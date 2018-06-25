@@ -3501,6 +3501,7 @@ recurse:
   case Expr::AsTypeExprClass:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
+  case Expr::CXXConstantExprClass:
   case Expr::FixedPointLiteralClass:
   {
     if (!NullOut) {

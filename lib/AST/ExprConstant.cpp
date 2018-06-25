@@ -5053,6 +5053,10 @@ public:
     llvm_unreachable("Return from function from the loop above.");
   }
 
+  bool VisitCXXConstantExpr(const CXXConstantExpr *E) {
+    return DerivedSuccess(E->getValue(), E);
+  }
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);
@@ -6664,6 +6668,10 @@ public:
     return VisitConstructExpr(E);
   }
   bool VisitLambdaExpr(const LambdaExpr *E) {
+    return VisitConstructExpr(E);
+  }
+  bool VisitCXXConstantExpr(const CXXConstantExpr *E) {
+    // FIXME: This seems like it might not be right.
     return VisitConstructExpr(E);
   }
 };
@@ -10868,6 +10876,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ArrayTypeTraitExprClass:
   case Expr::ExpressionTraitExprClass:
   case Expr::CXXNoexceptExprClass:
+  case Expr::CXXConstantExprClass:
     return NoDiag();
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass: {

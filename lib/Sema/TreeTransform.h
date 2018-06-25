@@ -1412,6 +1412,11 @@ public:
     return getSema().BuildCoroutineBodyStmt(Args);
   }
 
+  /// \brief Rebuild a constant expression from a source expression.
+  ExprResult RebuildCXXConstantExpr(Expr *E) {
+    return getSema().BuildConstantExpression(E);
+  }
+
   /// Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7099,6 +7104,16 @@ TreeTransform<Derived>::TransformCoyieldExpr(CoyieldExpr *E) {
   // Always rebuild; we don't know if this needs to be injected into a new
   // context or if the promise type has changed.
   return getDerived().RebuildCoyieldExpr(E->getKeywordLoc(), Result.get());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
+  ExprResult Result = getDerived().TransformExpr(E->getExpression());
+  if (Result.isInvalid())
+    return ExprError();
+  // Always rebuild. We need to re-evaluate the expression to get the value.
+  return getDerived().RebuildCXXConstantExpr(E);
 }
 
 // Objective-C Statements.

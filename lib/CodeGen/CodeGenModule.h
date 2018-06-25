@@ -1004,6 +1004,22 @@ public:
 
   llvm::Constant *getMemberPointerConstant(const UnaryOperator *e);
 
+  /// Try to emit the given expression as a constant; returns 0 if the
+  /// expression cannot be emitted as a constant.
+  llvm::Constant *EmitConstantExpr(const Expr *E, QualType DestType,
+                                   CodeGenFunction *CGF = nullptr);
+
+  /// Emit the given constant value as a constant, in the type's scalar
+  /// representation.
+  llvm::Constant *EmitConstantValue(const APValue &Value, QualType DestType,
+                                    CodeGenFunction *CGF = nullptr);
+
+  /// Emit the given constant value as a constant, in the type's memory
+  /// representation.
+  llvm::Constant *EmitConstantValueForMemory(const APValue &Value,
+                                             QualType DestType,
+                                             CodeGenFunction *CGF = nullptr);
+
   /// Emit type info if type of an expression is a variably modified
   /// type. Also emit proper debug info for cast types.
   void EmitExplicitCastExprType(const ExplicitCastExpr *E,

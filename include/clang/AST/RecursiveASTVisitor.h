@@ -2548,6 +2548,7 @@ DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
+DEF_TRAVERSE_STMT(CXXConstantExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

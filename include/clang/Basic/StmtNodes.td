@@ -154,6 +154,9 @@ def CoawaitExpr : DStmt<CoroutineSuspendExpr>;
 def DependentCoawaitExpr : DStmt<Expr>;
 def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
+// [Meta] expressions
+def CXXConstantExpr : DStmt<Expr>;
+
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;
 def ObjCBoxedExpr : DStmt<Expr>;

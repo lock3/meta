@@ -4411,6 +4411,49 @@ public:
   }
 };
 
+/// \brief Represents a compile-time value that was computed by a constant
+//// expression.
+class CXXConstantExpr : public Expr {
+  /// \brief The source expression.
+  Stmt *Source;
+
+  /// \brief The computed value of the source expression.
+  APValue Value;
+public:
+  CXXConstantExpr(Expr *E, APValue&& V)
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
+           E->getObjectKind(), false, false, false, false), Source(E),
+      Value(std::move(V)) {}
+
+  CXXConstantExpr(EmptyShell Empty)
+    : Expr(CXXConstantExprClass, Empty) {}
+
+  /// \brief Returns the evaluated expression. 
+  Expr *getExpression() const { return cast<Expr>(Source); }
+
+  /// \brief Returns the computed value.
+  const APValue& getValue() const { return Value; }
+
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return Source->getLocStart(); 
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    return Source->getLocEnd();
+  }
+
+  child_range children() { 
+    return child_range(&Source, &Source + 1); 
+  }
+
+  const_child_range children() const { 
+    return const_child_range(&Source, &Source + 1); 
+  }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConstantExprClass;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H
