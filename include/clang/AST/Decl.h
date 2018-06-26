@@ -1742,6 +1742,70 @@ private:
 
   LazyDeclStmtPtr Body;
 
+  // FIXME: This can be packed into the bitfields in DeclContext.
+  // NOTE: VC++ packs bitfields poorly if the types differ.
+  unsigned SClass : 3;
+  unsigned IsInline : 1;
+  unsigned IsInlineSpecified : 1;
+
+protected:
+  // This is shared by CXXConstructorDecl, CXXConversionDecl, and
+  // CXXDeductionGuideDecl.
+  unsigned IsExplicitSpecified : 1;
+
+private:
+  unsigned IsVirtualAsWritten : 1;
+  unsigned IsPure : 1;
+  unsigned HasInheritedPrototype : 1;
+  unsigned HasWrittenPrototype : 1;
+  unsigned IsDeleted : 1;
+  unsigned IsTrivial : 1; // sunk from CXXMethodDecl
+
+  /// \brief Wether this variable has 'constexpr' implicitly specified.
+  unsigned IsConstexprSpecified : 1;
+
+  /// \brief Whether this variable is 'immediate'.
+  unsigned IsImmediate : 1;
+
+  /// This flag indicates whether this function is trivial for the purpose of
+  /// calls. This is meaningful only when this function is a copy/move
+  /// constructor or a destructor.
+  unsigned IsTrivialForCall : 1;
+
+  unsigned IsDefaulted : 1; // sunk from CXXMethoDecl
+  unsigned IsExplicitlyDefaulted : 1; //sunk from CXXMethodDecl
+  unsigned HasImplicitReturnZero : 1;
+  unsigned IsLateTemplateParsed : 1;
+  unsigned IsConstexpr : 1;
+  unsigned InstantiationIsPending : 1;
+
+  /// Indicates if the function uses __try.
+  unsigned UsesSEHTry : 1;
+
+  /// Indicates if the function was a definition but its body was
+  /// skipped.
+  unsigned HasSkippedBody : 1;
+
+  /// Indicates if the function declaration will have a body, once we're done
+  /// parsing it.
+  unsigned WillHaveBody : 1;
+
+  /// Indicates that this function is a multiversioned function using attribute
+  /// 'target'.
+  unsigned IsMultiVersion : 1;
+
+protected:
+  /// [C++17] Only used by CXXDeductionGuideDecl. Declared here to avoid
+  /// increasing the size of CXXDeductionGuideDecl by the size of an unsigned
+  /// int as opposed to adding a single bit to FunctionDecl.
+  /// Indicates that the Deduction Guide is the implicitly generated 'copy
+  /// deduction candidate' (is used during overload resolution).
+  unsigned IsCopyDeductionCandidate : 1;
+
+private:
+
+  /// Store the ODRHash after first calculation.
+  unsigned HasODRHash : 1;
   unsigned ODRHash;
 
   /// End part of this FunctionDecl's source range.
@@ -2077,6 +2141,15 @@ public:
   /// Whether this is a (C++11) constexpr function or constexpr constructor.
   bool isConstexpr() const { return FunctionDeclBits.IsConstexpr; }
   void setConstexpr(bool IC) { FunctionDeclBits.IsConstexpr = IC; }
+
+  /// \Wether the constexpr specifier was written explicitly or derived from
+  /// an immediate specifier.
+  bool isConstexprSpecified() const { return IsConstexprSpecified; }
+  void setConstexprSpecified(bool ICS) { IsConstexprSpecified = ICS; }
+
+  /// Whether this is an immediate constexpr function.
+  bool isImmediate() const { return IsImmediate; }
+  void setImmediate(bool II) { IsImmediate = II; }
 
   /// Whether the instantiation of this function is pending.
   /// This bit is set when the decision to instantiate this function is made
