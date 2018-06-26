@@ -2426,6 +2426,44 @@ def err_concept_specialized : Error<
 def err_template_different_associated_constraints : Error<
   "associated constraints differ in template redeclaration">;
 
+// [Meta]
+// FIXME: The err_immediate_tag and err_immediate_no_declarators are dups
+// of constexpr errors. These should be merged.
+def err_immediate_tag : Error<
+  "%select{class|struct|interface|union|enum}0 cannot be marked 'immediate'">;
+def err_immediate_no_declarators : Error<
+  "'immediate' can only be used in function definitions">;
+def err_immediate_var : Error<
+  "variable cannot be marked 'immediate'">;
+def err_immediate_dtor : Error<
+  "destructor cannot be marked 'immediate'">;
+def err_cannot_evaluate_immedate : Error<
+  "cannot evaluate call to immediate %select{function|member function}0">;
+
+// Reflection
+def err_need_header_before_reflexpr : Error<
+  "you need to include <cppx/meta> before using the 'reflexpr' operator">;
+def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;
+def err_reflect_ambiguous_id : Error<"reflection of ambiguous identifier %0">;
+def err_reflect_overloaded_id : Error<"reflection of overloaded identifier %0">;
+def err_reflection_failed : Error<"reflection failed">;
+def err_reflection_trait_wrong_type : Error<
+  "operand does not have type %0">;
+def err_expression_not_reflection : Error<
+  "expression is not a reflection">;
+def err_expression_not_type_reflection : Error<
+  "expression does not reflect a type">;
+def err_expression_not_value_reflection : Error<
+  "expression does not reflect a value">;
+def reflection_not_constant_expression : Error<
+  "reflection is not a constant expression">;
+def err_reflection_not_known : Error<
+  "expression does not reflect a construct">;
+def err_empty_type_reflection : Error<
+  "cannot project a type for an empty reflection">;
+def err_cannot_project_value : Error<
+  "cannot project a value for a %select{constructor|destructor}">;
+
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
   "'%0' type specifier is incompatible with C++98">,

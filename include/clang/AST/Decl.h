@@ -1750,6 +1750,12 @@ private:
   unsigned IsDeleted : 1;
   unsigned IsTrivial : 1; // sunk from CXXMethodDecl
 
+  /// \brief Wether this variable has 'constexpr' implicitly specified.
+  unsigned IsConstexprSpecified : 1;
+
+  /// \brief Whether this variable is 'immediate'.
+  unsigned IsImmediate : 1;
+
   /// This flag indicates whether this function is trivial for the purpose of
   /// calls. This is meaningful only when this function is a copy/move
   /// constructor or a destructor.
@@ -2087,6 +2093,15 @@ public:
   /// Whether this is a (C++11) constexpr function or constexpr constructor.
   bool isConstexpr() const { return IsConstexpr; }
   void setConstexpr(bool IC) { IsConstexpr = IC; }
+
+  /// \Wether the constexpr specifier was written explicitly or derived from
+  /// an immediate specifier.
+  bool isConstexprSpecified() const { return IsConstexprSpecified; }
+  void setConstexprSpecified(bool ICS) { IsConstexprSpecified = ICS; }
+
+  /// Whether this is an immediate constexpr function.
+  bool isImmediate() const { return IsImmediate; }
+  void setImmediate(bool II) { IsImmediate = II; }
 
   /// Whether the instantiation of this function is pending.
   /// This bit is set when the decision to instantiate this function is made

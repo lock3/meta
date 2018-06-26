@@ -366,6 +366,12 @@ private:
   // constexpr-specifier
   unsigned Constexpr_specified : 1;
 
+  // immediate-specifier
+  unsigned Immediate_specified : 1;
+
+  // concept-specifier
+  unsigned Concept_specified : 1;
+
   union {
     UnionParsedType TypeRep;
     Decl *DeclRep;
@@ -395,7 +401,8 @@ private:
       TQ_unalignedLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc;
+  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, ImmediateLoc,
+    ConceptLoc;
   SourceLocation TQ_pipeLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -442,6 +449,8 @@ public:
       FS_noreturn_specified(false),
       Friend_specified(false),
       Constexpr_specified(false),
+      Immediate_specified(false),
+      Concept_specified(false),
       Attrs(attrFactory),
       writtenBS(),
       ObjCQualifiers(nullptr) {
@@ -703,6 +712,10 @@ public:
                             unsigned &DiagID);
   bool SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
                         unsigned &DiagID);
+  bool SetImmediateSpec(SourceLocation Loc, const char *&PrevSpec,
+                        unsigned &DiagID);
+  bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
+                      unsigned &DiagID);
 
   bool isFriendSpecified() const { return Friend_specified; }
   SourceLocation getFriendSpecLoc() const { return FriendLoc; }
@@ -713,9 +726,25 @@ public:
   bool isConstexprSpecified() const { return Constexpr_specified; }
   SourceLocation getConstexprSpecLoc() const { return ConstexprLoc; }
 
+  bool isImmediateSpecified() const { return Immediate_specified; }
+  SourceLocation getImmediateSpecLoc() const { return ImmediateLoc; }
+
+  bool isConceptSpecified() const { return Concept_specified; }
+  SourceLocation getConceptSpecLoc() const { return ConceptLoc; }
+
   void ClearConstexprSpec() {
     Constexpr_specified = false;
     ConstexprLoc = SourceLocation();
+  }
+
+  void ClearImmediateSpec() {
+    Immediate_specified = false;
+    ImmediateLoc = SourceLocation();
+  }
+
+  void ClearConceptSpec() {
+    Concept_specified = false;
+    ConceptLoc = SourceLocation();
   }
 
   AttributePool &getAttributePool() const {
