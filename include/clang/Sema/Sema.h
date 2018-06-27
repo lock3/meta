@@ -4989,6 +4989,11 @@ public:
   /// it simply returns the passed in expression.
   ExprResult MaybeBindToTemporary(Expr *E);
 
+  /// FinishCallExpr - If the function designated by the call is marked
+  /// immediate, then evaluate the expression and return an constant 
+  /// expression. This calls MaybeBindToTemporary on the way out.
+  ExprResult FinishCallExpr(Expr *E);
+
   bool CompleteConstructorCall(CXXConstructorDecl *Constructor,
                                MultiExprArg ArgsPtr,
                                SourceLocation Loc,
@@ -8562,6 +8567,12 @@ public:
   void CheckCompletedCoroutineBody(FunctionDecl *FD, Stmt *&Body);
   ClassTemplateDecl *lookupCoroutineTraits(SourceLocation KwLoc,
                                            SourceLocation FuncLoc);
+
+  //===--------------------------------------------------------------------===//
+  // Metaprogramming
+  //
+
+  ExprResult BuildConstantExpression(Expr *E);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

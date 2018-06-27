@@ -12822,7 +12822,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     if (CheckOtherCall(call, proto))
       return ExprError();
 
-    return MaybeBindToTemporary(call);
+    return FinishCallExpr(call);
   }
 
   if (isa<CXXPseudoDestructorExpr>(NakedMemExpr))
@@ -13036,7 +13036,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          MemExpr->getMemberLoc());
   }
 
-  return MaybeBindToTemporary(TheCall);
+  return FinishCallExpr(TheCall);
 }
 
 /// BuildCallToObjectOfClassType - Build a call to an object of class

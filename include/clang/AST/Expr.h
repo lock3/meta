@@ -641,6 +641,10 @@ public:
   /// lvalue with link time known address, with no side-effects.
   bool EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const;
 
+  /// EvaluateAsAnyValue - Evaluate an expression to fold it as either an
+  /// lvalue or an rvalue, depending on the kind of expression.
+  bool EvaluateAsAnyValue(EvalResult &Result, const ASTContext &Ctx) const;
+
   /// EvaluateAsInitializer - Evaluate an expression as if it were the
   /// initializer of the given declaration. Returns true if the initializer
   /// can be folded to a constant, and produces any relevant notes. In C++11,

@@ -5682,7 +5682,7 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
       return ExprError();
   }
 
-  return MaybeBindToTemporary(TheCall);
+  return FinishCallExpr(TheCall);
 }
 
 ExprResult
