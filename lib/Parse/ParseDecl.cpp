@@ -3519,6 +3519,16 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.setModulePrivateSpec(Loc, PrevSpec, DiagID);
       break;
 
+    // immediate
+    case tok::kw_immediate:
+      isInvalid = DS.SetImmediateSpec(Loc, PrevSpec, DiagID);
+      break;
+
+    // concept
+    case tok::kw_concept:
+      isInvalid = DS.SetConceptSpec(Loc, PrevSpec, DiagID);
+      break;
+
     // constexpr
     case tok::kw_constexpr:
       isInvalid = DS.SetConstexprSpec(Loc, PrevSpec, DiagID);
@@ -4927,6 +4937,12 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     // C++11 decltype and constexpr.
   case tok::annot_decltype:
   case tok::kw_constexpr:
+
+    // C++ Concepts TS - concept
+  case tok::kw_concept:
+
+    // [Meta] immediate
+  case tok::kw_immediate:
 
     // C11 _Atomic
   case tok::kw__Atomic:

@@ -10627,6 +10627,14 @@ bool Expr::EvaluateAsConstantExpr(EvalResult &Result, ConstExprUsage Usage,
                                  Usage);
 }
 
+bool Expr::EvaluateAsAnyValue(EvalResult &Result, const ASTContext &Ctx) const {
+  // FIXME: This evaluates xvalues as lvalues. That seems like it may be wrong.
+  if (isRValue())
+    return EvaluateAsRValue(Result, Ctx);
+  else 
+    return EvaluateAsLValue(Result, Ctx);
+}
+
 bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
                                  const VarDecl *VD,
                             SmallVectorImpl<PartialDiagnosticAt> &Notes) const {

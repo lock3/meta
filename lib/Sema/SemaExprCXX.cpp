@@ -7899,6 +7899,26 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
 
+/// Try to evaluate an immediate function. 
+static ExprResult
+EvaluateImmediateFunction(Sema &SemaRef, Expr *E)
+{
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  bool OK = E->EvaluateAsAnyValue(Result, SemaRef.Context);
+  if (OK || E->getType()->isVoidType())
+    return new (SemaRef.Context) CXXConstantExpr(E, std::move(Result.Val));
+
+  bool IsMember = isa<CXXMemberCallExpr>(E);
+  SemaRef.Diag(E->getLocStart(), diag::err_cannot_evaluate_immedate)
+      << IsMember << E->getSourceRange();
+  for (PartialDiagnosticAt PD : Diags)
+    SemaRef.Diag(PD.first, PD.second);
+  
+  return ExprError();
+}
+
 /// Evaluates the expression E and returns a CXXConstantExpr that wraps
 /// the both E and the computed value.
 ExprResult
@@ -7929,3 +7949,44 @@ Sema::BuildConstantExpression(Expr *E)
 
   return new (Context) CXXConstantExpr(E, std::move(Result.Val));
 }
+
+ExprResult
+Sema::FinishCallExpr(Expr *E)
+{
+  // Don't evaluate immediate functions within the body of a constexpr
+  // function. The arguments aren't known to be (but may be assumed to be?)
+  // constant expressions.
+  //
+  // FIXME: Restrict this to just immediate functions?
+  if (FunctionDecl *Fn = getCurFunctionDecl()) {
+    if (Fn->isConstexpr())
+      return MaybeBindToTemporary(E);
+  }
+
+  // Don't evaluate dependent expressions.
+  if (E->isTypeDependent() || E->isValueDependent())
+    return MaybeBindToTemporary(E);
+
+  // Actually evaluate the immediate function.
+  if (CXXMemberCallExpr *MemCall = dyn_cast<CXXMemberCallExpr>(E)) {
+    CXXMethodDecl *Method = MemCall->getMethodDecl();
+    if (Method && Method->isImmediate()) {
+      ExprResult Value = EvaluateImmediateFunction(*this, MemCall);
+      if (Value.isInvalid())
+        return ExprError();
+      E = Value.get();
+    }
+  } else if (CallExpr *Call = dyn_cast<CallExpr>(E)) {
+    if (FunctionDecl *Callee = Call->getDirectCallee()) {
+      if (Callee && Callee->isImmediate()) {
+        ExprResult Value = EvaluateImmediateFunction(*this, Call);
+        if (Value.isInvalid())
+          return ExprError();
+        E = Value.get();
+      }
+    }
+  }
+
+  return MaybeBindToTemporary(E);
+}
+
