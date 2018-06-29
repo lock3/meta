@@ -698,13 +698,19 @@ private:
                  Line.startsWith(TT_ObjCMethodSpecifier)) {
         Tok->Type = TT_ObjCMethodExpr;
         const FormatToken *BeforePrevious = Tok->Previous->Previous;
+        // Ensure we tag all identifiers in method declarations as
+        // TT_SelectorName.
+        bool UnknownIdentifierInMethodDeclaration =
+            Line.startsWith(TT_ObjCMethodSpecifier) &&
+            Tok->Previous->is(tok::identifier) && Tok->Previous->is(TT_Unknown);
         if (!BeforePrevious ||
             // FIXME(bug 36976): ObjC return types shouldn't use TT_CastRParen.
             !(BeforePrevious->is(TT_CastRParen) ||
               (BeforePrevious->is(TT_ObjCMethodExpr) &&
                BeforePrevious->is(tok::colon))) ||
             BeforePrevious->is(tok::r_square) ||
-            Contexts.back().LongestObjCSelectorName == 0) {
+            Contexts.back().LongestObjCSelectorName == 0 ||
+            UnknownIdentifierInMethodDeclaration) {
           Tok->Previous->Type = TT_SelectorName;
           if (!Contexts.back().FirstObjCSelectorName)
             Contexts.back().FirstObjCSelectorName = Tok->Previous;
@@ -2949,15 +2955,32 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
   //
   // Be careful to exclude the case  [proto.ext] { ... } since the `]` is
   // the TT_SelectorName there, but we don't want to break inside the brackets.
+  //
+  // Another edge case is @submessage { key: value }, which is a common
+  // substitution placeholder. In this case we want to keep `@` and `submessage`
+  // together.
+  //
   // We ensure elsewhere that extensions are always on their own line.
   if ((Style.Language == FormatStyle::LK_Proto ||
        Style.Language == FormatStyle::LK_TextProto) &&
       Right.is(TT_SelectorName) && !Right.is(tok::r_square) && Right.Next) {
+    // Keep `@submessage` together in:
+    // @submessage { key: value }
+    if (Right.Previous && Right.Previous->is(tok::at))
+      return false;
     // Look for the scope opener after selector in cases like:
     // selector { ...
     // selector: { ...
-    FormatToken *LBrace =
-        Right.Next->is(tok::colon) ? Right.Next->Next : Right.Next;
+    // selector: @base { ...
+    FormatToken *LBrace = Right.Next;
+    if (LBrace && LBrace->is(tok::colon)) {
+      LBrace = LBrace->Next;
+      if (LBrace && LBrace->is(tok::at)) {
+        LBrace = LBrace->Next;
+        if (LBrace)
+          LBrace = LBrace->Next;
+      }
+    }
     if (LBrace &&
         // The scope opener is one of {, [, <:
         // selector { ... }

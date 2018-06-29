@@ -115,8 +115,15 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-Bdynamic");
 
     if (D.CCCIsCXX()) {
-      if (ToolChain.ShouldLinkCXXStdlib(Args))
+      if (ToolChain.ShouldLinkCXXStdlib(Args)) {
+        bool OnlyLibstdcxxStatic = Args.hasArg(options::OPT_static_libstdcxx) &&
+                                   !Args.hasArg(options::OPT_static);
+        if (OnlyLibstdcxxStatic)
+          CmdArgs.push_back("-Bstatic");
         ToolChain.AddCXXStdlibLibArgs(Args, CmdArgs);
+        if (OnlyLibstdcxxStatic)
+          CmdArgs.push_back("-Bdynamic");
+      }
       CmdArgs.push_back("-lm");
     }
 
@@ -137,31 +144,12 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
 /// Fuchsia - Fuchsia tool chain which can call as(1) and ld(1) directly.
 
-static std::string normalizeTriple(llvm::Triple Triple) {
-  SmallString<64> T;
-  T += Triple.getArchName();
-  T += "-";
-  T += Triple.getOSName();
-  return T.str();
-}
-
-static std::string getTargetDir(const Driver &D,
-                                llvm::Triple Triple) {
-  SmallString<128> P(llvm::sys::path::parent_path(D.Dir));
-  llvm::sys::path::append(P, "lib", normalizeTriple(Triple));
-  return P.str();
-}
-
 Fuchsia::Fuchsia(const Driver &D, const llvm::Triple &Triple,
                  const ArgList &Args)
     : ToolChain(D, Triple, Args) {
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != D.Dir)
     getProgramPaths().push_back(D.Dir);
-
-  SmallString<128> P(getTargetDir(D, getTriple()));
-  llvm::sys::path::append(P, "lib");
-  getFilePaths().push_back(P.str());
 
   if (!D.SysRoot.empty()) {
     SmallString<128> P(D.SysRoot);
@@ -173,8 +161,7 @@ Fuchsia::Fuchsia(const Driver &D, const llvm::Triple &Triple,
 std::string Fuchsia::ComputeEffectiveClangTriple(const ArgList &Args,
                                                  types::ID InputType) const {
   llvm::Triple Triple(ComputeLLVMTriple(Args, InputType));
-  Triple.setTriple(normalizeTriple(Triple));
-  return Triple.getTriple();
+  return (Triple.getArchName() + "-" + Triple.getOSName()).str();
 }
 
 Tool *Fuchsia::buildLinker() const {
@@ -257,7 +244,7 @@ void Fuchsia::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
 
   switch (GetCXXStdlibType(DriverArgs)) {
   case ToolChain::CST_Libcxx: {
-    SmallString<128> P(getTargetDir(getDriver(), getTriple()));
+    SmallString<128> P(getDriver().ResourceDir);
     llvm::sys::path::append(P, "include", "c++", "v1");
     addSystemInclude(DriverArgs, CC1Args, P.str());
     break;

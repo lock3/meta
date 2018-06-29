@@ -774,7 +774,13 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
               "PROTO",
           },
           /*EnclosingFunctionNames=*/
-          {},
+          {
+              "EqualsProto",
+              "EquivToProto",
+              "PARSE_TEST_PROTO",
+              "PARSE_TEXT_PROTO",
+              "ParseTextOrDie",
+          },
           /*CanonicalDelimiter=*/"",
           /*BasedOnStyle=*/"google",
       },
@@ -2143,6 +2149,10 @@ FormatStyle::LanguageKind guessLanguage(StringRef FileName, StringRef Code) {
   }
   return GuessedLanguage;
 }
+
+const char *DefaultFormatStyle = "file";
+
+const char *DefaultFallbackStyle = "LLVM";
 
 llvm::Expected<FormatStyle> getStyle(StringRef StyleName, StringRef FileName,
                                      StringRef FallbackStyleName,

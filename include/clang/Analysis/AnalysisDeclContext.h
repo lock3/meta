@@ -264,7 +264,7 @@ public:
     return Ctx->getSelfDecl();
   }
 
-  const StackFrameContext *getCurrentStackFrame() const;
+  const StackFrameContext *getStackFrame() const;
 
   /// Return true if the current LocationContext has no caller context.
   virtual bool inTopFrame() const;
@@ -451,6 +451,7 @@ public:
                              bool addStaticInitBranches = false,
                              bool addCXXNewAllocator = true,
                              bool addRichCXXConstructors = true,
+                             bool markElidedCXXConstructors = true,
                              CodeInjector *injector = nullptr);
 
   AnalysisDeclContext *getContext(const Decl *D);

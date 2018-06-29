@@ -139,7 +139,8 @@ public:
     // encountered. This list may be expanded when new actions are implemented.
     assert(getCXXCtorInitializer() || isa<DeclStmt>(getStmt()) ||
            isa<CXXNewExpr>(getStmt()) || isa<CXXBindTemporaryExpr>(getStmt()) ||
-           isa<MaterializeTemporaryExpr>(getStmt()));
+           isa<MaterializeTemporaryExpr>(getStmt()) ||
+           isa<CXXConstructExpr>(getStmt()));
   }
 
   const Stmt *getStmt() const {
@@ -183,6 +184,14 @@ typedef llvm::ImmutableMap<ConstructedObjectKey, SVal>
 REGISTER_TRAIT_WITH_PROGRAMSTATE(ObjectsUnderConstruction,
                                  ObjectsUnderConstructionMap)
 
+// Additionally, track a set of destructors that correspond to elided
+// constructors when copy elision occurs.
+typedef std::pair<const CXXBindTemporaryExpr *, const LocationContext *>
+    ElidedDestructorItem;
+typedef llvm::ImmutableSet<ElidedDestructorItem>
+    ElidedDestructorSet;
+REGISTER_TRAIT_WITH_PROGRAMSTATE(ElidedDestructors,
+                                 ElidedDestructorSet)
 
 //===----------------------------------------------------------------------===//
 // Engine construction and deletion.
@@ -282,7 +291,7 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
       // Precondition: 'this' is always non-null upon entry to the
       // top-level function.  This is our starting assumption for
       // analyzing an "open" program.
-      const StackFrameContext *SFC = InitLoc->getCurrentStackFrame();
+      const StackFrameContext *SFC = InitLoc->getStackFrame();
       if (SFC->getParent() == nullptr) {
         loc::MemRegionVal L = svalBuilder.getCXXThis(MD, SFC);
         SVal V = state->getSVal(L);
@@ -358,14 +367,12 @@ ExprEngine::createTemporaryRegionIfNeeded(ProgramStateRef State,
   // a new temporary region out of thin air and copy the contents of the object
   // (which are currently present in the Environment, because Init is an rvalue)
   // into that region. This is not correct, but it is better than nothing.
-  bool FoundOriginalMaterializationRegion = false;
   const TypedValueRegion *TR = nullptr;
   if (const auto *MT = dyn_cast<MaterializeTemporaryExpr>(Result)) {
     if (Optional<SVal> V = getObjectUnderConstruction(State, MT, LC)) {
-      FoundOriginalMaterializationRegion = true;
-      TR = cast<CXXTempObjectRegion>(V->getAsRegion());
-      assert(TR);
       State = finishObjectConstruction(State, MT, LC);
+      State = State->BindExpr(Result, LC, *V);
+      return State;
     } else {
       StorageDuration SD = MT->getStorageDuration();
       // If this object is bound to a reference with static storage duration, we
@@ -402,35 +409,33 @@ ExprEngine::createTemporaryRegionIfNeeded(ProgramStateRef State,
     }
   }
 
-  if (!FoundOriginalMaterializationRegion) {
-    // What remains is to copy the value of the object to the new region.
-    // FIXME: In other words, what we should always do is copy value of the
-    // Init expression (which corresponds to the bigger object) to the whole
-    // temporary region TR. However, this value is often no longer present
-    // in the Environment. If it has disappeared, we instead invalidate TR.
-    // Still, what we can do is assign the value of expression Ex (which
-    // corresponds to the sub-object) to the TR's sub-region Reg. At least,
-    // values inside Reg would be correct.
-    SVal InitVal = State->getSVal(Init, LC);
-    if (InitVal.isUnknown()) {
-      InitVal = getSValBuilder().conjureSymbolVal(Result, LC, Init->getType(),
-                                                  currBldrCtx->blockCount());
-      State = State->bindLoc(BaseReg.castAs<Loc>(), InitVal, LC, false);
+  // What remains is to copy the value of the object to the new region.
+  // FIXME: In other words, what we should always do is copy value of the
+  // Init expression (which corresponds to the bigger object) to the whole
+  // temporary region TR. However, this value is often no longer present
+  // in the Environment. If it has disappeared, we instead invalidate TR.
+  // Still, what we can do is assign the value of expression Ex (which
+  // corresponds to the sub-object) to the TR's sub-region Reg. At least,
+  // values inside Reg would be correct.
+  SVal InitVal = State->getSVal(Init, LC);
+  if (InitVal.isUnknown()) {
+    InitVal = getSValBuilder().conjureSymbolVal(Result, LC, Init->getType(),
+                                                currBldrCtx->blockCount());
+    State = State->bindLoc(BaseReg.castAs<Loc>(), InitVal, LC, false);
 
-      // Then we'd need to take the value that certainly exists and bind it
-      // over.
-      if (InitValWithAdjustments.isUnknown()) {
-        // Try to recover some path sensitivity in case we couldn't
-        // compute the value.
-        InitValWithAdjustments = getSValBuilder().conjureSymbolVal(
-            Result, LC, InitWithAdjustments->getType(),
-            currBldrCtx->blockCount());
-      }
-      State =
-          State->bindLoc(Reg.castAs<Loc>(), InitValWithAdjustments, LC, false);
-    } else {
-      State = State->bindLoc(BaseReg.castAs<Loc>(), InitVal, LC, false);
+    // Then we'd need to take the value that certainly exists and bind it
+    // over.
+    if (InitValWithAdjustments.isUnknown()) {
+      // Try to recover some path sensitivity in case we couldn't
+      // compute the value.
+      InitValWithAdjustments = getSValBuilder().conjureSymbolVal(
+          Result, LC, InitWithAdjustments->getType(),
+          currBldrCtx->blockCount());
     }
+    State =
+        State->bindLoc(Reg.castAs<Loc>(), InitValWithAdjustments, LC, false);
+  } else {
+    State = State->bindLoc(BaseReg.castAs<Loc>(), InitVal, LC, false);
   }
 
   // The result expression would now point to the correct sub-region of the
@@ -438,10 +443,8 @@ ExprEngine::createTemporaryRegionIfNeeded(ProgramStateRef State,
   // correctly in case (Result == Init).
   State = State->BindExpr(Result, LC, Reg);
 
-  if (!FoundOriginalMaterializationRegion) {
-    // Notify checkers once for two bindLoc()s.
-    State = processRegionChange(State, TR, LC);
-  }
+  // Notify checkers once for two bindLoc()s.
+  State = processRegionChange(State, TR, LC);
 
   return State;
 }
@@ -450,7 +453,7 @@ ProgramStateRef ExprEngine::addObjectUnderConstruction(
     ProgramStateRef State,
     llvm::PointerUnion<const Stmt *, const CXXCtorInitializer *> P,
     const LocationContext *LC, SVal V) {
-  ConstructedObjectKey Key(P, LC->getCurrentStackFrame());
+  ConstructedObjectKey Key(P, LC->getStackFrame());
   // FIXME: Currently the state might already contain the marker due to
   // incorrect handling of temporaries bound to default parameters.
   assert(!State->get<ObjectsUnderConstruction>(Key) ||
@@ -462,7 +465,7 @@ Optional<SVal> ExprEngine::getObjectUnderConstruction(
     ProgramStateRef State,
     llvm::PointerUnion<const Stmt *, const CXXCtorInitializer *> P,
     const LocationContext *LC) {
-  ConstructedObjectKey Key(P, LC->getCurrentStackFrame());
+  ConstructedObjectKey Key(P, LC->getStackFrame());
   return Optional<SVal>::create(State->get<ObjectsUnderConstruction>(Key));
 }
 
@@ -470,9 +473,33 @@ ProgramStateRef ExprEngine::finishObjectConstruction(
     ProgramStateRef State,
     llvm::PointerUnion<const Stmt *, const CXXCtorInitializer *> P,
     const LocationContext *LC) {
-  ConstructedObjectKey Key(P, LC->getCurrentStackFrame());
+  ConstructedObjectKey Key(P, LC->getStackFrame());
   assert(State->contains<ObjectsUnderConstruction>(Key));
   return State->remove<ObjectsUnderConstruction>(Key);
+}
+
+ProgramStateRef ExprEngine::elideDestructor(ProgramStateRef State,
+                                            const CXXBindTemporaryExpr *BTE,
+                                            const LocationContext *LC) {
+  ElidedDestructorItem I(BTE, LC);
+  assert(!State->contains<ElidedDestructors>(I));
+  return State->add<ElidedDestructors>(I);
+}
+
+ProgramStateRef
+ExprEngine::cleanupElidedDestructor(ProgramStateRef State,
+                                    const CXXBindTemporaryExpr *BTE,
+                                    const LocationContext *LC) {
+  ElidedDestructorItem I(BTE, LC);
+  assert(State->contains<ElidedDestructors>(I));
+  return State->remove<ElidedDestructors>(I);
+}
+
+bool ExprEngine::isDestructorElided(ProgramStateRef State,
+                                    const CXXBindTemporaryExpr *BTE,
+                                    const LocationContext *LC) {
+  ElidedDestructorItem I(BTE, LC);
+  return State->contains<ElidedDestructors>(I);
 }
 
 bool ExprEngine::areAllObjectsFullyConstructed(ProgramStateRef State,
@@ -483,6 +510,10 @@ bool ExprEngine::areAllObjectsFullyConstructed(ProgramStateRef State,
     assert(LC && "ToLC must be a parent of FromLC!");
     for (auto I : State->get<ObjectsUnderConstruction>())
       if (I.first.getLocationContext() == LC)
+        return false;
+
+    for (auto I: State->get<ElidedDestructors>())
+      if (I.second == LC)
         return false;
 
     LC = LC->getParent();
@@ -528,6 +559,14 @@ static void printObjectsUnderConstructionForContext(raw_ostream &Out,
       continue;
     Key.print(Out, nullptr, PP);
     Out << " : " << Value << NL;
+  }
+
+  for (auto I : State->get<ElidedDestructors>()) {
+    if (I.second != LC)
+      continue;
+    Out << '(' << I.second << ',' << (const void *)I.first << ") ";
+    I.first->printPretty(Out, nullptr, PP);
+    Out << " : (constructor elided)" << NL;
   }
 }
 
@@ -640,7 +679,7 @@ void ExprEngine::removeDead(ExplodedNode *Pred, ExplodedNodeSet &Out,
     LC = LC->getParent();
   }
 
-  const StackFrameContext *SFC = LC ? LC->getCurrentStackFrame() : nullptr;
+  const StackFrameContext *SFC = LC ? LC->getStackFrame() : nullptr;
   SymbolReaper SymReaper(SFC, ReferenceStmt, SymMgr, getStoreManager());
 
   for (auto I : CleanedState->get<ObjectsUnderConstruction>()) {
@@ -963,7 +1002,7 @@ void ExprEngine::ProcessBaseDtor(const CFGBaseDtor D,
 
   const auto *CurDtor = cast<CXXDestructorDecl>(LCtx->getDecl());
   Loc ThisPtr = getSValBuilder().getCXXThis(CurDtor,
-                                            LCtx->getCurrentStackFrame());
+                                            LCtx->getStackFrame());
   SVal ThisVal = Pred->getState()->getSVal(ThisPtr);
 
   // Create the base object region.
@@ -985,7 +1024,7 @@ void ExprEngine::ProcessMemberDtor(const CFGMemberDtor D,
 
   const auto *CurDtor = cast<CXXDestructorDecl>(LCtx->getDecl());
   Loc ThisVal = getSValBuilder().getCXXThis(CurDtor,
-                                            LCtx->getCurrentStackFrame());
+                                            LCtx->getStackFrame());
   SVal FieldVal =
       State->getLValue(Member, State->getSVal(ThisVal).castAs<Loc>());
 
@@ -1003,10 +1042,11 @@ void ExprEngine::ProcessMemberDtor(const CFGMemberDtor D,
 void ExprEngine::ProcessTemporaryDtor(const CFGTemporaryDtor D,
                                       ExplodedNode *Pred,
                                       ExplodedNodeSet &Dst) {
-  ExplodedNodeSet CleanDtorState;
-  StmtNodeBuilder StmtBldr(Pred, CleanDtorState, *currBldrCtx);
+  const CXXBindTemporaryExpr *BTE = D.getBindTemporaryExpr();
   ProgramStateRef State = Pred->getState();
+  const LocationContext *LC = Pred->getLocationContext();
   const MemRegion *MR = nullptr;
+
   if (Optional<SVal> V =
           getObjectUnderConstruction(State, D.getBindTemporaryExpr(),
                                      Pred->getLocationContext())) {
@@ -1017,6 +1057,21 @@ void ExprEngine::ProcessTemporaryDtor(const CFGTemporaryDtor D,
                                      Pred->getLocationContext());
     MR = V->getAsRegion();
   }
+
+  // If copy elision has occured, and the constructor corresponding to the
+  // destructor was elided, we need to skip the destructor as well.
+  if (isDestructorElided(State, BTE, LC)) {
+    State = cleanupElidedDestructor(State, BTE, LC);
+    NodeBuilder Bldr(Pred, Dst, *currBldrCtx);
+    PostImplicitCall PP(D.getDestructorDecl(getContext()),
+                        D.getBindTemporaryExpr()->getLocStart(),
+                        Pred->getLocationContext());
+    Bldr.generateNode(PP, State, Pred);
+    return;
+  }
+
+  ExplodedNodeSet CleanDtorState;
+  StmtNodeBuilder StmtBldr(Pred, CleanDtorState, *currBldrCtx);
   StmtBldr.generateNode(D.getBindTemporaryExpr(), Pred, State);
 
   QualType T = D.getBindTemporaryExpr()->getSubExpr()->getType();
@@ -1759,8 +1814,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
 
 bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
                                        const LocationContext *CalleeLC) {
-  const StackFrameContext *CalleeSF = CalleeLC->getCurrentStackFrame();
-  const StackFrameContext *CallerSF = CalleeSF->getParent()->getCurrentStackFrame();
+  const StackFrameContext *CalleeSF = CalleeLC->getStackFrame();
+  const StackFrameContext *CallerSF = CalleeSF->getParent()->getStackFrame();
   assert(CalleeSF && CallerSF);
   ExplodedNode *BeforeProcessingCall = nullptr;
   const Stmt *CE = CalleeSF->getCallSite();
@@ -1772,7 +1827,7 @@ bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
     N = N->pred_empty() ? nullptr : *(N->pred_begin());
 
     // Skip the nodes corresponding to the inlined code.
-    if (L.getLocationContext()->getCurrentStackFrame() != CallerSF)
+    if (L.getStackFrame() != CallerSF)
       continue;
     // We reached the caller. Find the node right before we started
     // processing the call.
@@ -1871,10 +1926,10 @@ void ExprEngine::processCFGBlockEntrance(const BlockEdge &L,
     // Check if we stopped at the top level function or not.
     // Root node should have the location context of the top most function.
     const LocationContext *CalleeLC = Pred->getLocation().getLocationContext();
-    const LocationContext *CalleeSF = CalleeLC->getCurrentStackFrame();
+    const LocationContext *CalleeSF = CalleeLC->getStackFrame();
     const LocationContext *RootLC =
                         (*G.roots_begin())->getLocation().getLocationContext();
-    if (RootLC->getCurrentStackFrame() != CalleeSF) {
+    if (RootLC->getStackFrame() != CalleeSF) {
       Engine.FunctionSummaries->markReachedMaxBlockCount(CalleeSF->getDecl());
 
       // Re-run the call evaluation without inlining it, by storing the
@@ -2191,7 +2246,7 @@ void ExprEngine::processEndOfFunction(NodeBuilderContext& BC,
     NodeBuilder Bldr(Pred, CleanUpObjects, BC);
     ProgramStateRef State = Pred->getState();
     const LocationContext *FromLC = Pred->getLocationContext();
-    const LocationContext *ToLC = FromLC->getCurrentStackFrame()->getParent();
+    const LocationContext *ToLC = FromLC->getStackFrame()->getParent();
     const LocationContext *LC = FromLC;
     while (LC != ToLC) {
       assert(LC && "ToLC must be a parent of FromLC!");
@@ -2202,7 +2257,20 @@ void ExprEngine::processEndOfFunction(NodeBuilderContext& BC,
           // it must be a separate problem.
           assert(isa<CXXBindTemporaryExpr>(I.first.getStmt()));
           State = State->remove<ObjectsUnderConstruction>(I.first);
+          // Also cleanup the elided destructor info.
+          ElidedDestructorItem Item(
+              cast<CXXBindTemporaryExpr>(I.first.getStmt()),
+              I.first.getLocationContext());
+          State = State->remove<ElidedDestructors>(Item);
         }
+
+      // Also suppress the assertion for elided destructors when temporary
+      // destructors are not provided at all by the CFG, because there's no
+      // good place to clean them up.
+      if (!AMgr.getAnalyzerOptions().includeTemporaryDtorsInCFG())
+        for (auto I : State->get<ElidedDestructors>())
+          if (I.second == LC)
+            State = State->remove<ElidedDestructors>(I);
 
       LC = LC->getParent();
     }
@@ -2354,7 +2422,7 @@ void ExprEngine::VisitCommonDeclRefExpr(const Expr *Ex, const NamedDecl *D,
       // variable should be captured.
       if (const FieldDecl *FD = LambdaCaptureFields[VD]) {
         Loc CXXThis =
-            svalBuilder.getCXXThis(MD, LocCtxt->getCurrentStackFrame());
+            svalBuilder.getCXXThis(MD, LocCtxt->getStackFrame());
         SVal CXXThisVal = state->getSVal(CXXThis);
         VInfo = std::make_pair(state->getLValue(FD, CXXThisVal), FD->getType());
       }

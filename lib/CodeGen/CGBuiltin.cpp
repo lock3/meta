@@ -4081,16 +4081,22 @@ static const NeonIntrinsicInfo ARMSIMDIntrinsicMap [] = {
   NEONMAP1(vld1q_x2_v, arm_neon_vld1x2, 0),
   NEONMAP1(vld1q_x3_v, arm_neon_vld1x3, 0),
   NEONMAP1(vld1q_x4_v, arm_neon_vld1x4, 0),
+  NEONMAP1(vld2_dup_v, arm_neon_vld2dup, 0),
   NEONMAP1(vld2_lane_v, arm_neon_vld2lane, 0),
   NEONMAP1(vld2_v, arm_neon_vld2, 0),
+  NEONMAP1(vld2q_dup_v, arm_neon_vld2dup, 0),
   NEONMAP1(vld2q_lane_v, arm_neon_vld2lane, 0),
   NEONMAP1(vld2q_v, arm_neon_vld2, 0),
+  NEONMAP1(vld3_dup_v, arm_neon_vld3dup, 0),
   NEONMAP1(vld3_lane_v, arm_neon_vld3lane, 0),
   NEONMAP1(vld3_v, arm_neon_vld3, 0),
+  NEONMAP1(vld3q_dup_v, arm_neon_vld3dup, 0),
   NEONMAP1(vld3q_lane_v, arm_neon_vld3lane, 0),
   NEONMAP1(vld3q_v, arm_neon_vld3, 0),
+  NEONMAP1(vld4_dup_v, arm_neon_vld4dup, 0),
   NEONMAP1(vld4_lane_v, arm_neon_vld4lane, 0),
   NEONMAP1(vld4_v, arm_neon_vld4, 0),
+  NEONMAP1(vld4q_dup_v, arm_neon_vld4dup, 0),
   NEONMAP1(vld4q_lane_v, arm_neon_vld4lane, 0),
   NEONMAP1(vld4q_v, arm_neon_vld4, 0),
   NEONMAP2(vmax_v, arm_neon_vmaxu, arm_neon_vmaxs, Add1ArgType | UnsignedAlts),
@@ -4980,7 +4986,13 @@ Value *CodeGenFunction::EmitCommonNeonBuiltinExpr(
   case NEON::BI__builtin_neon_vld3_v:
   case NEON::BI__builtin_neon_vld3q_v:
   case NEON::BI__builtin_neon_vld4_v:
-  case NEON::BI__builtin_neon_vld4q_v: {
+  case NEON::BI__builtin_neon_vld4q_v:
+  case NEON::BI__builtin_neon_vld2_dup_v:
+  case NEON::BI__builtin_neon_vld2q_dup_v:
+  case NEON::BI__builtin_neon_vld3_dup_v:
+  case NEON::BI__builtin_neon_vld3q_dup_v:
+  case NEON::BI__builtin_neon_vld4_dup_v:
+  case NEON::BI__builtin_neon_vld4q_dup_v: {
     llvm::Type *Tys[] = {Ty, Int8PtrTy};
     Function *F = CGM.getIntrinsic(LLVMIntrinsic, Tys);
     Value *Align = getAlignmentValue32(PtrOp1);
@@ -5866,8 +5878,11 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
       case NEON::BI__builtin_neon_vld4_lane_v:
       case NEON::BI__builtin_neon_vld4q_lane_v:
       case NEON::BI__builtin_neon_vld2_dup_v:
+      case NEON::BI__builtin_neon_vld2q_dup_v:
       case NEON::BI__builtin_neon_vld3_dup_v:
+      case NEON::BI__builtin_neon_vld3q_dup_v:
       case NEON::BI__builtin_neon_vld4_dup_v:
+      case NEON::BI__builtin_neon_vld4q_dup_v:
         // Get the alignment for the argument in addition to the value;
         // we'll use it later.
         PtrOp1 = EmitPointerWithAlignment(E->getArg(1));
@@ -6043,68 +6058,6 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
     PtrOp0 = Builder.CreateElementBitCast(PtrOp0, VTy->getElementType());
     Value *Ld = Builder.CreateLoad(PtrOp0);
     return Builder.CreateInsertElement(Ops[1], Ld, Ops[2], "vld1_lane");
-  }
-  case NEON::BI__builtin_neon_vld2_dup_v:
-  case NEON::BI__builtin_neon_vld3_dup_v:
-  case NEON::BI__builtin_neon_vld4_dup_v: {
-    // Handle 64-bit elements as a special-case.  There is no "dup" needed.
-    if (VTy->getElementType()->getPrimitiveSizeInBits() == 64) {
-      switch (BuiltinID) {
-      case NEON::BI__builtin_neon_vld2_dup_v:
-        Int = Intrinsic::arm_neon_vld2;
-        break;
-      case NEON::BI__builtin_neon_vld3_dup_v:
-        Int = Intrinsic::arm_neon_vld3;
-        break;
-      case NEON::BI__builtin_neon_vld4_dup_v:
-        Int = Intrinsic::arm_neon_vld4;
-        break;
-      default: llvm_unreachable("unknown vld_dup intrinsic?");
-      }
-      llvm::Type *Tys[] = {Ty, Int8PtrTy};
-      Function *F = CGM.getIntrinsic(Int, Tys);
-      llvm::Value *Align = getAlignmentValue32(PtrOp1);
-      Ops[1] = Builder.CreateCall(F, {Ops[1], Align}, "vld_dup");
-      Ty = llvm::PointerType::getUnqual(Ops[1]->getType());
-      Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
-      return Builder.CreateDefaultAlignedStore(Ops[1], Ops[0]);
-    }
-    switch (BuiltinID) {
-    case NEON::BI__builtin_neon_vld2_dup_v:
-      Int = Intrinsic::arm_neon_vld2lane;
-      break;
-    case NEON::BI__builtin_neon_vld3_dup_v:
-      Int = Intrinsic::arm_neon_vld3lane;
-      break;
-    case NEON::BI__builtin_neon_vld4_dup_v:
-      Int = Intrinsic::arm_neon_vld4lane;
-      break;
-    default: llvm_unreachable("unknown vld_dup intrinsic?");
-    }
-    llvm::Type *Tys[] = {Ty, Int8PtrTy};
-    Function *F = CGM.getIntrinsic(Int, Tys);
-    llvm::StructType *STy = cast<llvm::StructType>(F->getReturnType());
-
-    SmallVector<Value*, 6> Args;
-    Args.push_back(Ops[1]);
-    Args.append(STy->getNumElements(), UndefValue::get(Ty));
-
-    llvm::Constant *CI = ConstantInt::get(Int32Ty, 0);
-    Args.push_back(CI);
-    Args.push_back(getAlignmentValue32(PtrOp1));
-
-    Ops[1] = Builder.CreateCall(F, Args, "vld_dup");
-    // splat lane 0 to all elts in each vector of the result.
-    for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
-      Value *Val = Builder.CreateExtractValue(Ops[1], i);
-      Value *Elt = Builder.CreateBitCast(Val, Ty);
-      Elt = EmitNeonSplat(Elt, CI);
-      Elt = Builder.CreateBitCast(Elt, Val->getType());
-      Ops[1] = Builder.CreateInsertValue(Ops[1], Elt, i);
-    }
-    Ty = llvm::PointerType::getUnqual(Ops[1]->getType());
-    Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
-    return Builder.CreateDefaultAlignedStore(Ops[1], Ops[0]);
   }
   case NEON::BI__builtin_neon_vqrshrn_n_v:
     Int =
@@ -9936,24 +9889,22 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
   case X86::BI__builtin_ia32_sqrtpd256:
   case X86::BI__builtin_ia32_sqrtpd:
   case X86::BI__builtin_ia32_sqrtps256:
-  case X86::BI__builtin_ia32_sqrtps: {
-    Function *F = CGM.getIntrinsic(Intrinsic::sqrt, Ops[0]->getType());
-    return Builder.CreateCall(F, {Ops[0]});
-  }
-  case X86::BI__builtin_ia32_sqrtps512_mask:
-  case X86::BI__builtin_ia32_sqrtpd512_mask: {
-    unsigned CC = cast<llvm::ConstantInt>(Ops[3])->getZExtValue();
-    // Support only if the rounding mode is 4 (AKA CUR_DIRECTION),
-    // otherwise keep the intrinsic.
-    if (CC != 4) {
-      Intrinsic::ID IID = BuiltinID == X86::BI__builtin_ia32_sqrtps512_mask ?
-                          Intrinsic::x86_avx512_mask_sqrt_ps_512 :
-                          Intrinsic::x86_avx512_mask_sqrt_pd_512;
-      return Builder.CreateCall(CGM.getIntrinsic(IID), Ops);
+  case X86::BI__builtin_ia32_sqrtps:
+  case X86::BI__builtin_ia32_sqrtps512:
+  case X86::BI__builtin_ia32_sqrtpd512: {
+    if (Ops.size() == 2) {
+      unsigned CC = cast<llvm::ConstantInt>(Ops[1])->getZExtValue();
+      // Support only if the rounding mode is 4 (AKA CUR_DIRECTION),
+      // otherwise keep the intrinsic.
+      if (CC != 4) {
+        Intrinsic::ID IID = BuiltinID == X86::BI__builtin_ia32_sqrtps512 ?
+                            Intrinsic::x86_avx512_sqrt_ps_512 :
+                            Intrinsic::x86_avx512_sqrt_pd_512;
+        return Builder.CreateCall(CGM.getIntrinsic(IID), Ops);
+      }
     }
     Function *F = CGM.getIntrinsic(Intrinsic::sqrt, Ops[0]->getType());
-    return EmitX86Select(*this, Ops[2], Builder.CreateCall(F, {Ops[0]}),
-                         Ops[1]);
+    return Builder.CreateCall(F, Ops[0]);
   }
   case X86::BI__builtin_ia32_pabsb128:
   case X86::BI__builtin_ia32_pabsw128:
@@ -10118,6 +10069,43 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
     Builder.CreateDefaultAlignedStore(Builder.CreateExtractValue(Call, 0),
                                       Ops[0]);
     return Builder.CreateExtractValue(Call, 1);
+  }
+
+  case X86::BI__builtin_ia32_fpclassps128_mask:
+  case X86::BI__builtin_ia32_fpclassps256_mask:
+  case X86::BI__builtin_ia32_fpclassps512_mask:
+  case X86::BI__builtin_ia32_fpclasspd128_mask:
+  case X86::BI__builtin_ia32_fpclasspd256_mask:
+  case X86::BI__builtin_ia32_fpclasspd512_mask: {
+    unsigned NumElts = Ops[0]->getType()->getVectorNumElements();
+    Value *MaskIn = Ops[2];
+    Ops.erase(&Ops[2]);
+
+    Intrinsic::ID ID;
+    switch (BuiltinID) {
+    default: llvm_unreachable("Unsupported intrinsic!");
+    case X86::BI__builtin_ia32_fpclassps128_mask:
+      ID = Intrinsic::x86_avx512_fpclass_ps_128;
+      break;
+    case X86::BI__builtin_ia32_fpclassps256_mask:
+      ID = Intrinsic::x86_avx512_fpclass_ps_256;
+      break;
+    case X86::BI__builtin_ia32_fpclassps512_mask:
+      ID = Intrinsic::x86_avx512_fpclass_ps_512;
+      break;
+    case X86::BI__builtin_ia32_fpclasspd128_mask:
+      ID = Intrinsic::x86_avx512_fpclass_pd_128;
+      break;
+    case X86::BI__builtin_ia32_fpclasspd256_mask:
+      ID = Intrinsic::x86_avx512_fpclass_pd_256;
+      break;
+    case X86::BI__builtin_ia32_fpclasspd512_mask:
+      ID = Intrinsic::x86_avx512_fpclass_pd_512;
+      break;
+    }
+
+    Value *Fpclass = Builder.CreateCall(CGM.getIntrinsic(ID), Ops);
+    return EmitX86MaskedCompareResult(*this, Fpclass, NumElts, MaskIn);
   }
 
   // packed comparison intrinsics

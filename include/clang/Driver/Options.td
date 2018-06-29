@@ -893,10 +893,6 @@ def ffixed_point : Flag<["-"], "ffixed-point">, Group<f_Group>,
                    Flags<[CC1Option]>, HelpText<"Enable fixed point types">;
 def fno_fixed_point : Flag<["-"], "fno-fixed-point">, Group<f_Group>,
                       HelpText<"Disable fixed point types">;
-def fsame_fbits : Flag<["-"], "fsame-fbits">, Group<f_Group>,
-                  Flags<[CC1Option]>,
-		  HelpText<"Force each unsigned fixed point type to have the same number of fractional bits as its corresponding signed type">;
-def fno_same_fbits : Flag<["-"], "fno-same-fbits">, Group<f_Group>;
 
 // Begin sanitizer flags. These should all be core options exposed in all driver
 // modes.
@@ -1793,6 +1789,7 @@ def gcolumn_info : Flag<["-"], "gcolumn-info">, Group<g_flags_Group>, Flags<[Cor
 def gno_column_info : Flag<["-"], "gno-column-info">, Group<g_flags_Group>, Flags<[CoreOption]>;
 def gsplit_dwarf : Flag<["-"], "gsplit-dwarf">, Group<g_flags_Group>;
 def ggnu_pubnames : Flag<["-"], "ggnu-pubnames">, Group<g_flags_Group>, Flags<[CC1Option]>;
+def gno_gnu_pubnames : Flag<["-"], "gno-gnu-pubnames">, Group<g_flags_Group>, Flags<[CC1Option]>;
 def gdwarf_aranges : Flag<["-"], "gdwarf-aranges">, Group<g_flags_Group>;
 def gmodules : Flag <["-"], "gmodules">, Group<gN_Group>,
   HelpText<"Generate debug info with external references to clang modules"

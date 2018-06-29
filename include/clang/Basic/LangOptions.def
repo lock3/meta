@@ -154,6 +154,7 @@ COMPATIBLE_LANGOPT(ModulesTS  , 1, 0, "C++ Modules TS")
 BENIGN_ENUM_LANGOPT(CompilingModule, CompilingModuleKind, 2, CMK_None,
                     "compiling a module interface")
 BENIGN_LANGOPT(CompilingPCH, 1, 0, "building a pch")
+BENIGN_LANGOPT(BuildingPCHWithObjectFile, 1, 0, "building a pch which has a corresponding object file")
 COMPATIBLE_LANGOPT(ModulesDeclUse    , 1, 0, "require declaration of module uses")
 BENIGN_LANGOPT(ModulesSearchAll  , 1, 1, "searching even non-imported modules to find unresolved references")
 COMPATIBLE_LANGOPT(ModulesStrictDeclUse, 1, 0, "requiring declaration of module uses and all headers to be in modules")
@@ -305,8 +306,8 @@ ENUM_LANGOPT(ClangABICompat, ClangABI, 4, ClangABI::Latest,
 COMPATIBLE_VALUE_LANGOPT(FunctionAlignment, 5, 0, "Default alignment for functions")
 
 LANGOPT(FixedPoint, 1, 0, "fixed point types")
-LANGOPT(SameFBits, 1, 0,
-        "unsigned and signed fixed point type having the same number of fractional bits")
+LANGOPT(PaddingOnUnsignedFixedPoint, 1, 0,
+        "unsigned fixed point types having one extra padding bit")
 
 #undef LANGOPT
 #undef COMPATIBLE_LANGOPT

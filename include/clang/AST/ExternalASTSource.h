@@ -163,6 +163,10 @@ public:
   /// Retrieve the module that corresponds to the given module ID.
   virtual Module *getModule(unsigned ID) { return nullptr; }
 
+  /// Determine whether D comes from a PCH which was built with a corresponding
+  /// object file.
+  virtual bool DeclIsFromPCHWithObjectFile(const Decl *D) { return false; }
+
   /// Abstracts clang modules and precompiled header files and holds
   /// everything needed to generate debug info for an imported module
   /// or PCH.
@@ -389,7 +393,7 @@ public:
   /// Whether this pointer is currently stored as an offset.
   bool isOffset() const { return Ptr & 0x01; }
 
-  /// Retrieve the pointer to the AST node that this lazy pointer
+  /// Retrieve the pointer to the AST node that this lazy pointer points to.
   ///
   /// \param Source the external AST source.
   ///

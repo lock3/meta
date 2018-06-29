@@ -82,10 +82,19 @@ ParsedType Sema::getInheritingConstructorName(CXXScopeSpec &SS,
 
 ParsedType Sema::getConstructorName(IdentifierInfo &II,
                                     SourceLocation NameLoc,
-                                    Scope *S, CXXScopeSpec &SS) {
+                                    Scope *S, CXXScopeSpec &SS,
+                                    bool EnteringContext) {
   CXXRecordDecl *CurClass = getCurrentClass(S, &SS);
   assert(CurClass && &II == CurClass->getIdentifier() &&
          "not a constructor name");
+
+  // When naming a constructor as a member of a dependent context (eg, in a
+  // friend declaration or an inherited constructor declaration), form an
+  // unresolved "typename" type.
+  if (CurClass->isDependentContext() && !EnteringContext) {
+    QualType T = Context.getDependentNameType(ETK_None, SS.getScopeRep(), &II);
+    return ParsedType::make(T);
+  }
 
   if (SS.isNotEmpty() && RequireCompleteDeclContext(SS, CurClass))
     return ParsedType();
@@ -3758,6 +3767,10 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
                                 const ImplicitConversionSequence &ICS,
                                 AssignmentAction Action,
                                 CheckedConversionKind CCK) {
+  // C++ [over.match.oper]p7: [...] operands of class type are converted [...]
+  if (CCK == CCK_ForBuiltinOverloadedOp && !From->getType()->isRecordType())
+    return From;
+
   switch (ICS.getKind()) {
   case ImplicitConversionSequence::StandardConversion: {
     ExprResult Res = PerformImplicitConversion(From, ToType, ICS.Standard,
@@ -3816,6 +3829,12 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
         return ExprError();
 
       From = CastArg.get();
+
+      // C++ [over.match.oper]p7:
+      //   [...] the second standard conversion sequence of a user-defined
+      //   conversion sequence is not applied.
+      if (CCK == CCK_ForBuiltinOverloadedOp)
+        return From;
 
       return PerformImplicitConversion(From, ToType, ICS.UserDefined.After,
                                        AA_Converting, CCK);
@@ -4280,7 +4299,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
 
   // If this conversion sequence succeeded and involved implicitly converting a
   // _Nullable type to a _Nonnull one, complain.
-  if (CCK == CCK_ImplicitConversion)
+  if (!isCast(CCK))
     diagnoseNullableToNonnullConversion(ToType, InitialFromType,
                                         From->getLocStart());
 
@@ -7718,12 +7737,8 @@ Sema::CorrectDelayedTyposInExpr(Expr *E, VarDecl *InitDecl,
   if (E && !ExprEvalContexts.empty() && ExprEvalContexts.back().NumTypos &&
       (E->isTypeDependent() || E->isValueDependent() ||
        E->isInstantiationDependent())) {
-    auto TyposInContext = ExprEvalContexts.back().NumTypos;
-    assert(TyposInContext < ~0U && "Recursive call of CorrectDelayedTyposInExpr");
-    ExprEvalContexts.back().NumTypos = ~0U;
     auto TyposResolved = DelayedTypos.size();
     auto Result = TransformTypos(*this, InitDecl, Filter).Transform(E);
-    ExprEvalContexts.back().NumTypos = TyposInContext;
     TyposResolved -= DelayedTypos.size();
     if (Result.isInvalid() || Result.get() != E) {
       ExprEvalContexts.back().NumTypos -= TyposResolved;

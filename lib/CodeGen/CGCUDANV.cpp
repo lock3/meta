@@ -389,8 +389,9 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
     FatMagic = HIPFatMagic;
   } else {
     if (RelocatableDeviceCode)
-      // TODO: Figure out how this is called on mac OS!
-      FatbinConstantName = "__nv_relfatbin";
+      FatbinConstantName = CGM.getTriple().isMacOSX()
+                               ? "__NV_CUDA,__nv_relfatbin"
+                               : "__nv_relfatbin";
     else
       FatbinConstantName =
           CGM.getTriple().isMacOSX() ? "__NV_CUDA,__nv_fatbin" : ".nv_fatbin";
@@ -398,8 +399,9 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
     FatbinSectionName =
         CGM.getTriple().isMacOSX() ? "__NV_CUDA,__fatbin" : ".nvFatBinSegment";
 
-    // TODO: Figure out how this is called on mac OS!
-    ModuleIDSectionName = "__nv_module_id";
+    ModuleIDSectionName = CGM.getTriple().isMacOSX()
+                              ? "__NV_CUDA,__nv_module_id"
+                              : "__nv_module_id";
     ModuleIDPrefix = "__nv_";
 
     // For CUDA, create a string literal containing the fat binary loaded from
@@ -470,6 +472,19 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
                            ModuleIDConstant,
                            makeDummyFunction(getCallbackFnTy())};
     CtorBuilder.CreateCall(RegisterLinkedBinaryFunc, Args);
+  }
+
+  // Create destructor and register it with atexit() the way NVCC does it. Doing
+  // it during regular destructor phase worked in CUDA before 9.2 but results in
+  // double-free in 9.2.
+  if (llvm::Function *CleanupFn = makeModuleDtorFunction()) {
+    // extern "C" int atexit(void (*f)(void));
+    llvm::FunctionType *AtExitTy =
+        llvm::FunctionType::get(IntTy, CleanupFn->getType(), false);
+    llvm::Constant *AtExitFunc =
+        CGM.CreateRuntimeFunction(AtExitTy, "atexit", llvm::AttributeList(),
+                                  /*Local=*/true);
+    CtorBuilder.CreateCall(AtExitFunc, CleanupFn);
   }
 
   CtorBuilder.CreateRetVoid();

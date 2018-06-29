@@ -139,7 +139,7 @@ std::pair<ProgramStateRef, SVal> ExprEngine::prepareForObjectConstruction(
       assert(Init->isAnyMemberInitializer());
       const CXXMethodDecl *CurCtor = cast<CXXMethodDecl>(LCtx->getDecl());
       Loc ThisPtr =
-      getSValBuilder().getCXXThis(CurCtor, LCtx->getCurrentStackFrame());
+      getSValBuilder().getCXXThis(CurCtor, LCtx->getStackFrame());
       SVal ThisVal = State->getSVal(ThisPtr);
 
       const ValueDecl *Field;
@@ -185,7 +185,7 @@ std::pair<ProgramStateRef, SVal> ExprEngine::prepareForObjectConstruction(
       // The temporary is to be managed by the parent stack frame.
       // So build it in the parent stack frame if we're not in the
       // top frame of the analysis.
-      const StackFrameContext *SFC = LCtx->getCurrentStackFrame();
+      const StackFrameContext *SFC = LCtx->getStackFrame();
       if (const LocationContext *CallerLCtx = SFC->getParent()) {
         auto RTC = (*SFC->getCallSiteBlock())[SFC->getIndex()]
                        .getAs<CFGCXXRecordTypedCall>();
@@ -209,16 +209,40 @@ std::pair<ProgramStateRef, SVal> ExprEngine::prepareForObjectConstruction(
       }
       llvm_unreachable("Unhandled return value construction context!");
     }
-    case ConstructionContext::TemporaryObjectKind: {
-      const auto *TCC = cast<TemporaryObjectConstructionContext>(CC);
+    case ConstructionContext::ElidedTemporaryObjectKind: {
+      assert(AMgr.getAnalyzerOptions().shouldElideConstructors());
+      const auto *TCC = cast<ElidedTemporaryObjectConstructionContext>(CC);
       const CXXBindTemporaryExpr *BTE = TCC->getCXXBindTemporaryExpr();
       const MaterializeTemporaryExpr *MTE = TCC->getMaterializedTemporaryExpr();
+      const CXXConstructExpr *CE = TCC->getConstructorAfterElision();
 
-      if (!BTE) {
-        // FIXME: Lifetime extension for temporaries without destructors
-        // is not implemented yet.
-        MTE = nullptr;
-      }
+      // Support pre-C++17 copy elision. We'll have the elidable copy
+      // constructor in the AST and in the CFG, but we'll skip it
+      // and construct directly into the final object. This call
+      // also sets the CallOpts flags for us.
+      SVal V;
+      std::tie(State, V) = prepareForObjectConstruction(
+          CE, State, LCtx, TCC->getConstructionContextAfterElision(), CallOpts);
+
+      // Remember that we've elided the constructor.
+      State = addObjectUnderConstruction(State, CE, LCtx, V);
+
+      // Remember that we've elided the destructor.
+      if (BTE)
+        State = elideDestructor(State, BTE, LCtx);
+
+      // Instead of materialization, shamelessly return
+      // the final object destination.
+      if (MTE)
+        State = addObjectUnderConstruction(State, MTE, LCtx, V);
+
+      return std::make_pair(State, V);
+    }
+    case ConstructionContext::SimpleTemporaryObjectKind: {
+      const auto *TCC = cast<SimpleTemporaryObjectConstructionContext>(CC);
+      const CXXBindTemporaryExpr *BTE = TCC->getCXXBindTemporaryExpr();
+      const MaterializeTemporaryExpr *MTE = TCC->getMaterializedTemporaryExpr();
+      SVal V = UnknownVal();
 
       if (MTE) {
         if (const ValueDecl *VD = MTE->getExtendingDecl()) {
@@ -232,18 +256,14 @@ std::pair<ProgramStateRef, SVal> ExprEngine::prepareForObjectConstruction(
             CallOpts.IsTemporaryLifetimeExtendedViaAggregate = true;
           }
         }
+
+        if (MTE->getStorageDuration() == SD_Static ||
+            MTE->getStorageDuration() == SD_Thread)
+          V = loc::MemRegionVal(MRMgr.getCXXStaticTempObjectRegion(E));
       }
 
-      if (MTE && MTE->getStorageDuration() != SD_FullExpression) {
-        // If the temporary is lifetime-extended, don't save the BTE,
-        // because we don't need a temporary destructor, but an automatic
-        // destructor.
-        BTE = nullptr;
-      }
-
-      // FIXME: Support temporaries lifetime-extended via static references.
-      // They'd need a getCXXStaticTempObjectRegion().
-      SVal V = loc::MemRegionVal(MRMgr.getCXXTempObjectRegion(E, LCtx));
+      if (V.isUnknown())
+        V = loc::MemRegionVal(MRMgr.getCXXTempObjectRegion(E, LCtx));
 
       if (BTE)
         State = addObjectUnderConstruction(State, BTE, LCtx, V);
@@ -271,6 +291,20 @@ void ExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *CE,
 
   SVal Target = UnknownVal();
 
+  if (Optional<SVal> ElidedTarget =
+          getObjectUnderConstruction(State, CE, LCtx)) {
+    // We've previously modeled an elidable constructor by pretending that it in
+    // fact constructs into the correct target. This constructor can therefore
+    // be skipped.
+    Target = *ElidedTarget;
+    StmtNodeBuilder Bldr(Pred, destNodes, *currBldrCtx);
+    State = finishObjectConstruction(State, CE, LCtx);
+    if (auto L = Target.getAs<Loc>())
+      State = State->BindExpr(CE, LCtx, State->getSVal(*L, CE->getType()));
+    Bldr.generateNode(CE, Pred, State);
+    return;
+  }
+
   // FIXME: Handle arrays, which run the same constructor for every element.
   // For now, we just run the first constructor (which should still invalidate
   // the entire array).
@@ -289,7 +323,7 @@ void ExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *CE,
   case CXXConstructExpr::CK_VirtualBase:
     // Make sure we are not calling virtual base class initializers twice.
     // Only the most-derived object should initialize virtual base classes.
-    if (const Stmt *Outer = LCtx->getCurrentStackFrame()->getCallSite()) {
+    if (const Stmt *Outer = LCtx->getStackFrame()->getCallSite()) {
       const CXXConstructExpr *OuterCtor = dyn_cast<CXXConstructExpr>(Outer);
       if (OuterCtor) {
         switch (OuterCtor->getConstructionKind()) {
@@ -327,7 +361,7 @@ void ExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *CE,
   case CXXConstructExpr::CK_Delegating: {
     const CXXMethodDecl *CurCtor = cast<CXXMethodDecl>(LCtx->getDecl());
     Loc ThisPtr = getSValBuilder().getCXXThis(CurCtor,
-                                              LCtx->getCurrentStackFrame());
+                                              LCtx->getStackFrame());
     SVal ThisVal = State->getSVal(ThisPtr);
 
     if (CE->getConstructionKind() == CXXConstructExpr::CK_Delegating) {
