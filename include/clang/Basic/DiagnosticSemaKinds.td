@@ -2461,8 +2461,8 @@ def err_reflection_not_known : Error<
   "expression does not reflect a construct">;
 def err_empty_type_reflection : Error<
   "cannot project a type for an empty reflection">;
-def err_cannot_project_value : Error<
-  "cannot project a value for a %select{constructor|destructor}">;
+// def err_cannot_project_value : Error<
+//   "cannot project a value for a %select{constructor|destructor}">;
 
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
