@@ -1662,6 +1662,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     Function->setRangeEnd(D->getSourceRange().getEnd());
   }
 
+  if (D->isImmediate())
+    Function->setImmediate(true);
+
   if (D->isInlined())
     Function->setImplicitlyInline();
 
@@ -1967,6 +1970,9 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                    SC, D->isInlineSpecified(),
                                    D->isConstexpr(), D->getLocEnd());
   }
+
+  if (D->isImmediate())
+    Method->setImmediate(true);
 
   if (D->isInlined())
     Method->setImplicitlyInline();
