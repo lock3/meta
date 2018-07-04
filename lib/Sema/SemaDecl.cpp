@@ -8586,8 +8586,12 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       // C++11 [dcl.constexpr]p3: functions declared constexpr are required to
       // be either constructors or to return a literal type. Therefore,
       // destructors cannot be declared constexpr.
-      if (isa<CXXDestructorDecl>(NewFD))
-        Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
+      if (isa<CXXDestructorDecl>(NewFD)) {
+        if (D.getDeclSpec().isConstexprSpecified())
+	  Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
+	else
+	  Diag(D.getDeclSpec().getImmediateSpecLoc(), diag::err_immediate_dtor);
+      }
     }
 
     if (isConcept) {

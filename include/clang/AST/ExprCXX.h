@@ -4423,10 +4423,10 @@ public:
   CXXConstantExpr(Expr *E, APValue&& V)
     : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
            E->getObjectKind(), false, false, false, false), Source(E),
-      Value(std::move(V)) {}
+      Value(std::move(V)) { }
 
   CXXConstantExpr(EmptyShell Empty)
-    : Expr(CXXConstantExprClass, Empty) {}
+    : Expr(CXXConstantExprClass, Empty) { llvm::outs() << "CXXConstantExpr()\n"; }
 
   /// \brief Returns the evaluated expression. 
   Expr *getExpression() const { return cast<Expr>(Source); }

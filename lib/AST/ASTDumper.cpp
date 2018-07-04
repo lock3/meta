@@ -1068,8 +1068,13 @@ void ASTDumper::dumpDecl(const Decl *D) {
     if (D->isInvalidDecl())
       OS << " invalid";
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-      if (FD->isConstexpr())
+      if (FD->isConstexpr()) {
         OS << " constexpr";
+	if (FD->isImmediate())
+          OS << " immediate";
+        else
+          OS << " constexpr";
+      }
 
 
     ConstDeclVisitor<ASTDumper>::Visit(D);

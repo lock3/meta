@@ -441,6 +441,12 @@ public:
     return Constant.getValue();
   }
 
+  Value *VisitCXXConstantExpr(CXXConstantExpr *E) {
+    if (E->getType()->isVoidType())
+      return nullptr;
+    return CGF.EmitConstantValue(E->getValue(), E->getType());
+  }
+
   // l-values.
   Value *VisitDeclRefExpr(DeclRefExpr *E) {
     if (CodeGenFunction::ConstantEmission Constant = CGF.tryEmitAsConstant(E))

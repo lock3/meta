@@ -1750,12 +1750,6 @@ private:
   unsigned IsDeleted : 1;
   unsigned IsTrivial : 1; // sunk from CXXMethodDecl
 
-  /// \brief Wether this variable has 'constexpr' implicitly specified.
-  unsigned IsConstexprSpecified : 1;
-
-  /// \brief Whether this variable is 'immediate'.
-  unsigned IsImmediate : 1;
-
   /// This flag indicates whether this function is trivial for the purpose of
   /// calls. This is meaningful only when this function is a copy/move
   /// constructor or a destructor.
@@ -1767,6 +1761,12 @@ private:
   unsigned IsLateTemplateParsed : 1;
   unsigned IsConstexpr : 1;
   unsigned InstantiationIsPending : 1;
+
+  /// \brief Wether this variable has 'constexpr' implicitly specified.
+  unsigned IsConstexprSpecified : 1;
+
+  /// \brief Whether this variable is 'immediate'.
+  unsigned IsImmediate : 1;
 
   /// Indicates if the function uses __try.
   unsigned UsesSEHTry : 1;
@@ -1879,10 +1879,11 @@ protected:
         IsDefaulted(false),
         IsExplicitlyDefaulted(false), HasImplicitReturnZero(false),
         IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
-        InstantiationIsPending(false), UsesSEHTry(false), HasSkippedBody(false),
-        WillHaveBody(false), IsMultiVersion(false),
-        IsCopyDeductionCandidate(false), HasODRHash(false), ODRHash(0),
-        EndRangeLoc(NameInfo.getEndLoc()), DNLoc(NameInfo.getInfo()) {}
+	InstantiationIsPending(false), IsImmediate(false), UsesSEHTry(false),
+	HasSkippedBody(false), WillHaveBody(false), IsMultiVersion(false),
+        IsCopyDeductionCandidate(false), HasODRHash(false),
+	ODRHash(0), EndRangeLoc(NameInfo.getEndLoc()),
+	DNLoc(NameInfo.getInfo()) {}
 
   using redeclarable_base = Redeclarable<FunctionDecl>;
 
