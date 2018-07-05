@@ -156,6 +156,7 @@ def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 
 // [Meta] expressions
 def CXXConstantExpr : DStmt<Expr>;
+def CXXReflectExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

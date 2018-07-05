@@ -23,6 +23,7 @@
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/Reflection.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/UnresolvedSet.h"
@@ -4831,6 +4832,62 @@ public:
   
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXConstantExprClass;
+  }
+};
+
+/// \brief Represents the compile-time reflection of an entity.
+///
+/// If the operand is type dependent.
+class CXXReflectExpr : public Expr {
+  SourceLocation KWLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+  /// The reflected entity.
+  Reflection Ref;
+
+public:
+  CXXReflectExpr(SourceLocation KWLoc, QualType T, Reflection R, 
+                 SourceLocation LPLoc, SourceLocation RPLoc, 
+                 ExprValueKind VK, bool TD, bool VD, bool ID, bool UPP)
+    : Expr(CXXReflectExprClass, T, VK, OK_Ordinary, TD, VD, ID, UPP),
+      KWLoc(KWLoc), LParenLoc(LPLoc), RParenLoc(RPLoc), Ref(R) { }
+
+  CXXReflectExpr(EmptyShell Empty)
+    : Expr(CXXReflectExprClass, Empty) {}
+
+  /// \brief The reflected entity.
+  Reflection getReflectedEntity() const { return Ref; }
+
+  /// \brief True if the expression reflects a declaration.
+  bool isReflectedDeclaration() const { return Ref.isDeclaration(); }
+
+  /// \brief True if the expression reflects a type.
+  bool isReflectedType() const { return Ref.isDeclaration(); }
+
+  /// \brief The reflected declaration.
+  const Decl *getReflectedDeclaration() const { return Ref.getAsDeclaration(); }
+
+  /// \brief The reflected type.
+  const Type *getReflectedType() const { return Ref.getAsType(); }
+
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return KWLoc; 
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    return RParenLoc;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectExprClass;
   }
 };
 

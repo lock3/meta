@@ -5106,6 +5106,11 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
+  bool VisitCXXReflectExpr(const CXXReflectExpr *E) {
+    Reflection Ref = E->getReflectedEntity();
+    return DerivedSuccess(Ref.getConstantValue(Info.Ctx), E);
+  }
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);
@@ -11047,6 +11052,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ExpressionTraitExprClass:
   case Expr::CXXNoexceptExprClass:
   case Expr::CXXConstantExprClass:
+  case Expr::CXXReflectExprClass:
+  // case Expr::CXXReflectionTraitExprClass:
     return NoDiag();
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass: {

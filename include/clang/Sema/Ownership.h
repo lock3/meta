@@ -15,6 +15,7 @@
 #define LLVM_CLANG_SEMA_OWNERSHIP_H
 
 #include "clang/AST/Expr.h"
+#include "clang/AST/Reflection.h"
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
@@ -247,6 +248,9 @@ namespace clang {
   /// parser.
   using ParsedType = OpaquePtr<QualType>;
   using UnionParsedType = UnionOpaquePtr<QualType>;
+
+  // An opaque pointer for threading reflection pointers through the parser.
+  using ParsedReflectionPtr = void*;
 
   // We can re-use the low bit of expression, statement, base, and
   // member-initializer pointers for the "invalid" flag of

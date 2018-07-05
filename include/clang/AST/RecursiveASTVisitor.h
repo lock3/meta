@@ -2561,6 +2561,7 @@ DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
 DEF_TRAVERSE_STMT(CXXConstantExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the
