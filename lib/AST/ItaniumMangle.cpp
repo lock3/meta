@@ -3559,6 +3559,7 @@ recurse:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
+  case Expr::CXXReflectionTraitExprClass:
   case Expr::FixedPointLiteralClass:
   {
     if (!NullOut) {

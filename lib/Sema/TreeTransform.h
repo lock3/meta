@@ -1426,6 +1426,25 @@ public:
     return getSema().BuildConstantExpression(E);
   }
 
+  /// \brief Rebuild a reflection expression from a source expression.
+  ExprResult RebuildCXXReflectExpr(SourceLocation KWLoc, unsigned Kind, 
+                                   void* Entity, SourceLocation RPLoc) {
+    return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity, 
+                                               SourceLocation(), RPLoc);
+  }
+
+  /// \brief Build a new reflection trait expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectionTraitExpr(SourceLocation TraitLoc,
+                                        ReflectionTrait Trait,
+                                        ArrayRef<Expr *> Args,
+                                        SourceLocation RParenLoc) {
+    // TODO: Make a separate Build function.
+    return getSema().ActOnCXXReflectionTrait(TraitLoc, Trait, Args, RParenLoc);
+  }
+
   /// Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7166,6 +7185,23 @@ ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
   llvm_unreachable("Unimplemented");
 }
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
+                                                    CXXReflectionTraitExpr *E) {
+  SmallVector<Expr *, 2> Args(E->getNumArgs());
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[i] = Arg.get();
+  }
+
+  return getDerived().RebuildCXXReflectionTraitExpr(
+      E->getTraitLoc(), E->getTrait(), Args, E->getRParenLoc());
+}
+
 
 // Objective-C Statements.
 

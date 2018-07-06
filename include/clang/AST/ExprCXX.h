@@ -4891,6 +4891,72 @@ public:
   }
 };
 
+/// \brief A reflection trait intrinsic.
+/// 
+/// A reflection trait is a query of an AST node. All traits accept a sequence
+/// of arguments (expressions), the first of which is the encoded value of
+/// the AST node.
+class CXXReflectionTraitExpr : public Expr {
+protected:
+  ReflectionTrait Trait;
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation TraitLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectionTraitExpr(ASTContext &C, QualType T, ReflectionTrait RT, 
+                         SourceLocation TraitLoc, ArrayRef<Expr *> Args, 
+                         SourceLocation RParenLoc);
+
+  CXXReflectionTraitExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
+
+  /// \brief Compute the reflected trait for Args.
+  ///
+  /// This is the main entry point for reflection-related operations. It is
+  /// called from during constexpr evaluation to compute the reflected value.
+  ///
+  /// The implementation of this function is in Reflect.cpp.
+  bool Reflect(EvalResult &Result, ASTContext &Ctx) const;
+
+  /// Returns the kind of reflection trait.
+  ReflectionTrait getTrait() const { return Trait; }
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the operand representing the reflected entity.
+  Expr *getASTNode() const { return cast<Expr>(Args[0]); }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getTraitLoc() const { return TraitLoc; }
+
+  /// Returns the source code location of the closing parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getLocStart() const { return TraitLoc; }
+  SourceLocation getLocEnd() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+};
+
+  
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

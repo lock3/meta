@@ -1449,3 +1449,27 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 }
 
 void ArrayTypeTraitExpr::anchor() {}
+
+CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T, 
+                                               ReflectionTrait RT, 
+                                               SourceLocation TraitLoc, 
+                                               ArrayRef<Expr *> Args, 
+                                               SourceLocation RParenLoc) 
+  : Expr(CXXReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
+         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
+           return E->isTypeDependent(); 
+         }),
+         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
+           return E->isValueDependent(); 
+         }),
+         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
+           return E->isInstantiationDependent(); 
+         }),
+         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
+           return E->containsUnexpandedParameterPack();
+         })), 
+    Trait(RT), NumArgs(Args.size()), Args(new Expr *[NumArgs]),
+    TraitLoc(TraitLoc), RParenLoc(RParenLoc) {
+
+  std::copy(Args.begin(), Args.end(), this->Args);
+}

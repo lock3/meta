@@ -1407,6 +1407,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_rvalue_expr:
     return ParseExpressionTrait();
 
+#define REFLECTION_TRAIT(N,Spelling,K)		\
+    case tok::kw_##Spelling:
+#include "clang/Basic/TokenKinds.def"
+    return ParseCXXReflectionTrait();
+
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();
     return ParseObjCAtExpression(AtLoc);

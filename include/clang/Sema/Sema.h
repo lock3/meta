@@ -8597,6 +8597,11 @@ public:
                                        ParsedReflectionPtr Entity,
                                        SourceLocation LP, SourceLocation RP);
 
+  ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc, 
+                                     ReflectionTrait Trait,
+                                     ArrayRef<Expr *> Args,
+                                     SourceLocation RPLoc);
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //
