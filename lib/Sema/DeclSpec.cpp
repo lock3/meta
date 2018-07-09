@@ -977,11 +977,16 @@ bool DeclSpec::setModulePrivateSpec(SourceLocation Loc, const char *&PrevSpec,
 
 bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
                                 unsigned &DiagID) {
+  if (Immediate_specified) {
+    DiagID = diag::err_invalid_decl_spec_combination;
+    PrevSpec = "immediate";
+    return true;
+  }
   // 'constexpr constexpr' is ok, but warn as this is likely not what the user
   // intended.
   if (Constexpr_specified) {
     DiagID = diag::warn_duplicate_declspec;
-    PrevSpec = "constexpr";
+    PrevSpec = "immediate";
     return true;
   }
   Constexpr_specified = true;
@@ -991,6 +996,12 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
 
 bool DeclSpec::SetImmediateSpec(SourceLocation Loc, const char *&PrevSpec,
                                 unsigned &DiagID) {
+  if (Constexpr_specified) {
+    DiagID = diag::err_invalid_decl_spec_combination;
+    PrevSpec = "constexpr";    
+    return true;
+  }
+  
   // 'immediate immediate' is ok, but warn as this is likely not what the user
   // intended. Note tht 'immediate constexpr' and 'constexpr immediate' are
   // perfectly acceptable.
