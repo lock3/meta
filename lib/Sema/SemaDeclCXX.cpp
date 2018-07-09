@@ -638,22 +638,22 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
   // C++11 [dcl.constexpr]p1: If any declaration of a function or function
   // template has a constexpr specifier then all its declarations shall
   // contain the constexpr specifier.
-    
-    // } else if(New->isConstexpr() && Old->isImmediate()) {
-    //   Diag(Old->getLocation(), diag::err_immediate_redecl_mismatch)
-    // 	<< Old << Old->isImmediate();
-    //   Diag(Old->getLocation(), diag::note_previous_declaration);
-    //   Invalid = true;
+
   if(New->isConstexpr() && Old->isImmediate()) {
     Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-      << New << New->isConstexpr();
+      << New << 1;
     Diag(Old->getLocation(), diag::note_previous_declaration);
     Invalid = true;    
   } else if(New->isImmediate() && Old->isConstexpr()) {
     Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-      << New << Old->isImmediate();
+      << New << 0;
     Diag(Old->getLocation(), diag::note_previous_declaration);
-    Invalid = true;        
+    Invalid = true;
+  } else if (New->isImmediate() != Old->isImmediate()) {
+    Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
+      << New << 2;
+    Diag(Old->getLocation(), diag::note_previous_declaration);
+    Invalid = true;
   } else if (New->isConstexpr() != Old->isConstexpr()) {
     Diag(New->getLocation(), diag::err_constexpr_redecl_mismatch)
       << New << New->isConstexpr();
