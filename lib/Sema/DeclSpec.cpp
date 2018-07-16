@@ -979,14 +979,14 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
                                 unsigned &DiagID) {
   if (Immediate_specified) {
     DiagID = diag::err_invalid_decl_spec_combination;
-    PrevSpec = "immediate";
+    PrevSpec = "constexpr!";
     return true;
   }
   // 'constexpr constexpr' is ok, but warn as this is likely not what the user
   // intended.
   if (Constexpr_specified) {
     DiagID = diag::warn_duplicate_declspec;
-    PrevSpec = "immediate";
+    PrevSpec = "constexpr!";
     return true;
   }
   Constexpr_specified = true;
@@ -1007,7 +1007,7 @@ bool DeclSpec::SetImmediateSpec(SourceLocation Loc, const char *&PrevSpec,
   // perfectly acceptable.
   if (Immediate_specified) {
     DiagID = diag::warn_duplicate_declspec;
-    PrevSpec = "immediate";
+    PrevSpec = "constexpr!";
     return true;
   }
   Immediate_specified = true;

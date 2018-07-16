@@ -2421,7 +2421,7 @@ def err_function_concept_exception_spec : Error<
   "function concept cannot have exception specification">;
 def err_concept_decl_invalid_specifiers : Error<
   "%select{variable|function}0 concept cannot be declared "
-  "'%select{thread_local|inline|friend|constexpr|immediate}1'">;
+  "'%select{thread_local|inline|friend|constexpr|constexpr!}1'">;
 def err_function_concept_with_params : Error<
   "function concept cannot have any parameters">;
 def err_function_concept_bool_ret : Error<
@@ -2442,19 +2442,19 @@ def err_template_different_associated_constraints : Error<
 // FIXME: The err_immediate_tag and err_immediate_no_declarators are dups
 // of constexpr errors. These should be merged.
 def err_immediate_tag : Error<
-  "%select{class|struct|interface|union|enum}0 cannot be marked 'immediate'">;
+  "%select{class|struct|interface|union|enum}0 cannot be marked 'constexpr!'">;
 def err_immediate_no_declarators : Error<
-  "'immediate' can only be used in function definitions">;
+  "'constexpr!' can only be used in function definitions">;
 def err_immediate_var : Error<
-  "variable cannot be marked 'immediate'">;
+  "variable cannot be marked 'constexpr!'">;
 def err_immediate_dtor : Error<
-  "destructor cannot be marked 'immediate'">;
+  "destructor cannot be marked 'constexpr!'">;
 def err_cannot_evaluate_immedate : Error<
-  "cannot evaluate call to immediate %select{function|member function}0">;
+  "cannot evaluate call to constexpr! %select{function|member function}0">;
 def err_immediate_redecl_mismatch : Error<
-  "%select{immediate declaration of %0 follows constexpr declaration"
-  "|constexpr declaration of %0 follows immediate declaration"
-  "|immediate declaration of %0 follows non-immediate declaration}1">;
+  "%select{constexpr! declaration of %0 follows constexpr declaration"
+  "|constexpr declaration of %0 follows constexpr! declaration"
+  "|constexpr! declaration of %0 follows non-constexpr! declaration}1">;
 
 // Reflection
 def err_need_header_before_reflexpr : Error<
