@@ -840,7 +840,7 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
 
   // If this is the 'constexpr!' keyword, tokenize it.
   if(II.getName() == "constexpr!")
-    Identifier.setKind(tok::kw_immediate);
+    Identifier.setKind(tok::kw_constexpr_bang);
 
   return true;
 }

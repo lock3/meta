@@ -3504,7 +3504,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       break;
 
     // immediate
-    case tok::kw_immediate:
+    case tok::kw_constexpr_bang:
       isInvalid = DS.SetImmediateSpec(Loc, PrevSpec, DiagID);
       break;
 
@@ -4924,7 +4924,7 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_concept:
 
     // [Meta] immediate
-  case tok::kw_immediate:
+  case tok::kw_constexpr_bang:
 
     // C11 _Atomic
   case tok::kw__Atomic:
