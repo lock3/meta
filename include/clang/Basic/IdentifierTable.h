@@ -101,6 +101,8 @@ class IdentifierInfo {
   // True if this is the 'import' contextual keyword.
   unsigned IsModulesImport : 1;
 
+  // True if this is the 'constexpr!' keyword.
+  bool IsConstexprBang : 1;
   // 29 bits left in a 64-bit word.
 
   // Managed by the language front-end.
@@ -377,6 +379,17 @@ public:
       RecomputeNeedsHandleIdentifier();
   }
 
+  /// Determine whether this is the constexpr! keyword
+  bool isConstexprBang() const { return IsConstexprBang; }
+
+  void setConstexprBang(bool I) {
+    IsConstexprBang = I;
+    if (I)
+      NeedsHandleIdentifier = true;
+    else
+      RecomputeNeedsHandleIdentifier();
+  }
+
   /// Return true if this identifier is an editor placeholder.
   ///
   /// Editor placeholders are produced by the code-completion engine and are
@@ -405,7 +418,8 @@ private:
   void RecomputeNeedsHandleIdentifier() {
     NeedsHandleIdentifier = isPoisoned() || hasMacroDefinition() ||
                             isExtensionToken() || isFutureCompatKeyword() ||
-                            isOutOfDate() || isModulesImport();
+                            isOutOfDate() || isModulesImport() ||
+                            isConstexprBang();
   }
 };
 

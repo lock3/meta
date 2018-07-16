@@ -1627,9 +1627,19 @@ bool Lexer::LexIdentifier(Token &Result, const char *CurPtr) {
   // TODO: Could merge these checks into an InfoTable flag to make the
   // comparison cheaper
   if (isASCII(C) && C != '\\' && C != '?' &&
+      C != '!' &&
       (C != '$' || !LangOpts.DollarIdents)) {
 FinishIdentifier:
     const char *IdStart = BufferPtr;
+
+    // if(strncmp(IdStart, "constexpr", 9)) {
+    //   C = *CurPtr++;
+    //   if(C == '!') {
+    // 	llvm::outs() << "hello world\n";
+    // 	IdStart = BufferPtr;
+    //   }   
+    // }
+    
     FormTokenWithChars(Result, CurPtr, tok::raw_identifier);
     Result.setRawIdentifierData(IdStart);
 
@@ -1675,8 +1685,7 @@ FinishIdentifier:
 
     return true;
   }
-
-  // Otherwise, $,\,? in identifier found.  Enter slower path.
+  // Otherwise, $,\,?,! in identifier found.  Enter slower path.
 
   C = getCharAndSize(CurPtr, Size);
   while (true) {
@@ -1690,6 +1699,13 @@ FinishIdentifier:
       CurPtr = ConsumeChar(CurPtr, Size, Result);
       C = getCharAndSize(CurPtr, Size);
       continue;
+    } else if (C == '!') {
+      if (!LangOpts.CPlusPlus17)
+      	goto FinishIdentifier;
+
+      CurPtr = ConsumeChar(CurPtr, Size, Result);
+      C = getCharAndSize(CurPtr, Size);
+      goto FinishIdentifier;
     } else if (C == '\\' && tryConsumeIdentifierUCN(CurPtr, Size, Result)) {
       C = getCharAndSize(CurPtr, Size);
       continue;
@@ -1708,7 +1724,7 @@ FinishIdentifier:
       CurPtr = ConsumeChar(CurPtr, Size, Result);
       C = getCharAndSize(CurPtr, Size);
     }
-  }
+  }  
 }
 
 /// isHexaLiteral - Return true if Start points to a hex constant.

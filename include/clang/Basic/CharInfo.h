@@ -38,7 +38,7 @@ namespace charinfo {
     CHAR_XLOWER = CHAR_XLETTER | CHAR_LOWER
   };
 } // end namespace charinfo
-
+  
 /// Returns true if this is an ASCII character.
 LLVM_READNONE inline bool isASCII(char c) {
   return static_cast<unsigned char>(c) <= 127;
@@ -61,6 +61,7 @@ LLVM_READONLY inline bool isIdentifierBody(unsigned char c,
   using namespace charinfo;
   if (InfoTable[c] & (CHAR_UPPER|CHAR_LOWER|CHAR_DIGIT|CHAR_UNDER))
     return true;
+  
   return AllowDollar && c == '$';
 }
 

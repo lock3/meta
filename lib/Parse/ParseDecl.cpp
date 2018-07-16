@@ -3515,7 +3515,9 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     // constexpr
     case tok::kw_constexpr:
+      llvm::outs() << "Parse kw_constexpr token.\n";
       isInvalid = DS.SetConstexprSpec(Loc, PrevSpec, DiagID);
+      llvm::outs() << "Is invalid?: " << isInvalid << '\n';
       break;
 
     // type-specifier

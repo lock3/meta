@@ -837,6 +837,11 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
     ModuleImportExpectsIdentifier = true;
     CurLexerKind = CLK_LexAfterModuleImport;
   }
+
+  // If this is the 'constexpr!' keyword, tokenize it.
+  if(II.getName() == "constexpr!")
+    Identifier.setKind(tok::kw_immediate);
+
   return true;
 }
 

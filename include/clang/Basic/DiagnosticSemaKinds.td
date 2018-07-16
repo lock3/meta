@@ -2453,7 +2453,8 @@ def err_cannot_evaluate_immedate : Error<
   "cannot evaluate call to immediate %select{function|member function}0">;
 def err_immediate_redecl_mismatch : Error<
   "%select{immediate declaration of %0 follows constexpr declaration"
-  "|constexpr declaration of %0 follows immediate declaration}1">;
+  "|constexpr declaration of %0 follows immediate declaration"
+  "|immediate declaration of %0 follows non-immediate declaration}1">;
 
 // Reflection
 def err_need_header_before_reflexpr : Error<

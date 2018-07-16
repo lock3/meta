@@ -229,7 +229,7 @@ bool TokenConcatenation::AvoidConcat(const Token &PrevPrevTok,
 
     // In C++11, a string or character literal followed by an identifier is a
     // single token.
-    if (Tok.getIdentifierInfo())
+    if (Tok.getIdentifierInfo()) 
       return true;
 
     // A ud-suffix is an identifier. If the previous token ends with one, treat
