@@ -1,0 +1,17 @@
+// -*- C++ -*-
+
+#ifndef CPPX_COMPILER
+#define CPPX_COMPILER
+
+namespace cppx
+{
+namespace meta
+{
+inline namespace v1
+{
+
+} // inline namespace v1
+} // namespace meta
+} // namespace cppx
+
+#endif // CPPX_COMPILER
