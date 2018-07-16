@@ -11,17 +11,18 @@ set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
   TRUE)
 
 set(LIBCPPX_HEADER_PATTERN
-  PATTERN "compiler"
   PATTERN "meta"
   PATTERN "*.hpp")
 
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)
   # Install these headers in the build version of the resource dir
+  # This installs into "experimental" so that #include <experimental/meta>
+  # will just work.
   set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)
 
   message(STATUS "Copying CPPX headers")
-  file(COPY cppx DESTINATION ${output_dir}
+  file(COPY experimental DESTINATION ${output_dir}
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
 
   # Force reconfiguration when headers are modified so that the updated headers
