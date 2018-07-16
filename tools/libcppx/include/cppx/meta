@@ -255,12 +255,14 @@ immediate iterator end(info x) {
 immediate info front(info x) {
   // FIXME
   // return __reflect_begin(x);
+  return {};
 }
 
 // Returns the next info in the sequence.
 immediate info next(info x) {
   // FIXME
   // return __reflect_next(x);
+  return {};
 }
 
 // Overload distance so that it's immediate.
@@ -275,23 +277,27 @@ immediate std::ptrdiff_t distance(iterator first, iterator last) {
 // Traversal queries
 
 // True if x is a member of a class.
-immediate bool is_class_member(object x) {
+immediate bool is_class_member(info x) {
   return is_class(parent(x));
 }
 
 // -------------------------------------------------------------------------- //
 // Name
 
-immediate const char* name(object x) {
-  return __reflect_name(x);
+immediate const char* name(info x) {
+  // FIXME:
+  // return __reflect_name(x);
+  return "";
 }
 
 // -------------------------------------------------------------------------- //
 // Type
 
 // Returns the reflected type of a variable or function.
-immediate object type(object x) {
-  return __reflect_type(x);
+immediate info type(info x) {
+  // FIXME
+  // return __reflect_type(x);
+  return {};
 }
 
 // -------------------------------------------------------------------------- //
@@ -303,7 +309,7 @@ struct namespace_traits {
     : is_inline(n)
   { }
 
-  immediate explicit namespace_traits(object x)
+  immediate explicit namespace_traits(info x)
     : namespace_traits(__reflect_traits(x))
   { require(is_namespace(x)); }
   
@@ -321,7 +327,7 @@ struct variable_traits {
       is_constexpr(n >> 7)
   { }
 
-  immediate explicit variable_traits(object x)
+  immediate explicit variable_traits(info x)
     : variable_traits(__reflect_traits(x))
   { require(is_variable(x)); }
   
@@ -344,7 +350,7 @@ struct function_traits {
       is_deleted(n >> 7)
   { }
 
-  immediate explicit function_traits(object x)
+  immediate explicit function_traits(info x)
     : function_traits(__reflect_traits(x))
   { require(is_function(x)); }
   
@@ -366,7 +372,7 @@ struct class_traits {
       is_injected(n >> 7)
   { }
 
-  immediate explicit class_traits(object x)
+  immediate explicit class_traits(info x)
     : class_traits(__reflect_traits(x))
   { }
   
@@ -388,7 +394,7 @@ struct data_member_traits {
       is_bitfield(n >> 8)
   { }
 
-  immediate explicit data_member_traits(object x)
+  immediate explicit data_member_traits(info x)
     : data_member_traits(__reflect_traits(x))
   { require(is_data_member(x)); }
   
@@ -418,7 +424,7 @@ struct member_function_traits {
       is_defaulted(n >> 14)
   { }
 
-  immediate explicit member_function_traits(object x)
+  immediate explicit member_function_traits(info x)
     : member_function_traits(__reflect_traits(x))
   { require(is_member_function(x)); }
 
@@ -444,7 +450,7 @@ struct enum_traits {
       is_scoped(n >> 4)
   { }
 
-  immediate explicit enum_traits(object x)
+  immediate explicit enum_traits(info x)
     : enum_traits(__reflect_traits(x))
   { require(is_enum(x)); }
   
@@ -458,7 +464,7 @@ struct enumerator_traits {
     : access(n)
   { }
 
-  immediate explicit enumerator_traits(object x)
+  immediate explicit enumerator_traits(info x)
     : enumerator_traits(__reflect_traits(x))
   { }
   
@@ -473,7 +479,7 @@ struct access_traits {
     : access(n)
   { }
   
-  immediate explicit access_traits(object x)
+  immediate explicit access_traits(info x)
     : access_traits(__reflect_traits(x))
   { }
   
@@ -483,7 +489,7 @@ struct access_traits {
 // -------------------------------------------------------------------------- //
 // General purpose queries
 
-immediate bool has_linkage(object x) {
+immediate bool has_linkage(info x) {
   switch (kind(x)) {
   case namespace_decl:
     return true;
@@ -500,7 +506,7 @@ immediate bool has_linkage(object x) {
   }
 }
 
-immediate bool has_external_linkage(object x) {
+immediate bool has_external_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return true;
@@ -517,7 +523,7 @@ immediate bool has_external_linkage(object x) {
   }
 }
 
-immediate bool has_internal_linkage(object x) {
+immediate bool has_internal_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return false;
@@ -534,7 +540,7 @@ immediate bool has_internal_linkage(object x) {
   }
 }
 
-immediate bool has_automatic_storage(object x) {
+immediate bool has_automatic_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == automatic_storage;
@@ -545,7 +551,7 @@ immediate bool has_automatic_storage(object x) {
   }  
 }
 
-immediate bool has_static_storage(object x) {
+immediate bool has_static_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == static_storage;
@@ -556,7 +562,7 @@ immediate bool has_static_storage(object x) {
   }  
 }
 
-immediate bool has_thread_storage(object x) {
+immediate bool has_thread_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == thread_storage;
@@ -567,7 +573,7 @@ immediate bool has_thread_storage(object x) {
   }
 }
 
-immediate bool has_access(object x) {
+immediate bool has_access(info x) {
   switch (kind(x)) {
     default:
       return false;
@@ -586,9 +592,9 @@ immediate bool has_access(object x) {
 
 // True if x's access specifier is determined by the default access of
 // the enclosing class.
-constexpr bool has_default_access(object x) {
+constexpr bool has_default_access(info x) {
   assert(is_class_member(x));
-  for (object m : parent(x)) {
+  for (info m : parent(x)) {
     if (is_access_specifier(m))
       return false;
     if (m == x)
@@ -597,7 +603,7 @@ constexpr bool has_default_access(object x) {
   __builtin_unreachable();
 }
 
-immediate bool is_public(object x) {
+immediate bool is_public(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -617,7 +623,7 @@ immediate bool is_public(object x) {
   }
 }
 
-immediate bool is_private(object x) {
+immediate bool is_private(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -637,7 +643,7 @@ immediate bool is_private(object x) {
   }
 }
 
-immediate bool is_protected(object x) {
+immediate bool is_protected(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -657,7 +663,7 @@ immediate bool is_protected(object x) {
   }
 }
 
-immediate bool is_static(object x) {
+immediate bool is_static(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_static;
@@ -672,7 +678,7 @@ immediate bool is_static(object x) {
   }
 }
 
-immediate bool is_extern(object x) {
+immediate bool is_extern(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_extern;
@@ -683,7 +689,7 @@ immediate bool is_extern(object x) {
   }
 }
 
-immediate bool is_inline(object x) {
+immediate bool is_inline(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return namespace_traits(x).is_inline;
@@ -700,7 +706,7 @@ immediate bool is_inline(object x) {
   }
 }
 
-immediate bool is_constexpr(object x) {
+immediate bool is_constexpr(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_constexpr;
@@ -715,56 +721,56 @@ immediate bool is_constexpr(object x) {
   }
 }
 
-immediate bool is_normal(object x) {
+immediate bool is_normal(info x) {
   return member_function_traits(x).kind == normal;
 }
 
-immediate bool is_constructor(object x) {
+immediate bool is_constructor(info x) {
   return member_function_traits(x).kind == constructor;
 }
 
-immediate bool is_destructor(object x) {
+immediate bool is_destructor(info x) {
   return member_function_traits(x).kind == destructor;
 }
 
-immediate bool is_conversion(object x) {
+immediate bool is_conversion(info x) {
   return member_function_traits(x).kind == conversion;
 }
 
-immediate bool is_explicit(object x) {
+immediate bool is_explicit(info x) {
   return member_function_traits(x).is_explicit;
 }
 
-immediate bool is_virtual(object x) {
+immediate bool is_virtual(info x) {
   return member_function_traits(x).is_virtual;
 }
 
-immediate bool is_pure_virtual(object x) {
+immediate bool is_pure_virtual(info x) {
   return member_function_traits(x).is_pure;
 }
 
-immediate bool is_override(object x) {
+immediate bool is_override(info x) {
   return member_function_traits(x).is_override;
 }
 
-immediate bool is_final(object x) {
+immediate bool is_final(info x) {
   return member_function_traits(x).is_final;
 }
 
-immediate bool is_defaulted(object x) {
+immediate bool is_defaulted(info x) {
   return member_function_traits(x).is_defaulted;
 }
 
-immediate bool is_mutable(object x) {
+immediate bool is_mutable(info x) {
   return data_member_traits(x).is_mutable;
 }
 
 // TODO: Add an accessor for the bit width.
-immediate bool is_bitfield(object x) {
+immediate bool is_bitfield(info x) {
   return data_member_traits(x).is_bitfield;
 }
 
-immediate bool is_defined(object x) {
+immediate bool is_defined(info x) {
   switch (kind(x)) {
     case variable_decl:
       // FIXME: This is not accurate.
@@ -782,7 +788,7 @@ immediate bool is_defined(object x) {
   }
 }
 
-immediate bool is_deleted(object x) {
+immediate bool is_deleted(info x) {
   switch (kind(x)) {
     case function_decl:
       return function_traits(x).is_deleted;
@@ -793,27 +799,27 @@ immediate bool is_deleted(object x) {
   }
 }
 
-immediate bool is_declared_struct(object x) {
+immediate bool is_declared_struct(info x) {
   return class_traits(x).key == struct_key;
 }
 
-immediate bool is_declared_class(object x) {
+immediate bool is_declared_class(info x) {
   return class_traits(x).key == class_key;
 }
 
-immediate bool is_union(object x) {
+immediate bool is_union(info x) {
   return class_traits(x).key == union_key;
 }
 
-immediate bool is_complete(object x) {
+immediate bool is_complete(info x) {
   return class_traits(x).is_complete;
 }
 
-immediate bool is_injected_class_name(object x) {
+immediate bool is_injected_class_name(info x) {
   return class_traits(x).is_injected;
 }
 
-immediate bool is_scoped(object x) {
+immediate bool is_scoped(info x) {
   return enum_traits(x).is_scoped;
 }
 #endif
