@@ -4389,6 +4389,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_fno_relaxed_template_template_args, false))
     CmdArgs.push_back("-frelaxed-template-template-args");
 
+  // -freflection is off by default. FIXME: Why?
+  if (Args.hasFlag(options::OPT_freflection,
+		   options::OPT_fno_reflection, false))
+    CmdArgs.push_back("-freflection");
+
   // -fsized-deallocation is off by default, as it is an ABI-breaking change for
   // most platforms.
   if (Args.hasFlag(options::OPT_fsized_deallocation,
