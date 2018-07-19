@@ -7182,8 +7182,46 @@ TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
-  llvm_unreachable("Unimplemented");
+TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
+{  Reflection R;
+  if (const Decl *D = E->getReflectedDeclaration()) {
+    // We can't just call TransformDecl. That's not guaranteed to perform
+    // substitution. We need to build an expression or type and substitute
+    // through that.
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
+      DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(const_cast<ValueDecl*>(VD), 
+                                                           false, VD->getType(),
+                                                           VK_RValue, 
+                                                           E->getExprLoc());
+      ExprResult NewRef = TransformExpr(Ref);
+      if (NewRef.isInvalid())
+        return ExprError();
+      ValueDecl *NewDecl = cast<DeclRefExpr>(NewRef.get())->getDecl();
+      R = Reflection(NewDecl);
+    } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
+      QualType T = SemaRef.Context.getTypeDeclType(TD);
+      QualType NewType = TransformType(T);
+      if (NewType.isNull())
+        return ExprError();
+      // FIXME: There are other types that can be declarations.
+      if (const TagDecl *Tag = NewType->getAsTagDecl())
+        R = Reflection(Tag);
+      else 
+        R = Reflection(NewType.getTypePtr());
+    } else {
+      // This is something like a namespace. Just use TransformDecl even
+      // though it's unlikely to change.
+      Decl *NewDecl = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
+      R = Reflection(NewDecl);
+    }
+  } else if (const Type *T = E->getReflectedType()) {
+    QualType NewType = TransformType(QualType(T, 0));
+    R = Reflection(NewType.getTypePtr());
+  }
+  return RebuildCXXReflectExpr(E->getLocStart(),
+                               R.getKind(), 
+                               const_cast<void*>(R.getOpaquePointer()),
+                               E->getLocEnd());
 }
 
 template <typename Derived>

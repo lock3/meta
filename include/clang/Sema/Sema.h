@@ -834,13 +834,13 @@ public:
   /// The MSVC "_GUID" struct, which is defined in MSVC header files.
   RecordDecl *MSVCGuidDecl;
 
-  /// \brief The 'cppx' namespace.
-  NamespaceDecl *CppxNamespace = nullptr;
+  /// \brief The 'std::experimental' namespace.
+  NamespaceDecl *ExperimentalNamespace = nullptr;
 
-  /// \brief The 'cppx::meta' namespace.
-  NamespaceDecl *CppxMetaNamespace = nullptr;
+  /// \brief The 'std::experimental::meta' namespace.
+  NamespaceDecl *ExperimentalMetaNamespace = nullptr;
 
-  /// \brief The 'cppx::meta::meta_info' type.
+  /// \brief The 'std::experimental::meta::meta_info' type.
   CXXRecordDecl *MetaInfoDecl = nullptr;
 
   /// Caches identifiers/selectors for NSFoundation APIs.
@@ -8584,8 +8584,8 @@ public:
   ExprResult BuildConstantExpression(Expr *E);
 
   // Namespace and types
-  NamespaceDecl *getCppxNamespace(SourceLocation Loc);
-  NamespaceDecl *getCppxMetaNamespace(SourceLocation Loc);
+  NamespaceDecl *getExperimentalNamespace(SourceLocation Loc);
+  NamespaceDecl *getExperimentalMetaNamespace(SourceLocation Loc);
   QualType getMetaInfoType(SourceLocation Loc);
 
   bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc, 
@@ -8601,6 +8601,12 @@ public:
                                      ReflectionTrait Trait,
                                      ArrayRef<Expr *> Args,
                                      SourceLocation RPLoc);
+
+  ExprResult ActOnCXXReflectedValueExpression(SourceLocation Loc, Expr *Ref);
+  ExprResult BuildCXXReflectedValueExpression(SourceLocation Loc, Expr *Ref);
+
+  QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
+  TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

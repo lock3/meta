@@ -1682,11 +1682,12 @@ FinishIdentifier:
   C = getCharAndSize(CurPtr, Size);
 
   if (C == '!') {
-    //todo: langopts reflection
-    if (strncmp(BufferPtr, "constexpr", 9) == 0
-	&& LangOpts.CPlusPlus17) {
-      CurPtr = ConsumeChar(CurPtr, Size, Result);
-      C = getCharAndSize(CurPtr, Size);
+    if (LangOpts.Reflection) {
+      if (strncmp(BufferPtr, "constexpr", 9) == 0
+	  && LangOpts.CPlusPlus17) {
+	CurPtr = ConsumeChar(CurPtr, Size, Result);
+	C = getCharAndSize(CurPtr, Size);
+      }
     }
 
     goto FinishIdentifier;

@@ -9,7 +9,7 @@
 #include <iterator>
 
 // FIXME!
-#define immediate constexpr
+// #define immediate constexpr
 
 namespace std::experimental
 {
@@ -21,7 +21,7 @@ inline namespace v1 {
 struct compile_time_error { };
 
 // Like assert, but always runs and guarantees non-compilation.
-immediate void require(bool b) {
+constexpr! void require(bool b) {
   if (!b)
     throw compile_time_error();
 }
@@ -103,83 +103,83 @@ enum memun_kind {
 // Kind and kind testing
 
 // Returns the kind (discriminator) of the meta object.
-immediate reflection_kind kind(info x) {
+constexpr! reflection_kind kind(info x) {
   // FIXME
   // return (reflection_kind)__reflect_index(x); 
   return {};
 }
 
 // True if x is a null reflection.
-immediate bool is_null(info x) {
+constexpr! bool is_null(info x) {
   return kind(x) == null_construct;
 }
 
 // True if x reflects a declaration.
 //
 // TODO: Make sure this stays in agreement with reflection_kind.
-immediate bool is_declaration(info x) {
+constexpr! bool is_declaration(info x) {
   reflection_kind k = kind(x);
   return translation_unit <= k && k <= enumerator_decl;
 }
 
 // True if x reflects a fundamental or non-user-defined type.
-immediate bool is_type(info x) {
+constexpr! bool is_type(info x) {
   reflection_kind k = kind(x);
   return void_type <= k && k <= array_type;
 }
 
 // True if x reflects a translation unit.
-immediate bool is_translation_unit(info x) {
+constexpr! bool is_translation_unit(info x) {
   return kind(x) == translation_unit;
 }
 
 // True if x reflects a namespace.
-immediate bool is_namespace(info x) {
+constexpr! bool is_namespace(info x) {
   return kind(x) == namespace_decl;
 }
 
 // True if x reflects a variable.
-immediate bool is_variable(info x) {
+constexpr! bool is_variable(info x) {
   return kind(x) == variable_decl;
 }
 
 // True if x reflects a function.
-immediate bool is_function(info x) {
+constexpr! bool is_function(info x) {
   return kind(x) == function_decl;
 }
 
 // True if x reflects a parameter.
-immediate bool is_parameter(info x) {
+constexpr! bool is_parameter(info x) {
   return kind(x) == parameter_decl;
 }
 
 // True if x reflects a class.
-immediate bool is_class(info x) {
+constexpr! bool is_class(info x) {
   return kind(x) == class_decl;
 }
 
 // True if x reflects a data member.
-immediate bool is_data_member(info x) {
+constexpr! bool is_data_member(info x) {
   return kind(x) == data_member_decl;
 }
 
 // True if x reflects a member function.
-immediate bool is_member_function(info x) {
+constexpr! bool is_member_function(info x) {
   return kind(x) == member_function_decl;
 }
 
 // True if x reflects an access specifier.
-immediate bool is_access_specifier(info x) {
+constexpr! bool is_access_specifier(info x) {
   return kind(x) == access_spec;
 }
 
 // True if x reflections an enum.
-immediate bool is_enum(info x) {
+constexpr! bool is_enum(info x) {
   return kind(x) == enum_decl;
 }
 
 // True if x reflects an enumerator.
-immediate bool is_enumerator(info x) {
+constexpr! bool is_enumerator(info x) {
   return kind(x) == enumerator_decl;
 }
 
@@ -187,14 +187,14 @@ immediate bool is_enumerator(info x) {
 // Traversal queries
 
 // Returns the lexical context of the declaration.
-immediate info parent(info x) {
+constexpr! info parent(info x) {
   // FIXME:
   // return __reflect_context(x);
   return {};
 }
 
 // Returns the home context of the declaration.
-immediate info home(info x) {
+constexpr! info home(info x) {
   // return __reflect_home(x);
   return {};
 }
@@ -207,27 +207,27 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
-  immediate iterator() : curr() { }
-  immediate iterator(info x) : curr(x) { }
+  constexpr! iterator() : curr() { }
+  constexpr! iterator(info x) : curr(x) { }
 
-  immediate info operator*() const { return curr; }
-  immediate info operator->() const { return curr; }
+  constexpr! info operator*() const { return curr; }
+  constexpr! info operator->() const { return curr; }
 
-  immediate iterator& operator++() { 
+  constexpr! iterator& operator++() { 
     // FIXME
     // if (!is_null(curr))
     //   curr = __reflect_next(curr); 
     return *this;
   }
 
-  immediate iterator operator++(int) {
+  constexpr! iterator operator++(int) {
     iterator tmp = *this;
     operator++();
     return tmp;
   }
 
-  immediate bool operator==(iterator i) const { return curr == i.curr; }
-  immediate bool operator!=(iterator i) const { return curr != i.curr; }
+  constexpr! bool operator==(iterator i) const { return curr == i.curr; }
+  constexpr! bool operator!=(iterator i) const { return curr != i.curr; }
 
 private:  
   info curr;
@@ -235,7 +235,7 @@ private:
 
 // Returns the first sub-object of x. Objects behave 
 // as forward iterators.
-immediate iterator begin(info x) {
+constexpr! iterator begin(info x) {
   // FIXME
   // return iterator(__reflect_begin(x));
   return {};
@@ -245,28 +245,28 @@ immediate iterator begin(info x) {
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
-immediate iterator end(info x) {
+constexpr! iterator end(info x) {
   return iterator();
 }
 
 // Returns the first child of declaration context. This can be used with
 // next() to traverse contexts as template arguments (iterators don't work
 // as template arguments).
-immediate info front(info x) {
+constexpr! info front(info x) {
   // FIXME
   // return __reflect_begin(x);
   return {};
 }
 
 // Returns the next info in the sequence.
-immediate info next(info x) {
+constexpr! info next(info x) {
   // FIXME
   // return __reflect_next(x);
   return {};
 }
 
-// Overload distance so that it's immediate.
-immediate std::ptrdiff_t distance(iterator first, iterator last) {
+// Overload distance so that it's constexpr!.
+constexpr! std::ptrdiff_t distance(iterator first, iterator last) {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
     ++n;
@@ -277,14 +277,14 @@ immediate std::ptrdiff_t distance(iterator first, iterator last) {
 // Traversal queries
 
 // True if x is a member of a class.
-immediate bool is_class_member(info x) {
+constexpr! bool is_class_member(info x) {
   return is_class(parent(x));
 }
 
 // -------------------------------------------------------------------------- //
 // Name
 
-immediate const char* name(info x) {
+constexpr! const char* name(info x) {
   // FIXME:
   // return __reflect_name(x);
   return "";
@@ -294,7 +294,7 @@ immediate const char* name(info x) {
 // Type
 
 // Returns the reflected type of a variable or function.
-immediate info type(info x) {
+constexpr! info type(info x) {
   // FIXME
   // return __reflect_type(x);
   return {};
@@ -305,11 +305,11 @@ immediate info type(info x) {
 
 #if 0
 struct namespace_traits {
-  immediate explicit namespace_traits(unsigned n)
+  constexpr! explicit namespace_traits(unsigned n)
     : is_inline(n)
   { }
 
-  immediate explicit namespace_traits(info x)
+  constexpr! explicit namespace_traits(info x)
     : namespace_traits(__reflect_traits(x))
   { require(is_namespace(x)); }
   
@@ -318,7 +318,7 @@ struct namespace_traits {
 
 // FIXME: A variable can be declared but not defined.
 struct variable_traits {
-  immediate explicit variable_traits(unsigned n) 
+  constexpr! explicit variable_traits(unsigned n) 
     : linkage(n),
       storage(n >> 2),
       is_static(n >> 4),
@@ -327,7 +327,7 @@ struct variable_traits {
       is_constexpr(n >> 7)
   { }
 
-  immediate explicit variable_traits(info x)
+  constexpr! explicit variable_traits(info x)
     : variable_traits(__reflect_traits(x))
   { require(is_variable(x)); }
   
@@ -340,7 +340,7 @@ struct variable_traits {
 };
 
 struct function_traits {
-  immediate explicit function_traits(unsigned n) 
+  constexpr! explicit function_traits(unsigned n) 
     : linkage(n), 
       is_static(n >> 2),
       is_extern(n >> 3),
@@ -350,7 +350,7 @@ struct function_traits {
       is_deleted(n >> 7)
   { }
 
-  immediate explicit function_traits(info x)
+  constexpr! explicit function_traits(info x)
     : function_traits(__reflect_traits(x))
   { require(is_function(x)); }
   
@@ -364,7 +364,7 @@ struct function_traits {
 };
 
 struct class_traits {
-  immediate explicit class_traits(unsigned n) 
+  constexpr! explicit class_traits(unsigned n) 
     : linkage(n),
       access(n >> 2),
       key(n >> 4),
@@ -372,7 +372,7 @@ struct class_traits {
       is_injected(n >> 7)
   { }
 
-  immediate explicit class_traits(info x)
+  constexpr! explicit class_traits(info x)
     : class_traits(__reflect_traits(x))
   { }
   
@@ -384,7 +384,7 @@ struct class_traits {
 };
 
 struct data_member_traits {
-  immediate explicit data_member_traits(unsigned n) 
+  constexpr! explicit data_member_traits(unsigned n) 
     : storage(n), 
       access(n >> 2),
       is_static(n >> 4),
@@ -394,7 +394,7 @@ struct data_member_traits {
       is_bitfield(n >> 8)
   { }
 
-  immediate explicit data_member_traits(info x)
+  constexpr! explicit data_member_traits(info x)
     : data_member_traits(__reflect_traits(x))
   { require(is_data_member(x)); }
   
@@ -408,7 +408,7 @@ struct data_member_traits {
 };
 
 struct member_function_traits {
-  immediate explicit member_function_traits(unsigned n) 
+  constexpr! explicit member_function_traits(unsigned n) 
     : access(n),
       kind(n >> 2),
       is_static(n >> 4),
@@ -424,7 +424,7 @@ struct member_function_traits {
       is_defaulted(n >> 14)
   { }
 
-  immediate explicit member_function_traits(info x)
+  constexpr! explicit member_function_traits(info x)
     : member_function_traits(__reflect_traits(x))
   { require(is_member_function(x)); }
 
@@ -444,13 +444,13 @@ struct member_function_traits {
 };
 
 struct enum_traits {
-  immediate explicit enum_traits(unsigned n) 
+  constexpr! explicit enum_traits(unsigned n) 
     : linkage(n),
       access(n >> 2),
       is_scoped(n >> 4)
   { }
 
-  immediate explicit enum_traits(info x)
+  constexpr! explicit enum_traits(info x)
     : enum_traits(__reflect_traits(x))
   { require(is_enum(x)); }
   
@@ -460,11 +460,11 @@ struct enum_traits {
 };
 
 struct enumerator_traits {
-  immediate explicit enumerator_traits(unsigned n) 
+  constexpr! explicit enumerator_traits(unsigned n) 
     : access(n)
   { }
 
-  immediate explicit enumerator_traits(info x)
+  constexpr! explicit enumerator_traits(info x)
     : enumerator_traits(__reflect_traits(x))
   { }
   
@@ -475,11 +475,11 @@ struct enumerator_traits {
 // Access specifiers
 
 struct access_traits {
-  immediate explicit access_traits(unsigned n) 
+  constexpr! explicit access_traits(unsigned n) 
     : access(n)
   { }
   
-  immediate explicit access_traits(info x)
+  constexpr! explicit access_traits(info x)
     : access_traits(__reflect_traits(x))
   { }
   
@@ -489,7 +489,7 @@ struct access_traits {
 // -------------------------------------------------------------------------- //
 // General purpose queries
 
-immediate bool has_linkage(info x) {
+constexpr! bool has_linkage(info x) {
   switch (kind(x)) {
   case namespace_decl:
     return true;
@@ -506,7 +506,7 @@ immediate bool has_linkage(info x) {
   }
 }
 
-immediate bool has_external_linkage(info x) {
+constexpr! bool has_external_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return true;
@@ -523,7 +523,7 @@ immediate bool has_external_linkage(info x) {
   }
 }
 
-immediate bool has_internal_linkage(info x) {
+constexpr! bool has_internal_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return false;
@@ -540,7 +540,7 @@ immediate bool has_internal_linkage(info x) {
   }
 }
 
-immediate bool has_automatic_storage(info x) {
+constexpr! bool has_automatic_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == automatic_storage;
@@ -551,7 +551,7 @@ immediate bool has_automatic_storage(info x) {
   }  
 }
 
-immediate bool has_static_storage(info x) {
+constexpr! bool has_static_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == static_storage;
@@ -562,7 +562,7 @@ immediate bool has_static_storage(info x) {
   }  
 }
 
-immediate bool has_thread_storage(info x) {
+constexpr! bool has_thread_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == thread_storage;
@@ -573,7 +573,7 @@ immediate bool has_thread_storage(info x) {
   }
 }
 
-immediate bool has_access(info x) {
+constexpr! bool has_access(info x) {
   switch (kind(x)) {
     default:
       return false;
@@ -603,7 +603,7 @@ constexpr bool has_default_access(info x) {
   __builtin_unreachable();
 }
 
-immediate bool is_public(info x) {
+constexpr! bool is_public(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -623,7 +623,7 @@ immediate bool is_public(info x) {
   }
 }
 
-immediate bool is_private(info x) {
+constexpr! bool is_private(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -643,7 +643,7 @@ immediate bool is_private(info x) {
   }
 }
 
-immediate bool is_protected(info x) {
+constexpr! bool is_protected(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -663,7 +663,7 @@ immediate bool is_protected(info x) {
   }
 }
 
-immediate bool is_static(info x) {
+constexpr! bool is_static(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_static;
@@ -678,7 +678,7 @@ immediate bool is_static(info x) {
   }
 }
 
-immediate bool is_extern(info x) {
+constexpr! bool is_extern(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_extern;
@@ -689,7 +689,7 @@ immediate bool is_extern(info x) {
   }
 }
 
-immediate bool is_inline(info x) {
+constexpr! bool is_inline(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return namespace_traits(x).is_inline;
@@ -706,7 +706,7 @@ immediate bool is_inline(info x) {
   }
 }
 
-immediate bool is_constexpr(info x) {
+constexpr! bool is_constexpr(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_constexpr;
@@ -721,56 +721,56 @@ immediate bool is_constexpr(info x) {
   }
 }
 
-immediate bool is_normal(info x) {
+constexpr! bool is_normal(info x) {
   return member_function_traits(x).kind == normal;
 }
 
-immediate bool is_constructor(info x) {
+constexpr! bool is_constructor(info x) {
   return member_function_traits(x).kind == constructor;
 }
 
-immediate bool is_destructor(info x) {
+constexpr! bool is_destructor(info x) {
   return member_function_traits(x).kind == destructor;
 }
 
-immediate bool is_conversion(info x) {
+constexpr! bool is_conversion(info x) {
   return member_function_traits(x).kind == conversion;
 }
 
-immediate bool is_explicit(info x) {
+constexpr! bool is_explicit(info x) {
   return member_function_traits(x).is_explicit;
 }
 
-immediate bool is_virtual(info x) {
+constexpr! bool is_virtual(info x) {
   return member_function_traits(x).is_virtual;
 }
 
-immediate bool is_pure_virtual(info x) {
+constexpr! bool is_pure_virtual(info x) {
   return member_function_traits(x).is_pure;
 }
 
-immediate bool is_override(info x) {
+constexpr! bool is_override(info x) {
   return member_function_traits(x).is_override;
 }
 
-immediate bool is_final(info x) {
+constexpr! bool is_final(info x) {
   return member_function_traits(x).is_final;
 }
 
-immediate bool is_defaulted(info x) {
+constexpr! bool is_defaulted(info x) {
   return member_function_traits(x).is_defaulted;
 }
 
-immediate bool is_mutable(info x) {
+constexpr! bool is_mutable(info x) {
   return data_member_traits(x).is_mutable;
 }
 
 // TODO: Add an accessor for the bit width.
-immediate bool is_bitfield(info x) {
+constexpr! bool is_bitfield(info x) {
   return data_member_traits(x).is_bitfield;
 }
 
-immediate bool is_defined(info x) {
+constexpr! bool is_defined(info x) {
   switch (kind(x)) {
     case variable_decl:
       // FIXME: This is not accurate.
@@ -788,7 +788,7 @@ immediate bool is_defined(info x) {
   }
 }
 
-immediate bool is_deleted(info x) {
+constexpr! bool is_deleted(info x) {
   switch (kind(x)) {
     case function_decl:
       return function_traits(x).is_deleted;
@@ -799,27 +799,27 @@ immediate bool is_deleted(info x) {
   }
 }
 
-immediate bool is_declared_struct(info x) {
+constexpr! bool is_declared_struct(info x) {
   return class_traits(x).key == struct_key;
 }
 
-immediate bool is_declared_class(info x) {
+constexpr! bool is_declared_class(info x) {
   return class_traits(x).key == class_key;
 }
 
-immediate bool is_union(info x) {
+constexpr! bool is_union(info x) {
   return class_traits(x).key == union_key;
 }
 
-immediate bool is_complete(info x) {
+constexpr! bool is_complete(info x) {
   return class_traits(x).is_complete;
 }
 
-immediate bool is_injected_class_name(info x) {
+constexpr! bool is_injected_class_name(info x) {
   return class_traits(x).is_injected;
 }
 
-immediate bool is_scoped(info x) {
+constexpr! bool is_scoped(info x) {
   return enum_traits(x).is_scoped;
 }
 #endif
@@ -829,6 +829,6 @@ immediate bool is_scoped(info x) {
 } // namespace std::experimental
 
 
-#undef immediate
+// #undef immediate
 
 #endif // CPPX_META
