@@ -70,6 +70,17 @@
 #define ANNOTATION(X) TOK(annot_ ## X)
 #endif
 
+// [Meta] Keyword macros for reflection queries.
+#ifndef REFLECTION_TRAIT
+#define REFLECTION_TRAIT(N,I,K) KEYWORD(I, KEYCXX11)
+#endif
+#ifndef REFLECTION_TRAIT_1
+#define REFLECTION_TRAIT_1(I,K) REFLECTION_TRAIT(1,I,K)
+#endif
+#ifndef REFLECTION_TRAIT_2
+#define REFLECTION_TRAIT_2(I,K) REFLECTION_TRAIT(2,I,K)
+#endif
+
 //===----------------------------------------------------------------------===//
 // Preprocessor keywords.
 //===----------------------------------------------------------------------===//
@@ -389,6 +400,18 @@ MODULES_KEYWORD(import)
 KEYWORD(constexpr_bang              , KEYCXX11)
 KEYWORD(reflexpr                    , KEYCXX11)
 KEYWORD(valueof                     , KEYCXX11)
+
+// Reflection compiler/library interface
+REFLECTION_TRAIT_1(__reflect_index  , ReflectIndex)
+REFLECTION_TRAIT_1(__reflect_context, ReflectContext)
+REFLECTION_TRAIT_1(__reflect_home   , ReflectHome)
+REFLECTION_TRAIT_1(__reflect_begin  , ReflectBegin)
+REFLECTION_TRAIT_1(__reflect_end    , ReflectEnd)
+REFLECTION_TRAIT_1(__reflect_next   , ReflectNext)
+REFLECTION_TRAIT_1(__reflect_name   , ReflectName)
+REFLECTION_TRAIT_1(__reflect_type   , ReflectType)
+REFLECTION_TRAIT_1(__reflect_traits , ReflectTraits)
+REFLECTION_TRAIT_1(__reflect_print  , ReflectPrint)
 
 // C++ char8_t proposal
 KEYWORD(char8_t                     , CHAR8SUPPORT)
@@ -833,6 +856,9 @@ ANNOTATION(module_include)
 ANNOTATION(module_begin)
 ANNOTATION(module_end)
 
+#undef REFLECTION_TRAIT_2
+#undef REFLECTION_TRAIT_1
+#undef REFLECTION_TRAIT
 #undef ANNOTATION
 #undef TESTING_KEYWORD
 #undef OBJC2_AT_KEYWORD

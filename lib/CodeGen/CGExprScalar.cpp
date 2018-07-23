@@ -1273,6 +1273,8 @@ void ScalarExprEmitter::EmitBinOpCheck(
 //===----------------------------------------------------------------------===//
 
 Value *ScalarExprEmitter::VisitExpr(Expr *E) {
+  llvm::outs() << "ScalarExprEmitter::VisitExpr\n";
+  // E->dump();
   CGF.ErrorUnsupported(E, "scalar expression");
   if (E->getType()->isVoidType())
     return nullptr;
@@ -3968,6 +3970,7 @@ Value *ScalarExprEmitter::VisitAtomicExpr(AtomicExpr *E) {
 /// Emit the computation of the specified expression of scalar type, ignoring
 /// the result.
 Value *CodeGenFunction::EmitScalarExpr(const Expr *E, bool IgnoreResultAssign) {
+  llvm::outs() << "EmitScalarExpr()\n";
   assert(E && hasScalarEvaluationKind(E->getType()) &&
          "Invalid scalar expression to emit");
 

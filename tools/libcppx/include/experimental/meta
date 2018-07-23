@@ -102,11 +102,10 @@ enum memun_kind {
 
 // Kind and kind testing
 
-// Returns the kind (discriminator) of the meta object.
+// Returns the kind (discriminator) of the meta info.
 constexpr! reflection_kind kind(info x) {
   // FIXME
-  // return (reflection_kind)__reflect_index(x); 
-  return {};
+  return (reflection_kind)__reflect_index(x); 
 }
 
 // True if x is a null reflection.
