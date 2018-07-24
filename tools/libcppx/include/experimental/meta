@@ -598,25 +598,23 @@ constexpr bool has_default_access(info x) {
 }
 
 constexpr! bool is_public(info x) {
-  // assert(has_access(x));
-  // switch (kind(x)) {
-  //   case data_member_decl:
-  //     return data_member_traits(x).access ==  public_access;
-  //   case member_function_decl:
-  //     return member_function_traits(x).access ==  public_access;
-  //   case access_spec:
-  //     return access_traits(x).access ==  public_access;
-  //   case class_decl:
-  //     return class_traits(x).access == public_access;
-  //   case enum_decl:
-  //     return class_traits(x).access == public_access;
-  //   case enumerator_decl:
-  //     return enumerator_traits(x).access == public_access;
-  //   default:
-  //     __builtin_unreachable();
-  // }
-
-  return true;
+  assert(has_access(x));
+  switch (kind(x)) {
+    case data_member_decl:
+      return data_member_traits(x).access ==  public_access;
+    case member_function_decl:
+      return member_function_traits(x).access ==  public_access;
+    case access_spec:
+      return access_traits(x).access ==  public_access;
+    case class_decl:
+      return class_traits(x).access == public_access;
+    case enum_decl:
+      return class_traits(x).access == public_access;
+    case enumerator_decl:
+      return enumerator_traits(x).access == public_access;
+    default:
+      __builtin_unreachable();
+  }
 }
 
 constexpr! bool is_private(info x) {
