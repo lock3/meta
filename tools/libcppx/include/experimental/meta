@@ -8,14 +8,11 @@
 #include <cstdint>
 #include <iterator>
 
-// FIXME!
-// #define immediate constexpr
-
 namespace std::experimental
 {
 namespace meta {
 inline namespace v1 {
-
+	 
 // FIXME: Find a better way of forcing constexpr errors.
 
 struct compile_time_error { };
@@ -104,7 +101,6 @@ enum memun_kind {
 
 // Returns the kind (discriminator) of the meta info.
 constexpr! reflection_kind kind(info x) {
-  // FIXME
   return (reflection_kind)__reflect_index(x); 
 }
 
@@ -184,7 +180,7 @@ constexpr! bool is_enumerator(info x) {
 
 // -------------------------------------------------------------------------- //
 // Traversal queries
-
+	 
 // Returns the lexical context of the declaration.
 constexpr! info parent(info x) {
   // FIXME:
@@ -231,6 +227,8 @@ public:
 private:  
   info curr;
 };
+
+constexpr! bool is_public(info x){return true;}
 
 // Returns the first sub-object of x. Objects behave 
 // as forward iterators.
@@ -603,23 +601,25 @@ constexpr bool has_default_access(info x) {
 }
 
 constexpr! bool is_public(info x) {
-  assert(has_access(x));
-  switch (kind(x)) {
-    case data_member_decl:
-      return data_member_traits(x).access ==  public_access;
-    case member_function_decl:
-      return member_function_traits(x).access ==  public_access;
-    case access_spec:
-      return access_traits(x).access ==  public_access;
-    case class_decl:
-      return class_traits(x).access == public_access;
-    case enum_decl:
-      return class_traits(x).access == public_access;
-    case enumerator_decl:
-      return enumerator_traits(x).access == public_access;
-    default:
-      __builtin_unreachable();
-  }
+  // assert(has_access(x));
+  // switch (kind(x)) {
+  //   case data_member_decl:
+  //     return data_member_traits(x).access ==  public_access;
+  //   case member_function_decl:
+  //     return member_function_traits(x).access ==  public_access;
+  //   case access_spec:
+  //     return access_traits(x).access ==  public_access;
+  //   case class_decl:
+  //     return class_traits(x).access == public_access;
+  //   case enum_decl:
+  //     return class_traits(x).access == public_access;
+  //   case enumerator_decl:
+  //     return enumerator_traits(x).access == public_access;
+  //   default:
+  //     __builtin_unreachable();
+  // }
+
+  return true;
 }
 
 constexpr! bool is_private(info x) {
@@ -827,7 +827,5 @@ constexpr! bool is_scoped(info x) {
 } // namespace meta
 } // namespace std::experimental
 
-
-// #undef immediate
 
 #endif // CPPX_META
