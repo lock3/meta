@@ -183,14 +183,13 @@ constexpr! bool is_enumerator(info x) {
 	 
 // Returns the lexical context of the declaration.
 constexpr! info parent(info x) {
-  // FIXME:
-  // return __reflect_context(x);
+  return __reflect_context(x);
   return {};
 }
 
 // Returns the home context of the declaration.
 constexpr! info home(info x) {
-  // return __reflect_home(x);
+  return __reflect_home(x);
   return {};
 }
 
@@ -280,8 +279,7 @@ constexpr! bool is_class_member(info x) {
 // Name
 
 constexpr! const char* name(info x) {
-  // FIXME:
-  // return __reflect_name(x);
+  return __reflect_name(x);
   return "";
 }
 
@@ -290,8 +288,7 @@ constexpr! const char* name(info x) {
 
 // Returns the reflected type of a variable or function.
 constexpr! info type(info x) {
-  // FIXME
-  // return __reflect_type(x);
+  return __reflect_type(x);
   return {};
 }
 
