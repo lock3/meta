@@ -228,8 +228,6 @@ private:
   info curr;
 };
 
-constexpr! bool is_public(info x){return true;}
-
 // Returns the first sub-object of x. Objects behave 
 // as forward iterators.
 constexpr! iterator begin(info x) {
@@ -300,7 +298,6 @@ constexpr! info type(info x) {
 // -------------------------------------------------------------------------- //
 // Declaration traits
 
-#if 0
 struct namespace_traits {
   constexpr! explicit namespace_traits(unsigned n)
     : is_inline(n)
@@ -821,7 +818,6 @@ constexpr! bool is_injected_class_name(info x) {
 constexpr! bool is_scoped(info x) {
   return enum_traits(x).is_scoped;
 }
-#endif
 
 } // inline namespace v1
 } // namespace meta
