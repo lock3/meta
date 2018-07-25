@@ -291,3 +291,82 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
   return new (Context) CXXReflectionTraitExpr(Context, ResultTy, Trait, 
                                               TraitLoc, Operands, RParenLoc);
 }
+
+ExprResult Sema::ActOnCXXReflectedValueExpression(SourceLocation Loc, 
+                                                  Expr *Reflection) {
+  return BuildCXXReflectedValueExpression(Loc, Reflection);
+}
+
+ExprResult Sema::BuildCXXReflectedValueExpression(SourceLocation Loc, 
+                                                  Expr *E) {
+  // Don't act on dependent expressions, just preserve them.
+  if (E->isTypeDependent() || E->isValueDependent())
+    return new (Context) CXXReflectedValueExpr(E, Context.DependentTy,
+                                               VK_RValue, OK_Ordinary, Loc);
+
+  // The operand must be a reflection.
+  if (!CheckReflectionOperand(*this, E))
+    return ExprError();
+
+  // Evaluate the reflection.
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!E->EvaluateAsRValue(Result, Context)) {
+    Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      Diag(PD.first, PD.second);
+    return ExprError();
+  }
+
+  Reflection R;
+  R.putConstantValue(Result.Val);
+  if (R.isNull() || R.isType()) {
+    // FIXME: This is the wrong error.
+    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);    
+    return ExprError();
+  }
+
+  // Build a declaration reference that would refer to the reflected entity.
+  Decl* D = const_cast<Decl*>(R.getDeclaration());
+  if (!isa<ValueDecl>(D)) {
+    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);
+    return ExprError();
+  }
+  ValueDecl *VD = cast<ValueDecl>(D);
+
+  // FIXME: We shouldn't be able to generate addresses for constructors,
+  // destructors, or local variables.
+
+  // Build a reference to the declaration.
+  CXXScopeSpec SS;
+  DeclarationNameInfo DNI(VD->getDeclName(), VD->getLocation());
+  ExprResult ER = BuildDeclarationNameExpr(SS, DNI, VD);
+  if (ER.isInvalid())
+    return ExprError();
+  Expr *Ref = ER.get();
+
+  // For data members and member functions, adjust the expression so that
+  // we evaluate a pointer-to-member, not the member itself.
+  if (FieldDecl *FD = dyn_cast<FieldDecl>(VD)) {
+    const Type *C = Context.getTagDeclType(FD->getParent()).getTypePtr();
+    QualType PtrTy = Context.getMemberPointerType(FD->getType(), C);
+    Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
+                                      OK_Ordinary, Loc, false);
+  } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(VD)) {
+    const Type *C = Context.getTagDeclType(MD->getParent()).getTypePtr();
+    QualType PtrTy = Context.getMemberPointerType(MD->getType(), C);
+    Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
+                                      OK_Ordinary, Loc, false);
+  }
+
+  // The type and category of the expression are those of an id-expression
+  // denoting the reflected entity. 
+  CXXReflectedValueExpr *Val = 
+      new (Context) CXXReflectedValueExpr(E, Ref->getType(), Ref->getValueKind(),
+                                          Ref->getObjectKind(), Loc);
+  Val->setReference(Ref);
+  return Val;
+}
+
+

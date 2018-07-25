@@ -1445,6 +1445,11 @@ public:
     return getSema().ActOnCXXReflectionTrait(TraitLoc, Trait, Args, RParenLoc);
   }
 
+  /// \brief Build a new reflected value expression.
+  ExprResult RebuildCXXReflectedValueExpr(SourceLocation Loc, Expr *E) {
+    return getSema().BuildCXXReflectedValueExpression(Loc, E);
+  }
+
   /// Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7183,7 +7188,7 @@ TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
-{  Reflection R;
+ {  Reflection R;
   if (const Decl *D = E->getReflectedDeclaration()) {
     // We can't just call TransformDecl. That's not guaranteed to perform
     // substitution. We need to build an expression or type and substitute
@@ -7240,6 +7245,16 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
       E->getTraitLoc(), E->getTrait(), Args, E->getRParenLoc());
 }
 
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectedValueExpr(
+                                                     CXXReflectedValueExpr *E) {
+  ExprResult Reflection = TransformExpr(E->getReflection());
+  if (Reflection.isInvalid())
+    return ExprError();
+  return getDerived().RebuildCXXReflectedValueExpr(E->getExprLoc(), 
+                                                   Reflection.get());
+}
 
 // Objective-C Statements.
 

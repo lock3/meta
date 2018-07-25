@@ -1,5 +1,6 @@
+// RUN: %clang -freflection -std=c++1z %s
+
 #include <experimental/meta>
-#include <cstdio>
 
 using namespace std::experimental;
 
@@ -36,8 +37,12 @@ struct S1 {
 
   class C { };
 
+  void f3();
+  
+
 private:
-  void f3() { }
+  int y1;
+  
 };
 
 struct S2 {
@@ -46,6 +51,35 @@ struct S2 {
 
 namespace N { 
   inline namespace M { }
+}
+
+void S1::f3()
+{
+  constexpr meta::info r = reflexpr(y1);
+  static_assert(kind(r) == meta::data_member_decl);
+
+  static_assert(is_null(r) == false);
+  static_assert(is_declaration(r) == true);
+  static_assert(is_type(r) == false);
+  static_assert(is_translation_unit(r) == false);
+  static_assert(is_namespace(r) == false);
+  static_assert(is_variable(r) == false);
+  static_assert(is_function(r) == false);
+  static_assert(is_parameter(r) == false);
+  static_assert(is_class(r) == false);
+  static_assert(is_data_member(r) == true);
+  static_assert(is_member_function(r) == false);
+  static_assert(is_access_specifier(r) == false);
+  static_assert(is_enum(r) == false);
+  static_assert(is_enumerator(r) == false);
+
+  static_assert(is_public(r) == false);
+  static_assert(is_static(r) == false);
+  static_assert(is_mutable(r) == false);
+  static_assert(is_inline(r) == false);
+  static_assert(is_constexpr(r) == false);
+  static_assert(is_bitfield(r) == false);
+
 }
 
 int main(int argc, char* argv[]) {

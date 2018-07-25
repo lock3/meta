@@ -4956,6 +4956,63 @@ public:
   }
 };
 
+/// \brief Represents the value of a reflected constant, variable, or function.
+class CXXReflectedValueExpr : public Expr {
+  /// \brief The source expression.
+  Stmt *Reflection;
+
+  /// \brief An expression referring to the referenced declaration.
+  Expr *Reference;
+
+  /// The location of the valueof operator.
+  SourceLocation Loc;
+public:
+  CXXReflectedValueExpr(Expr *E, QualType T, ExprValueKind VK, 
+                        ExprObjectKind OK, SourceLocation Loc)
+    : Expr(CXXReflectedValueExprClass, T, VK, OK, 
+           E->isTypeDependent(),
+           E->isValueDependent(), 
+           E->isInstantiationDependent(),
+           E->containsUnexpandedParameterPack()), 
+      Reflection(E), Reference(), Loc(Loc) {}
+  
+  CXXReflectedValueExpr(EmptyShell Empty)
+    : Expr(CXXReflectedValueExprClass, Empty) {}
+
+  /// \brief Returns the evaluated expression. 
+  Expr *getReflection() const { return cast<Expr>(Reflection); }
+
+  /// \brief The expression referring to a reflected entity.
+  Expr *getReference() const { 
+    assert(Reference && "reference not set");
+    return Reference; 
+  }
+
+  /// \brief Sets the reference to the reflected entity.
+  void setReference(Expr *E) {
+    Reference = E;
+  }
+
+  SourceLocation getLocStart() const LLVM_READONLY { 
+    return Loc;
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    return Reflection->getLocEnd();
+  }
+
+  child_range children() { 
+    return child_range(&Reflection, &Reflection + 1); 
+  }
+
+  const_child_range children() const { 
+    return const_child_range(&Reflection, &Reflection + 1); 
+  }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectedValueExprClass;
+  }
+};
+
   
 } // namespace clang
 

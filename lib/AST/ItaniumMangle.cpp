@@ -4277,6 +4277,10 @@ recurse:
     Out << "v18co_yield";
     mangleExpression(cast<CoawaitExpr>(E)->getOperand());
     break;
+
+  case Expr::CXXReflectedValueExprClass:
+    mangleExpression(cast<CXXReflectedValueExpr>(E)->getReference());
+    break;
   }
 }
 

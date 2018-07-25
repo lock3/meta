@@ -2752,6 +2752,7 @@ private:
 
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXReflectionTrait();
+  ExprResult ParseCXXReflectedValueExpression();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

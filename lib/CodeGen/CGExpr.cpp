@@ -1356,6 +1356,19 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitCoawaitLValue(cast<CoawaitExpr>(E));
   case Expr::CoyieldExprClass:
     return EmitCoyieldLValue(cast<CoyieldExpr>(E));
+
+  case Expr::CXXConstantExprClass: {
+    // Since this is an lvalue, we're generating a constant address.
+    const CXXConstantExpr *CE = cast<CXXConstantExpr>(E);
+    QualType T = getContext().getPointerType(CE->getType());
+    llvm::Constant *C = EmitConstantValue(CE->getValue(), T);
+    ConstantAddress Addr(C, getContext().getTypeAlignInChars(T));
+    LValueBaseInfo BI;
+    return LValue::MakeAddr(Addr, T, getContext(), BI, TBAAAccessInfo());
+  }
+
+  case Expr::CXXReflectedValueExprClass:
+    return EmitLValue(cast<CXXReflectedValueExpr>(E)->getReference());
   }
 }
 

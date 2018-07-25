@@ -786,6 +786,10 @@ public:
   }
   Value *VisitAsTypeExpr(AsTypeExpr *CE);
   Value *VisitAtomicExpr(AtomicExpr *AE);
+
+  Value* VisitCXXReflectedValueExpr(CXXReflectedValueExpr *E) {
+    return Visit(E->getReference());
+  }
 };
 }  // end anonymous namespace.
 

@@ -145,3 +145,25 @@ ExprResult Parser::ParseCXXReflectionTrait() {
   return Actions.ActOnCXXReflectionTrait(Loc, Trait, Args, RPLoc);
 }
 
+/// Parse a reflected-value-expression.
+///
+/// \verbatim
+///   reflected-value-expression:
+///     'valueof' '(' reflection ')'
+/// \endverbatim
+///
+/// The constant expression must be a reflection of a type.
+ExprResult Parser::ParseCXXReflectedValueExpression() {
+  assert(Tok.is(tok::kw_valueof) && "expected 'valueof'");
+  SourceLocation Loc = ConsumeToken();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "valueof"))
+    return ExprError();
+  ExprResult Reflection = ParseConstantExpression();
+  if (T.consumeClose())
+    return ExprError();
+  if (Reflection.isInvalid())
+    return ExprError();
+  return Actions.ActOnCXXReflectedValueExpression(Loc, Reflection.get());
+}
