@@ -2766,6 +2766,16 @@ def TypeTagForDatatype : InheritableAttr {
   let Documentation = [TypeTagForDatatypeDocs];
 }
 
+def Owner : DeclOrTypeAttr {
+  let Spellings = [CXX11<"gsl", "Owner">];
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Pointer : DeclOrTypeAttr {
+  let Spellings = [CXX11<"gsl", "Pointer">];
+  let Documentation = [Undocumented]; // FIXME
+}
+
 // Microsoft-related attributes
 
 def MSNoVTable : InheritableAttr, TargetSpecificAttr<TargetMicrosoftCXXABI> {

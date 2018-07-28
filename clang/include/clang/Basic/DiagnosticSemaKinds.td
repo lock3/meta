@@ -3194,6 +3194,25 @@ def warn_param_typestate_mismatch : Warning<
   "argument not in expected state; expected '%0', observed '%1'">,
   InGroup<Consumed>, DefaultIgnore;
 
+// LifetimeAnalysis
+def warn_pset_of_global : Warning<"the pset of '%0' must be a subset of {(static), (null)}, but is {%1}">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null pointer">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def note_never_initialized : Note<"it was never initialized here">;
+def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;
+def note_temporary_destroyed: Note<"temporary was destroyed at the end of the full expression">;
+
+// LifetimeAnalysis debug
+def warn_pset : Warning<"pset(%0) = %1">,
+  InGroup<LifetimeDebug>, DefaultIgnore;
+def warn_deref_unknown : Warning<"dereferencing a unknown pointer">,
+  InGroup<LifetimeDebug>, DefaultIgnore;
+def warn_lifetime_type_category : Warning<"lifetime type category is %select{Owner|Pointer|Aggregate|Value}0">,
+  InGroup<LifetimeDebug>, DefaultIgnore;
+    
 // no_sanitize attribute
 def warn_unknown_sanitizer_ignored : Warning<
   "unknown sanitizer '%0' ignored">, InGroup<UnknownSanitizers>;

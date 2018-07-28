@@ -25,6 +25,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Analysis/Analyses/CFGReachabilityAnalysis.h"
 #include "clang/Analysis/Analyses/Consumed.h"
+#include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/Analyses/ReachableCode.h"
 #include "clang/Analysis/Analyses/ThreadSafety.h"
 #include "clang/Analysis/Analyses/UninitializedValues.h"
@@ -1959,6 +1960,47 @@ public:
 } // namespace consumed
 } // namespace clang
 
+namespace clang {
+namespace {
+class LifetimeReporter : public LifetimeReporterBase {
+  Sema &S;
+
+public:
+  LifetimeReporter(Sema &S) : S(S) {}
+
+  void warnPpsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+                         std::string ActualPset) const final {
+    S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
+  }
+
+  void warnDerefDangling(SourceLocation Loc, bool possibly) const final {
+    S.Diag(Loc, diag::warn_deref_dangling) << possibly;
+  }
+  void warnDerefNull(SourceLocation Loc, bool possibly) const final {
+    S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
+  }
+
+  void notePointeeLeftScope(SourceLocation Loc, std::string Name) const final {
+    S.Diag(Loc, diag::note_pointee_left_scope) << Name;
+  }
+
+  void debugPset(SourceLocation Loc, StringRef Variable,
+                 std::string Pset) const final {
+    S.Diag(Loc, diag::warn_pset) << Variable << Pset;
+  }
+
+  void debugTypeCategory(SourceLocation Loc,
+                         TypeCategory Category) const final {
+    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category;
+  }
+
+  void diag(SourceLocation Loc, unsigned DiagID) const final {
+    S.Diag(Loc, DiagID);
+  }
+};
+} // namespace
+} // namespace clang
+
 //===----------------------------------------------------------------------===//
 // AnalysisBasedWarnings - Worker object used by Sema to execute analysis-based
 //  warnings on a function, method, or block.
@@ -1969,6 +2011,7 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
   enableCheckUnreachable = 0;
   enableThreadSafetyAnalysis = 0;
   enableConsumedAnalysis = 0;
+  enableLifetimeAnalysis = 0;
 }
 
 static unsigned isEnabled(DiagnosticsEngine &D, unsigned diag) {
@@ -2001,6 +2044,8 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
 
   DefaultPolicy.enableConsumedAnalysis =
     isEnabled(D, warn_use_in_invalid_state);
+
+  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_nullptr);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
@@ -2061,6 +2106,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // appropriately.  This is essentially a layering violation.
   if (P.enableCheckUnreachable || P.enableThreadSafetyAnalysis ||
       P.enableConsumedAnalysis) {
+    // TODO check
     // Unreachable code analysis and thread safety require a linearized CFG.
     AC.getCFGBuildOptions().setAllAlwaysAdd();
   }
@@ -2173,6 +2219,16 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     consumed::ConsumedWarningsHandler WarningHandler(S);
     consumed::ConsumedAnalyzer Analyzer(WarningHandler);
     Analyzer.run(AC);
+  }
+
+  // Check for thread safety violations
+  if (P.enableLifetimeAnalysis) {
+    LifetimeReporter Reporter{S};
+    if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
+      runLifetimeAnalysis(FD, S.Context, S.SourceMgr, Reporter);
+    } else if (const auto *VD = dyn_cast<VarDecl>(D)) {
+      runLifetimeAnalysis(VD, S.Context, Reporter);
+    }
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getBeginLoc()) ||
