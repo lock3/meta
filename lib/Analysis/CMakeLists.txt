@@ -16,6 +16,7 @@ add_clang_library(clangAnalysis
   CodeInjector.cpp
   Dominators.cpp
   FormatString.cpp
+  Lifetime.cpp
   LiveVariables.cpp
   OSLog.cpp
   ObjCNoReturn.cpp
