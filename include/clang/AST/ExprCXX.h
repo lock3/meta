@@ -57,7 +57,7 @@ class DeclAccessPair;
 class IdentifierInfo;
 class LambdaCapture;
 class NonTypeTemplateParmDecl;
-class TemplateParameterList;
+class TemplateParameterList;  
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.
@@ -4865,11 +4865,18 @@ public:
   /// \brief True if the expression reflects a type.
   bool isReflectedType() const { return Ref.isDeclaration(); }
 
+  /// \brief True if the expression reflects a dependent identifier.
+  bool isReflectedDependentId() const { return Ref.isUnresolved(); }
+
   /// \brief The reflected declaration.
   const Decl *getReflectedDeclaration() const { return Ref.getAsDeclaration(); }
 
   /// \brief The reflected type.
   const Type *getReflectedType() const { return Ref.getAsType(); }
+
+  /// \brief The reflected dependent identifier.
+  UnresolvedLookupExpr *getReflectedDependentId() const { return
+      Ref.getAsUnresolved(); }
 
   SourceLocation getLocStart() const LLVM_READONLY { 
     return KWLoc; 

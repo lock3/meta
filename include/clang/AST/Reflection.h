@@ -23,6 +23,8 @@
 
 namespace clang {
 
+class UnresolvedLookupExpr;
+
 /// \brief The kind of construct reflected. The corresponding AST objects
 /// for these constructs MUST have 8-bit aligned.
 ///
@@ -50,6 +52,10 @@ enum ReflectionKind {
   /// \brief A base class specifier. Corresponds to an object of type
   /// CXXBaseSpecifier.
   REK_base_specifier = 4,
+
+  /// \brief A declaration with a dependent nested name specifier.
+  /// Also corresponds to an object of type Decl.
+  REK_unresolved = 5,
 };
 
 /// Information about a reflected construct.
@@ -119,6 +125,9 @@ public:
   /// \brief Returns true if this is a reflected base class specifier.
   bool isBaseSpecifier() const { return Kind == REK_base_specifier; }
 
+  /// \brief Returns true if this has an unresolved nested name specifier.
+  bool isUnresolved() const { return Kind == REK_unresolved; }
+
   /// \brief The reflected declaration.
   const Decl *getDeclaration() const{ 
     assert(isDeclaration() && "Not a declaration");
@@ -126,7 +135,7 @@ public:
   }
 
   /// \brief The reflected declaration or null if not a declaration.
-  const Decl* getAsDeclaration() const {
+  const Decl *getAsDeclaration() const {
     return isDeclaration() ? getDeclaration() : nullptr;
   }
 
@@ -159,8 +168,19 @@ public:
   }
 
   /// \brief The reflected type or null if not a type.
-  const CXXBaseSpecifier* getAsBaseSpecifier() const {
+  const CXXBaseSpecifier *getAsBaseSpecifier() const {
     return isBaseSpecifier() ? getBaseSpecifier() : nullptr;
+  }
+
+  /// \brief The reflected dependent decl.
+  UnresolvedLookupExpr *getUnresolved() const {
+    assert(isUnresolved() && "Not an unresolved declaration");
+    return (UnresolvedLookupExpr*)Ptr;
+  }
+
+  /// \brief The reflected dependent decl or null if not a dependent decl.
+  UnresolvedLookupExpr *getAsUnresolved() const {
+    return isUnresolved() ? getUnresolved() : nullptr;
   }
 
   /// Returns the metadata object for the reflection. This is used to construct

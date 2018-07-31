@@ -7188,7 +7188,8 @@ TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
- {  Reflection R;
+{
+  Reflection R;
   if (const Decl *D = E->getReflectedDeclaration()) {
     // We can't just call TransformDecl. That's not guaranteed to perform
     // substitution. We need to build an expression or type and substitute
@@ -7222,7 +7223,15 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   } else if (const Type *T = E->getReflectedType()) {
     QualType NewType = TransformType(QualType(T, 0));
     R = Reflection(NewType.getTypePtr());
+  } else if (UnresolvedLookupExpr *ULE = E->getReflectedDependentId()) {
+    ExprResult NewId = getDerived().TransformUnresolvedLookupExpr(ULE);
+
+    if(NewId.isInvalid())
+      return ExprError();
+    
+    R = Reflection(NewId.get());
   }
+  
   return RebuildCXXReflectExpr(E->getLocStart(),
                                R.getKind(), 
                                const_cast<void*>(R.getOpaquePointer()),

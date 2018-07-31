@@ -106,6 +106,8 @@ bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
   // Perform any declaration having the given name.
   LookupResult R(*this, Id, IdLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS);
+
+  
   if (!R.isSingleResult()) {
     // FIXME: Incorporate the scope specifier in the diagnostics. Also note
     // alternatives for an ambiguous lookup.
@@ -126,6 +128,25 @@ bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
   // Reflect the named entity.
   Entity = R.getAsSingle<NamedDecl>();
   Kind = REK_declaration;
+  return true;
+}
+
+bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
+			       IdentifierInfo *Id,
+			       ParsedReflectionPtr &Entity) {
+  LookupResult R(*this, Id, IdLoc, LookupAnyName);
+  LookupParsedName(R, CurScope, &SS, false, true);
+
+  DeclarationNameInfo DNI = R.getLookupNameInfo();
+
+  const auto &decls = R.asUnresolvedSet();
+
+  Entity =
+    UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
+				 SS.getWithLocInContext(Context),
+				 DNI, /*ADL=*/false, /*NeedsOverload=*/false,
+				 decls.begin(),
+				 decls.end());
   return true;
 }
 
@@ -158,7 +179,7 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
   ReflectionKind REK = (ReflectionKind)Kind;
   Reflection R = Reflection::FromKindAndPtr(REK, Entity);
 
-  bool IsValueDependent = false;
+  bool IsValueDependent = false;  
   if (const Type* T = R.getAsType()) {
     // A type reflection is dependent if reflected T is dependent.
     IsValueDependent = T->isDependentType();
@@ -167,16 +188,19 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
       // A declaration reflection is value dependent if an id-expression 
       // referring to that declaration is type or value dependent. Reflections
       // of non-value declarations (e.g., namespaces) are never dependent.
-      // Build a fake id-expression in order to determine dependence. 
+      // Build a fake id-expression in order to determine dependence.
       Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false, 
                                           VD->getType(), VK_RValue, KWLoc);
       IsValueDependent = E->isTypeDependent() || E->isValueDependent();
+      
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       // A reflection of a type declaration is dependent if that type is
       // dependent.
       const Type* T = TD->getTypeForDecl();
       IsValueDependent = T->isDependentType();
     }
+  } else if (const UnresolvedLookupExpr* ULE = R.getAsUnresolved()) {
+    IsValueDependent = true;
   }
 
   // The type of reflexpr is always meta::info.
@@ -190,6 +214,24 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
                                       /*isInstDependent=*/IsValueDependent, 
                                       /*containsUnexpandedPacks=*/false);
 }
+
+// ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc, 
+//                                            ParsedReflectionPtr Entity,
+//                                            SourceLocation LPLoc, 
+//                                            SourceLocation RPLoc) {
+//   Reflection R = Reflection::FromKindAndPtr(REK_unresolved, Entity);
+
+//   // The type of reflexpr is always meta::info.
+//   QualType Ty = LookupMetaDecl(*this, "info", KWLoc);
+//   if (Ty.isNull())
+//     return ExprError();
+
+//   return new (Context) CXXReflectExpr(KWLoc, Ty, R, LPLoc, RPLoc, VK_RValue,
+//                                       /*isTypeDependent=*/false, 
+//                                       /*isValueDependent=*/IsValueDependent, 
+//                                       /*isInstDependent=*/IsValueDependent, 
+//                                       /*containsUnexpandedPacks=*/false);
+// }
 
 // Convert each operand to an rvalue.
 static void ConvertTraitOperands(Sema &SemaRef, ArrayRef<Expr *> Args, 

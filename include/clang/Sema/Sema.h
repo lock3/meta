@@ -8591,6 +8591,9 @@ public:
   bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc, 
                         IdentifierInfo *Id, unsigned &Kind, 
                         ParsedReflectionPtr &Entity);
+  bool ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
+				 IdentifierInfo *Id,
+				 ParsedReflectionPtr &Entity);
   bool ActOnReflectedType(Declarator &D, unsigned &Kind, 
                           ParsedReflectionPtr &Entity);
   ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc, unsigned Kind, 

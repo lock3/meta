@@ -45,36 +45,54 @@ ExprResult Parser::ParseCXXReflectExpression() {
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
 
+  NestedNameSpecifier* NNS = SS.getScopeRep();
+
   // If the next token is an identifier, try to resolve that. This will likely
   // match most uses of the reflection operator, but there are some cases
   // of id-expressions and type-ids that must be handled separately.
   //
   // FIXME: This probably won't work for things operator and conversion
-  // functions. 
-  if (!SS.isInvalid() && Tok.is(tok::identifier)) {
-    IdentifierInfo *Id = Tok.getIdentifierInfo();
-    SourceLocation IdLoc = ConsumeToken();
+  // functions.
 
-    if (!Actions.ActOnReflectedId(SS, IdLoc, Id, Kind, Entity))
+  // FIXME: "i think that you can build an unresolved id expression which wil hold an nns and
+  // an identifier. unresolvedlookupexpr,
+  // reflexpr has a resolved decl, a qualtype, or an expr and the expr is gonna be an unresolved lookup expression.
+  // we should probably put that into an enum or union, but if i make that change i am gonna have to replumb how the
+  // actual reflection object creator. Maybe make a function based on each type -- if i have a type, return typereflection() etc.
+
+  if(!SS.isInvalid() && NNS && NNS->isDependent()) {
+    IdentifierInfo *Id = Tok.getIdentifierInfo();
+    SourceLocation IdLoc = ConsumeToken();    
+    
+    if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Entity))
       return ExprError();
-  }
-  else if (isCXXTypeId(TypeIdAsTemplateArgument)) {
-    DeclSpec DS(AttrFactory);
-    ParseSpecifierQualifierList(DS);
-    Declarator D(DS, DeclaratorContext::TypeNameContext);
-    ParseDeclarator(D);
-    if (D.isInvalidType())
-      return ExprError();
-    if (!Actions.ActOnReflectedType(D, Kind, Entity))
-      return ExprError();
+    Kind = REK_unresolved;  
+  } else {
+    if (!SS.isInvalid() && Tok.is(tok::identifier)) {
+      IdentifierInfo *Id = Tok.getIdentifierInfo();
+      SourceLocation IdLoc = ConsumeToken();
+
+      if (!Actions.ActOnReflectedId(SS, IdLoc, Id, Kind, Entity))
+	return ExprError();
+    }
+    else if (isCXXTypeId(TypeIdAsTemplateArgument)) {
+      DeclSpec DS(AttrFactory);
+      ParseSpecifierQualifierList(DS);
+      Declarator D(DS, DeclaratorContext::TypeNameContext);
+      ParseDeclarator(D);
+      if (D.isInvalidType())
+	return ExprError();
+      if (!Actions.ActOnReflectedType(D, Kind, Entity))
+	return ExprError();
+    }
   }
 
   if (T.consumeClose())
     return ExprError();
   
   return Actions.ActOnCXXReflectExpression(KWLoc, Kind, Entity, 
-                                     T.getOpenLocation(), 
-                                     T.getCloseLocation());
+					   T.getOpenLocation(), 
+					   T.getCloseLocation());
 }
 
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {
