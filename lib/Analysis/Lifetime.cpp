@@ -367,7 +367,7 @@ public:
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
 class InvalidationReason {
-  enum { NOT_INITIALIZED, POINTEE_LEFT_SCOPE, TEMPORARY_LEFT_SCOPE } Reason;
+  enum { NOT_INITIALIZED, POINTEE_LEFT_SCOPE, TEMPORARY_LEFT_SCOPE, POINTER_ARITHMETIC } Reason;
   const VarDecl *Pointee = nullptr;
   SourceLocation Loc;
 
@@ -385,6 +385,9 @@ public:
       return;
     case TEMPORARY_LEFT_SCOPE:
       Reporter.diag(Loc, diag::note_temporary_destroyed);
+      return;
+    case POINTER_ARITHMETIC:
+      Reporter.diag(Loc, diag::note_pointer_arithmetic);
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
@@ -414,6 +417,14 @@ public:
     InvalidationReason R;
     R.Loc = Loc;
     R.Reason = TEMPORARY_LEFT_SCOPE;
+    return R;
+  }
+
+  static InvalidationReason PointerArithmetic(SourceLocation Loc) {
+    assert(Loc.isValid());
+    InvalidationReason R;
+    R.Loc = Loc;
+    R.Reason = POINTER_ARITHMETIC;
     return R;
   }
 };
@@ -664,7 +675,7 @@ class PSetsBuilder {
         case BO_AddAssign:
         case BO_SubAssign:
           // Affects pset; forbidden by the bounds profile.
-          SetPSet(P.getValue(), PSet::unknown(), BinOp->getExprLoc());
+          SetPSet(P.getValue(), PSet::invalid(InvalidationReason::PointerArithmetic(BinOp->getExprLoc())), BinOp->getExprLoc());
         default:
           break; // Traversing is done below
         }
@@ -687,7 +698,7 @@ class PSetsBuilder {
         case UO_PreInc:
         case UO_PreDec:
           // Affects pset; forbidden by the bounds profile.
-          SetPSet(P.getValue(), PSet::unknown(), UnOp->getExprLoc());
+          SetPSet(P.getValue(), PSet::invalid(InvalidationReason::PointerArithmetic(UnOp->getExprLoc())), UnOp->getExprLoc());
         default:
           break; // Traversing is done below
         }
@@ -818,7 +829,7 @@ class PSetsBuilder {
           if (VD->getType()->isArrayType())
             // Forbidden by bounds profile
             // Alternative would be: T a[]; auto *p = a; -> pset_ptr(p) = {a}
-            return PSet::unknown();
+            return PSet::invalid(InvalidationReason::PointerArithmetic(VD->getLocStart()));
           else
             // T i; auto *p = i; -> pset_ptr(p) = pset(i)
             return GetPSet(VD);
@@ -905,7 +916,7 @@ class PSetsBuilder {
               if (!P.hasValue())
                 // This can happen if P has array type; dereferencing an array
                 // is forbidden by the bounds profile
-                return PSet::unknown();
+                return PSet::invalid(InvalidationReason::PointerArithmetic(UnOp->getOperatorLoc()));
               RetPS.merge(GetPSet(P.getValue()));
             }
           }
