@@ -4875,7 +4875,7 @@ public:
   const Type *getReflectedType() const { return Ref.getAsType(); }
 
   /// \brief The reflected dependent identifier.
-  UnresolvedLookupExpr *getReflectedDependentId() const { return
+  const UnresolvedLookupExpr *getReflectedDependentId() const { return
       Ref.getAsUnresolved(); }
 
   SourceLocation getLocStart() const LLVM_READONLY { 

@@ -100,7 +100,7 @@ static QualType LookupMetaDecl(Sema &SemaRef, const char* Name,
 /// Lookup the declaration named by SS and Id. Populates the the kind
 /// and entity with the encoded reflection of the named entity.
 bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
-                            IdentifierInfo *Id, unsigned &Kind, 
+                            IdentifierInfo *Id, unsigned &Kind,
                             ParsedReflectionPtr &Entity) {
   
   // Perform any declaration having the given name.
@@ -132,12 +132,28 @@ bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
 }
 
 bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-			       IdentifierInfo *Id,
+			       IdentifierInfo *Id, unsigned &Kind,
 			       ParsedReflectionPtr &Entity) {
   LookupResult R(*this, Id, IdLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS, false, true);
-
   DeclarationNameInfo DNI = R.getLookupNameInfo();
+
+  if (!R.isSingleResult()) {
+    // FIXME: Incorporate the scope specifier in the diagnostics. Also note
+    // alternatives for an ambiguous lookup.
+    //
+    // FIXME: I believe that we would eventually like to support overloaded
+    // declarations and templates.
+    if (R.isAmbiguous())
+      Diag(IdLoc, diag::err_reflect_ambiguous_id) << Id;
+    else if (R.isOverloadedResult())
+      Diag(IdLoc, diag::err_reflect_overloaded_id) << Id;
+    else
+      Diag(IdLoc, diag::err_reflect_undeclared_id) << Id;
+    Kind = REK_special;
+    Entity = nullptr;
+    return false;
+  }
 
   const auto &decls = R.asUnresolvedSet();
 
@@ -147,6 +163,7 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
 				 DNI, /*ADL=*/false, /*NeedsOverload=*/false,
 				 decls.begin(),
 				 decls.end());
+  Kind = REK_unresolved;
   return true;
 }
 
@@ -214,24 +231,6 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
                                       /*isInstDependent=*/IsValueDependent, 
                                       /*containsUnexpandedPacks=*/false);
 }
-
-// ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc, 
-//                                            ParsedReflectionPtr Entity,
-//                                            SourceLocation LPLoc, 
-//                                            SourceLocation RPLoc) {
-//   Reflection R = Reflection::FromKindAndPtr(REK_unresolved, Entity);
-
-//   // The type of reflexpr is always meta::info.
-//   QualType Ty = LookupMetaDecl(*this, "info", KWLoc);
-//   if (Ty.isNull())
-//     return ExprError();
-
-//   return new (Context) CXXReflectExpr(KWLoc, Ty, R, LPLoc, RPLoc, VK_RValue,
-//                                       /*isTypeDependent=*/false, 
-//                                       /*isValueDependent=*/IsValueDependent, 
-//                                       /*isInstDependent=*/IsValueDependent, 
-//                                       /*containsUnexpandedPacks=*/false);
-// }
 
 // Convert each operand to an rvalue.
 static void ConvertTraitOperands(Sema &SemaRef, ArrayRef<Expr *> Args, 

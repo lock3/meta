@@ -173,13 +173,13 @@ public:
   }
 
   /// \brief The reflected dependent decl.
-  UnresolvedLookupExpr *getUnresolved() const {
+  const UnresolvedLookupExpr *getUnresolved() const {
     assert(isUnresolved() && "Not an unresolved declaration");
-    return (UnresolvedLookupExpr*)Ptr;
+    return (const UnresolvedLookupExpr*)Ptr;
   }
 
   /// \brief The reflected dependent decl or null if not a dependent decl.
-  UnresolvedLookupExpr *getAsUnresolved() const {
+  const UnresolvedLookupExpr *getAsUnresolved() const {
     return isUnresolved() ? getUnresolved() : nullptr;
   }
 

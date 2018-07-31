@@ -64,9 +64,8 @@ ExprResult Parser::ParseCXXReflectExpression() {
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();    
     
-    if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Entity))
+    if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
       return ExprError();
-    Kind = REK_unresolved;  
   } else {
     if (!SS.isInvalid() && Tok.is(tok::identifier)) {
       IdentifierInfo *Id = Tok.getIdentifierInfo();

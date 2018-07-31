@@ -7223,7 +7223,7 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   } else if (const Type *T = E->getReflectedType()) {
     QualType NewType = TransformType(QualType(T, 0));
     R = Reflection(NewType.getTypePtr());
-  } else if (UnresolvedLookupExpr *ULE = E->getReflectedDependentId()) {
+  } else if (UnresolvedLookupExpr *ULE = const_cast<UnresolvedLookupExpr*>(E->getReflectedDependentId())) {
     ExprResult NewId = getDerived().TransformUnresolvedLookupExpr(ULE);
 
     if(NewId.isInvalid())

@@ -8592,7 +8592,7 @@ public:
                         IdentifierInfo *Id, unsigned &Kind, 
                         ParsedReflectionPtr &Entity);
   bool ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-				 IdentifierInfo *Id,
+				 IdentifierInfo *Id, unsigned &Kind,
 				 ParsedReflectionPtr &Entity);
   bool ActOnReflectedType(Declarator &D, unsigned &Kind, 
                           ParsedReflectionPtr &Entity);
