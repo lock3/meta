@@ -76,6 +76,8 @@ namespace clang {
 namespace {
 
 bool hasMethodWithName(const CXXRecordDecl *R, StringRef Name) {
+  // TODO CXXRecordDecl::forallBases
+  // TODO cache IdentifierInfo to avoid string compare
   return std::any_of(R->method_begin(), R->method_end(),
                      [Name](const CXXMethodDecl *M) {
                        auto *I = M->getDeclName().getAsIdentifierInfo();
@@ -93,19 +95,18 @@ bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
 
 bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (std::none_of(R->method_begin(), R->method_end(),
-                   [](const CXXMethodDecl *M) {
-                     auto O = M->getDeclName().getCXXOverloadedOperator();
-                     return O == OO_Star && M->param_empty();
-                   }))
-    return false;
-  if (std::none_of(R->method_begin(), R->method_end(),
-                   [](const CXXMethodDecl *M) {
-                     auto O = M->getDeclName().getCXXOverloadedOperator();
-                     return O == OO_PlusPlus;
-                   }))
-    return false;
-  return true;
+  bool hasDeref = false;
+  bool hasPlusPlus = false;
+  for(auto* M : R->methods()) {
+	 auto O = M->getDeclName().getCXXOverloadedOperator();
+	 if(O == OO_PlusPlus)
+		 hasPlusPlus = true;
+	 else if(O == OO_Star && M->param_empty())
+		 hasDeref = true;
+	 if(hasPlusPlus && hasDeref)
+		 return true;
+  }
+  return false;
 }
 
 bool satisfiesRangeConcept(const CXXRecordDecl *R) {
@@ -120,15 +121,13 @@ Optional<TypeCategory> classifyStd(const CXXRecordDecl *R) {
   if (!DeclName || !DeclName.isIdentifier())
     return {};
 
-  auto *Namespace = dyn_cast<NamespaceDecl>(R->getDeclContext());
-  if (!Namespace || Namespace->getName() != "std")
+  if (!R->isInStdNamespace())
     return {};
 
-  // TODO check that parent of std namespace is translation unit
-
+  // FIXME faster lookup (e.g. (sorted) vector)
   static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
                                        "optional", "variant", "any"};
-  static std::set<StringRef> StdPointers{"regex", "reference_wrapper",
+  static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper",
                                          "vector<bool>::reference"};
 
   if (StdOwners.count(DeclName.getAsIdentifierInfo()->getName()))
@@ -154,19 +153,16 @@ TypeCategory classifyTypeCategory(const Type *T) {
     if (T->isPointerType() || T->isReferenceType())
       return TypeCategory::Pointer;
 
-    if (auto *Record = T->getAsStructureType()) {
-      if (!Record->getDecl()->field_empty()) {
-        return TypeCategory::Aggregate;
-      }
-    }
     return TypeCategory::Value;
   }
 
   assert(R->hasDefinition());
 
-  // using the annotation [[gsl::Owner]]
   if (R->hasAttr<OwnerAttr>())
     return TypeCategory::Owner;
+
+  if (R->hasAttr<PointerAttr>())
+    return TypeCategory::Pointer;
 
   //	* Every type that satisfies the standard Container requirements.
   if (satisfiesContainerRequirements(R))
@@ -184,16 +180,11 @@ TypeCategory classifyTypeCategory(const Type *T) {
   if (hasDerefOperations && R->hasUserDeclaredDestructor())
     return TypeCategory::Owner;
 
-  if (auto Cat = classifyStd(R)) {
+  if (auto Cat = classifyStd(R))
     return *Cat;
-  }
 
   //  Every type that satisfies the Ranges TS Range concept.
   if (satisfiesRangeConcept(R))
-    return TypeCategory::Pointer;
-
-  // using the annotation [[gsl::Pointer]]
-  if (R->hasAttr<PointerAttr>())
     return TypeCategory::Pointer;
 
   // * Every type that satisfies the standard Iterator requirements. (Example:
@@ -217,16 +208,8 @@ TypeCategory classifyTypeCategory(const Type *T) {
   // An Aggregate is a type that is not an Indirection
   // and is a class type with public data members
   // and no user-provided copy or move operations.
-  if (!R->hasUserDeclaredCopyConstructor() &&
-      !R->hasUserDeclaredCopyAssignment() &&
-      !R->hasUserDeclaredMoveOperation()) {
-
-    if (std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
-          assert(FD->getAccess() != AS_none);
-          return FD->getAccess() == AS_public;
-        }))
+  if (R->isAggregate())
       return TypeCategory::Aggregate;
-  }
 
   // A Value is a type that is neither an Indirection nor an Aggregate.
   return TypeCategory::Value;
