@@ -394,6 +394,32 @@ void function_call3() {
   clang_analyzer_pset(p); // expected-warning {{pset(p) = i, static)}} //TODO
 }
 
+void indirect_function_call() {
+  using F = int*(int*);
+  F* f;
+  int i = 0;
+  int* p = &i;
+  int* ret = f(p);
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
+  clang_analyzer_pset(ret); // expected-warning {{pset(p) = i, static)}} //TODO
+}
+
+void variadic_function_call() {
+  void f(...);
+  int i = 0;
+  int* p = &i;
+  f(p);
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
+}
+
+void member_function_call() {
+  S s;
+  S* p = &s;
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
+  s.f(); // non-const
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
+}
+
 void argument_ref_to_temporary() {
   const int &min(const int &a, const int &b); //like std::min
 

@@ -332,7 +332,6 @@ public:
   bool operator<(const Owner &O) const { return VD < O.VD; }
 
   std::string getName() const {
-
     switch (VD.getInt()) {
     case VARDECL:
       return VD.getPointer()->getNameAsString();
@@ -719,77 +718,57 @@ class PSetsBuilder {
       EvalStmt(SubStmt);
   }
 
-  /// Evaluates the CallExpr for effects on psets
+  /// Evaluates the CallExpr for effects on psets.
   /// When a non-const pointer to pointer or reference to pointer is passed
-  /// into
-  /// a function,
-  /// it's pointee's are invalidated.
-  /// Returns true if CallExpr was handled
+  /// into a function, it's pointee's are invalidated.
+  /// Returns true if CallExpr was handled.
   bool EvalCallExpr(const CallExpr *CallE) {
-    const auto *D = dyn_cast_or_null<FunctionDecl>(CallE->getCalleeDecl());
-    if (!D)
-      return false; // happens for CXXPseudoDestructorExpr
-
-    if (D->isVariadic())
-      return false; // Forbidden by type profile
-
-    if (D->getBuiltinID())
-      return false;
-
     EvalExpr(CallE->getCallee());
-    const auto *CXXD = dyn_cast<CXXMethodDecl>(D);
 
-    if (const auto *MemberCallE = dyn_cast<CXXMemberCallExpr>(CallE)) {
-      const auto *ThisE = MemberCallE->getImplicitObjectArgument();
-      EvalExpr(ThisE);
-      // TODO: something like
-      // if(!MemberCallE->getMethodDecl()->isConst())
-      //   invalidateOwner(ThisE, 1, E->getExprLoc());
-    }
-
+    auto* P = dyn_cast<PointerType>(CallE->getCallee()->getType()->getUnqualifiedDesugaredType());
+    assert(P);
+    auto* F = dyn_cast<FunctionProtoType>(P->getPointeeType()->getUnqualifiedDesugaredType());
+    //F->dump();
+    assert(F);
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
       const Expr *Arg = CallE->getArg(i);
+      QualType ParamQType = F->isVariadic() ? Arg->getType() : F->getParamType(i);
+      const Type* ParamType = ParamQType->getUnqualifiedDesugaredType();
 
-      QualType ParamType;
-      if (isa<CXXOperatorCallExpr>(CallE) && CXXD) {
-        // For CXXOperatorCallExpr, getArg(0) is the 'this' pointer
-        if (i == 0)
-          ParamType = CXXD->getThisType(ASTCtxt).getCanonicalType();
-        else
-          ParamType = D->getParamDecl(i - 1)->getType().getCanonicalType();
-        //} else if (CXXD && !CXXD->isStatic()) {
-      } else
-        ParamType = D->getParamDecl(i)->getType().getCanonicalType();
+      // TODO implement strong owner rvalue magnets
+      // TODO implement gsl::lifetime annotations
+      // TODO implement aggregates
 
-      QualType ArgType = Arg->getType().getCanonicalType();
-      // Check if the function can affect other psets through this argument
-      // (i.e. pointer to pointer or reference to pointer)
-      bool hasPSet = Pointer::is(ArgType);
-      bool canNotModifyPSet =
-          (ParamType->isPointerType() || ParamType->isReferenceType()) &&
-          ParamType->getPointeeType().isConstQualified();
-      if (!hasPSet || canNotModifyPSet) {
-        // Is not a Pointer, or its Pointee's are const and thus cannot be
-        // invalidated
-        EvalExpr(Arg);
-        continue;
+      if(auto* R = dyn_cast<ReferenceType>(ParamType)) {
+        if(classifyTypeCategory(R->getPointeeType().getTypePtr()) == TypeCategory::Owner) {
+          if(isa<RValueReferenceType>(R)) {
+            // parameter is in Oin_strong
+          } else if(ParamQType.isConstQualified()) {
+            // parameter is in Oin_weak
+          } else {
+            // parameter is in Oin
+          }
+        } else {
+          // parameter is in Pin
+        }
+
+      } else if(classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
+         // parameter is in Pin
       }
+
+      auto Pointee = ParamType->getPointeeType();
+      if(!Pointee.isNull()) {
+        if(!Pointee.isConstQualified() &&  classifyTypeCategory(Pointee.getTypePtr()) == TypeCategory::Pointer) {
+          // Pout
+        }
+      }
+
+      // Enforce that psets of all arguments in Oin and Pin do not alias
+      // Enforce that pset() of each argument does not refer to a non-const global Owner
+      // Enforce that pset() of each argument does not refer to a local Owner in Oin
 
       PSet PS = EvalExprForPSet(Arg, !ParamType->isPointerType());
-      if (PS.isUnknown() || PS.isInvalid())
-        continue;
-
-      // Everything in this pset may be invalidated
-      for (auto &Entry : PS) {
-        if (Entry.first == Owner::Null() || Entry.first == Owner::Static())
-          continue;
-
-        // Check if this Owner is also a Pointer
-        Optional<Pointer> IndirectP = Entry.first.getPointer();
-        if (IndirectP.hasValue())
-          // TODO: add possible values; for now just stop tracking
-          SetPSet(IndirectP.getValue(), PSet::unknown(), CallE->getExprLoc());
-      }
+      CheckPSetValidity(PS, Arg->getLocStart(), /*flagNull=*/false);
     }
     return true;
   }
@@ -979,7 +958,7 @@ class PSetsBuilder {
     return Pointer::get(DeclRef->getDecl());
   }
 
-  void CheckPSetValidity(const PSet &PS, SourceLocation Loc);
+  void CheckPSetValidity(const PSet &PS, SourceLocation Loc, bool flagNull = true);
 
   // Traverse S in depth-first post-order and evaluate all effects on psets
   void EvalStmt(const Stmt *S) {
@@ -1099,7 +1078,7 @@ void PSetsBuilder::SetPSet(Pointer P, PSet PS, SourceLocation Loc) {
     PSets.emplace(P, PS);
 }
 
-void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
+void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc, bool flagNull) {
   if (!Reporter)
     return;
 
@@ -1361,6 +1340,8 @@ public:
     AC.getCFGBuildOptions().AddLifetime = true;
     AC.getCFGBuildOptions().AddStaticInitBranches = true;
     AC.getCFGBuildOptions().AddCXXNewAllocator = true;
+    // TODO AddTemporaryDtors
+    // TODO AddEHEdges
     ControlFlowGraph = AC.getCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());
   }
@@ -1519,25 +1500,7 @@ void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
-  /*if (Func->getLocStart().isInvalid())
-    return;
-
-  if (SourceMgr->isInSystemHeader(Func->getLocStart()))
-    return;
-
-  if (!Func->getIdentifier())
-    return; // unnamed function
-
-  // We only check instantiations
-  if (cast<DeclContext>(Func)->isDependentContext())
-    return;
-    */
-
-  // llvm::errs() << "=== Entering " << Func->getName() << "\n";
-  // llvm::errs() << "at " << SourceMgr->getBufferName(Func->getLocStart()) <<
-  // ":" << SourceMgr->getSpellingLineNumber(Func->getLocStart()) << "\n";
-
-  LifetimeContext LC(/*FIXME address-of*/ Context, Reporter, SourceMgr, Func);
+  LifetimeContext LC(Context, Reporter, SourceMgr, Func);
   LC.TraverseBlocks();
 }
 
@@ -1551,7 +1514,7 @@ void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
     return;
 
   PSetsMap PSets; // TODO remove me
-  PSetsBuilder Builder(&Reporter, /*FIXME address-of*/ Context, PSets);
+  PSetsBuilder Builder(&Reporter, Context, PSets);
   Builder.EvalVarDecl(VD);
 }
 
