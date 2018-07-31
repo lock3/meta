@@ -1968,7 +1968,7 @@ class LifetimeReporter : public LifetimeReporterBase {
 public:
   LifetimeReporter(Sema &S) : S(S) {}
 
-  void warnPpsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+  void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
                          std::string ActualPset) const final {
     S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
   }

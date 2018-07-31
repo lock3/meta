@@ -1069,7 +1069,7 @@ public:
       }
 
       if (!PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
-        Reporter->warnPpsetOfGlobal(Loc, P->getName(), PS.str());
+        Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
       return;
     }
 
@@ -1107,7 +1107,7 @@ void PSetsBuilder::SetPSet(Pointer P, PSet PS, SourceLocation Loc) {
   // null}
   if (P.hasGlobalStorage() && !PS.isUnknown() &&
       !PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
-    Reporter->warnPpsetOfGlobal(Loc, P.getName(), PS.str());
+    Reporter->warnPsetOfGlobal(Loc, P.getName(), PS.str());
 
   auto i = PSets.find(P);
   if (i != PSets.end())
