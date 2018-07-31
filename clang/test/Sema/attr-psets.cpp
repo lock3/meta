@@ -106,25 +106,33 @@ void forbidden() {
   int i;
   int *p = &i;
   p++;
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (unknown)}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   p = &i;
   p--;
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (unknown)}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   p = &i;
   ++p;
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (unknown)}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   p = &i;
   --p;
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (unknown)}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   p = &i + 3;
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (unknown)}}
+  // TODO
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   int *q = &p[3];
-  clang_analyzer_pset(q); // expected-warning {{pset(q) = (unknown)}}
+  // TODO
+  clang_analyzer_pset(q); // expected-warning {{pset(q) = (invalid)}}
+}
+
+int global_var;
+void address_of_global() {
+  int* p = &global_var;
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (static)}}
 }
 
 void ref_leaves_scope() {
