@@ -67,10 +67,15 @@
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
+#include "llvm/ADT/Statistic.h"
 #include <algorithm>
 #include <map>
 #include <sstream>
 #include <unordered_map>
+
+#define DEBUG_TYPE "Lifetime Analysis"
+
+STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 
 namespace clang {
 namespace {
@@ -1436,10 +1441,12 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
 /// The traversal is repeated until the psets come to a steady state.
 void LifetimeContext::TraverseBlocks() {
   const PostOrderCFGView *SortedGraph = AC.getAnalysis<PostOrderCFGView>();
+  static const unsigned IterationLimit = 128;
 
-  bool updated;
+  bool Updated;
+  unsigned IterationCount = 0;
   do {
-    updated = false;
+    Updated = false;
     for (const auto *B : *SortedGraph) {
       auto &BC = getBlockContext(B);
 
@@ -1486,9 +1493,14 @@ void LifetimeContext::TraverseBlocks() {
       auto Builder = createPSetsBuilder(BC.ExitPSets);
       Builder.VisitBlock(*B, nullptr);
       BC.visited = true;
-      updated = true;
+      Updated = true;
     }
-  } while (updated);
+    ++IterationCount;
+  } while (Updated && IterationCount < IterationLimit);
+
+
+  if (IterationCount > MaxIterations)
+    MaxIterations = IterationCount;
 
   // Once more to emit diagnostics with final psets
   for (const auto *B : *SortedGraph) {
