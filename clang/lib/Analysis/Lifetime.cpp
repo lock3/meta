@@ -940,11 +940,15 @@ class PSetsBuilder {
       const Expr *Base = MemberE->getBase();
       if (isa<CXXThisExpr>(Base)) {
         // We are inside the class, so track the members separately
-        const auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl());
-        if (FD) {
+        // The returned declaration will be a FieldDecl or (in C++) a VarDecl
+        // (for static data members), a CXXMethodDecl, or an EnumConstantDecl.
+        if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl())) {
           auto V = Variable::thisPointer();
           V.addFieldRef(FD);
           return PSet::pointsToVariable(V);
+        } else if (auto *VD = dyn_cast<VarDecl>(MemberE->getMemberDecl())) {
+          // A static data member of this class
+          return PSet::onlyStatic();
         }
       } else {
         return EvalExprForPSet(
