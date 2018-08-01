@@ -32,7 +32,7 @@ class LifetimeReporterBase {
 public:
   virtual ~LifetimeReporterBase() = default;
   virtual void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
-                                 std::string ActualPset) const = 0;
+                                std::string ActualPset) const = 0;
   virtual void warnDerefDangling(SourceLocation Loc, bool possibly) const = 0;
   virtual void warnDerefNull(SourceLocation Loc, bool possibly) const = 0;
 

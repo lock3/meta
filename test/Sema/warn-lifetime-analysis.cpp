@@ -5,9 +5,15 @@ struct S {
   int f();
 };
 
+struct [[gsl::Pointer]] my_pointer {
+  int operator*();
+};
+
 void deref_uninitialized() {
   int *p; // expected-note {{it was never initialized here}}
   *p = 3; // expected-warning {{dereferencing a dangling pointer}}
+  my_pointer p2;
+  *p2;
 }
 
 void deref_nullptr() {
