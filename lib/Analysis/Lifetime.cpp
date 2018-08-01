@@ -1381,8 +1381,8 @@ class LifetimeContext {
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
                   SourceManager &SourceMgr, const FunctionDecl *FuncDecl)
-      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
-        SourceMgr(SourceMgr), FuncDecl(FuncDecl), AnalysisDCMgr(ASTCtxt),
+      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()), SourceMgr(SourceMgr),
+        FuncDecl(FuncDecl), AnalysisDCMgr(ASTCtxt),
         AC(&AnalysisDCMgr, FuncDecl), Reporter(Reporter) {
     // TODO: do not build own CFG here. Use the one from callee
     // AnalysisBasedWarnings::IssueWarnings
@@ -1531,7 +1531,6 @@ void LifetimeContext::TraverseBlocks() {
     }
     ++IterationCount;
   } while (Updated && IterationCount < IterationLimit);
-
 
   if (IterationCount > MaxIterations)
     MaxIterations = IterationCount;
