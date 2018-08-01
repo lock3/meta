@@ -1280,7 +1280,7 @@ class LifetimeContext {
   };
 
   ASTContext &ASTCtxt;
-  LangOptions LangOptions;
+  LangOptions LangOpts;
   SourceManager &SourceMgr;
   CFG *ControlFlowGraph;
   const FunctionDecl *FuncDecl;
@@ -1299,10 +1299,10 @@ class LifetimeContext {
     auto Loc = getStartLocOfBlock(B);
     llvm::errs() << "Block at " << SourceMgr.getBufferName(Loc) << ":"
                  << SourceMgr.getSpellingLineNumber(Loc) << "\n";
-    B.dump(ControlFlowGraph, LangOptions, true);
+    B.dump(ControlFlowGraph, LangOpts, true);
   }
 
-  void dumpCFG() const { ControlFlowGraph->dump(LangOptions, true); }
+  void dumpCFG() const { ControlFlowGraph->dump(LangOpts, true); }
 
   PSetsBuilder
   createPSetsBuilder(PSetsMap &PSets,
@@ -1341,7 +1341,7 @@ class LifetimeContext {
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
                   SourceManager &SourceMgr, const FunctionDecl *FuncDecl)
-      : ASTCtxt(ASTCtxt), LangOptions(ASTCtxt.getLangOpts()),
+      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
         SourceMgr(SourceMgr), FuncDecl(FuncDecl), AnalysisDCMgr(ASTCtxt),
         AC(&AnalysisDCMgr, FuncDecl), Reporter(Reporter) {
     // TODO: do not build own CFG here. Use the one from callee
