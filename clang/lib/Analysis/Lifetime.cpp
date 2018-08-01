@@ -879,7 +879,6 @@ class PSetsBuilder {
         return PSet::pointsToVariable(MaterializeTemporaryE, 0);
       else
         return PSet::pointsToVariable(Variable::temporary(), 0);
-      break;
     }
     case Expr::DeclRefExprClass: {
       const auto *DeclRef = cast<DeclRefExpr>(E);
@@ -903,7 +902,7 @@ class PSetsBuilder {
             return GetPSet(VD);
         }
       }
-      break;
+      return {};
     }
     case Expr::ArraySubscriptExprClass: {
       const auto *ArraySubscriptE = cast<ArraySubscriptExpr>(E);
@@ -922,7 +921,7 @@ class PSetsBuilder {
           // T a[3]; -> pset_ref(a[i]) = {a}
           return PSet::pointsToVariable(VD, 0);
       }
-      break;
+      return {};
     }
     case Expr::ConditionalOperatorClass: {
       const auto *CO = cast<ConditionalOperator>(E);
@@ -950,11 +949,10 @@ class PSetsBuilder {
           // A static data member of this class
           return PSet::onlyStatic();
         }
-      } else {
-        return EvalExprForPSet(
-            Base, !Base->getType().getCanonicalType()->isPointerType());
       }
-      break;
+
+      return EvalExprForPSet(
+          Base, !Base->getType().getCanonicalType()->isPointerType());
     }
     case Expr::BinaryOperatorClass: {
       const auto *BinOp = cast<BinaryOperator>(E);
@@ -1009,7 +1007,8 @@ class PSetsBuilder {
       default:
         return EvalExprForPSet(CastE->getSubExpr(), referenceCtx);
       }
-    } break;
+      break;
+    }
     default:;
     }
 
