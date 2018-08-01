@@ -1,5 +1,10 @@
 // RUN: %clang -std=c++17 -fsyntax-only -Wlifetime -Wlifetime-debug -Xclang -verify %s
 
+// TODO: clang tests usually should not depend on the standard library.
+//       This is to not rely on implementation details, and have the
+//       ability to run the tests without a standard library
+//       implementation installed or configured.
+//       We should replace all the std types we use with mocks.
 #include <any>
 #include <memory>
 #include <optional>
@@ -22,8 +27,17 @@ class [[gsl::Pointer]] my_pointer {
   int i;
 };
 
+struct my_implicit_owner {
+    int *begin() const;
+    int *end() const;
+    ~my_implicit_owner();
+};
+
+struct my_derived_owner : my_implicit_owner {
+};
+
 void owner() {
-  // use decltype to force template instantiation
+  // Use decltype to force template instantiation.
   __lifetime_type_category<my_owner>();                              // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::vector<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::unique_ptr<int>())>();      // expected-warning {{Owner}}
@@ -33,13 +47,17 @@ void owner() {
   __lifetime_type_category<decltype(std::optional<int>())>();        // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Owner}}
+  using IntVector = std::vector<int>;
+  __lifetime_type_category<decltype(IntVector())>();                 // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(my_implicit_owner())>();         // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(my_derived_owner())>();          // expected-warning {{Owner}}
 }
 
 void pointer() {
   __lifetime_type_category<decltype(my_pointer<int>())>();                   // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex_iterator<const char *>())>(); // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::basic_string_view<char>())>();      // expected-warning {{Pointer}}
-  //__lifetime_type_category<std::span<int>>(); // I need newer C++ lib
+  //__lifetime_type_category<std::span<int>>();
 
   int i;
   auto L = [&i]() { return i; };
