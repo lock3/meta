@@ -45,8 +45,8 @@ void pointer() {
   auto L = [&i]() { return i; };
   __lifetime_type_category<decltype(L)>(); // expected-warning {{Pointer}}
 
-  __lifetime_type_category<int *>(); // expected-warning {{Pointer}}
-  __lifetime_type_category<int &>(); // expected-warning {{Pointer}}
+  __lifetime_type_category<int *>();                                    // expected-warning {{Pointer}}
+  __lifetime_type_category<int &>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::reference_wrapper<int>(i))>(); // expected-warning {{Pointer}}
   // TODO: not detected because the type name is std::_Bit_reference

@@ -13,14 +13,24 @@ int rand();
 struct S {
   ~S();
   int m;
+  static int s;
   void f() {
     int *p = &m;            // pset becomes m, not *this
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = m}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = this.m}}
+    int *ps = &s;
+    clang_analyzer_pset(ps); // expected-warning {{pset(ps) = (static)}}
+    int *ps2 = &this->s;
+    clang_analyzer_pset(ps2); // TODO expected-warning {{pset(ps2) = (static)}}
   }
+  int *get();
 };
 
 struct D : public S {
   ~D();
+};
+
+struct [[gsl::Pointer]] my_pointer {
+  int operator*();
 };
 
 void pointer_exprs() {
@@ -67,11 +77,11 @@ void ref_exprs() {
 
   // Lifetime extension
   const int &ref3 = 3;
-  clang_analyzer_pset(ref3); // expected-warning {{pset(ref3) = ref3'}}
+  clang_analyzer_pset(ref3); // expected-warning {{pset(ref3) = (lifetime-extended temporary through ref3)}}
 
   // Lifetime extension of pointer; TODO is that correct?
   int *const &refp = &i;
-  clang_analyzer_pset(refp); // expected-warning {{pset(refp) = refp'}}
+  clang_analyzer_pset(refp); // expected-warning {{pset(refp) = (lifetime-extended temporary through refp)}}
 }
 
 void addr_and_dref() {
@@ -129,10 +139,23 @@ void forbidden() {
   clang_analyzer_pset(q); // expected-warning {{pset(q) = (invalid)}}
 }
 
+void deref_array() {
+  int *p[4];
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (untracked)}}
+  int *k = *p;            // expected-note {{pointer arithmetic is not allowed}} expected-warning {{dereferencing a dangling pointer}}
+  clang_analyzer_pset(k); // expected-warning {{pset(k) = (invalid)}}
+}
+
 int global_var;
 void address_of_global() {
-  int* p = &global_var;
+  int *p = &global_var;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = (static)}}
+}
+
+void class_type_pointer() {
+  my_pointer p;
+  // TODO
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 }
 
 void ref_leaves_scope() {
@@ -353,7 +376,7 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   int local_i;
   global_p1 = &local_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {local_i}}
   global_p1 = &param_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {param_i}}
-  global_p1 = param_p;  // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p'}}
+  global_p1 = param_p;  // TODO expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p'}}
 
   global_p1 = nullptr;            // OK
   clang_analyzer_pset(global_p1); // expected-warning {{pset(global_p1) = (null)}}
@@ -403,29 +426,32 @@ void function_call3() {
 }
 
 void indirect_function_call() {
-  using F = int*(int*);
-  F* f;
+  using F = int *(int *);
+  F *f;
   int i = 0;
-  int* p = &i;
-  int* ret = f(p);
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
+  int *p = &i;
+  int *ret = f(p);
+  clang_analyzer_pset(p);   // expected-warning {{pset(p) = i}}
   clang_analyzer_pset(ret); // expected-warning {{pset(p) = i, static)}} //TODO
 }
 
 void variadic_function_call() {
   void f(...);
   int i = 0;
-  int* p = &i;
+  int *p = &i;
   f(p);
   clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
 }
 
 void member_function_call() {
   S s;
-  S* p = &s;
+  S *p = &s;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
-  s.f(); // non-const
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
+  int *pp = s.get();
+  clang_analyzer_pset(pp); // expected-warning {{pset(p) = s'}}
+  s.f();                   // non-const
+  clang_analyzer_pset(p);  // expected-warning {{pset(p) = s)}}
+  clang_analyzer_pset(pp); // expected-warning {{pset(p) = (invalid)}}
 }
 
 void argument_ref_to_temporary() {

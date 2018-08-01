@@ -72,6 +72,7 @@
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <variant>
 
 #define DEBUG_TYPE "Lifetime Analysis"
 
@@ -102,14 +103,14 @@ bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Iterator
   bool hasDeref = false;
   bool hasPlusPlus = false;
-  for(auto* M : R->methods()) {
-	 auto O = M->getDeclName().getCXXOverloadedOperator();
-	 if(O == OO_PlusPlus)
-		 hasPlusPlus = true;
-	 else if(O == OO_Star && M->param_empty())
-		 hasDeref = true;
-	 if(hasPlusPlus && hasDeref)
-		 return true;
+  for (auto *M : R->methods()) {
+    auto O = M->getDeclName().getCXXOverloadedOperator();
+    if (O == OO_PlusPlus)
+      hasPlusPlus = true;
+    else if (O == OO_Star && M->param_empty())
+      hasDeref = true;
+    if (hasPlusPlus && hasDeref)
+      return true;
   }
   return false;
 }
@@ -154,6 +155,9 @@ TypeCategory classifyTypeCategory(const Type *T) {
   const auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
+    if (T->isArrayType())
+      return TypeCategory::Aggregate; // TODO not in the paper
+
     // raw pointers and references
     if (T->isPointerType() || T->isReferenceType())
       return TypeCategory::Pointer;
@@ -214,172 +218,151 @@ TypeCategory classifyTypeCategory(const Type *T) {
   // and is a class type with public data members
   // and no user-provided copy or move operations.
   if (R->isAggregate())
-      return TypeCategory::Aggregate;
+    return TypeCategory::Aggregate;
 
   // A Value is a type that is neither an Indirection nor an Aggregate.
   return TypeCategory::Value;
 }
 
-/// A Pointer is a
-/// 1) VarDecl or
-/// 2) FieldDecl (on 'this')
-/// and
-/// a) with pointer type, e.g. p in 'int* p' or
-/// b) with reference type, e.g. p in 'int& p' or
-/// c) of an object that contains a Pointer, e.g. p in 'struct { int* q; } p;'
-/// or
-/// TODO: implement case b) and c)
-/// Invariant: VD != FD && (!VD || !FD)
-class Pointer {
-  const VarDecl *VD = nullptr;
-  const FieldDecl *FD = nullptr;
+/// A Variable can represent
+/// - a local variable: Var contains a non-null VarDecl
+/// - the this pointer: Var contains a null VarDecl
+/// - a life-time extended temporary: Var contains a non-null
+/// MaterializeTemporaryExpr
+/// - a normal temporary: Var contains a null MaterializeTemporaryExpr
+/// plus fields of them (in member FDs).
+struct Variable {
+  Variable(const VarDecl *VD) : Var(VD) {}
+  Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
 
-public:
-  Pointer(const VarDecl *VD) : VD(VD) { assert(VD); }
-  Pointer(const FieldDecl *FD) : FD(FD) { assert(FD); }
-  Pointer(Pointer &&) = default;
-  Pointer &operator=(Pointer &&) = default;
-  Pointer(const Pointer &) = default;
-  Pointer &operator=(const Pointer &) = default;
-
-  bool operator==(const Pointer &o) const { return VD == o.VD && FD == o.FD; }
-  bool operator!=(const Pointer &o) const { return !(*this == o); }
-  bool operator<(const Pointer &o) const {
-    if (VD != o.VD)
-      return VD < o.VD;
-    return FD < o.FD;
+  static Variable temporary() {
+    return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
+  }
+  static Variable thisPointer() {
+    return Variable(static_cast<const VarDecl *>(nullptr));
   }
 
-  QualType getCanonicalType() const {
-    if (VD)
-      return VD->getType().getCanonicalType();
-    return FD->getType().getCanonicalType();
+  bool operator==(const Variable &O) const {
+    return Var == O.Var && FDs == O.FDs;
   }
 
-  StringRef getName() const {
-    if (VD)
-      return VD->getName();
-    return FD->getName();
+  bool operator!=(const Variable &O) const { return !(*this == O); }
+
+  bool operator<(const Variable &O) const {
+    if (Var != O.Var)
+      return Var < O.Var;
+    if (FDs.size() != O.FDs.size())
+      return FDs.size() != O.FDs.size();
+
+    for (auto i = FDs.begin(), j = O.FDs.begin(); i != FDs.end(); ++i, ++j) {
+      if (*i != *j)
+        return std::less<const FieldDecl *>()(*i, *j);
+    }
+    return false;
   }
 
-  bool hasGlobalStorage() const { return VD && VD->hasGlobalStorage(); }
-  /// Returns true if this pointer is a member variable of the class of the
-  /// current method
-  bool isMemberVariable() const { return FD; }
-
-  bool mayBeNull() const {
-    // TODO: check if the type is gsl::not_null
-    return isa<PointerType>(getCanonicalType());
+  bool hasGlobalStorage() const {
+    auto *VD = Var.dyn_cast<const VarDecl *>();
+    if (!VD)
+      return false;
+    return VD->hasGlobalStorage();
   }
 
-  bool isRealPointer() const { return getCanonicalType()->isPointerType(); }
-  bool isReference() const { return getCanonicalType()->isReferenceType(); }
-
-  std::size_t hash() const noexcept {
-    return VD ? std::hash<const VarDecl *>()(VD)
-              : std::hash<const FieldDecl *>()(FD);
+  bool trackPset() const {
+    if (isThisPointer() || isNonLifetimeExtendedTemporary())
+      return false;
+    auto Category = classifyTypeCategory(getType().getTypePtr());
+    return Category == TypeCategory::Pointer || Category == TypeCategory::Owner;
   }
 
-  // Returns either a Pointer or None if ValD is not a Pointer
-  static Optional<Pointer> get(const ValueDecl *ValD) {
-    if (!ValD)
-      return Optional<Pointer>();
-
-    if (!Pointer::is(ValD->getType().getCanonicalType()))
-      return Optional<Pointer>();
-
-    if (auto *VD = dyn_cast<VarDecl>(ValD))
-      return {VD};
-    if (auto *FD = dyn_cast<FieldDecl>(ValD))
-      return {FD};
-
-    return Optional<Pointer>(); // TODO: can this happen?
+  bool isMemberVariableOfEnclosingClass() const {
+    return isThisPointer() && !FDs.empty();
   }
 
-  // static bool is(const ValueDecl *VD) { return get(VD).hasValue(); }
+  /// Returns QualType of Variable or empty QualType if it refers to the 'this'
+  /// pointer
+  QualType getType() const {
+    if (FDs.empty()) {
+      if (auto *VD = Var.dyn_cast<const VarDecl *>())
+        return VD->getType();
+      if (auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
+        return MT->getType();
+      return {}; // Refers to 'this' pointer
+    }
 
-  /// Returns true if the given type has a pset
-  static bool is(QualType QT) {
-    return QT->isReferenceType() || QT->isPointerType();
+    return FDs.back()->getType();
   }
-};
-} // namespace
-} // namespace clang
 
-namespace std {
-template <> struct hash<clang::Pointer> {
-  std::size_t operator()(const clang::Pointer &P) const noexcept {
-    return P.hash();
+  bool isThisPointer() const {
+    return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
   }
-};
-} // namespace std
 
-namespace clang {
-namespace {
-/// An owner is anything that a Pointer can point to
-/// Invariant: VD != nullptr
-class Owner {
-  enum SpecialType { VARDECL = 0, NULLPTR = 1, STATIC = 2, TEMPORARY = 3 };
-
-  llvm::PointerIntPair<const ValueDecl *, 2> VD;
-
-  Owner(SpecialType ST) : VD(nullptr, ST) {}
-
-public:
-  Owner(const ValueDecl *VD) : VD(VD, VARDECL) {
-    assert(VD);
-    if (const auto *VarD = dyn_cast<VarDecl>(VD))
-      if (VarD->hasGlobalStorage())
-        *this = Static();
+  bool isNonLifetimeExtendedTemporary() const {
+    return Var.is<const MaterializeTemporaryExpr *>() &&
+           !Var.get<const MaterializeTemporaryExpr *>();
   }
-  bool operator==(const Owner &O) const { return VD == O.VD; }
-  bool operator!=(const Owner &O) const { return !(*this == O); }
-  bool operator<(const Owner &O) const { return VD < O.VD; }
+
+  // Is the pset of this Variable allowed to contain null?
+  bool mightBeNull() const {
+    if (isThisPointer())
+      return false;
+    // TODO: detect gsl::nullable / gsl::non_null
+    return getType().getCanonicalType()->isPointerType();
+  }
+
+  // If FDs is empty, Var must be of class type and
+  // FD must be a field within that class type.
+  // If FDs is not empty, FDs.back() must be of class type
+  // and FD must be a field within that class type.
+  void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
   std::string getName() const {
-    switch (VD.getInt()) {
-    case VARDECL:
-      return VD.getPointer()->getNameAsString();
-    case NULLPTR:
-      return "(null)";
-    case STATIC:
-      return "(static)";
-    case TEMPORARY:
-      return "(temporary)";
+    std::stringstream ss;
+    if (Var.is<const MaterializeTemporaryExpr *>()) {
+      auto *MD = Var.get<const MaterializeTemporaryExpr *>();
+      if (MD) {
+        ss << "(lifetime-extended temporary through ";
+        if (MD->getExtendingDecl())
+          ss << std::string(MD->getExtendingDecl()->getName()) << ")";
+        else
+          ss << "(unknown))";
+      } else {
+        ss << "(temporary)";
+      }
+    } else {
+      auto *VD = Var.get<const VarDecl *>();
+      ss << (VD ? std::string(VD->getName()) : "this");
     }
-    llvm_unreachable("Unexpected type");
+
+    for (auto *FD : FDs)
+      ss << "." << std::string(FD->getName());
+    return ss.str();
   }
 
-  /// Special Owner to refer to a nullptr
-  static Owner Null() { return Owner(NULLPTR); }
+  llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
 
-  /// An owner that can not be invalidated.
-  /// Used for variables with static duration
-  static Owner Static() { return Owner(STATIC); }
-
-  /// An owner that will vanish at the end of the full expression,
-  /// e.g. a temporary bound to const reference parameter.
-  static Owner Temporary() { return Owner(TEMPORARY); }
-
-  /// Returns either a Pointer or None if Owner is not a Pointer
-  Optional<Pointer> getPointer() const {
-    if (VD.getInt() == VARDECL)
-      return Pointer::get(VD.getPointer());
-    return Optional<Pointer>();
-  }
+  /// Possibly empty list of fields on Var
+  /// first entry is the field on VD,
+  /// next entry is the field inside there, etc.
+  std::vector<const FieldDecl *> FDs;
 };
 
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
 class InvalidationReason {
-  enum { NOT_INITIALIZED, POINTEE_LEFT_SCOPE, TEMPORARY_LEFT_SCOPE, POINTER_ARITHMETIC } Reason;
+  enum {
+    NOT_INITIALIZED,
+    POINTEE_LEFT_SCOPE,
+    TEMPORARY_LEFT_SCOPE,
+    POINTER_ARITHMETIC
+  } Reason;
   const VarDecl *Pointee = nullptr;
   SourceLocation Loc;
 
 public:
   SourceLocation getLoc() const { return Loc; }
 
-  void emitNotes(const LifetimeReporterBase &Reporter) const {
+  void emitNote(const LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case NOT_INITIALIZED:
       Reporter.diag(Loc, diag::note_never_initialized);
@@ -434,106 +417,126 @@ public:
   }
 };
 
-/// A pset (points-to set) can be unknown, invalid or valid.
-/// If it is valid, it can contain (static), (null) and a set of (Owner,order)
-/// Invariant: (!isInvalid() || Reason.hasValue())
-///         && (!isValid() || p.size() > 0)
+/// The reason how null entered a pset
+class NullReason {
+  SourceLocation Loc;
+
+public:
+  NullReason(SourceLocation Loc) : Loc(Loc) {}
+  void emitNote(const LifetimeReporterBase &Reporter) const {
+    Reporter.diag(Loc, diag::note_null_here);
+    return;
+  }
+};
+
+/// A pset (points-to set) can contain
+/// - null
+/// - static
+/// - invalid
+/// - variables with an order
+/// It a Pset contains non of that, its "unknown".
 class PSet {
 public:
-  enum State {
-    Valid,           // the pointer points to one element of p
-    Unknown,         // we lost track of what it could point to
-    PossiblyInvalid, // the pointer had a pset containing multiple objects, and
-                     // one of them was killed
-    Invalid, // the pointer was never initialized or the single member of its
-             // pset was killed
-  };
+  // Initializes an unknown pset
+  PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
 
-  PSet() : state(Unknown) {}
-
-  PSet(PSet &&) = default;
-  PSet &operator=(PSet &&) = default;
-  PSet(const PSet &) = default;
-  PSet &operator=(const PSet &) = default;
-
-  bool operator==(const PSet &o) const {
-    if (state == Valid)
-      return o.p == p;
-    return state == o.state;
+  bool operator==(const PSet &O) const {
+    return ContainsInvalid == O.ContainsInvalid &&
+           ContainsNull == O.ContainsNull &&
+           ContainsStatic == O.ContainsStatic && Vars == O.Vars;
   }
 
-  bool operator!=(const PSet &o) const { return !(*this == o); }
-
-  State getState() const { return state; }
-
-  InvalidationReason getReason() const {
-    assert(isInvalid());
-    assert(Reason.hasValue());
-    return Reason.getValue();
+  void explainWhyInvalid(const LifetimeReporterBase &Reporter) const {
+    for (auto &R : InvReasons)
+      R.emitNote(Reporter);
   }
 
-  bool isValid() const { return state == Valid; }
+  void explainWhyNull(const LifetimeReporterBase &Reporter) const {
+    for (auto &R : NullReasons)
+      R.emitNote(Reporter);
+  }
 
+  bool isValid() const {
+    return ContainsNull || ContainsStatic || !Vars.empty();
+  }
+
+  bool containsInvalid() const { return ContainsInvalid; }
   bool isInvalid() const {
-    return state == Invalid || state == PossiblyInvalid;
+    return !ContainsNull && !ContainsStatic && ContainsInvalid && Vars.empty();
   }
 
-  bool isUnknown() const { return state == Unknown; }
+  bool isUnknown() const {
+    return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
+  }
 
-  /// Returns true if this pset contains Owner with the same or a lower order
-  /// i.e. if invalidating (Owner, order) would invalidate this pset
-  bool contains(Owner Owner, unsigned order) const {
-    if (state != Valid)
+  /// Returns true if this pset contains Variable with the same or a lower order
+  /// i.e. whether invalidating (Variable, order) would invalidate this pset
+  bool contains(Variable Var, unsigned order = 0) const {
+    auto i = Vars.find(Var);
+    return i != Vars.end() && i->second >= order;
+  }
+
+  bool containsNull() const { return ContainsNull; }
+  bool isNull() const {
+    return ContainsNull && !ContainsStatic && !ContainsInvalid && Vars.empty();
+  }
+
+  void removeNull() { ContainsNull = false; }
+
+  bool containsStatic() const { return ContainsStatic; }
+  void addStatic() { ContainsStatic = true; }
+
+  const std::map<Variable, unsigned> &vars() { return Vars; }
+
+  bool isSubstitutableFor(const PSet &O) {
+    // If a includes invalid, then b must include invalid.
+    if (ContainsInvalid && !O.ContainsInvalid)
       return false;
 
-    for (const auto &i : p)
-      if (i.first == Owner && i.second >= order)
-        return true;
-
-    return false;
-  }
-
-  bool isSingular() const { return p.size() == 1; }
-
-  bool containsNull() const { return contains(Owner::Null(), 0); }
-
-  void removeNull() {
-    assert(isValid());
-    p.erase(Owner::Null());
-  }
-
-  bool isSubsetOf(const PSet &PS) {
-    assert(getState() != Unknown);
-    if (isInvalid())
+    // If a includes null, then b must include null.
+    if (ContainsNull && !O.ContainsNull)
       return false;
 
-    return std::includes(PS.p.begin(), PS.p.end(), p.begin(), p.end());
+    // If b includes static and no x or o, then a must include static and no x
+    // or o.
+    if (!ContainsStatic && O.ContainsStatic)
+      return false;
+
+    // If a includes o'', then b must include o'' or o'. (etc.)
+    // TODO Optimize
+    for (auto &kv : Vars) {
+      auto &V = kv.first;
+      auto Order = kv.second;
+      auto i = O.Vars.find(V);
+      if (i == O.Vars.end() || i->second > Order)
+        return false;
+    }
+
+    // TODO
+    // If a includes o'', then b must include o'' or o'. (etc.)
+    // If a includes o', then b must include o'.
+    // If a includes o, then b must include o or o' or o'' or some x with
+    // lifetime less than o. If b includes one or more xb1..n, where xbshortest
+    // is the one with shortest lifetime, then a must include static or xa1..m
+    // where all have longer lifetime than xbshortest.
+    return true;
   }
 
   std::string str() const {
+    if (isUnknown())
+      return "(unknown)";
     std::stringstream ss;
-    switch (state) {
-    case Unknown:
-      ss << "(unknown)";
-      break;
-    case Invalid:
-      ss << "(invalid)";
-      break;
-    case PossiblyInvalid:
-      ss << "(possibly invalid)";
-      break;
-    case Valid:
-      bool first = true;
-      for (const auto &i : p) {
-        if (!first)
-          ss << ", ";
-        else
-          first = false;
-        ss << i.first.getName();
-        for (size_t j = 0; j < i.second; ++j)
-          ss << "'";
-      }
-      break;
+    int notFirst = 0;
+    if (ContainsInvalid)
+      ss << (notFirst++ ? ", " : "") << "(invalid)";
+    if (ContainsNull)
+      ss << (notFirst++ ? ", " : "") << "(null)";
+    if (ContainsStatic)
+      ss << (notFirst++ ? ", " : "") << "(static)";
+    for (const auto &V : Vars) {
+      ss << (notFirst++ ? ", " : "") << V.first.getName();
+      for (size_t j = 0; j < V.second; ++j)
+        ss << "'";
     }
     return ss.str();
   }
@@ -541,39 +544,30 @@ public:
   void print(raw_ostream &Out) const { Out << str() << "\n"; }
 
   /// Merge contents of other pset into this
-  void merge(const PSet &otherPset) {
-    if (state == Unknown || otherPset.state == Unknown) {
-      state = Unknown;
-      return;
+  void merge(const PSet &O) {
+    if (!ContainsInvalid && O.ContainsInvalid) {
+      ContainsInvalid = true;
+      InvReasons = O.InvReasons;
     }
-    if (state == Invalid)
-      return;
-    if (otherPset.state == Invalid) {
-      state = Invalid;
-      assert(otherPset.Reason.hasValue());
-      Reason = otherPset.Reason;
-      return;
-    }
-    if (state == PossiblyInvalid)
-      return;
-    if (otherPset.state == PossiblyInvalid) {
-      state = PossiblyInvalid;
-      assert(otherPset.Reason.hasValue());
-      Reason = otherPset.Reason;
-      return;
-    }
-    assert(state == Valid && otherPset.state == Valid);
 
-    for (const auto &PO : otherPset.p) {
-      auto P = p.find(PO.first);
-      if (P == p.end()) {
-        p.insert(PO);
+    if (!ContainsNull && O.ContainsNull) {
+      ContainsNull = true;
+      NullReasons = O.NullReasons;
+    }
+    ContainsNull |= O.ContainsNull;
+    ContainsStatic |= O.ContainsStatic;
+
+    // TODO: optimize
+    for (const auto &VO : O.Vars) {
+      auto V = Vars.find(VO.first);
+      if (V == Vars.end()) {
+        Vars.insert(VO);
       } else {
-        // if p contains obj' and otherPset.p contains obj''
+        // if Vars contains obj' and otherPset.p contains obj''
         // then the union shall be invalidated whenever obj' or obj'' is
         // invalidated
         // which is the same as whenever obj'' is invalidated
-        P->second = std::max(P->second, PO.second);
+        V->second = std::max(V->second, VO.second);
       }
     }
   }
@@ -581,61 +575,69 @@ public:
   /// The pointer is dangling
   static PSet invalid(InvalidationReason Reason) {
     PSet ret;
-    ret.state = Invalid;
-    ret.Reason = Reason;
+    ret.ContainsInvalid = true;
+    ret.InvReasons.push_back(Reason);
     return ret;
   }
 
-  /// We don't know the state of the pointer
-  static PSet unknown() {
+  /// A pset that contains only (null)
+  static PSet null(NullReason Reason) {
     PSet ret;
-    ret.state = Unknown;
+    ret.ContainsNull = true;
+    ret.NullReasons.push_back(Reason);
     return ret;
   }
 
-  /// The pset contains nothing
-  static PSet valid() {
+  /// A pset that contains only (static)
+  static PSet onlyStatic() {
     PSet ret;
-    ret.state = Valid;
+    ret.ContainsStatic = true;
+    return ret;
+  }
+
+  /// A pset that contains (static), (null)
+  static PSet staticOrNull() {
+    PSet ret;
+    ret.ContainsStatic = true;
+    ret.ContainsNull = true;
     return ret;
   }
 
   /// The pset contains one of obj, obj' or obj''
-  static PSet validOwner(Owner Owner, unsigned order = 0) {
+  static PSet pointsToVariable(Variable Var, unsigned order = 0) {
     PSet ret;
-    ret.state = Valid;
-    ret.p.emplace(Owner, order);
+    if (Var.hasGlobalStorage())
+      ret.ContainsStatic = true;
+    else
+      ret.Vars.emplace(Var, order);
     return ret;
   }
 
   /// The pset contains null and one of obj, obj' or obj''
-  static PSet validOwnerOrNull(Owner Owner, unsigned order = 0) {
-    PSet ret = validOwner(Owner, order);
-    ret.p.emplace(Owner::Null(), 0);
+  static PSet pointsToVariableOrNull(Variable Var, unsigned order = 0) {
+    PSet ret = pointsToVariable(Var, order);
+    ret.ContainsNull = true;
     return ret;
   }
 
-  std::map<Owner, unsigned>::const_iterator begin() const { return p.begin(); }
-
-  std::map<Owner, unsigned>::const_iterator end() const { return p.end(); }
-
-  void insert(Owner Owner, unsigned order = 0) {
-    p.insert(std::make_pair(Owner, order));
-  }
-
 private:
-  State state = Unknown;
-  /// Maps owner obj to order.
+  int ContainsNull : 1;
+  int ContainsInvalid : 1;
+  int ContainsStatic : 1;
+  /// Maps Variable obj to order.
+  /// If Variable is not an Owner, order must be zero
   /// (obj,0) == obj: points to obj
   /// (obj,1) == obj': points to object owned directly by obj
   /// (obj,2) == obj'': points an object kept alive indirectly (transitively)
   /// via owner obj
-  std::map<Owner, unsigned> p;
+  std::map<Variable, unsigned> Vars;
 
-  Optional<InvalidationReason> Reason;
+  std::vector<InvalidationReason> InvReasons;
+  std::vector<NullReason> NullReasons;
 };
 
-using PSetsMap = std::unordered_map<Pointer, PSet>;
+// TODO optimize (sorted vector?)
+using PSetsMap = std::map<Variable, PSet>;
 
 // Collection of methods to update/check PSets from statements/expressions
 class PSetsBuilder {
@@ -660,6 +662,43 @@ class PSetsBuilder {
     }
   }
 
+  // Returns the variable which the expression refers to,
+  // or None.
+  Optional<Variable> refersTo(const Expr *E) {
+    E = E->IgnoreParenCasts();
+    switch (E->getStmtClass()) {
+    case Expr::DeclRefExprClass: {
+      const auto *DeclRef = cast<DeclRefExpr>(E);
+      auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
+      if (VD)
+        return Variable(VD);
+      return {};
+    }
+
+    case Expr::CXXThisExprClass: {
+      return Variable::thisPointer();
+    }
+
+    case Expr::MemberExprClass: {
+      const auto *M = cast<MemberExpr>(E);
+      auto SubV = refersTo(M->getBase());
+      if (!SubV)
+        return {};
+
+      /// The returned declaration will be a FieldDecl or (in C++) a VarDecl
+      /// (for static data members), a CXXMethodDecl, or an EnumConstantDecl.
+      auto *FD = dyn_cast<FieldDecl>(M->getMemberDecl());
+      if (FD) {
+        SubV->addFieldRef(FD);
+        return SubV;
+      }
+      return {};
+    }
+    default:
+      return {};
+    }
+  }
+
   // Evaluate the given expression for all effects on psets of variables
   void EvalExpr(const Expr *E) {
     E = E->IgnoreParenCasts();
@@ -667,43 +706,59 @@ class PSetsBuilder {
     switch (E->getStmtClass()) {
     case Expr::BinaryOperatorClass: {
       const auto *BinOp = cast<BinaryOperator>(E);
-      Optional<Pointer> P = PointerFromExpr(BinOp->getLHS());
-      if (P.hasValue() && P->isRealPointer()) {
-        switch (BinOp->getOpcode()) {
-        case BO_Assign: {
+      if (BinOp->getOpcode() == BO_Assign) {
+        EvalExpr(BinOp->getLHS()); // Eval for side-effects
+        auto Category =
+            classifyTypeCategory(BinOp->getLHS()->getType().getTypePtr());
+        Optional<Variable> V = refersTo(BinOp->getLHS());
+        if (Category == TypeCategory::Owner && V) {
+          // When an Owner x is copied to or moved to, set pset(x) = {x'}
+          SetPSet(*V, PSet::pointsToVariable(*V, 1), BinOp->getExprLoc());
+        } else if (Category == TypeCategory::Pointer && V) {
           // This assignment updates a Pointer
-          EvalExpr(BinOp->getLHS()); // Eval for side-effects
           PSet PS = EvalExprForPSet(BinOp->getRHS(), false);
-          SetPSet(P.getValue(), PS, BinOp->getExprLoc());
-          return;
+          SetPSet(*V, PS, BinOp->getExprLoc());
         }
-        case BO_AddAssign:
-        case BO_SubAssign:
-          // Affects pset; forbidden by the bounds profile.
-          SetPSet(P.getValue(), PSet::invalid(InvalidationReason::PointerArithmetic(BinOp->getExprLoc())), BinOp->getExprLoc());
-        default:
-          break; // Traversing is done below
+        return;
+      } else if (BinOp->getLHS()->getType()->isPointerType() &&
+                 (BinOp->getOpcode() == BO_AddAssign ||
+                  BinOp->getOpcode() == BO_SubAssign)) {
+        // Affects pset; forbidden by the bounds profile.
+        if (llvm::Optional<Variable> V = refersTo(BinOp->getLHS())) {
+          SetPSet(*V,
+                  PSet::invalid(InvalidationReason::PointerArithmetic(
+                      BinOp->getExprLoc())),
+                  BinOp->getExprLoc());
         }
+        // TODO: diagnose even if we have no VarDecl?
       }
       break;
     }
     case Expr::UnaryOperatorClass: {
       const auto *UnOp = cast<UnaryOperator>(E);
-      Optional<Pointer> P = PointerFromExpr(UnOp->getSubExpr());
-      if (P.hasValue() && P->isRealPointer()) {
+      auto *SubExpr = UnOp->getSubExpr();
+      if (SubExpr->getType()->isPointerType()) {
         switch (UnOp->getOpcode()) {
         case UO_Deref: {
           // Check if dereferencing this pointer is valid
-          PSet PS = EvalExprForPSet(UnOp->getSubExpr(), false);
+          PSet PS = EvalExprForPSet(SubExpr, false);
           CheckPSetValidity(PS, UnOp->getExprLoc());
           return;
         }
         case UO_PostInc:
         case UO_PostDec:
         case UO_PreInc:
-        case UO_PreDec:
+        case UO_PreDec: {
           // Affects pset; forbidden by the bounds profile.
-          SetPSet(P.getValue(), PSet::invalid(InvalidationReason::PointerArithmetic(UnOp->getExprLoc())), UnOp->getExprLoc());
+          if (Optional<Variable> V = refersTo(SubExpr)) {
+            SetPSet(*V,
+                    PSet::invalid(InvalidationReason::PointerArithmetic(
+                        UnOp->getExprLoc())),
+                    UnOp->getExprLoc());
+          }
+          // TODO: diagnose even if we have no VarDecl?
+          break;
+        }
         default:
           break; // Traversing is done below
         }
@@ -741,25 +796,29 @@ class PSetsBuilder {
   bool EvalCallExpr(const CallExpr *CallE) {
     EvalExpr(CallE->getCallee());
 
-    auto* P = dyn_cast<PointerType>(CallE->getCallee()->getType()->getUnqualifiedDesugaredType());
+    auto *P = dyn_cast<PointerType>(
+        CallE->getCallee()->getType()->getUnqualifiedDesugaredType());
     assert(P);
-    auto* F = dyn_cast<FunctionProtoType>(P->getPointeeType()->getUnqualifiedDesugaredType());
-    //F->dump();
+    auto *F = dyn_cast<FunctionProtoType>(
+        P->getPointeeType()->getUnqualifiedDesugaredType());
+    // F->dump();
     assert(F);
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
       const Expr *Arg = CallE->getArg(i);
-      QualType ParamQType = F->isVariadic() ? Arg->getType() : F->getParamType(i);
-      const Type* ParamType = ParamQType->getUnqualifiedDesugaredType();
+      QualType ParamQType =
+          F->isVariadic() ? Arg->getType() : F->getParamType(i);
+      const Type *ParamType = ParamQType->getUnqualifiedDesugaredType();
 
       // TODO implement strong owner rvalue magnets
       // TODO implement gsl::lifetime annotations
       // TODO implement aggregates
 
-      if(auto* R = dyn_cast<ReferenceType>(ParamType)) {
-        if(classifyTypeCategory(R->getPointeeType().getTypePtr()) == TypeCategory::Owner) {
-          if(isa<RValueReferenceType>(R)) {
+      if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
+        if (classifyTypeCategory(R->getPointeeType().getTypePtr()) ==
+            TypeCategory::Owner) {
+          if (isa<RValueReferenceType>(R)) {
             // parameter is in Oin_strong
-          } else if(ParamQType.isConstQualified()) {
+          } else if (ParamQType.isConstQualified()) {
             // parameter is in Oin_weak
           } else {
             // parameter is in Oin
@@ -768,20 +827,23 @@ class PSetsBuilder {
           // parameter is in Pin
         }
 
-      } else if(classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
-         // parameter is in Pin
+      } else if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
+        // parameter is in Pin
       }
 
       auto Pointee = ParamType->getPointeeType();
-      if(!Pointee.isNull()) {
-        if(!Pointee.isConstQualified() &&  classifyTypeCategory(Pointee.getTypePtr()) == TypeCategory::Pointer) {
+      if (!Pointee.isNull()) {
+        if (!Pointee.isConstQualified() &&
+            classifyTypeCategory(Pointee.getTypePtr()) ==
+                TypeCategory::Pointer) {
           // Pout
         }
       }
 
       // Enforce that psets of all arguments in Oin and Pin do not alias
-      // Enforce that pset() of each argument does not refer to a non-const global Owner
-      // Enforce that pset() of each argument does not refer to a local Owner in Oin
+      // Enforce that pset() of each argument does not refer to a non-const
+      // global Owner Enforce that pset() of each argument does not refer to a
+      // local Owner in Oin
 
       PSet PS = EvalExprForPSet(Arg, !ParamType->isPointerType());
       CheckPSetValidity(PS, Arg->getLocStart(), /*flagNull=*/false);
@@ -814,9 +876,9 @@ class PSetsBuilder {
       EvalExpr(MaterializeTemporaryE->GetTemporaryExpr());
 
       if (MaterializeTemporaryE->getExtendingDecl())
-        return PSet::validOwner(MaterializeTemporaryE->getExtendingDecl(), 1);
+        return PSet::pointsToVariable(MaterializeTemporaryE, 0);
       else
-        return PSet::validOwner(Owner::Temporary(), 0);
+        return PSet::pointsToVariable(Variable::temporary(), 0);
       break;
     }
     case Expr::DeclRefExprClass: {
@@ -829,12 +891,13 @@ class PSetsBuilder {
             return GetPSet(VD);
           else
             // T i; auto &p = i; -> pset_ref(p) = {i}
-            return PSet::validOwner(VD, 0);
+            return PSet::pointsToVariable(VD);
         } else {
           if (VD->getType()->isArrayType())
             // Forbidden by bounds profile
             // Alternative would be: T a[]; auto *p = a; -> pset_ptr(p) = {a}
-            return PSet::invalid(InvalidationReason::PointerArithmetic(VD->getLocStart()));
+            return PSet::invalid(
+                InvalidationReason::PointerArithmetic(DeclRef->getLocation()));
           else
             // T i; auto *p = i; -> pset_ptr(p) = pset(i)
             return GetPSet(VD);
@@ -857,7 +920,7 @@ class PSetsBuilder {
         if (VD && VD->getType().getCanonicalType()->isArrayType() &&
             referenceCtx)
           // T a[3]; -> pset_ref(a[i]) = {a}
-          return PSet::validOwner(VD, 0);
+          return PSet::pointsToVariable(VD, 0);
       }
       break;
     }
@@ -879,7 +942,9 @@ class PSetsBuilder {
         // We are inside the class, so track the members separately
         const auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl());
         if (FD) {
-          return PSet::validOwner(FD, 0);
+          auto V = Variable::thisPointer();
+          V.addFieldRef(FD);
+          return PSet::pointsToVariable(V);
         }
       } else {
         return EvalExprForPSet(
@@ -904,27 +969,21 @@ class PSetsBuilder {
           // pset_ref(*p) = pset_ptr(p)
           return PS;
         } else {
-          if (PS.isInvalid() || PS.isUnknown())
+          if (PS.containsInvalid() || PS.isUnknown())
             return PS;
 
           assert(PS.isValid());
           // pset_ptr(*p) = replace each pset entry of pset_ptr(p) by its own
           // pset
-          PSet RetPS = PSet::valid();
-          for (auto &Entry : PS) {
-            if (Entry.first == Owner::Null())
-              continue; // will be flagged by checkPSetValidity above
-            if (Entry.first == Owner::Static())
-              RetPS.merge(PSet::validOwner(Owner::Static()));
-            else {
-              Optional<Pointer> P = Entry.first.getPointer();
-              if (!P.hasValue())
-                // This can happen if P has array type; dereferencing an array
-                // is forbidden by the bounds profile
-                return PSet::invalid(InvalidationReason::PointerArithmetic(UnOp->getOperatorLoc()));
-              RetPS.merge(GetPSet(P.getValue()));
-            }
+          PSet RetPS;
+          if (PS.containsStatic())
+            RetPS.addStatic();
+
+          for (auto &KV : PS.vars()) {
+            const Variable &V = KV.first;
+            RetPS.merge(GetPSet(V));
           }
+
           return RetPS;
         }
       } else if (UnOp->getOpcode() == UO_AddrOf) {
@@ -941,7 +1000,8 @@ class PSetsBuilder {
       case CK_LValueBitCast:
       case CK_IntegralToPointer:
         // Those casts are forbidden by the type profile
-        return PSet::unknown();
+        // TODO: diagnose
+        return PSet{};
       default:
         return EvalExprForPSet(CastE->getSubExpr(), referenceCtx);
       }
@@ -955,26 +1015,17 @@ class PSetsBuilder {
         return PSet::invalid(
             InvalidationReason::NotInitialized(E->getExprLoc()));
       } else {
-        return PSet::validOwner(Owner::Null());
+        return PSet::null(E->getExprLoc());
       }
     }
 
     // Unhandled case
     EvalExpr(E);
-    return PSet::unknown();
+    return {};
   }
 
-  /// Returns a Pointer if E is a DeclRefExpr of a Pointer
-  Optional<Pointer> PointerFromExpr(const Expr *E) {
-    E = E->IgnoreParenCasts();
-    const auto *DeclRef = dyn_cast<DeclRefExpr>(E);
-    if (!DeclRef)
-      return Optional<Pointer>();
-
-    return Pointer::get(DeclRef->getDecl());
-  }
-
-  void CheckPSetValidity(const PSet &PS, SourceLocation Loc, bool flagNull = true);
+  void CheckPSetValidity(const PSet &PS, SourceLocation Loc,
+                         bool flagNull = true);
 
   // Traverse S in depth-first post-order and evaluate all effects on psets
   void EvalStmt(const Stmt *S) {
@@ -988,7 +1039,7 @@ class PSetsBuilder {
   }
 
   /// Invalidates all psets that point to V or something owned by V
-  void invalidateOwner(Owner O, unsigned order, InvalidationReason Reason) {
+  void invalidateOwner(Variable O, unsigned order, InvalidationReason Reason) {
     for (auto &i : PSets) {
       const auto &Pointer = i.first;
       PSet &PS = i.second;
@@ -999,10 +1050,10 @@ class PSetsBuilder {
         SetPSet(Pointer, PSet::invalid(Reason), Reason.getLoc());
     }
   }
-  void erasePointer(Pointer P) { PSets.erase(P); }
-  PSet GetPSet(Pointer P);
-  void SetPSet(Pointer P, PSet PS, SourceLocation Loc);
-  void diagPSet(Pointer P, SourceLocation Loc) {
+  void erasePointer(Variable P) { PSets.erase(P); }
+  PSet GetPSet(Variable P);
+  void SetPSet(Variable P, PSet PS, SourceLocation Loc);
+  void diagPSet(Variable P, SourceLocation Loc) {
     auto i = PSets.find(P);
     if (i != PSets.end())
       Reporter->debugPset(Loc, P.getName(), i->second.str());
@@ -1020,39 +1071,28 @@ public:
 
   void EvalVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
-    auto P = Pointer::get(VD);
-
-    if (!P.hasValue()) {
-      // Not a Pointer, but initializer can have side-effects
-      if (Initializer)
-        EvalExpr(Initializer);
-      return;
-    }
-
     SourceLocation Loc = VD->getLocEnd();
 
-    PSet PS; //== unknown
+    switch (classifyTypeCategory(VD->getType().getTypePtr())) {
+    case TypeCategory::Pointer: {
+      PSet PS;
+      if (Initializer)
+        PS = EvalExprForPSet(
+            Initializer, !VD->getType().getCanonicalType()->isPointerType());
+      else if (Loc.isValid())
+        PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
 
-    if (Initializer)
-      PS = EvalExprForPSet(Initializer, !P->isRealPointer());
-    else if (Loc.isValid())
-      PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
-
-    // We don't track the PSets of variables with global storage; just make
-    // sure that its pset is always {static} and/or {null}
-    if (P->hasGlobalStorage()) {
-      if (PS.isUnknown()) {
-        // TODO diagnose?
-        return;
-      }
-
-      if (!PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
-        Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
-      return;
+      SetPSet(VD, PS, Loc);
+      break;
     }
-
-    SetPSet(VD, PS, Loc);
-    return;
+    case TypeCategory::Owner: {
+      SetPSet(VD, PSet::pointsToVariable(VD, 1), Loc);
+    } // fallthrough
+    default: {
+      if (Initializer)
+        EvalExpr(Initializer);
+    }
+    }
   }
 
   void VisitBlock(const CFGBlock &B, const LifetimeReporterBase *Reporter);
@@ -1062,29 +1102,28 @@ public:
 };
 
 // Manages lifetime information for the CFG of a FunctionDecl
-
-PSet PSetsBuilder::GetPSet(Pointer P) {
+PSet PSetsBuilder::GetPSet(Variable P) {
   auto i = PSets.find(P);
   if (i != PSets.end())
     return i->second;
 
   // Assumption: global Pointers have a pset of {static, null}
-  if (P.hasGlobalStorage() || P.isMemberVariable()) {
-    if (P.mayBeNull())
-      return PSet::validOwnerOrNull(Owner::Static());
-    return PSet::validOwner(Owner::Static());
+  if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass()) {
+    if (P.mightBeNull())
+      return PSet::staticOrNull();
+    return PSet::onlyStatic();
   }
 
   llvm_unreachable("Missing pset for Pointer");
 }
 
-void PSetsBuilder::SetPSet(Pointer P, PSet PS, SourceLocation Loc) {
+void PSetsBuilder::SetPSet(Variable P, PSet PS, SourceLocation Loc) {
   assert(P.getName() != "");
 
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
   if (P.hasGlobalStorage() && !PS.isUnknown() &&
-      !PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
+      !PS.isSubstitutableFor(PSet::staticOrNull()) && Reporter)
     Reporter->warnPsetOfGlobal(Loc, P.getName(), PS.str());
 
   auto i = PSets.find(P);
@@ -1094,24 +1133,24 @@ void PSetsBuilder::SetPSet(Pointer P, PSet PS, SourceLocation Loc) {
     PSets.emplace(P, PS);
 }
 
-void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc, bool flagNull) {
+void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
+                                     bool flagNull) {
   if (!Reporter)
     return;
 
-  if (PS.getState() == PSet::Unknown) {
+  if (PS.isUnknown()) {
     Reporter->diag(Loc, diag::warn_deref_unknown);
     return;
   }
 
-  if (PS.getState() == PSet::Invalid ||
-      PS.getState() == PSet::PossiblyInvalid) {
-    Reporter->warnDerefDangling(Loc, PS.getState() == PSet::PossiblyInvalid);
-    PS.getReason().emitNotes(*Reporter);
+  if (PS.containsInvalid()) {
+    Reporter->warnDerefDangling(Loc, !PS.isInvalid());
+    PS.explainWhyInvalid(*Reporter);
     return;
   }
 
-  if (PS.isValid() && PS.containsNull()) {
-    Reporter->warnDerefNull(Loc, !PS.isSingular());
+  if (PS.containsNull()) {
+    Reporter->warnDerefNull(Loc, !PS.isNull());
     return;
   }
 }
@@ -1146,18 +1185,14 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Expr *E, bool positive,
       return;
     }
 
-    if (auto *DeclRef = dyn_cast<DeclRefExpr>(E)) {
-      Optional<Pointer> P = Pointer::get(DeclRef->getDecl());
-      if (!P.hasValue())
-        return;
-      auto PS = GetPSet(P.getValue());
-      if (!PS.isValid())
-        return;
-      if (PS.containsNull()) {
+    if (Optional<Variable> V = refersTo(E)) {
+      if (V->trackPset()) {
+        auto PS = GetPSet(*V);
         PS.removeNull();
-        SetPSet(P.getValue(), PS, Loc);
+        SetPSet(*V, PS, Loc);
       }
     }
+
   } else {
     if (auto *BO = dyn_cast<BinaryOperator>(E)) {
       if (BO->getOpcode() != BO_LOr)
@@ -1239,7 +1274,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       EvalStmt(S);
 
       // Kill all temporaries that vanish at the end of the full expression
-      invalidateOwner(Owner::Temporary(), 0,
+      invalidateOwner(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
       break;
     }
@@ -1408,9 +1443,9 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
     else {
       // Merge PSets with pred's PSets; TODO: make this efficient
       for (auto &i : EntryPSets) {
-        auto &Pointer = i.first;
+        auto &Var = i.first;
         auto &PS = i.second;
-        auto j = PredPSets.find(Pointer);
+        auto j = PredPSets.find(Var);
         if (j == PredPSets.end()) {
           // The only reason that predecessors have PSets for different
           // variables is that some of them lazily added global variables
@@ -1423,8 +1458,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
           // Then we don't care, because the variable will not be referenced in
           // the C++ code before it is declared.
 
-          PS = Pointer.mayBeNull() ? PSet::validOwnerOrNull(Owner::Static())
-                                   : PSet::validOwner(Owner::Static());
+          PS = Var.mightBeNull() ? PSet::staticOrNull() : PSet::onlyStatic();
           continue;
         }
         if (PS == j->second)
@@ -1460,10 +1494,10 @@ void LifetimeContext::TraverseBlocks() {
           if (classifyTypeCategory(PVD->getType().getTypePtr()) !=
               TypeCategory::Pointer)
             continue;
-          Pointer P(PVD);
+          Variable P(PVD);
           // Parameters cannot be invalid (checked at call site).
-          auto PS = P.mayBeNull() ? PSet::validOwnerOrNull(PVD, 1)
-                                  : PSet::validOwner(PVD, 1);
+          auto PS = P.mightBeNull() ? PSet::pointsToVariableOrNull(P, 1)
+                                    : PSet::pointsToVariable(P, 1);
           // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
           // PVD->dump();
           BC.ExitPSets.emplace(P, std::move(PS));
@@ -1532,13 +1566,17 @@ void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
 void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
                          LifetimeReporterBase &Reporter) {
 
-  auto P = Pointer::get(VD);
-  if (!P.hasValue())
+  if (classifyTypeCategory(VD->getType().getTypePtr()) != TypeCategory::Pointer)
     return;
 
   PSetsMap PSets; // TODO remove me
   PSetsBuilder Builder(&Reporter, Context, PSets);
   Builder.EvalVarDecl(VD);
+  // TODO
+  // We don't track the PSets of variables with global storage; just make
+  // sure that its pset is always {static} and/or {null}
+  // if (!PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
+  // Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
 }
 
 } // end namespace clang
