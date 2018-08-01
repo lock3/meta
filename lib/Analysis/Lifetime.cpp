@@ -82,21 +82,23 @@ namespace clang {
 namespace {
 
 bool hasMethodWithName(const CXXRecordDecl *R, StringRef Name) {
-  // TODO CXXRecordDecl::forallBases
   // TODO cache IdentifierInfo to avoid string compare
-  return std::any_of(R->method_begin(), R->method_end(),
+  auto CallBack = [Name](const CXXRecordDecl *Base) {
+    return std::none_of(Base->method_begin(), Base->method_end(),
                      [Name](const CXXMethodDecl *M) {
                        auto *I = M->getDeclName().getAsIdentifierInfo();
                        if (!I)
                          return false;
                        return I->getName() == Name;
                      });
+  };
+  return !R->forallBases(CallBack) || !CallBack(R);
 }
 
 bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Container
   return hasMethodWithName(R, "begin") && hasMethodWithName(R, "end") &&
-         R->hasUserDeclaredDestructor();
+         !R->hasTrivialDestructor();
 }
 
 bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
