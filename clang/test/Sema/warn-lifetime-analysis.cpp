@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
+
 struct S {
   ~S();
   int m;
@@ -43,15 +44,18 @@ void ref_to_member_leaves_scope_call() {
   p->m = 4;     // expected-warning {{dereferencing a dangling pointer}}
 }
 
-// No Pointer involved, thus not checked
+// No Pointer involved, thus not checked.
 void ignore_access_on_non_ref_ptr() {
   S s;
   s.m = 3;
   s.f();
 }
 
-// Note: the messages below are for the template instantiation in instantiate_ref_leaves_scope_template
-// The checker only checks instantiations
+// Note: the messages below are for the template instantiation in 'instantiate_ref_leaves_scope_template'.
+// The checker only checks instantiations.
+// TODO: some parts of the templated functions that are not dependent on the
+//       template argument could be checked independently of the
+//       instantiations.
 template <typename T>
 void ref_leaves_scope_template() {
   T p;
