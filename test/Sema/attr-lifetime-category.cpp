@@ -78,6 +78,9 @@ namespace std {
 template <typename T>
 void __lifetime_type_category(){}
 
+template <typename T>
+void __lifetime_type_category_arg(T arg){}
+
 class [[gsl::Owner]] my_owner {
   int i;
 };
@@ -129,6 +132,7 @@ void pointer() {
   __lifetime_type_category<decltype(std::reference_wrapper<int>(i))>(); // expected-warning {{Pointer}}
   // TODO: not detected because the type name is std::_Bit_reference
   __lifetime_type_category<decltype(std::vector<bool>::reference())>(); // expected-warning {{Pointer}}
+  __lifetime_type_category_arg(std::vector<bool>::reference());         // expected-warning {{Pointer}}
 }
 
 void aggregate() {
