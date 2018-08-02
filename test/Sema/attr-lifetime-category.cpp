@@ -1,23 +1,82 @@
 // RUN: %clang -std=c++17 -fsyntax-only -Wlifetime -Wlifetime-debug -Xclang -verify %s
 
-// TODO: clang tests usually should not depend on the standard library.
-//       This is to not rely on implementation details, and have the
-//       ability to run the tests without a standard library
-//       implementation installed or configured.
-//       We should replace all the std types we use with mocks.
-#include <any>
-#include <memory>
-#include <optional>
-#include <queue>
-#include <regex>
-#include <stack>
-#include <variant>
-#include <vector>
-//#include <span> I need newer C++ lib
-#include <string_view>
+// TODO: regression tests should not include the standard libary,
+//       but we should have a way to test against real implementations.
+namespace std {
+  struct any {};
+
+  template<typename T>
+  struct basic_regex {};
+
+  template<typename T>
+  struct regex_iterator {
+    T &operator*() const;
+  };
+
+  using regex = basic_regex<char>;
+
+  template<typename T>
+  struct unique_ptr {
+    T &operator*() const;
+    ~unique_ptr();
+  };
+
+  template<typename T>
+  struct optional {};
+
+  template<typename T>
+  struct vector {
+    T *begin();
+    T *end();
+    ~vector();
+  };
+
+  struct _Bit_reference {};
+
+  template<>
+  struct vector<bool> {
+    using reference = _Bit_reference;
+    bool *begin();
+    bool *end();
+    ~vector();
+  };
+
+  template<typename T>
+  struct span {
+    T *begin();
+    T *end();
+  };
+
+  template<typename T>
+  struct basic_string_view {
+    T *begin();
+    T *end();
+  };
+
+  using string_view = basic_string_view<char>;
+
+  template<typename T>
+  struct stack {};
+
+  template<typename T>
+  struct queue {};
+
+  template<typename T>
+  struct priority_queue {};
+
+  template<typename... T>
+  struct variant {};
+
+  template<typename T>
+  struct reference_wrapper {
+    template<typename U>
+    reference_wrapper(U&&);
+    operator T &() const;
+  };
+}
 
 template <typename T>
-void __lifetime_type_category(){};
+void __lifetime_type_category(){}
 
 class [[gsl::Owner]] my_owner {
   int i;
@@ -57,7 +116,8 @@ void pointer() {
   __lifetime_type_category<decltype(my_pointer<int>())>();                   // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex_iterator<const char *>())>(); // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::basic_string_view<char>())>();      // expected-warning {{Pointer}}
-  //__lifetime_type_category<std::span<int>>();
+  __lifetime_type_category<decltype(std::string_view())>();                  // expected-warning {{Pointer}}
+  __lifetime_type_category<decltype(std::span<int>())>();                    // expected-warning {{Pointer}}
 
   int i;
   auto L = [&i]() { return i; };

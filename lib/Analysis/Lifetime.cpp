@@ -86,14 +86,15 @@ bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
   // TODO cache IdentifierInfo to avoid string compare
   auto CallBack = [Name, ArgNum](const CXXRecordDecl *Base) {
     return std::none_of(Base->method_begin(), Base->method_end(),
-                 [Name, ArgNum](const CXXMethodDecl *M) {
-                   if (ArgNum != -1 && ArgNum != M->getMinRequiredArguments())
-                     return false;
-                   auto *I = M->getDeclName().getAsIdentifierInfo();
-                   if (!I)
-                     return false;
-                   return I->getName() == Name;
-                 });
+                        [Name, ArgNum](const CXXMethodDecl *M) {
+                          if (ArgNum != -1 &&
+                              ArgNum != M->getMinRequiredArguments())
+                            return false;
+                          auto *I = M->getDeclName().getAsIdentifierInfo();
+                          if (!I)
+                            return false;
+                          return I->getName() == Name;
+                        });
   };
   return !R->forallBases(CallBack) || !CallBack(R);
 }
@@ -101,8 +102,7 @@ bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
 bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Container
   return hasMethodWithNameAndArgNum(R, "begin", 0) &&
-         hasMethodWithNameAndArgNum(R, "end", 0) &&
-         !R->hasTrivialDestructor();
+         hasMethodWithNameAndArgNum(R, "end", 0) && !R->hasTrivialDestructor();
 }
 
 bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
@@ -124,17 +124,24 @@ bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
 bool satisfiesRangeConcept(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/experimental/ranges/range/Range
   return hasMethodWithNameAndArgNum(R, "begin", 0) &&
-         hasMethodWithNameAndArgNum(R, "end", 0) &&
-         R->hasTrivialDestructor();
+         hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
 }
 
-/// classifies some well-known std:: types or returns an empty optional
-Optional<TypeCategory> classifyStd(const CXXRecordDecl *R) {
-  auto DeclName = R->getDeclName();
+/// Classifies some well-known std:: types or returns an empty optional.
+/// Checks the type both before and after desugaring.
+Optional<TypeCategory> classifyStd(const Type *T) {
+  NamedDecl *Decl;
+  if (const auto *TypeDef = dyn_cast<TypedefType>(T)) {
+    if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
+      return TypeCat;
+    Decl = TypeDef->getDecl();
+  } else
+    Decl = T->getAsCXXRecordDecl();
+  auto DeclName = Decl->getDeclName();
   if (!DeclName || !DeclName.isIdentifier())
     return {};
 
-  if (!R->isInStdNamespace())
+  if (!Decl->isInStdNamespace())
     return {};
 
   // FIXME faster lookup (e.g. (sorted) vector)
@@ -153,12 +160,13 @@ Optional<TypeCategory> classifyStd(const CXXRecordDecl *R) {
 
 /// Returns the type category of the given type
 /// If T is a template specialization, it must be instantiated.
-TypeCategory classifyTypeCategory(const Type *T) {
+TypeCategory classifyTypeCategory(QualType QT) {
   /*
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
            llvm::errs() << "\n";*/
 
+  const Type *T = QT.getUnqualifiedType().getTypePtr();
   const auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
@@ -196,7 +204,7 @@ TypeCategory classifyTypeCategory(const Type *T) {
   if (hasDerefOperations && R->hasUserDeclaredDestructor())
     return TypeCategory::Owner;
 
-  if (auto Cat = classifyStd(R))
+  if (auto Cat = classifyStd(T))
     return *Cat;
 
   //  Every type that satisfies the Ranges TS Range concept.
@@ -278,7 +286,7 @@ struct Variable {
   bool trackPset() const {
     if (isThisPointer() || isNonLifetimeExtendedTemporary())
       return false;
-    auto Category = classifyTypeCategory(getType().getTypePtr());
+    auto Category = classifyTypeCategory(getType());
     return Category == TypeCategory::Pointer || Category == TypeCategory::Owner;
   }
 
@@ -715,8 +723,7 @@ class PSetsBuilder {
       const auto *BinOp = cast<BinaryOperator>(E);
       if (BinOp->getOpcode() == BO_Assign) {
         EvalExpr(BinOp->getLHS()); // Eval for side-effects
-        auto Category =
-            classifyTypeCategory(BinOp->getLHS()->getType().getTypePtr());
+        auto Category = classifyTypeCategory(BinOp->getLHS()->getType());
         Optional<Variable> V = refersTo(BinOp->getLHS());
         if (Category == TypeCategory::Owner && V) {
           // When an Owner x is copied to or moved to, set pset(x) = {x'}
@@ -821,8 +828,7 @@ class PSetsBuilder {
       // TODO implement aggregates
 
       if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
-        if (classifyTypeCategory(R->getPointeeType().getTypePtr()) ==
-            TypeCategory::Owner) {
+        if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
           if (isa<RValueReferenceType>(R)) {
             // parameter is in Oin_strong
           } else if (ParamQType.isConstQualified()) {
@@ -834,15 +840,14 @@ class PSetsBuilder {
           // parameter is in Pin
         }
 
-      } else if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
+      } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
         // parameter is in Pin
       }
 
       auto Pointee = ParamType->getPointeeType();
       if (!Pointee.isNull()) {
         if (!Pointee.isConstQualified() &&
-            classifyTypeCategory(Pointee.getTypePtr()) ==
-                TypeCategory::Pointer) {
+            classifyTypeCategory(Pointee) == TypeCategory::Pointer) {
           // Pout
         }
       }
@@ -1083,7 +1088,7 @@ public:
     const Expr *Initializer = VD->getInit();
     SourceLocation Loc = VD->getLocEnd();
 
-    switch (classifyTypeCategory(VD->getType().getTypePtr())) {
+    switch (classifyTypeCategory(VD->getType())) {
     case TypeCategory::Pointer: {
       PSet PS;
       if (Initializer)
@@ -1256,11 +1261,9 @@ bool PSetsBuilder::HandleClangAnalyzerPset(
   } else if (I->getName() == "__lifetime_type_category") {
     auto Loc = CallE->getLocStart();
 
-    auto QType = CallE->getDirectCallee()
-                     ->getTemplateSpecializationInfo()
-                     ->TemplateArguments->get(0)
-                     .getAsType();
-    TypeCategory TC = classifyTypeCategory(QType.getTypePtr());
+    auto Args = Callee->getTemplateSpecializationArgs();
+    auto QType = Args->get(0).getAsType();
+    TypeCategory TC = classifyTypeCategory(QType);
     Reporter->debugTypeCategory(Loc, TC);
     return true;
   }
@@ -1501,8 +1504,7 @@ void LifetimeContext::TraverseBlocks() {
 
         // ExitPSets are the function parameters.
         for (const ParmVarDecl *PVD : FuncDecl->parameters()) {
-          if (classifyTypeCategory(PVD->getType().getTypePtr()) !=
-              TypeCategory::Pointer)
+          if (classifyTypeCategory(PVD->getType()) != TypeCategory::Pointer)
             continue;
           Variable P(PVD);
           // Parameters cannot be invalid (checked at call site).
@@ -1575,7 +1577,7 @@ void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
 void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
                          LifetimeReporterBase &Reporter) {
 
-  if (classifyTypeCategory(VD->getType().getTypePtr()) != TypeCategory::Pointer)
+  if (classifyTypeCategory(VD->getType()) != TypeCategory::Pointer)
     return;
 
   PSetsMap PSets; // TODO remove me
