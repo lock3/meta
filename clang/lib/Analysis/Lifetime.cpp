@@ -127,11 +127,18 @@ bool satisfiesRangeConcept(const CXXRecordDecl *R) {
          hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
 }
 
+
 /// Classifies some well-known std:: types or returns an empty optional.
 /// Checks the type both before and after desugaring.
+// TODO:
+// Unfortunately, the types are stored in a desugared form for template
+// instantiations. For this and some other reasons I think it would be better
+// to look up the declarations (pointers) by names upfront and look up the
+// declarations instead of matching strings.
 Optional<TypeCategory> classifyStd(const Type *T) {
+  T->dump();
   NamedDecl *Decl;
-  if (const auto *TypeDef = dyn_cast<TypedefType>(T)) {
+  if (const auto *TypeDef = T->getAs<TypedefType>()) {
     if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
       return TypeCat;
     Decl = TypeDef->getDecl();
@@ -144,15 +151,14 @@ Optional<TypeCategory> classifyStd(const Type *T) {
   if (!Decl->isInStdNamespace())
     return {};
 
-  // FIXME faster lookup (e.g. (sorted) vector)
   static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
                                        "optional", "variant", "any"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper",
                                          "vector<bool>::reference"};
 
-  if (StdOwners.count(DeclName.getAsIdentifierInfo()->getName()))
+  if (StdOwners.count(Decl->getName()))
     return TypeCategory::Owner;
-  if (StdPointers.count(DeclName.getAsIdentifierInfo()->getName()))
+  if (StdPointers.count(Decl->getName()))
     return TypeCategory::Pointer;
 
   return {};
@@ -1248,6 +1254,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(
     assert(CallE->getNumArgs() == 1 &&
            "clang_analyzer_pset takes one argument");
 
+    // TODO: handle MemberExprs.
     const auto *DeclRef =
         dyn_cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts());
     assert(DeclRef && "Argument to clang_analyzer_pset must be a DeclRefExpr");
@@ -1263,6 +1270,12 @@ bool PSetsBuilder::HandleClangAnalyzerPset(
 
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
+    TypeCategory TC = classifyTypeCategory(QType);
+    Reporter->debugTypeCategory(Loc, TC);
+    return true;
+  } else if (I->getName() == "__lifetime_type_category_arg") {
+    auto Loc = CallE->getLocStart();
+    auto QType = CallE->getArg(0)->getType();
     TypeCategory TC = classifyTypeCategory(QType);
     Reporter->debugTypeCategory(Loc, TC);
     return true;
