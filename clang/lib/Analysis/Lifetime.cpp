@@ -81,23 +81,27 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace {
 
-bool hasMethodWithName(const CXXRecordDecl *R, StringRef Name) {
+bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
+                                int ArgNum = -1) {
   // TODO cache IdentifierInfo to avoid string compare
-  auto CallBack = [Name](const CXXRecordDecl *Base) {
+  auto CallBack = [Name, ArgNum](const CXXRecordDecl *Base) {
     return std::none_of(Base->method_begin(), Base->method_end(),
-                     [Name](const CXXMethodDecl *M) {
-                       auto *I = M->getDeclName().getAsIdentifierInfo();
-                       if (!I)
-                         return false;
-                       return I->getName() == Name;
-                     });
+                 [Name, ArgNum](const CXXMethodDecl *M) {
+                   if (ArgNum != -1 && ArgNum != M->getMinRequiredArguments())
+                     return false;
+                   auto *I = M->getDeclName().getAsIdentifierInfo();
+                   if (!I)
+                     return false;
+                   return I->getName() == Name;
+                 });
   };
   return !R->forallBases(CallBack) || !CallBack(R);
 }
 
 bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Container
-  return hasMethodWithName(R, "begin") && hasMethodWithName(R, "end") &&
+  return hasMethodWithNameAndArgNum(R, "begin", 0) &&
+         hasMethodWithNameAndArgNum(R, "end", 0) &&
          !R->hasTrivialDestructor();
 }
 
@@ -119,8 +123,9 @@ bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
 
 bool satisfiesRangeConcept(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/experimental/ranges/range/Range
-  return hasMethodWithName(R, "begin") && hasMethodWithName(R, "end") &&
-         !R->hasUserDeclaredDestructor();
+  return hasMethodWithNameAndArgNum(R, "begin", 0) &&
+         hasMethodWithNameAndArgNum(R, "end", 0) &&
+         R->hasTrivialDestructor();
 }
 
 /// classifies some well-known std:: types or returns an empty optional
