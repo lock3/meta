@@ -30,6 +30,7 @@ struct D : public S {
 };
 
 struct [[gsl::Pointer]] my_pointer {
+  my_pointer();
   int operator*();
 };
 
@@ -40,6 +41,10 @@ void pointer_exprs() {
   clang_analyzer_pset(q); // expected-warning {{pset(q) = (null)}}
   int *q2 = 0;
   clang_analyzer_pset(q2); // expected-warning {{pset(q2) = (null)}}
+
+  int* p_zero{}; //zero initialization
+  clang_analyzer_pset(p_zero); // expected-warning {{pset(p_zero) = (null)}}
+
   S s;
   p = &s.m;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
@@ -153,9 +158,8 @@ void address_of_global() {
 }
 
 void class_type_pointer() {
-  my_pointer p;
-  // TODO
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
+  my_pointer p; // default initialization
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
 }
 
 void ref_leaves_scope() {
