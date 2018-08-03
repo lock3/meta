@@ -6,7 +6,7 @@
 // function calls
 
 template <typename T>
-void clang_analyzer_pset(const T &);
+bool clang_analyzer_pset(const T &);
 
 int rand();
 
@@ -213,31 +213,66 @@ void ignore_pointer_to_member() {
   void (S::*mpf)() = &S::f; // pointer to member function; has no pset
 }
 
-void if_stmt(int *p) {
+void if_stmt(int *p, char *q) {
   clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+  int *alwaysNull = nullptr;
 
   if (p) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
   } else {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   }
+
+  if (p != nullptr) {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+  } else {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
+  }
+
+  if (p != alwaysNull) {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+  } else {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
+  }
+
+  if (p && clang_analyzer_pset(p)) // expected-warning {{pset(p) = p'}}
+    ;
+
+  if (!p || clang_analyzer_pset(p)) // expected-warning {{pset(p) = p'}}
+    ;
+
+  p ? clang_analyzer_pset(p) : false; // expected-warning {{pset(p) = p'}}
+  !p ? false : clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
 
   if (!p) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   } else {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
   }
 
-  char *q;
+  if (p == nullptr) {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
+  } else {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+  }
+
   if (p && q) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = q'}}
   } else {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q'}}
   }
 
   if (!p || !q) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q'}}
   } else {
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = q'}}
+  }
+
+  while(p) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
   }
 }

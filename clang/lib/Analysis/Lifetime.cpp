@@ -127,7 +127,6 @@ bool satisfiesRangeConcept(const CXXRecordDecl *R) {
          hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
 }
 
-
 /// Classifies some well-known std:: types or returns an empty optional.
 /// Checks the type both before and after desugaring.
 // TODO:
@@ -136,7 +135,6 @@ bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 // to look up the declarations (pointers) by names upfront and look up the
 // declarations instead of matching strings.
 Optional<TypeCategory> classifyStd(const Type *T) {
-  T->dump();
   NamedDecl *Decl;
   if (const auto *TypeDef = T->getAs<TypedefType>()) {
     if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
@@ -370,6 +368,8 @@ struct Variable {
 
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
+// TODO: We should use source ranges rather than single locations
+//       for user friendlyness.
 class InvalidationReason {
   enum {
     NOT_INITIALIZED,
@@ -446,7 +446,6 @@ public:
   NullReason(SourceLocation Loc) : Loc(Loc) {}
   void emitNote(const LifetimeReporterBase &Reporter) const {
     Reporter.diag(Loc, diag::note_null_here);
-    return;
   }
 };
 
@@ -1118,7 +1117,7 @@ public:
 
   void VisitBlock(const CFGBlock &B, const LifetimeReporterBase *Reporter);
 
-  void UpdatePSetsFromCondition(const Expr *E, bool positive,
+  void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                 SourceLocation Loc);
 };
 
@@ -1177,56 +1176,63 @@ void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
 }
 
 /// Updates psets to remove 'null' when entering conditional statements. If
-/// 'positive' is
-/// false,
-/// handles expression as-if it was negated.
+/// 'positive' is false, handles expression as-if it was negated.
 /// Examples:
 ///   int* p = f();
 /// if(p)
 ///  ... // pset of p does not contain 'null'
 /// else
-///  ... // pset of p still contains 'null'
+///  ... // pset of p is 'null'
 /// if(!p)
-///  ... // pset of p still contains 'null'
+///  ... // pset of p is 'null'
 /// else
 ///  ... // pset of p does not contain 'null'
-/// TODO: Add condition like 'p == nullptr', 'p != nullptr', '!(p ==
-/// nullptr)',
-/// etc
-void PSetsBuilder::UpdatePSetsFromCondition(const Expr *E, bool positive,
+void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                             SourceLocation Loc) {
+  const auto *E = dyn_cast_or_null<Expr>(S);
+  if (!E)
+    return;
   E = E->IgnoreParenImpCasts();
-
-  if (positive) {
-    if (auto *BO = dyn_cast<BinaryOperator>(E)) {
-      if (BO->getOpcode() != BO_LAnd)
-        return;
-      UpdatePSetsFromCondition(BO->getLHS(), true, Loc);
-      UpdatePSetsFromCondition(BO->getRHS(), true, Loc);
+  if (const auto *UO = dyn_cast<UnaryOperator>(E)) {
+    if (UO->getOpcode() != UO_LNot)
       return;
-    }
+    E = UO->getSubExpr();
+    UpdatePSetsFromCondition(E, !Positive, E->getLocStart());
+    return;
+  }
+  if (const auto *BO = dyn_cast<BinaryOperator>(E)) {
+    BinaryOperator::Opcode OC = BO->getOpcode();
+    if (OC != BO_NE && OC != BO_EQ)
+      return;
+    // The p == null is the negative case.
+    if (OC == BO_EQ)
+      Positive = !Positive;
+    const auto *LHS = BO->getLHS()->IgnoreParenImpCasts();
+    const auto *RHS = BO->getRHS()->IgnoreParenImpCasts();
+    Optional<Variable> LHSVar = refersTo(LHS);
+    Optional<Variable> RHSVar = refersTo(RHS);
+    bool LHSIsNull =
+        LHS->isNullPointerConstant(
+            ASTCtxt, Expr::NPC_ValueDependentIsNotNull) != Expr::NPCK_NotNull;
+    bool RHSIsNull =
+        RHS->isNullPointerConstant(
+            ASTCtxt, Expr::NPC_ValueDependentIsNotNull) != Expr::NPCK_NotNull;
+    if (LHSIsNull || (LHSVar && GetPSet(*LHSVar).isNull()))
+      E = RHS;
+    else if (RHSIsNull || (RHSVar && GetPSet(*RHSVar).isNull()))
+      E = LHS;
+    else
+      return;
+  }
 
-    if (Optional<Variable> V = refersTo(E)) {
-      if (V->trackPset()) {
-        auto PS = GetPSet(*V);
+  if (Optional<Variable> V = refersTo(E)) {
+    if (V->trackPset()) {
+      auto PS = GetPSet(*V);
+      if (Positive)
         PS.removeNull();
-        SetPSet(*V, PS, Loc);
-      }
-    }
-
-  } else {
-    if (auto *BO = dyn_cast<BinaryOperator>(E)) {
-      if (BO->getOpcode() != BO_LOr)
-        return;
-      UpdatePSetsFromCondition(BO->getLHS(), false, Loc);
-      UpdatePSetsFromCondition(BO->getRHS(), false, Loc);
-      return;
-    }
-
-    if (auto *UO = dyn_cast<UnaryOperator>(E)) {
-      if (UO->getOpcode() != UO_LNot)
-        return;
-      UpdatePSetsFromCondition(UO->getSubExpr(), true, Loc);
+      else
+        PS = PSet::null(Loc);
+      SetPSet(*V, PS, Loc);
     }
   }
 }
@@ -1426,6 +1432,20 @@ public:
   void TraverseBlocks();
 };
 
+static const Stmt *getRealTerminator(const CFGBlock *B) {
+  const Stmt *LastCFGStmt = nullptr;
+  for (const CFGElement &Element : *B) {
+    if (auto CFGSt = Element.getAs<CFGStmt>()) {
+      LastCFGStmt = CFGSt->getStmt();
+    }
+  }
+  const Stmt *TerminatorCond = B->getTerminatorCondition(true);
+  if (TerminatorCond && isa<BinaryOperator>(TerminatorCond))
+    return LastCFGStmt;
+  else
+    return TerminatorCond;
+}
+
 /// Computes entry psets of this block by merging exit psets
 /// of all reachable predecessors.
 /// Returns true if this block is reachable, i.e. one of it predecessors has
@@ -1446,23 +1466,17 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
 
     isReachable = true;
     auto PredPSets = PredBC.ExitPSets;
-    // If this block is only reachable from an IfStmt, modify pset according
-    // to condition.
-    if (auto TermStmt = PredBlock->getTerminator().getStmt()) {
-      // first successor is the then-branch, second successor is the
+    // Unfortunately, PredBlock->getTerminatorCondition(true) is almost what
+    // we whant here but not quite. In case of A || B, for the basic block
+    // corresponding to B, the terminator expression is the whole
+    // A || B. Is this a bug?
+    if (auto TermCond = getRealTerminator(PredBlock)) {
+      // First successor is the then-branch, second successor is the
       // else-branch.
-      bool thenBranch = (PredBlock->succ_begin()->getReachableBlock() == &B);
-      // TODO: also use for, do-while and while conditions
-      if (auto If = dyn_cast<IfStmt>(TermStmt)) {
-        assert(PredBlock->succ_size() == 2);
-        auto Builder = createPSetsBuilder(PredPSets);
-        Builder.UpdatePSetsFromCondition(If->getCond(), thenBranch,
-                                         If->getCond()->getLocStart());
-      } else if (const auto *CO = dyn_cast<ConditionalOperator>(TermStmt)) {
-        auto Builder = createPSetsBuilder(PredPSets);
-        Builder.UpdatePSetsFromCondition(CO->getCond(), thenBranch,
-                                         CO->getCond()->getLocStart());
-      }
+      bool IsThenBranch = PredBlock->succ_begin()->getReachableBlock() == &B;
+      auto Builder = createPSetsBuilder(PredPSets);
+      Builder.UpdatePSetsFromCondition(TermCond, IsThenBranch,
+                                       TermCond->getLocStart());
     }
     if (EntryPSets.empty())
       EntryPSets = PredPSets;
