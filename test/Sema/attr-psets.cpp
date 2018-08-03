@@ -42,7 +42,7 @@ void pointer_exprs() {
   int *q2 = 0;
   clang_analyzer_pset(q2); // expected-warning {{pset(q2) = (null)}}
 
-  int* p_zero{}; //zero initialization
+  int *p_zero{};               //zero initialization
   clang_analyzer_pset(p_zero); // expected-warning {{pset(p_zero) = (null)}}
 
   S s;
@@ -158,7 +158,7 @@ void address_of_global() {
 }
 
 void class_type_pointer() {
-  my_pointer p; // default initialization
+  my_pointer p;           // default initialization
   clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
 }
 
@@ -245,7 +245,7 @@ void if_stmt(int *p, char *q) {
   if (!p || clang_analyzer_pset(p)) // expected-warning {{pset(p) = p'}}
     ;
 
-  p ? clang_analyzer_pset(p) : false; // expected-warning {{pset(p) = p'}}
+  p ? clang_analyzer_pset(p) : false;  // expected-warning {{pset(p) = p'}}
   !p ? false : clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
 
   if (!p) {
@@ -276,7 +276,7 @@ void if_stmt(int *p, char *q) {
     clang_analyzer_pset(q); // expected-warning {{pset(q) = q'}}
   }
 
-  while(p) {
+  while (p) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
   }
 }
