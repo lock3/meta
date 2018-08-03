@@ -2221,7 +2221,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     Analyzer.run(AC);
   }
 
-  // Check for thread safety violations
+  // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
     LifetimeReporter Reporter{S};
     if (const auto *FD = dyn_cast<FunctionDecl>(D)) {
