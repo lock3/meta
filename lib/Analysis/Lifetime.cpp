@@ -72,7 +72,6 @@
 #include <map>
 #include <sstream>
 #include <unordered_map>
-#include <variant>
 
 #define DEBUG_TYPE "Lifetime Analysis"
 
