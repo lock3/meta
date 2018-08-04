@@ -288,7 +288,7 @@ struct Variable {
   }
 
   bool trackPset() const {
-    if (isThisPointer() || isNonLifetimeExtendedTemporary())
+    if (isThisPointer() || isTemporary())
       return false;
     auto Category = classifyTypeCategory(getType());
     return Category == TypeCategory::Pointer || Category == TypeCategory::Owner;
@@ -316,9 +316,14 @@ struct Variable {
     return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
   }
 
-  bool isNonLifetimeExtendedTemporary() const {
+  bool isTemporary() const {
     return Var.is<const MaterializeTemporaryExpr *>() &&
            !Var.get<const MaterializeTemporaryExpr *>();
+  }
+
+  bool isLifetimeExtendedTemporary() const {
+    return Var.is<const MaterializeTemporaryExpr *>() &&
+           Var.get<const MaterializeTemporaryExpr *>();
   }
 
   // Is the pset of this Variable allowed to contain null?
