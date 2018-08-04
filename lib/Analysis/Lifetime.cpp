@@ -1033,13 +1033,13 @@ class PSetsBuilder {
     }
     case Expr::InitListExprClass: {
       const auto *I = cast<InitListExpr>(E);
-      if(I->isSyntacticForm())
-          I = I->getSemanticForm();
+      if (I->isSyntacticForm())
+        I = I->getSemanticForm();
 
-      if(I->getType()->isPointerType() && I->getNumInits() == 0)
+      if (I->getType()->isPointerType() && I->getNumInits() == 0)
         return PSet::null(I->getLocStart());
 
-      if(I->getNumInits() == 1)
+      if (I->getNumInits() == 1)
         return EvalExprForPSet(I->getInit(0), referenceCtx);
 
       return PSet{};
