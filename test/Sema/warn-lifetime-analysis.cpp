@@ -73,7 +73,7 @@ void instantiate_ref_leaves_scope_template() {
 
 int global_i = 4;
 int *global_init_p = &global_i; // OK
-int *global_uninit_p;           // TODO expected-warning {{the pset of 'global_uninit_p' must be a subset of {(static), (null)}, but is {(invalid)}}
+int *global_uninit_p;           // TODOexpected-warning {{the pset of 'global_uninit_p' must be a subset of {(static), (null)}, but is {(invalid)}}
 int *global_null_p = nullptr;   // OK
 
 void uninitialized_static() {
