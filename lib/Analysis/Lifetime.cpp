@@ -87,8 +87,8 @@ bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
   auto CallBack = [Name, ArgNum](const CXXRecordDecl *Base) {
     return std::none_of(Base->method_begin(), Base->method_end(),
                         [Name, ArgNum](const CXXMethodDecl *M) {
-                          if (ArgNum != -1 &&
-                              ArgNum != M->getMinRequiredArguments())
+                          if (ArgNum >= 0 &&
+                              (unsigned)ArgNum != M->getMinRequiredArguments())
                             return false;
                           auto *I = M->getDeclName().getAsIdentifierInfo();
                           if (!I)
