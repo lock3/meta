@@ -3205,6 +3205,7 @@ def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;
 def note_temporary_destroyed: Note<"temporary was destroyed at the end of the full expression">;
 def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
+def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
 
 
