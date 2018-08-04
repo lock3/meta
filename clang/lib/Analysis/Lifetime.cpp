@@ -728,7 +728,7 @@ class PSetsBuilder {
 
   // Returns the variable which the expression refers to,
   // or None.
-  Optional<Variable> refersTo(const Expr *E) {
+  Variable refersTo(const Expr *E) {
     E = E->IgnoreParenCasts();
     switch (E->getStmtClass()) {
     case Expr::DeclRefExprClass: {
@@ -736,7 +736,7 @@ class PSetsBuilder {
       auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
       if (VD)
         return Variable(VD);
-      return {};
+      return Variable::temporary();
     }
 
     case Expr::CXXThisExprClass: {
@@ -746,20 +746,18 @@ class PSetsBuilder {
     case Expr::MemberExprClass: {
       const auto *M = cast<MemberExpr>(E);
       auto SubV = refersTo(M->getBase());
-      if (!SubV)
-        return {};
 
       /// The returned declaration will be a FieldDecl or (in C++) a VarDecl
       /// (for static data members), a CXXMethodDecl, or an EnumConstantDecl.
       auto *FD = dyn_cast<FieldDecl>(M->getMemberDecl());
       if (FD) {
-        SubV->addFieldRef(FD);
+        SubV.addFieldRef(FD);
         return SubV;
       }
-      return {};
+      return Variable::temporary();
     }
     default:
-      return {};
+      return Variable::temporary();
     }
   }
 
@@ -773,26 +771,25 @@ class PSetsBuilder {
       if (BinOp->getOpcode() == BO_Assign) {
         EvalExpr(BinOp->getLHS()); // Eval for side-effects
         auto Category = classifyTypeCategory(BinOp->getLHS()->getType());
-        Optional<Variable> V = refersTo(BinOp->getLHS());
-        if (Category == TypeCategory::Owner && V) {
+        Variable V = refersTo(BinOp->getLHS());
+        if (Category == TypeCategory::Owner) {
           // When an Owner x is copied to or moved to, set pset(x) = {x'}
-          SetPSet(*V, PSet::pointsToVariable(*V, 1), BinOp->getExprLoc());
-        } else if (Category == TypeCategory::Pointer && V) {
+          SetPSet(V, PSet::pointsToVariable(V, 1), BinOp->getExprLoc());
+        } else if (Category == TypeCategory::Pointer) {
           // This assignment updates a Pointer
           PSet PS = EvalExprForPSet(BinOp->getRHS(), false);
-          SetPSet(*V, PS, BinOp->getExprLoc());
+          SetPSet(V, PS, BinOp->getExprLoc());
         }
         return;
       } else if (BinOp->getLHS()->getType()->isPointerType() &&
                  (BinOp->getOpcode() == BO_AddAssign ||
                   BinOp->getOpcode() == BO_SubAssign)) {
         // Affects pset; forbidden by the bounds profile.
-        if (llvm::Optional<Variable> V = refersTo(BinOp->getLHS())) {
-          SetPSet(*V,
-                  PSet::invalid(InvalidationReason::PointerArithmetic(
-                      BinOp->getExprLoc())),
-                  BinOp->getExprLoc());
-        }
+        Variable V = refersTo(BinOp->getLHS());
+        SetPSet(V,
+                PSet::invalid(
+                    InvalidationReason::PointerArithmetic(BinOp->getExprLoc())),
+                BinOp->getExprLoc());
         // TODO: diagnose even if we have no VarDecl?
       }
       break;
