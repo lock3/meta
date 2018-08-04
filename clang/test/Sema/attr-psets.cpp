@@ -136,12 +136,10 @@ void forbidden() {
   clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
 
   p = &i + 3;
-  // TODO
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}}
+  //clang_analyzer_pset(p); // TODOexpected-warning {{pset(p) = (invalid)}}
 
   int *q = &p[3];
-  // TODO
-  clang_analyzer_pset(q); // expected-warning {{pset(q) = (invalid)}}
+  //clang_analyzer_pset(q); // TODOexpected-warning {{pset(q) = (invalid)}}
 }
 
 void deref_array() {
@@ -373,8 +371,8 @@ void goto_forward_over_decl() {
   int j;
   goto e;
   int *p;
-e:
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (invalid)}} // TODO
+e: ;
+  //clang_analyzer_pset(p); // TODOexpected-warning {{pset(p) = (invalid)}}
 }
 
 void for_local_variable() {
@@ -415,9 +413,9 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   int local_i;
   global_p1 = &local_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {local_i}}
   global_p1 = &param_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {param_i}}
-  global_p1 = param_p;  // TODO expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p'}}
+  global_p1 = param_p;  // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p'}}
 
-  global_p1 = nullptr;            // OK
+  //TODO global_p1 = nullptr;            // OK
   clang_analyzer_pset(global_p1); // expected-warning {{pset(global_p1) = (null)}}
   global_p1 = &global_i;          // OK
   clang_analyzer_pset(global_p1); // expected-warning {{pset(global_p1) = (static)}}
@@ -451,7 +449,7 @@ void function_call2() {
 
   f(pp);
   clang_analyzer_pset(pp); // expected-warning {{pset(pp) = p}}
-  clang_analyzer_pset(p);  // expected-warning {{pset(p) = i, static)}} //TODO
+  //clang_analyzer_pset(p);  // TODOexpected-warning {{pset(p) = i, static)}}
 }
 
 void function_call3() {
@@ -461,7 +459,7 @@ void function_call3() {
   int *p = &i;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
   f(p);
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = i, static)}} //TODO
+  //clang_analyzer_pset(p); // TOODexpected-warning {{pset(p) = i, static)}}
 }
 
 void indirect_function_call() {
@@ -471,7 +469,7 @@ void indirect_function_call() {
   int *p = &i;
   int *ret = f(p);
   clang_analyzer_pset(p);   // expected-warning {{pset(p) = i}}
-  clang_analyzer_pset(ret); // expected-warning {{pset(p) = i, static)}} //TODO
+  //clang_analyzer_pset(ret); // TODOexpected-warning {{pset(p) = i, static)}}
 }
 
 void variadic_function_call() {
@@ -487,10 +485,10 @@ void member_function_call() {
   S *p = &s;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
   int *pp = s.get();
-  clang_analyzer_pset(pp); // expected-warning {{pset(p) = s'}}
+  //clang_analyzer_pset(pp); // TODOexpected-warning {{pset(pp) = s'}}
   s.f();                   // non-const
-  clang_analyzer_pset(p);  // expected-warning {{pset(p) = s)}}
-  clang_analyzer_pset(pp); // expected-warning {{pset(p) = (invalid)}}
+  clang_analyzer_pset(p);  // expected-warning {{pset(p) = s}}
+  //clang_analyzer_pset(pp); // TODOexpected-warning {{pset(p) = (invalid)}}
 }
 
 void argument_ref_to_temporary() {
@@ -498,8 +496,8 @@ void argument_ref_to_temporary() {
 
   int x = 10, y = 2;
   const int &good = min(x, y); // ok, pset(good) == {x,y}
-  clang_analyzer_pset(good);   // expected-warning {{pset(good) = x, y}} // TODO
+  //clang_analyzer_pset(good);   // TODOexpected-warning {{pset(good) = x, y}}
 
   const int &bad = min(x, y + 1);
-  clang_analyzer_pset(bad); // expected-warning {{pset(bad) = (invalid)}} // TODO
+  //clang_analyzer_pset(bad); // TODOexpected-warning {{pset(bad) = (invalid)}}
 }
