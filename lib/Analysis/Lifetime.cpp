@@ -380,7 +380,8 @@ class InvalidationReason {
     NOT_INITIALIZED,
     POINTEE_LEFT_SCOPE,
     TEMPORARY_LEFT_SCOPE,
-    POINTER_ARITHMETIC
+    POINTER_ARITHMETIC,
+    DEREFERENCED
   } Reason;
   const VarDecl *Pointee = nullptr;
   SourceLocation Loc;
@@ -402,6 +403,9 @@ public:
       return;
     case POINTER_ARITHMETIC:
       Reporter.diag(Loc, diag::note_pointer_arithmetic);
+      return;
+    case DEREFERENCED:
+      Reporter.diag(Loc, diag::note_dereferenced);
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
@@ -439,6 +443,14 @@ public:
     InvalidationReason R;
     R.Loc = Loc;
     R.Reason = POINTER_ARITHMETIC;
+    return R;
+  }
+
+  static InvalidationReason Dereferenced(SourceLocation Loc) {
+    assert(Loc.isValid());
+    InvalidationReason R;
+    R.Loc = Loc;
+    R.Reason = DEREFERENCED;
     return R;
   }
 };
@@ -511,7 +523,10 @@ public:
   bool containsStatic() const { return ContainsStatic; }
   void addStatic() { ContainsStatic = true; }
 
-  const std::map<Variable, unsigned> &vars() { return Vars; }
+  const std::map<Variable, unsigned> &vars() const { return Vars; }
+
+  const std::vector<InvalidationReason> &invReasons() { return InvReasons; }
+  const std::vector<NullReason> &nullReasons() { return NullReasons; }
 
   bool isSubstitutableFor(const PSet &O) {
     // If a includes invalid, then b must include invalid.
@@ -597,11 +612,36 @@ public:
     }
   }
 
+  void insert(Variable Var, unsigned order = 0) {
+    if (Var.hasGlobalStorage()) {
+      ContainsStatic = true;
+      return;
+    }
+
+    if (Vars.count(Var))
+      order = std::min(Vars[Var], order);
+
+    Vars[Var] = order;
+  }
+
+  void appendNullReason(NullReason R) { NullReasons.push_back(R); }
+
+  void appendInvalidReason(InvalidationReason R) { InvReasons.push_back(R); }
+
   /// The pointer is dangling
   static PSet invalid(InvalidationReason Reason) {
     PSet ret;
     ret.ContainsInvalid = true;
     ret.InvReasons.push_back(Reason);
+    return ret;
+  }
+
+  /// The pointer is dangling
+  static PSet invalid(const std::vector<InvalidationReason> &Reasons) {
+    PSet ret;
+    ret.ContainsInvalid = true;
+    ret.InvReasons = Reasons;
+    ;
     return ret;
   }
 
@@ -993,22 +1033,7 @@ class PSetsBuilder {
           // pset_ref(*p) = pset_ptr(p)
           return PS;
         } else {
-          if (PS.containsInvalid() || PS.isUnknown())
-            return PS;
-
-          assert(PS.isValid());
-          // pset_ptr(*p) = replace each pset entry of pset_ptr(p) by its own
-          // pset
-          PSet RetPS;
-          if (PS.containsStatic())
-            RetPS.addStatic();
-
-          for (auto &KV : PS.vars()) {
-            const Variable &V = KV.first;
-            RetPS.merge(GetPSet(V));
-          }
-
-          return RetPS;
+          return derefPSet(PS, UnOp->getOperatorLoc());
         }
       } else if (UnOp->getOpcode() == UO_AddrOf) {
         assert(!referenceCtx);
@@ -1093,6 +1118,8 @@ class PSetsBuilder {
   void erasePointer(Variable P) { PSets.erase(P); }
   PSet GetPSet(Variable P);
   void SetPSet(Variable P, PSet PS, SourceLocation Loc);
+  PSet derefPSet(PSet P, SourceLocation Loc);
+
   void diagPSet(Variable P, SourceLocation Loc) {
     auto i = PSets.find(P);
     if (i != PSets.end())
@@ -1157,8 +1184,48 @@ PSet PSetsBuilder::GetPSet(Variable P) {
   llvm_unreachable("Missing pset for Pointer");
 }
 
+/// Computes the pset of dereferencing a variable with the given pset
+/// If PS contains (null), it is silently ignored.
+PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
+  // When a local Pointer p is dereferenced using unary * or -> to create a
+  // temporary tmp, then if pset(pset(p)) is nonempty, set pset(tmp) =
+  // pset(pset(p)) and Kill(pset(tmp)'). Otherwise, set pset(tmp) = {tmp}.
+  if (PS.isUnknown())
+    return {};
+
+  if (PS.containsInvalid()) {
+    std::vector<InvalidationReason> invReasons = PS.invReasons();
+    invReasons.emplace_back(InvalidationReason::Dereferenced(Loc));
+    return PSet::invalid(PS.invReasons());
+  }
+
+  PSet RetPS;
+  if (PS.containsStatic())
+    RetPS.addStatic();
+
+  for (auto &KV : PS.vars()) {
+    const Variable &V = KV.first;
+    auto order = KV.second;
+
+    if (order > 0)
+      RetPS.insert(V, order + 1); // pset(o') = { o'' }
+    else
+      RetPS.merge(GetPSet(V));
+  }
+
+  if (RetPS.containsNull())
+    RetPS.appendNullReason(Loc);
+
+  if (RetPS.containsInvalid())
+    RetPS.appendInvalidReason(InvalidationReason::Dereferenced(Loc));
+
+  return RetPS;
+}
+
 void PSetsBuilder::SetPSet(Variable P, PSet PS, SourceLocation Loc) {
   assert(P.getName() != "");
+  if (!P.trackPset())
+    return;
 
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
