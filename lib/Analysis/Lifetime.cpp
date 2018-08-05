@@ -842,6 +842,10 @@ class PSetsBuilder {
         return;
       break;
     }
+    case Expr::ConditionalOperatorClass:
+      // Do not handle it here; this is always the terminator of a CFG block
+      // and it will be handled explicitly there.
+      return;
     default:;
     }
     // Other Expr, just recurse
@@ -854,6 +858,11 @@ class PSetsBuilder {
   /// into a function, it's pointee's are invalidated.
   /// Returns true if CallExpr was handled.
   bool EvalCallExpr(const CallExpr *CallE) {
+    // Handle call to clang_analyzer_pset, which will print the pset of its
+    // argument
+    if (HandleClangAnalyzerPset(CallE))
+      return true;
+
     EvalExpr(CallE->getCallee());
 
     auto *P = dyn_cast<PointerType>(
@@ -1124,8 +1133,7 @@ class PSetsBuilder {
       Reporter->debugPset(Loc, P.getName(), "(untracked)");
   }
 
-  bool HandleClangAnalyzerPset(const Stmt *S,
-                               const LifetimeReporterBase *Reporter);
+  bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
 public:
   PSetsBuilder(const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt,
@@ -1322,12 +1330,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
 
 /// Checks if the statement S is a call to clang_analyzer_pset and, if yes,
 /// diags the pset of its argument
-bool PSetsBuilder::HandleClangAnalyzerPset(
-    const Stmt *S, const LifetimeReporterBase *Reporter) {
-
-  const auto *CallE = dyn_cast<CallExpr>(S);
-  if (!CallE)
-    return false;
+bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
 
   const FunctionDecl *Callee = CallE->getDirectCallee();
   if (!Callee)
@@ -1388,12 +1391,6 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     switch (E.getKind()) {
     case CFGElement::Statement: {
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
-
-      // Handle call to clang_analyzer_pset, which will print the pset of its
-      // argument
-      if (HandleClangAnalyzerPset(S, Reporter))
-        break;
-
       EvalStmt(S);
 
       // Kill all temporaries that vanish at the end of the full expression
