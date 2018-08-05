@@ -35,7 +35,11 @@ public:
                                 std::string ActualPset) const = 0;
   virtual void warnDerefDangling(SourceLocation Loc, bool possibly) const = 0;
   virtual void warnDerefNull(SourceLocation Loc, bool possibly) const = 0;
-
+  virtual void warnParametersAlias(SourceLocation LocParam1,
+                                   SourceLocation LocParam2,
+                                   const std::string &Pointee) const = 0;
+  virtual void warnParameterDangling(SourceLocation Loc,
+                                     bool indirectly) const = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc,
                                     std::string Name) const = 0;
 
