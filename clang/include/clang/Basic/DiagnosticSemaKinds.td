@@ -3201,12 +3201,18 @@ def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null point
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_parameter_alias : Warning<"this parameter points to the same variable '%0' as another parameter">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling pointer as parameter">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;
 def note_temporary_destroyed: Note<"temporary was destroyed at the end of the full expression">;
 def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
 def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
+def note_here: Note<"here">;
 
 
 // LifetimeAnalysis debug

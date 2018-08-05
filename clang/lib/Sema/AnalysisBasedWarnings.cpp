@@ -1979,7 +1979,16 @@ public:
   void warnDerefNull(SourceLocation Loc, bool possibly) const final {
     S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
   }
+  void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
+                           const std::string &Pointee) const final {
 
+    S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
+    S.Diag(LocParam2, diag::note_here);
+  }
+  void warnParameterDangling(SourceLocation Loc,
+                                     bool indirectly) const final {
+    S.Diag(Loc, diag::warn_parameter_dangling) << indirectly ;
+  }
   void notePointeeLeftScope(SourceLocation Loc, std::string Name) const final {
     S.Diag(Loc, diag::note_pointee_left_scope) << Name;
   }

@@ -79,3 +79,19 @@ int *global_null_p = nullptr;   // OK
 void uninitialized_static() {
   static int *p; // expected-warning {{the pset of 'p' must be a subset of {(static), (null)}, but is {(invalid)}}
 }
+
+void function_call() {
+  void f(int *);
+  void g(int **);
+  void h(int *, int **);
+
+  int *p; // expected-note 2 {{it was never initialized here}}
+  f(p);   // expected-warning {{passing a dangling pointer as parameter}}
+
+  int **q = &p;
+  g(q); // expected-warning {{passing a indirectly dangling pointer as parameter}} // expected-note {{was dereferenced here}}
+
+  int i;
+  p = &i;
+  h(p, q); // expected-warning {{this parameter points to the same variable 'i' as another parameter}} expected-note {{here}}
+}
