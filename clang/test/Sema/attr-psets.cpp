@@ -602,6 +602,7 @@ void Example1_4() {
 
 void Example9() {
   std::vector<int> v1(100);
+  clang_analyzer_pset(v1); // expected-warning {{pset(v1) = v1'}}
   int *pi = &v1[0];
   //clang_analyzer_pset(pi); // TODOexpected-warning {{pset(p1) = v1'}}
   auto v2 = std::move(v1);
