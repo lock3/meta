@@ -14,16 +14,20 @@ struct vector {
   vector(unsigned);
   T *begin();
   T *end();
-  T& operator[](unsigned);
+  T &operator[](unsigned);
+  T *data();
   ~vector();
 };
 
-template< class T > struct remove_reference      {typedef T type;};
-template< class T > struct remove_reference<T&>  {typedef T type;};
-template< class T > struct remove_reference<T&&> {typedef T type;};
+template <class T>
+struct remove_reference { typedef T type; };
+template <class T>
+struct remove_reference<T &> { typedef T type; };
+template <class T>
+struct remove_reference<T &&> { typedef T type; };
 
 template <typename T>
-typename remove_reference<T>::type&& move(T&& arg);
+typename remove_reference<T>::type &&move(T &&arg);
 } // namespace std
 
 int rand();
@@ -500,6 +504,7 @@ void variadic_function_call() {
 
 void member_function_call() {
   S s;
+  // clang_analyzer_pset(s); // TODOexpected-warning {{pset(s) = s'}}
   S *p = &s;
   clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
   int *pp = s.get();
@@ -607,4 +612,25 @@ void Example9() {
   //clang_analyzer_pset(pi); // TODOexpected-warning {{pset(p1) = v1'}}
   auto v2 = std::move(v1);
   //clang_analyzer_pset(pi); // TODOexpected-warning {{pset(p1) = v2'}}
+}
+
+void return_pointer() {
+  std::vector<int> v1(100);
+  clang_analyzer_pset(v1); // expected-warning {{pset(v1) = v1'}}
+
+  int *f(std::vector<int> &);
+  int *p = f(v1);
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = v1'}}
+
+  int &r = v1[0];
+  clang_analyzer_pset(r); // expected-warning {{pset(r) = v1'}}
+
+  int *pmem = v1.data();
+  clang_analyzer_pset(pmem); // expected-warning {{pset(pmem) = v1'}}
+
+  auto *v1p = &v1;
+  clang_analyzer_pset(v1p); // expected-warning {{pset(v1p) = v1}}
+
+  auto *pmem2 = v1p->data();
+  //clang_analyzer_pset(pmem2); // TODOexpected-warning {{pset(pmem2) = v1'}}
 }

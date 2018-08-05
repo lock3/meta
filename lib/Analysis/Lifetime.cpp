@@ -843,6 +843,8 @@ class PSetsBuilder {
       }
       break;
     }
+    case Expr::CXXOperatorCallExprClass:
+    case Expr::CXXMemberCallExprClass:
     case Expr::CallExprClass: {
       EvalCallExpr(cast<CallExpr>(E));
       return;
@@ -874,7 +876,7 @@ class PSetsBuilder {
     std::vector<const Expr *> Pout;
   };
 
-  void PushCallArguments(const Expr *Arg, QualType ParamQType, PSet PS,
+  void PushCallArguments(const Expr *Arg, QualType ParamQType,
                          CallArguments &Args) {
     // TODO implement gsl::lifetime annotations
     // TODO implement aggregates
@@ -883,19 +885,24 @@ class PSetsBuilder {
     if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
         if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.emplace_back(Arg, PS);
+          Args.Oin_strong.emplace_back(
+              Arg, EvalExprForPSet(Arg, /*referenceCtx=*/false));
         } else if (ParamQType.isConstQualified()) {
-          Args.Oin_weak.emplace_back(Arg, PS);
+          Args.Oin_weak.emplace_back(
+              Arg, EvalExprForPSet(Arg, /*referenceCtx=*/false));
         } else {
-          Args.Oin.emplace_back(Arg, PS);
+          Args.Oin.emplace_back(Arg,
+                                EvalExprForPSet(Arg, /*referenceCtx=*/false));
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(Arg, PS);
+        Args.Pin.emplace_back(Arg, EvalExprForPSet(Arg, /*referenceCtx=*/true));
       }
 
     } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(Arg, PS);
+      Args.Pin.emplace_back(Arg, EvalExprForPSet(Arg, /*referenceCtx=*/false));
+    } else {
+      EvalExpr(Arg);
     }
 
     // A “function output” means a return value or a parameter passed by raw
@@ -1046,11 +1053,11 @@ class PSetsBuilder {
   /// When a non-const pointer to pointer or reference to pointer is passed
   /// into a function, it's pointee's are invalidated.
   /// Returns true if CallExpr was handled.
-  void EvalCallExpr(const CallExpr *CallE) {
+  PSet EvalCallExpr(const CallExpr *CallE) {
     // Handle call to clang_analyzer_pset, which will print the pset of its
     // argument
     if (HandleClangAnalyzerPset(CallE))
-      return;
+      return {};
 
     auto *CalleeE = CallE->getCallee();
     EvalExpr(CalleeE);
@@ -1058,11 +1065,26 @@ class PSetsBuilder {
     CallArguments Args;
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
       const Expr *Arg = CallE->getArg(i);
-      QualType ParamQType =
-          CT.FTy->isVariadic() ? Arg->getType() : CT.FTy->getParamType(i);
+
+      QualType ParamQType = [&] {
+        // For CXXOperatorCallExpr, getArg(0) is the 'this' pointer.
+        if (dyn_cast<CXXOperatorCallExpr>(CallE)) {
+          if (i == 0) {
+            auto QT = ASTCtxt.getLValueReferenceType(Arg->getType(),
+                                                     /*SpelledAsLValue=*/true);
+            if (CT.FTy->isConst())
+              QT.addConst();
+            return QT;
+          } else
+            return CT.FTy->getParamType(i - 1);
+        }
+        if (CT.FTy->isVariadic())
+          return Arg->getType();
+        else
+          return CT.FTy->getParamType(i);
+      }();
 
       PushCallArguments(Arg, ParamQType,
-                        EvalExprForPSet(Arg, ParamQType->isReferenceType()),
                         Args); // appends into Args
     }
 
@@ -1070,20 +1092,19 @@ class PSetsBuilder {
       // A this pointer parameter is treated as if it were declared as a
       // reference to the current object
       auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE);
-      assert(MemberCall);
-      auto *Object = MemberCall->getImplicitObjectArgument();
-      assert(Object);
+      if (MemberCall) {
+        auto *Object = MemberCall->getImplicitObjectArgument();
+        assert(Object);
 
-      // TODO: *this is gsl::non_null annotated
-      auto LValRefToObject = ASTCtxt.getLValueReferenceType(
-          Object->getType(), /*SpelledAsLValue=*/true);
-      if (CT.FTy->isConst())
-        LValRefToObject.addConst();
+        // TODO: *this is gsl::non_null annotated
+        auto LValRefToObject = ASTCtxt.getLValueReferenceType(
+            Object->getType(), /*SpelledAsLValue=*/true);
+        if (CT.FTy->isConst())
+          LValRefToObject.addConst();
 
-      PushCallArguments(
-          Object, LValRefToObject,
-          EvalExprForPSet(Object, !Object->getType()->isPointerType()),
-          Args); // appends into Args
+        PushCallArguments(Object, LValRefToObject,
+                          Args); // appends into Args
+      }
     }
 
     // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
@@ -1099,6 +1120,16 @@ class PSetsBuilder {
 
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
+    PSet ret;
+    for (CallArgument &CA : PinExtended) {
+      // llvm::errs() << " Pin PS:" << CA.PS.str() << "\n";
+      ret.merge(CA.PS);
+    }
+    for (CallArgument &CA : Args.Oin) {
+      // llvm::errs() << " Oin PS:" << CA.PS.str() << "\n";
+      ret.merge(CA.PS);
+    }
+    return ret;
   }
 
   /// Evaluates E for effects that change psets.
@@ -1262,6 +1293,12 @@ class PSetsBuilder {
     }
     case Expr::CXXConstructExprClass:
       return PSet::null(E->getExprLoc());
+
+    case Expr::CXXOperatorCallExprClass:
+    case Expr::CXXMemberCallExprClass:
+    case Expr::CallExprClass: {
+      return EvalCallExpr(cast<CallExpr>(E));
+    }
     default:;
     }
 
@@ -1371,6 +1408,8 @@ PSet PSetsBuilder::GetPSet(Variable P) {
     return PSet::onlyStatic();
   }
 
+  llvm::errs() << "PSetsBuilder::GetPSet: did not find pset for " << P.getName()
+               << "\n";
   llvm_unreachable("Missing pset for Pointer");
 }
 
