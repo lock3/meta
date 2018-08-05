@@ -844,9 +844,8 @@ class PSetsBuilder {
       break;
     }
     case Expr::CallExprClass: {
-      if (EvalCallExpr(cast<CallExpr>(E)))
-        return;
-      break;
+      EvalCallExpr(cast<CallExpr>(E));
+      return;
     }
     case Expr::ConditionalOperatorClass:
       // Do not handle it here; this is always the terminator of a CFG block
@@ -1050,11 +1049,11 @@ class PSetsBuilder {
   /// When a non-const pointer to pointer or reference to pointer is passed
   /// into a function, it's pointee's are invalidated.
   /// Returns true if CallExpr was handled.
-  bool EvalCallExpr(const CallExpr *CallE) {
+  void EvalCallExpr(const CallExpr *CallE) {
     // Handle call to clang_analyzer_pset, which will print the pset of its
     // argument
     if (HandleClangAnalyzerPset(CallE))
-      return true;
+      return;
 
     EvalExpr(CallE->getCallee());
 
@@ -1098,8 +1097,6 @@ class PSetsBuilder {
 
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
-
-    return true;
   }
 
   /// Evaluates E for effects that change psets.
