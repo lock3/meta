@@ -1626,8 +1626,8 @@ void LifetimeContext::TraverseBlocks() {
             continue;
           Variable P(PVD);
           // Parameters cannot be invalid (checked at call site).
-          auto PS = P.mightBeNull() ? PSet::pointsToVariableOrNull(P, 1)
-                                    : PSet::pointsToVariable(P, 1);
+          auto PS = P.mightBeNull() ? PSet::pointsToVariableOrNull(P, 0)
+                                    : PSet::pointsToVariable(P, 0);
           // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
           // PVD->dump();
           BC.ExitPSets.emplace(P, std::move(PS));
