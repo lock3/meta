@@ -216,66 +216,66 @@ void ignore_pointer_to_member() {
 }
 
 void if_stmt(int *p, char *q) {
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p}}
   int *alwaysNull = nullptr;
 
   if (p) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   } else {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   }
 
   if (p != nullptr) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   } else {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   }
 
   if (p != alwaysNull) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   } else {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   }
 
-  if (p && clang_analyzer_pset(p)) // expected-warning {{pset(p) = p'}}
+  if (p && clang_analyzer_pset(p)) // expected-warning {{pset(p) = p}}
     ;
 
-  if (!p || clang_analyzer_pset(p)) // expected-warning {{pset(p) = p'}}
+  if (!p || clang_analyzer_pset(p)) // expected-warning {{pset(p) = p}}
     ;
 
-  p ? clang_analyzer_pset(p) : false;  // expected-warning {{pset(p) = p'}}
-  !p ? false : clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+  p ? clang_analyzer_pset(p) : false;  // expected-warning {{pset(p) = p}}
+  !p ? false : clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
 
   if (!p) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   } else {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   }
 
   if (p == nullptr) {
     clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
   } else {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   }
 
   if (p && q) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
-    clang_analyzer_pset(q); // expected-warning {{pset(q) = q'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = q}}
   } else {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
-    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q}}
   }
 
   if (!p || !q) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
-    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = (null), q}}
   } else {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
-    clang_analyzer_pset(q); // expected-warning {{pset(q) = q'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
+    clang_analyzer_pset(q); // expected-warning {{pset(q) = q}}
   }
 
   while (p) {
-    clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
   }
 }
 
@@ -393,9 +393,9 @@ void __assert_fail() __attribute__((__noreturn__));
        : __assert_fail())
 
 void asserting(int *p) {
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p'}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null), p}}
   assert(p);
-  clang_analyzer_pset(p); // expected-warning {{pset(p) = p'}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = p}}
 }
 
 int *global_p1 = nullptr;
@@ -403,7 +403,7 @@ int *global_p2 = nullptr;
 int global_i;
 
 void namespace_scoped_vars(int param_i, int *param_p) {
-  clang_analyzer_pset(param_p); // expected-warning {{pset(param_p) = (null), param_p'}}
+  clang_analyzer_pset(param_p); // expected-warning {{pset(param_p) = (null), param_p}}
 
   if (global_p1) {
     clang_analyzer_pset(global_p1); // expected-warning {{pset(global_p1) = (static)}}
@@ -413,7 +413,7 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   int local_i;
   global_p1 = &local_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {local_i}}
   global_p1 = &param_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {param_i}}
-  global_p1 = param_p;  // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p'}}
+  global_p1 = param_p;  // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(null), param_p}}
 
   //TODO global_p1 = nullptr;            // OK
   clang_analyzer_pset(global_p1); // expected-warning {{pset(global_p1) = (null)}}
