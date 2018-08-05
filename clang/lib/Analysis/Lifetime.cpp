@@ -858,16 +858,23 @@ class PSetsBuilder {
       EvalStmt(SubStmt);
   }
 
+  struct CallArgument {
+    CallArgument(const Expr *ArgumentExpr, PSet PS)
+        : ArgumentExpr(ArgumentExpr), PS(std::move(PS)) {}
+    const Expr *ArgumentExpr;
+    PSet PS;
+  };
+
   struct CallArguments {
-    std::vector<const Expr *> Oin_strong;
-    std::vector<const Expr *> Oin_weak;
-    std::vector<const Expr *> Oin;
-    std::vector<const Expr *> Pin;
+    std::vector<CallArgument> Oin_strong;
+    std::vector<CallArgument> Oin_weak;
+    std::vector<CallArgument> Oin;
+    std::vector<CallArgument> Pin;
     // The pointee is the output
     std::vector<const Expr *> Pout;
   };
 
-  void PushCallArguments(const Expr *Arg, QualType ParamQType,
+  void PushCallArguments(const Expr *Arg, QualType ParamQType, PSet PS,
                          CallArguments &Args) {
     // TODO implement gsl::lifetime annotations
     // TODO implement aggregates
@@ -876,19 +883,19 @@ class PSetsBuilder {
     if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
         if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.push_back(Arg);
+          Args.Oin_strong.emplace_back(Arg, PS);
         } else if (ParamQType.isConstQualified()) {
-          Args.Oin_weak.push_back(Arg);
+          Args.Oin_weak.emplace_back(Arg, PS);
         } else {
-          Args.Oin.push_back(Arg);
+          Args.Oin.emplace_back(Arg, PS);
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.push_back(Arg);
+        Args.Pin.emplace_back(Arg, PS);
       }
 
     } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      Args.Pin.push_back(Arg);
+      Args.Pin.emplace_back(Arg, PS);
     }
 
     // A “function output” means a return value or a parameter passed by raw
@@ -950,24 +957,16 @@ class PSetsBuilder {
     return CT;
   }
 
-  /// Models the pset information about real and generated parameters
-  struct PinInfo {
-    /// Location of the argument
-    SourceLocation Loc;
-    /// PSet of the argument
-    PSet PS;
-  };
-
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
-  std::vector<PinInfo>
-  diagnoseAndExpandPin(const std::vector<const Expr *> &PinArgs) {
-    std::vector<PinInfo> Pin;
+  std::vector<CallArgument>
+  diagnoseAndExpandPin(const std::vector<CallArgument> &PinArgs) {
+    std::vector<CallArgument> PinExtended;
     // llvm::errs() << "Start Pin: ";
-    for (auto &ArgExpr : PinArgs) {
-      // ArgExpr->dump();
-      PSet PS = EvalExprForPSet(ArgExpr, !ArgExpr->getType()->isPointerType());
-      Pin.push_back(PinInfo{ArgExpr->getExprLoc(), PS});
+    for (auto &CA : PinArgs) {
+      const Expr *ArgExpr = CA.ArgumentExpr;
+      PSet PS = CA.PS;
+      PinExtended.emplace_back(ArgExpr, PS);
 
       if (PS.containsInvalid()) {
         if (Reporter) {
@@ -985,7 +984,7 @@ class PSetsBuilder {
       // TODO: What is the type of `*p` when p is of class-type, possibly
       // without operator*?
       QualType QT = ArgExpr->getType()->getPointeeType();
-      //llvm::errs() << "param with PSET " << PS.str() << "\n";
+      // llvm::errs() << "param with PSET " << PS.str() << "\n";
       while (!QT.isNull() && QT->isPointerType() && !PS.containsInvalid()) {
         PS = derefPSet(PS, ArgExpr->getExprLoc());
         if (PS.containsInvalid()) {
@@ -996,44 +995,42 @@ class PSetsBuilder {
           }
           break;
         }
-        //llvm::errs() << " deref -> " << PS.str() << "\n";
-        Pin.push_back(PinInfo{ArgExpr->getExprLoc(), PS});
+        // llvm::errs() << " deref -> " << PS.str() << "\n";
+        PinExtended.emplace_back(ArgExpr, PS);
         QT = QT->getPointeeType();
       }
     }
-    return Pin;
+    return PinExtended;
   }
 
   /// Diagnose if psets arguments in Oin and Pin refer to the same variable
-  void diagnoseParameterAliasing(const std::vector<PinInfo> &Pin,
-                                 const std::vector<const Expr *> &Oin) {
-
+  void diagnoseParameterAliasing(const std::vector<CallArgument> &Pin,
+                                 const std::vector<CallArgument> &Oin) {
+    if (!Reporter)
+      return;
     std::map<Variable, SourceLocation> AllVars;
-    for (auto &PinI : Pin) {
-      for (auto &KV : PinI.PS.vars()) {
+    for (auto &CA : Pin) {
+      for (auto &KV : CA.PS.vars()) {
         auto &Var = KV.first;
         // pset(argument(p)) and pset(argument(x)) must be disjoint (as long as
         // not annotated)
-        auto i = AllVars.emplace(Var, PinI.Loc);
+        auto i = AllVars.emplace(Var, CA.ArgumentExpr->getExprLoc());
         if (!i.second) {
-          if (Reporter)
-            Reporter->warnParametersAlias(PinI.Loc, i.first->second,
-                                          Var.getName());
+          Reporter->warnParametersAlias(CA.ArgumentExpr->getExprLoc(),
+                                        i.first->second, Var.getName());
         }
       }
     }
-    for (const Expr *OinE : Oin) {
-      for (auto &KV : EvalExprForPSet(OinE, false).vars()) {
+    for (auto &CA : Oin) {
+      for (auto &KV : CA.PS.vars()) {
         auto &Var = KV.first;
-        // pset(argument(p)) and pset(argument(x)) must be disjoint (as long as
-        // not annotated)
-        // Enforce that pset() of each argument does not refer to a
-        // local Owner in Oin
-        auto i = AllVars.emplace(Var, OinE->getExprLoc());
+        // pset(argument(p)) and pset(argument(x)) must be disjoint (as long
+        // as not annotated) Enforce that pset() of each argument does not
+        // refer to a local Owner in Oin
+        auto i = AllVars.emplace(Var, CA.ArgumentExpr->getExprLoc());
         if (!i.second) {
-          if (Reporter)
-            Reporter->warnParametersAlias(OinE->getExprLoc(), i.first->second,
-                                          Var.getName());
+          Reporter->warnParametersAlias(CA.ArgumentExpr->getExprLoc(),
+                                        i.first->second, Var.getName());
         }
       }
     }
@@ -1055,9 +1052,8 @@ class PSetsBuilder {
     if (HandleClangAnalyzerPset(CallE))
       return;
 
-    EvalExpr(CallE->getCallee());
-
     auto *CalleeE = CallE->getCallee();
+    EvalExpr(CalleeE);
     CallTypes CT = GetCallTypes(CalleeE);
     CallArguments Args;
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
@@ -1065,7 +1061,9 @@ class PSetsBuilder {
       QualType ParamQType =
           CT.FTy->isVariadic() ? Arg->getType() : CT.FTy->getParamType(i);
 
-      PushCallArguments(Arg, ParamQType, Args); // appends into Args
+      PushCallArguments(Arg, ParamQType,
+                        EvalExprForPSet(Arg, ParamQType->isReferenceType()),
+                        Args); // appends into Args
     }
 
     if (CT.ClassDecl) {
@@ -1074,6 +1072,7 @@ class PSetsBuilder {
       auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE);
       assert(MemberCall);
       auto *Object = MemberCall->getImplicitObjectArgument();
+      assert(Object);
 
       // TODO: *this is gsl::non_null annotated
       auto LValRefToObject = ASTCtxt.getLValueReferenceType(
@@ -1081,14 +1080,17 @@ class PSetsBuilder {
       if (CT.FTy->isConst())
         LValRefToObject.addConst();
 
-      PushCallArguments(Object, LValRefToObject, Args); // appends into Args
+      PushCallArguments(
+          Object, LValRefToObject,
+          EvalExprForPSet(Object, !Object->getType()->isPointerType()),
+          Args); // appends into Args
     }
 
-    // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p) ==
-    // pset(x)
+    // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
+    // == pset(x)
 
-    std::vector<PinInfo> Pin = diagnoseAndExpandPin(Args.Pin);
-    diagnoseParameterAliasing(Pin, Args.Oin);
+    std::vector<CallArgument> PinExtended = diagnoseAndExpandPin(Args.Pin);
+    diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // If p is explicitly lifetime-annotated with x, then each call site
     // enforces the precondition that argument(p) is a valid Pointer and
@@ -1143,7 +1145,8 @@ class PSetsBuilder {
         } else {
           if (VD->getType()->isArrayType())
             // Forbidden by bounds profile
-            // Alternative would be: T a[]; auto *p = a; -> pset_ptr(p) = {a}
+            // Alternative would be: T a[]; auto *p = a; -> pset_ptr(p) =
+            // {a}
             return PSet::invalid(
                 InvalidationReason::PointerArithmetic(DeclRef->getLocation()));
           else
@@ -1188,8 +1191,9 @@ class PSetsBuilder {
       const Expr *Base = MemberE->getBase();
       if (isa<CXXThisExpr>(Base)) {
         // We are inside the class, so track the members separately
-        // The returned declaration will be a FieldDecl or (in C++) a VarDecl
-        // (for static data members), a CXXMethodDecl, or an EnumConstantDecl.
+        // The returned declaration will be a FieldDecl or (in C++) a
+        // VarDecl (for static data members), a CXXMethodDecl, or an
+        // EnumConstantDecl.
         if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl())) {
           auto V = Variable::thisPointer();
           V.addFieldRef(FD);
@@ -1536,9 +1540,8 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
              "Argument to clang_analyzer_pset must be a DeclRefExpr");
 
       const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
-      assert(
-          VD &&
-          "Argument to clang_analyzer_pset must be a reference to a VarDecl");
+      assert(VD && "Argument to clang_analyzer_pset must be a reference to "
+                   "a VarDecl");
 
       diagPSet(VD, Loc);
     }
@@ -1765,8 +1768,8 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
 
           // OR there was a goto that stayed in the same scope but skipped
           // back over the initialization of this Pointer.
-          // Then we don't care, because the variable will not be referenced in
-          // the C++ code before it is declared.
+          // Then we don't care, because the variable will not be referenced
+          // in the C++ code before it is declared.
 
           PS = Var.mightBeNull() ? PSet::staticOrNull() : PSet::onlyStatic();
           continue;
@@ -1869,8 +1872,8 @@ void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
   LC.TraverseBlocks();
 }
 
-/// Check that each global variable is initialized to a pset of {static} and/or
-/// {null}
+/// Check that each global variable is initialized to a pset of {static}
+/// and/or {null}
 void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
                          LifetimeReporterBase &Reporter) {
 
@@ -1887,4 +1890,4 @@ void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
   // Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
 }
 
-} // end namespace clang
+} // namespace clang
