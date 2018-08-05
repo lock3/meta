@@ -1324,7 +1324,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
 /// diags the pset of its argument
 bool PSetsBuilder::HandleClangAnalyzerPset(
     const Stmt *S, const LifetimeReporterBase *Reporter) {
-  assert(Reporter);
+
   const auto *CallE = dyn_cast<CallExpr>(S);
   if (!CallE)
     return false;
@@ -1338,35 +1338,43 @@ bool PSetsBuilder::HandleClangAnalyzerPset(
     return false;
 
   if (I->getName() == "clang_analyzer_pset") {
-    auto Loc = CallE->getLocStart();
+    if (Reporter) {
+      auto Loc = CallE->getLocStart();
 
-    assert(CallE->getNumArgs() == 1 &&
-           "clang_analyzer_pset takes one argument");
+      assert(CallE->getNumArgs() == 1 &&
+             "clang_analyzer_pset takes one argument");
 
-    // TODO: handle MemberExprs.
-    const auto *DeclRef =
-        dyn_cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts());
-    assert(DeclRef && "Argument to clang_analyzer_pset must be a DeclRefExpr");
+      // TODO: handle MemberExprs.
+      const auto *DeclRef =
+          dyn_cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts());
+      assert(DeclRef &&
+             "Argument to clang_analyzer_pset must be a DeclRefExpr");
 
-    const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
-    assert(VD &&
-           "Argument to clang_analyzer_pset must be a reference to a VarDecl");
+      const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
+      assert(
+          VD &&
+          "Argument to clang_analyzer_pset must be a reference to a VarDecl");
 
-    diagPSet(VD, Loc);
+      diagPSet(VD, Loc);
+    }
     return true;
   } else if (I->getName() == "__lifetime_type_category") {
-    auto Loc = CallE->getLocStart();
+    if (Reporter) {
+      auto Loc = CallE->getLocStart();
 
-    auto Args = Callee->getTemplateSpecializationArgs();
-    auto QType = Args->get(0).getAsType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    Reporter->debugTypeCategory(Loc, TC);
+      auto Args = Callee->getTemplateSpecializationArgs();
+      auto QType = Args->get(0).getAsType();
+      TypeCategory TC = classifyTypeCategory(QType);
+      Reporter->debugTypeCategory(Loc, TC);
+    }
     return true;
   } else if (I->getName() == "__lifetime_type_category_arg") {
-    auto Loc = CallE->getLocStart();
-    auto QType = CallE->getArg(0)->getType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    Reporter->debugTypeCategory(Loc, TC);
+    if (Reporter) {
+      auto Loc = CallE->getLocStart();
+      auto QType = CallE->getArg(0)->getType();
+      TypeCategory TC = classifyTypeCategory(QType);
+      Reporter->debugTypeCategory(Loc, TC);
+    }
     return true;
   }
   return false;
@@ -1383,7 +1391,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 
       // Handle call to clang_analyzer_pset, which will print the pset of its
       // argument
-      if (Reporter && HandleClangAnalyzerPset(S, Reporter))
+      if (HandleClangAnalyzerPset(S, Reporter))
         break;
 
       EvalStmt(S);
