@@ -8,6 +8,26 @@
 template <typename T>
 bool clang_analyzer_pset(const T &);
 
+namespace std {
+template <typename T>
+struct vector {
+  vector(unsigned);
+  T *begin();
+  T *end();
+  T& operator[](unsigned);
+  ~vector();
+};
+
+
+template< class T > struct remove_reference      {typedef T type;};
+template< class T > struct remove_reference<T&>  {typedef T type;};
+template< class T > struct remove_reference<T&&> {typedef T type;};
+
+template <typename T>
+typename remove_reference<T>::type&& move(T&& arg);
+
+} // namespace std
+
 int rand();
 
 struct S {
@@ -371,7 +391,7 @@ void goto_forward_over_decl() {
   int j;
   goto e;
   int *p;
-e: ;
+e:;
   //clang_analyzer_pset(p); // TODOexpected-warning {{pset(p) = (invalid)}}
 }
 
@@ -468,7 +488,7 @@ void indirect_function_call() {
   int i = 0;
   int *p = &i;
   int *ret = f(p);
-  clang_analyzer_pset(p);   // expected-warning {{pset(p) = i}}
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = i}}
   //clang_analyzer_pset(ret); // TODOexpected-warning {{pset(p) = i, static)}}
 }
 
@@ -486,8 +506,8 @@ void member_function_call() {
   clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
   int *pp = s.get();
   //clang_analyzer_pset(pp); // TODOexpected-warning {{pset(pp) = s'}}
-  s.f();                   // non-const
-  clang_analyzer_pset(p);  // expected-warning {{pset(p) = s}}
+  s.f();                  // non-const
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
   //clang_analyzer_pset(pp); // TODOexpected-warning {{pset(p) = (invalid)}}
 }
 
@@ -500,4 +520,92 @@ void argument_ref_to_temporary() {
 
   const int &bad = min(x, y + 1);
   //clang_analyzer_pset(bad); // TODOexpected-warning {{pset(bad) = (invalid)}}
+}
+
+void Example1_1() {
+  int *p = nullptr;
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
+  int *p2;
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = (invalid)}}
+  {
+    struct {
+      int i;
+    } s = {0};
+    p = &s.i;
+    clang_analyzer_pset(p); // expected-warning {{pset(p) = s}}
+    p2 = p;
+    clang_analyzer_pset(p2); // expected-warning {{pset(p2) = s}}
+    *p = 1;                  // ok
+    *p2 = 1;                 // ok
+  }
+  clang_analyzer_pset(p);  // expected-warning {{pset(p) = (invalid)}}
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = (invalid)}}
+  p = nullptr;
+  clang_analyzer_pset(p); // expected-warning {{pset(p) = (null)}}
+  int x[100];
+  p2 = &x[10];
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = x}}
+  *p2 = 1;                 // ok
+  p2 = p;                  // D: pset(p2) = pset(p) which is {null}
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = (null)}}
+  p2 = &x[10];
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = x}}
+  *p2 = 1;                 // ok
+  int **pp = &p2;
+  clang_analyzer_pset(pp); // expected-warning {{pset(pp) = p}}
+  *pp = p;                 // ok
+}
+
+void Example1_4() {
+  int *p1 = nullptr;
+  int *p2 = nullptr;
+  int *p3 = nullptr;
+  int *p4 = nullptr;
+  {
+    int i = 0;
+    int &ri = i;
+    clang_analyzer_pset(ri); // expected-warning {{pset(ri) = i}}
+    p1 = &ri;
+    clang_analyzer_pset(p1); // expected-warning {{pset(p1) = i}}
+    *p1 = 1;                 // ok
+    int *pi = &i;
+    clang_analyzer_pset(pi); // expected-warning {{pset(pi) = i}}
+    p2 = pi;
+    clang_analyzer_pset(p2); // expected-warning {{pset(p2) = i}}
+    *p2 = 1;                 // ok
+    int **ppi = &pi;
+    clang_analyzer_pset(ppi); // expected-warning {{pset(ppi) = pi}}
+    **ppi = 1;                // ok, modifies i
+    int *pi2 = *ppi;
+    clang_analyzer_pset(pi2); // expected-warning {{pset(pi2) = i}}
+    p3 = pi2;
+    clang_analyzer_pset(p3); // expected-warning {{pset(p3) = i}}
+    *p3 = 1;                 // ok
+    {
+      int j = 0;
+      pi = &j;                 // (note: so *ppi now points to j)
+      clang_analyzer_pset(pi); // expected-warning {{pset(pi) = j}}
+      pi2 = *ppi;
+      clang_analyzer_pset(pi2); // expected-warning {{pset(pi2) = j}}
+      **ppi = 1;                // ok, modifies j
+      *pi2 = 1;                 // ok
+      p4 = pi2;
+      clang_analyzer_pset(p4); // expected-warning {{pset(p4) = j}}
+      *p4 = 1;                 // ok
+    }
+    clang_analyzer_pset(pi);  // expected-warning {{pset(pi) = (invalid)}}
+    clang_analyzer_pset(pi2); // expected-warning {{pset(pi2) = (invalid)}}
+    clang_analyzer_pset(p4);  // expected-warning {{pset(p4) = (invalid)}}
+  }
+  clang_analyzer_pset(p3); // expected-warning {{pset(p3) = (invalid)}}
+  clang_analyzer_pset(p2); // expected-warning {{pset(p2) = (invalid)}}
+  clang_analyzer_pset(p1); // expected-warning {{pset(p1) = (invalid)}}
+}
+
+void Example9() {
+  std::vector<int> v1(100);
+  int *pi = &v1[0];
+  //clang_analyzer_pset(pi); // TODOexpected-warning {{pset(p1) = v1'}}
+  auto v2 = std::move(v1);
+  //clang_analyzer_pset(pi); // TODOexpected-warning {{pset(p1) = v2'}}
 }
