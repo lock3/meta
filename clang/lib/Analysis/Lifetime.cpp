@@ -599,7 +599,6 @@ public:
       ContainsNull = true;
       NullReasons = O.NullReasons;
     }
-    ContainsNull |= O.ContainsNull;
     ContainsStatic |= O.ContainsStatic;
 
     // TODO: optimize
