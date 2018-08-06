@@ -1,3 +1,12 @@
+//=- LifetimePsetBuilder.cpp - Diagnose lifetime violations -*- C++ -*-=======//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
