@@ -195,7 +195,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
   if (satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
 
-  // TODO: handle outside class definition 'R& operator*(T a);'
+  // TODO: handle outside class definition 'R& operator*(T a);' and inheritance.
   bool hasDerefOperations = std::any_of(
       R->method_begin(), R->method_end(), [](const CXXMethodDecl *M) {
         auto O = M->getDeclName().getCXXOverloadedOperator();
@@ -379,7 +379,7 @@ struct Variable {
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
 // TODO: We should use source ranges rather than single locations
-//       for user friendlyness.
+//       for user friendliness.
 class InvalidationReason {
   enum EReason {
     NOT_INITIALIZED,
@@ -520,21 +520,20 @@ public:
   const std::vector<NullReason> &nullReasons() { return NullReasons; }
 
   bool isSubstitutableFor(const PSet &O) {
-    // If a includes invalid, then b must include invalid.
+    // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid && !O.ContainsInvalid)
       return false;
 
-    // If a includes null, then b must include null.
+    // If 'this' includes null, then 'O' must include null.
     if (ContainsNull && !O.ContainsNull)
       return false;
 
-    // If b includes static and no x or o, then a must include static and no x
-    // or o.
+    // If 'O' includes static and no x or o, then 'this' must include static and
+    // no x or o.
     if (!ContainsStatic && O.ContainsStatic)
       return false;
 
-    // If a includes o'', then b must include o'' or o'. (etc.)
-    // TODO Optimize
+    // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
     for (auto &kv : Vars) {
       auto &V = kv.first;
       auto Order = kv.second;
@@ -544,32 +543,31 @@ public:
     }
 
     // TODO
-    // If a includes o'', then b must include o'' or o'. (etc.)
-    // If a includes o', then b must include o'.
-    // If a includes o, then b must include o or o' or o'' or some x with
-    // lifetime less than o. If b includes one or more xb1..n, where xbshortest
-    // is the one with shortest lifetime, then a must include static or xa1..m
-    // where all have longer lifetime than xbshortest.
+    // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
+    // If 'this' includes o', then 'O' must include o'.
+    // If 'this' includes o, then 'O' must include o or o' or o'' or some x with
+    // lifetime less than o. If 'O' includes one or more xb1..n, where
+    // xbshortest is the one with shortest lifetime, then a must include static
+    // or xa1..m where all have longer lifetime than xbshortest.
     return true;
   }
 
   std::string str() const {
     if (isUnknown())
       return "(unknown)";
-    std::stringstream ss;
-    int notFirst = 0;
+    SmallVector<std::string, 16> Entries;
     if (ContainsInvalid)
-      ss << (notFirst++ ? ", " : "") << "(invalid)";
+      Entries.push_back("(invalid)");
     if (ContainsNull)
-      ss << (notFirst++ ? ", " : "") << "(null)";
+      Entries.push_back("(null)");
     if (ContainsStatic)
-      ss << (notFirst++ ? ", " : "") << "(static)";
+      Entries.push_back("(static)");
     for (const auto &V : Vars) {
-      ss << (notFirst++ ? ", " : "") << V.first.getName();
+      Entries.push_back(V.first.getName());
       for (size_t j = 0; j < V.second; ++j)
-        ss << "'";
+        Entries.back().append("'");
     }
-    return ss.str();
+    return llvm::join(Entries, ", ");
   }
 
   void print(raw_ostream &Out) const { Out << str() << "\n"; }
@@ -587,7 +585,6 @@ public:
     }
     ContainsStatic |= O.ContainsStatic;
 
-    // TODO: optimize
     for (const auto &VO : O.Vars) {
       auto V = Vars.find(VO.first);
       if (V == Vars.end()) {
@@ -620,10 +617,7 @@ public:
 
   /// The pointer is dangling
   static PSet invalid(InvalidationReason Reason) {
-    PSet ret;
-    ret.ContainsInvalid = true;
-    ret.InvReasons.push_back(Reason);
-    return ret;
+    return invalid(std::vector<InvalidationReason>{Reason});
   }
 
   /// The pointer is dangling
@@ -642,35 +636,23 @@ public:
     return ret;
   }
 
-  /// A pset that contains only (static)
-  static PSet onlyStatic() {
+  /// A pset that contains (static) and (null) if Nullable is true
+  static PSet staticVar(bool Nullable) {
     PSet ret;
+    ret.ContainsNull = Nullable;
     ret.ContainsStatic = true;
     return ret;
   }
 
-  /// A pset that contains (static), (null)
-  static PSet staticOrNull() {
-    PSet ret;
-    ret.ContainsStatic = true;
-    ret.ContainsNull = true;
-    return ret;
-  }
-
-  /// The pset contains one of obj, obj' or obj''
-  static PSet pointsToVariable(Variable Var, unsigned order = 0) {
+  /// The pset contains one of obj, obj', obj'', or optionally null
+  static PSet pointsToVariable(Variable Var, bool Nullable,
+                               unsigned order = 0) {
     PSet ret;
     if (Var.hasGlobalStorage())
       ret.ContainsStatic = true;
     else
       ret.Vars.emplace(Var, order);
-    return ret;
-  }
-
-  /// The pset contains null and one of obj, obj' or obj''
-  static PSet pointsToVariableOrNull(Variable Var, unsigned order = 0) {
-    PSet ret = pointsToVariable(Var, order);
-    ret.ContainsNull = true;
+    ret.ContainsNull = Nullable;
     return ret;
   }
 
@@ -764,7 +746,7 @@ class PSetsBuilder {
         Variable V = refersTo(BinOp->getLHS());
         if (Category == TypeCategory::Owner) {
           // When an Owner x is copied to or moved to, set pset(x) = {x'}
-          SetPSet(V, PSet::pointsToVariable(V, 1), BinOp->getExprLoc());
+          SetPSet(V, PSet::pointsToVariable(V, false, 1), BinOp->getExprLoc());
         } else if (Category == TypeCategory::Pointer) {
           // This assignment updates a Pointer
           PSet PS = EvalExprForPSet(BinOp->getRHS(), false);
@@ -1142,9 +1124,9 @@ class PSetsBuilder {
       EvalExpr(MaterializeTemporaryE->GetTemporaryExpr());
 
       if (MaterializeTemporaryE->getExtendingDecl())
-        return PSet::pointsToVariable(MaterializeTemporaryE, 0);
+        return PSet::pointsToVariable(MaterializeTemporaryE, false, 0);
       else
-        return PSet::pointsToVariable(Variable::temporary(), 0);
+        return PSet::pointsToVariable(Variable::temporary(), false, 0);
     }
     case Expr::DeclRefExprClass: {
       const auto *DeclRef = cast<DeclRefExpr>(E);
@@ -1156,7 +1138,7 @@ class PSetsBuilder {
             return GetPSet(VD);
           else
             // T i; auto &p = i; -> pset_ref(p) = {i}
-            return PSet::pointsToVariable(VD);
+            return PSet::pointsToVariable(VD, false);
         } else {
           if (VD->getType()->isArrayType())
             // Forbidden by bounds profile
@@ -1186,7 +1168,7 @@ class PSetsBuilder {
         if (VD && VD->getType().getCanonicalType()->isArrayType() &&
             referenceCtx)
           // T a[3]; -> pset_ref(a[i]) = {a}
-          return PSet::pointsToVariable(VD, 0);
+          return PSet::pointsToVariable(VD, false, 0);
       }
       return {};
     }
@@ -1212,10 +1194,10 @@ class PSetsBuilder {
         if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl())) {
           auto V = Variable::thisPointer();
           V.addFieldRef(FD);
-          return PSet::pointsToVariable(V);
+          return PSet::pointsToVariable(V, false);
         } else if (auto *VD = dyn_cast<VarDecl>(MemberE->getMemberDecl())) {
           // A static data member of this class
-          return PSet::onlyStatic();
+          return PSet::staticVar(false);
         }
       }
 
@@ -1364,7 +1346,7 @@ public:
       break;
     }
     case TypeCategory::Owner: {
-      SetPSet(VD, PSet::pointsToVariable(VD, 1), Loc);
+      SetPSet(VD, PSet::pointsToVariable(VD, false, 1), Loc);
     } // fallthrough
     default: {
       if (Initializer)
@@ -1386,11 +1368,8 @@ PSet PSetsBuilder::GetPSet(Variable P) {
     return i->second;
 
   // Assumption: global Pointers have a pset of {static, null}
-  if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass()) {
-    if (P.mightBeNull())
-      return PSet::staticOrNull();
-    return PSet::onlyStatic();
-  }
+  if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
+    return PSet::staticVar(P.mightBeNull());
 
   llvm::errs() << "PSetsBuilder::GetPSet: did not find pset for " << P.getName()
                << "\n";
@@ -1443,7 +1422,7 @@ void PSetsBuilder::SetPSet(Variable P, PSet PS, SourceLocation Loc) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
   if (P.hasGlobalStorage() && !PS.isUnknown() &&
-      !PS.isSubstitutableFor(PSet::staticOrNull()) && Reporter)
+      !PS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
     Reporter->warnPsetOfGlobal(Loc, P.getName(), PS.str());
 
   auto i = PSets.find(P);
@@ -1798,7 +1777,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
           // Then we don't care, because the variable will not be referenced
           // in the C++ code before it is declared.
 
-          PS = Var.mightBeNull() ? PSet::staticOrNull() : PSet::onlyStatic();
+          PS = PSet::staticVar(Var.mightBeNull());
           continue;
         }
         if (PS == j->second)
@@ -1835,8 +1814,7 @@ void LifetimeContext::TraverseBlocks() {
             continue;
           Variable P(PVD);
           // Parameters cannot be invalid (checked at call site).
-          auto PS = P.mightBeNull() ? PSet::pointsToVariableOrNull(P, 0)
-                                    : PSet::pointsToVariable(P, 0);
+          auto PS = PSet::pointsToVariable(P, P.mightBeNull(), 0);
           // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
           // PVD->dump();
           BC.ExitPSets.emplace(P, std::move(PS));
