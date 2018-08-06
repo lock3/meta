@@ -381,15 +381,22 @@ struct Variable {
 // TODO: We should use source ranges rather than single locations
 //       for user friendlyness.
 class InvalidationReason {
-  enum {
+  enum EReason {
     NOT_INITIALIZED,
     POINTEE_LEFT_SCOPE,
     TEMPORARY_LEFT_SCOPE,
     POINTER_ARITHMETIC,
     DEREFERENCED
   } Reason;
+
   const VarDecl *Pointee = nullptr;
   SourceLocation Loc;
+
+  InvalidationReason(SourceLocation Loc, EReason Reason,
+                     const VarDecl *Pointee = nullptr)
+      : Reason(Reason), Pointee(Pointee), Loc(Loc) {
+    assert(Loc.isValid());
+  }
 
 public:
   SourceLocation getLoc() const { return Loc; }
@@ -417,46 +424,25 @@ public:
   }
 
   static InvalidationReason NotInitialized(SourceLocation Loc) {
-    assert(Loc.isValid());
-    InvalidationReason R;
-    R.Loc = Loc;
-    R.Reason = NOT_INITIALIZED;
-    return R;
+    return {Loc, NOT_INITIALIZED};
   }
 
   static InvalidationReason PointeeLeftScope(SourceLocation Loc,
                                              const VarDecl *Pointee) {
-    assert(Loc.isValid());
     assert(Pointee);
-    InvalidationReason R;
-    R.Loc = Loc;
-    R.Reason = POINTEE_LEFT_SCOPE;
-    R.Pointee = Pointee;
-    return R;
+    return {Loc, POINTEE_LEFT_SCOPE, Pointee};
   }
 
   static InvalidationReason TemporaryLeftScope(SourceLocation Loc) {
-    assert(Loc.isValid());
-    InvalidationReason R;
-    R.Loc = Loc;
-    R.Reason = TEMPORARY_LEFT_SCOPE;
-    return R;
+    return {Loc, TEMPORARY_LEFT_SCOPE};
   }
 
   static InvalidationReason PointerArithmetic(SourceLocation Loc) {
-    assert(Loc.isValid());
-    InvalidationReason R;
-    R.Loc = Loc;
-    R.Reason = POINTER_ARITHMETIC;
-    return R;
+    return {Loc, POINTER_ARITHMETIC};
   }
 
   static InvalidationReason Dereferenced(SourceLocation Loc) {
-    assert(Loc.isValid());
-    InvalidationReason R;
-    R.Loc = Loc;
-    R.Reason = DEREFERENCED;
-    return R;
+    return {Loc, DEREFERENCED};
   }
 };
 
@@ -465,7 +451,7 @@ class NullReason {
   SourceLocation Loc;
 
 public:
-  NullReason(SourceLocation Loc) : Loc(Loc) {}
+  NullReason(SourceLocation Loc) : Loc(Loc) { assert(Loc.isValid()); }
   void emitNote(const LifetimeReporterBase &Reporter) const {
     Reporter.diag(Loc, diag::note_null_here);
   }
@@ -645,7 +631,6 @@ public:
     PSet ret;
     ret.ContainsInvalid = true;
     ret.InvReasons = Reasons;
-    ;
     return ret;
   }
 
