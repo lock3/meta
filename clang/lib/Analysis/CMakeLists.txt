@@ -18,6 +18,8 @@ add_clang_library(clangAnalysis
   ExprMutationAnalyzer.cpp
   FormatString.cpp
   Lifetime.cpp
+  LifetimeTypeCategory.cpp
+  LifetimePsetBuilder.cpp
   LiveVariables.cpp
   ObjCNoReturn.cpp
   PostOrderCFGView.cpp
