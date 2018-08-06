@@ -64,6 +64,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Analysis/Analyses/LifetimeInternal.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
@@ -78,7 +79,7 @@
 STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 
 namespace clang {
-namespace {
+namespace lifetime {
 
 bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
                                 int ArgNum = -1) {
@@ -1860,12 +1861,9 @@ void LifetimeContext::TraverseBlocks() {
   }
 }
 
-} // end unnamed namespace
-
 /// Check that the function adheres to the lifetime profile
-void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                         SourceManager &SourceMgr,
-                         LifetimeReporterBase &Reporter) {
+void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
+                 SourceManager &SourceMgr, LifetimeReporterBase &Reporter) {
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
@@ -1875,8 +1873,8 @@ void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
 
 /// Check that each global variable is initialized to a pset of {static}
 /// and/or {null}
-void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
-                         LifetimeReporterBase &Reporter) {
+void runAnalysis(const VarDecl *VD, ASTContext &Context,
+                 LifetimeReporterBase &Reporter) {
 
   if (classifyTypeCategory(VD->getType()) != TypeCategory::Pointer)
     return;
@@ -1891,4 +1889,5 @@ void runLifetimeAnalysis(const VarDecl *VD, ASTContext &Context,
   // Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
 }
 
+} // namespace lifetime
 } // namespace clang

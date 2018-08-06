@@ -19,14 +19,14 @@
 #include <string>
 
 namespace clang {
-
-enum class TypeCategory { Owner, Pointer, Aggregate, Value };
-
 class FunctionDecl;
 class ASTContext;
 class SourceManager;
 class VarDecl;
 class Sema;
+
+namespace lifetime {
+enum class TypeCategory { Owner, Pointer, Aggregate, Value };
 
 class LifetimeReporterBase {
 public:
@@ -52,12 +52,11 @@ public:
   virtual void diag(SourceLocation Loc, unsigned DiagID) const = 0;
 };
 
-void runLifetimeAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                         SourceManager &SourceMgr,
-                         LifetimeReporterBase &Reporter);
-void runLifetimeAnalysis(const VarDecl *V, ASTContext &Context,
-                         LifetimeReporterBase &Reporter);
-
+void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
+                 SourceManager &SourceMgr, LifetimeReporterBase &Reporter);
+void runAnalysis(const VarDecl *V, ASTContext &Context,
+                 LifetimeReporterBase &Reporter);
+} // namespace lifetime
 } // namespace clang
 
 #endif // LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
