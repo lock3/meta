@@ -593,10 +593,8 @@ public:
       if (V == Vars.end()) {
         Vars.insert(VO);
       } else {
-        // if Vars contains obj' and otherPset.p contains obj''
-        // then the union shall be invalidated whenever obj' or obj'' is
-        // invalidated
-        // which is the same as whenever obj'' is invalidated
+        // If this would contain o' and o'' it would be invalidated on KILL(o')
+        // and KILL(o'') which is the same for a pset only containing o''.
         V->second = std::max(V->second, VO.second);
       }
     }
@@ -608,8 +606,10 @@ public:
       return;
     }
 
+    // If this would contain o' and o'' it would be invalidated on KILL(o')
+    // and KILL(o'') which is the same for a pset only containing o''.
     if (Vars.count(Var))
-      order = std::min(Vars[Var], order);
+      order = std::max(Vars[Var], order);
 
     Vars[Var] = order;
   }
