@@ -77,7 +77,7 @@ int *global_uninit_p;           // TODOexpected-warning {{the pset of 'global_un
 int *global_null_p = nullptr;   // OK
 
 void uninitialized_static() {
-  static int *p; // expected-warning {{the pset of 'p' must be a subset of {(static), (null)}, but is {(invalid)}}
+  static int *p; // expected-warning {{the pset of 'p' must be a subset of {(static), (null)}, but is {((invalid))}}
 }
 
 void function_call() {
