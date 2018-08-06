@@ -191,7 +191,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
   if (R->hasAttr<PointerAttr>())
     return TypeCategory::Pointer;
 
-  //	* Every type that satisfies the standard Container requirements.
+  //	Every type that satisfies the standard Container requirements.
   if (satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
 
@@ -214,17 +214,17 @@ TypeCategory classifyTypeCategory(QualType QT) {
   if (satisfiesRangeConcept(R))
     return TypeCategory::Pointer;
 
-  // * Every type that satisfies the standard Iterator requirements. (Example:
+  // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
   if (satisfiesIteratorRequirements(R))
     return TypeCategory::Pointer;
 
-  // * Every type that provides unary * or -> and does not have a user-provided
+  // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
   if (hasDerefOperations && !R->hasUserDeclaredDestructor())
     return TypeCategory::Pointer;
 
-  // * Every closure type of a lambda that captures by reference.
+  // Every closure type of a lambda that captures by reference.
   if (R->isLambda() &&
       std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
         return FD->getType()->isReferenceType();
@@ -554,7 +554,7 @@ public:
 
   std::string str() const {
     if (isUnknown())
-      return "(unknown)";
+      return "((unknown))";
     SmallVector<std::string, 16> Entries;
     if (ContainsInvalid)
       Entries.push_back("(invalid)");
@@ -567,7 +567,7 @@ public:
       for (size_t j = 0; j < V.second; ++j)
         Entries.back().append("'");
     }
-    return llvm::join(Entries, ", ");
+    return "(" + llvm::join(Entries, ", ") + ")";
   }
 
   void print(raw_ostream &Out) const { Out << str() << "\n"; }
@@ -1529,7 +1529,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     return false;
 
   auto FuncNum = llvm::StringSwitch<int>(I->getName())
-                     .Case("clang_analyzer_pset", 1)
+                     .Case("__lifetime_pset", 1)
                      .Case("__lifetime_type_category", 2)
                      .Case("__lifetime_type_category_arg", 3)
                      .Default(0);
@@ -1718,11 +1718,7 @@ static const Stmt *getRealTerminator(const CFGBlock *B) {
       LastCFGStmt = CFGSt->getStmt();
     }
   }
-  const Stmt *TerminatorCond = B->getTerminatorCondition(true);
-  if (TerminatorCond && isa<BinaryOperator>(TerminatorCond))
-    return LastCFGStmt;
-  else
-    return TerminatorCond;
+  return LastCFGStmt;
 }
 
 /// Computes entry psets of this block by merging exit psets
