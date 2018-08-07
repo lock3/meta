@@ -376,7 +376,7 @@ class PSetsBuilder {
 
       QualType ParamQType = [&] {
         // For CXXOperatorCallExpr, getArg(0) is the 'this' pointer.
-        if (dyn_cast<CXXOperatorCallExpr>(CallE)) {
+        if (isa<CXXOperatorCallExpr>(CallE)) {
           if (i == 0) {
             auto QT = ASTCtxt.getLValueReferenceType(Arg->getType(),
                                                      /*SpelledAsLValue=*/true);
@@ -399,8 +399,7 @@ class PSetsBuilder {
     if (CT.ClassDecl) {
       // A this pointer parameter is treated as if it were declared as a
       // reference to the current object
-      auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE);
-      if (MemberCall) {
+      if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE)) {
         auto *Object = MemberCall->getImplicitObjectArgument();
         assert(Object);
 
@@ -528,23 +527,20 @@ class PSetsBuilder {
     case Expr::MemberExprClass: {
       const auto *MemberE = cast<MemberExpr>(E);
       const Expr *Base = MemberE->getBase();
-      if (isa<CXXThisExpr>(Base)) {
-        // We are inside the class, so track the members separately
-        // The returned declaration will be a FieldDecl or (in C++) a
-        // VarDecl (for static data members), a CXXMethodDecl, or an
-        // EnumConstantDecl.
-        if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl())) {
-          auto V = Variable::thisPointer();
-          V.addFieldRef(FD);
-          return PSet::pointsToVariable(V, false);
-        } else if (auto *VD = dyn_cast<VarDecl>(MemberE->getMemberDecl())) {
-          // A static data member of this class
-          return PSet::staticVar(false);
-        }
+      if (auto *VD = dyn_cast<VarDecl>(MemberE->getMemberDecl())) {
+        // A static data member of this class
+        return PSet::staticVar(false);
       }
+      PSet RetPSet;
+      if (isa<CXXThisExpr>(Base))
+        RetPSet.insert(Variable::thisPointer());
+      else
+        RetPSet = EvalExprForPSet(
+            Base, !Base->getType().getCanonicalType()->isPointerType());
+      if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl()))
+        RetPSet.addFieldRef(FD);
 
-      return EvalExprForPSet(
-          Base, !Base->getType().getCanonicalType()->isPointerType());
+      return RetPSet;
     }
     case Expr::BinaryOperatorClass: {
       const auto *BinOp = cast<BinaryOperator>(E);
@@ -647,7 +643,7 @@ class PSetsBuilder {
       if (!PS.isValid())
         continue; // Nothing to invalidate
 
-      if (PS.contains(O, order))
+      if (PS.containsBase(O, order))
         SetPSet(Pointer, PSet::invalid(Reason), Reason.getLoc());
     }
   }
