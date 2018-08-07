@@ -524,6 +524,11 @@ class PSetsBuilder {
       PSRHS.merge(PSLHS);
       return PSRHS;
     }
+    case Expr::CXXThisExprClass: {
+      PSet RetPSet;
+      RetPSet.insert(Variable::thisPointer());
+      return RetPSet;
+    }
     case Expr::MemberExprClass: {
       const auto *MemberE = cast<MemberExpr>(E);
       const Expr *Base = MemberE->getBase();
@@ -532,14 +537,10 @@ class PSetsBuilder {
         return PSet::staticVar(false);
       }
       PSet RetPSet;
-      if (isa<CXXThisExpr>(Base))
-        RetPSet.insert(Variable::thisPointer());
-      else
-        RetPSet = EvalExprForPSet(
-            Base, !Base->getType().getCanonicalType()->isPointerType());
+      RetPSet = EvalExprForPSet(
+          Base, !Base->getType().getCanonicalType()->isPointerType());
       if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl()))
         RetPSet.addFieldRef(FD);
-
       return RetPSet;
     }
     case Expr::BinaryOperatorClass: {
