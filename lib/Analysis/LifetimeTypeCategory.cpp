@@ -13,31 +13,36 @@
 namespace clang {
 namespace lifetime {
 
-bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
-                                int ArgNum = -1) {
+template <typename T>
+static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
   // TODO cache IdentifierInfo to avoid string compare
-  auto CallBack = [Name, ArgNum](const CXXRecordDecl *Base) {
-    return std::none_of(Base->method_begin(), Base->method_end(),
-                        [Name, ArgNum](const CXXMethodDecl *M) {
-                          if (ArgNum >= 0 &&
-                              (unsigned)ArgNum != M->getMinRequiredArguments())
-                            return false;
-                          auto *I = M->getDeclName().getAsIdentifierInfo();
-                          if (!I)
-                            return false;
-                          return I->getName() == Name;
-                        });
+  auto CallBack = [Predicate](const CXXRecordDecl *Base) {
+    return std::none_of(
+        Base->method_begin(), Base->method_end(),
+        [Predicate](const CXXMethodDecl *M) { return Predicate(M); });
   };
   return !R->forallBases(CallBack) || !CallBack(R);
 }
 
-bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
+static bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
+                                       int ArgNum = -1) {
+  return hasMethodLike(R, [Name, ArgNum](const CXXMethodDecl *M) {
+    if (ArgNum >= 0 && (unsigned)ArgNum != M->getMinRequiredArguments())
+      return false;
+    auto *I = M->getDeclName().getAsIdentifierInfo();
+    if (!I)
+      return false;
+    return I->getName() == Name;
+  });
+}
+
+static bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Container
   return hasMethodWithNameAndArgNum(R, "begin", 0) &&
          hasMethodWithNameAndArgNum(R, "end", 0) && !R->hasTrivialDestructor();
 }
 
-bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
+static bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Iterator
   bool hasDeref = false;
   bool hasPlusPlus = false;
@@ -53,7 +58,7 @@ bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   return false;
 }
 
-bool satisfiesRangeConcept(const CXXRecordDecl *R) {
+static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/experimental/ranges/range/Range
   return hasMethodWithNameAndArgNum(R, "begin", 0) &&
          hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
@@ -66,7 +71,7 @@ bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 // instantiations. For this and some other reasons I think it would be better
 // to look up the declarations (pointers) by names upfront and look up the
 // declarations instead of matching strings.
-Optional<TypeCategory> classifyStd(const Type *T) {
+static Optional<TypeCategory> classifyStd(const Type *T) {
   NamedDecl *Decl;
   if (const auto *TypeDef = T->getAs<TypedefType>()) {
     if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
@@ -74,11 +79,7 @@ Optional<TypeCategory> classifyStd(const Type *T) {
     Decl = TypeDef->getDecl();
   } else
     Decl = T->getAsCXXRecordDecl();
-  auto DeclName = Decl->getDeclName();
-  if (!DeclName || !DeclName.isIdentifier())
-    return {};
-
-  if (!Decl->isInStdNamespace())
+  if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())
     return {};
 
   static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
@@ -128,12 +129,11 @@ TypeCategory classifyTypeCategory(QualType QT) {
   if (satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
 
-  // TODO: handle outside class definition 'R& operator*(T a);' and inheritance.
-  bool hasDerefOperations = std::any_of(
-      R->method_begin(), R->method_end(), [](const CXXMethodDecl *M) {
-        auto O = M->getDeclName().getCXXOverloadedOperator();
-        return (O == OO_Arrow) || (O == OO_Star && M->param_empty());
-      });
+  // TODO: handle outside class definition 'R& operator*(T a);' .
+  bool hasDerefOperations = hasMethodLike(R, [](const CXXMethodDecl *M) {
+    auto O = M->getDeclName().getCXXOverloadedOperator();
+    return (O == OO_Arrow) || (O == OO_Star && M->param_empty());
+  });
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
