@@ -46,6 +46,7 @@ static bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Iterator
   bool hasDeref = false;
   bool hasPlusPlus = false;
+  // TODO: check base classes.
   for (auto *M : R->methods()) {
     auto O = M->getDeclName().getCXXOverloadedOperator();
     if (O == OO_PlusPlus)
@@ -194,6 +195,24 @@ bool isNullableType(QualType QT) {
       return true;
   }
   return QT.getCanonicalType()->isPointerType();
+}
+
+QualType getPointeeType(QualType QT) {
+  if (QT->isReferenceType() || QT->isAnyPointerType())
+    return QT->getPointeeType();
+
+  if (const auto *R = QT->getAsCXXRecordDecl()) {
+    for (auto *M : R->methods()) {
+      auto O = M->getDeclName().getCXXOverloadedOperator();
+      if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
+       QT = M->getReturnType();
+       if (QT->isReferenceType() || QT->isAnyPointerType())
+         return getPointeeType(QT);
+       return QT;
+      }
+    }
+  }
+  return {};
 }
 } // namespace lifetime
 } // namespace clang
