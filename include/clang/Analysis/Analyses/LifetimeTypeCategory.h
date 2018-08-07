@@ -16,6 +16,8 @@
 namespace clang {
 namespace lifetime {
 TypeCategory classifyTypeCategory(QualType QT);
+
+bool isNullableType(QualType QT);
 } // namespace lifetime
 } // namespace clang
 

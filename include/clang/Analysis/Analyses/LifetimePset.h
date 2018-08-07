@@ -108,7 +108,7 @@ struct Variable {
     if (isThisPointer())
       return false;
     // TODO: detect gsl::nullable / gsl::non_null
-    return getType().getCanonicalType()->isPointerType();
+    return isNullableType(getType());
   }
 
   bool isCategoryPointer() const {

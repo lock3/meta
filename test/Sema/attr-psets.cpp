@@ -30,6 +30,17 @@ template <typename T>
 typename remove_reference<T>::type &&move(T &&arg);
 } // namespace std
 
+namespace gsl {
+template <typename T>
+using nullable = T;
+
+template <typename T>
+struct not_null {
+  constexpr operator T() const;
+  constexpr T operator->() const;
+};
+} // namespace gsl
+
 int rand();
 
 struct S {
@@ -633,4 +644,9 @@ void return_pointer() {
 
   auto *pmem2 = v1p->data();
   //__lifetime_pset(pmem2); // TODOexpected-warning {{pset(pmem2) = (v1')}}
+}
+
+void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = (q)}}
 }

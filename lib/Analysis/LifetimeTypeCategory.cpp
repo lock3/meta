@@ -175,5 +175,25 @@ TypeCategory classifyTypeCategory(QualType QT) {
   return TypeCategory::Value;
 }
 
+bool isNullableType(QualType QT) {
+  QualType Inner = QT;
+  while (const auto *TypeDef = Inner->getAs<TypedefType>()) {
+    const NamedDecl *Decl = TypeDef->getDecl();
+    // TODO: check gsl namespace?
+    // TODO: handle clang nullability annotations?
+    if (Decl->getName() == "not_null")
+      return false;
+    if (Decl->getName() == "nullable")
+      return true;
+    Inner = TypeDef->desugar();
+  }
+  if (const auto *RD = Inner->getAsCXXRecordDecl()) {
+    if (RD->getName() == "not_null")
+      return false;
+    if (RD->getName() == "nullable")
+      return true;
+  }
+  return QT.getCanonicalType()->isPointerType();
+}
 } // namespace lifetime
 } // namespace clang
