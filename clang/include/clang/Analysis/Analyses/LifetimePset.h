@@ -57,6 +57,8 @@ struct Variable {
     return false;
   }
 
+  bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
+
   bool hasGlobalStorage() const {
     auto *VD = Var.dyn_cast<const VarDecl *>();
     if (!VD)
@@ -107,7 +109,6 @@ struct Variable {
   bool mightBeNull() const {
     if (isThisPointer())
       return false;
-    // TODO: detect gsl::nullable / gsl::non_null
     return isNullableType(getType());
   }
 
@@ -282,6 +283,16 @@ public:
     return i != Vars.end() && i->second >= order;
   }
 
+  /// Returns true if we look for S and we have S.field in the set.
+  bool containsBase(Variable Var, unsigned order = 0) const {
+    auto i =
+        find_if(Vars.begin(), Vars.end(),
+                [Var, order](const std::pair<Variable, unsigned> &Other) {
+                  return Var.isBaseEqual(Other.first) && order <= Other.second;
+                });
+    return i != Vars.end() && i->second >= order;
+  }
+
   bool containsNull() const { return ContainsNull; }
   bool isNull() const {
     return ContainsNull && !ContainsStatic && !ContainsInvalid && Vars.empty();
@@ -389,6 +400,16 @@ public:
     Vars[Var] = order;
   }
 
+  void addFieldRef(const FieldDecl *FD) {
+    std::map<Variable, unsigned> NewVars;
+    for (auto &VO : Vars) {
+      Variable Var = VO.first;
+      Var.addFieldRef(FD);
+      NewVars.insert(std::make_pair(Var, VO.second));
+    }
+    Vars = NewVars;
+  }
+
   void appendNullReason(NullReason R) { NullReasons.push_back(R); }
 
   void appendInvalidReason(InvalidationReason R) { InvReasons.push_back(R); }
@@ -423,7 +444,8 @@ public:
   }
 
   /// The pset contains one of obj, obj' or obj''
-  static PSet pointsToVariable(Variable Var,  bool Nullable, unsigned order = 0) {
+  static PSet pointsToVariable(Variable Var, bool Nullable,
+                               unsigned order = 0) {
     PSet ret;
     if (Var.hasGlobalStorage())
       ret.ContainsStatic = true;

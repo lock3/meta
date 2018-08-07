@@ -80,7 +80,7 @@ void pointer_exprs() {
 
   S s;
   p = &s.m;
-  __lifetime_pset(p); // expected-warning {{pset(p) = (s)}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (s.m)}}
   int a[2];
   p = &a[0];
   __lifetime_pset(p); // expected-warning {{pset(p) = (a)}}
