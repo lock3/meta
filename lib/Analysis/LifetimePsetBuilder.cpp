@@ -525,19 +525,16 @@ class PSetsBuilder {
       return PSRHS;
     }
     case Expr::CXXThisExprClass: {
-      PSet RetPSet;
-      RetPSet.insert(Variable::thisPointer());
-      return RetPSet;
+      return PSet::pointsToVariable(Variable::thisPointer(), false, 0);
     }
     case Expr::MemberExprClass: {
       const auto *MemberE = cast<MemberExpr>(E);
       const Expr *Base = MemberE->getBase();
-      if (auto *VD = dyn_cast<VarDecl>(MemberE->getMemberDecl())) {
-        // A static data member of this class
+      // A static data member of this class
+      if (isa<VarDecl>(MemberE->getMemberDecl())) {
         return PSet::staticVar(false);
       }
-      PSet RetPSet;
-      RetPSet = EvalExprForPSet(
+      PSet RetPSet = EvalExprForPSet(
           Base, !Base->getType().getCanonicalType()->isPointerType());
       if (auto *FD = dyn_cast<FieldDecl>(MemberE->getMemberDecl()))
         RetPSet.addFieldRef(FD);
@@ -577,11 +574,10 @@ class PSetsBuilder {
       case CK_IntegralToPointer:
         // Those casts are forbidden by the type profile
         // TODO: diagnose
-        return PSet{};
+        return {};
       default:
         return EvalExprForPSet(CastE->getSubExpr(), referenceCtx);
       }
-      break;
     }
     case Expr::InitListExprClass: {
       const auto *I = cast<InitListExpr>(E);
@@ -594,7 +590,7 @@ class PSetsBuilder {
       if (I->getNumInits() == 1)
         return EvalExprForPSet(I->getInit(0), referenceCtx);
 
-      return PSet{};
+      return {};
     }
     case Expr::CXXConstructExprClass:
       return PSet::null(E->getExprLoc());
@@ -604,7 +600,7 @@ class PSetsBuilder {
     case Expr::CallExprClass: {
       return EvalCallExpr(cast<CallExpr>(E));
     }
-    default:;
+    default: break;
     }
 
     if (E->isNullPointerConstant(ASTCtxt, Expr::NPC_ValueDependentIsNotNull)) {
