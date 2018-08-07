@@ -170,6 +170,8 @@ public:
 };
 
 static const Stmt *getRealTerminator(const CFGBlock *B) {
+  if (B->succ_size() == 1)
+    return nullptr;
   const Stmt *LastCFGStmt = nullptr;
   for (const CFGElement &Element : *B) {
     if (auto CFGSt = Element.getAs<CFGStmt>()) {
