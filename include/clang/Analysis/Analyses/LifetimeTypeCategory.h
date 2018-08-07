@@ -18,6 +18,8 @@ namespace lifetime {
 TypeCategory classifyTypeCategory(QualType QT);
 
 bool isNullableType(QualType QT);
+
+QualType getPointeeType(QualType QT);
 } // namespace lifetime
 } // namespace clang
 
