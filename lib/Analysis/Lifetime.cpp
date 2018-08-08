@@ -6,60 +6,6 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-// The pset of a (pointer/reference) variable can be modified by
-//   1) Initialization
-//   2) Assignment
-// It will be set to the pset of the expression on the right-hand-side.
-// Such expressions can contain:
-//   1) Casts: Ignored, pset(expr) == pset((cast)expr)
-//   2) Address-Of operator:
-//        It can only be applied to lvalues, i.e.
-//        VarDecl, pset(&a) = {a}
-//        a function returning a ref,
-//        result of an (compound) assignment, pset(&(a = b)) == {b}
-//        pre-in/decrement, pset(&(--a)) = {a}
-//        deref,
-//        array subscript, pset(&a[3]) = {a}
-//        a.b, a.*b: pset(&a.b) = {a}
-//        a->b, a->*b,
-//        comma expr, pset(&(a,b)) = {b}
-//        string literal, pset(&"string") = {static}
-//        static_cast<int&>(x)
-//
-//   3) Dereference operator
-//   4) Function calls and CXXMemberCallExpr
-//   5) MemberExpr: pset(this->a) = {a}; pset_ref(o->a) = {o}; pset_ptr(o->a) =
-//   {o'}
-//   6) Ternary: pset(cond ? a : b) == pset(a) union pset(b)
-//   7) Assignment operator: pset(a = b) == {b}
-// Rules:
-//  1) T& p1 = expr; T* p2 = &expr; -> pset(p1) == pset(p2) == pset_ref(expr)
-//  2) T& p1 = *expr; T* p2 = expr; -> pset(p1) == pset(p2) == pset_ptr(expr)
-//  3) Casts are ignored: pset(expr) == pset((cast)expr)
-//  4) T* p1 = &C.m; -> pset(p1) == {C} (per ex. 1.3)
-//  5) T* p2 = C.get(); -> pset(p2) == {C'} (per ex. 8.1)
-//
-// Assumptions:
-// - The 'this' pointer cannot be invalidated inside a member method (enforced
-// here: no delete on *this)
-// - Global variable's pset is (static) and/or (null) (enforced here)
-// - Arithmetic on pointer types is forbidden (enforced by
-// cppcoreguidelines-pro-type-pointer-arithmetic)
-// - A function does not modify const arguments (enforced by
-// cppcoreguidelines-pro-type-pointer-arithmetic)
-// - An access to an array through array subscription always points inside the
-// array (enforced by cppcoreguidelines-pro-bounds)
-//
-// TODO:
-//  track psets for objects containing Pointers (e.g. iterators)
-//  handle function/method call in PSetFromExpr
-//  check correct use of gsl::owner<> (delete only on 'valid' owner, delete must
-//  happen before owner goes out of scope)
-//  handle try-catch blocks (AC.getCFGBuildOptions().AddEHEdges = true)
-//
-//===----------------------------------------------------------------------===//
-
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"

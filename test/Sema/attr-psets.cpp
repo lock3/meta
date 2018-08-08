@@ -177,7 +177,7 @@ void forbidden() {
 
 void deref_array() {
   int *p[4];
-  __lifetime_pset(p); // expected-warning {{pset(p) = (untracked)}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
   int *k = *p;            // expected-note {{pointer arithmetic is not allowed}} expected-warning {{dereferencing a dangling pointer}}
   __lifetime_pset(k); // expected-warning {{pset(k) = ((invalid))}}
 }
@@ -643,7 +643,7 @@ void return_pointer() {
   __lifetime_pset(v1p); // expected-warning {{pset(v1p) = (v1)}}
 
   auto *pmem2 = v1p->data();
-  //__lifetime_pset(pmem2); // TODOexpected-warning {{pset(pmem2) = (v1')}}
+  __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = (v1')}}
 }
 
 void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {

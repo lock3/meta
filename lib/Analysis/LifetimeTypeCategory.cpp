@@ -108,11 +108,13 @@ TypeCategory classifyTypeCategory(QualType QT) {
   const auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
-    if (T->isArrayType())
-      return TypeCategory::Aggregate; // TODO not in the paper
+    /*if (T->isArrayType())
+      return TypeCategory::Aggregate; // TODO not in the paper*/
 
     // raw pointers and references
-    if (T->isPointerType() || T->isReferenceType())
+    // Arrays are Pointers, because they implicitly convert into them
+    // and we don't track implicit conversions.
+    if (T->isArrayType() || T->isPointerType() || T->isReferenceType())
       return TypeCategory::Pointer;
 
     return TypeCategory::Value;
