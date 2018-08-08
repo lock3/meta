@@ -197,6 +197,11 @@ bool isNullableType(QualType QT) {
   return QT.getCanonicalType()->isPointerType();
 }
 
+// For primitive types like pointers, references we return the pointee.
+// For user defined types the pointee type is determined by the return
+// type of operator*, operator-> or operator[]. Since these methods
+// might return references, and operator-> returns a pointers, we strip
+// off one extra level of pointers sometimes.
 QualType getPointeeType(QualType QT) {
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
@@ -207,7 +212,7 @@ QualType getPointeeType(QualType QT) {
       if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
        QT = M->getReturnType();
        if (QT->isReferenceType() || QT->isAnyPointerType())
-         return getPointeeType(QT);
+         return QT->getPointeeType();
        return QT;
       }
     }
