@@ -25,14 +25,14 @@ namespace lifetime {
 /// - the this pointer: Var contains a null VarDecl
 /// - a life-time extended temporary: Var contains a non-null
 /// MaterializeTemporaryExpr
-/// - a normal temporary: Var contains a null MaterializeTemporaryExpr
+/// - a normal temporary: Var contains a Expr
 /// plus fields of them (in member FDs).
 struct Variable {
   Variable(const VarDecl *VD) : Var(VD) {}
-  Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
+  Variable(const Expr *E) : Var(E) {}
 
   static Variable temporary() {
-    return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
+    return Variable(static_cast<const Expr *>(nullptr));
   }
   static Variable thisPointer() {
     return Variable(static_cast<const VarDecl *>(nullptr));
@@ -83,8 +83,8 @@ struct Variable {
     if (FDs.empty()) {
       if (auto *VD = Var.dyn_cast<const VarDecl *>())
         return VD->getType();
-      if (auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
-        return MT->getType();
+      if (auto *E = Var.dyn_cast<const Expr *>())
+        return E->getType();
       return {}; // Refers to 'this' pointer
     }
 
@@ -96,13 +96,13 @@ struct Variable {
   }
 
   bool isTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           !Var.get<const MaterializeTemporaryExpr *>();
+    return Var.is<const Expr *>() &&
+           !dyn_cast<MaterializeTemporaryExpr>(Var.get<const Expr *>());
   }
 
   bool isLifetimeExtendedTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           Var.get<const MaterializeTemporaryExpr *>();
+    return Var.is<const Expr *>() &&
+           dyn_cast<MaterializeTemporaryExpr>(Var.get<const Expr *>());
   }
 
   // Is the pset of this Variable allowed to contain null?
@@ -126,9 +126,9 @@ struct Variable {
 
   std::string getName() const {
     std::stringstream ss;
-    if (Var.is<const MaterializeTemporaryExpr *>()) {
-      auto *MD = Var.get<const MaterializeTemporaryExpr *>();
-      if (MD) {
+    if (Var.is<const Expr *>()) {
+      auto *E = Var.get<const Expr *>();
+      if (auto *MD = dyn_cast<MaterializeTemporaryExpr>(E)) {
         ss << "(lifetime-extended temporary through ";
         if (MD->getExtendingDecl())
           ss << std::string(MD->getExtendingDecl()->getName()) << ")";
@@ -147,7 +147,7 @@ struct Variable {
     return ss.str();
   }
 
-  llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
+  llvm::PointerUnion<const VarDecl *, const Expr *> Var;
 
   /// Possibly empty list of fields on Var
   /// first entry is the field on VD,
@@ -165,6 +165,7 @@ class InvalidationReason {
     POINTEE_LEFT_SCOPE,
     TEMPORARY_LEFT_SCOPE,
     POINTER_ARITHMETIC,
+    FORBIDDEN_CAST,
     DEREFERENCED
   } Reason;
 
@@ -192,6 +193,7 @@ public:
     case TEMPORARY_LEFT_SCOPE:
       Reporter.diag(Loc, diag::note_temporary_destroyed);
       return;
+    case FORBIDDEN_CAST: // TODO: add own diagnostic
     case POINTER_ARITHMETIC:
       Reporter.diag(Loc, diag::note_pointer_arithmetic);
       return;
@@ -222,6 +224,10 @@ public:
 
   static InvalidationReason Dereferenced(SourceLocation Loc) {
     return {Loc, DEREFERENCED};
+  }
+
+  static InvalidationReason ForbiddenCast(SourceLocation Loc) {
+    return {Loc, FORBIDDEN_CAST};
   }
 };
 
@@ -384,6 +390,12 @@ public:
         V->second = std::max(V->second, VO.second);
       }
     }
+  }
+
+  PSet operator+(const PSet &O) const {
+    PSet Ret = *this;
+    Ret.merge(O);
+    return Ret;
   }
 
   void insert(Variable Var, unsigned order = 0) {
