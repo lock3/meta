@@ -38,8 +38,10 @@ class LifetimeContext {
     /// Computed PSets after updating EntryPSets through all CFGElements of
     /// this block
     PSetsMap ExitPSets;
-    /// Contains the expressions of the block.
-    PSetsMap RefersTo;
+    /// If the CFGBlock ends with a branch and the psets
+    /// for the second successor are different from ExitPSets,
+    /// then they are contained in ExitPSetsSecondSuccessor.
+    llvm::Optional<PSetsMap> ExitPSetsSecondSuccessor;
   };
 
   ASTContext &ASTCtxt;
@@ -51,6 +53,9 @@ class LifetimeContext {
   AnalysisDeclContextManager AnalysisDCMgr;
   AnalysisDeclContext AC;
   LifetimeReporterBase &Reporter;
+
+  std::map<const Expr *, PSet> PSetsOfExpr;
+  std::map<const Expr *, PSet> RefersTo;
 
   bool computeEntryPSets(const CFGBlock &B, PSetsMap &EntryPSets);
 
@@ -111,23 +116,12 @@ public:
     // TODO AddTemporaryDtors
     // TODO AddEHEdges
     ControlFlowGraph = AC.getCFG();
+    // dumpCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());
   }
 
   void TraverseBlocks();
 };
-
-static const Stmt *getRealTerminator(const CFGBlock *B) {
-  if (B->succ_size() == 1)
-    return nullptr;
-  const Stmt *LastCFGStmt = nullptr;
-  for (const CFGElement &Element : *B) {
-    if (auto CFGSt = Element.getAs<CFGStmt>()) {
-      LastCFGStmt = CFGSt->getStmt();
-    }
-  }
-  return LastCFGStmt;
-}
 
 /// Computes entry psets of this block by merging exit psets
 /// of all reachable predecessors.
@@ -149,17 +143,12 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
 
     isReachable = true;
     auto PredPSets = PredBC.ExitPSets;
-    auto PredRefersTo = PredBC.RefersTo;
-    // Unfortunately, PredBlock->getTerminatorCondition(true) is almost what
-    // we whant here but not quite. In case of A || B, for the basic block
-    // corresponding to B, the terminator expression is the whole
-    // A || B. Is this a bug?
-    if (auto TermCond = getRealTerminator(PredBlock)) {
-      // First successor is the then-branch, second successor is the
-      // else-branch.
-      bool IsThenBranch = PredBlock->succ_begin()->getReachableBlock() == &B;
-      UpdatePSetsFromCondition(PredPSets, PredRefersTo, &Reporter, ASTCtxt,
-                               TermCond, IsThenBranch, TermCond->getLocStart());
+    if (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B) {
+      // We are the second successor. Check if there is a different exit pset
+      // for the second succcessor (because it was modified by a non-null check
+      // in the condition).
+      if (PredBC.ExitPSetsSecondSuccessor)
+        PredPSets = *PredBC.ExitPSetsSecondSuccessor;
     }
     if (EntryPSets.empty())
       EntryPSets = PredPSets;
@@ -247,7 +236,8 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPSets = EntryPSets;
       BC.ExitPSets = BC.EntryPSets;
-      VisitBlock(BC.ExitPSets, BC.RefersTo, *B, /*Reporter=*/nullptr, ASTCtxt);
+      VisitBlock(BC.ExitPSets, BC.ExitPSetsSecondSuccessor, PSetsOfExpr,
+                 RefersTo, *B, /*Reporter=*/nullptr, ASTCtxt);
       BC.visited = true;
       Updated = true;
     }
@@ -264,7 +254,8 @@ void LifetimeContext::TraverseBlocks() {
       continue;
 
     BC.ExitPSets = BC.EntryPSets;
-    VisitBlock(BC.ExitPSets, BC.RefersTo, *B, &Reporter, ASTCtxt);
+    VisitBlock(BC.ExitPSets, BC.ExitPSetsSecondSuccessor, PSetsOfExpr, RefersTo,
+               *B, &Reporter, ASTCtxt);
   }
 }
 
@@ -287,8 +278,9 @@ void runAnalysis(const VarDecl *VD, ASTContext &Context,
     return;
 
   PSetsMap PSets;
-  PSetsMap RefersTo;
-  EvalVarDecl(PSets, RefersTo, VD, &Reporter, Context);
+  std::map<const Expr *, PSet> PSetsOfExpr;
+  std::map<const Expr *, PSet> RefersTo;
+  EvalVarDecl(PSets, PSetsOfExpr, RefersTo, VD, &Reporter, Context);
   // TODO
   // We don't track the PSets of variables with global storage; just make
   // sure that its pset is always {static} and/or {null}
