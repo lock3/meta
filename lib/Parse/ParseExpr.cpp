@@ -1399,7 +1399,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseCXXDeleteExpression(false, Tok.getLocation());
 
   case tok::lessless:
-    return ParseCXXCodeFragment();
+    return ParseCXXCodeFragmentExpression();
 
   case tok::kw_noexcept: { // [C++0x] 'noexcept' '(' expression ')'
     Diag(Tok, diag::warn_cxx98_compat_noexcept_expr);

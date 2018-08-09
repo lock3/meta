@@ -2793,6 +2793,7 @@ private:
 
   // C++ Code Fragments
   ExprResult ParseCXXCodeFragment();
+  ExprResult ParseCXXCodeFragmentExpression();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

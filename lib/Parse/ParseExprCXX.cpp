@@ -1722,6 +1722,11 @@ ExprResult Parser::ParseCXXCodeFragment() {
   return ExprResult();
 }
 
+/// ParseCXXCodeFragmentExpression
+ExprResult Parser::ParseCXXCodeFragmentExpression() {
+  return ExprResult();
+}
+
 /// ParseCXXCondition - if/switch/while condition expression.
 ///
 ///       condition:
