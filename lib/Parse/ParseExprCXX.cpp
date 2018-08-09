@@ -1723,7 +1723,17 @@ Decl *Parser::ParseCXXCodeFragment() {
 }
 
 /// ParseCXXCodeFragmentExpression
+///
+///       fragment-expression:
+///         '<<' fragment
+///
 ExprResult Parser::ParseCXXCodeFragmentExpression() {
+  SourceLocation Loc = ConsumeToken();
+
+  Decl *Fragment = ParseCXXCodeFragment();
+  if (!Fragment)
+    return ExprError();
+
   return ExprResult();
 }
 
