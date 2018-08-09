@@ -78,6 +78,9 @@ public:
           return E;
         E = P->getSubExpr();
         continue;
+      } else if (const auto *C = dyn_cast<ExprWithCleanups>(E)) {
+        E = C->getSubExpr();
+        continue;
       }
       return E;
     }
@@ -167,11 +170,6 @@ public:
     if (hasPSet(E))
       setPSet(E, getPSet(E->getLHS()) + getPSet(E->getRHS()));
 
-    return true;
-  }
-
-  bool VisitExprWithCleanups(const ExprWithCleanups *E) {
-    RefersTo[E] = refersTo(E->getSubExpr());
     return true;
   }
 
