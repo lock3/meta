@@ -38,6 +38,8 @@ class LifetimeContext {
     /// Computed PSets after updating EntryPSets through all CFGElements of
     /// this block
     PSetsMap ExitPSets;
+    /// Contains the expressions of the block.
+    PSetsMap RefersTo;
   };
 
   ASTContext &ASTCtxt;
@@ -147,6 +149,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
 
     isReachable = true;
     auto PredPSets = PredBC.ExitPSets;
+    auto PredRefersTo = PredBC.RefersTo;
     // Unfortunately, PredBlock->getTerminatorCondition(true) is almost what
     // we whant here but not quite. In case of A || B, for the basic block
     // corresponding to B, the terminator expression is the whole
@@ -155,8 +158,8 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       // First successor is the then-branch, second successor is the
       // else-branch.
       bool IsThenBranch = PredBlock->succ_begin()->getReachableBlock() == &B;
-      UpdatePSetsFromCondition(PredPSets, &Reporter, ASTCtxt, TermCond,
-                               IsThenBranch, TermCond->getLocStart());
+      UpdatePSetsFromCondition(PredPSets, PredRefersTo, &Reporter, ASTCtxt,
+                               TermCond, IsThenBranch, TermCond->getLocStart());
     }
     if (EntryPSets.empty())
       EntryPSets = PredPSets;
@@ -242,7 +245,7 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPSets = EntryPSets;
       BC.ExitPSets = BC.EntryPSets;
-      VisitBlock(BC.ExitPSets, *B, /*Reporter=*/nullptr, ASTCtxt);
+      VisitBlock(BC.ExitPSets, BC.RefersTo, *B, /*Reporter=*/nullptr, ASTCtxt);
       BC.visited = true;
       Updated = true;
     }
@@ -259,7 +262,7 @@ void LifetimeContext::TraverseBlocks() {
       continue;
 
     BC.ExitPSets = BC.EntryPSets;
-    VisitBlock(BC.ExitPSets, *B, &Reporter, ASTCtxt);
+    VisitBlock(BC.ExitPSets, BC.RefersTo, *B, &Reporter, ASTCtxt);
   }
 }
 
@@ -282,7 +285,8 @@ void runAnalysis(const VarDecl *VD, ASTContext &Context,
     return;
 
   PSetsMap PSets;
-  EvalVarDecl(PSets, VD, &Reporter, Context);
+  PSetsMap RefersTo;
+  EvalVarDecl(PSets, RefersTo, VD, &Reporter, Context);
   // TODO
   // We don't track the PSets of variables with global storage; just make
   // sure that its pset is always {static} and/or {null}

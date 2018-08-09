@@ -54,7 +54,7 @@ class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
   const LifetimeReporterBase *Reporter;
   ASTContext &ASTCtxt;
   PSetsMap &PSets;
-  PSetsMap RefersTo;
+  PSetsMap &RefersTo;
 
 public:
   bool shouldTraversePostOrder() const { return true; }
@@ -203,6 +203,7 @@ public:
             PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
     return true;
   }
+
   bool VisitCStyleCastExpr(const CStyleCastExpr *E) {
     switch (E->getCastKind()) {
     case CK_BitCast:
@@ -243,7 +244,14 @@ public:
   }
 
   bool VisitBinaryOperator(const BinaryOperator *BO) {
-    if (BO->getOpcode() == BO_Assign) {
+    auto OpCode = BO->getOpcode();
+
+    // Logical and, or have short circuit which is represented in the CFG.
+    // We do not need to traverse the AST further.
+    if (OpCode == BO_LAnd || OpCode == BO_LOr)
+      return false;
+
+    if (OpCode == BO_Assign) {
       VisitBinAssign(BO);
     } else if (hasPSet(BO)) {
       setPSet(BO, PSet::invalid(
@@ -654,8 +662,9 @@ public:
 
 public:
   PSetsBuilder(const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PSets)
-      : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets) {}
+               PSetsMap &PSets, PSetsMap &RefersTo)
+      : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets), RefersTo(RefersTo) {
+  }
 
   bool VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -700,9 +709,8 @@ public:
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
   auto i = PSets.find(P);
-  if (i != PSets.end()) {
+  if (i != PSets.end())
     return i->second;
-  }
 
   // Assumption: global Pointers have a pset of {static, null}
   if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
@@ -955,24 +963,23 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B) {
   }
 }
 
-void VisitBlock(PSetsMap &PSets, const CFGBlock &B,
+void VisitBlock(PSetsMap &PSets, PSetsMap &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
   Builder.VisitBlock(B);
 }
 
-void UpdatePSetsFromCondition(PSetsMap &PSets,
+void UpdatePSetsFromCondition(PSetsMap &PSets, PSetsMap &RefersTo,
                               const LifetimeReporterBase *Reporter,
                               ASTContext &ASTCtxt, const Stmt *S, bool Positive,
                               SourceLocation Loc) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets);
-  Builder.TraverseStmt(const_cast<Stmt *>(S));
+  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
   Builder.UpdatePSetsFromCondition(S, Positive, Loc);
 }
 
-void EvalVarDecl(PSetsMap &PSets, const VarDecl *VD,
+void EvalVarDecl(PSetsMap &PSets, PSetsMap &RefersTo, const VarDecl *VD,
                  const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
   Builder.VisitVarDecl(VD);
 }
 

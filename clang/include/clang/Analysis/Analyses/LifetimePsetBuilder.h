@@ -24,7 +24,7 @@ class LifetimeReporterBase;
 
 /// Updates psets with all effects that appear in the block.
 /// \param Reporter if non-null, emits diagnostics
-void VisitBlock(PSetsMap &PSets, const CFGBlock &B,
+void VisitBlock(PSetsMap &PSets, PSetsMap &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt);
 
 /// Updates psets to remove 'null' when entering conditional statements. If
@@ -40,14 +40,14 @@ void VisitBlock(PSetsMap &PSets, const CFGBlock &B,
 /// else
 ///  ... // pset of p does not contain 'null'
 /// \param Reporter if non-null, emits diagnostics
-void UpdatePSetsFromCondition(PSetsMap &PSets,
+void UpdatePSetsFromCondition(PSetsMap &PSets, PSetsMap &RefersTo,
                               const LifetimeReporterBase *Reporter,
                               ASTContext &ASTCtxt, const Stmt *S, bool Positive,
                               SourceLocation Loc);
 
 /// Evaluate a variable declartation for effects on psets
 /// \param Reporter if non-null, emits diagnostics
-void EvalVarDecl(PSetsMap &PSets, const VarDecl *VD,
+void EvalVarDecl(PSetsMap &PSets, PSetsMap &RefersTo, const VarDecl *VD,
                  const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt);
 } // namespace lifetime
 } // namespace clang
