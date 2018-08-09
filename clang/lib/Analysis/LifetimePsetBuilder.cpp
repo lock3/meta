@@ -624,8 +624,11 @@ public:
         setPSet(Pointer, PSet::invalid(Reason), Reason.getLoc());
     }
   }
+
   void erasePointer(Variable P) { PSets.erase(P); }
+
   PSet getPSet(Variable P);
+
   PSet getPSet(const Expr *E) {
     E = IgnoreParenImpCasts(E);
     assert(hasPSet(E));
@@ -639,12 +642,14 @@ public:
     // everything that it refers to.
     return getPSet(refersTo(E));
   }
+
   PSet getPSet(const PSet &P) {
     PSet Ret;
     for (auto &KV : P.vars())
       Ret.merge(getPSet(KV.first));
     return Ret;
   }
+
   void setPSet(Variable P, PSet PS, SourceLocation Loc);
   void setPSet(const Expr *E, PSet PS) { setPSet(E, PS, E->getExprLoc()); }
   void setPSet(PSet V, PSet PS, SourceLocation Loc);
@@ -819,6 +824,16 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
   if (!E)
     return;
   E = IgnoreParenImpCasts(E);
+  // Handle user written bool conversion.
+  if (const auto *CE = dyn_cast<CXXMemberCallExpr>(E)) {
+    if (const auto *ConvDecl =
+            dyn_cast_or_null<CXXConversionDecl>(CE->getDirectCallee())) {
+      if (ConvDecl->getConversionType()->isBooleanType())
+        UpdatePSetsFromCondition(CE->getImplicitObjectArgument(), Positive,
+                                 E->getLocStart());
+    }
+    return;
+  }
   if (const auto *UO = dyn_cast<UnaryOperator>(E)) {
     if (UO->getOpcode() != UO_LNot)
       return;
@@ -845,7 +860,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
     return;
   }
 
-  if (E->isLValue() && isPointer(E)) {
+  if (E->isLValue() && hasPSet(E)) {
     auto Ref = refersTo(E);
     // We refer to multiple variables (or none),
     // and we cannot know which of them is null/non-null.
