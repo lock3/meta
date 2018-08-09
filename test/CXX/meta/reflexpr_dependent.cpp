@@ -8,8 +8,8 @@ using namespace std::experimental;
 
 template<typename T>
 struct S1 {
-  constexpr static T foo() { return T(); }
-  constexpr static T variable;
+  constexpr T foo() { return T(); }
+  constexpr T variable;
 };
 
 template<typename T>
@@ -49,7 +49,7 @@ struct S { };
 
 void test_templates() {
   constexpr int x1 = test<int>();
-  constexpr int x2 = test<S>();
+  // constexpr int x2 = test<S>();
 }
 
 int main(int argc, char* argv[])

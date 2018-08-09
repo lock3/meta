@@ -4154,6 +4154,49 @@ public:
                       Expr *E);
 };
 
+/// \brief Representation of reflected types.
+///
+/// Reflected types have the form 'typename(x)' where x is a reflection.
+class ReflectedType : public Type {
+  friend class ASTContext;  // ASTContext creates these.
+  
+  Expr *Reflection;
+  QualType UnderlyingType;
+
+protected:
+  ReflectedType(Expr *E, QualType T, QualType Can = QualType());
+
+public:
+  /// \brief Returns the reflection (expression) of the operator.
+  Expr *getReflection() const { return Reflection; }
+
+  /// \brief Returns the underlying type; the one reflected.
+  QualType getUnderlyingType() const { return UnderlyingType; }
+
+  /// \brief Returns whether this type provides sugar.
+  bool isSugared() const;
+
+  /// \brief Removes one level of sugar.
+  QualType desugar() const;
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Reflected; }
+};
+
+/// \brief Representation of dependent reflected types.
+class DependentReflectedType : public ReflectedType, 
+                               public llvm::FoldingSetNode {
+  const ASTContext &Context;
+public:
+  DependentReflectedType(const ASTContext &Context, Expr *E);
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Context, getReflection());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context,
+                      Expr *E);
+};
+
 /// A unary type transform, which is a type constructed from another.
 class UnaryTransformType : public Type {
 public:

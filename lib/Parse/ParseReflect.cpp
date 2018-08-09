@@ -45,8 +45,6 @@ ExprResult Parser::ParseCXXReflectExpression() {
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
 
-  NestedNameSpecifier* NNS = SS.getScopeRep();
-
   // If the next token is an identifier, try to resolve that. This will likely
   // match most uses of the reflection operator, but there are some cases
   // of id-expressions and type-ids that must be handled separately.
@@ -60,31 +58,38 @@ ExprResult Parser::ParseCXXReflectExpression() {
   // we should probably put that into an enum or union, but if i make that change i am gonna have to replumb how the
   // actual reflection object creator. Maybe make a function based on each type -- if i have a type, return typereflection() etc.
 
+  NestedNameSpecifier* NNS = SS.getScopeRep();
   if(!SS.isInvalid() && NNS && NNS->isDependent()) {
+    llvm::outs() << "mmama mia\n";
     IdentifierInfo *Id = Tok.getIdentifierInfo();
-    SourceLocation IdLoc = ConsumeToken();    
-    
+    SourceLocation IdLoc = ConsumeToken();
     if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
       return ExprError();
-  } else {
-    if (!SS.isInvalid() && Tok.is(tok::identifier)) {
-      IdentifierInfo *Id = Tok.getIdentifierInfo();
-      SourceLocation IdLoc = ConsumeToken();
+  } else if (!SS.isInvalid() && Tok.is(tok::identifier)) {
+    IdentifierInfo *Id = Tok.getIdentifierInfo();
+    SourceLocation IdLoc = ConsumeToken();
 
-      if (!Actions.ActOnReflectedId(SS, IdLoc, Id, Kind, Entity))
-	return ExprError();
-    }
-    else if (isCXXTypeId(TypeIdAsTemplateArgument)) {
-      DeclSpec DS(AttrFactory);
-      ParseSpecifierQualifierList(DS);
-      Declarator D(DS, DeclaratorContext::TypeNameContext);
-      ParseDeclarator(D);
-      if (D.isInvalidType())
-	return ExprError();
-      if (!Actions.ActOnReflectedType(D, Kind, Entity))
-	return ExprError();
-    }
+    if (!Actions.ActOnReflectedId(SS, IdLoc, Id, Kind, Entity))
+      return ExprError();
+
+  } else if (isCXXTypeId(TypeIdAsTemplateArgument)) {
+    DeclSpec DS(AttrFactory);
+    ParseSpecifierQualifierList(DS);
+    Declarator D(DS, DeclaratorContext::TypeNameContext);
+    ParseDeclarator(D);
+    if (D.isInvalidType())
+      return ExprError();
+    if (!Actions.ActOnReflectedType(D, Kind, Entity))
+      return ExprError();
   }
+  // else if (!SS.isInvalid() && Tok.is(tok::annot_template_id)) {
+  //   TemplateIdAnnotation *IdAnn = takeTemplateIdAnnotation(Tok);
+    //   IdentifierInfo *Id = IdAnn->Name;
+    //   SourceLocation IdLoc = ConsumeAnnotationToken();
+
+    //   if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
+    // 	return ExprError();
+    // }
 
   if (T.consumeClose())
     return ExprError();
@@ -183,4 +188,26 @@ ExprResult Parser::ParseCXXReflectedValueExpression() {
   if (Reflection.isInvalid())
     return ExprError();
   return Actions.ActOnCXXReflectedValueExpression(Loc, Reflection.get());
+}
+
+/// Parse a type reflection specifier.
+///
+/// \verbatim
+///   reflection-type-specifier:
+///     'typename' '(' reflection ')'
+/// \endverbatim
+///
+/// The constant expression must be a reflection of a type.
+TypeResult Parser::ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
+                                               SourceLocation &EndLoc) {
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
+    return TypeResult(true);
+  ExprResult Result = ParseConstantExpression();
+  if (!T.consumeClose()) {
+    EndLoc = T.getCloseLocation();
+    if (!Result.isInvalid())
+      return Actions.ActOnReflectedTypeSpecifier(TypenameLoc, Result.get());
+  }
+  return TypeResult(true);
 }

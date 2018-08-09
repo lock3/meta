@@ -1170,7 +1170,10 @@ namespace serialization {
       TYPE_DEPENDENT_ADDRESS_SPACE = 47,
 
       /// A dependentSizedVectorType record.
-      TYPE_DEPENDENT_SIZED_VECTOR = 48
+      TYPE_DEPENDENT_SIZED_VECTOR = 48,
+
+      /// \brief A ReflectedType record.
+      TYPE_REFLECTED  = 49
     };
 
     /// The type IDs for special types constructed by semantic

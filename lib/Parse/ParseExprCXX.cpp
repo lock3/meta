@@ -1903,6 +1903,8 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
     llvm_unreachable("Not a simple-type-specifier token!");
 
   // type-name
+  // [Meta] reflected-type-specifier
+  case tok::annot_refltype: // typename(x)
   case tok::annot_typename: {
     if (getTypeAnnotation(Tok))
       DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, PrevSpec, DiagID,

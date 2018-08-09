@@ -603,6 +603,13 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
+  case Type::Reflected:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<ReflectedType>(T1)->getReflection(),
+                                  cast<ReflectedType>(T2)->getReflection()))
+      return false;
+    break;
+
   case Type::Auto:
     if (!IsStructurallyEquivalent(Context, cast<AutoType>(T1)->getDeducedType(),
                                   cast<AutoType>(T2)->getDeducedType()))

@@ -5382,6 +5382,10 @@ bool UnnamedLocalNoLinkageFinder::VisitDecltypeType(const DecltypeType*) {
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitReflectedType(const ReflectedType*) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitUnaryTransformType(
                                                     const UnaryTransformType*) {
   return false;

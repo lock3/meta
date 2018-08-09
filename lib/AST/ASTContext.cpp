@@ -3085,6 +3085,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -4764,6 +4765,31 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
   Types.push_back(dt);
   return QualType(dt, 0);
 }
+
+QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
+  ReflectedType *RT;
+
+  if (E->isInstantiationDependent()) {
+    llvm::FoldingSetNodeID ID;
+    DependentReflectedType::Profile(ID, *this, E);
+
+    void *InsertPos = nullptr;
+    DependentReflectedType *Canon
+      = DependentReflectedTypes.FindNodeOrInsertPos(ID, InsertPos);
+    if (!Canon) {
+      // Build a new, canonical typename(E) type.
+      Canon = new (*this, TypeAlignment) DependentReflectedType(*this, E);
+      DependentReflectedTypes.InsertNode(Canon, InsertPos);
+    }
+    RT = new (*this, TypeAlignment) ReflectedType(E, T, QualType(Canon, 0));
+  } else {
+      CanQualType Canon = getCanonicalType(T);
+    RT = new (*this, TypeAlignment) ReflectedType(E, T, Canon);
+  }
+  Types.push_back(RT);
+  return QualType(RT, 0);
+}
+
 
 /// getUnaryTransformationType - We don't unique these, since the memory
 /// savings are minimal and these are rare.

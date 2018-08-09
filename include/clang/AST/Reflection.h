@@ -52,10 +52,6 @@ enum ReflectionKind {
   /// \brief A base class specifier. Corresponds to an object of type
   /// CXXBaseSpecifier.
   REK_base_specifier = 4,
-
-  /// \brief A declaration with a dependent nested name specifier.
-  /// Also corresponds to an object of type Decl.
-  REK_unresolved = 5,
 };
 
 /// Information about a reflected construct.
@@ -125,8 +121,13 @@ public:
   /// \brief Returns true if this is a reflected base class specifier.
   bool isBaseSpecifier() const { return Kind == REK_base_specifier; }
 
-  /// \brief Returns true if this has an unresolved nested name specifier.
-  bool isUnresolved() const { return Kind == REK_unresolved; }
+  /// \brief Returns true if this is a reflected dependent expression.
+  bool isUnresolved() const {    
+    if(!isStatement())
+      return false;
+    const Stmt *S = getStatement();
+    return S->getStmtClass() == Stmt::UnresolvedLookupExprClass;
+  }
 
   /// \brief The reflected declaration.
   const Decl *getDeclaration() const{ 
@@ -174,7 +175,8 @@ public:
 
   /// \brief The reflected dependent decl.
   const UnresolvedLookupExpr *getUnresolved() const {
-    assert(isUnresolved() && "Not an unresolved declaration");
+    assert(isUnresolved() && "Not an unresolved expression.");
+
     return (const UnresolvedLookupExpr*)Ptr;
   }
 

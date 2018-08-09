@@ -2754,6 +2754,9 @@ private:
   ExprResult ParseCXXReflectionTrait();
   ExprResult ParseCXXReflectedValueExpression();
 
+  TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc, 
+                                        SourceLocation &EndLoc);
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

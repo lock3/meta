@@ -1932,6 +1932,14 @@ public:
   Expr *getUnderlyingExpr() const { return getTypePtr()->getUnderlyingExpr(); }
 };
 
+// FIXME: location of the 'typename' and parens.
+class ReflectedTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
+                                                         ReflectedTypeLoc,
+                                                         ReflectedType> {
+public:
+  Expr *getReflection() const { return getTypePtr()->getReflection(); }
+};
+
 struct UnaryTransformTypeLocInfo {
   // FIXME: While there's only one unary transform right now, future ones may
   // need different representations

@@ -4807,7 +4807,7 @@ public:
       Value(std::move(V)) { }
 
   CXXConstantExpr(EmptyShell Empty)
-    : Expr(CXXConstantExprClass, Empty) { llvm::outs() << "CXXConstantExpr()\n"; }
+    : Expr(CXXConstantExprClass, Empty) { }
 
   /// \brief Returns the evaluated expression. 
   Expr *getExpression() const { return cast<Expr>(Source); }
@@ -4866,7 +4866,7 @@ public:
   bool isReflectedType() const { return Ref.isDeclaration(); }
 
   /// \brief True if the expression reflects a dependent identifier.
-  bool isReflectedDependentId() const { return Ref.isUnresolved(); }
+  bool isReflectedDependentId() const { return Ref.isStatement(); }
 
   /// \brief The reflected declaration.
   const Decl *getReflectedDeclaration() const { return Ref.getAsDeclaration(); }

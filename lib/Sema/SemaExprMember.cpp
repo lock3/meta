@@ -89,7 +89,6 @@ enum IMAKind {
 static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
                                             const LookupResult &R) {
   assert(!R.empty() && (*R.begin())->isCXXClassMember());
-
   DeclContext *DC = SemaRef.getFunctionLevelDeclContext();
 
   bool isStaticContext = SemaRef.CXXThisTypeOverride.isNull() &&
@@ -97,12 +96,20 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
 
   if (R.isUnresolvableResult())
     return isStaticContext ? IMA_Unresolved_StaticContext : IMA_Unresolved;
-
   // Collect all the declaring classes of instance members we find.
   bool hasNonInstance = false;
   bool isField = false;
   BaseSet Classes;
   for (NamedDecl *D : R) {
+    // if(isa<CXXMethodDecl>(D)) {
+    //   llvm::outs() << "Decl kind: " << D->getDeclKindName() << '\n';
+    //   if(dyn_cast<CXXMethodDecl>(D)->isReflectionParameter()) {
+    // 	llvm::outs() << "D is a reflection parameter.\n";
+    // 	return IMA_Static;
+    //   }
+    // }
+    
+    // llvm::outs() << "Qualified name: " << D->getQualifiedNameAsString() << '\n';
     // Look through any using decls.
     D = D->getUnderlyingDecl();
 
@@ -115,7 +122,6 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
     } else
       hasNonInstance = true;
   }
-
   // If we didn't find any instance members, it can't be an implicit
   // member reference.
   if (Classes.empty())
@@ -153,13 +159,12 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
   // If the current context is not an instance method, it can't be
   // an implicit member reference.
   if (isStaticContext) {
-    if (hasNonInstance)
+    if (hasNonInstance) {
       return IMA_Mixed_StaticContext;
-
+    }
     return AbstractInstanceResult ? AbstractInstanceResult
                                   : IMA_Error_StaticContext;
   }
-
   CXXRecordDecl *contextClass;
   if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC))
     contextClass = MD->getParent()->getCanonicalDecl();

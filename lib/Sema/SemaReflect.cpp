@@ -146,7 +146,7 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
     // declarations and templates.
     if (R.isAmbiguous())
       Diag(IdLoc, diag::err_reflect_ambiguous_id) << Id;
-    else if (R.isOverloadedResult())
+    else if (R.isOverloadedResult()) 
       Diag(IdLoc, diag::err_reflect_overloaded_id) << Id;
     else
       Diag(IdLoc, diag::err_reflect_undeclared_id) << Id;
@@ -155,7 +155,47 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
     return false;
   }
 
+  // Decl* D = R.getAsSingle<Decl>();
+  // if(CXXMethodDecl* MD = dyn_cast<CXXMethodDecl>(D)) {
+  //   llvm::UnresolvedSet set;
+  //   set.push(Ref);
+    
+  //   Entity =
+  //     UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
+  // 				   SS.getWithLocInContext(Context),
+  // 				   DNI, /*ADL=*/false, /*NeedsOverload=*/false,
+  // 				   set.begin(),
+  // 				   set.end());
+  //   Kind = REK_statement;
+  //   return true;
+    
+  // }
+    
+
   const auto &decls = R.asUnresolvedSet();
+
+  // For data members and member functions, adjust the expression so that
+  // we evaluate a pointer-to-member, not the member itself.
+  // if (FieldDecl *FD = dyn_cast<FieldDecl>(VD)) {
+  //   const Type *C = Context.getTagDeclType(FD->getParent()).getTypePtr();
+  //   QualType PtrTy = Context.getMemberPointerType(FD->getType(), C);
+  //   Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
+  //                                     OK_Ordinary, Loc, false);
+  // } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(VD)) {
+  //   const Type *C = Context.getTagDeclType(MD->getParent()).getTypePtr();
+  //   QualType PtrTy = Context.getMemberPointerType(MD->getType(), C);
+  //   Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
+  //                                     OK_Ordinary, Loc, false);
+  // }
+
+  // for(auto D : decls) {
+  //   DeclContext *DC = getFunctionLevelDeclContext();
+  //   // if(CXXMethodDecl* MD = dyn_cast<CXXMethodDecl*>(DC)) {
+  //     // MD->setReflectionParameter();
+  //     cast<CXXMethodDecl>(DC)->setReflectionParameter();
+  //     llvm::outs() << "Set Reflection Parameter.\n";
+  //   // }
+  // }
 
   Entity =
     UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
@@ -163,7 +203,7 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
 				 DNI, /*ADL=*/false, /*NeedsOverload=*/false,
 				 decls.begin(),
 				 decls.end());
-  Kind = REK_unresolved;
+  Kind = REK_statement;
   return true;
 }
 
@@ -209,7 +249,6 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
       Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false, 
                                           VD->getType(), VK_RValue, KWLoc);
       IsValueDependent = E->isTypeDependent() || E->isValueDependent();
-      
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       // A reflection of a type declaration is dependent if that type is
       // dependent.
@@ -408,6 +447,67 @@ ExprResult Sema::BuildCXXReflectedValueExpression(SourceLocation Loc,
                                           Ref->getObjectKind(), Loc);
   Val->setReference(Ref);
   return Val;
+}
+
+/// Evaluates the given expression and yields the computed type.
+TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
+                                             Expr *E) {
+  QualType T = BuildReflectedType(TypenameLoc, E);
+  if (T.isNull())
+    return TypeResult(true);
+
+  // FIXME: Add parens?
+  TypeLocBuilder TLB;
+  ReflectedTypeLoc TL = TLB.push<ReflectedTypeLoc>(T);
+  TL.setNameLoc(TypenameLoc);
+  TypeSourceInfo *TSI = TLB.getTypeSourceInfo(Context, T);
+  return CreateParsedType(T, TSI);
+}
+
+/// Evaluates the given expression and yields the computed type.
+QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
+  if (E->isTypeDependent() || E->isValueDependent())
+    return Context.getReflectedType(E, Context.DependentTy);
+
+  // The operand must be a reflection.
+  if (!CheckReflectionOperand(*this, E))
+    return QualType();
+
+  // Evaluate the reflection.
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!E->EvaluateAsRValue(Result, Context)) {
+    Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      Diag(PD.first, PD.second);
+    return QualType();
+  }
+
+  Reflection R;
+  R.putConstantValue(Result.Val);
+  if (R.isNull()) {
+    Diag(E->getExprLoc(), diag::err_empty_type_reflection);    
+    return QualType();
+  }
+
+  // Get the type of the reflected entity.
+  QualType Reflected; 
+  if (const Type* T = R.getAsType()) {
+    Reflected = QualType(T, 0);
+  } else if (const Decl* D = R.getAsDeclaration()) {
+    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
+      Reflected = Context.getTypeDeclType(TD);
+    } else {
+      Diag(E->getExprLoc(), diag::err_expression_not_type_reflection);
+      return QualType();
+    }
+  } else {
+    // FIXME: Handle things like base classes.
+    llvm_unreachable("unknown reflection");
+  }
+
+  return Context.getReflectedType(E, Reflected);
 }
 
 

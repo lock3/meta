@@ -5600,6 +5600,33 @@ QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
+QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
+                                                        ReflectedTypeLoc TL) {
+  const ReflectedType *T = TL.getTypePtr();
+
+  // reflectedtype expressions are not potentially evaluated contexts.
+  //
+  // FIXME: This is totally misleading, since we are definitely going to
+  // evaluate the expression (just not at runtime).
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
+      /*IsDecltype=*/true);
+
+  ExprResult E = getDerived().TransformExpr(T->getReflection());
+  if (E.isInvalid())
+    return QualType();
+
+  QualType Result = getSema().BuildReflectedType(TL.getNameLoc(), E.get());
+  if (Result.isNull())
+    return QualType();
+
+  ReflectedTypeLoc NewTL = TLB.push<ReflectedTypeLoc>(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+
+  return Result;
+}
+
+template<typename Derived>
 QualType TreeTransform<Derived>::TransformUnaryTransformType(
                                                             TypeLocBuilder &TLB,
                                                      UnaryTransformTypeLoc TL) {
@@ -7189,12 +7216,14 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
 {
+  llvm::outs() << "Transform\n";
   Reflection R;
   if (const Decl *D = E->getReflectedDeclaration()) {
     // We can't just call TransformDecl. That's not guaranteed to perform
     // substitution. We need to build an expression or type and substitute
     // through that.
     if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
+      llvm::outs() << "Value declaration\n";
       DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(const_cast<ValueDecl*>(VD), 
                                                            false, VD->getType(),
                                                            VK_RValue, 
@@ -7205,6 +7234,7 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
       ValueDecl *NewDecl = cast<DeclRefExpr>(NewRef.get())->getDecl();
       R = Reflection(NewDecl);
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
+      llvm::outs() << "Type Declaration\n";
       QualType T = SemaRef.Context.getTypeDeclType(TD);
       QualType NewType = TransformType(T);
       if (NewType.isNull())
@@ -7215,16 +7245,51 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
       else 
         R = Reflection(NewType.getTypePtr());
     } else {
+      llvm::outs() << "Something else\n";
       // This is something like a namespace. Just use TransformDecl even
       // though it's unlikely to change.
       Decl *NewDecl = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
       R = Reflection(NewDecl);
     }
   } else if (const Type *T = E->getReflectedType()) {
+    llvm::outs() << "Type\n";
     QualType NewType = TransformType(QualType(T, 0));
     R = Reflection(NewType.getTypePtr());
   } else if (UnresolvedLookupExpr *ULE = const_cast<UnresolvedLookupExpr*>(E->getReflectedDependentId())) {
+    llvm::outs() << "ULE has not been transformed.\n";
     ExprResult NewId = getDerived().TransformUnresolvedLookupExpr(ULE);
+
+    // LookupResult Res(SemaRef, ULE->getName(), ULE->getNameLoc(),
+    //              Sema::LookupOrdinaryName);
+
+    // // Transform the declaration set.
+    // if (TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
+    //   return ExprError();
+    // // Rebuild the nested-name qualifier, if present.
+    // CXXScopeSpec SS;
+    // if (ULE->getQualifierLoc()) {
+    //   NestedNameSpecifierLoc QualifierLoc
+    // 	= getDerived().TransformNestedNameSpecifierLoc(ULE->getQualifierLoc());\
+    //   if (!QualifierLoc)
+    // 	return ExprError();
+
+    //   SS.Adopt(QualifierLoc);
+    // }
+    // // NamedDecl *D = Res.getAsSingle<NamedDecl>();
+    // ExprResult NewId = SemaRef.BuildMemberReferenceExpr(nullptr, QualType() ,
+    // 							SourceLocation(),
+    // 							false,
+    // 							SS, SourceLocation(),
+    // 							nullptr,
+    // 							Res, nullptr, nullptr); 
+      // (SS, SourceLocation(), Res,
+      // 						       /*TemplateArgs=*/nullptr,
+      // 						       /*isKnownInstance=*/false,
+      // 						       /*Scope=*/nullptr);
+      
+    llvm::outs() << "ULE has been transformed.\n";
+
+
 
     if(NewId.isInvalid())
       return ExprError();
@@ -10554,7 +10619,6 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   // Transform the declaration set.
   if (TransformOverloadExprDecls(Old, Old->requiresADL(), R))
     return ExprError();
-
   // Rebuild the nested-name qualifier, if present.
   CXXScopeSpec SS;
   if (Old->getQualifierLoc()) {
@@ -10580,7 +10644,6 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   }
 
   SourceLocation TemplateKWLoc = Old->getTemplateKeywordLoc();
-
   // If we have neither explicit template arguments, nor the template keyword,
   // it's a normal declaration name or member reference.
   if (!Old->hasExplicitTemplateArgs() && !TemplateKWLoc.isValid()) {
@@ -10596,7 +10659,6 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
 
     return getDerived().RebuildDeclarationNameExpr(SS, R, Old->requiresADL());
   }
-
   // If we have template arguments, rebuild them, then rebuild the
   // templateid expression.
   TemplateArgumentListInfo TransArgs(Old->getLAngleLoc(), Old->getRAngleLoc());
@@ -10607,7 +10669,6 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
     R.clear();
     return ExprError();
   }
-
   return getDerived().RebuildTemplateIdExpr(SS, TemplateKWLoc, R,
                                             Old->requiresADL(), &TransArgs);
 }

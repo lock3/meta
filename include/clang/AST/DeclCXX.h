@@ -2051,6 +2051,9 @@ public:
 class CXXMethodDecl : public FunctionDecl {
   void anchor() override;
 
+  // True if this is a parameter for a CXXReflectExpr
+  bool ReflectionParameter = false;
+
 protected:
   CXXMethodDecl(Kind DK, ASTContext &C, CXXRecordDecl *RD,
                 SourceLocation StartLoc, const DeclarationNameInfo &NameInfo,
@@ -2128,6 +2131,11 @@ public:
 
   /// Determine whether this is a move assignment operator.
   bool isMoveAssignmentOperator() const;
+
+  /// Determine whether this is a reflection parameter.
+  bool isReflectionParameter() const { return ReflectionParameter; }
+
+  void setReflectionParameter() { ReflectionParameter = true; }
 
   CXXMethodDecl *getCanonicalDecl() override {
     return cast<CXXMethodDecl>(FunctionDecl::getCanonicalDecl());

@@ -1505,6 +1505,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
 
     // simple-type-specifier:
 
+  case tok::annot_refltype:
   case tok::annot_typename:
   case_typename:
     // In Objective-C, we might have a protocol-qualified type.
