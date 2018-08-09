@@ -687,13 +687,21 @@ public:
 
     switch (classifyTypeCategory(VD->getType())) {
     case TypeCategory::Pointer: {
-      PSet PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
-      if (Initializer) {
+      PSet PS;
+      if (VD->getType()->isArrayType()) {
+        // That pset is invalid, because array to pointer decay is forbidden
+        // by the bounds profile.
+        // TODO: Better diagnostic that explains the array to pointer decay
+        PS =  PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
+      }
+      else if (Initializer) {
         if (VD->getType()->isReferenceType())
           PS = refersTo(Initializer);
         else {
           PS = getPSet(Initializer);
         }
+      } else {
+        PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
       }
       setPSet(VD, PS, Loc);
       break;
@@ -702,15 +710,6 @@ public:
       setPSet(VD, PSet::pointsToVariable(VD, false, 1), Loc);
     }
     default:;
-      if (VD->getType()->isArrayType()) {
-        // Arrays are not officially Pointers, but we may
-        // encounter an implicit cast to a pointer, and then
-        // the parent will see it as a Pointer and ask for a pset.
-        // That pset is invalid, because array to pointer decay is forbidden
-        // by the bounds profile.
-        setPSet(VD, PSet::invalid(InvalidationReason::PointerArithmetic(Loc)),
-                Loc);
-      }
     }
     return true;
   }
