@@ -28,6 +28,13 @@ struct remove_reference<T &&> { typedef T type; };
 
 template <typename T>
 typename remove_reference<T>::type &&move(T &&arg);
+
+template <typename T>
+struct unique_ptr {
+  T &operator*() const;
+  explicit operator bool() const;
+  ~unique_ptr();
+};
 } // namespace std
 
 namespace gsl {
@@ -248,14 +255,22 @@ void ignore_pointer_to_member() {
   void (S::*mpf)() = &S::f; // pointer to member function; has no pset
 }
 
-void if_stmt(int *p, char *q) {
+void if_stmt(int *p, char *q, gsl::nullable<std::unique_ptr<int>> up) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
+  __lifetime_pset(up); // expected-warning {{pset(up) = ((null), up')}}
   int *alwaysNull = nullptr;
+  bool b = p && q;
 
   if (p) {
     __lifetime_pset(p); // expected-warning {{pset(p) = (p)}}
   } else {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
+  }
+
+  if (up) {
+    __lifetime_pset(up); // expected-warning {{pset(up) = (up')}}
+  } else {
+    __lifetime_pset(up); // expected-warning {{pset(up) = ((null))}}
   }
 
   if (p != nullptr) {
