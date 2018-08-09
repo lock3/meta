@@ -1988,6 +1988,9 @@ public:
   void warnParameterDangling(SourceLocation Loc, bool indirectly) const final {
     S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
   }
+  void warnParameterNull(SourceLocation Loc, bool possibly) const final {
+    S.Diag(Loc, diag::warn_parameter_null) << possibly;
+  }
   void notePointeeLeftScope(SourceLocation Loc, std::string Name) const final {
     S.Diag(Loc, diag::note_pointee_left_scope) << Name;
   }

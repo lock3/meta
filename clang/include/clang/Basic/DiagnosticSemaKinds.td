@@ -3201,9 +3201,11 @@ def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null point
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_parameter_alias : Warning<"this parameter points to the same variable '%0' as another parameter">,
+def warn_parameter_alias : Warning<"this argument points to the same variable '%0' as another argument">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling pointer as parameter">,
+def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling pointer as argument">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_parameter_null : Warning<"passing a%select{| possibly}0 null pointer as argument to a non-null parameter">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 
 def note_never_initialized : Note<"it was never initialized here">;

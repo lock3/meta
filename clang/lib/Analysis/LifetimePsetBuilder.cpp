@@ -330,9 +330,11 @@ public:
   }
 
   struct CallArgument {
-    CallArgument(SourceLocation Loc, PSet PS) : Loc(Loc), PS(std::move(PS)) {}
+    CallArgument(SourceLocation Loc, PSet PS, QualType QType)
+        : Loc(Loc), PS(std::move(PS)), QType(QType) {}
     SourceLocation Loc;
     PSet PS;
+    QualType QType;
   };
 
   struct CallArguments {
@@ -353,19 +355,21 @@ public:
     if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
         if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.emplace_back(Arg->getExprLoc(), getPSet(Arg));
+          Args.Oin_strong.emplace_back(Arg->getExprLoc(), getPSet(Arg),
+                                       ParamQType);
         } else if (ParamQType.isConstQualified()) {
-          Args.Oin_weak.emplace_back(Arg->getExprLoc(), getPSet(Arg));
+          Args.Oin_weak.emplace_back(Arg->getExprLoc(), getPSet(Arg),
+                                     ParamQType);
         } else {
-          Args.Oin.emplace_back(Arg->getExprLoc(), getPSet(Arg));
+          Args.Oin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(Arg->getExprLoc(), refersTo(Arg));
+        Args.Pin.emplace_back(Arg->getExprLoc(), refersTo(Arg), ParamQType);
       }
 
     } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg));
+      Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
     }
 
     // A “function output” means a return value or a parameter passed by raw
@@ -434,17 +438,25 @@ public:
     std::vector<CallArgument> PinExtended;
     for (auto &CA : PinArgs) {
       // const Expr *ArgExpr = CA.ArgumentExpr;
-      PSet PS = CA.PS;
-      PinExtended.emplace_back(CA.Loc, PS);
+      PinExtended.emplace_back(CA.Loc, CA.PS, CA.QType);
 
-      if (PS.containsInvalid()) {
+      if (CA.PS.containsInvalid()) {
         if (Reporter) {
           Reporter->warnParameterDangling(CA.Loc,
                                           /*indirectly=*/false);
-          PS.explainWhyInvalid(*Reporter);
+          CA.PS.explainWhyInvalid(*Reporter);
         }
         break;
+      } else if (CA.PS.containsNull() && !isNullableType(CA.QType)) {
+        if (Reporter) {
+          Reporter->warnParameterNull(CA.Loc, !CA.PS.isNull());
+          CA.PS.explainWhyNull(*Reporter);
+        }
       }
+
+      auto PointeeType = getPointeeType(CA.QType);
+      if (classifyTypeCategory(PointeeType) == TypeCategory::Pointer)
+        PinExtended.emplace_back(CA.Loc, derefPSet(CA.PS, CA.Loc), PointeeType);
 #if 0
       // For each Pointer parameter p, treat it as if it were additionally
       // followed by a generated deref__p parameter of the same type as *p. If
@@ -569,9 +581,9 @@ public:
             return refersTo(Object);
           }();
           if (TC == TypeCategory::Pointer)
-            Args.Pin.emplace_back(CallE->getExprLoc(), PS);
+            Args.Pin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
           else
-            Args.Oin.emplace_back(CallE->getExprLoc(), PS);
+            Args.Oin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
         }
       }
     }
@@ -692,9 +704,8 @@ public:
         // That pset is invalid, because array to pointer decay is forbidden
         // by the bounds profile.
         // TODO: Better diagnostic that explains the array to pointer decay
-        PS =  PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
-      }
-      else if (Initializer) {
+        PS = PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
+      } else if (Initializer) {
         if (VD->getType()->isReferenceType())
           PS = refersTo(Initializer);
         else {
