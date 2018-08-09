@@ -9,6 +9,7 @@
 
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 
 namespace clang {
 namespace lifetime {
@@ -178,23 +179,36 @@ TypeCategory classifyTypeCategory(QualType QT) {
   return TypeCategory::Value;
 }
 
+// TODO: check gsl namespace?
+// TODO: handle clang nullability annotations?
 bool isNullableType(QualType QT) {
+  auto getKnownNullability = [](StringRef Name) -> Optional<bool> {
+    if (Name == "nullable")
+      return true;
+    if (Name == "not_null")
+      return false;
+    return {};
+  };
   QualType Inner = QT;
+  if (const auto *TemplSpec = Inner->getAs<TemplateSpecializationType>()) {
+    if (TemplSpec->isTypeAlias()) {
+      if (const auto *TD = TemplSpec->getTemplateName().getAsTemplateDecl()) {
+        if (TD->getIdentifier()) {
+          if (auto Nullability = getKnownNullability(TD->getName()))
+            return *Nullability;
+        }
+      }
+    }
+  }
   while (const auto *TypeDef = Inner->getAs<TypedefType>()) {
     const NamedDecl *Decl = TypeDef->getDecl();
-    // TODO: check gsl namespace?
-    // TODO: handle clang nullability annotations?
-    if (Decl->getName() == "not_null")
-      return false;
-    if (Decl->getName() == "nullable")
-      return true;
+    if (auto Nullability = getKnownNullability(Decl->getName()))
+      return *Nullability;
     Inner = TypeDef->desugar();
   }
   if (const auto *RD = Inner->getAsCXXRecordDecl()) {
-    if (RD->getName() == "not_null")
-      return false;
-    if (RD->getName() == "nullable")
-      return true;
+    if (auto Nullability = getKnownNullability(RD->getName()))
+      return *Nullability;
   }
   return QT.getCanonicalType()->isPointerType();
 }
@@ -212,10 +226,10 @@ QualType getPointeeType(QualType QT) {
     for (auto *M : R->methods()) {
       auto O = M->getDeclName().getCXXOverloadedOperator();
       if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
-       QT = M->getReturnType();
-       if (QT->isReferenceType() || QT->isAnyPointerType())
-         return QT->getPointeeType();
-       return QT;
+        QT = M->getReturnType();
+        if (QT->isReferenceType() || QT->isAnyPointerType())
+          return QT->getPointeeType();
+        return QT;
       }
     }
   }
