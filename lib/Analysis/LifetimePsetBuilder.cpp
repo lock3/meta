@@ -300,7 +300,8 @@ public:
   bool VisitLambdaExpr(const LambdaExpr *E) {
     // TODO: if this is a Pointer (because it captures by reference, fill the
     // pset to what it had captured)
-    setPSet(E, PSet{});
+    if(hasPSet(E))
+      setPSet(E, PSet{});
     return true;
   }
 
