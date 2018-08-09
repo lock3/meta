@@ -1718,8 +1718,8 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
 }
 
 /// ParseCXXCodeFragment
-ExprResult Parser::ParseCXXCodeFragment() {
-  return ExprResult();
+Decl *Parser::ParseCXXCodeFragment() {
+  return nullptr;
 }
 
 /// ParseCXXCodeFragmentExpression

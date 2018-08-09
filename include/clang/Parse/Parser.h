@@ -2792,7 +2792,7 @@ private:
   ParsedTemplateArgument ParseReflectedTemplateArgument();
 
   // C++ Code Fragments
-  ExprResult ParseCXXCodeFragment();
+  Decl* ParseCXXCodeFragment();
   ExprResult ParseCXXCodeFragmentExpression();
 
   //===--------------------------------------------------------------------===//
