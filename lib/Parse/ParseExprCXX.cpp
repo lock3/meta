@@ -1717,6 +1717,11 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
   }
 }
 
+/// ParseCXXCodeFragment
+ExprResult Parser::ParseCXXCodeFragment() {
+  return ExprResult();
+}
+
 /// ParseCXXCondition - if/switch/while condition expression.
 ///
 ///       condition:

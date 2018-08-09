@@ -1795,6 +1795,9 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while/for condition expression.
   struct ForRangeInfo;
+
+  //===--------------------------------------------------------------------===//
+  // C++ if/switch/while condition expression.
   Sema::ConditionResult ParseCXXCondition(StmtResult *InitStmt,
                                           SourceLocation Loc,
                                           Sema::ConditionKind CK,
@@ -2787,6 +2790,9 @@ private:
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
                                         SourceLocation &EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
+
+  // C++ Code Fragments
+  ExprResult ParseCXXCodeFragment();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
