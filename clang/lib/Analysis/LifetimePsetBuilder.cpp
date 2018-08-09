@@ -53,8 +53,12 @@ class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
 
   const LifetimeReporterBase *Reporter;
   ASTContext &ASTCtxt;
+  /// psets of all memory locations, which are identified
+  /// by their non-reference variable declaration or
+  /// MaterializedTemporaryExpr plus (optional) FieldDecls.
   PSetsMap &PSets;
-  PSetsMap &RefersTo;
+  std::map<const Expr *, PSet> &PSetsOfExpr;
+  std::map<const Expr *, PSet> &RefersTo;
 
 public:
   bool shouldTraversePostOrder() const { return true; }
@@ -87,25 +91,21 @@ public:
   }
 
   bool VisitDeclRefExpr(DeclRefExpr *DeclRef) {
+    auto varRefersTo = [this](QualType QT, Variable V) {
+      if (QT->isLValueReferenceType())
+        return getPSet(V);
+      else
+        return PSet::pointsToVariable(V, false);
+    };
+
     if (auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
-      RefersTo[DeclRef] = refersTo(VD);
-
-      if (!hasPSet(DeclRef))
-        return true;
-
-      setPSet(DeclRef, getPSet(VD));
-    }
-
-    if (auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
-      auto V = Variable::thisPointer();
+      RefersTo[DeclRef] = varRefersTo(VD->getType(), VD);
+    } else if (auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
+      Variable V = Variable::thisPointer();
       V.addFieldRef(FD);
-      RefersTo[DeclRef] = PSet::pointsToVariable(V, false);
-
-      if (!hasPSet(DeclRef))
-        return true;
-
-      setPSet(DeclRef, getPSet(PSet::pointsToVariable(V, false)));
+      RefersTo[DeclRef] = varRefersTo(FD->getType(), V);
     }
+
     return true;
   }
 
@@ -161,7 +161,6 @@ public:
   }
 
   bool VisitConditionalOperator(const ConditionalOperator *E) {
-    // TODO provide the refersTo and getPSet as entries psets in the CFG
     if (E->isLValue())
       RefersTo[E] = refersTo(E->getLHS()) + refersTo(E->getRHS());
 
@@ -243,15 +242,23 @@ public:
     return true;
   }
 
-  bool VisitBinaryOperator(const BinaryOperator *BO) {
-    auto OpCode = BO->getOpcode();
-
+  bool TraverseBinaryOperator(BinaryOperator *BO) {
     // Logical and, or have short circuit which is represented in the CFG.
     // We do not need to traverse the AST further.
+    auto OpCode = BO->getOpcode();
     if (OpCode == BO_LAnd || OpCode == BO_LOr)
-      return false;
+      return true;
+    return RecursiveASTVisitor<PSetsBuilder>::TraverseBinaryOperator(BO);
+  }
 
-    if (OpCode == BO_Assign) {
+  bool TraverseConditionalOperator(const ConditionalOperator *) {
+    // This is already split into parts in the CFG, no need to traverse again
+    // here.
+    return true;
+  }
+
+  bool VisitBinaryOperator(const BinaryOperator *BO) {
+    if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
     } else if (hasPSet(BO)) {
       setPSet(BO, PSet::invalid(
@@ -289,7 +296,6 @@ public:
     CheckPSetValidity(PS, UO->getExprLoc());
 
     RefersTo[UO] = PS;
-    setPSet(UO, derefPSet(PS, UO->getExprLoc()));
     return true;
   }
 
@@ -321,16 +327,6 @@ public:
       assert(i != RefersTo.end());
     }
     return i->second;
-  }
-
-  // Returns the storage to which a declared variable refers.
-  // A VarDecl usually refers to itself. Only lvalue references
-  // are VarDecl that don't have storage themself.
-  PSet refersTo(const VarDecl *VD) {
-    auto T = VD->getType();
-    if (T->isLValueReferenceType())
-      return getPSet(VD);
-    return PSet::pointsToVariable(VD, false);
   }
 
   struct CallArgument {
@@ -593,19 +589,22 @@ public:
 
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
-    PSet Ret;
-    for (CallArgument &CA : PinExtended) {
-      // llvm::errs() << " Pin PS:" << CA.PS.str() << "\n";
-      Ret.merge(CA.PS);
-    }
-    for (CallArgument &CA : Args.Oin) {
-      // llvm::errs() << " Oin PS:" << CA.PS.str() << "\n";
-      Ret.merge(CA.PS);
-    }
+    auto computeRetPset = [&] {
+      PSet Ret;
+      for (CallArgument &CA : PinExtended) {
+        // llvm::errs() << " Pin PS:" << CA.PS.str() << "\n";
+        Ret.merge(CA.PS);
+      }
+      for (CallArgument &CA : Args.Oin) {
+        // llvm::errs() << " Oin PS:" << CA.PS.str() << "\n";
+        Ret.merge(CA.PS);
+      }
+      return Ret;
+    };
     if (CallE->isLValue())
-      RefersTo[CallE] = Ret;
-    else
-      setPSet(CallE, Ret, CallE->getExprLoc());
+      RefersTo[CallE] = computeRetPset();
+    else if (hasPSet(CallE))
+      setPSet(CallE, computeRetPset());
     return true;
   }
 
@@ -633,8 +632,8 @@ public:
     E = IgnoreParenImpCasts(E);
     assert(hasPSet(E));
 
-    auto i = PSets.find(E);
-    if (i != PSets.end())
+    auto i = PSetsOfExpr.find(E);
+    if (i != PSetsOfExpr.end())
       return i->second;
 
     // If we have no pset, we might still have a refersTo set for this
@@ -645,13 +644,23 @@ public:
 
   PSet getPSet(const PSet &P) {
     PSet Ret;
+    if (P.containsInvalid())
+      return PSet::invalid(P.invReasons());
+
     for (auto &KV : P.vars())
       Ret.merge(getPSet(KV.first));
     return Ret;
   }
 
   void setPSet(Variable P, PSet PS, SourceLocation Loc);
-  void setPSet(const Expr *E, PSet PS) { setPSet(E, PS, E->getExprLoc()); }
+  void setPSet(const Expr *E, PSet PS) {
+    assert(hasPSet(E));
+    auto i = PSetsOfExpr.find(E);
+    if (i != PSetsOfExpr.end())
+      i->second = std::move(PS);
+    else
+      PSetsOfExpr.emplace(E, PS);
+  }
   void setPSet(PSet V, PSet PS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
@@ -667,9 +676,10 @@ public:
 
 public:
   PSetsBuilder(const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PSets, PSetsMap &RefersTo)
-      : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets), RefersTo(RefersTo) {
-  }
+               PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
+               std::map<const Expr *, PSet> &RefersTo)
+      : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets),
+        PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
 
   bool VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -705,11 +715,13 @@ public:
     return true;
   }
 
-  void VisitBlock(const CFGBlock &B);
+  void VisitBlock(const CFGBlock &B,
+                  llvm::Optional<PSetsMap> &PSetsSecondSuccessor);
 
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
+                                llvm::Optional<PSetsMap> &PSetsSecondSuccessor,
                                 SourceLocation Loc);
-};
+}; // namespace lifetime
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
@@ -818,8 +830,9 @@ void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
 ///  ... // pset of p is 'null'
 /// else
 ///  ... // pset of p does not contain 'null'
-void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
-                                            SourceLocation Loc) {
+void PSetsBuilder::UpdatePSetsFromCondition(
+    const Stmt *S, bool Positive,
+    llvm::Optional<PSetsMap> &PSetsSecondSuccessor, SourceLocation Loc) {
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
@@ -830,7 +843,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
             dyn_cast_or_null<CXXConversionDecl>(CE->getDirectCallee())) {
       if (ConvDecl->getConversionType()->isBooleanType())
         UpdatePSetsFromCondition(CE->getImplicitObjectArgument(), Positive,
-                                 E->getLocStart());
+                                 PSetsSecondSuccessor, E->getLocStart());
     }
     return;
   }
@@ -838,7 +851,8 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
     if (UO->getOpcode() != UO_LNot)
       return;
     E = UO->getSubExpr();
-    UpdatePSetsFromCondition(E, !Positive, E->getLocStart());
+    UpdatePSetsFromCondition(E, !Positive, PSetsSecondSuccessor,
+                             E->getLocStart());
     return;
   }
   if (const auto *BO = dyn_cast<BinaryOperator>(E)) {
@@ -854,9 +868,11 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
       return;
 
     if (LHS->isLValue() && getPSet(RHS).isNull())
-      UpdatePSetsFromCondition(LHS, Positive, E->getLocStart());
+      UpdatePSetsFromCondition(LHS, Positive, PSetsSecondSuccessor,
+                               E->getLocStart());
     else if (RHS->isLValue() && getPSet(LHS).isNull())
-      UpdatePSetsFromCondition(RHS, Positive, E->getLocStart());
+      UpdatePSetsFromCondition(RHS, Positive, PSetsSecondSuccessor,
+                               E->getLocStart());
     return;
   }
 
@@ -869,13 +885,19 @@ void PSetsBuilder::UpdatePSetsFromCondition(const Stmt *S, bool Positive,
 
     Variable V = Ref.vars().begin()->first;
     PSet PS = getPSet(V);
-    if (Positive)
+    PSet PSElseBranch = PS;
+    if (Positive) {
       PS.removeNull();
-    else
+      PSElseBranch = PSet::null(Loc);
+    } else {
       PS = PSet::null(Loc);
+      PSElseBranch.removeNull();
+    }
+    PSetsSecondSuccessor = PSets;
+    (*PSetsSecondSuccessor)[V] = PSElseBranch;
     setPSet(V, PS, Loc);
   }
-}
+} // namespace lifetime
 
 /// Checks if the statement S is a call to clang_analyzer_pset and, if yes,
 /// diags the pset of its argument
@@ -934,18 +956,42 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
   }
 }
 
+static const Stmt *getRealTerminator(const CFGBlock &B) {
+  if (B.succ_size() == 1)
+    return nullptr;
+  const Stmt *LastCFGStmt = nullptr;
+  for (const CFGElement &Element : B) {
+    if (auto CFGSt = Element.getAs<CFGStmt>()) {
+      LastCFGStmt = CFGSt->getStmt();
+    }
+  }
+  return LastCFGStmt;
+}
+
 // Update PSets in Builder through all CFGElements of this block
-void PSetsBuilder::VisitBlock(const CFGBlock &B) {
+void PSetsBuilder::VisitBlock(const CFGBlock &B,
+                              llvm::Optional<PSetsMap> &PSetsSecondSuccessor) {
+  auto *Terminator = getRealTerminator(B);
+
   for (auto i = B.begin(); i != B.end(); ++i) {
     const CFGElement &E = *i;
     switch (E.getKind()) {
     case CFGElement::Statement: {
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
       TraverseStmt(const_cast<Stmt *>(S));
+      /*llvm::errs() << "TraverseStmt\n";
+      S->dump();
+      llvm::errs() << "\n";*/
 
       // Kill all temporaries that vanish at the end of the full expression
       invalidateOwner(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+
+      if (S == Terminator) {
+        UpdatePSetsFromCondition(S, /*Positive=*/true, PSetsSecondSuccessor,
+                                 S->getLocEnd());
+      }
+
       break;
     }
     case CFGElement::LifetimeEnds: {
@@ -978,23 +1024,19 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B) {
   }
 }
 
-void VisitBlock(PSetsMap &PSets, PSetsMap &RefersTo, const CFGBlock &B,
+void VisitBlock(PSetsMap &PSets,
+                llvm::Optional<PSetsMap> &ExitPSetsSecondSuccessor,
+                std::map<const Expr *, PSet> &PSetsOfExpr,
+                std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
-  Builder.VisitBlock(B);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
+  Builder.VisitBlock(B, ExitPSetsSecondSuccessor);
 }
 
-void UpdatePSetsFromCondition(PSetsMap &PSets, PSetsMap &RefersTo,
-                              const LifetimeReporterBase *Reporter,
-                              ASTContext &ASTCtxt, const Stmt *S, bool Positive,
-                              SourceLocation Loc) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
-  Builder.UpdatePSetsFromCondition(S, Positive, Loc);
-}
-
-void EvalVarDecl(PSetsMap &PSets, PSetsMap &RefersTo, const VarDecl *VD,
+void EvalVarDecl(PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
+                 std::map<const Expr *, PSet> &RefersTo, const VarDecl *VD,
                  const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, RefersTo);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
   Builder.VisitVarDecl(VD);
 }
 
