@@ -85,13 +85,15 @@ void function_call() {
   void g(int **);
   void h(int *, int **);
 
-  int *p; // expected-note 2 {{it was never initialized here}}
-  f(p);   // expected-warning {{passing a dangling pointer as parameter}}
+  int *p; // expected-note {{it was never initialized here}}
+  f(p);   // expected-warning {{passing a dangling pointer as argument}}
 
   int **q = &p;
-  g(q); // expected-warning {{passing a indirectly dangling pointer as parameter}} // expected-note {{was dereferenced here}}
+  //TODO: should this diagnose? If I understood Herb correctly,
+  // then q must be valid, but *q is an out parameter, and thus is allowed be invalid (will be written, not read, in callee).
+  g(q); // TODOexpected-warning {{passing a indirectly dangling pointer as parameter}} // TODOexpected-note {{was dereferenced here}}
 
   int i;
   p = &i;
-  h(p, q); // expected-warning {{this parameter points to the same variable 'i' as another parameter}} expected-note {{here}}
+  h(p, q); // expected-warning {{this argument points to the same variable 'i' as another argument}} expected-note {{here}}
 }
