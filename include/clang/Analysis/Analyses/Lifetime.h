@@ -35,6 +35,7 @@ public:
                                    const std::string &Pointee) const = 0;
   virtual void warnParameterDangling(SourceLocation Loc,
                                      bool indirectly) const = 0;
+  virtual void warnParameterNull(SourceLocation Loc, bool possibly) const = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc,
                                     std::string Name) const = 0;
 
