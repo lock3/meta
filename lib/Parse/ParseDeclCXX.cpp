@@ -3288,22 +3288,21 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   BalancedDelimiterTracker T(*this, tok::l_brace);
   T.consumeOpen();
 
-  if (TagDecl)
+  if (TagDecl) {
     Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, FinalLoc,
                                             IsFinalSpelledSealed,
                                             T.getOpenLocation());
 
-  // C++ 11p3: Members of a class defined with the keyword class are private
-  // by default. Members of a class defined with the keywords struct or union
-  // are public by default.
-  AccessSpecifier CurAS;
-  if (TagType == DeclSpec::TST_class)
-    CurAS = AS_private;
-  else
-    CurAS = AS_public;
-  ParsedAttributesWithRange AccessAttrs(AttrFactory);
+    // C++ 11p3: Members of a class defined with the keyword class are private
+    // by default. Members of a class defined with the keywords struct or union
+    // are public by default.
+    AccessSpecifier CurAS;
+    if (TagType == DeclSpec::TST_class)
+      CurAS = AS_private;
+    else
+      CurAS = AS_public;
+    ParsedAttributesWithRange AccessAttrs(AttrFactory);
 
-  if (TagDecl) {
     // While we still have something to read, read the member-declarations.
     while (!tryParseMisplacedModuleImport() && Tok.isNot(tok::r_brace) &&
            Tok.isNot(tok::eof)) {
@@ -3312,47 +3311,45 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
           CurAS, AccessAttrs, static_cast<DeclSpec::TST>(TagType), TagDecl);
     }
     T.consumeClose();
-  } else {
-    SkipUntil(tok::r_brace);
-  }
 
-  // If attributes exist after class contents, parse them.
-  ParsedAttributes attrs(AttrFactory);
-  MaybeParseGNUAttributes(attrs);
+    // If attributes exist after class contents, parse them.
+    ParsedAttributes attrs(AttrFactory);
+    MaybeParseGNUAttributes(attrs);
 
-  if (TagDecl)
     Actions.ActOnFinishCXXMemberSpecification(getCurScope(), RecordLoc, TagDecl,
                                               T.getOpenLocation(),
                                               T.getCloseLocation(), attrs);
 
-  // C++11 [class.mem]p2:
-  //   Within the class member-specification, the class is regarded as complete
-  //   within function bodies, default arguments, exception-specifications, and
-  //   brace-or-equal-initializers for non-static data members (including such
-  //   things in nested classes).
-  if (TagDecl && NonNestedClass) {
-    // We are not inside a nested class. This class and its nested classes
-    // are complete and we can parse the delayed portions of method
-    // declarations and the lexed inline method definitions, along with any
-    // delayed attributes.
-    SourceLocation SavedPrevTokLocation = PrevTokLocation;
-    ParseLexedAttributes(getCurrentClass());
-    ParseLexedMethodDeclarations(getCurrentClass());
+    // C++11 [class.mem]p2:
+    //   Within the class member-specification, the class is regarded as complete
+    //   within function bodies, default arguments, exception-specifications, and
+    //   brace-or-equal-initializers for non-static data members (including such
+    //   things in nested classes).
+    if (NonNestedClass) {
+      // We are not inside a nested class. This class and its nested classes
+      // are complete and we can parse the delayed portions of method
+      // declarations and the lexed inline method definitions, along with any
+      // delayed attributes.
+      SourceLocation SavedPrevTokLocation = PrevTokLocation;
+      ParseLexedAttributes(getCurrentClass());
+      ParseLexedMethodDeclarations(getCurrentClass());
 
-    // We've finished with all pending member declarations.
-    Actions.ActOnFinishCXXMemberDecls();
+      // We've finished with all pending member declarations.
+      Actions.ActOnFinishCXXMemberDecls();
 
-    ParseLexedMemberInitializers(getCurrentClass());
-    ParseLexedMethodDefs(getCurrentClass());
-    PrevTokLocation = SavedPrevTokLocation;
+      ParseLexedMemberInitializers(getCurrentClass());
+      ParseLexedMethodDefs(getCurrentClass());
+      PrevTokLocation = SavedPrevTokLocation;
 
-    // We've finished parsing everything, including default argument
-    // initializers.
-    Actions.ActOnFinishCXXNonNestedClass(TagDecl);
-  }
+      // We've finished parsing everything, including default argument
+      // initializers.
+      Actions.ActOnFinishCXXNonNestedClass(TagDecl);
+    }
 
-  if (TagDecl)
     Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
+  } else {
+    SkipUntil(tok::r_brace);
+  }
 
   // Leave the class scope.
   ParsingDef.Pop();
