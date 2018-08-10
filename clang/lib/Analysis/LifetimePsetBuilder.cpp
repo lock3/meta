@@ -13,7 +13,6 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/Lex/Lexer.h"
 #include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
 
 namespace clang {
@@ -99,7 +98,7 @@ public:
       if (QT->isLValueReferenceType())
         return getPSet(V);
       else
-        return PSet::pointsToVariable(V, false);
+        return PSet::singleton(V, false);
     };
 
     if (auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
@@ -154,13 +153,13 @@ public:
     assert(VD);
     // TODO otherwise diagnose pointer arithmetic violation
     if (VD->getType().getCanonicalType()->isArrayType())
-      Ref = PSet::pointsToVariable(VD, false);
+      Ref = PSet::singleton(VD, false);
 
     return true;
   }
 
   bool VisitCXXThisExpr(const CXXThisExpr *E) {
-    setPSet(E, PSet::pointsToVariable(Variable::thisPointer(), false));
+    setPSet(E, PSet::singleton(Variable::thisPointer(), false));
     return true;
   }
 
@@ -176,9 +175,9 @@ public:
 
   bool VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
     if (E->getExtendingDecl())
-      RefersTo[E] = PSet::pointsToVariable(E, false, 0);
+      RefersTo[E] = PSet::singleton(E, false, 0);
     else
-      RefersTo[E] = PSet::pointsToVariable(Variable::temporary(), false, 0);
+      RefersTo[E] = PSet::singleton(Variable::temporary(), false, 0);
     return true;
   }
 
@@ -229,7 +228,7 @@ public:
 
     if (TC == TypeCategory::Owner) {
       // When an Owner x is copied to or moved to, set pset(x) = {x'}
-      // setPSet(refersTo(BO->getLHS()), PSet::pointsToVariable(V, false, 1),
+      // setPSet(refersTo(BO->getLHS()), PSet::singleton(V, false, 1),
       // BinOp->getExprLoc());
       // TODO
     } else if (TC == TypeCategory::Pointer) {
@@ -632,7 +631,8 @@ public:
         continue; // Nothing to invalidate
 
       if (PS.containsBase(O, order))
-        setPSet(Pointer, PSet::invalid(Reason), Reason.getLoc());
+        setPSet(PSet::singleton(Pointer), PSet::invalid(Reason),
+                Reason.getLoc());
     }
   }
 
@@ -661,10 +661,12 @@ public:
 
     for (auto &KV : P.vars())
       Ret.merge(getPSet(KV.first));
+
+    if (P.containsStatic())
+      Ret.merge(PSet::staticVar(false));
     return Ret;
   }
 
-  void setPSet(Variable P, PSet PS, SourceLocation Loc);
   void setPSet(const Expr *E, PSet PS) {
     assert(hasPSet(E));
     auto i = PSetsOfExpr.find(E);
@@ -673,6 +675,7 @@ public:
     else
       PSetsOfExpr.emplace(E, PS);
   }
+  void setPSetForVar(Variable P, PSet PS);
   void setPSet(PSet V, PSet PS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
@@ -711,11 +714,11 @@ public:
       } else {
         PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
       }
-      setPSet(VD, PS, Loc);
+      setPSet(PSet::singleton(VD), PS, Loc);
       break;
     }
     case TypeCategory::Owner: {
-      setPSet(VD, PSet::pointsToVariable(VD, false, 1), Loc);
+      setPSet(PSet::singleton(VD), PSet::singleton(VD, false, 1), Loc);
     }
     default:;
     }
@@ -783,7 +786,7 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
   return RetPS;
 }
 
-void PSetsBuilder::setPSet(Variable V, PSet PS, SourceLocation Loc) {
+void PSetsBuilder::setPSetForVar(Variable V, PSet PS) {
   auto i = PSets.find(V);
   if (i != PSets.end())
     i->second = std::move(PS);
@@ -798,9 +801,14 @@ void PSetsBuilder::setPSet(PSet V, PSet PS, SourceLocation Loc) {
       !PS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
     Reporter->warnPsetOfGlobal(Loc, "TODO", PS.str());
 
+  // We assume that the copy of a global pointer can be null.
+  // TODO: Check for nullablility of the type.
+  if (PS.containsStatic())
+    PS.merge(PSet::null(Loc));
+
   // greedy
   for (auto &KV : V.vars())
-    setPSet(KV.first, PS, Loc);
+    setPSetForVar(KV.first, PS);
 }
 
 void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
@@ -902,7 +910,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     }
     FalseBranchExitPSets = PSets;
     (*FalseBranchExitPSets)[V] = PSElseBranch;
-    setPSet(V, PS, Loc);
+    setPSet(PSet::singleton(V), PS, Loc);
   }
 } // namespace lifetime
 

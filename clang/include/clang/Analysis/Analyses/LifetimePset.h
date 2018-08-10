@@ -303,7 +303,6 @@ public:
   bool isNull() const {
     return ContainsNull && !ContainsStatic && !ContainsInvalid && Vars.empty();
   }
-
   void removeNull() { ContainsNull = false; }
 
   bool containsStatic() const { return ContainsStatic; }
@@ -311,6 +310,11 @@ public:
     return ContainsStatic && !ContainsNull && !ContainsInvalid && Vars.empty();
   }
   void addStatic() { ContainsStatic = true; }
+
+  bool isSingleton() const {
+    return isStatic() || (!ContainsStatic && !ContainsNull &&
+                          !ContainsInvalid && Vars.size() == 1);
+  }
 
   const std::map<Variable, unsigned> &vars() const { return Vars; }
 
@@ -461,8 +465,8 @@ public:
   }
 
   /// The pset contains one of obj, obj' or obj''
-  static PSet pointsToVariable(Variable Var, bool Nullable,
-                               unsigned order = 0) {
+  static PSet singleton(Variable Var, bool Nullable = false,
+                        unsigned order = 0) {
     PSet ret;
     if (Var.hasGlobalStorage())
       ret.ContainsStatic = true;
