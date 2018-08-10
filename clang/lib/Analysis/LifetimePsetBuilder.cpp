@@ -675,7 +675,6 @@ public:
     else
       PSetsOfExpr.emplace(E, PS);
   }
-  void setPSetForVar(Variable P, PSet PS);
   void setPSet(PSet V, PSet PS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
@@ -786,14 +785,6 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
   return RetPS;
 }
 
-void PSetsBuilder::setPSetForVar(Variable V, PSet PS) {
-  auto i = PSets.find(V);
-  if (i != PSets.end())
-    i->second = std::move(PS);
-  else
-    PSets.emplace(V, PS);
-}
-
 void PSetsBuilder::setPSet(PSet V, PSet PS, SourceLocation Loc) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
@@ -806,9 +797,22 @@ void PSetsBuilder::setPSet(PSet V, PSet PS, SourceLocation Loc) {
   if (PS.containsStatic())
     PS.merge(PSet::null(Loc));
 
-  // greedy
-  for (auto &KV : V.vars())
-    setPSetForVar(KV.first, PS);
+  if (V.isSingleton())  {
+    Variable Var = V.vars().begin()->first;
+    auto I = PSets.find(Var);
+    if (I != PSets.end())
+      I->second = std::move(PS);
+    else
+      PSets.emplace(Var, PS);
+  } else {
+    for (auto &KV : V.vars()) {
+      auto I = PSets.find(KV.first);
+      if (I != PSets.end())
+        I->second.merge(PS);
+      else
+        PSets.emplace(KV.first, PS);
+    }
+  }
 }
 
 void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
