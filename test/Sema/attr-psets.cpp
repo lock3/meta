@@ -668,3 +668,26 @@ void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
   __lifetime_pset(q); // expected-warning {{pset(q) = (q)}}
 }
+
+void ambiguous_pointers(bool cond) {
+  int x;
+  int y;
+  int z;
+  int w;
+  int *p1 = &x;
+  int *p2 = &y;
+  int **pp = &p1;
+  __lifetime_pset(p1); // expected-warning {{pset(p1) = (x)}}
+  __lifetime_pset(p2); // expected-warning {{pset(p2) = (y)}}
+  __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1)}}
+  *pp = &w;
+  __lifetime_pset(p1); // expected-warning {{pset(p1) = (w)}}
+  __lifetime_pset(p2); // expected-warning {{pset(p2) = (y)}}
+  __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1)}}
+  if (cond)
+    pp = &p2;
+  *pp = &z;
+  __lifetime_pset(p1); // expected-warning {{pset(p1) = (x, z)}}
+  __lifetime_pset(p2); // expected-warning {{pset(p2) = (y, z)}}
+  __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1, p2)}}
+}
