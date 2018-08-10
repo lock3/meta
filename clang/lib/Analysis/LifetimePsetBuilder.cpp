@@ -675,12 +675,12 @@ public:
   void setPSet(PSet V, PSet PS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
-  void diagPSet(Variable P, SourceLocation Loc) {
-    auto i = PSets.find(P);
-    if (i != PSets.end())
-      Reporter->debugPset(Loc, P.getName(), i->second.str());
+  void diagPSet(Variable V, SourceLocation Loc) {
+    PSet set = getPSet(V);
+    if (set.isUnknown())
+      Reporter->debugPset(Loc, V.getName(), "(untracked)");
     else
-      Reporter->debugPset(Loc, P.getName(), "(untracked)");
+      Reporter->debugPset(Loc, V.getName(), set.str());
   }
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
