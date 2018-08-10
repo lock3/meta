@@ -677,10 +677,7 @@ public:
 
   void diagPSet(Variable V, SourceLocation Loc) {
     PSet set = getPSet(V);
-    if (set.isUnknown())
-      Reporter->debugPset(Loc, V.getName(), "(untracked)");
-    else
-      Reporter->debugPset(Loc, V.getName(), set.str());
+    Reporter->debugPset(Loc, V.getName(), set.str());
   }
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
