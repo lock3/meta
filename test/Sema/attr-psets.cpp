@@ -452,6 +452,7 @@ int global_i;
 
 void namespace_scoped_vars(int param_i, int *param_p) {
   __lifetime_pset(param_p); // expected-warning {{pset(param_p) = ((null), param_p)}}
+  __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
 
   if (global_p1) {
     __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
@@ -459,16 +460,18 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   }
 
   int local_i;
-  global_p1 = &local_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(local_i)}}
-  global_p1 = &param_i; // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {(param_i)}}
-  global_p1 = param_p;  // expected-warning {{the pset of 'global_p1' must be a subset of {(static), (null)}, but is {((null), param_p)}}
+  global_p1 = &local_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(local_i)}}
+  global_p1 = &param_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(param_i)}}
+  global_p1 = param_p;  // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {((null), param_p)}}
+  int *local_p = global_p1;
+  __lifetime_pset(global_p1); // expected-warning {{pset(local_p1) = ((null), (static))}}
 
-  //TODO global_p1 = nullptr;            // OK
-  __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((null), param_p)}}
+  global_p1 = nullptr;            // OK
+  __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
   global_p1 = &global_i;          // OK
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
   global_p1 = global_p2;          // OK
-  __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((null), (static))}}
+  __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
 }
 
 void function_call() {
