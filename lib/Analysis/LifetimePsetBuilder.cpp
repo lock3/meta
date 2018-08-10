@@ -675,7 +675,7 @@ public:
     else
       PSetsOfExpr.emplace(E, PS);
   }
-  void setPSet(PSet V, PSet PS, SourceLocation Loc);
+  void setPSet(PSet LHS, PSet RHS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
   void diagPSet(Variable V, SourceLocation Loc) {
@@ -785,32 +785,32 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
   return RetPS;
 }
 
-void PSetsBuilder::setPSet(PSet V, PSet PS, SourceLocation Loc) {
+void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
-  if (V.isStatic() && !PS.isUnknown() &&
-      !PS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
-    Reporter->warnPsetOfGlobal(Loc, "TODO", PS.str());
+  if (LHS.isStatic() && !RHS.isUnknown() &&
+      !RHS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
+    Reporter->warnPsetOfGlobal(Loc, "TODO", RHS.str());
 
   // We assume that the copy of a global pointer can be null.
   // TODO: Check for nullablility of the type.
-  if (PS.containsStatic())
-    PS.merge(PSet::null(Loc));
+  if (RHS.containsStatic())
+    RHS.merge(PSet::null(Loc));
 
-  if (V.isSingleton())  {
-    Variable Var = V.vars().begin()->first;
+  if (LHS.isSingleton())  {
+    Variable Var = LHS.vars().begin()->first;
     auto I = PSets.find(Var);
     if (I != PSets.end())
-      I->second = std::move(PS);
+      I->second = std::move(RHS);
     else
-      PSets.emplace(Var, PS);
+      PSets.emplace(Var, RHS);
   } else {
-    for (auto &KV : V.vars()) {
+    for (auto &KV : LHS.vars()) {
       auto I = PSets.find(KV.first);
       if (I != PSets.end())
-        I->second.merge(PS);
+        I->second.merge(RHS);
       else
-        PSets.emplace(KV.first, PS);
+        PSets.emplace(KV.first, RHS);
     }
   }
 }
