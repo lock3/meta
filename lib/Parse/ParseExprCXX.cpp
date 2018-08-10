@@ -1719,6 +1719,29 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
 
 /// ParseCXXCodeFragment
 Decl *Parser::ParseCXXCodeFragment() {
+  switch (Tok.getKind()) {
+    case tok::kw_namespace:
+      llvm_unreachable("namespace fragments not implemented");
+
+    case tok::kw_struct:
+    case tok::kw_class:
+    case tok::kw_union:
+      llvm_unreachable("class fragments not implemented");
+
+    case tok::kw_enum:
+      llvm_unreachable("enum fragments not implemented");
+
+    case tok::l_brace:
+      llvm_unreachable("block fragments not implemented");
+
+    default:
+      break;
+
+    Diag(Tok.getLocation(), diag::err_expected_fragment);
+    SkipUntil(tok::semi);
+    return nullptr;
+  }
+
   return nullptr;
 }
 
