@@ -1723,6 +1723,13 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
 }
 
 /// ParseCXXCodeFragment
+///
+///      fragment-expression:
+///        named-namespace-definition
+///        class-specifier
+///        enum-specifier
+///        compound-statement
+///
 Decl *Parser::ParseCXXCodeFragment() {
   // Start the fragment. The fragment is finished in one of the
   // ParseCXX*Fragment functions.
