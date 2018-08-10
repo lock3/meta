@@ -58,9 +58,9 @@ struct S {
     int *p = &m;            // pset becomes m, not *this
     __lifetime_pset(p); // expected-warning {{pset(p) = (this.m)}}
     int *ps = &s;
-    __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
+    __lifetime_pset(ps); // expected-warning {{pset(ps) = ((null), (static))}}
     int *ps2 = &this->s;
-    __lifetime_pset(ps2); // TODO expected-warning {{pset(ps2) = ((static))}}
+    __lifetime_pset(ps2); // expected-warning {{pset(ps2) = ((null), (static))}}
   }
   int *get();
 };
@@ -192,7 +192,7 @@ void deref_array() {
 int global_var;
 void address_of_global() {
   int *p = &global_var;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((null), (static))}}
 }
 
 void class_type_pointer() {
@@ -464,7 +464,7 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   global_p1 = &param_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(param_i)}}
   global_p1 = param_p;  // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {((null), param_p)}}
   int *local_p = global_p1;
-  __lifetime_pset(global_p1); // expected-warning {{pset(local_p1) = ((null), (static))}}
+  __lifetime_pset(local_p); // expected-warning {{pset(local_p) = ((null), (static))}}
 
   global_p1 = nullptr;            // OK
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
