@@ -14966,8 +14966,7 @@ void Sema::ActOnCXXExitDeclInitializer(Scope *S, Decl *D) {
 
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders.
-Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
-                                  SmallVectorImpl<Expr *> &Captures) {
+Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc) {
   return nullptr;
 }
 
