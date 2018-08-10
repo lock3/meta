@@ -1722,6 +1722,14 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
 
+  DeclSpec::TST TagType;
+  if (Tok.is(tok::kw_struct))
+   TagType = DeclSpec::TST_struct;
+  else if (Tok.is(tok::kw_class))
+   TagType = DeclSpec::TST_class;
+  else
+   TagType = DeclSpec::TST_union;
+
   return nullptr;
 }
 
