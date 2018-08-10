@@ -13,6 +13,7 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
 
 namespace clang {
@@ -735,9 +736,9 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (i != PSets.end())
     return i->second;
 
-  // Assumption: global Pointers have a pset of {static, null}
+  // Assumption: global Pointers have a pset of {static}
   if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
-    return PSet::staticVar(P.mightBeNull());
+    return PSet::staticVar(false);
 
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
                << "\n";
@@ -782,21 +783,21 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
   return RetPS;
 }
 
-void PSetsBuilder::setPSet(Variable P, PSet PS, SourceLocation Loc) {
-  // Assumption: global Pointers have a pset that is a subset of {static,
-  // null}
-  if (P.hasGlobalStorage() && !PS.isUnknown() &&
-      !PS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
-    Reporter->warnPsetOfGlobal(Loc, P.getName(), PS.str());
-
-  auto i = PSets.find(P);
+void PSetsBuilder::setPSet(Variable V, PSet PS, SourceLocation Loc) {
+  auto i = PSets.find(V);
   if (i != PSets.end())
     i->second = std::move(PS);
   else
-    PSets.emplace(P, PS);
+    PSets.emplace(V, PS);
 }
 
 void PSetsBuilder::setPSet(PSet V, PSet PS, SourceLocation Loc) {
+  // Assumption: global Pointers have a pset that is a subset of {static,
+  // null}
+  if (V.isStatic() && !PS.isUnknown() &&
+      !PS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
+    Reporter->warnPsetOfGlobal(Loc, "TODO", PS.str());
+
   // greedy
   for (auto &KV : V.vars())
     setPSet(KV.first, PS, Loc);

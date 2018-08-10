@@ -307,6 +307,9 @@ public:
   void removeNull() { ContainsNull = false; }
 
   bool containsStatic() const { return ContainsStatic; }
+  bool isStatic() const {
+    return ContainsStatic && !ContainsNull && !ContainsInvalid && Vars.empty();
+  }
   void addStatic() { ContainsStatic = true; }
 
   const std::map<Variable, unsigned> &vars() const { return Vars; }
