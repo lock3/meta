@@ -14964,6 +14964,13 @@ void Sema::ActOnCXXExitDeclInitializer(Scope *S, Decl *D) {
     ExitDeclaratorContext(S);
 }
 
+/// Called at the start of a source code fragment to establish the fragment
+/// declaration and placeholders.
+Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
+                                  SmallVectorImpl<Expr *> &Captures) {
+  return nullptr;
+}
+
 /// ActOnCXXConditionDeclarationExpr - Parsed a condition declaration of a
 /// C++ if/switch/while/for statement.
 /// e.g: "if (int x = f()) {...}"

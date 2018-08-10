@@ -10095,6 +10095,9 @@ public:
                                          SourceLocation StmtLoc,
                                          ConditionKind CK);
 
+  Decl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
+                                    SmallVectorImpl<Expr *> &Captures);
+
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 
   ExprResult CheckConditionVariable(VarDecl *ConditionVar,
