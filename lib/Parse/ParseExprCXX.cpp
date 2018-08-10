@@ -1717,6 +1717,11 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
   }
 }
 
+/// ParseCXXClassFragment
+Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
+  return nullptr;
+}
+
 /// ParseCXXCodeFragment
 Decl *Parser::ParseCXXCodeFragment() {
   switch (Tok.getKind()) {
