@@ -2727,6 +2727,14 @@ private:
                                   SourceLocation AttrFixitLoc,
                                   unsigned TagType,
                                   Decl *TagDecl);
+  void ParseCXXMemberSpecificationInternal(SourceLocation &RecordLoc,
+                                           SourceLocation &FinalLoc,
+                                           BalancedDelimiterTracker &T,
+                                           ParsedAttributesWithRange &Attrs,
+                                           unsigned &TagType,
+                                           Decl *&TagDecl,
+                                           bool &IsFinalSpelledSealed,
+                                           bool &NonNestedClass);
   void ParseCXXMemberSpecification(SourceLocation StartLoc,
                                    SourceLocation AttrFixitLoc,
                                    ParsedAttributesWithRange &Attrs,
