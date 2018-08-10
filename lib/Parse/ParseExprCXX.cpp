@@ -1724,6 +1724,11 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
 
 /// ParseCXXCodeFragment
 Decl *Parser::ParseCXXCodeFragment() {
+  // Start the fragment. The fragment is finished in one of the
+  // ParseCXX*Fragment functions.
+  Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(),
+                                                 Tok.getLocation());
+
   switch (Tok.getKind()) {
     case tok::kw_namespace:
       llvm_unreachable("namespace fragments not implemented");
@@ -1731,7 +1736,7 @@ Decl *Parser::ParseCXXCodeFragment() {
     case tok::kw_struct:
     case tok::kw_class:
     case tok::kw_union:
-      llvm_unreachable("class fragments not implemented");
+      return ParseCXXClassFragment(Fragment);
 
     case tok::kw_enum:
       llvm_unreachable("enum fragments not implemented");
