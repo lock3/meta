@@ -24,8 +24,7 @@ class LifetimeReporterBase;
 
 /// Updates psets with all effects that appear in the block.
 /// \param Reporter if non-null, emits diagnostics
-void VisitBlock(PSetsMap &PSets,
-                llvm::Optional<PSetsMap> &ExitPSetsSecondSuccessor,
+void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt);

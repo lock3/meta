@@ -300,7 +300,7 @@ public:
   bool VisitLambdaExpr(const LambdaExpr *E) {
     // TODO: if this is a Pointer (because it captures by reference, fill the
     // pset to what it had captured)
-    if(hasPSet(E))
+    if (hasPSet(E))
       setPSet(E, PSet{});
     return true;
   }
@@ -841,7 +841,7 @@ void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
 ///  ... // pset of p does not contain 'null'
 void PSetsBuilder::UpdatePSetsFromCondition(
     const Stmt *S, bool Positive,
-    llvm::Optional<PSetsMap> &PSetsSecondSuccessor, SourceLocation Loc) {
+    llvm::Optional<PSetsMap> &FalseBranchExitPSets, SourceLocation Loc) {
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
@@ -852,7 +852,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
             dyn_cast_or_null<CXXConversionDecl>(CE->getDirectCallee())) {
       if (ConvDecl->getConversionType()->isBooleanType())
         UpdatePSetsFromCondition(CE->getImplicitObjectArgument(), Positive,
-                                 PSetsSecondSuccessor, E->getLocStart());
+                                 FalseBranchExitPSets, E->getLocStart());
     }
     return;
   }
@@ -860,7 +860,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     if (UO->getOpcode() != UO_LNot)
       return;
     E = UO->getSubExpr();
-    UpdatePSetsFromCondition(E, !Positive, PSetsSecondSuccessor,
+    UpdatePSetsFromCondition(E, !Positive, FalseBranchExitPSets,
                              E->getLocStart());
     return;
   }
@@ -877,10 +877,10 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       return;
 
     if (LHS->isLValue() && getPSet(RHS).isNull())
-      UpdatePSetsFromCondition(LHS, Positive, PSetsSecondSuccessor,
+      UpdatePSetsFromCondition(LHS, Positive, FalseBranchExitPSets,
                                E->getLocStart());
     else if (RHS->isLValue() && getPSet(LHS).isNull())
-      UpdatePSetsFromCondition(RHS, Positive, PSetsSecondSuccessor,
+      UpdatePSetsFromCondition(RHS, Positive, FalseBranchExitPSets,
                                E->getLocStart());
     return;
   }
@@ -902,8 +902,8 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       PS = PSet::null(Loc);
       PSElseBranch.removeNull();
     }
-    PSetsSecondSuccessor = PSets;
-    (*PSetsSecondSuccessor)[V] = PSElseBranch;
+    FalseBranchExitPSets = PSets;
+    (*FalseBranchExitPSets)[V] = PSElseBranch;
     setPSet(V, PS, Loc);
   }
 } // namespace lifetime
@@ -979,9 +979,7 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
 
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
-                              llvm::Optional<PSetsMap> &PSetsSecondSuccessor) {
-  auto *Terminator = getRealTerminator(B);
-
+                              llvm::Optional<PSetsMap> &FalseBranchExitPSets) {
   for (auto i = B.begin(); i != B.end(); ++i) {
     const CFGElement &E = *i;
     switch (E.getKind()) {
@@ -995,11 +993,6 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       // Kill all temporaries that vanish at the end of the full expression
       invalidateOwner(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
-
-      if (S == Terminator) {
-        UpdatePSetsFromCondition(S, /*Positive=*/true, PSetsSecondSuccessor,
-                                 S->getLocEnd());
-      }
 
       break;
     }
@@ -1031,15 +1024,18 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       break;
     }
   }
+  if (auto *Terminator = getRealTerminator(B)) {
+    UpdatePSetsFromCondition(Terminator, /*Positive=*/true,
+                             FalseBranchExitPSets, Terminator->getLocEnd());
+  }
 }
 
-void VisitBlock(PSetsMap &PSets,
-                llvm::Optional<PSetsMap> &ExitPSetsSecondSuccessor,
+void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
   PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
-  Builder.VisitBlock(B, ExitPSetsSecondSuccessor);
+  Builder.VisitBlock(B, FalseBranchExitPSets);
 }
 
 void EvalVarDecl(PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,

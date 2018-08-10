@@ -38,10 +38,9 @@ class LifetimeContext {
     /// Computed PSets after updating EntryPSets through all CFGElements of
     /// this block
     PSetsMap ExitPSets;
-    /// If the CFGBlock ends with a branch and the psets
-    /// for the second successor are different from ExitPSets,
-    /// then they are contained in ExitPSetsSecondSuccessor.
-    llvm::Optional<PSetsMap> ExitPSetsSecondSuccessor;
+    /// For blocks representing a branch, we have different psets for
+    /// the true and the false branch.
+    llvm::Optional<PSetsMap> FalseBranchExitPSets;
   };
 
   ASTContext &ASTCtxt;
@@ -142,14 +141,14 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       continue; // Skip this back edge.
 
     isReachable = true;
-    auto PredPSets = PredBC.ExitPSets;
-    if (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B) {
-      // We are the second successor. Check if there is a different exit pset
-      // for the second succcessor (because it was modified by a non-null check
-      // in the condition).
-      if (PredBC.ExitPSetsSecondSuccessor)
-        PredPSets = *PredBC.ExitPSetsSecondSuccessor;
-    }
+    // Is this a true or a false branch from the predecessor? We have might
+    // have different state for both.
+    // TODO: how does this work with false branch pruning?
+    auto PredPSets =
+        (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B &&
+         PredBC.FalseBranchExitPSets)
+            ? *PredBC.FalseBranchExitPSets
+            : PredBC.ExitPSets;
     if (EntryPSets.empty())
       EntryPSets = PredPSets;
     else {
@@ -236,8 +235,8 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPSets = EntryPSets;
       BC.ExitPSets = BC.EntryPSets;
-      VisitBlock(BC.ExitPSets, BC.ExitPSetsSecondSuccessor, PSetsOfExpr,
-                 RefersTo, *B, /*Reporter=*/nullptr, ASTCtxt);
+      VisitBlock(BC.ExitPSets, BC.FalseBranchExitPSets, PSetsOfExpr, RefersTo,
+                 *B, /*Reporter=*/nullptr, ASTCtxt);
       BC.visited = true;
       Updated = true;
     }
@@ -254,8 +253,8 @@ void LifetimeContext::TraverseBlocks() {
       continue;
 
     BC.ExitPSets = BC.EntryPSets;
-    VisitBlock(BC.ExitPSets, BC.ExitPSetsSecondSuccessor, PSetsOfExpr, RefersTo,
-               *B, &Reporter, ASTCtxt);
+    VisitBlock(BC.ExitPSets, BC.FalseBranchExitPSets, PSetsOfExpr, RefersTo, *B,
+               &Reporter, ASTCtxt);
   }
 }
 
