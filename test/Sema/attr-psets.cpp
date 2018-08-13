@@ -368,6 +368,8 @@ void switch_stmt() {
   __lifetime_pset(p); // expected-warning {{pset(p) = (initial, i, j)}}
 }
 
+// Duplicated warnings are due to the fact that we are doing fixed point
+// iteration and some blocks might be visited multiple times.
 void for_stmt() {
   int initial;
   int *p = &initial;
@@ -375,10 +377,12 @@ void for_stmt() {
   int j;
   // There are different psets on the first and further iterations.
   for (int i = 0; i < 1024; ++i) {
-    __lifetime_pset(p); // expected-warning {{pset(p) = (initial, j)}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
+                        // expected-warning@-1 {{pset(p) = (initial, j)}}
     p = &j;
   }
-  __lifetime_pset(p); // expected-warning {{pset(p) = (initial, j)}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
+                      // expected-warning@-1 {{pset(p) = (initial, j)}}
 }
 
 void for_stmt_ptr_decl() {
@@ -392,9 +396,11 @@ void goto_stmt(bool b) {
   int *p = nullptr;
   int i;
 l1:
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((null), i)}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
+                      // expected-warning@-1 {{pset(p) = ((null), i)}}
   p = &i;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+                      // expected-warning@-1 {{pset(p) = (i)}}
   if (b)
     goto l1;
 
@@ -427,7 +433,8 @@ void for_local_variable() {
   int i;
   int *p = &i;
   while (true) {
-    __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid), i)}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+                        // expected-warning@-1 {{pset(p) = ((invalid), i)}}
     int j;
     p = &j; // p will become invalid on the next iteration, because j leaves scope
   }
