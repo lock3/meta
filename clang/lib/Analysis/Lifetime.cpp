@@ -49,7 +49,6 @@ class LifetimeContext {
   CFG *ControlFlowGraph;
   const FunctionDecl *FuncDecl;
   std::vector<BlockContext> BlockContexts;
-  AnalysisDeclContextManager AnalysisDCMgr;
   AnalysisDeclContext AC;
   LifetimeReporterBase &Reporter;
 
@@ -99,8 +98,7 @@ public:
                   const FunctionDecl *FuncDecl)
       : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
         SourceMgr(ASTCtxt.getSourceManager()), FuncDecl(FuncDecl),
-        AnalysisDCMgr(ASTCtxt), AC(&AnalysisDCMgr, FuncDecl),
-        Reporter(Reporter) {
+        AC(nullptr, FuncDecl), Reporter(Reporter) {
     // TODO: do not build own CFG here. Use the one from callee
     // AnalysisBasedWarnings::IssueWarnings
     AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
