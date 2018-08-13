@@ -25,7 +25,7 @@ class LifetimeReporterBase;
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
-                const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt);
+                LifetimeReporterBase &Reporter, ASTContext &ASTCtxt);
 
 /// Get the initial PSets for function parameters.
 void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);

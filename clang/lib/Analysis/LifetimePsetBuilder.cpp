@@ -13,7 +13,6 @@
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
 
 namespace clang {
 namespace lifetime {
@@ -51,7 +50,7 @@ static bool isPointer(const Expr *E) {
 // - CXXDefaultArgExpr
 class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
 
-  const LifetimeReporterBase &Reporter;
+  LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
   /// psets of all memory locations, which are identified
   /// by their non-reference variable declaration or
@@ -676,7 +675,7 @@ public:
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
 public:
-  PSetsBuilder(const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
+  PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo)
       : Reporter(Reporter), ASTCtxt(ASTCtxt), PMap(PMap),
@@ -809,10 +808,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
 
 void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
                                      bool flagNull) {
-  if (PS.isUnknown()) {
-    Reporter.diag(Loc, diag::warn_deref_unknown);
-    return;
-  }
+  assert (!PS.isUnknown());
 
   if (PS.containsInvalid()) {
     Reporter.warnDerefDangling(Loc, !PS.isInvalid());
@@ -1030,7 +1026,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
-                const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt) {
+                LifetimeReporterBase &Reporter, ASTContext &ASTCtxt) {
   PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo);
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }

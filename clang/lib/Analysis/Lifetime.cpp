@@ -15,10 +15,8 @@
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
 #include "llvm/ADT/Statistic.h"
 #include <algorithm>
-#include <map>
 #include <sstream>
 #include <unordered_map>
 

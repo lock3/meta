@@ -1964,49 +1964,83 @@ namespace clang {
 namespace lifetime {
 class Reporter : public LifetimeReporterBase {
   Sema &S;
+  std::set<SourceLocation> WarningLocs;
+  bool IgnoreCurrentWarning = false;
+  
+  bool enableIfNew(SourceLocation Loc) {
+    auto I = WarningLocs.insert(Loc);
+    IgnoreCurrentWarning = !I.second;
+    return !IgnoreCurrentWarning;
+  }
 
 public:
   Reporter(Sema &S) : S(S) {}
 
   void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
-                        std::string ActualPset) const final {
-    S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
+                        std::string ActualPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
   }
 
-  void warnDerefDangling(SourceLocation Loc, bool possibly) const final {
-    S.Diag(Loc, diag::warn_deref_dangling) << possibly;
+  void warnDerefDangling(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_deref_dangling) << possibly;
   }
-  void warnDerefNull(SourceLocation Loc, bool possibly) const final {
-    S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
+  void warnDerefNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
   }
   void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
-                           const std::string &Pointee) const final {
-
-    S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
-    S.Diag(LocParam2, diag::note_here);
+                           const std::string &Pointee) final {
+    if(enableIfNew(LocParam1)) {
+      S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
+      S.Diag(LocParam2, diag::note_here);
+    }
   }
-  void warnParameterDangling(SourceLocation Loc, bool indirectly) const final {
-    S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
+  void warnParameterDangling(SourceLocation Loc, bool indirectly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
   }
-  void warnParameterNull(SourceLocation Loc, bool possibly) const final {
-    S.Diag(Loc, diag::warn_parameter_null) << possibly;
+  void warnParameterNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_parameter_null) << possibly;
   }
-  void notePointeeLeftScope(SourceLocation Loc, std::string Name) const final {
-    S.Diag(Loc, diag::note_pointee_left_scope) << Name;
+  void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_pointee_left_scope) << Name;
   }
-
+  void noteNeverInitialized(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_never_initialized);
+  }
+  void noteTemporaryDestroyed(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_temporary_destroyed);
+  }
+  void notePointerArithmetic(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_pointer_arithmetic);
+  }
+  void noteForbiddenCast(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_forbidden_cast);
+  }
+  void noteDereferenced(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_dereferenced);
+  }
+  void noteAssigned(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_assigned);
+  }
   void debugPset(SourceLocation Loc, StringRef Variable,
-                 std::string Pset) const final {
+                 std::string Pset) final {
     S.Diag(Loc, diag::warn_pset) << Variable << Pset;
   }
 
   void debugTypeCategory(SourceLocation Loc,
-                         TypeCategory Category) const final {
+                         TypeCategory Category) final {
     S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category;
-  }
-
-  void diag(SourceLocation Loc, unsigned DiagID) const final {
-    S.Diag(Loc, DiagID);
   }
 };
 } // namespace lifetime
