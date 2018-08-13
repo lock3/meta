@@ -97,3 +97,12 @@ void function_call() {
   p = &i;
   h(p, q); // expected-warning {{this argument points to the same variable 'i' as another argument}} expected-note {{here}}
 }
+
+void for_stmt() {
+  int *p; // expected-note {{it was never initialized here}}
+  for (int i = 0; i < 1024; ++i) {
+    (void)*p; // expected-warning {{dereferencing a dangling pointer}}
+    int j;
+    p = &j;
+  }
+}

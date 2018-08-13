@@ -13,7 +13,6 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
-#include "clang/Sema/SemaDiagnostic.h" // TODO: remove me and move all diagnostics into LifetimeReporter
 #include <map>
 #include <sstream>
 #include <vector>
@@ -166,7 +165,8 @@ class InvalidationReason {
     TEMPORARY_LEFT_SCOPE,
     POINTER_ARITHMETIC,
     FORBIDDEN_CAST,
-    DEREFERENCED
+    DEREFERENCED,
+    ASSIGNED,
   } Reason;
 
   const VarDecl *Pointee = nullptr;
@@ -181,24 +181,29 @@ class InvalidationReason {
 public:
   SourceLocation getLoc() const { return Loc; }
 
-  void emitNote(const LifetimeReporterBase &Reporter) const {
+  void emitNote(LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case NOT_INITIALIZED:
-      Reporter.diag(Loc, diag::note_never_initialized);
+      Reporter.noteNeverInitialized(Loc);
       return;
     case POINTEE_LEFT_SCOPE:
       assert(Pointee);
       Reporter.notePointeeLeftScope(Loc, Pointee->getNameAsString());
       return;
     case TEMPORARY_LEFT_SCOPE:
-      Reporter.diag(Loc, diag::note_temporary_destroyed);
+      Reporter.noteTemporaryDestroyed(Loc);
       return;
     case FORBIDDEN_CAST: // TODO: add own diagnostic
+      Reporter.noteForbiddenCast(Loc);
+      return;
     case POINTER_ARITHMETIC:
-      Reporter.diag(Loc, diag::note_pointer_arithmetic);
+      Reporter.notePointerArithmetic(Loc);
       return;
     case DEREFERENCED:
-      Reporter.diag(Loc, diag::note_dereferenced);
+      Reporter.noteDereferenced(Loc);
+      return;
+    case ASSIGNED:
+      Reporter.noteAssigned(Loc);
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
@@ -229,6 +234,10 @@ public:
   static InvalidationReason ForbiddenCast(SourceLocation Loc) {
     return {Loc, FORBIDDEN_CAST};
   }
+
+  static InvalidationReason Assigned(SourceLocation Loc) {
+    return {Loc, ASSIGNED};
+  }
 };
 
 /// The reason how null entered a pset
@@ -237,8 +246,8 @@ class NullReason {
 
 public:
   NullReason(SourceLocation Loc) : Loc(Loc) { assert(Loc.isValid()); }
-  void emitNote(const LifetimeReporterBase &Reporter) const {
-    Reporter.diag(Loc, diag::note_null_here);
+  void emitNote(LifetimeReporterBase &Reporter) const {
+    Reporter.noteAssigned(Loc);
   }
 };
 
@@ -259,12 +268,12 @@ public:
            ContainsStatic == O.ContainsStatic && Vars == O.Vars;
   }
 
-  void explainWhyInvalid(const LifetimeReporterBase &Reporter) const {
+  void explainWhyInvalid(LifetimeReporterBase &Reporter) const {
     for (auto &R : InvReasons)
       R.emitNote(Reporter);
   }
 
-  void explainWhyNull(const LifetimeReporterBase &Reporter) const {
+  void explainWhyNull(LifetimeReporterBase &Reporter) const {
     for (auto &R : NullReasons)
       R.emitNote(Reporter);
   }
