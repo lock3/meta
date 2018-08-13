@@ -29,11 +29,6 @@ void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt);
 
-/// Evaluate a variable declartation for effects on psets
-/// \param Reporter if non-null, emits diagnostics
-void EvalVarDecl(PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
-                 std::map<const Expr *, PSet> &RefersTo, const VarDecl *VD,
-                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt);
 } // namespace lifetime
 } // namespace clang
 
