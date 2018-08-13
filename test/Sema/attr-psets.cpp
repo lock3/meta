@@ -687,7 +687,7 @@ void ambiguous_pointers(bool cond) {
   if (cond)
     pp = &p2;
   *pp = &z;
-  __lifetime_pset(p1); // expected-warning {{pset(p1) = (x, z)}}
+  __lifetime_pset(p1); // expected-warning {{pset(p1) = (z, w)}}
   __lifetime_pset(p2); // expected-warning {{pset(p2) = (y, z)}}
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1, p2)}}
 }
