@@ -891,6 +891,12 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
+Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
+  // Fragment declarations only occur as part of a fragment expression.
+  // These declarations are instantiated independently from the visitor.
+  llvm_unreachable("should never get here");
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
