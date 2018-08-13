@@ -124,9 +124,9 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
                                         PSetsMap &EntryPSets) {
   // If no predecessors have been visited by now, this block is not
   // reachable
-  bool isReachable = false;
-  for (auto i = B.pred_begin(); i != B.pred_end(); ++i) {
-    CFGBlock *PredBlock = i->getReachableBlock();
+  bool IsReachable = false;
+  for (auto I = B.pred_begin(); I != B.pred_end(); ++I) {
+    CFGBlock *PredBlock = I->getReachableBlock();
     if (!PredBlock)
       continue;
 
@@ -134,10 +134,9 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
     if (!PredBC.visited)
       continue; // Skip this back edge.
 
-    isReachable = true;
+    IsReachable = true;
     // Is this a true or a false branch from the predecessor? We have might
     // have different state for both.
-    // TODO: how does this work with false branch pruning?
     auto PredPSets =
         (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B &&
          PredBC.FalseBranchExitPSets)
@@ -147,33 +146,28 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       EntryPSets = PredPSets;
     else {
       // Merge PSets with pred's PSets; TODO: make this efficient
-      for (auto &i : EntryPSets) {
-        auto &Var = i.first;
-        auto &PS = i.second;
-        auto j = PredPSets.find(Var);
-        if (j == PredPSets.end()) {
+      for (auto &I : EntryPSets) {
+        auto &Var = I.first;
+        auto &PS = I.second;
+        auto J = PredPSets.find(Var);
+        if (J == PredPSets.end()) {
           // The only reason that predecessors have PSets for different
-          // variables is that some of them lazily added global variables
-          // or member variables.
-          // If a global pointer is not mentioned, its pset is implicitly
-          // {(null), (static)}
-
-          // OR there was a goto that stayed in the same scope but skipped
-          // back over the initialization of this Pointer.
+          // variables is that there was a goto that stayed in the same scope
+          // but skipped back over the initialization of this Pointer.
           // Then we don't care, because the variable will not be referenced
           // in the C++ code before it is declared.
 
           PS = PSet::staticVar(Var.mightBeNull());
           continue;
         }
-        if (PS == j->second)
+        if (PS == J->second)
           continue;
 
-        PS.merge(j->second);
+        PS.merge(J->second);
       }
     }
   }
-  return isReachable;
+  return IsReachable;
 }
 
 /// Traverse all blocks of the CFG.
