@@ -14967,7 +14967,12 @@ void Sema::ActOnCXXExitDeclInitializer(Scope *S, Decl *D) {
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders.
 Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc) {
-  return nullptr;
+  CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
+
+  if (S)
+    PushDeclContext(S, Fragment);
+
+  return Fragment;
 }
 
 /// ActOnCXXConditionDeclarationExpr - Parsed a condition declaration of a
