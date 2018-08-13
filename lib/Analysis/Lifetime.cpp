@@ -201,18 +201,7 @@ void LifetimeContext::TraverseBlocks() {
           continue;
 
         // ExitPSets are the function parameters.
-        for (const ParmVarDecl *PVD : FuncDecl->parameters()) {
-          TypeCategory TC = classifyTypeCategory(PVD->getType());
-          if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
-            continue;
-          Variable P(PVD);
-          // Parameters cannot be invalid (checked at call site).
-          auto PS =
-              PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
-          // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
-          // PVD->dump();
-          BC.ExitPSets.emplace(P, std::move(PS));
-        }
+        PopulatePSetForParams(BC.ExitPSets, FuncDecl);
         BC.visited = true;
         continue;
       }

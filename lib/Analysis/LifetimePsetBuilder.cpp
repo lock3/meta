@@ -1050,5 +1050,20 @@ void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
   PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
   Builder.VisitBlock(B, FalseBranchExitPSets);
 }
+
+void PopulatePSetForParams(PSetsMap &PSets, const FunctionDecl *FD) {
+  for (const ParmVarDecl *PVD : FD->parameters()) {
+    TypeCategory TC = classifyTypeCategory(PVD->getType());
+    if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
+      continue;
+    Variable P(PVD);
+    // Parameters cannot be invalid (checked at call site).
+    auto PS =
+      PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
+    // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
+    // PVD->dump();
+    PSets.emplace(P, std::move(PS));
+  }
+}
 } // namespace lifetime
 } // namespace clang
