@@ -80,11 +80,11 @@ struct Variable {
   /// pointer
   QualType getType() const {
     if (FDs.empty()) {
-      if (auto *VD = Var.dyn_cast<const VarDecl *>())
+      if (const auto *VD = Var.dyn_cast<const VarDecl *>())
         return VD->getType();
-      if (auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
+      if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
         return MT->getType();
-      return {}; // Refers to 'this' pointer
+      return {}; // Refers to 'this' pointer.
     }
 
     return FDs.back()->getType();
@@ -321,8 +321,8 @@ public:
   void addStatic() { ContainsStatic = true; }
 
   bool isSingleton() const {
-    return isStatic() || (!ContainsStatic && !ContainsNull &&
-                          !ContainsInvalid && Vars.size() == 1);
+    return !ContainsInvalid &&
+           (ContainsStatic ^ ContainsNull ^ (Vars.size() == 1));
   }
 
   const std::map<Variable, unsigned> &vars() const { return Vars; }

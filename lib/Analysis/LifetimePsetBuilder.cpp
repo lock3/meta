@@ -26,6 +26,7 @@ static bool isPointer(const Expr *E) {
   auto TC = classifyTypeCategory(E->getType());
   return TC == TypeCategory::Pointer;
 }
+
 /// Collection of methods to update/check PSets from statements/expressions
 /// Conceptually, for each Expr where Expr::isLValue() is true,
 /// we put an entry into the RefersTo map, which contains the set
@@ -658,9 +659,9 @@ public:
 
   void setPSet(const Expr *E, PSet PS) {
     assert(hasPSet(E));
-    auto i = PSetsOfExpr.find(E);
-    if (i != PSetsOfExpr.end())
-      i->second = std::move(PS);
+    auto I = PSetsOfExpr.find(E);
+    if (I != PSetsOfExpr.end())
+      I->second = std::move(PS);
     else
       PSetsOfExpr.emplace(E, PS);
   }
