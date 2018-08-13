@@ -707,11 +707,14 @@ public:
       } else if (Initializer) {
         if (VD->getType()->isReferenceType())
           PS = refersTo(Initializer);
-        else {
+        else
           PS = getPSet(Initializer);
-        }
       } else {
-        PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
+        // Never treat local statics as uninitialized.
+        if (VD->hasGlobalStorage())
+          PS = PSet::staticVar(false);
+        else
+          PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
       }
       setPSet(PSet::singleton(VD), PS, Loc);
       break;
