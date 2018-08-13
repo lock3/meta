@@ -2236,7 +2236,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   if (P.enableLifetimeAnalysis) {
     lifetime::Reporter Reporter{S};
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
-      lifetime::runAnalysis(FD, S.Context, S.SourceMgr, Reporter);
+      lifetime::runAnalysis(FD, S.Context, Reporter);
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getBeginLoc()) ||

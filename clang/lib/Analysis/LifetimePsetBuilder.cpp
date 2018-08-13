@@ -130,7 +130,7 @@ public:
         Ret.insert(V, KV.second);
       }
       RefersTo[ME] = Ret;
-    } else if (auto *VD = dyn_cast<VarDecl>(ME->getMemberDecl())) {
+    } else if (isa<VarDecl>(ME->getMemberDecl())) {
       // A static data member of this class
       RefersTo[ME] = PSet::staticVar(false);
     }

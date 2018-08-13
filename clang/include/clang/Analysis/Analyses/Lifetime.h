@@ -49,7 +49,7 @@ public:
 };
 
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 SourceManager &SourceMgr, LifetimeReporterBase &Reporter);
+                 LifetimeReporterBase &Reporter);
 } // namespace lifetime
 } // namespace clang
 
