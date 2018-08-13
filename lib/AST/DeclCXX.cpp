@@ -2916,6 +2916,18 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
                                     SourceLocation(), nullptr, nullptr);
 }
 
+void CXXFragmentDecl::anchor() {}
+
+CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                         SourceLocation IntroLoc) {
+  return new (Cxt, DC) CXXFragmentDecl(DC, IntroLoc);
+}
+
+CXXFragmentDecl *CXXFragmentDecl::CreateDeserialized(ASTContext &C,
+                                                     unsigned ID) {
+  return new (C, ID) CXXFragmentDecl(nullptr, SourceLocation());
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

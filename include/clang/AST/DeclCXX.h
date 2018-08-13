@@ -3937,6 +3937,84 @@ public:
   IdentifierInfo* getSetterId() const { return SetterId; }
 };
 
+/// \brief Contains a fragment of source code.
+///
+/// This is an implicit structure created when defining a source code fragment.
+/// The nested declaration is called the fragment's content. This declaration
+/// contains the set of constant parameters over which the the fragment is
+/// defined. This has no corresponding concrete syntax.
+///
+/// Example:
+///
+///     contexpr int n = 4;
+///     auto x = <<class: int x = n; >>;
+///
+/// The fragment expression introduces an implicit fragment declaration
+/// containing the referenced fragment (the expression maintains captured
+/// values). The fragment declaration contains the class definition, and
+/// the variable is initialized with its reflection.
+///
+/// Note the fragment itself is not part of the declaration context, but held
+/// separately.
+///
+/// FIXME: The fragment might also be statement.
+class CXXFragmentDecl : public Decl, public DeclContext {
+  virtual void anchor();
+
+  /// The source code fragment.
+  Decl* Content;
+
+  /// A ParsingClass object from the parser. If this is a class fragment,
+  /// then this will contain the late-parsed declarations associated with
+  /// the class fragment's definition.
+  void* ParsedClass;
+
+  CXXFragmentDecl(DeclContext *DC, SourceLocation IntroLoc)
+      : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content(),
+        ParsedClass() {}
+public:
+  static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                 SourceLocation IntroLoc);
+
+  static CXXFragmentDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The contained fragment.
+  Decl* getContent() const { return Content; }
+
+  /// \brief Sets the contained fragment.
+  void setContent(Decl *D) {
+    assert(!Content && "Content already set");
+    Content = D;
+  }
+
+  /// \brief Information needed to parse definitions within the fragment.
+  void* getParsedClass() const { return ParsedClass; }
+
+  /// \brief Sets the parsing information.
+  void setParsedClass(void* PC) {
+    assert(!ParsedClass && "Parsing info already set");
+    ParsedClass = PC;
+  }
+
+  /// brief True if the fragment has dynamic type T.
+  template<typename T>
+  bool isA() const { return isa<T>(Content); }
+
+  /// \brief The fragment dynamically cast as the given type or nullptr.
+  template<typename T>
+  T* getAs() const { return dyn_cast<T>(Content); }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXFragment; }
+
+  static DeclContext *castToDeclContext(const CXXFragmentDecl *D) {
+    return static_cast<DeclContext *>(const_cast<CXXFragmentDecl*>(D));
+  }
+  static CXXFragmentDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<CXXFragmentDecl *>(const_cast<DeclContext*>(DC));
+  }
+};
+
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
