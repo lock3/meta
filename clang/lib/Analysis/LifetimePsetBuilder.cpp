@@ -51,7 +51,7 @@ static bool isPointer(const Expr *E) {
 // - CXXDefaultArgExpr
 class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
 
-  const LifetimeReporterBase *Reporter;
+  const LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
   /// psets of all memory locations, which are identified
   /// by their non-reference variable declaration or
@@ -440,17 +440,13 @@ public:
       PinExtended.emplace_back(CA.Loc, CA.PS, CA.QType);
 
       if (CA.PS.containsInvalid()) {
-        if (Reporter) {
-          Reporter->warnParameterDangling(CA.Loc,
-                                          /*indirectly=*/false);
-          CA.PS.explainWhyInvalid(*Reporter);
-        }
+        Reporter.warnParameterDangling(CA.Loc,
+                                        /*indirectly=*/false);
+        CA.PS.explainWhyInvalid(Reporter);
         break;
       } else if (CA.PS.containsNull() && !isNullableType(CA.QType)) {
-        if (Reporter) {
-          Reporter->warnParameterNull(CA.Loc, !CA.PS.isNull());
-          CA.PS.explainWhyNull(*Reporter);
-        }
+        Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
+        CA.PS.explainWhyNull(Reporter);
       }
 
       auto PointeeType = getPointeeType(CA.QType);
@@ -469,11 +465,9 @@ public:
       while (!QT.isNull() && QT->isPointerType() && !PS.containsInvalid()) {
         PS = derefPSet(PS, ArgExpr->getExprLoc());
         if (PS.containsInvalid()) {
-          if (Reporter) {
-            Reporter->warnParameterDangling(ArgExpr->getExprLoc(),
-                                            /*indirectly=*/true);
-            PS.explainWhyInvalid(*Reporter);
-          }
+          Reporter.warnParameterDangling(ArgExpr->getExprLoc(),
+                                          /*indirectly=*/true);
+          PS.explainWhyInvalid(Reporter);
           break;
         }
         // llvm::errs() << " deref -> " << PS.str() << "\n";
@@ -488,8 +482,6 @@ public:
   /// Diagnose if psets arguments in Oin and Pin refer to the same variable
   void diagnoseParameterAliasing(const std::vector<CallArgument> &Pin,
                                  const std::vector<CallArgument> &Oin) {
-    if (!Reporter)
-      return;
     std::map<Variable, SourceLocation> AllVars;
     for (auto &CA : Pin) {
       for (auto &KV : CA.PS.vars()) {
@@ -497,9 +489,8 @@ public:
         // pset(argument(p)) and pset(argument(x)) must be disjoint (as long as
         // not annotated)
         auto i = AllVars.emplace(Var, CA.Loc);
-        if (!i.second) {
-          Reporter->warnParametersAlias(CA.Loc, i.first->second, Var.getName());
-        }
+        if (!i.second)
+          Reporter.warnParametersAlias(CA.Loc, i.first->second, Var.getName());
       }
     }
     for (auto &CA : Oin) {
@@ -509,9 +500,8 @@ public:
         // as not annotated) Enforce that pset() of each argument does not
         // refer to a local Owner in Oin
         auto i = AllVars.emplace(Var, CA.Loc);
-        if (!i.second) {
-          Reporter->warnParametersAlias(CA.Loc, i.first->second, Var.getName());
-        }
+        if (!i.second)
+          Reporter.warnParametersAlias(CA.Loc, i.first->second, Var.getName());
       }
     }
 
@@ -680,13 +670,13 @@ public:
 
   void diagPSet(Variable V, SourceLocation Loc) {
     PSet set = getPSet(V);
-    Reporter->debugPset(Loc, V.getName(), set.str());
+    Reporter.debugPset(Loc, V.getName(), set.str());
   }
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
 public:
-  PSetsBuilder(const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt,
+  PSetsBuilder(const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo)
       : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets),
@@ -791,16 +781,15 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
 void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
-  if (LHS.isStatic() && !RHS.isUnknown() &&
-      !RHS.isStatic() && !RHS.isNull() && Reporter)
-    Reporter->warnPsetOfGlobal(Loc, "TODO", RHS.str());
+  if (LHS.isStatic() && !RHS.isUnknown() && !RHS.isStatic() && !RHS.isNull())
+    Reporter.warnPsetOfGlobal(Loc, "TODO", RHS.str());
 
   // We assume that the copy of a global pointer can be null.
   // TODO: Check for nullablility of the type.
   if (RHS.containsStatic())
     RHS.merge(PSet::null(Loc));
 
-  if (LHS.isSingleton())  {
+  if (LHS.isSingleton()) {
     Variable Var = LHS.vars().begin()->first;
     auto I = PSets.find(Var);
     if (I != PSets.end())
@@ -820,22 +809,19 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
 
 void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
                                      bool flagNull) {
-  if (!Reporter)
-    return;
-
   if (PS.isUnknown()) {
-    Reporter->diag(Loc, diag::warn_deref_unknown);
+    Reporter.diag(Loc, diag::warn_deref_unknown);
     return;
   }
 
   if (PS.containsInvalid()) {
-    Reporter->warnDerefDangling(Loc, !PS.isInvalid());
-    PS.explainWhyInvalid(*Reporter);
+    Reporter.warnDerefDangling(Loc, !PS.isInvalid());
+    PS.explainWhyInvalid(Reporter);
     return;
   }
 
   if (PS.containsNull()) {
-    Reporter->warnDerefNull(Loc, !PS.isNull());
+    Reporter.warnDerefNull(Loc, !PS.isNull());
     return;
   }
 }
@@ -940,8 +926,6 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
                      .Default(0);
   if (FuncNum == 0)
     return false;
-  if (!Reporter)
-    return true;
 
   auto Loc = CallE->getLocStart();
   switch (FuncNum) {
@@ -964,13 +948,13 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter->debugTypeCategory(Loc, TC);
+    Reporter.debugTypeCategory(Loc, TC);
     return true;
   }
   case 3: {
     auto QType = CallE->getArg(0)->getType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter->debugTypeCategory(Loc, TC);
+    Reporter.debugTypeCategory(Loc, TC);
     return true;
   }
   default:
@@ -1046,7 +1030,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
-                const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
+                const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt) {
   PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
   Builder.VisitBlock(B, FalseBranchExitPSets);
 }
@@ -1058,8 +1042,7 @@ void PopulatePSetForParams(PSetsMap &PSets, const FunctionDecl *FD) {
       continue;
     Variable P(PVD);
     // Parameters cannot be invalid (checked at call site).
-    auto PS =
-      PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
+    auto PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
     // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
     // PVD->dump();
     PSets.emplace(P, std::move(PS));

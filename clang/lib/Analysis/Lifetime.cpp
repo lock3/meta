@@ -195,7 +195,7 @@ void LifetimeContext::TraverseBlocks() {
     for (const auto *B : *SortedGraph) {
       auto &BC = getBlockContext(B);
 
-      // The entry block introduces the function parameters into the psets
+      // The entry block introduces the function parameters into the psets.
       if (B == &ControlFlowGraph->getEntry()) {
         if (BC.visited)
           continue;
@@ -209,8 +209,8 @@ void LifetimeContext::TraverseBlocks() {
       if (B == &ControlFlowGraph->getExit())
         continue;
 
-      // compute entry psets of this block by merging exit psets
-      // of all reachable predecessors.
+      // Compute entry psets of this block by merging exit psets of all
+      // reachable predecessors.
       PSetsMap EntryPSets;
       bool isReachable = computeEntryPSets(*B, EntryPSets);
       if (!isReachable)
@@ -225,7 +225,7 @@ void LifetimeContext::TraverseBlocks() {
       BC.EntryPSets = EntryPSets;
       BC.ExitPSets = BC.EntryPSets;
       VisitBlock(BC.ExitPSets, BC.FalseBranchExitPSets, PSetsOfExpr, RefersTo,
-                 *B, /*Reporter=*/nullptr, ASTCtxt);
+                 *B, Reporter, ASTCtxt);
       BC.visited = true;
       Updated = true;
     }
@@ -234,17 +234,6 @@ void LifetimeContext::TraverseBlocks() {
 
   if (IterationCount > MaxIterations)
     MaxIterations = IterationCount;
-
-  // Once more to emit diagnostics with final psets
-  for (const auto *B : *SortedGraph) {
-    auto &BC = getBlockContext(B);
-    if (!BC.visited)
-      continue;
-
-    BC.ExitPSets = BC.EntryPSets;
-    VisitBlock(BC.ExitPSets, BC.FalseBranchExitPSets, PSetsOfExpr, RefersTo, *B,
-               &Reporter, ASTCtxt);
-  }
 }
 
 /// Check that the function adheres to the lifetime profile
