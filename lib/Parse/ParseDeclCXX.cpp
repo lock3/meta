@@ -3206,7 +3206,6 @@ void Parser::ParseCXXMemberSpecificationInternal(SourceLocation &RecordLoc,
   }
 
   Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
-
 }
 
 /// ParseCXXMemberSpecification - Parse the class definition.
