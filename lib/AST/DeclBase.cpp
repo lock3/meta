@@ -813,6 +813,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPRequires:
     case OMPCapturedExpr:
     case Empty:
+    case CXXFragment:
       // Never looked up by name.
       return 0;
   }
