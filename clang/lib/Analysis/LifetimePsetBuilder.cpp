@@ -792,7 +792,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
   if (LHS.isStatic() && !RHS.isUnknown() &&
-      !RHS.isSubstitutableFor(PSet::staticVar(true)) && Reporter)
+      !RHS.isStatic() && !RHS.isNull() && Reporter)
     Reporter->warnPsetOfGlobal(Loc, "TODO", RHS.str());
 
   // We assume that the copy of a global pointer can be null.
