@@ -3145,7 +3145,8 @@ void Parser::ParseCXXMemberSpecificationInternal(SourceLocation &RecordLoc,
                                                  unsigned &TagType,
                                                  Decl *&TagDecl,
                                                  bool &IsFinalSpelledSealed,
-                                                 bool &NonNestedClass) {
+                                                 bool &NonNestedClass,
+                                                 tok::TokenKind EndToken) {
   Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, FinalLoc,
                                           IsFinalSpelledSealed,
                                           T.getOpenLocation());
@@ -3161,7 +3162,7 @@ void Parser::ParseCXXMemberSpecificationInternal(SourceLocation &RecordLoc,
   ParsedAttributesWithRange AccessAttrs(AttrFactory);
 
   // While we still have something to read, read the member-declarations.
-  while (!tryParseMisplacedModuleImport() && Tok.isNot(tok::r_brace) &&
+  while (!tryParseMisplacedModuleImport() && Tok.isNot(EndToken) &&
          Tok.isNot(tok::eof)) {
     // Each iteration of this loop reads one member-declaration.
     ParseCXXClassMemberDeclarationWithPragmas(
@@ -3363,7 +3364,8 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
                                         /*BalancedDelimiterTracker=*/T, Attrs,
                                         TagType, TagDecl,
                                         IsFinalSpelledSealed,
-                                        NonNestedClass);
+                                        NonNestedClass,
+                                        tok::r_brace);
   } else {
     SkipUntil(tok::r_brace);
   }

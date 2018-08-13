@@ -2734,7 +2734,8 @@ private:
                                            unsigned &TagType,
                                            Decl *&TagDecl,
                                            bool &IsFinalSpelledSealed,
-                                           bool &NonNestedClass);
+                                           bool &NonNestedClass,
+                                           tok::TokenKind EndToken);
   void ParseCXXMemberSpecification(SourceLocation StartLoc,
                                    SourceLocation AttrFixitLoc,
                                    ParsedAttributesWithRange &Attrs,
