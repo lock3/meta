@@ -14975,6 +14975,23 @@ Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc) {
   return Fragment;
 }
 
+
+/// Binds the content the fragment declaration. Returns the updated fragment.
+/// The Fragment is nullptr if an error occurred during parsing. However,
+/// we still need to pop the declaration context.
+Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
+  CXXFragmentDecl *FD = nullptr;
+  if (Fragment) {
+    FD = cast<CXXFragmentDecl>(Fragment);
+    FD->setContent(Content);
+  }
+
+  if (S)
+    PopDeclContext();
+
+  return FD;
+}
+
 /// ActOnCXXConditionDeclarationExpr - Parsed a condition declaration of a
 /// C++ if/switch/while/for statement.
 /// e.g: "if (int x = f()) {...}"

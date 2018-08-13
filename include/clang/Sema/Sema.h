@@ -10096,6 +10096,7 @@ public:
                                          ConditionKind CK);
 
   Decl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc);
+  Decl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 

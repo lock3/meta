@@ -1730,7 +1730,35 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
   else
    TagType = DeclSpec::TST_union;
 
-  return nullptr;
+  SourceLocation ClassKeyLoc = ConsumeToken();
+
+  // Build a tag type for the injected class.
+  SourceLocation IdLoc;
+  CXXScopeSpec SS;
+  MultiTemplateParamsArg MTP;
+  bool IsOwned;
+  bool IsDependent;
+  TypeResult UnderlyingType;
+  Decl *Class = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
+                                 ClassKeyLoc, SS,
+                                 /*Id=*/nullptr, IdLoc,
+                                 /*AttributeList=*/nullptr,
+                                 /*AccessSpecifier=*/AS_none,
+                                 /*ModulePrivateLoc=*/SourceLocation(),
+                                 MTP, IsOwned, IsDependent,
+                                 /*ScopedEnumKWLoc=*/SourceLocation(),
+                                 /*ScopeEnumUsesClassTag=*/false,
+                                 UnderlyingType,
+                                 /*IsTypeSpecifier=*/false,
+                                 /*IsTemplateParamOrArg=*/false,
+                                 /*SkipBody=*/nullptr);
+
+  // Parse the class definition.
+  ParsedAttributesWithRange PA(AttrFactory);
+  ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
+                              Class);
+
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Class);
 }
 
 /// ParseCXXCodeFragment
