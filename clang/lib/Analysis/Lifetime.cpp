@@ -267,25 +267,5 @@ void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
   LifetimeContext LC(Context, Reporter, SourceMgr, Func);
   LC.TraverseBlocks();
 }
-
-/// Check that each global variable is initialized to a pset of {static}
-/// and/or {null}
-void runAnalysis(const VarDecl *VD, ASTContext &Context,
-                 LifetimeReporterBase &Reporter) {
-
-  if (classifyTypeCategory(VD->getType()) != TypeCategory::Pointer)
-    return;
-
-  PSetsMap PSets;
-  std::map<const Expr *, PSet> PSetsOfExpr;
-  std::map<const Expr *, PSet> RefersTo;
-  EvalVarDecl(PSets, PSetsOfExpr, RefersTo, VD, &Reporter, Context);
-  // TODO
-  // We don't track the PSets of variables with global storage; just make
-  // sure that its pset is always {static} and/or {null}
-  // if (!PS.isSubsetOf(PSet::validOwnerOrNull(Owner::Static())) && Reporter)
-  // Reporter->warnPsetOfGlobal(Loc, P->getName(), PS.str());
-}
-
 } // namespace lifetime
 } // namespace clang

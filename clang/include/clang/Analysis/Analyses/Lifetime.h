@@ -50,8 +50,6 @@ public:
 
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
                  SourceManager &SourceMgr, LifetimeReporterBase &Reporter);
-void runAnalysis(const VarDecl *V, ASTContext &Context,
-                 LifetimeReporterBase &Reporter);
 } // namespace lifetime
 } // namespace clang
 

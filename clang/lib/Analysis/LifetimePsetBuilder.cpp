@@ -1050,13 +1050,5 @@ void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
   PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
   Builder.VisitBlock(B, FalseBranchExitPSets);
 }
-
-void EvalVarDecl(PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
-                 std::map<const Expr *, PSet> &RefersTo, const VarDecl *VD,
-                 const LifetimeReporterBase *Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
-  Builder.VisitVarDecl(VD);
-}
-
 } // namespace lifetime
 } // namespace clang
