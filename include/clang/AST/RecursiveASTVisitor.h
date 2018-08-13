@@ -1055,7 +1055,7 @@ DEF_TRAVERSE_TYPE(TypeOfType, { TRY_TO(TraverseType(T->getUnderlyingType())); })
 DEF_TRAVERSE_TYPE(DecltypeType,
                   { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
 
-DEF_TRAVERSE_TYPE(ReflectedType, 
+DEF_TRAVERSE_TYPE(ReflectedType,
                   { TRY_TO(TraverseStmt(T->getReflection())); })
 
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
