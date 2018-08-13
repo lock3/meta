@@ -528,6 +528,9 @@ TYPE_TRAIT_1(__is_standard_layout, IsStandardLayout, KEYCXX)
 TYPE_TRAIT_1(__is_signed, IsSigned, KEYCXX)
 TYPE_TRAIT_1(__is_unsigned, IsUnsigned, KEYCXX)
 
+// Placeholders for future syntax
+KEYWORD(__fragment , KEYALL)
+
 // Embarcadero Binary Type Traits
 TYPE_TRAIT_2(__is_same, IsSame, KEYCXX)
 TYPE_TRAIT_2(__is_convertible, IsConvertible, KEYCXX)

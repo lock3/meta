@@ -1779,7 +1779,7 @@ Decl *Parser::ParseCXXCodeFragment() {
 ///         '<<' fragment
 ///
 ExprResult Parser::ParseCXXCodeFragmentExpression() {
-  assert(Tok.is(tok::kw_lessless) && "expected '<<' token");
+  assert(Tok.is(tok::kw___fragment) && "expected '<<' token");
   SourceLocation Loc = ConsumeToken();
 
   Decl *Fragment = ParseCXXCodeFragment();

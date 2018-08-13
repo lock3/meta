@@ -1398,7 +1398,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw_delete: // [C++] delete-expression
     return ParseCXXDeleteExpression(false, Tok.getLocation());
 
-  case tok::lessless:
+  case tok::kw___fragment:
     return ParseCXXCodeFragmentExpression();
 
   case tok::kw_noexcept: { // [C++0x] 'noexcept' '(' expression ')'
