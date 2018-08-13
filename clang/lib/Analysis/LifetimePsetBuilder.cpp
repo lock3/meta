@@ -565,12 +565,12 @@ public:
         if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
           PSet PS = [&] {
             if (Object->getType()->isPointerType())
-              return getPSet(Object);
-            return refersTo(Object);
+              return derefPSet(getPSet(Object), CallE->getExprLoc());
+            return getPSet(Object);
           }();
           if (TC == TypeCategory::Pointer)
             Args.Pin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
-          else
+          else if (TC == TypeCategory::Owner)
             Args.Oin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
         }
       }
@@ -764,7 +764,7 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
 
     if (order > 0)
       RetPS.insert(V, order + 1); // pset(o') = { o'' }
-    else if (V.isCategoryPointer())
+    else
       RetPS.merge(getPSet(V));
   }
 
@@ -808,7 +808,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
 
 void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
                                      bool flagNull) {
-  assert (!PS.isUnknown());
+  assert(!PS.isUnknown());
 
   if (PS.containsInvalid()) {
     Reporter.warnDerefDangling(Loc, !PS.isInvalid());
