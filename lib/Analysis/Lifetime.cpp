@@ -34,13 +34,13 @@ class LifetimeContext {
   struct BlockContext {
     bool visited = false;
     /// Merged PSets of all predecessors of this CFGBlock.
-    PSetsMap EntryPSets;
+    PSetsMap EntryPMap;
     /// Computed PSets after updating EntryPSets through all CFGElements of
     /// this block.
-    PSetsMap ExitPSets;
+    PSetsMap ExitPMap;
     /// For blocks representing a branch, we have different psets for
     /// the true and the false branch.
-    llvm::Optional<PSetsMap> FalseBranchExitPSets;
+    llvm::Optional<PSetsMap> FalseBranchExitPMap;
   };
 
   ASTContext &ASTCtxt;
@@ -55,7 +55,7 @@ class LifetimeContext {
   std::map<const Expr *, PSet> PSetsOfExpr;
   std::map<const Expr *, PSet> RefersTo;
 
-  bool computeEntryPSets(const CFGBlock &B, PSetsMap &EntryPSets);
+  bool computeEntryPSets(const CFGBlock &B, PSetsMap &EntryPMap);
 
   BlockContext &getBlockContext(const CFGBlock *B) {
     return BlockContexts[B->getBlockID()];
@@ -121,7 +121,7 @@ public:
 /// Returns true if this block is reachable, i.e. one of it predecessors has
 /// been visited.
 bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
-                                        PSetsMap &EntryPSets) {
+                                        PSetsMap &EntryPMap) {
   // If no predecessors have been visited by now, this block is not
   // reachable
   bool IsReachable = false;
@@ -139,14 +139,14 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
     // have different state for both.
     auto PredPSets =
         (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B &&
-         PredBC.FalseBranchExitPSets)
-            ? *PredBC.FalseBranchExitPSets
-            : PredBC.ExitPSets;
-    if (EntryPSets.empty())
-      EntryPSets = PredPSets;
+         PredBC.FalseBranchExitPMap)
+            ? *PredBC.FalseBranchExitPMap
+            : PredBC.ExitPMap;
+    if (EntryPMap.empty())
+      EntryPMap = PredPSets;
     else {
       // Merge PSets with pred's PSets; TODO: make this efficient
-      for (auto &I : EntryPSets) {
+      for (auto &I : EntryPMap) {
         auto &Var = I.first;
         auto &PS = I.second;
         auto J = PredPSets.find(Var);
@@ -189,7 +189,7 @@ void LifetimeContext::TraverseBlocks() {
           continue;
 
         // ExitPSets are the function parameters.
-        PopulatePSetForParams(BC.ExitPSets, FuncDecl);
+        PopulatePSetForParams(BC.ExitPMap, FuncDecl);
         BC.visited = true;
         continue;
       }
@@ -199,20 +199,20 @@ void LifetimeContext::TraverseBlocks() {
 
       // Compute entry psets of this block by merging exit psets of all
       // reachable predecessors.
-      PSetsMap EntryPSets;
-      bool isReachable = computeEntryPSets(*B, EntryPSets);
+      PSetsMap EntryPMap;
+      bool isReachable = computeEntryPSets(*B, EntryPMap);
       if (!isReachable)
         continue;
 
-      if (BC.visited && EntryPSets == BC.EntryPSets) {
+      if (BC.visited && EntryPMap == BC.EntryPMap) {
         // Has been computed at least once and nothing changed; no need to
         // recompute.
         continue;
       }
 
-      BC.EntryPSets = EntryPSets;
-      BC.ExitPSets = BC.EntryPSets;
-      VisitBlock(BC.ExitPSets, BC.FalseBranchExitPSets, PSetsOfExpr, RefersTo,
+      BC.EntryPMap = EntryPMap;
+      BC.ExitPMap = BC.EntryPMap;
+      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr, RefersTo,
                  *B, Reporter, ASTCtxt);
       BC.visited = true;
       Updated = true;

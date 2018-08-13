@@ -56,7 +56,7 @@ class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
   /// psets of all memory locations, which are identified
   /// by their non-reference variable declaration or
   /// MaterializedTemporaryExpr plus (optional) FieldDecls.
-  PSetsMap &PSets;
+  PSetsMap &PMap;
   std::map<const Expr *, PSet> &PSetsOfExpr;
   std::map<const Expr *, PSet> &RefersTo;
 
@@ -441,7 +441,7 @@ public:
 
       if (CA.PS.containsInvalid()) {
         Reporter.warnParameterDangling(CA.Loc,
-                                        /*indirectly=*/false);
+                                       /*indirectly=*/false);
         CA.PS.explainWhyInvalid(Reporter);
         break;
       } else if (CA.PS.containsNull() && !isNullableType(CA.QType)) {
@@ -614,9 +614,9 @@ public:
 
   /// Invalidates all psets that point to V or something owned by V
   void invalidateOwner(Variable O, unsigned order, InvalidationReason Reason) {
-    for (auto &i : PSets) {
-      const auto &Pointer = i.first;
-      PSet &PS = i.second;
+    for (auto &I : PMap) {
+      const auto &Pointer = I.first;
+      PSet &PS = I.second;
       if (!PS.isValid())
         continue; // Nothing to invalidate
 
@@ -626,7 +626,7 @@ public:
     }
   }
 
-  void erasePointer(Variable P) { PSets.erase(P); }
+  void erasePointer(Variable P) { PMap.erase(P); }
 
   PSet getPSet(Variable P);
 
@@ -677,9 +677,9 @@ public:
 
 public:
   PSetsBuilder(const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PSets, std::map<const Expr *, PSet> &PSetsOfExpr,
+               PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo)
-      : Reporter(Reporter), ASTCtxt(ASTCtxt), PSets(PSets),
+      : Reporter(Reporter), ASTCtxt(ASTCtxt), PMap(PMap),
         PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
 
   bool VisitVarDecl(const VarDecl *VD) {
@@ -718,18 +718,18 @@ public:
   }
 
   void VisitBlock(const CFGBlock &B,
-                  llvm::Optional<PSetsMap> &PSetsSecondSuccessor);
+                  llvm::Optional<PSetsMap> &FalseBranchExitPMap);
 
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
-                                llvm::Optional<PSetsMap> &PSetsSecondSuccessor,
+                                llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                                 SourceLocation Loc);
 }; // namespace lifetime
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
-  auto i = PSets.find(P);
-  if (i != PSets.end())
-    return i->second;
+  auto I = PMap.find(P);
+  if (I != PMap.end())
+    return I->second;
 
   // Assumption: global Pointers have a pset of {static}
   if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
@@ -791,18 +791,18 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
 
   if (LHS.isSingleton()) {
     Variable Var = LHS.vars().begin()->first;
-    auto I = PSets.find(Var);
-    if (I != PSets.end())
+    auto I = PMap.find(Var);
+    if (I != PMap.end())
       I->second = std::move(RHS);
     else
-      PSets.emplace(Var, RHS);
+      PMap.emplace(Var, RHS);
   } else {
     for (auto &KV : LHS.vars()) {
-      auto I = PSets.find(KV.first);
-      if (I != PSets.end())
+      auto I = PMap.find(KV.first);
+      if (I != PMap.end())
         I->second.merge(RHS);
       else
-        PSets.emplace(KV.first, RHS);
+        PMap.emplace(KV.first, RHS);
     }
   }
 }
@@ -839,8 +839,8 @@ void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
 /// else
 ///  ... // pset of p does not contain 'null'
 void PSetsBuilder::UpdatePSetsFromCondition(
-    const Stmt *S, bool Positive,
-    llvm::Optional<PSetsMap> &FalseBranchExitPSets, SourceLocation Loc) {
+    const Stmt *S, bool Positive, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
+    SourceLocation Loc) {
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
@@ -851,7 +851,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
             dyn_cast_or_null<CXXConversionDecl>(CE->getDirectCallee())) {
       if (ConvDecl->getConversionType()->isBooleanType())
         UpdatePSetsFromCondition(CE->getImplicitObjectArgument(), Positive,
-                                 FalseBranchExitPSets, E->getLocStart());
+                                 FalseBranchExitPMap, E->getLocStart());
     }
     return;
   }
@@ -859,7 +859,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     if (UO->getOpcode() != UO_LNot)
       return;
     E = UO->getSubExpr();
-    UpdatePSetsFromCondition(E, !Positive, FalseBranchExitPSets,
+    UpdatePSetsFromCondition(E, !Positive, FalseBranchExitPMap,
                              E->getLocStart());
     return;
   }
@@ -876,10 +876,10 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       return;
 
     if (LHS->isLValue() && getPSet(RHS).isNull())
-      UpdatePSetsFromCondition(LHS, Positive, FalseBranchExitPSets,
+      UpdatePSetsFromCondition(LHS, Positive, FalseBranchExitPMap,
                                E->getLocStart());
     else if (RHS->isLValue() && getPSet(LHS).isNull())
-      UpdatePSetsFromCondition(RHS, Positive, FalseBranchExitPSets,
+      UpdatePSetsFromCondition(RHS, Positive, FalseBranchExitPMap,
                                E->getLocStart());
     return;
   }
@@ -901,8 +901,8 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       PS = PSet::null(Loc);
       PSElseBranch.removeNull();
     }
-    FalseBranchExitPSets = PSets;
-    (*FalseBranchExitPSets)[V] = PSElseBranch;
+    FalseBranchExitPMap = PMap;
+    (*FalseBranchExitPMap)[V] = PSElseBranch;
     setPSet(PSet::singleton(V), PS, Loc);
   }
 } // namespace lifetime
@@ -976,7 +976,7 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
 
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
-                              llvm::Optional<PSetsMap> &FalseBranchExitPSets) {
+                              llvm::Optional<PSetsMap> &FalseBranchExitPMap) {
   for (auto i = B.begin(); i != B.end(); ++i) {
     const CFGElement &E = *i;
     switch (E.getKind()) {
@@ -1022,20 +1022,20 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     }
   }
   if (auto *Terminator = getRealTerminator(B)) {
-    UpdatePSetsFromCondition(Terminator, /*Positive=*/true,
-                             FalseBranchExitPSets, Terminator->getLocEnd());
+    UpdatePSetsFromCondition(Terminator, /*Positive=*/true, FalseBranchExitPMap,
+                             Terminator->getLocEnd());
   }
 }
 
-void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
+void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PSets, PSetsOfExpr, RefersTo);
-  Builder.VisitBlock(B, FalseBranchExitPSets);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo);
+  Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
-void PopulatePSetForParams(PSetsMap &PSets, const FunctionDecl *FD) {
+void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   for (const ParmVarDecl *PVD : FD->parameters()) {
     TypeCategory TC = classifyTypeCategory(PVD->getType());
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
@@ -1045,7 +1045,7 @@ void PopulatePSetForParams(PSetsMap &PSets, const FunctionDecl *FD) {
     auto PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
     // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
     // PVD->dump();
-    PSets.emplace(P, std::move(PS));
+    PMap.emplace(P, std::move(PS));
   }
 }
 } // namespace lifetime

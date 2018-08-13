@@ -16,21 +16,19 @@
 namespace clang {
 class CFGBlock;
 class ASTContext;
-class Stmt;
-class VarDecl;
 
 namespace lifetime {
 class LifetimeReporterBase;
 
 /// Updates psets with all effects that appear in the block.
 /// \param Reporter if non-null, emits diagnostics
-void VisitBlock(PSetsMap &PSets, llvm::Optional<PSetsMap> &FalseBranchExitPSets,
+void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 const LifetimeReporterBase &Reporter, ASTContext &ASTCtxt);
 
 /// Get the initial PSets for function parameters.
-void PopulatePSetForParams(PSetsMap &PSets, const FunctionDecl *FD);
+void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);
 } // namespace lifetime
 } // namespace clang
 

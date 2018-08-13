@@ -426,7 +426,9 @@ void goto_forward_over_decl() {
   goto e;
   int *p;
 e:;
-  //__lifetime_pset(p); // TODOexpected-warning {{pset(p) = ((invalid))}}
+  // We do not care about this case since the core guidelines forbid
+  // the use of goto. TODO: do not crash on this.
+  // __lifetime_pset(p); // TODOexpected-warning {{pset(p) = ((static))}}
 }
 
 void for_local_variable() {
