@@ -30,13 +30,13 @@ namespace clang {
 namespace lifetime {
 
 class LifetimeContext {
-  /// psets for a CFGBlock
+  /// Additional information for each CFGBlock.
   struct BlockContext {
     bool visited = false;
-    /// Merged PSets of all predecessors of this CFGBlock
+    /// Merged PSets of all predecessors of this CFGBlock.
     PSetsMap EntryPSets;
     /// Computed PSets after updating EntryPSets through all CFGElements of
-    /// this block
+    /// this block.
     PSetsMap ExitPSets;
     /// For blocks representing a branch, we have different psets for
     /// the true and the false branch.
@@ -64,15 +64,17 @@ class LifetimeContext {
 
   void dumpBlock(const CFGBlock &B) const {
     auto Loc = getStartLocOfBlock(B);
-    llvm::errs() << "Block at " << SourceMgr.getBufferName(Loc) << ":"
-                 << SourceMgr.getSpellingLineNumber(Loc) << "\n";
+    if (Loc.isValid()) {
+      llvm::errs() << "Block at " << SourceMgr.getBufferName(Loc) << ":"
+                   << SourceMgr.getSpellingLineNumber(Loc) << "\n";
+    }
     B.dump(ControlFlowGraph, LangOpts, true);
   }
 
   void dumpCFG() const { ControlFlowGraph->dump(LangOpts, true); }
 
   /// Approximate the SourceLocation of a Block for attaching pset debug
-  /// diagnostics
+  /// diagnostics.
   SourceLocation getStartLocOfBlock(const CFGBlock &B) const {
     if (&B == &ControlFlowGraph->getEntry())
       return FuncDecl->getLocStart();
@@ -89,22 +91,16 @@ class LifetimeContext {
       default:;
       }
     }
-    if (B.succ_empty())
-      return SourceLocation();
-    // for(auto i = B.succ_begin(); i != B.succ_end(); ++i)
-    //{
-    // TODO: this may lead to infinite recursion
-    return getStartLocOfBlock(**B.succ_begin());
-    //}
-    llvm_unreachable("Could not determine start loc of CFGBlock");
+    return {};
   }
 
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
-                  SourceManager &SourceMgr, const FunctionDecl *FuncDecl)
-      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()), SourceMgr(SourceMgr),
-        FuncDecl(FuncDecl), AnalysisDCMgr(ASTCtxt),
-        AC(&AnalysisDCMgr, FuncDecl), Reporter(Reporter) {
+                  const FunctionDecl *FuncDecl)
+      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
+        SourceMgr(ASTCtxt.getSourceManager()), FuncDecl(FuncDecl),
+        AnalysisDCMgr(ASTCtxt), AC(&AnalysisDCMgr, FuncDecl),
+        Reporter(Reporter) {
     // TODO: do not build own CFG here. Use the one from callee
     // AnalysisBasedWarnings::IssueWarnings
     AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
@@ -238,11 +234,11 @@ void LifetimeContext::TraverseBlocks() {
 
 /// Check that the function adheres to the lifetime profile
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 SourceManager &SourceMgr, LifetimeReporterBase &Reporter) {
+                 LifetimeReporterBase &Reporter) {
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
-  LifetimeContext LC(Context, Reporter, SourceMgr, Func);
+  LifetimeContext LC(Context, Reporter, Func);
   LC.TraverseBlocks();
 }
 } // namespace lifetime
