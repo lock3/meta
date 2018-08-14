@@ -784,11 +784,6 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   if (LHS.isStatic() && !RHS.isUnknown() && !RHS.isStatic() && !RHS.isNull())
     Reporter.warnPsetOfGlobal(Loc, "TODO", RHS.str());
 
-  // We assume that the copy of a global pointer can be null.
-  // TODO: Check for nullablility of the type.
-  if (RHS.containsStatic())
-    RHS.merge(PSet::null(Loc));
-
   if (LHS.isSingleton()) {
     Variable Var = LHS.vars().begin()->first;
     auto I = PMap.find(Var);
