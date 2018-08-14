@@ -57,7 +57,7 @@ class DeclAccessPair;
 class IdentifierInfo;
 class LambdaCapture;
 class NonTypeTemplateParmDecl;
-class TemplateParameterList;  
+class TemplateParameterList;
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.
@@ -4451,41 +4451,41 @@ class CXXConstantExpr : public Expr {
   APValue Value;
 public:
   CXXConstantExpr(Expr *E, APValue&& V)
-    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
            E->getObjectKind(), false, false, false, false), Source(E),
       Value(std::move(V)) { }
 
   CXXConstantExpr(EmptyShell Empty)
     : Expr(CXXConstantExprClass, Empty) { }
 
-  /// \brief Returns the evaluated expression. 
+  /// \brief Returns the evaluated expression.
   Expr *getExpression() const { return cast<Expr>(Source); }
 
   /// \brief Returns the computed value.
   const APValue& getValue() const { return Value; }
 
-  SourceLocation getBeginLoc() const LLVM_READONLY { 
-    return Source->getBeginLoc(); 
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return Source->getBeginLoc();
   }
 
   SourceLocation getEndLoc() const LLVM_READONLY {
     return Source->getEndLoc();
   }
 
-  child_range children() { 
-    return child_range(&Source, &Source + 1); 
+  child_range children() {
+    return child_range(&Source, &Source + 1);
   }
 
-  const_child_range children() const { 
-    return const_child_range(&Source, &Source + 1); 
+  const_child_range children() const {
+    return const_child_range(&Source, &Source + 1);
   }
-  
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXConstantExprClass;
   }
 };
 
-/// \brief Represents expressions of the form `reflexpr(x)`. 
+/// \brief Represents expressions of the form `reflexpr(x)`.
 ///
 /// The operand of the expression is either a type, an expression, a
 /// template-name, or a namespace-name.
@@ -4508,19 +4508,19 @@ class CXXReflectExpr : public Expr {
     : Expr(CXXReflectExprClass, Empty) {}
 
 public:
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, QualType Arg,
                                 SourceLocation LP, SourceLocation RP);
-  
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, TemplateName Arg,
                                 SourceLocation LP, SourceLocation RP);
 
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, NamespaceName Arg,
                                 SourceLocation LP, SourceLocation RP);
 
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, Expr *Arg,
                                 SourceLocation LP, SourceLocation RP);
 
@@ -4567,7 +4567,7 @@ public:
 };
 
 /// \brief A reflection trait intrinsic.
-/// 
+///
 /// A reflection trait is a query of an AST node. All traits accept a sequence
 /// of arguments (expressions), the first of which is the encoded value of
 /// the AST node.
