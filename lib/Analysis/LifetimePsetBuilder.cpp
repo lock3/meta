@@ -117,18 +117,14 @@ public:
     if (ME->getBase()->getType()->isPointerType()) {
       // This is like a deref plus member expr.
       BaseRefersTo = getPSet(ME->getBase());
-      CheckPSetValidity(BaseRefersTo, ME->getExprLoc(), /*flagNull=*/true);
+      CheckPSetValidity(BaseRefersTo, ME->getExprLoc());
     } else {
       BaseRefersTo = RefersTo[ME->getBase()];
     }
 
     if (auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
-      PSet Ret;
-      for (auto &KV : BaseRefersTo.vars()) {
-        Variable V = KV.first;
-        V.addFieldRef(FD);
-        Ret.insert(V, KV.second);
-      }
+      PSet Ret = BaseRefersTo;
+      Ret.addFieldRef(FD);
       RefersTo[ME] = Ret;
     } else if (isa<VarDecl>(ME->getMemberDecl())) {
       // A static data member of this class
@@ -606,15 +602,14 @@ public:
     return true;
   }
 
-  void CheckPSetValidity(const PSet &PS, SourceLocation Loc,
-                         bool flagNull = true);
+  void CheckPSetValidity(const PSet &PS, SourceLocation Loc);
 
   /// Invalidates all psets that point to V or something owned by V
   void invalidateOwner(Variable O, unsigned order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
       PSet &PS = I.second;
-      if (!PS.isValid())
+      if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
       if (PS.containsBase(O, order))
@@ -799,8 +794,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   }
 }
 
-void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc,
-                                     bool flagNull) {
+void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
   assert(!PS.isUnknown());
 
   if (PS.containsInvalid()) {

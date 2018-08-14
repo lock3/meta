@@ -76,8 +76,7 @@ struct Variable {
     return isThisPointer() && !FDs.empty();
   }
 
-  /// Returns QualType of Variable or empty QualType if it refers to the 'this'
-  /// pointer
+  /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
   QualType getType() const {
     if (FDs.empty()) {
       if (const auto *VD = Var.dyn_cast<const VarDecl *>())
@@ -117,10 +116,7 @@ struct Variable {
     return classifyTypeCategory(getType()) == TypeCategory::Pointer;
   }
 
-  // If FDs is empty, Var must be of class type and
-  // FD must be a field within that class type.
-  // If FDs is not empty, FDs.back() must be of class type
-  // and FD must be a field within that class type.
+  // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
   std::string getName() const {
@@ -148,10 +144,9 @@ struct Variable {
 
   llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
 
-  /// Possibly empty list of fields on Var
-  /// first entry is the field on VD,
+  /// Possibly empty list of fields on Var first entry is the field on VD,
   /// next entry is the field inside there, etc.
-  std::vector<const FieldDecl *> FDs;
+  llvm::SmallVector<const FieldDecl *, 8> FDs;
 };
 
 /// The reason why a pset became invalid
@@ -169,7 +164,7 @@ class InvalidationReason {
     ASSIGNED,
   } Reason;
 
-  const VarDecl *Pointee = nullptr;
+  const VarDecl *Pointee;
   SourceLocation Loc;
 
   InvalidationReason(SourceLocation Loc, EReason Reason,
@@ -240,7 +235,7 @@ public:
   }
 };
 
-/// The reason how null entered a pset
+/// The reason how null entered a pset.
 class NullReason {
   SourceLocation Loc;
 
@@ -251,7 +246,7 @@ public:
   }
 };
 
-/// A pset (points-to set) can contain
+/// A pset (points-to set) can contain:
 /// - null
 /// - static
 /// - invalid
@@ -278,10 +273,6 @@ public:
       R.emitNote(Reporter);
   }
 
-  bool isValid() const {
-    return ContainsNull || ContainsStatic || !Vars.empty();
-  }
-
   bool containsInvalid() const { return ContainsInvalid; }
   bool isInvalid() const {
     return !ContainsNull && !ContainsStatic && ContainsInvalid && Vars.empty();
@@ -292,20 +283,19 @@ public:
   }
 
   /// Returns true if this pset contains Variable with the same or a lower order
-  /// i.e. whether invalidating (Variable, order) would invalidate this pset
-  bool contains(Variable Var, unsigned order = 0) const {
-    auto i = Vars.find(Var);
-    return i != Vars.end() && i->second >= order;
+  /// i.e. whether invalidating (Variable, order) would invalidate this pset.
+  bool contains(Variable Var, unsigned Order = 0) const {
+    auto I = Vars.find(Var);
+    return I != Vars.end() && I->second >= Order;
   }
 
   /// Returns true if we look for S and we have S.field in the set.
-  bool containsBase(Variable Var, unsigned order = 0) const {
-    auto i =
-        find_if(Vars.begin(), Vars.end(),
-                [Var, order](const std::pair<Variable, unsigned> &Other) {
-                  return Var.isBaseEqual(Other.first) && order <= Other.second;
-                });
-    return i != Vars.end() && i->second >= order;
+  bool containsBase(Variable Var, unsigned Order = 0) const {
+    auto I = llvm::find_if(
+        Vars, [Var, Order](const std::pair<Variable, unsigned> &Other) {
+          return Var.isBaseEqual(Other.first) && Order <= Other.second;
+        });
+    return I != Vars.end() && I->second >= Order;
   }
 
   bool containsNull() const { return ContainsNull; }
@@ -385,7 +375,7 @@ public:
 
   void print(raw_ostream &Out) const { Out << str() << "\n"; }
 
-  /// Merge contents of other pset into this
+  /// Merge contents of other pset into this.
   void merge(const PSet &O) {
     if (!ContainsInvalid && O.ContainsInvalid) {
       ContainsInvalid = true;
@@ -416,7 +406,7 @@ public:
     return Ret;
   }
 
-  void insert(Variable Var, unsigned order = 0) {
+  void insert(Variable Var, unsigned Order = 0) {
     if (Var.hasGlobalStorage()) {
       ContainsStatic = true;
       return;
@@ -425,9 +415,9 @@ public:
     // If this would contain o' and o'' it would be invalidated on KILL(o')
     // and KILL(o'') which is the same for a pset only containing o''.
     if (Vars.count(Var))
-      order = std::max(Vars[Var], order);
+      Order = std::max(Vars[Var], Order);
 
-    Vars[Var] = order;
+    Vars[Var] = Order;
   }
 
   void addFieldRef(const FieldDecl *FD) {
