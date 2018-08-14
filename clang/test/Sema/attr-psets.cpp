@@ -124,9 +124,11 @@ void ref_exprs() {
   const int &ref3 = 3;
   __lifetime_pset(ref3); // expected-warning {{pset(ref3) = ((lifetime-extended temporary through ref3))}}
 
-  // Lifetime extension of pointer; TODO is that correct?
+  // Lifetime extension of pointer
   int *const &refp = &i;
   __lifetime_pset(refp); // expected-warning {{pset(refp) = ((lifetime-extended temporary through refp))}}
+  p = refp;
+  __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
 }
 
 void addr_and_dref() {

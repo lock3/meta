@@ -170,9 +170,12 @@ public:
   }
 
   bool VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
-    if (E->getExtendingDecl())
-      RefersTo[E] = PSet::singleton(E, false, 0);
-    else
+    if (E->getExtendingDecl()) {
+      PSet Singleton = PSet::singleton(E, false, 0);
+      RefersTo[E] = Singleton;
+      if (hasPSet(E->GetTemporaryExpr()))
+        setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getLocStart());
+    } else
       RefersTo[E] = PSet::singleton(Variable::temporary(), false, 0);
     return true;
   }
