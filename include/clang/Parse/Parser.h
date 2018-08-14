@@ -2793,8 +2793,8 @@ private:
 
   // C++ Code Fragments
   Decl* ParseCXXClassFragment(Decl* Fragment);
-  Decl* ParseCXXCodeFragment();
-  ExprResult ParseCXXCodeFragmentExpression();
+  Decl* ParseCXXFragment();
+  ExprResult ParseCXXFragmentExpression();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

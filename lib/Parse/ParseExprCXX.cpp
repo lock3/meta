@@ -1761,7 +1761,7 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Class);
 }
 
-/// ParseCXXCodeFragment
+/// ParseCXXFragment
 ///
 ///      fragment-expression:
 ///        named-namespace-definition
@@ -1769,7 +1769,7 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
 ///        enum-specifier
 ///        compound-statement
 ///
-Decl *Parser::ParseCXXCodeFragment() {
+Decl *Parser::ParseCXXFragment() {
   // Start the fragment. The fragment is finished in one of the
   // ParseCXX*Fragment functions.
   Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(),
@@ -1801,16 +1801,16 @@ Decl *Parser::ParseCXXCodeFragment() {
   return nullptr;
 }
 
-/// ParseCXXCodeFragmentExpression
+/// ParseCXXFragmentExpression
 ///
 ///       fragment-expression:
 ///         '<<' fragment
 ///
-ExprResult Parser::ParseCXXCodeFragmentExpression() {
+ExprResult Parser::ParseCXXFragmentExpression() {
   assert(Tok.is(tok::kw___fragment) && "expected '<<' token");
   SourceLocation Loc = ConsumeToken();
 
-  Decl *Fragment = ParseCXXCodeFragment();
+  Decl *Fragment = ParseCXXFragment();
   if (!Fragment)
     return ExprError();
 
