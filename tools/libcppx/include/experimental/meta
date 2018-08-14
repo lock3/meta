@@ -208,9 +208,8 @@ public:
   constexpr! info operator->() const { return curr; }
 
   constexpr! iterator& operator++() { 
-    // FIXME
-    // if (!is_null(curr))
-    //   curr = __reflect_next(curr); 
+    if (!is_null(curr))
+      curr = __reflect_next(curr); 
     return *this;
   }
 
@@ -230,8 +229,7 @@ private:
 // Returns the first sub-object of x. Objects behave 
 // as forward iterators.
 constexpr! iterator begin(info x) {
-  // FIXME
-  // return iterator(__reflect_begin(x));
+  return iterator(__reflect_begin(x));
   return {};
 }
 
@@ -247,15 +245,13 @@ constexpr! iterator end(info x) {
 // next() to traverse contexts as template arguments (iterators don't work
 // as template arguments).
 constexpr! info front(info x) {
-  // FIXME
-  // return __reflect_begin(x);
+  return __reflect_begin(x);
   return {};
 }
 
 // Returns the next info in the sequence.
 constexpr! info next(info x) {
-  // FIXME
-  // return __reflect_next(x);
+  return __reflect_next(x);
   return {};
 }
 

@@ -5497,9 +5497,9 @@ static bool IsMetaObject(ASTContext &Ctx, EnumDecl *E) {
   if (!isa<NamespaceDecl>(DC))
     return false;
   NamespaceDecl *NS = cast<NamespaceDecl>(DC);
-  IdentifierInfo *ObjectId = &Ctx.Idents.get("object");
+  IdentifierInfo *InfoId = &Ctx.Idents.get("info");
   IdentifierInfo *MetaId = &Ctx.Idents.get("meta");
-  return E->getIdentifier() == ObjectId && NS->getIdentifier() == MetaId;
+  return E->getIdentifier() == InfoId && NS->getIdentifier() == MetaId;
 }
 
 static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E, 

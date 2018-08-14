@@ -4783,7 +4783,7 @@ QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
     }
     RT = new (*this, TypeAlignment) ReflectedType(E, T, QualType(Canon, 0));
   } else {
-      CanQualType Canon = getCanonicalType(T);
+    CanQualType Canon = getCanonicalType(T);
     RT = new (*this, TypeAlignment) ReflectedType(E, T, Canon);
   }
   Types.push_back(RT);
