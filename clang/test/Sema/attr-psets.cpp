@@ -343,7 +343,6 @@ void implicit_else() {
 }
 
 void condition_short_circuit(S *p) {
-  // TODO: should not warn
   if (p && p->m)
     ;
 }
@@ -575,9 +574,9 @@ void Example1_1() {
       int i;
     } s = {0};
     p = &s.i;
-    //__lifetime_pset(p); // TODOexpected-warning {{pset(p) = (s.i)}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = (s.i)}}
     p2 = p;
-    //__lifetime_pset(p2); // TODOexpected-warning {{pset(p2) = (s.i)}}
+    __lifetime_pset(p2); // expected-warning {{pset(p2) = (s.i)}}
     *p = 1;                  // ok
     *p2 = 1;                 // ok
   }
@@ -649,9 +648,9 @@ void Example9() {
   std::vector<int> v1(100);
   __lifetime_pset(v1); // expected-warning {{pset(v1) = (v1')}}
   int *pi = &v1[0];
-  //__lifetime_pset(pi); // TODOexpected-warning {{pset(p1) = (v1')}}
+  __lifetime_pset(pi); // expected-warning {{pset(pi) = (v1')}}
   auto v2 = std::move(v1);
-  //__lifetime_pset(pi); // TODOexpected-warning {{pset(p1) = (v2')}}
+  //__lifetime_pset(pi); // TODOexpected-warning {{pset(pi) = (v2')}}
 }
 
 void return_pointer() {
