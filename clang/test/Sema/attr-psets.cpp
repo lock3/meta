@@ -700,3 +700,8 @@ void ambiguous_pointers(bool cond) {
   __lifetime_pset(p2); // expected-warning {{pset(p2) = (y, z)}}
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1, p2)}}
 }
+
+void cast(int *p) {
+  float *q = reinterpret_cast<float *>(p);
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
+}
