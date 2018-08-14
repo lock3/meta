@@ -1508,6 +1508,12 @@ class DeclContext {
     uint64_t IsConstexpr : 1;
     uint64_t InstantiationIsPending : 1;
 
+    /// \brief Wether this variable has 'constexpr' implicitly specified.
+    unsigned IsConstexprSpecified : 1;
+
+    /// \brief Whether this variable is 'immediate'.
+    unsigned IsImmediate : 1;
+
     /// Indicates if the function uses __try.
     uint64_t UsesSEHTry : 1;
 

@@ -1742,70 +1742,6 @@ private:
 
   LazyDeclStmtPtr Body;
 
-  // FIXME: This can be packed into the bitfields in DeclContext.
-  // NOTE: VC++ packs bitfields poorly if the types differ.
-  unsigned SClass : 3;
-  unsigned IsInline : 1;
-  unsigned IsInlineSpecified : 1;
-
-protected:
-  // This is shared by CXXConstructorDecl, CXXConversionDecl, and
-  // CXXDeductionGuideDecl.
-  unsigned IsExplicitSpecified : 1;
-
-private:
-  unsigned IsVirtualAsWritten : 1;
-  unsigned IsPure : 1;
-  unsigned HasInheritedPrototype : 1;
-  unsigned HasWrittenPrototype : 1;
-  unsigned IsDeleted : 1;
-  unsigned IsTrivial : 1; // sunk from CXXMethodDecl
-
-  /// This flag indicates whether this function is trivial for the purpose of
-  /// calls. This is meaningful only when this function is a copy/move
-  /// constructor or a destructor.
-  unsigned IsTrivialForCall : 1;
-
-  unsigned IsDefaulted : 1; // sunk from CXXMethoDecl
-  unsigned IsExplicitlyDefaulted : 1; //sunk from CXXMethodDecl
-  unsigned HasImplicitReturnZero : 1;
-  unsigned IsLateTemplateParsed : 1;
-  unsigned IsConstexpr : 1;
-  unsigned InstantiationIsPending : 1;
-
-  /// \brief Wether this variable has 'constexpr' implicitly specified.
-  unsigned IsConstexprSpecified : 1;
-
-  /// \brief Whether this variable is 'immediate'.
-  unsigned IsImmediate : 1;
-
-  /// Indicates if the function uses __try.
-  unsigned UsesSEHTry : 1;
-
-  /// Indicates if the function was a definition but its body was
-  /// skipped.
-  unsigned HasSkippedBody : 1;
-
-  /// Indicates if the function declaration will have a body, once we're done
-  /// parsing it.
-  unsigned WillHaveBody : 1;
-
-  /// Indicates that this function is a multiversioned function using attribute
-  /// 'target'.
-  unsigned IsMultiVersion : 1;
-
-protected:
-  /// [C++17] Only used by CXXDeductionGuideDecl. Declared here to avoid
-  /// increasing the size of CXXDeductionGuideDecl by the size of an unsigned
-  /// int as opposed to adding a single bit to FunctionDecl.
-  /// Indicates that the Deduction Guide is the implicitly generated 'copy
-  /// deduction candidate' (is used during overload resolution).
-  unsigned IsCopyDeductionCandidate : 1;
-
-private:
-
-  /// Store the ODRHash after first calculation.
-  unsigned HasODRHash : 1;
   unsigned ODRHash;
 
   /// End part of this FunctionDecl's source range.
@@ -1874,7 +1810,7 @@ private:
                                         TemplateSpecializationKind TSK);
 
   void setParams(ASTContext &C, ArrayRef<ParmVarDecl *> NewParamInfo);
-
+  
   // This is unfortunately needed because ASTDeclWriter::VisitFunctionDecl
   // need to access this bit but we want to avoid making ASTDeclWriter
   // a friend of FunctionDeclBitfields just for this.
@@ -1890,22 +1826,7 @@ protected:
   FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
                const DeclarationNameInfo &NameInfo, QualType T,
                TypeSourceInfo *TInfo, StorageClass S, bool isInlineSpecified,
-               bool isConstexprSpecified)
-      : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
-                       StartLoc),
-        DeclContext(DK), redeclarable_base(C), SClass(S),
-        IsInline(isInlineSpecified), IsInlineSpecified(isInlineSpecified),
-        IsExplicitSpecified(false), IsVirtualAsWritten(false), IsPure(false),
-        HasInheritedPrototype(false), HasWrittenPrototype(true),
-        IsDeleted(false), IsTrivial(false), IsTrivialForCall(false),
-        IsDefaulted(false),
-        IsExplicitlyDefaulted(false), HasImplicitReturnZero(false),
-        IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
-	InstantiationIsPending(false), IsImmediate(false), UsesSEHTry(false),
-	HasSkippedBody(false), WillHaveBody(false), IsMultiVersion(false),
-        IsCopyDeductionCandidate(false), HasODRHash(false),
-	ODRHash(0), EndRangeLoc(NameInfo.getEndLoc()),
-	DNLoc(NameInfo.getInfo()) {}
+               bool isConstexprSpecified);
 
   using redeclarable_base = Redeclarable<FunctionDecl>;
 
@@ -2157,15 +2078,6 @@ public:
   bool isConstexpr() const { return FunctionDeclBits.IsConstexpr; }
   void setConstexpr(bool IC) { FunctionDeclBits.IsConstexpr = IC; }
 
-  /// \Wether the constexpr specifier was written explicitly or derived from
-  /// an immediate specifier.
-  bool isConstexprSpecified() const { return IsConstexprSpecified; }
-  void setConstexprSpecified(bool ICS) { IsConstexprSpecified = ICS; }
-
-  /// Whether this is an immediate constexpr function.
-  bool isImmediate() const { return IsImmediate; }
-  void setImmediate(bool II) { IsImmediate = II; }
-
   /// Whether the instantiation of this function is pending.
   /// This bit is set when the decision to instantiate this function is made
   /// and unset if and when the function body is created. That leaves out
@@ -2180,6 +2092,19 @@ public:
   /// (see instantiationIsPending)
   void setInstantiationIsPending(bool IC) {
     FunctionDeclBits.InstantiationIsPending = IC;
+  }
+
+  /// Whether this is an immediate constexpr function.
+  bool isImmediate() const { return FunctionDeclBits.IsImmediate; }
+  void setImmediate(bool II) { FunctionDeclBits.IsImmediate = II; }
+
+  /// \brief Whether the constexpr specifier was written explicitly or derived
+  /// from an immediate specifier.
+  bool isConstexprSpecified() const {
+    return FunctionDeclBits.IsConstexprSpecified;
+  }  
+  void setConstexprSpecified(bool II) {
+    FunctionDeclBits.IsConstexprSpecified = II;
   }
 
   /// Indicates the function uses __try.

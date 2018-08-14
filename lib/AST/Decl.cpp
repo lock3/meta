@@ -2634,6 +2634,8 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   setLateTemplateParsed(false);
   setConstexpr(isConstexprSpecified);
   setInstantiationIsPending(false);
+  setConstexprSpecified(false);
+  setImmediate(false);
   setUsesSEHTry(false);
   setHasSkippedBody(false);
   setWillHaveBody(false);
