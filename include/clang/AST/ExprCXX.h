@@ -4815,11 +4815,22 @@ public:
   /// \brief Returns the computed value.
   const APValue& getValue() const { return Value; }
 
-  SourceLocation getLocStart() const LLVM_READONLY { 
-    return Source->getLocStart(); 
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
   }
-  SourceLocation getLocEnd() const LLVM_READONLY {
-    return Source->getLocEnd();
+    
+  SourceLocation getBeginLoc() const LLVM_READONLY { 
+    return Source->getBeginLoc(); 
+  }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return Source->getEndLoc();
   }
 
   child_range children() { 
@@ -4878,10 +4889,19 @@ public:
   const UnresolvedLookupExpr *getReflectedDependentId() const { return
       Ref.getAsUnresolved(); }
 
-  SourceLocation getLocStart() const LLVM_READONLY { 
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const LLVM_READONLY { 
     return KWLoc; 
   }
-  SourceLocation getLocEnd() const LLVM_READONLY {
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
     return RParenLoc;
   }
 
@@ -4950,8 +4970,18 @@ public:
   /// Returns the source code location of the closing parenthesis.
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
-  SourceLocation getLocStart() const { return TraitLoc; }
-  SourceLocation getLocEnd() const { return RParenLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const { return TraitLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const { return RParenLoc; }
 
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(&Args[0]),
@@ -5000,11 +5030,20 @@ public:
     Reference = E;
   }
 
-  SourceLocation getLocStart() const LLVM_READONLY { 
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }  
+  SourceLocation getBeginLoc() const LLVM_READONLY { 
     return Loc;
   }
-  SourceLocation getLocEnd() const LLVM_READONLY {
-    return Reflection->getLocEnd();
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return Reflection->getEndLoc();
   }
 
   child_range children() { 

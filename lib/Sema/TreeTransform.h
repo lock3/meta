@@ -5608,9 +5608,13 @@ QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
   //
   // FIXME: This is totally misleading, since we are definitely going to
   // evaluate the expression (just not at runtime).
+  // FIXME: changing this due to merge conflics / make sure it's right
+  // old version:
+  // EnterExpressionEvaluationContext Unevaluated(
+  //     SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
+  //     /*IsDecltype=*/true);
   EnterExpressionEvaluationContext Unevaluated(
-      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
-      /*IsDecltype=*/true);
+      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
 
   ExprResult E = getDerived().TransformExpr(T->getReflection());
   if (E.isInvalid())
@@ -7297,10 +7301,10 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     R = Reflection(NewId.get());
   }
   
-  return RebuildCXXReflectExpr(E->getLocStart(),
+  return RebuildCXXReflectExpr(E->getBeginLoc(),
                                R.getKind(), 
                                const_cast<void*>(R.getOpaquePointer()),
-                               E->getLocEnd());
+                               E->getEndLoc());
 }
 
 template <typename Derived>

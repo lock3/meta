@@ -7917,7 +7917,7 @@ EvaluateImmediateFunction(Sema &SemaRef, Expr *E)
     return new (SemaRef.Context) CXXConstantExpr(E, std::move(Result.Val));
 
   bool IsMember = isa<CXXMemberCallExpr>(E);
-  SemaRef.Diag(E->getLocStart(), diag::err_cannot_evaluate_immedate)
+  SemaRef.Diag(E->getBeginLoc(), diag::err_cannot_evaluate_immedate)
       << IsMember << E->getSourceRange();
   for (PartialDiagnosticAt PD : Diags)
     SemaRef.Diag(PD.first, PD.second);
@@ -7947,7 +7947,7 @@ Sema::BuildConstantExpression(Expr *E)
 
   if (!OK) {
     // FIXME: Wrong error message.
-    Diag(E->getLocStart(), diag::err_expr_not_ice) << 0;
+    Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 0;
     for (auto PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();
