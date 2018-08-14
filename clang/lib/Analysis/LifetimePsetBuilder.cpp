@@ -140,18 +140,18 @@ public:
 
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
     // By the bounds profile, ArraySubscriptExpr is only allowed on arrays
-    // (not on pointers),
-    // thus the base needs to be a DeclRefExpr.
+    // (not on pointers), thus the base needs to be a DeclRefExpr.
     const auto *DeclRef =
         dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts());
 
-    auto &Ref = RefersTo[E]; // create (unknown)
+    // Unless we see the actual array, we assume it is pointer arithmetic.
+    auto &Ref = RefersTo[E];
+    Ref = PSet::invalid(InvalidationReason::PointerArithmetic(E->getExprLoc()));
     if (!DeclRef)
-      return true; // TODO diagnose violation of pointer arithmetic
+      return true;
 
     const VarDecl *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
     assert(VD);
-    // TODO otherwise diagnose pointer arithmetic violation
     if (VD->getType().getCanonicalType()->isArrayType())
       Ref = PSet::singleton(VD, false);
 
@@ -222,7 +222,6 @@ public:
     }
   }
 
-  // TODO: Why is this not called by the RecursiveASTVisitor directly?
   bool VisitBinAssign(const BinaryOperator *BO) {
     auto TC = classifyTypeCategory(BO->getType());
 
@@ -281,14 +280,12 @@ public:
     }
   }
 
-  // TODO: Why is this not called by the RecursiveASTVisitor directly?
   bool VisitUnaryAddrOf(const UnaryOperator *UO) {
     if (hasPSet(UO))
       setPSet(UO, refersTo(UO->getSubExpr()));
     return true;
   }
 
-  // TODO: Why is this not called by the RecursiveASTVisitor directly?
   bool VisitUnaryDeref(const UnaryOperator *UO) {
     auto PS = getPSet(UO->getSubExpr());
     CheckPSetValidity(PS, UO->getExprLoc());

@@ -176,10 +176,10 @@ void forbidden() {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 
   p = &i + 3;
-  //__lifetime_pset(p); // TODOexpected-warning {{pset(p) = ((invalid))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 
   int *q = &p[3];
-  //__lifetime_pset(q); // TODOexpected-warning {{pset(q) = ((invalid))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
 }
 
 void deref_array() {
