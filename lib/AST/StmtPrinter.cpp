@@ -2332,6 +2332,11 @@ void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   OS << "valueof(...)"; // TODO Finish this
 }
 
+void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
+ OS << "__fragment ";
+ Node->getFragment()->getContent()->print(OS, Policy);
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

@@ -4933,6 +4933,62 @@ public:
   }
 };
 
+/// \brief An expression that introduces a source code fragment.
+///
+/// This expression binds together two constructs: the declaration of a
+/// source code fragment, and a subexpression that computes a reflection of
+/// the fragment. For example, this expression:
+///
+///     <<struct:  int x;>>
+///
+/// introduces the fragment containing struct { int x; } and the reflection of
+/// that entity.
+///
+/// FIXME: The destination context might actually be a block statement. As in:
+/// inject a statement at the end of this block. We don't currently support
+/// that.
+class CXXFragmentExpr : public Expr {
+  /// \brief The location of the introducer token.
+  SourceLocation IntroLoc;
+
+  /// The fragment introduced by the expression.
+  CXXFragmentDecl *Fragment;
+
+  /// The expression that constructs the reflection value for the fragment.
+  Stmt *Init;
+
+  public:
+  CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
+                  CXXFragmentDecl *Fragment, Expr *Init);
+
+  explicit CXXFragmentExpr(EmptyShell Empty)
+      : Expr(CXXFragmentExprClass, Empty), IntroLoc(), Init() {}
+
+  /// \brief The introduced fragment.
+  CXXFragmentDecl *getFragment() const { return Fragment; }
+
+  /// \brief The expression that value initializes an object of this type.
+  Expr *getInitializer() const { return reinterpret_cast<Expr *>(Init); }
+
+  child_range children() {
+    return child_range(&Init, &Init + 1);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&Init, &Init + 1);
+  }
+
+  /// \brief The location of the introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getLocStart() const { return IntroLoc; }
+  SourceLocation getLocEnd() const { return IntroLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXFragmentExprClass;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

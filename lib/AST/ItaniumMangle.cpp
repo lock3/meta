@@ -3577,6 +3577,7 @@ recurse:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::FixedPointLiteralClass:
+  case Expr::CXXFragmentExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

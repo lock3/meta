@@ -1920,6 +1920,10 @@ void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }

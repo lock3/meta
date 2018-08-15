@@ -10097,6 +10097,8 @@ public:
 
   Decl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc);
   Decl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content);
+  ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
+  ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 

@@ -1479,6 +1479,11 @@ public:
   ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
     return getSema().BuildCXXUnreflexprExpression(Loc, E);
   }
+  
+  /// \brief Build a new fragment expression.
+  ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
+    return getSema().BuildCXXFragmentExpr(Loc, Fragment);
+  }
 
   /// Build a new Objective-C \@try statement.
   ///
@@ -7501,6 +7506,46 @@ TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
 
   return getDerived().RebuildCXXUnreflexprExpr(E->getExprLoc(),
                                                ReflectedDeclExpr.get());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
+  // Create the fragment declaration and its placeholders.
+  //
+  // FIXME: The instantiation of the fragment and its content should
+  // probably be managed by SubstDecl.
+  SourceLocation Loc = E->getExprLoc();
+  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc);
+  CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
+  CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
+
+  // Register captured parameters as local instantiations. Merge with the
+  // parent scope so that names used in this context can refer to declarations
+  // outside.
+  LocalInstantiationScope Scope(getSema(), true);
+  auto OldIter = OldFragment->decls_begin();
+  auto NewIter = NewFragment->decls_begin();
+  while (NewIter != NewFragment->decls_end())
+    Scope.InstantiatedLocal(*OldIter++, *NewIter++);
+
+  // Clone the underlying declaration.
+  {
+    // Arguments used to instantiate the fragment are those used to
+    // instantiate the current context.
+    NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
+    MultiLevelTemplateArgumentList Args =
+        getSema().getTemplateInstantiationArgs(Owner);
+    Decl *NewContent = 
+        getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
+    if (!NewContent)
+      return ExprError();
+    F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
+    if (!F)
+      return ExprError();
+  }
+
+  return getDerived().RebuildCXXFragmentExpr(Loc, F);
 }
 
 // Objective-C Statements.

@@ -199,6 +199,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
+  case Expr::CXXFragmentExprClass:
     return Cl::CL_PRValue;
 
   case Expr::ConstantExprClass:

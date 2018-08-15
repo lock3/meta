@@ -1563,3 +1563,14 @@ CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
     KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
   std::copy(Args.begin(), Args.end(), this->Args);
 }
+
+// FIXME: Can a fragment be value dependent?
+CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, 
+                                 QualType T, CXXFragmentDecl *Frag, Expr *E)
+  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary, 
+         /*TD=*/T->isDependentType(),
+         /*VD=*/false,
+         /*ID=*/false, 
+         /*ContainsUnexpandedParameterPack=*/false), 
+    IntroLoc(IntroLoc), Fragment(Frag), Init(E) {
+}
