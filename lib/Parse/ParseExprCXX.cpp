@@ -1792,12 +1792,10 @@ Decl *Parser::ParseCXXFragment() {
 
     default:
       break;
-
-    Diag(Tok.getLocation(), diag::err_expected_fragment);
-    SkipUntil(tok::semi);
-    return nullptr;
   }
 
+  Diag(Tok.getLocation(), diag::err_expected_fragment);
+  SkipUntil(tok::semi);
   return nullptr;
 }
 
