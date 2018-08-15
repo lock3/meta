@@ -1309,10 +1309,13 @@ class DeclContext {
     /// DeclContext scope (for example TranslationUnit). Used in
     /// LookupQualifiedName()
     mutable uint64_t UseQualifiedLookup : 1;
+
+    /// If \c true, this declaration context is an injectable fragment.
+    mutable uint64_t Fragment : 1;
   };
 
   /// Number of bits in DeclContextBitfields.
-  enum { NumDeclContextBits = 13 };
+  enum { NumDeclContextBits = 14 };
 
   /// Stores the bits used by TagDecl.
   /// If modified NumTagDeclBits and the accessor
@@ -2347,6 +2350,14 @@ public:
 
   bool shouldUseQualifiedLookup() const {
     return DeclContextBits.UseQualifiedLookup;
+  }
+
+  bool isFragment() const {
+    return DeclContextBits.Fragment;
+  }
+
+  void setFragment(bool F = true) {
+    DeclContextBits.Fragment = F;
   }
 
   static bool classof(const Decl *D);
