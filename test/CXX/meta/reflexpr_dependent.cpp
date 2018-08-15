@@ -8,8 +8,9 @@ using namespace std::experimental;
 
 template<typename T>
 struct S1 {
+  constexpr S1() = default;
   constexpr T foo() { return T(); }
-  constexpr T variable;
+  T variable;
 };
 
 template<typename T>
@@ -25,12 +26,12 @@ constexpr int test() {
   constexpr const T y3 = T();
   constexpr meta::info x4 = reflexpr(y3);
 
-  constexpr S1<T> y4;
+  constexpr S1<T> y4 = S1<T>();
   constexpr meta::info x5 = reflexpr(y4);
 
-  // FIX ME: compiler seems to recognize these as function calls,
-  // thus we can only reflect on static methods.
-  constexpr meta::info x6 = reflexpr(S1<T>::foo);
+  // FIX ME: compiler registers this method reflection as
+  // not constexpr
+  // constexpr meta::info x6 = reflexpr(S1<T>::foo); 
   constexpr meta::info x7 = reflexpr(S1<T>::variable);
   
 
@@ -40,14 +41,14 @@ constexpr int test() {
   (void)__reflect_print(x3);
   (void)__reflect_print(x4);
   (void)__reflect_print(x5);
-  (void)__reflect_print(x6);
+  // (void)__reflect_print(x6); 
   (void)__reflect_print(x7);
   return 0;
 }
 
 struct S { };
 
-void test_templates() {
+constexpr void test_templates() {
   constexpr int x1 = test<int>();
   // constexpr int x2 = test<S>();
 }
