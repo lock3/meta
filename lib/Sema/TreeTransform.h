@@ -7220,7 +7220,7 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
 {
-  llvm::outs() << "Transform\n";
+  // llvm::outs() << "Transform\n";
   Reflection R;
   if (const Decl *D = E->getReflectedDeclaration()) {
     // We can't just call TransformDecl. That's not guaranteed to perform
@@ -7260,11 +7260,68 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     QualType NewType = TransformType(QualType(T, 0));
     R = Reflection(NewType.getTypePtr());
   } else if (UnresolvedLookupExpr *ULE = const_cast<UnresolvedLookupExpr*>(E->getReflectedDependentId())) {
-    llvm::outs() << "ULE has not been transformed.\n";
-    ExprResult NewId = getDerived().TransformUnresolvedLookupExpr(ULE);
+    // llvm::outs() << "ULE has not been transformed.\n";
+    LookupResult Res(SemaRef, ULE->getName(), ULE->getNameLoc(),
+		     Sema::LookupOrdinaryName);
 
-    // LookupResult Res(SemaRef, ULE->getName(), ULE->getNameLoc(),
-    //              Sema::LookupOrdinaryName);
+    // Transform the declaration set.
+    if (TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
+      return ExprError();
+
+    NestedNameSpecifierLoc OldNNS = ULE->getQualifierLoc();
+    // DeclarationNameInfo& OldName = const_cast<DeclarationNameInfo&>(ULE->getNameInfo());
+
+    NestedNameSpecifierLoc NewNNS =
+      getDerived().TransformNestedNameSpecifierLoc(OldNNS);
+    // DeclarationNameInfo NewName = getDerived().TransformDeclarationNameInfo(OldName);
+
+
+    // llvm::outs() << "New NNS: ";
+    // NewNNS.getNestedNameSpecifier()->dump();
+    // llvm::outs() << "\nNew DNI: " << NewName.getAsString() << '\n';
+
+    // llvm::outs() << "ULE Class: " << ULE->getStmtClassName() << '\n';
+
+    // llvm::outs() << "DNI Type:\n";
+    // NewName.getNamedTypeInfo()->getType().dump();
+    // llvm::outs() << '\n';
+
+    CXXScopeSpec SS;
+    SS.Adopt(NewNNS);
+
+    // ExprResult NewEx = getDerived().RebuildDeclarationNameExpr(SS, Res, ULE->requiresADL());
+    // llvm::outs() << "NewEx:\n";
+    // NewEx.get()->dump();
+
+    // llvm::outs() << "Type of ULE:\n";
+    // NewNNS.getTypeLoc().getType().dump();
+
+    DeclaratorDecl *D = Res.getAsSingle<DeclaratorDecl>();
+    D->setQualifierInfo(NewNNS);
+    D->setType(NewNNS.getTypeLoc().getType());
+    // if(D) {
+    //   llvm::outs() << "DeclaratorDecl: " << D->getDeclKindName() << '\n';      
+    //   D->dump();
+    // }
+    // else
+    //   llvm::outs() << "NamedDecl null\n";
+    // ExprResult NewExpr = getDerived().RebuildDeclarationNameExpr(SS, Res, ULE->requiresADL());
+    // llvm::outs() << "NewExpr:\n";
+    // NewExpr.get()->dump();
+    
+
+    // LookupResult Res(getSema(), NewName.getName().getAsIdentifierInfo(), NewName.getLoc(),
+    // 		     Sema::LookupAnyName);
+    // NamedDecl* Dec = Res.getAsSingle<NamedDecl>();
+    // llvm::outs() << "Named Decl.\n";
+    // Dec->dump();
+
+    // ExprResult NewId = getDerived().TransformUnresolvedLookupExpr(ULE);
+    // return RebuildCXXReflectExpr(SourceLocation(), REK_declaration, D,
+    // 				 SourceLocation());
+    
+
+
 
     // // Transform the declaration set.
     // if (TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
@@ -7291,14 +7348,15 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
       // 						       /*isKnownInstance=*/false,
       // 						       /*Scope=*/nullptr);
       
-    llvm::outs() << "ULE has been transformed.\n";
+    // llvm::outs() << "ULE has been transformed.\n";
 
 
 
-    if(NewId.isInvalid())
-      return ExprError();
+    // if(NewId.isInvalid())
+    //   return ExprError();
     
-    R = Reflection(NewId.get());
+    // R = Reflection(NewId.get());
+    R = Reflection(D);
   }
   
   return RebuildCXXReflectExpr(E->getBeginLoc(),
@@ -10660,8 +10718,7 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
                                                      /*TemplateArgs=*/nullptr,
                                                      /*Scope=*/nullptr);
     }
-
-    return getDerived().RebuildDeclarationNameExpr(SS, R, Old->requiresADL());
+    return getDerived().RebuildDeclarationNameExpr(SS, R, Old->requiresADL()); 
   }
   // If we have template arguments, rebuild them, then rebuild the
   // templateid expression.
