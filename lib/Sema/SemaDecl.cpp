@@ -15037,6 +15037,10 @@ CreateNewDecl:
   }
 }
 
+void Sema::StartDefinition(TagDecl *D) {
+  D->startDefinition();
+}
+
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);

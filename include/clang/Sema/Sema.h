@@ -2295,6 +2295,8 @@ public:
                    ArrayRef<Decl *> Fields, SourceLocation LBrac,
                    SourceLocation RBrac, const ParsedAttributesView &AttrList);
 
+  void StartDefinition(TagDecl *D);
+
   /// ActOnTagStartDefinition - Invoked when we have entered the
   /// scope of a tag's definition (e.g., for an enumeration, class,
   /// struct, or union).
