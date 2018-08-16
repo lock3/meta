@@ -209,8 +209,6 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
       Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false, 
                                           VD->getType(), VK_RValue, KWLoc);
       IsValueDependent = E->isTypeDependent() || E->isValueDependent();
-      llvm::outs() << "Reflected Declaration:\n";
-      VD->dump();
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       // A reflection of a type declaration is dependent if that type is
       // dependent.
