@@ -15049,7 +15049,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   // Build our new class implicit class to hold our fragment info.
   CXXRecordDecl *Class = CXXRecordDecl::Create(
-      Context, TTK_Class, CurContext, Loc, Loc, nullptr, nullptr);
+      Context, TTK_Class, FD, Loc, Loc, nullptr, nullptr);
   Class->setImplicit(true);
   StartDefinition(Class);
   QualType ClassTy = Context.getRecordType(Class);

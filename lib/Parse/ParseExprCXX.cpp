@@ -1742,7 +1742,7 @@ Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
   Decl *Class = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
                                  ClassKeyLoc, SS,
                                  /*Id=*/nullptr, IdLoc,
-                                 /*AttributeList=*/nullptr,
+                                 ParsedAttributesView(),
                                  /*AccessSpecifier=*/AS_none,
                                  /*ModulePrivateLoc=*/SourceLocation(),
                                  MTP, IsOwned, IsDependent,
