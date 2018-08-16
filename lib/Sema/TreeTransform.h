@@ -7265,9 +7265,10 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
 		     Sema::LookupOrdinaryName);
 
     // Transform the declaration set.
-    if (TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
+    if (getDerived().TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
       return ExprError();
 
+    // FIXME: could this be a type decl?
     DeclaratorDecl *D = Res.getAsSingle<DeclaratorDecl>();
 
     // Determine and set the substituted type.
@@ -7278,9 +7279,18 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
 
     D->setQualifierInfo(NewNNS);
     D->setType(NewNNS.getTypeLoc().getType());
+
+    getDerived().TransformDecl(D->getLocation(), D);
+      
+    // if(Stmt* Body = D->getBody()) {
+      // getDerived().TransformDefinition(D->getLocation(), D);
+      // getDerived().TransformStmt(Body);
+    // }  
     
     R = Reflection(D);
   }
+
+  llvm::outs() << "End transformation\n";
   
   return RebuildCXXReflectExpr(E->getBeginLoc(),
                                R.getKind(), 
@@ -10618,8 +10628,8 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   if (Old->getNamingClass()) {
     CXXRecordDecl *NamingClass
       = cast_or_null<CXXRecordDecl>(getDerived().TransformDecl(
-                                                            Old->getNameLoc(),
-                                                        Old->getNamingClass()));
+							       Old->getNameLoc(),
+							       Old->getNamingClass()));
     if (!NamingClass) {
       R.clear();
       return ExprError();
