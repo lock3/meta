@@ -60,7 +60,6 @@ ExprResult Parser::ParseCXXReflectExpression() {
 
   NestedNameSpecifier* NNS = SS.getScopeRep();
   if(!SS.isInvalid() && NNS && NNS->isDependent()) {
-    llvm::outs() << "mmama mia\n";
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();
     if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))

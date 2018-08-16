@@ -15,34 +15,34 @@ struct S1 {
 
 template<typename T>
 constexpr int test() {
-  constexpr meta::info x1 = reflexpr(T);
+  // constexpr meta::info x1 = reflexpr(T);
   
-  constexpr T* y1 = nullptr;
-  constexpr meta::info x2 = reflexpr(y1);
+  // constexpr T* y1 = nullptr;
+  // constexpr meta::info x2 = reflexpr(y1);
 
-  constexpr T y2 = T();
-  constexpr meta::info x3 = reflexpr(y2);
+  // constexpr T y2 = T();
+  // constexpr meta::info x3 = reflexpr(y2);
 
-  constexpr const T y3 = T();
-  constexpr meta::info x4 = reflexpr(y3);
+  // constexpr const T y3 = T();
+  // constexpr meta::info x4 = reflexpr(y3);
 
-  constexpr S1<T> y4 = S1<T>();
-  constexpr meta::info x5 = reflexpr(y4);
+  // constexpr S1<T> y4 = S1<T>();
+  // constexpr meta::info x5 = reflexpr(y4);
 
   // FIX ME: compiler registers this method reflection as
   // not constexpr
-  // constexpr meta::info x6 = reflexpr(S1<T>::foo); 
-  constexpr meta::info x7 = reflexpr(S1<T>::variable);
+  constexpr meta::info x6 = reflexpr(S1<T>::foo); 
+  // constexpr meta::info x7 = reflexpr(S1<T>::variable);
   
 
   // Generate output
-  (void)__reflect_print(x1);
-  (void)__reflect_print(x2);
-  (void)__reflect_print(x3);
-  (void)__reflect_print(x4);
-  (void)__reflect_print(x5);
+  // (void)__reflect_print(x1);
+  // (void)__reflect_print(x2);
+  // (void)__reflect_print(x3);
+  // (void)__reflect_print(x4);
+  // (void)__reflect_print(x5);
   // (void)__reflect_print(x6); 
-  (void)__reflect_print(x7);
+  // (void)__reflect_print(x7);
   return 0;
 }
 

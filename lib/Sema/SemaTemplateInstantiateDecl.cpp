@@ -1902,6 +1902,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     }
   }
 
+
   SmallVector<ParmVarDecl *, 4> Params;
   TypeSourceInfo *TInfo = SubstFunctionType(D, Params);
   if (!TInfo)
@@ -2009,7 +2010,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     // Record that this is an instantiation of a member function.
     Method->setInstantiationOfMemberFunction(D, TSK_ImplicitInstantiation);
   }
-
   // If we are instantiating a member function defined
   // out-of-line, the instantiation will have the same lexical
   // context (which will be a namespace scope) as the template.
@@ -2045,7 +2045,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     if (Previous.isSingleTagDecl())
       Previous.clear();
   }
-
   if (!IsClassScopeSpecialization)
     SemaRef.CheckFunctionDeclaration(nullptr, Method, Previous, false);
 
@@ -2069,7 +2068,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     SemaRef.SetDeclDefaulted(Method, Method->getLocation());
   if (D->isDeletedAsWritten())
     SemaRef.SetDeclDeleted(Method, Method->getLocation());
-
   // If there's a function template, let our caller handle it.
   if (FunctionTemplate) {
     // do nothing
@@ -3402,7 +3400,7 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
 
   CXXRecordDecl *ThisContext = nullptr;
   unsigned ThisTypeQuals = 0;
-  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D)) {
+  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D)) {    
     ThisContext = cast<CXXRecordDecl>(Owner);
     ThisTypeQuals = Method->getTypeQualifiers();
   }

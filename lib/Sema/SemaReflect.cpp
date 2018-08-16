@@ -155,47 +155,7 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
     return false;
   }
 
-  // Decl* D = R.getAsSingle<Decl>();
-  // if(CXXMethodDecl* MD = dyn_cast<CXXMethodDecl>(D)) {
-  //   llvm::UnresolvedSet set;
-  //   set.push(Ref);
-    
-  //   Entity =
-  //     UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
-  // 				   SS.getWithLocInContext(Context),
-  // 				   DNI, /*ADL=*/false, /*NeedsOverload=*/false,
-  // 				   set.begin(),
-  // 				   set.end());
-  //   Kind = REK_statement;
-  //   return true;
-    
-  // }
-    
-
   const auto &decls = R.asUnresolvedSet();
-
-  // For data members and member functions, adjust the expression so that
-  // we evaluate a pointer-to-member, not the member itself.
-  // if (FieldDecl *FD = dyn_cast<FieldDecl>(VD)) {
-  //   const Type *C = Context.getTagDeclType(FD->getParent()).getTypePtr();
-  //   QualType PtrTy = Context.getMemberPointerType(FD->getType(), C);
-  //   Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
-  //                                     OK_Ordinary, Loc, false);
-  // } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(VD)) {
-  //   const Type *C = Context.getTagDeclType(MD->getParent()).getTypePtr();
-  //   QualType PtrTy = Context.getMemberPointerType(MD->getType(), C);
-  //   Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue, 
-  //                                     OK_Ordinary, Loc, false);
-  // }
-
-  // for(auto D : decls) {
-  //   DeclContext *DC = getFunctionLevelDeclContext();
-  //   // if(CXXMethodDecl* MD = dyn_cast<CXXMethodDecl*>(DC)) {
-  //     // MD->setReflectionParameter();
-  //     cast<CXXMethodDecl>(DC)->setReflectionParameter();
-  //     llvm::outs() << "Set Reflection Parameter.\n";
-  //   // }
-  // }
 
   Entity =
     UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
@@ -249,6 +209,8 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
       Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false, 
                                           VD->getType(), VK_RValue, KWLoc);
       IsValueDependent = E->isTypeDependent() || E->isValueDependent();
+      llvm::outs() << "Reflected Declaration:\n";
+      VD->dump();
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       // A reflection of a type declaration is dependent if that type is
       // dependent.
@@ -299,7 +261,7 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
 
   // FIXME: We should cache meta::info and simply compare against that.
   if (Source != Expected) {
-    SemaRef.Diag(E->getLocStart(), diag::err_reflection_trait_wrong_type) 
+    SemaRef.Diag(E->getBeginLoc(), diag::err_reflection_trait_wrong_type) 
         << Source;
     return false;
   }
