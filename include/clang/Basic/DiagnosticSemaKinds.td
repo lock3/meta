@@ -2456,8 +2456,8 @@ def err_immediate_redecl_mismatch : Error<
   "|constexpr declaration of %0 follows constexpr! declaration"
   "|constexpr! declaration of %0 follows non-constexpr! declaration}1">;
 def err_invalid_immediate : Error<
-  "%select{function parameter|typedef|non-static data member}0 "
-  "cannot be immediate">;
+  "%select{function parameter|function pointer}0 "
+  "cannot be immediate">;  
 
 // Reflection
 def err_need_header_before_reflexpr : Error<
