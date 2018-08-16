@@ -2295,6 +2295,7 @@ public:
                    ArrayRef<Decl *> Fields, SourceLocation LBrac,
                    SourceLocation RBrac, const ParsedAttributesView &AttrList);
 
+  /// \brief Calls D->startDefinition().
   void StartDefinition(TagDecl *D);
 
   /// \brief Calls D->CompletedDefinition().
