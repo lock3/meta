@@ -4981,8 +4981,8 @@ class CXXFragmentExpr : public Expr {
   /// \brief The location of the introducer token.
   SourceLocation getIntroLoc() const { return IntroLoc; }
 
-  SourceLocation getLocStart() const { return IntroLoc; }
-  SourceLocation getLocEnd() const { return IntroLoc; }
+  SourceLocation getBeginLoc() const { return IntroLoc; }
+  SourceLocation getEndLoc() const { return IntroLoc; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXFragmentExprClass;
