@@ -12462,6 +12462,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (DS.isConstexprSpecified())
     Diag(DS.getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 0;
+  if (DS.isImmediateSpecified())
+    Diag(DS.getImmediateSpecLoc(), diag::err_invalid_immediate)
+      << 0;
 
   DiagnoseFunctionSpecifiers(DS);
 
