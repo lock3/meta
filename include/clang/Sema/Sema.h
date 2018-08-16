@@ -2297,6 +2297,9 @@ public:
 
   void StartDefinition(TagDecl *D);
 
+  /// \brief Calls D->CompletedDefinition().
+  void CompleteDefinition(RecordDecl *D);
+
   /// ActOnTagStartDefinition - Invoked when we have entered the
   /// scope of a tag's definition (e.g., for an enumeration, class,
   /// struct, or union).

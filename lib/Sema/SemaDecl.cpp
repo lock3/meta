@@ -15041,6 +15041,10 @@ void Sema::StartDefinition(TagDecl *D) {
   D->startDefinition();
 }
 
+void Sema::CompleteDefinition(RecordDecl *D) {
+  D->completeDefinition();
+}
+
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
