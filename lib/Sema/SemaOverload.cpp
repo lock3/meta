@@ -9487,6 +9487,14 @@ static bool checkAddressOfFunctionIsAvailable(Sema &S, const FunctionDecl *FD,
     return false;
   }
 
+  if (FD->isImmediate()) {
+    // This is not bounded by Complain since there is no case
+    // where one can take the address of an immediate function.
+    S.Diag(Loc,
+	   diag::err_invalid_immediate) << 1;
+    return false;
+  }
+
   auto I = llvm::find_if(FD->parameters(), [](const ParmVarDecl *P) {
     return P->hasAttr<PassObjectSizeAttr>();
   });
