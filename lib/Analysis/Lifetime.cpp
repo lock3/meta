@@ -106,6 +106,7 @@ public:
     AC.getCFGBuildOptions().AddCXXNewAllocator = true;
     // TODO AddTemporaryDtors
     // TODO AddEHEdges
+    AC.getCFGBuildOptions().setAllAlwaysAdd();
     ControlFlowGraph = AC.getCFG();
     // dumpCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());

@@ -10,7 +10,7 @@
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/StmtVisitor.h"
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/CFG.h"
 
@@ -49,7 +49,7 @@ static bool isPointer(const Expr *E) {
 // Diagnose: static_cast to lvalue ref
 // TODO: handle
 // - CXXDefaultArgExpr
-class PSetsBuilder : public RecursiveASTVisitor<PSetsBuilder> {
+class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, bool> {
 
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
@@ -86,6 +86,14 @@ public:
     }
   }
 
+  bool VisitDeclStmt(const DeclStmt* DS) {
+    for (const auto *DeclIt : DS->decls()) {
+      if (const auto *VD = dyn_cast<VarDecl>(DeclIt))
+        return VisitVarDecl(VD);
+    }
+    return true;
+  }
+
   bool VisitImplicitCastExpr(const ImplicitCastExpr *E) {
     if (E->getCastKind() == CK_NullToPointer)
       setPSet(E, PSet::null(E->getExprLoc()));
@@ -93,7 +101,7 @@ public:
     return true;
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *DeclRef) {
+  bool VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
     auto varRefersTo = [this](QualType QT, Variable V) {
       if (QT->isLValueReferenceType())
         return getPSet(V);
@@ -235,21 +243,6 @@ public:
     }
 
     RefersTo[BO] = refersTo(BO->getLHS());
-    return true;
-  }
-
-  bool TraverseBinaryOperator(BinaryOperator *BO) {
-    // Logical and, or have short circuit which is represented in the CFG.
-    // We do not need to traverse the AST further.
-    auto OpCode = BO->getOpcode();
-    if (OpCode == BO_LAnd || OpCode == BO_LOr)
-      return true;
-    return RecursiveASTVisitor<PSetsBuilder>::TraverseBinaryOperator(BO);
-  }
-
-  bool TraverseConditionalOperator(const ConditionalOperator *) {
-    // This is already split into parts in the CFG, no need to traverse again
-    // here.
     return true;
   }
 
@@ -963,19 +956,19 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
                               llvm::Optional<PSetsMap> &FalseBranchExitPMap) {
-  for (auto i = B.begin(); i != B.end(); ++i) {
-    const CFGElement &E = *i;
+  for (const auto &E : B) {
     switch (E.getKind()) {
     case CFGElement::Statement: {
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
-      TraverseStmt(const_cast<Stmt *>(S));
+      Visit(S);
       /*llvm::errs() << "TraverseStmt\n";
       S->dump();
       llvm::errs() << "\n";*/
 
       // Kill all temporaries that vanish at the end of the full expression
-      invalidateOwner(Variable::temporary(), 0,
-                      InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+      if (isa<ExprWithCleanups>(S))
+        invalidateOwner(Variable::temporary(), 0,
+                        InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
 
       break;
     }
