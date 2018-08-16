@@ -1812,7 +1812,7 @@ ExprResult Parser::ParseCXXFragmentExpression() {
   if (!Fragment)
     return ExprError();
 
-  return ExprResult();
+  return Actions.ActOnCXXFragmentExpr(Loc, Fragment);
 }
 
 /// ParseCXXCondition - if/switch/while condition expression.
