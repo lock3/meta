@@ -38,8 +38,23 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
 
   SourceLocation ClassKeyLoc = ConsumeToken();
 
-  // Build a tag type for the injected class.
+  // FIXME: We could accept an idexpr here, except that those names aren't
+  // exported. They're really only meant to be used for self-references
+  // within the fragment.
+  if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
+    Diag(Tok.getLocation(), diag::err_expected) << "class-fragment";
+    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
+    return nullptr;
+  }
+
+  IdentifierInfo *Id = nullptr;
   SourceLocation IdLoc;
+  if (Tok.is(tok::identifier)) {
+    Id = Tok.getIdentifierInfo();
+    IdLoc = ConsumeToken();
+  }
+
+  // Build a tag type for the injected class.
   CXXScopeSpec SS;
   MultiTemplateParamsArg MTP;
   bool IsOwned;
@@ -47,7 +62,7 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   TypeResult UnderlyingType;
   Decl *Class = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
                                  ClassKeyLoc, SS,
-                                 /*Id=*/nullptr, IdLoc,
+                                 Id, IdLoc,
                                  ParsedAttributesView(),
                                  /*AccessSpecifier=*/AS_none,
                                  /*ModulePrivateLoc=*/SourceLocation(),
