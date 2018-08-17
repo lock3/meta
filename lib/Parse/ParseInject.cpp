@@ -60,7 +60,7 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   bool IsOwned;
   bool IsDependent;
   TypeResult UnderlyingType;
-  Decl *Class = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
+  Decl *ClassDecl = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
                                  ClassKeyLoc, SS,
                                  Id, IdLoc,
                                  ParsedAttributesView(),
@@ -77,9 +77,9 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   // Parse the class definition.
   ParsedAttributesWithRange PA(AttrFactory);
   ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
-                              Class);
+                              ClassDecl);
 
-  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Class);
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, ClassDecl);
 }
 
 /// ParseCXXFragment
