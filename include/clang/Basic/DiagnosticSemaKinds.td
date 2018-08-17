@@ -2452,8 +2452,7 @@ def err_immediate_dtor : Error<
 def err_cannot_evaluate_immedate : Error<
   "cannot evaluate call to constexpr! %select{function|member function}0">;
 def err_immediate_redecl_mismatch : Error<
-  "%select{constexpr! declaration of %0 follows constexpr declaration"
-  "|constexpr declaration of %0 follows constexpr! declaration"
+  "%select{non-constexpr! declaration of %0 follows constexpr! declaration"
   "|constexpr! declaration of %0 follows non-constexpr! declaration}1">;
 def err_invalid_immediate : Error<
   "%select{function parameter|function pointer}0 "
