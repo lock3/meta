@@ -11,6 +11,7 @@
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 
 #include "clang/Basic/SourceLocation.h"
+#include "llvm/ADT/STLExtras.h"
 #include <string>
 
 namespace clang {
@@ -19,9 +20,12 @@ class ASTContext;
 class SourceManager;
 class VarDecl;
 class Sema;
+class QualType;
 
 namespace lifetime {
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
+
+using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
 class LifetimeReporterBase {
 public:
@@ -49,7 +53,7 @@ public:
 };
 
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter);
+                 LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible);
 } // namespace lifetime
 } // namespace clang
 

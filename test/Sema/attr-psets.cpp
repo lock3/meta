@@ -672,6 +672,12 @@ void return_pointer() {
 
   auto *pmem2 = v1p->data();
   __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = (v1')}}
+
+  int *g(int *, float *);
+  int a;
+  float b;
+  int *q = g(&a, &b);
+  __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
 }
 
 void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {

@@ -97,8 +97,6 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return {};
 }
 
-/// Returns the type category of the given type
-/// If T is a template specialization, it must be instantiated.
 TypeCategory classifyTypeCategory(QualType QT) {
   /*
           llvm::errs() << "classifyTypeCategory\n ";
@@ -210,11 +208,6 @@ bool isNullableType(QualType QT) {
   return QT.getCanonicalType()->isPointerType();
 }
 
-// For primitive types like pointers, references we return the pointee.
-// For user defined types the pointee type is determined by the return
-// type of operator*, operator-> or operator[]. Since these methods
-// might return references, and operator-> returns a pointers, we strip
-// off one extra level of pointers sometimes.
 QualType getPointeeType(QualType QT) {
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
@@ -231,6 +224,20 @@ QualType getPointeeType(QualType QT) {
     }
   }
   return {};
+}
+
+QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx) {
+  if (QT->isReferenceType())
+    QT = QT->getPointeeType();
+  assert(classifyTypeCategory(QT) == TypeCategory::Owner);
+  QualType Pointee = getPointeeType(QT);
+  return Ctx.getPointerType(Pointee);
+}
+
+QualType normalizeType(QualType QT, ASTContext &Ctx) {
+  if (QT->isReferenceType())
+    return Ctx.getPointerType(QT->getPointeeType());
+  return QT;
 }
 } // namespace lifetime
 } // namespace clang
