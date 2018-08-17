@@ -33,6 +33,15 @@ QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx);
 
 // Normalizes references to pointers.
 QualType normalizeType(QualType QT, ASTContext &Ctx);
+
+struct CallTypes {
+  const FunctionProtoType *FTy = nullptr;
+  const CXXRecordDecl *ClassDecl = nullptr;
+};
+
+/// Obtains the function prototype (without 'this' pointer) and the type of
+/// the object (if MemberCallExpr).
+CallTypes getCallTypes(const Expr *CalleeE);
 } // namespace lifetime
 } // namespace clang
 

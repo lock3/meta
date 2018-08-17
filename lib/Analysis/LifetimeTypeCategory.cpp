@@ -239,5 +239,41 @@ QualType normalizeType(QualType QT, ASTContext &Ctx) {
     return Ctx.getPointerType(QT->getPointeeType());
   return QT;
 }
+
+CallTypes getCallTypes(const Expr *CalleeE) {
+  CallTypes CT;
+
+  if (CalleeE->hasPlaceholderType(BuiltinType::BoundMember)) {
+    CalleeE = CalleeE->IgnoreParenImpCasts();
+    if (const auto *BinOp = dyn_cast<BinaryOperator>(CalleeE)) {
+      auto MemberPtr = BinOp->getRHS()->getType()->castAs<MemberPointerType>();
+      CT.FTy = MemberPtr->getPointeeType()
+                   .IgnoreParens()
+                   ->getAs<FunctionProtoType>();
+      CT.ClassDecl = MemberPtr->getClass()->getAsCXXRecordDecl();
+    } else if (const auto *ME = dyn_cast<MemberExpr>(CalleeE)) {
+      CT.FTy = dyn_cast<FunctionProtoType>(ME->getMemberDecl()->getType());
+      auto ClassType = ME->getBase()->getType();
+      if (ClassType->isPointerType())
+        ClassType = ClassType->getPointeeType();
+      CT.ClassDecl = ClassType->getAsCXXRecordDecl();
+    } else {
+      CalleeE->dump();
+      llvm_unreachable("not a binOp after boundMember");
+    }
+    assert(CT.FTy);
+    assert(CT.ClassDecl);
+    return CT;
+  }
+
+  const auto *P =
+      dyn_cast<PointerType>(CalleeE->getType()->getUnqualifiedDesugaredType());
+  assert(P);
+  CT.FTy = dyn_cast<FunctionProtoType>(
+      P->getPointeeType()->getUnqualifiedDesugaredType());
+
+  assert(CT.FTy);
+  return CT;
+}
 } // namespace lifetime
 } // namespace clang

@@ -372,54 +372,6 @@ public:
     }
   }
 
-  struct CallTypes {
-    const FunctionProtoType *FTy = nullptr;
-    const CXXRecordDecl *ClassDecl = nullptr;
-  };
-
-  /// Obtains the function prototype (without 'this' pointer) and the type of
-  /// the object (if MemberCallExpr).
-  CallTypes GetCallTypes(const Expr *CalleeE) {
-    CallTypes CT;
-
-    if (CalleeE->hasPlaceholderType(BuiltinType::BoundMember)) {
-      CalleeE = CalleeE->IgnoreParenImpCasts();
-      if (const auto *BinOp = dyn_cast<BinaryOperator>(CalleeE)) {
-        auto MemberPtr =
-            BinOp->getRHS()->getType()->castAs<MemberPointerType>();
-        CT.FTy = dyn_cast<FunctionProtoType>(
-            MemberPtr->getPointeeType().IgnoreParens().getTypePtr());
-        CT.ClassDecl = MemberPtr->getClass()->getAsCXXRecordDecl();
-        assert(CT.FTy);
-        assert(CT.ClassDecl);
-        return CT;
-      }
-
-      if (const auto *ME = dyn_cast<MemberExpr>(CalleeE)) {
-        CT.FTy = dyn_cast<FunctionProtoType>(ME->getMemberDecl()->getType());
-        auto ClassType = ME->getBase()->getType();
-        if (ClassType->isPointerType())
-          ClassType = ClassType->getPointeeType();
-        CT.ClassDecl = ClassType->getAsCXXRecordDecl();
-        assert(CT.FTy);
-        assert(CT.ClassDecl);
-        return CT;
-      }
-
-      CalleeE->dump();
-      llvm_unreachable("not a binOp after boundMember");
-    }
-
-    auto *P = dyn_cast<PointerType>(
-        CalleeE->getType()->getUnqualifiedDesugaredType());
-    assert(P);
-    CT.FTy = dyn_cast<FunctionProtoType>(
-        P->getPointeeType()->getUnqualifiedDesugaredType());
-
-    assert(CT.FTy);
-    return CT;
-  }
-
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
   std::vector<CallArgument>
@@ -495,7 +447,7 @@ public:
       return true;
 
     auto *CalleeE = CallE->getCallee();
-    CallTypes CT = GetCallTypes(CalleeE);
+    CallTypes CT = getCallTypes(CalleeE);
     CallArguments Args;
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
       const Expr *Arg = CallE->getArg(i);
