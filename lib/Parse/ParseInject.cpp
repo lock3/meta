@@ -19,7 +19,7 @@
 using namespace clang;
 
 /// ParseCXXClassFragment
-Decl *Parser::ParseCXXClassFragment(Decl* Fragment) {
+Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
          "expected 'struct', 'class', or 'union'");
 

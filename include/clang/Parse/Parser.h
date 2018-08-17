@@ -2792,8 +2792,8 @@ private:
   ParsedTemplateArgument ParseReflectedTemplateArgument();
 
   // C++ Code Fragments
-  Decl* ParseCXXClassFragment(Decl* Fragment);
-  Decl* ParseCXXFragment();
+  Decl *ParseCXXClassFragment(Decl *Fragment);
+  Decl *ParseCXXFragment();
   ExprResult ParseCXXFragmentExpression();
 
   //===--------------------------------------------------------------------===//
