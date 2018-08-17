@@ -18,6 +18,11 @@
 
 using namespace clang;
 
+/// ParseCXXNamespaceFragment
+Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
+  return nullptr;
+}
+
 /// ParseCXXClassFragment
 Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
@@ -78,7 +83,7 @@ Decl *Parser::ParseCXXFragment() {
 
   switch (Tok.getKind()) {
     case tok::kw_namespace:
-      llvm_unreachable("namespace fragments not implemented");
+      return ParseCXXNamespaceFragment(Fragment);
 
     case tok::kw_struct:
     case tok::kw_class:
