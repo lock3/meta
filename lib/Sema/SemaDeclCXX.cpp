@@ -642,6 +642,8 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
   if (New->isImmediate() != Old->isImmediate()) {
     Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
       << New << New->isImmediate();
+    Diag(Old->getLocation(), diag::note_previous_declaration);
+    Invalid = true;
   } else if (New->isConstexpr() != Old->isConstexpr()) {
     Diag(New->getLocation(), diag::err_constexpr_redecl_mismatch)
       << New << New->isImmediate();
