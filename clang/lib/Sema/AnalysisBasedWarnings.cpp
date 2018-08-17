@@ -35,6 +35,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/Overload.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "llvm/ADT/BitVector.h"
@@ -2268,9 +2269,21 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
+    auto isConvertible = [this](QualType From, QualType To) {
+      if (From->isReferenceType())
+        From = From->getPointeeType();
+      if (To->isReferenceType())
+        To = To->getPointeeType();
+      OpaqueValueExpr Expr(SourceLocation{}, From, VK_RValue);
+      ImplicitConversionSequence ICS = S.TryImplicitConversion(
+        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+        /*InOverloadResolution=*/false, /*CStyle=*/false,
+        /*AllowObjCWritebackConversion=*/false);
+      return !ICS.isFailure();
+    };
     lifetime::Reporter Reporter{S};
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
-      lifetime::runAnalysis(FD, S.Context, Reporter);
+      lifetime::runAnalysis(FD, S.Context, Reporter, isConvertible);
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getBeginLoc()) ||

@@ -49,6 +49,7 @@ class LifetimeContext {
   std::vector<BlockContext> BlockContexts;
   AnalysisDeclContext AC;
   LifetimeReporterBase &Reporter;
+  IsConvertibleTy IsConvertible;
 
   std::map<const Expr *, PSet> PSetsOfExpr;
   std::map<const Expr *, PSet> RefersTo;
@@ -93,10 +94,11 @@ class LifetimeContext {
 
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
-                  const FunctionDecl *FuncDecl)
+                  const FunctionDecl *FuncDecl, IsConvertibleTy IsConvertible)
       : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
         SourceMgr(ASTCtxt.getSourceManager()), FuncDecl(FuncDecl),
-        AC(nullptr, FuncDecl), Reporter(Reporter) {
+        AC(nullptr, FuncDecl), Reporter(Reporter),
+        IsConvertible(IsConvertible) {
     // TODO: do not build own CFG here. Use the one from callee
     // AnalysisBasedWarnings::IssueWarnings
     AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
@@ -211,8 +213,8 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPMap = EntryPMap;
       BC.ExitPMap = BC.EntryPMap;
-      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr, RefersTo,
-                 *B, Reporter, ASTCtxt);
+      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr, RefersTo, *B,
+                 Reporter, ASTCtxt, IsConvertible);
       BC.visited = true;
       Updated = true;
     }
@@ -225,11 +227,12 @@ void LifetimeContext::TraverseBlocks() {
 
 /// Check that the function adheres to the lifetime profile
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter) {
+                 LifetimeReporterBase &Reporter,
+                 IsConvertibleTy IsConvertible) {
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
-  LifetimeContext LC(Context, Reporter, Func);
+  LifetimeContext LC(Context, Reporter, Func, IsConvertible);
   LC.TraverseBlocks();
 }
 } // namespace lifetime

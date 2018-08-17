@@ -53,6 +53,7 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, bool> {
 
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
+  IsConvertibleTy IsConvertible;
   /// psets of all memory locations, which are identified
   /// by their non-reference variable declaration or
   /// MaterializedTemporaryExpr plus (optional) FieldDecls.
@@ -86,7 +87,7 @@ public:
     }
   }
 
-  bool VisitDeclStmt(const DeclStmt* DS) {
+  bool VisitDeclStmt(const DeclStmt *DS) {
     for (const auto *DeclIt : DS->decls()) {
       if (const auto *VD = dyn_cast<VarDecl>(DeclIt))
         return VisitVarDecl(VD);
@@ -438,32 +439,14 @@ public:
         CA.PS.explainWhyNull(Reporter);
       }
 
-      auto PointeeType = getPointeeType(CA.QType);
-      if (classifyTypeCategory(PointeeType) == TypeCategory::Pointer)
-        PinExtended.emplace_back(CA.Loc, derefPSet(CA.PS, CA.Loc), PointeeType);
-#if 0
-      // For each Pointer parameter p, treat it as if it were additionally
-      // followed by a generated deref__p parameter of the same type as *p. If
-      // deref_p is also a Pointer, treat it as if it were additionally followed
-      // by a generated deref__deref__p parameter of type **p. These are treated
-      // as distinct parameters in the following.
-      // TODO: What is the type of `*p` when p is of class-type, possibly
-      // without operator*?
-      QualType QT = ArgExpr->getType()->getPointeeType();
-      // llvm::errs() << "param with PSET " << PS.str() << "\n";
-      while (!QT.isNull() && QT->isPointerType() && !PS.containsInvalid()) {
-        PS = derefPSet(PS, ArgExpr->getExprLoc());
-        if (PS.containsInvalid()) {
-          Reporter.warnParameterDangling(ArgExpr->getExprLoc(),
-                                          /*indirectly=*/true);
-          PS.explainWhyInvalid(Reporter);
-          break;
-        }
-        // llvm::errs() << " deref -> " << PS.str() << "\n";
-        PinExtended.emplace_back(ArgExpr, PS);
-        QT = QT->getPointeeType();
+      QualType QT = getPointeeType(CA.QType);
+      PSet PS = CA.PS;
+      // Expand deref locations for pointers.
+      while (classifyTypeCategory(QT) == TypeCategory::Pointer) {
+        PS = derefPSet(PS, CA.Loc);
+        PinExtended.emplace_back(CA.Loc, PS, QT);
+        QT = getPointeeType(QT);
       }
-#endif
     }
     return PinExtended;
   }
@@ -536,8 +519,7 @@ public:
           return CT.FTy->getParamType(i);
       }();
 
-      PushCallArguments(Arg, ParamQType,
-                        Args); // appends into Args
+      PushCallArguments(Arg, ParamQType, Args); // Append to Args.
     }
 
     if (CT.ClassDecl) {
@@ -579,22 +561,24 @@ public:
 
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
-    auto computeRetPset = [&] {
-      PSet Ret;
-      for (CallArgument &CA : PinExtended) {
-        // llvm::errs() << " Pin PS:" << CA.PS.str() << "\n";
+
+    PSet Ret;
+    QualType RetType = normalizeType(CT.FTy->getReturnType(), ASTCtxt);
+    for (CallArgument &CA : PinExtended) {
+      if (IsConvertible(CA.QType, RetType))
         Ret.merge(CA.PS);
-      }
-      for (CallArgument &CA : Args.Oin) {
-        // llvm::errs() << " Oin PS:" << CA.PS.str() << "\n";
+    }
+    for (CallArgument &CA : Args.Oin) {
+      QualType CheckType = getPointerIntoOwner(CA.QType, ASTCtxt);
+      if (IsConvertible(CheckType, RetType))
         Ret.merge(CA.PS);
-      }
-      return Ret;
-    };
+    }
+    if (Ret.isUnknown())
+      Ret.addStatic();
     if (CallE->isLValue())
-      RefersTo[CallE] = computeRetPset();
+      RefersTo[CallE] = Ret;
     else if (hasPSet(CallE))
-      setPSet(CallE, computeRetPset());
+      setPSet(CallE, Ret);
     return true;
   }
 
@@ -666,9 +650,10 @@ public:
 public:
   PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
-               std::map<const Expr *, PSet> &RefersTo)
-      : Reporter(Reporter), ASTCtxt(ASTCtxt), PMap(PMap),
-        PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
+               std::map<const Expr *, PSet> &RefersTo,
+               IsConvertibleTy IsConvertible)
+      : Reporter(Reporter), ASTCtxt(ASTCtxt), IsConvertible(IsConvertible),
+        PMap(PMap), PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
 
   bool VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -1009,8 +994,10 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
-                LifetimeReporterBase &Reporter, ASTContext &ASTCtxt) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo);
+                LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
+                IsConvertibleTy IsConvertible) {
+  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
+                       IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
