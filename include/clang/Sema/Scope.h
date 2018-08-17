@@ -130,7 +130,10 @@ public:
     CompoundStmtScope = 0x400000,
 
     /// We are between inheritance colon and the real class/struct definition scope.
-    ClassInheritanceScope = 0x800000
+    ClassInheritanceScope = 0x800000,
+
+    /// \brief We are in the scope of a source code literal/fragment.
+    FragmentScope = 0x1000000
   };
 
 private:
