@@ -640,10 +640,15 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
   // contain the constexpr specifier.
 
   if (New->isImmediate() != Old->isImmediate()) {
-    Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-      << New << New->isImmediate();
-    Diag(Old->getLocation(), diag::note_previous_declaration);
-    Invalid = true;
+    TemplateSpecializationKind TSK = New->getTemplateSpecializationKind();
+    // Template specializations may be redeclared constexpr!
+    if ((TSK != TSK_ExplicitSpecialization && New->isImmediate()) ||
+	(TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
+      Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
+	<< New << New->isImmediate();
+      Diag(Old->getLocation(), diag::note_previous_declaration);
+      Invalid = true;
+    }
   } else if (New->isConstexpr() != Old->isConstexpr()) {
     Diag(New->getLocation(), diag::err_constexpr_redecl_mismatch)
       << New << New->isImmediate();
