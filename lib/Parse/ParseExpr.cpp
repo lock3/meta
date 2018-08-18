@@ -689,6 +689,9 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///                   '::'[opt] 'delete' cast-expression
 ///                   '::'[opt] 'delete' '[' ']' cast-expression
 ///
+///       fragment-expression:
+///                   '<<' fragment
+///
 /// [GNU/Embarcadero] unary-type-trait:
 ///                   '__is_arithmetic'
 ///                   '__is_floating_point'
