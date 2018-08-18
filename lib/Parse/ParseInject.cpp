@@ -20,7 +20,55 @@ using namespace clang;
 
 /// ParseCXXNamespaceFragment
 Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
-  return nullptr;
+  assert(Tok.is(tok::kw_namespace) && "expected 'namespace'");
+
+  SourceLocation NamespaceLoc = ConsumeToken();
+  IdentifierInfo *Id = nullptr;
+  SourceLocation IdLoc;
+  if (Tok.is(tok::identifier)) {
+    Id = Tok.getIdentifierInfo();
+    IdLoc = ConsumeToken();
+  } else {
+    // FIXME: This shouldn't be necessary. The ActOnStartNamespaceDef
+    // function uses the Id param to determine if the namespace
+    // it's generating should be an annoynomous namespace.
+    //
+    // As a workaround, we provide this manufactured id for
+    // the namespace.
+    ASTContext &CurContext = Actions.getASTContext();
+    Id = &CurContext.Idents.get("__fragment_namespace");
+  }
+
+  BalancedDelimiterTracker T(*this, tok::l_brace);
+  if (T.consumeOpen()) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return nullptr;
+  }
+
+  ParseScope NamespaceScope(this, Scope::DeclScope);
+
+  SourceLocation InlineLoc;
+  ParsedAttributesWithRange Attrs(AttrFactory);
+  UsingDirectiveDecl *ImplicitUsing = nullptr;
+  Decl *Ns = Actions.ActOnStartNamespaceDef(getCurScope(), InlineLoc,
+                                            NamespaceLoc, IdLoc, Id,
+                                            T.getOpenLocation(),
+                                            Attrs, ImplicitUsing);
+
+  // Parse the declarations within the namespace. Note that this will match
+  // the closing brace. We don't allow nested specifiers for the vector.
+  std::vector<IdentifierInfo *> NsIds;
+  std::vector<SourceLocation> NsIdLocs;
+  std::vector<SourceLocation> NsLocs;
+  ParseInnerNamespace(NsIdLocs, NsIds, NsLocs, 0, InlineLoc, Attrs, T);
+
+  NamespaceScope.Exit();
+
+  Actions.ActOnFinishNamespaceDef(Ns, T.getCloseLocation());
+  if (Ns->isInvalidDecl())
+    return nullptr;
+
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Ns);
 }
 
 /// ParseCXXClassFragment
