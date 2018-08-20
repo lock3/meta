@@ -453,22 +453,11 @@ public:
       const Expr *Arg = CallE->getArg(i);
 
       QualType ParamQType = [&] {
-        // For CXXOperatorCallExpr, getArg(0) is the 'this' pointer.
-        if (isa<CXXOperatorCallExpr>(CallE)) {
-          if (i == 0) {
-            // TODO handle Arg->getType()->isPointerType()
-            auto QT = ASTCtxt.getLValueReferenceType(Arg->getType(),
-                                                     /*SpelledAsLValue=*/true);
-            if (CT.FTy->isConst())
-              QT.addConst();
-            return QT;
-          } else
-            return CT.FTy->getParamType(i - 1);
-        }
-        if (CT.FTy->isVariadic())
-          return Arg->getType();
-        else
-          return CT.FTy->getParamType(i);
+        auto QT = Arg->getType();
+        if (Arg->isLValue())
+          QT = ASTCtxt.getLValueReferenceType(QT,
+                                              /*SpelledAsLValue=*/true);
+        return QT;
       }();
 
       PushCallArguments(Arg, ParamQType, Args); // Append to Args.
