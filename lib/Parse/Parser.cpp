@@ -836,6 +836,11 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     }
     goto dont_know;
 
+  case tok::kw_constexpr: // [Meta] constexpr-declaration
+    if (NextToken().is(tok::l_brace))
+      return ParseConstexprDeclaration();
+    goto dont_know;
+
   case tok::kw___if_exists:
   case tok::kw___if_not_exists:
     ParseMicrosoftIfExistsExternalDeclaration();
