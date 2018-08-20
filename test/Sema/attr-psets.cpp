@@ -55,7 +55,7 @@ struct S {
   int m;
   static int s;
   void f() {
-    int *p = &m;            // pset becomes m, not *this
+    int *p = &m;        // pset becomes m, not *this
     __lifetime_pset(p); // expected-warning {{pset(p) = (this.m)}}
     int *ps = &s;
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
@@ -82,7 +82,7 @@ void pointer_exprs() {
   int *q2 = 0;
   __lifetime_pset(q2); // expected-warning {{pset(q2) = ((null))}}
 
-  int *p_zero{};               //zero initialization
+  int *p_zero{};           //zero initialization
   __lifetime_pset(p_zero); // expected-warning {{pset(p_zero) = ((null))}}
 
   S s;
@@ -93,10 +93,10 @@ void pointer_exprs() {
   __lifetime_pset(p); // expected-warning {{pset(p) = (a)}}
 
   D d;
-  S *ps = &d;              // Ignore implicit cast
+  S *ps = &d;          // Ignore implicit cast
   __lifetime_pset(ps); // expected-warning {{pset(ps) = (d)}}
 
-  D *pd = (D *)&s;         // Ignore explicit cast
+  D *pd = (D *)&s;     // Ignore explicit cast
   __lifetime_pset(pd); // expected-warning {{pset(pd) = (s)}}
 
   int i;
@@ -185,9 +185,9 @@ void forbidden() {
 }
 
 void deref_array() {
-  int *p[4]; // expected-note {{pointer arithmetic is not allowed}}
+  int *p[4];          // expected-note {{pointer arithmetic is not allowed}}
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
-  int *k = *p;            // expected-warning {{dereferencing a dangling pointer}}
+  int *k = *p;        // expected-warning {{dereferencing a dangling pointer}}
   __lifetime_pset(k); // expected-warning {{pset(k) = ((invalid))}}
 }
 
@@ -198,7 +198,7 @@ void address_of_global() {
 }
 
 void class_type_pointer() {
-  my_pointer p;           // default initialization
+  my_pointer p;       // default initialization
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
 }
 
@@ -258,7 +258,7 @@ void ignore_pointer_to_member() {
 }
 
 void if_stmt(int *p, char *q, gsl::nullable<std::unique_ptr<int>> up) {
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
+  __lifetime_pset(p);  // expected-warning {{pset(p) = ((null), p)}}
   __lifetime_pset(up); // expected-warning {{pset(up) = ((null), up')}}
   int *alwaysNull = nullptr;
   bool b = p && q;
@@ -461,7 +461,7 @@ int *global_p2 = nullptr;
 int global_i;
 
 void namespace_scoped_vars(int param_i, int *param_p) {
-  __lifetime_pset(param_p); // expected-warning {{pset(param_p) = ((null), param_p)}}
+  __lifetime_pset(param_p);   // expected-warning {{pset(param_p) = ((null), param_p)}}
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
 
   if (global_p1) {
@@ -476,11 +476,11 @@ void namespace_scoped_vars(int param_i, int *param_p) {
   int *local_p = global_p1;
   __lifetime_pset(local_p); // expected-warning {{pset(local_p) = ((static))}}
 
-  global_p1 = nullptr;            // OK
+  global_p1 = nullptr;        // OK
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
-  global_p1 = &global_i;          // OK
+  global_p1 = &global_i;      // OK
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
-  global_p1 = global_p2;          // OK
+  global_p1 = global_p2;      // OK
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
 }
 
@@ -548,7 +548,7 @@ void member_function_call() {
   __lifetime_pset(p); // expected-warning {{pset(p) = (s)}}
   int *pp = s.get();
   //__lifetime_pset(pp); // TODOexpected-warning {{pset(pp) = (s')}}
-  s.f();                  // non-const
+  s.f();              // non-const
   __lifetime_pset(p); // expected-warning {{pset(p) = (s)}}
   //__lifetime_pset(pp); // TODOexpected-warning {{pset(p) = ((invalid))}}
 }
@@ -577,8 +577,8 @@ void Example1_1() {
     __lifetime_pset(p); // expected-warning {{pset(p) = (s.i)}}
     p2 = p;
     __lifetime_pset(p2); // expected-warning {{pset(p2) = (s.i)}}
-    *p = 1;                  // ok
-    *p2 = 1;                 // ok
+    *p = 1;              // ok
+    *p2 = 1;             // ok
   }
   __lifetime_pset(p);  // expected-warning {{pset(p) = ((invalid))}}
   __lifetime_pset(p2); // expected-warning {{pset(p2) = ((invalid))}}
@@ -587,15 +587,15 @@ void Example1_1() {
   int x[100];
   p2 = &x[10];
   __lifetime_pset(p2); // expected-warning {{pset(p2) = (x)}}
-  *p2 = 1;                 // ok
-  p2 = p;                  // D: pset(p2) = pset(p) which is {null}
+  *p2 = 1;             // ok
+  p2 = p;              // D: pset(p2) = pset(p) which is {null}
   __lifetime_pset(p2); // expected-warning {{pset(p2) = ((null))}}
   p2 = &x[10];
   __lifetime_pset(p2); // expected-warning {{pset(p2) = (x)}}
-  *p2 = 1;                 // ok
+  *p2 = 1;             // ok
   int **pp = &p2;
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p2)}}
-  *pp = p;                 // ok
+  *pp = p;             // ok
 }
 
 void Example1_4() {
@@ -609,31 +609,31 @@ void Example1_4() {
     __lifetime_pset(ri); // expected-warning {{pset(ri) = (i)}}
     p1 = &ri;
     __lifetime_pset(p1); // expected-warning {{pset(p1) = (i)}}
-    *p1 = 1;                 // ok
+    *p1 = 1;             // ok
     int *pi = &i;
     __lifetime_pset(pi); // expected-warning {{pset(pi) = (i)}}
     p2 = pi;
     __lifetime_pset(p2); // expected-warning {{pset(p2) = (i)}}
-    *p2 = 1;                 // ok
+    *p2 = 1;             // ok
     int **ppi = &pi;
     __lifetime_pset(ppi); // expected-warning {{pset(ppi) = (pi)}}
-    **ppi = 1;                // ok, modifies i
+    **ppi = 1;            // ok, modifies i
     int *pi2 = *ppi;
     __lifetime_pset(pi2); // expected-warning {{pset(pi2) = (i)}}
     p3 = pi2;
     __lifetime_pset(p3); // expected-warning {{pset(p3) = (i)}}
-    *p3 = 1;                 // ok
+    *p3 = 1;             // ok
     {
       int j = 0;
-      pi = &j;                 // (note: so *ppi now points to j)
+      pi = &j;             // (note: so *ppi now points to j)
       __lifetime_pset(pi); // expected-warning {{pset(pi) = (j)}}
       pi2 = *ppi;
       __lifetime_pset(pi2); // expected-warning {{pset(pi2) = (j)}}
-      **ppi = 1;                // ok, modifies j
-      *pi2 = 1;                 // ok
+      **ppi = 1;            // ok, modifies j
+      *pi2 = 1;             // ok
       p4 = pi2;
       __lifetime_pset(p4); // expected-warning {{pset(p4) = (j)}}
-      *p4 = 1;                 // ok
+      *p4 = 1;             // ok
     }
     __lifetime_pset(pi);  // expected-warning {{pset(pi) = ((invalid))}}
     __lifetime_pset(pi2); // expected-warning {{pset(pi2) = ((invalid))}}
