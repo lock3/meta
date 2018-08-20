@@ -29,5 +29,4 @@ constexpr int count_members(meta::info x) {
 
 int main(int argc, char* argv[]) {
   static_assert(count_members(reflexpr(N)) == 4);
-  // printf("members: %d\n", count_members(reflexpr(N)));
 }

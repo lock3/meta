@@ -483,6 +483,10 @@ class CXXRecordDecl : public RecordDecl {
     /// constructor which is neither the copy nor move constructor.
     unsigned HasConstexprNonCopyMoveConstructor : 1;
 
+    /// True when this class has at least one user-declared constexpr!
+    /// constructor which is neither the copy nor move constructor.
+    unsigned CanHaveImmediateNonCopyMoveConstructor : 1;
+
     /// True if this class has a (possibly implicit) defaulted default
     /// constructor.
     unsigned HasDefaultedDefaultConstructor : 1;
@@ -491,11 +495,21 @@ class CXXRecordDecl : public RecordDecl {
     /// be constexpr.
     unsigned DefaultedDefaultConstructorIsConstexpr : 1;
 
+    /// True if a defaulted default constructor for this class would
+    /// be constexpr!
+    unsigned DefaultedDefaultConstructorCanBeImmediate : 1;
+
     /// True if this class has a constexpr default constructor.
     ///
     /// This is true for either a user-declared constexpr default constructor
     /// or an implicitly declared constexpr default constructor.
     unsigned HasConstexprDefaultConstructor : 1;
+
+    /// True if this class has a constexpr! default constructor.
+    ///
+    /// This is true for either a user-declared constexpr! default constructor
+    /// or an implicitly declared constexpr! default constructor.
+    unsigned CanHaveImmediateDefaultConstructor : 1;
 
     /// True when this class contains at least one non-static data
     /// member or base class of non-literal or volatile type.
@@ -1391,6 +1405,14 @@ public:
             defaultedDefaultConstructorIsConstexpr());
   }
 
+  /// Determine whether this class has at least one constexpr! constructor
+  /// other than the copy or move constructors.
+  bool CanHaveImmediateNonCopyMoveConstructor() const {
+    return data().CanHaveImmediateNonCopyMoveConstructor ||
+           (needsImplicitDefaultConstructor() &&
+            defaultedDefaultConstructorIsConstexpr());
+  }
+
   /// Determine whether a defaulted default constructor for this class
   /// would be constexpr.
   bool defaultedDefaultConstructorIsConstexpr() const {
@@ -1398,11 +1420,24 @@ public:
            (!isUnion() || hasInClassInitializer() || !hasVariantMembers());
   }
 
+  /// Determine whether a defaulted default constructor for this class
+  /// would be constexpr!.
+  bool defaultedDefaultConstructorCanBeImmediate() const {
+    return data().DefaultedDefaultConstructorCanBeImmediate ||
+      defaultedDefaultConstructorIsConstexpr();
+  }
+
   /// Determine whether this class has a constexpr default constructor.
   bool hasConstexprDefaultConstructor() const {
     return data().HasConstexprDefaultConstructor ||
            (needsImplicitDefaultConstructor() &&
             defaultedDefaultConstructorIsConstexpr());
+  }
+
+  /// Determine whether this class has a constexpr! default constructor.
+  bool canHaveImmediateDefaultConstructor() const {
+    return data().CanHaveImmediateDefaultConstructor ||
+      hasConstexprDefaultConstructor();
   }
 
   /// Determine whether this class has a trivial copy constructor

@@ -5637,13 +5637,13 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     case URT_ReflectEnd: {
       if (const Decl *D = R.getAsDeclaration()) {
         if (const DeclContext *DC = dyn_cast<DeclContext>(D)) {
-          Decl *Iter;
+          Decl *Iter;	  
           if (E->getTrait() == URT_ReflectBegin) {
             auto I = DC->decls_begin();
             Iter = (I != DC->decls_end()) ? *I : nullptr;
           } else {
             Iter = nullptr;
-          }
+          }	  
           APValue Result;
           MakeReflection(Info.Ctx, Iter, Result);
           return DerivedSuccess(Result, E);
@@ -5670,7 +5670,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     case URT_ReflectName: {
       if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(R.getAsDeclaration())) {
         if (IdentifierInfo *II = ND->getIdentifier()) {
-          StringLiteral *Str = MakeString(Info.Ctx, II->getName(), E->getLocStart());
+          StringLiteral *Str = MakeString(Info.Ctx, II->getName(), E->getBeginLoc());
           APValue Val;
           if (!Evaluate(Val, Info, Str))
             return false;
@@ -5678,7 +5678,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
         }
       } else if (const Type *T = R.getAsType()) {
         QualType CanTy = Info.Ctx.getCanonicalType(QualType(T, 0));
-        StringLiteral *Str = MakeString(Info.Ctx, CanTy.getAsString(), E->getLocStart());
+        StringLiteral *Str = MakeString(Info.Ctx, CanTy.getAsString(), E->getBeginLoc());
           APValue Val;
           if (!Evaluate(Val, Info, Str))
             return false;

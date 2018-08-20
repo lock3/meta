@@ -95,7 +95,9 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       HasConstexprNonCopyMoveConstructor(false),
       HasDefaultedDefaultConstructor(false),
       DefaultedDefaultConstructorIsConstexpr(true),
+      DefaultedDefaultConstructorCanBeImmediate(true),
       HasConstexprDefaultConstructor(false),
+      CanHaveImmediateDefaultConstructor(false),
       HasNonLiteralTypeFieldsOrBases(false), ComputedVisibleConversions(false),
       UserProvidedDefaultConstructor(false), DeclaredSpecialMembers(0),
       ImplicitCopyConstructorCanHaveConstParamForVBase(true),
@@ -330,6 +332,9 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       //   In the definition of a constexpr constructor [...]
       //    -- the class shall not have any virtual base classes
       data().DefaultedDefaultConstructorIsConstexpr = false;
+      // A constructor cannot be constexpr! if it cannot be
+      // constexpr.
+      data().DefaultedDefaultConstructorCanBeImmediate = false;
 
       // C++1z [class.copy]p8:
       //   The implicitly-declared copy constructor for a class X will have
@@ -385,8 +390,10 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       //   If that user-written default constructor would satisfy the
       //   requirements of a constexpr constructor, the implicitly-defined
       //   default constructor is constexpr.
-      if (!BaseClassDecl->hasConstexprDefaultConstructor())
+      if (!BaseClassDecl->hasConstexprDefaultConstructor()) {
         data().DefaultedDefaultConstructorIsConstexpr = false;
+        data().DefaultedDefaultConstructorCanBeImmediate = false;
+      }
 
       // C++1z [class.copy]p8:
       //   The implicitly-declared copy constructor for a class X will have
@@ -713,9 +720,11 @@ void CXXRecordDecl::addedMember(Decl *D) {
 
       if (Constructor->isUserProvided())
         data().UserProvidedDefaultConstructor = true;
-      if (Constructor->isConstexpr())
+      if (Constructor->isConstexpr()) {
         data().HasConstexprDefaultConstructor = true;
-      if (Constructor->isDefaulted())
+	data().CanHaveImmediateDefaultConstructor = true;
+      }
+      if (Constructor->isDefaulted()) 
         data().HasDefaultedDefaultConstructor = true;
     }
 
@@ -745,8 +754,10 @@ void CXXRecordDecl::addedMember(Decl *D) {
     //   [...] has at least one constexpr constructor or constructor template
     //   (possibly inherited from a base class) that is not a copy or move
     //   constructor [...]
-    if (Constructor->isConstexpr() && !Constructor->isCopyOrMoveConstructor())
+    if (Constructor->isConstexpr() && !Constructor->isCopyOrMoveConstructor()) {
       data().HasConstexprNonCopyMoveConstructor = true;
+      data().CanHaveImmediateNonCopyMoveConstructor = true;
+    }
   }
 
   // Handle destructors.
@@ -1183,10 +1194,12 @@ void CXXRecordDecl::addedMember(Decl *D) {
         //    -- every constructor involved in initializing non-static data
         //       members [...] shall be a constexpr constructor
         if (!Field->hasInClassInitializer() &&
-            !FieldRec->hasConstexprDefaultConstructor() && !isUnion())
+            !FieldRec->hasConstexprDefaultConstructor() && !isUnion()) {
           // The standard requires any in-class initializer to be a constant
           // expression. We consider this to be a defect.
           data().DefaultedDefaultConstructorIsConstexpr = false;
+	  data().DefaultedDefaultConstructorCanBeImmediate = false;
+	}
 
         // C++11 [class.copy]p8:
         //   The implicitly-declared copy constructor for a class X will have
@@ -1219,8 +1232,10 @@ void CXXRecordDecl::addedMember(Decl *D) {
     } else {
       // Base element type of field is a non-class type.
       if (!T->isLiteralType(Context) ||
-          (!Field->hasInClassInitializer() && !isUnion()))
+          (!Field->hasInClassInitializer() && !isUnion())) {
         data().DefaultedDefaultConstructorIsConstexpr = false;
+	data().DefaultedDefaultConstructorCanBeImmediate = false;
+      }
 
       // C++11 [class.copy]p23:
       //   A defaulted copy/move assignment operator for a class X is defined
@@ -1268,16 +1283,20 @@ void CXXRecordDecl::finishedDefaultedOrDeletedMember(CXXMethodDecl *D) {
   if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(D)) {
     if (Constructor->isDefaultConstructor()) {
       SMKind |= SMF_DefaultConstructor;
-      if (Constructor->isConstexpr())
+      if (Constructor->isConstexpr()) {
         data().HasConstexprDefaultConstructor = true;
+	data().CanHaveImmediateDefaultConstructor = true;
+      }
     }
     if (Constructor->isCopyConstructor())
       SMKind |= SMF_CopyConstructor;
     else if (Constructor->isMoveConstructor())
       SMKind |= SMF_MoveConstructor;
-    else if (Constructor->isConstexpr())
+    else if (Constructor->isConstexpr()) {
       // We may now know that the constructor is constexpr.
       data().HasConstexprNonCopyMoveConstructor = true;
+      data().CanHaveImmediateNonCopyMoveConstructor = true;
+    }
   } else if (isa<CXXDestructorDecl>(D)) {
     SMKind |= SMF_Destructor;
     if (!D->isTrivial() || D->getAccess() != AS_public || D->isDeleted())
