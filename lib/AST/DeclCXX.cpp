@@ -2916,6 +2916,49 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
                                     SourceLocation(), nullptr, nullptr);
 }
 
+void ConstexprDecl::anchor() {}
+
+ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation ConstexprLoc,
+                                     FunctionDecl *Fn) {
+  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Fn);
+}
+
+ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation ConstexprLoc,
+                                     CXXRecordDecl *Class) {
+  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Class);
+}
+
+ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) ConstexprDecl(nullptr, SourceLocation());
+}
+
+bool ConstexprDecl::hasBody() const {
+  if (Representation.isNull())
+    return false;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->hasBody();
+}
+
+Stmt *ConstexprDecl::getBody() const {
+  if (Representation.isNull())
+    return nullptr;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->getBody();
+}
+
+SourceRange ConstexprDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (Stmt *Body = getBody())
+    RangeEnd = Body->getEndLoc();
+  return SourceRange(getLocation(), RangeEnd);
+}
+
 void CXXFragmentDecl::anchor() {}
 
 CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,

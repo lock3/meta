@@ -3937,6 +3937,97 @@ public:
   IdentifierInfo* getSetterId() const { return SetterId; }
 };
 
+
+/// \brief Represents a C++ constexpr-declaration.
+///
+/// A constexpr-declaration contains a sequence of statements that are evaluated
+/// at compile-time. For example:
+///
+/// \code
+/// constexpr {
+///   // statements
+/// }
+/// \endcode
+///
+/// When the constexpr-declaration appears in namespace or class scope, this
+/// class contains a \c constexpr \c void function that contains the parsed body
+/// of the declaration.
+class ConstexprDecl : public Decl {
+  virtual void anchor();
+
+  /// The de-sugared form of the declaration.
+  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
+
+  /// The de-sugared call expression.
+  CallExpr *Call;
+
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(), Call(nullptr) {}
+
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc, FunctionDecl *Fn)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(Fn), Call(nullptr) {}
+
+  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc,
+                CXXRecordDecl *Class)
+      : Decl(Constexpr, DC, ConstexprLoc), Representation(Class),
+        Call(nullptr) {}
+
+public:
+  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
+                               SourceLocation ConstexprLoc, FunctionDecl *Fn);
+  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
+                               SourceLocation ConstexprLoc,
+                               CXXRecordDecl *Closure);
+  static ConstexprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief Returns \c true if this is represented as a function.
+  bool hasFunctionRepresentation() const {
+    return Representation.is<FunctionDecl *>();
+  }
+
+  /// \brief Returns \c true if this is represented as a lambda expression.
+  bool hasLambdaRepresentation() const {
+    return Representation.is<CXXRecordDecl *>();
+  }
+
+  /// \brief Returns the function representation of the declaration.
+  FunctionDecl *getFunctionDecl() const {
+    return Representation.get<FunctionDecl *>();
+  }
+
+  /// \brief Returns the closure declaration for the lambda expression.
+  CXXRecordDecl *getClosureDecl() const {
+    return Representation.get<CXXRecordDecl *>();
+  }
+
+  /// \brief Returns the call operator of the closure.
+  CXXMethodDecl *getClosureCallOperator() const {
+    assert(hasLambdaRepresentation() &&
+           "constexpr declaration is not represented by a lambda expression");
+    return getClosureDecl()->getLambdaCallOperator();
+  }
+
+  /// \brief Returns \c true if the constexpr-declaration has a body.
+  bool hasBody() const override;
+
+  /// \brief Returns the body of the constexpr-declaration.
+  Stmt *getBody() const override;
+
+  /// Returns the expression that evaluates the constexpr-declaration.
+  CallExpr *getCallExpr() const { return Call; }
+
+  /// Sets the expression that evaluates the constexpr-declaration.
+  void setCallExpr(CallExpr *E) { Call = E; }
+
+  SourceRange getSourceRange() const override;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Constexpr; }
+
+  friend class ASTDeclReader;
+};
+
+
 /// \brief Contains a fragment of source code.
 ///
 /// This is an implicit structure created when defining a source code fragment.

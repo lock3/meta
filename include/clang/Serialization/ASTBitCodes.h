@@ -1547,7 +1547,10 @@ namespace serialization {
       /// An OMPDeclareReductionDecl record.
       DECL_OMP_DECLARE_REDUCTION,
 
-      DECL_LAST = DECL_OMP_DECLARE_REDUCTION
+      /// A ConstexprDecl record.
+      DECL_CONSTEXPR,
+
+      DECL_LAST = DECL_CONSTEXPR
     };
 
     /// Record codes for each kind of statement or expression.
