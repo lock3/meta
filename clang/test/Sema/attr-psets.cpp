@@ -713,6 +713,10 @@ void cast(int *p) {
   __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
 }
 
+// Support CXXOperatorCallExpr on non-member function
+struct S3;
+void operator==(S3 &A, S3& B) { A == B; }
+
 struct S2 {
   void f() {
     this->f();
