@@ -712,3 +712,10 @@ void cast(int *p) {
   float *q = reinterpret_cast<float *>(p);
   __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
 }
+
+struct S2 {
+  void f() {
+    this->f();
+    (*this).f();
+  }
+};
