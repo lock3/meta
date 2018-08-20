@@ -49,6 +49,7 @@ static bool isPointer(const Expr *E) {
 // Diagnose: static_cast to lvalue ref
 // TODO: handle
 // - CXXDefaultArgExpr
+// - CXXCtorInitializer
 class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, bool> {
 
   LifetimeReporterBase &Reporter;
@@ -131,6 +132,12 @@ public:
   bool VisitExpr(const Expr *E) {
     assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
     assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
+    return true;
+  }
+
+  bool VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
+    if (hasPSet(E))
+      setPSet(E, getPSet(E->getExpr()));
     return true;
   }
 
