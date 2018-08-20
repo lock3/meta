@@ -1169,6 +1169,7 @@ DeclContext *DeclContext::getPrimaryContext() {
   case Decl::Block:
   case Decl::Captured:
   case Decl::OMPDeclareReduction:
+  case Decl::CXXFragment:
     // There is only one DeclContext for these entities.
     return this;
 
