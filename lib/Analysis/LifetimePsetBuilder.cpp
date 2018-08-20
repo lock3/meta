@@ -69,14 +69,26 @@ public:
   /// Ignore parentheses and most implicit casts.
   /// Does not go through implicit cast that convert a literal into a pointer,
   /// because there the type category changes.
+  /// Does not ignore LValueToRValue casts by default, because they
+  /// move psets from RefersTo into PsetOfExpr.
   /// Does not ignore MaterializeTemporaryExpr as Expr::IgnoreParenImpCasts
   /// would.
-  static const Expr *IgnoreParenImpCasts(const Expr *E) {
+  static const Expr *IgnoreParenImpCasts(const Expr *E,
+                                         bool IgnoreLValueToRValue = false) {
     while (true) {
       E = E->IgnoreParens();
       if (const auto *P = dyn_cast<ImplicitCastExpr>(E)) {
-        if (P->getCastKind() == CK_NullToPointer)
+        switch (P->getCastKind()) {
+        case CK_NullToPointer:
+        case CK_ArrayToPointerDecay:
           return E;
+        case CK_LValueToRValue:
+          if (!IgnoreLValueToRValue)
+            return E;
+          break;
+        default:
+          break;
+        }
         E = P->getSubExpr();
         continue;
       } else if (const auto *C = dyn_cast<ExprWithCleanups>(E)) {
@@ -96,9 +108,29 @@ public:
   }
 
   bool VisitImplicitCastExpr(const ImplicitCastExpr *E) {
-    if (E->getCastKind() == CK_NullToPointer)
+    switch (E->getCastKind()) {
+    case CK_NullToPointer:
       setPSet(E, PSet::null(E->getExprLoc()));
+      break;
+    case CK_LValueToRValue:
+      // For L-values, the pset refers to the memory location,
+      // for non-L-values we need to get the pset.
+      if (hasPSet(E))
+        setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
+      break;
+    case CK_ArrayToPointerDecay:
+      setPSet(E, PSet::invalid(
+                     InvalidationReason::PointerArithmetic(E->getExprLoc())));
+      break;
+    default:
+      break;
+    }
+    return true;
+  }
 
+  bool VisitExpr(const Expr *E) {
+    assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
+    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
     return true;
   }
 
@@ -122,7 +154,7 @@ public:
   }
 
   bool VisitMemberExpr(const MemberExpr *ME) {
-    PSet BaseRefersTo = getPSet(ME->getBase(), ME->getBase()->isLValue());
+    PSet BaseRefersTo = getPSet(ME->getBase());
     if (ME->getBase()->getType()->isPointerType())
       CheckPSetValidity(BaseRefersTo, ME->getExprLoc());
 
@@ -163,8 +195,7 @@ public:
   }
 
   bool VisitConditionalOperator(const ConditionalOperator *E) {
-    bool IsRef = E->isLValue();
-    setPSet(E, getPSet(E->getLHS(), IsRef) + getPSet(E->getRHS(), IsRef));
+    setPSet(E, getPSet(E->getLHS()) + getPSet(E->getRHS()));
     return true;
   }
 
@@ -209,7 +240,7 @@ public:
           E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
       return true;
     default: {
-      setPSet(E, getPSet(E->getSubExpr(), E->isLValue()));
+      setPSet(E, getPSet(E->getSubExpr()));
       return true;
     }
     }
@@ -225,11 +256,10 @@ public:
       // TODO
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer
-      setPSet(getPSet(BO->getLHS(), true), getPSet(BO->getRHS()),
-              BO->getExprLoc());
+      setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()), BO->getExprLoc());
     }
 
-    setPSet(BO, getPSet(BO->getLHS(), true));
+    setPSet(BO, getPSet(BO->getLHS()));
     return true;
   }
 
@@ -251,7 +281,7 @@ public:
       return VisitUnaryDeref(UO);
     default:
       if (UO->getType()->isPointerType())
-        setPSet(getPSet(UO->getSubExpr(), true),
+        setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(
                     InvalidationReason::PointerArithmetic(UO->getExprLoc())),
                 UO->getExprLoc());
@@ -261,7 +291,7 @@ public:
 
   bool VisitUnaryAddrOf(const UnaryOperator *UO) {
     if (hasPSet(UO))
-      setPSet(UO, getPSet(UO->getSubExpr(), true));
+      setPSet(UO, getPSet(UO->getSubExpr()));
     return true;
   }
 
@@ -323,12 +353,13 @@ public:
           Args.Oin_weak.emplace_back(Arg->getExprLoc(), getPSet(Arg),
                                      ParamQType);
         } else {
-          Args.Oin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
+          Args.Oin.emplace_back(Arg->getExprLoc(),
+                                derefPSet(getPSet(Arg), Arg->getExprLoc()),
+                                ParamQType);
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg, true),
-                              ParamQType);
+        Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
       }
 
     } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
@@ -450,11 +481,7 @@ public:
 
         auto TC = classifyTypeCategory(ObjectType);
         if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-          PSet PS = [&] {
-            if (Object->getType()->isPointerType())
-              return derefPSet(getPSet(Object), CallE->getExprLoc());
-            return getPSet(Object);
-          }();
+          PSet PS = derefPSet(getPSet(Object), CallE->getExprLoc());
           if (TC == TypeCategory::Pointer)
             Args.Pin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
           else if (TC == TypeCategory::Owner)
@@ -514,12 +541,12 @@ public:
 
   PSet getPSet(Variable P);
 
-  PSet getPSet(const Expr *E, bool OfReference = false) {
+  PSet getPSet(const Expr *E) {
     E = IgnoreParenImpCasts(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
       assert(I != RefersTo.end());
-      return OfReference ? I->second : getPSet(I->second);
+      return I->second;
     } else {
       auto I = PSetsOfExpr.find(E);
       if (I == PSetsOfExpr.end())
@@ -578,9 +605,7 @@ public:
         // TODO: Better diagnostic that explains the array to pointer decay
         PS = PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
       } else if (Initializer) {
-        // Initially set to invalid to handle self-assignement
-        setPSet(PSet::singleton(VD), PSet::invalid(InvalidationReason::NotInitialized(Loc)), Loc);
-        PS = getPSet(Initializer, VD->getType()->isReferenceType());
+        PS = getPSet(Initializer);
       } else {
         // Never treat local statics as uninitialized.
         if (VD->hasGlobalStorage())
@@ -717,7 +742,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
-  E = IgnoreParenImpCasts(E);
+  E = IgnoreParenImpCasts(E, /*IgnoreLValueToRValue=*/true);
   // Handle user written bool conversion.
   if (const auto *CE = dyn_cast<CXXMemberCallExpr>(E)) {
     if (const auto *ConvDecl =
@@ -758,7 +783,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
   }
 
   if (E->isLValue() && hasPSet(E)) {
-    auto Ref = getPSet(E, true);
+    auto Ref = getPSet(E);
     // We refer to multiple variables (or none),
     // and we cannot know which of them is null/non-null.
     if (Ref.vars().size() != 1)

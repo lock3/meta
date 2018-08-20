@@ -185,9 +185,10 @@ void forbidden() {
 }
 
 void deref_array() {
-  int *p[4];          // expected-note {{pointer arithmetic is not allowed}}
+  int *p[4];
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
   int *k = *p;        // expected-warning {{dereferencing a dangling pointer}}
+                      // expected-note@-1 {{pointer arithmetic is not allowed}}
   __lifetime_pset(k); // expected-warning {{pset(k) = ((invalid))}}
 }
 
