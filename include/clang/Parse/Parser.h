@@ -2797,6 +2797,8 @@ private:
   Decl *ParseCXXFragment();
   ExprResult ParseCXXFragmentExpression();
 
+  DeclGroupPtrTy ParseConstexprDeclaration();
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

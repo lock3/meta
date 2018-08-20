@@ -8776,6 +8776,16 @@ public:
     }
   };
 
+  Decl *ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
+                           unsigned &ScopeFlags);
+  void ActOnStartConstexprDecl(Scope *S, Decl *D);
+  void ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body);
+  void ActOnConstexprDeclError(Scope *S, Decl *D);
+
+  bool EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D);
+  bool EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E);
+  bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //

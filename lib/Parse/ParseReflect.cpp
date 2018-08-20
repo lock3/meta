@@ -13,9 +13,11 @@
 
 #include "clang/Parse/Parser.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/ParsedReflection.h"
+
 using namespace clang;
 
 /// Parse the operand of a reflexpr expression. This is almost exactly like
@@ -386,4 +388,42 @@ Parser::ParseReflectedTemplateArgument() {
     return ParsedTemplateArgument();
 
   return Actions.ActOnReflectedTemplateArgument(Loc, Result.get());
+}
+
+/// Parse a constexpr-declaration.
+///
+/// \verbatim
+///   constexpr-declaration:
+///     'constexpr' compound-statement
+/// \endverbatim
+Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
+  assert(Tok.is(tok::kw_constexpr));
+
+  SourceLocation ConstexprLoc = ConsumeToken();
+
+  if (!Tok.is(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << tok::l_brace;
+    return nullptr;
+  }
+
+  unsigned ScopeFlags;
+  Decl *D = Actions.ActOnConstexprDecl(getCurScope(), ConstexprLoc, ScopeFlags);
+
+  // Enter a scope for the constexpr declaration body.
+  ParseScope BodyScope(this, ScopeFlags);
+
+  Actions.ActOnStartConstexprDecl(getCurScope(), D);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
+                                      "parsing constexpr declaration body");
+
+  // Parse the body of the constexpr declaration.
+  StmtResult Body(ParseCompoundStatementBody());
+
+  if (!Body.isInvalid())
+    Actions.ActOnFinishConstexprDecl(getCurScope(), D, Body.get());
+  else
+    Actions.ActOnConstexprDeclError(getCurScope(), D);
+
+  return Actions.ConvertDeclToDeclGroup(D);
 }
