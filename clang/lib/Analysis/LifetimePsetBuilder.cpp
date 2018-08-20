@@ -965,6 +965,8 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     // PVD->dump();
     PMap.emplace(P, std::move(PS));
   }
+  PMap.emplace(Variable::thisPointer(),
+               PSet::singleton(Variable::thisPointer()));
 }
 } // namespace lifetime
 } // namespace clang
