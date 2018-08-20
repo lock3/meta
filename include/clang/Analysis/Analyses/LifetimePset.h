@@ -116,6 +116,10 @@ struct Variable {
     return classifyTypeCategory(getType()) == TypeCategory::Pointer;
   }
 
+  const VarDecl* asVarDecl() const {
+    return Var.get<const VarDecl *>();
+  }
+
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
