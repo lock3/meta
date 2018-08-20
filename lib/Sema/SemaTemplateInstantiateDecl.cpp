@@ -891,6 +891,50 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
+Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
+  if (FunctionDecl *Fn = D->getFunctionDecl()) {
+    // Instantiate the nested function.
+    //
+    // FIXME: The point of instantiation is probably wrong.
+    FunctionDecl *NewFn = cast<FunctionDecl>(SemaRef.SubstDecl(Fn, Owner,
+                                                               TemplateArgs));
+    if (NewFn->isInvalidDecl())
+      return nullptr;
+
+    // FIXME: We probably need to manage the function's definition a little
+    // better. Note that we can't use InstantiateFunctionDefinition; that
+    // assumes that the NewFn will have a template pattern.
+    StmtResult NewBody;
+    {
+      Sema::ContextRAII Switch(SemaRef, NewFn);
+      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+    }
+    if (NewBody.isInvalid())
+      return nullptr;
+    NewFn->setBody(NewBody.get());
+
+    // Build the constexpr declaration.
+    ConstexprDecl *CD = ConstexprDecl::Create(SemaRef.Context, Owner,
+                                              Fn->getLocation(), NewFn);
+    Owner->addDecl(CD); // FIXME: OWner or CurContext?
+
+    // And evaluate it if needed.
+    if (!NewFn->isDependentContext()) {
+      // FIXME: What the hell are we going to do with late parsed
+      // declarations during template instantiation?
+      SmallVector<void *, 8> LateParsedDecls;
+      SemaRef.EvaluateConstexprDecl(CD, NewFn);
+    }
+
+    return CD;
+  } else if (CXXRecordDecl *Class = D->getClosureDecl()) {
+    llvm_unreachable("local constexpr-decl instantiation not implemented");
+  } else {
+    llvm_unreachable("invalid metaprogram");
+  }
+
+}
+
 Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
   // Fragment declarations only occur as part of a fragment expression.
   // These declarations are instantiated independently from the visitor.
