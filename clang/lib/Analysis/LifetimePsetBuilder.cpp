@@ -578,6 +578,8 @@ public:
         // TODO: Better diagnostic that explains the array to pointer decay
         PS = PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
       } else if (Initializer) {
+        // Initially set to invalid to handle self-assignement
+        setPSet(PSet::singleton(VD), PSet::invalid(InvalidationReason::NotInitialized(Loc)), Loc);
         PS = getPSet(Initializer, VD->getType()->isReferenceType());
       } else {
         // Never treat local statics as uninitialized.

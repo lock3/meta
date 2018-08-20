@@ -723,3 +723,7 @@ struct S2 {
     (*this).f();
   }
 };
+
+void self_init() {
+  int *a = a;
+}
