@@ -642,6 +642,13 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
     return PSet::staticVar(false);
 
+  if (auto VD = P.asVarDecl()) {
+    // To handle self-assignment during initialization
+    if (!isa<ParmVarDecl>(VD))
+      return PSet::invalid(
+          InvalidationReason::NotInitialized(VD->getLocation()));
+  }
+
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
                << "\n";
   llvm_unreachable("Missing pset for Pointer");

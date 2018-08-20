@@ -716,7 +716,7 @@ void cast(int *p) {
 
 // Support CXXOperatorCallExpr on non-member function
 struct S3;
-void operator==(S3 &A, S3& B) { A == B; }
+void operator==(S3 &A, S3 &B) { A == B; }
 
 struct S2 {
   void f() {
