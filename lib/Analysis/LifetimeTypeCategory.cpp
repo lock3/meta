@@ -116,7 +116,8 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Value;
   }
 
-  assert(R->hasDefinition());
+  if(!R->hasDefinition())
+    return TypeCategory::Value;
 
   if (R->hasAttr<OwnerAttr>())
     return TypeCategory::Owner;

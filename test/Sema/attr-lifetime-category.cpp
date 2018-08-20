@@ -170,4 +170,7 @@ void value() {
   int i = 0;
   auto L = [i]() { return i; };
   __lifetime_type_category<decltype(L)>(); // expected-warning {{Value}}
+
+  class C3;
+  __lifetime_type_category<C3>(); // expected-warning {{Value}}
 }
