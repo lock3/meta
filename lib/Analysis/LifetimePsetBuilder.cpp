@@ -406,7 +406,7 @@ public:
   }
 
   /// Diagnose if psets arguments in Oin and Pin refer to the same variable
-  void diagnoseParameterAliasing(const std::vector<CallArgument> &Pin,
+  /*void diagnoseParameterAliasing(const std::vector<CallArgument> &Pin,
                                  const std::vector<CallArgument> &Oin) {
     std::map<Variable, SourceLocation> AllVars;
     for (auto &CA : Pin) {
@@ -430,13 +430,7 @@ public:
           Reporter.warnParametersAlias(CA.Loc, i.first->second, Var.getName());
       }
     }
-
-    /*llvm::errs() << "Vars passed into call: ";
-    for (auto &KV : AllVars) {
-      llvm::errs() << " " << KV.first.getName();
-    }
-    llvm::errs() << "\n";*/
-  }
+  }*/
 
   /// Evaluates the CallExpr for effects on psets.
   /// When a non-const pointer to pointer or reference to pointer is passed
@@ -491,7 +485,7 @@ public:
     // == pset(x)
 
     std::vector<CallArgument> PinExtended = diagnoseAndExpandPin(Args.Pin);
-    diagnoseParameterAliasing(PinExtended, Args.Oin);
+    // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // If p is explicitly lifetime-annotated with x, then each call site
     // enforces the precondition that argument(p) is a valid Pointer and
