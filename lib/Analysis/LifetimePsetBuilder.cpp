@@ -342,45 +342,42 @@ public:
     std::vector<CallArgument> Oin;
     std::vector<CallArgument> Pin;
     // The pointee is the output
-    std::vector<const Expr *> Pout;
+    std::vector<CallArgument> Pout;
   };
 
   void PushCallArguments(const Expr *Arg, QualType ParamQType,
                          CallArguments &Args) {
     // TODO implement gsl::lifetime annotations
     // TODO implement aggregates
-    const Type *ParamType = ParamQType->getUnqualifiedDesugaredType();
+    SourceLocation ArgLoc = Arg->getExprLoc();
 
-    if (auto *R = dyn_cast<ReferenceType>(ParamType)) {
+    if (auto *R = ParamQType->getAs<ReferenceType>()) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
         if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.emplace_back(Arg->getExprLoc(), getPSet(Arg),
-                                       ParamQType);
+          Args.Oin_strong.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
         } else if (ParamQType.isConstQualified()) {
-          Args.Oin_weak.emplace_back(Arg->getExprLoc(), getPSet(Arg),
-                                     ParamQType);
+          Args.Oin_weak.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
         } else {
-          Args.Oin.emplace_back(Arg->getExprLoc(),
-                                derefPSet(getPSet(Arg), Arg->getExprLoc()),
-                                ParamQType);
+          Args.Oin.emplace_back(
+              ArgLoc, derefPSet(getPSet(Arg), Arg->getExprLoc()), ParamQType);
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
+        Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
       }
 
     } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(Arg->getExprLoc(), getPSet(Arg), ParamQType);
+      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
     }
 
-    // A “function output” means a return value or a parameter passed by raw
-    // pointer to non-const (and is not considered to include the top-level raw
-    // pointer, because the output is the pointee).
-    if (ParamQType->isPointerType()) {
-      auto Pointee = ParamType->getPointeeType();
+    // A “function output” means a return value or a parameter passed by
+    // Pointer to non-const (and is not considered to include the top-level
+    // Pointer, because the output is the pointee).
+    if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
+      QualType Pointee = getPointeeType(ParamQType);
       if (!Pointee.isConstQualified() &&
           classifyTypeCategory(Pointee) == TypeCategory::Pointer)
-        Args.Pout.push_back(Arg);
+        Args.Pout.emplace_back(ArgLoc, getPSet(Arg), Pointee);
     }
   }
 
@@ -511,20 +508,26 @@ public:
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
 
-    PSet Ret;
-    QualType RetType = normalizeType(CT.FTy->getReturnType(), ASTCtxt);
-    for (CallArgument &CA : PinExtended) {
-      if (IsConvertible(CA.QType, RetType))
-        Ret.merge(CA.PS);
+    auto computeOutput = [&](QualType OutputType) {
+      PSet Ret;
+      QualType RetType = normalizeType(OutputType, ASTCtxt);
+      for (CallArgument &CA : PinExtended) {
+        if (IsConvertible(CA.QType, RetType))
+          Ret.merge(CA.PS);
+      }
+      for (CallArgument &CA : Args.Oin) {
+        QualType CheckType = getPointerIntoOwner(CA.QType, ASTCtxt);
+        if (IsConvertible(CheckType, RetType))
+          Ret.merge(CA.PS);
+      }
+      if (Ret.isUnknown())
+        Ret.addStatic();
+      return Ret;
+    };
+    setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
+    for (const auto Arg : Args.Pout) {
+      setPSet(Arg.PS, computeOutput(Arg.QType), CallE->getLocStart());
     }
-    for (CallArgument &CA : Args.Oin) {
-      QualType CheckType = getPointerIntoOwner(CA.QType, ASTCtxt);
-      if (IsConvertible(CheckType, RetType))
-        Ret.merge(CA.PS);
-    }
-    if (Ret.isUnknown())
-      Ret.addStatic();
-    setPSet(CallE, Ret);
     return true;
   }
 
