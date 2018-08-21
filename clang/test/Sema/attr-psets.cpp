@@ -6,7 +6,10 @@
 // function calls
 
 template <typename T>
-bool __lifetime_pset(const T &);
+bool __lifetime_pset(const T&);
+
+template <typename T>
+bool __lifetime_pset_ref(const T&);
 
 namespace std {
 template <typename T>
@@ -53,6 +56,7 @@ int rand();
 struct S {
   ~S();
   int m;
+  int *mp;
   static int s;
   void f() {
     int *p = &m;        // pset becomes m, not *this
@@ -61,6 +65,7 @@ struct S {
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
     int *ps2 = &this->s;
     __lifetime_pset(ps2); // expected-warning {{pset(ps2) = ((static))}}
+    __lifetime_pset(mp); // expected-warning {{pset(mp) = ((static))}}
   }
   int *get();
 };
@@ -112,21 +117,21 @@ void ref_exprs() {
   bool b;
   int i, j;
   int &ref1 = i;
-  __lifetime_pset(ref1); // expected-warning {{pset(ref1) = (i)}}
+  __lifetime_pset_ref(ref1); // expected-warning {{pset(ref1) = (i)}}
 
   int *p = &ref1;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
 
   int &ref2 = b ? i : j;
-  __lifetime_pset(ref2); // expected-warning {{pset(ref2) = (i, j)}}
+  __lifetime_pset_ref(ref2); // expected-warning {{pset(ref2) = (i, j)}}
 
   // Lifetime extension
   const int &ref3 = 3;
-  __lifetime_pset(ref3); // expected-warning {{pset(ref3) = ((lifetime-extended temporary through ref3))}}
+  __lifetime_pset_ref(ref3); // expected-warning {{pset(ref3) = ((lifetime-extended temporary through ref3))}}
 
   // Lifetime extension of pointer
   int *const &refp = &i;
-  __lifetime_pset(refp); // expected-warning {{pset(refp) = ((lifetime-extended temporary through refp))}}
+  __lifetime_pset_ref(refp); // expected-warning {{pset(refp) = ((lifetime-extended temporary through refp))}}
   p = refp;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
 }
@@ -607,7 +612,7 @@ void Example1_4() {
   {
     int i = 0;
     int &ri = i;
-    __lifetime_pset(ri); // expected-warning {{pset(ri) = (i)}}
+    __lifetime_pset_ref(ri); // expected-warning {{pset(ri) = (i)}}
     p1 = &ri;
     __lifetime_pset(p1); // expected-warning {{pset(p1) = (i)}}
     *p1 = 1;             // ok

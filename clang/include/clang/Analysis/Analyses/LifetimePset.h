@@ -117,7 +117,7 @@ struct Variable {
   }
 
   const VarDecl* asVarDecl() const {
-    return Var.get<const VarDecl *>();
+    return Var.dyn_cast<const VarDecl *>();
   }
 
   // Chain of field accesses starting from VD. Types must match.

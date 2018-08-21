@@ -13,6 +13,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/Lex/Lexer.h"
 
 namespace clang {
 namespace lifetime {
@@ -574,11 +575,6 @@ public:
   void setPSet(PSet LHS, PSet RHS, SourceLocation Loc);
   PSet derefPSet(PSet P, SourceLocation Loc);
 
-  void diagPSet(Variable V, SourceLocation Loc) {
-    PSet set = getPSet(V);
-    Reporter.debugPset(Loc, V.getName(), set.str());
-  }
-
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
 public:
@@ -823,37 +819,35 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
 
   auto FuncNum = llvm::StringSwitch<int>(I->getName())
                      .Case("__lifetime_pset", 1)
-                     .Case("__lifetime_type_category", 2)
-                     .Case("__lifetime_type_category_arg", 3)
+                     .Case("__lifetime_pset_ref", 2)
+                     .Case("__lifetime_type_category", 3)
+                     .Case("__lifetime_type_category_arg", 4)
                      .Default(0);
   if (FuncNum == 0)
     return false;
 
   auto Loc = CallE->getLocStart();
   switch (FuncNum) {
-  case 1: {
+  case 1:
+  case 2: {
     assert(CallE->getNumArgs() == 1 && "__lifetime_pset takes one argument");
-
-    // TODO: handle MemberExprs.
-    const auto *DeclRef =
-        dyn_cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts());
-    assert(DeclRef && "Argument to __lifetime_pset must be a DeclRefExpr");
-
-    const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
-    assert(VD && "Argument to __lifetime_pset must be a reference to "
-                 "a VarDecl");
-
-    diagPSet(VD, Loc);
+    PSet Set = getPSet(CallE->getArg(0));
+    if (FuncNum == 1)
+      Set = getPSet(Set);
+    StringRef SourceText = Lexer::getSourceText(
+        CharSourceRange::getTokenRange(CallE->getArg(0)->getSourceRange()),
+        ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
+    Reporter.debugPset(Loc, SourceText, Set.str());
     return true;
   }
-  case 2: {
+  case 3: {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
     TypeCategory TC = classifyTypeCategory(QType);
     Reporter.debugTypeCategory(Loc, TC);
     return true;
   }
-  case 3: {
+  case 4: {
     auto QType = CallE->getArg(0)->getType();
     TypeCategory TC = classifyTypeCategory(QType);
     Reporter.debugTypeCategory(Loc, TC);
