@@ -6565,6 +6565,18 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
     HadError = true;
   }
 
+  // Explicitly-defaulted functions can only be immediate if
+  // they are implicitly constexpr.
+  if (getLangOpts().Reflection &&
+      (getLangOpts().CPlusPlus14 ?
+       !isa<CXXDestructorDecl>(MD)
+       : isa<CXXConstructorDecl>(MD)) &&
+      MD->isImmediate() && !Constexpr &&
+      MD->getTemplatedKind() == FunctionDecl::TK_NonTemplate) {    
+    Diag(MD->getBeginLoc(), diag::err_incorrect_defaulted_immediate) << CSM;
+    HadError = true;
+  }
+
   //   and may have an explicit exception-specification only if it is compatible
   //   with the exception-specification on the implicit declaration.
   if (Type->hasExceptionSpec()) {
