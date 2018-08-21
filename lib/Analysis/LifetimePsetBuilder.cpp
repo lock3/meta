@@ -400,14 +400,7 @@ public:
         CA.PS.explainWhyNull(Reporter);
       }
 
-      QualType QT = getPointeeType(CA.QType);
-      PSet PS = CA.PS;
-      // Expand deref locations for pointers.
-      while (classifyTypeCategory(QT) == TypeCategory::Pointer) {
-        PS = derefPSet(PS, CA.Loc);
-        PinExtended.emplace_back(CA.Loc, PS, QT);
-        QT = getPointeeType(QT);
-      }
+      // TODO: expand fields.
     }
     return PinExtended;
   }
