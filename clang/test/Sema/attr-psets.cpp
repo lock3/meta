@@ -674,11 +674,14 @@ void return_pointer() {
   auto *pmem2 = v1p->data();
   __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = (v1')}}
 
-  int *g(int *, float *);
+  int *g(int *, float *, float**);
   int a;
   float b;
-  int *q = g(&a, &b);
+  float *c;
+  int *q = g(&a, &b, &c);
   __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
+  // TODO: do we need invalid here? Discuss.
+  __lifetime_pset(c); // expected-warning {{pset(c) = ((invalid), b)}}
 }
 
 void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {
