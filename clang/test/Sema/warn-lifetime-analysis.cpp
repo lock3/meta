@@ -95,7 +95,7 @@ void function_call() {
 
   int i;
   p = &i;
-  h(p, q); // expected-warning {{this argument points to the same variable 'i' as another argument}} expected-note {{here}}
+  h(p, q);
 }
 
 void for_stmt() {
