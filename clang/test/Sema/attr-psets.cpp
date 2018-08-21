@@ -680,8 +680,7 @@ void return_pointer() {
   float *c;
   int *q = g(&a, &b, &c);
   __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
-  // TODO: do we need invalid here? Discuss.
-  __lifetime_pset(c); // expected-warning {{pset(c) = ((invalid), b)}}
+  __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
 }
 
 void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {
