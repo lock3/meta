@@ -129,9 +129,10 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   /// TODO This can be changed to a VarDecl to make it static
   /// member data
+  QualType ConstReflectionType = ReflectionType.withConst();
   FieldDecl *Field = FieldDecl::Create(
                                        Context, Class, Loc, Loc, ReflectionFieldId,
-                                       ReflectionType, ReflectionTypeInfo,
+                                       ConstReflectionType, ReflectionTypeInfo,
                                        nullptr, false,
                                        ICIS_NoInit);
   Field->setAccess(AS_public);
