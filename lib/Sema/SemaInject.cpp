@@ -189,7 +189,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
     DeclRefExpr *Ref = new (Context) DeclRefExpr(
         Parm, false, Parm->getType(), VK_LValue, Loc);
     Expr *Arg = new (Context) ParenListExpr(Context, Loc, Ref, Loc);
-    Inits[I + 1] = BuildMemberInitializer(Field, Arg, Loc).get();
+    Inits[I] = BuildMemberInitializer(Field, Arg, Loc).get();
   }
   Ctor->setNumCtorInitializers(NumInits);
   Ctor->setCtorInitializers(Inits);
