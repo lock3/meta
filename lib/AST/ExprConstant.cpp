@@ -5117,6 +5117,19 @@ public:
     return DerivedSuccess(Result, E);
   }
 
+  bool VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+
+    // Just evaluate the initializer to produce an object of fragment type.
+    // This will also evaluate the captured variables since they are
+    // arguments to the constructor call.
+    APValue Result;
+    if (!Evaluate(Result, Info, E->getInitializer()))
+      return false;
+    return DerivedSuccess(Result, E);
+  }
+
   /// Visit a value which is evaluated, but whose value is ignored.
   void VisitIgnoredValue(const Expr *E) {
     EvaluateIgnoredValue(Info, E);
