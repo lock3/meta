@@ -2015,6 +2015,10 @@ public:
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_dereferenced);
   }
+  void noteModified(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_modified);
+  }
   void noteAssigned(SourceLocation Loc) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_assigned);

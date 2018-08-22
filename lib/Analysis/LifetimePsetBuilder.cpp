@@ -331,57 +331,44 @@ public:
 
   struct CallArgument {
     CallArgument(SourceLocation Loc, PSet PS, QualType QType)
-        : Loc(Loc), PS(std::move(PS)), ArgQType(QType) {}
+        : Loc(Loc), PS(std::move(PS)), ParamQType(QType) {}
     SourceLocation Loc;
     PSet PS;
-    QualType ArgQType;
+    QualType ParamQType;
   };
 
   struct CallArguments {
-    std::vector<CallArgument> Oin_strong;
     std::vector<CallArgument> Oin_weak;
-    std::vector<CallArgument> Oin;
+    std::vector<CallArgument> Oinvalidate;
     std::vector<CallArgument> Pin;
-    // The pointee is the output
-    std::vector<CallArgument> Pout;
-  };
-
-  void PushCallArguments(const Expr *Arg, CallArguments &Args) {
-    // TODO implement gsl::lifetime annotations
-    // TODO implement aggregates
-    SourceLocation ArgLoc = Arg->getExprLoc();
-    QualType ArgQType = Arg->getType();
-    if (Arg->isLValue())
-      ArgQType = ASTCtxt.getLValueReferenceType(ArgQType,
-                                                /*SpelledAsLValue=*/true);
-
-    if (auto *R = ArgQType->getAs<ReferenceType>()) {
-      if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
-        if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
-        } else if (ArgQType.isConstQualified()) {
-          Args.Oin_weak.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
-        } else {
-          Args.Oin.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
-                                ArgQType);
-        }
-      } else {
-        // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
-      }
-
-    } else if (classifyTypeCategory(ArgQType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
-    }
-
+    std::vector<CallArgument> Oin;
     // A “function output” means a return value or a parameter passed by
     // Pointer to non-const (and is not considered to include the top-level
     // Pointer, because the output is the pointee).
-    if (classifyTypeCategory(ArgQType) == TypeCategory::Pointer) {
-      QualType Pointee = getPointeeType(ArgQType);
-      if (!Pointee.isConstQualified() &&
-          classifyTypeCategory(Pointee) == TypeCategory::Pointer)
-        Args.Pout.emplace_back(ArgLoc, getPSet(Arg), Pointee);
+    std::vector<CallArgument> Pout;
+  };
+
+  void PushCallArguments(const FunctionDecl *FD, int ArgNum, const Expr *Arg,
+                         QualType ParamType, CallArguments &Args) {
+    // TODO implement aggregates
+    SourceLocation ArgLoc = Arg->getExprLoc();
+    if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
+      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamType);
+      QualType Pointee = getPointeeType(ParamType);
+      if (!Pointee.isConstQualified()) {
+        if (classifyTypeCategory(Pointee) == TypeCategory::Pointer)
+          Args.Pout.emplace_back(ArgLoc, getPSet(Arg), Pointee);
+        else if (classifyTypeCategory(Pointee) == TypeCategory::Owner) {
+          if (!isLifetimeConst(FD, Pointee, ArgNum))
+            Args.Oinvalidate.emplace_back(ArgLoc, getPSet(Arg), Pointee);
+          Args.Oin.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
+                                Pointee);
+        }
+      } else if (classifyTypeCategory(Pointee) == TypeCategory::Owner) {
+        if (ParamType->isLValueReferenceType())
+          Args.Oin_weak.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
+                                     Pointee);
+      }
     }
   }
 
@@ -391,14 +378,14 @@ public:
   diagnoseAndExpandPin(const std::vector<CallArgument> &PinArgs) {
     std::vector<CallArgument> PinExtended;
     for (auto &CA : PinArgs) {
-      PinExtended.emplace_back(CA.Loc, CA.PS, CA.ArgQType);
+      PinExtended.emplace_back(CA.Loc, CA.PS, CA.ParamQType);
 
       if (CA.PS.containsInvalid()) {
         Reporter.warnParameterDangling(CA.Loc,
                                        /*indirectly=*/false);
         CA.PS.explainWhyInvalid(Reporter);
         break;
-      } else if (CA.PS.containsNull() && !isNullableType(CA.ArgQType)) {
+      } else if (CA.PS.containsNull() && !isNullableType(CA.ParamQType)) {
         Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
         CA.PS.explainWhyNull(Reporter);
       }
@@ -447,9 +434,28 @@ public:
 
     auto *CalleeE = CallE->getCallee();
     CallTypes CT = getCallTypes(CalleeE);
+    auto ParamTypes = CT.FTy->getParamTypes();
     CallArguments Args;
-    for (const Expr *Arg : CallE->arguments()) {
-      PushCallArguments(Arg, Args); // Append to Args.
+    for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
+      const Expr *Arg = CallE->getArg(I);
+      QualType ParamType = [&] {
+        // For instance calls, getArg(0) is the 'this' pointer.
+        if (isa<CXXOperatorCallExpr>(CallE)) {
+          if (I == 0) {
+            // TODO handle Arg->getType()->isPointerType()
+            auto QT = ASTCtxt.getLValueReferenceType(Arg->getType());
+            if (CT.FTy->isConst())
+              QT.addConst();
+            return QT;
+          } else
+            return ParamTypes[I - 1];
+        }
+        if (I >= ParamTypes.size())
+          return Arg->getType();
+        else
+          return ParamTypes[I];
+      }();
+      PushCallArguments(CallE->getDirectCallee(), I, Arg, ParamType, Args);
     }
 
     if (CT.ClassDecl) {
@@ -462,15 +468,12 @@ public:
         QualType ObjectType = Object->getType();
         if (ObjectType->isPointerType())
           ObjectType = ObjectType->getPointeeType();
+        ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
+        if (CT.FTy->isConst())
+          ObjectType.addConst();
 
-        auto TC = classifyTypeCategory(ObjectType);
-        if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-          PSet PS = derefPSet(getPSet(Object), CallE->getExprLoc());
-          if (TC == TypeCategory::Pointer)
-            Args.Pin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
-          else if (TC == TypeCategory::Owner)
-            Args.Oin.emplace_back(CallE->getExprLoc(), PS, ObjectType);
-        }
+        PushCallArguments(CallE->getDirectCallee(), 0, Object, ObjectType,
+                          Args);
       }
     }
 
@@ -480,6 +483,14 @@ public:
     std::vector<CallArgument> PinExtended = diagnoseAndExpandPin(Args.Pin);
     // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
+    // Invalidate owners taken by Pointer to non-const.
+    // TODO: handle lifetime_const annotations
+    for (const auto &Arg : Args.Oinvalidate) {
+      for (auto VarOrd : Arg.PS.vars()) {
+        invalidateVar(VarOrd.first, 0, InvalidationReason::Modified(Arg.Loc));
+      }
+    }
+
     // If p is explicitly lifetime-annotated with x, then each call site
     // enforces the precondition that argument(p) is a valid Pointer and
     // pset(argument(p)) == pset(argument(x)), and in the callee on function
@@ -487,26 +498,32 @@ public:
 
     // Enforce that pset() of each argument does not refer to a non-const
     // global Owner
-
     auto computeOutput = [&](QualType OutputType) {
       PSet Ret;
       QualType RetType = normalizeType(OutputType, ASTCtxt);
       for (CallArgument &CA : PinExtended) {
-        if (IsConvertible(CA.ArgQType, RetType))
+        if (IsConvertible(normalizeType(CA.ParamQType, ASTCtxt), RetType))
           Ret.merge(CA.PS);
       }
       for (CallArgument &CA : Args.Oin) {
-        QualType CheckType = getPointerIntoOwner(CA.ArgQType, ASTCtxt);
+        QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
         if (IsConvertible(CheckType, RetType))
           Ret.merge(CA.PS);
+      }
+      if (Ret.isUnknown()) {
+        for (CallArgument &CA : Args.Oin_weak) {
+          QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
+          if (IsConvertible(CheckType, RetType))
+            Ret.merge(CA.PS);
+        }
       }
       if (Ret.isUnknown())
         Ret.addStatic();
       return Ret;
     };
     setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
-    for (const auto Arg : Args.Pout) {
-      setPSet(Arg.PS, computeOutput(Arg.ArgQType), CallE->getLocStart());
+    for (const auto &Arg : Args.Pout) {
+      setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
     }
     return true;
   }
@@ -514,14 +531,14 @@ public:
   void CheckPSetValidity(const PSet &PS, SourceLocation Loc);
 
   /// Invalidates all psets that point to V or something owned by V
-  void invalidateOwner(Variable O, unsigned order, InvalidationReason Reason) {
+  void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
       PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
-      if (PS.containsBase(O, order))
+      if (PS.containsBase(V, order))
         setPSet(PSet::singleton(Pointer), PSet::invalid(Reason),
                 Reason.getLoc());
     }
@@ -876,8 +893,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 
       // Kill all temporaries that vanish at the end of the full expression
       if (isa<ExprWithCleanups>(S))
-        invalidateOwner(Variable::temporary(), 0,
-                        InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+        invalidateVar(Variable::temporary(), 0,
+                      InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
 
       break;
     }
@@ -888,7 +905,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       erasePointer(Leaver.getVarDecl());
 
       // Invalidate all pointers that track leaving Owners
-      invalidateOwner(
+      invalidateVar(
           Leaver.getVarDecl(), 0,
           InvalidationReason::PointeeLeftScope(
               Leaver.getTriggerStmt()->getLocEnd(), Leaver.getVarDecl()));

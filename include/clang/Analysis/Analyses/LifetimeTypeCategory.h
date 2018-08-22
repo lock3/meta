@@ -42,6 +42,8 @@ struct CallTypes {
 /// Obtains the function prototype (without 'this' pointer) and the type of
 /// the object (if MemberCallExpr).
 CallTypes getCallTypes(const Expr *CalleeE);
+
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum);
 } // namespace lifetime
 } // namespace clang
 
