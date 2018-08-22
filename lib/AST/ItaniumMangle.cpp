@@ -1779,6 +1779,9 @@ void CXXNameMangler::manglePrefix(const DeclContext *DC, bool NoFunction) {
   if (NoFunction && isLocalContainerContext(DC))
     return;
 
+  if (isa<CXXFragmentDecl>(DC))
+    return;
+
   assert(!isLocalContainerContext(DC));
 
   const NamedDecl *ND = cast<NamedDecl>(DC);
