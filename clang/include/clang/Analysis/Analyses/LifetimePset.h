@@ -116,9 +116,7 @@ struct Variable {
     return classifyTypeCategory(getType()) == TypeCategory::Pointer;
   }
 
-  const VarDecl* asVarDecl() const {
-    return Var.dyn_cast<const VarDecl *>();
-  }
+  const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
@@ -165,7 +163,7 @@ class InvalidationReason {
     POINTER_ARITHMETIC,
     FORBIDDEN_CAST,
     DEREFERENCED,
-    ASSIGNED,
+    MODIFIED
   } Reason;
 
   const VarDecl *Pointee;
@@ -201,8 +199,8 @@ public:
     case DEREFERENCED:
       Reporter.noteDereferenced(Loc);
       return;
-    case ASSIGNED:
-      Reporter.noteAssigned(Loc);
+    case MODIFIED:
+      Reporter.noteModified(Loc);
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
@@ -234,8 +232,8 @@ public:
     return {Loc, FORBIDDEN_CAST};
   }
 
-  static InvalidationReason Assigned(SourceLocation Loc) {
-    return {Loc, ASSIGNED};
+  static InvalidationReason Modified(SourceLocation Loc) {
+    return {Loc, MODIFIED};
   }
 };
 

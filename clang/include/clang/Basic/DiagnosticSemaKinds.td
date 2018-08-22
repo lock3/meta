@@ -3215,6 +3215,7 @@ def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
 def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
 def note_forbidden_cast: Note<"used a forbidden cast here">;
+def note_modified: Note<"modified here">;
 def note_assigned: Note<"assigned here">;
 def note_here: Note<"here">;
 

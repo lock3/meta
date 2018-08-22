@@ -46,6 +46,7 @@ public:
   virtual void notePointerArithmetic(SourceLocation Loc) = 0;
   virtual void noteForbiddenCast(SourceLocation Loc) = 0;
   virtual void noteDereferenced(SourceLocation Loc) = 0;
+  virtual void noteModified(SourceLocation Loc) = 0;
   virtual void noteAssigned(SourceLocation Loc) = 0;
   virtual void debugPset(SourceLocation Loc, StringRef Variable,
                          std::string Pset) = 0;

@@ -18,6 +18,7 @@ struct vector {
   T *begin();
   T *end();
   T &operator[](unsigned);
+  T &at(unsigned);
   T *data();
   ~vector();
 };
@@ -385,11 +386,11 @@ void for_stmt() {
   // There are different psets on the first and further iterations.
   for (int i = 0; i < 1024; ++i) {
     __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
-                        // expected-warning@-1 {{pset(p) = (initial, j)}}
+                        // expected-warning@-1 {{pset(p) = (j, initial)}}
     p = &j;
   }
   __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
-                      // expected-warning@-1 {{pset(p) = (initial, j)}}
+                      // expected-warning@-1 {{pset(p) = (j, initial)}}
 }
 
 void for_stmt_ptr_decl() {
@@ -655,6 +656,8 @@ void Example9() {
   __lifetime_pset(v1); // expected-warning {{pset(v1) = (v1')}}
   int *pi = &v1[0];
   __lifetime_pset(pi); // expected-warning {{pset(pi) = (v1')}}
+  pi = &v1.at(0);
+  __lifetime_pset(pi); // expected-warning {{pset(pi) = (v1')}}
   auto v2 = std::move(v1);
   //__lifetime_pset(pi); // TODOexpected-warning {{pset(pi) = (v2')}}
 }
@@ -663,21 +666,29 @@ void return_pointer() {
   std::vector<int> v1(100);
   __lifetime_pset(v1); // expected-warning {{pset(v1) = (v1')}}
 
-  int *f(std::vector<int> &);
+  int *f(const std::vector<int> &);
+  const std::vector<int> &id(const std::vector<int> &);
+  void invalidate(std::vector<int> &);
   int *p = f(v1);
   __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
+  const std::vector<int> &v2 = id(v1);
+  __lifetime_pset_ref(v2); // expected-warning {{pset(v2) = (v1)}}
 
   int &r = v1[0];
   __lifetime_pset(r); // expected-warning {{pset(r) = (v1')}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
 
   int *pmem = v1.data();
   __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
 
   auto *v1p = &v1;
   __lifetime_pset(v1p); // expected-warning {{pset(v1p) = (v1)}}
 
   auto *pmem2 = v1p->data();
   __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = (v1')}}
+  invalidate(v1);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 
   int *g(int *, float *, float**);
   int a;

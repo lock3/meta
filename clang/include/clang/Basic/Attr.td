@@ -2776,6 +2776,12 @@ def Pointer : DeclOrTypeAttr {
   let Documentation = [Undocumented]; // FIXME
 }
 
+def Lifetimeconst : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetimeconst">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
 // Microsoft-related attributes
 
 def MSNoVTable : InheritableAttr, TargetSpecificAttr<TargetMicrosoftCXXABI> {

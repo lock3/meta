@@ -116,7 +116,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Value;
   }
 
-  if(!R->hasDefinition())
+  if (!R->hasDefinition())
     return TypeCategory::Value;
 
   if (R->hasAttr<OwnerAttr>())
@@ -275,6 +275,26 @@ CallTypes getCallTypes(const Expr *CalleeE) {
 
   assert(CT.FTy);
   return CT;
+}
+
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
+  // Until annotations are widespread, STL specific lifetimeconst
+  // methods and params can be enumerated here.
+  if (!FD)
+    return false;
+  if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
+    if (ArgNum == 0) {
+      if (FD->isOverloadedOperator()) {
+        return MD->isConst() || MD->hasAttr<LifetimeconstAttr>() ||
+               FD->getOverloadedOperator() == OO_Subscript;
+      } else
+        return FD->getName() == "at" || FD->getName() == "data";
+    }
+  }
+  if (ArgNum >= FD->param_size())
+    return false;
+  auto Param = FD->parameters()[ArgNum];
+  return Pointee.isConstQualified() || Param->hasAttr<LifetimeconstAttr>();
 }
 } // namespace lifetime
 } // namespace clang
