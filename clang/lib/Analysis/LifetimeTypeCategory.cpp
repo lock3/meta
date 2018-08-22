@@ -286,7 +286,8 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
     if (ArgNum == 0) {
       if (FD->isOverloadedOperator()) {
         return MD->isConst() || MD->hasAttr<LifetimeconstAttr>() ||
-               FD->getOverloadedOperator() == OO_Subscript;
+               FD->getOverloadedOperator() == OO_Subscript ||
+               FD->getOverloadedOperator() == OO_Star;
       } else
         return FD->getName() == "at" || FD->getName() == "data";
     }

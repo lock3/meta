@@ -348,26 +348,32 @@ public:
     std::vector<CallArgument> Pout;
   };
 
-  void PushCallArguments(const FunctionDecl *FD, int ArgNum, const Expr *Arg,
-                         QualType ParamType, CallArguments &Args) {
+  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
+                         PSet Set, QualType ParamType, bool IsThisArg,
+                         CallArguments &Args) {
     // TODO implement aggregates
-    SourceLocation ArgLoc = Arg->getExprLoc();
     if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamType);
+      if (ParamType->isRValueReferenceType())
+        return;
+      Args.Pin.emplace_back(Loc, Set, ParamType);
       QualType Pointee = getPointeeType(ParamType);
+      auto TC = classifyTypeCategory(Pointee);
       if (!Pointee.isConstQualified()) {
-        if (classifyTypeCategory(Pointee) == TypeCategory::Pointer)
-          Args.Pout.emplace_back(ArgLoc, getPSet(Arg), Pointee);
-        else if (classifyTypeCategory(Pointee) == TypeCategory::Owner) {
+        if (TC == TypeCategory::Pointer)
+          Args.Pout.emplace_back(Loc, Set, Pointee);
+        else if (TC == TypeCategory::Owner) {
           if (!isLifetimeConst(FD, Pointee, ArgNum))
-            Args.Oinvalidate.emplace_back(ArgLoc, getPSet(Arg), Pointee);
-          Args.Oin.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
-                                Pointee);
+            Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
+          Args.Oin.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
         }
-      } else if (classifyTypeCategory(Pointee) == TypeCategory::Owner) {
+      } else if (TC == TypeCategory::Owner) {
         if (ParamType->isLValueReferenceType())
-          Args.Oin_weak.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
-                                     Pointee);
+          Args.Oin_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      }
+      // For this, we also push the pointed value.
+      if (IsThisArg) {
+        if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
+          PushCallArguments(FD, 0, Loc, getPSet(Set), Pointee, false, Args);
       }
     }
   }
@@ -438,6 +444,7 @@ public:
     CallArguments Args;
     for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
       const Expr *Arg = CallE->getArg(I);
+      bool IsThisArg = false;
       QualType ParamType = [&] {
         // For instance calls, getArg(0) is the 'this' pointer.
         if (isa<CXXOperatorCallExpr>(CallE)) {
@@ -446,6 +453,7 @@ public:
             auto QT = ASTCtxt.getLValueReferenceType(Arg->getType());
             if (CT.FTy->isConst())
               QT.addConst();
+            IsThisArg = true;
             return QT;
           } else
             return ParamTypes[I - 1];
@@ -455,7 +463,8 @@ public:
         else
           return ParamTypes[I];
       }();
-      PushCallArguments(CallE->getDirectCallee(), I, Arg, ParamType, Args);
+      PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(),
+                        getPSet(Arg), ParamType, IsThisArg, Args);
     }
 
     if (CT.ClassDecl) {
@@ -468,12 +477,13 @@ public:
         QualType ObjectType = Object->getType();
         if (ObjectType->isPointerType())
           ObjectType = ObjectType->getPointeeType();
+        auto TC = classifyTypeCategory(ObjectType);
         ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
         if (CT.FTy->isConst())
           ObjectType.addConst();
 
-        PushCallArguments(CallE->getDirectCallee(), 0, Object, ObjectType,
-                          Args);
+        PushCallArguments(CallE->getDirectCallee(), 0, Object->getLocStart(),
+                          getPSet(Object), ObjectType, true, Args);
       }
     }
 
