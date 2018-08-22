@@ -891,7 +891,7 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
-Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
+Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
   if (FunctionDecl *Fn = D->getFunctionDecl()) {
     // Instantiate the nested function.
     //
@@ -914,7 +914,7 @@ Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
     NewFn->setBody(NewBody.get());
 
     // Build the constexpr declaration.
-    ConstexprDecl *CD = ConstexprDecl::Create(SemaRef.Context, Owner,
+    CXXMetaprogramDecl *CD = CXXMetaprogramDecl::Create(SemaRef.Context, Owner,
                                               Fn->getLocation(), NewFn);
     Owner->addDecl(CD); // FIXME: OWner or CurContext?
 
@@ -923,7 +923,7 @@ Decl *TemplateDeclInstantiator::VisitConstexprDecl(ConstexprDecl *D) {
       // FIXME: What the hell are we going to do with late parsed
       // declarations during template instantiation?
       SmallVector<void *, 8> LateParsedDecls;
-      SemaRef.EvaluateConstexprDecl(CD, NewFn);
+      SemaRef.EvaluateCXXMetaprogramDecl(CD, NewFn);
     }
 
     return CD;

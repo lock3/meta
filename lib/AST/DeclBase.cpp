@@ -789,7 +789,6 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Export:
     case FileScopeAsm:
     case StaticAssert:
-    case Constexpr:
     case ObjCPropertyImpl:
     case PragmaComment:
     case PragmaDetectMismatch:
@@ -815,6 +814,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPCapturedExpr:
     case Empty:
     case CXXFragment:
+    case CXXMetaprogram:
       // Never looked up by name.
       return 0;
   }

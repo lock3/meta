@@ -942,9 +942,9 @@ static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {
 ///
 /// \p ScopeFlags is set to the value that should be used to create the scope
 /// containing the constexpr-declaration body.
-Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
+Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
                                unsigned &ScopeFlags) {
-  ConstexprDecl *CD;
+  CXXMetaprogramDecl *CD;
   if (NeedsFunctionRepresentation(CurContext)) {
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
     PushFunctionScope();
@@ -979,7 +979,7 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
     // Function->setMetaprogram();
 
     // Build the constexpr declaration around the function.
-    CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Function);
+    CD = CXXMetaprogramDecl::Create(Context, CurContext, ConstexprLoc, Function);
   } else if (CurContext->isFunctionOrMethod()) {
     ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
 
@@ -1021,9 +1021,9 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
     // Method->setMetaprogram();
 
     // NOTE: The call operator is not yet attached to the closure type. That
-    // happens in ActOnFinishConstexprDecl(). The operator is, however,
+    // happens in ActOnFinishCXXMetaprogramDecl(). The operator is, however,
     // available in the LSI.
-    CD = ConstexprDecl::Create(Context, CurContext, ConstexprLoc, Closure);
+    CD = CXXMetaprogramDecl::Create(Context, CurContext, ConstexprLoc, Closure);
   } else
     llvm_unreachable("constexpr declaration in unsupported context");
 
@@ -1038,8 +1038,8 @@ Decl *Sema::ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
 ///
 /// This ensures that the declaration context is pushed with the appropriate
 /// scope.
-void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
-  ConstexprDecl *CD = cast<ConstexprDecl>(D);
+void Sema::ActOnStartCXXMetaprogramDecl(Scope *S, Decl *D) {
+  CXXMetaprogramDecl *CD = cast<CXXMetaprogramDecl>(D);
 
   if (CD->hasFunctionRepresentation()) {
     if (S)
@@ -1060,17 +1060,17 @@ void Sema::ActOnStartConstexprDecl(Scope *S, Decl *D) {
 /// Called immediately after parsing the body of a constexpr-declaration.
 ///
 /// The statements within the body are evaluated here.
-void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
-  ConstexprDecl *CD = cast<ConstexprDecl>(D);
+void Sema::ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
+  CXXMetaprogramDecl *CD = cast<CXXMetaprogramDecl>(D);
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
     ActOnFinishFunctionBody(Fn, Body);
     if (!CurContext->isDependentContext())
-      EvaluateConstexprDecl(CD, Fn);
+      EvaluateCXXMetaprogramDecl(CD, Fn);
   } else {
     ExprResult Lambda = ActOnLambdaExpr(CD->getLocation(), Body, S);
     if (!CurContext->isDependentContext())
-      EvaluateConstexprDecl(CD, Lambda.get());
+      EvaluateCXXMetaprogramDecl(CD, Lambda.get());
   }
 
   // If we didn't have a scope when building this, we need to restore the
@@ -1080,8 +1080,8 @@ void Sema::ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body) {
 }
 
 /// Called when an error occurs while parsing the constexpr-declaration body.
-void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
-  ConstexprDecl *CD = cast<ConstexprDecl>(D);
+void Sema::ActOnCXXMetaprogramDeclError(Scope *S, Decl *D) {
+  CXXMetaprogramDecl *CD = cast<CXXMetaprogramDecl>(D);
   CD->setInvalidDecl();
   if (CD->hasFunctionRepresentation())
     ActOnFinishFunctionBody(CD->getFunctionDecl(), nullptr);
@@ -1099,7 +1099,7 @@ void Sema::ActOnConstexprDeclError(Scope *S, Decl *D) {
 ///
 /// This builds an unnamed constexpr void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
-bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D) {
+bool Sema::EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, FunctionDecl *D) {
   QualType FunctionTy = D->getType();
   DeclRefExpr *Ref =
       new (Context) DeclRefExpr(D, /*RefersToEnclosingVariableOrCapture=*/false,
@@ -1111,14 +1111,14 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D) {
   CallExpr *Call =
       new (Context) CallExpr(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
                              VK_RValue, SourceLocation());
-  return EvaluateConstexprDeclCall(CD, Call);
+  return EvaluateCXXMetaprogramDeclCall(CD, Call);
 }
 
 /// Process a constexpr-declaration.
 ///
 /// This builds an unnamed \c constexpr \c void function whose body is that of
 /// the constexpr-delaration, and evaluates a call to that function.
-bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E) {
+bool Sema::EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, Expr *E) {
   LambdaExpr *Lambda = cast<LambdaExpr>(E);
   CXXMethodDecl *Method = Lambda->getCallOperator();
   QualType MethodTy = Method->getType();
@@ -1135,7 +1135,7 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E) {
                                                      VK_RValue,
                                                      SourceLocation(),
                                                      FPOptions());
-  return EvaluateConstexprDeclCall(CD, Call);
+  return EvaluateCXXMetaprogramDeclCall(CD, Call);
 }
 
 /// Evaluate the expression.
@@ -1143,6 +1143,6 @@ bool Sema::EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E) {
 /// \returns  \c true if the expression \p E can be evaluated, \c false
 ///           otherwise.
 ///
-bool Sema::EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call) {
+bool Sema::EvaluateCXXMetaprogramDeclCall(CXXMetaprogramDecl *CD, CallExpr *Call) {
   return false;
 }

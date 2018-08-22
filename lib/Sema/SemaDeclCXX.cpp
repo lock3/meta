@@ -1659,7 +1659,7 @@ bool Sema::CheckConstexprFunctionDecl(const FunctionDecl *NewFD) {
 ///
 /// \return true if the body is OK (maybe only as an extension), false if we
 ///         have diagnosed a problem.
-static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
+static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
                                    DeclStmt *DS, SourceLocation &Cxx1yLoc) {
   // C++11 [dcl.constexpr]p3 and p4:
   //  The definition of a constexpr function(p3) or constructor(p4) [...] shall
@@ -1833,7 +1833,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     //   - using-directives,
     //   - typedef declarations and alias-declarations that do not define
     //     classes or enumerations,
-    if (!CheckConstexprDeclStmt(SemaRef, Dcl, cast<DeclStmt>(S), Cxx1yLoc))
+    if (!CheckCXXMetaprogramDeclStmt(SemaRef, Dcl, cast<DeclStmt>(S), Cxx1yLoc))
       return false;
     return true;
 

@@ -838,7 +838,7 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
 
   case tok::kw_constexpr: // [Meta] constexpr-declaration
     if (NextToken().is(tok::l_brace))
-      return ParseConstexprDeclaration();
+      return ParseCXXMetaprogramDeclaration();
     goto dont_know;
 
   case tok::kw___if_exists:

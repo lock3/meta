@@ -396,7 +396,7 @@ Parser::ParseReflectedTemplateArgument() {
 ///   constexpr-declaration:
 ///     'constexpr' compound-statement
 /// \endverbatim
-Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
+Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
   assert(Tok.is(tok::kw_constexpr));
 
   SourceLocation ConstexprLoc = ConsumeToken();
@@ -407,12 +407,12 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   }
 
   unsigned ScopeFlags;
-  Decl *D = Actions.ActOnConstexprDecl(getCurScope(), ConstexprLoc, ScopeFlags);
+  Decl *D = Actions.ActOnCXXMetaprogramDecl(getCurScope(), ConstexprLoc, ScopeFlags);
 
   // Enter a scope for the constexpr declaration body.
   ParseScope BodyScope(this, ScopeFlags);
 
-  Actions.ActOnStartConstexprDecl(getCurScope(), D);
+  Actions.ActOnStartCXXMetaprogramDecl(getCurScope(), D);
 
   PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
                                       "parsing constexpr declaration body");
@@ -421,9 +421,9 @@ Parser::DeclGroupPtrTy Parser::ParseConstexprDeclaration() {
   StmtResult Body(ParseCompoundStatementBody());
 
   if (!Body.isInvalid())
-    Actions.ActOnFinishConstexprDecl(getCurScope(), D, Body.get());
+    Actions.ActOnFinishCXXMetaprogramDecl(getCurScope(), D, Body.get());
   else
-    Actions.ActOnConstexprDeclError(getCurScope(), D);
+    Actions.ActOnCXXMetaprogramDeclError(getCurScope(), D);
 
   return Actions.ConvertDeclToDeclGroup(D);
 }

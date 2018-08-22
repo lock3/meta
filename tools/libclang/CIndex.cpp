@@ -6240,7 +6240,6 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::ObjCPropertyImpl:
   case Decl::FileScopeAsm:
   case Decl::StaticAssert:
-  case Decl::Constexpr:
   case Decl::Block:
   case Decl::Captured:
   case Decl::OMPCapturedExpr:
@@ -6257,6 +6256,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::PragmaDetectMismatch:
   case Decl::UsingPack:
   case Decl::CXXFragment:
+  case Decl::CXXMetaprogram:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

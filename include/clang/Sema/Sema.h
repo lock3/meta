@@ -8776,15 +8776,15 @@ public:
     }
   };
 
-  Decl *ActOnConstexprDecl(Scope *S, SourceLocation ConstexprLoc,
+  Decl *ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
                            unsigned &ScopeFlags);
-  void ActOnStartConstexprDecl(Scope *S, Decl *D);
-  void ActOnFinishConstexprDecl(Scope *S, Decl *D, Stmt *Body);
-  void ActOnConstexprDeclError(Scope *S, Decl *D);
+  void ActOnStartCXXMetaprogramDecl(Scope *S, Decl *D);
+  void ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body);
+  void ActOnCXXMetaprogramDeclError(Scope *S, Decl *D);
 
-  bool EvaluateConstexprDecl(ConstexprDecl *CD, FunctionDecl *D);
-  bool EvaluateConstexprDecl(ConstexprDecl *CD, Expr *E);
-  bool EvaluateConstexprDeclCall(ConstexprDecl *CD, CallExpr *Call);
+  bool EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, FunctionDecl *D);
+  bool EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, Expr *E);
+  bool EvaluateCXXMetaprogramDeclCall(CXXMetaprogramDecl *CD, CallExpr *Call);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

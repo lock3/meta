@@ -1547,10 +1547,10 @@ namespace serialization {
       /// An OMPDeclareReductionDecl record.
       DECL_OMP_DECLARE_REDUCTION,
 
-      /// A ConstexprDecl record.
-      DECL_CONSTEXPR,
+      /// A CXXMetaprogramDecl record.
+      DECL_CXX_METAPROGRAM,
 
-      DECL_LAST = DECL_CONSTEXPR
+      DECL_LAST = DECL_CXX_METAPROGRAM
     };
 
     /// Record codes for each kind of statement or expression.

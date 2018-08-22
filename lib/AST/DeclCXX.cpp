@@ -2916,25 +2916,25 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
                                     SourceLocation(), nullptr, nullptr);
 }
 
-void ConstexprDecl::anchor() {}
+void CXXMetaprogramDecl::anchor() {}
 
-ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
+CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
                                      SourceLocation ConstexprLoc,
                                      FunctionDecl *Fn) {
-  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Fn);
+  return new (Cxt, DC) CXXMetaprogramDecl(DC, ConstexprLoc, Fn);
 }
 
-ConstexprDecl *ConstexprDecl::Create(ASTContext &Cxt, DeclContext *DC,
+CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
                                      SourceLocation ConstexprLoc,
                                      CXXRecordDecl *Class) {
-  return new (Cxt, DC) ConstexprDecl(DC, ConstexprLoc, Class);
+  return new (Cxt, DC) CXXMetaprogramDecl(DC, ConstexprLoc, Class);
 }
 
-ConstexprDecl *ConstexprDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) ConstexprDecl(nullptr, SourceLocation());
+CXXMetaprogramDecl *CXXMetaprogramDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) CXXMetaprogramDecl(nullptr, SourceLocation());
 }
 
-bool ConstexprDecl::hasBody() const {
+bool CXXMetaprogramDecl::hasBody() const {
   if (Representation.isNull())
     return false;
   const FunctionDecl *FD = hasFunctionRepresentation()
@@ -2943,7 +2943,7 @@ bool ConstexprDecl::hasBody() const {
   return FD->hasBody();
 }
 
-Stmt *ConstexprDecl::getBody() const {
+Stmt *CXXMetaprogramDecl::getBody() const {
   if (Representation.isNull())
     return nullptr;
   const FunctionDecl *FD = hasFunctionRepresentation()
@@ -2952,7 +2952,7 @@ Stmt *ConstexprDecl::getBody() const {
   return FD->getBody();
 }
 
-SourceRange ConstexprDecl::getSourceRange() const {
+SourceRange CXXMetaprogramDecl::getSourceRange() const {
   SourceLocation RangeEnd = getLocation();
   if (Stmt *Body = getBody())
     RangeEnd = Body->getEndLoc();

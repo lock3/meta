@@ -99,5 +99,5 @@ def Import : Decl;
 def OMPThreadPrivate : Decl;
 def OMPRequires : Decl;
 def Empty : Decl;
-def Constexpr : Decl;
+def CXXMetaprogram : Decl;
 def CXXFragment : Decl, DeclContext;

@@ -124,7 +124,7 @@ namespace clang {
     void VisitBlockDecl(BlockDecl *D);
     void VisitCapturedDecl(CapturedDecl *D);
     void VisitEmptyDecl(EmptyDecl *D);
-    void VisitConstexprDecl(ConstexprDecl *D);
+    void VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D);
 
     void VisitDeclContext(DeclContext *DC);
     template <typename T> void VisitRedeclarable(Redeclarable<T> *D);
@@ -1100,7 +1100,7 @@ void ASTDeclWriter::VisitEmptyDecl(EmptyDecl *D) {
   Code = serialization::DECL_EMPTY;
 }
 
-void ASTDeclWriter::VisitConstexprDecl(ConstexprDecl *D) {
+void ASTDeclWriter::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
   VisitDecl(D);
   Record.push_back(D->hasFunctionRepresentation());
   const Decl *Representation = D->hasFunctionRepresentation()
@@ -1108,7 +1108,7 @@ void ASTDeclWriter::VisitConstexprDecl(ConstexprDecl *D) {
     : static_cast<Decl *>(D->getClosureDecl());
   Record.AddDeclRef(Representation);
   Record.AddStmt(D->getCallExpr());
-  Code = serialization::DECL_CONSTEXPR;
+  Code = serialization::DECL_CXX_METAPROGRAM;
 }
 
 void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {

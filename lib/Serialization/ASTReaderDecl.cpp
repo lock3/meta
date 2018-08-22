@@ -3866,8 +3866,8 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   case DECL_OBJC_TYPE_PARAM:
     D = ObjCTypeParamDecl::CreateDeserialized(Context, ID);
     break;
-  case DECL_CONSTEXPR:
-    D = ConstexprDecl::CreateDeserialized(Context, ID);
+  case DECL_CXX_METAPROGRAM:
+    D = CXXMetaprogramDecl::CreateDeserialized(Context, ID);
     break;
   }
 

@@ -3952,7 +3952,7 @@ public:
 /// When the constexpr-declaration appears in namespace or class scope, this
 /// class contains a \c constexpr \c void function that contains the parsed body
 /// of the declaration.
-class ConstexprDecl : public Decl {
+class CXXMetaprogramDecl : public Decl {
   virtual void anchor();
 
   /// The de-sugared form of the declaration.
@@ -3961,24 +3961,24 @@ class ConstexprDecl : public Decl {
   /// The de-sugared call expression.
   CallExpr *Call;
 
-  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc)
-      : Decl(Constexpr, DC, ConstexprLoc), Representation(), Call(nullptr) {}
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
+      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(), Call(nullptr) {}
 
-  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc, FunctionDecl *Fn)
-      : Decl(Constexpr, DC, ConstexprLoc), Representation(Fn), Call(nullptr) {}
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc, FunctionDecl *Fn)
+      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Fn), Call(nullptr) {}
 
-  ConstexprDecl(DeclContext *DC, SourceLocation ConstexprLoc,
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
                 CXXRecordDecl *Class)
-      : Decl(Constexpr, DC, ConstexprLoc), Representation(Class),
+      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Class),
         Call(nullptr) {}
 
 public:
-  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation ConstexprLoc, FunctionDecl *Fn);
-  static ConstexprDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation ConstexprLoc,
+  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
+                               SourceLocation CXXMetaprogramLoc, FunctionDecl *Fn);
+  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
+                               SourceLocation CXXMetaprogramLoc,
                                CXXRecordDecl *Closure);
-  static ConstexprDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// \brief Returns \c true if this is represented as a function.
   bool hasFunctionRepresentation() const {
@@ -4022,7 +4022,7 @@ public:
   SourceRange getSourceRange() const override;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == Constexpr; }
+  static bool classofKind(Kind K) { return K == CXXMetaprogram; }
 
   friend class ASTDeclReader;
 };

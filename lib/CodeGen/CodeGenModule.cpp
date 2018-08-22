@@ -4851,7 +4851,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     // Nothing to do.
     break;
 
-  case Decl::Constexpr:
+  case Decl::CXXMetaprogram:
     // Nothing to do.
     break;
 

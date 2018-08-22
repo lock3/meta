@@ -2595,7 +2595,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
   // [Meta] constexpr-declaration
   if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
-    return ParseConstexprDeclaration();
+    return ParseCXXMetaprogramDeclaration();
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;

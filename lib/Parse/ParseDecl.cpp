@@ -1705,7 +1705,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     break;
   case tok::kw_constexpr: // [Meta]: constexpr-declaration
     if (NextToken().is(tok::l_brace))
-      return ParseConstexprDeclaration();
+      return ParseCXXMetaprogramDeclaration();
 
   default:
     return ParseSimpleDeclaration(Context, DeclEnd, attrs, true);
