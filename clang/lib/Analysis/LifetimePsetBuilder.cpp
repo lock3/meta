@@ -331,10 +331,10 @@ public:
 
   struct CallArgument {
     CallArgument(SourceLocation Loc, PSet PS, QualType QType)
-        : Loc(Loc), PS(std::move(PS)), QType(QType) {}
+        : Loc(Loc), PS(std::move(PS)), ArgQType(QType) {}
     SourceLocation Loc;
     PSet PS;
-    QualType QType;
+    QualType ArgQType;
   };
 
   struct CallArguments {
@@ -346,36 +346,36 @@ public:
     std::vector<CallArgument> Pout;
   };
 
-  void PushCallArguments(const Expr *Arg, QualType ParamQType,
+  void PushCallArguments(const Expr *Arg, QualType ArgQType,
                          CallArguments &Args) {
     // TODO implement gsl::lifetime annotations
     // TODO implement aggregates
     SourceLocation ArgLoc = Arg->getExprLoc();
 
-    if (auto *R = ParamQType->getAs<ReferenceType>()) {
+    if (auto *R = ArgQType->getAs<ReferenceType>()) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
         if (isa<RValueReferenceType>(R)) {
-          Args.Oin_strong.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
-        } else if (ParamQType.isConstQualified()) {
-          Args.Oin_weak.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
+          Args.Oin_strong.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
+        } else if (ArgQType.isConstQualified()) {
+          Args.Oin_weak.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
         } else {
           Args.Oin.emplace_back(
-              ArgLoc, derefPSet(getPSet(Arg), Arg->getExprLoc()), ParamQType);
+              ArgLoc, derefPSet(getPSet(Arg), Arg->getExprLoc()), ArgQType);
         }
       } else {
         // Type Category is Pointer due to raw references.
-        Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
+        Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
       }
 
-    } else if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ParamQType);
+    } else if (classifyTypeCategory(ArgQType) == TypeCategory::Pointer) {
+      Args.Pin.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
     }
 
     // A “function output” means a return value or a parameter passed by
     // Pointer to non-const (and is not considered to include the top-level
     // Pointer, because the output is the pointee).
-    if (classifyTypeCategory(ParamQType) == TypeCategory::Pointer) {
-      QualType Pointee = getPointeeType(ParamQType);
+    if (classifyTypeCategory(ArgQType) == TypeCategory::Pointer) {
+      QualType Pointee = getPointeeType(ArgQType);
       if (!Pointee.isConstQualified() &&
           classifyTypeCategory(Pointee) == TypeCategory::Pointer)
         Args.Pout.emplace_back(ArgLoc, getPSet(Arg), Pointee);
@@ -389,14 +389,14 @@ public:
     std::vector<CallArgument> PinExtended;
     for (auto &CA : PinArgs) {
       // const Expr *ArgExpr = CA.ArgumentExpr;
-      PinExtended.emplace_back(CA.Loc, CA.PS, CA.QType);
+      PinExtended.emplace_back(CA.Loc, CA.PS, CA.ArgQType);
 
       if (CA.PS.containsInvalid()) {
         Reporter.warnParameterDangling(CA.Loc,
                                        /*indirectly=*/false);
         CA.PS.explainWhyInvalid(Reporter);
         break;
-      } else if (CA.PS.containsNull() && !isNullableType(CA.QType)) {
+      } else if (CA.PS.containsNull() && !isNullableType(CA.ArgQType)) {
         Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
         CA.PS.explainWhyNull(Reporter);
       }
@@ -449,7 +449,7 @@ public:
     for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
       const Expr *Arg = CallE->getArg(i);
 
-      QualType ParamQType = [&] {
+      QualType ArgQType = [&] {
         auto QT = Arg->getType();
         if (Arg->isLValue())
           QT = ASTCtxt.getLValueReferenceType(QT,
@@ -457,7 +457,7 @@ public:
         return QT;
       }();
 
-      PushCallArguments(Arg, ParamQType, Args); // Append to Args.
+      PushCallArguments(Arg, ArgQType, Args); // Append to Args.
     }
 
     if (CT.ClassDecl) {
@@ -500,11 +500,11 @@ public:
       PSet Ret;
       QualType RetType = normalizeType(OutputType, ASTCtxt);
       for (CallArgument &CA : PinExtended) {
-        if (IsConvertible(CA.QType, RetType))
+        if (IsConvertible(CA.ArgQType, RetType))
           Ret.merge(CA.PS);
       }
       for (CallArgument &CA : Args.Oin) {
-        QualType CheckType = getPointerIntoOwner(CA.QType, ASTCtxt);
+        QualType CheckType = getPointerIntoOwner(CA.ArgQType, ASTCtxt);
         if (IsConvertible(CheckType, RetType))
           Ret.merge(CA.PS);
       }
@@ -514,7 +514,7 @@ public:
     };
     setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
     for (const auto Arg : Args.Pout) {
-      setPSet(Arg.PS, computeOutput(Arg.QType), CallE->getLocStart());
+      setPSet(Arg.PS, computeOutput(Arg.ArgQType), CallE->getLocStart());
     }
     return true;
   }
