@@ -110,7 +110,9 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   // Build our new class implicit class to hold our fragment info.
   CXXRecordDecl *Class = CXXRecordDecl::Create(
-      Context, TTK_Class, FD, Loc, Loc, nullptr, nullptr);
+					       Context, TTK_Class, FD, Loc, Loc,
+					       /*Id=*/nullptr,
+					       /*PrevDecl=*/nullptr);
   Class->setImplicit(true);
   StartDefinition(Class);
   QualType ClassTy = Context.getRecordType(Class);
@@ -134,6 +136,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
                                        ICIS_NoInit);
   Field->setAccess(AS_public);
   Field->setImplicit(true);
+
   Fields.push_back(Field);
   Class->addDecl(Field);
 
@@ -193,7 +196,6 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   // Build the definition.
   Stmt *Def = CompoundStmt::Create(Context, None, Loc, Loc);
   Ctor->setBody(Def);
-
   Class->addDecl(Ctor);
 
   CompleteDefinition(Class);
