@@ -346,11 +346,14 @@ public:
     std::vector<CallArgument> Pout;
   };
 
-  void PushCallArguments(const Expr *Arg, QualType ArgQType,
-                         CallArguments &Args) {
+  void PushCallArguments(const Expr *Arg, CallArguments &Args) {
     // TODO implement gsl::lifetime annotations
     // TODO implement aggregates
     SourceLocation ArgLoc = Arg->getExprLoc();
+    QualType ArgQType = Arg->getType();
+    if (Arg->isLValue())
+      ArgQType = ASTCtxt.getLValueReferenceType(ArgQType,
+                                                /*SpelledAsLValue=*/true);
 
     if (auto *R = ArgQType->getAs<ReferenceType>()) {
       if (classifyTypeCategory(R->getPointeeType()) == TypeCategory::Owner) {
@@ -359,8 +362,8 @@ public:
         } else if (ArgQType.isConstQualified()) {
           Args.Oin_weak.emplace_back(ArgLoc, getPSet(Arg), ArgQType);
         } else {
-          Args.Oin.emplace_back(
-              ArgLoc, derefPSet(getPSet(Arg), Arg->getExprLoc()), ArgQType);
+          Args.Oin.emplace_back(ArgLoc, derefPSet(getPSet(Arg), ArgLoc),
+                                ArgQType);
         }
       } else {
         // Type Category is Pointer due to raw references.
@@ -388,7 +391,6 @@ public:
   diagnoseAndExpandPin(const std::vector<CallArgument> &PinArgs) {
     std::vector<CallArgument> PinExtended;
     for (auto &CA : PinArgs) {
-      // const Expr *ArgExpr = CA.ArgumentExpr;
       PinExtended.emplace_back(CA.Loc, CA.PS, CA.ArgQType);
 
       if (CA.PS.containsInvalid()) {
@@ -446,18 +448,8 @@ public:
     auto *CalleeE = CallE->getCallee();
     CallTypes CT = getCallTypes(CalleeE);
     CallArguments Args;
-    for (unsigned i = 0; i < CallE->getNumArgs(); ++i) {
-      const Expr *Arg = CallE->getArg(i);
-
-      QualType ArgQType = [&] {
-        auto QT = Arg->getType();
-        if (Arg->isLValue())
-          QT = ASTCtxt.getLValueReferenceType(QT,
-                                              /*SpelledAsLValue=*/true);
-        return QT;
-      }();
-
-      PushCallArguments(Arg, ArgQType, Args); // Append to Args.
+    for (const Expr *Arg : CallE->arguments()) {
+      PushCallArguments(Arg, Args); // Append to Args.
     }
 
     if (CT.ClassDecl) {
