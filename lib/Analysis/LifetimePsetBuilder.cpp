@@ -283,12 +283,15 @@ public:
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
-    // TODO: If a class-type pointer is constructed
-    // and an owner is provided as argument to the constructor,
-    // should we assume that the pointer points into that owner
-    // i.e. pset(p) = {o'}?
-    if (isPointer(E))
-      setPSet(E, PSet::null(E->getExprLoc()));
+    if (isPointer(E)) {
+      if (E->getNumArgs() == 0) {
+        setPSet(E, PSet::null(E->getExprLoc()));
+        return;
+      }
+      auto TC = classifyTypeCategory(E->getArg(0)->getType());
+      if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
+        setPSet(E, derefPSet(getPSet(E->getArg(0)), E->getLocation()));
+    }
   }
 
   struct CallArgument {
