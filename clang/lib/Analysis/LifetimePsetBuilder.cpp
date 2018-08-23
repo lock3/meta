@@ -51,7 +51,7 @@ static bool isPointer(const Expr *E) {
 // TODO: handle
 // - CXXDefaultArgExpr
 // - CXXCtorInitializer
-class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, bool> {
+class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
 
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
@@ -64,10 +64,6 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, bool> {
   std::map<const Expr *, PSet> &RefersTo;
 
 public:
-  bool shouldTraversePostOrder() const { return true; }
-  bool shouldVisitTemplateInstantiations() const { return true; }
-  bool shouldVisitImplicitCode() const { return true; }
-
   /// Ignore parentheses and most implicit casts.
   /// Does not go through implicit cast that convert a literal into a pointer,
   /// because there the type category changes.
@@ -99,49 +95,44 @@ public:
     }
   }
 
-  bool VisitStringLiteral(const StringLiteral *SL) {
+  void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
-    return true;
   }
 
-  bool VisitDeclStmt(const DeclStmt *DS) {
+  void VisitDeclStmt(const DeclStmt *DS) {
     for (const auto *DeclIt : DS->decls()) {
       if (const auto *VD = dyn_cast<VarDecl>(DeclIt))
-        return VisitVarDecl(VD);
+        VisitVarDecl(VD);
     }
-    return true;
   }
 
-  bool VisitImplicitCastExpr(const ImplicitCastExpr *E) {
+  void VisitImplicitCastExpr(const ImplicitCastExpr *E) {
     switch (E->getCastKind()) {
     case CK_NullToPointer:
       setPSet(E, PSet::null(E->getExprLoc()));
-      break;
+      return;
     case CK_LValueToRValue:
       // For L-values, the pset refers to the memory location,
       // for non-L-values we need to get the pset.
       if (hasPSet(E))
         setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
-      break;
+      return;
     default:
-      break;
+      return;
     }
-    return true;
   }
 
-  bool VisitExpr(const Expr *E) {
+  void VisitExpr(const Expr *E) {
     assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
     assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
-    return true;
   }
 
-  bool VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
+  void VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
     if (hasPSet(E))
       setPSet(E, getPSet(E->getExpr()));
-    return true;
   }
 
-  bool VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
+  void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
     auto varRefersTo = [this](QualType QT, Variable V) {
       if (QT->isLValueReferenceType())
         return getPSet(V);
@@ -156,11 +147,9 @@ public:
       V.addFieldRef(FD);
       setPSet(DeclRef, varRefersTo(FD->getType(), V));
     }
-
-    return true;
   }
 
-  bool VisitMemberExpr(const MemberExpr *ME) {
+  void VisitMemberExpr(const MemberExpr *ME) {
     PSet BaseRefersTo = getPSet(ME->getBase());
     if (ME->getBase()->getType()->isPointerType())
       CheckPSetValidity(BaseRefersTo, ME->getExprLoc());
@@ -173,11 +162,9 @@ public:
       // A static data member of this class
       setPSet(ME, PSet::staticVar(false));
     }
-
-    return true;
   }
 
-  bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
+  void VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
     // By the bounds profile, ArraySubscriptExpr is only allowed on arrays
     // (not on pointers), thus the base needs to be a DeclRefExpr.
     const auto *DeclRef =
@@ -193,20 +180,17 @@ public:
         Ref = PSet::singleton(VD, false);
     }
     setPSet(E, Ref);
-    return true;
   }
 
-  bool VisitCXXThisExpr(const CXXThisExpr *E) {
+  void VisitCXXThisExpr(const CXXThisExpr *E) {
     setPSet(E, PSet::singleton(Variable::thisPointer(), false));
-    return true;
   }
 
-  bool VisitConditionalOperator(const ConditionalOperator *E) {
+  void VisitConditionalOperator(const ConditionalOperator *E) {
     setPSet(E, getPSet(E->getLHS()) + getPSet(E->getRHS()));
-    return true;
   }
 
-  bool VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
+  void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
     if (E->getExtendingDecl()) {
       PSet Singleton = PSet::singleton(E, false, 0);
       setPSet(E, Singleton);
@@ -214,10 +198,9 @@ public:
         setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getLocStart());
     } else
       setPSet(E, PSet::singleton(Variable::temporary(), false, 0));
-    return true;
   }
 
-  bool VisitInitListExpr(const InitListExpr *I) {
+  void VisitInitListExpr(const InitListExpr *I) {
     if (I->isSyntacticForm())
       I = I->getSemanticForm();
 
@@ -227,17 +210,15 @@ public:
       else if (I->getNumInits() == 1)
         setPSet(I, getPSet(I->getInit(0)));
     }
-    return true;
   }
 
-  bool VisitCXXReinterpretCastExpr(const CXXReinterpretCastExpr *E) {
+  void VisitCXXReinterpretCastExpr(const CXXReinterpretCastExpr *E) {
     // Not allowed by bounds profile
     setPSet(E,
             PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
-    return true;
   }
 
-  bool VisitCStyleCastExpr(const CStyleCastExpr *E) {
+  void VisitCStyleCastExpr(const CStyleCastExpr *E) {
     switch (E->getCastKind()) {
     case CK_BitCast:
     case CK_LValueBitCast:
@@ -245,15 +226,15 @@ public:
       // Those casts are forbidden by the type profile
       setPSet(
           E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
-      return true;
+      return;
     default: {
       setPSet(E, getPSet(E->getSubExpr()));
-      return true;
+      return;
     }
     }
   }
 
-  bool VisitBinAssign(const BinaryOperator *BO) {
+  void VisitBinAssign(const BinaryOperator *BO) {
     auto TC = classifyTypeCategory(BO->getType());
 
     if (TC == TypeCategory::Owner) {
@@ -267,65 +248,53 @@ public:
     }
 
     setPSet(BO, getPSet(BO->getLHS()));
-    return true;
   }
 
-  bool VisitBinaryOperator(const BinaryOperator *BO) {
+  void VisitBinaryOperator(const BinaryOperator *BO) {
     if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
     } else if (hasPSet(BO)) {
       setPSet(BO, PSet::invalid(
                       InvalidationReason::PointerArithmetic(BO->getExprLoc())));
     }
-    return true;
   }
 
-  bool VisitUnaryOperator(const UnaryOperator *UO) {
+  void VisitUnaryOperator(const UnaryOperator *UO) {
     switch (UO->getOpcode()) {
     case UO_AddrOf:
-      return VisitUnaryAddrOf(UO);
-    case UO_Deref:
-      return VisitUnaryDeref(UO);
+      if (hasPSet(UO))
+        setPSet(UO, getPSet(UO->getSubExpr()));
+      return;
+    case UO_Deref: {
+      auto PS = getPSet(UO->getSubExpr());
+      CheckPSetValidity(PS, UO->getExprLoc());
+      setPSet(UO, PS);
+      return;
+    }
     default:
       if (UO->getType()->isPointerType())
         setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(
                     InvalidationReason::PointerArithmetic(UO->getExprLoc())),
                 UO->getExprLoc());
-      return true;
+      return;
     }
   }
 
-  bool VisitUnaryAddrOf(const UnaryOperator *UO) {
-    if (hasPSet(UO))
-      setPSet(UO, getPSet(UO->getSubExpr()));
-    return true;
-  }
-
-  bool VisitUnaryDeref(const UnaryOperator *UO) {
-    auto PS = getPSet(UO->getSubExpr());
-    CheckPSetValidity(PS, UO->getExprLoc());
-
-    setPSet(UO, PS);
-    return true;
-  }
-
-  bool VisitLambdaExpr(const LambdaExpr *E) {
+  void VisitLambdaExpr(const LambdaExpr *E) {
     // TODO: if this is a Pointer (because it captures by reference, fill the
     // pset to what it had captured)
     if (hasPSet(E))
       setPSet(E, PSet{});
-    return true;
   }
 
-  bool VisitCXXConstructExpr(const CXXConstructExpr *E) {
+  void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     // TODO: If a class-type pointer is constructed
     // and an owner is provided as argument to the constructor,
     // should we assume that the pointer points into that owner
     // i.e. pset(p) = {o'}?
     if (isPointer(E))
       setPSet(E, PSet::null(E->getExprLoc()));
-    return true;
   }
 
   struct CallArgument {
@@ -431,11 +400,11 @@ public:
   /// When a non-const pointer to pointer or reference to pointer is passed
   /// into a function, it's pointee's are invalidated.
   /// Returns true if CallExpr was handled.
-  bool VisitCallExpr(const CallExpr *CallE) {
+  void VisitCallExpr(const CallExpr *CallE) {
     // Handle call to clang_analyzer_pset, which will print the pset of its
     // argument
     if (HandleClangAnalyzerPset(CallE))
-      return true;
+      return;
 
     auto *CalleeE = CallE->getCallee();
     CallTypes CT = getCallTypes(CalleeE);
@@ -533,7 +502,6 @@ public:
     for (const auto &Arg : Args.Pout) {
       setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
     }
-    return true;
   }
 
   void CheckPSetValidity(const PSet &PS, SourceLocation Loc);
@@ -602,7 +570,7 @@ public:
       : Reporter(Reporter), ASTCtxt(ASTCtxt), IsConvertible(IsConvertible),
         PMap(PMap), PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
 
-  bool VisitVarDecl(const VarDecl *VD) {
+  void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
     SourceLocation Loc = VD->getLocEnd();
 
@@ -631,7 +599,6 @@ public:
     }
     default:;
     }
-    return true;
   }
 
   void VisitBlock(const CFGBlock &B,
