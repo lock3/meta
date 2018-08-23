@@ -17,10 +17,10 @@ struct [[gsl::Pointer]] my_pointer {
 };
 
 void deref_uninitialized() {
-  int *p; // expected-note {{it was never initialized here}}
-  *p = 3; // expected-warning {{dereferencing a dangling pointer}} expected-note {{was dereferenced here}}
+  int *p;        // expected-note {{it was never initialized here}}
+  *p = 3;        // expected-warning {{dereferencing a dangling pointer}} expected-note {{was dereferenced here}}
   my_pointer p2; // expected-note {{assigned here}}
-  *p2; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
+  *p2;           // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
 
 void deref_nullptr() {
@@ -45,7 +45,7 @@ void ref_to_member_leaves_scope_call() {
     p = &s;
     p->f();     // OK
   }             // expected-note 3 {{pointee 's' left the scope here}}
-  p->f();       // expected-warning {{dereferencing a dangling pointer}}
+  p->f();       // expected-warning {{passing a dangling pointer as argument}}
   int i = p->m; // expected-warning {{dereferencing a dangling pointer}}
   p->m = 4;     // expected-warning {{dereferencing a dangling pointer}}
 }
