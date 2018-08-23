@@ -195,13 +195,10 @@ public:
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
-    if (E->getExtendingDecl()) {
-      PSet Singleton = PSet::singleton(E, false, 0);
-      setPSet(E, Singleton);
-      if (hasPSet(E->GetTemporaryExpr()))
-        setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getLocStart());
-    } else
-      setPSet(E, PSet::singleton(Variable::temporary(), false, 0));
+    PSet Singleton = PSet::singleton(E, false, 0);
+    setPSet(E, Singleton);
+    if (hasPSet(E->GetTemporaryExpr()))
+      setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getLocStart());
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
