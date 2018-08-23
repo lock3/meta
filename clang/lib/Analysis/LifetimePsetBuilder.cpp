@@ -295,6 +295,18 @@ public:
     }
   }
 
+   void VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E) {
+     if (E->getType()->isPointerType()) {
+       // ImplicitValueInitExpr does not have a valid location
+       auto Parents = ASTCtxt.getParents(*E);
+       assert(!Parents.empty());
+       auto* Parent = Parents[0].get<Decl>();
+       assert(Parent);
+       auto Loc = Parent->getLocStart();
+       setPSet(E, PSet::null(Loc));
+    }
+   }
+
   struct CallArgument {
     CallArgument(SourceLocation Loc, PSet PS, QualType QType)
         : Loc(Loc), PS(std::move(PS)), ParamQType(QType) {}

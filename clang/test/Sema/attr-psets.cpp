@@ -745,3 +745,9 @@ struct S2 {
 void self_init() {
   int *a = a;
 }
+
+class A {
+  int *B = nullptr;
+  int *C;
+  A() : C() {}
+};
