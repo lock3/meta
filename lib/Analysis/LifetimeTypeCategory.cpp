@@ -223,6 +223,12 @@ QualType getPointeeType(QualType QT) {
         return QT;
       }
     }
+    // Check the bases.
+    for (auto Base : R->bases()) {
+      QualType Ret = getPointeeType(Base.getType());
+      if (!Ret.isNull())
+        return Ret;
+    }
   }
   return {};
 }
