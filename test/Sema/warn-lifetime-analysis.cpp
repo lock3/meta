@@ -1,5 +1,11 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
 
+namespace std {
+  struct string {
+    ~string();
+  };
+}
+
 struct S {
   ~S();
   int m;
@@ -105,4 +111,10 @@ void for_stmt() {
     int j;
     p = &j;
   }
+}
+
+std::string operator "" _s(const char *str, unsigned long len);
+
+void do_not_warn_for_decay_only() {
+  auto str = "decaythis"_s;
 }
