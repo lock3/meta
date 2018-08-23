@@ -193,8 +193,7 @@ void forbidden() {
 void deref_array() {
   int *p[4];
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
-  int *k = *p;        // expected-warning {{dereferencing a dangling pointer}}
-                      // expected-note@-1 {{pointer arithmetic is not allowed}}
+  int *k = p[1];
   __lifetime_pset(k); // expected-warning {{pset(k) = ((invalid))}}
 }
 
@@ -386,11 +385,11 @@ void for_stmt() {
   // There are different psets on the first and further iterations.
   for (int i = 0; i < 1024; ++i) {
     __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
-                        // expected-warning@-1 {{pset(p) = (j, initial)}}
+                        // expected-warning@-1 {{pset(p) = (initial, j)}}
     p = &j;
   }
   __lifetime_pset(p); // expected-warning {{pset(p) = (initial)}}
-                      // expected-warning@-1 {{pset(p) = (j, initial)}}
+                      // expected-warning@-1 {{pset(p) = (initial, j)}}
 }
 
 void for_stmt_ptr_decl() {

@@ -82,8 +82,6 @@ public:
       if (const auto *P = dyn_cast<ImplicitCastExpr>(E)) {
         switch (P->getCastKind()) {
         case CK_NullToPointer:
-        case CK_ArrayToPointerDecay:
-          return E;
         case CK_LValueToRValue:
           if (!IgnoreLValueToRValue)
             return E;
@@ -99,6 +97,11 @@ public:
       }
       return E;
     }
+  }
+
+  bool VisitStringLiteral(const StringLiteral *SL) {
+    setPSet(SL, PSet::staticVar(false));
+    return true;
   }
 
   bool VisitDeclStmt(const DeclStmt *DS) {
@@ -119,10 +122,6 @@ public:
       // for non-L-values we need to get the pset.
       if (hasPSet(E))
         setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
-      break;
-    case CK_ArrayToPointerDecay:
-      setPSet(E, PSet::invalid(
-                     InvalidationReason::PointerArithmetic(E->getExprLoc())));
       break;
     default:
       break;
@@ -477,7 +476,6 @@ public:
         QualType ObjectType = Object->getType();
         if (ObjectType->isPointerType())
           ObjectType = ObjectType->getPointeeType();
-        auto TC = classifyTypeCategory(ObjectType);
         ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
         if (CT.FTy->isConst())
           ObjectType.addConst();
