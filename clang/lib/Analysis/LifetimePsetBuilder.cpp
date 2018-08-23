@@ -99,6 +99,10 @@ public:
     setPSet(SL, PSet::staticVar(false));
   }
 
+  void VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *E) {
+    setPSet(E, getPSet(E->getSubExpr()));
+  }
+
   void VisitDeclStmt(const DeclStmt *DS) {
     for (const auto *DeclIt : DS->decls()) {
       if (const auto *VD = dyn_cast<VarDecl>(DeclIt))
