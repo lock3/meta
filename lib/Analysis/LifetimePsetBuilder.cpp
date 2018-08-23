@@ -212,13 +212,7 @@ public:
     }
   }
 
-  void VisitCXXReinterpretCastExpr(const CXXReinterpretCastExpr *E) {
-    // Not allowed by bounds profile
-    setPSet(E,
-            PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
-  }
-
-  void VisitCStyleCastExpr(const CStyleCastExpr *E) {
+  void VisitExplicitCastExpr(const ExplicitCastExpr *E) {
     switch (E->getCastKind()) {
     case CK_BitCast:
     case CK_LValueBitCast:
