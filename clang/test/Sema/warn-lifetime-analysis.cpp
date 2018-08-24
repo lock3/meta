@@ -118,3 +118,11 @@ std::string operator "" _s(const char *str, unsigned long len);
 void do_not_warn_for_decay_only() {
   auto str = "decaythis"_s;
 }
+
+int *return_wrong_ptr(int *p) {
+  int i = 0;
+  int *q = &i;
+  if (p)
+    return p;
+  return q; // expected-warning {{dereferencing a dangling pointer}}
+}
