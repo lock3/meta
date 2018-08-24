@@ -60,6 +60,7 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
   /// by their non-reference variable declaration or
   /// MaterializedTemporaryExpr plus (optional) FieldDecls.
   PSetsMap &PMap;
+  const PSet &PSetOfAllParams;
   std::map<const Expr *, PSet> &PSetsOfExpr;
   std::map<const Expr *, PSet> &RefersTo;
 
@@ -127,8 +128,8 @@ public:
   }
 
   void VisitExpr(const Expr *E) {
-    assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
-    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
+    /*assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
+    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());*/
   }
 
   void VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
@@ -254,6 +255,17 @@ public:
     }
   }
 
+  void VisitReturnStmt(const ReturnStmt *R) {
+    if (const Expr *RetVal = R->getRetValue()) {
+      if (!hasPSet(RetVal))
+        return;
+      if (!getPSet(RetVal).isSubstitutableFor(PSetOfAllParams)) {
+        // TODO: better warning message.
+        Reporter.warnDerefDangling(R->getReturnLoc(), false);
+      }
+    }
+  }
+
   void VisitUnaryOperator(const UnaryOperator *UO) {
     switch (UO->getOpcode()) {
     case UO_AddrOf:
@@ -295,17 +307,17 @@ public:
     }
   }
 
-   void VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E) {
-     if (E->getType()->isPointerType()) {
-       // ImplicitValueInitExpr does not have a valid location
-       auto Parents = ASTCtxt.getParents(*E);
-       assert(!Parents.empty());
-       auto* Parent = Parents[0].get<Decl>();
-       assert(Parent);
-       auto Loc = Parent->getLocStart();
-       setPSet(E, PSet::null(Loc));
+  void VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E) {
+    if (E->getType()->isPointerType()) {
+      // ImplicitValueInitExpr does not have a valid location
+      auto Parents = ASTCtxt.getParents(*E);
+      assert(!Parents.empty());
+      auto *Parent = Parents[0].get<Decl>();
+      assert(Parent);
+      auto Loc = Parent->getLocStart();
+      setPSet(E, PSet::null(Loc));
     }
-   }
+  }
 
   struct CallArgument {
     CallArgument(SourceLocation Loc, PSet PS, QualType QType)
@@ -561,7 +573,7 @@ public:
     return Ret;
   }
 
-  void setPSet(const Expr *E, PSet PS) {
+  void setPSet(const Expr *E, const PSet &PS) {
     if (E->isLValue())
       RefersTo[E] = PS;
     else
@@ -574,11 +586,13 @@ public:
 
 public:
   PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
+               PSetsMap &PMap, const PSet &PSetOfAllParams,
+               std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo,
                IsConvertibleTy IsConvertible)
       : Reporter(Reporter), ASTCtxt(ASTCtxt), IsConvertible(IsConvertible),
-        PMap(PMap), PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
+        PMap(PMap), PSetOfAllParams(PSetOfAllParams), PSetsOfExpr(PSetsOfExpr),
+        RefersTo(RefersTo) {}
 
   void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -918,16 +932,18 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 }
 
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
+                const PSet &PSetOfAllParams,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
-                       IsConvertible);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetOfAllParams, PSetsOfExpr,
+                       RefersTo, IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
-void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
+PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
+  PSet PSetForAllParams;
   for (const ParmVarDecl *PVD : FD->parameters()) {
     TypeCategory TC = classifyTypeCategory(PVD->getType());
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
@@ -935,12 +951,12 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     Variable P(PVD);
     // Parameters cannot be invalid (checked at call site).
     auto PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
-    // Reporter.PsetDebug(PS, PVD->getLocEnd(), P.getValue());
-    // PVD->dump();
+    PSetForAllParams.merge(PS);
     PMap.emplace(P, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
+  return PSetForAllParams;
 }
 } // namespace lifetime
 } // namespace clang

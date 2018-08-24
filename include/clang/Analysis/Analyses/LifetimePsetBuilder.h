@@ -23,13 +23,14 @@ class LifetimeReporterBase;
 /// Updates psets with all effects that appear in the block.
 /// \param Reporter if non-null, emits diagnostics
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
+                const PSet &PSetOfAllParams,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible);
 
 /// Get the initial PSets for function parameters.
-void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);
+PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);
 } // namespace lifetime
 } // namespace clang
 
