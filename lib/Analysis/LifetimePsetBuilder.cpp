@@ -877,7 +877,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       llvm::errs() << "\n";*/
 
       // Kill all temporaries that vanish at the end of the full expression
-      if (isa<ExprWithCleanups>(S))
+      if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S))
         invalidateVar(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
 
