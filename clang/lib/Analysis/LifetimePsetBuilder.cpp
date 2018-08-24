@@ -309,6 +309,19 @@ public:
     }
   }
 
+  void VisitCXXStdInitializerListExpr(const CXXStdInitializerListExpr *E) {
+    if (hasPSet(E) || E->isLValue())
+      setPSet(E, getPSet(E->getSubExpr()));
+  }
+
+  void VisitCXXDefaultArgExpr(const CXXDefaultArgExpr *E) {
+    if (hasPSet(E) || E->isLValue())
+      // FIXME: We should do setPSet(E, getPSet(E->getSubExpr())),
+      // but the getSubExpr() is not visited as part of the CFG,
+      // so it does not have a pset.
+      setPSet(E, PSet::staticVar(false));
+  }
+
   void VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E) {
     if (E->getType()->isPointerType()) {
       // ImplicitValueInitExpr does not have a valid location
