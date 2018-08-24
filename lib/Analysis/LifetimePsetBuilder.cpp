@@ -181,7 +181,7 @@ public:
     PSet Ref =
         PSet::invalid(InvalidationReason::PointerArithmetic(E->getExprLoc()));
     if (DeclRef) {
-      const VarDecl *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
+      const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
       assert(VD);
       if (VD->getType().getCanonicalType()->isArrayType())
         Ref = PSet::singleton(VD, false);
@@ -236,10 +236,8 @@ public:
     auto TC = classifyTypeCategory(BO->getType());
 
     if (TC == TypeCategory::Owner) {
-      // When an Owner x is copied to or moved to, set pset(x) = {x'}
-      // setPSet(refersTo(BO->getLHS()), PSet::singleton(V, false, 1),
-      // BinOp->getExprLoc());
-      // TODO
+      // Owners usually are user defined types. We should see a function call.
+      // Do we need to handle raw pointers annotated as owners?
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer
       setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()), BO->getExprLoc());
@@ -595,7 +593,7 @@ public:
       PSetsOfExpr[E] = PS;
   }
   void setPSet(PSet LHS, PSet RHS, SourceLocation Loc);
-  PSet derefPSet(PSet P, SourceLocation Loc);
+  PSet derefPSet(const PSet &P, SourceLocation Loc);
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
@@ -672,7 +670,7 @@ PSet PSetsBuilder::getPSet(Variable P) {
 
 /// Computes the pset of dereferencing a variable with the given pset
 /// If PS contains (null), it is silently ignored.
-PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
+PSet PSetsBuilder::derefPSet(const PSet &PS, SourceLocation Loc) {
   // When a local Pointer p is dereferenced using unary * or -> to create a
   // temporary tmp, then if pset(pset(p)) is nonempty, set pset(tmp) =
   // pset(pset(p)) and Kill(pset(tmp)'). Otherwise, set pset(tmp) = {tmp}.
