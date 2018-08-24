@@ -295,7 +295,8 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
                FD->getOverloadedOperator() == OO_Subscript ||
                FD->getOverloadedOperator() == OO_Star;
       } else
-        return FD->getName() == "at" || FD->getName() == "data";
+        return FD->getName() == "at" || FD->getName() == "data" ||
+               FD->getName() == "begin" || FD->getName() == "end";
     }
   }
   if (ArgNum >= FD->param_size())
