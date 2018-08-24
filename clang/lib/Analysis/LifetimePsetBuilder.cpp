@@ -521,13 +521,13 @@ public:
       }
       for (CallArgument &CA : Args.Oin) {
         QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-        if (IsConvertible(CheckType, RetType))
+        if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
           Ret.merge(CA.PS);
       }
       if (Ret.isUnknown()) {
         for (CallArgument &CA : Args.Oin_weak) {
           QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-          if (IsConvertible(CheckType, RetType))
+          if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
             Ret.merge(CA.PS);
         }
       }
