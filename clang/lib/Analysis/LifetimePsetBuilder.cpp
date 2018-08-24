@@ -712,12 +712,6 @@ PSet PSetsBuilder::derefPSet(PSet PS, SourceLocation Loc) {
       RetPS.merge(getPSet(V));
   }
 
-  if (RetPS.containsNull())
-    RetPS.appendNullReason(Loc);
-
-  if (RetPS.containsInvalid())
-    RetPS.appendInvalidReason(InvalidationReason::Dereferenced(Loc));
-
   return RetPS;
 }
 
