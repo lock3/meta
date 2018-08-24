@@ -128,8 +128,10 @@ public:
   }
 
   void VisitExpr(const Expr *E) {
-    /*assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
-    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());*/
+    if (IgnoreParenImpCasts(E) != E)
+      return;
+    assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
+    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
   }
 
   void VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
