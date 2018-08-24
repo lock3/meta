@@ -359,20 +359,17 @@ public:
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
       if (ParamType->isRValueReferenceType())
-        return; // TODO: Oin_strong
-
+        return;
+      Args.Pin.emplace_back(Loc, Set, ParamType);
       QualType Pointee = getPointeeType(ParamType);
       auto TC = classifyTypeCategory(Pointee);
       if (!Pointee.isConstQualified()) {
-        if (TC == TypeCategory::Pointer) {
-          Args.Pin.emplace_back(Loc, Set, ParamType);
+        if (TC == TypeCategory::Pointer)
           Args.Pout.emplace_back(Loc, Set, Pointee);
-        } else if (TC == TypeCategory::Owner) {
+        else if (TC == TypeCategory::Owner) {
           if (!isLifetimeConst(FD, Pointee, ArgNum))
             Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
           Args.Oin.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
-        } else {
-          Args.Pin.emplace_back(Loc, Set, ParamType);
         }
       } else if (TC == TypeCategory::Owner) {
         if (ParamType->isLValueReferenceType())
@@ -524,25 +521,15 @@ public:
       }
       for (CallArgument &CA : Args.Oin) {
         QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-        if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
-          Ret.merge(CA.PS);
-      }
-      if (Ret.isUnknown()) {
-        for (CallArgument &CA : PinExtended)
-          Ret.merge(CA.PS);
-        for (CallArgument &CA : Args.Oin)
+        if (IsConvertible(CheckType, RetType))
           Ret.merge(CA.PS);
       }
       if (Ret.isUnknown()) {
         for (CallArgument &CA : Args.Oin_weak) {
           QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-          if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
+          if (IsConvertible(CheckType, RetType))
             Ret.merge(CA.PS);
         }
-      }
-      if (Ret.isUnknown()) {
-        for (CallArgument &CA : Args.Oin_weak)
-          Ret.merge(CA.PS);
       }
       if (Ret.isUnknown())
         Ret.addStatic();

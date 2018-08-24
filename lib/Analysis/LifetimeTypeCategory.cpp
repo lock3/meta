@@ -238,8 +238,6 @@ QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx) {
     QT = QT->getPointeeType();
   assert(classifyTypeCategory(QT) == TypeCategory::Owner);
   QualType Pointee = getPointeeType(QT);
-  if(Pointee.isNull())
-    return {};
   return Ctx.getPointerType(Pointee);
 }
 
