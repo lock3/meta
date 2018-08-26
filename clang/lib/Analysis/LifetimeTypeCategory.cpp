@@ -230,6 +230,13 @@ QualType getPointeeType(QualType QT) {
         return Ret;
     }
   }
+  if(auto TST = QT->getAs<TemplateSpecializationType>()) {
+    if(TST->getNumArgs()) {
+      auto& Arg0 = TST->getArg(0);
+      if(Arg0.getKind() == TemplateArgument::Type)
+        return Arg0.getAsType();
+    }
+  }
   return {};
 }
 

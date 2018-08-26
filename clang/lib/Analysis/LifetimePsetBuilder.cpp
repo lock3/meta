@@ -161,7 +161,8 @@ public:
     // Make sure that derefencing a dangling pointer is diagnosed unless
     // the member is a member function. In that case, the invalid
     // base will be diagnosed in VisitCallExpr().
-    if (ME->getBase()->getType()->isPointerType() && !ME->hasPlaceholderType(BuiltinType::BoundMember))
+    if (ME->getBase()->getType()->isPointerType() &&
+        !ME->hasPlaceholderType(BuiltinType::BoundMember))
       CheckPSetValidity(BaseRefersTo, ME->getExprLoc());
 
     if (auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
