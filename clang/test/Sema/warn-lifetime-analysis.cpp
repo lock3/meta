@@ -1,10 +1,79 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
-
 namespace std {
-  struct string {
-    ~string();
+using size_t = unsigned long long;
+
+struct string_view {
+  string_view();
+  string_view(const char *s);
+  char &operator[](int i);
+};
+
+struct string {
+  string();
+  string(const char *s, size_t len);
+  string(const char *s);
+  explicit string(const string_view &);
+  char &operator[](int i);
+  operator string_view();
+  ~string();
+};
+
+template <typename T>
+struct unique_ptr {
+  T &operator*() const;
+  T *get();
+  ~unique_ptr();
+};
+
+template <class T, class... Args>
+unique_ptr<T> make_unique(Args &&... args);
+
+template <typename T>
+struct optional {
+  T &value();
+};
+
+template <class T>
+struct allocator {
+  allocator();
+};
+
+template< class T >
+class initializer_list {
+  initializer_list() noexcept;
+};
+
+template <
+    class T,
+    class Allocator = std::allocator<T>>
+struct vector {
+  struct iterator {
+    T& operator*();
+    iterator& operator++();
+    bool operator!=(const iterator&) const;
   };
-}
+  vector(size_t);
+  vector(std::initializer_list<T> init,
+         const Allocator &alloc = Allocator());
+  T& operator[](size_t);
+  iterator begin();
+  iterator end();
+  ~vector();
+};
+
+template <typename K, typename V>
+struct pair {
+  K first;
+  V second;
+};
+
+template <typename K, typename V>
+struct map {
+  using iterator = pair<K, V> *;
+  iterator find(const K &) const;
+  iterator end() const;
+};
+} // namespace std
 
 struct Owner {
   ~Owner();
@@ -113,7 +182,7 @@ void for_stmt() {
   }
 }
 
-std::string operator "" _s(const char *str, unsigned long len);
+std::string operator"" _s(const char *str, std::size_t len);
 
 void do_not_warn_for_decay_only() {
   auto str = "decaythis"_s;
@@ -126,3 +195,88 @@ int *return_wrong_ptr(int *p) {
     return p;
   return q; // expected-warning {{dereferencing a dangling pointer}}
 }
+
+// Examples from paper P0936 by Richard Smith and Nicolai Josuttis
+namespace P0936 {
+template <typename T>
+void use(const T &);
+
+void sj2() {
+  char &c = std::string{"my non-sso string"}[0];
+  c = 'x'; // TODO dereferencing a dangling pointer
+}
+
+void sj2_alt() {
+  char *c = std::make_unique<char>().get(); // expected-note {{temporary was destroyed at the end of the full expression}}
+  *c = 'x'; // expected-warning {{dereferencing a dangling pointer}}
+}
+
+std::vector<int> getVec();
+std::optional<std::vector<int>> getOptVec();
+
+void sj3() {
+  for (int value : getVec()) { // OK
+  }
+
+  for (int value : getOptVec().value()) { // expected-warning {{passing a dangling pointer as argument}}
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  }
+}
+
+std::vector<int> getVec_alt();
+std::unique_ptr<std::vector<int>> getOptVec_alt();
+
+void sj3_alt() {
+  for (int value : getVec_alt()) { // OK
+  }
+
+  for (int value : *getOptVec_alt()) { // expected-warning {{passing a dangling pointer as argument}}
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  }
+}
+
+std::string operator+(std::string_view sv1, std::string_view sv2) {
+  return std::string(sv1) + std::string(sv2);
+}
+
+template <typename T>
+T concat(const T &x, const T &y) {
+  return x + y;
+}
+
+void sj4() {
+  std::string_view s = "foo"_s;
+  use(s); // TODO dereferencing a dangling pointer
+
+  std::string_view hi = "hi";
+  auto xy = concat(hi, hi);
+
+  use(xy);
+}
+
+std::string GetString();
+
+void f(std::string_view);
+
+const std::string &findWithDefault(const std::map<int, std::string> &m, int key, const std::string &default_value) {
+  auto iter = m.find(key);
+  if (iter != m.end())
+    return iter->second;
+  else
+    return default_value;
+}
+
+void sj5() {
+  use(GetString()); // OK
+
+  std::string_view sv = GetString();
+
+  use(sv); // TODO dereferencing a dangling pointer
+
+  std::map<int, std::string> myMap;
+  const std::string &val = findWithDefault(myMap, 1, "default value");
+
+  use(val); // TODO dereferencing a dangling pointer
+}
+
+} // namespace P0936
