@@ -45,7 +45,7 @@ struct allocator {
   allocator();
 };
 
-template< class T >
+template <class T>
 class initializer_list {
   initializer_list() noexcept;
 };
@@ -55,14 +55,14 @@ template <
     class Allocator = std::allocator<T>>
 struct vector {
   struct iterator {
-    T& operator*();
-    iterator& operator++();
-    bool operator!=(const iterator&) const;
+    T &operator*();
+    iterator &operator++();
+    bool operator!=(const iterator &) const;
   };
   vector(size_t);
   vector(std::initializer_list<T> init,
          const Allocator &alloc = Allocator());
-  T& operator[](size_t);
+  T &operator[](size_t);
   iterator begin();
   iterator end();
   ~vector();
@@ -210,11 +210,13 @@ void use(const T &);
 
 void sj2() {
   char &c = std::string{"my non-sso string"}[0];
-  c = 'x'; // TODO dereferencing a dangling pointer
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  c = 'x'; // expected-warning {{dereferencing a dangling pointer}}
 }
 
 void sj2_alt() {
-  char *c = std::make_unique<char>().get(); // expected-note {{temporary was destroyed at the end of the full expression}}
+  char *c = std::make_unique<char>().get();
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
   *c = 'x'; // expected-warning {{dereferencing a dangling pointer}}
 }
 
@@ -225,8 +227,8 @@ void sj3() {
   for (int value : getVec()) { // OK
   }
 
-  for (int value : getOptVec().value()) { // expected-warning {{passing a dangling pointer as argument}}
-  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  for (int value : getOptVec().value()) { // expected-warning {{dereferencing a dangling pointer}}
+    // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
   }
 }
 
@@ -237,8 +239,8 @@ void sj3_alt() {
   for (int value : getVec_alt()) { // OK
   }
 
-  for (int value : *getOptVec_alt()) { // expected-warning {{passing a dangling pointer as argument}}
-  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  for (int value : *getOptVec_alt()) { // expected-warning {{dereferencing a dangling pointer}}
+    // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
   }
 }
 
