@@ -529,6 +529,15 @@ public:
             Ret.merge(CA.PS);
         }
       }
+      if (Ret.isUnknown()) {
+        for (CallArgument &CA : Args.Oin)
+          Ret.merge(CA.PS);
+      }
+      if (Ret.isUnknown()) {
+        for (CallArgument &CA : Args.Oin_weak) {
+          Ret.merge(CA.PS);
+        }
+      }
       if (Ret.isUnknown())
         Ret.addStatic();
       return Ret;
