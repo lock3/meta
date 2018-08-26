@@ -6,8 +6,8 @@ namespace std {
   };
 }
 
-struct S {
-  ~S();
+struct Owner {
+  ~Owner();
   int m;
   int f();
 };
@@ -39,9 +39,9 @@ void ref_leaves_scope() {
 }
 
 void ref_to_member_leaves_scope_call() {
-  S *p;
+  Owner *p;
   {
-    S s;
+    Owner s;
     p = &s;
     p->f();     // OK
   }             // expected-note 3 {{pointee 's' left the scope here}}
@@ -52,7 +52,7 @@ void ref_to_member_leaves_scope_call() {
 
 // No Pointer involved, thus not checked.
 void ignore_access_on_non_ref_ptr() {
-  S s;
+  Owner s;
   s.m = 3;
   s.f();
 }
