@@ -39,6 +39,12 @@ struct unique_ptr {
   explicit operator bool() const;
   ~unique_ptr();
 };
+
+template <typename T>
+struct optional {
+  T &value();
+};
+
 } // namespace std
 
 namespace gsl {
@@ -751,3 +757,20 @@ class A {
   int *C;
   A() : C() {}
 };
+
+void deref_based_on_template_param() {
+  // we determine DerefType(std::optional) by looking at it's template parameter
+  std::optional<int> O;
+  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
+  int &D = O.value();
+  //__lifetime_pset(D); // TODOexpected-warning {{pset(D) = (O')}}
+  D = 1;
+
+  int &f_ref(const std::optional<int> &O);
+  int &D2 = f_ref(O);
+  //__lifetime_pset(D2); // TODOexpected-warning {{pset(D2) = (O')}}
+
+  int *f_ptr(const std::optional<int> &O);
+  int *D3 = f_ptr(O);
+  //__lifetime_pset(D3); // TODOexpected-warning {{pset(D3) = (O')}}
+}
