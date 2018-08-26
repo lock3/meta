@@ -546,7 +546,16 @@ public:
         Ret.addStatic();
       return Ret;
     };
-    setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
+
+    if (classifyTypeCategory(CT.FTy->getReturnType()) == TypeCategory::Owner) {
+      auto Temp = PSet::singleton(Variable::temporary());
+      setPSet(Temp,
+              PSet::singleton(Variable::temporary(), /*Nullable=*/false, 1),
+              CallE->getLocStart());
+      setPSet(CallE, Temp);
+    } else {
+      setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
+    }
     for (const auto &Arg : Args.Pout) {
       setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
     }
