@@ -140,11 +140,16 @@ public:
   }
 
   void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
-    auto varRefersTo = [this](QualType QT, Variable V) {
-      if (QT->isLValueReferenceType())
-        return getPSet(V);
-      else
+    auto varRefersTo = [&](QualType QT, Variable V) {
+      if (QT->isLValueReferenceType()) {
+        auto P = getPSet(V);
+        if(CheckPSetValidity(P, DeclRef->getExprLoc()))
+          return P;
+        else
+          return PSet();
+      } else {
         return PSet::singleton(V, false);
+      }
     };
 
     if (auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
@@ -557,7 +562,7 @@ public:
     }
   }
 
-  void CheckPSetValidity(const PSet &PS, SourceLocation Loc);
+  bool CheckPSetValidity(const PSet &PS, SourceLocation Loc);
 
   /// Invalidates all psets that point to V or something owned by V
   void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
@@ -699,11 +704,8 @@ PSet PSetsBuilder::derefPSet(const PSet &PS, SourceLocation Loc) {
   if (PS.isUnknown())
     return {};
 
-  if (PS.containsInvalid()) {
-    std::vector<InvalidationReason> invReasons = PS.invReasons();
-    invReasons.emplace_back(InvalidationReason::Dereferenced(Loc));
-    return PSet::invalid(PS.invReasons());
-  }
+  if (PS.containsInvalid())
+    return {}; // Return unknown, so we don't diagnose again.
 
   PSet RetPS;
   if (PS.containsStatic())
@@ -746,19 +748,18 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   }
 }
 
-void PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
-  assert(!PS.isUnknown());
-
+bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
   if (PS.containsInvalid()) {
     Reporter.warnDerefDangling(Loc, !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
-    return;
+    return false;
   }
 
   if (PS.containsNull()) {
     Reporter.warnDerefNull(Loc, !PS.isNull());
-    return;
+    return false;
   }
+  return true;
 }
 
 /// Updates psets to remove 'null' when entering conditional statements. If
