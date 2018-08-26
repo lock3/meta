@@ -6,10 +6,10 @@
 // function calls
 
 template <typename T>
-bool __lifetime_pset(const T&);
+bool __lifetime_pset(const T &);
 
 template <typename T>
-bool __lifetime_pset_ref(const T&);
+bool __lifetime_pset_ref(const T &);
 
 namespace std {
 template <typename T>
@@ -66,7 +66,7 @@ struct S {
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
     int *ps2 = &this->s;
     __lifetime_pset(ps2); // expected-warning {{pset(ps2) = ((static))}}
-    __lifetime_pset(mp); // expected-warning {{pset(mp) = ((static))}}
+    __lifetime_pset(mp);  // expected-warning {{pset(mp) = ((static))}}
   }
   int *get();
 };
@@ -679,7 +679,7 @@ void return_pointer() {
 
   int *pmem = v1.data();
   __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
+  __lifetime_pset(p);    // expected-warning {{pset(p) = (v1')}}
 
   auto *v1p = &v1;
   __lifetime_pset(v1p); // expected-warning {{pset(v1p) = (v1)}}
@@ -689,7 +689,7 @@ void return_pointer() {
   invalidate(v1);
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 
-  int *g(int *, float *, float**);
+  int *g(int *, float *, float **);
   int a;
   float b;
   float *c;
