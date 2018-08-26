@@ -230,10 +230,10 @@ QualType getPointeeType(QualType QT) {
         return Ret;
     }
   }
-  if(auto TST = QT->getAs<TemplateSpecializationType>()) {
-    if(TST->getNumArgs()) {
-      auto& Arg0 = TST->getArg(0);
-      if(Arg0.getKind() == TemplateArgument::Type)
+  if (auto TST = QT->getAs<TemplateSpecializationType>()) {
+    if (TST->getNumArgs()) {
+      auto &Arg0 = TST->getArg(0);
+      if (Arg0.getKind() == TemplateArgument::Type)
         return Arg0.getAsType();
     }
   }
@@ -245,7 +245,7 @@ QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx) {
     QT = QT->getPointeeType();
   assert(classifyTypeCategory(QT) == TypeCategory::Owner);
   QualType Pointee = getPointeeType(QT);
-  if(Pointee.isNull())
+  if (Pointee.isNull())
     return {};
   return Ctx.getPointerType(Pointee);
 }
