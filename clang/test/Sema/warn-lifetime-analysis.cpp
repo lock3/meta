@@ -9,6 +9,11 @@ struct string_view {
 };
 
 struct string {
+  struct iterator {
+    char &operator*();
+    iterator &operator++();
+    bool operator!=(const iterator &) const;
+  };
   string();
   string(const char *s, size_t len);
   string(const char *s);
@@ -16,6 +21,8 @@ struct string {
   char &operator[](int i);
   operator string_view();
   ~string();
+  iterator begin();
+  iterator end();
 };
 
 template <typename T>
