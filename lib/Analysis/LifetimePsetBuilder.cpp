@@ -548,11 +548,7 @@ public:
     };
 
     if (classifyTypeCategory(CT.FTy->getReturnType()) == TypeCategory::Owner) {
-      auto Temp = PSet::singleton(Variable::temporary());
-      setPSet(Temp,
-              PSet::singleton(Variable::temporary(), /*Nullable=*/false, 1),
-              CallE->getLocStart());
-      setPSet(CallE, Temp);
+      setPSet(CallE, PSet::singleton(Variable::temporary()));
     } else {
       setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
     }
@@ -670,6 +666,10 @@ public:
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
+  // We do not explicitly record pset(tmp) = {tmp'}.
+  if(P.isTemporary())
+    return PSet::singleton(P, false, 1);
+
   auto I = PMap.find(P);
   if (I != PMap.end())
     return I->second;
