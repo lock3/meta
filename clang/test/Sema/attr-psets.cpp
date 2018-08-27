@@ -12,11 +12,18 @@ template <typename T>
 bool __lifetime_pset_ref(const T &);
 
 namespace std {
+
+template <typename T>
+struct vector_iterator {
+  T &operator*() const;
+};
+
 template <typename T>
 struct vector {
+  using iterator = vector_iterator<T>;
   vector(unsigned);
-  T *begin();
-  T *end();
+  iterator begin();
+  iterator end();
   T &operator[](unsigned);
   T &at(unsigned);
   T *data();
