@@ -55,7 +55,10 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
 
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
+  /// Returns true if the first argument is implicitly convertible
+  /// into the second argument after ignoring references on both.
   IsConvertibleTy IsConvertible;
+
   /// psets of all memory locations, which are identified
   /// by their non-reference variable declaration or
   /// MaterializedTemporaryExpr plus (optional) FieldDecls.
@@ -143,7 +146,7 @@ public:
     auto varRefersTo = [&](QualType QT, Variable V) {
       if (QT->isLValueReferenceType()) {
         auto P = getPSet(V);
-        if(CheckPSetValidity(P, DeclRef->getExprLoc()))
+        if (CheckPSetValidity(P, DeclRef->getExprLoc()))
           return P;
         else
           return PSet();
@@ -672,7 +675,7 @@ public:
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
   // We do not explicitly record pset(tmp) = {tmp'}.
-  if(P.isTemporary())
+  if (P.isTemporary())
     return PSet::singleton(P, false, 1);
 
   auto I = PMap.find(P);
