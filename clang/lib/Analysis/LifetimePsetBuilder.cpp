@@ -529,7 +529,6 @@ public:
     // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // Invalidate owners taken by Pointer to non-const.
-    // TODO: handle lifetime_const annotations
     for (const auto &Arg : Args.Oinvalidate) {
       for (auto VarOrd : Arg.PS.vars()) {
         invalidateVar(VarOrd.first, 0, InvalidationReason::Modified(Arg.Loc));
