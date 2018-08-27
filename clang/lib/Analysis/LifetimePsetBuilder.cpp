@@ -266,7 +266,7 @@ public:
 
   void VisitReturnStmt(const ReturnStmt *R) {
     if (const Expr *RetVal = R->getRetValue()) {
-      if (!hasPSet(RetVal))
+      if (!isPointer(RetVal))
         return;
       if (!getPSet(RetVal).isSubstitutableFor(PSetOfAllParams)) {
         // TODO: better warning message.

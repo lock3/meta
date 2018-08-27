@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
 namespace std {
-using size_t = unsigned long long;
+using size_t = unsigned long;
 
 struct string_view {
   string_view();
@@ -245,7 +245,7 @@ void sj3_alt() {
 }
 
 std::string operator+(std::string_view sv1, std::string_view sv2) {
-  return std::string(sv1) + std::string(sv2); //TODO: wrong "dereferencing a dangling pointer" here on VisitReturn
+  return std::string(sv1) + std::string(sv2);
 }
 
 template <typename T>
