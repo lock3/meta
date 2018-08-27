@@ -372,13 +372,13 @@ public:
       return; // Owner&& and others
 
     QualType Pointee = getPointeeType(ParamType);
-    auto TC = classifyTypeCategory(Pointee);
+    auto PointeeCat = classifyTypeCategory(Pointee);
 
     // TODO: paper and implementation note say that const Owner& should NOT be
     // in Input.
     Args.Input.emplace_back(Loc, Set, ParamType);
 
-    if (ParamType->isLValueReferenceType() && TC == TypeCategory::Owner &&
+    if (ParamType->isLValueReferenceType() && PointeeCat == TypeCategory::Owner &&
         Pointee.isConstQualified()) {
       // all Owner arguments passed as const Owner&
       Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
@@ -392,15 +392,15 @@ public:
 
     // the deref location of this for Pointer or Owner methods.
     if (IsThisArg) {
-      if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
+      if (PointeeCat == TypeCategory::Owner || PointeeCat == TypeCategory::Pointer)
         Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
     }
 
-    if (TC == TypeCategory::Pointer && !Pointee.isConstQualified())
+    if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
       Args.Output.emplace_back(Loc, Set, Pointee);
     // Add deref this to Output for Pointer ctor?
 
-    if (TC == TypeCategory::Owner && !isLifetimeConst(FD, Pointee, ArgNum))
+    if (PointeeCat == TypeCategory::Owner && !isLifetimeConst(FD, Pointee, ArgNum))
       Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
   }
 
