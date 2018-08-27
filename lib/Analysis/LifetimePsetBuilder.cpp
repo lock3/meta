@@ -531,7 +531,7 @@ public:
     // Invalidate owners taken by Pointer to non-const.
     for (const auto &Arg : Args.Oinvalidate) {
       for (auto VarOrd : Arg.PS.vars()) {
-        invalidateVar(VarOrd.first, 0, InvalidationReason::Modified(Arg.Loc));
+        invalidateVar(VarOrd.first, 1, InvalidationReason::Modified(Arg.Loc));
       }
     }
 
@@ -596,6 +596,8 @@ public:
   void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
+      if(Pointer == V)
+        continue;
       PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
