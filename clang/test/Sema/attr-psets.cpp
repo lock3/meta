@@ -685,6 +685,8 @@ void return_pointer() {
   __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
   const std::vector<int> &v2 = id(v1);
   __lifetime_pset_ref(v2); // expected-warning {{pset(v2) = (v1)}}
+  auto it = v1.begin();
+  __lifetime_pset(it); // expected-warning {{pset(it) = (v1')}}
 
   int &r = v1[0];
   __lifetime_pset(r); // expected-warning {{pset(r) = (v1')}}
