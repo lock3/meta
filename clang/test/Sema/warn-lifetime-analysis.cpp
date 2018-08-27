@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
 namespace std {
-using size_t = unsigned long;
+using size_t = decltype(sizeof(int));
 
 struct string_view {
   string_view();
