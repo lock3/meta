@@ -240,16 +240,6 @@ QualType getPointeeType(QualType QT) {
   return {};
 }
 
-QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx) {
-  if (QT->isReferenceType())
-    QT = QT->getPointeeType();
-  assert(classifyTypeCategory(QT) == TypeCategory::Owner);
-  QualType Pointee = getPointeeType(QT);
-  if (Pointee.isNull())
-    return {};
-  return Ctx.getPointerType(Pointee);
-}
-
 QualType normalizeType(QualType QT, ASTContext &Ctx) {
   if (QT->isReferenceType())
     return Ctx.getPointerType(QT->getPointeeType());
