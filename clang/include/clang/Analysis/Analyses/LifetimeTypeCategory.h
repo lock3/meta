@@ -24,12 +24,9 @@ bool isNullableType(QualType QT);
 // For primitive types like pointers, references we return the pointee.
 // For user defined types the pointee type is determined by the return
 // type of operator*, operator-> or operator[]. Since these methods
-// might return references, and operator-> returns a pointers, we strip
-// off one extra level of pointers sometimes.
+// might return references, and operator-> returns a pointer, we strip
+// off that one extra level of pointer/references.
 QualType getPointeeType(QualType QT);
-
-// Get the type that might point into the owner.
-QualType getPointerIntoOwner(QualType QT, ASTContext &Ctx);
 
 // Normalizes references to pointers.
 QualType normalizeType(QualType QT, ASTContext &Ctx);

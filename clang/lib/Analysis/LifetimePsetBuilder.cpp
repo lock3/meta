@@ -353,54 +353,61 @@ public:
   };
 
   struct CallArguments {
-    std::vector<CallArgument> Oin_weak;
+    std::vector<CallArgument> Input_weak;
     std::vector<CallArgument> Oinvalidate;
-    std::vector<CallArgument> Pin;
-    std::vector<CallArgument> Oin;
+    std::vector<CallArgument> Input;
     // A “function output” means a return value or a parameter passed by
     // Pointer to non-const (and is not considered to include the top-level
     // Pointer, because the output is the pointee).
-    std::vector<CallArgument> Pout;
+    std::vector<CallArgument> Output;
   };
 
   void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
                          PSet Set, QualType ParamType, bool IsThisArg,
                          CallArguments &Args) {
     // TODO implement aggregates
-    if (classifyTypeCategory(ParamType) == TypeCategory::Pointer) {
-      if (ParamType->isRValueReferenceType())
-        return;
-      Args.Pin.emplace_back(Loc, Set, ParamType);
-      QualType Pointee = getPointeeType(ParamType);
-      auto TC = classifyTypeCategory(Pointee);
-      if (!Pointee.isConstQualified()) {
-        if (TC == TypeCategory::Pointer)
-          Args.Pout.emplace_back(Loc, Set, Pointee);
-        else if (TC == TypeCategory::Owner) {
-          if (!isLifetimeConst(FD, Pointee, ArgNum))
-            Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
-          Args.Oin.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
-        }
-      } else if (TC == TypeCategory::Owner) {
-        if (ParamType->isLValueReferenceType())
-          Args.Oin_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
-      }
-      // For this, we also push the pointed value.
-      if (IsThisArg) {
-        if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
-          PushCallArguments(FD, 0, Loc, getPSet(Set), Pointee, false, Args);
-      }
+    if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
+      return;
+    if (ParamType->isRValueReferenceType())
+      return; // Owner&& and others
+
+    QualType Pointee = getPointeeType(ParamType);
+    auto TC = classifyTypeCategory(Pointee);
+
+    // TODO: paper and implementation note say that const Owner& should NOT be
+    // in Input.
+    Args.Input.emplace_back(Loc, Set, ParamType);
+
+    if (ParamType->isLValueReferenceType() && TC == TypeCategory::Owner &&
+        Pointee.isConstQualified()) {
+      // all Owner arguments passed as const Owner&
+      Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      // the deref locations of Owners passed by const Owner&
+      // Args.Input_weak.emplace_back(Loc, derefPSet(derefPSet(Set, Loc), Loc),
+      // Pointee);
+      return;
     }
+    /*if(ParamType->isLValueReferenceType())
+      Args.Input.emplace_back(Loc, getPSet(Set), Pointee);*/
+
+    // the deref location of this for Pointer or Owner methods.
+    if (IsThisArg) {
+      if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
+        Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+    }
+
+    if (TC == TypeCategory::Pointer && !Pointee.isConstQualified())
+      Args.Output.emplace_back(Loc, Set, Pointee);
+    // Add deref this to Output for Pointer ctor?
+
+    if (TC == TypeCategory::Owner && !isLifetimeConst(FD, Pointee, ArgNum))
+      Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
   }
 
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
-  std::vector<CallArgument>
-  diagnoseAndExpandPin(const std::vector<CallArgument> &PinArgs) {
-    std::vector<CallArgument> PinExtended;
-    for (auto &CA : PinArgs) {
-      PinExtended.emplace_back(CA.Loc, CA.PS, CA.ParamQType);
-
+  void diagnoseInputs(const std::vector<CallArgument> &Input) {
+    for (auto &CA : Input) {
       if (CA.PS.containsInvalid()) {
         Reporter.warnParameterDangling(CA.Loc,
                                        /*indirectly=*/false);
@@ -410,10 +417,7 @@ public:
         Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
         CA.PS.explainWhyNull(Reporter);
       }
-
-      // TODO: expand fields.
     }
-    return PinExtended;
   }
 
   /// Diagnose if psets arguments in Oin and Pin refer to the same variable
@@ -442,6 +446,23 @@ public:
       }
     }
   }*/
+
+  /// Checks if the Pointer/Owner From can assign into
+  /// the Pointer To.
+  bool CanAssign(QualType From, QualType To) {
+    QualType FromPointee = getPointeeType(From);
+    if (FromPointee.isNull())
+      return false;
+
+    QualType ToPointee = getPointeeType(To);
+    if (ToPointee.isNull())
+      return false;
+
+    ToPointee = ToPointee.getCanonicalType();
+    FromPointee = FromPointee.getCanonicalType();
+    return ToPointee == FromPointee &&
+           ToPointee.isConstQualified() >= FromPointee.isConstQualified();
+  }
 
   /// Evaluates the CallExpr for effects on psets.
   /// When a non-const pointer to pointer or reference to pointer is passed
@@ -504,7 +525,7 @@ public:
     // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
     // == pset(x)
 
-    std::vector<CallArgument> PinExtended = diagnoseAndExpandPin(Args.Pin);
+    diagnoseInputs(Args.Input);
     // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // Invalidate owners taken by Pointer to non-const.
@@ -515,6 +536,26 @@ public:
       }
     }
 
+#if 0
+    llvm::errs() << "==== Call\n";
+    CT.FTy->dump();
+    for (CallArgument &CA : Args.Input) {
+      llvm::errs() << "Input: \n";
+      CA.ParamQType->dump();
+      llvm::errs() << "\n";
+    }
+    for (CallArgument &CA : Args.Input_weak) {
+      llvm::errs() << "Input_weak: \n";
+      CA.ParamQType->dump();
+      llvm::errs() << "\n";
+    }
+    for (CallArgument &CA : Args.Output) {
+      llvm::errs() << "Output: \n";
+      CA.ParamQType->dump();
+      llvm::errs() << "\n";
+    }
+#endif
+
     // If p is explicitly lifetime-annotated with x, then each call site
     // enforces the precondition that argument(p) is a valid Pointer and
     // pset(argument(p)) == pset(argument(x)), and in the callee on function
@@ -524,30 +565,14 @@ public:
     // global Owner
     auto computeOutput = [&](QualType OutputType) {
       PSet Ret;
-      QualType RetType = normalizeType(OutputType, ASTCtxt);
-      for (CallArgument &CA : PinExtended) {
-        if (IsConvertible(normalizeType(CA.ParamQType, ASTCtxt), RetType))
-          Ret.merge(CA.PS);
-      }
-      for (CallArgument &CA : Args.Oin) {
-        QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-        if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
+      for (CallArgument &CA : Args.Input) {
+        if (CanAssign(CA.ParamQType, OutputType))
           Ret.merge(CA.PS);
       }
       if (Ret.isUnknown()) {
-        for (CallArgument &CA : Args.Oin_weak) {
-          QualType CheckType = getPointerIntoOwner(CA.ParamQType, ASTCtxt);
-          if (!CheckType.isNull() && IsConvertible(CheckType, RetType))
+        for (CallArgument &CA : Args.Input_weak) {
+          if (CanAssign(CA.ParamQType, OutputType))
             Ret.merge(CA.PS);
-        }
-      }
-      if (Ret.isUnknown()) {
-        for (CallArgument &CA : Args.Oin)
-          Ret.merge(CA.PS);
-      }
-      if (Ret.isUnknown()) {
-        for (CallArgument &CA : Args.Oin_weak) {
-          Ret.merge(CA.PS);
         }
       }
       if (Ret.isUnknown())
@@ -555,12 +580,13 @@ public:
       return Ret;
     };
 
-    if (classifyTypeCategory(CT.FTy->getReturnType()) == TypeCategory::Owner) {
+    auto TC = classifyTypeCategory(CT.FTy->getReturnType());
+    if (TC == TypeCategory::Owner)
       setPSet(CallE, PSet::singleton(Variable::temporary()));
-    } else {
+    else if (TC == TypeCategory::Pointer)
       setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
-    }
-    for (const auto &Arg : Args.Pout) {
+
+    for (const auto &Arg : Args.Output) {
       setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
     }
   }
