@@ -1744,6 +1744,12 @@ private:
 
   unsigned ODRHash;
 
+  /// \brief Wether this variable has 'constexpr' implicitly specified.
+  bool IsConstexprSpecified;
+
+  /// \brief Whether this variable is 'immediate'.
+  bool IsImmediate;
+
   /// End part of this FunctionDecl's source range.
   ///
   /// We could compute the full range in getSourceRange(). However, when we're
@@ -2095,16 +2101,16 @@ public:
   }
 
   /// Whether this is an immediate constexpr function.
-  bool isImmediate() const { return FunctionDeclBits.IsImmediate; }
-  void setImmediate(bool II) { FunctionDeclBits.IsImmediate = II; }
+  bool isImmediate() const { return IsImmediate; }
+  void setImmediate(bool II) { IsImmediate = II; }
 
   /// \brief Whether the constexpr specifier was written explicitly or derived
   /// from an immediate specifier.
   bool isConstexprSpecified() const {
-    return FunctionDeclBits.IsConstexprSpecified;
+    return IsConstexprSpecified;
   }  
   void setConstexprSpecified(bool II) {
-    FunctionDeclBits.IsConstexprSpecified = II;
+    IsConstexprSpecified = II;
   }
 
   /// Indicates the function uses __try.
