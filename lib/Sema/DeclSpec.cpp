@@ -986,7 +986,7 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
   // intended.
   if (Constexpr_specified) {
     DiagID = diag::warn_duplicate_declspec;
-    PrevSpec = "constexpr!";
+    PrevSpec = "constexpr";
     return true;
   }
   Constexpr_specified = true;
