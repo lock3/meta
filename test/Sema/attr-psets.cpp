@@ -783,3 +783,10 @@ void deref_based_on_template_param() {
   int *D3 = f_ptr(O);
   __lifetime_pset(D3); //expected-warning {{pset(D3) = (O')}}
 }
+
+void derived_to_base_conversion() {
+  S *f(D *);
+  D d;
+  S *sp = f(&d);
+  __lifetime_pset(sp); //expected-warning {{pset(sp) = (d)}}
+}
