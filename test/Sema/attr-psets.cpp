@@ -690,7 +690,7 @@ void return_pointer() {
   __lifetime_pset(it); // expected-warning {{pset(it) = (v1')}}
 
   int &r = v1[0];
-  __lifetime_pset(r); // expected-warning {{pset(r) = (v1')}}
+  __lifetime_pset_ref(r); // expected-warning {{pset(r) = (v1')}}
   __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
 
   int *pmem = v1.data();
@@ -773,12 +773,12 @@ void deref_based_on_template_param() {
   std::optional<int> O;
   __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
   int &D = O.value();
-  __lifetime_pset(D); // expected-warning {{pset(D) = (O')}}
+  __lifetime_pset_ref(D); // expected-warning {{pset(D) = (O')}}
   D = 1;
 
   int &f_ref(const std::optional<int> &O);
   int &D2 = f_ref(O);
-  __lifetime_pset(D2); // expected-warning {{pset(D2) = (O')}}
+  __lifetime_pset_ref(D2); // expected-warning {{pset(D2) = (O')}}
 
   int *f_ptr(const std::optional<int> &O);
   int *D3 = f_ptr(O);

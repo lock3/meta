@@ -912,8 +912,12 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
   case 2: {
     assert(CallE->getNumArgs() == 1 && "__lifetime_pset takes one argument");
     PSet Set = getPSet(CallE->getArg(0));
-    if (FuncNum == 1)
+
+    if (FuncNum == 1) {
+      if (!hasPSet(CallE->getArg(0)))
+        return true; // Argument must be a Pointer or Owner
       Set = getPSet(Set);
+    }
     StringRef SourceText = Lexer::getSourceText(
         CharSourceRange::getTokenRange(CallE->getArg(0)->getSourceRange()),
         ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
