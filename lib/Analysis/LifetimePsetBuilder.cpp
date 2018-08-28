@@ -362,7 +362,7 @@ public:
     std::vector<CallArgument> Output;
   };
 
-  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
+  void PushCallArguments(const FunctionDecl *FD, unsigned ArgNum, SourceLocation Loc,
                          PSet Set, QualType ParamType,
                          CallArguments &Args) {
     // TODO implement aggregates

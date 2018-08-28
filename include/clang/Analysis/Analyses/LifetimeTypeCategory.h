@@ -40,7 +40,7 @@ struct CallTypes {
 /// the object (if MemberCallExpr).
 CallTypes getCallTypes(const Expr *CalleeE);
 
-bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum);
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, unsigned ArgNum);
 } // namespace lifetime
 } // namespace clang
 
