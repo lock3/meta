@@ -3,9 +3,16 @@ namespace std {
 using size_t = decltype(sizeof(int));
 
 struct string_view {
+  struct iterator {
+    char& operator*();
+    iterator& operator++();
+    bool operator!=(const iterator&) const;
+  };
   string_view();
   string_view(const char *s);
   char &operator[](int i);
+  iterator begin();
+  iterator end();
 };
 
 struct string {
@@ -250,17 +257,17 @@ std::string operator+(std::string_view sv1, std::string_view sv2) {
 
 template <typename T>
 T concat(const T &x, const T &y) {
-  return x + y;
+  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set (x, y) is expected}}
 }
 
 void sj4() {
   std::string_view s = "foo"_s;
-  use(s); // TODO dereferencing a dangling pointer
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  use(s);  // expected-warning {{passing a dangling pointer as argument}}
 
   std::string_view hi = "hi";
   auto xy = concat(hi, hi);
-
-  use(xy);
+  // expected-note@-1 {{in instantiation of function template specialization 'P0936::concat<std::string_view>' requested here}}
 }
 
 std::string GetString();
@@ -279,8 +286,8 @@ void sj5() {
   use(GetString()); // OK
 
   std::string_view sv = GetString();
-
-  use(sv); // TODO dereferencing a dangling pointer
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  use(sv);  // expected-warning {{passing a dangling pointer as argument}}
 
   std::map<int, std::string> myMap;
   const std::string &val = findWithDefault(myMap, 1, "default value");
