@@ -271,9 +271,12 @@ public:
     if (const Expr *RetVal = R->getRetValue()) {
       if (!isPointer(RetVal))
         return;
-      if (!getPSet(RetVal).isSubstitutableFor(PSetOfAllParams)) {
-        // TODO: better warning message.
-        Reporter.warnDerefDangling(R->getReturnLoc(), false);
+      auto RetPSet = getPSet(RetVal);
+      if(RetPSet.containsInvalid()) {
+        Reporter.warnReturnDangling(R->getReturnLoc(), false);
+        RetPSet.explainWhyInvalid(Reporter);
+      } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
+        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(), PSetOfAllParams.str());
       }
     }
   }

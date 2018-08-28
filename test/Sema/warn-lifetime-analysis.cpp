@@ -200,7 +200,7 @@ int *return_wrong_ptr(int *p) {
   int *q = &i;
   if (p)
     return p;
-  return q; // expected-warning {{dereferencing a dangling pointer}}
+  return q; // expected-warning {{returning a Pointer with points-to set (i) where points-to set ((null), p) is expected}}
 }
 
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
