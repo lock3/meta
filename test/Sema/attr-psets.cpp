@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
 
 // TODO:
 // lifetime annotations
@@ -836,4 +836,10 @@ void kill_materialized_temporary() {
     __lifetime_pset(p); //expected-warning {{pset(p) = ((lifetime-extended temporary through i))}}
   }
   __lifetime_pset(p); //expected-warning {{pset(p) = ((invalid))}}
+}
+
+int throw_local() {
+  int i;
+  // TODO: better error message
+  throw &i; // expected-warning {{dereferencing a dangling pointer}}
 }

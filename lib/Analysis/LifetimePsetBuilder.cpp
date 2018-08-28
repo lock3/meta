@@ -348,6 +348,13 @@ public:
     }
   }
 
+  void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
+    if (!isPointer(TE->getSubExpr()))
+      return;
+    if (!getPSet(TE->getSubExpr()).isStatic())
+      Reporter.warnDerefDangling(TE->getLocEnd(), false);
+  }
+
   struct CallArgument {
     CallArgument(SourceLocation Loc, PSet PS, QualType QType)
         : Loc(Loc), PS(std::move(PS)), ParamQType(QType) {}
