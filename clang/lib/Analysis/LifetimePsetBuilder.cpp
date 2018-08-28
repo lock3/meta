@@ -605,7 +605,22 @@ public:
     }
   }
 
-  void erasePointer(Variable P) { PMap.erase(P); }
+  // Remove the variable from the pset and returns
+  // a list of variables that are materialized temporaries
+  // extended by that variable.
+  void eraseVariable(Variable P) {
+    PMap.erase(P);
+    if (auto *VD = P.asVarDecl()) {
+      // Remove all materialized temporaries that were extended by this
+      // variable.
+      for (auto I = PMap.begin(); I != PMap.end();) {
+        if (I->first.isLifetimeExtendedTemporaryBy(VD))
+          I = PMap.erase(I);
+        else
+          ++I;
+      }
+    }
+  }
 
   PSet getPSet(Variable P);
 
@@ -948,23 +963,48 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       llvm::errs() << "\n";*/
 
       // Kill all temporaries that vanish at the end of the full expression
-      if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S))
+      if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S)) {
         invalidateVar(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+        // Remove all materialized temporaries that are not extended.
+        for (auto I = PMap.begin(); I != PMap.end();) {
+          auto Var = I->first;
+          if (Var.isLifetimeExtendedTemporaryBy(nullptr)) {
+            invalidateVar(
+                Var, 0, InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+            I = PMap.erase(I);
+          } else {
+            ++I;
+          }
+        }
+      }
 
       break;
     }
     case CFGElement::LifetimeEnds: {
       auto Leaver = E.castAs<CFGLifetimeEnds>();
 
-      // Stop tracking Pointers that leave scope
-      erasePointer(Leaver.getVarDecl());
+      // Stop tracking Variables that leave scope.
+      eraseVariable(Leaver.getVarDecl());
+
+      // Kill all that were extended by this variable.
+      std::vector<Variable> ToKill;
+      ToKill.push_back(Leaver.getVarDecl());
+
+      for (auto I : PMap) {
+        for (auto V : I.second.vars()) {
+          if (V.first.isLifetimeExtendedTemporaryBy(Leaver.getVarDecl()))
+            ToKill.push_back(V.first);
+        }
+      }
 
       // Invalidate all pointers that track leaving Owners
-      invalidateVar(
-          Leaver.getVarDecl(), 0,
-          InvalidationReason::PointeeLeftScope(
-              Leaver.getTriggerStmt()->getLocEnd(), Leaver.getVarDecl()));
+      for (auto V : ToKill) {
+        invalidateVar(
+            V, 0,
+            InvalidationReason::PointeeLeftScope(
+                Leaver.getTriggerStmt()->getLocEnd(), Leaver.getVarDecl()));
+      }
       break;
     }
     case CFGElement::NewAllocator:
@@ -986,7 +1026,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     UpdatePSetsFromCondition(Terminator, /*Positive=*/true, FalseBranchExitPMap,
                              Terminator->getLocEnd());
   }
-}
+} // namespace lifetime
 
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 const PSet &PSetOfAllParams,

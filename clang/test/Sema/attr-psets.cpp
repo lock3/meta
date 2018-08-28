@@ -824,3 +824,14 @@ void derived_to_base_conversion() {
   S *sp = f(&d);
   __lifetime_pset(sp); //expected-warning {{pset(sp) = (d)}}
 }
+
+void kill_materialized_temporary() {
+  const int* p;
+  {
+    const int& i = 1;
+    __lifetime_pset_ref(i); //expected-warning {{pset(i) = ((lifetime-extended temporary through i))}}
+    p = &i;
+    __lifetime_pset(p); //expected-warning {{pset(p) = ((lifetime-extended temporary through i))}}
+  }
+  __lifetime_pset(p); //expected-warning {{pset(p) = ((invalid))}}
+}
