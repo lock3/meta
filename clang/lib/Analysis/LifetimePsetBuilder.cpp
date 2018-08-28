@@ -374,21 +374,21 @@ public:
     QualType Pointee = getPointeeType(ParamType);
     auto PointeeCat = classifyTypeCategory(Pointee);
 
-    // TODO: paper and implementation note say that const Owner& should NOT be
-    // in Input.
-    Args.Input.emplace_back(Loc, Set, ParamType);
-
     if (ParamType->isLValueReferenceType() &&
         PointeeCat == TypeCategory::Owner && Pointee.isConstQualified()) {
       // all Owner arguments passed as const Owner&
-      Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      Args.Input_weak.emplace_back(Loc, Set, ParamType);
       // the deref locations of Owners passed by const Owner&
-      // Args.Input_weak.emplace_back(Loc, derefPSet(derefPSet(Set, Loc), Loc),
-      // Pointee);
+      Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
       return;
     }
-    /*if(ParamType->isLValueReferenceType())
-      Args.Input.emplace_back(Loc, getPSet(Set), Pointee);*/
+
+    Args.Input.emplace_back(Loc, Set, ParamType);
+
+    if (ParamType->isLValueReferenceType() &&
+        (PointeeCat == TypeCategory::Owner ||
+         PointeeCat == TypeCategory::Pointer))
+      Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
 
     // the deref location of this for Pointer or Owner methods.
     if (IsThisArg) {
