@@ -56,7 +56,7 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
   /// Returns true if the first argument is implicitly convertible
-  /// into the second argument after ignoring references on both.
+  /// into the second argument.
   IsConvertibleTy IsConvertible;
 
   /// psets of all memory locations, which are identified
