@@ -202,7 +202,7 @@ void do_not_warn_for_decay_only() {
   auto str = "decaythis"_s;
 }
 
-int *return_wrong_ptr(int *p) {
+const int *return_wrong_ptr(const int *p) {
   int i = 0;
   int *q = &i;
   if (p)

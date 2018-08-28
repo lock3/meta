@@ -277,7 +277,8 @@ void ignore_pointer_to_member() {
   void (S::*mpf)() = &S::f; // pointer to member function; has no pset
 }
 
-void if_stmt(int *p, char *q, gsl::nullable<std::unique_ptr<int>> up) {
+void if_stmt(const int *p, const char *q,
+             gsl::nullable<std::unique_ptr<int>> up) {
   __lifetime_pset(p);  // expected-warning {{pset(p) = ((null), p)}}
   __lifetime_pset(up); // expected-warning {{pset(up) = ((null), up')}}
   int *alwaysNull = nullptr;
@@ -362,7 +363,7 @@ void implicit_else() {
   __lifetime_pset(p); // expected-warning {{pset(p) = (i, j)}}
 }
 
-void condition_short_circuit(S *p) {
+void condition_short_circuit(const S *p) {
   if (p && p->m)
     ;
 }
@@ -470,30 +471,30 @@ void __assert_fail() __attribute__((__noreturn__));
        ? static_cast<void>(0) \
        : __assert_fail())
 
-void asserting(int *p) {
+void asserting(const int *p) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
   assert(p);
   __lifetime_pset(p); // expected-warning {{pset(p) = (p)}}
 }
 
-int *global_p1 = nullptr;
-int *global_p2 = nullptr;
+const int *global_p1 = nullptr;
+const int *global_p2 = nullptr;
 int global_i;
 
-void namespace_scoped_vars(int param_i, int *param_p) {
+void namespace_scoped_vars(int param_i, const int *param_p) {
   __lifetime_pset(param_p);   // expected-warning {{pset(param_p) = ((null), param_p)}}
   __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
 
   if (global_p1) {
     __lifetime_pset(global_p1); // expected-warning {{pset(global_p1) = ((static))}}
-    *global_p1 = 3;
+    (void)*global_p1;
   }
 
   int local_i;
   global_p1 = &local_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(local_i)}}
   global_p1 = &param_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(param_i)}}
   global_p1 = param_p;  // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {((null), param_p)}}
-  int *local_p = global_p1;
+  const int *local_p = global_p1;
   __lifetime_pset(local_p); // expected-warning {{pset(local_p) = ((static))}}
 
   global_p1 = nullptr;        // OK
@@ -714,7 +715,8 @@ void return_pointer() {
   __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
 }
 
-void test_annotations(gsl::nullable<int *> p, gsl::not_null<int *> q) {
+void test_annotations(gsl::nullable<const int *> p,
+                      gsl::not_null<const int *> q) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), p)}}
   __lifetime_pset(q); // expected-warning {{pset(q) = (q)}}
 }
@@ -749,7 +751,7 @@ void cast(int *p) {
 
 // Support CXXOperatorCallExpr on non-member function
 struct S3;
-void operator==(S3 &A, S3 &B) { A == B; }
+void operator==(const S3 &A, const S3 &B) { A == B; }
 
 struct S2 {
   void f() {
@@ -786,10 +788,10 @@ void deref_based_on_template_param() {
 }
 
 my_pointer global_pointer;
-void f(my_pointer &p) {
+void f(my_pointer &p) { // expected-note {{it was never initialized here}}
   // p is a out-parameter, so its pset is {invalid}
-  (void)*p;           // TODOexpected-warning {{dereferencing dangling pointer}}
-  p = global_pointer; // OK, *this is not validated on assignment operator call
+  (void)*p;           // expected-warning {{dereferencing a dangling pointer}}
+  p = global_pointer; // TODO OK, *this is not validated on assignment operator call
 }
 void caller() {
   void f(my_pointer & p);
