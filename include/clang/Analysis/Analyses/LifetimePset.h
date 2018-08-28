@@ -103,6 +103,12 @@ struct Variable {
            Var.get<const MaterializeTemporaryExpr *>();
   }
 
+  bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
+    return isLifetimeExtendedTemporary() &&
+           Var.get<const MaterializeTemporaryExpr *>()->getExtendingDecl() ==
+               VD;
+  }
+
   // Is the pset of this Variable allowed to contain null?
   bool mightBeNull() const {
     if (isThisPointer())

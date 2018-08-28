@@ -291,8 +291,10 @@ void sj5() {
 
   std::map<int, std::string> myMap;
   const std::string &val = findWithDefault(myMap, 1, "default value");
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
 
-  use(val); // TODO dereferencing a dangling pointer
+  // TODO: diagnostic should not say "dereferencing"
+  use(val); // expected-warning {{dereferencing a dangling pointer}}
 }
 
 } // namespace P0936
