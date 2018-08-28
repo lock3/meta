@@ -1,4 +1,4 @@
-// RUN: %clang -std=c++1z %s
+// RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -std=c++1z -freflection %s
 
 #include <experimental/meta>
 

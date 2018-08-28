@@ -1,4 +1,4 @@
-// RUN: %clang -freflection -std=c++1z %s
+// RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -std=c++1z -freflection %s
 
 #include <experimental/meta>
 
@@ -49,7 +49,7 @@ constexpr int test() {
 struct S { };
 
 constexpr void test_templates() {
-  constexpr int x1 = test<int>();
+  // constexpr int x1 = test<int>();
   // constexpr int x2 = test<S>();
 }
 
