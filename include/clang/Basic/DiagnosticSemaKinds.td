@@ -2441,6 +2441,9 @@ def err_template_different_associated_constraints : Error<
 // [Meta]
 // FIXME: The err_immediate_tag and err_immediate_no_declarators are dups
 // of constexpr errors. These should be merged.
+def err_incorrect_defaulted_immediate : Error<
+  "defaulted definition of %sub{select_special_member_kind}0 "
+  "is not implicitly constexpr">;
 def err_immediate_tag : Error<
   "%select{class|struct|interface|union|enum}0 cannot be marked 'constexpr!'">;
 def err_immediate_no_declarators : Error<
