@@ -1049,10 +1049,22 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     TypeCategory TC = classifyTypeCategory(PVD->getType());
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
       continue;
+    QualType PointeeType = getPointeeType(PVD->getType());
     Variable P(PVD);
     // Parameters cannot be invalid (checked at call site).
-    auto PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
-    PSetForAllParams.merge(PS);
+    PSet PS;
+    // Output params are initially undefined.
+    if (TC == TypeCategory::Pointer && !PointeeType.isConstQualified() &&
+        !PVD->getType()->isRValueReferenceType()) {
+      PS =
+          PSet::invalid(InvalidationReason::NotInitialized(PVD->getLocStart()));
+      // It is still ok to point to output values when we return values.
+      PSetForAllParams.merge(
+          PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner));
+    } else {
+      PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
+      PSetForAllParams.merge(PS);
+    }
     PMap.emplace(P, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
