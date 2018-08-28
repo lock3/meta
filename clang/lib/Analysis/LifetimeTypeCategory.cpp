@@ -282,7 +282,7 @@ CallTypes getCallTypes(const Expr *CalleeE) {
   return CT;
 }
 
-bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, unsigned ArgNum) {
   // Until annotations are widespread, STL specific lifetimeconst
   // methods and params can be enumerated here.
   if (!FD)
