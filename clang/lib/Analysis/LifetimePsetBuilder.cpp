@@ -363,7 +363,7 @@ public:
   };
 
   void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
-                         PSet Set, QualType ParamType, bool IsThisArg,
+                         PSet Set, QualType ParamType,
                          CallArguments &Args) {
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
@@ -389,13 +389,6 @@ public:
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer))
       Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
-
-    // the deref location of this for Pointer or Owner methods.
-    if (IsThisArg) {
-      if (PointeeCat == TypeCategory::Owner ||
-          PointeeCat == TypeCategory::Pointer)
-        Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
-    }
 
     if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
       Args.Output.emplace_back(Loc, Set, Pointee);
@@ -500,7 +493,7 @@ public:
           return ParamTypes[I];
       }();
       PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(),
-                        getPSet(Arg), ParamType, IsThisArg, Args);
+                        getPSet(Arg), ParamType, Args);
     }
 
     if (CT.ClassDecl) {
@@ -518,7 +511,7 @@ public:
           ObjectType.addConst();
 
         PushCallArguments(CallE->getDirectCallee(), 0, Object->getLocStart(),
-                          getPSet(Object), ObjectType, true, Args);
+                          getPSet(Object), ObjectType, Args);
       }
     }
 

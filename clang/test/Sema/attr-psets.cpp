@@ -90,6 +90,7 @@ struct D : public S {
 
 struct [[gsl::Pointer]] my_pointer {
   my_pointer();
+  my_pointer &operator=(const my_pointer &);
   int operator*();
 };
 
@@ -784,6 +785,39 @@ void deref_based_on_template_param() {
   __lifetime_pset(D3); //expected-warning {{pset(D3) = (O')}}
 }
 
+my_pointer global_pointer;
+void f(my_pointer &p) {
+  // p is a out-parameter, so its pset is {invalid}
+  (void)*p;           // TODOexpected-warning {{dereferencing dangling pointer}}
+  p = global_pointer; // OK, *this is not validated on assignment operator call
+}
+void caller() {
+  void f(my_pointer & p);
+  my_pointer p;
+  // TODO remove me expected-note@-1 {{assigned here}}
+  f(p); // OK, p is assumed to be out-parameter, so no validation
+  // TODO remove me expected-warning@-1 {{passing a null pointer as argument to a non-null parameter}}
+}
+
+struct Struct {
+  Struct *f();
+  Struct &g();
+};
+
+void this_in_input() {
+  Struct S;
+  Struct *Sptr = &S;
+  Struct *ptr = S.f();
+  __lifetime_pset(ptr); // expected-warning {{pset(ptr) = (S)}}
+  ptr = Sptr->f();
+  __lifetime_pset(ptr); // expected-warning {{pset(ptr) = (S)}}
+
+  Struct &Sref = S.g();
+  __lifetime_pset_ref(Sref); // expected-warning {{pset(Sref) = (S)}}
+
+  Struct &Sref2 = Sptr->g();
+  __lifetime_pset_ref(Sref2); // expected-warning {{pset(Sref2) = (S)}}
+}
 void derived_to_base_conversion() {
   S *f(D *);
   D d;
