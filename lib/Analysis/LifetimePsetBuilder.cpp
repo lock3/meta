@@ -272,11 +272,12 @@ public:
       if (!isPointer(RetVal))
         return;
       auto RetPSet = getPSet(RetVal);
-      if(RetPSet.containsInvalid()) {
+      if (RetPSet.containsInvalid()) {
         Reporter.warnReturnDangling(R->getReturnLoc(), false);
         RetPSet.explainWhyInvalid(Reporter);
       } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
-        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(), PSetOfAllParams.str());
+        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
+                                     PSetOfAllParams.str());
       }
     }
   }
@@ -365,8 +366,8 @@ public:
     std::vector<CallArgument> Output;
   };
 
-  void PushCallArguments(const FunctionDecl *FD, unsigned ArgNum, SourceLocation Loc,
-                         PSet Set, QualType ParamType,
+  void PushCallArguments(const FunctionDecl *FD, unsigned ArgNum,
+                         SourceLocation Loc, PSet Set, QualType ParamType,
                          CallArguments &Args) {
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
@@ -593,7 +594,7 @@ public:
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
       if (Pointer == V)
-        continue;
+        continue; // Invalidating Owner' should not change the pset of Owner
       PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
