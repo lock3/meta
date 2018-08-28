@@ -378,8 +378,8 @@ public:
     // in Input.
     Args.Input.emplace_back(Loc, Set, ParamType);
 
-    if (ParamType->isLValueReferenceType() && PointeeCat == TypeCategory::Owner &&
-        Pointee.isConstQualified()) {
+    if (ParamType->isLValueReferenceType() &&
+        PointeeCat == TypeCategory::Owner && Pointee.isConstQualified()) {
       // all Owner arguments passed as const Owner&
       Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
       // the deref locations of Owners passed by const Owner&
@@ -392,7 +392,8 @@ public:
 
     // the deref location of this for Pointer or Owner methods.
     if (IsThisArg) {
-      if (PointeeCat == TypeCategory::Owner || PointeeCat == TypeCategory::Pointer)
+      if (PointeeCat == TypeCategory::Owner ||
+          PointeeCat == TypeCategory::Pointer)
         Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
     }
 
@@ -400,7 +401,8 @@ public:
       Args.Output.emplace_back(Loc, Set, Pointee);
     // Add deref this to Output for Pointer ctor?
 
-    if (PointeeCat == TypeCategory::Owner && !isLifetimeConst(FD, Pointee, ArgNum))
+    if (PointeeCat == TypeCategory::Owner &&
+        !isLifetimeConst(FD, Pointee, ArgNum))
       Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
   }
 
@@ -449,7 +451,7 @@ public:
 
   /// Checks if the Pointer/Owner From can assign into
   /// the Pointer To.
-  bool CanAssign(QualType From, QualType To) {
+  bool canAssign(QualType From, QualType To) {
     QualType FromPointee = getPointeeType(From);
     if (FromPointee.isNull())
       return false;
@@ -458,10 +460,8 @@ public:
     if (ToPointee.isNull())
       return false;
 
-    ToPointee = ToPointee.getCanonicalType();
-    FromPointee = FromPointee.getCanonicalType();
-    return ToPointee == FromPointee &&
-           ToPointee.isConstQualified() >= FromPointee.isConstQualified();
+    return IsConvertible(ASTCtxt.getPointerType(FromPointee),
+                         ASTCtxt.getPointerType(ToPointee));
   }
 
   /// Evaluates the CallExpr for effects on psets.
@@ -565,12 +565,12 @@ public:
     auto computeOutput = [&](QualType OutputType) {
       PSet Ret;
       for (CallArgument &CA : Args.Input) {
-        if (CanAssign(CA.ParamQType, OutputType))
+        if (canAssign(CA.ParamQType, OutputType))
           Ret.merge(CA.PS);
       }
       if (Ret.isUnknown()) {
         for (CallArgument &CA : Args.Input_weak) {
-          if (CanAssign(CA.ParamQType, OutputType))
+          if (canAssign(CA.ParamQType, OutputType))
             Ret.merge(CA.PS);
         }
       }
@@ -596,7 +596,7 @@ public:
   void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
-      if(Pointer == V)
+      if (Pointer == V)
         continue;
       PSet &PS = I.second;
       if (PS.containsInvalid())
