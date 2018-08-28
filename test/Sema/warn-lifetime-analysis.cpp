@@ -4,9 +4,9 @@ using size_t = decltype(sizeof(int));
 
 struct string_view {
   struct iterator {
-    char& operator*();
-    iterator& operator++();
-    bool operator!=(const iterator&) const;
+    char &operator*();
+    iterator &operator++();
+    bool operator!=(const iterator &) const;
   };
   string_view();
   string_view(const char *s);
@@ -263,7 +263,7 @@ T concat(const T &x, const T &y) {
 void sj4() {
   std::string_view s = "foo"_s;
   // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
-  use(s);  // expected-warning {{passing a dangling pointer as argument}}
+  use(s); // expected-warning {{passing a dangling pointer as argument}}
 
   std::string_view hi = "hi";
   auto xy = concat(hi, hi);
@@ -287,7 +287,7 @@ void sj5() {
 
   std::string_view sv = GetString();
   // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
-  use(sv);  // expected-warning {{passing a dangling pointer as argument}}
+  use(sv); // expected-warning {{passing a dangling pointer as argument}}
 
   std::map<int, std::string> myMap;
   const std::string &val = findWithDefault(myMap, 1, "default value");
