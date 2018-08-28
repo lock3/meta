@@ -3207,6 +3207,12 @@ def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling 
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_parameter_null : Warning<"passing a%select{| possibly}0 null pointer as argument to a non-null parameter">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_return_dangling : Warning<"returning a%select{| possibly}0 dangling Pointer">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_return_null : Warning<"returning a%select{| possibly}0 null Pointer where a non-null Pointer is expected">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_return_wrong_pset : Warning<"returning a Pointer with points-to set %0 where points-to set %1 is expected">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
 
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;

@@ -39,6 +39,9 @@ public:
                                    const std::string &Pointee) = 0;
   virtual void warnParameterDangling(SourceLocation Loc, bool indirectly) = 0;
   virtual void warnParameterNull(SourceLocation Loc, bool possibly) = 0;
+  virtual void warnReturnDangling(SourceLocation Loc, bool possibly) = 0;
+  virtual void warnReturnNull(SourceLocation Loc, bool possibly) = 0;
+  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc, std::string Name) = 0;
 
   virtual void noteNeverInitialized(SourceLocation Loc) = 0;

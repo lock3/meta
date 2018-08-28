@@ -2006,6 +2006,18 @@ public:
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_parameter_null) << possibly;
   }
+  void warnReturnDangling(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_dangling) << possibly;
+  }
+  void warnReturnNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_null) << possibly;
+  }
+  void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
+  }
   void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_pointee_left_scope) << Name;
