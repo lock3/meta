@@ -375,7 +375,7 @@ public:
 
   void PushCallArguments(const FunctionDecl *FD, unsigned ArgNum,
                          SourceLocation Loc, PSet Set, QualType ParamType,
-                         bool IsThisArg, CallArguments &Args) {
+                         bool IsInputThis, CallArguments &Args) {
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
       return;
@@ -396,7 +396,7 @@ public:
 
     Args.Input.emplace_back(Loc, Set, ParamType);
 
-    if ((Pointee.isConstQualified() || IsThisArg ||
+    if ((Pointee.isConstQualified() || IsInputThis ||
          ParamType->isRValueReferenceType()) &&
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer))
@@ -485,16 +485,17 @@ public:
     CallArguments Args;
     for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
       const Expr *Arg = CallE->getArg(I);
-      bool IsThisArg = false;
+      bool IsInputThis = false;
       QualType ParamType = [&] {
         // For instance calls, getArg(0) is the 'this' pointer.
-        if (isa<CXXOperatorCallExpr>(CallE)) {
+        if (const auto *OE = dyn_cast<CXXOperatorCallExpr>(CallE)) {
           if (I == 0) {
             // TODO handle Arg->getType()->isPointerType()
             auto QT = ASTCtxt.getLValueReferenceType(Arg->getType());
             if (CT.FTy->isConst())
               QT.addConst();
-            IsThisArg = true;
+            if (OE->getOperator() != OO_Equal)
+              IsInputThis = true;
             return QT;
           } else
             return ParamTypes[I - 1];
@@ -505,7 +506,7 @@ public:
           return ParamTypes[I];
       }();
       PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(),
-                        getPSet(Arg), ParamType, IsThisArg, Args);
+                        getPSet(Arg), ParamType, IsInputThis, Args);
     }
 
     if (CT.ClassDecl) {
