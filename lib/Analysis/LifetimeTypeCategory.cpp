@@ -145,7 +145,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
-  if (hasDerefOperations && R->hasUserDeclaredDestructor())
+  if (hasDerefOperations && !R->hasTrivialDestructor())
     return TypeCategory::Owner;
 
   if (auto Cat = classifyStd(T))
