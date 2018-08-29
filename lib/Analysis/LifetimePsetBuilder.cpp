@@ -541,19 +541,20 @@ public:
 
 #if 0
     llvm::errs() << "==== Call\n";
+    CallE->dump();
     CT.FTy->dump();
     for (CallArgument &CA : Args.Input) {
-      llvm::errs() << "Input: \n";
+      llvm::errs() << "Input: " << CA.PS.str() << "\n";
       CA.ParamQType->dump();
       llvm::errs() << "\n";
     }
     for (CallArgument &CA : Args.Input_weak) {
-      llvm::errs() << "Input_weak: \n";
+      llvm::errs() << "Input_weak: " << CA.PS.str() << "\n";
       CA.ParamQType->dump();
       llvm::errs() << "\n";
     }
     for (CallArgument &CA : Args.Output) {
-      llvm::errs() << "Output: \n";
+      llvm::errs() << "Output: " << CA.PS.str() << "\n";
       CA.ParamQType->dump();
       llvm::errs() << "\n";
     }
