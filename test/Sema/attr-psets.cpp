@@ -689,6 +689,10 @@ void return_pointer() {
   __lifetime_pset_ref(v2); // expected-warning {{pset(v2) = (v1)}}
   auto it = v1.begin();
   __lifetime_pset(it); // expected-warning {{pset(it) = (v1')}}
+  std::vector<int>::iterator it2;
+  it2 = v1.begin();
+  __lifetime_pset(it2); // expected-warning {{pset(it2) = (v1')}}
+
 
   int &r = v1[0];
   __lifetime_pset_ref(r); // expected-warning {{pset(r) = (v1')}}
@@ -796,9 +800,7 @@ void f(my_pointer &p) { // expected-note {{it was never initialized here}}
 void caller() {
   void f(my_pointer & p);
   my_pointer p;
-  // TODO remove me expected-note@-1 {{assigned here}}
   f(p); // OK, p is assumed to be out-parameter, so no validation
-  // TODO remove me expected-warning@-1 {{passing a null pointer as argument to a non-null parameter}}
 }
 
 struct Struct {
