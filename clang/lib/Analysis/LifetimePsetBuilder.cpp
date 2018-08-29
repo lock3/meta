@@ -520,8 +520,6 @@ public:
         if (ObjectType->isPointerType())
           ObjectType = ObjectType->getPointeeType();
         ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
-        if (CT.FTy->isConst())
-          ObjectType.addConst();
 
         PushCallArguments(CallE->getDirectCallee(), 0, Object->getLocStart(),
                           getPSet(Object), ObjectType, true, Args);
