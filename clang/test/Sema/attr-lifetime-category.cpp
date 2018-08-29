@@ -31,7 +31,9 @@ struct vector {
   ~vector();
 };
 
-struct _Bit_reference {};
+struct _Bit_reference {
+  void flip();
+};
 
 template <>
 struct vector<bool> {
@@ -130,8 +132,8 @@ void pointer() {
   __lifetime_type_category<int &>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::reference_wrapper<int>(i))>(); // expected-warning {{Pointer}}
-  //__lifetime_type_category<decltype(std::vector<bool>::reference())>(); // TODOexpected-warning {{Pointer}}
-  //__lifetime_type_category_arg(std::vector<bool>::reference());         // TODOexpected-warning {{Pointer}}
+  __lifetime_type_category_arg(std::vector<bool>::reference());         // expected-warning {{Pointer}}
+  __lifetime_type_category<decltype(std::vector<bool>::reference())>(); // expected-warning {{Pointer}}
 }
 
 void aggregate() {

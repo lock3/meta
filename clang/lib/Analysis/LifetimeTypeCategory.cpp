@@ -72,22 +72,30 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 // Unfortunately, the types are stored in a desugared form for template
 // instantiations. For this and some other reasons I think it would be better
 // to look up the declarations (pointers) by names upfront and look up the
-// declarations instead of matching strings.
+// declarations instead of matching strings populated lazily.
 static Optional<TypeCategory> classifyStd(const Type *T) {
+  static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
+                                       "optional", "variant", "any"};
+  static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   NamedDecl *Decl;
   if (const auto *TypeDef = T->getAs<TypedefType>()) {
     if (auto TypeCat = classifyStd(TypeDef->desugar().getTypePtr()))
       return TypeCat;
     Decl = TypeDef->getDecl();
+    if (Decl->getName() == "reference") {
+      const auto *RD = dyn_cast<CXXRecordDecl>(Decl->getDeclContext());
+      if (satisfiesContainerRequirements(RD) && RD->isInStdNamespace()) {
+        // Lazily populate the list of pointers with the name of the
+        // implementation defined proxy classes.
+        if ((Decl = TypeDef->desugar()->getAsCXXRecordDecl()))
+          StdPointers.insert(Decl->getName());
+        return TypeCategory::Pointer;
+      }
+    }
   } else
     Decl = T->getAsCXXRecordDecl();
   if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())
     return {};
-
-  static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
-                                       "optional", "variant", "any"};
-  static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper",
-                                         "vector<bool>::reference"};
 
   if (StdOwners.count(Decl->getName()))
     return TypeCategory::Owner;
@@ -222,6 +230,10 @@ QualType getPointeeType(QualType QT) {
           return QT->getPointeeType();
         return QT;
       }
+      // Heuristic for vector<bool>::reference. Return void, we do not
+      // want it to alias with pointers to bool. TODO: revise.
+      if (M->getIdentifier() && M->getName() == "flip")
+        return M->getReturnType();
     }
     // Check the bases.
     for (auto Base : R->bases()) {
@@ -282,7 +294,8 @@ CallTypes getCallTypes(const Expr *CalleeE) {
   return CT;
 }
 
-bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, unsigned ArgNum) {
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee,
+                     unsigned ArgNum) {
   // Until annotations are widespread, STL specific lifetimeconst
   // methods and params can be enumerated here.
   if (!FD)
