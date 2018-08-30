@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -fsyntax-only -verify -std=c++1z -freflection %s
-// expected-no-diagnostics
 
 #include <experimental/meta>
 
@@ -60,6 +59,8 @@ int main() {
   //   void test_function(Frag& frag) {
   //   }
   // };
+
+  constexpr auto unfinished_fragment = __fragment; // expected-error {{expected fragment}}
 
   // constexpr auto test_cls_frag_wrapper = SomeClass<test_cls_frag>();
   // constexpr auto test_cls_self_frag_wrapper = SomeClass<test_cls_self_frag>();
