@@ -72,6 +72,9 @@ constexpr auto test_union_self_frag_wrapper = SomeClass<test_union_self_frag>();
 constexpr auto test_ns_frag_wrapper = SomeClass<test_ns_frag>();
 // constexpr auto test_ns_self_frag_wrapper = SomeClass<test_ns_self_frag>();
 
+constexpr {
+};
+
 };
 
 int main() {
