@@ -213,10 +213,9 @@ bool isNullableType(QualType QT) {
   if (const auto *RD = Inner->getAsCXXRecordDecl()) {
     if (auto Nullability = getKnownNullability(RD->getName()))
       return *Nullability;
-    if (satisfiesIteratorRequirements(RD))
-      return true;
   }
-  return QT.getCanonicalType()->isPointerType();
+  return classifyTypeCategory(QT) == TypeCategory::Pointer &&
+         !QT->isReferenceType();
 }
 
 QualType getPointeeType(QualType QT) {
