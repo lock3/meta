@@ -110,18 +110,18 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   bool IsDependent;
   TypeResult UnderlyingType;
   Decl *ClassDecl = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
-                                 ClassKeyLoc, SS,
-                                 Id, IdLoc,
-                                 ParsedAttributesView(),
-                                 /*AccessSpecifier=*/AS_none,
-                                 /*ModulePrivateLoc=*/SourceLocation(),
-                                 MTP, IsOwned, IsDependent,
-                                 /*ScopedEnumKWLoc=*/SourceLocation(),
-                                 /*ScopeEnumUsesClassTag=*/false,
-                                 UnderlyingType,
-                                 /*IsTypeSpecifier=*/false,
-                                 /*IsTemplateParamOrArg=*/false,
-                                 /*SkipBody=*/nullptr);
+                                     ClassKeyLoc, SS,
+                                     Id, IdLoc,
+                                     ParsedAttributesView(),
+                                     /*AccessSpecifier=*/AS_none,
+                                     /*ModulePrivateLoc=*/SourceLocation(),
+                                     MTP, IsOwned, IsDependent,
+                                     /*ScopedEnumKWLoc=*/SourceLocation(),
+                                     /*ScopeEnumUsesClassTag=*/false,
+                                     UnderlyingType,
+                                     /*IsTypeSpecifier=*/false,
+                                     /*IsTemplateParamOrArg=*/false,
+                                     /*SkipBody=*/nullptr);
 
   // Parse the class definition.
   ParsedAttributesWithRange PA(AttrFactory);
