@@ -613,18 +613,24 @@ public:
     }
   }
 
-  // Remove the variable from the pset and returns
-  // a list of variables that are materialized temporaries
-  // extended by that variable.
-  void eraseVariable(Variable P) {
+  // Remove the variable from the pset together with the materialized
+  // temporaries extended by that variable. It also invalidates the pointers
+  // pointing to these.
+  void eraseVariable(Variable P, SourceLocation Loc) {
     PMap.erase(P);
     if (auto *VD = P.asVarDecl()) {
+      invalidateVar(P, 0, InvalidationReason::PointeeLeftScope(Loc, VD));
       // Remove all materialized temporaries that were extended by this
-      // variable.
+      // variable and do the invalidation.
       for (auto I = PMap.begin(); I != PMap.end();) {
-        if (I->first.isLifetimeExtendedTemporaryBy(VD))
+        for (auto V : I->second.vars()) {
+          if (V.first.isLifetimeExtendedTemporaryBy(VD))
+            invalidateVar(V.first, 0,
+                          InvalidationReason::PointeeLeftScope(Loc, VD));
+        }
+        if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
           I = PMap.erase(I);
-        else
+        } else
           ++I;
       }
     }
@@ -997,26 +1003,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       auto Leaver = E.castAs<CFGLifetimeEnds>();
 
       // Stop tracking Variables that leave scope.
-      eraseVariable(Leaver.getVarDecl());
-
-      // Kill all that were extended by this variable.
-      std::vector<Variable> ToKill;
-      ToKill.push_back(Leaver.getVarDecl());
-
-      for (auto I : PMap) {
-        for (auto V : I.second.vars()) {
-          if (V.first.isLifetimeExtendedTemporaryBy(Leaver.getVarDecl()))
-            ToKill.push_back(V.first);
-        }
-      }
-
-      // Invalidate all pointers that track leaving Owners
-      for (auto V : ToKill) {
-        invalidateVar(
-            V, 0,
-            InvalidationReason::PointeeLeftScope(
-                Leaver.getTriggerStmt()->getLocEnd(), Leaver.getVarDecl()));
-      }
+      eraseVariable(Leaver.getVarDecl(), Leaver.getTriggerStmt()->getLocEnd());
       break;
     }
     case CFGElement::NewAllocator:
