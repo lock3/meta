@@ -251,7 +251,7 @@ public:
       // Owners usually are user defined types. We should see a function call.
       // Do we need to handle raw pointers annotated as owners?
     } else if (TC == TypeCategory::Pointer) {
-      // This assignment updates a Pointer
+      // This assignment updates a Pointer.
       setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()), BO->getExprLoc());
     }
 
@@ -395,12 +395,15 @@ public:
     }
 
     Args.Input.emplace_back(Loc, Set, ParamType);
+    diagnoseInput(Args.Input.back(), IsInputThis);
 
     if ((Pointee.isConstQualified() || IsInputThis ||
          ParamType->isRValueReferenceType()) &&
         (PointeeCat == TypeCategory::Owner ||
-         PointeeCat == TypeCategory::Pointer))
+         PointeeCat == TypeCategory::Pointer)) {
       Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      diagnoseInput(Args.Input.back(), IsInputThis);
+    }
 
     if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
       Args.Output.emplace_back(Loc, Set, Pointee);
@@ -413,17 +416,15 @@ public:
 
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
-  void diagnoseInputs(const std::vector<CallArgument> &Input) {
-    for (auto &CA : Input) {
-      if (CA.PS.containsInvalid()) {
-        Reporter.warnParameterDangling(CA.Loc,
-                                       /*indirectly=*/false);
-        CA.PS.explainWhyInvalid(Reporter);
-        break;
-      } else if (CA.PS.containsNull() && !isNullableType(CA.ParamQType)) {
-        Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
-        CA.PS.explainWhyNull(Reporter);
-      }
+  void diagnoseInput(const CallArgument &CA, bool IsInputThis) {
+    if (CA.PS.containsInvalid()) {
+      Reporter.warnParameterDangling(CA.Loc,
+                                     /*indirectly=*/false);
+      CA.PS.explainWhyInvalid(Reporter);
+    } else if (CA.PS.containsNull() &&
+               (!isNullableType(CA.ParamQType) || IsInputThis)) {
+      Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
+      CA.PS.explainWhyNull(Reporter);
     }
   }
 
@@ -529,7 +530,6 @@ public:
     // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
     // == pset(x)
 
-    diagnoseInputs(Args.Input);
     // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // Invalidate owners taken by Pointer to non-const.
