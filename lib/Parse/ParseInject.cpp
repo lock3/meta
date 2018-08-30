@@ -41,7 +41,8 @@ Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
 
   BalancedDelimiterTracker T(*this, tok::l_brace);
   if (T.consumeOpen()) {
-    Diag(Tok, diag::err_expected) << tok::l_brace;
+    Diag(Tok, diag::err_expected) << "namespace-fragment";
+    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
     return nullptr;
   }
 
@@ -90,7 +91,7 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   // exported. They're really only meant to be used for self-references
   // within the fragment.
   if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
-    Diag(Tok.getLocation(), diag::err_expected) << "class-fragment";
+    Diag(Tok, diag::err_expected) << "class-fragment";
     Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
     return nullptr;
   }
