@@ -623,15 +623,16 @@ public:
       // Remove all materialized temporaries that were extended by this
       // variable and do the invalidation.
       for (auto I = PMap.begin(); I != PMap.end();) {
-        for (auto V : I->second.vars()) {
-          if (V.first.isLifetimeExtendedTemporaryBy(VD))
-            invalidateVar(V.first, 0,
-                          InvalidationReason::PointeeLeftScope(Loc, VD));
-        }
         if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
           I = PMap.erase(I);
-        } else
+        } else {
+          for (auto V : I->second.vars()) {
+            if (V.first.isLifetimeExtendedTemporaryBy(VD))
+              invalidateVar(V.first, 0,
+                            InvalidationReason::PointeeLeftScope(Loc, VD));
+          }
           ++I;
+        }
       }
     }
   }
