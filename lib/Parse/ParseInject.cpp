@@ -167,6 +167,7 @@ Decl *Parser::ParseCXXFragment() {
       break;
   }
 
+  Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
   Diag(Tok.getLocation(), diag::err_expected_fragment);
   SkipUntil(tok::semi, StopAtSemi | StopBeforeMatch);
   return nullptr;
@@ -183,10 +184,6 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 
   Decl *Fragment = ParseCXXFragment();
   if (!Fragment) {
-    // We're going into an error state, this is normally
-    // handled by ActOnCXXFragmentExpr, but we need to
-    // ensure we clean up the parse scope.
-    Actions.PopDeclContext();
     return ExprError();
   }
 
