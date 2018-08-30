@@ -18,6 +18,9 @@ constexpr auto test_cls_self_frag = __fragment class Frag {
   }
 };
 
+constexpr auto test_cls_empty_frag = __fragment class {
+};
+
 constexpr auto test_struct_frag = __fragment struct {
   int i = 0;
 
@@ -30,6 +33,9 @@ constexpr auto test_struct_self_frag = __fragment struct Frag {
 
   void test_function(Frag& frag) {
   }
+};
+
+constexpr auto test_struct_empty_frag = __fragment struct {
 };
 
 constexpr auto test_union_frag = __fragment union {
@@ -46,6 +52,9 @@ constexpr auto test_union_self_frag = __fragment union Frag {
   }
 };
 
+constexpr auto test_union_empty_frag = __fragment union {
+};
+
 constexpr auto test_ns_frag = __fragment namespace {
   void test_function() {
   }
@@ -56,6 +65,9 @@ constexpr auto test_ns_frag = __fragment namespace {
 //   }
 // };
 
+constexpr auto test_ns_empty_frag = __fragment namespace {
+};
+
 constexpr auto unfinished_fragment = __fragment; // expected-error {{expected fragment}}
 
 template<auto &x_val>
@@ -65,12 +77,16 @@ class SomeClass {
 
 constexpr auto test_cls_frag_wrapper = SomeClass<test_cls_frag>();
 constexpr auto test_cls_self_frag_wrapper = SomeClass<test_cls_self_frag>();
+constexpr auto test_cls_empty_frag_wrapper = SomeClass<test_cls_empty_frag>();
 constexpr auto test_struct_frag_wrapper = SomeClass<test_struct_frag>();
 constexpr auto test_struct_self_frag_wrapper = SomeClass<test_struct_self_frag>();
+constexpr auto test_struct_empty_frag_wrapper = SomeClass<test_struct_empty_frag>();
 constexpr auto test_union_frag_wrapper = SomeClass<test_union_frag>();
 constexpr auto test_union_self_frag_wrapper = SomeClass<test_union_self_frag>();
+constexpr auto test_union_empty_frag_wrapper = SomeClass<test_union_empty_frag>();
 constexpr auto test_ns_frag_wrapper = SomeClass<test_ns_frag>();
 // constexpr auto test_ns_self_frag_wrapper = SomeClass<test_ns_self_frag>();
+constexpr auto test_ns_empty_frag_wrapper = SomeClass<test_ns_empty_frag>();
 
 constexpr {
 };
