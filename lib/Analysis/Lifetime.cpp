@@ -95,10 +95,8 @@ class LifetimeContext {
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
                   const FunctionDecl *FuncDecl, IsConvertibleTy IsConvertible)
-      : ASTCtxt(ASTCtxt),
-        FuncDecl(FuncDecl),
-        AC(nullptr, FuncDecl), Reporter(Reporter),
-        IsConvertible(IsConvertible) {
+      : ASTCtxt(ASTCtxt), FuncDecl(FuncDecl), AC(nullptr, FuncDecl),
+        Reporter(Reporter), IsConvertible(IsConvertible) {
     // TODO: do not build own CFG here. Use the one from callee
     // AnalysisBasedWarnings::IssueWarnings
     AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
@@ -124,8 +122,7 @@ public:
 /// been visited.
 bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
                                         PSetsMap &EntryPMap) {
-  // If no predecessors have been visited by now, this block is not
-  // reachable
+  // If no predecessors have been visited by now, this block is not reachable.
   bool IsReachable = false;
   for (auto &PredBlock : B.preds()) {
     if (!PredBlock.isReachable())
