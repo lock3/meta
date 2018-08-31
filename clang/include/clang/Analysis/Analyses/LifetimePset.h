@@ -89,6 +89,8 @@ struct Variable {
     return FDs.back()->getType();
   }
 
+  bool isField() const { return !FDs.empty(); }
+
   bool isThisPointer() const {
     return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
   }

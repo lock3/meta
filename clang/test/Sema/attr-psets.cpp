@@ -85,6 +85,12 @@ struct S {
   bool operator==(S s) {
     int *p = s.mp;
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+    S s2;
+    p = s2.mp;
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+    const S &s3 = S();
+    p = s3.mp;
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
     return true;
   }
 };
