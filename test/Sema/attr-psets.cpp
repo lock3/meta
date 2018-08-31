@@ -82,6 +82,11 @@ struct S {
     __lifetime_pset(mp);  // expected-warning {{pset(mp) = ((static))}}
   }
   int *get();
+  bool operator==(S s) {
+    int *p = s.mp;
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+    return true;
+  }
 };
 
 struct D : public S {

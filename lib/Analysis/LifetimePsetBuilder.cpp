@@ -754,19 +754,23 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (P.isTemporary())
     return PSet::singleton(P, false, 1);
 
-  auto I = PMap.find(P);
-  if (I != PMap.end())
-    return I->second;
-
   // Assumption: global Pointers have a pset of {static}
   if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
     return PSet::staticVar(false);
+
+  auto I = PMap.find(P);
+  if (I != PMap.end())
+    return I->second;
 
   if (auto VD = P.asVarDecl()) {
     // To handle self-assignment during initialization
     if (!isa<ParmVarDecl>(VD))
       return PSet::invalid(
           InvalidationReason::NotInitialized(VD->getLocation()));
+    else {
+      // Assume that the unseen pointers inside a parameter is valid.
+      return PSet::staticVar(false);
+    }
   }
 
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
