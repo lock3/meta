@@ -767,11 +767,11 @@ PSet PSetsBuilder::getPSet(Variable P) {
     if (!isa<ParmVarDecl>(VD))
       return PSet::invalid(
           InvalidationReason::NotInitialized(VD->getLocation()));
-    else {
-      // Assume that the unseen pointers inside a parameter is valid.
-      return PSet::staticVar(false);
-    }
   }
+
+  // Assume that the unseen pointer fields are valid.
+  if (P.isField())
+    return PSet::staticVar(false);
 
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
                << "\n";
