@@ -267,21 +267,6 @@ public:
     }
   }
 
-  void VisitReturnStmt(const ReturnStmt *R) {
-    if (const Expr *RetVal = R->getRetValue()) {
-      if (!isPointer(RetVal))
-        return;
-      auto RetPSet = getPSet(RetVal);
-      if (RetPSet.containsInvalid()) {
-        Reporter.warnReturnDangling(R->getReturnLoc(), false);
-        RetPSet.explainWhyInvalid(Reporter);
-      } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
-        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
-                                     PSetOfAllParams.str());
-      }
-    }
-  }
-
   void VisitUnaryOperator(const UnaryOperator *UO) {
     switch (UO->getOpcode()) {
     case UO_AddrOf:
@@ -301,6 +286,21 @@ public:
                     InvalidationReason::PointerArithmetic(UO->getExprLoc())),
                 UO->getExprLoc());
       return;
+    }
+  }
+
+  void VisitReturnStmt(const ReturnStmt *R) {
+    if (const Expr *RetVal = R->getRetValue()) {
+      if (!isPointer(RetVal))
+        return;
+      auto RetPSet = getPSet(RetVal);
+      if (RetPSet.containsInvalid()) {
+        Reporter.warnReturnDangling(R->getReturnLoc(), false);
+        RetPSet.explainWhyInvalid(Reporter);
+      } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
+        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
+                                     PSetOfAllParams.str());
+      }
     }
   }
 
