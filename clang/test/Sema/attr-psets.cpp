@@ -128,6 +128,8 @@ void pointer_exprs() {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), i)}}
   p = p ?: nullptr;
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), i)}}
+  const char *text = __PRETTY_FUNCTION__;
+  __lifetime_pset(text); // expected-warning {{pset(text) = ((static))}}
 }
 
 void ref_exprs() {
