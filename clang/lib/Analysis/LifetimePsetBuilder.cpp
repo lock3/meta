@@ -138,6 +138,10 @@ public:
     assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
   }
 
+  void VisitCXXNewExpr(const CXXNewExpr *E) {
+    setPSet(E, PSet::staticVar(false));
+  }
+
   void VisitCXXDefaultInitExpr(const CXXDefaultInitExpr *E) {
     if (hasPSet(E))
       setPSet(E, getPSet(E->getExpr()));
