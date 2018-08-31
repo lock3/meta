@@ -42,8 +42,6 @@ class LifetimeContext {
   };
 
   ASTContext &ASTCtxt;
-  LangOptions LangOpts;
-  SourceManager &SourceMgr;
   CFG *ControlFlowGraph;
   const FunctionDecl *FuncDecl;
   std::vector<BlockContext> BlockContexts;
@@ -64,13 +62,14 @@ class LifetimeContext {
   void dumpBlock(const CFGBlock &B) const {
     auto Loc = getStartLocOfBlock(B);
     if (Loc.isValid()) {
+      auto &SourceMgr = ASTCtxt.getSourceManager();
       llvm::errs() << "Block at " << SourceMgr.getBufferName(Loc) << ":"
                    << SourceMgr.getSpellingLineNumber(Loc) << "\n";
     }
-    B.dump(ControlFlowGraph, LangOpts, true);
+    B.dump(ControlFlowGraph, ASTCtxt.getLangOpts(), true);
   }
 
-  void dumpCFG() const { ControlFlowGraph->dump(LangOpts, true); }
+  void dumpCFG() const { ControlFlowGraph->dump(ASTCtxt.getLangOpts(), true); }
 
   /// Approximate the SourceLocation of a Block for attaching pset debug
   /// diagnostics.
@@ -96,8 +95,8 @@ class LifetimeContext {
 public:
   LifetimeContext(ASTContext &ASTCtxt, LifetimeReporterBase &Reporter,
                   const FunctionDecl *FuncDecl, IsConvertibleTy IsConvertible)
-      : ASTCtxt(ASTCtxt), LangOpts(ASTCtxt.getLangOpts()),
-        SourceMgr(ASTCtxt.getSourceManager()), FuncDecl(FuncDecl),
+      : ASTCtxt(ASTCtxt),
+        FuncDecl(FuncDecl),
         AC(nullptr, FuncDecl), Reporter(Reporter),
         IsConvertible(IsConvertible) {
     // TODO: do not build own CFG here. Use the one from callee
@@ -128,9 +127,8 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
   // If no predecessors have been visited by now, this block is not
   // reachable
   bool IsReachable = false;
-  for (auto I = B.pred_begin(); I != B.pred_end(); ++I) {
-    CFGBlock *PredBlock = I->getReachableBlock();
-    if (!PredBlock)
+  for (auto &PredBlock : B.preds()) {
+    if (!PredBlock.isReachable())
       continue;
 
     auto &PredBC = getBlockContext(PredBlock);
@@ -145,29 +143,15 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
          PredBC.FalseBranchExitPMap)
             ? *PredBC.FalseBranchExitPMap
             : PredBC.ExitPMap;
-    if (EntryPMap.empty())
-      EntryPMap = PredPSets;
-    else {
-      // Merge PSets with pred's PSets; TODO: make this efficient
-      for (auto &I : EntryPMap) {
-        auto &Var = I.first;
-        auto &PS = I.second;
-        auto J = PredPSets.find(Var);
-        if (J == PredPSets.end()) {
-          // The only reason that predecessors have PSets for different
-          // variables is that there was a goto that stayed in the same scope
-          // but skipped back over the initialization of this Pointer.
-          // Then we don't care, because the variable will not be referenced
-          // in the C++ code before it is declared.
-
-          PS = PSet::staticVar(Var.mightBeNull());
-          continue;
-        }
-        if (PS == J->second)
-          continue;
-
-        PS.merge(J->second);
-      }
+    // Merge PSets with pred's PSets; TODO: make this efficient
+    for (auto &I : PredPSets) {
+      auto &Var = I.first;
+      auto &PS = I.second;
+      auto J = EntryPMap.find(Var);
+      if (J == EntryPMap.end())
+        EntryPMap.insert(std::make_pair(Var, PS));
+      else if (!(PS == J->second))
+        J->second.merge(PS);
     }
   }
   return IsReachable;

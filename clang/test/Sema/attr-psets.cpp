@@ -442,15 +442,13 @@ l1:
 }
 
 void goto_forward_over_decl() {
-  // TODO: When jumping over the declaration of p, we will never see that
-  // DeclStmt in the CFG
   int j;
   goto e;
   int *p;
 e:;
   // We do not care about this case since the core guidelines forbid
-  // the use of goto. TODO: do not crash on this.
-  // __lifetime_pset(p); // TODOexpected-warning {{pset(p) = ((static))}}
+  // the use of goto.
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 }
 
 void for_local_variable() {

@@ -237,10 +237,9 @@ public:
       setPSet(
           E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
       return;
-    default: {
+    default:
       setPSet(E, getPSet(E->getSubExpr()));
       return;
-    }
     }
   }
 
