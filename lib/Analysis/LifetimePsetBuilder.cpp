@@ -75,8 +75,8 @@ public:
   /// move psets from RefersTo into PsetOfExpr.
   /// Does not ignore MaterializeTemporaryExpr as Expr::IgnoreParenImpCasts
   /// would.
-  static const Expr *IgnoreParenImpCasts(const Expr *E,
-                                         bool IgnoreLValueToRValue = false) {
+  static const Expr *IgnoreTransparentExprs(const Expr *E,
+                                            bool IgnoreLValueToRValue = false) {
     while (true) {
       E = E->IgnoreParens();
       if (const auto *P = dyn_cast<ImplicitCastExpr>(E)) {
@@ -98,6 +98,14 @@ public:
       } else if (const auto *C = dyn_cast<OpaqueValueExpr>(E)) {
         E = C->getSourceExpr();
         continue;
+      } else if (const auto *C = dyn_cast<UnaryOperator>(E)) {
+        if (C->getOpcode() == UO_Extension) {
+          E = C->getSubExpr();
+          continue;
+        }
+      } else if (const auto *C = dyn_cast<CXXBindTemporaryExpr>(E)) {
+        E = C->getSubExpr();
+        continue;
       }
       return E;
     }
@@ -107,8 +115,8 @@ public:
     setPSet(SL, PSet::staticVar(false));
   }
 
-  void VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *E) {
-    setPSet(E, getPSet(E->getSubExpr()));
+  void VisitPredefinedExpr(const PredefinedExpr *E) {
+    setPSet(E, PSet::staticVar(false));
   }
 
   void VisitDeclStmt(const DeclStmt *DS) {
@@ -135,13 +143,17 @@ public:
   }
 
   void VisitExpr(const Expr *E) {
-    if (IgnoreParenImpCasts(E) != E)
+    if (IgnoreTransparentExprs(E) != E)
       return;
     assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
     assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
   }
 
   void VisitCXXNewExpr(const CXXNewExpr *E) {
+    setPSet(E, PSet::staticVar(false));
+  }
+
+  void VisitAddrLabelExpr(const AddrLabelExpr *E) {
     setPSet(E, PSet::staticVar(false));
   }
 
@@ -287,7 +299,7 @@ public:
       return;
     }
     default:
-      if (UO->getType()->isPointerType())
+      if (UO->getType()->isPointerType() || UO->getType()->isArrayType())
         setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(
                     InvalidationReason::PointerArithmetic(UO->getExprLoc())),
@@ -650,7 +662,7 @@ public:
   PSet getPSet(Variable P);
 
   PSet getPSet(const Expr *E) {
-    E = IgnoreParenImpCasts(E);
+    E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
       assert(I != RefersTo.end());
@@ -847,7 +859,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
-  E = IgnoreParenImpCasts(E, /*IgnoreLValueToRValue=*/true);
+  E = IgnoreTransparentExprs(E, /*IgnoreLValueToRValue=*/true);
   // Handle user written bool conversion.
   if (const auto *CE = dyn_cast<CXXMemberCallExpr>(E)) {
     if (const auto *ConvDecl =
@@ -873,8 +885,8 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     // The p == null is the negative case.
     if (OC == BO_EQ)
       Positive = !Positive;
-    const auto *LHS = IgnoreParenImpCasts(BO->getLHS());
-    const auto *RHS = IgnoreParenImpCasts(BO->getRHS());
+    const auto *LHS = IgnoreTransparentExprs(BO->getLHS());
+    const auto *RHS = IgnoreTransparentExprs(BO->getRHS());
     if (!isPointer(LHS) || !isPointer(RHS))
       return;
 
