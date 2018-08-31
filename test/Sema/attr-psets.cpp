@@ -126,6 +126,8 @@ void pointer_exprs() {
 
   p = rand() % 2 ? &i : nullptr;
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), i)}}
+  p = p ?: nullptr;
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((null), i)}}
 }
 
 void ref_exprs() {
