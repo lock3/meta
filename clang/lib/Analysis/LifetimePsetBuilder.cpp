@@ -82,6 +82,7 @@ public:
       if (const auto *P = dyn_cast<ImplicitCastExpr>(E)) {
         switch (P->getCastKind()) {
         case CK_NullToPointer:
+          return E;
         case CK_LValueToRValue:
           if (!IgnoreLValueToRValue)
             return E;
