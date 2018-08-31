@@ -431,6 +431,8 @@ l1:
     goto l1;
 
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+  void *ptr = &&l1;
+  __lifetime_pset(ptr); // expected-warning {{pset(ptr) = ((static))}}
 }
 
 void goto_skipping_decl(bool b) {
