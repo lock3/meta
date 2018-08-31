@@ -95,6 +95,9 @@ public:
       } else if (const auto *C = dyn_cast<ExprWithCleanups>(E)) {
         E = C->getSubExpr();
         continue;
+      } else if (const auto *C = dyn_cast<OpaqueValueExpr>(E)) {
+        E = C->getSourceExpr();
+        continue;
       }
       return E;
     }
@@ -210,8 +213,8 @@ public:
     setPSet(E, PSet::singleton(Variable::thisPointer(), false));
   }
 
-  void VisitConditionalOperator(const ConditionalOperator *E) {
-    setPSet(E, getPSet(E->getLHS()) + getPSet(E->getRHS()));
+  void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
+    setPSet(E, getPSet(E->getTrueExpr()) + getPSet(E->getFalseExpr()));
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
