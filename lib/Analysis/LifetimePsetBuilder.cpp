@@ -616,23 +616,26 @@ public:
   // Remove the variable from the pset together with the materialized
   // temporaries extended by that variable. It also invalidates the pointers
   // pointing to these.
-  void eraseVariable(Variable P, SourceLocation Loc) {
-    PMap.erase(P);
-    if (auto *VD = P.asVarDecl()) {
-      invalidateVar(P, 0, InvalidationReason::PointeeLeftScope(Loc, VD));
-      // Remove all materialized temporaries that were extended by this
-      // variable and do the invalidation.
-      for (auto I = PMap.begin(); I != PMap.end();) {
-        if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
-          I = PMap.erase(I);
-        } else {
-          for (auto V : I->second.vars()) {
-            if (V.first.isLifetimeExtendedTemporaryBy(VD))
-              invalidateVar(V.first, 0,
-                            InvalidationReason::PointeeLeftScope(Loc, VD));
-          }
-          ++I;
+  void eraseVariable(const VarDecl *VD, SourceLocation Loc) {
+    InvalidationReason Reason =
+        VD ? InvalidationReason::PointeeLeftScope(Loc, VD)
+           : InvalidationReason::TemporaryLeftScope(Loc);
+    if (VD) {
+      PMap.erase(VD);
+      invalidateVar(VD, 0, Reason);
+    }
+    // Remove all materialized temporaries that were extended by this
+    // variable (or a lifetime extended temporary without an extending
+    // declaration) and do the invalidation.
+    for (auto I = PMap.begin(); I != PMap.end();) {
+      if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
+        I = PMap.erase(I);
+      } else {
+        for (auto V : I->second.vars()) {
+          if (V.first.isLifetimeExtendedTemporaryBy(VD))
+            invalidateVar(V.first, 0, Reason);
         }
+        ++I;
       }
     }
   }
@@ -986,16 +989,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
         invalidateVar(Variable::temporary(), 0,
                       InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
         // Remove all materialized temporaries that are not extended.
-        for (auto I = PMap.begin(); I != PMap.end();) {
-          auto Var = I->first;
-          if (Var.isLifetimeExtendedTemporaryBy(nullptr)) {
-            invalidateVar(
-                Var, 0, InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
-            I = PMap.erase(I);
-          } else {
-            ++I;
-          }
-        }
+        eraseVariable(nullptr, S->getLocEnd());
       }
 
       break;
