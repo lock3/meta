@@ -75,6 +75,13 @@ struct reference_wrapper {
   reference_wrapper(U &&);
   operator T &() const;
 };
+
+template <typename T>
+struct shared_ptr {
+  template <typename T2 = T>
+  T2& operator*();
+  ~shared_ptr();
+};
 } // namespace std
 
 template <typename T>
@@ -105,6 +112,7 @@ void owner() {
   __lifetime_type_category<my_owner>();                              // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::vector<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::unique_ptr<int>())>();      // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::shared_ptr<int>())>();      // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::stack<int>())>();           // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::queue<int>())>();           // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::priority_queue<int>())>();  // expected-warning {{Owner}}
