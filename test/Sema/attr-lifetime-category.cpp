@@ -1,4 +1,4 @@
-// RUN: %clang -std=c++17 -fsyntax-only -Wlifetime -Wlifetime-debug -Xclang -verify %s
+// RUN: %clang_cc1 -std=c++1z -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
 
 // TODO: regression tests should not include the standard libary,
 //       but we should have a way to test against real implementations.
