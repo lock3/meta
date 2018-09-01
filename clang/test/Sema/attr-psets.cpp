@@ -708,10 +708,9 @@ void return_pointer() {
   it2 = v1.begin();
   __lifetime_pset(it2); // expected-warning {{pset(it2) = (v1')}}
 
-
   int &r = v1[0];
   __lifetime_pset_ref(r); // expected-warning {{pset(r) = (v1')}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
+  __lifetime_pset(p);     // expected-warning {{pset(p) = (v1')}}
 
   int *pmem = v1.data();
   __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
@@ -847,9 +846,9 @@ void derived_to_base_conversion() {
 }
 
 void kill_materialized_temporary() {
-  const int* p;
+  const int *p;
   {
-    const int& i = 1;
+    const int &i = 1;
     __lifetime_pset_ref(i); //expected-warning {{pset(i) = ((lifetime-extended temporary through i))}}
     p = &i;
     __lifetime_pset(p); //expected-warning {{pset(p) = ((lifetime-extended temporary through i))}}
