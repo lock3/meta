@@ -862,3 +862,22 @@ int throw_local() {
   // TODO: better error message
   throw &i; // expected-warning {{dereferencing a dangling pointer}}
 }
+
+template <class T>
+struct [[gsl::Owner]] OwnerPointsToTemplateType {
+  T *get();
+};
+
+void ownerPointsToTemplateType() {
+  OwnerPointsToTemplateType<int> O;
+  __lifetime_pset(O); //expected-warning {{pset(O) = (O'}}
+  int *I = O.get();
+  __lifetime_pset(I); //expected-warning {{pset(I) = (O'}}
+
+  // When finding the pointee type of an Owner,
+  // look through AutoType to find the ClassTemplateSpecialization.
+  auto Oauto = OwnerPointsToTemplateType<int>();
+  __lifetime_pset(Oauto); //expected-warning {{pset(Oauto) = (Oauto')}}
+  int *Iauto = Oauto.get();
+  __lifetime_pset(Iauto); //expected-warning {{pset(Iauto) = (Oauto')}}
+}

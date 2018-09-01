@@ -229,6 +229,7 @@ bool isNullableType(QualType QT) {
 }
 
 QualType getPointeeType(QualType QT) {
+  QT = QT.getCanonicalType();
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
 
@@ -252,12 +253,11 @@ QualType getPointeeType(QualType QT) {
       if (!Ret.isNull())
         return Ret;
     }
-  }
-  if (auto TST = QT->getAs<TemplateSpecializationType>()) {
-    if (TST->getNumArgs()) {
-      auto &Arg0 = TST->getArg(0);
-      if (Arg0.getKind() == TemplateArgument::Type)
-        return Arg0.getAsType();
+
+    if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      auto &Args = T->getTemplateArgs();
+      if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
+        return Args[0].getAsType();
     }
   }
   return {};
