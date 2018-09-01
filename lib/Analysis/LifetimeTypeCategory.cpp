@@ -19,8 +19,15 @@ static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
   // TODO cache IdentifierInfo to avoid string compare
   auto CallBack = [Predicate](const CXXRecordDecl *Base) {
     return std::none_of(
-        Base->method_begin(), Base->method_end(),
-        [Predicate](const CXXMethodDecl *M) { return Predicate(M); });
+        Base->decls_begin(), Base->decls_end(), [Predicate](const Decl *D) {
+          if (auto *M = dyn_cast<CXXMethodDecl>(D))
+            return Predicate(M);
+          if (auto *Tmpl = dyn_cast<FunctionTemplateDecl>(D)) {
+            if (auto *M = dyn_cast<CXXMethodDecl>(Tmpl->getTemplatedDecl()))
+              return Predicate(M);
+          }
+          return false;
+        });
   };
   return !R->forallBases(CallBack) || !CallBack(R);
 }
