@@ -601,6 +601,15 @@ public:
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
+    /// \brief A list of certain kinds of side effects encountered during
+    /// evaluation.
+    ///
+    /// If evaluation encounters an source code injection when this is not
+    /// set, the expression has undefined behavior. This is only set for the
+    /// evaluation of metaprograms. No other evaluations should modify source 
+    /// code.
+    SmallVectorImpl<EvalEffect> *Effects;
+
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr) {}
 
