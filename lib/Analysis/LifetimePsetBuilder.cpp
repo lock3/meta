@@ -337,8 +337,11 @@ public:
         return;
       }
       auto TC = classifyTypeCategory(E->getArg(0)->getType());
-      if (TC == TypeCategory::Owner || TC == TypeCategory::Pointer)
+      if (TC == TypeCategory::Owner ||
+          E->getConstructor()->isCopyOrMoveConstructor())
         setPSet(E, derefPSet(getPSet(E->getArg(0)), E->getLocation()));
+      else if (TC == TypeCategory::Pointer)
+        setPSet(E, getPSet(E->getArg(0)));
     }
   }
 
