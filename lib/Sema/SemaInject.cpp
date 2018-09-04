@@ -219,6 +219,15 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, FD, Init);
 }
 
+bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
+  return true;
+}
+
+static bool
+ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
+  return true;
+}
+
 /// Inject a sequence of source code fragments or modification requests
 /// into the current AST. The point of injection (POI) is the point at
 /// which the injection is applied.
@@ -227,5 +236,11 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 bool Sema::ApplyEffects(SourceLocation POI,
                         SmallVectorImpl<EvalEffect> &Effects) {
   bool Ok = true;
+  for (EvalEffect &Effect : Effects) {
+    if (Effect.Kind == EvalEffect::InjectionEffect)
+      Ok &= ApplyInjection(POI, *Effect.Injection);
+    else
+      Ok &= ApplyDiagnostic(*this, POI, *Effect.DiagnosticArg);
+  }
   return Ok;
 }

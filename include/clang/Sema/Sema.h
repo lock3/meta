@@ -10116,6 +10116,7 @@ public:
   ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
 
+  bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
   bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
