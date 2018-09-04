@@ -100,6 +100,50 @@ struct SubobjectAdjustment {
   }
 };
 
+/// An injection records a code generation effect resulting from evaluation.
+/// This is a set containing the values of captured declarations and the
+/// expression into which those will be substituted.
+struct InjectionInfo {
+  /// The type of the expression being injected. This determines how the
+  /// result will be interpreted semantically.
+  QualType ReflectionType;
+
+  /// The actual value computed by the injection statement.
+  APValue ReflectionValue;
+
+  /// If non-null, the type of the injectee. This embeds the declaration
+  /// into which the value or contents will be injected.
+  QualType InjecteeType;
+};
+
+/// Represents a side-effect to constexpr evaluation. When recorded,
+/// these are returned to the semantic analyzer for subsequent processing.
+struct EvalEffect {
+  enum {
+    InjectionEffect,
+    DiagnosticEffect,
+  } Kind;
+
+  union {
+    /// Information about the injected entity.
+    InjectionInfo *Injection;
+
+    /// The argument to the print function: a reflection value.
+    APValue *DiagnosticArg;
+  };
+
+  EvalEffect()
+    : Injection(nullptr)
+  { }
+
+  ~EvalEffect() {
+    if (Kind == InjectionEffect)
+      delete Injection;
+    else
+      delete DiagnosticArg;
+  }
+};
+
 /// This represents one expression.  Note that Expr's are subclasses of Stmt.
 /// This allows an expression to be transparently used any place a Stmt is
 /// required.
