@@ -47,7 +47,7 @@ struct Variable {
     if (Var != O.Var)
       return Var < O.Var;
     if (FDs.size() != O.FDs.size())
-      return FDs.size() != O.FDs.size();
+      return FDs.size() < O.FDs.size();
 
     for (auto i = FDs.begin(), j = O.FDs.begin(); i != FDs.end(); ++i, ++j) {
       if (*i != *j)

@@ -104,6 +104,16 @@ struct S {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
     return true;
   }
+
+  // Crash reproduced with convoluted CFG.
+  void foorbar(const S& s, bool b) {
+    int *p = nullptr;
+    if (s.mp) {
+      if (!mp)
+        p = nullptr;
+      p = s.mp;
+    }
+  }
 };
 
 struct D : public S {
