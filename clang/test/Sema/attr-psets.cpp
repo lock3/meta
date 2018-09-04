@@ -919,3 +919,7 @@ void string_view_ctors(const char *c) {
 void unary_operator(const char *p) {
   const char *q = --p;
 }
+
+void funcptrs() {
+  auto fptr = unary_operator;
+}
