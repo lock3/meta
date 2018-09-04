@@ -2285,8 +2285,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
-    auto isConvertible = [this](QualType From, QualType To) {
-      OpaqueValueExpr Expr(SourceLocation{}, From, VK_RValue);
+    auto isConvertible = [this, D](QualType From, QualType To) {
+      OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
         &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
         /*InOverloadResolution=*/false, /*CStyle=*/false,
