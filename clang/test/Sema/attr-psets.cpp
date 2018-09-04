@@ -30,6 +30,17 @@ struct vector {
   ~vector();
 };
 
+template <typename T>
+struct basic_string_view {
+  basic_string_view();
+  basic_string_view(const T*);
+  basic_string_view(const T*, unsigned);
+  const T *begin();
+  const T *end();
+};
+
+using string_view = basic_string_view<char>;
+
 template <class T>
 struct remove_reference { typedef T type; };
 template <class T>
@@ -879,4 +890,19 @@ void ownerPointsToTemplateType() {
   __lifetime_pset(Oauto); //expected-warning {{pset(Oauto) = (Oauto')}}
   int *Iauto = Oauto.get();
   __lifetime_pset(Iauto); //expected-warning {{pset(Iauto) = (Oauto')}}
+}
+
+
+void string_view_ctors(const char *c) {
+  std::string_view sv;
+  __lifetime_pset(sv);  //expected-warning {{pset(sv) = ((null))}}
+  std::string_view sv2(c);
+  __lifetime_pset(sv2); //expected-warning {{pset(sv2) = ((null), c)}}
+  char local;
+  std::string_view sv3(&local, 1);
+  __lifetime_pset(sv3); //expected-warning {{pset(sv3) = (local)}}
+  std::string_view sv4(sv3);
+  __lifetime_pset(sv4); //expected-warning {{pset(sv4) = (local)}}
+  //std::string_view sv5(std::move(sv3));
+  ///__lifetime_pset(sv5); //TODOexpected-warning {{pset(sv5) = (local)}}
 }
