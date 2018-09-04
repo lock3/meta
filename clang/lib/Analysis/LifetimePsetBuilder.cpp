@@ -305,7 +305,7 @@ public:
         setPSet(UO, getPSet(UO->getSubExpr()));
         setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(
-                  InvalidationReason::PointerArithmetic(UO->getExprLoc())),
+                    InvalidationReason::PointerArithmetic(UO->getExprLoc())),
                 UO->getExprLoc());
       }
       return;
@@ -1075,7 +1075,8 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     // Parameters cannot be invalid (checked at call site).
     PSet PS;
     // Output params are initially undefined.
-    if (TC == TypeCategory::Pointer && !PointeeType.isConstQualified() &&
+    if (TC == TypeCategory::Pointer && !PointeeType.isNull() &&
+        !PointeeType.isConstQualified() &&
         !PVD->getType()->isRValueReferenceType()) {
       PS =
           PSet::invalid(InvalidationReason::NotInitialized(PVD->getLocStart()));
