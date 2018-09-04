@@ -299,11 +299,13 @@ public:
       return;
     }
     default:
-      if (UO->getType()->isPointerType() || UO->getType()->isArrayType())
+      if (UO->getType()->isPointerType() || UO->getType()->isArrayType()) {
+        setPSet(UO, getPSet(UO->getSubExpr()));
         setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(
-                    InvalidationReason::PointerArithmetic(UO->getExprLoc())),
+                  InvalidationReason::PointerArithmetic(UO->getExprLoc())),
                 UO->getExprLoc());
+      }
       return;
     }
   }

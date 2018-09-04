@@ -902,7 +902,6 @@ void ownerPointsToTemplateType() {
   __lifetime_pset(Iauto); //expected-warning {{pset(Iauto) = (Oauto')}}
 }
 
-
 void string_view_ctors(const char *c) {
   std::string_view sv;
   __lifetime_pset(sv);  //expected-warning {{pset(sv) = ((null))}}
@@ -915,4 +914,8 @@ void string_view_ctors(const char *c) {
   __lifetime_pset(sv4); //expected-warning {{pset(sv4) = (local)}}
   //std::string_view sv5(std::move(sv3));
   ///__lifetime_pset(sv5); //TODOexpected-warning {{pset(sv5) = (local)}}
+}
+
+void unary_operator(const char *p) {
+  const char *q = --p;
 }
