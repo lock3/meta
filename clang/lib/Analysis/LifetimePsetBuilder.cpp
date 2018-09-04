@@ -367,9 +367,7 @@ public:
       // ImplicitValueInitExpr does not have a valid location
       auto Parents = ASTCtxt.getParents(*E);
       assert(!Parents.empty());
-      auto *Parent = Parents[0].get<Decl>();
-      assert(Parent);
-      auto Loc = Parent->getLocStart();
+      auto Loc = Parents[0].getSourceRange().getBegin();
       setPSet(E, PSet::null(Loc));
     }
   }
