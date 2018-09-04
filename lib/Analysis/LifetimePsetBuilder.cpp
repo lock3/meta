@@ -175,12 +175,14 @@ public:
       }
     };
 
-    if (auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
+    if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD->getType(), VD));
-    } else if (auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
+    } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer();
       V.addFieldRef(FD);
       setPSet(DeclRef, varRefersTo(FD->getType(), V));
+    } else if (isa<FunctionDecl>(DeclRef->getDecl())) {
+      setPSet(DeclRef, PSet::staticVar(false));
     }
   }
 
