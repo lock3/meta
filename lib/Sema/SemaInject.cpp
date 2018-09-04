@@ -223,8 +223,40 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
   return true;
 }
 
+static void
+PrintDecl(Sema &SemaRef, const Decl *D) {
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  PP.TerseOutput = false;
+  D->print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
+
+static void
+PrintType(Sema &SemaRef, const Type *T) {
+  if (TagDecl *TD = T->getAsTagDecl())
+    return PrintDecl(SemaRef, TD);
+  PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
+  QualType QT(T, 0);
+  QT.print(llvm::errs(), PP);
+  llvm::errs() << '\n';
+}
+
 static bool
 ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
+  Reflection R(Arg);
+  if (const Decl *D = R.getAsDeclaration()) {
+    // D->dump();
+    PrintDecl(SemaRef, D);
+  }
+  else if (const Type *T = R.getAsType()) {
+    // if (TagDecl *TD = T->getAsTagDecl())
+    //   TD->dump();
+    // else
+    //   T->dump();
+    PrintType(SemaRef, T);
+  }
+  else
+    llvm_unreachable("printing invalid reflection");
   return true;
 }
 
