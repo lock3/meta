@@ -405,6 +405,8 @@ public:
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
       return;
     QualType Pointee = getPointeeType(ParamType);
+    if (Pointee.isNull())
+      return;
     auto PointeeCat = classifyTypeCategory(Pointee);
 
     if (ParamType->isRValueReferenceType() && PointeeCat == TypeCategory::Owner)
