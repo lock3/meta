@@ -174,15 +174,16 @@ public:
         return PSet::singleton(V, false);
       }
     };
-
-    if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
+    if (isa<FunctionDecl>(DeclRef->getDecl()) ||
+        DeclRef->refersToEnclosingVariableOrCapture()) {
+      setPSet(DeclRef, PSet::staticVar(false));
+    }
+    else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD->getType(), VD));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer();
       V.addFieldRef(FD);
       setPSet(DeclRef, varRefersTo(FD->getType(), V));
-    } else if (isa<FunctionDecl>(DeclRef->getDecl())) {
-      setPSet(DeclRef, PSet::staticVar(false));
     }
   }
 

@@ -918,8 +918,20 @@ void string_view_ctors(const char *c) {
 
 void unary_operator(const char *p) {
   const char *q = --p;
+  __lifetime_pset(p); //expected-warning {{pset(p) = ((invalid))}}
+  __lifetime_pset(q); //expected-warning {{pset(q) = ((invalid))}}
 }
 
 void funcptrs() {
   auto fptr = unary_operator;
+  __lifetime_pset(fptr); //expected-warning {{pset(fptr) = ((static))}}
+}
+
+void lambda_capture(const int *param) {
+  auto a = [&]() {
+    return *param;
+  };
+  auto b = [=]() {
+    return *param;
+  };
 }
