@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/Decl.h"
@@ -1144,5 +1145,43 @@ bool Sema::EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, Expr *E) {
 ///           otherwise.
 ///
 bool Sema::EvaluateCXXMetaprogramDeclCall(CXXMetaprogramDecl *CD, CallExpr *Call) {
-  return false;
+  // Associate the call expression with the declaration.
+  CD->setCallExpr(Call);
+
+  SmallVector<PartialDiagnosticAt, 8> Notes;
+  SmallVector<EvalEffect, 16> Effects;
+  Expr::EvalResult Result;
+  Result.Diag = &Notes;
+  Result.Effects = &Effects;
+
+  bool Folded = Call->EvaluateAsRValue(Result, Context);
+  if (!Folded) {
+    // If the only error is that we didn't initialize a (void) value, that's
+    // actually okay. APValue doesn't know how to do this anyway.
+    //
+    // FIXME: We should probably have a top-level EvaluateAsVoid() function that
+    // handles this case.
+    if (!Notes.empty()) {
+      // If we got a compiler error, then just emit that.
+      if (Notes[0].second.getDiagID() == diag::err_user_defined_error)
+        Diag(CD->getBeginLoc(), Notes[0].second);
+      else if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
+        // FIXME: These source locations are wrong.
+        Diag(CD->getBeginLoc(), diag::err_expr_not_ice) << LangOpts.CPlusPlus;
+        for (const PartialDiagnosticAt &Note : Notes)
+          Diag(Note.first, Note.second);
+      }
+    }
+  }
+
+  // Apply any modifications, and if successful, remove the declaration from
+  // the class; it shouldn't be visible in the output code.
+  SourceLocation POI = CD->getSourceRange().getEnd();
+  ApplyEffects(POI, Effects);
+
+  // FIXME: Do we really want to remove the metaprogram after evaluation? Or
+  // should we just mark it completed.
+  CD->getDeclContext()->removeDecl(CD);
+
+  return Notes.empty();
 }
