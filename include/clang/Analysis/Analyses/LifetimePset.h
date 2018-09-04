@@ -380,6 +380,7 @@ public:
       for (size_t j = 0; j < V.second; ++j)
         Entries.back().append("'");
     }
+    std::sort(Entries.begin(), Entries.end());
     return "(" + llvm::join(Entries, ", ") + ")";
   }
 

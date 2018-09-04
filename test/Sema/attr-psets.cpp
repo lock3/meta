@@ -413,7 +413,7 @@ void switch_stmt() {
     p = &j;
     __lifetime_pset(p); // expected-warning {{pset(p) = (j)}}
   }
-  __lifetime_pset(p); // expected-warning {{pset(p) = (initial, i, j)}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (i, initial, j)}}
 }
 
 // Duplicated warnings are due to the fact that we are doing fixed point
@@ -768,7 +768,7 @@ void ambiguous_pointers(bool cond) {
   if (cond)
     pp = &p2;
   *pp = &z;
-  __lifetime_pset(p1); // expected-warning {{pset(p1) = (z, w)}}
+  __lifetime_pset(p1); // expected-warning {{pset(p1) = (w, z)}}
   __lifetime_pset(p2); // expected-warning {{pset(p2) = (y, z)}}
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p1, p2)}}
 }
