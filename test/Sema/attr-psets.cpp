@@ -935,3 +935,8 @@ void lambda_capture(const int *param) {
     return *param;
   };
 }
+
+typedef int T;
+void f(int *p) {
+  p->T::~T();
+}
