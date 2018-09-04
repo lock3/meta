@@ -769,7 +769,10 @@ PSet PSetsBuilder::getPSet(Variable P) {
           InvalidationReason::NotInitialized(VD->getLocation()));
   }
 
-  // Assume that the unseen pointer fields are valid.
+  // Assume that the unseen pointer fields are valid. We will always have
+  // unseen fields since we do not track the fields of owners and values.
+  // Until proper aggregate support is implemented, this might be triggered
+  // unintentionally.
   if (P.isField())
     return PSet::staticVar(false);
 
