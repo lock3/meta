@@ -366,7 +366,8 @@ public:
     if (E->getType()->isPointerType()) {
       // ImplicitValueInitExpr does not have a valid location
       auto Parents = ASTCtxt.getParents(*E);
-      assert(!Parents.empty());
+      if (Parents.empty())
+        return;
       auto Loc = Parents[0].getSourceRange().getBegin();
       setPSet(E, PSet::null(Loc));
     }
