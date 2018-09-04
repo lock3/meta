@@ -509,6 +509,8 @@ public:
       return;
 
     auto *CalleeE = CallE->getCallee();
+    if (isa<CXXPseudoDestructorExpr>(CalleeE))
+      return;
     CallTypes CT = getCallTypes(CalleeE);
     auto ParamTypes = CT.FTy->getParamTypes();
     CallArguments Args;
