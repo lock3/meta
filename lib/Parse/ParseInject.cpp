@@ -203,26 +203,8 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   SourceLocation Loc = ConsumeToken();
 
   /// Get a reflection as the operand of the
-  ExprResult Reflection;
-  switch (Tok.getKind()) {
-    case tok::kw_namespace:
-    case tok::kw_struct:
-    case tok::kw_class:
-    case tok::kw_union:
-    case tok::kw_enum:
-    case tok::l_brace: {
-      Decl *Fragment = ParseCXXFragment();
-      if (!Fragment)
-        return StmtError();
-      Reflection = Actions.ActOnCXXFragmentExpr(Loc, Fragment);
-      break;
-    }
+  ExprResult Reflection = ParseConstantExpression();
 
-    default: {
-      Reflection = ParseConstantExpression();
-      break;
-    }
-  }
   if (Reflection.isInvalid())
     return StmtResult();
 
