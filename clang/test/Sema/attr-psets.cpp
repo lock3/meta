@@ -615,8 +615,9 @@ void argument_ref_to_temporary() {
   __lifetime_pset_ref(good);   //expected-warning {{pset(good) = (x, y)}}
 
   const int &bad = min(x, y + 1);
-  // TODOexpected-note@-1 {{temporary was destroyed at the end of the full expression}}
-  // __lifetime_pset_ref(bad); // TODOexpected-warning {{pset(bad) = ((invalid))}}
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  __lifetime_pset_ref(bad); // expected-warning {{pset(bad) = ((unknown))}}
+                            // expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 
 void Example1_1() {
