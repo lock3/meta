@@ -574,7 +574,7 @@ void function_call3() {
   int *p = &i;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   f(p);
-  //__lifetime_pset(p); // TOODexpected-warning {{pset(p) = (i, (static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
 }
 
 void indirect_function_call() {
