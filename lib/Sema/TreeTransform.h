@@ -2158,6 +2158,10 @@ public:
     llvm_unreachable("unimplemented");
   }
 
+  StmtResult RebuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref) {
+    return getSema().BuildCXXInjectionStmt(Loc, Ref);
+  }
+
   /// Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7979,6 +7983,15 @@ template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   llvm_unreachable("unimplemented");
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
+  ExprResult E = TransformExpr(S->getReflection());
+  if (E.isInvalid())
+    return StmtError();
+  return RebuildCXXInjectionStmt(S->getBeginLoc(), E.get());
 }
 
 template<typename Derived>

@@ -219,6 +219,16 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, FD, Init);
 }
 
+/// Returns an injection statement.
+StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
+  return BuildCXXInjectionStmt(Loc, Reflection);
+}
+
+/// Returns an injection statement.
+StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
+  return StmtError();
+}
+
 bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
   return true;
 }

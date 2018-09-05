@@ -742,6 +742,55 @@ public:
   }
 };
 
+
+/// Represents a C++ injection statement.
+///
+/// An injection statement, when evaluated, queues a source code modification,
+/// usually the injection of a fragment into the metaprogram evaluation
+/// context.
+///
+/// Example:
+///
+///     -> <<class: int a; >>
+///
+class CXXInjectionStmt : public Stmt {
+  SourceLocation IntroLoc;
+
+  /// The reflection being injected.
+  Stmt *Reflection;
+
+public:
+  CXXInjectionStmt(SourceLocation IntroLoc, Expr *Ref)
+    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Reflection(Ref) {}
+
+  explicit CXXInjectionStmt(EmptyShell Empty)
+      : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Reflection() {}
+
+  /// \brief The introduced reflection.
+  Expr *getReflection() const { return reinterpret_cast<Expr *>(Reflection); }
+
+  /// \brief The location of introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return IntroLoc;
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return Reflection->getEndLoc();
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInjectionStmtClass;
+  }
+
+  child_range children() {
+    return child_range(&Reflection, &Reflection + 1);
+  }
+
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+};
+
 }  // end namespace clang
 
 #endif

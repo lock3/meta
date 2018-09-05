@@ -1797,6 +1797,11 @@ private:
   struct ForRangeInfo;
 
   //===--------------------------------------------------------------------===//
+  // C++ Code Injection
+
+  StmtResult ParseCXXInjectionStatement();
+
+  //===--------------------------------------------------------------------===//
   // C++ if/switch/while condition expression.
   Sema::ConditionResult ParseCXXCondition(StmtResult *InitStmt,
                                           SourceLocation Loc,

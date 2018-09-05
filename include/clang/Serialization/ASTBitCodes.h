@@ -1827,7 +1827,10 @@ namespace serialization {
 
       /// A CXXTryStmt record.
       STMT_CXX_TRY,
-      
+
+      /// A CXXInjection record.
+      STMT_CXX_INJECTION,
+
       /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
 

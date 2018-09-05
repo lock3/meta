@@ -402,6 +402,12 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
     OS << "\n";
 }
 
+void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
+  // FIXME: Actually print something meaningful.
+  Indent() << "-> { ... }";
+  if (Policy.IncludeNewlines) OS << "\n";
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())
