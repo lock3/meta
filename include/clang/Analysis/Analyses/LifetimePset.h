@@ -10,9 +10,9 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 
+#include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
 #include <sstream>
 #include <vector>
@@ -49,9 +49,9 @@ struct Variable {
     if (FDs.size() != O.FDs.size())
       return FDs.size() < O.FDs.size();
 
-    for (auto i = FDs.begin(), j = O.FDs.begin(); i != FDs.end(); ++i, ++j) {
-      if (*i != *j)
-        return std::less<const FieldDecl *>()(*i, *j);
+    for (auto I = FDs.begin(), J = O.FDs.begin(); I != FDs.end(); ++I, ++J) {
+      if (*I != *J)
+        return std::less<const FieldDecl *>()(*I, *J);
     }
     return false;
   }
@@ -59,17 +59,9 @@ struct Variable {
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
   bool hasGlobalStorage() const {
-    auto *VD = Var.dyn_cast<const VarDecl *>();
-    if (!VD)
-      return false;
-    return VD->hasGlobalStorage();
-  }
-
-  bool trackPset() const {
-    if (isThisPointer() || isTemporary())
-      return false;
-    auto Category = classifyTypeCategory(getType());
-    return Category == TypeCategory::Pointer || Category == TypeCategory::Owner;
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
+      return VD->hasGlobalStorage();
+    return false;
   }
 
   bool isMemberVariableOfEnclosingClass() const {
@@ -116,12 +108,6 @@ struct Variable {
     if (isThisPointer())
       return false;
     return isNullableType(getType());
-  }
-
-  bool isCategoryPointer() const {
-    if (isThisPointer())
-      return true;
-    return classifyTypeCategory(getType()) == TypeCategory::Pointer;
   }
 
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
@@ -292,13 +278,6 @@ public:
     return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
   }
 
-  /// Returns true if this pset contains Variable with the same or a lower order
-  /// i.e. whether invalidating (Variable, order) would invalidate this pset.
-  bool contains(Variable Var, unsigned Order = 0) const {
-    auto I = Vars.find(Var);
-    return I != Vars.end() && I->second >= Order;
-  }
-
   /// Returns true if we look for S and we have S.field in the set.
   bool containsBase(Variable Var, unsigned Order = 0) const {
     auto I = llvm::find_if(
@@ -425,8 +404,9 @@ public:
 
     // If this would contain o' and o'' it would be invalidated on KILL(o')
     // and KILL(o'') which is the same for a pset only containing o''.
-    if (Vars.count(Var))
-      Order = std::max(Vars[Var], Order);
+    auto It = Vars.find(Var);
+    if (It != Vars.end())
+      Order = std::max(It->second, Order);
 
     Vars[Var] = Order;
   }
@@ -440,10 +420,6 @@ public:
     }
     Vars = NewVars;
   }
-
-  void appendNullReason(NullReason R) { NullReasons.push_back(R); }
-
-  void appendInvalidReason(InvalidationReason R) { InvReasons.push_back(R); }
 
   /// The pointer is dangling
   static PSet invalid(InvalidationReason Reason) {
