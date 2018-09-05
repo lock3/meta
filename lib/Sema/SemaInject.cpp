@@ -226,7 +226,22 @@ StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
 
 /// Returns an injection statement.
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
-  return StmtError();
+  // The operand must be a reflection (if non-dependent).
+  if (!Reflection->isTypeDependent() && !Reflection->isValueDependent()) {
+    if (!Context.isReflectionType(Reflection->getType())) {
+      Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
+      return StmtError();
+    }
+  }
+
+  // Perform an lvalue-to-value conversion so that we get an rvalue in
+  // evaluation.
+  if (Reflection->isGLValue())
+    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(),
+                                          CK_LValueToRValue, Reflection,
+                                          nullptr, VK_RValue);
+
+  return new (Context) CXXInjectionStmt(Loc, Reflection);
 }
 
 bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {

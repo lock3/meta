@@ -9379,6 +9379,11 @@ def note_await_ready_no_bool_conversion : Note<
 >;
 }
 
+let CategoryName = "Reflection Issue" in {
+def err_not_a_reflection : Error<
+  "expression is not a reflection">;
+} // end of reflection issue category
+
 let CategoryName = "Documentation Issue" in {
 def warn_not_a_doxygen_trailing_member_comment : Warning<
   "not a Doxygen trailing comment">, InGroup<Documentation>, DefaultIgnore;
