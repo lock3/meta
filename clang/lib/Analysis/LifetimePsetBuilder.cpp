@@ -40,17 +40,6 @@ static bool isPointer(const Expr *E) {
 /// For every expression whose Type is a Pointer or an Owner,
 /// we also track the pset (points-to set), e.g.
 ///  pset(&v) = {v}
-///
-// todo update RefersTo in all lvalues, namely,
-// - preincrement, predecrement
-// - pointer to member of object .*
-// - pointer to member of pointer ->*
-// - comma operator
-// - string literal
-// Diagnose: static_cast to lvalue ref
-// TODO: handle
-// - CXXDefaultArgExpr
-// - CXXCtorInitializer
 class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
 
   LifetimeReporterBase &Reporter;
