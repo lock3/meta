@@ -178,7 +178,7 @@ public:
     case TEMPORARY_LEFT_SCOPE:
       Reporter.noteTemporaryDestroyed(Loc);
       return;
-    case FORBIDDEN_CAST: // TODO: add own diagnostic
+    case FORBIDDEN_CAST:
       Reporter.noteForbiddenCast(Loc);
       return;
     case POINTER_ARITHMETIC:
@@ -472,7 +472,6 @@ private:
   std::vector<NullReason> NullReasons;
 };
 
-// TODO optimize (sorted vector?)
 using PSetsMap = std::map<Variable, PSet>;
 
 } // namespace lifetime
