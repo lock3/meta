@@ -178,9 +178,7 @@ void function_call() {
   f(p);   // expected-warning {{passing a dangling pointer as argument}}
 
   int **q = &p;
-  //TODO: should this diagnose? If I understood Herb correctly,
-  // then q must be valid, but *q is an out parameter, and thus is allowed be invalid (will be written, not read, in callee).
-  g(q); // TODOexpected-warning {{passing a indirectly dangling pointer as parameter}} // TODOexpected-note {{was dereferenced here}}
+  g(q); // OK, *q is invalid but out parameter
 
   int i;
   p = &i;
