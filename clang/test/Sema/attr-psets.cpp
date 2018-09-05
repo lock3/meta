@@ -1,10 +1,10 @@
 // RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
 
 template <typename T>
-bool __lifetime_pset(const T &);
+bool __lifetime_pset(const T &) { return true; }
 
 template <typename T>
-bool __lifetime_pset_ref(const T &);
+bool __lifetime_pset_ref(const T &) { return true; }
 
 namespace std {
 
@@ -930,6 +930,7 @@ void lambda_capture(const int *param) {
   auto a = [&]() {
     return *param;
   };
+  __lifetime_pset(a); //expected-warning {{pset(a) = (param)}}
   auto b = [=]() {
     return *param;
   };
