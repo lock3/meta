@@ -1,10 +1,5 @@
 // RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
 
-// TODO:
-// lifetime annotations
-// lambda
-// function calls
-
 template <typename T>
 bool __lifetime_pset(const T &);
 
@@ -567,7 +562,9 @@ void function_call2() {
 
   f(pp);
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p)}}
-  //__lifetime_pset(p);  // TODOexpected-warning {{pset(p) = (i, (static))}}
+  // The deref location of the argument is an output only,
+  // the the function has no input with matching type.
+  __lifetime_pset(p);  // expected-warning {{pset(p) = ((static))}}
 }
 
 void function_call3() {
@@ -587,7 +584,7 @@ void indirect_function_call() {
   int *p = &i;
   int *ret = f(p);
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
-  //__lifetime_pset(ret); // TODOexpected-warning {{pset(p) = (i, (static))}}
+  __lifetime_pset(ret); // expected-warning {{pset(ret) = (i)}}
 }
 
 void variadic_function_call() {
@@ -615,10 +612,11 @@ void argument_ref_to_temporary() {
 
   int x = 10, y = 2;
   const int &good = min(x, y); // ok, pset(good) == {x,y}
-  //__lifetime_pset(good);   // TODOexpected-warning {{pset(good) = (x, y)}}
+  __lifetime_pset_ref(good);   //expected-warning {{pset(good) = (x, y)}}
 
   const int &bad = min(x, y + 1);
-  //__lifetime_pset(bad); // TODOexpected-warning {{pset(bad) = ((invalid))}}
+  // TODOexpected-note@-1 {{temporary was destroyed at the end of the full expression}}
+  // __lifetime_pset_ref(bad); // TODOexpected-warning {{pset(bad) = ((invalid))}}
 }
 
 void Example1_1() {
