@@ -199,7 +199,7 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 ///
 /// Note that the statement parser will collect the trailing semicolon.
 StmtResult Parser::ParseCXXInjectionStatement() {
-  assert(Tok.is(tok::arrow) && "expected ->");
+  assert(Tok.is(tok::arrow) && "expected '->' token");
   SourceLocation Loc = ConsumeToken();
 
   /// Get a reflection as the operand of the
