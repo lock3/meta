@@ -318,10 +318,15 @@ public:
   }
 
   void VisitLambdaExpr(const LambdaExpr *E) {
-    // TODO: if this is a Pointer (because it captures by reference, fill the
-    // pset to what it had captured)
-    if (hasPSet(E))
-      setPSet(E, PSet{});
+    if (!hasPSet(E))
+      return;
+    PSet Set;
+    for (auto Capture : E->captures()) {
+      if (!Capture.capturesVariable() || Capture.getCaptureKind() != LCK_ByRef)
+        continue;
+      Set.merge(PSet::singleton(Capture.getCapturedVar()));
+    }
+    setPSet(E, Set);
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
