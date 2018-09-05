@@ -939,3 +939,14 @@ typedef int T;
 void f(int *p) {
   p->T::~T();
 }
+
+void default_argument() {
+  int* null(int* p = nullptr);
+  int* staticf(int* p = &global_i);
+
+  int* p = null();
+  //__lifetime_pset(p); //TODOexpected-warning {{pset(p) = ((null))}}
+
+  p = staticf();
+  __lifetime_pset(p); //expected-warning {{pset(p) = ((static))}}
+}
