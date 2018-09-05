@@ -4822,6 +4822,10 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
   return QualType(dt, 0);
 }
 
+bool ASTContext::isReflectionType(QualType T) {
+  return true;
+}
+
 QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
   ReflectedType *RT;
 

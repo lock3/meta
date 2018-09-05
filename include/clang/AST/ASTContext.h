@@ -1515,6 +1515,8 @@ public:
   /// C++11 decltype.
   QualType getDecltypeType(Expr *e, QualType UnderlyingType) const;
 
+  bool isReflectionType(QualType T);
+
   /// \brief Reflected types.
   QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
 
