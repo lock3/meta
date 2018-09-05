@@ -97,8 +97,6 @@ public:
                   const FunctionDecl *FuncDecl, IsConvertibleTy IsConvertible)
       : ASTCtxt(ASTCtxt), FuncDecl(FuncDecl), AC(nullptr, FuncDecl),
         Reporter(Reporter), IsConvertible(IsConvertible) {
-    // TODO: do not build own CFG here. Use the one from callee
-    // AnalysisBasedWarnings::IssueWarnings
     AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
     AC.getCFGBuildOptions().AddInitializers = true;
     AC.getCFGBuildOptions().AddLifetime = true;
