@@ -271,6 +271,11 @@ Retry:
     SemiError = "co_return";
     break;
 
+  case tok::arrow:
+    Res = ParseCXXInjectionStatement();
+    SemiError = "->";
+    break;
+
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);
     bool msAsm = false;
