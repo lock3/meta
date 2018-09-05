@@ -766,7 +766,7 @@ PSet PSetsBuilder::getPSet(Variable P) {
     return PSet::singleton(P, false, 1);
 
   // Assumption: global Pointers have a pset of {static}
-  if (P.hasGlobalStorage() || P.isMemberVariableOfEnclosingClass())
+  if (P.hasStaticLifetime())
     return PSet::staticVar(false);
 
   auto I = PMap.find(P);
