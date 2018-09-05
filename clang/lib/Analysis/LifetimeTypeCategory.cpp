@@ -263,12 +263,6 @@ QualType getPointeeType(QualType QT) {
   return {};
 }
 
-QualType normalizeType(QualType QT, ASTContext &Ctx) {
-  if (QT->isReferenceType())
-    return Ctx.getPointerType(QT->getPointeeType());
-  return QT;
-}
-
 CallTypes getCallTypes(const Expr *CalleeE) {
   CallTypes CT;
 
