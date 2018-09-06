@@ -932,9 +932,11 @@ void lambda_capture(const int *param, const int *param2) {
     return *param + *alias;
   };
   __lifetime_pset(a); //expected-warning {{pset(a) = (param, param2)}}
+  int *ptr = nullptr;
   auto b = [=]() {
-    return *param;
+    return *param + *ptr;
   };
+  __lifetime_pset(b); //expected-warning {{pset(b) = ((null), param)}}
 }
 
 typedef int T;
