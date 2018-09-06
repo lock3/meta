@@ -612,7 +612,7 @@ void argument_ref_to_temporary() {
 
   int x = 10, y = 2;
   const int &good = min(x, y); // ok, pset(good) == {x,y}
-  __lifetime_pset_ref(good);   //expected-warning {{pset(good) = (x, y)}}
+  __lifetime_pset_ref(good);   // expected-warning {{pset(good) = (x, y)}}
 
   const int &bad = min(x, y + 1);
   // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
@@ -822,7 +822,7 @@ void deref_based_on_template_param() {
 
   int *f_ptr(const std::optional<int> &O);
   int *D3 = f_ptr(O);
-  __lifetime_pset(D3); //expected-warning {{pset(D3) = (O')}}
+  __lifetime_pset(D3); // expected-warning {{pset(D3) = (O')}}
 }
 
 my_pointer global_pointer;
@@ -862,18 +862,18 @@ void derived_to_base_conversion() {
   S *f(D *);
   D d;
   S *sp = f(&d);
-  __lifetime_pset(sp); //expected-warning {{pset(sp) = (d)}}
+  __lifetime_pset(sp); // expected-warning {{pset(sp) = (d)}}
 }
 
 void kill_materialized_temporary() {
   const int *p;
   {
     const int &i = 1;
-    __lifetime_pset_ref(i); //expected-warning {{pset(i) = ((lifetime-extended temporary through i))}}
+    __lifetime_pset_ref(i); // expected-warning {{pset(i) = ((lifetime-extended temporary through i))}}
     p = &i;
-    __lifetime_pset(p); //expected-warning {{pset(p) = ((lifetime-extended temporary through i))}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((lifetime-extended temporary through i))}}
   }
-  __lifetime_pset(p); //expected-warning {{pset(p) = ((invalid))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 }
 
 int throw_local() {
@@ -889,41 +889,41 @@ struct [[gsl::Owner]] OwnerPointsToTemplateType {
 
 void ownerPointsToTemplateType() {
   OwnerPointsToTemplateType<int> O;
-  __lifetime_pset(O); //expected-warning {{pset(O) = (O'}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = (O'}}
   int *I = O.get();
-  __lifetime_pset(I); //expected-warning {{pset(I) = (O'}}
+  __lifetime_pset(I); // expected-warning {{pset(I) = (O'}}
 
   // When finding the pointee type of an Owner,
   // look through AutoType to find the ClassTemplateSpecialization.
   auto Oauto = OwnerPointsToTemplateType<int>();
-  __lifetime_pset(Oauto); //expected-warning {{pset(Oauto) = (Oauto')}}
+  __lifetime_pset(Oauto); // expected-warning {{pset(Oauto) = (Oauto')}}
   int *Iauto = Oauto.get();
-  __lifetime_pset(Iauto); //expected-warning {{pset(Iauto) = (Oauto')}}
+  __lifetime_pset(Iauto); // expected-warning {{pset(Iauto) = (Oauto')}}
 }
 
 void string_view_ctors(const char *c) {
   std::string_view sv;
-  __lifetime_pset(sv);  //expected-warning {{pset(sv) = ((null))}}
+  __lifetime_pset(sv);  // expected-warning {{pset(sv) = ((null))}}
   std::string_view sv2(c);
-  __lifetime_pset(sv2); //expected-warning {{pset(sv2) = ((null), c)}}
+  __lifetime_pset(sv2); // expected-warning {{pset(sv2) = ((null), c)}}
   char local;
   std::string_view sv3(&local, 1);
-  __lifetime_pset(sv3); //expected-warning {{pset(sv3) = (local)}}
+  __lifetime_pset(sv3); // expected-warning {{pset(sv3) = (local)}}
   std::string_view sv4(sv3);
-  __lifetime_pset(sv4); //expected-warning {{pset(sv4) = (local)}}
+  __lifetime_pset(sv4); // expected-warning {{pset(sv4) = (local)}}
   //std::string_view sv5(std::move(sv3));
   ///__lifetime_pset(sv5); //TODOexpected-warning {{pset(sv5) = (local)}}
 }
 
 void unary_operator(const char *p) {
   const char *q = --p;
-  __lifetime_pset(p); //expected-warning {{pset(p) = ((invalid))}}
-  __lifetime_pset(q); //expected-warning {{pset(q) = ((invalid))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
 }
 
 void funcptrs() {
   auto fptr = unary_operator;
-  __lifetime_pset(fptr); //expected-warning {{pset(fptr) = ((static))}}
+  __lifetime_pset(fptr); // expected-warning {{pset(fptr) = ((static))}}
 }
 
 auto lambda_capture(const int *param, const int *param2) {
@@ -931,14 +931,14 @@ auto lambda_capture(const int *param, const int *param2) {
   auto a = [&]() {
     return *param + *alias;
   };
-  __lifetime_pset(a); //expected-warning {{pset(a) = (param, param2)}}
+  __lifetime_pset(a); // expected-warning {{pset(a) = (param, param2)}}
   int i;
   int *ptr = &i;
   auto b = [=]() {
     return *param + *ptr;
   };
-  __lifetime_pset(b); //expected-warning {{pset(b) = ((null), i, param)}}
-  return b; //expected-warning {{returning a Pointer with points-to set ((null), i, param) where points-to set ((null), param, param2) is expected}}
+  __lifetime_pset(b); // expected-warning {{pset(b) = ((null), i, param)}}
+  return b; // expected-warning {{returning a Pointer with points-to set ((null), i, param) where points-to set ((null), param, param2) is expected}}
 }
 
 typedef int T;
@@ -954,5 +954,5 @@ void default_argument() {
   //__lifetime_pset(p); //TODOexpected-warning {{pset(p) = ((null))}}
 
   p = staticf();
-  __lifetime_pset(p); //expected-warning {{pset(p) = ((static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
 }
