@@ -926,17 +926,19 @@ void funcptrs() {
   __lifetime_pset(fptr); //expected-warning {{pset(fptr) = ((static))}}
 }
 
-void lambda_capture(const int *param, const int *param2) {
+auto lambda_capture(const int *param, const int *param2) {
   const int *&alias = param2;
   auto a = [&]() {
     return *param + *alias;
   };
   __lifetime_pset(a); //expected-warning {{pset(a) = (param, param2)}}
-  int *ptr = nullptr;
+  int i;
+  int *ptr = &i;
   auto b = [=]() {
     return *param + *ptr;
   };
-  __lifetime_pset(b); //expected-warning {{pset(b) = ((null), param)}}
+  __lifetime_pset(b); //expected-warning {{pset(b) = ((null), i, param)}}
+  return b; //expected-warning {{returning a Pointer with points-to set ((null), i, param) where points-to set ((null), param, param2) is expected}}
 }
 
 typedef int T;
