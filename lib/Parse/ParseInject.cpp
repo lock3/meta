@@ -194,7 +194,6 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 /// \brief Parse a C++ injection statement.
 ///
 ///   injection-statement:
-///     '->' reflection ';'
 ///     '->' fragment ';'
 ///
 /// Note that the statement parser will collect the trailing semicolon.
@@ -203,10 +202,10 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   SourceLocation Loc = ConsumeToken();
 
   /// Get a reflection as the operand of the
-  ExprResult Reflection = ParseConstantExpression();
+  ExprResult Fragment = ParseConstantExpression();
 
-  if (Reflection.isInvalid())
+  if (Fragment.isInvalid())
     return StmtResult();
 
-  return Actions.ActOnCXXInjectionStmt(Loc, Reflection.get());
+  return Actions.ActOnCXXInjectionStmt(Loc, Fragment.get());
 }
