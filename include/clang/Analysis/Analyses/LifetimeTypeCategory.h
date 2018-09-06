@@ -28,9 +28,6 @@ bool isNullableType(QualType QT);
 // off that one extra level of pointer/references.
 QualType getPointeeType(QualType QT);
 
-// Normalizes references to pointers.
-QualType normalizeType(QualType QT, ASTContext &Ctx);
-
 struct CallTypes {
   const FunctionProtoType *FTy = nullptr;
   const CXXRecordDecl *ClassDecl = nullptr;

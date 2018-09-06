@@ -7,18 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Analysis/Analyses/Lifetime.h"
-#include "clang/AST/ASTContext.h"
-#include "clang/AST/DeclCXX.h"
-#include "clang/AST/DeclTemplate.h"
-#include "clang/AST/Expr.h"
-#include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
+#include "clang/Analysis/CFGStmtMap.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/AST/ASTContext.h"
 #include "llvm/ADT/Statistic.h"
-#include <algorithm>
-#include <sstream>
-#include <unordered_map>
 
 #define DEBUG_TYPE "Lifetime Analysis"
 
@@ -30,7 +24,7 @@ namespace lifetime {
 class LifetimeContext {
   /// Additional information for each CFGBlock.
   struct BlockContext {
-    bool visited = false;
+    bool Visited = false;
     /// Merged PSets of all predecessors of this CFGBlock.
     PSetsMap EntryPMap;
     /// Computed PSets after updating EntryPSets through all CFGElements of
@@ -127,7 +121,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       continue;
 
     auto &PredBC = getBlockContext(PredBlock);
-    if (!PredBC.visited)
+    if (!PredBC.Visited)
       continue; // Skip this back edge.
 
     IsReachable = true;
@@ -167,12 +161,12 @@ void LifetimeContext::TraverseBlocks() {
 
       // The entry block introduces the function parameters into the psets.
       if (B == &ControlFlowGraph->getEntry()) {
-        if (BC.visited)
+        if (BC.Visited)
           continue;
 
         // ExitPSets are the function parameters.
         PSetOfAllParams = PopulatePSetForParams(BC.ExitPMap, FuncDecl);
-        BC.visited = true;
+        BC.Visited = true;
         continue;
       }
 
@@ -186,7 +180,7 @@ void LifetimeContext::TraverseBlocks() {
       if (!isReachable)
         continue;
 
-      if (BC.visited && EntryPMap == BC.EntryPMap) {
+      if (BC.Visited && EntryPMap == BC.EntryPMap) {
         // Has been computed at least once and nothing changed; no need to
         // recompute.
         continue;
@@ -196,7 +190,7 @@ void LifetimeContext::TraverseBlocks() {
       BC.ExitPMap = BC.EntryPMap;
       VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetOfAllParams,
                  PSetsOfExpr, RefersTo, *B, Reporter, ASTCtxt, IsConvertible);
-      BC.visited = true;
+      BC.Visited = true;
       Updated = true;
     }
     ++IterationCount;
