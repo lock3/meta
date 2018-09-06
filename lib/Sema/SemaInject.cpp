@@ -114,6 +114,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 					       /*Id=*/nullptr,
 					       /*PrevDecl=*/nullptr);
   Class->setImplicit(true);
+  Class->setFragment(true);
   StartDefinition(Class);
   QualType ClassTy = Context.getRecordType(Class);
   TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
