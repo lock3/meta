@@ -837,6 +837,7 @@ void caller() {
   void f(my_pointer & p);
   my_pointer p;
   f(p); // OK, p is assumed to be out-parameter, so no validation
+  p = global_pointer;
 }
 
 struct Struct {
