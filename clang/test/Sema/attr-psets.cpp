@@ -926,11 +926,12 @@ void funcptrs() {
   __lifetime_pset(fptr); //expected-warning {{pset(fptr) = ((static))}}
 }
 
-void lambda_capture(const int *param) {
+void lambda_capture(const int *param, const int *param2) {
+  const int *&alias = param2;
   auto a = [&]() {
-    return *param;
+    return *param + *alias;
   };
-  __lifetime_pset(a); //expected-warning {{pset(a) = (param)}}
+  __lifetime_pset(a); //expected-warning {{pset(a) = (param, param2)}}
   auto b = [=]() {
     return *param;
   };
