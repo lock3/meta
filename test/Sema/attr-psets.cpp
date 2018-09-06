@@ -834,10 +834,11 @@ void f(my_pointer &p) { // expected-note {{it was never initialized here}}
                       // TODO-remove expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 void caller() {
-  void f(my_pointer & p);
+  void f(my_pointer &p);
   my_pointer p;
   f(p); // OK, p is assumed to be out-parameter, so no validation
-  p = global_pointer;
+  my_pointer p2;
+  p2 = global_pointer;
 }
 
 struct Struct {
