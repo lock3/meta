@@ -522,6 +522,9 @@ class CXXRecordDecl : public RecordDecl {
     /// const-qualified reference parameter or a non-reference parameter.
     unsigned HasDeclaredCopyAssignmentWithConstParam : 1;
 
+    /// Whether this class describes a C++ fragment.
+    unsigned IsFragment : 1;
+
     /// Whether this class describes a C++ lambda.
     unsigned IsLambda : 1;
 
@@ -1190,6 +1193,15 @@ public:
   /// class.
   bool needsOverloadResolutionForDestructor() const {
     return data().NeedOverloadResolutionForDestructor;
+  }
+
+  /// Determine whether this class describes a fragment object.
+  bool isFragment() const {
+    return data().IsFragment;
+  }
+
+  void setFragment(bool IsFrag) {
+    data().IsFragment = IsFrag;
   }
 
   /// Determine whether this class describes a lambda function object.
