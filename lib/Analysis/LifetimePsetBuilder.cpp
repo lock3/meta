@@ -151,28 +151,29 @@ public:
       setPSet(E, getPSet(E->getExpr()));
   }
 
+  PSet varRefersTo(Variable V, SourceLocation Loc) {
+    if (V.getType()->isLValueReferenceType()) {
+      auto P = getPSet(V);
+      if (CheckPSetValidity(P, Loc))
+        return P;
+      else
+        return PSet();
+    } else {
+      return PSet::singleton(V, false);
+    }
+  };
+
   void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
-    auto varRefersTo = [&](QualType QT, Variable V) {
-      if (QT->isLValueReferenceType()) {
-        auto P = getPSet(V);
-        if (CheckPSetValidity(P, DeclRef->getExprLoc()))
-          return P;
-        else
-          return PSet();
-      } else {
-        return PSet::singleton(V, false);
-      }
-    };
     if (isa<FunctionDecl>(DeclRef->getDecl()) ||
         DeclRef->refersToEnclosingVariableOrCapture()) {
       setPSet(DeclRef, PSet::staticVar(false));
     }
     else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
-      setPSet(DeclRef, varRefersTo(VD->getType(), VD));
+      setPSet(DeclRef, varRefersTo(VD, DeclRef->getExprLoc()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer();
       V.addFieldRef(FD);
-      setPSet(DeclRef, varRefersTo(FD->getType(), V));
+      setPSet(DeclRef, varRefersTo(V, DeclRef->getExprLoc()));
     }
   }
 
@@ -324,7 +325,9 @@ public:
     for (auto Capture : E->captures()) {
       if (!Capture.capturesVariable() || Capture.getCaptureKind() != LCK_ByRef)
         continue;
-      Set.merge(PSet::singleton(Capture.getCapturedVar()));
+      const VarDecl *VD = Capture.getCapturedVar();
+      // TODO: better location for the possible warning?
+      Set.merge(varRefersTo(VD, E->getExprLoc()));
     }
     setPSet(E, Set);
   }
