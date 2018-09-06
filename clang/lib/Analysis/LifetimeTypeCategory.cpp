@@ -178,7 +178,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda() &&
       std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
-        return FD->getType()->isReferenceType();
+        return classifyTypeCategory(FD->getType()) == TypeCategory::Pointer;
       })) {
     return TypeCategory::Pointer;
   }

@@ -323,11 +323,14 @@ public:
       return;
     PSet Set;
     for (auto Capture : E->captures()) {
-      if (!Capture.capturesVariable() || Capture.getCaptureKind() != LCK_ByRef)
+      if (!Capture.capturesVariable())
         continue;
       const VarDecl *VD = Capture.getCapturedVar();
       // TODO: better location for the possible warning?
-      Set.merge(varRefersTo(VD, E->getExprLoc()));
+      PSet CaptureSet = varRefersTo(VD, E->getExprLoc());
+      if (Capture.getCaptureKind() == LCK_ByCopy)
+        CaptureSet = getPSet(CaptureSet);
+      Set.merge(CaptureSet);
     }
     setPSet(E, Set);
   }
