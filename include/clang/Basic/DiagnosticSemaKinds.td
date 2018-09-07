@@ -9379,9 +9379,9 @@ def note_await_ready_no_bool_conversion : Note<
 >;
 }
 
-let CategoryName = "Reflection Issue" in {
-def err_not_a_reflection : Error<
-  "expression is not a reflection">;
+let CategoryName = "Injection Issue" in {
+def err_not_a_fragment : Error<
+  "expression is not a fragment">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
