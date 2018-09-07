@@ -223,28 +223,28 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 }
 
 /// Returns an injection statement.
-StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
-  return BuildCXXInjectionStmt(Loc, Reflection);
+StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
+  return BuildCXXInjectionStmt(Loc, Fragment);
 }
 
 /// Returns an injection statement.
-StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection) {
+StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
   // The operand must be a reflection (if non-dependent).
-  if (!Reflection->isTypeDependent() && !Reflection->isValueDependent()) {
-    if (!Context.isReflectionType(Reflection->getType())) {
-      Diag(Reflection->getExprLoc(), diag::err_not_a_reflection);
-      return StmtError();
-    }
+  // if (!Fragment->isTypeDependent() && !Fragment->isValueDependent()) {
+  if (!Fragment->getType()->getAsCXXRecordDecl()->isFragment()) {
+    Diag(Fragment->getExprLoc(), diag::err_not_a_fragment);
+    return StmtError();
   }
+  // }
 
   // Perform an lvalue-to-value conversion so that we get an rvalue in
   // evaluation.
-  if (Reflection->isGLValue())
-    Reflection = ImplicitCastExpr::Create(Context, Reflection->getType(),
-                                          CK_LValueToRValue, Reflection,
-                                          nullptr, VK_RValue);
+  if (Fragment->isGLValue())
+    Fragment = ImplicitCastExpr::Create(Context, Fragment->getType(),
+                                        CK_LValueToRValue, Fragment,
+                                        nullptr, VK_RValue);
 
-  return new (Context) CXXInjectionStmt(Loc, Reflection);
+  return new (Context) CXXInjectionStmt(Loc, Fragment);
 }
 
 bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {

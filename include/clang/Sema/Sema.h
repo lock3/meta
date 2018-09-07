@@ -10116,8 +10116,8 @@ public:
   ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment);
 
-  StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
-  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Reflection);
+  StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
+  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
 
   bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
   bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
