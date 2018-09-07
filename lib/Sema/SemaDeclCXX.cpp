@@ -1761,6 +1761,9 @@ static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
         Cxx1yLoc = DS->getBeginLoc();
       continue;
 
+    case Decl::CXXMetaprogram:
+      continue;
+
     default:
       SemaRef.Diag(DS->getBeginLoc(), diag::err_constexpr_body_invalid_stmt)
           << isa<CXXConstructorDecl>(Dcl);
@@ -1900,6 +1903,10 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
           !CheckConstexprFunctionStmt(SemaRef, Dcl, SubStmt, ReturnStmts,
                                       Cxx1yLoc))
         return false;
+    return true;
+
+  case Stmt::CXXInjectionStmtClass:
+    // Injection is a compile-time statements.
     return true;
 
   case Stmt::SwitchStmtClass:
