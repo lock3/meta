@@ -10119,8 +10119,12 @@ public:
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
 
+  bool InjectFragment(SourceLocation POI, const Decl *Injection,
+		      Decl *Injectee);
+
   bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
-  bool ApplyEffects(SourceLocation POI, SmallVectorImpl<EvalEffect> &Injections);
+  bool ApplyEffects(SourceLocation POI,
+		    SmallVectorImpl<EvalEffect> &Injections);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 

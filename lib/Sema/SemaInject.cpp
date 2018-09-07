@@ -247,8 +247,33 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
   return new (Context) CXXInjectionStmt(Loc, Fragment);
 }
 
-bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
+/// Inject a fragment into the current context.
+bool Sema::InjectFragment(SourceLocation POI,
+                          const Decl *Injection,
+                          Decl *Injectee) {
   return true;
+}
+
+static const Decl *
+GetDeclFromReflection(Sema &SemaRef, APValue FragmentData, SourceLocation Loc) {
+  assert(FragmentData.isStruct()
+	 && "expected FragmentData to be a struct value");
+  Reflection Refl(FragmentData.getStructField(0));
+  return Refl.getDeclaration();
+}
+
+bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
+  const Decl *Injection = GetDeclFromReflection(*this, II.FragmentData, POI);
+
+  Decl *Injectee = Decl::castFromDeclContext(CurContext);
+  if (!Injectee) {
+    return false;
+  }
+
+  // FIXME: We need to validate the Injection is compatible
+  // with the Injectee.
+
+  return InjectFragment(POI, Injection, Injectee);
 }
 
 static void
