@@ -104,16 +104,8 @@ struct SubobjectAdjustment {
 /// This is a set containing the values of captured declarations and the
 /// expression into which those will be substituted.
 struct InjectionInfo {
-  /// The type of the expression being injected. This determines how the
-  /// result will be interpreted semantically.
-  QualType ReflectionType;
-
   /// The actual value computed by the injection statement.
-  APValue ReflectionValue;
-
-  /// If non-null, the type of the injectee. This embeds the declaration
-  /// into which the value or contents will be injected.
-  QualType InjecteeType;
+  APValue FragmentData;
 };
 
 /// Represents a side-effect to constexpr evaluation. When recorded,

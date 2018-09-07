@@ -4257,6 +4257,31 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
+  case Stmt::CXXInjectionStmtClass: {
+    if (Info.checkingPotentialConstantExpression())
+      return ESR_Succeeded;
+
+    if (!Info.EvalStatus.Effects) {
+      // Only metapgrams can produce injection results.
+      Info.CCEDiag(S->getBeginLoc(), diag::note_injection_outside_constexpr_decl);
+      return ESR_Failed;
+    }
+
+    // Compute the value of the injected reflection and its modifications.
+    const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
+    Expr *Fragment = IS->getFragment();
+    APValue Result;
+    if (!Evaluate(Result, Info, Fragment))
+      return ESR_Failed;
+
+    // Queue the injection as a side effect.
+    Info.EvalStatus.Effects->emplace_back();
+    EvalEffect &Effect = Info.EvalStatus.Effects->back();
+    Effect.Kind = EvalEffect::InjectionEffect;
+    Effect.Injection = new InjectionInfo{Result};
+    return ESR_Succeeded;
+  }
+
   case Stmt::SwitchStmtClass:
     return EvaluateSwitch(Result, Info, cast<SwitchStmt>(S));
 
