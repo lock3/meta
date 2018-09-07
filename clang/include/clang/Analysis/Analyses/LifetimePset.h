@@ -331,10 +331,6 @@ public:
     // TODO
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
     // If 'this' includes o', then 'O' must include o'.
-    // If 'this' includes o, then 'O' must include o or o' or o'' or some x with
-    // lifetime less than o. If 'O' includes one or more xb1..n, where
-    // xbshortest is the one with shortest lifetime, then a must include static
-    // or xa1..m where all have longer lifetime than xbshortest.
     return true;
   }
 
