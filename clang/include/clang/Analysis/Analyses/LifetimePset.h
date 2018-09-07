@@ -10,22 +10,24 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSET_H
 
-#include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
 #include <sstream>
 #include <vector>
 
 namespace clang {
 namespace lifetime {
-/// A Variable can represent
+/// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
 /// - the this pointer: Var contains a null VarDecl
 /// - a life-time extended temporary: Var contains a non-null
 /// MaterializeTemporaryExpr
 /// - a normal temporary: Var contains a null MaterializeTemporaryExpr
 /// plus fields of them (in member FDs).
+/// And a list of dereference and field select operations that applied
+/// consecutively to the base.
 struct Variable {
   Variable(const VarDecl *VD) : Var(VD) {}
   Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
@@ -65,19 +67,31 @@ struct Variable {
   }
 
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
+  /// TODO: Should we cache the type instead of calculating?
   QualType getType() const {
-    if (FDs.empty()) {
-      if (const auto *VD = Var.dyn_cast<const VarDecl *>())
-        return VD->getType();
-      if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
-        return MT->getType();
-      return {}; // Refers to 'this' pointer.
-    }
+    QualType Base;
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
+      Base = VD->getType();
+    else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
+      Base = MT->getType();
+    // Else refers to 'this' pointer or temporary. Should we set the correct
+    // type for this?
 
-    return FDs.back()->getType();
+    int Derefs = 0;
+    for (auto It = FDs.rbegin(); It != FDs.rend(); ++It) {
+      if (*It) {
+        Base = (*It)->getType();
+        break;
+      } else {
+        ++Derefs;
+      }
+    }
+    while (Derefs--)
+      Base = getPointeeType(Base);
+    return Base;
   }
 
-  bool isField() const { return !FDs.empty(); }
+  bool isField() const { return !FDs.empty() && FDs.back(); }
 
   bool isThisPointer() const {
     return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
@@ -99,43 +113,45 @@ struct Variable {
                VD;
   }
 
-  // Is the pset of this Variable allowed to contain null?
-  bool mightBeNull() const {
-    return !isThisPointer() && isNullableType(getType());
-  }
-
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
+  void deref() { FDs.push_back(nullptr); }
+
   std::string getName() const {
-    std::stringstream ss;
+    std::string Ret;
     if (Var.is<const MaterializeTemporaryExpr *>()) {
       auto *MD = Var.get<const MaterializeTemporaryExpr *>();
       if (MD) {
-        ss << "(lifetime-extended temporary through ";
+        Ret = "(lifetime-extended temporary through ";
         if (MD->getExtendingDecl())
-          ss << std::string(MD->getExtendingDecl()->getName()) << ")";
+          Ret += std::string(MD->getExtendingDecl()->getName()) + ")";
         else
-          ss << "(unknown))";
+          Ret += "(unknown))";
       } else {
-        ss << "(temporary)";
+        Ret = "(temporary)";
       }
     } else {
       auto *VD = Var.get<const VarDecl *>();
-      ss << (VD ? std::string(VD->getName()) : "this");
+      Ret = (VD ? std::string(VD->getName()) : "this");
     }
 
-    for (auto *FD : FDs)
-      ss << "." << std::string(FD->getName());
-    return ss.str();
+    for (const auto *FD : FDs) {
+      if (FD)
+        Ret += "." + std::string(FD->getName());
+      else
+        Ret = "(*" + Ret + ")";
+    }
+    return Ret;
   }
 
   llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
 
-  /// Possibly empty list of fields on Var first entry is the field on VD,
-  /// next entry is the field inside there, etc.
+  /// Possibly empty list of fields and deref operations on the base.
+  /// The First entry is the field on base, next entry is the field inside
+  /// there, etc. Null pointers represent a deref operation.
   llvm::SmallVector<const FieldDecl *, 8> FDs;
 };
 

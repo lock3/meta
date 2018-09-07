@@ -167,8 +167,7 @@ public:
     if (isa<FunctionDecl>(DeclRef->getDecl()) ||
         DeclRef->refersToEnclosingVariableOrCapture()) {
       setPSet(DeclRef, PSet::staticVar(false));
-    }
-    else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
+    } else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD, DeclRef->getExprLoc()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer();
@@ -1073,27 +1072,32 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
 PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   PSet PSetForAllParams;
   for (const ParmVarDecl *PVD : FD->parameters()) {
-    TypeCategory TC = classifyTypeCategory(PVD->getType());
+    QualType ParamTy = PVD->getType();
+    TypeCategory TC = classifyTypeCategory(ParamTy);
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
       continue;
-    QualType PointeeType = getPointeeType(PVD->getType());
+    QualType PointeeType = getPointeeType(ParamTy);
     Variable P(PVD);
+    // Pointers initially point to their conjured deref location. But references
+    // already handled as they are pointing to the deref loc.
+    if (TC == TypeCategory::Pointer && !ParamTy->isReferenceType())
+      P.deref();
     // Parameters cannot be invalid (checked at call site).
     PSet PS;
     // Output params are initially undefined.
     if (TC == TypeCategory::Pointer && !PointeeType.isNull() &&
-        !PointeeType.isConstQualified() &&
-        !PVD->getType()->isRValueReferenceType()) {
+        !PointeeType.isConstQualified() && !ParamTy->isRValueReferenceType()) {
       PS =
           PSet::invalid(InvalidationReason::NotInitialized(PVD->getLocStart()));
       // It is still ok to point to output values when we return values.
-      PSetForAllParams.merge(
-          PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner));
+      PSetForAllParams.merge(PSet::singleton(P, isNullableType(ParamTy),
+                                             TC == TypeCategory::Owner));
     } else {
-      PS = PSet::singleton(P, P.mightBeNull(), TC == TypeCategory::Owner);
+      PS = PSet::singleton(P, isNullableType(ParamTy),
+                           TC == TypeCategory::Owner);
       PSetForAllParams.merge(PS);
     }
-    PMap.emplace(P, std::move(PS));
+    PMap.emplace(PVD, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
