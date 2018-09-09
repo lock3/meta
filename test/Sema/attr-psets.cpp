@@ -28,8 +28,8 @@ struct vector {
 template <typename T>
 struct basic_string_view {
   basic_string_view();
-  basic_string_view(const T*);
-  basic_string_view(const T*, unsigned);
+  basic_string_view(const T *);
+  basic_string_view(const T *, unsigned);
   const T *begin();
   const T *end();
 };
@@ -101,7 +101,7 @@ struct S {
   }
 
   // Crash reproduced with convoluted CFG.
-  void foorbar(const S& s, bool b) {
+  void foorbar(const S &s, bool b) {
     int *p = nullptr;
     if (s.mp) {
       if (!mp)
@@ -564,7 +564,7 @@ void function_call2() {
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p)}}
   // The deref location of the argument is an output only,
   // the the function has no input with matching type.
-  __lifetime_pset(p);  // expected-warning {{pset(p) = ((static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
 }
 
 void function_call3() {
@@ -583,7 +583,7 @@ void indirect_function_call() {
   int i = 0;
   int *p = &i;
   int *ret = f(p);
-  __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+  __lifetime_pset(p);   // expected-warning {{pset(p) = (i)}}
   __lifetime_pset(ret); // expected-warning {{pset(ret) = (i)}}
 }
 
@@ -856,7 +856,7 @@ void f(my_pointer &p) { // expected-note {{it was never initialized here}}
                       // TODO-remove expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 void caller() {
-  void f(my_pointer &p);
+  void f(my_pointer & p);
   my_pointer p;
   f(p); // OK, p is assumed to be out-parameter, so no validation
   my_pointer p2;
@@ -927,7 +927,7 @@ void ownerPointsToTemplateType() {
 
 void string_view_ctors(const char *c) {
   std::string_view sv;
-  __lifetime_pset(sv);  // expected-warning {{pset(sv) = ((null))}}
+  __lifetime_pset(sv); // expected-warning {{pset(sv) = ((null))}}
   std::string_view sv2(c);
   __lifetime_pset(sv2); // expected-warning {{pset(sv2) = ((*c), (null))}}
   char local;
@@ -962,7 +962,7 @@ auto lambda_capture(const int *param, const int *param2) {
     return *param + *ptr;
   };
   __lifetime_pset(b); // expected-warning {{pset(b) = ((*param), (null), i)}}
-  return b; // expected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
+  return b;           // expected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
 }
 
 typedef int T;
@@ -971,10 +971,10 @@ void f(int *p) {
 }
 
 void default_argument() {
-  int* null(int* p = nullptr);
-  int* staticf(int* p = &global_i);
+  int *null(int *p = nullptr);
+  int *staticf(int *p = &global_i);
 
-  int* p = null();
+  int *p = null();
   //__lifetime_pset(p); //TODOexpected-warning {{pset(p) = ((null))}}
 
   p = staticf();
