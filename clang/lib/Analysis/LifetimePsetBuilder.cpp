@@ -398,9 +398,9 @@ public:
     std::vector<CallArgument> Output;
   };
 
-  void PushCallArguments(const FunctionDecl *FD, unsigned ArgNum,
-                         SourceLocation Loc, PSet Set, QualType ParamType,
-                         bool IsInputThis, CallArguments &Args) {
+  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
+                         PSet Set, QualType ParamType, bool IsInputThis,
+                         CallArguments &Args) {
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
       return;
@@ -497,6 +497,29 @@ public:
                          ASTCtxt.getPointerType(ToPointee));
   }
 
+  struct CallExprArguments {
+    const Expr *This = nullptr;
+    std::vector<const Expr *> Arguments;
+  };
+
+  CallExprArguments getArguments(const CallExpr *CallE) {
+    CallExprArguments CA;
+    for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
+      const Expr *Arg = CallE->getArg(I);
+      // For instance calls, getArg(0) is the 'this' pointer.
+      if (isa<CXXOperatorCallExpr>(CallE) && I == 0) {
+        CA.This = Arg;
+        continue;
+      }
+      CA.Arguments.push_back(Arg);
+    }
+
+    if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE))
+      CA.This = MemberCall->getImplicitObjectArgument();
+
+    return CA;
+  }
+
   /// Evaluates the CallExpr for effects on psets.
   /// When a non-const pointer to pointer or reference to pointer is passed
   /// into a function, it's pointee's are invalidated.
@@ -511,55 +534,53 @@ public:
     if (isa<CXXPseudoDestructorExpr>(CalleeE))
       return;
     CallTypes CT = getCallTypes(CalleeE);
+    if (auto *OC = dyn_cast<CXXOperatorCallExpr>(CallE)) {
+      CT.ClassDecl = OC->getArg(0)->getType()->getAsCXXRecordDecl();
+
+      /// Special case for assignment into Pointer: copy pset
+      if (OC->getOperator() == OO_Equal && OC->getNumArgs() == 2 &&
+          classifyTypeCategory(OC->getArg(0)->getType()) ==
+              TypeCategory::Pointer) {
+        auto PSetRHS = getPSet(getPSet(OC->getArg(1)));
+        setPSet(getPSet(OC->getArg(0)), PSetRHS, CallE->getExprLoc());
+        setPSet(CallE, PSetRHS);
+        return;
+      }
+    }
+
     auto ParamTypes = CT.FTy->getParamTypes();
+    CallExprArguments CallArgs = getArguments(CallE);
     CallArguments Args;
-    for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
-      const Expr *Arg = CallE->getArg(I);
-      bool IsInputThis = false;
+    for (unsigned I = 0; I < CallArgs.Arguments.size(); ++I) {
+      const Expr *Arg = CallArgs.Arguments[I];
       QualType ParamType = [&] {
         // For instance calls, getArg(0) is the 'this' pointer.
-        if (const auto *OE = dyn_cast<CXXOperatorCallExpr>(CallE)) {
-          if (I == 0) {
-            // TODO handle Arg->getType()->isPointerType()
-            auto QT = ASTCtxt.getLValueReferenceType(Arg->getType());
-            if (CT.FTy->isConst())
-              QT.addConst();
-            if (OE->getOperator() != OO_Equal)
-              IsInputThis = true;
-            return QT;
-          } else
-            return ParamTypes[I - 1];
-        }
         if (I >= ParamTypes.size())
           return Arg->getType();
         else
           return ParamTypes[I];
       }();
       PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(),
-                        getPSet(Arg), ParamType, IsInputThis, Args);
+                        getPSet(Arg), ParamType, /*IsInputThis=*/false, Args);
     }
 
     if (CT.ClassDecl) {
       // A this pointer parameter is treated as if it were declared as a
       // reference to the current object
-      if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE)) {
-        auto *Object = MemberCall->getImplicitObjectArgument();
-        assert(Object);
+      assert(CallArgs.This);
 
-        QualType ObjectType = Object->getType();
-        if (ObjectType->isPointerType())
-          ObjectType = ObjectType->getPointeeType();
-        ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
+      QualType ObjectType = CallArgs.This->getType();
+      if (ObjectType->isPointerType())
+        ObjectType = ObjectType->getPointeeType();
+      ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
 
-        PushCallArguments(CallE->getDirectCallee(), 0, Object->getLocStart(),
-                          getPSet(Object), ObjectType, true, Args);
-      }
+      PushCallArguments(CallE->getDirectCallee(), -1,
+                        CallArgs.This->getLocStart(), getPSet(CallArgs.This),
+                        ObjectType, /*IsInputThis=*/true, Args);
     }
 
     // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
     // == pset(x)
-
-    // diagnoseParameterAliasing(PinExtended, Args.Oin);
 
     // Invalidate owners taken by Pointer to non-const.
     for (const auto &Arg : Args.Oinvalidate) {

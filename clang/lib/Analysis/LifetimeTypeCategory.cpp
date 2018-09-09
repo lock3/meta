@@ -299,29 +299,36 @@ CallTypes getCallTypes(const Expr *CalleeE) {
   return CT;
 }
 
-bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee,
-                     unsigned ArgNum) {
+bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
   // Until annotations are widespread, STL specific lifetimeconst
   // methods and params can be enumerated here.
   if (!FD)
     return false;
+
+  if (ArgNum >= 0) {
+    if (static_cast<size_t>(ArgNum) >= FD->param_size())
+      return false;
+    auto Param = FD->parameters()[ArgNum];
+    return Pointee.isConstQualified() || Param->hasAttr<LifetimeconstAttr>();
+  }
+
+  assert(ArgNum == -1);
+  if (FD->hasAttr<LifetimeconstAttr>())
+    return true;
+
   if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
-    if (ArgNum == 0) {
-      if (FD->isOverloadedOperator()) {
-        return MD->isConst() || MD->hasAttr<LifetimeconstAttr>() ||
-               FD->getOverloadedOperator() == OO_Subscript ||
-               FD->getOverloadedOperator() == OO_Star;
-      } else {
-        return FD->getDeclName().isIdentifier() &&
-               (FD->getName() == "at" || FD->getName() == "data" ||
-                FD->getName() == "begin" || FD->getName() == "end");
-      }
+    if (MD->isConst())
+      return true;
+    if (FD->isOverloadedOperator()) {
+      return FD->getOverloadedOperator() == OO_Subscript ||
+             FD->getOverloadedOperator() == OO_Star;
+    } else {
+      return FD->getDeclName().isIdentifier() &&
+             (FD->getName() == "at" || FD->getName() == "data" ||
+              FD->getName() == "begin" || FD->getName() == "end");
     }
   }
-  if (ArgNum >= FD->param_size())
-    return false;
-  auto Param = FD->parameters()[ArgNum];
-  return Pointee.isConstQualified() || Param->hasAttr<LifetimeconstAttr>();
+  return false;
 }
 } // namespace lifetime
 } // namespace clang

@@ -2777,7 +2777,13 @@ def Pointer : DeclOrTypeAttr {
 }
 
 def Lifetimeconst : InheritableParamAttr {
-  let Spellings = [CXX11<"gsl", "lifetimeconst">];
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Lifetime : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime">];
   let Subjects = SubjectList<[CXXMethod, ParmVar]>;
   let Documentation = [Undocumented]; // FIXME
 }
