@@ -759,6 +759,28 @@ void test_annotations(gsl::nullable<const int *> p,
   __lifetime_pset(q); // expected-warning {{pset(q) = ((*q))}}
 }
 
+void lifetime_const() {
+  class [[gsl::Owner]] Owner {
+    int *ptr;
+
+  public:
+    int operator*();
+    int *begin() { return ptr; }
+    void reset() {}
+    [[gsl::lifetime_const]] void peek() {}
+  };
+  Owner O;
+  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
+  int *P = O.begin();
+  __lifetime_pset(P); // expected-warning {{pset(P) = (O')}}
+
+  O.peek();
+  __lifetime_pset(P); // expected-warning {{pset(P) = (O')}}
+
+  O.reset();
+  __lifetime_pset(P); // expected-warning {{pset(P) = ((invalid))}}
+}
+
 void ambiguous_pointers(bool cond) {
   int x;
   int y;
