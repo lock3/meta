@@ -84,6 +84,7 @@ public:
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
+  Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
   Decl *InjectDecl(Decl *D);
@@ -167,6 +168,123 @@ bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
   return Invalid;
 }
 
+static bool InjectVariableInitializer(InjectionContext &Cxt,
+                                      VarDecl *Old,
+                                      VarDecl *New) {
+  if (Old->getInit()) {
+    if (New->isStaticDataMember() && !Old->isOutOfLine())
+      Cxt.getSema().PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::ConstantEvaluated, Old);
+    else
+      Cxt.getSema().PushExpressionEvaluationContext(
+          Sema::ExpressionEvaluationContext::PotentiallyEvaluated, Old);
+
+    // Instantiate the initializer.
+    ExprResult Init;
+    {
+      Sema::ContextRAII SwitchContext(Cxt.getSema(), New->getDeclContext());
+      bool DirectInit = (Old->getInitStyle() == VarDecl::CallInit);
+      Init = Cxt.TransformInitializer(Old->getInit(), DirectInit);
+    }
+
+    if (!Init.isInvalid()) {
+      Expr *InitExpr = Init.get();
+      if (New->hasAttr<DLLImportAttr>() &&
+          (!InitExpr ||
+           !InitExpr->isConstantInitializer(Cxt.getContext(), false))) {
+        // Do not dynamically initialize dllimport variables.
+      } else if (InitExpr) {
+        Cxt.getSema().AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
+      } else {
+        Cxt.getSema().ActOnUninitializedDecl(New);
+      }
+    } else {
+      New->setInvalidDecl();
+    }
+
+    Cxt.getSema().PopExpressionEvaluationContext();
+  } else {
+    if (New->isStaticDataMember()) {
+      if (!New->isOutOfLine())
+        return New;
+
+      // If the declaration inside the class had an initializer, don't add
+      // another one to the out-of-line definition.
+      if (Old->getFirstDecl()->hasInit())
+        return New;
+    }
+
+    // We'll add an initializer to a for-range declaration later.
+    if (New->isCXXForRangeDecl())
+      return New;
+
+    Cxt.getSema().ActOnUninitializedDecl(New);
+  }
+
+  return New;
+}
+
+Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  bool Invalid = InjectDeclarator(D, DNI, TSI);
+
+  VarDecl *Var = VarDecl::Create(
+      getContext(), Owner, D->getInnerLocStart(), DNI, TSI->getType(),
+      TSI, D->getStorageClass());
+
+  if (D->isNRVOVariable()) {
+    QualType ReturnType = cast<FunctionDecl>(Owner)->getReturnType();
+    if (getSema().isCopyElisionCandidate(ReturnType, Var, Sema::CES_Strict))
+      Var->setNRVOVariable(true);
+  }
+
+  Var->setImplicit(D->isImplicit());
+  Var->setInvalidDecl(Invalid);
+  Owner->addDecl(Var);
+
+  // If we are instantiating a local extern declaration, the
+  // instantiation belongs lexically to the containing function.
+  // If we are instantiating a static data member defined
+  // out-of-line, the instantiation will have the same lexical
+  // context (which will be a namespace scope) as the template.
+  if (D->isLocalExternDecl()) {
+    Var->setLocalExternDecl();
+    Var->setLexicalDeclContext(Owner);
+  } else if (D->isOutOfLine()) {
+    Var->setLexicalDeclContext(D->getLexicalDeclContext());
+  }
+  Var->setTSCSpec(D->getTSCSpec());
+  Var->setInitStyle(D->getInitStyle());
+  Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
+  Var->setConstexpr(D->isConstexpr());
+  Var->setInitCapture(D->isInitCapture());
+  Var->setPreviousDeclInSameBlockScope(D->isPreviousDeclInSameBlockScope());
+  Var->setAccess(D->getAccess());
+
+  if (!D->isStaticDataMember()) {
+    if (D->isUsed(false))
+      Var->setIsUsed();
+    Var->setReferenced(D->isReferenced());
+  }
+
+  // Forward the mangling number from the template to the instantiated decl.
+  getContext().setManglingNumber(
+      Var, getContext().getManglingNumber(D));
+  getContext().setStaticLocalNumber(
+      Var, getContext().getStaticLocalNumber(D));
+
+  if (D->isInlineSpecified())
+    Var->setInlineSpecified();
+  else if (D->isInline())
+    Var->setImplicitlyInline();
+
+  InjectVariableInitializer(*this, D, Var);
+
+  return Var;
+}
 
 Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
@@ -241,6 +359,8 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   // Inject the declaration.
   switch (D->getKind()) {
+  case Decl::Var:
+    return InjectVarDecl(cast<VarDecl>(D));
   case Decl::CXXMethod:
   case Decl::CXXConstructor:
   case Decl::CXXDestructor:
