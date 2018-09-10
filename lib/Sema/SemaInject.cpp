@@ -87,6 +87,7 @@ public:
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
   Decl *InjectDecl(Decl *D);
+  Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
 
   // Members
 
@@ -245,6 +246,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   case Decl::CXXDestructor:
   case Decl::CXXConversion:
     return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
+  case Decl::AccessSpec:
+    return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
   default:
     break;
   }
@@ -272,6 +275,12 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
 
   return R;
+}
+
+Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+  return AccessSpecDecl::Create(
+      getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
 }
 
 } // namespace clang
