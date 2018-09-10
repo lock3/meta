@@ -1916,11 +1916,35 @@ VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
   // Everything else is implicitly initialized to false.
 }
 
+VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
+                 SourceLocation StartLoc, DeclarationNameInfo NameInfo,
+                 QualType T, TypeSourceInfo *TInfo,
+                 StorageClass SC)
+    : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
+                     StartLoc),
+      redeclarable_base(C), Init() {
+  static_assert(sizeof(VarDeclBitfields) <= sizeof(unsigned),
+                "VarDeclBitfields too large!");
+  static_assert(sizeof(ParmVarDeclBitfields) <= sizeof(unsigned),
+                "ParmVarDeclBitfields too large!");
+  static_assert(sizeof(NonParmVarDeclBitfields) <= sizeof(unsigned),
+                "NonParmVarDeclBitfields too large!");
+  AllBits = 0;
+  VarDeclBits.SClass = SC;
+  // Everything else is implicitly initialized to false.
+}
+
 VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartL, SourceLocation IdL,
                          IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S) {
   return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, Id, T, TInfo, S);
+}
+
+VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
+                         SourceLocation StartL, DeclarationNameInfo NameInfo, 
+                         QualType T, TypeSourceInfo *TInfo, StorageClass S) {
+  return new (C, DC) VarDecl(Var, C, DC, StartL, NameInfo, T, TInfo, S);
 }
 
 VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
