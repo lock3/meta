@@ -15041,12 +15041,30 @@ void Sema::StartDefinition(TagDecl *D) {
   D->startDefinition();
 }
 
+/// If there are any unprocessed fragments associated with the class, then
+/// we need to parse them now. Note that this happens after the class is
+/// completed.
+///
+/// Note that this is (apparently) called multiple times on the class.
+/// I don't know why.
+static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
+  if (!D) // Not a class
+    return;
+  if (D->isCXXClassMember()) // Not an outermost class
+    return;
+  if (!SemaRef.HasPendingInjections(D))
+    return;
+  SemaRef.InjectPendingDefinitions();
+}
+
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
+  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
+  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
