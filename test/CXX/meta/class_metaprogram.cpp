@@ -3,6 +3,8 @@
 #include <experimental/meta>
 
 constexpr auto fragment = __fragment struct {
+  int x = 1;
+
   int frag_num() {
     return 2;
   }
@@ -16,6 +18,7 @@ class Foo {
 
 int main() {
   Foo f;
+  assert(f.x == 1);
   assert(f.frag_num() == 2);
   return 0;
 };
