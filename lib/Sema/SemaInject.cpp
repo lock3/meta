@@ -85,6 +85,7 @@ public:
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
   Decl *InjectVarDecl(VarDecl *D);
+  Decl *InjectFieldDecl(FieldDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
   Decl *InjectDecl(Decl *D);
@@ -286,6 +287,37 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   return Var;
 }
 
+Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  CXXRecordDecl *Owner;
+  bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
+
+  Expr *BitWidth = nullptr;
+
+  // Build and check the field.
+  FieldDecl *Field = getSema().CheckFieldDecl(
+      DNI.getName(), TSI->getType(), TSI, Owner, D->getLocation(),
+      D->isMutable(), BitWidth, D->getInClassInitStyle(), D->getInnerLocStart(),
+      D->getAccess(), nullptr);
+
+  // Propagate semantic properties.
+  Field->setImplicit(D->isImplicit());
+  Field->setAccess(D->getAccess());
+
+  if (!Field->isInvalidDecl())
+    Field->setInvalidDecl(Invalid);
+
+  Owner->addDecl(Field);
+
+  // If the field has an initializer, add it to the Fragment so that we
+  // can process it later.
+  if (D->hasInClassInitializer())
+    InjectedDefinitions.push_back(InjectedDef(D, Field));
+
+  return Field;
+}
+
 Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
   DeclarationNameInfo DNI;
@@ -361,6 +393,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   switch (D->getKind()) {
   case Decl::Var:
     return InjectVarDecl(cast<VarDecl>(D));
+  case Decl::Field:
+    return InjectFieldDecl(cast<FieldDecl>(D));
   case Decl::CXXMethod:
   case Decl::CXXConstructor:
   case Decl::CXXDestructor:
