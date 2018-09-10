@@ -74,20 +74,19 @@ struct Variable {
       Base = VD->getType();
     else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
       Base = MT->getType();
-    // Else refers to 'this' pointer or temporary. Should we set the correct
-    // type for this?
+    else
+      assert(!FDs.empty() && "Not yet supported for temporary and this.");
 
-    int Derefs = 0;
     for (auto It = FDs.rbegin(); It != FDs.rend(); ++It) {
       if (*It) {
+        assert(isThisPointer() || isTemporary() ||
+               (*It)->getParent() == Base->getAsCXXRecordDecl());
         Base = (*It)->getType();
         break;
       } else {
-        ++Derefs;
+        Base = getPointeeType(Base);
       }
     }
-    while (Derefs--)
-      Base = getPointeeType(Base);
     return Base;
   }
 
