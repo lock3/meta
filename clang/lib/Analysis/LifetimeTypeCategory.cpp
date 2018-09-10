@@ -305,6 +305,11 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
   if (!FD)
     return false;
 
+  // std::begin, std::end free functions.
+  if (FD->isInStdNamespace() && FD->getDeclName().isIdentifier() &&
+      (FD->getName() == "begin" || FD->getName() == "end"))
+    return true;
+
   if (ArgNum >= 0) {
     if (static_cast<size_t>(ArgNum) >= FD->param_size())
       return false;
@@ -321,11 +326,14 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
       return true;
     if (FD->isOverloadedOperator()) {
       return FD->getOverloadedOperator() == OO_Subscript ||
-             FD->getOverloadedOperator() == OO_Star;
+             FD->getOverloadedOperator() == OO_Star ||
+             FD->getOverloadedOperator() == OO_Arrow;
     } else {
       return FD->getDeclName().isIdentifier() &&
              (FD->getName() == "at" || FD->getName() == "data" ||
-              FD->getName() == "begin" || FD->getName() == "end");
+              FD->getName() == "begin" || FD->getName() == "end" ||
+              FD->getName() == "rbegin" || FD->getName() == "rend" ||
+              FD->getName() == "back" || FD->getName() == "front");
     }
   }
   return false;
