@@ -80,7 +80,9 @@ struct Variable {
     for (auto It = FDs.rbegin(); It != FDs.rend(); ++It) {
       if (*It) {
         assert(isThisPointer() || isTemporary() ||
-               (*It)->getParent() == Base->getAsCXXRecordDecl());
+               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
+               Base->getAsCXXRecordDecl()->isDerivedFrom(
+                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
         Base = (*It)->getType();
         break;
       } else {
