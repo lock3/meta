@@ -2307,6 +2307,7 @@ public:
 
   /// \brief Calls D->CompletedDefinition().
   void CompleteDefinition(RecordDecl *D);
+  void CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map);
 
   /// ActOnTagStartDefinition - Invoked when we have entered the
   /// scope of a tag's definition (e.g., for an enumeration, class,

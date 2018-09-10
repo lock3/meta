@@ -15028,7 +15028,7 @@ CreateNewDecl:
   if (Invalid && getLangOpts().CPlusPlus) {
     if (New->isBeingDefined())
       if (auto RD = dyn_cast<RecordDecl>(New))
-        RD->completeDefinition();
+        CompleteDefinition(RD);
     return nullptr;
   } else if (SkipBody && SkipBody->ShouldSkip) {
     return SkipBody->Previous;
@@ -15043,6 +15043,10 @@ void Sema::StartDefinition(TagDecl *D) {
 
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
+}
+
+void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
+  D->completeDefinition(Map);
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
@@ -15125,7 +15129,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   if (Tag->isBeingDefined()) {
     assert(Tag->isInvalidDecl() && "We should already have completed it");
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   if (isa<CXXRecordDecl>(Tag)) {
@@ -15168,7 +15172,7 @@ void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
   // Make sure we "complete" the definition even it is invalid.
   if (Tag->isBeingDefined()) {
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   // We're undoing ActOnTagStartDefinition here, not
@@ -16112,7 +16116,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
                 Record->setInvalidDecl();
               }
             }
-            CXXRecord->completeDefinition(&FinalOverriders);
+            CompleteDefinition(CXXRecord, &FinalOverriders);
             Completed = true;
           }
         }
@@ -16120,7 +16124,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
     }
 
     if (!Completed)
-      Record->completeDefinition();
+      CompleteDefinition(Record);
 
     // Handle attributes before checking the layout.
     ProcessDeclAttributeList(S, Record, Attrs);
