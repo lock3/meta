@@ -123,6 +123,7 @@ namespace clang {
   class FunctionProtoType;
   class FunctionTemplateDecl;
   class ImplicitConversionSequence;
+  class InjectionContext;
   typedef MutableArrayRef<ImplicitConversionSequence> ConversionSequenceList;
   class InitListExpr;
   class InitializationKind;
@@ -655,6 +656,12 @@ public:
     LateTemplateParserCleanup = LTPCleanup;
     OpaqueParser = P;
   }
+
+  /// When injecting class fragments, definitions of member functions are
+  /// not injected immediately. They are deferred, just as they are during
+  /// parsing. These injections are processed when the outermost class is
+  /// completed.
+  std::deque<InjectionContext *> PendingClassMemberInjections;
 
   class DelayedDiagnostics;
 
@@ -10125,6 +10132,10 @@ public:
   bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
   bool ApplyEffects(SourceLocation POI,
 		    SmallVectorImpl<EvalEffect> &Injections);
+  bool HasPendingInjections(DeclContext *D);
+  void InjectPendingDefinitions();
+  void InjectPendingDefinitions(InjectionContext *Cxt);
+  void InjectPendingDefinition(InjectionContext *Cxt, Decl *Frag, Decl *New);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 

@@ -9382,6 +9382,11 @@ def note_await_ready_no_bool_conversion : Note<
 let CategoryName = "Injection Issue" in {
 def err_not_a_fragment : Error<
   "expression is not a fragment">;
+def err_invalid_injection : Error<
+  "injecting %select{statements|class members|namespace members}0 into "
+  "%select{a function|a class|a namespace|global scope}1">;
+def err_injecting_local_into_invalid_scope : Error<
+  "cannot inject a local variable into %select{namespace|class}0 scope">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

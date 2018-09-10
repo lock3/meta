@@ -498,11 +498,91 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
   return new (Context) CXXInjectionStmt(Loc, Fragment);
 }
 
+// Returns an integer value describing the target context of the injection.
+// This correlates to the second %select in err_invalid_injection.
+static int DescribeInjectionTarget(DeclContext *DC) {
+  if (DC->isFunctionOrMethod())
+    return 0;
+  else if (DC->isRecord())
+    return 1;
+  else if (DC->isNamespace())
+    return 2;
+  else if (DC->isTranslationUnit())
+    return 3;
+  else
+    llvm_unreachable("Invalid injection context");
+}
+
+struct TypedValue
+{
+  QualType Type;
+  APValue Value;
+};
+
+// Generate an error injecting a declaration of kind SK into the given
+// declaration context. Returns false. Note that SK correlates to the first
+// %select in err_invalid_injection.
+static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
+                             DeclContext *DC) {
+  S.Diag(POI, diag::err_invalid_injection) << SK << DescribeInjectionTarget(DC);
+  return false;
+}
+
+static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
+                                   DeclContext *Injection,
+                                   DeclContext *Injectee) {
+  if (Injection->isRecord() && !Injectee->isRecord()) {
+    InvalidInjection(SemaRef, POI, 1, Injectee);
+    return false;
+  } else if (Injection->isFileContext() && !Injectee->isFileContext()) {
+    InvalidInjection(SemaRef, POI, 0, Injectee);
+    return false;
+  }
+  return true;
+}
+
 /// Inject a fragment into the current context.
 bool Sema::InjectFragment(SourceLocation POI,
                           const Decl *Injection,
                           Decl *Injectee) {
-  return true;
+  assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
+  DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
+  DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
+
+  if (!CheckInjectionContexts(*this, POI, InjectionDC, InjecteeDC))
+    return false;
+
+  ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+
+  // Establish the injection context and register the substitutions.
+  InjectionContext *Cxt = new InjectionContext(*this);
+  // Cxt->AddDeclSubstitution(Injection, Injectee);
+
+  // Inject each declaration in the fragment.
+  for (Decl *D : InjectionDC->decls()) {
+    // Never inject injected class names.
+    if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
+      if (Class->isInjectedClassName())
+        continue;
+
+    Decl *R = Cxt->InjectDecl(D);
+    if (!R || R->isInvalidDecl()) {
+      Injectee->setInvalidDecl(true);
+      continue;
+    }
+  }
+
+  // If we're injecting into a class and have pending definitions, attach
+  // those to the class for subsequent analysis.
+  if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee)) {
+    if (!Injectee->isInvalidDecl() && !Cxt->InjectedDefinitions.empty()) {
+      PendingClassMemberInjections.push_back(Cxt->Detach());
+      return true;
+    }
+  }
+
+  delete Cxt;
+  return !Injectee->isInvalidDecl();
 }
 
 static const Decl *
@@ -579,4 +659,76 @@ bool Sema::ApplyEffects(SourceLocation POI,
       Ok &= ApplyDiagnostic(*this, POI, *Effect.DiagnosticArg);
   }
   return Ok;
+}
+
+
+/// Check if there are any pending definitions of member functions for
+/// this class or any of its nested class definitions. We can simply look
+/// at the most recent injection; if it's D or declared inside D, then
+/// the answer is yes. Otherwise the answer is no.
+///
+/// We need to check for this whenever a class is completed during an
+/// injection. We don't want to prematurely inject definitions.
+///
+/// FIXME: It's likely that this wouldn't be necessarily if we integrated
+/// injection contexts into the template instantiation context; they are
+/// somewhat similar.
+bool Sema::HasPendingInjections(DeclContext *D) {
+  bool is_empty = PendingClassMemberInjections.empty();
+  if (is_empty)
+    return false;
+  InjectionContext *Cxt = PendingClassMemberInjections.back();
+  assert(!Cxt->InjectedDefinitions.empty() && "bad injection queue");
+  InjectedDef& Def = Cxt->InjectedDefinitions.front();
+  DeclContext *DC = Def.Injected->getDeclContext();
+  while (!DC->isFileContext()) {
+    if (DC == D)
+      return true;
+    DC = DC->getParent();
+  }
+  return false;
+}
+
+void Sema::InjectPendingDefinitions() {
+  while (!PendingClassMemberInjections.empty()) {
+    InjectionContext *Cxt = PendingClassMemberInjections.back();
+    PendingClassMemberInjections.pop_back();
+    InjectPendingDefinitions(Cxt);
+  }
+}
+
+void Sema::InjectPendingDefinitions(InjectionContext *Cxt) {
+  Cxt->Attach();
+  for (InjectedDef& Def : Cxt->InjectedDefinitions)
+    InjectPendingDefinition(Cxt, Def.Fragment, Def.Injected);
+  delete Cxt;
+}
+
+void Sema::InjectPendingDefinition(InjectionContext *Cxt,
+                                   Decl *Frag,
+                                   Decl *New) {
+  // FIXME: Everything should already be parsed
+  // this should be unncessary
+  PushFunctionScope();
+
+  // Switch to the class enclosing the newly injected declaration.
+  ContextRAII ClassCxt (*this, New->getDeclContext());
+
+  if (FieldDecl *OldField = dyn_cast<FieldDecl>(Frag)) {
+    FieldDecl *NewField = cast<FieldDecl>(New);
+    ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());
+    if (Init.isInvalid())
+      NewField->setInvalidDecl();
+    else
+      NewField->setInClassInitializer(Init.get());
+  }
+  else if (CXXMethodDecl *OldMethod = dyn_cast<CXXMethodDecl>(Frag)) {
+    CXXMethodDecl *NewMethod = cast<CXXMethodDecl>(New);
+    ContextRAII MethodCxt (*this, NewMethod);
+    StmtResult Body = Cxt->TransformStmt(OldMethod->getBody());
+    if (Body.isInvalid())
+      NewMethod->setInvalidDecl();
+    else
+      NewMethod->setBody(Body.get());
+  }
 }
