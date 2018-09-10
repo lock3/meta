@@ -25,6 +25,257 @@
 
 using namespace clang;
 
+
+namespace clang {
+
+/// Records information about a definition inside a fragment that must be
+/// processed later. These are typically fields and methods.
+struct InjectedDef {
+  InjectedDef(Decl *F, Decl *I) : Fragment(F), Injected(I) { }
+
+  /// The declaration within the fragment.
+  Decl *Fragment;
+
+  /// The injected declaration.
+  Decl *Injected;
+};
+
+class InjectionContext;
+
+/// \brief An injection context. This is declared to establish a set of
+/// substitutions during an injection.
+class InjectionContext : public TreeTransform<InjectionContext> {
+   using Base = TreeTransform<InjectionContext>;
+public:
+  InjectionContext(Sema &SemaRef) : Base(SemaRef) { }
+
+  ASTContext &getContext() { return getSema().Context; }
+
+  /// Detach the context from the semantics object. Returns this object for
+  /// convenience.
+  InjectionContext *Detach() {
+    return this;
+  }
+
+  /// Re-attach the context to the context stack.
+  void Attach() {
+  }
+
+  /// Returns a replacement for D if a substitution has been registered or
+  /// nullptr if no such replacement exists.
+  Decl *GetDeclReplacement(Decl *D) {
+    auto Iter = TransformedLocalDecls.find(D);
+    if (Iter != TransformedLocalDecls.end())
+      return Iter->second;
+    else
+      return nullptr;
+  }
+
+  /// Returns true if D is within an injected fragment or cloned declaration.
+  bool IsInInjection(Decl *D);
+
+  DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
+    DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
+    return TransformDeclarationNameInfo(DNI);
+  }
+
+  bool InjectDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
+		   TypeSourceInfo *&TSI);
+  void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
+  bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
+                              TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
+  Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
+  Decl *InjectDeclImpl(Decl *D);
+  Decl *InjectDecl(Decl *D);
+
+  // Members
+
+  /// \brief A list of declarations whose definitions have not yet been
+  /// injected. These are processed when a class receiving injections is
+  /// completed.
+  llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
+};
+
+bool InjectionContext::IsInInjection(Decl *D) {
+  return true;
+}
+
+// Inject the name and the type of a declarator declaration. Sets the
+// declaration name info, type, and owner. Returns true if the declarator
+// is invalid.
+//
+// FIXME: If the declarator has a nested names specifier, rebuild that
+// also. That potentially modifies the owner of the declaration
+bool InjectionContext::InjectDeclarator(DeclaratorDecl *D,
+                                        DeclarationNameInfo &DNI,
+                                        TypeSourceInfo *&TSI) {
+  bool Invalid = false;
+
+  // Rebuild the name.
+  DNI = TransformDeclarationName(D);
+  if (D->getDeclName().isEmpty() != DNI.getName().isEmpty()) {
+    DNI = DeclarationNameInfo(D->getDeclName(), D->getLocation());
+    Invalid = true;
+  }
+
+  // Rebuild the type.
+  TSI = TransformType(D->getTypeSourceInfo());
+  if (!TSI) {
+    TSI = D->getTypeSourceInfo();
+    Invalid = true;
+  }
+
+  return Invalid;
+}
+
+void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
+                                           FunctionDecl* New) {
+  // Make sure the parameters are actually bound to the function.
+  TypeSourceInfo *TSI = New->getTypeSourceInfo();
+  FunctionProtoTypeLoc TL = TSI->getTypeLoc().castAs<FunctionProtoTypeLoc>();
+  New->setParams(TL.getParams());
+
+  // Update the parameters their owning functions and register substitutions
+  // as needed. Note that we automatically register substitutions for injected
+  // parameters.
+  unsigned OldIndex = 0;
+  unsigned NewIndex = 0;
+  auto OldParms = Old->parameters();
+  auto NewParms = New->parameters();
+  if (OldParms.size() > 0) {
+    do {
+      ParmVarDecl *OldParm = OldParms[OldIndex++];
+      ParmVarDecl *NewParm = NewParms[NewIndex++];
+      NewParm->setOwningFunction(New);
+    } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
+  } else {
+    assert(NewParms.size() == 0);
+  }
+  assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+}
+
+// Inject the name and the type of a declarator declaration. Sets the
+// declaration name info, type, and owner. Returns true if the declarator
+// is invalid.
+bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
+                                              DeclarationNameInfo &DNI,
+                                              TypeSourceInfo *&TSI,
+                                              CXXRecordDecl *&Owner) {
+  bool Invalid = InjectDeclarator(D, DNI, TSI);
+  Owner = cast<CXXRecordDecl>(getSema().CurContext);
+  return Invalid;
+}
+
+
+Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
+  ASTContext &AST = getContext();
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  CXXRecordDecl *Owner;
+  bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
+
+  // Build the underlying method.
+  //
+  // FIXME: Should we propagate implicit operators?
+  CXXMethodDecl *Method;
+  if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
+    Method = CXXConstructorDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
+                                        TSI->getType(), TSI,
+                                        Ctor->isExplicit(),
+                                        Ctor->isInlineSpecified(),
+                                        Ctor->isImplicit(),
+                                        Ctor->isConstexpr());
+    Method->setRangeEnd(D->getEndLoc());
+  } else if (CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D)) {
+    Method = CXXDestructorDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
+                                       TSI->getType(), TSI,
+                                       Dtor->isInlineSpecified(),
+                                       Dtor->isImplicit());
+    Method->setRangeEnd(D->getEndLoc());
+  } else if (CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D)) {
+    Method = CXXConversionDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
+                                       TSI->getType(), TSI,
+                                       Conv->isInlineSpecified(),
+                                       Conv->isExplicit(), Conv->isConstexpr(),
+                                       Conv->getEndLoc());
+  } else {
+    Method = CXXMethodDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
+                                   TSI->getType(), TSI,
+                                   D->isStatic() ? SC_Static : SC_None,
+                                   D->isInlineSpecified(), D->isConstexpr(),
+                                   D->getEndLoc());
+  }
+  UpdateFunctionParms(D, Method);
+
+  // Propagate semantic properties.
+  Method->setImplicit(D->isImplicit());
+  Method->setAccess(D->getAccess());
+
+  // Propagate virtual flags.
+  Method->setVirtualAsWritten(D->isVirtualAsWritten());
+  if (D->isPure())
+    SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+
+  Method->setDeletedAsWritten(D->isDeletedAsWritten());
+  Method->setDefaulted(D->isDefaulted());
+
+  if (!Method->isInvalidDecl())
+    Method->setInvalidDecl(Invalid);
+
+  // Don't register the declaration if we're injecting the declaration of
+  // a template-declaration. We'll add the template later.
+  if (!D->getDescribedFunctionTemplate())
+    Owner->addDecl(Method);
+
+  // If the method is has a body, add it to the context so that we can
+  // process it later. Note that deleted/defaulted definitions are just
+  // flags processed above. Ignore the definition if we've marked this
+  // as pure virtual.
+  if (D->hasBody() && !Method->isPure())
+    InjectedDefinitions.push_back(InjectedDef(D, Method));
+
+  return Method;
+}
+
+Decl *InjectionContext::InjectDeclImpl(Decl *D) {
+  // Inject the declaration.
+  switch (D->getKind()) {
+  case Decl::CXXMethod:
+  case Decl::CXXConstructor:
+  case Decl::CXXDestructor:
+  case Decl::CXXConversion:
+    return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
+  default:
+    break;
+  }
+  D->dump();
+  llvm_unreachable("unhandled declaration");
+}
+
+/// \brief Injects a new version of the declaration. Do not use this to
+/// resolve references to declarations; use ResolveDecl instead.
+Decl *InjectionContext::InjectDecl(Decl *D) {
+  assert(!GetDeclReplacement(D) && "Declaration already injected");
+
+  // If the declaration does not appear in the context, then it need
+  // not be resolved.
+  if (!IsInInjection(D))
+    return D;
+
+  Decl* R = InjectDeclImpl(D);
+  if (!R)
+    return nullptr;
+
+  // If we injected a top-level declaration, notify the AST consumer,
+  // so that it can be processed for code generation.
+  if (isa<TranslationUnitDecl>(R->getDeclContext()))
+    getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
+
+  return R;
+}
+
+} // namespace clang
+
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders.
 Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc) {
