@@ -3213,6 +3213,8 @@ def warn_return_null : Warning<"returning a%select{| possibly}0 null Pointer whe
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_return_wrong_pset : Warning<"returning a Pointer with points-to set %0 where points-to set %1 is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
+def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
 
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;

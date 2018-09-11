@@ -2014,6 +2014,10 @@ public:
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_return_null) << possibly;
   }
+  void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_non_static_throw) << ThrownPset;
+  }
   void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
