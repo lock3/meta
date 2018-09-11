@@ -736,8 +736,7 @@ void return_pointer() {
 
   auto it3 = std::begin(v1);
   int *pmem = v1.data();
-  // TODO: it3 should point to v1'
-  __lifetime_pset(it3);  // expected-warning {{pset(it3) = ((static))}}
+  __lifetime_pset(it3);  // expected-warning {{pset(it3) = (v1')}}
   __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
   __lifetime_pset(p);    // expected-warning {{pset(p) = (v1')}}
 

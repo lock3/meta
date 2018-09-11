@@ -409,6 +409,7 @@ public:
     if (Pointee.isNull())
       return;
     auto PointeeCat = classifyTypeCategory(Pointee);
+    bool IsLifetimeConst = isLifetimeConst(FD, Pointee, ArgNum);
 
     if (ParamType->isRValueReferenceType() && PointeeCat == TypeCategory::Owner)
       return;
@@ -425,7 +426,9 @@ public:
     Args.Input.emplace_back(Loc, Set, ParamType);
     diagnoseInput(Args.Input.back(), IsInputThis);
 
-    if ((Pointee.isConstQualified() || IsInputThis ||
+    // TODO: to support std::begin, we consider lifetime_const arguments as
+    //       input. In the future we might have a separate annotation: gsl::in.
+    if ((Pointee.isConstQualified() || IsInputThis || IsLifetimeConst ||
          ParamType->isRValueReferenceType()) &&
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer)) {
@@ -437,8 +440,7 @@ public:
       Args.Output.emplace_back(Loc, Set, Pointee);
     // Add deref this to Output for Pointer ctor?
 
-    if (PointeeCat == TypeCategory::Owner &&
-        !isLifetimeConst(FD, Pointee, ArgNum))
+    if (PointeeCat == TypeCategory::Owner && !IsLifetimeConst)
       Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
   }
 
