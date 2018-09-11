@@ -218,7 +218,16 @@ public:
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
-    setPSet(E, getPSet(E->getTrueExpr()) + getPSet(E->getFalseExpr()));
+    auto LHS = getPSet(E->getTrueExpr(), /*AllowNonExisting=*/true);
+    auto RHS = getPSet(E->getFalseExpr(), /*AllowNonExisting=*/true);
+    // If the condition is trivially true/false, the corresponding branch
+    // will be pruned from the CFG and we will not find a pset of it.
+    if (LHS.isUnknown())
+      setPSet(E, RHS);
+    else if (RHS.isUnknown())
+      setPSet(E, LHS);
+    else
+      setPSet(E, LHS + RHS);
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
@@ -706,7 +715,7 @@ public:
 
   PSet getPSet(Variable P);
 
-  PSet getPSet(const Expr *E) {
+  PSet getPSet(const Expr *E, bool AllowNonExisting = false) {
     E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
@@ -714,8 +723,9 @@ public:
       return I->second;
     } else {
       auto I = PSetsOfExpr.find(E);
+      assert(AllowNonExisting || I != PSetsOfExpr.end());
       if (I == PSetsOfExpr.end())
-        return PSet::singleton(Variable::temporary());
+        return {};
       return I->second;
     }
   }

@@ -984,3 +984,12 @@ void default_argument() {
   p = staticf();
   __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
 }
+
+void pruned_branch(bool cond) {
+  int i;
+  int *trivial = true ? &i : nullptr;
+  __lifetime_pset(trivial); // expected-warning {{(i)}}
+
+  int *non_trivial = cond ? &i : nullptr;
+  __lifetime_pset(non_trivial); // expected-warning {{((null), i)}}
+}
