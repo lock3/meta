@@ -90,6 +90,7 @@ public:
   Decl *InjectDeclImpl(Decl *D);
   Decl *InjectDecl(Decl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
+  Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
 
   // Members
 
@@ -402,6 +403,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::AccessSpec:
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
+  case Decl::CXXMetaprogram:
+    return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
   default:
     break;
   }
@@ -435,6 +438,23 @@ Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
   CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return AccessSpecDecl::Create(
       getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
+}
+
+Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  unsigned ScopeFlags; // Unused
+  Decl *New = getSema().ActOnCXXMetaprogramDecl(
+    /*Scope=*/nullptr, D->getLocation(), ScopeFlags);
+
+  getSema().ActOnStartCXXMetaprogramDecl(/*Scope=*/nullptr, New);
+  StmtResult S = TransformStmt(D->getBody());
+  if (!S.isInvalid())
+    getSema().ActOnFinishCXXMetaprogramDecl(/*Scope=*/nullptr, New, S.get());
+  else
+    getSema().ActOnCXXMetaprogramDeclError(/*Scope=*/nullptr, New);
+
+  return New;
 }
 
 } // namespace clang
