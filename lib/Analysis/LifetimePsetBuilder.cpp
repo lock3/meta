@@ -400,7 +400,7 @@ public:
   };
 
   void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
-                         PSet Set, QualType ParamType, bool IsInputThis,
+                         const Expr *Arg, QualType ParamType, bool IsInputThis,
                          CallArguments &Args) {
     // TODO implement aggregates
     if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
@@ -417,13 +417,13 @@ public:
     if (ParamType->isLValueReferenceType() &&
         PointeeCat == TypeCategory::Owner && Pointee.isConstQualified()) {
       // all Owner arguments passed as const Owner&
-      Args.Input_weak.emplace_back(Loc, Set, ParamType);
+      Args.Input_weak.emplace_back(Loc, getPSet(Arg), ParamType);
       // the deref locations of Owners passed by const Owner&
-      Args.Input_weak.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      Args.Input_weak.emplace_back(Loc, derefPSet(getPSet(Arg), Loc), Pointee);
       return;
     }
 
-    Args.Input.emplace_back(Loc, Set, ParamType);
+    Args.Input.emplace_back(Loc, getPSet(Arg), ParamType);
     diagnoseInput(Args.Input.back(), IsInputThis);
 
     // TODO: to support std::begin, we consider lifetime_const arguments as
@@ -432,16 +432,16 @@ public:
          ParamType->isRValueReferenceType()) &&
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer)) {
-      Args.Input.emplace_back(Loc, derefPSet(Set, Loc), Pointee);
+      Args.Input.emplace_back(Loc, derefPSet(getPSet(Arg), Loc), Pointee);
       diagnoseInput(Args.Input.back(), IsInputThis);
     }
 
     if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
-      Args.Output.emplace_back(Loc, Set, Pointee);
+      Args.Output.emplace_back(Loc, getPSet(Arg), Pointee);
     // Add deref this to Output for Pointer ctor?
 
     if (PointeeCat == TypeCategory::Owner && !IsLifetimeConst)
-      Args.Oinvalidate.emplace_back(Loc, Set, Pointee);
+      Args.Oinvalidate.emplace_back(Loc, getPSet(Arg), Pointee);
   }
 
   /// Returns the psets of each expressions in PinArgs,
@@ -563,8 +563,8 @@ public:
         else
           return ParamTypes[I];
       }();
-      PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(),
-                        getPSet(Arg), ParamType, /*IsInputThis=*/false, Args);
+      PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(), Arg,
+                        ParamType, /*IsInputThis=*/false, Args);
     }
 
     if (CT.ClassDecl) {
@@ -578,8 +578,8 @@ public:
       ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
 
       PushCallArguments(CallE->getDirectCallee(), -1,
-                        CallArgs.This->getLocStart(), getPSet(CallArgs.This),
-                        ObjectType, /*IsInputThis=*/true, Args);
+                        CallArgs.This->getLocStart(), CallArgs.This, ObjectType,
+                        /*IsInputThis=*/true, Args);
     }
 
     // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
