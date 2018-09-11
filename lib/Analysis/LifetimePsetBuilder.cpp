@@ -233,11 +233,16 @@ public:
       I = I->getSemanticForm();
 
     if (I->getType()->isPointerType()) {
-      if (I->getNumInits() == 0)
+      if (I->getNumInits() == 0) {
         setPSet(I, PSet::null(I->getLocStart()));
-      else if (I->getNumInits() == 1)
+        return;
+      }
+      if (I->getNumInits() == 1) {
         setPSet(I, getPSet(I->getInit(0)));
+        return;
+      }
     }
+    setPSet(I, PSet::singleton(Variable::temporary()));
   }
 
   void VisitExplicitCastExpr(const ExplicitCastExpr *E) {
@@ -248,6 +253,9 @@ public:
       // Those casts are forbidden by the type profile
       setPSet(
           E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
+      return;
+    case CK_ToVoid:
+      // No psets involved
       return;
     default:
       setPSet(E, getPSet(E->getSubExpr()));
@@ -346,6 +354,9 @@ public:
         setPSet(E, derefPSet(getPSet(E->getArg(0)), E->getLocation()));
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));
+    } else {
+      // Constructing a temporary owner/value
+      setPSet(E, PSet::singleton(Variable::temporary()));
     }
   }
 
