@@ -3,7 +3,11 @@
 // TODO: regression tests should not include the standard libary,
 //       but we should have a way to test against real implementations.
 namespace std {
-struct any {};
+struct any {
+  any();
+  any(const any&);
+  ~any();
+};
 
 template <typename T>
 struct basic_regex {};
@@ -67,7 +71,11 @@ template <typename T>
 struct priority_queue {};
 
 template <typename... T>
-struct variant {};
+struct variant {
+  variant();
+  variant(const variant&);
+  ~variant();
+};
 
 template <typename T>
 struct reference_wrapper {
@@ -117,8 +125,6 @@ void owner() {
   __lifetime_type_category<decltype(std::queue<int>())>();           // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::priority_queue<int>())>();  // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::optional<int>())>();        // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Owner}}
   using IntVector = std::vector<int>;
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_implicit_owner())>(); // expected-warning {{Owner}}
@@ -161,6 +167,8 @@ void aggregate() {
 }
 
 void value() {
+  __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Value}}
+  __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Value}}
   // no public data members
   class C1 {
     C1() { i = 1; }
