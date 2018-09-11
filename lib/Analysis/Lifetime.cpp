@@ -97,6 +97,7 @@ public:
     AC.getCFGBuildOptions().AddStaticInitBranches = true;
     AC.getCFGBuildOptions().AddCXXNewAllocator = true;
     AC.getCFGBuildOptions().AddExprWithCleanups = true;
+    AC.getCFGBuildOptions().AddCXXDefaultInitExprInCtors = true;
     // TODO AddTemporaryDtors
     // TODO AddEHEdges
     AC.getCFGBuildOptions().setAllAlwaysAdd();
