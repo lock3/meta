@@ -376,8 +376,9 @@ public:
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
     if (!isPointer(TE->getSubExpr()))
       return;
-    if (!getPSet(TE->getSubExpr()).isStatic())
-      Reporter.warnDerefDangling(TE->getLocEnd(), false);
+    PSet ThrownPSet = getPSet(TE->getSubExpr());
+    if (!ThrownPSet.isStatic())
+      Reporter.warnNonStaticThrow(TE->getLocEnd(), ThrownPSet.str());
   }
 
   struct CallArgument {

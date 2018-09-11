@@ -903,7 +903,7 @@ void kill_materialized_temporary() {
 int throw_local() {
   int i;
   // TODO: better error message
-  throw &i; // expected-warning {{dereferencing a dangling pointer}}
+  throw &i; // expected-warning {{throwing a pointer with points-to set (i) where points-to set ((static)) is expected}}
 }
 
 template <class T>
