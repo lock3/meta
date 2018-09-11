@@ -84,6 +84,7 @@ public:
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
+  Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectFieldDecl(FieldDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
@@ -156,6 +157,37 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
     assert(NewParms.size() == 0);
   }
   assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+}
+
+Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
+  bool Invalid = false;
+
+  DeclContext *Owner = getSema().CurContext;
+
+  // Transform the type. If this fails, just retain the original, but
+  // invalidate the declaration later.
+  TypeSourceInfo *TSI = TransformType(D->getTypeSourceInfo());
+  if (!TSI) {
+    TSI = D->getTypeSourceInfo();
+    Invalid = true;
+  }
+
+  // Create the new typedef
+  TypedefNameDecl *Typedef;
+  if (isa<TypeAliasDecl>(D))
+    Typedef = TypeAliasDecl::Create(
+        getContext(), Owner, D->getBeginLoc(), D->getLocation(),
+        D->getIdentifier(), TSI);
+  else
+    Typedef = TypedefDecl::Create(
+        getContext(), Owner, D->getBeginLoc(), D->getLocation(),
+        D->getIdentifier(), TSI);
+
+  Typedef->setAccess(D->getAccess());
+  Typedef->setInvalidDecl(Invalid);
+  Owner->addDecl(Typedef);
+
+  return Typedef;
 }
 
 // Inject the name and the type of a declarator declaration. Sets the
@@ -392,6 +424,9 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   // Inject the declaration.
   switch (D->getKind()) {
+  case Decl::Typedef:
+  case Decl::TypeAlias:
+    return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
   case Decl::Var:
     return InjectVarDecl(cast<VarDecl>(D));
   case Decl::Field:
