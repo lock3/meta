@@ -7,6 +7,8 @@ template <typename T>
 bool __lifetime_pset_ref(const T &) { return true; }
 
 namespace std {
+template <typename T>
+typename T::iterator begin(T&);
 
 template <typename T>
 struct vector_iterator {
@@ -732,7 +734,10 @@ void return_pointer() {
   __lifetime_pset_ref(r); // expected-warning {{pset(r) = (v1')}}
   __lifetime_pset(p);     // expected-warning {{pset(p) = (v1')}}
 
+  auto it3 = std::begin(v1);
   int *pmem = v1.data();
+  // TODO: it3 should point to v1'
+  __lifetime_pset(it3);  // expected-warning {{pset(it3) = ((static))}}
   __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
   __lifetime_pset(p);    // expected-warning {{pset(p) = (v1')}}
 
