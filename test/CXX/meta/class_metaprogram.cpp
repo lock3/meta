@@ -18,6 +18,8 @@ constexpr auto fragment = __fragment struct {
   int frag_num() {
     return 2;
   }
+
+  typedef int fragment_int;
 };
 
 class Foo {
@@ -28,8 +30,12 @@ class Foo {
 
 int main() {
   Foo f;
+
   assert(f.x == 1);
   assert(f.frag_num() == 2);
   assert(f.inner_frag_num() == 0);
+
+  Foo::fragment_int int_of_injected_type = 1;
+  assert(static_cast<int>(int_of_injected_type) == 1);
   return 0;
 };
