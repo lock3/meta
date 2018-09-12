@@ -207,18 +207,14 @@ public:
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
-    auto LHS = getPSet(E->getTrueExpr(), /*AllowNonExisting=*/true);
-    auto RHS = getPSet(E->getFalseExpr(), /*AllowNonExisting=*/true);
     // If the condition is trivially true/false, the corresponding branch
     // will be pruned from the CFG and we will not find a pset of it.
-    if (LHS.isUnknown())
-      setPSet(E, RHS);
-    else if (RHS.isUnknown())
-      setPSet(E, LHS);
-    else {
-      assert(!LHS.isUnknown() && !RHS.isUnknown());
-      setPSet(E, LHS + RHS);
-    }
+    // With AllowNonExisting, getPSet() will then return (unknown).
+    // Note that a pset could also be explicitly unknown to suppress
+    // further warnings after the first violation was diagnosed.
+    auto LHS = getPSet(E->getTrueExpr(), /*AllowNonExisting=*/true);
+    auto RHS = getPSet(E->getFalseExpr(), /*AllowNonExisting=*/true);
+    setPSet(E, LHS + RHS);
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
