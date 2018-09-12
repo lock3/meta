@@ -994,18 +994,24 @@ void pruned_branch(bool cond) {
   __lifetime_pset(non_trivial); // expected-warning {{((null), i)}}
 }
 
-namespace issue23 {
-  // This uses to crash with missing pset.
-  // It's mainly about knowing if the first argument
-  // of a CXXOperatorCall is the this pointer or not.
-  class b {
-  public:
-    b(int);
-    void operator*();
-  };
-  template <typename a> void operator!=(const b &, const a &);
-  struct {
-    b c = 0;
-  } e;
-  void d() { e.c != 0; }
+namespace crashes {
+// This used to crash with missing pset.
+// It's mainly about knowing if the first argument
+// of a CXXOperatorCall is the this pointer or not.
+class b {
+public:
+  b(int);
+  void operator*();
+};
+template <typename a>
+void operator!=(const b &, const a &);
+struct {
+  b c = 0;
+} e;
+void d() { e.c != 0; }
+
+void ignore_casts() {
+  (void)bool(nullptr);
+  (void)bool(1);
 }
+} // namespace crashes

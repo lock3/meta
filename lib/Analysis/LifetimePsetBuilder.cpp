@@ -68,8 +68,11 @@ public:
                                             bool IgnoreLValueToRValue = false) {
     while (true) {
       E = E->IgnoreParens();
-      if (const auto *P = dyn_cast<ImplicitCastExpr>(E)) {
+      if (const auto *P = dyn_cast<CastExpr>(E)) {
         switch (P->getCastKind()) {
+        case CK_BitCast:
+        case CK_LValueBitCast:
+        case CK_IntegralToPointer:
         case CK_NullToPointer:
           return E;
         case CK_LValueToRValue:
@@ -112,22 +115,6 @@ public:
     for (const auto *DeclIt : DS->decls()) {
       if (const auto *VD = dyn_cast<VarDecl>(DeclIt))
         VisitVarDecl(VD);
-    }
-  }
-
-  void VisitImplicitCastExpr(const ImplicitCastExpr *E) {
-    switch (E->getCastKind()) {
-    case CK_NullToPointer:
-      setPSet(E, PSet::null(E->getExprLoc()));
-      return;
-    case CK_LValueToRValue:
-      // For L-values, the pset refers to the memory location,
-      // for non-L-values we need to get the pset.
-      if (hasPSet(E))
-        setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
-      return;
-    default:
-      return;
     }
   }
 
@@ -256,7 +243,8 @@ public:
     setPSet(I, PSet::singleton(Variable::temporary()));
   }
 
-  void VisitExplicitCastExpr(const ExplicitCastExpr *E) {
+  void VisitCastExpr(const CastExpr *E) {
+    // Some casts are transparent, see IgnoreTransparentExprs()
     switch (E->getCastKind()) {
     case CK_BitCast:
     case CK_LValueBitCast:
@@ -265,11 +253,18 @@ public:
       setPSet(
           E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
       return;
-    case CK_ToVoid:
-      // No psets involved
+    case CK_NullToPointer:
+      setPSet(E, PSet::null(E->getExprLoc()));
+      return;
+    case CK_LValueToRValue:
+      // For L-values, the pset refers to the memory location,
+      // which in turn points to the pointee. For R-values,
+      // the pset just refers to the pointee.
+      if (hasPSet(E))
+        setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
       return;
     default:
-      setPSet(E, getPSet(E->getSubExpr()));
+      llvm_unreachable("Should have been ignored in IgnoreTransparentExprs()");
       return;
     }
   }
