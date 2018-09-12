@@ -1016,3 +1016,24 @@ void ignore_casts() {
   unsigned d = 0;
 }
 } // namespace crashes
+
+namespace creduce2 {
+enum a { b };
+class c {
+public:
+  c(a);
+  void operator*();
+};
+void d() { c e = b; }
+} // namespace creduce2
+
+namespace creduce3 {
+class a {
+  void b() {
+    a c;
+    m_fn2() == c;
+  }
+  void operator==(a);
+  a m_fn2();
+};
+}
