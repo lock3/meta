@@ -364,6 +364,8 @@ public:
         setPSet(E, derefPSet(getPSet(E->getArg(0)), E->getLocation()));
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));
+      else
+        setPSet(E, PSet::invalid(InvalidationReason::NotInitialized(E->getExprLoc())));
     } else {
       // Constructing a temporary owner/value
       setPSet(E, PSet::singleton(Variable::temporary()));
@@ -663,10 +665,10 @@ public:
     };
 
     auto TC = classifyTypeCategory(CT.FTy->getReturnType());
-    if (TC == TypeCategory::Owner)
-      setPSet(CallE, PSet::singleton(Variable::temporary()));
-    else if (TC == TypeCategory::Pointer)
+    if (TC == TypeCategory::Pointer)
       setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
+    else
+      setPSet(CallE, PSet::singleton(Variable::temporary()));
 
     for (const auto &Arg : Args.Output) {
       setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
