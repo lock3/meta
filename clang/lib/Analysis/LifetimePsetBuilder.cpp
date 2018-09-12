@@ -226,8 +226,10 @@ public:
       setPSet(E, RHS);
     else if (RHS.isUnknown())
       setPSet(E, LHS);
-    else
+    else {
+      assert(!LHS.isUnknown() && !RHS.isUnknown());
       setPSet(E, LHS + RHS);
+    }
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
