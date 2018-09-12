@@ -61,6 +61,12 @@ public:
   void Attach() {
   }
 
+  /// \brief Adds a substitution from one declaration to another.
+  void AddDeclSubstitution(const Decl *Old, Decl *New) {
+    assert(TransformedLocalDecls.count(Old) == 0 && "Overwriting substitution");
+    transformedLocalDecl(const_cast<Decl*>(Old), New);
+  }
+
   /// Returns a replacement for D if a substitution has been registered or
   /// nullptr if no such replacement exists.
   Decl *GetDeclReplacement(Decl *D) {
@@ -182,6 +188,7 @@ Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
     Typedef = TypedefDecl::Create(
         getContext(), Owner, D->getBeginLoc(), D->getLocation(),
         D->getIdentifier(), TSI);
+  AddDeclSubstitution(D, Typedef);
 
   Typedef->setAccess(D->getAccess());
   Typedef->setInvalidDecl(Invalid);
@@ -268,6 +275,7 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI, TSI->getType(),
       TSI, D->getStorageClass());
+  AddDeclSubstitution(D, Var);
 
   if (D->isNRVOVariable()) {
     QualType ReturnType = cast<FunctionDecl>(Owner)->getReturnType();
@@ -333,6 +341,7 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
       DNI.getName(), TSI->getType(), TSI, Owner, D->getLocation(),
       D->isMutable(), BitWidth, D->getInClassInitStyle(), D->getInnerLocStart(),
       D->getAccess(), nullptr);
+  AddDeclSubstitution(D, Field);
 
   // Propagate semantic properties.
   Field->setImplicit(D->isImplicit());
@@ -389,6 +398,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
                                    D->isInlineSpecified(), D->isConstexpr(),
                                    D->getEndLoc());
   }
+  AddDeclSubstitution(D, Method);
   UpdateFunctionParms(D, Method);
 
   // Propagate semantic properties.
@@ -579,7 +589,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   // Build our new class implicit class to hold our fragment info.
   CXXRecordDecl *Class = CXXRecordDecl::Create(
-					       Context, TTK_Class, FD, Loc, Loc,
+					       Context, TTK_Class, CurContext, Loc, Loc,
 					       /*Id=*/nullptr,
 					       /*PrevDecl=*/nullptr);
   StartDefinition(Class);
@@ -774,7 +784,8 @@ bool Sema::InjectFragment(SourceLocation POI,
 
   // Establish the injection context and register the substitutions.
   InjectionContext *Cxt = new InjectionContext(*this);
-  // Cxt->AddDeclSubstitution(Injection, Injectee);
+  Cxt->AddDeclSubstitution(Injection, Injectee);
+  // Cxt->AddPlaceholderSubstitutions(Fragment, Class, Captures);
 
   // Inject each declaration in the fragment.
   for (Decl *D : InjectionDC->decls()) {

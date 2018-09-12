@@ -1197,7 +1197,8 @@ public:
 
   /// Determine whether this class describes a fragment object.
   bool isFragment() const {
-    return data().IsFragment;
+    auto *DD = DefinitionData;
+    return DD && DD->IsFragment;
   }
 
   void setFragment(bool IsFrag) {
