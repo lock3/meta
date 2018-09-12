@@ -103,6 +103,8 @@ public:
     }
   }
 
+  bool IsIgnoredExpr(const Expr *E) { return IgnoreTransparentExprs(E) != E; }
+
   void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
   }
@@ -245,6 +247,8 @@ public:
 
   void VisitCastExpr(const CastExpr *E) {
     // Some casts are transparent, see IgnoreTransparentExprs()
+    if (IsIgnoredExpr(E))
+      return;
     switch (E->getCastKind()) {
     case CK_BitCast:
     case CK_LValueBitCast:

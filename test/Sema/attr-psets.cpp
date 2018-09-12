@@ -1013,5 +1013,6 @@ void d() { e.c != 0; }
 void ignore_casts() {
   (void)bool(nullptr);
   (void)bool(1);
+  unsigned d = 0;
 }
 } // namespace crashes
