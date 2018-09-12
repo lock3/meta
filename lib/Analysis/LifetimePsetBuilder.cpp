@@ -522,12 +522,14 @@ public:
     std::vector<const Expr *> Arguments;
   };
 
-  CallExprArguments getArguments(const CallExpr *CallE, bool IsNonStaticMemberFunction) {
+  CallExprArguments getArguments(const CallExpr *CallE,
+                                 bool IsNonStaticMemberFunction) {
     CallExprArguments CA;
     for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
       const Expr *Arg = CallE->getArg(I);
       // For instance calls, getArg(0) is the 'this' pointer.
-      if (IsNonStaticMemberFunction && isa<CXXOperatorCallExpr>(CallE) && I == 0) {
+      if (IsNonStaticMemberFunction && isa<CXXOperatorCallExpr>(CallE) &&
+          I == 0) {
         CA.This = Arg;
         continue;
       }
@@ -556,7 +558,7 @@ public:
     CallTypes CT = getCallTypes(CalleeE);
     if (auto *OC = dyn_cast<CXXOperatorCallExpr>(CallE)) {
       assert(OC->getDirectCallee());
-      if(OC->getDirectCallee()->isCXXInstanceMember())
+      if (OC->getDirectCallee()->isCXXInstanceMember())
         CT.ClassDecl = OC->getArg(0)->getType()->getAsCXXRecordDecl();
 
       /// Special case for assignment into Pointer: copy pset

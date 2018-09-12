@@ -8,7 +8,7 @@ bool __lifetime_pset_ref(const T &) { return true; }
 
 namespace std {
 template <typename T>
-typename T::iterator begin(T&);
+typename T::iterator begin(T &);
 
 template <typename T>
 struct vector_iterator {
