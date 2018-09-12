@@ -103,7 +103,10 @@ public:
     }
   }
 
-  bool IsIgnoredExpr(const Expr *E) { return IgnoreTransparentExprs(E) != E; }
+  bool IsIgnoredStmt(const Stmt *S) {
+    const Expr *E = dyn_cast<Expr>(S);
+    return E && IgnoreTransparentExprs(E) != E;
+  }
 
   void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
@@ -121,8 +124,6 @@ public:
   }
 
   void VisitExpr(const Expr *E) {
-    if (IgnoreTransparentExprs(E) != E)
-      return;
     assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
     assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
   }
@@ -243,8 +244,6 @@ public:
 
   void VisitCastExpr(const CastExpr *E) {
     // Some casts are transparent, see IgnoreTransparentExprs()
-    if (IsIgnoredExpr(E))
-      return;
     switch (E->getCastKind()) {
     case CK_BitCast:
     case CK_LValueBitCast:
@@ -1063,7 +1062,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     switch (E.getKind()) {
     case CFGElement::Statement: {
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
-      Visit(S);
+      if (!IsIgnoredStmt(S))
+        Visit(S);
       /*llvm::errs() << "TraverseStmt\n";
       S->dump();
       llvm::errs() << "\n";*/
