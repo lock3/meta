@@ -1110,3 +1110,13 @@ a &a::operator+=(a) {
   return *this;
 }
 } // namespace creduce5
+
+namespace creduce6 {
+class a {
+protected:
+  static void b();
+};
+class c : a {
+  c() { (void)this->b; }
+};
+}

@@ -1027,7 +1027,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
         Visit(S);
 #ifndef NDEBUG
         if (auto *Ex = dyn_cast<Expr>(S)) {
-          if (Ex->isLValue() && RefersTo.find(Ex) == RefersTo.end()) {
+          if (Ex->isLValue() && !Ex->getType()->isFunctionType() &&
+              RefersTo.find(Ex) == RefersTo.end()) {
             Ex->dump();
             llvm_unreachable("Missing entry in RefersTo");
           }
