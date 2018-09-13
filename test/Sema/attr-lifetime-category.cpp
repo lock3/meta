@@ -107,6 +107,7 @@ class [[gsl::Pointer]] my_pointer {
 };
 
 struct my_implicit_owner {
+  int operator*();
   int *begin() const;
   int *end() const;
   ~my_implicit_owner();
@@ -139,9 +140,6 @@ void pointer() {
   __lifetime_type_category<decltype(std::span<int>())>();                    // expected-warning {{Pointer}}
 
   int i;
-  auto L = [&i]() { return i; };
-  __lifetime_type_category<decltype(L)>(); // expected-warning {{Pointer}}
-
   __lifetime_type_category<int *>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<int &>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Pointer}}
@@ -169,6 +167,7 @@ void aggregate() {
 void value() {
   __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Value}}
   __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Value}}
+
   // no public data members
   class C1 {
     C1() { i = 1; }
@@ -188,6 +187,8 @@ void value() {
   int i = 0;
   auto L = [i]() { return i; };
   __lifetime_type_category<decltype(L)>(); // expected-warning {{Value}}
+  auto L2 = [&i]() { return i; };
+  __lifetime_type_category<decltype(L2)>(); // expected-warning {{Value}}
 
   class C3;
   __lifetime_type_category<C3>(); // expected-warning {{Value}}

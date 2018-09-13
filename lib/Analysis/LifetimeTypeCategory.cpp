@@ -143,12 +143,10 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Pointer;
 
   // In case we do not know the pointee type fall back to value.
-  /*QualType Pointee = getPointeeType(QT);
-  if (Pointee.isNull())
-    return TypeCategory::Value;*/
+  QualType Pointee = getPointeeType(QT);
 
   // Every type that satisfies the standard Container requirements.
-  if (satisfiesContainerRequirements(R))
+  if (!Pointee.isNull() && satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
 
   // TODO: handle outside class definition 'R& operator*(T a);' .
@@ -159,32 +157,30 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
-  if (hasDerefOperations && !R->hasTrivialDestructor())
+  if (!Pointee.isNull() && hasDerefOperations && !R->hasTrivialDestructor())
     return TypeCategory::Owner;
 
   if (auto Cat = classifyStd(T))
     return *Cat;
 
   //  Every type that satisfies the Ranges TS Range concept.
-  if (satisfiesRangeConcept(R))
+  if (!Pointee.isNull() && satisfiesRangeConcept(R))
     return TypeCategory::Pointer;
 
   // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (satisfiesIteratorRequirements(R))
+  if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
     return TypeCategory::Pointer;
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (hasDerefOperations && !R->hasUserDeclaredDestructor())
+  if (!Pointee.isNull() && hasDerefOperations &&
+      !R->hasUserDeclaredDestructor())
     return TypeCategory::Pointer;
 
   // Every closure type of a lambda that captures by reference.
-  if (R->isLambda() &&
-      std::any_of(R->field_begin(), R->field_end(), [](const FieldDecl *FD) {
-        return classifyTypeCategory(FD->getType()) == TypeCategory::Pointer;
-      })) {
-    return TypeCategory::Pointer;
+  if (R->isLambda()) {
+    return TypeCategory::Value;
   }
 
   // An Aggregate is a type that is not an Indirection
