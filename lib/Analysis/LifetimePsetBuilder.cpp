@@ -562,9 +562,11 @@ public:
       if (OC->getDirectCallee()->isCXXInstanceMember())
         CT.ClassDecl = OC->getArg(0)->getType()->getAsCXXRecordDecl();
 
-      /// Special case for assignment into Pointer: copy pset
+      /// Special case for assignment of Pointer into Pointer: copy pset
       if (OC->getOperator() == OO_Equal && OC->getNumArgs() == 2 &&
           classifyTypeCategory(OC->getArg(0)->getType()) ==
+              TypeCategory::Pointer &&
+          classifyTypeCategory(OC->getArg(1)->getType()) ==
               TypeCategory::Pointer) {
         auto PSetRHS = getPSet(getPSet(OC->getArg(1)));
         setPSet(getPSet(OC->getArg(0)), PSetRHS, CallE->getExprLoc());
