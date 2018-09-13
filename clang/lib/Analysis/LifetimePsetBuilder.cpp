@@ -291,10 +291,7 @@ public:
 
   void VisitUnaryOperator(const UnaryOperator *UO) {
     switch (UO->getOpcode()) {
-    case UO_AddrOf:
-      if (hasPSet(UO))
-        setPSet(UO, getPSet(UO->getSubExpr()));
-      return;
+    case UO_AddrOf: break;
     case UO_Deref: {
       auto PS = getPSet(UO->getSubExpr());
       CheckPSetValidity(PS, UO->getSourceRange());
@@ -302,24 +299,17 @@ public:
       return;
     }
     default:
-      if (UO->getType()->isPointerType() || UO->getType()->isArrayType()) {
-        setPSet(UO, getPSet(UO->getSubExpr()));
+      // Workaround: detecting compiler generated AST node.
+      if (hasPSet(UO) && UO->getLocStart() != UO->getLocEnd()) {
         setPSet(getPSet(UO->getSubExpr()),
                 PSet::invalid(InvalidationReason::PointerArithmetic(
                     UO->getSourceRange())),
                 UO->getSourceRange());
-        return;
       }
     }
 
-    // Propagate lvalue refers to for non-Pointers
-    switch (UO->getOpcode()) {
-    case UO_PreDec:
-    case UO_PreInc:
+    if (hasPSet(UO) || UO->isLValue())
       setPSet(UO, getPSet(UO->getSubExpr()));
-    default:
-      return;
-    }
   }
 
   void VisitReturnStmt(const ReturnStmt *R) {

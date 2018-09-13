@@ -1037,6 +1037,13 @@ void parameter_psets(int value,
   __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((null), (static))}}
 }
 
+void foreach_arithmetic() {
+  int t[] = {1, 2, 3, 4, 5};
+  for (int &i : t) {
+    i += 1;
+  }
+}
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
