@@ -247,9 +247,26 @@ class NullReason {
   SourceRange Range;
 
 public:
-  NullReason(SourceRange Range) : Range(Range) { assert(Range.isValid()); }
+  enum EReason { ASSIGNED, PARAMETER_NULL } Reason;
+
+  NullReason(SourceRange Range, EReason Reason = ASSIGNED)
+      : Range(Range), Reason(Reason) {
+    assert(Range.isValid());
+  }
+
+  static NullReason parameterNull(SourceRange Range) {
+    return {Range, PARAMETER_NULL};
+  }
+
   void emitNote(LifetimeReporterBase &Reporter) const {
-    Reporter.noteAssigned(Range.getBegin());
+    switch (Reason) {
+    case ASSIGNED:
+      Reporter.noteAssigned(Range.getBegin());
+      break;
+    case PARAMETER_NULL:
+      Reporter.noteParameterNull(Range.getBegin());
+      break;
+    }
   }
 };
 
@@ -301,6 +318,12 @@ public:
   bool containsNull() const { return ContainsNull; }
   bool isNull() const {
     return ContainsNull && !ContainsStatic && !ContainsInvalid && Vars.empty();
+  }
+  void addNull(NullReason Reason) {
+    if (ContainsNull)
+      return;
+    ContainsNull = true;
+    NullReasons.push_back(Reason);
   }
   void removeNull() { ContainsNull = false; }
 
@@ -450,7 +473,7 @@ public:
   }
 
   /// A pset that contains (static), (null)
-  static PSet staticVar(bool Nullable) {
+  static PSet staticVar(bool Nullable = false) {
     PSet ret;
     ret.ContainsNull = Nullable;
     ret.ContainsStatic = true;
