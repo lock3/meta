@@ -331,23 +331,6 @@ public:
     }
   }
 
-  void VisitLambdaExpr(const LambdaExpr *E) {
-    if (!hasPSet(E))
-      return;
-    PSet Set;
-    for (auto Capture : E->captures()) {
-      if (!Capture.capturesVariable())
-        continue;
-      const VarDecl *VD = Capture.getCapturedVar();
-      // TODO: better location for the possible warning?
-      PSet CaptureSet = varRefersTo(VD, E->getSourceRange());
-      if (Capture.getCaptureKind() == LCK_ByCopy)
-        CaptureSet = getPSet(CaptureSet);
-      Set.merge(CaptureSet);
-    }
-    setPSet(E, Set);
-  }
-
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     if (isPointer(E)) {
       if (E->getNumArgs() == 0) {
