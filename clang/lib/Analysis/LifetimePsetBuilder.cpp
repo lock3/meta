@@ -360,7 +360,8 @@ public:
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));
       else
-        setPSet(E, PSet::invalid(InvalidationReason::NotInitialized(E->getExprLoc())));
+        setPSet(E, PSet::invalid(
+                       InvalidationReason::NotInitialized(E->getExprLoc())));
     } else {
       // Constructing a temporary owner/value
       setPSet(E, PSet::singleton(Variable::temporary()));
