@@ -208,9 +208,15 @@ const int *return_wrong_ptr(const int *p) {
   return q; // expected-warning {{returning a Pointer with points-to set (i) where points-to set ((*p), (null)) is expected}}
 }
 
-void use_null_param(int *p) {
+void null_notes(int *p) {
   // expected-note@-1 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
   (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
+
+  if(p) { // expected-note {{Pointer is guarded by condition that compares to null here}}
+    ;
+  } else {
+    (void)*p; // expected-warning {{dereferencing a null pointer}}
+  }
 }
 
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
