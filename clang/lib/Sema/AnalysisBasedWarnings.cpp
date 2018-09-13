@@ -2056,7 +2056,11 @@ public:
   }
   void noteParameterNull(SourceLocation Loc) final {
     if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_pointer);
+      S.Diag(Loc, diag::note_null_reason_parameter);
+  }
+  void noteNullDefaultConstructed(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_null_reason_default_construct);
   }
   void debugPset(SourceLocation Loc, StringRef Variable,
                  std::string Pset) final {
