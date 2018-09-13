@@ -3222,6 +3222,7 @@ def note_temporary_destroyed: Note<"temporary was destroyed at the end of the fu
 def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
 def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
+def note_null_reason_pointer: Note<"This parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null.">;
 def note_forbidden_cast: Note<"used a forbidden cast here">;
 def note_modified: Note<"modified here">;
 def note_assigned: Note<"assigned here">;

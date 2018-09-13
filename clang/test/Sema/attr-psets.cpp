@@ -992,6 +992,51 @@ void pruned_branch(bool cond) {
   __lifetime_pset(non_trivial); // expected-warning {{((null), i)}}
 }
 
+void parameter_psets(int value,
+                     char *const *in,
+                     int &int_ref,
+                     const int &const_int_ref,
+                     std::unique_ptr<int> owner_by_value,
+                     const std::unique_ptr<int> &owner_const_ref,
+                     std::unique_ptr<int> &owner_ref,
+                     my_pointer ptr_by_value,
+                     const my_pointer &ptr_const_ref,
+                     my_pointer &ptr_ref,
+                     my_pointer *ptr_ptr,
+                     const my_pointer *ptr_const_ptr) {
+
+  __lifetime_pset(in); // expected-warning {{((*in), (null))}}
+  assert(in);
+  __lifetime_pset(*in); // expected-warning {{((null), (static))}}
+
+  __lifetime_pset_ref(int_ref);       // expected-warning {{((*int_ref))}}
+  __lifetime_pset_ref(const_int_ref); // expected-warning {{((*const_int_ref))}}
+  __lifetime_pset(owner_by_value);    // expected-warning {{(owner_by_value')}}
+
+  __lifetime_pset_ref(owner_ref); // expected-warning {{((*owner_ref))}}
+  __lifetime_pset(owner_ref);     /// expected-warning {{((*owner_ref)')}}
+
+  __lifetime_pset_ref(owner_const_ref); // expected-warning {{((*owner_const_ref))}}
+  __lifetime_pset(owner_const_ref);     // expected-warning {{((*owner_const_ref)')}}
+
+  __lifetime_pset(ptr_by_value); // expected-warning {{((*ptr_by_value), (null))}}
+
+  __lifetime_pset_ref(ptr_const_ref); // expected-warning {{((*ptr_const_ref))}}
+  __lifetime_pset(ptr_const_ref);     // expected-warning {{((static))}} TODO correct?
+
+  __lifetime_pset_ref(ptr_ref); // expected-warning {{((*ptr_ref))}}
+  // TODO pending clarification if Pointer& is out or in/out:
+  __lifetime_pset(ptr_ref); // expected-warning {{((invalid))}}
+
+  __lifetime_pset(ptr_ptr); // expected-warning {{((*ptr_ptr), (null))}}
+  assert(ptr_ptr);
+  __lifetime_pset(*ptr_ptr); // out: expected-warning {{((invalid))}}
+
+  __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
+  assert(ptr_const_ptr);
+  __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((null), (static))}}
+}
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
