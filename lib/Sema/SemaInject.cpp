@@ -940,11 +940,18 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
   // this should be unncessary
   PushFunctionScope();
 
-  // Switch to the class enclosing the newly injected declaration.
-  ContextRAII ClassCxt (*this, New->getDeclContext());
-
   if (FieldDecl *OldField = dyn_cast<FieldDecl>(Frag)) {
     FieldDecl *NewField = cast<FieldDecl>(New);
+
+    // Switch to the class enclosing the newly injected declaration.
+    ContextRAII ClassCxt (*this, NewField->getDeclContext());
+
+    // This is necessary to provide the correct lookup behavior
+    // for any injected field with a default initializer using
+    // a decl owned by the injectee
+    this->CXXThisTypeOverride = Context.getPointerType(
+      Context.getRecordType(NewField->getParent()));
+
     ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());
     if (Init.isInvalid())
       NewField->setInvalidDecl();

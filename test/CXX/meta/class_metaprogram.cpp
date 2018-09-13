@@ -24,6 +24,7 @@ constexpr auto fragment = __fragment struct {
   }
 
   int x = 1;
+  int z = this->y;
 
   int frag_num() {
     return 2;
@@ -56,6 +57,7 @@ int main() {
   assert(f.dependent_on_injected_val() == 1);
   assert(f.frag_num() == 2);
   assert(f.inner_frag_num() == 0);
+  assert(f.z == 55);
   assert(f.proxy_frag_num() == 55);
   assert(f.inner_proxy_frag_num() == 55);
   assert(f.referenced_global() == 42);
