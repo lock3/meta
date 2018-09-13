@@ -1092,3 +1092,14 @@ void b() {
   c = 0; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
 } // namespace creduce4
+
+namespace creduce5 {
+class a {
+  long b;
+  a &operator+=(a);
+};
+a &a::operator+=(a) {
+  b += b;
+  return *this;
+}
+} // namespace creduce5
