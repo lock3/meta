@@ -141,10 +141,10 @@ public:
       setPSet(E, getPSet(E->getExpr()));
   }
 
-  PSet varRefersTo(Variable V, SourceLocation Loc) {
+  PSet varRefersTo(Variable V, SourceRange Range) {
     if (V.getType()->isLValueReferenceType()) {
       auto P = getPSet(V);
-      if (CheckPSetValidity(P, Loc))
+      if (CheckPSetValidity(P, Range))
         return P;
       else
         return PSet();
@@ -158,11 +158,11 @@ public:
         DeclRef->refersToEnclosingVariableOrCapture()) {
       setPSet(DeclRef, PSet::staticVar(false));
     } else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
-      setPSet(DeclRef, varRefersTo(VD, DeclRef->getExprLoc()));
+      setPSet(DeclRef, varRefersTo(VD, DeclRef->getSourceRange()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer();
       V.addFieldRef(FD);
-      setPSet(DeclRef, varRefersTo(V, DeclRef->getExprLoc()));
+      setPSet(DeclRef, varRefersTo(V, DeclRef->getSourceRange()));
     }
   }
 
@@ -173,7 +173,7 @@ public:
     // base will be diagnosed in VisitCallExpr().
     if (ME->getBase()->getType()->isPointerType() &&
         !ME->hasPlaceholderType(BuiltinType::BoundMember))
-      CheckPSetValidity(BaseRefersTo, ME->getExprLoc());
+      CheckPSetValidity(BaseRefersTo, ME->getSourceRange());
 
     if (auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
       PSet Ret = BaseRefersTo;
@@ -192,8 +192,8 @@ public:
         dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts());
 
     // Unless we see the actual array, we assume it is pointer arithmetic.
-    PSet Ref =
-        PSet::invalid(InvalidationReason::PointerArithmetic(E->getExprLoc()));
+    PSet Ref = PSet::invalid(
+        InvalidationReason::PointerArithmetic(E->getSourceRange()));
     if (DeclRef) {
       const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
       assert(VD);
@@ -222,7 +222,7 @@ public:
     PSet Singleton = PSet::singleton(E, false, 0);
     setPSet(E, Singleton);
     if (hasPSet(E->GetTemporaryExpr()))
-      setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getLocStart());
+      setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
@@ -231,7 +231,7 @@ public:
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
-        setPSet(I, PSet::null(I->getLocStart()));
+        setPSet(I, PSet::null(I->getSourceRange()));
         return;
       }
       if (I->getNumInits() == 1) {
@@ -249,18 +249,18 @@ public:
     case CK_LValueBitCast:
     case CK_IntegralToPointer:
       // Those casts are forbidden by the type profile
-      setPSet(
-          E, PSet::invalid(InvalidationReason::ForbiddenCast(E->getExprLoc())));
+      setPSet(E, PSet::invalid(
+                     InvalidationReason::ForbiddenCast(E->getSourceRange())));
       return;
     case CK_NullToPointer:
-      setPSet(E, PSet::null(E->getExprLoc()));
+      setPSet(E, PSet::null(E->getSourceRange()));
       return;
     case CK_LValueToRValue:
       // For L-values, the pset refers to the memory location,
       // which in turn points to the pointee. For R-values,
       // the pset just refers to the pointee.
       if (hasPSet(E))
-        setPSet(E, derefPSet(getPSet(E->getSubExpr()), E->getExprLoc()));
+        setPSet(E, derefPSet(getPSet(E->getSubExpr())));
       return;
     default:
       llvm_unreachable("Should have been ignored in IgnoreTransparentExprs()");
@@ -276,7 +276,8 @@ public:
       // Do we need to handle raw pointers annotated as owners?
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer.
-      setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()), BO->getExprLoc());
+      setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()),
+              BO->getSourceRange());
     }
 
     setPSet(BO, getPSet(BO->getLHS()));
@@ -286,8 +287,8 @@ public:
     if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
     } else if (hasPSet(BO)) {
-      setPSet(BO, PSet::invalid(
-                      InvalidationReason::PointerArithmetic(BO->getExprLoc())));
+      setPSet(BO, PSet::invalid(InvalidationReason::PointerArithmetic(
+                      BO->getSourceRange())));
     }
   }
 
@@ -299,7 +300,7 @@ public:
       return;
     case UO_Deref: {
       auto PS = getPSet(UO->getSubExpr());
-      CheckPSetValidity(PS, UO->getExprLoc());
+      CheckPSetValidity(PS, UO->getSourceRange());
       setPSet(UO, PS);
       return;
     }
@@ -307,9 +308,9 @@ public:
       if (UO->getType()->isPointerType() || UO->getType()->isArrayType()) {
         setPSet(UO, getPSet(UO->getSubExpr()));
         setPSet(getPSet(UO->getSubExpr()),
-                PSet::invalid(
-                    InvalidationReason::PointerArithmetic(UO->getExprLoc())),
-                UO->getExprLoc());
+                PSet::invalid(InvalidationReason::PointerArithmetic(
+                    UO->getSourceRange())),
+                UO->getSourceRange());
       }
       return;
     }
@@ -339,7 +340,7 @@ public:
         continue;
       const VarDecl *VD = Capture.getCapturedVar();
       // TODO: better location for the possible warning?
-      PSet CaptureSet = varRefersTo(VD, E->getExprLoc());
+      PSet CaptureSet = varRefersTo(VD, E->getSourceRange());
       if (Capture.getCaptureKind() == LCK_ByCopy)
         CaptureSet = getPSet(CaptureSet);
       Set.merge(CaptureSet);
@@ -350,18 +351,18 @@ public:
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     if (isPointer(E)) {
       if (E->getNumArgs() == 0) {
-        setPSet(E, PSet::null(E->getExprLoc()));
+        setPSet(E, PSet::null(E->getSourceRange()));
         return;
       }
       auto TC = classifyTypeCategory(E->getArg(0)->getType());
       if (TC == TypeCategory::Owner ||
           E->getConstructor()->isCopyOrMoveConstructor())
-        setPSet(E, derefPSet(getPSet(E->getArg(0)), E->getLocation()));
+        setPSet(E, derefPSet(getPSet(E->getArg(0))));
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));
       else
-        setPSet(E, PSet::invalid(
-                       InvalidationReason::NotInitialized(E->getExprLoc())));
+        setPSet(E, PSet::invalid(InvalidationReason::NotInitialized(
+                       E->getSourceRange())));
     } else {
       // Constructing a temporary owner/value
       setPSet(E, PSet::singleton(Variable::temporary()));
@@ -387,8 +388,7 @@ public:
       auto Parents = ASTCtxt.getParents(*E);
       if (Parents.empty())
         return;
-      auto Loc = Parents[0].getSourceRange().getBegin();
-      setPSet(E, PSet::null(Loc));
+      setPSet(E, PSet::null(Parents[0].getSourceRange()));
     }
   }
 
@@ -401,9 +401,9 @@ public:
   }
 
   struct CallArgument {
-    CallArgument(SourceLocation Loc, PSet PS, QualType QType)
-        : Loc(Loc), PS(std::move(PS)), ParamQType(QType) {}
-    SourceLocation Loc;
+    CallArgument(SourceRange Range, PSet PS, QualType QType)
+        : Range(Range), PS(std::move(PS)), ParamQType(QType) {}
+    SourceRange Range;
     PSet PS;
     QualType ParamQType;
   };
@@ -418,7 +418,7 @@ public:
     std::vector<CallArgument> Output;
   };
 
-  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceLocation Loc,
+  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceRange Range,
                          const Expr *Arg, QualType ParamType, bool IsInputThis,
                          CallArguments &Args) {
     // TODO implement aggregates
@@ -436,13 +436,13 @@ public:
     if (ParamType->isLValueReferenceType() &&
         PointeeCat == TypeCategory::Owner && Pointee.isConstQualified()) {
       // all Owner arguments passed as const Owner&
-      Args.Input_weak.emplace_back(Loc, getPSet(Arg), ParamType);
+      Args.Input_weak.emplace_back(Range, getPSet(Arg), ParamType);
       // the deref locations of Owners passed by const Owner&
-      Args.Input_weak.emplace_back(Loc, derefPSet(getPSet(Arg), Loc), Pointee);
+      Args.Input_weak.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);
       return;
     }
 
-    Args.Input.emplace_back(Loc, getPSet(Arg), ParamType);
+    Args.Input.emplace_back(Range, getPSet(Arg), ParamType);
     diagnoseInput(Args.Input.back(), IsInputThis);
 
     // TODO: to support std::begin, we consider lifetime_const arguments as
@@ -451,58 +451,31 @@ public:
          ParamType->isRValueReferenceType()) &&
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer)) {
-      Args.Input.emplace_back(Loc, derefPSet(getPSet(Arg), Loc), Pointee);
+      Args.Input.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);
       diagnoseInput(Args.Input.back(), IsInputThis);
     }
 
     if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
-      Args.Output.emplace_back(Loc, getPSet(Arg), Pointee);
+      Args.Output.emplace_back(Range, getPSet(Arg), Pointee);
     // Add deref this to Output for Pointer ctor?
 
     if (PointeeCat == TypeCategory::Owner && !IsLifetimeConst)
-      Args.Oinvalidate.emplace_back(Loc, getPSet(Arg), Pointee);
+      Args.Oinvalidate.emplace_back(Range, getPSet(Arg), Pointee);
   }
 
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
   void diagnoseInput(const CallArgument &CA, bool IsInputThis) {
     if (CA.PS.containsInvalid()) {
-      Reporter.warnParameterDangling(CA.Loc,
+      Reporter.warnParameterDangling(CA.Range.getBegin(),
                                      /*indirectly=*/false);
       CA.PS.explainWhyInvalid(Reporter);
     } else if (CA.PS.containsNull() &&
                (!isNullableType(CA.ParamQType) || IsInputThis)) {
-      Reporter.warnParameterNull(CA.Loc, !CA.PS.isNull());
+      Reporter.warnParameterNull(CA.Range.getBegin(), !CA.PS.isNull());
       CA.PS.explainWhyNull(Reporter);
     }
   }
-
-  /// Diagnose if psets arguments in Oin and Pin refer to the same variable
-  /*void diagnoseParameterAliasing(const std::vector<CallArgument> &Pin,
-                                 const std::vector<CallArgument> &Oin) {
-    std::map<Variable, SourceLocation> AllVars;
-    for (auto &CA : Pin) {
-      for (auto &KV : CA.PS.vars()) {
-        auto &Var = KV.first;
-        // pset(argument(p)) and pset(argument(x)) must be disjoint (as long as
-        // not annotated)
-        auto i = AllVars.emplace(Var, CA.Loc);
-        if (!i.second)
-          Reporter.warnParametersAlias(CA.Loc, i.first->second, Var.getName());
-      }
-    }
-    for (auto &CA : Oin) {
-      for (auto &KV : CA.PS.vars()) {
-        auto &Var = KV.first;
-        // pset(argument(p)) and pset(argument(x)) must be disjoint (as long
-        // as not annotated) Enforce that pset() of each argument does not
-        // refer to a local Owner in Oin
-        auto i = AllVars.emplace(Var, CA.Loc);
-        if (!i.second)
-          Reporter.warnParametersAlias(CA.Loc, i.first->second, Var.getName());
-      }
-    }
-  }*/
 
   /// Checks if the Pointer/Owner From can assign into
   /// the Pointer To.
@@ -570,7 +543,7 @@ public:
           classifyTypeCategory(OC->getArg(1)->getType()) ==
               TypeCategory::Pointer) {
         auto PSetRHS = getPSet(getPSet(OC->getArg(1)));
-        setPSet(getPSet(OC->getArg(0)), PSetRHS, CallE->getExprLoc());
+        setPSet(getPSet(OC->getArg(0)), PSetRHS, CallE->getSourceRange());
         setPSet(CallE, PSetRHS);
         return;
       }
@@ -588,7 +561,7 @@ public:
         else
           return ParamTypes[I];
       }();
-      PushCallArguments(CallE->getDirectCallee(), I, Arg->getLocStart(), Arg,
+      PushCallArguments(CallE->getDirectCallee(), I, Arg->getSourceRange(), Arg,
                         ParamType, /*IsInputThis=*/false, Args);
     }
 
@@ -603,7 +576,8 @@ public:
       ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
 
       PushCallArguments(CallE->getDirectCallee(), -1,
-                        CallArgs.This->getLocStart(), CallArgs.This, ObjectType,
+                        CallArgs.This->getSourceRange(), CallArgs.This,
+                        ObjectType,
                         /*IsInputThis=*/true, Args);
     }
 
@@ -613,7 +587,7 @@ public:
     // Invalidate owners taken by Pointer to non-const.
     for (const auto &Arg : Args.Oinvalidate) {
       for (auto VarOrd : Arg.PS.vars()) {
-        invalidateVar(VarOrd.first, 1, InvalidationReason::Modified(Arg.Loc));
+        invalidateVar(VarOrd.first, 1, InvalidationReason::Modified(Arg.Range));
       }
     }
 
@@ -669,11 +643,11 @@ public:
       setPSet(CallE, PSet::singleton(Variable::temporary()));
 
     for (const auto &Arg : Args.Output) {
-      setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getLocStart());
+      setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getSourceRange());
     }
   }
 
-  bool CheckPSetValidity(const PSet &PS, SourceLocation Loc);
+  bool CheckPSetValidity(const PSet &PS, SourceRange Range);
 
   /// Invalidates all psets that point to V or something owned by V
   void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
@@ -694,10 +668,10 @@ public:
   // Remove the variable from the pset together with the materialized
   // temporaries extended by that variable. It also invalidates the pointers
   // pointing to these.
-  void eraseVariable(const VarDecl *VD, SourceLocation Loc) {
+  void eraseVariable(const VarDecl *VD, SourceRange Range) {
     InvalidationReason Reason =
-        VD ? InvalidationReason::PointeeLeftScope(Loc, VD)
-           : InvalidationReason::TemporaryLeftScope(Loc);
+        VD ? InvalidationReason::PointeeLeftScope(Range, VD)
+           : InvalidationReason::TemporaryLeftScope(Range);
     if (VD) {
       PMap.erase(VD);
       invalidateVar(VD, 0, Reason);
@@ -754,8 +728,8 @@ public:
     else
       PSetsOfExpr[E] = PS;
   }
-  void setPSet(PSet LHS, PSet RHS, SourceLocation Loc);
-  PSet derefPSet(const PSet &P, SourceLocation Loc);
+  void setPSet(PSet LHS, PSet RHS, SourceRange Range);
+  PSet derefPSet(const PSet &P);
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
@@ -771,7 +745,7 @@ public:
 
   void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
-    SourceLocation Loc = VD->getLocEnd();
+    SourceRange Range = VD->getSourceRange();
 
     switch (classifyTypeCategory(VD->getType())) {
     case TypeCategory::Pointer: {
@@ -780,7 +754,7 @@ public:
         // That pset is invalid, because array to pointer decay is forbidden
         // by the bounds profile.
         // TODO: Better diagnostic that explains the array to pointer decay
-        PS = PSet::invalid(InvalidationReason::PointerArithmetic(Loc));
+        PS = PSet::invalid(InvalidationReason::PointerArithmetic(Range));
       } else if (Initializer) {
         PS = getPSet(Initializer);
       } else {
@@ -788,13 +762,13 @@ public:
         if (VD->hasGlobalStorage())
           PS = PSet::staticVar(false);
         else
-          PS = PSet::invalid(InvalidationReason::NotInitialized(Loc));
+          PS = PSet::invalid(InvalidationReason::NotInitialized(Range));
       }
-      setPSet(PSet::singleton(VD), PS, Loc);
+      setPSet(PSet::singleton(VD), PS, Range);
       break;
     }
     case TypeCategory::Owner: {
-      setPSet(PSet::singleton(VD), PSet::singleton(VD, false, 1), Loc);
+      setPSet(PSet::singleton(VD), PSet::singleton(VD, false, 1), Range);
     }
     default:;
     }
@@ -805,7 +779,7 @@ public:
 
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                 llvm::Optional<PSetsMap> &FalseBranchExitPMap,
-                                SourceLocation Loc);
+                                SourceRange Range);
 }; // namespace lifetime
 
 // Manages lifetime information for the CFG of a FunctionDecl
@@ -843,7 +817,7 @@ PSet PSetsBuilder::getPSet(Variable P) {
 
 /// Computes the pset of dereferencing a variable with the given pset
 /// If PS contains (null), it is silently ignored.
-PSet PSetsBuilder::derefPSet(const PSet &PS, SourceLocation Loc) {
+PSet PSetsBuilder::derefPSet(const PSet &PS) {
   // When a local Pointer p is dereferenced using unary * or -> to create a
   // temporary tmp, then if pset(pset(p)) is nonempty, set pset(tmp) =
   // pset(pset(p)) and Kill(pset(tmp)'). Otherwise, set pset(tmp) = {tmp}.
@@ -870,11 +844,11 @@ PSet PSetsBuilder::derefPSet(const PSet &PS, SourceLocation Loc) {
   return RetPS;
 }
 
-void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
+void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
   if (LHS.isStatic() && !RHS.isUnknown() && !RHS.isStatic() && !RHS.isNull())
-    Reporter.warnPsetOfGlobal(Loc, "TODO", RHS.str());
+    Reporter.warnPsetOfGlobal(Range.getBegin(), "TODO", RHS.str());
 
   if (LHS.isSingleton()) {
     Variable Var = LHS.vars().begin()->first;
@@ -894,15 +868,15 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceLocation Loc) {
   }
 }
 
-bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
+bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) {
   if (PS.containsInvalid()) {
-    Reporter.warnDerefDangling(Loc, !PS.isInvalid());
+    Reporter.warnDerefDangling(Range.getBegin(), !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
     return false;
   }
 
   if (PS.containsNull()) {
-    Reporter.warnDerefNull(Loc, !PS.isNull());
+    Reporter.warnDerefNull(Range.getBegin(), !PS.isNull());
     return false;
   }
   return true;
@@ -922,7 +896,7 @@ bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceLocation Loc) {
 ///  ... // pset of p does not contain 'null'
 void PSetsBuilder::UpdatePSetsFromCondition(
     const Stmt *S, bool Positive, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
-    SourceLocation Loc) {
+    SourceRange Range) {
   const auto *E = dyn_cast_or_null<Expr>(S);
   if (!E)
     return;
@@ -933,7 +907,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
             dyn_cast_or_null<CXXConversionDecl>(CE->getDirectCallee())) {
       if (ConvDecl->getConversionType()->isBooleanType())
         UpdatePSetsFromCondition(CE->getImplicitObjectArgument(), Positive,
-                                 FalseBranchExitPMap, E->getLocStart());
+                                 FalseBranchExitPMap, E->getSourceRange());
     }
     return;
   }
@@ -942,7 +916,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       return;
     E = UO->getSubExpr();
     UpdatePSetsFromCondition(E, !Positive, FalseBranchExitPMap,
-                             E->getLocStart());
+                             E->getSourceRange());
     return;
   }
   if (const auto *BO = dyn_cast<BinaryOperator>(E)) {
@@ -959,10 +933,10 @@ void PSetsBuilder::UpdatePSetsFromCondition(
 
     if (getPSet(RHS).isNull())
       UpdatePSetsFromCondition(LHS, Positive, FalseBranchExitPMap,
-                               E->getLocStart());
+                               E->getSourceRange());
     else if (getPSet(LHS).isNull())
       UpdatePSetsFromCondition(RHS, Positive, FalseBranchExitPMap,
-                               E->getLocStart());
+                               E->getSourceRange());
     return;
   }
 
@@ -978,14 +952,14 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     PSet PSElseBranch = PS;
     if (Positive) {
       PS.removeNull();
-      PSElseBranch = PSet::null(Loc);
+      PSElseBranch = PSet::null(Range);
     } else {
-      PS = PSet::null(Loc);
+      PS = PSet::null(Range);
       PSElseBranch.removeNull();
     }
     FalseBranchExitPMap = PMap;
     (*FalseBranchExitPMap)[V] = PSElseBranch;
-    setPSet(PSet::singleton(V), PS, Loc);
+    setPSet(PSet::singleton(V), PS, Range);
   }
 } // namespace lifetime
 
@@ -1010,7 +984,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
   if (FuncNum == 0)
     return false;
 
-  auto Loc = CallE->getLocStart();
+  auto Range = CallE->getSourceRange();
   switch (FuncNum) {
   case 1:
   case 2: {
@@ -1025,20 +999,20 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     StringRef SourceText = Lexer::getSourceText(
         CharSourceRange::getTokenRange(CallE->getArg(0)->getSourceRange()),
         ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
-    Reporter.debugPset(Loc, SourceText, Set.str());
+    Reporter.debugPset(Range.getBegin(), SourceText, Set.str());
     return true;
   }
   case 3: {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter.debugTypeCategory(Loc, TC);
+    Reporter.debugTypeCategory(Range.getBegin(), TC);
     return true;
   }
   case 4: {
     auto QType = CallE->getArg(0)->getType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter.debugTypeCategory(Loc, TC);
+    Reporter.debugTypeCategory(Range.getBegin(), TC);
     return true;
   }
   default:
@@ -1138,8 +1112,8 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     // Output params are initially undefined.
     if (TC == TypeCategory::Pointer && !PointeeType.isNull() &&
         !PointeeType.isConstQualified() && !ParamTy->isRValueReferenceType()) {
-      PS =
-          PSet::invalid(InvalidationReason::NotInitialized(PVD->getLocStart()));
+      PS = PSet::invalid(
+          InvalidationReason::NotInitialized(PVD->getSourceRange()));
       // It is still ok to point to output values when we return values.
       PSetForAllParams.merge(PSet::singleton(P, isNullableType(ParamTy),
                                              TC == TypeCategory::Owner));

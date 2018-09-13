@@ -83,7 +83,7 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 static Optional<TypeCategory> classifyStd(const Type *T) {
   // MSVC: _Ptr_base is a base class of shared_ptr, and we only see
   // _Ptr_base when calling get() on a shared_ptr.
-  static std::set<StringRef> StdOwners{"stack",    "queue",   "priority_queue",
+  static std::set<StringRef> StdOwners{"stack", "queue", "priority_queue",
                                        "optional", "_Ptr_base"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   NamedDecl *Decl;
@@ -141,6 +141,11 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   if (R->hasAttr<PointerAttr>())
     return TypeCategory::Pointer;
+
+  // In case we do not know the pointee type fall back to value.
+  /*QualType Pointee = getPointeeType(QT);
+  if (Pointee.isNull())
+    return TypeCategory::Value;*/
 
   // Every type that satisfies the standard Container requirements.
   if (satisfiesContainerRequirements(R))
