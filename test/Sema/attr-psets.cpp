@@ -853,11 +853,9 @@ void deref_based_on_template_param() {
 
 my_pointer global_pointer;
 void f(my_pointer &p) { // expected-note {{it was never initialized here}}
-                        // TODO-remove expected-note@-1 {{it was never initialized here}}
   // p is a out-parameter, so its pset is {invalid}
-  (void)*p;           // expected-warning {{dereferencing a dangling pointer}}
+  (void)*p;           // expected-warning {{passing a dangling pointer as argument}}
   p = global_pointer; // OK, *this is not validated on assignment operator call
-                      // TODO-remove expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 void caller() {
   void f(my_pointer & p);
