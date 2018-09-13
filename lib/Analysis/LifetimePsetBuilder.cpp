@@ -144,7 +144,7 @@ public:
       else
         return PSet();
     } else {
-      return PSet::singleton(V, false);
+      return PSet::singleton(V);
     }
   };
 
@@ -193,13 +193,13 @@ public:
       const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
       assert(VD);
       if (VD->getType().getCanonicalType()->isArrayType())
-        Ref = PSet::singleton(VD, false);
+        Ref = PSet::singleton(VD);
     }
     setPSet(E, Ref);
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
-    setPSet(E, PSet::singleton(Variable::thisPointer(), false));
+    setPSet(E, PSet::singleton(Variable::thisPointer()));
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
@@ -214,7 +214,7 @@ public:
   }
 
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
-    PSet Singleton = PSet::singleton(E, false, 0);
+    PSet Singleton = PSet::singleton(E);
     setPSet(E, Singleton);
     if (hasPSet(E->GetTemporaryExpr()))
       setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
@@ -860,6 +860,7 @@ bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) {
 
   if (PS.containsNull()) {
     Reporter.warnDerefNull(Range.getBegin(), !PS.isNull());
+    PS.explainWhyNull(Reporter);
     return false;
   }
   return true;
@@ -1101,19 +1102,27 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
 
     PSet PS;
     if (TC == TypeCategory::Owner) {
+      PS = PSet::singleton(PVD, false, 1);
+
       // TODO: nullable Owners don't exist in the paper (yet?)
-      PS = PSet::singleton(PVD, isNullableType(ParamTy), 1);
+      if (isNullableType(ParamTy))
+        PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
     } else {
       Variable P_deref(PVD);
       P_deref.deref();
-      PS = PSet::singleton(P_deref, isNullableType(ParamTy));
+      PS = PSet::singleton(P_deref);
+      if (isNullableType(ParamTy))
+        PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
 
       QualType PointeeType = getPointeeType(ParamTy);
       switch (classifyTypeCategory(PointeeType)) {
-      case TypeCategory::Owner:
-        PMap.emplace(P_deref,
-                     PSet::singleton(P_deref, isNullableType(PointeeType), 1));
+      case TypeCategory::Owner: {
+        PSet DerefPS = PSet::singleton(P_deref, false, 1);
+        if (isNullableType(ParamTy))
+          DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
+        PMap.emplace(P_deref, DerefPS);
         break;
+      }
       case TypeCategory::Pointer:
         if (!PointeeType.isConstQualified()) {
           // Output params are initially invalid.
@@ -1123,7 +1132,10 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
         } else {
           // staticVar to allow further derefs (if this is Pointer to a Pointer
           // to a Pointer etc)
-          PMap.emplace(P_deref, PSet::staticVar(isNullableType(ParamTy)));
+          PSet DerefPS = PSet::staticVar();
+          if (isNullableType(ParamTy))
+            DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
+          PMap.emplace(P_deref, DerefPS);
         }
       default:
         break;

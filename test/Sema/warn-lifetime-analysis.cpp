@@ -107,8 +107,8 @@ void deref_uninitialized() {
 }
 
 void deref_nullptr() {
-  int *q = nullptr;
-  *q = 3; // expected-warning {{dereferencing a null pointer}}
+  int *q = nullptr; // expected-note {{assigned here}}
+  *q = 3;           // expected-warning {{dereferencing a null pointer}}
 }
 
 void ref_leaves_scope() {
@@ -206,6 +206,11 @@ const int *return_wrong_ptr(const int *p) {
   if (p)
     return p;
   return q; // expected-warning {{returning a Pointer with points-to set (i) where points-to set ((*p), (null)) is expected}}
+}
+
+void use_null_param(int *p) {
+  // expected-note@-1 {{This parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null.}}
+  (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
 }
 
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
