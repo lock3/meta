@@ -251,7 +251,8 @@ public:
     ASSIGNED,
     PARAMETER_NULL,
     DEFAULT_CONSTRUCTED,
-    COMPARED_TO_NULL
+    COMPARED_TO_NULL,
+    NULLPTR_CONSTANT
   } Reason;
 
   NullReason(SourceRange Range, EReason Reason) : Range(Range), Reason(Reason) {
@@ -272,6 +273,10 @@ public:
     return {Range, COMPARED_TO_NULL};
   }
 
+  static NullReason nullptrConstant(SourceRange Range) {
+    return {Range, NULLPTR_CONSTANT};
+  }
+
   void emitNote(LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case ASSIGNED:
@@ -286,6 +291,8 @@ public:
     case COMPARED_TO_NULL:
       Reporter.noteNullComparedToNull(Range.getBegin());
       break;
+    case NULLPTR_CONSTANT:
+      break; // not diagnosed, hopefully obvious
     }
   }
 };
@@ -346,6 +353,11 @@ public:
     NullReasons.push_back(Reason);
   }
   void removeNull() { ContainsNull = false; }
+
+  void addNullReason(NullReason Reason) {
+    assert(ContainsNull);
+    NullReasons.push_back(Reason);
+  }
 
   bool containsStatic() const { return ContainsStatic; }
   bool isStatic() const {

@@ -226,7 +226,8 @@ public:
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
-        setPSet(I, PSet::null(NullReason::defaultConstructed(I->getSourceRange())));
+        setPSet(
+            I, PSet::null(NullReason::defaultConstructed(I->getSourceRange())));
         return;
       }
       if (I->getNumInits() == 1) {
@@ -248,7 +249,7 @@ public:
                      InvalidationReason::ForbiddenCast(E->getSourceRange())));
       return;
     case CK_NullToPointer:
-      setPSet(E, PSet::null(NullReason::assigned(E->getSourceRange())));
+      setPSet(E, PSet::null(NullReason::nullptrConstant(E->getSourceRange())));
       return;
     case CK_LValueToRValue:
       // For L-values, the pset refers to the memory location,
@@ -271,8 +272,10 @@ public:
       // Do we need to handle raw pointers annotated as owners?
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer.
-      setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()),
-              BO->getRHS()->getSourceRange());
+      PSet RHS = getPSet(BO->getRHS());
+      if (RHS.containsNull())
+        RHS.addNullReason(NullReason::assigned(BO->getRHS()->getSourceRange()));
+      setPSet(getPSet(BO->getLHS()), RHS, BO->getRHS()->getSourceRange());
     }
 
     setPSet(BO, getPSet(BO->getLHS()));
@@ -331,7 +334,8 @@ public:
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     if (isPointer(E)) {
       if (E->getNumArgs() == 0) {
-        setPSet(E, PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
+        setPSet(
+            E, PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
         return;
       }
       auto TC = classifyTypeCategory(E->getArg(0)->getType());
@@ -368,7 +372,8 @@ public:
       auto Parents = ASTCtxt.getParents(*E);
       if (Parents.empty())
         return;
-      setPSet(E, PSet::null(NullReason::defaultConstructed(Parents[0].getSourceRange())));
+      setPSet(E, PSet::null(NullReason::defaultConstructed(
+                     Parents[0].getSourceRange())));
     }
   }
 
@@ -737,6 +742,11 @@ public:
         PS = PSet::invalid(InvalidationReason::PointerArithmetic(Range));
       } else if (Initializer) {
         PS = getPSet(Initializer);
+
+        // For raw pointers, show here the assignment. For other Pointers,
+        // we will have seen a CXXConstructor, which added a NullReason.
+        if (PS.containsNull() && VD->getType()->isPointerType())
+          PS.addNullReason(NullReason::assigned(Range));
       } else {
         // Never treat local statics as uninitialized.
         if (VD->hasGlobalStorage())
