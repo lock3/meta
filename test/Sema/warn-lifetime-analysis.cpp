@@ -219,6 +219,19 @@ void null_notes(int *p) {
   }
 }
 
+void null_notes_copy(int *p) {
+  // expected-note@-1 {{the parameter is assumed to be potentially null}}
+  int *q = p; // expected-note {{assigned here}}
+  (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
+}
+
+void null_notes_copy2(int *p) {
+  // expected-note@-1 {{the parameter is assumed to be potentially null}}
+  int *q;
+  q = p; // expected-note {{assigned here}}
+  (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>
