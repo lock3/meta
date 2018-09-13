@@ -247,12 +247,18 @@ class NullReason {
   SourceRange Range;
 
 public:
-  enum EReason { ASSIGNED, PARAMETER_NULL, DEFAULT_CONSTRUCTED } Reason;
+  enum EReason {
+    ASSIGNED,
+    PARAMETER_NULL,
+    DEFAULT_CONSTRUCTED,
+    COMPARED_TO_NULL
+  } Reason;
 
-  NullReason(SourceRange Range, EReason Reason = ASSIGNED)
-      : Range(Range), Reason(Reason) {
+  NullReason(SourceRange Range, EReason Reason) : Range(Range), Reason(Reason) {
     assert(Range.isValid());
   }
+
+  static NullReason assigned(SourceRange Range) { return {Range, ASSIGNED}; }
 
   static NullReason parameterNull(SourceRange Range) {
     return {Range, PARAMETER_NULL};
@@ -260,6 +266,10 @@ public:
 
   static NullReason defaultConstructed(SourceRange Range) {
     return {Range, DEFAULT_CONSTRUCTED};
+  }
+
+  static NullReason comparedToNull(SourceRange Range) {
+    return {Range, COMPARED_TO_NULL};
   }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
@@ -272,6 +282,9 @@ public:
       break;
     case DEFAULT_CONSTRUCTED:
       Reporter.noteNullDefaultConstructed(Range.getBegin());
+      break;
+    case COMPARED_TO_NULL:
+      Reporter.noteNullComparedToNull(Range.getBegin());
       break;
     }
   }

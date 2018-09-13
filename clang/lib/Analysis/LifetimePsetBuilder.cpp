@@ -226,7 +226,7 @@ public:
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
-        setPSet(I, PSet::null(I->getSourceRange()));
+        setPSet(I, PSet::null(NullReason::defaultConstructed(I->getSourceRange())));
         return;
       }
       if (I->getNumInits() == 1) {
@@ -248,7 +248,7 @@ public:
                      InvalidationReason::ForbiddenCast(E->getSourceRange())));
       return;
     case CK_NullToPointer:
-      setPSet(E, PSet::null(E->getSourceRange()));
+      setPSet(E, PSet::null(NullReason::assigned(E->getSourceRange())));
       return;
     case CK_LValueToRValue:
       // For L-values, the pset refers to the memory location,
@@ -368,7 +368,7 @@ public:
       auto Parents = ASTCtxt.getParents(*E);
       if (Parents.empty())
         return;
-      setPSet(E, PSet::null(Parents[0].getSourceRange()));
+      setPSet(E, PSet::null(NullReason::defaultConstructed(Parents[0].getSourceRange())));
     }
   }
 
@@ -937,9 +937,9 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     PSet PSElseBranch = PS;
     if (Positive) {
       PS.removeNull();
-      PSElseBranch = PSet::null(Range);
+      PSElseBranch = PSet::null(NullReason::comparedToNull(Range));
     } else {
-      PS = PSet::null(Range);
+      PS = PSet::null(NullReason::comparedToNull(Range));
       PSElseBranch.removeNull();
     }
     FalseBranchExitPMap = PMap;
