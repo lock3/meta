@@ -959,14 +959,14 @@ auto lambda_capture(const int *param, const int *param2) {
   auto a = [&]() {
     return *param + *alias;
   };
-  __lifetime_pset(a); // expected-warning {{pset(a) = (param, param2)}}
+  __lifetime_pset(a); // TODOexpected-warning {{pset(a) = (param, param2)}}
   int i;
   int *ptr = &i;
   auto b = [=]() {
     return *param + *ptr;
   };
-  __lifetime_pset(b); // expected-warning {{pset(b) = ((*param), (null), i)}}
-  return b;           // expected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
+  __lifetime_pset(b); // TODOexpected-warning {{pset(b) = ((*param), (null), i)}}
+  return b;           // TODOexpected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
 }
 
 typedef int T;
