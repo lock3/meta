@@ -123,11 +123,6 @@ public:
     }
   }
 
-  void VisitExpr(const Expr *E) {
-    assert(!hasPSet(E) || PSetsOfExpr.find(E) != PSetsOfExpr.end());
-    assert(!E->isLValue() || RefersTo.find(E) != RefersTo.end());
-  }
-
   void VisitCXXNewExpr(const CXXNewExpr *E) {
     setPSet(E, PSet::staticVar(false));
   }
@@ -311,7 +306,16 @@ public:
                 PSet::invalid(InvalidationReason::PointerArithmetic(
                     UO->getSourceRange())),
                 UO->getSourceRange());
+        return;
       }
+    }
+
+    // Propagate lvalue refers to for non-Pointers
+    switch (UO->getOpcode()) {
+    case UO_PreDec:
+    case UO_PreInc:
+      setPSet(UO, getPSet(UO->getSubExpr()));
+    default:
       return;
     }
   }
@@ -1026,8 +1030,22 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     switch (E.getKind()) {
     case CFGElement::Statement: {
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
-      if (!IsIgnoredStmt(S))
+      if (!IsIgnoredStmt(S)) {
         Visit(S);
+#ifndef NDEBUG
+        if (auto *Ex = dyn_cast<Expr>(S)) {
+          if (Ex->isLValue() && RefersTo.find(Ex) == RefersTo.end()) {
+            Ex->dump();
+            llvm_unreachable("Missing entry in RefersTo");
+          }
+          if (!Ex->isLValue() && hasPSet(Ex) &&
+              PSetsOfExpr.find(Ex) == PSetsOfExpr.end()) {
+            Ex->dump();
+            llvm_unreachable("Missing entry in PSetsOfExpr");
+          }
+        }
+#endif
+      }
       /*llvm::errs() << "TraverseStmt\n";
       S->dump();
       llvm::errs() << "\n";*/
@@ -1088,37 +1106,39 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     TypeCategory TC = classifyTypeCategory(ParamTy);
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
       continue;
-    QualType PointeeType = getPointeeType(ParamTy);
-    Variable P(PVD);
-    Variable DerefP = P;
-    if (TC == TypeCategory::Pointer)
-      DerefP.deref();
-    // Pointers initially point to their conjured deref location.
-    // Parameters cannot be invalid (checked at call site).
-    PSet PS = PSet::singleton(DerefP, isNullableType(ParamTy),
-                              TC == TypeCategory::Owner);
-    PSetForAllParams.merge(PS);
-    // Output params are initially undefined.
-    TypeCategory PointeeTC = !PointeeType.isNull()
-                                 ? classifyTypeCategory(PointeeType)
-                                 : TypeCategory::Value;
-    if (TC == TypeCategory::Pointer && !PointeeType.isNull() &&
-        !PointeeType.isConstQualified() && !ParamTy->isRValueReferenceType() &&
-        (PointeeTC == TypeCategory::Pointer)) {
-      PSet OutputPSet = PSet::invalid(
-          InvalidationReason::NotInitialized(PVD->getSourceRange()));
-      PMap.emplace(DerefP, std::move(OutputPSet));
-    } else if (ParamTy->isReferenceType() && PointeeType.isConstQualified()
-               && PointeeTC == TypeCategory::Pointer) {
-      // For const Pointer& arguments, we need the pointee of the Pointer in the
-      // pmap, which is gained by dereferencing the reference twice.
-      Variable DerefDerefP = DerefP;
-      DerefDerefP.deref();
-      PSet DerefDerefPSet = PSet::singleton(
-          DerefDerefP, isNullableType(ParamTy), TC == TypeCategory::Owner);
-      PMap.emplace(DerefP, std::move(DerefDerefPSet));
+
+    PSet PS;
+    if (TC == TypeCategory::Owner) {
+      // TODO: nullable Owners don't exist in the paper (yet?)
+      PS = PSet::singleton(PVD, isNullableType(ParamTy), 1);
+    } else {
+      Variable P_deref(PVD);
+      P_deref.deref();
+      PS = PSet::singleton(P_deref, isNullableType(ParamTy));
+
+      QualType PointeeType = getPointeeType(ParamTy);
+      switch (classifyTypeCategory(PointeeType)) {
+      case TypeCategory::Owner:
+        PMap.emplace(P_deref,
+                     PSet::singleton(P_deref, isNullableType(PointeeType), 1));
+        break;
+      case TypeCategory::Pointer:
+        if (!PointeeType.isConstQualified()) {
+          // Output params are initially invalid.
+          PMap.emplace(P_deref,
+                       PSet::invalid(InvalidationReason::NotInitialized(
+                           PVD->getSourceRange())));
+        } else {
+          // staticVar to allow further derefs (if this is Pointer to a Pointer
+          // to a Pointer etc)
+          PMap.emplace(P_deref, PSet::staticVar(isNullableType(ParamTy)));
+        }
+      default:
+        break;
+      }
     }
-    PMap.emplace(P, std::move(PS));
+    PSetForAllParams.merge(PS);
+    PMap.emplace(PVD, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
