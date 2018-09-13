@@ -488,14 +488,12 @@ public:
   }
 
   /// The pset contains one of obj, obj' or obj''
-  static PSet singleton(Variable Var, bool Nullable = false,
-                        unsigned order = 0) {
+  static PSet singleton(Variable Var, unsigned order = 0) {
     PSet ret;
     if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
     else
       ret.Vars.emplace(Var, order);
-    ret.ContainsNull = Nullable;
     return ret;
   }
 

@@ -748,7 +748,7 @@ public:
       break;
     }
     case TypeCategory::Owner: {
-      setPSet(PSet::singleton(VD), PSet::singleton(VD, false, 1), Range);
+      setPSet(PSet::singleton(VD), PSet::singleton(VD, 1), Range);
     }
     default:;
     }
@@ -766,7 +766,7 @@ public:
 PSet PSetsBuilder::getPSet(Variable P) {
   // We do not explicitly record pset(tmp) = {tmp'}.
   if (P.isTemporary())
-    return PSet::singleton(P, false, 1);
+    return PSet::singleton(P, 1);
 
   // Assumption: global Pointers have a pset of {static}
   if (P.hasStaticLifetime())
@@ -1104,7 +1104,7 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
 
     PSet PS;
     if (TC == TypeCategory::Owner) {
-      PS = PSet::singleton(PVD, false, 1);
+      PS = PSet::singleton(PVD, 1);
 
       // TODO: nullable Owners don't exist in the paper (yet?)
       if (isNullableType(ParamTy))
@@ -1119,7 +1119,7 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       QualType PointeeType = getPointeeType(ParamTy);
       switch (classifyTypeCategory(PointeeType)) {
       case TypeCategory::Owner: {
-        PSet DerefPS = PSet::singleton(P_deref, false, 1);
+        PSet DerefPS = PSet::singleton(P_deref, 1);
         if (isNullableType(ParamTy))
           DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
         PMap.emplace(P_deref, DerefPS);
