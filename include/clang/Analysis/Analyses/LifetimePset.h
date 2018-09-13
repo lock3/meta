@@ -157,7 +157,7 @@ struct Variable {
 };
 
 /// The reason why a pset became invalid
-/// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Loc.isValid()
+/// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Range.isValid()
 // TODO: We should use source ranges rather than single locations
 //       for user friendliness.
 class InvalidationReason {
@@ -172,84 +172,84 @@ class InvalidationReason {
   } Reason;
 
   const VarDecl *Pointee;
-  SourceLocation Loc;
+  SourceRange Range;
 
-  InvalidationReason(SourceLocation Loc, EReason Reason,
+  InvalidationReason(SourceRange Range, EReason Reason,
                      const VarDecl *Pointee = nullptr)
-      : Reason(Reason), Pointee(Pointee), Loc(Loc) {
-    assert(Loc.isValid());
+      : Reason(Reason), Pointee(Pointee), Range(Range) {
+    assert(Range.isValid());
   }
 
 public:
-  SourceLocation getLoc() const { return Loc; }
+  SourceLocation getLoc() const { return Range.getBegin(); }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
     switch (Reason) {
     case NOT_INITIALIZED:
-      Reporter.noteNeverInitialized(Loc);
+      Reporter.noteNeverInitialized(getLoc());
       return;
     case POINTEE_LEFT_SCOPE:
       assert(Pointee);
-      Reporter.notePointeeLeftScope(Loc, Pointee->getNameAsString());
+      Reporter.notePointeeLeftScope(getLoc(), Pointee->getNameAsString());
       return;
     case TEMPORARY_LEFT_SCOPE:
-      Reporter.noteTemporaryDestroyed(Loc);
+      Reporter.noteTemporaryDestroyed(getLoc());
       return;
     case FORBIDDEN_CAST:
-      Reporter.noteForbiddenCast(Loc);
+      Reporter.noteForbiddenCast(getLoc());
       return;
     case POINTER_ARITHMETIC:
-      Reporter.notePointerArithmetic(Loc);
+      Reporter.notePointerArithmetic(getLoc());
       return;
     case DEREFERENCED:
-      Reporter.noteDereferenced(Loc);
+      Reporter.noteDereferenced(getLoc());
       return;
     case MODIFIED:
-      Reporter.noteModified(Loc);
+      Reporter.noteModified(getLoc());
       return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
   }
 
-  static InvalidationReason NotInitialized(SourceLocation Loc) {
-    return {Loc, NOT_INITIALIZED};
+  static InvalidationReason NotInitialized(SourceRange Range) {
+    return {Range, NOT_INITIALIZED};
   }
 
-  static InvalidationReason PointeeLeftScope(SourceLocation Loc,
+  static InvalidationReason PointeeLeftScope(SourceRange Range,
                                              const VarDecl *Pointee) {
     assert(Pointee);
-    return {Loc, POINTEE_LEFT_SCOPE, Pointee};
+    return {Range, POINTEE_LEFT_SCOPE, Pointee};
   }
 
-  static InvalidationReason TemporaryLeftScope(SourceLocation Loc) {
-    return {Loc, TEMPORARY_LEFT_SCOPE};
+  static InvalidationReason TemporaryLeftScope(SourceRange Range) {
+    return {Range, TEMPORARY_LEFT_SCOPE};
   }
 
-  static InvalidationReason PointerArithmetic(SourceLocation Loc) {
-    return {Loc, POINTER_ARITHMETIC};
+  static InvalidationReason PointerArithmetic(SourceRange Range) {
+    return {Range, POINTER_ARITHMETIC};
   }
 
-  static InvalidationReason Dereferenced(SourceLocation Loc) {
-    return {Loc, DEREFERENCED};
+  static InvalidationReason Dereferenced(SourceRange Range) {
+    return {Range, DEREFERENCED};
   }
 
-  static InvalidationReason ForbiddenCast(SourceLocation Loc) {
-    return {Loc, FORBIDDEN_CAST};
+  static InvalidationReason ForbiddenCast(SourceRange Range) {
+    return {Range, FORBIDDEN_CAST};
   }
 
-  static InvalidationReason Modified(SourceLocation Loc) {
-    return {Loc, MODIFIED};
+  static InvalidationReason Modified(SourceRange Range) {
+    return {Range, MODIFIED};
   }
 };
 
 /// The reason how null entered a pset.
 class NullReason {
-  SourceLocation Loc;
+  SourceRange Range;
 
 public:
-  NullReason(SourceLocation Loc) : Loc(Loc) { assert(Loc.isValid()); }
+  NullReason(SourceRange Range) : Range(Range) { assert(Range.isValid()); }
   void emitNote(LifetimeReporterBase &Reporter) const {
-    Reporter.noteAssigned(Loc);
+    Reporter.noteAssigned(Range.getBegin());
   }
 };
 
