@@ -524,9 +524,9 @@ void namespace_scoped_vars(int param_i, const int *param_p) {
   }
 
   int local_i;
-  global_p1 = &local_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(local_i)}}
-  global_p1 = &param_i; // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {(param_i)}}
-  global_p1 = param_p;  // expected-warning {{the pset of 'TODO' must be a subset of {(static), (null)}, but is {((*param_p), (null))}}
+  global_p1 = &local_i; // expected-warning {{the pset of '&local_i' must be a subset of {(static), (null)}, but is {(local_i)}}
+  global_p1 = &param_i; // expected-warning {{the pset of '&param_i' must be a subset of {(static), (null)}, but is {(param_i)}}
+  global_p1 = param_p;  // expected-warning {{the pset of 'param_p' must be a subset of {(static), (null)}, but is {((*param_p), (null))}}
   const int *local_p = global_p1;
   __lifetime_pset(local_p); // expected-warning {{pset(local_p) = ((static))}}
 
