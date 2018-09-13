@@ -281,9 +281,11 @@ public:
   void VisitBinaryOperator(const BinaryOperator *BO) {
     if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
-    } else if (hasPSet(BO)) {
+    } else if (BO->getType()->isPointerType()) {
       setPSet(BO, PSet::invalid(InvalidationReason::PointerArithmetic(
                       BO->getSourceRange())));
+    } else if (BO->isLValue() && BO->isCompoundAssignmentOp()) {
+      setPSet(BO, getPSet(BO->getLHS()));
     }
   }
 
