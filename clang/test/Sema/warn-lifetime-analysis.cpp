@@ -255,7 +255,8 @@ std::string operator+(std::string_view sv1, std::string_view sv2) {
 
 template <typename T>
 T concat(const T &x, const T &y) {
-  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set (x, y) is expected}}
+  // TODO: Elide the deref for references?
+  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set ((*x), (*y)) is expected}}
 }
 
 void sj4() {

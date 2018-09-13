@@ -1090,26 +1090,35 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       continue;
     QualType PointeeType = getPointeeType(ParamTy);
     Variable P(PVD);
-    // Pointers initially point to their conjured deref location. But references
-    // already handled as they are pointing to the deref loc.
-    if (TC == TypeCategory::Pointer && !ParamTy->isReferenceType())
-      P.deref();
+    Variable DerefP = P;
+    if (TC == TypeCategory::Pointer)
+      DerefP.deref();
+    // Pointers initially point to their conjured deref location.
     // Parameters cannot be invalid (checked at call site).
-    PSet PS;
+    PSet PS = PSet::singleton(DerefP, isNullableType(ParamTy),
+                              TC == TypeCategory::Owner);
+    PSetForAllParams.merge(PS);
     // Output params are initially undefined.
+    TypeCategory PointeeTC = !PointeeType.isNull()
+                                 ? classifyTypeCategory(PointeeType)
+                                 : TypeCategory::Value;
     if (TC == TypeCategory::Pointer && !PointeeType.isNull() &&
-        !PointeeType.isConstQualified() && !ParamTy->isRValueReferenceType()) {
-      PS = PSet::invalid(
+        !PointeeType.isConstQualified() && !ParamTy->isRValueReferenceType() &&
+        (PointeeTC == TypeCategory::Pointer)) {
+      PSet OutputPSet = PSet::invalid(
           InvalidationReason::NotInitialized(PVD->getSourceRange()));
-      // It is still ok to point to output values when we return values.
-      PSetForAllParams.merge(PSet::singleton(P, isNullableType(ParamTy),
-                                             TC == TypeCategory::Owner));
-    } else {
-      PS = PSet::singleton(P, isNullableType(ParamTy),
-                           TC == TypeCategory::Owner);
-      PSetForAllParams.merge(PS);
+      PMap.emplace(DerefP, std::move(OutputPSet));
+    } else if (ParamTy->isReferenceType() && PointeeType.isConstQualified()
+               && PointeeTC == TypeCategory::Pointer) {
+      // For const Pointer& arguments, we need the pointee of the Pointer in the
+      // pmap, which is gained by dereferencing the reference twice.
+      Variable DerefDerefP = DerefP;
+      DerefDerefP.deref();
+      PSet DerefDerefPSet = PSet::singleton(
+          DerefDerefP, isNullableType(ParamTy), TC == TypeCategory::Owner);
+      PMap.emplace(DerefP, std::move(DerefDerefPSet));
     }
-    PMap.emplace(PVD, std::move(PS));
+    PMap.emplace(P, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
