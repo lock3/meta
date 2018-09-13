@@ -291,7 +291,8 @@ public:
 
   void VisitUnaryOperator(const UnaryOperator *UO) {
     switch (UO->getOpcode()) {
-    case UO_AddrOf: break;
+    case UO_AddrOf:
+      break;
     case UO_Deref: {
       auto PS = getPSet(UO->getSubExpr());
       CheckPSetValidity(PS, UO->getSourceRange());
@@ -330,7 +331,7 @@ public:
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     if (isPointer(E)) {
       if (E->getNumArgs() == 0) {
-        setPSet(E, PSet::null(E->getSourceRange()));
+        setPSet(E, PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
         return;
       }
       auto TC = classifyTypeCategory(E->getArg(0)->getType());

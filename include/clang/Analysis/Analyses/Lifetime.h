@@ -52,6 +52,7 @@ public:
   virtual void noteModified(SourceLocation Loc) = 0;
   virtual void noteAssigned(SourceLocation Loc) = 0;
   virtual void noteParameterNull(SourceLocation Loc) = 0;
+  virtual void noteNullDefaultConstructed(SourceLocation Loc) = 0;
   virtual void debugPset(SourceLocation Loc, StringRef Variable,
                          std::string Pset) = 0;
   virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category) = 0;

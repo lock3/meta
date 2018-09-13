@@ -102,7 +102,7 @@ struct [[gsl::Pointer]] my_pointer {
 void deref_uninitialized() {
   int *p;        // expected-note {{it was never initialized here}}
   *p = 3;        // expected-warning {{dereferencing a dangling pointer}}
-  my_pointer p2; // expected-note {{assigned here}}
+  my_pointer p2; // expected-note {{default-constructed Pointers are assumed to be null}}
   *p2;           // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
 
@@ -209,7 +209,7 @@ const int *return_wrong_ptr(const int *p) {
 }
 
 void use_null_param(int *p) {
-  // expected-note@-1 {{This parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null.}}
+  // expected-note@-1 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
   (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
 }
 

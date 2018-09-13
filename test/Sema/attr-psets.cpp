@@ -1095,7 +1095,7 @@ public:
   void operator*();
 };
 void b() {
-  a c;   // expected-note {{assigned here}}
+  a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
   c = 0; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
 } // namespace creduce4
