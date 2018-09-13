@@ -277,7 +277,7 @@ public:
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer.
       setPSet(getPSet(BO->getLHS()), getPSet(BO->getRHS()),
-              BO->getSourceRange());
+              BO->getRHS()->getSourceRange());
     }
 
     setPSet(BO, getPSet(BO->getLHS()));
@@ -847,8 +847,12 @@ PSet PSetsBuilder::derefPSet(const PSet &PS) {
 void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   // Assumption: global Pointers have a pset that is a subset of {static,
   // null}
-  if (LHS.isStatic() && !RHS.isUnknown() && !RHS.isStatic() && !RHS.isNull())
-    Reporter.warnPsetOfGlobal(Range.getBegin(), "TODO", RHS.str());
+  if (LHS.isStatic() && !RHS.isUnknown() && !RHS.isStatic() && !RHS.isNull()) {
+    StringRef SourceText =
+        Lexer::getSourceText(CharSourceRange::getTokenRange(Range),
+                             ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
+    Reporter.warnPsetOfGlobal(Range.getBegin(), SourceText, RHS.str());
+  }
 
   if (LHS.isSingleton()) {
     Variable Var = LHS.vars().begin()->first;
