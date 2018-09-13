@@ -1,10 +1,20 @@
-// RUN: /Users/wyatt/Projects/llvm-build/bin/clang++ -std=c++1z -freflection /Users/wyatt/Projects/clang/test/CXX/meta/class_metaprogram.cpp
+// RUN: %clangxx -std=c++1z -freflection %s
 
 #include <experimental/meta>
+
+int global_int = 42;
 
 constexpr auto inner_fragment = __fragment struct {
   int inner_frag_num() {
     return 0;
+  }
+
+  int inner_proxy_frag_num() {
+    return this->y;
+  }
+
+  int referenced_global() {
+    return global_int;
   }
 };
 
@@ -19,12 +29,23 @@ constexpr auto fragment = __fragment struct {
     return 2;
   }
 
+  int proxy_frag_num() {
+    return this->y;
+  }
+
   typedef int fragment_int;
 };
 
 class Foo {
+  int y = 55;
+
   constexpr {
     -> fragment;
+  }
+
+public:
+  int dependent_on_injected_val() {
+    return this->x;
   }
 };
 
@@ -32,8 +53,12 @@ int main() {
   Foo f;
 
   assert(f.x == 1);
+  assert(f.dependent_on_injected_val() == 1);
   assert(f.frag_num() == 2);
   assert(f.inner_frag_num() == 0);
+  assert(f.proxy_frag_num() == 55);
+  assert(f.inner_proxy_frag_num() == 55);
+  assert(f.referenced_global() == 42);
 
   Foo::fragment_int int_of_injected_type = 1;
   assert(static_cast<int>(int_of_injected_type) == 1);

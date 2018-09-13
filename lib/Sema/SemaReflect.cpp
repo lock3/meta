@@ -1065,6 +1065,7 @@ void Sema::ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
   CXXMetaprogramDecl *CD = cast<CXXMetaprogramDecl>(D);
   if (CD->hasFunctionRepresentation()) {
     FunctionDecl *Fn = CD->getFunctionDecl();
+    DiscardCleanupsInEvaluationContext();
     ActOnFinishFunctionBody(Fn, Body);
     if (!CurContext->isDependentContext())
       EvaluateCXXMetaprogramDecl(CD, Fn);
