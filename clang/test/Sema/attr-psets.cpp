@@ -1036,4 +1036,16 @@ class a {
   void operator==(a);
   a m_fn2();
 };
+} // namespace creduce3
+
+namespace creduce4 {
+class a {
+public:
+  void operator=(int);
+  void operator*();
+};
+void b() {
+  a c;   // expected-note {{assigned here}}
+  c = 0; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
 }
+} // namespace creduce4
