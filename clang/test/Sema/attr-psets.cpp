@@ -1044,6 +1044,23 @@ void foreach_arithmetic() {
   }
 }
 
+namespace CXXScalarValueInitExpr {
+template <typename a>
+class b {
+public:
+  void c() {
+    // CXXScalarValueInitExpr -> value-initialization
+    int *p = a();
+    __lifetime_pset(p); // expected-warning {{((null))}}
+  }
+};
+
+void d() {
+  b<int *> d;
+  d.c(); // expected-note {{in instantiation}}
+}
+} // namespace CXXScalarValueInitExpr
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument

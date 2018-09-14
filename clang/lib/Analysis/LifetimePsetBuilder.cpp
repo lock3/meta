@@ -238,6 +238,15 @@ public:
     setPSet(I, PSet::singleton(Variable::temporary()));
   }
 
+  void VisitCXXScalarValueInitExpr(const CXXScalarValueInitExpr *E) {
+    // Appears for `T()` in a template specialisation, where
+    // T is a simple type.
+    if (E->getType()->isPointerType()) {
+      setPSet(E,
+              PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
+    }
+  }
+
   void VisitCastExpr(const CastExpr *E) {
     // Some casts are transparent, see IgnoreTransparentExprs()
     switch (E->getCastKind()) {
@@ -289,7 +298,7 @@ public:
                       BO->getSourceRange())));
     } else if (BO->isLValue() && BO->isCompoundAssignmentOp()) {
       setPSet(BO, getPSet(BO->getLHS()));
-    } else if(BO->isLValue() && BO->getOpcode() == BO_Comma) {
+    } else if (BO->isLValue() && BO->getOpcode() == BO_Comma) {
       setPSet(BO, getPSet(BO->getRHS()));
     }
   }
