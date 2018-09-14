@@ -1119,4 +1119,12 @@ protected:
 class c : a {
   c() { (void)this->b; }
 };
+} // namespace creduce6
+
+namespace creduce7 {
+int a;
+void b() {
+  int c = ((void)b, a);
+  (void)c;
 }
+} // namespace creduce7
