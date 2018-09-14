@@ -695,6 +695,8 @@ public:
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
       assert(I != RefersTo.end());
+      if (I == RefersTo.end())
+        return {};
       return I->second;
     } else {
       auto I = PSetsOfExpr.find(E);
