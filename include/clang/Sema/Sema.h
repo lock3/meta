@@ -10134,9 +10134,12 @@ public:
   bool ApplyEffects(SourceLocation POI,
 		    SmallVectorImpl<EvalEffect> &Injections);
   bool HasPendingInjections(DeclContext *D);
-  void InjectPendingDefinitions();
-  void InjectPendingDefinitions(InjectionContext *Cxt);
-  void InjectPendingDefinition(InjectionContext *Cxt, Decl *Frag, Decl *New);
+  void InjectPendingFieldDefinitions();
+  void InjectPendingMethodDefinitions();
+  void InjectPendingFieldDefinitions(InjectionContext *Cxt);
+  void InjectPendingMethodDefinitions(InjectionContext *Cxt);
+  void InjectPendingDefinition(InjectionContext *Cxt, FieldDecl *Frag, FieldDecl *New);
+  void InjectPendingDefinition(InjectionContext *Cxt, CXXMethodDecl *Frag, CXXMethodDecl *New);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 

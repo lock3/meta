@@ -4,7 +4,14 @@
 
 int global_int = 42;
 
-constexpr auto inner_fragment = __fragment struct {
+constexpr auto inner_fragment = __fragment struct S {
+  int* c0 = new int(5);
+
+  S() { }
+  ~S() {
+    delete c0;
+  }
+
   int inner_frag_num() {
     return 0;
   }
@@ -61,6 +68,7 @@ int main() {
   assert(f.proxy_frag_num() == 55);
   assert(f.inner_proxy_frag_num() == 55);
   assert(f.referenced_global() == 42);
+  assert(*f.c0 == 5);
 
   Foo::fragment_int int_of_injected_type = 1;
   assert(static_cast<int>(int_of_injected_type) == 1);

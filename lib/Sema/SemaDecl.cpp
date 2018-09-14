@@ -15054,7 +15054,7 @@ static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
     return;
   if (!SemaRef.HasPendingInjections(D))
     return;
-  SemaRef.InjectPendingDefinitions();
+  SemaRef.InjectPendingFieldDefinitions();
 }
 
 void Sema::CompleteDefinition(RecordDecl *D) {

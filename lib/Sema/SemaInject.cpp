@@ -28,10 +28,18 @@ using namespace clang;
 
 namespace clang {
 
+enum InjectedDefType {
+  InjectedDef_Field,
+  InjectedDef_Method
+};
+
 /// Records information about a definition inside a fragment that must be
 /// processed later. These are typically fields and methods.
 struct InjectedDef {
-  InjectedDef(Decl *F, Decl *I) : Fragment(F), Injected(I) { }
+  InjectedDef(const InjectedDefType& T, Decl *F, Decl *I) :
+    Type(T), Fragment(F), Injected(I) { }
+
+  InjectedDefType Type;
 
   /// The declaration within the fragment.
   Decl *Fragment;
@@ -331,7 +339,7 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
-  CXXRecordDecl *Owner;
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
   Expr *BitWidth = nullptr;
@@ -355,7 +363,7 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // If the field has an initializer, add it to the Fragment so that we
   // can process it later.
   if (D->hasInClassInitializer())
-    InjectedDefinitions.push_back(InjectedDef(D, Field));
+    InjectedDefinitions.push_back(InjectedDef(InjectedDef_Field, D, Field));
 
   return Field;
 }
@@ -364,7 +372,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
-  CXXRecordDecl *Owner;
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
   // Build the underlying method.
@@ -426,7 +434,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // flags processed above. Ignore the definition if we've marked this
   // as pure virtual.
   if (D->hasBody() && !Method->isPure())
-    InjectedDefinitions.push_back(InjectedDef(D, Method));
+    InjectedDefinitions.push_back(InjectedDef(InjectedDef_Method, D, Method));
 
   return Method;
 }
@@ -918,53 +926,86 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   return false;
 }
 
-void Sema::InjectPendingDefinitions() {
+static void CleanupUsedContexts(
+  std::deque<InjectionContext *>& PendingClassMemberInjections) {
   while (!PendingClassMemberInjections.empty()) {
-    InjectionContext *Cxt = PendingClassMemberInjections.back();
+    delete PendingClassMemberInjections.back();
     PendingClassMemberInjections.pop_back();
-    InjectPendingDefinitions(Cxt);
   }
 }
 
-void Sema::InjectPendingDefinitions(InjectionContext *Cxt) {
+void Sema::InjectPendingFieldDefinitions() {
+  for (auto&& Cxt : PendingClassMemberInjections) {
+    InjectPendingFieldDefinitions(Cxt);
+  }
+}
+
+void Sema::InjectPendingMethodDefinitions() {
+  for (auto&& Cxt : PendingClassMemberInjections) {
+    InjectPendingMethodDefinitions(Cxt);
+  }
+  CleanupUsedContexts(PendingClassMemberInjections);
+}
+
+void Sema::InjectPendingFieldDefinitions(InjectionContext *Cxt) {
   Cxt->Attach();
-  for (InjectedDef& Def : Cxt->InjectedDefinitions)
-    InjectPendingDefinition(Cxt, Def.Fragment, Def.Injected);
-  delete Cxt;
+  for (InjectedDef& Def : Cxt->InjectedDefinitions) {
+    if (Def.Type != InjectedDef_Field)
+      continue;
+
+    InjectPendingDefinition(Cxt,
+  			    static_cast<FieldDecl *>(Def.Fragment),
+	  		    static_cast<FieldDecl *>(Def.Injected));
+  }
+}
+
+void Sema::InjectPendingMethodDefinitions(InjectionContext *Cxt) {
+  Cxt->Attach();
+  for (InjectedDef& Def : Cxt->InjectedDefinitions) {
+    if (Def.Type != InjectedDef_Method)
+      continue;
+
+    InjectPendingDefinition(Cxt,
+  			    static_cast<CXXMethodDecl *>(Def.Fragment),
+	  		    static_cast<CXXMethodDecl *>(Def.Injected));
+  }
 }
 
 void Sema::InjectPendingDefinition(InjectionContext *Cxt,
-                                   Decl *Frag,
-                                   Decl *New) {
+                                   FieldDecl *OldField,
+                                   FieldDecl *NewField) {
+  // Switch to the class enclosing the newly injected declaration.
+  ContextRAII ClassCxt (*this, NewField->getDeclContext());
+
+  // This is necessary to provide the correct lookup behavior
+  // for any injected field with a default initializer using
+  // a decl owned by the injectee
+  this->CXXThisTypeOverride = Context.getPointerType(
+    Context.getRecordType(NewField->getParent()));
+
+  ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());
+  if (Init.isInvalid())
+    NewField->setInvalidDecl();
+  else
+    NewField->setInClassInitializer(Init.get());
+}
+
+void Sema::InjectPendingDefinition(InjectionContext *Cxt,
+                                   CXXMethodDecl *OldMethod,
+                                   CXXMethodDecl *NewMethod) {
   // FIXME: Everything should already be parsed
   // this should be unncessary
   PushFunctionScope();
 
-  if (FieldDecl *OldField = dyn_cast<FieldDecl>(Frag)) {
-    FieldDecl *NewField = cast<FieldDecl>(New);
+  ContextRAII MethodCxt (*this, NewMethod);
+  StmtResult Body = Cxt->TransformStmt(OldMethod->getBody());
+  if (Body.isInvalid())
+    NewMethod->setInvalidDecl();
+  else
+    NewMethod->setBody(Body.get());
 
-    // Switch to the class enclosing the newly injected declaration.
-    ContextRAII ClassCxt (*this, NewField->getDeclContext());
-
-    // This is necessary to provide the correct lookup behavior
-    // for any injected field with a default initializer using
-    // a decl owned by the injectee
-    this->CXXThisTypeOverride = Context.getPointerType(
-      Context.getRecordType(NewField->getParent()));
-
-    ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());
-    if (Init.isInvalid())
-      NewField->setInvalidDecl();
-    else
-      NewField->setInClassInitializer(Init.get());
-  }
-  else if (CXXMethodDecl *OldMethod = dyn_cast<CXXMethodDecl>(Frag)) {
-    CXXMethodDecl *NewMethod = cast<CXXMethodDecl>(New);
-    ContextRAII MethodCxt (*this, NewMethod);
-    StmtResult Body = Cxt->TransformStmt(OldMethod->getBody());
-    if (Body.isInvalid())
-      NewMethod->setInvalidDecl();
-    else
-      NewMethod->setBody(Body.get());
+  if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(NewMethod)) {
+    SetCtorInitializers(Constructor, /*AnyErrors=*/false);
+    // DiagnoseUninitializedFields(*this, Constructor);
   }
 }
