@@ -1145,3 +1145,12 @@ void b() {
   (void)c;
 }
 } // namespace creduce7
+
+namespace creduce8 {
+// ImplicitValueInitExpr of array type
+class a {
+  char b[];
+  a();
+};
+a::a() : b() {}
+} // namespace creduce8
