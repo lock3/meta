@@ -378,17 +378,9 @@ public:
   }
 
   void VisitImplicitValueInitExpr(const ImplicitValueInitExpr *E) {
-    // ImplicitValueInitExpr does not have a valid location
-    if (E->getType()->isPointerType()) {
-      auto Parents = ASTCtxt.getParents(*E);
-      if (Parents.empty())
-        return;
-      setPSet(E, PSet::null(NullReason::defaultConstructed(Parents[0].getSourceRange())));
-    } else if (E->getType()->isArrayType()) {
-      // This pset is anyway unused, but satifies our general check
-      // that we have psets of all Pointer/Owners.
-      setPSet(E, {});
-    }
+    // We don't really care, because this expression is not referenced
+    // anywhere. But still set it to satisfy the VisitStmt() post-condition.
+    setPSet(E, {});
   }
 
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
