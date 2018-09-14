@@ -674,10 +674,15 @@ public:
       if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
         I = PMap.erase(I);
       } else {
-        for (auto V : I->second.vars()) {
-          if (V.first.isLifetimeExtendedTemporaryBy(VD))
-            invalidateVar(V.first, 0, Reason);
-        }
+        auto &Var = I->first;
+        auto &Pset = I->second;
+        bool PsetContainsTemporary =
+            std::any_of(Pset.vars().begin(), Pset.vars().end(),
+                        [VD](const std::pair<const Variable, unsigned> &KV) {
+                          return KV.first.isLifetimeExtendedTemporaryBy(VD);
+                        });
+        if (PsetContainsTemporary)
+          setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getLoc());
         ++I;
       }
     }
