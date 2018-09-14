@@ -1004,8 +1004,39 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
   else
     NewMethod->setBody(Body.get());
 
-  if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(NewMethod)) {
-    SetCtorInitializers(Constructor, /*AnyErrors=*/false);
+  if (CXXConstructorDecl *OldConstructor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
+    CXXConstructorDecl *NewConstructor = cast<CXXConstructorDecl>(NewMethod);
+
+    int NumCtorInits = OldConstructor->getNumCtorInitializers();
+    CXXCtorInitializer** NewCtorInits = new CXXCtorInitializer*[NumCtorInits]();
+
+    MutableArrayRef<CXXCtorInitializer *> NewInitArgs(NewCtorInits, NumCtorInits);
+
+    auto OldIterator = OldConstructor->init_begin();
+    auto OldIteratorEnd = OldConstructor->init_end();
+    auto NewIterator = NewInitArgs.begin();
+    auto NewIteratorEnd = NewInitArgs.end();
+
+    while (OldIterator != OldIteratorEnd && NewIterator != NewIteratorEnd) {
+      CXXCtorInitializer* OldInitializer = *OldIterator;
+
+      ASTContext &AST = getASTContext();
+      FieldDecl* NewField = cast<FieldDecl>(
+        Cxt->GetDeclReplacement(OldInitializer->getMember()));
+      ExprResult NewInit = Cxt->TransformExpr(OldInitializer->getInit());
+
+      CXXCtorInitializer* NewInitializer = new CXXCtorInitializer(
+	AST, NewField, OldInitializer->getMemberLocation(),
+        OldInitializer->getLParenLoc(), NewInit.get(),
+	OldInitializer->getRParenLoc());
+
+      *NewIterator = NewInitializer;
+
+      OldIterator++;
+      NewIterator++;
+    }
+
+    SetCtorInitializers(NewConstructor, /*AnyErrors=*/false, NewInitArgs);
     // DiagnoseUninitializedFields(*this, Constructor);
   }
 }
