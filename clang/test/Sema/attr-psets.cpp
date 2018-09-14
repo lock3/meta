@@ -1044,6 +1044,14 @@ void foreach_arithmetic() {
   }
 }
 
+void enum_casts() {
+  enum EN {
+    TEST,
+  };
+  EN E1, E2;
+  ((int &)E1) |= ((int)E2);
+}
+
 namespace CXXScalarValueInitExpr {
 template <typename a>
 class b {
