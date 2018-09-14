@@ -813,9 +813,12 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (P.isField())
     return PSet::staticVar(false);
 
+#ifndef NDEBUG
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
                << "\n";
   llvm_unreachable("Missing pset for Pointer");
+#endif
+  return {};
 }
 
 /// Computes the pset of dereferencing a variable with the given pset
