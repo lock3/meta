@@ -289,6 +289,8 @@ public:
                       BO->getSourceRange())));
     } else if (BO->isLValue() && BO->isCompoundAssignmentOp()) {
       setPSet(BO, getPSet(BO->getLHS()));
+    } else if(BO->isLValue() && BO->getOpcode() == BO_Comma) {
+      setPSet(BO, getPSet(BO->getRHS()));
     }
   }
 
