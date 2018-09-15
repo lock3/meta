@@ -5,7 +5,7 @@
 namespace std {
 struct any {
   any();
-  any(const any&);
+  any(const any &);
   ~any();
 };
 
@@ -73,7 +73,7 @@ struct priority_queue {};
 template <typename... T>
 struct variant {
   variant();
-  variant(const variant&);
+  variant(const variant &);
   ~variant();
 };
 
@@ -87,7 +87,7 @@ struct reference_wrapper {
 template <typename T>
 struct shared_ptr {
   template <typename T2 = T>
-  T2& operator*();
+  T2 &operator*();
   ~shared_ptr();
 };
 } // namespace std
@@ -118,14 +118,14 @@ struct my_derived_owner : my_implicit_owner {
 
 void owner() {
   // Use decltype to force template instantiation.
-  __lifetime_type_category<my_owner>();                              // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::vector<int>())>();          // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::unique_ptr<int>())>();      // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::shared_ptr<int>())>();      // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::stack<int>())>();           // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::queue<int>())>();           // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::priority_queue<int>())>();  // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::optional<int>())>();        // expected-warning {{Owner}}
+  __lifetime_type_category<my_owner>();                             // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::vector<int>())>();         // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::unique_ptr<int>())>();     // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::shared_ptr<int>())>();     // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::stack<int>())>();          // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::queue<int>())>();          // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::priority_queue<int>())>(); // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::optional<int>())>();       // expected-warning {{Owner}}
   using IntVector = std::vector<int>;
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_implicit_owner())>(); // expected-warning {{Owner}}
