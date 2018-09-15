@@ -694,7 +694,7 @@ public:
     E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
-      assert(I != RefersTo.end());
+      assert(AllowNonExisting || I != RefersTo.end());
       if (I == RefersTo.end())
         return {};
       return I->second;

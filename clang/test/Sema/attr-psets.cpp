@@ -990,6 +990,11 @@ void pruned_branch(bool cond) {
 
   int *non_trivial = cond ? &i : nullptr;
   __lifetime_pset(non_trivial); // expected-warning {{((null), i)}}
+
+  // Pruned branches with lvalues
+  int a, b;
+  int &trivial_r = 0 ? b : a;
+  __lifetime_pset_ref(trivial_r); // expected-warning {{(a)}}
 }
 
 void parameter_psets(int value,
