@@ -915,9 +915,9 @@ struct [[gsl::Owner]] OwnerPointsToTemplateType {
 
 void ownerPointsToTemplateType() {
   OwnerPointsToTemplateType<int> O;
-  __lifetime_pset(O); // expected-warning {{pset(O) = (O'}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
   int *I = O.get();
-  __lifetime_pset(I); // expected-warning {{pset(I) = (O'}}
+  __lifetime_pset(I); // expected-warning {{pset(I) = (O')}}
 
   // When finding the pointee type of an Owner,
   // look through AutoType to find the ClassTemplateSpecialization.
