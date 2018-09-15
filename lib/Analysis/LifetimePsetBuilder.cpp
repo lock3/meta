@@ -1017,19 +1017,33 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter.debugTypeCategory(Range.getBegin(), TC);
+    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
+      auto PointeeType = getPointeeType(QType);
+      assert(!PointeeType.isNull());
+      Reporter.debugTypeCategory(Range.getBegin(), TC,
+                                 PointeeType.getAsString());
+    } else {
+      Reporter.debugTypeCategory(Range.getBegin(), TC);
+    }
     return true;
   }
   case 4: {
     auto QType = CallE->getArg(0)->getType();
     TypeCategory TC = classifyTypeCategory(QType);
-    Reporter.debugTypeCategory(Range.getBegin(), TC);
+    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
+      auto PointeeType = getPointeeType(QType);
+      assert(!PointeeType.isNull());
+      Reporter.debugTypeCategory(Range.getBegin(), TC,
+                                 PointeeType.getAsString());
+    } else {
+      Reporter.debugTypeCategory(Range.getBegin(), TC);
+    }
     return true;
   }
   default:
     llvm_unreachable("Unknown debug function.");
   }
-}
+} // namespace lifetime
 
 static const Stmt *getRealTerminator(const CFGBlock &B) {
   if (B.succ_size() == 1)

@@ -2057,8 +2057,8 @@ public:
   }
 
   void debugTypeCategory(SourceLocation Loc,
-                         TypeCategory Category) final {
-    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category;
+                         TypeCategory Category, StringRef Pointee) final {
+    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category << !Pointee.empty() << Pointee;
   }
 };
 } // namespace lifetime
