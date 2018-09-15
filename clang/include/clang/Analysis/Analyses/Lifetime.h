@@ -56,7 +56,7 @@ public:
   virtual void noteNullComparedToNull(SourceLocation Loc) = 0;
   virtual void debugPset(SourceLocation Loc, StringRef Variable,
                          std::string Pset) = 0;
-  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category) = 0;
+  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category, StringRef Pointee = "") = 0;
 };
 
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,

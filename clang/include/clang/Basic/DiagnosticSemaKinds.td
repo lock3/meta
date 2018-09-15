@@ -3236,7 +3236,7 @@ def warn_pset : Warning<"pset(%0) = %1">,
   InGroup<LifetimeDebug>, DefaultIgnore;
 def warn_deref_unknown : Warning<"dereferencing a unknown pointer">,
   InGroup<LifetimeDebug>, DefaultIgnore;
-def warn_lifetime_type_category : Warning<"lifetime type category is %select{Owner|Pointer|Aggregate|Value}0">,
+def warn_lifetime_type_category : Warning<"lifetime type category is %select{Owner|Pointer|Aggregate|Value}0 %select{|with pointee %2}1">,
   InGroup<LifetimeDebug>, DefaultIgnore;
     
 // no_sanitize attribute
