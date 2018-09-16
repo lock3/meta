@@ -232,6 +232,15 @@ void null_notes_copy2(int *p) {
   (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
 }
 
+namespace supress_further_warnings {
+int *f(int *);
+void test() {
+  int *p; // expected-note {{it was never initialized here}}
+  int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
+  (void)*q; // further diagnostics are suppressed here
+}
+} // namespace supress_further_warnings
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>
