@@ -206,6 +206,49 @@ void value() {
   class C3;
   __lifetime_type_category<C3>(); // expected-warning {{Value}}
 
-  __lifetime_type_category<decltype(owner_failed_deduce())>();                // expected-warning {{Value}}
+  __lifetime_type_category<decltype(owner_failed_deduce())>();                   // expected-warning {{Value}}
   __lifetime_type_category<decltype(template_owner_failed_deduce<3, void>())>(); // expected-warning {{Value}}
 }
+
+namespace classTemplateInstantiation {
+// First template parameter is a non-type to avoid falling back
+// to deducing DerefType from first template parameter.
+template <int I, typename T>
+struct iterator {
+  T &operator*();
+};
+
+template <int I, typename T>
+struct vector {
+  iterator<I, T> begin();
+  iterator<I, T> end();
+  ~vector();
+};
+
+void f() {
+  // Clang would create an ClassTemplateSpecializationDecl for
+  // iterator<0, int>, but create no definition, i.e. we could not see
+  // iterator<0, int>::operator*(), unless that operator is explicitly called
+  // by the program. The lifetime checker now forces and definition of
+  // iterator<0, int> to be able to deduce the DerefType(iterator<0, int>).
+  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Owner with pointee int}}
+}
+} // namespace classTemplateInstantiation
+
+namespace functionTemplateInstantiation {
+// First template parameter is a non-type to avoid falling back
+// to deducing DerefType from first template parameter.
+template <int I, typename T>
+struct pointer {
+  template<typename D = T>
+  D& operator*();
+};
+
+void f() {
+  // Clang creates a FunctionTemplateDecl for operator*()
+  // but not specialisation for the default case (D = T)
+  // unless begin() is used in the program. The lifetime checker now forces
+  // and specialisation of operator*() to be able to deduce the DerefType(pointer<0, int>).
+  __lifetime_type_category<decltype(pointer<0, int>())>(); // expected-warning {{Pointer with pointee int}}
+}
+} // namespace functionTemplateInstantiation

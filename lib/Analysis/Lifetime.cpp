@@ -21,6 +21,10 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
+LookupOperatorTy GlobalLookupOperator;
+LookupMemberFunctionTy GlobalLookupMemberFunction;
+DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization;
+
 class LifetimeContext {
   /// Additional information for each CFGBlock.
   struct BlockContext {
@@ -202,12 +206,18 @@ void LifetimeContext::TraverseBlocks() {
 }
 
 /// Check that the function adheres to the lifetime profile
-void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter,
-                 IsConvertibleTy IsConvertible) {
+void runAnalysis(
+    const FunctionDecl *Func, ASTContext &Context,
+    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
+    LookupOperatorTy LookupOperator,
+    LookupMemberFunctionTy LookupMemberFunction,
+    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization) {
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
+  GlobalLookupOperator = LookupOperator;
+  GlobalLookupMemberFunction = LookupMemberFunction;
+  GlobalDefineClassTemplateSpecialization = DefineClassTemplateSpecialization;
   LifetimeContext LC(Context, Reporter, Func, IsConvertible);
   LC.TraverseBlocks();
 }

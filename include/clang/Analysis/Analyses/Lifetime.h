@@ -10,6 +10,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 
+#include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include <string>
 
@@ -20,9 +21,25 @@ class SourceManager;
 class VarDecl;
 class Sema;
 class QualType;
+class ClassTemplateSpecializationDecl;
+class CXXRecordDecl;
+class FunctionDecl;
 
 namespace lifetime {
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
+
+using LookupOperatorTy = llvm::function_ref<FunctionDecl *(
+    const CXXRecordDecl *R, OverloadedOperatorKind Op)>;
+extern LookupOperatorTy GlobalLookupOperator;
+
+using LookupMemberFunctionTy =
+    llvm::function_ref<FunctionDecl *(const CXXRecordDecl *R, StringRef Name)>;
+extern LookupMemberFunctionTy GlobalLookupMemberFunction;
+
+using DefineClassTemplateSpecializationTy =
+    llvm::function_ref<void(ClassTemplateSpecializationDecl *Specialization)>;
+extern DefineClassTemplateSpecializationTy
+    GlobalDefineClassTemplateSpecialization;
 
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
@@ -59,8 +76,12 @@ public:
   virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category, StringRef Pointee = "") = 0;
 };
 
-void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
-                 LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible);
+void runAnalysis(
+    const FunctionDecl *Func, ASTContext &Context,
+    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
+    LookupOperatorTy LookupOperator,
+    LookupMemberFunctionTy LookupMemberFunction,
+    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization);
 } // namespace lifetime
 } // namespace clang
 

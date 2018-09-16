@@ -11,8 +11,20 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
 
+#define CLASSIFY_DEBUG 0
+
 namespace clang {
 namespace lifetime {
+
+static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
+                                    OverloadedOperatorKind Op) {
+  return GlobalLookupOperator(R, Op);
+}
+
+static FunctionDecl *lookupMemberFunction(const CXXRecordDecl *R,
+                                          StringRef Name) {
+  return GlobalLookupMemberFunction(R, Name);
+}
 
 template <typename T>
 static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
@@ -73,6 +85,10 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
          hasMethodWithNameAndArgNum(R, "end", 0) && R->hasTrivialDestructor();
 }
 
+static bool hasDerefOperations(const CXXRecordDecl *R) {
+  return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
+}
+
 /// Classifies some well-known std:: types or returns an empty optional.
 /// Checks the type both before and after desugaring.
 // TODO:
@@ -119,9 +135,8 @@ TypeCategory classifyTypeCategory(QualType QT) {
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
            llvm::errs() << "\n";*/
-
   const Type *T = QT.getUnqualifiedType().getTypePtr();
-  const auto *R = T->getAsCXXRecordDecl();
+  auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
     // raw pointers and references
@@ -133,11 +148,32 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Value;
   }
 
-  // In case we do not know the pointee type fall back to value.
-  QualType Pointee = getPointeeType(QT);
+  if (!R->hasDefinition()) {
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
+      GlobalDefineClassTemplateSpecialization(CDS);
+  }
 
   if (!R->hasDefinition())
     return TypeCategory::Value;
+
+  // In case we do not know the pointee type fall back to value.
+  QualType Pointee = getPointeeType(QT);
+
+#if CLASSIFY_DEBUG
+  llvm::errs() << "classifyTypeCategory " << QT.getAsString() << "\n";
+  llvm::errs() << "  satisfiesContainerRequirements(R): "
+               << satisfiesContainerRequirements(R) << "\n";
+  llvm::errs() << "  hasDerefOperations(R): " << hasDerefOperations(R) << "\n";
+  llvm::errs() << "  satisfiesRangeConcept(R): " << satisfiesRangeConcept(R)
+               << "\n";
+  llvm::errs() << "  hasTrivialDestructor(R): " << R->hasTrivialDestructor()
+               << "\n";
+  llvm::errs() << "  satisfiesIteratorRequirements(R): "
+               << satisfiesIteratorRequirements(R) << "\n";
+  llvm::errs() << "  R->isAggregate(): " << R->isAggregate() << "\n";
+  llvm::errs() << "  R->isLambda(): " << R->isLambda() << "\n";
+  llvm::errs() << "  DerefType: " << Pointee.getAsString() << "\n";
+#endif
 
   if (R->hasAttr<OwnerAttr>()) {
     if (Pointee.isNull())
@@ -157,15 +193,9 @@ TypeCategory classifyTypeCategory(QualType QT) {
   if (!Pointee.isNull() && satisfiesContainerRequirements(R))
     return TypeCategory::Owner;
 
-  // TODO: handle outside class definition 'R& operator*(T a);' .
-  bool hasDerefOperations = hasMethodLike(R, [](const CXXMethodDecl *M) {
-    auto O = M->getDeclName().getCXXOverloadedOperator();
-    return (O == OO_Arrow) || (O == OO_Star && M->param_empty());
-  });
-
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
-  if (!Pointee.isNull() && hasDerefOperations && !R->hasTrivialDestructor())
+  if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
     return TypeCategory::Owner;
 
   if (auto Cat = classifyStd(T))
@@ -182,7 +212,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (!Pointee.isNull() && hasDerefOperations &&
+  if (!Pointee.isNull() && hasDerefOperations(R) &&
       !R->hasUserDeclaredDestructor())
     return TypeCategory::Pointer;
 
@@ -236,81 +266,39 @@ bool isNullableType(QualType QT) {
          !QT->isReferenceType();
 }
 
-static QualType getPointeeType(const CXXMethodDecl *M) {
-  assert(M);
-  QualType PointeeType;
+static QualType getPointeeType(const CXXRecordDecl *R) {
+  assert(R);
 
-  auto O = M->getDeclName().getCXXOverloadedOperator();
-  if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
-    PointeeType = M->getReturnType();
-    if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
-      PointeeType = PointeeType->getPointeeType();
-    PointeeType = PointeeType.getCanonicalType();
-    /*M->dump();
-    llvm::errs() << "points to " << PointeeType.getAsString()
-                 << " TC:" << (int)classifyTypeCategory(PointeeType) << "\n";*/
-    if (PointeeType->isDependentType())
-      return {};
-    return PointeeType;
+  for (auto Op : {OO_Star, OO_Arrow, OO_Subscript}) {
+    if (auto *F = lookupOperator(R, Op)) {
+      auto PointeeType = F->getReturnType();
+      if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
+        PointeeType = PointeeType->getPointeeType();
+      return PointeeType.getCanonicalType();
+    }
   }
 
-#if 0
-  auto *I = M->getDeclName().getAsIdentifierInfo();
-  if (I && I->getName() == "begin") {
-    PointeeType = M->getReturnType();
+  if (auto *F = lookupMemberFunction(R, "begin")) {
+    auto PointeeType = F->getReturnType();
     if (classifyTypeCategory(PointeeType) != TypeCategory::Pointer) {
+#if CLASSIFY_DEBUG
       // TODO: diag?
-      // llvm::errs() << "begin() function does not return a Pointer!\n";
-      // M->dump();
+      llvm::errs() << "begin() function does not return a Pointer!\n";
+      F->dump();
+#endif
       return {};
     }
     PointeeType = getPointeeType(PointeeType);
-    PointeeType = PointeeType.getCanonicalType();
-    /*M->dump();
-    llvm::errs() << "points to " << PointeeType.getAsString()
-                  << " TC:" << (int)classifyTypeCategory(PointeeType)
-                  << "\n";
-    PointeeType->dump();
-    if (PointeeType->isDependentType())
-      return false;*/
-    return PointeeType;
+    return PointeeType.getCanonicalType();
   }
-#endif
+
   // Heuristic for vector<bool>::reference. Return void, we do not
   // want it to alias with pointers to bool. TODO: revise.
-  if (M->getIdentifier() && M->getName() == "flip") {
-    PointeeType = M->getReturnType();
-    return PointeeType;
+  if (auto *F = lookupMemberFunction(R, "flip")) {
+    return F->getReturnType();
   }
-  return {};
-}
 
-static QualType getPointeeType(const CXXRecordDecl *R) {
-  assert(R);
-  QualType PointeeType;
-  std::any_of(R->decls_begin(), R->decls_end(), [&PointeeType](const Decl *D) {
-    if (auto *M = dyn_cast<CXXMethodDecl>(D)) {
-      PointeeType = getPointeeType(M);
-      return !PointeeType.isNull();
-    }
-    if (auto *Tmpl = dyn_cast<FunctionTemplateDecl>(D)) {
-      // TODO: we only see specializations that were added
-      // because the user explicitly called them. We should
-      // also look at other, e.g. when the template
-      // parameter has a default as in template<int I,
-      // typename T> struct Pointer {
-      //   template<typename S = T>
-      //   S& operator*();
-      // };
-      for (auto *S : Tmpl->specializations())
-        if (auto *M = dyn_cast<CXXMethodDecl>(S)) {
-          PointeeType = getPointeeType(M);
-          return !PointeeType.isNull();
-        }
-    }
-    return false;
-  });
-  return PointeeType;
+  return {};
 }
 
 static QualType getPointeeTypeImpl(QualType QT) {
@@ -321,41 +309,20 @@ static QualType getPointeeTypeImpl(QualType QT) {
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
 
-  const auto *R = QT->getAsCXXRecordDecl();
+  auto *R = QT->getAsCXXRecordDecl();
   if (!R)
     return {};
 
-  // llvm::errs() << "def:" << R->hasDefinition() << "\n";
   if (!R->hasDefinition()) {
-    // TODO: this happens for mentioned but no used template like
-    // template <typename T>
-    // struct vector_iterator { T &operator*(); };
-    // template <typename T>
-    // struct vector {
-    //   vector_iterator<T> begin();
-    //   ~vector();
-    // };
-    // where when looking at vector<int>, we will see that begin()
-    // returns vector_iterator<int>, but vector_iterator<int> will have no
-    // definition, because it is only specialized if an actual instance of that
-    // type is created by the program. We should force a template instantiation.
-    if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
-      auto &Args = T->getTemplateArgs();
-      if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
-        return Args[0].getAsType();
-    }
-    return {};
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
+      GlobalDefineClassTemplateSpecialization(CDS);
   }
+
+  assert(R->hasDefinition());
 
   auto PointeeType = getPointeeType(R);
   if (!PointeeType.isNull())
     return PointeeType;
-
-  for (auto Base : R->bases()) {
-    auto PointeeType = getPointeeType(Base.getType()->getAsCXXRecordDecl());
-    if (!PointeeType.isNull())
-      return PointeeType;
-  }
 
   if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
     auto &Args = T->getTemplateArgs();
@@ -385,9 +352,9 @@ QualType getPointeeType(QualType QT) {
   if (!P.isNull())
     P = P.getCanonicalType();
   M[Idx].second = P;
-#if 0
-  llvm::errs() << "DerefType(: " << QT.getAsString() << ") = "
-               << (P.isNull() ? "(null)" : P.getAsString()) << "\n";
+#if CLASSIFY_DEBUG
+  llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()
+               << "\n";
 #endif
   return P;
 }
