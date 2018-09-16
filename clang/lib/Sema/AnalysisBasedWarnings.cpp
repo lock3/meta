@@ -2309,9 +2309,98 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
         /*AllowObjCWritebackConversion=*/false);
       return !ICS.isFailure();
     };
+
+    /// Find the viable overload of the given kind on the given class.
+    /// Considers member function and non-member functions. Will create
+    /// template instantiations if necessary.
+    auto lookupOperator = [this](const CXXRecordDecl* R, OverloadedOperatorKind Op) -> FunctionDecl* {
+      // Find all of the overloaded operators visible from this
+      // point. We perform both an operator-name lookup from the local
+      // scope and an argument-dependent lookup based on the types of
+      // the arguments.
+      UnresolvedSet<16> Functions;
+      S.LookupOverloadedOperatorName(Op, S.getScopeForContext(const_cast<CXXRecordDecl*>(R)), QualType(), QualType(),
+                                    Functions);
+      DeclarationName OpName = S.Context.DeclarationNames.getCXXOperatorName(Op);
+      SourceLocation OpLoc = R->getLocation();
+      // TODO: provide better source location info.
+      //DeclarationNameInfo OpNameInfo(OpName, OpLoc);
+
+      // The expression itself does not matter, we just need to fake the right QualType.
+      // We are looking for an operator overload that takes an lvalue of class type.
+      Expr* Object = ImplicitCastExpr::Create(S.Context, S.Context.getRecordType(R), CK_NoOp, nullptr, nullptr, VK_LValue);
+      Expr *Args[2] = { Object, nullptr};
+      auto NumArgs = 1;
+      if (Op == OO_Subscript) {
+        auto SizeType = S.Context.getSizeType();
+        Args[1] = IntegerLiteral::Create(S.Context, llvm::APInt(S.Context.getIntWidth(SizeType), 0), SizeType, OpLoc);
+        NumArgs = 2;
+      }
+      ArrayRef<Expr *> ArgsArray(Args, NumArgs);
+
+      // Build an empty overload set.
+      OverloadCandidateSet CandidateSet(OpLoc, OverloadCandidateSet::CSK_Operator);
+
+      // Add the candidates from the given function set. Instantiates templates.
+      S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
+
+      // Add operator candidates that are member functions. Instantiates templates.
+      S.AddMemberOperatorCandidates(Op, OpLoc, ArgsArray, CandidateSet);
+
+      // Add candidates from ADL.  Instantiates templates.
+      S.AddArgumentDependentLookupCandidates(OpName, OpLoc, ArgsArray,
+                                            /*ExplicitTemplateArgs*/nullptr,
+                                            CandidateSet);
+      // Add builtin operator candidates.
+      //bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
+      // Perform overload resolution.
+      OverloadCandidateSet::iterator Best;
+      if(CandidateSet.BestViableFunction(S, OpLoc, Best) != OR_Success)
+        return nullptr;
+
+      return Best->Function;
+    };
+
+    /// Find a member function on R with the given name that takes no arguments. Instantiates templates.
+    auto lookupMemberFunction = [this](const CXXRecordDecl* R, StringRef Name) -> FunctionDecl* {
+      SourceLocation Loc = R->getLocation();
+      LookupResult Res(S, DeclarationNameInfo(DeclarationName(&S.Context.Idents.get(Name)), Loc), Sema::LookupMemberName);
+      S.LookupQualifiedName(Res, const_cast<CXXRecordDecl*>(R));
+
+      UnresolvedSet<16> Functions;
+      for(auto* D : Res)
+        Functions.addDecl(D);
+
+      // The expression itself does not matter, we just need to fake the right QualType.
+      // A member function takes the object as first argument.
+      Expr* Object = ImplicitCastExpr::Create(S.Context, S.Context.getRecordType(R), CK_NoOp, nullptr, nullptr, VK_LValue);
+      Expr *Args[] = { Object};
+      ArrayRef<Expr *> ArgsArray(Args, 1);
+
+      OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+      S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
+
+      OverloadCandidateSet::iterator Best;
+      if(CandidateSet.BestViableFunction(S, Loc, Best) != OR_Success)
+        return nullptr;
+
+      return Best->Function;
+    };
+
+    /// Tries to add the definition to a template specialization
+    /// \post Specialization->hasDefinition() == true if possible
+    auto tryInstantiateClassTemplateSpecialization = [this](ClassTemplateSpecializationDecl* Specialization) {
+      S.InstantiateClassTemplateSpecialization(Specialization->getLocation(), Specialization, TSK_ImplicitInstantiation, /*Complain=*/false);
+    };
+
     lifetime::Reporter Reporter{S};
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
-      lifetime::runAnalysis(FD, S.Context, Reporter, isConvertible);
+      lifetime::runAnalysis(FD, S.Context, Reporter,
+                            isConvertible,
+                            lookupOperator,
+                            lookupMemberFunction,
+                            tryInstantiateClassTemplateSpecialization);
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getBeginLoc()) ||
