@@ -2324,6 +2324,9 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       // Build an empty overload set.
       OverloadCandidateSet CandidateSet(OpLoc, OverloadCandidateSet::CSK_Operator);
 
+      bool PrevDiag = S.Diags.getSuppressAllDiagnostics();
+      S.Diags.setSuppressAllDiagnostics(true);
+
       // Add the candidates from the given function set. Instantiates templates.
       S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
 
@@ -2334,8 +2337,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       S.AddArgumentDependentLookupCandidates(OpName, OpLoc, ArgsArray,
                                             /*ExplicitTemplateArgs*/nullptr,
                                             CandidateSet);
-      // Add builtin operator candidates.
-      //bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
+      S.Diags.setSuppressAllDiagnostics(PrevDiag);
 
       // Perform overload resolution.
       OverloadCandidateSet::iterator Best;
@@ -2362,7 +2365,12 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       ArrayRef<Expr *> ArgsArray(Args, 1);
 
       OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+
+      // Don't diagnose if we fail here because the template is ill-formed.
+      bool PrevDiag = S.Diags.getSuppressAllDiagnostics();
+      S.Diags.setSuppressAllDiagnostics(true);
       S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
+      S.Diags.setSuppressAllDiagnostics(PrevDiag);
 
       OverloadCandidateSet::iterator Best;
       if(CandidateSet.BestViableFunction(S, Loc, Best) != OR_Success)
@@ -2374,7 +2382,10 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     /// Tries to add the definition to a template specialization
     /// \post Specialization->hasDefinition() == true if possible
     auto tryInstantiateClassTemplateSpecialization = [this](ClassTemplateSpecializationDecl* Specialization) {
+      bool Prev = S.Diags.getSuppressAllDiagnostics();
+      S.Diags.setSuppressAllDiagnostics(true);
       S.InstantiateClassTemplateSpecialization(Specialization->getLocation(), Specialization, TSK_ImplicitInstantiation, /*Complain=*/false);
+      S.Diags.setSuppressAllDiagnostics(Prev);
     };
 
     lifetime::Reporter Reporter{S};
