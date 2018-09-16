@@ -99,10 +99,23 @@ template <typename T>
 void __lifetime_type_category_arg(T arg) {}
 
 class [[gsl::Owner]] my_owner {
+  int &operator*();
   int i;
 };
 template <class T>
 class [[gsl::Pointer]] my_pointer {
+  T &operator*();
+  int i;
+};
+
+class [[gsl::Owner]] owner_failed_deduce {
+  // TODOexpected-warning@-1 {{cannot deduce deref type, ignoring attribute}}
+  int i;
+};
+
+template <int I, typename T>
+class [[gsl::Owner]] template_owner_failed_deduce {
+  // TODOexpected-warning@-1 {{cannot deduce deref type, ignoring attribute}}
   int i;
 };
 
@@ -192,4 +205,7 @@ void value() {
 
   class C3;
   __lifetime_type_category<C3>(); // expected-warning {{Value}}
+
+  __lifetime_type_category<decltype(owner_failed_deduce())>();                // expected-warning {{Value}}
+  __lifetime_type_category<decltype(template_owner_failed_deduce<3, void>())>(); // expected-warning {{Value}}
 }

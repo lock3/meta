@@ -133,17 +133,25 @@ TypeCategory classifyTypeCategory(QualType QT) {
     return TypeCategory::Value;
   }
 
+  // In case we do not know the pointee type fall back to value.
+  QualType Pointee = getPointeeType(QT);
+
   if (!R->hasDefinition())
     return TypeCategory::Value;
 
-  if (R->hasAttr<OwnerAttr>())
-    return TypeCategory::Owner;
+  if (R->hasAttr<OwnerAttr>()) {
+    if (Pointee.isNull())
+      return TypeCategory::Value; // TODO diagnose
+    else
+      return TypeCategory::Owner;
+  }
 
-  if (R->hasAttr<PointerAttr>())
-    return TypeCategory::Pointer;
-
-  // In case we do not know the pointee type fall back to value.
-  QualType Pointee = getPointeeType(QT);
+  if (R->hasAttr<PointerAttr>()) {
+    if (Pointee.isNull())
+      return TypeCategory::Value; // TODO diagnose
+    else
+      return TypeCategory::Pointer;
+  }
 
   // Every type that satisfies the standard Container requirements.
   if (!Pointee.isNull() && satisfiesContainerRequirements(R))
@@ -228,39 +236,160 @@ bool isNullableType(QualType QT) {
          !QT->isReferenceType();
 }
 
-QualType getPointeeType(QualType QT) {
+static QualType getPointeeType(const CXXMethodDecl *M) {
+  assert(M);
+  QualType PointeeType;
+
+  auto O = M->getDeclName().getCXXOverloadedOperator();
+  if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
+    PointeeType = M->getReturnType();
+    if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
+      PointeeType = PointeeType->getPointeeType();
+    PointeeType = PointeeType.getCanonicalType();
+    /*M->dump();
+    llvm::errs() << "points to " << PointeeType.getAsString()
+                 << " TC:" << (int)classifyTypeCategory(PointeeType) << "\n";*/
+    if (PointeeType->isDependentType())
+      return {};
+    return PointeeType;
+  }
+
+#if 0
+  auto *I = M->getDeclName().getAsIdentifierInfo();
+  if (I && I->getName() == "begin") {
+    PointeeType = M->getReturnType();
+    if (classifyTypeCategory(PointeeType) != TypeCategory::Pointer) {
+      // TODO: diag?
+      // llvm::errs() << "begin() function does not return a Pointer!\n";
+      // M->dump();
+      return {};
+    }
+    PointeeType = getPointeeType(PointeeType);
+    PointeeType = PointeeType.getCanonicalType();
+    /*M->dump();
+    llvm::errs() << "points to " << PointeeType.getAsString()
+                  << " TC:" << (int)classifyTypeCategory(PointeeType)
+                  << "\n";
+    PointeeType->dump();
+    if (PointeeType->isDependentType())
+      return false;*/
+    return PointeeType;
+  }
+#endif
+  // Heuristic for vector<bool>::reference. Return void, we do not
+  // want it to alias with pointers to bool. TODO: revise.
+  if (M->getIdentifier() && M->getName() == "flip") {
+    PointeeType = M->getReturnType();
+    return PointeeType;
+  }
+  return {};
+}
+
+static QualType getPointeeType(const CXXRecordDecl *R) {
+  assert(R);
+  QualType PointeeType;
+  std::any_of(R->decls_begin(), R->decls_end(), [&PointeeType](const Decl *D) {
+    if (auto *M = dyn_cast<CXXMethodDecl>(D)) {
+      PointeeType = getPointeeType(M);
+      return !PointeeType.isNull();
+    }
+    if (auto *Tmpl = dyn_cast<FunctionTemplateDecl>(D)) {
+      // TODO: we only see specializations that were added
+      // because the user explicitly called them. We should
+      // also look at other, e.g. when the template
+      // parameter has a default as in template<int I,
+      // typename T> struct Pointer {
+      //   template<typename S = T>
+      //   S& operator*();
+      // };
+      for (auto *S : Tmpl->specializations())
+        if (auto *M = dyn_cast<CXXMethodDecl>(S)) {
+          PointeeType = getPointeeType(M);
+          return !PointeeType.isNull();
+        }
+    }
+    return false;
+  });
+  return PointeeType;
+}
+
+static QualType getPointeeTypeImpl(QualType QT) {
   QT = QT.getCanonicalType();
+  // llvm::errs() << "\n\ngetPointeeType " << QT.getAsString() << " asRecord:"
+  // << (intptr_t)QT->getAsCXXRecordDecl() << "\n";
+
   if (QT->isReferenceType() || QT->isAnyPointerType())
     return QT->getPointeeType();
 
-  if (const auto *R = QT->getAsCXXRecordDecl()) {
-    for (auto *M : R->methods()) {
-      auto O = M->getDeclName().getCXXOverloadedOperator();
-      if (O == OO_Arrow || O == OO_Star || O == OO_Subscript) {
-        QT = M->getReturnType();
-        if (QT->isReferenceType() || QT->isAnyPointerType())
-          return QT->getPointeeType();
-        return QT;
-      }
-      // Heuristic for vector<bool>::reference. Return void, we do not
-      // want it to alias with pointers to bool. TODO: revise.
-      if (M->getIdentifier() && M->getName() == "flip")
-        return M->getReturnType();
-    }
-    // Check the bases.
-    for (auto Base : R->bases()) {
-      QualType Ret = getPointeeType(Base.getType());
-      if (!Ret.isNull())
-        return Ret;
-    }
+  const auto *R = QT->getAsCXXRecordDecl();
+  if (!R)
+    return {};
 
+  // llvm::errs() << "def:" << R->hasDefinition() << "\n";
+  if (!R->hasDefinition()) {
+    // TODO: this happens for mentioned but no used template like
+    // template <typename T>
+    // struct vector_iterator { T &operator*(); };
+    // template <typename T>
+    // struct vector {
+    //   vector_iterator<T> begin();
+    //   ~vector();
+    // };
+    // where when looking at vector<int>, we will see that begin()
+    // returns vector_iterator<int>, but vector_iterator<int> will have no
+    // definition, because it is only specialized if an actual instance of that
+    // type is created by the program. We should force a template instantiation.
     if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
       auto &Args = T->getTemplateArgs();
       if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
         return Args[0].getAsType();
     }
+    return {};
+  }
+
+  auto PointeeType = getPointeeType(R);
+  if (!PointeeType.isNull())
+    return PointeeType;
+
+  for (auto Base : R->bases()) {
+    auto PointeeType = getPointeeType(Base.getType()->getAsCXXRecordDecl());
+    if (!PointeeType.isNull())
+      return PointeeType;
+  }
+
+  if (auto *T = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+    auto &Args = T->getTemplateArgs();
+    if (Args.size() > 0 && Args[0].getKind() == TemplateArgument::Type)
+      return Args[0].getAsType();
   }
   return {};
+}
+
+QualType getPointeeType(QualType QT) {
+  QT = QT.getCanonicalType();
+  static std::vector<std::pair<QualType, QualType>> M;
+
+  auto I = std::find_if(
+      M.begin(), M.end(),
+      [&](const std::pair<QualType, QualType> &P) { return P.first == QT; });
+
+  if (I != M.end())
+    return I->second;
+
+  // Insert Null before calling getPointeeTypeImpl to stop
+  // a possible classifyTypeCategory -> getPointeeType infinite recursion
+  M.emplace_back(QT, QualType{});
+  size_t Idx = M.size() - 1;
+
+  auto P = getPointeeTypeImpl(QT);
+  if (!P.isNull())
+    P = P.getCanonicalType();
+  M[Idx].second = P;
+#if 0
+  llvm::errs() << "DerefType(: " << QT.getAsString() << ") = "
+               << (P.isNull() ? "(null)" : P.getAsString()) << "\n";
+#endif
+  return P;
 }
 
 CallTypes getCallTypes(const Expr *CalleeE) {
