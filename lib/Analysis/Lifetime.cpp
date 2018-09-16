@@ -7,11 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 #include "clang/Analysis/Analyses/Lifetime.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
-#include "clang/Analysis/CFGStmtMap.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/AST/ASTContext.h"
+#include "clang/Analysis/CFGStmtMap.h"
 #include "llvm/ADT/Statistic.h"
 
 #define DEBUG_TYPE "Lifetime Analysis"
