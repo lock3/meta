@@ -57,7 +57,8 @@ public:
   virtual void warnParameterNull(SourceLocation Loc, bool possibly) = 0;
   virtual void warnReturnDangling(SourceLocation Loc, bool possibly) = 0;
   virtual void warnReturnNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) = 0;
+  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset,
+                                   StringRef ExpectedPset) = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc, std::string Name) = 0;
   virtual void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) = 0;
 
@@ -73,7 +74,8 @@ public:
   virtual void noteNullComparedToNull(SourceLocation Loc) = 0;
   virtual void debugPset(SourceLocation Loc, StringRef Variable,
                          std::string Pset) = 0;
-  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category, StringRef Pointee = "") = 0;
+  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category,
+                                 StringRef Pointee = "") = 0;
 };
 
 void runAnalysis(
