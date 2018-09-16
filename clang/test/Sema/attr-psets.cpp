@@ -1184,3 +1184,17 @@ class a {
 };
 a::a() : b() {}
 } // namespace creduce8
+
+namespace creduce9 {
+template <typename a>
+struct b : a {};
+template <typename = b<int>>
+class c {};
+class B {
+  // b<int> is ill-formed, but only used by name
+  // We don't want to see any errors when we internally
+  // try to look at the instantiation.
+  c<> d;
+  B() {}
+};
+} // namespace creduce9
