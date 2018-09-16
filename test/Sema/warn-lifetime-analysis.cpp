@@ -96,7 +96,7 @@ struct Owner {
 };
 
 struct [[gsl::Pointer]] my_pointer {
-  int& operator*();
+  int &operator*();
 };
 
 void deref_uninitialized() {
@@ -212,7 +212,7 @@ void null_notes(int *p) {
   // expected-note@-1 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
   (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
 
-  if(p) { // expected-note {{is compared to null here}}
+  if (p) { // expected-note {{is compared to null here}}
     ;
   } else {
     (void)*p; // expected-warning {{dereferencing a null pointer}}
@@ -222,13 +222,13 @@ void null_notes(int *p) {
 void null_notes_copy(int *p) {
   // expected-note@-1 {{the parameter is assumed to be potentially null}}
   int *q = p; // expected-note {{assigned here}}
-  (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
+  (void)*q;   // expected-warning {{dereferencing a possibly null pointer}}
 }
 
 void null_notes_copy2(int *p) {
   // expected-note@-1 {{the parameter is assumed to be potentially null}}
   int *q;
-  q = p; // expected-note {{assigned here}}
+  q = p;    // expected-note {{assigned here}}
   (void)*q; // expected-warning {{dereferencing a possibly null pointer}}
 }
 
