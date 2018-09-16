@@ -460,11 +460,13 @@ public:
 
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
-  void diagnoseInput(const CallArgument &CA, bool IsInputThis) {
+  void diagnoseInput(CallArgument &CA, bool IsInputThis) {
     if (CA.PS.containsInvalid()) {
       Reporter.warnParameterDangling(CA.Range.getBegin(),
                                      /*indirectly=*/false);
       CA.PS.explainWhyInvalid(Reporter);
+      // suppress further diagnostics, e.g. when this input is returned
+      CA.PS = {};
     } else if (CA.PS.containsNull() &&
                (!isNullableType(CA.ParamQType) || IsInputThis)) {
       Reporter.warnParameterNull(CA.Range.getBegin(), !CA.PS.isNull());
