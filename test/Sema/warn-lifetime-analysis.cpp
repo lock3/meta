@@ -96,7 +96,7 @@ struct Owner {
 };
 
 struct [[gsl::Pointer]] my_pointer {
-  int operator*();
+  int& operator*();
 };
 
 void deref_uninitialized() {

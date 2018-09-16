@@ -17,6 +17,8 @@ namespace clang {
 namespace lifetime {
 /// Returns the type category of the given type
 /// If T is a template specialization, it must be instantiated.
+/// \post If the returned TypeCategory is Owner or Pointer, then
+///       getPointeeType() will return non-null for the same QT.
 TypeCategory classifyTypeCategory(QualType QT);
 
 bool isNullableType(QualType QT);

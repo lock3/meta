@@ -120,7 +120,7 @@ struct D : public S {
 struct [[gsl::Pointer]] my_pointer {
   my_pointer();
   my_pointer &operator=(const my_pointer &);
-  int operator*();
+  int& operator*();
 };
 
 void pointer_exprs() {
@@ -768,7 +768,7 @@ void lifetime_const() {
     int *ptr;
 
   public:
-    int operator*();
+    int& operator*();
     int *begin() { return ptr; }
     void reset() {}
     [[gsl::lifetime_const]] void peek() {}
@@ -911,6 +911,7 @@ int throw_local() {
 template <class T>
 struct [[gsl::Owner]] OwnerPointsToTemplateType {
   T *get();
+  T& operator*();
 };
 
 void ownerPointsToTemplateType() {
