@@ -433,13 +433,17 @@ public:
       return;
     }
 
+    // At this point we have Pointer arguments except 'Owner&&' and 'const
+    // Owner&'
     Args.Input.emplace_back(Range, getPSet(Arg), ParamType);
     diagnoseInput(Args.Input.back(), IsInputThis);
 
-    // TODO: to support std::begin, we consider lifetime_const arguments as
-    //       input. In the future we might have a separate annotation: gsl::in.
-    if ((Pointee.isConstQualified() || IsInputThis || IsLifetimeConst ||
-         ParamType->isRValueReferenceType()) &&
+    // Input includes the deref location of all reference arguments except:
+    // - Owner&&
+    // - const Owner&
+    // - Pointer& marked [[gsl::lifetime_out]] (TODO)
+    // Here '*this' is handled as a parameter of type 'Object&'
+    if (ParamType->isLValueReferenceType() &&
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer)) {
       Args.Input.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);

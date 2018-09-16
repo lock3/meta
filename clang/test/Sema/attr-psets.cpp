@@ -123,6 +123,14 @@ struct [[gsl::Pointer]] my_pointer {
   int& operator*();
 };
 
+struct [[gsl::Owner]] OwnerOfInt {
+  int& operator*();
+};
+
+struct [[gsl::Pointer]] PointerToInt {
+  int& operator*();
+};
+
 void pointer_exprs() {
   int *p;
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
@@ -576,7 +584,15 @@ void function_call3() {
   int *p = &i;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   f(p);
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+}
+
+void function_call4() {
+  PointerToInt f(OwnerOfInt&);
+
+  OwnerOfInt O;
+  auto P = f(O);
+  __lifetime_pset(P); // expected-warning {{(O')}}
 }
 
 void indirect_function_call() {
