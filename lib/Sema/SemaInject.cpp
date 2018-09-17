@@ -95,9 +95,11 @@ public:
 
   bool InjectDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
 		   TypeSourceInfo *&TSI);
-  void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
+
+  void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
+
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
@@ -145,6 +147,18 @@ bool InjectionContext::InjectDeclarator(DeclaratorDecl *D,
     Invalid = true;
   }
 
+  return Invalid;
+}
+
+// Inject the name and the type of a declarator declaration. Sets the
+// declaration name info, type, and owner. Returns true if the declarator
+// is invalid.
+bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
+                                              DeclarationNameInfo &DNI,
+                                              TypeSourceInfo *&TSI,
+                                              CXXRecordDecl *&Owner) {
+  bool Invalid = InjectDeclarator(D, DNI, TSI);
+  Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return Invalid;
 }
 
@@ -204,18 +218,6 @@ Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
   Owner->addDecl(Typedef);
 
   return Typedef;
-}
-
-// Inject the name and the type of a declarator declaration. Sets the
-// declaration name info, type, and owner. Returns true if the declarator
-// is invalid.
-bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
-                                              DeclarationNameInfo &DNI,
-                                              TypeSourceInfo *&TSI,
-                                              CXXRecordDecl *&Owner) {
-  bool Invalid = InjectDeclarator(D, DNI, TSI);
-  Owner = cast<CXXRecordDecl>(getSema().CurContext);
-  return Invalid;
 }
 
 static bool InjectVariableInitializer(InjectionContext &Cxt,
@@ -435,7 +437,7 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
-  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+  CXXRecordDecl *Owner;
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
   Expr *BitWidth = nullptr;
@@ -468,7 +470,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
-  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+  CXXRecordDecl *Owner;
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
   // Build the underlying method.
