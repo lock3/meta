@@ -2372,8 +2372,10 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       S.LookupQualifiedName(Res, const_cast<CXXRecordDecl*>(R));
 
       UnresolvedSet<16> Functions;
-      for(auto* D : Res)
-        Functions.addDecl(D);
+      for(auto* D : Res) {
+        if (isa<FunctionTemplateDecl>(D) || isa<FunctionDecl>(D))
+          Functions.addDecl(D);
+      }
 
       // The expression itself does not matter, we just need to fake the right QualType.
       // A member function takes the object as first argument.
