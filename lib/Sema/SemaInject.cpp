@@ -100,6 +100,7 @@ public:
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
+  Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
   Decl *InjectFieldDecl(FieldDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
@@ -336,6 +337,101 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   return Var;
 }
 
+/// Injects the base specifier Base into Class.
+static bool InjectBaseSpecifiers(InjectionContext &Cxt, 
+                                 CXXRecordDecl *OldClass,
+                                 CXXRecordDecl *NewClass) {
+  bool Invalid = false;
+  SmallVector<CXXBaseSpecifier*, 4> Bases;
+  for (const CXXBaseSpecifier &OldBase : OldClass->bases()) {
+    TypeSourceInfo *TSI = Cxt.TransformType(OldBase.getTypeSourceInfo());
+    if (!TSI) {
+      Invalid = true;
+      continue;
+    }
+
+    CXXBaseSpecifier *NewBase = Cxt.getSema().CheckBaseSpecifier(
+        NewClass, OldBase.getSourceRange(), OldBase.isVirtual(), 
+        OldBase.getAccessSpecifierAsWritten(), TSI, OldBase.getEllipsisLoc());
+    if (!NewBase) {
+      Invalid = true;
+      continue;
+    }
+
+    Bases.push_back(NewBase);
+  }
+
+  if (!Invalid && Cxt.getSema().AttachBaseSpecifiers(NewClass, Bases))
+    Invalid = true;
+
+  // Invalidate the class if necessary.
+  NewClass->setInvalidDecl(Invalid);
+
+  return Invalid;
+}
+
+static bool InjectClassMembers(InjectionContext &Cxt,
+                               CXXRecordDecl *OldClass,
+                               CXXRecordDecl *NewClass) {
+  for (Decl *OldMember : OldClass->decls()) {
+    // Don't transform invalid declarations.
+    if (OldMember->isInvalidDecl())
+      continue;
+
+    // Don't transform non-members appearing in a class.
+    if (OldMember->getDeclContext() != OldClass)
+      continue;
+
+    Decl *NewMember = Cxt.InjectDecl(OldMember);
+    if (!NewMember)
+      NewClass->setInvalidDecl();
+  }
+  return NewClass->isInvalidDecl();
+}
+
+static bool InjectClassDefinition(InjectionContext &Cxt,
+                                  CXXRecordDecl *OldClass,
+                                  CXXRecordDecl *NewClass) {
+  Sema::ContextRAII SwitchContext(Cxt.getSema(), NewClass);
+  Cxt.getSema().StartDefinition(NewClass);
+  InjectBaseSpecifiers(Cxt, OldClass, NewClass);
+  InjectClassMembers(Cxt, OldClass, NewClass);
+  Cxt.getSema().CompleteDefinition(NewClass);
+  return NewClass->isInvalidDecl();
+}
+
+Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
+  bool Invalid = false;
+  DeclContext *Owner = getSema().CurContext;
+
+  CXXRecordDecl *Class;
+  if (D->isInjectedClassName()) {
+    DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
+    Class = CXXRecordDecl::Create(
+        getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
+        D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
+  } else {
+    DeclarationNameInfo DNI = TransformDeclarationName(D);
+    if (!DNI.getName())
+      Invalid = true;
+    Class = CXXRecordDecl::Create(
+        getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
+        D->getLocation(), DNI.getName().getAsIdentifierInfo(),
+        /*PrevDecl=*/nullptr);
+  }
+  AddDeclSubstitution(D, Class);
+
+  Class->setAccess(D->getAccess());
+  Class->setImplicit(D->isImplicit());
+  Class->setInvalidDecl(Invalid);
+  Owner->addDecl(Class);
+
+  if (D->hasDefinition())
+    InjectClassDefinition(*this, D, Class);
+
+  return Class;
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
@@ -447,6 +543,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
   case Decl::Var:
     return InjectVarDecl(cast<VarDecl>(D));
+  case Decl::CXXRecord:
+    return InjectCXXRecordDecl(cast<CXXRecordDecl>(D));
   case Decl::Field:
     return InjectFieldDecl(cast<FieldDecl>(D));
   case Decl::CXXMethod:

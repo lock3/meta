@@ -41,7 +41,7 @@ constexpr auto inner_fragment = __fragment struct S {
   }
 };
 
-constexpr auto fragment = __fragment struct {
+constexpr auto fragment = __fragment struct X {
   constexpr {
     -> inner_fragment;
   }
@@ -59,6 +59,16 @@ constexpr auto fragment = __fragment struct {
   }
 
   typedef int fragment_int;
+
+  struct Nested {
+    int bar;
+
+    Nested(int bar) : bar(bar) { }
+
+    int get_y(const X& t) {
+      return t.y;
+    }
+  };
 };
 
 class Foo {
@@ -93,6 +103,14 @@ int main() {
     assert(static_cast<int>(int_of_injected_type) == 1);
 
     assert(InternalFragClass::instance_count == 1);
+  }
+
+  {
+    Foo f;
+    Foo::Nested nested(5);
+
+    assert(nested.bar == 5);
+    assert(nested.get_y(f) == 55);
   }
 
   assert(InternalFragClass::instance_count == 0);
