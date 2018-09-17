@@ -4,6 +4,20 @@
 
 int global_int = 42;
 
+struct InternalFragClass {
+  static int instance_count;
+
+  InternalFragClass() {
+    instance_count += 1;
+  }
+
+  ~InternalFragClass() {
+    instance_count -= 1;
+  }
+};
+
+int InternalFragClass::instance_count = 0;
+
 constexpr auto inner_fragment = __fragment struct S {
   int* c0 = new int(5);
   int* c1;
@@ -32,6 +46,7 @@ constexpr auto fragment = __fragment struct {
     -> inner_fragment;
   }
 
+  InternalFragClass FragClass;
   int x = 1;
   int z = this->y;
 
@@ -60,20 +75,27 @@ public:
 };
 
 int main() {
-  Foo f;
+  {
+    Foo f;
 
-  assert(f.x == 1);
-  assert(f.dependent_on_injected_val() == 1);
-  assert(f.frag_num() == 2);
-  assert(f.inner_frag_num() == 0);
-  assert(f.z == 55);
-  assert(f.proxy_frag_num() == 55);
-  assert(f.inner_proxy_frag_num() == 55);
-  assert(f.referenced_global() == 42);
-  assert(*f.c0 == 5);
-  assert(*f.c1 == 10);
+    assert(f.x == 1);
+    assert(f.dependent_on_injected_val() == 1);
+    assert(f.frag_num() == 2);
+    assert(f.inner_frag_num() == 0);
+    assert(f.z == 55);
+    assert(f.proxy_frag_num() == 55);
+    assert(f.inner_proxy_frag_num() == 55);
+    assert(f.referenced_global() == 42);
+    assert(*f.c0 == 5);
+    assert(*f.c1 == 10);
 
-  Foo::fragment_int int_of_injected_type = 1;
-  assert(static_cast<int>(int_of_injected_type) == 1);
+    Foo::fragment_int int_of_injected_type = 1;
+    assert(static_cast<int>(int_of_injected_type) == 1);
+
+    assert(InternalFragClass::instance_count == 1);
+  }
+
+  assert(InternalFragClass::instance_count == 0);
+
   return 0;
 };
