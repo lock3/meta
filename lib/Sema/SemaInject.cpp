@@ -100,6 +100,7 @@ public:
 
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
 
+  Decl *InjectNamespaceDecl(NamespaceDecl *D);
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
   Decl *InjectFunctionDecl(FunctionDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
@@ -191,6 +192,31 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
     assert(NewParms.size() == 0);
   }
   assert(OldIndex == OldParms.size() && NewIndex == NewParms.size());
+}
+
+Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  // Build the namespace.
+  //
+  // FIXME: Search for a previous declaration of the namespace so that they
+  // can be stitched together (i.e., redo lookup).
+  NamespaceDecl *Ns = NamespaceDecl::Create(
+      getContext(), Owner, D->isInline(), D->getLocation(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr);
+  AddDeclSubstitution(D, Ns);
+
+  Owner->addDecl(Ns);
+
+  // Inject the namespace members.
+  Sema::ContextRAII NsCxt(getSema(), Ns);
+  for (Decl *OldMember : D->decls()) {
+    Decl *NewMember = InjectDecl(OldMember);
+    if (!NewMember || NewMember->isInvalidDecl())
+      Ns->setInvalidDecl(true);
+  }
+
+  return Ns;
 }
 
 Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
@@ -603,6 +629,8 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   // Inject the declaration.
   switch (D->getKind()) {
+  case Decl::Namespace:
+    return InjectNamespaceDecl(cast<NamespaceDecl>(D));
   case Decl::Typedef:
   case Decl::TypeAlias:
     return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
