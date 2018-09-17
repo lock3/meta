@@ -1198,3 +1198,11 @@ class B {
   B() {}
 };
 } // namespace creduce9
+
+namespace creduce10 {
+// Don't crash when 'begin' is a field instead of a member function
+class a {
+  char begin;
+};
+void b(a) {}
+}
