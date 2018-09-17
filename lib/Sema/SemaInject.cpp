@@ -287,6 +287,8 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
 
+  // FIXME: Check for re-declaration.
+
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI, TSI->getType(),
       TSI, D->getStorageClass());
@@ -326,6 +328,8 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
       Var->setIsUsed();
     Var->setReferenced(D->isReferenced());
   }
+
+  // FIXME: Instantiate attributes.
 
   // Forward the mangling number from the template to the instantiated decl.
   getContext().setManglingNumber(
@@ -385,6 +389,8 @@ static bool InjectClassMembers(InjectionContext &Cxt,
       continue;
 
     // Don't transform non-members appearing in a class.
+    //
+    // FIXME: What does it mean to inject friends?
     if (OldMember->getDeclContext() != OldClass)
       continue;
 
@@ -410,6 +416,8 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   bool Invalid = false;
   DeclContext *Owner = getSema().CurContext;
 
+  // FIXME: Do a lookup for previous declarations.
+
   CXXRecordDecl *Class;
   if (D->isInjectedClassName()) {
     DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
@@ -427,6 +435,9 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   }
   AddDeclSubstitution(D, Class);
 
+  // FIXME: Inject attributes.
+
+  // FIXME: Propagate other properties?
   Class->setAccess(D->getAccess());
   Class->setImplicit(D->isImplicit());
   Class->setInvalidDecl(Invalid);
@@ -444,6 +455,7 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   CXXRecordDecl *Owner;
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
+  // FIXME: Substitute through the bit width.
   Expr *BitWidth = nullptr;
 
   // Build and check the field.
@@ -452,6 +464,11 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
       D->isMutable(), BitWidth, D->getInClassInitStyle(), D->getInnerLocStart(),
       D->getAccess(), nullptr);
   AddDeclSubstitution(D, Field);
+
+  // FIXME: Propagate attributes?
+
+  // FIXME: In general, see VisitFieldDecl in the template instantiatior.
+  // There are some interesting cases we probably need to handle.
 
   // Propagate semantic properties.
   Field->setImplicit(D->isImplicit());
@@ -639,7 +656,7 @@ InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
     return nullptr;
 
   return TemplateParameterList::Create(
-      getSema().Context, OldParms->getTemplateLoc(), OldParms->getLAngleLoc(), 
+      getSema().Context, OldParms->getTemplateLoc(), OldParms->getLAngleLoc(),
       NewParms, OldParms->getRAngleLoc(), Reqs.get());
 }
 
@@ -662,6 +679,7 @@ Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
       Fn->getDeclName(), Parms, Fn);
   AddDeclSubstitution(D, Template);
 
+  // FIXME: Other attributes to process?
   Fn->setDescribedFunctionTemplate(Template);
   Template->setAccess(D->getAccess());
 
@@ -685,6 +703,7 @@ Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
     TypeSourceInfo *Default = TransformType(D->getDefaultArgumentInfo());
     if (Default)
       Parm->setDefaultArgument(Default);
+    // FIXME: What if this fails.
   }
 
   return Parm;
@@ -776,10 +795,10 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
     return ExprError();
 
   // Build our new class implicit class to hold our fragment info.
-  CXXRecordDecl *Class = CXXRecordDecl::Create(
-					       Context, TTK_Class, CurContext, Loc, Loc,
-					       /*Id=*/nullptr,
-					       /*PrevDecl=*/nullptr);
+  CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK_Class, CurContext,
+                                               Loc, Loc,
+                                               /*Id=*/nullptr,
+                                               /*PrevDecl=*/nullptr);
   StartDefinition(Class);
 
   Class->setImplicit(true);
@@ -800,9 +819,9 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   /// TODO This can be changed to a VarDecl to make it static
   /// member data
   QualType ConstReflectionType = ReflectionType.withConst();
-  FieldDecl *Field = FieldDecl::Create(
-                                       Context, Class, Loc, Loc, ReflectionFieldId,
-                                       ConstReflectionType, ReflectionTypeInfo,
+  FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc,
+                                       ReflectionFieldId, ConstReflectionType,
+                                       ReflectionTypeInfo,
                                        nullptr, false,
                                        ICIS_NoInit);
   Field->setAccess(AS_public);
@@ -1046,14 +1065,9 @@ static bool
 ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
   Reflection R(Arg);
   if (const Decl *D = R.getAsDeclaration()) {
-    // D->dump();
     PrintDecl(SemaRef, D);
   }
   else if (const Type *T = R.getAsType()) {
-    // if (TagDecl *TD = T->getAsTagDecl())
-    //   TD->dump();
-    // else
-    //   T->dump();
     PrintType(SemaRef, T);
   }
   else
@@ -1091,8 +1105,8 @@ bool Sema::ApplyEffects(SourceLocation POI,
 /// injection contexts into the template instantiation context; they are
 /// somewhat similar.
 bool Sema::HasPendingInjections(DeclContext *D) {
-  bool is_empty = PendingClassMemberInjections.empty();
-  if (is_empty)
+  bool IsEmpty = PendingClassMemberInjections.empty();
+  if (IsEmpty)
     return false;
   InjectionContext *Cxt = PendingClassMemberInjections.back();
   assert(!Cxt->InjectedDefinitions.empty() && "bad injection queue");
@@ -1184,16 +1198,16 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
   else
     NewMethod->setBody(Body.get());
 
-  if (CXXConstructorDecl *OldConstructor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
-    CXXConstructorDecl *NewConstructor = cast<CXXConstructorDecl>(NewMethod);
+  if (CXXConstructorDecl *OldCtor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
+    CXXConstructorDecl *NewCtor = cast<CXXConstructorDecl>(NewMethod);
 
-    int NumCtorInits = OldConstructor->getNumCtorInitializers();
-    CXXCtorInitializer** NewCtorInits = new CXXCtorInitializer*[NumCtorInits]();
+    int NumCtorInits = OldCtor->getNumCtorInitializers();
+    CXXCtorInitializer** NewCtorMem = new CXXCtorInitializer*[NumCtorInits]();
 
-    MutableArrayRef<CXXCtorInitializer *> NewInitArgs(NewCtorInits, NumCtorInits);
+    MutableArrayRef<CXXCtorInitializer *> NewInitArgs(NewCtorMem, NumCtorInits);
 
-    auto OldIterator = OldConstructor->init_begin();
-    auto OldIteratorEnd = OldConstructor->init_end();
+    auto OldIterator = OldCtor->init_begin();
+    auto OldIteratorEnd = OldCtor->init_end();
     auto NewIterator = NewInitArgs.begin();
     auto NewIteratorEnd = NewInitArgs.end();
 
@@ -1205,6 +1219,9 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
         Cxt->GetDeclReplacement(OldInitializer->getMember()));
       ExprResult NewInit = Cxt->TransformExpr(OldInitializer->getInit());
 
+      // TODO: this assumes a member initializer
+      // there are other ctor initializer types we need to
+      // handle
       CXXCtorInitializer* NewInitializer = new CXXCtorInitializer(
 	AST, NewField, OldInitializer->getMemberLocation(),
         OldInitializer->getLParenLoc(), NewInit.get(),
@@ -1216,7 +1233,8 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
       NewIterator++;
     }
 
-    SetCtorInitializers(NewConstructor, /*AnyErrors=*/false, NewInitArgs);
+    SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
+    // FIXME: We should run diagnostics here
     // DiagnoseUninitializedFields(*this, Constructor);
   }
 }
