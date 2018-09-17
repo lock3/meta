@@ -50,6 +50,11 @@ constexpr auto fragment = __fragment struct X {
   int x = 1;
   int z = this->y;
 
+  template<typename T>
+  int get_z(const T& t) {
+    return t.z;
+  }
+
   int frag_num() {
     return 2;
   }
@@ -98,6 +103,7 @@ int main() {
     assert(f.referenced_global() == 42);
     assert(*f.c0 == 5);
     assert(*f.c1 == 10);
+    assert(f.get_z(f) == 55);
 
     Foo::fragment_int int_of_injected_type = 1;
     assert(static_cast<int>(int_of_injected_type) == 1);

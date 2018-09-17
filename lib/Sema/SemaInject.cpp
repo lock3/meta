@@ -110,6 +110,10 @@ public:
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
   Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
 
+  TemplateParameterList *InjectTemplateParms(TemplateParameterList *Old);
+  Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
+  Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
+
   // Members
 
   /// \brief A list of declarations whose definitions have not yet been
@@ -558,6 +562,10 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
   case Decl::CXXMetaprogram:
     return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
+  case Decl::FunctionTemplate:
+    return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
+  case Decl::TemplateTypeParm:
+    return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
   default:
     break;
   }
@@ -608,6 +616,78 @@ Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
     getSema().ActOnCXXMetaprogramDeclError(/*Scope=*/nullptr, New);
 
   return New;
+}
+
+TemplateParameterList *
+InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
+  bool Invalid = false;
+  SmallVector<NamedDecl *, 8> NewParms;
+  NewParms.reserve(OldParms->size());
+  for (auto &P : *OldParms) {
+    NamedDecl *D = cast_or_null<NamedDecl>(InjectDecl(P));
+    NewParms.push_back(D);
+    if (!D || D->isInvalidDecl())
+      Invalid = true;
+  }
+
+  // Clean up if we had an error.
+  if (Invalid)
+    return nullptr;
+
+  ExprResult Reqs = TransformExpr(OldParms->getRequiresClause());
+  if (Reqs.isInvalid())
+    return nullptr;
+
+  return TemplateParameterList::Create(
+      getSema().Context, OldParms->getTemplateLoc(), OldParms->getLAngleLoc(), 
+      NewParms, OldParms->getRAngleLoc(), Reqs.get());
+}
+
+Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  TemplateParameterList *Parms = InjectTemplateParms(D->getTemplateParameters());
+  if (!Parms)
+    return nullptr;
+
+  // Build the underlying pattern.
+  Decl *Pattern = InjectDecl(D->getTemplatedDecl());
+  if (!Pattern)
+    return nullptr;
+  FunctionDecl *Fn = cast<FunctionDecl>(Pattern);
+
+  // Build the enclosing template.
+  FunctionTemplateDecl *Template = FunctionTemplateDecl::Create(
+      getSema().Context, getSema().CurContext, Fn->getLocation(),
+      Fn->getDeclName(), Parms, Fn);
+  AddDeclSubstitution(D, Template);
+
+  Fn->setDescribedFunctionTemplate(Template);
+  Template->setAccess(D->getAccess());
+
+  // Add the declaration.
+  Owner->addDecl(Template);
+
+  return Template;
+}
+
+Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
+  TemplateTypeParmDecl *Parm = TemplateTypeParmDecl::Create(
+      getSema().Context, getSema().CurContext, D->getBeginLoc(), D->getLocation(),
+      D->getDepth(), D->getIndex(), D->getIdentifier(),
+      D->wasDeclaredWithTypename(), D->isParameterPack());
+  AddDeclSubstitution(D, Parm);
+
+  Parm->setAccess(AS_public);
+
+  // Process the default argument.
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+    TypeSourceInfo *Default = TransformType(D->getDefaultArgumentInfo());
+    if (Default)
+      Parm->setDefaultArgument(Default);
+  }
+
+  return Parm;
 }
 
 } // namespace clang
