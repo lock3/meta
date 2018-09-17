@@ -358,6 +358,16 @@ bool Decl::isInStdNamespace() const {
   return getDeclContext()->isStdNamespace();
 }
 
+bool Decl::isInFragment() const {
+  const DeclContext *DC = getDeclContext();
+  while (DC) {
+    if (isa<CXXFragmentDecl>(DC))
+      return true;
+    DC = DC->getParent();
+  }
+  return false;
+}
+
 TranslationUnitDecl *Decl::getTranslationUnitDecl() {
   if (auto *TUD = dyn_cast<TranslationUnitDecl>(this))
     return TUD;

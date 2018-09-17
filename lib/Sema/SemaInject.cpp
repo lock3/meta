@@ -123,7 +123,7 @@ public:
 };
 
 bool InjectionContext::IsInInjection(Decl *D) {
-  return true;
+  return D->isInFragment();
 }
 
 // Inject the name and the type of a declarator declaration. Sets the

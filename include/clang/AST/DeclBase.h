@@ -452,6 +452,8 @@ public:
 
   bool isInStdNamespace() const;
 
+  bool isInFragment() const;
+
   ASTContext &getASTContext() const LLVM_READONLY;
 
   void setAccess(AccessSpecifier AS) {
