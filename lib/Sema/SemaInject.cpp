@@ -101,6 +101,7 @@ public:
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
 
   Decl *InjectTypedefNameDecl(TypedefNameDecl *D);
+  Decl *InjectFunctionDecl(FunctionDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
   Decl *InjectFieldDecl(FieldDecl *D);
@@ -278,6 +279,47 @@ static bool InjectVariableInitializer(InjectionContext &Cxt,
   }
 
   return New;
+}
+
+Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI;
+  TypeSourceInfo* TSI;
+  bool Invalid = InjectDeclarator(D, DNI, TSI);
+
+  // FIXME: Check for redeclaration.
+
+  FunctionDecl* Fn = FunctionDecl::Create(
+      getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
+      D->getStorageClass(), D->hasWrittenPrototype(), D->isConstexpr());
+  AddDeclSubstitution(D, Fn);
+  UpdateFunctionParms(D, Fn);
+
+  // Set properties.
+  Fn->setInlineSpecified(D->isInlineSpecified());
+  Fn->setInvalidDecl(Invalid);
+
+  Owner->addDecl(Fn);
+
+  // If the function has a body, inject that also. Note that namespace-scope
+  // function definitions are never deferred. Also, function decls never
+  // appear in class scope (we hope), so we shouldn't be doing this too
+  // early.
+  if (Stmt *OldBody = D->getBody()) {
+    // FIXME: Everything should already be parsed
+    // this should be unncessary
+    getSema().PushFunctionScope();
+
+    Sema::ContextRAII FnCxt (getSema(), Fn);
+    StmtResult NewBody = TransformStmt(OldBody);
+    if (NewBody.isInvalid())
+      Fn->setInvalidDecl();
+    else
+      Fn->setBody(NewBody.get());
+  }
+
+  return Fn;
 }
 
 Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
@@ -564,6 +606,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   case Decl::Typedef:
   case Decl::TypeAlias:
     return InjectTypedefNameDecl(cast<TypedefNameDecl>(D));
+  case Decl::Function:
+    return InjectFunctionDecl(cast<FunctionDecl>(D));
   case Decl::Var:
     return InjectVarDecl(cast<VarDecl>(D));
   case Decl::CXXRecord:

@@ -3,17 +3,24 @@
 #include <experimental/meta>
 
 constexpr auto fragment = __fragment namespace {
-  int x = 1;
+  int v_one = 1;
+  int v_two = 2;
+
+  int add_v_one(int num) {
+    return v_one + num;
+  }
 };
 
-namespace Foo {
+namespace foo {
   constexpr {
     -> fragment;
   }
 };
 
 int main() {
-  assert(Foo::x == 1);
+  assert(foo::v_one == 1);
+  assert(foo::v_two == 2);
+  assert(foo::add_v_one(1) == 2);
 
   return 0;
 };
