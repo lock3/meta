@@ -212,8 +212,7 @@ TypeCategory classifyTypeCategory(QualType QT) {
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (!Pointee.isNull() && hasDerefOperations(R) &&
-      !R->hasUserDeclaredDestructor())
+  if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
     return TypeCategory::Pointer;
 
   // Every closure type of a lambda that captures by reference.
