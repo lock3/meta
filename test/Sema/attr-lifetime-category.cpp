@@ -252,3 +252,13 @@ void f() {
   __lifetime_type_category<decltype(pointer<0, int>())>(); // expected-warning {{Pointer with pointee int}}
 }
 } // namespace functionTemplateInstantiation
+
+namespace defaultedDestructor {
+  struct P {
+    ~P() = default; // still trivial destructor
+    int* operator->();
+  };
+  void f() {
+    __lifetime_type_category<P>(); // expected-warning {{Pointer with pointee int}}
+  }
+}
