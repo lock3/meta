@@ -2321,10 +2321,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       UnresolvedSet<16> Functions;
       S.LookupOverloadedOperatorName(Op, S.getScopeForContext(const_cast<CXXRecordDecl*>(R)), QualType(), QualType(),
                                     Functions);
-      DeclarationName OpName = S.Context.DeclarationNames.getCXXOperatorName(Op);
       SourceLocation OpLoc = R->getLocation();
-      // TODO: provide better source location info.
-      //DeclarationNameInfo OpNameInfo(OpName, OpLoc);
 
       // The expression itself does not matter, we just need to fake the right QualType.
       // We are looking for an operator overload that takes an lvalue of class type.
@@ -2349,11 +2346,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
       // Add operator candidates that are member functions. Instantiates templates.
       S.AddMemberOperatorCandidates(Op, OpLoc, ArgsArray, CandidateSet);
-
-      // Add candidates from ADL.  Instantiates templates.
-      S.AddArgumentDependentLookupCandidates(OpName, OpLoc, ArgsArray,
-                                            /*ExplicitTemplateArgs*/nullptr,
-                                            CandidateSet);
 
       S.Diags.setSuppressAllDiagnostics(PrevDiag);
 
