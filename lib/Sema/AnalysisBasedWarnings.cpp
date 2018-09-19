@@ -43,6 +43,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 #include <algorithm>
@@ -2281,7 +2282,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     consumed::ConsumedAnalyzer Analyzer(WarningHandler);
     Analyzer.run(AC);
   }
-
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
     auto isConvertible = [this, D](QualType From, QualType To) {
@@ -2293,6 +2293,22 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       return !ICS.isFailure();
     };
 
+    struct DiagnosticsSuppressor {
+      DiagnosticsSuppressor(Sema &S) : S(S), PrevDiag(S.Diags.getSuppressAllDiagnostics()) {
+        S.Diags.setSuppressAllDiagnostics(true);
+        PendingLocalImplicitInstantiations = S.PendingLocalImplicitInstantiations;
+        PendingInstantiations = S.PendingInstantiations;
+      }
+      ~DiagnosticsSuppressor() {
+        S.Diags.setSuppressAllDiagnostics(PrevDiag);
+        S.PendingLocalImplicitInstantiations = PendingLocalImplicitInstantiations;
+        S.PendingInstantiations = PendingInstantiations;
+      }
+      Sema& S;
+      bool PrevDiag;
+      std::deque<Sema::PendingImplicitInstantiation> PendingLocalImplicitInstantiations;
+      std::deque<Sema::PendingImplicitInstantiation> PendingInstantiations;
+    };
     /// Find the viable overload of the given kind on the given class.
     /// Considers member function and non-member functions. Will create
     /// template instantiations if necessary.
@@ -2301,6 +2317,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       // point. We perform both an operator-name lookup from the local
       // scope and an argument-dependent lookup based on the types of
       // the arguments.
+      DiagnosticsSuppressor _(S);
       UnresolvedSet<16> Functions;
       S.LookupOverloadedOperatorName(Op, S.getScopeForContext(const_cast<CXXRecordDecl*>(R)), QualType(), QualType(),
                                     Functions);
@@ -2321,16 +2338,11 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       // Build an empty overload set.
       OverloadCandidateSet CandidateSet(OpLoc, OverloadCandidateSet::CSK_Operator);
 
-      bool PrevDiag = S.Diags.getSuppressAllDiagnostics();
-      S.Diags.setSuppressAllDiagnostics(true);
-
       // Add the candidates from the given function set. Instantiates templates.
       S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
 
       // Add operator candidates that are member functions. Instantiates templates.
       S.AddMemberOperatorCandidates(Op, OpLoc, ArgsArray, CandidateSet);
-
-      S.Diags.setSuppressAllDiagnostics(PrevDiag);
 
       // Perform overload resolution.
       OverloadCandidateSet::iterator Best;
@@ -2342,6 +2354,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
     /// Find a member function on R with the given name that takes no arguments. Instantiates templates.
     auto lookupMemberFunction = [this](const CXXRecordDecl* R, StringRef Name) -> FunctionDecl* {
+      // Don't diagnose if we fail here because the template is ill-formed.
+      DiagnosticsSuppressor _(S);
       SourceLocation Loc = R->getLocation();
       LookupResult Res(S, DeclarationNameInfo(DeclarationName(&S.Context.Idents.get(Name)), Loc), Sema::LookupMemberName);
       S.LookupQualifiedName(Res, const_cast<CXXRecordDecl*>(R));
@@ -2360,11 +2374,9 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
       OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
 
-      // Don't diagnose if we fail here because the template is ill-formed.
-      bool PrevDiag = S.Diags.getSuppressAllDiagnostics();
-      S.Diags.setSuppressAllDiagnostics(true);
+
+
       S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
-      S.Diags.setSuppressAllDiagnostics(PrevDiag);
 
       OverloadCandidateSet::iterator Best;
       if(CandidateSet.BestViableFunction(S, Loc, Best) != OR_Success)
@@ -2376,10 +2388,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     /// Tries to add the definition to a template specialization
     /// \post Specialization->hasDefinition() == true if possible
     auto tryInstantiateClassTemplateSpecialization = [this](ClassTemplateSpecializationDecl* Specialization) {
-      bool Prev = S.Diags.getSuppressAllDiagnostics();
-      S.Diags.setSuppressAllDiagnostics(true);
+      DiagnosticsSuppressor _(S);
       S.InstantiateClassTemplateSpecialization(Specialization->getLocation(), Specialization, TSK_ImplicitInstantiation, /*Complain=*/false);
-      S.Diags.setSuppressAllDiagnostics(Prev);
     };
 
     lifetime::Reporter Reporter{S};
