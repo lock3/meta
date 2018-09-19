@@ -28,6 +28,14 @@ using namespace clang;
 
 namespace clang {
 
+/// \brief A compile-time value along with its type.
+struct TypedValue {
+  TypedValue(QualType T, const APValue& V) : Type(T), Value(V) { }
+
+  QualType Type;
+  APValue Value;
+};
+
 enum InjectedDefType {
   InjectedDef_Field,
   InjectedDef_Method
@@ -75,6 +83,41 @@ public:
     transformedLocalDecl(const_cast<Decl*>(Old), New);
   }
 
+  /// \brief Adds a substitution from a fragment placeholder to its
+  /// (type) constant value.
+  void AddPlaceholderSubstitution(Decl *Orig, QualType T, const APValue &V) {
+    assert(isa<VarDecl>(Orig) && "Expected a variable declaration");
+    assert(PlaceholderSubsts.count(Orig) == 0 && "Overwriting substitution");
+    PlaceholderSubsts.try_emplace(Orig, T, V);
+  }
+
+  /// \brief Adds substitutions for each placeholder in the fragment.
+  /// The types and values are sourced from the fields of the reflection
+  /// class and the captured values.
+  void AddPlaceholderSubstitutions(const DeclContext *Fragment,
+                                   const ArrayRef<FieldDecl *> &CaptureDecls,
+                                   const ArrayRef<APValue> &Captures) {
+    assert(isa<CXXFragmentDecl>(Fragment) && "Context is not a fragment");
+
+    auto PlaceIter = Fragment->decls_begin();
+    auto PlaceIterEnd = Fragment->decls_end();
+    auto CaptureDeclIter = CaptureDecls.begin();
+    auto CaptureDeclIterEnd = CaptureDecls.end();
+    auto CaptureIter = Captures.begin();
+    auto CaptureIterEnd = Captures.end();
+
+    while (PlaceIter != PlaceIterEnd
+           && CaptureDeclIter != CaptureDeclIterEnd
+           && CaptureIter != CaptureIterEnd) {
+
+      Decl *Var = *PlaceIter++;
+      QualType Ty = (*CaptureDeclIter++)->getType();
+      const APValue &Val = *CaptureIter++;
+
+      AddPlaceholderSubstitution(Var, Ty, Val);
+    }
+  }
+
   /// Returns a replacement for D if a substitution has been registered or
   /// nullptr if no such replacement exists.
   Decl *GetDeclReplacement(Decl *D) {
@@ -85,12 +128,37 @@ public:
       return nullptr;
   }
 
+  /// Returns a replacement expression if E refers to a placeholder.
+  Expr *GetPlaceholderReplacement(DeclRefExpr *E) {
+    auto Iter = PlaceholderSubsts.find(E->getDecl());
+    if (Iter != PlaceholderSubsts.end()) {
+      // Build a new constant expression as the replacement. The source
+      // expression is opaque since the actual declaration isn't part of
+      // the output AST (but we might want it as context later -- makes
+      // pretty printing more elegant).
+      const TypedValue &TV = Iter->second;
+      Expr *Opaque = new (getContext()) OpaqueValueExpr(
+          E->getLocation(), TV.Type, VK_RValue, OK_Ordinary, E);
+      return new (getContext()) CXXConstantExpr(Opaque, TV.Value);
+    } else {
+      return nullptr;
+    }
+  }
+
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool IsInInjection(Decl *D);
 
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
     return TransformDeclarationNameInfo(DNI);
+  }
+
+  ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+    if (Expr *R = GetPlaceholderReplacement(E)) {
+      return R;
+    }
+
+    return Base::TransformDeclRefExpr(E);
   }
 
   bool InjectDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
@@ -117,6 +185,11 @@ public:
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
 
   // Members
+
+  /// \brief A mapping of fragment placeholders to their typed compile-time
+  /// values. This is used by TreeTransformer to replace references with
+  /// constant expressions.
+  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
 
   /// \brief A list of declarations whose definitions have not yet been
   /// injected. These are processed when a class receiving injections is
@@ -187,6 +260,7 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
       ParmVarDecl *OldParm = OldParms[OldIndex++];
       ParmVarDecl *NewParm = NewParms[NewIndex++];
       NewParm->setOwningFunction(New);
+      AddDeclSubstitution(OldParm, NewParm);
     } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
   } else {
     assert(NewParms.size() == 0);
@@ -335,7 +409,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   if (Stmt *OldBody = D->getBody()) {
     // FIXME: Everything should already be parsed
     // this should be unncessary
-    getSema().PushFunctionScope();
+    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
 
     Sema::ContextRAII FnCxt (getSema(), Fn);
     StmtResult NewBody = TransformStmt(OldBody);
@@ -783,10 +857,122 @@ Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
 
 } // namespace clang
 
+// Find variables to capture in the given scope.
+static void FindCapturesInScope(Sema &SemaRef, Scope *S,
+                                SmallVectorImpl<VarDecl *> &Vars) {
+  for (Decl *D : S->decls()) {
+    if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
+      // Only capture locals with initializers.
+      //
+      // FIXME: If the fragment is in the initializer of a variable, this
+      // will also capture that variable. For example:
+      //
+      //    auto f = <<class: ... >>;
+      //
+      // The capture list for the fragment will include f. This seems insane,
+      // but lambda capture seems to also do this (with some caveats about
+      // usage).
+      //
+      // We can actually detect this case in this implementation because
+      // the type must be deduced and we won't have associated the
+      // initializer with the variable yet.
+      if (!isa<ParmVarDecl>(Var) &&
+          !Var->hasInit() &&
+          Var->getType()->isUndeducedType())
+        continue;
+
+      Vars.push_back(Var);
+    }
+  }
+}
+
+// Search the scope list for captured variables. When S is null, we're
+// applying applying a transformation.
+static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
+                         SmallVectorImpl<VarDecl *> &Vars) {
+  assert(S && "Expected non-null scope");
+  while (S && S->getEntity() != Fn) {
+    FindCapturesInScope(SemaRef, S, Vars);
+    S = S->getParent();
+  }
+  if (S)
+    FindCapturesInScope(SemaRef, S, Vars);
+}
+
+/// Construct a reference to each captured value and force an r-value
+/// conversion so that we get rvalues during evaluation.
+static void ReferenceCaptures(Sema &SemaRef,
+                              SmallVectorImpl<VarDecl *> &Vars,
+                              SmallVectorImpl<Expr *> &Refs) {
+  Refs.resize(Vars.size());
+  std::transform(Vars.begin(), Vars.end(), Refs.begin(), [&](VarDecl *D) {
+    Expr *Ref = new (SemaRef.Context) DeclRefExpr(D, false, D->getType(),
+                                                  VK_LValue, D->getLocation());
+    return ImplicitCastExpr::Create(SemaRef.Context, D->getType(),
+                                    CK_LValueToRValue, Ref, nullptr, VK_RValue);
+  });
+}
+
+/// Returns the variable from a captured declaration.
+static VarDecl *GetVariableFromCapture(Expr *E) {
+  Expr *Ref = cast<ImplicitCastExpr>(E)->getSubExpr();
+  return cast<VarDecl>(cast<DeclRefExpr>(Ref)->getDecl());
+}
+
+// Create a placeholder for each captured expression in the scope of the
+// fragment. For some captured variable 'v', these have the form:
+//
+//    constexpr auto v = <opaque>;
+//
+// These are replaced by their values during injection.
+static void CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
+  ValueDecl *Var = GetVariableFromCapture(E);
+  SourceLocation IdLoc = Var->getLocation();
+  IdentifierInfo *Id = Var->getIdentifier();
+  QualType T = SemaRef.Context.DependentTy;
+  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, IdLoc, IdLoc,
+                                         Id, T, TSI, SC_Static);
+  Placeholder->setConstexpr(true);
+  Placeholder->setImplicit(true);
+  Placeholder->setInitStyle(VarDecl::CInit);
+  Placeholder->setInit(
+      new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
+  Placeholder->setReferenced(true);
+  Placeholder->markUsed(SemaRef.Context);
+  Frag->addDecl(Placeholder);
+}
+
+static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
+                               SmallVectorImpl<Expr *> &Captures) {
+  std::for_each(Captures.begin(), Captures.end(), [&](Expr *E) {
+    CreatePlaceholder(SemaRef, Frag, E);
+  });
+}
+
+/// Called at the start of a source code fragment to establish the list of
+/// automatic variables captured. This is only called by the parser and searches
+/// the list of local variables in scope.
+void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
+  assert(Captures.empty() && "Captures already specified");
+
+  // Only collect captures within a function.
+  //
+  // FIXME: It might be better to use the scope, but the flags don't appear
+  // to be set right within constexpr declarations, etc.
+  if (isa<FunctionDecl>(CurContext)) {
+    SmallVector<VarDecl *, 8> Vars;
+    FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
+    ReferenceCaptures(*this, Vars, Captures);
+  }
+}
+
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders.
-Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc) {
+Decl *Sema::ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
+                                  SmallVectorImpl<Expr *> &Captures) {
   CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
+  CreatePlaceholders(*this, Fragment, Captures);
 
   if (S)
     PushDeclContext(S, Fragment);
@@ -813,8 +999,9 @@ Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
 
 
 /// Builds a new fragment expression.
-ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
-  return BuildCXXFragmentExpr(Loc, Fragment);
+ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
+                                      SmallVectorImpl<Expr *> &Captures) {
+  return BuildCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
 /// \brief Builds a new fragment expression.
@@ -836,7 +1023,8 @@ ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 ///        fragment_reflection(fragment_reflection) { }
 ///   };
 ///
-ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
+ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
+                                      SmallVectorImpl<Expr *> &Captures) {
   CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
 
   // Reflection; need to get a ReflectExpr the Fragment
@@ -852,7 +1040,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   // in this or any enclosing context.
   if (CurContext->isDependentContext()) {
     return new (Context) CXXFragmentExpr(Context, Loc, Context.DependentTy,
-                                         FD, nullptr);
+                                         FD, Captures, nullptr);
   }
 
   // Build the expression used to the reflection of fragment.
@@ -882,14 +1070,14 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   // Build the class fields.
   SmallVector<FieldDecl *, 4> Fields;
+
+  // Build the field for the reflection itself.
   QualType ReflectionType = Reflection.get()->getType();
   IdentifierInfo *ReflectionFieldId = &Context.Idents.get(
       "fragment_reflection");
   TypeSourceInfo *ReflectionTypeInfo = Context.getTrivialTypeSourceInfo(
       ReflectionType);
 
-  /// TODO This can be changed to a VarDecl to make it static
-  /// member data
   QualType ConstReflectionType = ReflectionType.withConst();
   FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc,
                                        ReflectionFieldId, ConstReflectionType,
@@ -901,6 +1089,23 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   Fields.push_back(Field);
   Class->addDecl(Field);
+
+  // Build the capture fields.
+  for (Expr *E : Captures) {
+    VarDecl *Var = GetVariableFromCapture(E);
+    std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo *Id = &Context.Idents.get(Name);
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Var->getType());
+    FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc, Id,
+                                         Var->getType(), TypeInfo,
+                                         nullptr, false,
+                                         ICIS_NoInit);
+    Field->setAccess(AS_public);
+    Field->setImplicit(true);
+
+    Fields.push_back(Field);
+    Class->addDecl(Field);
+  }
 
   // Build a new constructor for our fragment type.
   DeclarationName Name = Context.DeclarationNames.getCXXConstructorName(
@@ -922,12 +1127,16 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
 
   SmallVector<QualType, 4> ArgTypes;
   ArgTypes.push_back(ReflectionType);
+  for (Expr *E : Captures)
+    ArgTypes.push_back(E->getType());
 
   QualType CtorTy = Context.getFunctionType(Context.VoidTy, ArgTypes, EPI);
   Ctor->setType(CtorTy);
 
   // Build the constructor params.
   SmallVector<ParmVarDecl *, 4> Parms;
+
+  // Build the constructor param for the reflection param.
   IdentifierInfo *ReflectionParmId = &Context.Idents.get("fragment_reflection");
   ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
                                           ReflectionParmId,
@@ -936,6 +1145,22 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   Parm->setScopeInfo(0, 0);
   Parm->setImplicit(true);
   Parms.push_back(Parm);
+
+  // Build the constructor capture params.
+  for (std::size_t I = 0; I < Captures.size(); ++I) {
+    Expr *E = Captures[I];
+    VarDecl *Var = GetVariableFromCapture(E);
+    std::string Name = "__param_" + Var->getIdentifier()->getName().str();
+    IdentifierInfo *Id = &Context.Idents.get(Name);
+    QualType ParmTy = E->getType();
+    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
+    ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
+                                            Id, ParmTy, TypeInfo,
+                                            SC_None, nullptr);
+    Parm->setScopeInfo(0, I + 1);
+    Parm->setImplicit(true);
+    Parms.push_back(Parm);
+  }
 
   Ctor->setParams(Parms);
 
@@ -963,21 +1188,33 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
   CompleteDefinition(Class);
 
   // Setup the arguments to use for initialization.
-  SmallVector<Expr *, 4> CtorArgs;
+  SmallVector<Expr *, 8> CtorArgs;
   CtorArgs.push_back(Reflection.get());
+  for (Expr *E : Captures) {
+    CtorArgs.push_back(E);
+  }
 
   // Build an expression that that initializes the fragment object.
-  CXXConstructExpr *Cast = CXXConstructExpr::Create(
-      Context, ClassTy, Loc, Ctor, true, CtorArgs,
-      /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
-      /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false,
-      CXXConstructExpr::CK_Complete, SourceRange(Loc, Loc));
-  Expr *Init = CXXFunctionalCastExpr::Create(
-      Context, ClassTy, VK_RValue, ClassTSI, CK_NoOp, Cast,
-      /*Path=*/nullptr, Loc, Loc);
+  Expr *Init;
+  if (CtorArgs.size() == 1) {
+    CXXConstructExpr *Cast = CXXConstructExpr::Create(
+        Context, ClassTy, Loc, Ctor, true, CtorArgs,
+        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
+        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false,
+        CXXConstructExpr::CK_Complete, SourceRange(Loc, Loc));
+    Init = CXXFunctionalCastExpr::Create(
+        Context, ClassTy, VK_RValue, ClassTSI, CK_NoOp, Cast,
+        /*Path=*/nullptr, Loc, Loc);
+  } else {
+    Init = new (Context) CXXTemporaryObjectExpr(
+        Context, Ctor, ClassTy, ClassTSI, CtorArgs, SourceRange(Loc, Loc),
+        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
+        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false);
+  }
 
   // Finally, build the fragment expression.
-  return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, FD, Init);
+  return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, FD, Captures,
+                                       Init);
 }
 
 /// Returns an injection statement.
@@ -1051,6 +1288,8 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
 /// Inject a fragment into the current context.
 bool Sema::InjectFragment(SourceLocation POI,
                           const Decl *Injection,
+                          const ArrayRef<FieldDecl *> CaptureDecls,
+                          const ArrayRef<APValue> Captures,
                           Decl *Injectee) {
   assert(isa<CXXRecordDecl>(Injection) || isa<NamespaceDecl>(Injection));
   DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
@@ -1059,12 +1298,15 @@ bool Sema::InjectFragment(SourceLocation POI,
   if (!CheckInjectionContexts(*this, POI, InjectionDC, InjecteeDC))
     return false;
 
+  const CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(
+                                      Injection->getDeclContext());
+
   ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
   // Establish the injection context and register the substitutions.
   InjectionContext *Cxt = new InjectionContext(*this);
   Cxt->AddDeclSubstitution(Injection, Injectee);
-  // Cxt->AddPlaceholderSubstitutions(Fragment, Class, Captures);
+  Cxt->AddPlaceholderSubstitutions(Fragment, CaptureDecls, Captures);
 
   // Inject each declaration in the fragment.
   for (Decl *D : InjectionDC->decls()) {
@@ -1094,25 +1336,62 @@ bool Sema::InjectFragment(SourceLocation POI,
 }
 
 static const Decl *
-GetDeclFromReflection(Sema &SemaRef, APValue FragmentData, SourceLocation Loc) {
-  assert(FragmentData.isStruct()
-	 && "expected FragmentData to be a struct value");
+GetFragDeclFromClosure(APValue FragmentData) {
   Reflection Refl(FragmentData.getStructField(0));
   return Refl.getDeclaration();
 }
 
-bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
-  const Decl *Injection = GetDeclFromReflection(*this, II.FragmentData, POI);
+static const SmallVector<APValue, 8>
+GetFragCapturesFromClosure(APValue FragmentData) {
+  // Skip the first field, it's used to store the reflection
+  // not a capture.
+  unsigned NumCaptures = FragmentData.getStructNumFields() - 1;
 
+  SmallVector<APValue, 8> Captures;
+  for (unsigned int I = 0; I < NumCaptures; ++I) {
+    Captures.push_back(FragmentData.getStructField(I + 1));
+  }
+  return Captures;
+}
+
+static const SmallVector<FieldDecl *, 8>
+GetFragCaptureDeclsFromClosure(CXXRecordDecl *FragmentClosureDecl) {
+  auto FieldIteratorBegin = FragmentClosureDecl->field_begin();
+  auto FieldIteratorEnd   = FragmentClosureDecl->field_end();
+
+  // Skip the first field, it's used to store the reflection
+  // not a capture.
+  FieldIteratorBegin++;
+
+  using iterator_type = DeclContext::specific_decl_iterator<clang::FieldDecl>;
+  auto field_range = llvm::iterator_range<iterator_type>(FieldIteratorBegin,
+                                                         FieldIteratorEnd);
+  return SmallVector<FieldDecl *, 8>(field_range);
+}
+
+bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
   Decl *Injectee = Decl::castFromDeclContext(CurContext);
   if (!Injectee) {
     return false;
   }
 
+  assert(II.FragmentClosureData.isStruct()
+	 && "expected FragmentData to be a struct value");
+
+  APValue FragmentClosureData = II.FragmentClosureData;
+  const Decl *Injection = GetFragDeclFromClosure(FragmentClosureData);
+  const SmallVector<APValue, 8> Captures = GetFragCapturesFromClosure(
+                                       FragmentClosureData);
+
+  CXXRecordDecl
+    *FragmentClosureDecl = II.FragmentClosureDecl;
+  const SmallVector<FieldDecl *, 8>
+    CaptureDecls = GetFragCaptureDeclsFromClosure(FragmentClosureDecl);
+
   // FIXME: We need to validate the Injection is compatible
   // with the Injectee.
 
-  return InjectFragment(POI, Injection, Injectee);
+  return InjectFragment(POI, Injection, CaptureDecls, Captures, Injectee);
 }
 
 static void
@@ -1259,9 +1538,7 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
 void Sema::InjectPendingDefinition(InjectionContext *Cxt,
                                    CXXMethodDecl *OldMethod,
                                    CXXMethodDecl *NewMethod) {
-  // FIXME: Everything should already be parsed
-  // this should be unncessary
-  PushFunctionScope();
+  SynthesizedFunctionScope Scope(*this, NewMethod);
 
   ContextRAII MethodCxt (*this, NewMethod);
   StmtResult Body = Cxt->TransformStmt(OldMethod->getBody());

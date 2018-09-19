@@ -1768,6 +1768,19 @@ private:
   /// \brief Whether this variable is 'immediate'.
   bool IsImmediate;
 
+  /// Indicates that the function is a metaprogram (constexpr block). In
+  /// certain contexts, we can have namespace-scoped declarations find local
+  /// variables in a metaprogram. For example:
+  ///
+  ///   constexpr {
+  ///     auto x = ...;
+  ///     -> <<namespace N: typename(x) n; >>;
+  ///   }
+  ///
+  /// The lookup of x should succeed only when x is a local of a constexpr
+  /// declaration and technically, the origin context should be a fragment.
+  unsigned IsMetaprogram : 1;
+
   /// End part of this FunctionDecl's source range.
   ///
   /// We could compute the full range in getSourceRange(). However, when we're
@@ -2241,6 +2254,10 @@ public:
   /// True if this function will eventually have a body, once it's fully parsed.
   bool willHaveBody() const { return FunctionDeclBits.WillHaveBody; }
   void setWillHaveBody(bool V = true) { FunctionDeclBits.WillHaveBody = V; }
+
+  /// True if this function is a metaprogram.
+  bool isMetaprogram() const { return IsMetaprogram; }
+  void setMetaprogram(bool V = true) { IsMetaprogram = V; }
 
   /// True if this function is considered a multiversioned function.
   bool isMultiVersion() const {

@@ -4270,15 +4270,19 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     // Compute the value of the injected reflection and its modifications.
     const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
     Expr *Fragment = IS->getFragment();
-    APValue Result;
-    if (!Evaluate(Result, Info, Fragment))
+    APValue FragmentClosureData;
+    if (!Evaluate(FragmentClosureData, Info, Fragment))
       return ESR_Failed;
+
+    CXXRecordDecl *FragmentClosureDecl =
+      Fragment->getType()->getAsCXXRecordDecl();
 
     // Queue the injection as a side effect.
     Info.EvalStatus.Effects->emplace_back();
     EvalEffect &Effect = Info.EvalStatus.Effects->back();
     Effect.Kind = EvalEffect::InjectionEffect;
-    Effect.Injection = new InjectionInfo{Result};
+    Effect.Injection = new InjectionInfo{FragmentClosureDecl,
+                                         FragmentClosureData};
     return ESR_Succeeded;
   }
 

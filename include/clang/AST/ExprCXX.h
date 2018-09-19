@@ -4450,6 +4450,10 @@ class CXXConstantExpr : public Expr {
   /// \brief The computed value of the source expression.
   APValue Value;
 public:
+  CXXConstantExpr(Expr *E, const APValue& V)
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
+           E->getObjectKind(), false, false, false, false), Source(E),
+      Value(V) {}
   CXXConstantExpr(Expr *E, APValue&& V)
     : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
            E->getObjectKind(), false, false, false, false), Source(E),
@@ -4951,6 +4955,17 @@ class CXXFragmentExpr : public Expr {
   /// \brief The location of the introducer token.
   SourceLocation IntroLoc;
 
+  /// \brief The number of captured declarations.
+  std::size_t NumCaptures;
+
+  /// \brief The reference expressions to local variables. These are all
+  /// DeclRefExprs. We store these instead of their underlying declarations
+  /// to facilitate their evaluation during injection.
+  ///
+  /// TODO: These are implicitly stored as operands to the initializer.
+  /// Do we need to store them twice?
+  Expr** Captures;
+
   /// The fragment introduced by the expression.
   CXXFragmentDecl *Fragment;
 
@@ -4959,10 +4974,29 @@ class CXXFragmentExpr : public Expr {
 
   public:
   CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
-                  CXXFragmentDecl *Fragment, Expr *Init);
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
+                  Expr *Init);
 
   explicit CXXFragmentExpr(EmptyShell Empty)
-      : Expr(CXXFragmentExprClass, Empty), IntroLoc(), Init() {}
+    : Expr(CXXFragmentExprClass, Empty), IntroLoc(), NumCaptures(),
+      Captures(), Init() {}
+
+  /// \brief The number of captured declarations.
+  std::size_t getNumCaptures() const { return NumCaptures; }
+
+  /// \brief The Ith capture of the injection statement.
+  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
+  Expr *getCapture(std::size_t I) { return Captures[I]; }
+
+  using capture_iterator = Expr**;
+  using capture_range = llvm::iterator_range<capture_iterator>;
+
+  capture_iterator begin_captures() const { return Captures; }
+  capture_iterator end_captures() const { return Captures + NumCaptures; }
+
+  capture_range captures() const {
+    return capture_range(begin_captures(), end_captures());
+  }
 
   /// \brief The introduced fragment.
   CXXFragmentDecl *getFragment() const { return Fragment; }

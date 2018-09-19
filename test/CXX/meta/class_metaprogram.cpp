@@ -81,6 +81,10 @@ class Foo {
 
   constexpr {
     -> fragment;
+    int captured_int_val = 7;
+    -> __fragment struct {
+      int captured_int = captured_int_val;
+    };
   }
 
 public:
@@ -104,6 +108,7 @@ int main() {
     assert(*f.c0 == 5);
     assert(*f.c1 == 10);
     assert(f.get_z(f) == 55);
+    assert(f.captured_int == 7);
 
     Foo::fragment_int int_of_injected_type = 1;
     assert(static_cast<int>(int_of_injected_type) == 1);

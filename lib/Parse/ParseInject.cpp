@@ -139,7 +139,10 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
 ///        enum-specifier
 ///        compound-statement
 ///
-Decl *Parser::ParseCXXFragment() {
+Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
+  // Implicitly capture automatic variables as captured constants.
+  Actions.ActOnCXXFragmentCapture(Captures);
+
   // A name declared in the the fragment is not leaked into the enclosing
   // scope. That is, fragments names are only accessible from within.
   ParseScope FragmentScope(this, Scope::DeclScope | Scope::FragmentScope);
@@ -147,7 +150,8 @@ Decl *Parser::ParseCXXFragment() {
   // Start the fragment. The fragment is finished in one of the
   // ParseCXX*Fragment functions.
   Decl *Fragment = Actions.ActOnStartCXXFragment(getCurScope(),
-                                                 Tok.getLocation());
+                                                 Tok.getLocation(),
+                                                 Captures);
 
   switch (Tok.getKind()) {
     case tok::kw_namespace:
@@ -183,12 +187,13 @@ ExprResult Parser::ParseCXXFragmentExpression() {
   assert(Tok.is(tok::kw___fragment) && "expected '<<' token");
   SourceLocation Loc = ConsumeToken();
 
-  Decl *Fragment = ParseCXXFragment();
+  SmallVector<Expr *, 8> Captures;
+  Decl *Fragment = ParseCXXFragment(Captures);
   if (!Fragment) {
     return ExprError();
   }
 
-  return Actions.ActOnCXXFragmentExpr(Loc, Fragment);
+  return Actions.ActOnCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
 /// \brief Parse a C++ injection statement.

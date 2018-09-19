@@ -2696,6 +2696,7 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   setInstantiationIsPending(false);
   setConstexprSpecified(false);
   setImmediate(false);
+  setMetaprogram(false);
   setUsesSEHTry(false);
   setHasSkippedBody(false);
   setWillHaveBody(false);

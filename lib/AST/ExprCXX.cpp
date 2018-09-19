@@ -1564,13 +1564,36 @@ CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
   std::copy(Args.begin(), Args.end(), this->Args);
 }
 
+static bool AnyTypeDependentExprs(ArrayRef<Expr *> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    if (Args[i]->isTypeDependent())
+      return true;
+  return false;
+}
+
+static bool AnyValueDependentExprs(ArrayRef<Expr *> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    if (Args[i]->isValueDependent())
+      return true;
+  return false;
+}
+
+static bool AnyInstantiationDependentExprs(ArrayRef<Expr *> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    if (Args[i]->isInstantiationDependent())
+      return true;
+  return false;
+}
+
 // FIXME: Can a fragment be value dependent?
-CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, 
-                                 QualType T, CXXFragmentDecl *Frag, Expr *E)
-  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary, 
-         /*TD=*/T->isDependentType(),
-         /*VD=*/false,
-         /*ID=*/false, 
-         /*ContainsUnexpandedParameterPack=*/false), 
-    IntroLoc(IntroLoc), Fragment(Frag), Init(E) {
+CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
+                                 QualType T, CXXFragmentDecl *Frag,
+                                 ArrayRef<Expr *> Caps, Expr *E)
+  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary,
+         /*TD=*/T->isDependentType() || AnyTypeDependentExprs(Caps),
+         /*VD=*/AnyValueDependentExprs(Caps),
+         /*ID=*/AnyInstantiationDependentExprs(Caps),
+         /*ContainsUnexpandedParameterPack=*/false),
+    IntroLoc(IntroLoc), NumCaptures(Caps.size()),
+    Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
 }

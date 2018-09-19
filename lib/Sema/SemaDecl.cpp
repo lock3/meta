@@ -1167,6 +1167,13 @@ Sema::getTemplateNameKindForDiagnostics(TemplateName Name) {
   return TemplateNameKindForDiagnostics::DependentTemplate;
 }
 
+static bool isMetaprogram(DeclContext *DC) {
+  if (FunctionDecl *F = cast<FunctionDecl>(DC))
+    return F->isMetaprogram();
+
+  return false;
+}
+
 // Determines the context to return to after temporarily entering a
 // context.  This depends in an unnecessarily complicated way on the
 // exact ordering of callbacks from the parser.
@@ -1184,7 +1191,8 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
   // ill-formed fashion (such as to specify the width of a bit-field, or
   // in an array-bound) - in which case we still want to return the
   // lexically containing DC (which could be a nested class).
-  if (isa<FunctionDecl>(DC) && !isLambdaCallOperator(DC)) {
+  if (isa<FunctionDecl>(DC) && !isLambdaCallOperator(DC)
+      && !isMetaprogram(DC)) {
     DC = DC->getLexicalParent();
 
     // A function not defined within a class will always return to its

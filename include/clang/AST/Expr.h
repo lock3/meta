@@ -104,8 +104,11 @@ struct SubobjectAdjustment {
 /// This is a set containing the values of captured declarations and the
 /// expression into which those will be substituted.
 struct InjectionInfo {
+  /// The class of the fragment clojure used in the injection.
+  CXXRecordDecl *FragmentClosureDecl;
+
   /// The actual value computed by the injection statement.
-  APValue FragmentData;
+  APValue FragmentClosureData;
 };
 
 /// Represents a side-effect to constexpr evaluation. When recorded,

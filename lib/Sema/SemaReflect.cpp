@@ -977,7 +977,7 @@ Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
                              /*hasWrittenPrototype=*/true,
                              /*isConstexprSpecified=*/true);
     Function->setImplicit();
-    // Function->setMetaprogram();
+    Function->setMetaprogram();
 
     // Build the constexpr declaration around the function.
     CD = CXXMetaprogramDecl::Create(Context, CurContext, ConstexprLoc, Function);
@@ -1019,7 +1019,7 @@ Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
                      /*ExplicitParams=*/false,
                      /*ExplicitResultType=*/true,
                      /*Mutable=*/false);
-    // Method->setMetaprogram();
+    Method->setMetaprogram();
 
     // NOTE: The call operator is not yet attached to the closure type. That
     // happens in ActOnFinishCXXMetaprogramDecl(). The operator is, however,

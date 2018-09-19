@@ -1481,8 +1481,9 @@ public:
   }
   
   /// \brief Build a new fragment expression.
-  ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment) {
-    return getSema().BuildCXXFragmentExpr(Loc, Fragment);
+  ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
+                                    SmallVectorImpl<Expr *> &Captures) {
+    return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -7515,12 +7516,27 @@ TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
+  // Transform captures first.
+  SmallVector<Expr *, 8> Captures;
+  for (Expr *Old : E->captures()) {
+    ExprResult New = getDerived().TransformExpr(Old);
+    if (New.isInvalid())
+      return ExprError();
+
+    // Transforming an expression ignores implicit casts, so we have to
+    // rebuild that here.
+    New = ImplicitCastExpr::Create(SemaRef.Context, New.get()->getType(),
+                                    CK_LValueToRValue, New.get(), nullptr,
+                                    VK_RValue);
+    Captures.push_back(New.get());
+  }
+
   // Create the fragment declaration and its placeholders.
   //
   // FIXME: The instantiation of the fragment and its content should
   // probably be managed by SubstDecl.
   SourceLocation Loc = E->getExprLoc();
-  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc);
+  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
   CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
   CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
 
@@ -7549,7 +7565,7 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
       return ExprError();
   }
 
-  return getDerived().RebuildCXXFragmentExpr(Loc, F);
+  return getDerived().RebuildCXXFragmentExpr(Loc, F, Captures);
 }
 
 // Objective-C Statements.
