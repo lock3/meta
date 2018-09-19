@@ -2123,7 +2123,7 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
   DefaultPolicy.enableConsumedAnalysis =
     isEnabled(D, warn_use_in_invalid_state);
 
-  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_nullptr);
+  DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_dangling);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {

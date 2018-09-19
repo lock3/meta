@@ -3198,7 +3198,7 @@ def warn_param_typestate_mismatch : Warning<
 def warn_pset_of_global : Warning<"the pset of '%0' must be a subset of {(static), (null)}, but is {%1}">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null pointer">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
+  InGroup<LifetimeNull>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_parameter_alias : Warning<"this argument points to the same variable '%0' as another argument">,
@@ -3206,11 +3206,11 @@ def warn_parameter_alias : Warning<"this argument points to the same variable '%
 def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling pointer as argument">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_parameter_null : Warning<"passing a%select{| possibly}0 null pointer as argument to a non-null parameter">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
+  InGroup<LifetimeNull>, DefaultIgnore;
 def warn_return_dangling : Warning<"returning a%select{| possibly}0 dangling Pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_return_null : Warning<"returning a%select{| possibly}0 null Pointer where a non-null Pointer is expected">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
+  InGroup<LifetimeNull>, DefaultIgnore;
 def warn_return_wrong_pset : Warning<"returning a Pointer with points-to set %0 where points-to set %1 is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
