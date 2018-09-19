@@ -702,16 +702,26 @@ public:
     E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
-      assert(AllowNonExisting || I != RefersTo.end());
-      if (I == RefersTo.end())
+      if (I != RefersTo.end())
+        return I->second;
+      if (AllowNonExisting)
         return {};
-      return I->second;
+#ifndef NDEBUG
+      E->dump();
+      llvm_unreachable("Expression has no entry in RefersTo");
+#endif
+      return {};
     } else {
       auto I = PSetsOfExpr.find(E);
-      assert(AllowNonExisting || I != PSetsOfExpr.end());
-      if (I == PSetsOfExpr.end())
+      if (I != PSetsOfExpr.end())
+        return I->second;
+      if (AllowNonExisting)
         return {};
-      return I->second;
+#ifndef NDEBUG
+      E->dump();
+      llvm_unreachable("Expression has no entry in PSetsOfExpr");
+#endif
+      return {};
     }
   }
 
