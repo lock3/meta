@@ -128,6 +128,7 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
 }
 
 static TypeCategory classifyTypeCategoryImpl(QualType QT) {
+  assert(!QT.isNull());
   /*
           llvm::errs() << "classifyTypeCategory\n ";
            T->dump(llvm::errs());
@@ -136,6 +137,9 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
   auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
+    if (T->isVoidPointerType())
+      return TypeCategory::Value;
+
     // raw pointers and references
     // Arrays are Pointers, because they implicitly convert into them
     // and we don't track implicit conversions.
