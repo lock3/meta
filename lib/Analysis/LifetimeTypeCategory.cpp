@@ -343,8 +343,11 @@ QualType getPointeeType(QualType QT) {
   size_t Idx = M.size() - 1;
 
   auto P = getPointeeTypeImpl(QT);
-  if (!P.isNull())
+  if (!P.isNull()) {
     P = P.getCanonicalType();
+    if (P->isVoidType())
+      P = {};
+  }
   M[Idx].second = P;
 #if CLASSIFY_DEBUG
   llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()

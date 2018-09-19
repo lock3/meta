@@ -1170,7 +1170,7 @@ namespace creduce4 {
 class a {
 public:
   void operator=(int);
-  void operator*();
+  int& operator*();
 };
 void b() {
   a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
