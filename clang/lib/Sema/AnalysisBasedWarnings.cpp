@@ -2301,14 +2301,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   }
   // Check for lifetime safety violations
   if (P.enableLifetimeAnalysis) {
-    auto isConvertible = [this, D](QualType From, QualType To) {
-      OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
-      ImplicitConversionSequence ICS = S.TryImplicitConversion(
-        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
-        /*InOverloadResolution=*/false, /*CStyle=*/false,
-        /*AllowObjCWritebackConversion=*/false);
-      return !ICS.isFailure();
-    };
 
     struct DiagnosticsSuppressor {
       DiagnosticsSuppressor(Sema &S) : S(S), PrevDiag(S.Diags.getSuppressAllDiagnostics()) {
@@ -2326,6 +2318,17 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       std::deque<Sema::PendingImplicitInstantiation> PendingLocalImplicitInstantiations;
       std::deque<Sema::PendingImplicitInstantiation> PendingInstantiations;
     };
+
+    auto isConvertible = [this, D](QualType From, QualType To) {
+      DiagnosticsSuppressor _(S);
+      OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
+      ImplicitConversionSequence ICS = S.TryImplicitConversion(
+        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+        /*InOverloadResolution=*/false, /*CStyle=*/false,
+        /*AllowObjCWritebackConversion=*/false);
+      return !ICS.isFailure();
+    };
+
     /// Find the viable overload of the given kind on the given class.
     /// Considers member function and non-member functions. Will create
     /// template instantiations if necessary.
