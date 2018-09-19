@@ -240,8 +240,8 @@ namespace functionTemplateInstantiation {
 // to deducing DerefType from first template parameter.
 template <int I, typename T>
 struct pointer {
-  template<typename D = T>
-  D& operator*();
+  template <typename D = T>
+  D &operator*();
 };
 
 void f() {
@@ -254,11 +254,22 @@ void f() {
 } // namespace functionTemplateInstantiation
 
 namespace defaultedDestructor {
-  struct P {
-    ~P() = default; // still trivial destructor
-    int* operator->();
-  };
-  void f() {
-    __lifetime_type_category<P>(); // expected-warning {{Pointer with pointee int}}
-  }
+struct P {
+  ~P() = default; // still trivial destructor
+  int *operator->();
+};
+void f() {
+  __lifetime_type_category<P>(); // expected-warning {{Pointer with pointee int}}
 }
+} // namespace defaultedDestructor
+
+namespace non_member_deref {
+struct P {
+};
+int &operator*(P &);
+void f() {
+  P p;
+  *p;
+  __lifetime_type_category<P>(); // TODOexpected-warning {{Pointer with pointee int}}
+}
+} // namespace non_member_deref
