@@ -1280,3 +1280,24 @@ class g {
   }
 };
 } // namespace creduce12
+
+namespace creduce13 {
+template <typename a>
+a b(a &&);
+
+template <typename c>
+struct d : c {};
+
+class e {
+  d<int> operator*();
+};
+
+class h {
+  e begin();
+  void end();
+};
+
+class j {
+  j(h &&k) { b(k); }
+};
+} // namespace creduce13
