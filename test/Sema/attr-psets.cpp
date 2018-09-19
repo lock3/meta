@@ -1209,3 +1209,16 @@ class a {
 };
 void b(a) {}
 }
+
+namespace creduce11 {
+template <typename a> struct b {
+  a operator[](long);
+};
+struct g {};
+class f {
+  b<g> h;
+  // g is an Aggregate temporary, and it needs to have a pset
+  // because it is passed as r-value reference to the implicit operator=.
+  void i() { h[0] = g(); }
+};
+}
