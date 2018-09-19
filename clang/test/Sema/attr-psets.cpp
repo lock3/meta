@@ -393,7 +393,8 @@ void if_stmt(const int *p, const char *q,
   int i;
   p = &i;
   __lifetime_pset(p); // expected-warning {{(i}}}
-  if(p) {}
+  if (p) {
+  }
   __lifetime_pset(p); // expected-warning {{(i}}}
 }
 
@@ -1176,7 +1177,7 @@ namespace creduce4 {
 class a {
 public:
   void operator=(int);
-  int& operator*();
+  int &operator*();
 };
 void b() {
   a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
