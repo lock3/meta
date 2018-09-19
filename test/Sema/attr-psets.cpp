@@ -1013,7 +1013,8 @@ void pruned_branch(bool cond) {
   int &trivial_r = 0 ? b : a;
   __lifetime_pset_ref(trivial_r); // expected-warning {{(a)}}
 
-  0 ? void() : pruned_branch(); // has not pset, should not crash.
+  void returns_void();
+  0 ? void() : returns_void(); // has not pset, should not crash.
 }
 
 void parameter_psets(int value,
