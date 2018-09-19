@@ -209,11 +209,11 @@ const int *return_wrong_ptr(const int *p) {
 }
 
 void null_notes(int *p) {
-  // expected-note@-1 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
+  // expected-note@-1 2 {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
   (void)*p; // expected-warning {{dereferencing a possibly null pointer}}
 
-  if (p) { // expected-note {{is compared to null here}}
-    ;
+  if (p) {
+    (void)*p;
   } else {
     (void)*p; // expected-warning {{dereferencing a null pointer}}
   }

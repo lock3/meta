@@ -353,6 +353,12 @@ public:
     NullReasons.push_back(Reason);
   }
   void removeNull() { ContainsNull = false; }
+  void removeEverythingButNull() {
+    ContainsInvalid = false;
+    InvReasons.clear();
+    ContainsStatic = false;
+    Vars.clear();
+  }
 
   void addNullReason(NullReason Reason) {
     assert(ContainsNull);
