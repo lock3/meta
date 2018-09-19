@@ -1258,3 +1258,25 @@ class f {
   void i() { h[0] = g(); }
 };
 } // namespace creduce11
+
+namespace creduce12 {
+class a {
+public:
+  void operator*();
+  a operator++(int);
+};
+class b {
+public:
+  using c = a;
+  template <class d>
+  void e(c f, d) { *f++; }
+};
+class g {
+  using h = b;
+  h i;
+  void k() {
+    a j;
+    i.e(j, this);
+  }
+};
+} // namespace creduce12
