@@ -112,6 +112,18 @@ public:
     return hasPSet(E) || E->isLValue();
   }
 
+  PSet varRefersTo(Variable V, SourceRange Range) {
+    if (V.getType()->isLValueReferenceType()) {
+      auto P = getPSet(V);
+      if (CheckPSetValidity(P, Range))
+        return P;
+      else
+        return PSet();
+    } else {
+      return PSet::singleton(V);
+    }
+  };
+
   void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
   }
@@ -139,18 +151,6 @@ public:
     if (hasPSet(E))
       setPSet(E, getPSet(E->getExpr()));
   }
-
-  PSet varRefersTo(Variable V, SourceRange Range) {
-    if (V.getType()->isLValueReferenceType()) {
-      auto P = getPSet(V);
-      if (CheckPSetValidity(P, Range))
-        return P;
-      else
-        return PSet();
-    } else {
-      return PSet::singleton(V);
-    }
-  };
 
   void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
     if (isa<FunctionDecl>(DeclRef->getDecl()) ||
