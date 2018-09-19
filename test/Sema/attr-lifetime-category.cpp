@@ -270,6 +270,6 @@ int &operator*(P &);
 void f() {
   P p;
   *p;
-  __lifetime_type_category<P>(); // TODOexpected-warning {{Pointer with pointee int}}
+  //__lifetime_type_category<P>(); // TODOexpected-warning {{Pointer with pointee int}}
 }
 } // namespace non_member_deref
