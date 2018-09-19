@@ -108,9 +108,7 @@ public:
     return E && IgnoreTransparentExprs(E) != E;
   }
 
-  static bool mustSetPset(const Expr *E) {
-    return hasPSet(E) || E->isLValue();
-  }
+  static bool mustSetPset(const Expr *E) { return hasPSet(E) || E->isLValue(); }
 
   PSet varRefersTo(Variable V, SourceRange Range) {
     if (V.getType()->isLValueReferenceType()) {
@@ -206,9 +204,10 @@ public:
     setPSet(E, PSet::singleton(Variable::thisPointer()));
   }
 
-  void VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr* E) {
-    // Non-type template parameters that are pointers must point to something static
-    // (because only addresses known at compiler time are allowed)
+  void
+  VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E) {
+    // Non-type template parameters that are pointers must point to something
+    // static (because only addresses known at compiler time are allowed)
     if (mustSetPset(E))
       setPSet(E, PSet::staticVar());
   }
