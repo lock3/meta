@@ -389,6 +389,12 @@ void if_stmt(const int *p, const char *q,
   while (p) {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
   }
+
+  int i;
+  p = &i;
+  __lifetime_pset(p); // expected-warning {{(i}}}
+  if(p) {}
+  __lifetime_pset(p); // expected-warning {{(i}}}
 }
 
 void implicit_else() {

@@ -993,10 +993,12 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     PSet PS = getPSet(V);
     PSet PSElseBranch = PS;
     if (Positive) {
+      // The variable is non-null in the if-branch and null in the then-branch.
+      PSElseBranch.removeEverythingButNull();
       PS.removeNull();
-      PSElseBranch = PSet::null(NullReason::comparedToNull(Range));
     } else {
-      PS = PSet::null(NullReason::comparedToNull(Range));
+      // The variable is null in the if-branch and non-null in the then-branch.
+      PS.removeEverythingButNull();
       PSElseBranch.removeNull();
     }
     FalseBranchExitPMap = PMap;
