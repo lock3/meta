@@ -302,6 +302,8 @@ public:
       setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->isLValue() && BO->getOpcode() == BO_Comma) {
       setPSet(BO, getPSet(BO->getRHS()));
+    } else if (BO->getOpcode() == BO_PtrMemD || BO->getOpcode() == BO_PtrMemI) {
+      setPSet(BO, {}); // TODO, not specified in paper
     }
   }
 

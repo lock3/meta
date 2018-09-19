@@ -1094,6 +1094,21 @@ void d() {
 }
 } // namespace CXXScalarValueInitExpr
 
+namespace PointerToMember {
+struct Aggregate {
+  int *p1;
+  int *p2;
+};
+
+void f() {
+  Aggregate a;
+  int i;
+  a.p1 = &i; // make a.p1 valid; a.p2 still invalid
+  int *Aggregate::*memptr = &Aggregate::p2;
+  (void)*(a.*memptr); // .* is ignored
+}
+} // namespace PointerToMember
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
