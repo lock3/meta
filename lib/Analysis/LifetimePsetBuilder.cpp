@@ -103,9 +103,13 @@ public:
     }
   }
 
-  bool IsIgnoredStmt(const Stmt *S) {
+  static bool IsIgnoredStmt(const Stmt *S) {
     const Expr *E = dyn_cast<Expr>(S);
     return E && IgnoreTransparentExprs(E) != E;
+  }
+
+  static bool mustSetPset(const Expr *E) {
+    return hasPSet(E) || E->isLValue();
   }
 
   void VisitStringLiteral(const StringLiteral *SL) {
@@ -200,6 +204,13 @@ public:
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
     setPSet(E, PSet::singleton(Variable::thisPointer()));
+  }
+
+  void VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr* E) {
+    // Non-type template parameters that are pointers must point to something static
+    // (because only addresses known at compiler time are allowed)
+    if (mustSetPset(E))
+      setPSet(E, PSet::staticVar());
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {

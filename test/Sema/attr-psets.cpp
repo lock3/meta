@@ -1111,6 +1111,17 @@ void f() {
 }
 } // namespace PointerToMember
 
+namespace SubstNonTypeTemplateParmExpr {
+template <int *i>
+void f() {
+  (void)*i; // Template parameters have pset (static)
+}
+int g;
+void test() {
+  f<&g>();
+}
+} // namespace SubstNonTypeTemplateParmExpr
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument
