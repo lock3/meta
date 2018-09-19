@@ -203,6 +203,8 @@ public:
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
+    if (!isPointer(E) && !E->isLValue())
+      return;
     // If the condition is trivially true/false, the corresponding branch
     // will be pruned from the CFG and we will not find a pset of it.
     // With AllowNonExisting, getPSet() will then return (unknown).
