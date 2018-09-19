@@ -1223,10 +1223,11 @@ class a {
   char begin;
 };
 void b(a) {}
-}
+} // namespace creduce10
 
 namespace creduce11 {
-template <typename a> struct b {
+template <typename a>
+struct b {
   a operator[](long);
 };
 struct g {};
@@ -1236,4 +1237,4 @@ class f {
   // because it is passed as r-value reference to the implicit operator=.
   void i() { h[0] = g(); }
 };
-}
+} // namespace creduce11
