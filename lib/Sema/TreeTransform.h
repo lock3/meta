@@ -7556,7 +7556,7 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
     MultiLevelTemplateArgumentList Args =
         getSema().getTemplateInstantiationArgs(Owner);
-    Decl *NewContent = 
+    Decl *NewContent =
         getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
     if (!NewContent)
       return ExprError();

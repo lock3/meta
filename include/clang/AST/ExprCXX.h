@@ -4964,7 +4964,7 @@ class CXXFragmentExpr : public Expr {
   ///
   /// TODO: These are implicitly stored as operands to the initializer.
   /// Do we need to store them twice?
-  Expr** Captures;
+  Expr **Captures;
 
   /// The fragment introduced by the expression.
   CXXFragmentDecl *Fragment;
