@@ -11338,12 +11338,9 @@ void Sema::ActOnFinishCXXMemberDecls() {
   }
 }
 
-/// If there are any unprocessed fragments associated with the class, then
-/// we need to parse them now. Note that this happens after the class is
-/// completed.
-///
-/// Note that this is (apparently) called multiple times on the class.
-/// I don't know why.
+/// If there are any pending method definitions, we need to
+/// handle them now. Field definitions should have already
+/// been handled, and the class should be complete.
 static void ProcessMethodInjections(Sema &SemaRef, CXXRecordDecl *D) {
   if (D->isCXXClassMember()) // Not an outermost class
     return;

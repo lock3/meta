@@ -15049,12 +15049,12 @@ void Sema::StartDefinition(TagDecl *D) {
   D->startDefinition();
 }
 
-/// If there are any unprocessed fragments associated with the class, then
-/// we need to parse them now. Note that this happens after the class is
-/// completed.
-///
-/// Note that this is (apparently) called multiple times on the class.
-/// I don't know why.
+/// If there are any pending field definitions, we need to
+/// handle them now. At this point we should have a
+/// declaration complete class. Member definitions shall
+/// be handled after all field definitions have been processed,
+/// and the class is otherwise both declaration, and
+/// definition complete.
 static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
   if (!D) // Not a class
     return;

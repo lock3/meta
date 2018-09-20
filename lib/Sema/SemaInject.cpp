@@ -407,10 +407,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // appear in class scope (we hope), so we shouldn't be doing this too
   // early.
   if (Stmt *OldBody = D->getBody()) {
-    // FIXME: Everything should already be parsed
-    // this should be unncessary
     Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-
     Sema::ContextRAII FnCxt (getSema(), Fn);
     StmtResult NewBody = TransformStmt(OldBody);
     if (NewBody.isInvalid())
