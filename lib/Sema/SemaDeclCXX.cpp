@@ -11338,8 +11338,23 @@ void Sema::ActOnFinishCXXMemberDecls() {
   }
 }
 
+/// If there are any unprocessed fragments associated with the class, then
+/// we need to parse them now. Note that this happens after the class is
+/// completed.
+///
+/// Note that this is (apparently) called multiple times on the class.
+/// I don't know why.
+static void ProcessMethodInjections(Sema &SemaRef, CXXRecordDecl *D) {
+  if (D->isCXXClassMember()) // Not an outermost class
+    return;
+  if (!SemaRef.HasPendingInjections(D))
+    return;
+  SemaRef.InjectPendingMethodDefinitions();
+}
+
 void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
-  InjectPendingMethodDefinitions();
+  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+    ProcessMethodInjections(*this, RD);
   referenceDLLExportedClassMethods();
 }
 

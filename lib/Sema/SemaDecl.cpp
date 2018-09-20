@@ -15055,7 +15055,7 @@ void Sema::StartDefinition(TagDecl *D) {
 ///
 /// Note that this is (apparently) called multiple times on the class.
 /// I don't know why.
-static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
+static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
   if (!D) // Not a class
     return;
   if (D->isCXXClassMember()) // Not an outermost class
@@ -15067,12 +15067,12 @@ static void ProcessInjections(Sema &SemaRef, CXXRecordDecl *D) {
 
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
-  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
+  ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
-  ProcessInjections(*this, dyn_cast<CXXRecordDecl>(D));
+  ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {

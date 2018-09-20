@@ -81,6 +81,9 @@ class Foo {
 
   constexpr {
     -> fragment;
+  }
+
+  constexpr {
     int captured_int_val = 7;
     -> __fragment struct {
       int captured_int = captured_int_val;
