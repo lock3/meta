@@ -192,6 +192,8 @@ def note_reflection_not_defined : Note<
 
 // [Meta] Compile-time code generation
 def err_user_defined_error : Error<"%0">;
+def note_injection_outside_constexpr_decl : Note<
+  "code injection outside of a constexpr-declaration">;
 
 def warn_integer_constant_overflow : Warning<
   "overflow in expression; result is %0 with type %1">,
