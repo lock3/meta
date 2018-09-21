@@ -1,4 +1,4 @@
-// RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include %s
+// RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include -stdlib=libstdc++ %s
 // RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include -stdlib=libc++ -I/usr/lib/llvm-7/include/c++/v1 %s
 // Note: paths are for Ubuntu's libc++-7-dev package from http://apt.llvm.org/
 // Examples are from https://herbsutter.com/2018/09/20/lifetime-profile-v1-0-posted/
