@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime -Wno-lifetime-null %s
+// RUN: %clang_cc1 -fsyntax-only -std=c++11 -verify -Wlifetime -Wno-lifetime-null %s
 
 void deref_uninitialized() {
   int *p;        // expected-note {{it was never initialized here}}
