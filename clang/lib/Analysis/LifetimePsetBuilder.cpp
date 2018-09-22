@@ -342,18 +342,41 @@ public:
   }
 
   void VisitReturnStmt(const ReturnStmt *R) {
-    if (const Expr *RetVal = R->getRetValue()) {
-      if (!isPointer(RetVal))
-        return;
-      auto RetPSet = getPSet(RetVal);
-      if (RetPSet.containsInvalid()) {
-        Reporter.warnReturnDangling(R->getReturnLoc(), false);
-        RetPSet.explainWhyInvalid(Reporter);
-      } else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
-        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
-                                     PSetOfAllParams.str());
+    const Expr *RetVal = R->getRetValue();
+    if (!RetVal)
+      return;
+
+    if (!isPointer(RetVal))
+      return;
+    R->dump();
+    auto RetPSet = getPSet(RetVal);
+    if (RetVal->isLValue())
+      RetPSet = getPSet(RetVal);
+    llvm::errs() << "RetPset: " << RetPSet.str() << "\n";
+    // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
+    // the ReturnStmt node
+    for (auto &V : RetPSet.vars()) {
+      auto &Var = V.first;
+      if (Var.isTemporary() || Var.isLifetimeExtendedTemporary()) {
+        RetPSet = PSet::invalid(
+            InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
+        break;
+      } else if (auto *VD = Var.asVarDecl()) {
+        // Allow to return a pointer to *p (then p is a parameter).
+        if (VD->hasLocalStorage() && !Var.isDeref()) {
+          RetPSet = PSet::invalid(
+              InvalidationReason::PointeeLeftScope(R->getSourceRange(), VD));
+          break;
+        }
       }
     }
+    if (RetPSet.containsInvalid()) {
+      Reporter.warnReturnDangling(R->getReturnLoc(), false);
+      RetPSet.explainWhyInvalid(Reporter);
+    } /* else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
+       Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
+                                    PSetOfAllParams.str());
+     }*/
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {

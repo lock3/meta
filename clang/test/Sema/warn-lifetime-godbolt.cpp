@@ -431,7 +431,8 @@ int* example_2_5_6_6a() {	// pset(ret) = {static}
     int i = 0;
     return &i;		    	// pset(&i) = {i}, then KILL(i) -> pset(ret) = {invalid}
 				        	// ERROR, {invalid} is not substitutable for {static}
-    // TODO expected-warning@-2 {{returning a Pointer with points-to set (i) where points-to set ((unknown)) is expected}}
+    // expected-warning@-2 {{returning a dangling Pointer}}
+    // expected-note@-3 {{pointee 'i' left the scope here}}
 }
 
 // https://godbolt.org/z/53qeAD
@@ -439,7 +440,8 @@ int* example_2_5_6_7_a(int* pi) {
     int i = 0;
     return cond ? pi : &i;	// pset(expr)={pi,i}, KILL(i) => pset(expr)={invalid}
  	        				// ERROR, {invalid} is not subtitutable for {pi}
-    // expected-warning@-2 {{returning a Pointer with points-to set ((*pi), (null), i) where points-to set ((*pi), (null)) is expected}}
+    // expected-warning@-2 {{returning a dangling Pointer}}
+    // expected-note@-3 {{pointee 'i' left the scope here}}
 }
 
 // https://godbolt.org/z/-exrN7
@@ -485,7 +487,8 @@ template<typename T>	// for T == string_view, pset(ret) = {x1,x2},
 T add(T x1, T x2) {		//   pset(x1) = {x1}, pset(x2) = {x2}
     return x1 + x2 ;	// A: ERROR (lifetime.4): {tmp'} was invalidated
 }						//   when temporary ‘x1 + x2’ was destroyed (line A)
-// expected-warning@-2 {{returning a Pointer with points-to set ((temporary)') where points-to set ((*x1), (*x2), (null)) is expected}}
+// expected-warning@-2 {{returning a dangling Pointer}}
+// expected-note@-3 {{temporary was destroyed at the end of the full expression}}
 
 void example_2_6_2_3() {
     add(1,2);           // ok

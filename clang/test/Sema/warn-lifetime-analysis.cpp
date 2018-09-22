@@ -205,7 +205,8 @@ const int *return_wrong_ptr(const int *p) {
   int *q = &i;
   if (p)
     return p;
-  return q; // expected-warning {{returning a Pointer with points-to set (i) where points-to set ((*p), (null)) is expected}}
+  return q; // expected-warning {{returning a dangling Pointer}}
+  // expected-note@-1 {{pointee 'i' left the scope here}}
 }
 
 void null_notes(int *p) {
@@ -235,7 +236,7 @@ void null_notes_copy2(int *p) {
 namespace supress_further_warnings {
 int *f(int *);
 void test() {
-  int *p; // expected-note {{it was never initialized here}}
+  int *p;        // expected-note {{it was never initialized here}}
   int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
   (void)*q; // further diagnostics are suppressed here
 }
@@ -300,7 +301,8 @@ std::string operator+(std::string_view sv1, std::string_view sv2) {
 template <typename T>
 T concat(const T &x, const T &y) {
   // TODO: Elide the deref for references?
-  return x + y; // expected-warning {{returning a Pointer with points-to set ((temporary)') where points-to set ((*x), (*y)) is expected}}
+  return x + y; // expected-warning {{returning a dangling Pointer}}
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
 }
 
 void sj4() {
