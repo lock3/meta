@@ -829,19 +829,19 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (I != PMap.end())
     return I->second;
 
-  if (auto VD = P.asVarDecl()) {
-    // To handle self-assignment during initialization
-    if (!isa<ParmVarDecl>(VD))
-      return PSet::invalid(
-          InvalidationReason::NotInitialized(VD->getLocation()));
-  }
-
   // Assume that the unseen pointer fields are valid. We will always have
   // unseen fields since we do not track the fields of owners and values.
   // Until proper aggregate support is implemented, this might be triggered
   // unintentionally.
   if (P.isField())
     return PSet::staticVar(false);
+
+  if (auto VD = P.asVarDecl()) {
+    // To handle self-assignment during initialization
+    if (!isa<ParmVarDecl>(VD))
+      return PSet::invalid(
+          InvalidationReason::NotInitialized(VD->getLocation()));
+  }
 
 #ifndef NDEBUG
   llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
