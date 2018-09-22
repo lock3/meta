@@ -95,7 +95,7 @@ struct S {
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
     S s2;
     p = s2.mp;
-    __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+    __lifetime_pset(p); // TODO expected-warning {{pset(p) = ((static))}}
     const S &s3 = S();
     p = s3.mp;
     __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
@@ -1131,6 +1131,21 @@ void test() {
   f<&g>();
 }
 } // namespace SubstNonTypeTemplateParmExpr
+
+namespace Aggregates {
+struct UnscannedEntry {
+  std::vector<int> V1;
+  std::vector<int> V2;
+};
+std::vector<int> get();
+
+void f() {
+  UnscannedEntry E;
+  __lifetime_type_category<UnscannedEntry>(); // expected-warning {{Aggregate}}
+  // We don't handle Aggregates yet
+  __lifetime_pset(E.V1); // expected-warning {{((static)}}
+}
+} // namespace Aggregates
 
 namespace crashes {
 // This used to crash with missing pset.
