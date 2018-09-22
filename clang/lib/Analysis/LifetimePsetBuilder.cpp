@@ -1048,27 +1048,23 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
   case 3: {
     auto Args = Callee->getTemplateSpecializationArgs();
     auto QType = Args->get(0).getAsType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-      auto PointeeType = getPointeeType(QType);
-      assert(!PointeeType.isNull());
-      Reporter.debugTypeCategory(Range.getBegin(), TC,
-                                 PointeeType.getAsString());
+    auto Class = classifyTypeCategory(QType);
+    if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+                                 Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), TC);
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
     }
     return true;
   }
   case 4: {
     auto QType = CallE->getArg(0)->getType();
-    TypeCategory TC = classifyTypeCategory(QType);
-    if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-      auto PointeeType = getPointeeType(QType);
-      assert(!PointeeType.isNull());
-      Reporter.debugTypeCategory(Range.getBegin(), TC,
-                                 PointeeType.getAsString());
+    auto Class = classifyTypeCategory(QType);
+    if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+                                 Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), TC);
+      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
     }
     return true;
   }

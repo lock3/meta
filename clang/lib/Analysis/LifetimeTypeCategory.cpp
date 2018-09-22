@@ -17,6 +17,8 @@
 namespace clang {
 namespace lifetime {
 
+static QualType getPointeeType(const Type *T);
+
 static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
                                     OverloadedOperatorKind Op) {
   return GlobalLookupOperator(R, Op);
@@ -128,6 +130,46 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return {};
 }
 
+/// Checks if all bases agree to the same TypeClassification,
+/// and if they do, returns it.
+Optional<TypeClassification> getBaseClassification(const CXXRecordDecl *R) {
+  QualType PointeeType;
+  bool HasOwnerBase = false;
+  bool HasPointerBase = false;
+  bool PointeesDisagree = false;
+
+  for (const CXXBaseSpecifier &B : R->bases()) {
+    auto C = classifyTypeCategory(B.getType());
+    if (C.TC == TypeCategory::Owner) {
+      HasOwnerBase = true;
+    } else if (C.TC == TypeCategory::Pointer) {
+      HasPointerBase = true;
+    } else {
+      continue;
+    }
+    if (PointeeType.isNull())
+      PointeeType = C.PointeeType;
+    else if (PointeeType != C.PointeeType) {
+      PointeesDisagree = true;
+    }
+  }
+
+  if (!HasOwnerBase && !HasPointerBase)
+    return {};
+
+  if (HasOwnerBase && HasPointerBase)
+    return TypeClassification(TypeCategory::Value);
+
+  if (PointeesDisagree)
+    return TypeClassification(TypeCategory::Value);
+
+  assert(HasOwnerBase ^ HasPointerBase);
+  if (HasPointerBase)
+    return TypeClassification(TypeCategory::Pointer, PointeeType);
+  else
+    return TypeClassification(TypeCategory::Owner, PointeeType);
+}
+
 static TypeClassification classifyTypeCategoryImpl(const Type *T) {
   assert(T);
   auto *R = T->getAsCXXRecordDecl();
@@ -217,6 +259,9 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
   if (R->isLambda()) {
     return TypeCategory::Value;
   }
+
+  if (auto C = getBaseClassification(R))
+    return *C;
 
   // An Aggregate is a type that is not an Indirection
   // and is a class type with public data members
@@ -348,7 +393,9 @@ static QualType getPointeeTypeImpl(const Type *T) {
   return {};
 }
 
-QualType getPointeeType(const Type *T) {
+/// WARNING: This overload does not consider base classes.
+/// Use classifyTypeCategory(T).PointeeType to consider base classes.
+static QualType getPointeeType(const Type *T) {
   assert(T);
   T = T->getCanonicalTypeUnqualified().getTypePtr();
   static std::map<const Type *, QualType> M;
