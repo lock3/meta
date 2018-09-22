@@ -15,13 +15,48 @@
 
 namespace clang {
 namespace lifetime {
+struct TypeClassification {
+  TypeCategory TC;
+  /// Called DerefType in the paper. Valid when TC is Owner or Pointer.
+  QualType PointeeType;
+
+  TypeClassification(TypeCategory TC) : TC(TC) {
+    assert(TC == TypeCategory::Aggregate || TC == TypeCategory::Value);
+  }
+
+  TypeClassification(TypeCategory TC, QualType PointeeType)
+      : TC(TC), PointeeType(PointeeType) {
+    assert(!PointeeType.isNull());
+    assert(!PointeeType->isVoidType());
+    assert(TC == TypeCategory::Pointer || TC == TypeCategory::Owner);
+  }
+
+  std::string str() const {
+    switch (TC) {
+    case TypeCategory::Owner:
+      return "Owner with DerefType " + PointeeType.getAsString();
+    case TypeCategory::Pointer:
+      return "Pointer with DerefType " + PointeeType.getAsString();
+    case TypeCategory::Aggregate:
+      return "Aggregate";
+    case TypeCategory::Value:
+      return "Value";
+    }
+  }
+
+  bool operator==(TypeCategory O) const { return O == TC; }
+  bool operator!=(TypeCategory O) const { return O != TC; }
+
+  operator TypeCategory() const { return TC; }
+};
+
 /// Returns the type category of the given type
 /// If T is a template specialization, it must be instantiated.
 /// \post If the returned TypeCategory is Owner or Pointer, then
 ///       getPointeeType() will return non-null for the same QT.
-TypeCategory classifyTypeCategory(const Type *T);
+TypeClassification classifyTypeCategory(const Type *T);
 
-inline TypeCategory classifyTypeCategory(QualType QT) {
+inline TypeClassification classifyTypeCategory(QualType QT) {
   return classifyTypeCategory(QT.getTypePtr());
 }
 
