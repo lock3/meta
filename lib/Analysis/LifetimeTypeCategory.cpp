@@ -229,6 +229,9 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
       return {TypeCategory::Pointer, Pointee};
   }
 
+  if (auto Cat = classifyStd(T))
+    return {*Cat, Pointee};
+
   // Every type that satisfies the standard Container requirements.
   if (!Pointee.isNull() && satisfiesContainerRequirements(R))
     return {TypeCategory::Owner, Pointee};
@@ -237,9 +240,6 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
   // (Example: unique_ptr.)
   if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
     return {TypeCategory::Owner, Pointee};
-
-  if (auto Cat = classifyStd(T))
-    return {*Cat, Pointee};
 
   //  Every type that satisfies the Ranges TS Range concept.
   if (!Pointee.isNull() && satisfiesRangeConcept(R))
