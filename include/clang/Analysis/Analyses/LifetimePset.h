@@ -121,6 +121,8 @@ struct Variable {
 
   void deref() { FDs.push_back(nullptr); }
 
+  bool isDeref() const { return !FDs.empty() && FDs.back() == nullptr; }
+
   std::string getName() const {
     std::string Ret;
     if (Var.is<const MaterializeTemporaryExpr *>()) {
