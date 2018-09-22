@@ -109,7 +109,7 @@ void example_1_1_4() {
 	            				//   ‘__tmp1’ went out of scope on line C (path: C,D)
 }
 
-// https://godbolt.org/z/J7ndW5
+// https://godbolt.org/z/g9C8G6
 void example_2_4_2_1(string param) {
     int* p;				// A: pset(p) = {invalid} expected-note {{it was never initialized here}}
     *p = 1;				// ERROR (lifetime.1), p is invalid (line A) expected-warning {{dereferencing a dangling pointer}}
@@ -131,7 +131,7 @@ void example_2_4_2_1(string param) {
     // ...
 }						// KILL(param) — invalidates any Pointer to param
 
-// https://godbolt.org/z/2oAgrx
+// https://godbolt.org/z/G3BCOR
 void example_2_4_5_1() {
     int* p = nullptr;	// A: pset(p) = pset(nullptr) which is {null} expected-note {{assigned here}}
     *p = 1;		    	// ERROR (lifetime.1), p is null (line A) expected-warning {{dereferencing a null pointer}}
@@ -498,7 +498,7 @@ struct X { int a, b; };
 
 int&  example_2_6_2_4(X& x) { return x.a; }		// ok, pset(ret) == pset(x)
 
-// https://godbolt.org/z/tknVJi
+// https://godbolt.org/z/AqXDYp
 void example_2_6_2_5() {
     char& c = std::string{"hello my pretty long string"}[0]; // expected-note {{temporary was destroyed at the end of the full expression}}
     cout << c;              // ERROR expected-warning {{dereferencing a dangling pointer}}
