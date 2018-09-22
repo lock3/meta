@@ -128,7 +128,7 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return {};
 }
 
-static TypeCategory classifyTypeCategoryImpl(const Type *T) {
+static TypeClassification classifyTypeCategoryImpl(const Type *T) {
   assert(T);
   auto *R = T->getAsCXXRecordDecl();
 
@@ -140,7 +140,7 @@ static TypeCategory classifyTypeCategoryImpl(const Type *T) {
     // Arrays are Pointers, because they implicitly convert into them
     // and we don't track implicit conversions.
     if (T->isArrayType() || T->isPointerType() || T->isReferenceType())
-      return TypeCategory::Pointer;
+      return {TypeCategory::Pointer, getPointeeType(T)};
 
     return TypeCategory::Value;
   }
@@ -177,41 +177,41 @@ static TypeCategory classifyTypeCategoryImpl(const Type *T) {
     if (Pointee.isNull())
       return TypeCategory::Value; // TODO diagnose
     else
-      return TypeCategory::Owner;
+      return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
     if (Pointee.isNull())
       return TypeCategory::Value; // TODO diagnose
     else
-      return TypeCategory::Pointer;
+      return {TypeCategory::Pointer, Pointee};
   }
 
   // Every type that satisfies the standard Container requirements.
   if (!Pointee.isNull() && satisfiesContainerRequirements(R))
-    return TypeCategory::Owner;
+    return {TypeCategory::Owner, Pointee};
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
   if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
-    return TypeCategory::Owner;
+    return {TypeCategory::Owner, Pointee};
 
   if (auto Cat = classifyStd(T))
-    return *Cat;
+    return {*Cat, Pointee};
 
   //  Every type that satisfies the Ranges TS Range concept.
   if (!Pointee.isNull() && satisfiesRangeConcept(R))
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
   if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
   if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
-    return TypeCategory::Pointer;
+    return {TypeCategory::Pointer, Pointee};
 
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda()) {
@@ -228,18 +228,18 @@ static TypeCategory classifyTypeCategoryImpl(const Type *T) {
   return TypeCategory::Value;
 }
 
-TypeCategory classifyTypeCategory(const Type *T) {
-  static std::map<const Type *, TypeCategory> Cache;
+TypeClassification classifyTypeCategory(const Type *T) {
+  static std::map<const Type *, TypeClassification> Cache;
 
   auto I = Cache.find(T);
   if (I != Cache.end())
     return I->second;
 
   auto TC = classifyTypeCategoryImpl(T);
-  Cache[T] = TC;
+  Cache.emplace(T, TC);
 #if CLASSIFY_DEBUG
   llvm::errs() << "classifyTypeCategory(" << QualType(T, 0).getAsString()
-               << ") = " << (int)TC << "\n";
+               << ") = " << TC.str() << "\n";
 #endif
   return TC;
 }
@@ -314,6 +314,12 @@ static QualType getPointeeTypeImpl(const Type *T) {
 
   if (T->isReferenceType() || T->isAnyPointerType())
     return T->getPointeeType();
+
+  if (T->isArrayType()) {
+    // TODO: use AstContext.getAsArrayType() to correctly promote qualifiers
+    auto *AT = dyn_cast<ArrayType>(T);
+    return AT->getElementType();
+  }
 
   auto *R = T->getAsCXXRecordDecl();
   if (!R)
