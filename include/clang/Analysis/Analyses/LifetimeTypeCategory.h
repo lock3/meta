@@ -67,9 +67,8 @@ bool isNullableType(QualType QT);
 // type of operator*, operator-> or operator[]. Since these methods
 // might return references, and operator-> returns a pointer, we strip
 // off that one extra level of pointer/references.
-QualType getPointeeType(const Type *T);
 inline QualType getPointeeType(QualType QT) {
-  return getPointeeType(QT.getTypePtr());
+  return classifyTypeCategory(QT).PointeeType;
 }
 
 struct CallTypes {

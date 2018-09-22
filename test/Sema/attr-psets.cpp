@@ -1304,3 +1304,25 @@ class j {
   j(h &&k) { b(k); }
 };
 } // namespace creduce13
+
+namespace creduce14 {
+// With this bug, c was classified as Aggregate,
+// but a<int> as Pointer (due to the correct methods
+// and PointeeType from template parameter.)
+// The d.b() crashed, because b expected *this to have a
+// pset, but the Aggregate d in fn1 does not have one.
+// Now c is also classified as Pointer.
+template <typename>
+class a {
+public:
+  void begin();
+  void end();
+  void b();
+};
+
+class c : public a<int> {};
+
+void fn1(c d) { // expected-note {{potentially null}}
+  d.b();        // expected-warning {{passing a possibly null pointer}}
+}
+} // namespace creduce14
