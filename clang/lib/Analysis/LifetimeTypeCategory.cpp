@@ -10,6 +10,7 @@
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
+#include <map>
 
 #define CLASSIFY_DEBUG 0
 
@@ -127,13 +128,8 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   return {};
 }
 
-static TypeCategory classifyTypeCategoryImpl(QualType QT) {
-  assert(!QT.isNull());
-  /*
-          llvm::errs() << "classifyTypeCategory\n ";
-           T->dump(llvm::errs());
-           llvm::errs() << "\n";*/
-  const Type *T = QT.getUnqualifiedType().getTypePtr();
+static TypeCategory classifyTypeCategoryImpl(const Type *T) {
+  assert(T);
   auto *R = T->getAsCXXRecordDecl();
 
   if (!R) {
@@ -158,10 +154,11 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
     return TypeCategory::Value;
 
   // In case we do not know the pointee type fall back to value.
-  QualType Pointee = getPointeeType(QT);
+  QualType Pointee = getPointeeType(T);
 
 #if CLASSIFY_DEBUG
-  llvm::errs() << "classifyTypeCategory " << QT.getAsString() << "\n";
+  llvm::errs() << "classifyTypeCategory " << QualType(T, 0).getAsString()
+               << "\n";
   llvm::errs() << "  satisfiesContainerRequirements(R): "
                << satisfiesContainerRequirements(R) << "\n";
   llvm::errs() << "  hasDerefOperations(R): " << hasDerefOperations(R) << "\n";
@@ -231,21 +228,17 @@ static TypeCategory classifyTypeCategoryImpl(QualType QT) {
   return TypeCategory::Value;
 }
 
-TypeCategory classifyTypeCategory(QualType QT) {
-  static std::vector<std::pair<QualType, TypeCategory>> Cache;
+TypeCategory classifyTypeCategory(const Type *T) {
+  static std::map<const Type *, TypeCategory> Cache;
 
-  auto I = std::find_if(Cache.begin(), Cache.end(),
-                        [&](const std::pair<QualType, TypeCategory> &P) {
-                          return P.first == QT;
-                        });
-
+  auto I = Cache.find(T);
   if (I != Cache.end())
     return I->second;
 
-  auto TC = classifyTypeCategoryImpl(QT);
-  Cache.emplace_back(QT, TC);
+  auto TC = classifyTypeCategoryImpl(T);
+  Cache[T] = TC;
 #if CLASSIFY_DEBUG
-  llvm::errs() << "classifyTypeCategory(" << QT.getAsString()
+  llvm::errs() << "classifyTypeCategory(" << QualType(T, 0).getAsString()
                << ") = " << (int)TC << "\n";
 #endif
   return TC;
@@ -315,21 +308,20 @@ static QualType getPointeeType(const CXXRecordDecl *R) {
   return {};
 }
 
-static QualType getPointeeTypeImpl(QualType QT) {
-  QT = QT.getCanonicalType();
+static QualType getPointeeTypeImpl(const Type *T) {
   // llvm::errs() << "\n\ngetPointeeType " << QT.getAsString() << " asRecord:"
   // << (intptr_t)QT->getAsCXXRecordDecl() << "\n";
 
-  if (QT->isReferenceType() || QT->isAnyPointerType())
-    return QT->getPointeeType();
+  if (T->isReferenceType() || T->isAnyPointerType())
+    return T->getPointeeType();
 
-  auto *R = QT->getAsCXXRecordDecl();
+  auto *R = T->getAsCXXRecordDecl();
   if (!R)
     return {};
 
   // std::vector<bool> contains std::vector<bool>::references
   if (IsVectorBoolReference(R))
-    return QT;
+    return QualType(T, 0);
 
   if (!R->hasDefinition()) {
     if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
@@ -350,32 +342,29 @@ static QualType getPointeeTypeImpl(QualType QT) {
   return {};
 }
 
-QualType getPointeeType(QualType QT) {
-  QT = QT.getCanonicalType();
-  static std::vector<std::pair<QualType, QualType>> M;
+QualType getPointeeType(const Type *T) {
+  assert(T);
+  T = T->getCanonicalTypeUnqualified().getTypePtr();
+  static std::map<const Type *, QualType> M;
 
-  auto I = std::find_if(
-      M.begin(), M.end(),
-      [&](const std::pair<QualType, QualType> &P) { return P.first == QT; });
-
+  auto I = M.find(T);
   if (I != M.end())
     return I->second;
 
   // Insert Null before calling getPointeeTypeImpl to stop
   // a possible classifyTypeCategory -> getPointeeType infinite recursion
-  M.emplace_back(QT, QualType{});
-  size_t Idx = M.size() - 1;
+  M[T] = QualType{};
 
-  auto P = getPointeeTypeImpl(QT);
+  auto P = getPointeeTypeImpl(T);
   if (!P.isNull()) {
     P = P.getCanonicalType();
     if (P->isVoidType())
       P = {};
   }
-  M[Idx].second = P;
+  M[T] = P;
 #if CLASSIFY_DEBUG
-  llvm::errs() << "DerefType(" << QT.getAsString() << ") = " << P.getAsString()
-               << "\n";
+  llvm::errs() << "DerefType(" << QualType(T, 0).getAsString()
+               << ") = " << P.getAsString() << "\n";
 #endif
   return P;
 }

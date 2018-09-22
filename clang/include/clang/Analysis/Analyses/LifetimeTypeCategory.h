@@ -19,7 +19,11 @@ namespace lifetime {
 /// If T is a template specialization, it must be instantiated.
 /// \post If the returned TypeCategory is Owner or Pointer, then
 ///       getPointeeType() will return non-null for the same QT.
-TypeCategory classifyTypeCategory(QualType QT);
+TypeCategory classifyTypeCategory(const Type *T);
+
+inline TypeCategory classifyTypeCategory(QualType QT) {
+  return classifyTypeCategory(QT.getTypePtr());
+}
 
 bool isNullableType(QualType QT);
 
@@ -28,7 +32,10 @@ bool isNullableType(QualType QT);
 // type of operator*, operator-> or operator[]. Since these methods
 // might return references, and operator-> returns a pointer, we strip
 // off that one extra level of pointer/references.
-QualType getPointeeType(QualType QT);
+QualType getPointeeType(const Type *T);
+inline QualType getPointeeType(QualType QT) {
+  return getPointeeType(QT.getTypePtr());
+}
 
 struct CallTypes {
   const FunctionProtoType *FTy = nullptr;
