@@ -238,20 +238,20 @@ int *f(int *);
 void test() {
   int *p;        // expected-note {{it was never initialized here}}
   int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
-  (void)*q; // further diagnostics are suppressed here
+  (void)*q;      // further diagnostics are suppressed here
 }
 } // namespace supress_further_warnings
 
 namespace do_not_check_Owner_methods {
-  struct [[gsl::Owner]] Owner {
-    int& operator*();
-    ~Owner();
-    void f() {
-      int *i;
-      (void)*i;
-    }
-  };
-}
+struct [[gsl::Owner]] Owner {
+  int &operator*();
+  ~Owner();
+  void f() {
+    int *i;
+    (void)*i;
+  }
+};
+} // namespace do_not_check_Owner_methods
 
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
