@@ -6,6 +6,9 @@ bool __lifetime_pset(const T &) { return true; }
 template <typename T>
 bool __lifetime_pset_ref(const T &) { return true; }
 
+template <typename T>
+void __lifetime_type_category() {}
+
 namespace std {
 template <typename T>
 typename T::iterator begin(T &);
@@ -18,7 +21,7 @@ struct vector_iterator {
 template <typename T>
 struct vector {
   using iterator = vector_iterator<T>;
-  vector(unsigned);
+  vector(unsigned = 0);
   iterator begin();
   iterator end();
   T &operator[](unsigned);
