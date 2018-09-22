@@ -212,12 +212,24 @@ void runAnalysis(
     LookupOperatorTy LookupOperator,
     LookupMemberFunctionTy LookupMemberFunction,
     DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization) {
+
   if (!Func->doesThisDeclarationHaveABody())
     return;
 
   GlobalLookupOperator = LookupOperator;
   GlobalLookupMemberFunction = LookupMemberFunction;
   GlobalDefineClassTemplateSpecialization = DefineClassTemplateSpecialization;
+
+  if (auto *M = dyn_cast<CXXMethodDecl>(Func)) {
+    if (M->isInstance()) {
+      // Do not check the bodies of methods on Owners
+      auto Class =
+          classifyTypeCategory(M->getThisType(Context)->getPointeeType());
+      if (Class.TC == TypeCategory::Owner)
+        return;
+    }
+  }
+
   LifetimeContext LC(Context, Reporter, Func, IsConvertible);
   LC.TraverseBlocks();
 }

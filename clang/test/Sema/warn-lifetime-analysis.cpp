@@ -241,6 +241,17 @@ void test() {
 }
 } // namespace supress_further_warnings
 
+namespace do_not_check_Owner_methods {
+  struct [[gsl::Owner]] Owner {
+    int& operator*();
+    ~Owner();
+    void f() {
+      int *i;
+      (void)*i;
+    }
+  };
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>
