@@ -348,11 +348,11 @@ public:
 
     if (!isPointer(RetVal))
       return;
-    R->dump();
+
     auto RetPSet = getPSet(RetVal);
     if (RetVal->isLValue())
       RetPSet = getPSet(RetVal);
-    llvm::errs() << "RetPset: " << RetPSet.str() << "\n";
+
     // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
     // the ReturnStmt node
     for (auto &V : RetPSet.vars()) {
