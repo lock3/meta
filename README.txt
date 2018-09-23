@@ -2,11 +2,24 @@ This is the home of the Clang-based implementation of Herb Sutter’s Lifetime
 safety profile for the C++ Core Guidelines, available online
 at cppx.godbolt.org.
 
-Compiler with LLVM commit d8e175bca5919de13fe003cab6b10f23af3d055d (svn 337102).
+TL;DR:
+  git clone https://git.llvm.org/git/llvm 
+  cd llvm
+  git checkout -b lifetime d8e175bca5
+  cd tools
+  git clone https://github.com/mgehre/clang.git
+  cd ..
+  mkdir build
+  cd build
+  cmake .. -G Ninja
+  ninja clang
+  ./bin/clang -Wlifetime ....
+
+Compile with LLVM commit d8e175bca5919de13fe003cab6b10f23af3d055d (svn 337102).
 
 Also checkout master (known to work: c50d5b32) of
 https://github.com/ericniebler/range-v3.git into a range-v3 subfolder of your
-clang checkout.
+clang checkout to run the tests.
 
 //===----------------------------------------------------------------------===//
 // C Language Family Front-end
