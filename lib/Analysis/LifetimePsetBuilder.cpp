@@ -346,7 +346,7 @@ public:
     if (!RetVal)
       return;
 
-    if (!isPointer(RetVal))
+    if (!isPointer(RetVal) && !RetVal->isLValue())
       return;
 
     auto RetPSet = getPSet(RetVal);
