@@ -253,6 +253,14 @@ struct [[gsl::Owner]] Owner {
 };
 } // namespace do_not_check_Owner_methods
 
+int &f(int &a) {
+  return a;
+}
+int &hello() {
+  int x = 0;
+  return f(x); // expected-warning {{dangling}} expected-note {{pointee 'x' left}}
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>
