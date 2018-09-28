@@ -1553,6 +1553,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
                                                               StartingScope);
 
   Record->setImplicit(D->isImplicit());
+
   // FIXME: Check against AS_none is an ugly hack to work around the issue that
   // the tag decls introduced by friend class declarations don't have an access
   // specifier. Remove once this area of the code gets sorted out.
@@ -1589,14 +1590,20 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
 
   Owner->addDecl(Record);
 
+  // In some cases, explicitly instantiate the definition.
+  //
   // DR1484 clarifies that the members of a local class are instantiated as part
   // of the instantiation of their enclosing entity.
-  if (D->isCompleteDefinition() && D->isLocalClass()) {
+  if (D->isCompleteDefinition() && (D->isLocalClass() || D->isInFragment())) {
     Sema::LocalEagerInstantiationScope LocalInstantiations(SemaRef);
 
     SemaRef.InstantiateClass(D->getLocation(), Record, D, TemplateArgs,
                              TSK_ImplicitInstantiation,
                              /*Complain=*/true);
+
+    // FIXME: This feels out of place, but setFragment depends
+    // on the data definition of the CXXRecordDecl
+    Record->setFragment(D->isFragment());
 
     // For nested local classes, we will instantiate the members when we
     // reach the end of the outermost (non-nested) local class.

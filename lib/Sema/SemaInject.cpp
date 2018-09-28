@@ -1222,12 +1222,12 @@ StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
 /// Returns an injection statement.
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
   // The operand must be a reflection (if non-dependent).
-  // if (!Fragment->isTypeDependent() && !Fragment->isValueDependent()) {
-  if (!Fragment->getType()->getAsCXXRecordDecl()->isFragment()) {
-    Diag(Fragment->getExprLoc(), diag::err_not_a_fragment);
-    return StmtError();
+  if (!Fragment->isTypeDependent() && !Fragment->isValueDependent()) {
+    if (!Fragment->getType()->getAsCXXRecordDecl()->isFragment()) {
+      Diag(Fragment->getExprLoc(), diag::err_not_a_fragment);
+      return StmtError();
+    }
   }
-  // }
 
   // Perform an lvalue-to-value conversion so that we get an rvalue in
   // evaluation.

@@ -120,7 +120,8 @@ CXXRecordDecl::CXXRecordDecl(Kind K, TagKind TK, const ASTContext &C,
                              CXXRecordDecl *PrevDecl)
     : RecordDecl(K, TK, C, DC, StartLoc, IdLoc, Id, PrevDecl),
       DefinitionData(PrevDecl ? PrevDecl->DefinitionData
-                              : nullptr) {}
+                              : nullptr),
+      Metafunction(nullptr) {}
 
 CXXRecordDecl *CXXRecordDecl::Create(const ASTContext &C, TagKind TK,
                                      DeclContext *DC, SourceLocation StartLoc,
@@ -1848,6 +1849,13 @@ bool CXXRecordDecl::mayBeAbstract() const {
       return true;
   }
 
+  return false;
+}
+
+/// A prototype class is nested within a generated class.
+bool CXXRecordDecl::isPrototypeClass() const {
+  if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext()))
+    return Parent->getMetafunction();
   return false;
 }
 

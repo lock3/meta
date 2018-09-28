@@ -11350,8 +11350,11 @@ static void ProcessMethodInjections(Sema &SemaRef, CXXRecordDecl *D) {
 }
 
 void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
-  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+  if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
     ProcessMethodInjections(*this, RD);
+    if (RD->isPrototypeClass())
+      return;
+  }
   referenceDLLExportedClassMethods();
 }
 
@@ -14109,8 +14112,8 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     if (SS.isEmpty()) {
       bool Owned = false;
       bool IsDependent = false;
-      return ActOnTag(S, TagSpec, TUK_Friend, TagLoc, SS, Name, NameLoc,
-                      Attr, AS_public,
+      return ActOnTag(S, TagSpec, /*Metafunction=*/nullptr,
+                      TUK_Friend, TagLoc, SS, Name, NameLoc, Attr, AS_public,
                       /*ModulePrivateLoc=*/SourceLocation(),
                       MultiTemplateParamsArg(), Owned, IsDependent,
                       /*ScopedEnumKWLoc=*/SourceLocation(),

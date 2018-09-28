@@ -693,6 +693,10 @@ class CXXRecordDecl : public RecordDecl {
   llvm::PointerUnion<ClassTemplateDecl *, MemberSpecializationInfo *>
       TemplateOrInstantiation;
 
+  /// An unresolved id expression that nominates a function to
+  /// generate the definition of this class.
+  Expr *Metafunction;
+
   /// Called from setBases and addedMember to notify the class that a
   /// direct or virtual base class or a member of class type has been added.
   void addedClassSubobject(CXXRecordDecl *Base);
@@ -1981,6 +1985,26 @@ public:
   // Determine whether this type is an Interface Like type for
   // __interface inheritance purposes.
   bool isInterfaceLike() const;
+
+  /// Determines whether this class is a prototype specification for a
+  /// metaclass.
+  ///
+  /// In other words:
+  ///
+  /// \code
+  /// class(meta) C { ... };
+  /// \endcode
+  ///
+  /// If this class is the prototype definition of metaclass C,
+  /// then this is true.
+  bool isPrototypeClass() const;
+
+  /// The expression used to generate a final class from a prototype.
+  /// This is always an unresolved id expression.
+  Expr *getMetafunction() const { return Metafunction; }
+
+  /// Associates a metafunction with with a class.
+  void setMetafunction(Expr *E) { Metafunction = E; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

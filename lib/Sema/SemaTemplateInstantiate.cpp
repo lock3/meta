@@ -2598,7 +2598,8 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
   assert(
       (TSK == TSK_ExplicitInstantiationDefinition ||
        TSK == TSK_ExplicitInstantiationDeclaration ||
-       (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass())) &&
+       (TSK == TSK_ImplicitInstantiation &&
+        (Instantiation->isLocalClass() || Instantiation->isInFragment()))) &&
       "Unexpected template specialization kind!");
   for (auto *D : Instantiation->decls()) {
     bool SuppressNew = false;

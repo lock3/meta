@@ -109,10 +109,10 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   bool IsOwned;
   bool IsDependent;
   TypeResult UnderlyingType;
-  Decl *ClassDecl = Actions.ActOnTag(getCurScope(), TagType, Sema::TUK_Definition,
-                                     ClassKeyLoc, SS,
-                                     Id, IdLoc,
-                                     ParsedAttributesView(),
+  Decl *ClassDecl = Actions.ActOnTag(getCurScope(), TagType,
+                                     /*Metafunction=*/nullptr,
+                                     Sema::TUK_Definition, ClassKeyLoc, SS,
+                                     Id, IdLoc, ParsedAttributesView(),
                                      /*AccessSpecifier=*/AS_none,
                                      /*ModulePrivateLoc=*/SourceLocation(),
                                      MTP, IsOwned, IsDependent,

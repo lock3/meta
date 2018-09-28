@@ -1385,6 +1385,13 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
 ///         'class'
 ///         'struct'
 ///         'union'
+/// [Meta]  nested-name-specifier[opt] metaclass-name
+///         'class' metaclass-specifier
+///         'struct' metaclass-specifier
+///         'union' metaclass-specifier
+///
+/// [Meta] metaclass-specifier:
+///         '(' id-expression ')'
 ///
 ///       elaborated-type-specifier: [C++ dcl.type.elab]
 ///         class-key ::[opt] nested-name-specifier[opt] identifier
@@ -1419,6 +1426,19 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   else {
     assert(TagTokKind == tok::kw_union && "Not a class specifier");
     TagType = DeclSpec::TST_union;
+  }
+
+  // [Meta] Match the optional metaclass-specifier
+  ExprResult Meta;
+  if (Tok.is(tok::l_paren)) {
+    BalancedDelimiterTracker T(*this, tok::l_paren);
+    if (T.expectAndConsume(diag::err_expected_lparen_after, "class-key"))
+      return;
+    Meta = ParseCXXIdExpression();
+    if (T.consumeClose())
+      return;
+    if (Meta.isInvalid())
+      return;
   }
 
   if (Tok.is(tok::code_completion)) {
@@ -1927,8 +1947,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
     // Declaration or definition of a class type
     TagOrTempResult = Actions.ActOnTag(
-        getCurScope(), TagType, TUK, StartLoc, SS, Name, NameLoc, attrs, AS,
-        DS.getModulePrivateSpecLoc(), TParams, Owned, IsDependent,
+        getCurScope(), TagType, Meta.get(), TUK, StartLoc, SS, Name, NameLoc,
+        attrs, AS, DS.getModulePrivateSpecLoc(), TParams, Owned, IsDependent,
         SourceLocation(), false, clang::TypeResult(),
         DSC == DeclSpecContext::DSC_type_specifier,
         DSC == DeclSpecContext::DSC_template_param ||

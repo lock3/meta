@@ -1596,4 +1596,5 @@ CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
          /*ContainsUnexpandedParameterPack=*/false),
     IntroLoc(IntroLoc), NumCaptures(Caps.size()),
     Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
+  std::copy(Caps.begin(), Caps.end(), Captures);
 }
