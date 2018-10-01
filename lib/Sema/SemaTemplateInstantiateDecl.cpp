@@ -907,7 +907,9 @@ Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
     StmtResult NewBody;
     {
       Sema::ContextRAII Switch(SemaRef, NewFn);
-      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs);
+      SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs,
+                                  ExistingMappings);
     }
     if (NewBody.isInvalid())
       return nullptr;
@@ -3169,6 +3171,49 @@ Decl *Sema::SubstDecl(Decl *D, DeclContext *Owner,
   return Instantiator.Visit(D);
 }
 
+static SmallVector<std::pair<Decl *, Decl *>, 8>
+CalculateExistingMappingsFor(const CXXFragmentDecl *OldFrag,
+                             const CXXFragmentDecl *NewFrag) {
+  SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+
+  auto OldIter = OldFrag->decls_begin();
+  auto OldIterEnd = OldFrag->decls_end();
+  auto NewIter = NewFrag->decls_begin();
+  auto NewIterEnd = NewFrag->decls_end();
+
+  assert(std::distance(OldIter, OldIterEnd) ==
+         std::distance(NewIter, NewIterEnd) && "Fragment decls do not match!");
+
+  while (NewIter != NewIterEnd)
+    ExistingMappings.push_back(std::make_pair(*OldIter++, *NewIter++));
+
+  return ExistingMappings;
+}
+
+static SmallVector<std::pair<Decl *, Decl *>, 8>
+CalculateExistingMappingsFor(const FunctionDecl *OldDecl,
+                             const FunctionDecl *NewDecl) {
+  const CXXMethodDecl *OldMethod
+    = dyn_cast<CXXMethodDecl>(OldDecl);
+  const CXXMethodDecl *NewMethod
+    = dyn_cast<CXXMethodDecl>(NewDecl);
+
+  if (OldMethod && NewMethod) {
+    const CXXRecordDecl *OldRecord = OldMethod->getParent();
+    const CXXRecordDecl *NewRecord = NewMethod->getParent();
+
+    const CXXFragmentDecl *OldFrag
+      = dyn_cast<CXXFragmentDecl>(OldRecord->getDeclContext());
+    const CXXFragmentDecl *NewFrag
+      = dyn_cast<CXXFragmentDecl>(NewRecord->getDeclContext());
+
+    if (OldFrag && NewFrag) {
+      return CalculateExistingMappingsFor(OldFrag, NewFrag);
+    }
+  }
+  return SmallVector<std::pair<Decl *, Decl *>, 8>();
+}
+
 /// Instantiates a nested template parameter list in the current
 /// instantiation context.
 ///
@@ -4038,7 +4083,9 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       }
 
       // Instantiate the function body.
-      Body = SubstStmt(Pattern, TemplateArgs);
+      auto ExistingMappings = CalculateExistingMappingsFor(PatternDecl,
+                                                           Function);
+      Body = SubstStmt(Pattern, TemplateArgs, ExistingMappings);
 
       if (Body.isInvalid())
         Function->setInvalidDecl();
@@ -5057,7 +5104,7 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
   // injection), we could have local instantiations that are not obviously
   // local. For example, if we have this in a non-dependent context:
   //
-  //    for... (auto x : tup) 
+  //    for... (auto x : tup)
   //      (void)x;
   //
   // Then the resolution of x in (void)x would not satisfy the criteria

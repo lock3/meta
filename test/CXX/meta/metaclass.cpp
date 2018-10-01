@@ -4,9 +4,11 @@
 
 template<typename T>
 constexpr void test(T source) {
+  int foo = 1;
+
   auto frag =  __fragment struct {
     int h_1() {
-      return 1;
+      return foo;
     }
   };
 

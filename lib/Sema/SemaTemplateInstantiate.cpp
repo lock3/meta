@@ -2823,14 +2823,21 @@ Sema::InstantiateClassTemplateSpecializationMembers(
                           TSK);
 }
 
+using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
+
 StmtResult
-Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
+Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs,
+                const DeclMappingList &ExistingMappings) {
   if (!S)
     return S;
 
   TemplateInstantiator Instantiator(*this, TemplateArgs,
                                     SourceLocation(),
                                     DeclarationName());
+
+  for (const auto& Mapping : ExistingMappings)
+    Instantiator.transformedLocalDecl(Mapping.first, Mapping.second);
+
   return Instantiator.TransformStmt(S);
 }
 

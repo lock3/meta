@@ -7871,8 +7871,11 @@ public:
                   const MultiLevelTemplateArgumentList &TemplateArgs,
                   SmallVectorImpl<Expr *> &Outputs);
 
+  using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
+
   StmtResult SubstStmt(Stmt *S,
-                       const MultiLevelTemplateArgumentList &TemplateArgs);
+                       const MultiLevelTemplateArgumentList &TemplateArgs,
+                       const DeclMappingList &ExistingMappings);
 
   StmtResult
   SubstForTupleBody(Stmt *Body,
