@@ -750,8 +750,8 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
 
   // If the declaration does not appear in the context, then it need
   // not be resolved.
-  if (!IsInInjection(D))
-    return D;
+  // if (!IsInInjection(D))
+    // return D;
 
   Decl* R = InjectDeclImpl(D);
   if (!R)
@@ -1011,62 +1011,21 @@ ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
   return BuildCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
-/// \brief Builds a new fragment expression.
-/// Consider the following:
-///
-///   constexpr {
-///     auto x = <<class: int a, b, c;>>;
-///   }
-///
-/// The type of the expression is a new meta:: class defined, approximately,
-/// like this:
-///
-///   using typename(reflexpr(<fragment>)) = refl_type;
-///
-///   struct __fragment_type  {
-///     refl_type fragment_reflection;
-///
-///     __fragment_type(refl_type fragment_reflection) :
-///        fragment_reflection(fragment_reflection) { }
-///   };
-///
-ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
-                                      SmallVectorImpl<Expr *> &Captures) {
-  CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
-
-  // Reflection; need to get a ReflectExpr the Fragment
-  // hold as a static consptexpr std::meta::info on the generated class
-  // create a default constructor so that the fragment can
-  // be initialized.
-
-  // If the fragment appears in a context that depends on template parameters,
-  // then the expression is dependent.
-  //
-  // FIXME: This is just an approximation of the right answer. In truth, the
-  // expression is dependent if the fragment depends on any template parameter
-  // in this or any enclosing context.
-  if (CurContext->isDependentContext()) {
-    return new (Context) CXXFragmentExpr(Context, Loc, Context.DependentTy,
-                                         FD, Captures, nullptr);
-  }
-
-  // Build the expression used to the reflection of fragment.
-  //
-  // TODO: We should be able to compute the type without generating an
-  // expression. We're not actually using the expression.
-  ExprResult Reflection = ActOnCXXReflectExpression(
-    /*KWLoc=*/SourceLocation(), /*Kind=*/ReflectionKind::REK_declaration,
-    /*Entity=*/FD->getContent(), /*LPLoc=*/SourceLocation(),
-    /*RPLoc=*/SourceLocation());
-  if (Reflection.isInvalid())
-    return ExprError();
+static
+CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
+                                        SourceLocation Loc,
+                                        CXXFragmentDecl *FD,
+                                        CXXReflectExpr *Reflection,
+                                        SmallVectorImpl<Expr *> &Captures) {
+  ASTContext &Context = S.Context;
+  DeclContext *CurContext = S.CurContext;
 
   // Build our new class implicit class to hold our fragment info.
   CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK_Class, CurContext,
                                                Loc, Loc,
                                                /*Id=*/nullptr,
                                                /*PrevDecl=*/nullptr);
-  StartDefinition(Class);
+  S.StartDefinition(Class);
 
   Class->setImplicit(true);
   Class->setFragment(true);
@@ -1079,7 +1038,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
   SmallVector<FieldDecl *, 4> Fields;
 
   // Build the field for the reflection itself.
-  QualType ReflectionType = Reflection.get()->getType();
+  QualType ReflectionType = Reflection->getType();
   IdentifierInfo *ReflectionFieldId = &Context.Idents.get(
       "fragment_reflection");
   TypeSourceInfo *ReflectionTypeInfo = Context.getTrivialTypeSourceInfo(
@@ -1182,7 +1141,7 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
     DeclRefExpr *Ref = new (Context) DeclRefExpr(
         Parm, false, Parm->getType(), VK_LValue, Loc);
     Expr *Arg = new (Context) ParenListExpr(Context, Loc, Ref, Loc);
-    Inits[I] = BuildMemberInitializer(Field, Arg, Loc).get();
+    Inits[I] = S.BuildMemberInitializer(Field, Arg, Loc).get();
   }
   Ctor->setNumCtorInitializers(NumInits);
   Ctor->setCtorInitializers(Inits);
@@ -1192,11 +1151,11 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
   Ctor->setBody(Def);
   Class->addDecl(Ctor);
 
-  CompleteDefinition(Class);
+  S.CompleteDefinition(Class);
 
   // Setup the arguments to use for initialization.
   SmallVector<Expr *, 8> CtorArgs;
-  CtorArgs.push_back(Reflection.get());
+  CtorArgs.push_back(dyn_cast<Expr>(Reflection));
   for (Expr *E : Captures) {
     CtorArgs.push_back(E);
   }
@@ -1224,20 +1183,98 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                        Init);
 }
 
-/// Returns an injection statement.
-StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
-  return BuildCXXInjectionStmt(Loc, Fragment);
+static
+CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
+                                        SourceLocation Loc,
+                                        CXXReflectExpr *Reflection,
+                                        SmallVectorImpl<Expr *> &Captures) {
+  CXXFragmentDecl *FD = CXXFragmentDecl::Create(S.Context, S.CurContext, Loc);
+  Sema::ContextRAII FragmentContext(S, FD);
+
+  return SynthesizeFragmentExpr(S, Loc, FD, Reflection, Captures);
+}
+
+/// \brief Builds a new fragment expression.
+/// Consider the following:
+///
+///   constexpr {
+///     auto x = <<class: int a, b, c;>>;
+///   }
+///
+/// The type of the expression is a new meta:: class defined, approximately,
+/// like this:
+///
+///   using typename(reflexpr(<fragment>)) = refl_type;
+///
+///   struct __fragment_type  {
+///     refl_type fragment_reflection;
+///
+///     __fragment_type(refl_type fragment_reflection) :
+///        fragment_reflection(fragment_reflection) { }
+///   };
+///
+ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
+                                      SmallVectorImpl<Expr *> &Captures) {
+  CXXFragmentDecl *FD = cast<CXXFragmentDecl>(Fragment);
+
+  // Reflection; need to get a ReflectExpr the Fragment
+  // hold as a static consptexpr std::meta::info on the generated class
+  // create a default constructor so that the fragment can
+  // be initialized.
+
+  // If the fragment appears in a context that depends on template parameters,
+  // then the expression is dependent.
+  //
+  // FIXME: This is just an approximation of the right answer. In truth, the
+  // expression is dependent if the fragment depends on any template parameter
+  // in this or any enclosing context.
+  if (CurContext->isDependentContext()) {
+    return new (Context) CXXFragmentExpr(Context, Loc, Context.DependentTy,
+                                         FD, Captures, nullptr);
+  }
+
+  // Build the expression used to the reflection of fragment.
+  //
+  // TODO: We should be able to compute the type without generating an
+  // expression. We're not actually using the expression.
+  ExprResult Reflection = ActOnCXXReflectExpression(
+    /*KWLoc=*/SourceLocation(), /*Kind=*/ReflectionKind::REK_declaration,
+    /*Entity=*/FD->getContent(), /*LPLoc=*/SourceLocation(),
+    /*RPLoc=*/SourceLocation());
+  if (Reflection.isInvalid())
+    return ExprError();
+
+  return SynthesizeFragmentExpr(
+      *this, Loc, FD, static_cast<CXXReflectExpr *>(Reflection.get()),
+      Captures);
 }
 
 /// Returns an injection statement.
-StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment) {
-  // The operand must be a reflection (if non-dependent).
-  if (!Fragment->isTypeDependent() && !Fragment->isValueDependent()) {
-    if (!Fragment->getType()->getAsCXXRecordDecl()->isFragment()) {
-      Diag(Fragment->getExprLoc(), diag::err_not_a_fragment);
+StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc,
+                                       Expr *FragmentOrReflection) {
+  return BuildCXXInjectionStmt(Loc, FragmentOrReflection);
+}
+
+/// Returns an injection statement.
+StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
+                                       Expr *FragmentOrReflection) {
+  // The operand must be resolveable to a fragment (if non-dependent).
+  if (!FragmentOrReflection->isTypeDependent()
+      && !FragmentOrReflection->isValueDependent()) {
+    if (CXXReflectExpr *Reflection
+        = dyn_cast<CXXReflectExpr>(FragmentOrReflection)) {
+      SmallVector<Expr *, 0> Captures;
+      FragmentOrReflection = SynthesizeFragmentExpr(*this, Loc, Reflection,
+                                                    Captures);
+    }
+
+    if (!FragmentOrReflection->getType()->getAsCXXRecordDecl()->isFragment()) {
+      Diag(FragmentOrReflection->getExprLoc(), diag::err_not_a_fragment);
       return StmtError();
     }
   }
+
+  Expr *Fragment = FragmentOrReflection;
 
   // Perform an lvalue-to-value conversion so that we get an rvalue in
   // evaluation.
@@ -1305,15 +1342,19 @@ bool Sema::InjectFragment(SourceLocation POI,
   if (!CheckInjectionContexts(*this, POI, InjectionDC, InjecteeDC))
     return false;
 
-  const CXXFragmentDecl *Fragment = cast<CXXFragmentDecl>(
-                                      Injection->getDeclContext());
-
   ContextRAII Switch(*this, InjecteeDC, isa<CXXRecordDecl>(Injectee));
 
   // Establish the injection context and register the substitutions.
   InjectionContext *Cxt = new InjectionContext(*this);
   Cxt->AddDeclSubstitution(Injection, Injectee);
-  Cxt->AddPlaceholderSubstitutions(Fragment, CaptureDecls, Captures);
+
+  // If we don't have a fragment decl context, this is a reflection
+  // we've transformed into a fragment, and placeholder substitions
+  // are not necessary.
+  if (const CXXFragmentDecl *Fragment
+      = dyn_cast<CXXFragmentDecl>(Injection->getDeclContext())) {
+    Cxt->AddPlaceholderSubstitutions(Fragment, CaptureDecls, Captures);
+  }
 
   // Inject each declaration in the fragment.
   for (Decl *D : InjectionDC->decls()) {

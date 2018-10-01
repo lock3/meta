@@ -200,6 +200,7 @@ ExprResult Parser::ParseCXXFragmentExpression() {
 ///
 ///   injection-statement:
 ///     '->' fragment ';'
+///     '->' reflection ';'
 ///
 /// Note that the statement parser will collect the trailing semicolon.
 StmtResult Parser::ParseCXXInjectionStatement() {
@@ -208,7 +209,6 @@ StmtResult Parser::ParseCXXInjectionStatement() {
 
   /// Get a reflection as the operand of the
   ExprResult Fragment = ParseConstantExpression();
-
   if (Fragment.isInvalid())
     return StmtResult();
 
