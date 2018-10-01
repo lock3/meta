@@ -3,23 +3,39 @@
 #include <experimental/meta>
 
 template<typename T>
-constexpr void test(T source) {
-  int foo = 1;
+constexpr void interface(T source) {
+  int default_val = 1;
+  -> __fragment struct {
+    int val = default_val;
 
-  auto frag =  __fragment struct {
-    int h_1() {
-      return foo;
+    void set_foo(const int& val) {
+      this->val = val;
+    }
+
+    int foo() {
+      return val;
+    }
+
+    void reset_foo() {
+      set_foo(default_val);
     }
   };
+};
 
-  -> frag;
-}
-
-class(test) Test {
+template<typename T>
+class(interface) Thing {
 };
 
 int main() {
-  Test t;
-  assert(t.h_1() == 1);
+  Thing<int> thing;
+
+  assert(thing.foo() == 1);
+
+  thing.set_foo(2);
+  assert(thing.foo() == 2);
+
+  thing.reset_foo();
+  assert(thing.foo() == 1);
+
   return 0;
 }

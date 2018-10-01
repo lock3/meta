@@ -667,6 +667,16 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   AddDeclSubstitution(D, Method);
   UpdateFunctionParms(D, Method);
 
+  // Propagate Template Attributes
+  MemberSpecializationInfo *MemberSpecInfo = D->getMemberSpecializationInfo();
+  if (MemberSpecInfo) {
+    FunctionDecl *TemplateFD =
+        static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
+    TemplateSpecializationKind TemplateSK =
+        MemberSpecInfo->getTemplateSpecializationKind();
+    Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+  }
+
   // Propagate semantic properties.
   Method->setImplicit(D->isImplicit());
   Method->setAccess(D->getAccess());
@@ -1583,4 +1593,149 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
     // FIXME: We should run diagnostics here
     // DiagnoseUninitializedFields(*this, Constructor);
   }
+}
+
+/// Given an  input like this:
+///
+///    class(metafn) Proto { ... };
+///
+/// Generate something that looks (about) like this:
+///
+///    namespace __fake__ { class Proto { ... } };
+///    class Class {
+///      using prototype = __fake__::Proto;
+///      constexpr { metafn(reflexpr(prototype)); }
+///    }
+///
+/// We don't actually need to emit the fake namespace; we just don't
+/// add it to a declaration context.
+CXXRecordDecl *Sema::ActOnStartMetaclass(CXXRecordDecl *Class,
+                                         Expr *Metafunction, TagUseKind TUK) {
+  Class->setMetafunction(Metafunction);
+
+  if (TUK == TUK_Definition) {
+    // Start defining the (final) class.
+    Class->setLexicalDeclContext(CurContext);
+    CurContext->addDecl(Class);
+    StartDefinition(Class);
+
+    // Create a new, nested class to hold the parsed member. This must
+    // be a fragment in order to suppress default generation of members.
+    DeclarationNameInfo DNI(Class->getDeclName(), Class->getLocation());
+    CXXRecordDecl *Proto = CXXRecordDecl::Create(
+        Context, Class->getTagKind(), Class, Class->getBeginLoc(),
+        Class->getLocation(), DNI.getName().getAsIdentifierInfo(), nullptr);
+
+    return Proto;
+  }
+
+  return Class;
+}
+
+void Sema::ActOnStartMetaclassDefinition(CXXRecordDecl *Proto) {
+  Proto->setImplicit(true);
+  Proto->setFragment(true);
+}
+
+/// We've just finished parsing the definition of something like this:
+///
+///    class(M) C { ... };
+///
+/// And have conceptually transformed that into something like this.
+///
+///    namespace __fake__ { class C { ... } };
+///
+/// Now, we need to build a new version of the class containing a
+/// prototype and its generator.
+///
+///    class C {
+///      using prototype = __fake__::C;
+///      constexpr { M(reflexpr(prototype)); }
+///    };
+///
+/// The only remaining step is to build and apply the metaprogram to
+/// generate the enclosing class.
+CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
+                                          SourceRange BraceRange) {
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(Proto->getDeclContext());
+  Expr *Metafunction = Class->getMetafunction();
+  assert(Metafunction && "expected metaclass");
+
+  // FIXME: Are there any properties that Class should inherit from
+  // the prototype? Alignment and layout attributes?
+
+  // Propagate access level
+  Class->setAccess(Proto->getAccess());
+
+  // Make sure that the final class is available in its declaring scope.
+  bool IsAnonymousClass = Class->getName().empty();
+  if (!IsAnonymousClass)
+    PushOnScopeChains(Class, CurScope->getParent(), false);
+
+  // Make the new class is the current declaration context for the
+  // purpose of injecting source code.
+  ContextRAII Switch(*this, Class);
+
+  // For the purpose of creating the metaprogram and performing
+  // the final analysis, the Class needs to be scope's entity, not
+  // prototype.
+  S->setEntity(Class);
+
+  // Use the name of the class for most source locations.
+  //
+  // FIXME: This isn't a particularly good idea.
+  SourceLocation Loc = Proto->getLocation();
+
+  // Insert 'using prototype = <proto>'.
+  QualType ProtoTy = Context.getRecordType(Proto);
+  TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
+  IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
+  TypeDecl *Alias = TypeAliasDecl::Create(Context, Class, Loc, Loc, ProtoId,
+                                          ProtoTSI);
+  Alias->setImplicit(true);
+  Alias->setAccess(AS_public);
+  Class->addDecl(Alias);
+
+  // Add 'constexpr { M(reflexpr(prototype)); }' to the class.
+  //
+  // FIXME: This is duplicated in SemaInject.
+  unsigned ScopeFlags;
+  Decl *CD = ActOnCXXMetaprogramDecl(CurScope, Loc, ScopeFlags);
+  CD->setImplicit(true);
+  CD->setAccess(AS_public);
+
+  ActOnStartCXXMetaprogramDecl(CurScope, CD);
+
+  // Build the expression reflexpr(prototype).
+  // This technically is performing the equivalent
+  // addition of 'constexpr { M(reflexpr(__fake__::C)); }'.
+  ExprResult Input = ActOnCXXReflectExpression(
+      /*KWLoc=*/SourceLocation(), /*Kind=*/ReflectionKind::REK_declaration,
+      /*Entity=*/Proto, /*LPLoc=*/SourceLocation(),
+      /*RPLoc=*/SourceLocation());
+
+  // Build the call to <gen>(<ref>)
+  Expr *Args[] {Input.get()};
+  ExprResult Call = ActOnCallExpr(CurScope, Metafunction, Loc, Args, Loc);
+  if (Call.isInvalid()) {
+    ActOnCXXMetaprogramDeclError(nullptr, CD);
+    Class->setInvalidDecl(true);
+  } else {
+    Stmt* Body = CompoundStmt::Create(Context, Call.get(), Loc, Loc);
+    ActOnFinishCXXMetaprogramDecl(CurScope, CD, Body);
+
+    // Finally, re-analyze the fields of the fields the class to
+    // instantiate remaining defaults. This will also complete the
+    // definition.
+    SmallVector<Decl *, 32> Fields;
+    ActOnFields(S, Class->getLocation(), Class, Fields,
+                BraceRange.getBegin(), BraceRange.getEnd(),
+                ParsedAttributesView());
+
+    ActOnFinishCXXNonNestedClass(Class);
+
+    assert(Class->isCompleteDefinition() && "Generated class not complete");
+  }
+
+  return Class;
 }

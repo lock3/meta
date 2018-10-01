@@ -2040,6 +2040,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     return true;
   Pattern = PatternDef;
 
+  Expr *Metafunction = Pattern->getMetafunction();
+  if (Metafunction)
+    Instantiation = ActOnStartMetaclass(Instantiation, Metafunction);
+
   // Record the point of instantiation.
   if (MemberSpecializationInfo *MSInfo
         = Instantiation->getMemberSpecializationInfo()) {
@@ -2081,6 +2085,9 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   // Start the definition of this instantiation.
   Instantiation->startDefinition();
+
+  if (Instantiation->isPrototypeClass())
+    ActOnStartMetaclassDefinition(Instantiation);
 
   // The instantiation is visible here, even if it was first declared in an
   // unimported module.
@@ -2229,6 +2236,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
       }
     }
   }
+
+  if (Instantiation->isPrototypeClass())
+    ActOnFinishMetaclass(Instantiation, getCurScope(),
+                         Instantiation->getBraceRange());
 
   // Exit the scope of this instantiation.
   SavedContext.pop();

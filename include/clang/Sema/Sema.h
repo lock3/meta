@@ -6296,11 +6296,12 @@ public:
       bool IsFriend, bool &IsMemberSpecialization, bool &Invalid);
 
   DeclResult CheckClassTemplate(
-      Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
-      CXXScopeSpec &SS, IdentifierInfo *Name, SourceLocation NameLoc,
-      const ParsedAttributesView &Attr, TemplateParameterList *TemplateParams,
-      AccessSpecifier AS, SourceLocation ModulePrivateLoc,
-      SourceLocation FriendLoc, unsigned NumOuterTemplateParamLists,
+      Scope *S, unsigned TagSpec, Expr *Metafunction, TagUseKind TUK,
+      SourceLocation KWLoc, CXXScopeSpec &SS, IdentifierInfo *Name,
+      SourceLocation NameLoc, const ParsedAttributesView &Attr,
+      TemplateParameterList *TemplateParams, AccessSpecifier AS,
+      SourceLocation ModulePrivateLoc, SourceLocation FriendLoc,
+      unsigned NumOuterTemplateParamLists,
       TemplateParameterList **OuterTemplateParamLists,
       SkipBodyInfo *SkipBody = nullptr);
 
@@ -10149,6 +10150,12 @@ public:
   void InjectPendingMethodDefinitions(InjectionContext *Cxt);
   void InjectPendingDefinition(InjectionContext *Cxt, FieldDecl *Frag, FieldDecl *New);
   void InjectPendingDefinition(InjectionContext *Cxt, CXXMethodDecl *Frag, CXXMethodDecl *New);
+
+  CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,
+                                     TagUseKind TUK = TUK_Definition);
+  void ActOnStartMetaclassDefinition(CXXRecordDecl *Proto);
+  CXXRecordDecl *ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
+                                      SourceRange BraceRange);
 
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 
