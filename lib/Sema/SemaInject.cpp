@@ -1697,8 +1697,6 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   Class->addDecl(Alias);
 
   // Add 'constexpr { M(reflexpr(prototype)); }' to the class.
-  //
-  // FIXME: This is duplicated in SemaInject.
   unsigned ScopeFlags;
   Decl *CD = ActOnCXXMetaprogramDecl(CurScope, Loc, ScopeFlags);
   CD->setImplicit(true);
