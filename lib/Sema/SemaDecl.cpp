@@ -15160,8 +15160,9 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
 
 void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
                                     SourceRange BraceRange) {
-  AdjustDeclIfTemplate(TagD);
-  TagDecl *Tag = cast<TagDecl>(TagD);
+  Decl *LocalTagD = TagD;
+  AdjustDeclIfTemplate(LocalTagD);
+  TagDecl *Tag = cast<TagDecl>(LocalTagD);
   Tag->setBraceRange(BraceRange);
 
   // Make sure we "complete" the definition even it is invalid.
