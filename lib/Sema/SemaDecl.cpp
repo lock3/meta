@@ -15158,7 +15158,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
+void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
                                     SourceRange BraceRange) {
   AdjustDeclIfTemplate(TagD);
   TagDecl *Tag = cast<TagDecl>(TagD);
@@ -15186,7 +15186,7 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
   // final class.
   if (CXXRecordDecl *Proto = dyn_cast<CXXRecordDecl>(Tag)) {
     if (Proto->isPrototypeClass()) {
-      ActOnFinishMetaclass(Proto, S, BraceRange);
+      TagD = Tag = ActOnFinishMetaclass(Proto, S, BraceRange);
     }
   }
 

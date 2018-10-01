@@ -2337,7 +2337,7 @@ public:
 
   /// ActOnTagFinishDefinition - Invoked once we have finished parsing
   /// the definition of a tag (enumeration, class, struct, or union).
-  void ActOnTagFinishDefinition(Scope *S, Decl *TagDecl,
+  void ActOnTagFinishDefinition(Scope *S, Decl *&TagDecl,
                                 SourceRange BraceRange);
 
   void ActOnTagFinishSkippedDefinition(SkippedDefinitionContext Context);

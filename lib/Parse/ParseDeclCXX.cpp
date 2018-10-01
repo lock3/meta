@@ -1972,9 +1972,15 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     if (SkipBody.ShouldSkip)
       SkipCXXMemberSpecification(StartLoc, AttrFixitLoc, TagType,
                                  TagOrTempResult.get());
-    else if (getLangOpts().CPlusPlus)
+    else if (getLangOpts().CPlusPlus) {
+      // We need to be able to update the TagOrTempResult
+      // for any substitutions resulting from meta class
+      // construction completion.
+      Decl *ResultDecl = TagOrTempResult.get();
       ParseCXXMemberSpecification(StartLoc, AttrFixitLoc, attrs, TagType,
-                                  TagOrTempResult.get());
+                                  ResultDecl);
+      TagOrTempResult = ResultDecl;
+    }
     else {
       Decl *D =
           SkipBody.CheckSameAsPrevious ? SkipBody.New : TagOrTempResult.get();
@@ -3171,7 +3177,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
 void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
                                          SourceLocation AttrFixitLoc,
                                          ParsedAttributesWithRange &Attrs,
-                                         unsigned TagType, Decl *TagDecl) {
+                                         unsigned TagType, Decl *&TagDecl) {
   assert((TagType == DeclSpec::TST_struct ||
          TagType == DeclSpec::TST_interface ||
          TagType == DeclSpec::TST_union  ||
