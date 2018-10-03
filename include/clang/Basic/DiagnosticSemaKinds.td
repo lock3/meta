@@ -2461,6 +2461,10 @@ def err_invalid_immediate : Error<
   "%select{function parameter|function pointer}0 "
   "cannot be constexpr!">;  
 
+// tuple and pack loops
+def note_loop_body_instantiation_here : Note<
+  "in instantiation of loop body expansion">;
+
 // Reflection
 def err_need_header_before_reflexpr : Error<
   "you need to include <experimental/meta> before using the 'reflexpr' operator">;

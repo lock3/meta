@@ -2195,6 +2195,26 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
+DEF_TRAVERSE_STMT(CXXTupleExpansionStmt, {
+  if (!getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
+    // Visit everything else only if shouldVisitImplicitCode().
+    ShouldVisitChildren = false;
+  }
+})
+
+DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
+  if (!getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
+    // Visit everything else only if shouldVisitImplicitCode().
+    ShouldVisitChildren = false;
+  }
+})
+
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
   TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));

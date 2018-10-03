@@ -3813,6 +3813,30 @@ public:
                                   BuildForRangeKind Kind);
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
+  StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *Collection,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind);
+  StmtResult ActOnCXXExpansionStmtError(Stmt *S);
+  StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
+                                        SourceLocation EllipsisLoc,
+                                        SourceLocation ColonLoc,
+                                        Stmt *RangeVarDecl, Stmt *LoopVarDecl,
+                                        SourceLocation RParenLoc,
+                                        BuildForRangeKind Kind);
+  StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
+                                       SourceLocation EllipsisLoc,
+                                       SourceLocation ColonLoc, Expr *PackExpr,
+                                       Stmt *LoopVarDecl,
+                                       SourceLocation RParenLoc,
+                                       BuildForRangeKind Kind);
+  StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
+  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion,
+                                         Stmt *Body);
+  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion,
+                                        Stmt *Body);
+
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,
                            LabelDecl *TheDecl);
@@ -7193,6 +7217,9 @@ public:
       /// template which was deferred until it was needed.
       ExceptionSpecInstantiation,
 
+      /// We are instantiating the body of a range-based loop over a tuple.
+      ForLoopInstantiation,
+
       /// We are declaring an implicit special member function.
       DeclaringSpecialMember,
 
@@ -7220,6 +7247,13 @@ public:
     /// performing the instantiation, for substitutions of prior template
     /// arguments.
     NamedDecl *Template;
+
+    /// The dependent for loop body in which we are performing
+    /// substitutions.
+    ///
+    // TODO: Make this a union with Entity since we are instantiating either
+    // a declaration or a statement, never both.
+    Stmt *Loop;
 
     /// The list of template arguments we are substituting, if they
     /// are not part of the entity.
@@ -7458,6 +7492,11 @@ public:
                           ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
+    /// Note that we are substituting into the body of a for-tuple
+    /// statement.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
+                          SourceRange InstantiationRange);
 
     /// Note that we have finished instantiating this template.
     void Clear();
@@ -7787,6 +7826,10 @@ public:
 
   StmtResult SubstStmt(Stmt *S,
                        const MultiLevelTemplateArgumentList &TemplateArgs);
+
+  StmtResult
+  SubstForTupleBody(Stmt *Body,
+                    const MultiLevelTemplateArgumentList &TemplateArgs);
 
   TemplateParameterList *
   SubstTemplateParams(TemplateParameterList *Params, DeclContext *Owner,
@@ -10667,6 +10710,28 @@ private:
   /// directives, like -Wpragma-pack.
   sema::SemaPPCallbacks *SemaPPCallbackHandler;
 
+public:
+  /// Tracks the nesting level of loop expansions. A loop expansion is
+  /// is initially dependent when parsed an instantiated. It is non-dependent
+  /// after that.
+  ///
+  /// This affects ODR usage. In particular, expressions in the body of
+  /// these statements aren't really expressions until they're instantiated.
+  struct LoopExpansionContext
+  {
+    LoopExpansionContext(FunctionDecl *F)
+      : Fn(F)
+    { }
+
+    FunctionDecl *Fn;
+    SmallVector<Stmt *, 4> Loops;
+  };
+
+  /// Maintains a stack of expansion contexts.
+  SmallVector<LoopExpansionContext, 4> LoopExpansionStack;
+
+  void PushLoopExpansion(Stmt *S);
+  void PopLoopExpansion();
 protected:
   friend class Parser;
   friend class InitializationSequence;

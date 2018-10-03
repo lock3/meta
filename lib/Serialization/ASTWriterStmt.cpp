@@ -1248,6 +1248,18 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Code = serialization::STMT_CXX_FOR_RANGE;
 }
 
+void ASTStmtWriter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_TUPLE_EXPANSION;
+}
+
+void ASTStmtWriter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_PACK_EXPANSION;
+}
+
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   Record.AddSourceLocation(S->getKeywordLoc());

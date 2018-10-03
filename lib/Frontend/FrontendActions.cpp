@@ -349,6 +349,8 @@ private:
       return "DefiningSynthesizedFunction";
     case CodeSynthesisContext::Memoization:
       return "Memoization";
+    case CodeSynthesisContext::ForLoopInstantiation:
+      return "ForLoopInstantiation";
     }
     return "";
   }

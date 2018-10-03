@@ -1812,9 +1812,15 @@ namespace serialization {
 
       /// A CXXTryStmt record.
       STMT_CXX_TRY,
+      
       /// A CXXForRangeStmt record.
-
       STMT_CXX_FOR_RANGE,
+
+      /// A CXXTupleExpansion record.
+      STMT_CXX_TUPLE_EXPANSION,
+      
+      /// A CXXPackExpansion record.
+      STMT_CXX_PACK_EXPANSION,
 
       /// A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,

@@ -342,6 +342,14 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *S) {
+  VisitStmt(S);
+}
+
+void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
   VisitStmt(S);
   ID.AddBoolean(S->isIfExists());

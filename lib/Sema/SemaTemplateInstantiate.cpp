@@ -194,6 +194,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
   case ExplicitTemplateArgumentSubstitution:
   case DeducedTemplateArgumentSubstitution:
   case PriorTemplateArgumentSubstitution:
+  case ForLoopInstantiation:
     return true;
 
   case DefaultTemplateArgumentChecking:
@@ -352,6 +353,21 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           SemaRef, CodeSynthesisContext::DefaultTemplateArgumentChecking,
           PointOfInstantiation, InstantiationRange, Param, Template,
           TemplateArgs) {}
+
+// For tuple-for instantiation.
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef, 
+          CodeSynthesisContext::ForLoopInstantiation,
+          PointOfInstantiation, InstantiationRange, nullptr, nullptr,
+          TemplateArgs) {
+  // Set the loop on the active instantiation.
+  CodeSynthesisContext& Inst = 
+    SemaRef.CodeSynthesisContexts.back();
+  Inst.Loop = S;
+}
 
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
   Ctx.SavedInNonInstantiationSFINAEContext = InNonInstantiationSFINAEContext;
@@ -628,6 +644,12 @@ void Sema::PrintInstantiationStack() {
         << Active->InstantiationRange;
       break;
 
+    case CodeSynthesisContext::ForLoopInstantiation:
+      // FIXME: Provide more context about the loop body error.
+      Diags.Report(Active->PointOfInstantiation, 
+                   diag::note_loop_body_instantiation_here);
+      break;
+
     case CodeSynthesisContext::DeclaringSpecialMember:
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_in_declaration_of_implicit_special_member)
@@ -669,6 +691,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       if (isa<TypeAliasTemplateDecl>(Active->Entity))
         break;
       // Fall through.
+    case CodeSynthesisContext::ForLoopInstantiation:
     case CodeSynthesisContext::DefaultFunctionArgumentInstantiation:
     case CodeSynthesisContext::ExceptionSpecInstantiation:
       // This is a template instantiation, so there is no SFINAE.
@@ -2777,6 +2800,20 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
 
   TemplateInstantiator Instantiator(*this, TemplateArgs,
                                     SourceLocation(),
+                                    DeclarationName());
+  return Instantiator.TransformStmt(S);
+}
+
+/// Substitution into a loop body is different than substitution in other
+/// contexts. In particular, we are not actually instantiating a template.
+/// We're just rebuilding a tree and rewiring expressions that refer to
+/// newly instantiated declarations.
+StmtResult
+Sema::SubstForTupleBody(Stmt *S,
+                        const MultiLevelTemplateArgumentList &TemplateArgs) {
+  TemplateInstantiator Instantiator(*this, 
+                                    TemplateArgs, 
+                                    SourceLocation(), 
                                     DeclarationName());
   return Instantiator.TransformStmt(S);
 }

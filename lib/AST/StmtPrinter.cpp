@@ -360,6 +360,34 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   if (Policy.IncludeNewlines) OS << "\n";
 }
 
+void StmtPrinter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeInit());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
+void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getUnexpandedPack());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())

@@ -14,6 +14,8 @@
 #include "clang/AST/StmtCXX.h"
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/DeclTemplate.h"
+#include "clang/Lex/Token.h"
 
 using namespace clang;
 
@@ -82,6 +84,64 @@ VarDecl *CXXForRangeStmt::getLoopVariable() {
 const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
+
+CXXExpansionStmt::CXXExpansionStmt(StmtClass SC, DeclStmt *Range,
+                                   DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+                                   SourceLocation FL, SourceLocation EL,
+                                   SourceLocation CL, SourceLocation RPL)
+    : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N),
+      InstantiatedStmts(nullptr) {
+  SubExprs[RANGE] = Range;
+  SubExprs[LOOP] = LoopVar;
+  SubExprs[BODY] = Body;
+}
+
+VarDecl *CXXExpansionStmt::getRangeVariable() {
+  Decl *RV = cast<DeclStmt>(getRangeVarStmt())->getSingleDecl();
+  assert(RV && "No range variable in CXXExpansionStmt");
+  return cast<VarDecl>(RV);
+}
+
+VarDecl *CXXExpansionStmt::getLoopVariable() {
+  Decl *LV = cast<DeclStmt>(getLoopVarStmt())->getSingleDecl();
+  assert(LV && "No loop variable in CXXExpansionStmt");
+  return cast<VarDecl>(LV);
+}
+
+const VarDecl *CXXExpansionStmt::getLoopVariable() const {
+  return const_cast<CXXExpansionStmt *>(this)->getLoopVariable();
+}
+
+CXXTupleExpansionStmt::CXXTupleExpansionStmt(
+    TemplateParameterList *TP, DeclStmt *RangeVar, DeclStmt *LoopVar,
+    Stmt *Body, std::size_t N, SourceLocation FL, SourceLocation EL,
+    SourceLocation CL, SourceLocation RPL)
+    : CXXExpansionStmt(CXXTupleExpansionStmtClass, RangeVar, LoopVar, Body, N,
+                       FL, EL, CL, RPL),
+      Parms(TP) {}
+
+NonTypeTemplateParmDecl *CXXTupleExpansionStmt::getPlaceholderParameter() {
+  return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
+}
+
+Expr *CXXTupleExpansionStmt::getRangeInit() {
+  DeclStmt *RangeStmt = getRangeVarStmt();
+  VarDecl *RangeDecl = dyn_cast_or_null<VarDecl>(RangeStmt->getSingleDecl());
+  assert(RangeDecl && "for-range should have a single var decl");
+  return RangeDecl->getInit();
+}
+
+const Expr *CXXTupleExpansionStmt::getRangeInit() const {
+  return const_cast<CXXTupleExpansionStmt *>(this)->getRangeInit();
+}
+
+CXXPackExpansionStmt::CXXPackExpansionStmt(DeclStmt *RangeVar,
+                                           DeclStmt *LoopVar, Stmt *Body,
+                                           SourceLocation FL, SourceLocation EL,
+                                           SourceLocation CL,
+                                           SourceLocation RPL)
+    : CXXExpansionStmt(CXXPackExpansionStmtClass, RangeVar, LoopVar, Body, 0,
+                       FL, EL, CL, RPL) {}
 
 CoroutineBodyStmt *CoroutineBodyStmt::Create(
     const ASTContext &C, CoroutineBodyStmt::CtorArgs const &Args) {

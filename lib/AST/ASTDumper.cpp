@@ -514,6 +514,7 @@ namespace  {
     void VisitGotoStmt(const GotoStmt *Node);
     void VisitCXXCatchStmt(const CXXCatchStmt *Node);
     void VisitCapturedStmt(const CapturedStmt *Node);
+    void VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *Node);
 
     // OpenMP
     void VisitOMPExecutableDirective(const OMPExecutableDirective *Node);
@@ -1319,6 +1320,14 @@ void ASTDumper::VisitPragmaDetectMismatchDecl(
 
 void ASTDumper::VisitCapturedDecl(const CapturedDecl *D) {
   dumpStmt(D->getBody());
+}
+
+void ASTDumper::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *Node) {
+  // NOTE: It's possible that the number of statements has been set,
+  // but the instantiated statements not added.
+  if (Stmt **Iter = Node->begin_instantiated_statements())
+    for (; Iter != Node->end_instantiated_statements(); ++Iter)
+      dumpStmt(*Iter);
 }
 
 //===----------------------------------------------------------------------===//

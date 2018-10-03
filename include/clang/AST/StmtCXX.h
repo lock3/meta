@@ -23,6 +23,10 @@
 namespace clang {
 
 class VarDecl;
+class CXXMethodDecl;
+class CXXRecordDecl;
+class TemplateParameterList;
+class NonTypeTemplateParmDecl;
 
 /// CXXCatchStmt - This represents a C++ catch block.
 ///
@@ -32,7 +36,7 @@ class CXXCatchStmt : public Stmt {
   VarDecl *ExceptionDecl;
   /// The handler block.
   Stmt *HandlerBlock;
-
+  
 public:
   CXXCatchStmt(SourceLocation catchLoc, VarDecl *exDecl, Stmt *handlerBlock)
   : Stmt(CXXCatchStmtClass), CatchLoc(catchLoc), ExceptionDecl(exDecl),
@@ -229,6 +233,187 @@ public:
   // Iterators
   child_range children() {
     return child_range(&SubExprs[0], &SubExprs[END]);
+  }
+};
+
+/// \brief The base class of tuple and pack expansion statements.
+///
+/// Tuple and pack expansion statements have the following form:
+///
+/// \verbatim
+///   for (auto x : expandable) statement
+/// \endverbatim
+///
+/// The "expandable" expression is either a tuple-like construct or an
+/// unexpanded parameter pack.
+class CXXExpansionStmt : public Stmt {
+protected:
+  /// \brief The subexpressions of an expression include the loop variable,
+  /// the tuple or pack being expanded, and the loop body.
+  enum {
+    RANGE, ///< The expression or captured variable being expanded.
+    LOOP,  ///< The variable bound to each member of the expansion.
+    BODY,  ///< The uninstantiated loop body.
+    END
+  };
+  Stmt *SubExprs[END];
+
+  SourceLocation ForLoc;
+  SourceLocation EllipsisLoc;
+  SourceLocation ColonLoc;
+  SourceLocation RParenLoc;
+
+  /// \brief The expansion size of the range. When the range is dependent
+  /// this value is not meaningful.
+  std::size_t Size;
+
+  /// \brief The statements instantiated from the loop body. These are not
+  /// sub-expressions.
+  Stmt **InstantiatedStmts;
+
+  friend class ASTStmtReader;
+
+public:
+  CXXExpansionStmt(StmtClass SC, DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
+                   std::size_t N, SourceLocation FL, SourceLocation EL,
+                   SourceLocation CL, SourceLocation RPL);
+  CXXExpansionStmt(StmtClass SC, EmptyShell Empty) : Stmt(SC, Empty) {}
+
+  /// \brief Returns the statement containing the range declaration.
+  Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
+
+  /// \brief The range variable.
+  const VarDecl *getRangeVariable() const;  
+  VarDecl *getRangeVariable();
+
+  /// \brief Returns the dependent loop variable declaration.
+  DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
+
+  /// \brief Get the loop variable.
+  const VarDecl *getLoopVariable() const;
+  VarDecl *getLoopVariable();
+
+  /// \brief Returns the parsed body of the loop.
+  const Stmt *getBody() const { return SubExprs[BODY]; }
+  Stmt *getBody() { return SubExprs[BODY]; }
+
+  /// \brief Set the body of the loop.
+  void setBody(Stmt *S) { SubExprs[BODY] = S; }
+
+  /// \brief Returns the number of instantiated statements.
+  std::size_t getSize() const { return Size; }
+
+  /// \brief Set the sequence of instantiated statements.
+  void setInstantiatedStatements(Stmt **S) {
+    assert(!InstantiatedStmts && "instantiated statements already defined");
+    InstantiatedStmts = S;
+  }
+
+  /// \brief Returns the sequence of instantiated statements.
+  ArrayRef<Stmt *> getInstantiatedStatements() const {
+    return llvm::makeArrayRef(InstantiatedStmts, Size);
+  }
+
+  /// \brief Returns a pointer to the first instantiated statement.
+  Stmt **begin_instantiated_statements() const { return InstantiatedStmts; }
+  /// \brief Returns a pointer past the last instantiated statement.
+  Stmt **end_instantiated_statements() const {
+    return InstantiatedStmts + Size;
+  }
+
+  SourceLocation getForLoc() const { return ForLoc; }
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  SourceLocation getColonLoc() const { return ColonLoc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }  
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return SubExprs[BODY]->getEndLoc();
+  }
+
+  // Iterators
+  child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
+};
+
+/// \brief Represents the expansion of a loop body for each element of a tuple.
+///
+/// For example:
+///
+/// \code
+///   for (auto x : make_tuple(0, 1.2, "3"_s)) cout << x;
+/// \endcode
+///
+/// Internally, the statement is represented in a partially desugared form like
+/// this:
+///
+/// \verbatim
+///   {
+///     auto&& __tuple = range-init;
+///     for<int __N> {
+///       for-range-declaration = get<__N>(__tuple);
+///       statement
+///   }
+/// \endverbatim
+///
+/// When the loop is finished (i.e., after parsing or instantiation), the
+/// inner block of the \c for\<\> is expanded for each value \c __N from 0 to
+/// the number of elements determined from the type of \c __tuple.
+class CXXTupleExpansionStmt : public CXXExpansionStmt {
+  /// \brief Abstractly, the size of the expansion. This is needed to construct
+  /// the initializer for the loop variable.
+  TemplateParameterList *Parms;
+
+public:
+  CXXTupleExpansionStmt(TemplateParameterList *TP, DeclStmt *RangeVar,
+                        DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+                        SourceLocation FL, SourceLocation EL, SourceLocation CL,
+                        SourceLocation RPL);
+  CXXTupleExpansionStmt(EmptyShell Empty)
+      : CXXExpansionStmt(CXXTupleExpansionStmtClass, Empty) {}
+
+  /// \brief Returns the template parameter list of the declaration.
+  TemplateParameterList *getTemplateParameters() { return Parms; }
+
+  /// \brief Returns the placeholder value \c __N used in the loop variable
+  /// initializer \c get\<__N\>(__range).
+  NonTypeTemplateParmDecl *getPlaceholderParameter();
+
+  /// \brief Returns the statement containing the range declaration.
+  DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
+
+  /// \brief Returns the initializer of the range statement.
+  Expr *getRangeInit();
+  const Expr *getRangeInit() const;
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXTupleExpansionStmtClass;
+  }
+};
+
+/// \brief Represents the expansion of a parameter pack over a loop body.
+class CXXPackExpansionStmt : public CXXExpansionStmt {
+public:
+  CXXPackExpansionStmt(DeclStmt *RangeVar, DeclStmt *LoopVar, Stmt *Body,
+                       SourceLocation FL, SourceLocation EL, SourceLocation CL,
+                       SourceLocation RPL);
+  CXXPackExpansionStmt(EmptyShell Empty)
+      : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
+
+  /// \brief Returns the unexpanded parameter pack being ranged over.
+  Expr *getUnexpandedPack() { return cast<Expr>(SubExprs[RANGE]); }
+  const Expr *getUnexpandedPack() const;
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXPackExpansionStmtClass;
   }
 };
 
