@@ -1962,6 +1962,10 @@ DEF_TRAVERSE_DECL(CXXMetaprogramDecl, {
   // FIXME: Not sure if we can do anything useful here.
 });
 
+DEF_TRAVERSE_DECL(CXXInjectionDecl, {
+  // FIXME: Not sure if we can do anything useful here.
+});
+
 DEF_TRAVERSE_DECL(CXXFragmentDecl, {
   TRY_TO(TraverseDecl(D->getContent()));
 });

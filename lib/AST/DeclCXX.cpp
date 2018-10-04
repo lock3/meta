@@ -2968,6 +2968,49 @@ SourceRange CXXMetaprogramDecl::getSourceRange() const {
   return SourceRange(getLocation(), RangeEnd);
 }
 
+void CXXInjectionDecl::anchor() {}
+
+CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation CXXInjectionLoc,
+                                     FunctionDecl *Fn) {
+  return new (Cxt, DC) CXXInjectionDecl(DC, CXXInjectionLoc, Fn);
+}
+
+CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation CXXInjectionLoc,
+                                     CXXRecordDecl *Class) {
+  return new (Cxt, DC) CXXInjectionDecl(DC, CXXInjectionLoc, Class);
+}
+
+CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
+}
+
+bool CXXInjectionDecl::hasBody() const {
+  if (Representation.isNull())
+    return false;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->hasBody();
+}
+
+Stmt *CXXInjectionDecl::getBody() const {
+  if (Representation.isNull())
+    return nullptr;
+  const FunctionDecl *FD = hasFunctionRepresentation()
+                               ? getFunctionDecl()
+                               : getClosureCallOperator();
+  return FD->getBody();
+}
+
+SourceRange CXXInjectionDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (Stmt *Body = getBody())
+    RangeEnd = Body->getEndLoc();
+  return SourceRange(getLocation(), RangeEnd);
+}
+
 void CXXFragmentDecl::anchor() {}
 
 CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,

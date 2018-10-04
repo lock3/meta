@@ -100,4 +100,5 @@ def OMPThreadPrivate : Decl;
 def OMPRequires : Decl;
 def Empty : Decl;
 def CXXMetaprogram : Decl;
+def CXXInjection : Decl;
 def CXXFragment : Decl, DeclContext;

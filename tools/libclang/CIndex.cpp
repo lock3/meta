@@ -6257,6 +6257,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::UsingPack:
   case Decl::CXXFragment:
   case Decl::CXXMetaprogram:
+  case Decl::CXXInjection:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

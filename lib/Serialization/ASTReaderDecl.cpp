@@ -3869,6 +3869,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   case DECL_CXX_METAPROGRAM:
     D = CXXMetaprogramDecl::CreateDeserialized(Context, ID);
     break;
+  case DECL_CXX_INJECTION:
+    D = CXXInjectionDecl::CreateDeserialized(Context, ID);
+    break;
   }
 
   assert(D && "Unknown declaration reading AST file");

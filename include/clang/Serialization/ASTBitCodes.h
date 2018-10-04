@@ -1550,6 +1550,9 @@ namespace serialization {
       /// A CXXMetaprogramDecl record.
       DECL_CXX_METAPROGRAM,
 
+      /// A CXXInjectionDecl record.
+      DECL_CXX_INJECTION,
+
       DECL_LAST = DECL_CXX_METAPROGRAM
     };
 

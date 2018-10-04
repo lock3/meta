@@ -4855,6 +4855,10 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     // Nothing to do.
     break;
 
+  case Decl::CXXInjection:
+    // Nothing to do.
+    break;
+
   // Objective-C Decls
 
   // Forward declarations, no (immediate) code generation.

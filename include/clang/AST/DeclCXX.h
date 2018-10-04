@@ -4068,6 +4068,93 @@ public:
   friend class ASTDeclReader;
 };
 
+/// \brief Represents a C++ injection-declaration.
+///
+/// A injection-declaration contains an injection-statement that is evaluated
+/// at compile-time. For example:
+///
+/// \code
+/// constexpr -> fragment-or-reflection;
+/// \endcode
+class CXXInjectionDecl : public Decl {
+  virtual void anchor();
+
+  /// The de-sugared form of the declaration.
+  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
+
+  /// The de-sugared call expression.
+  CallExpr *Call;
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
+      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(),
+        Call(nullptr) {}
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
+                     FunctionDecl *Fn)
+      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(Fn),
+        Call(nullptr) {}
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
+                     CXXRecordDecl *Class)
+      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(Class),
+        Call(nullptr) {}
+
+public:
+  static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                    SourceLocation CXXInjectionLoc,
+                                    FunctionDecl *Fn);
+  static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                    SourceLocation CXXInjectionLoc,
+                                    CXXRecordDecl *Closure);
+  static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// Returns \c true if this is represented as a function.
+  bool hasFunctionRepresentation() const {
+    return Representation.is<FunctionDecl *>();
+  }
+
+  /// Returns \c true if this is represented as a lambda expression.
+  bool hasLambdaRepresentation() const {
+    return Representation.is<CXXRecordDecl *>();
+  }
+
+  /// Returns the function representation of the declaration.
+  FunctionDecl *getFunctionDecl() const {
+    return Representation.get<FunctionDecl *>();
+  }
+
+  /// Returns the closure declaration for the lambda expression.
+  CXXRecordDecl *getClosureDecl() const {
+    return Representation.get<CXXRecordDecl *>();
+  }
+
+  /// Returns the call operator of the closure.
+  CXXMethodDecl *getClosureCallOperator() const {
+    assert(hasLambdaRepresentation() &&
+           "constexpr declaration is not represented by a lambda expression");
+    return getClosureDecl()->getLambdaCallOperator();
+  }
+
+  /// Returns \c true if the injection-declaration has a body.
+  bool hasBody() const override;
+
+  /// Returns the body of the injection-declaration.
+  Stmt *getBody() const override;
+
+  /// Returns the expression that evaluates the injection-declaration.
+  CallExpr *getCallExpr() const { return Call; }
+
+  /// Sets the expression that evaluates the injection-declaration.
+  void setCallExpr(CallExpr *E) { Call = E; }
+
+  SourceRange getSourceRange() const override;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXInjection; }
+
+  friend class ASTDeclReader;
+};
+
 
 /// \brief Contains a fragment of source code.
 ///
