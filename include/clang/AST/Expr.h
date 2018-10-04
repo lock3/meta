@@ -601,7 +601,7 @@ public:
     ///
     /// If evaluation encounters an source code injection when this is not
     /// set, the expression has undefined behavior. This is only set for the
-    /// evaluation of metaprograms. No other evaluations should modify source 
+    /// evaluation of metaprograms. No other evaluations should modify source
     /// code.
     SmallVectorImpl<EvalEffect> *Effects;
 

@@ -3975,10 +3975,10 @@ public:
 };
 
 
-/// \brief Represents a C++ constexpr-declaration.
+/// \brief Represents a C++ metaprogram-declaration.
 ///
-/// A constexpr-declaration contains a sequence of statements that are evaluated
-/// at compile-time. For example:
+/// A metaprogram-declaration contains a sequence of statements that are
+/// evaluated at compile-time. For example:
 ///
 /// \code
 /// constexpr {
@@ -3986,7 +3986,7 @@ public:
 /// }
 /// \endcode
 ///
-/// When the constexpr-declaration appears in namespace or class scope, this
+/// When the metaprogram-declaration appears in namespace or class scope, this
 /// class contains a \c constexpr \c void function that contains the parsed body
 /// of the declaration.
 class CXXMetaprogramDecl : public Decl {
@@ -3999,61 +3999,65 @@ class CXXMetaprogramDecl : public Decl {
   CallExpr *Call;
 
   CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
-      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(), Call(nullptr) {}
-
-  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc, FunctionDecl *Fn)
-      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Fn), Call(nullptr) {}
+      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(),
+        Call(nullptr) {}
 
   CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
-                CXXRecordDecl *Class)
+                     FunctionDecl *Fn)
+      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Fn),
+        Call(nullptr) {}
+
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
+                     CXXRecordDecl *Class)
       : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Class),
         Call(nullptr) {}
 
 public:
   static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation CXXMetaprogramLoc, FunctionDecl *Fn);
+                                    SourceLocation CXXMetaprogramLoc,
+                                    FunctionDecl *Fn);
   static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
-                               SourceLocation CXXMetaprogramLoc,
-                               CXXRecordDecl *Closure);
+                                    SourceLocation CXXMetaprogramLoc,
+                                    CXXRecordDecl *Closure);
   static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// \brief Returns \c true if this is represented as a function.
+  /// Returns \c true if this is represented as a function.
   bool hasFunctionRepresentation() const {
     return Representation.is<FunctionDecl *>();
   }
 
-  /// \brief Returns \c true if this is represented as a lambda expression.
+  /// Returns \c true if this is represented as a lambda expression.
   bool hasLambdaRepresentation() const {
     return Representation.is<CXXRecordDecl *>();
   }
 
-  /// \brief Returns the function representation of the declaration.
+  /// Returns the function representation of the declaration.
   FunctionDecl *getFunctionDecl() const {
     return Representation.get<FunctionDecl *>();
   }
 
-  /// \brief Returns the closure declaration for the lambda expression.
+  /// Returns the closure declaration for the lambda expression.
   CXXRecordDecl *getClosureDecl() const {
     return Representation.get<CXXRecordDecl *>();
   }
 
-  /// \brief Returns the call operator of the closure.
+  /// Returns the call operator of the closure.
   CXXMethodDecl *getClosureCallOperator() const {
     assert(hasLambdaRepresentation() &&
            "constexpr declaration is not represented by a lambda expression");
     return getClosureDecl()->getLambdaCallOperator();
   }
 
-  /// \brief Returns \c true if the constexpr-declaration has a body.
+  /// Returns \c true if the metaprogram-declaration has a body.
   bool hasBody() const override;
 
-  /// \brief Returns the body of the constexpr-declaration.
+  /// Returns the body of the metaprogram-declaration.
   Stmt *getBody() const override;
 
-  /// Returns the expression that evaluates the constexpr-declaration.
+  /// Returns the expression that evaluates the metaprogram-declaration.
   CallExpr *getCallExpr() const { return Call; }
 
-  /// Sets the expression that evaluates the constexpr-declaration.
+  /// Sets the expression that evaluates the metaprogram-declaration.
   void setCallExpr(CallExpr *E) { Call = E; }
 
   SourceRange getSourceRange() const override;
