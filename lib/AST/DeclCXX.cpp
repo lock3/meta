@@ -2928,15 +2928,15 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
 void CXXMetaprogramDecl::anchor() {}
 
 CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation ConstexprLoc,
+                                     SourceLocation CXXMetaprogramLoc,
                                      FunctionDecl *Fn) {
-  return new (Cxt, DC) CXXMetaprogramDecl(DC, ConstexprLoc, Fn);
+  return new (Cxt, DC) CXXMetaprogramDecl(DC, CXXMetaprogramLoc, Fn);
 }
 
 CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation ConstexprLoc,
+                                     SourceLocation CXXMetaprogramLoc,
                                      CXXRecordDecl *Class) {
-  return new (Cxt, DC) CXXMetaprogramDecl(DC, ConstexprLoc, Class);
+  return new (Cxt, DC) CXXMetaprogramDecl(DC, CXXMetaprogramLoc, Class);
 }
 
 CXXMetaprogramDecl *CXXMetaprogramDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
