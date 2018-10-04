@@ -204,6 +204,13 @@ public:
     setPSet(E, PSet::singleton(Variable::thisPointer()));
   }
 
+  void VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
+    // The typeid expression is an lvalue expression which refers to an object
+    // with static storage duration, of the polymorphic type const
+    // std::type_info or of some type derived from it.
+    setPSet(E, PSet::staticVar());
+  }
+
   void
   VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E) {
     // Non-type template parameters that are pointers must point to something

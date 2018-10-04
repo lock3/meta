@@ -10,6 +10,8 @@ template <typename T>
 void __lifetime_type_category() {}
 
 namespace std {
+class type_info;
+
 template <typename T>
 typename T::iterator begin(T &);
 
@@ -1149,6 +1151,15 @@ void f() {
   __lifetime_pset(E.V1); // expected-warning {{((static)}}
 }
 } // namespace Aggregates
+
+namespace TypeId {
+struct A {};
+void f(const std::type_info &);
+
+void g() {
+  f(typeid(A));
+}
+} // namespace TypeId
 
 namespace crashes {
 // This used to crash with missing pset.
