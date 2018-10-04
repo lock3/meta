@@ -2803,6 +2803,7 @@ private:
   ExprResult ParseCXXFragmentExpression();
 
   DeclGroupPtrTy ParseCXXMetaprogramDeclaration();
+  DeclGroupPtrTy ParseCXXInjectionDeclaration();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

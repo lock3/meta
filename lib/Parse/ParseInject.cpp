@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/ASTConsumer.h"
+#include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
@@ -207,10 +208,79 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   assert(Tok.is(tok::arrow) && "expected '->' token");
   SourceLocation Loc = ConsumeToken();
 
-  /// Get a reflection as the operand of the
-  ExprResult Fragment = ParseConstantExpression();
-  if (Fragment.isInvalid())
+  /// Get a fragment as the operand of the decl.
+  ExprResult FragmentOrReflection = ParseConstantExpression();
+  if (FragmentOrReflection.isInvalid())
     return StmtResult();
 
-  return Actions.ActOnCXXInjectionStmt(Loc, Fragment.get());
+  return Actions.ActOnCXXInjectionStmt(Loc, FragmentOrReflection.get());
+}
+
+
+/// Parse a metaprogram-declaration.
+///
+/// \verbatim
+///   metaprogram-declaration:
+///     'constexpr' compound-statement
+/// \endverbatim
+Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
+  assert(Tok.is(tok::kw_constexpr));
+  SourceLocation ConstexprLoc = ConsumeToken();
+  assert(Tok.is(tok::l_brace));
+
+  unsigned ScopeFlags;
+  Decl *D = Actions.ActOnCXXMetaprogramDecl(getCurScope(), ConstexprLoc,
+                                            ScopeFlags);
+
+  // Enter a scope for the metaprogram declaration body.
+  ParseScope BodyScope(this, ScopeFlags);
+
+  Actions.ActOnStartCXXMetaprogramDecl(getCurScope(), D);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
+                                      "parsing metaprogram declaration body");
+
+  // Parse the body of the metaprogram declaration.
+  StmtResult Body(ParseCompoundStatementBody());
+  if (!Body.isInvalid())
+    Actions.ActOnFinishCXXMetaprogramDecl(getCurScope(), D, Body.get());
+  else
+    Actions.ActOnCXXMetaprogramDeclError(getCurScope(), D);
+
+  return Actions.ConvertDeclToDeclGroup(D);
+}
+
+
+/// \brief Parse a C++ injection declaration.
+///
+///   injection-declaration:
+///     'constexpr' '->' fragment ';'
+///     'constexpr' '->' reflection ';'
+///
+/// Returns the group of declarations parsed.
+Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
+  assert(Tok.is(tok::kw_constexpr));
+  SourceLocation ConstexprLoc = ConsumeToken();
+  assert(Tok.is(tok::arrow) && "expected '->' token");
+
+  unsigned ScopeFlags;
+  Decl *D = Actions.ActOnCXXInjectionDecl(getCurScope(), ConstexprLoc,
+                                          ScopeFlags);
+
+  // Enter a scope for the constexpr declaration body.
+  ParseScope BodyScope(this, ScopeFlags);
+
+  Actions.ActOnStartCXXInjectionDecl(getCurScope(), D);
+
+  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
+                                      "parsing injection declaration body");
+
+  // Parse the injection statement of the metaprogram declaration.
+  StmtResult InjectionStmt = ParseCXXInjectionStatement();
+  if (!InjectionStmt.isInvalid())
+    Actions.ActOnFinishCXXInjectionDecl(getCurScope(), D, InjectionStmt.get());
+  else
+    Actions.ActOnCXXInjectionDeclError(getCurScope(), D);
+
+  return Actions.ConvertDeclToDeclGroup(D);
 }

@@ -8789,14 +8789,18 @@ public:
   };
 
   Decl *ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
-                           unsigned &ScopeFlags);
+                                unsigned &ScopeFlags);
+  Decl *ActOnCXXInjectionDecl(Scope *S, SourceLocation ConstexprLoc,
+                              unsigned &ScopeFlags);
   void ActOnStartCXXMetaprogramDecl(Scope *S, Decl *D);
+  void ActOnStartCXXInjectionDecl(Scope *S, Decl *D);
   void ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body);
+  void ActOnFinishCXXInjectionDecl(Scope *S, Decl *D, Stmt *InjectionStmt);
   void ActOnCXXMetaprogramDeclError(Scope *S, Decl *D);
+  void ActOnCXXInjectionDeclError(Scope *S, Decl *D);
 
-  bool EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, FunctionDecl *D);
-  bool EvaluateCXXMetaprogramDecl(CXXMetaprogramDecl *CD, Expr *E);
-  bool EvaluateCXXMetaprogramDeclCall(CXXMetaprogramDecl *CD, CallExpr *Call);
+  void EvaluateCXXMetaDecl(CXXMetaprogramDecl *D, FunctionDecl *FD);
+  void EvaluateCXXMetaDecl(CXXInjectionDecl *D, FunctionDecl *FD);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

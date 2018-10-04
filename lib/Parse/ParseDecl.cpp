@@ -1703,9 +1703,13 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     ProhibitAttributes(attrs);
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
-  case tok::kw_constexpr: // [Meta]: constexpr-declaration
+  case tok::kw_constexpr:
+    // [Meta] metaprogram-declaration
     if (NextToken().is(tok::l_brace))
       return ParseCXXMetaprogramDeclaration();
+    // [Meta] injection-declaration
+    if (NextToken().is(tok::arrow))
+      return ParseCXXInjectionDeclaration();
 
   default:
     return ParseSimpleDeclaration(Context, DeclEnd, attrs, true);

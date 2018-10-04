@@ -2619,9 +2619,14 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
-  // [Meta] constexpr-declaration
-  if (Tok.is(tok::kw_constexpr) && NextToken().is(tok::l_brace))
-    return ParseCXXMetaprogramDeclaration();
+  if (Tok.is(tok::kw_constexpr)) {
+    // [Meta] metaprogram-declaration
+    if (NextToken().is(tok::l_brace))
+      return ParseCXXMetaprogramDeclaration();
+    // [Meta] injection-declaration
+    if (NextToken().is(tok::arrow))
+      return ParseCXXInjectionDeclaration();
+  }
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;

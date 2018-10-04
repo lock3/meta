@@ -42,9 +42,7 @@ constexpr auto inner_fragment = __fragment struct S {
 };
 
 constexpr auto fragment = __fragment struct X {
-  constexpr {
-    -> inner_fragment;
-  }
+  constexpr -> inner_fragment;
 
   InternalFragClass FragClass;
   int x = 1;

@@ -1553,7 +1553,7 @@ namespace serialization {
       /// A CXXInjectionDecl record.
       DECL_CXX_INJECTION,
 
-      DECL_LAST = DECL_CXX_METAPROGRAM
+      DECL_LAST = DECL_CXX_INJECTION
     };
 
     /// Record codes for each kind of statement or expression.

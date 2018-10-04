@@ -891,7 +891,10 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
-Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+template <typename MetaType>
+static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
+                           const MultiLevelTemplateArgumentList &TemplateArgs,
+                           MetaType *D) {
   if (FunctionDecl *Fn = D->getFunctionDecl()) {
     // Instantiate the nested function.
     //
@@ -916,25 +919,32 @@ Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
     NewFn->setBody(NewBody.get());
 
     // Build the constexpr declaration.
-    CXXMetaprogramDecl *CD = CXXMetaprogramDecl::Create(SemaRef.Context, Owner,
-                                              Fn->getLocation(), NewFn);
-    Owner->addDecl(CD); // FIXME: OWner or CurContext?
+    MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
+                                    Fn->getLocation(), NewFn);
+    Owner->addDecl(MD); // FIXME: OWner or CurContext?
 
     // And evaluate it if needed.
     if (!NewFn->isDependentContext()) {
       // FIXME: What the hell are we going to do with late parsed
       // declarations during template instantiation?
       SmallVector<void *, 8> LateParsedDecls;
-      SemaRef.EvaluateCXXMetaprogramDecl(CD, NewFn);
+      SemaRef.EvaluateCXXMetaDecl(MD, NewFn);
     }
 
-    return CD;
+    return MD;
   } else if (CXXRecordDecl *Class = D->getClosureDecl()) {
-    llvm_unreachable("local constexpr-decl instantiation not implemented");
+    llvm_unreachable("local metaprogram-decl instantiation not implemented");
   } else {
     llvm_unreachable("invalid metaprogram");
   }
+}
 
+Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  return VisitMetaDecl(SemaRef, Owner, TemplateArgs, D);
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  return VisitMetaDecl(SemaRef, Owner, TemplateArgs, D);
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
