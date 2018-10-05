@@ -1832,6 +1832,8 @@ public:
 
   bool isNamespace() const { return getDeclKind() == Decl::Namespace; }
 
+  bool isFragment() const { return getDeclKind() == Decl::CXXFragment; }
+
   bool isStdNamespace() const;
 
   bool isInlineNamespace() const;

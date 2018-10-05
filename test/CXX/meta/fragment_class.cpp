@@ -2,9 +2,12 @@
 
 #include <experimental/meta>
 
+int capture = 10;
+
 class Foo {
   // static constexpr auto test_cls_frag = __fragment class {
   //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function() {
   //   }
@@ -12,6 +15,7 @@ class Foo {
 
   // static constexpr auto test_cls_self_frag = __fragment class Frag {
   //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function(Frag& frag) {
   //   }
@@ -24,6 +28,7 @@ class Foo {
 
   // static constexpr auto test_struct_frag = __fragment struct {
   //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function() {
   //   }
@@ -31,6 +36,7 @@ class Foo {
 
   // static constexpr auto test_struct_self_frag = __fragment struct Frag {
   //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function(Frag& frag) {
   //   }
@@ -42,14 +48,14 @@ class Foo {
   static constexpr auto test_struct_frag_without_body = __fragment struct; // expected-error {{expected class-fragment}}
 
   // static constexpr auto test_union_frag = __fragment union {
-  //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function() {
   //   }
   // };
 
   // static constexpr auto test_union_self_frag = __fragment union Frag {
-  //   int i = 0;
+  //   int i_capture = capture;
 
   //   void test_function(Frag& frag) {
   //   }
@@ -61,14 +67,19 @@ class Foo {
   static constexpr auto test_union_frag_without_body = __fragment union; // expected-error {{expected class-fragment}}
 
   static constexpr auto test_ns_frag = __fragment namespace {
+    int i_capture = capture;
+
     void test_function() {
     }
   };
 
-  // static constexpr auto test_ns_self_frag = __fragment namespace Frag {
-  //   void test_function(Frag& frag) {
-  //   }
-  // };
+  static constexpr auto test_ns_self_frag = __fragment namespace Frag {
+    int i_capture = capture;
+
+    using x = int;
+    void test_function(Frag::x& x) {
+    }
+  };
 
   static constexpr auto test_ns_empty_frag = __fragment union {
   };
@@ -92,7 +103,7 @@ class Foo {
   // constexpr auto test_union_self_frag_wrapper = SomeClass<test_union_self_frag>();
   // constexpr auto test_union_empty_frag_wrapper = SomeClass<test_union_empty_frag>();
   static constexpr auto test_ns_frag_wrapper = SomeClass<test_ns_frag>();
-  // constexpr auto test_ns_self_frag_wrapper = SomeClass<test_ns_self_frag>();
+  static constexpr auto test_ns_self_frag_wrapper = SomeClass<test_ns_self_frag>();
   static constexpr auto test_ns_empty_frag_wrapper = SomeClass<test_ns_frag>();
 
   constexpr {

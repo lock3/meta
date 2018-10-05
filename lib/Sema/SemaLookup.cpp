@@ -1309,6 +1309,14 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
         if (Ctx->isTransparentContext())
           continue;
 
+        // If we're here, we've left the namespace body of our fragment,
+        // and are now looking soley at the fragment itself.
+        // This is an odd case, as we shouldn't be looking at only
+        // namespace and file contexts. Our best option is to
+        // recurse, and try again from this new perspective.
+        if (Ctx->isFragment())
+          return CppLookupName(R, S);
+
         // If we have a context, and it's not a context stashed in the
         // template parameter scope for an out-of-line definition, also
         // look into that context.
