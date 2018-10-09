@@ -1976,6 +1976,7 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
   if (const auto *BT = dyn_cast<BuiltinType>(T)) {
     if (BT->getKind() == BuiltinType::Bool) return STK_Bool;
     if (BT->getKind() == BuiltinType::NullPtr) return STK_CPointer;
+    if (BT->getKind() == BuiltinType::MetaInfo) return STK_Integral;
     if (BT->isInteger()) return STK_Integral;
     if (BT->isFloatingPoint()) return STK_Floating;
     llvm_unreachable("unknown scalar builtin type");
@@ -2762,6 +2763,8 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
     return "char32_t";
   case NullPtr:
     return "nullptr_t";
+  case MetaInfo:
+    return "meta::info";
   case Overload:
     return "<overloaded function type>";
   case BoundMember:
@@ -3837,6 +3840,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
     case BuiltinType::OCLReserveID:
     case BuiltinType::BuiltinFn:
     case BuiltinType::NullPtr:
+    case BuiltinType::MetaInfo:
     case BuiltinType::OMPArraySection:
       return false;
     }

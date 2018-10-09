@@ -221,6 +221,10 @@ FLOATING_TYPE(Float128, Float128Ty)
 // This is the type of C++0x 'nullptr'.
 BUILTIN_TYPE(NullPtr, NullPtrTy)
 
+// This is the type used to represent internal compiler objects
+// which have been brought in via reflection.
+BUILTIN_TYPE(MetaInfo, MetaInfoTy)
+
 // The primitive Objective C 'id' type.  The user-visible 'id'
 // type is a typedef of an ObjCObjectPointerType to an
 // ObjCObjectType with this as its base.  In fact, this only ever

@@ -6808,6 +6808,9 @@ QualType ASTReader::GetType(TypeID ID) {
     switch ((PredefinedTypeIDs)Index) {
     case PREDEF_TYPE_NULL_ID:
       return QualType();
+    case PREDEF_TYPE_META_INFO_ID:
+      T = Context.MetaInfoTy;
+      break;
     case PREDEF_TYPE_VOID_ID:
       T = Context.VoidTy;
       break;

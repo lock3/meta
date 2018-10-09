@@ -2501,6 +2501,7 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
   //                 ::= Di # char32_t
   //                 ::= Ds # char16_t
   //                 ::= Dn # std::nullptr_t (i.e., decltype(nullptr))
+  //                 ::= Dm # std::meta::info (i.e., typename(reflexpr(void)))
   //                 ::= u <source-name>    # vendor extended type
   std::string type_name;
   switch (T->getKind()) {
@@ -2613,6 +2614,9 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
     break;
   case BuiltinType::NullPtr:
     Out << "Dn";
+    break;
+  case BuiltinType::MetaInfo:
+    Out << "Dm";
     break;
 
 #define BUILTIN_TYPE(Id, SingletonId)

@@ -131,9 +131,9 @@ bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
   return true;
 }
 
-bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-			       IdentifierInfo *Id, unsigned &Kind,
-			       ParsedReflectionPtr &Entity) {
+bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
+                                     IdentifierInfo *Id, unsigned &Kind,
+                                     ParsedReflectionPtr &Entity) {
   LookupResult R(*this, Id, IdLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS, false, true);
   DeclarationNameInfo DNI = R.getLookupNameInfo();
