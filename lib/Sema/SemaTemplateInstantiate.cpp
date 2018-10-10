@@ -237,10 +237,15 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     Inst.InstantiationRange = InstantiationRange;
     SemaRef.pushCodeSynthesisContext(Inst);
 
+    if (Inst.Entity) {
     AlreadyInstantiating =
         !SemaRef.InstantiatingSpecializations
              .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
              .second;
+    } else {
+      AlreadyInstantiating = false;
+    }
+    
     atTemplateBegin(SemaRef.TemplateInstCallbacks, SemaRef, Inst);
   }
 }
@@ -2908,9 +2913,8 @@ static const Decl *getCanonicalParmVarDecl(const Decl *D) {
   return D;
 }
 
-
 llvm::PointerUnion<Decl *, LocalInstantiationScope::DeclArgumentPack *> *
-LocalInstantiationScope::findInstantiationOf(const Decl *D) {
+LocalInstantiationScope::lookupInstantiationOf(const Decl *D) {
   D = getCanonicalParmVarDecl(D);
   for (LocalInstantiationScope *Current = this; Current;
        Current = Current->Outer) {
@@ -2921,7 +2925,7 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
       LocalDeclsMap::iterator Found = Current->LocalDecls.find(CheckD);
       if (Found != Current->LocalDecls.end())
         return &Found->second;
-
+      
       // If this is a tag declaration, it's possible that we need to look for
       // a previous declaration.
       if (const TagDecl *Tag = dyn_cast<TagDecl>(CheckD))
@@ -2929,11 +2933,19 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
       else
         CheckD = nullptr;
     } while (CheckD);
-
-    // If we aren't combined with our outer scope, we're done.
+    
+    // If we aren't combined with our outer scope, we're done. 
     if (!Current->CombineWithOuterScope)
       break;
   }
+  return nullptr;
+}
+
+llvm::PointerUnion<Decl *, LocalInstantiationScope::DeclArgumentPack *> *
+LocalInstantiationScope::findInstantiationOf(const Decl *D) {
+  // Search for a local instantiation.
+  if (auto *Result = lookupInstantiationOf(D))
+    return Result;
 
   // If we're performing a partial substitution during template argument
   // deduction, we may not have values for template parameters yet.

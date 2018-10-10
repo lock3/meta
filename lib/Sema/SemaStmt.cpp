@@ -2905,9 +2905,8 @@ StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
   llvm_unreachable("unimplemented");
 }
 
-// Check tat the 
 static bool
-CheckLoopExapansionStack(Sema &SemaRef, Stmt *S) {
+CheckLoopExpansionStack(Sema &SemaRef, Stmt *S) {
   if (SemaRef.LoopExpansionStack.empty())
     return false;
   Sema::LoopExpansionContext& Ctx = SemaRef.LoopExpansionStack.back();
@@ -2916,7 +2915,7 @@ CheckLoopExapansionStack(Sema &SemaRef, Stmt *S) {
 
 /// Pop the current loop instantiation.
 StmtResult Sema::ActOnCXXExpansionStmtError(Stmt *S) {
-  assert(CheckLoopExapansionStack(*this, S));
+  assert(CheckLoopExpansionStack(*this, S));
   PopLoopExpansion();
   return StmtError();
 }

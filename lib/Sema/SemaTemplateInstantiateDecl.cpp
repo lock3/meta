@@ -4964,6 +4964,22 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
     return cast<LabelDecl>(Inst);
   }
 
+  // For certain instantiations (e.g., for loop instantiations, and code
+  // injection), we could have local instantiations that are not obviously
+  // local. For example, if we have this in a non-dependent context:
+  //
+  //    for... (auto x : tup) 
+  //      (void)x;
+  //
+  // Then the resolution of x in (void)x would not satisfy the criteria
+  // for local lookup above: it's local, but not in a dependent context.
+  if (CurrentInstantiationScope) {
+    if (auto Found = CurrentInstantiationScope->lookupInstantiationOf(D)) {
+      if (Decl *FD = Found->dyn_cast<Decl *>())
+        return cast<NamedDecl>(FD);
+    }
+  }
+
   // For variable template specializations, update those that are still
   // type-dependent.
   if (VarTemplateSpecializationDecl *VarSpec =

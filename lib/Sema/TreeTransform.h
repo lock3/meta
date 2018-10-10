@@ -7710,6 +7710,7 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
   }
 
   StmtResult Body = getDerived().TransformStmt(S->getBody());
+  
   if (Body.isInvalid())
     return StmtError();
 

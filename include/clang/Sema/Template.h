@@ -378,6 +378,12 @@ class VarDecl;
     llvm::PointerUnion<Decl *, DeclArgumentPack *> *
     findInstantiationOf(const Decl *D);
 
+    /// Like above, but returns a nullptr if there is no local
+    /// declaration.
+    llvm::PointerUnion<Decl *, DeclArgumentPack *> *
+    lookupInstantiationOf(const Decl *D);
+
+
     void InstantiatedLocal(const Decl *D, Decl *Inst);
     void InstantiatedLocalPackArg(const Decl *D, ParmVarDecl *Inst);
     void MakeInstantiatedLocalArgPack(const Decl *D);

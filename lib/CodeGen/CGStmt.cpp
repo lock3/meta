@@ -1025,6 +1025,7 @@ CodeGenFunction::EmitCXXTupleExpansionStmt(const CXXTupleExpansionStmt &S,
 
   ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
   for (std::size_t I = 0; I < S.getSize(); ++I) {
+    
     LexicalScope BodyScope(*this, S.getSourceRange());
     BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
     BreakContinueStack.push_back(BC);
