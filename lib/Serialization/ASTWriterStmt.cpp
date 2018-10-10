@@ -1254,6 +1254,12 @@ void ASTStmtWriter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
   Code = serialization::STMT_CXX_TUPLE_EXPANSION;
 }
 
+void ASTStmtWriter::VisitCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_CONSTEXPR_EXPANSION;
+}
+
 void ASTStmtWriter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.

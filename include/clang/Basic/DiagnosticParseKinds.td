@@ -534,6 +534,9 @@ def ext_constexpr_if : ExtWarn<
 def warn_cxx14_compat_constexpr_if : Warning<
   "constexpr if is incompatible with C++ standards before C++17">,
   DefaultIgnore, InGroup<CXXPre17Compat>;
+// TODO: this should be in a meta group.
+def ext_expansion_stmt : ExtWarn<
+  "Expansion statements are a Reflection extension">, InGroup<CXX17>;
 def ext_init_statement : ExtWarn<
   "'%select{if|switch}0' initialization statements are a C++17 extension">,
   InGroup<CXX17>;

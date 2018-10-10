@@ -346,6 +346,10 @@ void StmtProfiler::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *S) {
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitCXXConstexprExpansionStmt(const CXXConstexprExpansionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
   VisitStmt(S);
 }

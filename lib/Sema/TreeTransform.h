@@ -2073,7 +2073,7 @@ public:
                                           Sema::BFRK_Rebuild);
   }
 
-  /// \brief Build a new C++ tuple-based for expansion statement.
+  /// Build a new C++ tuple-based for expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
@@ -2087,7 +2087,19 @@ public:
                                                 Sema::BFRK_Rebuild);
   }
 
-  /// \brief Build a new C++ tuple-based pack expansion statement.
+  /// Build a new C++ tuple-based for expansion statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  StmtResult RebuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
+                                          SourceLocation ConstexprLoc,
+                                          SourceLocation ColonLoc,
+                                          Stmt *RangeVar, Stmt *LoopVar,
+                                          SourceLocation RParenLoc) {
+    llvm_unreachable("unimplemented");
+  }
+
+  /// Build a new C++ tuple-based pack expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
@@ -7729,6 +7741,12 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
 
   CXXTupleExpansionStmt *TES = cast<CXXTupleExpansionStmt>(NewStmt.get());
   return getSema().FinishCXXTupleExpansionStmt(TES, Body.get());
+}
+
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S) {
+  llvm_unreachable("unimplemented");
 }
 
 template <typename Derived>

@@ -244,6 +244,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
 
   case Stmt::CXXPackExpansionStmtClass:
   case Stmt::CXXTupleExpansionStmtClass:
+  case Stmt::CXXConstexprExpansionStmtClass:
     // FIXME: These should be exposed.
     K = CXCursor_UnexposedStmt;
     break;

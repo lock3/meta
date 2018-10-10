@@ -374,6 +374,20 @@ void StmtPrinter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *Node) {
     OS << "\n";
 }
 
+void StmtPrinter::VisitCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeInit());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
 void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
   Indent() << "for... (";
   PrintingPolicy SubPolicy(Policy);

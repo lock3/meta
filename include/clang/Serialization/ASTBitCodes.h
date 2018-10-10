@@ -1818,6 +1818,9 @@ namespace serialization {
 
       /// A CXXTupleExpansion record.
       STMT_CXX_TUPLE_EXPANSION,
+
+      /// A CXXConstexprExpansion record.
+      STMT_CXX_CONSTEXPR_EXPANSION,
       
       /// A CXXPackExpansion record.
       STMT_CXX_PACK_EXPANSION,

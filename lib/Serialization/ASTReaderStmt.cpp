@@ -1300,6 +1300,11 @@ void ASTStmtReader::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
   // FIXME: Implement me.
 }
 
+void ASTStmtReader::VisitCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
 void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
@@ -3602,6 +3607,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_CXX_TUPLE_EXPANSION:
       S = new (Context) CXXTupleExpansionStmt(Empty);
+      break;
+
+    case STMT_CXX_CONSTEXPR_EXPANSION:
+      S = new (Context) CXXConstexprExpansionStmt(Empty);
       break;
       
     case STMT_CXX_PACK_EXPANSION:

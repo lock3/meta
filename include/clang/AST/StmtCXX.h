@@ -344,7 +344,7 @@ public:
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
 };
 
-/// \brief Represents the expansion of a loop body for each element of a tuple.
+/// Represents the expansion of a loop body for each element of a tuple.
 ///
 /// For example:
 ///
@@ -368,7 +368,7 @@ public:
 /// inner block of the \c for\<\> is expanded for each value \c __N from 0 to
 /// the number of elements determined from the type of \c __tuple.
 class CXXTupleExpansionStmt : public CXXExpansionStmt {
-  /// \brief Abstractly, the size of the expansion. This is needed to construct
+  /// Abstractly, the size of the expansion. This is needed to construct
   /// the initializer for the loop variable.
   TemplateParameterList *Parms;
 
@@ -380,22 +380,80 @@ public:
   CXXTupleExpansionStmt(EmptyShell Empty)
       : CXXExpansionStmt(CXXTupleExpansionStmtClass, Empty) {}
 
-  /// \brief Returns the template parameter list of the declaration.
+  /// Returns the template parameter list of the declaration.
   TemplateParameterList *getTemplateParameters() { return Parms; }
 
-  /// \brief Returns the placeholder value \c __N used in the loop variable
+  /// Returns the placeholder value \c __N used in the loop variable
   /// initializer \c get\<__N\>(__range).
   NonTypeTemplateParmDecl *getPlaceholderParameter();
 
-  /// \brief Returns the statement containing the range declaration.
+  /// Returns the statement containing the range declaration.
   DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
 
-  /// \brief Returns the initializer of the range statement.
+  /// Returns the initializer of the range statement.
   Expr *getRangeInit();
   const Expr *getRangeInit() const;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXTupleExpansionStmtClass;
+  }
+};
+
+/// Represents the expansion of a loop body for each element of
+/// a constexpr range.
+///
+/// A constexpr range is range whose begin and end operations are
+/// constexpr and whose iterator type is a literal type with all
+/// salient iterator operations being constexpr.
+/// For example:
+///
+/// \code
+///   for constexpr (auto x : constexpr_range) cout << x;
+/// \endcode
+///
+/// Internally, the statement is represented in a partially desugared form like
+/// this:
+///
+/// \verbatim
+///   {
+///     auto&& __range = range-init;
+///     for<iter> {
+///       constexpr for-range-declaration = *__iter; 
+///       statement
+///       std::next(__iter);
+///   }
+/// \endverbatim
+class CXXConstexprExpansionStmt : public CXXExpansionStmt {
+
+  /// FIXME: Do constexpr expansions handle __N the same way as tupleexpansions?
+  /// Abstractly, the size of the expansion. This is needed to construct
+  /// the initializer for the loop variable.
+  TemplateParameterList *Parms;
+  
+public:
+  CXXConstexprExpansionStmt(TemplateParameterList *TP, DeclStmt *RangeVar,
+                        DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+                        SourceLocation FL, SourceLocation CEL,
+			SourceLocation CL, SourceLocation RPL);
+  CXXConstexprExpansionStmt(EmptyShell Empty)
+      : CXXExpansionStmt(CXXConstexprExpansionStmtClass, Empty) {}
+
+  /// Returns the template parameter list of the declaration.
+  TemplateParameterList *getTemplateParameters() { return Parms; }
+
+  /// Returns the placeholder value \c __N used in the loop variable
+  /// initializer \c get\<__N\>(__range).
+  NonTypeTemplateParmDecl *getPlaceholderParameter() { return nullptr; }
+
+  /// Returns the statement containing the range declaration.
+  DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
+
+  /// Returns the initializer of the range statement.
+  Expr *getRangeInit() { return nullptr; }
+  const Expr *getRangeInit() const { return nullptr; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConstexprExpansionStmtClass;
   }
 };
 

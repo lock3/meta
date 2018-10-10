@@ -1531,12 +1531,24 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
-  // [Meta]: Check 'for ...' or 'for constexpr.'
+  // [Meta]: Check 'for ...' or 'for constexpr'.
   // TODO: What does 'for... co_await' mean?
   SourceLocation EllipsisLoc;
-  if (getLangOpts().CPlusPlus17 && getLangOpts().Reflection &&
-      (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)))
-    EllipsisLoc = ConsumeToken();
+  bool IsConstexpr = false;
+  if (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)) {
+    if (getLangOpts().CPlusPlus17 && getLangOpts().Reflection &&
+	(Tok.is(tok::ellipsis))) {
+      EllipsisLoc = ConsumeToken();
+    }
+    else if(getLangOpts().CPlusPlus17 && getLangOpts().Reflection &&
+	    (Tok.is(tok::kw_constexpr))) {
+      IsConstexpr = true;
+      EllipsisLoc = ConsumeToken();
+    }
+    else {
+      Diag(Tok, diag::ext_expansion_stmt);
+    }
+  }
 
   SourceLocation CoawaitLoc;
   if (Tok.is(tok::kw_co_await))
