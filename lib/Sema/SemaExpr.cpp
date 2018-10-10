@@ -14274,6 +14274,17 @@ static bool isOdrUseContext(Sema &SemaRef, bool SkipDependentUses = true) {
   if (SkipDependentUses && SemaRef.CurContext->isDependentContext())
     return false;
 
+  // Similarly to above... If we're anywhere inside an expansion loop body for
+  // the current function, then these aren't really expressions until they're
+  // instantiated.
+  if (SkipDependentUses) {
+    if (!SemaRef.LoopExpansionStack.empty()) {
+      Sema::LoopExpansionContext& LEC = SemaRef.LoopExpansionStack.back();
+      if (SemaRef.CurContext == LEC.Fn) 
+        return false;
+    }
+  }
+
   switch (SemaRef.ExprEvalContexts.back().Context) {
     case Sema::ExpressionEvaluationContext::Unevaluated:
     case Sema::ExpressionEvaluationContext::UnevaluatedList:
