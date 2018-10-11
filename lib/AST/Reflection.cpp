@@ -12,35 +12,77 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/Reflection.h"
-#include "clang/AST/DeclCXX.h"
-#include "clang/AST/ASTContext.h"
-using namespace clang;
 
-// We need at least 64 bits of pointer value internally. This is also the
-// "natural" upper limit of easily working with APSInts.
-static_assert(sizeof(std::intptr_t) >= sizeof(std::uint64_t), "");
+namespace clang {
 
-// Anything that can be directly encoded in the pointer value must have at
-// least 8 bits of alignment. We need extra bits to encode the AST kind.
-static_assert(alignof(Decl) >= 8, "");
-static_assert(alignof(Type) >= 8, "");
-static_assert(alignof(Stmt) >= 8, "");
-static_assert(alignof(CXXBaseSpecifier) >= 8, "");
+namespace reflect {
 
-APValue Reflection::getConstantValue(ASTContext& Ctx) const {
-  APValue V;
-  getConstantValue(Ctx, V);
-  return V;
+bool isReflectedDeclaration(APValue &Reflection) {
+  assert(Reflection.isReflection() && "Not a reflection");
+  return Reflection.getReflectionKind() == REK_declaration;
 }
 
-void Reflection::getConstantValue(ASTContext& Ctx, APValue& Value) const {
-  std::intptr_t N = (std::intptr_t)Ptr | Kind;
-  Value = APValue(Ctx.MakeIntValue(N, Ctx.getIntPtrType()));
+bool isReflectedType(APValue &Reflection) {
+  assert(Reflection.isReflection() && "Not a reflection");
+  return Reflection.getReflectionKind() == REK_type;
 }
 
-void Reflection::putConstantValue(const APValue& Value) {
-  assert(Value.isInt() && "Expected an integer value");
-  std::intptr_t N = Value.getInt().getExtValue();
-  Ptr = reinterpret_cast<void*>(N & ~0x03);
-  Kind = static_cast<ReflectionKind>(N & 0x03);
+bool isReflectedStatement(APValue &Reflection) {
+  assert(Reflection.isReflection() && "Not a reflection");
+  return Reflection.getReflectionKind() == REK_statement;
 }
+
+bool isReflectedULE(APValue &Reflection) {
+  if (!isReflectedStatement(Reflection))
+    return false;
+  const Stmt *S = getReflectedStatement(Reflection);
+  return S->getStmtClass() == Stmt::UnresolvedLookupExprClass;
+}
+
+bool isNullReflection(APValue &Reflection) {
+  return Reflection.getReflectionKind() == REK_special
+      && Reflection.getReflectedEntity() == nullptr;
+}
+
+const Decl *getReflectedDeclaration(APValue &Reflection) {
+  assert(isReflectedDeclaration(Reflection) && "Not a declaration");
+  auto ReflEntity = Reflection.getReflectedEntity();
+  return static_cast<const Decl *>(ReflEntity);
+}
+
+const Type *getReflectedType(APValue &Reflection) {
+  assert(isReflectedType(Reflection) && "Not a type");
+  auto ReflEntity = Reflection.getReflectedEntity();
+  return static_cast<const Type *>(ReflEntity);
+}
+
+const Stmt *getReflectedStatement(APValue &Reflection) {
+  assert(isReflectedStatement(Reflection) && "Not a statement");
+  auto ReflEntity = Reflection.getReflectedEntity();
+  return static_cast<const Stmt *>(ReflEntity);
+}
+
+const UnresolvedLookupExpr *getReflectedULE(APValue &Reflection) {
+  assert(isReflectedULE(Reflection) && "Not an unresolved expression");
+  auto ReflEntity = Reflection.getReflectedEntity();
+  return static_cast<const UnresolvedLookupExpr *>(ReflEntity);
+}
+
+const Decl *getAsReflectedDeclaration(APValue &Reflection) {
+  return isReflectedDeclaration(Reflection)
+       ? getReflectedDeclaration(Reflection) : nullptr;
+}
+
+const Type *getAsReflectedType(APValue &Reflection) {
+  return isReflectedType(Reflection)
+       ? getReflectedType(Reflection) : nullptr;
+}
+
+const UnresolvedLookupExpr *getAsReflectedULE(APValue &Reflection) {
+  return isReflectedULE(Reflection)
+       ? getReflectedULE(Reflection) : nullptr;
+}
+
+} // namespace reflect
+
+} // namespace clang
