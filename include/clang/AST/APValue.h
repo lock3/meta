@@ -32,6 +32,35 @@ namespace clang {
   class CXXRecordDecl;
   class QualType;
 
+/// \brief The kind of construct reflected. The corresponding AST objects
+/// for these constructs MUST have 8-bit aligned.
+///
+/// \todo Include
+enum ReflectionKind {
+  /// \brief Used internally to represent empty reflections or values that
+  /// cannot be encoded directly in the address. If the corresponding
+  /// pointer value is null, then the reflection is empty. Otherwise, the
+  /// corresponding value is a key in lookup table (not implemented).
+  REK_special = 0,
+
+  /// \brief A reflection of a named entity, possibly a namespace. Note
+  /// that user-defined types are reflected as declarations, not types.
+  /// Corresponds to an object of type Decl.
+  REK_declaration = 1,
+
+  /// \brief A reflection of a non-user-defined type. Corresponds to
+  /// an object of type Type.
+  REK_type = 2,
+
+  /// \brief A reflection of a statement or expression. Corresponds to
+  /// an object of type Expr.
+  REK_statement = 3,
+
+  /// \brief A base class specifier. Corresponds to an object of type
+  /// CXXBaseSpecifier.
+  REK_base_specifier = 4,
+};
+
 /// APValue - This class implements a discriminated union of [uninitialized]
 /// [APSInt] [APFloat], [Complex APSInt] [Complex APFloat], [Expr + Offset],
 /// [Vector: N * APValue], [Array: N * APValue]
@@ -51,7 +80,8 @@ public:
     Struct,
     Union,
     MemberPointer,
-    AddrLabelDiff
+    AddrLabelDiff,
+    Reflection
   };
 
   class LValueBase {
@@ -158,6 +188,11 @@ private:
     const AddrLabelExpr* RHSExpr;
   };
   struct MemberPointerData;
+  struct ReflectionData {
+    ReflectionKind ReflKind;
+    const void *ReflEntity;
+    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity);
+  };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
@@ -214,6 +249,10 @@ public:
       : Kind(Uninitialized) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity)
+    : Kind(Uninitialized) {
+    MakeReflection(ReflKind, ReflEntity);
+  }
 
   ~APValue() {
     MakeUninit();
@@ -242,6 +281,7 @@ public:
   bool isUnion() const { return Kind == Union; }
   bool isMemberPointer() const { return Kind == MemberPointer; }
   bool isAddrLabelDiff() const { return Kind == AddrLabelDiff; }
+  bool isReflection() const { return Kind == Reflection; }
 
   void dump() const;
   void dump(raw_ostream &OS) const;
@@ -398,6 +438,16 @@ public:
     return ((const AddrLabelDiffData*)(const char*)Data.buffer)->RHSExpr;
   }
 
+  ReflectionKind getReflectionKind() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->ReflKind;
+  }
+
+  const void *getReflectedEntity() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->ReflEntity;
+  }
+
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt *)(char *)Data.buffer = std::move(I);
@@ -498,6 +548,11 @@ private:
     assert(isUninit() && "Bad state change");
     new ((void*)(char*)Data.buffer) AddrLabelDiffData();
     Kind = AddrLabelDiff;
+  }
+  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity) {
+    assert(isUninit() && "Bad state change");
+    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity);
+    Kind = Reflection;
   }
 };
 

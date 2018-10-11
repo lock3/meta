@@ -164,6 +164,10 @@ APValue::UnionData::~UnionData () {
   delete Value;
 }
 
+APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
+                                        const void *ReflEntity) :
+  ReflKind(ReflKind), ReflEntity(ReflEntity) { }
+
 APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
   switch (RHS.getKind()) {
   case Uninitialized:
@@ -225,6 +229,9 @@ APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
     MakeAddrLabelDiff();
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
+  case Reflection:
+    MakeReflection(RHS.getReflectionKind(), RHS.getReflectedEntity());
+    break;
   }
 }
 
@@ -251,6 +258,8 @@ void APValue::DestroyDataAndMakeUninit() {
     ((MemberPointerData*)(char*)Data.buffer)->~MemberPointerData();
   else if (Kind == AddrLabelDiff)
     ((AddrLabelDiffData*)(char*)Data.buffer)->~AddrLabelDiffData();
+  else if (Kind == Reflection)
+    ((ReflectionData*)(char*)Data.buffer)->~ReflectionData();
   Kind = Uninitialized;
 }
 
@@ -263,6 +272,7 @@ bool APValue::needsCleanup() const {
   case Union:
   case Array:
   case Vector:
+  case Reflection:
     return true;
   case Int:
     return getInt().needsCleanup();
@@ -378,6 +388,9 @@ void APValue::dump(raw_ostream &OS) const {
     return;
   case AddrLabelDiff:
     OS << "AddrLabelDiff: <todo>";
+    return;
+  case Reflection:
+    OS << "Reflection: <todo>";
     return;
   }
   llvm_unreachable("Unknown APValue kind!");
@@ -579,6 +592,9 @@ void APValue::printPretty(raw_ostream &Out, ASTContext &Ctx, QualType Ty) const{
     Out << "&&" << getAddrLabelDiffLHS()->getLabel()->getName();
     Out << " - ";
     Out << "&&" << getAddrLabelDiffRHS()->getLabel()->getName();
+    return;
+  case APValue::Reflection:
+    // FIXME: This needs implemented
     return;
   }
   llvm_unreachable("Unknown APValue kind!");
