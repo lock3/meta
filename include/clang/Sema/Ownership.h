@@ -250,7 +250,7 @@ namespace clang {
   using UnionParsedType = UnionOpaquePtr<QualType>;
 
   // An opaque pointer for threading reflection pointers through the parser.
-  using ParsedReflectionPtr = void*;
+  using ParsedReflectionPtr = const void *;
 
   // We can re-use the low bit of expression, statement, base, and
   // member-initializer pointers for the "invalid" flag of

@@ -4854,40 +4854,32 @@ class CXXReflectExpr : public Expr {
   SourceLocation LParenLoc;
   SourceLocation RParenLoc;
 
-  /// The reflected entity.
-  Reflection Ref;
+  APValue Value;
 
-public:
-  CXXReflectExpr(SourceLocation KWLoc, QualType T, Reflection R, 
-                 SourceLocation LPLoc, SourceLocation RPLoc, 
+  CXXReflectExpr(SourceLocation KWLoc, QualType T, APValue Value,
+                 SourceLocation LPLoc, SourceLocation RPLoc,
                  ExprValueKind VK, bool TD, bool VD, bool ID, bool UPP)
     : Expr(CXXReflectExprClass, T, VK, OK_Ordinary, TD, VD, ID, UPP),
-      KWLoc(KWLoc), LParenLoc(LPLoc), RParenLoc(RPLoc), Ref(R) { }
+      KWLoc(KWLoc), LParenLoc(LPLoc), RParenLoc(RPLoc), Value(Value) { }
 
   CXXReflectExpr(EmptyShell Empty)
     : Expr(CXXReflectExprClass, Empty) {}
 
-  /// \brief The reflected entity.
-  Reflection getReflectedEntity() const { return Ref; }
+public:
+  static CXXReflectExpr *Create(ASTContext &C, SourceLocation KWLoc, QualType T,
+                                APValue Value,
+                                SourceLocation LPLoc, SourceLocation RPLoc,
+                                ExprValueKind VK, bool TD, bool VD, bool ID,
+                                bool UPP);
+  static CXXReflectExpr *Create(ASTContext &C, SourceLocation KWLoc, QualType T,
+                                ReflectionKind Kind,
+                                const void *ReflectedEntity,
+                                SourceLocation LPLoc, SourceLocation RPLoc,
+                                ExprValueKind VK, bool TD, bool VD, bool ID,
+                                bool UPP);
 
-  /// \brief True if the expression reflects a declaration.
-  bool isReflectedDeclaration() const { return Ref.isDeclaration(); }
-
-  /// \brief True if the expression reflects a type.
-  bool isReflectedType() const { return Ref.isDeclaration(); }
-
-  /// \brief True if the expression reflects a dependent identifier.
-  bool isReflectedDependentId() const { return Ref.isStatement(); }
-
-  /// \brief The reflected declaration.
-  const Decl *getReflectedDeclaration() const { return Ref.getAsDeclaration(); }
-
-  /// \brief The reflected type.
-  const Type *getReflectedType() const { return Ref.getAsType(); }
-
-  /// \brief The reflected dependent identifier.
-  const UnresolvedLookupExpr *getReflectedDependentId() const { return
-      Ref.getAsUnresolved(); }
+  /// \brief The reflection value.
+  APValue getValue() const { return Value; }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {

@@ -71,6 +71,7 @@ protected:
   unsigned char FloatWidth, FloatAlign;
   unsigned char DoubleWidth, DoubleAlign;
   unsigned char LongDoubleWidth, LongDoubleAlign, Float128Align;
+  unsigned char MetaInfoWidth, MetaInfoAlign;
   unsigned char LargeArrayMinWidth, LargeArrayAlign;
   unsigned char LongWidth, LongAlign;
   unsigned char LongLongWidth, LongLongAlign;
@@ -583,6 +584,10 @@ public:
   const llvm::fltSemantics &getFloat128Format() const {
     return *Float128Format;
   }
+
+  /// getMetaInfoWidth/Align - Returns the size/align of meta::info
+  unsigned getMetaInfoWidth() const { return MetaInfoWidth; }
+  unsigned getMetaInfoAlign() const { return MetaInfoAlign; }
 
   /// Return true if the 'long double' type should be mangled like
   /// __float128.

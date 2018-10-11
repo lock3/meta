@@ -1884,6 +1884,10 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
       Width = Target->getPointerWidth(0); // C++ 3.9.1p11: sizeof(nullptr_t)
       Align = Target->getPointerAlign(0); //   == sizeof(void*)
       break;
+    case BuiltinType::MetaInfo:
+      Width = Target->getMetaInfoWidth();
+      Align = Target->getMetaInfoAlign();
+      break;
     case BuiltinType::ObjCId:
     case BuiltinType::ObjCClass:
     case BuiltinType::ObjCSel:

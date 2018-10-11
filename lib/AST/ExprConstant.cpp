@@ -51,6 +51,7 @@
 #define DEBUG_TYPE "exprconstant"
 
 using namespace clang;
+using namespace clang::reflect;
 using llvm::APSInt;
 using llvm::APFloat;
 
@@ -2029,6 +2030,9 @@ static bool HandleConversionToBool(const APValue &Val, bool &Result) {
     return EvalPointerValueAsBool(Val, Result);
   case APValue::MemberPointer:
     Result = Val.getMemberPointerDecl();
+    return true;
+  case APValue::Reflection:
+    Result = Val.getReflectedEntity();
     return true;
   case APValue::Vector:
   case APValue::Array:
@@ -5107,8 +5111,7 @@ public:
   }
 
   bool VisitCXXReflectExpr(const CXXReflectExpr *E) {
-    Reflection Ref = E->getReflectedEntity();
-    return DerivedSuccess(Ref.getConstantValue(Info.Ctx), E);
+    return DerivedSuccess(E->getValue(), E);
   }
 
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
@@ -5161,11 +5164,11 @@ enum ConstructKind {
   CK_ArrayType,
 };
 
-static std::size_t ReflectIndex(ASTContext &Ctx, Reflection R) {
-  if (R.isNull())
+static std::size_t ReflectIndex(ASTContext &Ctx, APValue Reflection) {
+  if (isNullReflection(Reflection))
     return CK_Null;
 
-  if (const Decl *D = R.getAsDeclaration()) {
+  if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
     switch (D->getKind()) {
     case Decl::TranslationUnit:
       return CK_TranslationUnit;
@@ -5202,7 +5205,7 @@ static std::size_t ReflectIndex(ASTContext &Ctx, Reflection R) {
 #endif
       llvm_unreachable("reflection of unhandled declaration kind");
     }
-  } else if (const Type *T = R.getAsType()) {
+  } else if (const Type *T = getAsReflectedType(Reflection)) {
     switch (T->getTypeClass()) {
     case Type::Builtin:
       if (T->isVoidType())
@@ -5238,15 +5241,13 @@ static std::size_t ReflectIndex(ASTContext &Ctx, Reflection R) {
 }
 
 /// Build a reflection of the declaration in Result.
-static void MakeReflection(ASTContext &Ctx, const Decl *D, APValue &Result) {
-  Reflection R = D;
-  R.getConstantValue(Ctx, Result);
+static void MakeReflection(const Decl *D, APValue &Result) {
+  Result = APValue(REK_declaration, D);
 }
 
 /// Build a reflection of the declaration in Result.
-static void MakeReflection(ASTContext &Ctx, const Type *T, APValue &Result) {
-  Reflection R = const_cast<Type*>(T);
-  R.getConstantValue(Ctx, Result);
+static void MakeReflection(const Type *T, APValue &Result) {
+  Result = APValue(REK_type, T);
 }
 
 enum LinkageTrait {
@@ -5454,12 +5455,12 @@ static unsigned GetTraits(EvalInfo &Info, const Decl *D) {
   llvm_unreachable("Should not be here");
 }
 
-static bool MakeTraits(EvalInfo &Info, Reflection &R, 
+static bool MakeTraits(EvalInfo &Info, APValue &Reflection,
                        const CXXReflectionTraitExpr *E, APSInt &Result) {
-  if (const Decl *D = R.getAsDeclaration()) {
+  if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
     Result = Info.Ctx.MakeIntValue(GetTraits(Info, D), Info.Ctx.UnsignedIntTy);
     return true;
-  } else if (const Type *T = R.getAsType()) {
+  } else if (const Type *T = getAsReflectedType(Reflection)) {
     // T->dump();
     // Result = APValue(Info.Ctx.MakeIntValue(0, Info.Ctx.UnsignedIntTy));
     // return true;
@@ -5476,11 +5477,6 @@ static bool isStringLiteralType(QualType T) {
   else
     return false;
   return T->isCharType() && T.isConstQualified();
-}
-
-template<typename T>
-static T* MaybeGetAsDecl(Reflection R) {
-  return dyn_cast_or_null<T>(const_cast<Decl*>(R.getAsDeclaration()));
 }
 
 /// Returns true if E is actually a meta object.
@@ -5526,13 +5522,12 @@ static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E,
   }  else if (const EnumType *EnumTy = dyn_cast<EnumType>(T.getTypePtr())) {
     EnumDecl *Enum = EnumTy->getDecl();
     if (IsMetaObject(Info.Ctx, Enum)) {
-      Reflection R;
-      R.putConstantValue(Args[0]);
-      if (R.isNull()) {
+      APValue Reflection = Args[0];
+      if (isNullReflection(Reflection)) {
         llvm::errs() << "<null>\n";
-      } else if (const Decl *D = R.getAsDeclaration()) {
+      } else if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
         D->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
-      } else if (const Type* T = R.getAsType()) {
+      } else if (const Type* T = getAsReflectedType(Reflection)) {
         QualType QT(T, 0);
         QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
       } else {
@@ -5596,7 +5591,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     return DerivedSuccess(Zero, E);
   }
 
-  Reflection R = Args[0];
+  APValue Reflection = Args[0];
 
   // Selectively reject null reflections here.
   switch (E->getTrait()) {
@@ -5607,26 +5602,26 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     // Disallow them for all others.
     //
     // TODO: Diagnose which property was invalidly reflected.
-    if (R.isNull()) {
+    if (isNullReflection(Reflection)) {
       CCEDiag(E->getArg(0), diag::note_empty_reflection) << 0;
-      return false;  
+      return false;
     }
   }
 
   switch (E->getTrait()) {
     case URT_ReflectIndex: {
-      unsigned CK = ReflectIndex(Info.Ctx, R);
+      unsigned CK = ReflectIndex(Info.Ctx, Reflection);
       llvm::APSInt Index = Info.Ctx.MakeIntValue(CK, E->getType());
       return DerivedSuccess(APValue(Index), E);
     }
-    
-    case URT_ReflectContext: 
+
+    case URT_ReflectContext:
     case URT_ReflectHome: {
-      if (const Decl *D = R.getAsDeclaration()) {
+      if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
         bool Which = (E->getTrait() == URT_ReflectContext);
         Decl *Owner = GetSemanticOrLexicalOwner(D, Which);
         APValue Result;
-        MakeReflection(Info.Ctx, Owner, Result);
+        MakeReflection(Owner, Result);
         return DerivedSuccess(Result, E);
       }
       CCEDiag(E->getArg(0), diag::note_reflection_not_declared) << 0;
@@ -5635,17 +5630,17 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
 
     case URT_ReflectBegin:
     case URT_ReflectEnd: {
-      if (const Decl *D = R.getAsDeclaration()) {
+      if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
         if (const DeclContext *DC = dyn_cast<DeclContext>(D)) {
-          Decl *Iter;	  
+          Decl *Iter;
           if (E->getTrait() == URT_ReflectBegin) {
             auto I = DC->decls_begin();
             Iter = (I != DC->decls_end()) ? *I : nullptr;
           } else {
             Iter = nullptr;
-          }	  
+          }
           APValue Result;
-          MakeReflection(Info.Ctx, Iter, Result);
+          MakeReflection(Iter, Result);
           return DerivedSuccess(Result, E);
         }
         CCEDiag(E->getArg(0), diag::note_reflection_not_nested) << 0;
@@ -5656,10 +5651,10 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     }
 
     case URT_ReflectNext: {
-      if (const Decl *D = R.getAsDeclaration()) {
+      if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
         const Decl *Next = D->getNextDeclInContext();
         APValue Result;
-        MakeReflection(Info.Ctx, Next, Result);
+        MakeReflection(Next, Result);
         return DerivedSuccess(Result, E);
       }
       CCEDiag(E->getArg(0), diag::note_reflection_not_declared) << 0;
@@ -5668,34 +5663,38 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     }
 
     case URT_ReflectName: {
-      if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(R.getAsDeclaration())) {
+      auto &&ReflDecl = getAsReflectedDeclaration(Reflection);
+      if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(ReflDecl)) {
         if (IdentifierInfo *II = ND->getIdentifier()) {
-          StringLiteral *Str = MakeString(Info.Ctx, II->getName(), E->getBeginLoc());
+          StringLiteral *Str = MakeString(Info.Ctx, II->getName(),
+                                          E->getBeginLoc());
           APValue Val;
           if (!Evaluate(Val, Info, Str))
             return false;
           return DerivedSuccess(Val, E);
         }
-      } else if (const Type *T = R.getAsType()) {
+      } else if (const Type *T = getAsReflectedType(Reflection)) {
         QualType CanTy = Info.Ctx.getCanonicalType(QualType(T, 0));
-        StringLiteral *Str = MakeString(Info.Ctx, CanTy.getAsString(), E->getBeginLoc());
-          APValue Val;
-          if (!Evaluate(Val, Info, Str))
-            return false;
-          return DerivedSuccess(Val, E);
+        StringLiteral *Str = MakeString(Info.Ctx, CanTy.getAsString(),
+                                        E->getBeginLoc());
+        APValue Val;
+        if (!Evaluate(Val, Info, Str))
+          return false;
+        return DerivedSuccess(Val, E);
       }
       CCEDiag(E->getArg(0), diag::note_reflection_not_named) << 0;
       return false;
     }
 
     case URT_ReflectType: {
-      if (const ValueDecl *VD = dyn_cast_or_null<ValueDecl>(R.getAsDeclaration())) {
+      auto &&ReflDecl = getAsReflectedDeclaration(Reflection);
+      if (const ValueDecl *VD = dyn_cast_or_null<ValueDecl>(ReflDecl)) {
         QualType CanTy = Info.Ctx.getCanonicalType(VD->getType());
         APValue Result;
         if (TagDecl *TD = CanTy->getAsTagDecl())
-          MakeReflection(Info.Ctx, TD, Result);
+          MakeReflection(TD, Result);
         else
-          MakeReflection(Info.Ctx, CanTy.getTypePtr(), Result);
+          MakeReflection(CanTy.getTypePtr(), Result);
         return DerivedSuccess(Result, E);
       }
       CCEDiag(E->getArg(0), diag::note_reflection_not_typed) << 0;
@@ -5704,7 +5703,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
 
     case URT_ReflectTraits: {
       APSInt Result;
-      if (!MakeTraits(Info, R, E, Result))
+      if (!MakeTraits(Info, Reflection, E, Result))
         return false;
       return DerivedSuccess(APValue(Result), E);
     }
@@ -5715,7 +5714,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
 
   return Error(E);
 }
-  
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -7912,7 +7911,7 @@ public:
   }
 
   bool Success(const APValue &V, const Expr *E) {
-    if (V.isLValue() || V.isAddrLabelDiff()) {
+    if (V.isLValue() || V.isAddrLabelDiff() || V.isReflection()) {
       Result = V;
       return true;
     }

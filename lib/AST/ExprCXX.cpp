@@ -1473,3 +1473,26 @@ CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T,
 
   std::copy(Args.begin(), Args.end(), this->Args);
 }
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, SourceLocation KWLoc,
+                                       QualType T, APValue Value,
+                                       SourceLocation LPLoc,
+                                       SourceLocation RPLoc,
+                                       ExprValueKind VK, bool TD, bool VD,
+                                       bool ID, bool UPP) {
+  assert(Value.isReflection() && "Value is not a reflection");
+  // TODO Memory allocation may be wrong here
+  return new (C) CXXReflectExpr(KWLoc, T, Value, LPLoc,
+                                RPLoc, VK, TD, VD, ID, UPP);
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, SourceLocation KWLoc,
+                                       QualType T, ReflectionKind Kind,
+                                       const void *ReflectedEntity,
+                                       SourceLocation LPLoc,
+                                       SourceLocation RPLoc,
+                                       ExprValueKind VK, bool TD, bool VD,
+                                       bool ID, bool UPP) {
+  APValue Value(Kind, ReflectedEntity);
+  return Create(C, KWLoc, T, Value, LPLoc, RPLoc, VK, TD, VD, ID, UPP);
+}

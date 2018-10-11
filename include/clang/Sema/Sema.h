@@ -8583,11 +8583,6 @@ public:
 
   ExprResult BuildConstantExpression(Expr *E);
 
-  // Namespace and types
-  NamespaceDecl *getExperimentalNamespace(SourceLocation Loc);
-  NamespaceDecl *getExperimentalMetaNamespace(SourceLocation Loc);
-  QualType getMetaInfoType(SourceLocation Loc);
-
   bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc, 
                         IdentifierInfo *Id, unsigned &Kind, 
                         ParsedReflectionPtr &Entity);

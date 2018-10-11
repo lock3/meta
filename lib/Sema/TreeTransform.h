@@ -1427,9 +1427,9 @@ public:
   }
 
   /// \brief Rebuild a reflection expression from a source expression.
-  ExprResult RebuildCXXReflectExpr(SourceLocation KWLoc, unsigned Kind, 
-                                   void* Entity, SourceLocation RPLoc) {
-    return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity, 
+  ExprResult RebuildCXXReflectExpr(SourceLocation KWLoc, unsigned Kind,
+                                   const void* Entity, SourceLocation RPLoc) {
+    return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity,
                                                SourceLocation(), RPLoc);
   }
 
@@ -7220,23 +7220,27 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
 {
+  using namespace clang::reflect;
+
   // llvm::outs() << "Transform\n";
-  Reflection R;
-  if (const Decl *D = E->getReflectedDeclaration()) {
+  APValue OldReflection = E->getValue();
+  ReflectionKind ReflKind;
+  const void *ReflEntity;
+  if (const Decl *D = getAsReflectedDeclaration(OldReflection)) {
+    ReflKind = REK_declaration;
+
     // We can't just call TransformDecl. That's not guaranteed to perform
     // substitution. We need to build an expression or type and substitute
     // through that.
     if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
       llvm::outs() << "Value declaration\n";
-      DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(const_cast<ValueDecl*>(VD), 
-                                                           false, VD->getType(),
-                                                           VK_RValue, 
-                                                           E->getExprLoc());
+      DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(
+          const_cast<ValueDecl*>(VD), false, VD->getType(),
+          VK_RValue, E->getExprLoc());
       ExprResult NewRef = TransformExpr(Ref);
       if (NewRef.isInvalid())
         return ExprError();
-      ValueDecl *NewDecl = cast<DeclRefExpr>(NewRef.get())->getDecl();
-      R = Reflection(NewDecl);
+      ReflEntity = cast<DeclRefExpr>(NewRef.get())->getDecl();
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       llvm::outs() << "Type Declaration\n";
       QualType T = SemaRef.Context.getTypeDeclType(TD);
@@ -7245,22 +7249,23 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
         return ExprError();
       // FIXME: There are other types that can be declarations.
       if (const TagDecl *Tag = NewType->getAsTagDecl())
-        R = Reflection(Tag);
-      else 
-        R = Reflection(NewType.getTypePtr());
+        ReflEntity = Tag;
+      else
+        ReflEntity = NewType.getTypePtr();
     } else {
       llvm::outs() << "Something else\n";
       // This is something like a namespace. Just use TransformDecl even
       // though it's unlikely to change.
-      Decl *NewDecl = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
-      R = Reflection(NewDecl);
+      ReflEntity = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
     }
-  } else if (const Type *T = E->getReflectedType()) {
+  } else if (const Type *T = getAsReflectedType(OldReflection)) {
     llvm::outs() << "Type\n";
     QualType NewType = TransformType(QualType(T, 0));
-    R = Reflection(NewType.getTypePtr());
-  } else if (UnresolvedLookupExpr *ULE =
-	     const_cast<UnresolvedLookupExpr*>(E->getReflectedDependentId())) {
+    ReflKind = REK_type;
+    ReflEntity = NewType.getTypePtr();
+  } else if (UnresolvedLookupExpr *ULE
+             = const_cast<UnresolvedLookupExpr *>(
+                 getAsReflectedULE(OldReflection))) {
     LookupResult Res(SemaRef, ULE->getName(), ULE->getNameLoc(),
 		     Sema::LookupOrdinaryName);
 
@@ -7281,20 +7286,24 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     D->setType(NewNNS.getTypeLoc().getType());
 
     getDerived().TransformDecl(D->getLocation(), D);
-      
+
     // if(Stmt* Body = D->getBody()) {
       // getDerived().TransformDefinition(D->getLocation(), D);
       // getDerived().TransformStmt(Body);
-    // }  
-    
-    R = Reflection(D);
+    // }
+
+    ReflKind = REK_declaration;
+    ReflEntity = D;
+  } else {
+    ReflKind = REK_special;
+    ReflEntity = nullptr;
   }
 
   llvm::outs() << "End transformation\n";
-  
+
   return RebuildCXXReflectExpr(E->getBeginLoc(),
-                               R.getKind(), 
-                               const_cast<void*>(R.getOpaquePointer()),
+                               ReflKind,
+                               ReflEntity,
                                E->getEndLoc());
 }
 

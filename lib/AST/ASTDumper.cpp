@@ -29,6 +29,7 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
 using namespace clang::comments;
+using namespace clang::reflect;
 
 //===----------------------------------------------------------------------===//
 // ASTDumper Visitor
@@ -2481,9 +2482,11 @@ static const char* GetReflectionTraitName(const CXXReflectionTraitExpr *E) {
 
 void ASTDumper::VisitCXXReflectExpr(const CXXReflectExpr *Node) {
   VisitExpr(Node);
-  if (const Decl *D = Node->getReflectedDeclaration())
+
+  APValue Reflection = Node->getValue();
+  if (const Decl *D = getAsReflectedDeclaration(Reflection))
     dumpDecl(D);
-  else if (const Type *T = Node->getReflectedType())
+  else if (const Type *T = getAsReflectedType(Reflection))
     dumpType(QualType(T, 0));
 }
 

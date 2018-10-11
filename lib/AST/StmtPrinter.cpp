@@ -57,6 +57,7 @@
 #include <string>
 
 using namespace clang;
+using namespace clang::reflect;
 
 //===----------------------------------------------------------------------===//
 // StmtPrinter Visitor
@@ -2650,12 +2651,13 @@ void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
 
 void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
   OS << "reflexpr(";
-  if (const Decl *D = S->getReflectedDeclaration()) {
+  APValue Reflection = S->getValue();
+  if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
     if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
       OS << ND->getDeclName();
     else
       OS << "<non-printable>"; // FIXME: ???
-  } else if (const Type *T = S->getReflectedType()) {
+  } else if (const Type *T = getAsReflectedType(Reflection)) {
     QualType(T, 0).print(OS, Policy);
   } else {
     llvm_unreachable("invalid reflection");

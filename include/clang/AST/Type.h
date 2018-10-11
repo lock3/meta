@@ -6566,8 +6566,8 @@ inline bool Type::isUnsignedFixedPointType() const {
 
 inline bool Type::isScalarType() const {
   if (const auto *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return BT->getKind() > BuiltinType::Void &&
-           BT->getKind() <= BuiltinType::NullPtr;
+    return BT->getKind() > BuiltinType::Void
+        && BT->getKind() <= BuiltinType::MetaInfo;
   if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType))
     // Enums are scalar types, but only if they are defined.  Incomplete enums
     // are not treated as scalar types.
@@ -6581,8 +6581,9 @@ inline bool Type::isScalarType() const {
 
 inline bool Type::isIntegralOrEnumerationType() const {
   if (const auto *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return BT->getKind() >= BuiltinType::Bool &&
-           BT->getKind() <= BuiltinType::Int128;
+    return (BT->getKind() >= BuiltinType::Bool
+            && BT->getKind() <= BuiltinType::Int128)
+        || BT->getKind() == BuiltinType::MetaInfo;
 
   // Check for a complete enum type; incomplete enum types are not properly an
   // enumeration type in the sense required here.

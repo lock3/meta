@@ -29,7 +29,7 @@ constexpr! void require(bool b) {
 // readily convert to bool. Most likely, this should be a 
 // special type that prevents all forms of construction 
 // but value construction.
-enum info : std::intptr_t { };
+using info = decltype(reflexpr(void));
 
 // TODO: Keep this in sync and in order with the 
 // corresponding enum in ExprConstant.cpp.

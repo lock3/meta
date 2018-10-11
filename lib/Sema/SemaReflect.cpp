@@ -24,78 +24,8 @@
 #include "clang/Sema/SemaInternal.h"
 #include "TypeLocBuilder.h"
 using namespace clang;
+using namespace clang::reflect;
 using namespace sema;
-
-/// \brief Returns the std::experimental namespace if a suitable
-/// header has been included. If not, a diagnostic is emitted,
-/// and nullptr is returned.
-NamespaceDecl *Sema::getExperimentalNamespace(SourceLocation Loc) {
-  if (ExperimentalNamespace)
-    return ExperimentalNamespace;
-
-  IdentifierInfo *StdII = &PP.getIdentifierTable().get("std");
-  LookupResult StdR(*this, StdII, Loc, LookupNamespaceName);
-  LookupQualifiedName(StdR, Context.getTranslationUnitDecl());
-  if(!StdR.isSingleResult()) {
-    Diag(Loc, diag::err_need_header_before_reflexpr);
-    return nullptr;
-  }
-
-  NamespaceDecl *Std = StdR.getAsSingle<NamespaceDecl>();
-  
-  IdentifierInfo *ExperimentalII = &PP.getIdentifierTable().get("experimental");
-  LookupResult R(*this, ExperimentalII, Loc, LookupNamespaceName);
-  LookupQualifiedName(R, Std);
-  if (!R.isSingleResult()) {
-    Diag(Loc, diag::err_need_header_before_reflexpr);
-    return nullptr;
-  }
-  NamespaceDecl *Ns = R.getAsSingle<NamespaceDecl>();
-  assert(Ns && "experimental is not a namespace");
-  ExperimentalNamespace = Ns;
-  return ExperimentalNamespace;
-}
-
-/// \brief Same as RequireExperimentalNamespace, but requires experimental::meta.
-NamespaceDecl *Sema::getExperimentalMetaNamespace(SourceLocation Loc) {
-  if (ExperimentalMetaNamespace)
-    return ExperimentalMetaNamespace;
-
-  NamespaceDecl *Experimental = getExperimentalNamespace(Loc);
-  if (!Experimental)
-    return nullptr;
-
-  // Get the cppx::meta namespace.
-  IdentifierInfo *MetaII = &PP.getIdentifierTable().get("meta");
-  LookupResult R(*this, MetaII, Loc, LookupNamespaceName);
-  LookupQualifiedName(R, Experimental);
-  if (!R.isSingleResult()) {
-    Diag(Loc, diag::err_need_header_before_reflexpr);
-    return nullptr;
-  }
-  NamespaceDecl *Ns = R.getAsSingle<NamespaceDecl>();
-  assert(Ns && "experimental::meta is not a namespace");
-  ExperimentalMetaNamespace = Ns;
-  return ExperimentalMetaNamespace;
-}
-
-static QualType LookupMetaDecl(Sema &SemaRef, const char* Name, 
-                               SourceLocation Loc) {
-  NamespaceDecl *Meta = SemaRef.getExperimentalMetaNamespace(Loc);
-  if (!Meta)
-    return QualType();
-
-  // Lookup the meta_info class.
-  IdentifierInfo *II = &SemaRef.PP.getIdentifierTable().get(Name);
-  LookupResult R(SemaRef, II, SourceLocation(), Sema::LookupAnyName);
-  SemaRef.LookupQualifiedName(R, Meta);
-  TagDecl *TD = R.getAsSingle<TagDecl>();
-  if (!TD) {
-    SemaRef.Diag(Loc, diag::err_need_header_before_reflexpr);
-    return QualType();
-  }
-  return SemaRef.Context.getTagDeclType(TD);
-}
 
 /// Lookup the declaration named by SS and Id. Populates the the kind
 /// and entity with the encoded reflection of the named entity.
@@ -188,25 +118,25 @@ bool Sema::ActOnReflectedType(Declarator &D, unsigned &Kind,
 
 /// Returns a constant expression that encodes the value of the reflection.
 /// The type of the reflection is meta::reflection, an enum class.
-ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc, 
-                                           unsigned Kind, 
+ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
+                                           unsigned Kind,
                                            ParsedReflectionPtr Entity,
-                                           SourceLocation LPLoc, 
+                                           SourceLocation LPLoc,
                                            SourceLocation RPLoc) {
   ReflectionKind REK = (ReflectionKind)Kind;
-  Reflection R = Reflection::FromKindAndPtr(REK, Entity);
+  APValue Reflection(REK, Entity);
 
-  bool IsValueDependent = false;  
-  if (const Type* T = R.getAsType()) {
+  bool IsValueDependent = false;
+  if (const Type* T = getAsReflectedType(Reflection)) {
     // A type reflection is dependent if reflected T is dependent.
     IsValueDependent = T->isDependentType();
-  } else if (const Decl *D = R.getAsDeclaration()) {
+  } else if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
     if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
-      // A declaration reflection is value dependent if an id-expression 
+      // A declaration reflection is value dependent if an id-expression
       // referring to that declaration is type or value dependent. Reflections
       // of non-value declarations (e.g., namespaces) are never dependent.
       // Build a fake id-expression in order to determine dependence.
-      Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false, 
+      Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false,
                                           VD->getType(), VK_RValue, KWLoc);
       IsValueDependent = E->isTypeDependent() || E->isValueDependent();
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
@@ -215,20 +145,16 @@ ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
       const Type* T = TD->getTypeForDecl();
       IsValueDependent = T->isDependentType();
     }
-  } else if (const UnresolvedLookupExpr* ULE = R.getAsUnresolved()) {
+  } else if (const UnresolvedLookupExpr *ULE = getAsReflectedULE(Reflection)) {
     IsValueDependent = true;
   }
 
-  // The type of reflexpr is always meta::info.
-  QualType Ty = LookupMetaDecl(*this, "info", KWLoc);
-  if (Ty.isNull())
-    return ExprError();
-
-  return new (Context) CXXReflectExpr(KWLoc, Ty, R, LPLoc, RPLoc, VK_RValue, 
-                                      /*isTypeDependent=*/false, 
-                                      /*isValueDependent=*/IsValueDependent, 
-                                      /*isInstDependent=*/IsValueDependent, 
-                                      /*containsUnexpandedPacks=*/false);
+  return CXXReflectExpr::Create(Context, KWLoc, Context.MetaInfoTy, Reflection,
+                                LPLoc, RPLoc, VK_RValue,
+                                /*isTypeDependent=*/false,
+                                /*isValueDependent=*/IsValueDependent,
+                                /*isInstDependent=*/IsValueDependent,
+                                /*containsUnexpandedPacks=*/false);
 }
 
 // Convert each operand to an rvalue.
@@ -250,15 +176,13 @@ static void ConvertTraitOperands(Sema &SemaRef, ArrayRef<Expr *> Args,
 static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
   // Get the type of the expression.
   QualType Source = E->getType();
-  if (Source->isReferenceType()) 
-    Source = Source->getPointeeType();  
+  if (Source->isReferenceType())
+    Source = Source->getPointeeType();
   Source = Source.getUnqualifiedType();
   Source = SemaRef.Context.getCanonicalType(Source);
 
-  QualType Expected = LookupMetaDecl(SemaRef, "info", E->getExprLoc());
-
   // FIXME: We should cache meta::info and simply compare against that.
-  if (Source != Expected) {
+  if (Source != SemaRef.Context.MetaInfoTy) {
     SemaRef.Diag(E->getBeginLoc(), diag::err_reflection_trait_wrong_type) 
         << Source;
     return false;
@@ -271,13 +195,6 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
                                          ReflectionTrait Trait,
                                          ArrayRef<Expr *> Args,
                                          SourceLocation RParenLoc) {
-  QualType ObjectTy = LookupMetaDecl(*this, "info", TraitLoc);
-  if (ObjectTy.isNull())
-    return ExprError();
-  QualType KindTy = LookupMetaDecl(*this, "reflection_kind", TraitLoc);
-  if (KindTy.isNull())
-    return ExprError();
-
   // If any arguments are dependent, then the expression is dependent.
   for (std::size_t I = 0; I < Args.size(); ++I) {
     Expr *Arg = Args[0];
@@ -290,7 +207,7 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
   // Build a set of converted arguments.
   SmallVector<Expr *, 2> Operands(Args.size());
   ConvertTraitOperands(*this, Args, Operands);
-  
+
   // Check the type of the first operand. Note: ReflectPrint is polymorphic.
   if (Trait != URT_ReflectPrint) {
     if (!CheckReflectionOperand(*this, Operands[0]))
@@ -301,18 +218,18 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
   QualType ResultTy;
   switch (Trait) {
     case URT_ReflectIndex: // meta::reflection_kind
-      ResultTy = KindTy;
+      ResultTy = Context.IntTy;
       break;
-    
-    case URT_ReflectContext: 
-    case URT_ReflectHome: 
-    case URT_ReflectBegin: 
-    case URT_ReflectEnd: 
-    case URT_ReflectNext: 
-    case URT_ReflectType: // meta::object
-      ResultTy = ObjectTy;
+
+    case URT_ReflectContext:
+    case URT_ReflectHome:
+    case URT_ReflectBegin:
+    case URT_ReflectEnd:
+    case URT_ReflectNext:
+    case URT_ReflectType: // meta::info
+      ResultTy = Context.MetaInfoTy;
       break;
-    
+
     case URT_ReflectName: // const char*
       ResultTy = Context.getPointerType(Context.CharTy.withConst());
       break;
@@ -359,16 +276,15 @@ ExprResult Sema::BuildCXXReflectedValueExpression(SourceLocation Loc,
     return ExprError();
   }
 
-  Reflection R;
-  R.putConstantValue(Result.Val);
-  if (R.isNull() || R.isType()) {
+  APValue Reflection = Result.Val;
+  if (isNullReflection(Reflection) || isReflectedType(Reflection)) {
     // FIXME: This is the wrong error.
-    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);    
+    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);
     return ExprError();
   }
 
   // Build a declaration reference that would refer to the reflected entity.
-  Decl* D = const_cast<Decl*>(R.getDeclaration());
+  Decl* D = const_cast<Decl*>(getReflectedDeclaration(Reflection));
   if (!isa<ValueDecl>(D)) {
     Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);
     return ExprError();
@@ -444,18 +360,17 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
     return QualType();
   }
 
-  Reflection R;
-  R.putConstantValue(Result.Val);
-  if (R.isNull()) {
-    Diag(E->getExprLoc(), diag::err_empty_type_reflection);    
+  APValue Reflection = Result.Val;
+  if (isNullReflection(Reflection)) {
+    Diag(E->getExprLoc(), diag::err_empty_type_reflection);
     return QualType();
   }
 
   // Get the type of the reflected entity.
-  QualType Reflected; 
-  if (const Type* T = R.getAsType()) {
+  QualType Reflected;
+  if (const Type* T = getAsReflectedType(Reflection)) {
     Reflected = QualType(T, 0);
-  } else if (const Decl* D = R.getAsDeclaration()) {
+  } else if (const Decl* D = getAsReflectedDeclaration(Reflection)) {
     if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
       Reflected = Context.getTypeDeclType(TD);
     } else {
