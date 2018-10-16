@@ -6237,6 +6237,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Converted = TemplateArgument(CanonParamType, /*isNullPtr*/true);
       break;
     case APValue::Int:
+    case APValue::Reflection:
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
       break;

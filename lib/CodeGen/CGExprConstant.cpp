@@ -23,6 +23,7 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Builtins.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -1807,6 +1808,9 @@ llvm::Constant *CodeGenModule::EmitConstantValue(const APValue &Value,
   }
   case APValue::Int:
     return llvm::ConstantInt::get(VMContext, Value.getInt());
+  case APValue::Reflection:
+    // FIXME: Could this branch be reached?
+    llvm_unreachable("Reflections should not be codegened.");
   case APValue::ComplexInt: {
     llvm::Constant *Complex[2];
 
@@ -2249,6 +2253,8 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
     return ConstantLValueEmitter(*this, Value, DestType).tryEmit();
   case APValue::Int:
     return llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
+  case APValue::Reflection:
+    return llvm::ConstantInt::get(CGM.getLLVMContext(), llvm::APSInt(128));
   case APValue::ComplexInt: {
     llvm::Constant *Complex[2];
 
