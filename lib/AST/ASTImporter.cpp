@@ -6625,7 +6625,7 @@ Expr *ASTNodeImporter::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
   return UnresolvedLookupExpr::Create(
       Importer.getToContext(), NamingClass,
       Importer.Import(E->getQualifierLoc()), NameInfo, E->requiresADL(),
-      E->isOverloaded(), ToDecls.begin(), ToDecls.end());
+      E->isOverloaded(), E->isReflection(), ToDecls.begin(), ToDecls.end());
 }
 
 Expr *ASTNodeImporter::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *E) {

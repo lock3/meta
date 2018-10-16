@@ -277,7 +277,8 @@ UnresolvedLookupExpr::Create(const ASTContext &C,
   void *Mem = C.Allocate(Size, alignof(UnresolvedLookupExpr));
   return new (Mem) UnresolvedLookupExpr(C, NamingClass, QualifierLoc,
                                         TemplateKWLoc, NameInfo,
-                                        ADL, /*Overload*/ true, Args,
+                                        ADL, /*Overload=*/true,
+                                        /*Reflection=*/false, Args,
                                         Begin, End);
 }
 

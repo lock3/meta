@@ -10120,7 +10120,8 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
     return UnresolvedLookupExpr::Create(
         SemaRef.Context, /*NamingClass=*/nullptr,
         ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), ReductionId,
-        /*ADL=*/true, /*Overloaded=*/true, ResSet.begin(), ResSet.end());
+        /*ADL=*/true, /*Overloaded=*/true, /*Reflection=*/false,
+        ResSet.begin(), ResSet.end());
   }
   if (auto *VD = filterLookupForUDR<ValueDecl *>(
           Lookups, [&SemaRef, Ty](ValueDecl *D) -> ValueDecl * {

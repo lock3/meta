@@ -12160,7 +12160,8 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, UnaryOperatorKind Opc,
     UnresolvedLookupExpr *Fn
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
-                                     /*ADL*/ true, IsOverloaded(Fns),
+                                     /*ADL=*/true, IsOverloaded(Fns),
+                                     /*Reflection=*/false,
                                      Fns.begin(), Fns.end());
     return new (Context)
         CXXOperatorCallExpr(Context, Op, Fn, ArgsArray, Context.DependentTy,
@@ -12351,7 +12352,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
     UnresolvedLookupExpr *Fn
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
-                                     /*ADL*/PerformADL, IsOverloaded(Fns),
+                                     /*ADL=*/PerformADL, IsOverloaded(Fns),
+                                     /*Reflection=*/false,
                                      Fns.begin(), Fns.end());
     return new (Context)
         CXXOperatorCallExpr(Context, Op, Fn, Args, Context.DependentTy,
@@ -12612,7 +12614,8 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
     UnresolvedLookupExpr *Fn
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
-                                     /*ADL*/ true, /*Overloaded*/ false,
+                                     /*ADL=*/true, /*Overloaded=*/false,
+                                     /*Reflection=*/false,
                                      UnresolvedSetIterator(),
                                      UnresolvedSetIterator());
     // Can't add any actual overloads yet
@@ -13558,7 +13561,8 @@ Sema::BuildForRangeBeginEndCall(SourceLocation Loc,
     UnresolvedLookupExpr *Fn =
       UnresolvedLookupExpr::Create(Context, /*NamingClass=*/nullptr,
                                    NestedNameSpecifierLoc(), NameInfo,
-                                   /*NeedsADL=*/true, /*Overloaded=*/false,
+                                   /*ADL=*/true, /*Overloaded=*/false,
+                                   /*Reflection=*/false,
                                    FoundNames.begin(), FoundNames.end());
 
     bool CandidateSetError = buildOverloadedCallSet(S, Fn, Fn, Range, Loc,

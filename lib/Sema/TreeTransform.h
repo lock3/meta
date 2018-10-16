@@ -7222,7 +7222,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
 {
   using namespace clang::reflect;
 
-  // llvm::outs() << "Transform\n";
   APValue OldReflection = E->getValue();
   ReflectionKind ReflKind;
   const void *ReflEntity;
@@ -7233,7 +7232,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     // substitution. We need to build an expression or type and substitute
     // through that.
     if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
-      llvm::outs() << "Value declaration\n";
       DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(
           const_cast<ValueDecl*>(VD), false, VD->getType(),
           VK_RValue, E->getExprLoc());
@@ -7242,7 +7240,6 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
         return ExprError();
       ReflEntity = cast<DeclRefExpr>(NewRef.get())->getDecl();
     } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-      llvm::outs() << "Type Declaration\n";
       QualType T = SemaRef.Context.getTypeDeclType(TD);
       QualType NewType = TransformType(T);
       if (NewType.isNull())
@@ -7253,53 +7250,28 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
       else
         ReflEntity = NewType.getTypePtr();
     } else {
-      llvm::outs() << "Something else\n";
       // This is something like a namespace. Just use TransformDecl even
       // though it's unlikely to change.
       ReflEntity = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
     }
   } else if (const Type *T = getAsReflectedType(OldReflection)) {
-    llvm::outs() << "Type\n";
     QualType NewType = TransformType(QualType(T, 0));
     ReflKind = REK_type;
     ReflEntity = NewType.getTypePtr();
   } else if (UnresolvedLookupExpr *ULE
              = const_cast<UnresolvedLookupExpr *>(
                  getAsReflectedULE(OldReflection))) {
-    LookupResult Res(SemaRef, ULE->getName(), ULE->getNameLoc(),
-		     Sema::LookupOrdinaryName);
+    ExprResult LookupResult = getDerived().TransformUnresolvedLookupExpr(ULE);
 
-    // Transform the declaration set.
-    if (getDerived().TransformOverloadExprDecls(ULE, ULE->requiresADL(), Res))
+    if (LookupResult.isInvalid())
       return ExprError();
 
-    // FIXME: could this be a type decl?
-    DeclaratorDecl *D = Res.getAsSingle<DeclaratorDecl>();
-
-    // Determine and set the substituted type.
-    // FIXME: do some error checking here
-    NestedNameSpecifierLoc OldNNS = ULE->getQualifierLoc();
-    NestedNameSpecifierLoc NewNNS =
-      getDerived().TransformNestedNameSpecifierLoc(OldNNS);
-
-    D->setQualifierInfo(NewNNS);
-    D->setType(NewNNS.getTypeLoc().getType());
-
-    getDerived().TransformDecl(D->getLocation(), D);
-
-    // if(Stmt* Body = D->getBody()) {
-      // getDerived().TransformDefinition(D->getLocation(), D);
-      // getDerived().TransformStmt(Body);
-    // }
-
-    ReflKind = REK_declaration;
-    ReflEntity = D;
+    ReflKind = OldReflection.getReflectionKind();
+    ReflEntity = static_cast<UnresolvedLookupExpr *>(LookupResult.get());
   } else {
     ReflKind = REK_special;
     ReflEntity = nullptr;
   }
-
-  llvm::outs() << "End transformation\n";
 
   return RebuildCXXReflectExpr(E->getBeginLoc(),
                                ReflKind,
@@ -8692,7 +8664,7 @@ TreeTransform<Derived>::TransformOMPReductionClause(OMPReductionClause *C) {
        UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context),
-          NameInfo, /*ADL=*/true, ULE->isOverloaded(),
+          NameInfo, /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
           Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
@@ -8738,7 +8710,8 @@ OMPClause *TreeTransform<Derived>::TransformOMPTaskReductionClause(
       UnresolvedReductions.push_back(UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), NameInfo,
-          /*ADL=*/true, ULE->isOverloaded(), Decls.begin(), Decls.end()));
+          /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
+          Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
   }
@@ -8783,7 +8756,8 @@ TreeTransform<Derived>::TransformOMPInReductionClause(OMPInReductionClause *C) {
       UnresolvedReductions.push_back(UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), NameInfo,
-          /*ADL=*/true, ULE->isOverloaded(), Decls.begin(), Decls.end()));
+          /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
+          Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
   }
@@ -10616,7 +10590,7 @@ bool TreeTransform<Derived>::TransformOverloadExprDecls(OverloadExpr *Old,
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformUnresolvedLookupExpr(
-                                                  UnresolvedLookupExpr *Old) {
+                                                    UnresolvedLookupExpr *Old) {
   LookupResult R(SemaRef, Old->getName(), Old->getNameLoc(),
                  Sema::LookupOrdinaryName);
 
@@ -10655,7 +10629,7 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
     // In a C++11 unevaluated context, an UnresolvedLookupExpr might refer to an
     // instance member. In other contexts, BuildPossibleImplicitMemberExpr will
     // give a good diagnostic.
-    if (D && D->isCXXInstanceMember()) {
+    if (D && D->isCXXInstanceMember() && !Old->isReflection()) {
       return SemaRef.BuildPossibleImplicitMemberExpr(SS, TemplateKWLoc, R,
                                                      /*TemplateArgs=*/nullptr,
                                                      /*Scope=*/nullptr);

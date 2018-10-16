@@ -2764,6 +2764,7 @@ ExprResult Sema::BuildDeclarationNameExpr(const CXXScopeSpec &SS,
                                    SS.getWithLocInContext(Context),
                                    R.getLookupNameInfo(),
                                    NeedsADL, R.isOverloadedResult(),
+                                   /*Reflection=*/false,
                                    R.begin(), R.end());
 
   return ULE;
