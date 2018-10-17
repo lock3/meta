@@ -428,6 +428,8 @@ public:
   }
 
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
+    if(!TE->getSubExpr())
+      return;
     if (!isPointer(TE->getSubExpr()))
       return;
     PSet ThrownPSet = getPSet(TE->getSubExpr());
