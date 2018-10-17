@@ -7247,7 +7247,12 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
       // FIXME: There are other types that can be declarations.
       if (const TagDecl *Tag = NewType->getAsTagDecl())
         ReflEntity = Tag;
-      else
+      else if (const BuiltinType *BT = NewType->getAs<BuiltinType>()) {
+        // As builtin types are builtin, there is not an available
+        // decl to use for reflection, thus this must be a type reflection.
+        ReflKind = REK_type;
+        ReflEntity = BT;
+      } else
         ReflEntity = NewType.getTypePtr();
     } else {
       // This is something like a namespace. Just use TransformDecl even

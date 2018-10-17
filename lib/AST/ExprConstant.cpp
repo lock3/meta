@@ -5479,25 +5479,6 @@ static bool isStringLiteralType(QualType T) {
   return T->isCharType() && T.isConstQualified();
 }
 
-/// Returns true if E is actually a meta object.
-///
-/// FIXME: This is really flimsy. This should be a simple, straightforward
-/// test. In fact, it would be ideal the reflection type were a fundamental
-/// type instead of an enum.
-static bool IsMetaObject(ASTContext &Ctx, EnumDecl *E) {
-  DeclContext *DC = E->getDeclContext();
-  if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
-    if (NS->isInline())
-      DC = NS->getDeclContext();
-  }
-  if (!isa<NamespaceDecl>(DC))
-    return false;
-  NamespaceDecl *NS = cast<NamespaceDecl>(DC);
-  IdentifierInfo *InfoId = &Ctx.Idents.get("info");
-  IdentifierInfo *MetaId = &Ctx.Idents.get("meta");
-  return E->getIdentifier() == InfoId && NS->getIdentifier() == MetaId;
-}
-
 static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E, 
                   SmallVectorImpl<APValue> &Args) {
   Expr *E0 = E->getArg(0);
@@ -5519,9 +5500,8 @@ static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E,
     std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
     llvm::errs() << NonQuote << '\n';
     return true;
-  }  else if (const EnumType *EnumTy = dyn_cast<EnumType>(T.getTypePtr())) {
-    EnumDecl *Enum = EnumTy->getDecl();
-    if (IsMetaObject(Info.Ctx, Enum)) {
+  }  else if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
+    if (Ty->getKind() == BuiltinType::MetaInfo) {
       APValue Reflection = Args[0];
       if (isNullReflection(Reflection)) {
         llvm::errs() << "<null>\n";
