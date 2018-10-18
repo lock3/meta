@@ -32,12 +32,10 @@ using namespace sema;
 bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
                             IdentifierInfo *Id, unsigned &Kind,
                             ParsedReflectionPtr &Entity) {
-  
   // Perform any declaration having the given name.
   LookupResult R(*this, Id, IdLoc, LookupAnyName);
   LookupParsedName(R, CurScope, &SS);
 
-  
   if (!R.isSingleResult()) {
     // FIXME: Incorporate the scope specifier in the diagnostics. Also note
     // alternatives for an ambiguous lookup.

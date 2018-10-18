@@ -5500,14 +5500,14 @@ static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E,
     std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
     llvm::errs() << NonQuote << '\n';
     return true;
-  }  else if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
+  } else if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
     if (Ty->getKind() == BuiltinType::MetaInfo) {
       APValue Reflection = Args[0];
       if (isNullReflection(Reflection)) {
         llvm::errs() << "<null>\n";
       } else if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
         D->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
-      } else if (const Type* T = getAsReflectedType(Reflection)) {
+      } else if (const Type *T = getAsReflectedType(Reflection)) {
         QualType QT(T, 0);
         QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
       } else {

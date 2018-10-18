@@ -33,9 +33,9 @@ ExprResult Parser::ParseCXXReflectExpression() {
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
     return ExprError();
-  
-    unsigned Kind; // The reflected entity kind.
-    ParsedReflectionPtr Entity; // The actual entity.
+
+  unsigned Kind; // The reflected entity kind.
+  ParsedReflectionPtr Entity; // The actual entity.
 
   // FIXME: The operand parsing is a bit fragile. We could do a lot better
   // by looking at tokens to characterize the parse before committing.
@@ -52,17 +52,11 @@ ExprResult Parser::ParseCXXReflectExpression() {
   // FIXME: This probably won't work for things operator and conversion
   // functions.
 
-  // FIXME: "i think that you can build an unresolved id expression which wil hold an nns and
-  // an identifier. unresolvedlookupexpr,
-  // reflexpr has a resolved decl, a qualtype, or an expr and the expr is gonna be an unresolved lookup expression.
-  // we should probably put that into an enum or union, but if i make that change i am gonna have to replumb how the
-  // actual reflection object creator. Maybe make a function based on each type -- if i have a type, return typereflection() etc.
-
   NestedNameSpecifier* NNS = SS.getScopeRep();
-  if(!SS.isInvalid() && NNS && NNS->isDependent()) {
+  if (!SS.isInvalid() && NNS && NNS->isDependent()) {
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();
-    if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
+    if (!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
       return ExprError();
   } else if (!SS.isInvalid() && Tok.is(tok::identifier)) {
     IdentifierInfo *Id = Tok.getIdentifierInfo();
