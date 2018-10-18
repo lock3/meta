@@ -34,11 +34,12 @@ bool isNullReflection(APValue &Reflection);
 
 const Decl *getReflectedDeclaration(APValue &Reflection);
 const Type *getReflectedType(APValue &Reflection);
-const Stmt *getReflectedStatement(APValue &Reflection);
+const Expr *getReflectedStatement(APValue &Reflection);
 const UnresolvedLookupExpr *getReflectedULE(APValue &Reflection);
 
 const Decl *getAsReflectedDeclaration(APValue &Reflection);
 const Type *getAsReflectedType(APValue &Reflection);
+const Expr *getAsReflectedStatement(APValue &Reflection);
 const UnresolvedLookupExpr *getAsReflectedULE(APValue &Reflection);
 
 } // namespace reflect

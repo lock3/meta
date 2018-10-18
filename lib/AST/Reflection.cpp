@@ -35,8 +35,8 @@ bool isReflectedStatement(APValue &Reflection) {
 bool isReflectedULE(APValue &Reflection) {
   if (!isReflectedStatement(Reflection))
     return false;
-  const Stmt *S = getReflectedStatement(Reflection);
-  return S->getStmtClass() == Stmt::UnresolvedLookupExprClass;
+  const Expr *E = getReflectedStatement(Reflection);
+  return E->getStmtClass() == Stmt::UnresolvedLookupExprClass;
 }
 
 bool isNullReflection(APValue &Reflection) {
@@ -56,10 +56,10 @@ const Type *getReflectedType(APValue &Reflection) {
   return static_cast<const Type *>(ReflEntity);
 }
 
-const Stmt *getReflectedStatement(APValue &Reflection) {
+const Expr *getReflectedStatement(APValue &Reflection) {
   assert(isReflectedStatement(Reflection) && "Not a statement");
   auto ReflEntity = Reflection.getReflectedEntity();
-  return static_cast<const Stmt *>(ReflEntity);
+  return static_cast<const Expr *>(ReflEntity);
 }
 
 const UnresolvedLookupExpr *getReflectedULE(APValue &Reflection) {
@@ -76,6 +76,11 @@ const Decl *getAsReflectedDeclaration(APValue &Reflection) {
 const Type *getAsReflectedType(APValue &Reflection) {
   return isReflectedType(Reflection)
        ? getReflectedType(Reflection) : nullptr;
+}
+
+const Expr *getAsReflectedStatement(APValue &Reflection) {
+  return isReflectedStatement(Reflection)
+       ? getReflectedStatement(Reflection) : nullptr;
 }
 
 const UnresolvedLookupExpr *getAsReflectedULE(APValue &Reflection) {
