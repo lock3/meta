@@ -3004,9 +3004,6 @@ class UnresolvedLookupExpr final
   /// trivially rederivable if we urgently need to kill this field.
   bool Overloaded = false;
 
-  /// True if these lookup results are for a reflection.
-  bool Reflection = false;
-
   /// The naming class (C++ [class.access.base]p5) of the lookup, if
   /// any.  This can generally be recalculated from the context chain,
   /// but that can be fairly expensive for unqualified lookups.  If we
@@ -3019,14 +3016,13 @@ class UnresolvedLookupExpr final
                        NestedNameSpecifierLoc QualifierLoc,
                        SourceLocation TemplateKWLoc,
                        const DeclarationNameInfo &NameInfo,
-                       bool RequiresADL, bool Overloaded, bool Reflection,
+                       bool RequiresADL, bool Overloaded,
                        const TemplateArgumentListInfo *TemplateArgs,
                        UnresolvedSetIterator Begin, UnresolvedSetIterator End)
       : OverloadExpr(UnresolvedLookupExprClass, C, QualifierLoc, TemplateKWLoc,
                      NameInfo, TemplateArgs, Begin, End, false, false, false),
         RequiresADL(RequiresADL),
-        Overloaded(Overloaded), Reflection(Reflection),
-        NamingClass(NamingClass) {}
+        Overloaded(Overloaded), NamingClass(NamingClass) {}
 
   UnresolvedLookupExpr(EmptyShell Empty)
       : OverloadExpr(UnresolvedLookupExprClass, Empty) {}
@@ -3041,13 +3037,12 @@ public:
                                       NestedNameSpecifierLoc QualifierLoc,
                                       const DeclarationNameInfo &NameInfo,
                                       bool ADL, bool Overloaded,
-                                      bool Reflection,
                                       UnresolvedSetIterator Begin,
                                       UnresolvedSetIterator End) {
     return new(C) UnresolvedLookupExpr(C, NamingClass, QualifierLoc,
                                        SourceLocation(), NameInfo,
-                                       ADL, Overloaded, Reflection,
-                                       nullptr, Begin, End);
+                                       ADL, Overloaded, nullptr,
+                                       Begin, End);
   }
 
   static UnresolvedLookupExpr *Create(const ASTContext &C,
@@ -3070,9 +3065,6 @@ public:
 
   /// True if this lookup is overloaded.
   bool isOverloaded() const { return Overloaded; }
-
-  /// True if this lookup is for reflection.
-  bool isReflection() const { return Reflection; }
 
   /// Gets the 'naming class' (in the sense of C++0x
   /// [class.access.base]p5) of the lookup.  This is the scope

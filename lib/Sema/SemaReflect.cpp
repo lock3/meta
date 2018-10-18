@@ -91,7 +91,6 @@ bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
     UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
                                  SS.getWithLocInContext(Context),
                                  DNI, /*ADL=*/false, /*Overloaded=*/false,
-                                 /*Reflection=*/true,
                                  decls.begin(), decls.end());
   Kind = REK_statement;
   return true;

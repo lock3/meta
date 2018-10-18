@@ -8669,7 +8669,7 @@ TreeTransform<Derived>::TransformOMPReductionClause(OMPReductionClause *C) {
        UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context),
-          NameInfo, /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
+          NameInfo, /*ADL=*/true, ULE->isOverloaded(),
           Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
@@ -8715,8 +8715,7 @@ OMPClause *TreeTransform<Derived>::TransformOMPTaskReductionClause(
       UnresolvedReductions.push_back(UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), NameInfo,
-          /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
-          Decls.begin(), Decls.end()));
+          /*ADL=*/true, ULE->isOverloaded(), Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
   }
@@ -8761,8 +8760,7 @@ TreeTransform<Derived>::TransformOMPInReductionClause(OMPInReductionClause *C) {
       UnresolvedReductions.push_back(UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
           ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), NameInfo,
-          /*ADL=*/true, ULE->isOverloaded(), /*Reflection=*/false,
-          Decls.begin(), Decls.end()));
+          /*ADL=*/true, ULE->isOverloaded(), Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
   }
@@ -10634,7 +10632,7 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
     // In a C++11 unevaluated context, an UnresolvedLookupExpr might refer to an
     // instance member. In other contexts, BuildPossibleImplicitMemberExpr will
     // give a good diagnostic.
-    if (D && D->isCXXInstanceMember() && !Old->isReflection()) {
+    if (D && D->isCXXInstanceMember()) {
       return SemaRef.BuildPossibleImplicitMemberExpr(SS, TemplateKWLoc, R,
                                                      /*TemplateArgs=*/nullptr,
                                                      /*Scope=*/nullptr);

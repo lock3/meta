@@ -289,7 +289,7 @@ static ExprResult buildOperatorCoawaitLookupExpr(Sema &SemaRef, Scope *S,
   Expr *CoawaitOp = UnresolvedLookupExpr::Create(
       SemaRef.Context, /*NamingClass=*/nullptr, NestedNameSpecifierLoc(),
       DeclarationNameInfo(OpName, Loc), /*ADL=*/true, IsOverloaded,
-      /*Reflection=*/false, Functions.begin(), Functions.end());
+      Functions.begin(), Functions.end());
   assert(CoawaitOp);
   return CoawaitOp;
 }

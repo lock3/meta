@@ -12161,7 +12161,6 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, UnaryOperatorKind Opc,
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
                                      /*ADL=*/true, IsOverloaded(Fns),
-                                     /*Reflection=*/false,
                                      Fns.begin(), Fns.end());
     return new (Context)
         CXXOperatorCallExpr(Context, Op, Fn, ArgsArray, Context.DependentTy,
@@ -12353,7 +12352,6 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
                                      /*ADL=*/PerformADL, IsOverloaded(Fns),
-                                     /*Reflection=*/false,
                                      Fns.begin(), Fns.end());
     return new (Context)
         CXXOperatorCallExpr(Context, Op, Fn, Args, Context.DependentTy,
@@ -12615,7 +12613,6 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
       = UnresolvedLookupExpr::Create(Context, NamingClass,
                                      NestedNameSpecifierLoc(), OpNameInfo,
                                      /*ADL=*/true, /*Overloaded=*/false,
-                                     /*Reflection=*/false,
                                      UnresolvedSetIterator(),
                                      UnresolvedSetIterator());
     // Can't add any actual overloads yet
@@ -13562,7 +13559,6 @@ Sema::BuildForRangeBeginEndCall(SourceLocation Loc,
       UnresolvedLookupExpr::Create(Context, /*NamingClass=*/nullptr,
                                    NestedNameSpecifierLoc(), NameInfo,
                                    /*ADL=*/true, /*Overloaded=*/false,
-                                   /*Reflection=*/false,
                                    FoundNames.begin(), FoundNames.end());
 
     bool CandidateSetError = buildOverloadedCallSet(S, Fn, Fn, Range, Loc,
