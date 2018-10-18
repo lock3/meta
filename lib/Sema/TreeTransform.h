@@ -7227,38 +7227,7 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   const void *ReflEntity;
   if (const Decl *D = getAsReflectedDeclaration(OldReflection)) {
     ReflKind = REK_declaration;
-
-    // We can't just call TransformDecl. That's not guaranteed to perform
-    // substitution. We need to build an expression or type and substitute
-    // through that.
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
-      DeclRefExpr *Ref = new (SemaRef.Context) DeclRefExpr(
-          const_cast<ValueDecl*>(VD), false, VD->getType(),
-          VK_RValue, E->getExprLoc());
-      ExprResult NewRef = TransformExpr(Ref);
-      if (NewRef.isInvalid())
-        return ExprError();
-      ReflEntity = cast<DeclRefExpr>(NewRef.get())->getDecl();
-    } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-      QualType T = SemaRef.Context.getTypeDeclType(TD);
-      QualType NewType = TransformType(T);
-      if (NewType.isNull())
-        return ExprError();
-      // FIXME: There are other types that can be declarations.
-      if (const TagDecl *Tag = NewType->getAsTagDecl())
-        ReflEntity = Tag;
-      else if (const BuiltinType *BT = NewType->getAs<BuiltinType>()) {
-        // As builtin types are builtin, there is not an available
-        // decl to use for reflection, thus this must be a type reflection.
-        ReflKind = REK_type;
-        ReflEntity = BT;
-      } else
-        ReflEntity = NewType.getTypePtr();
-    } else {
-      // This is something like a namespace. Just use TransformDecl even
-      // though it's unlikely to change.
-      ReflEntity = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
-    }
+    ReflEntity = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
   } else if (const Type *T = getAsReflectedType(OldReflection)) {
     QualType NewType = TransformType(QualType(T, 0));
     ReflKind = REK_type;
@@ -7273,6 +7242,15 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
 
     ReflKind = OldReflection.getReflectionKind();
     ReflEntity = static_cast<UnresolvedLookupExpr *>(LookupResult.get());
+  } else if (Expr *E
+             = const_cast<Expr *>(getAsReflectedStatement(OldReflection))) {
+    ExprResult TransformResult = TransformExpr(E);
+
+    if (TransformResult.isInvalid())
+      return ExprError();
+
+    ReflKind = REK_statement;
+    ReflEntity = TransformResult.get();
   } else {
     ReflKind = REK_special;
     ReflEntity = nullptr;

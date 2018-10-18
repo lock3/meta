@@ -53,9 +53,37 @@ bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
     return false;
   }
 
-  // Reflect the named entity.
-  Entity = R.getAsSingle<NamedDecl>();
-  Kind = REK_declaration;
+  Decl *D = R.getAsSingle<NamedDecl>();
+
+  if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
+    DeclRefExpr *Ref = new (Context) DeclRefExpr(
+      const_cast<ValueDecl*>(VD), false, VD->getType(),
+      VK_RValue, IdLoc);
+    Entity = Ref;
+    Kind = REK_statement;
+  } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
+    QualType T = Context.getTypeDeclType(TD);
+
+    // FIXME: There are other types that can be declarations.
+    if (const TagDecl *Tag = T->getAsTagDecl()) {
+      Entity = Tag;
+      Kind = REK_declaration;
+    } else if (const BuiltinType *BT = T->getAs<BuiltinType>()) {
+      // As builtin types are builtin, there is not an available
+      // decl to use for reflection, thus this must be a type reflection.
+      Entity = BT;
+      Kind = REK_type;
+    } else {
+      Entity = T.getTypePtr();
+      Kind = REK_type;
+    }
+  } else {
+    // This is something like a namespace. Just use TransformDecl even
+    // though it's unlikely to change.
+    Entity = D;
+    Kind = REK_declaration;
+  }
+
   return true;
 }
 
