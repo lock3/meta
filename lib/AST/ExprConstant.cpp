@@ -5510,6 +5510,11 @@ static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E,
       } else if (const Type *T = getAsReflectedType(Reflection)) {
         QualType QT(T, 0);
         QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
+      } else if (const Expr *E = getAsReflectedStatement(Reflection)) {
+        if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
+          DRE->getDecl()->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
+        else
+          llvm_unreachable("unknown statement reflection");
       } else {
         // FIXME: we should be able to print things.
         llvm_unreachable("unknown reflection");
