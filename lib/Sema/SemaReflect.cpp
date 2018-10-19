@@ -274,80 +274,32 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
                                               TraitLoc, Operands, RParenLoc);
 }
 
-ExprResult Sema::ActOnCXXReflectedValueExpression(SourceLocation Loc,
-                                                  Expr *Reflection) {
-  return BuildCXXReflectedValueExpression(Loc, Reflection);
+ExprResult Sema::ActOnCXXUnreflexprExpression(SourceLocation Loc,
+                                              Expr *Reflection) {
+  return BuildCXXUnreflexprExpression(Loc, Reflection);
 }
 
-ExprResult Sema::BuildCXXReflectedValueExpression(SourceLocation Loc,
-                                                  Expr *E) {
+ExprResult Sema::BuildCXXUnreflexprExpression(SourceLocation Loc,
+                                              Expr *E) {
+  // TODO: Process the reflection E, UnresolveLookupExpr
+
   // Don't act on dependent expressions, just preserve them.
-  if (E->isTypeDependent() || E->isValueDependent())
-    return new (Context) CXXReflectedValueExpr(E, Context.DependentTy,
-                                               VK_RValue, OK_Ordinary, Loc);
+  // if (E->isTypeDependent() || E->isValueDependent())
+  //   return new (Context) CXXUnreflexprExpr(E, Context.DependentTy,
+  //                                          VK_RValue, OK_Ordinary, Loc);
 
   // The operand must be a reflection.
   if (!CheckReflectionOperand(*this, E))
     return ExprError();
 
-  // Evaluate the reflection.
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  if (!E->EvaluateAsRValue(Result, Context)) {
-    Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      Diag(PD.first, PD.second);
-    return ExprError();
-  }
+  // TODO: Process the reflection E, into DeclRefExpr
 
-  APValue Reflection = Result.Val;
-  if (isNullReflection(Reflection) || isReflectedType(Reflection)) {
-    // FIXME: This is the wrong error.
-    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);
-    return ExprError();
-  }
+  // CXXUnreflexprExpr *Val =
+  //     new (Context) CXXUnreflexprExpr(E, E->getType(), E->getValueKind(),
+  //                                     E->getObjectKind(), Loc);
 
-  // Build a declaration reference that would refer to the reflected entity.
-  Decl* D = const_cast<Decl*>(getReflectedDeclaration(Reflection));
-  if (!isa<ValueDecl>(D)) {
-    Diag(E->getExprLoc(), diag::err_expression_not_value_reflection);
-    return ExprError();
-  }
-  ValueDecl *VD = cast<ValueDecl>(D);
-
-  // FIXME: We shouldn't be able to generate addresses for constructors,
-  // destructors, or local variables.
-
-  // Build a reference to the declaration.
-  CXXScopeSpec SS;
-  DeclarationNameInfo DNI(VD->getDeclName(), VD->getLocation());
-  ExprResult ER = BuildDeclarationNameExpr(SS, DNI, VD);
-  if (ER.isInvalid())
-    return ExprError();
-  Expr *Ref = ER.get();
-
-  // For data members and member functions, adjust the expression so that
-  // we evaluate a pointer-to-member, not the member itself.
-  if (FieldDecl *FD = dyn_cast<FieldDecl>(VD)) {
-    const Type *C = Context.getTagDeclType(FD->getParent()).getTypePtr();
-    QualType PtrTy = Context.getMemberPointerType(FD->getType(), C);
-    Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue,
-                                      OK_Ordinary, Loc, false);
-  } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(VD)) {
-    const Type *C = Context.getTagDeclType(MD->getParent()).getTypePtr();
-    QualType PtrTy = Context.getMemberPointerType(MD->getType(), C);
-    Ref = new (Context) UnaryOperator(Ref, UO_AddrOf, PtrTy, VK_RValue,
-                                      OK_Ordinary, Loc, false);
-  }
-
-  // The type and category of the expression are those of an id-expression
-  // denoting the reflected entity.
-  CXXReflectedValueExpr *Val =
-      new (Context) CXXReflectedValueExpr(E, Ref->getType(), Ref->getValueKind(),
-                                          Ref->getObjectKind(), Loc);
-  Val->setReference(Ref);
-  return Val;
+  // return Val;
+  return ExprError();
 }
 
 /// Evaluates the given expression and yields the computed type.

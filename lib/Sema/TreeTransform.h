@@ -1446,8 +1446,8 @@ public:
   }
 
   /// \brief Build a new reflected value expression.
-  ExprResult RebuildCXXReflectedValueExpr(SourceLocation Loc, Expr *E) {
-    return getSema().BuildCXXReflectedValueExpression(Loc, E);
+  ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
+    return getSema().BuildCXXUnreflexprExpression(Loc, E);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -7280,13 +7280,14 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectedValueExpr(
-                                                     CXXReflectedValueExpr *E) {
-  ExprResult Reflection = TransformExpr(E->getReflection());
-  if (Reflection.isInvalid())
+TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
+  ExprResult ReflectedDeclExpr = TransformExpr(E->getReflectedDeclExpr());
+
+  if (ReflectedDeclExpr.isInvalid())
     return ExprError();
-  return getDerived().RebuildCXXReflectedValueExpr(E->getExprLoc(), 
-                                                   Reflection.get());
+
+  return getDerived().RebuildCXXUnreflexprExpr(E->getExprLoc(),
+                                               ReflectedDeclExpr.get());
 }
 
 // Objective-C Statements.

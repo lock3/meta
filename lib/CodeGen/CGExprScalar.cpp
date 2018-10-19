@@ -787,8 +787,8 @@ public:
   Value *VisitAsTypeExpr(AsTypeExpr *CE);
   Value *VisitAtomicExpr(AtomicExpr *AE);
 
-  Value* VisitCXXReflectedValueExpr(CXXReflectedValueExpr *E) {
-    return Visit(E->getReference());
+  Value* VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
+    return Visit(E->getReflectedDeclExpr());
   }
 };
 }  // end anonymous namespace.

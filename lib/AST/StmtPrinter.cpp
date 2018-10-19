@@ -2686,10 +2686,10 @@ void StmtPrinter::VisitCXXReflectionTraitExpr(CXXReflectionTraitExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXReflectedValueExpr(CXXReflectedValueExpr *E) {
-  OS << "valueof(";
-  PrintExpr(E->getReflection());
-  OS << ')';
+void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
+  OS << "unreflexpr(reflexpr(";
+  PrintExpr(E->getReflectedDeclExpr());
+  OS << "))";
 }
 
 // Obj-C

@@ -423,11 +423,11 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXConstantExprClass:
     return ClassifyInternal(Ctx, cast<CXXConstantExpr>(E)->getExpression());
 
-  case Expr::CXXReflectedValueExprClass: {
+  case Expr::CXXUnreflexprExprClass: {
     // If the expression is dependent, then classify it as an lvalue.
     // FIXME: See the comments above about unresolved expressions.
     if (!E->isTypeDependent()) {
-      Expr *Ref = cast<CXXReflectedValueExpr>(E)->getReference();
+      Expr *Ref = cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr();
       return ClassifyInternal(Ctx, Ref);
     }
     return Cl::CL_LValue;

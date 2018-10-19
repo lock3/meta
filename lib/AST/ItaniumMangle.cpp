@@ -4290,8 +4290,8 @@ recurse:
     mangleExpression(cast<CoawaitExpr>(E)->getOperand());
     break;
 
-  case Expr::CXXReflectedValueExprClass:
-    mangleExpression(cast<CXXReflectedValueExpr>(E)->getReference());
+  case Expr::CXXUnreflexprExprClass:
+    mangleExpression(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr());
     break;
   }
 }

@@ -5116,9 +5116,9 @@ public:
 
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
 
-  bool VisitCXXReflectedValueExpr(const CXXReflectedValueExpr *E) {
+  bool VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
     APValue Result;
-    if (!Evaluate(Result, Info, E->getReference()))
+    if (!Evaluate(Result, Info, E->getReflectedDeclExpr()))
       return false;
     return DerivedSuccess(Result, E);
   }
@@ -11592,9 +11592,9 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CoyieldExprClass:
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
-  case Expr::CXXReflectedValueExprClass:
+  case Expr::CXXUnreflexprExprClass:
     // A reflected value is an ICE if it's reference is.
-    return CheckICE(cast<CXXReflectedValueExpr>(E)->getReference(), Ctx);
+    return CheckICE(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr(), Ctx);
 
   case Expr::InitListExprClass: {
     // C++03 [dcl.init]p13: If T is a scalar type, then a declaration of the

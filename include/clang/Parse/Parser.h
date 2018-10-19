@@ -2752,7 +2752,7 @@ private:
 
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXReflectionTrait();
-  ExprResult ParseCXXReflectedValueExpression();
+  ExprResult ParseCXXUnreflexprExpression();
 
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc, 
                                         SourceLocation &EndLoc);

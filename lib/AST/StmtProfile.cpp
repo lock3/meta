@@ -1862,7 +1862,7 @@ void StmtProfiler::VisitCXXReflectionTraitExpr(
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXReflectedValueExpr(const CXXReflectedValueExpr *E) {
+void StmtProfiler::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
   VisitExpr(E);
 }
 

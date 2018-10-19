@@ -163,24 +163,24 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 /// Parse a reflected-value-expression.
 ///
 /// \verbatim
-///   reflected-value-expression:
-///     'valueof' '(' reflection ')'
+///   unreflexpr-expression:
+///     'unreflexpr' '(' reflection ')'
 /// \endverbatim
 ///
 /// The constant expression must be a reflection of a type.
-ExprResult Parser::ParseCXXReflectedValueExpression() {
-  assert(Tok.is(tok::kw_valueof) && "expected 'valueof'");
+ExprResult Parser::ParseCXXUnreflexprExpression() {
+  assert(Tok.is(tok::kw_unreflexpr) && "expected 'unreflexpr'");
   SourceLocation Loc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "valueof"))
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "unreflexpr"))
     return ExprError();
   ExprResult Reflection = ParseConstantExpression();
   if (T.consumeClose())
     return ExprError();
   if (Reflection.isInvalid())
     return ExprError();
-  return Actions.ActOnCXXReflectedValueExpression(Loc, Reflection.get());
+  return Actions.ActOnCXXUnreflexprExpression(Loc, Reflection.get());
 }
 
 /// Parse a type reflection specifier.

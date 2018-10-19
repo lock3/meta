@@ -4986,73 +4986,52 @@ public:
   }
 };
 
-/// \brief Represents the value of a reflected constant, variable, or function.
-class CXXReflectedValueExpr : public Expr {
-  /// \brief The source expression.
-  Stmt *Reflection;
+class CXXUnreflexprExpr : public Expr {
+  Expr *ReflectedDeclExpr;
 
-  /// \brief An expression referring to the referenced declaration.
-  Expr *Reference;
+  /// The location of the unreflexpr operator.
+  SourceLocation OpLoc;
 
-  /// The location of the valueof operator.
-  SourceLocation Loc;
+  /// The location of the right paren
+  SourceLocation RParenLoc;
 public:
-  CXXReflectedValueExpr(Expr *E, QualType T, ExprValueKind VK, 
-                        ExprObjectKind OK, SourceLocation Loc)
-    : Expr(CXXReflectedValueExprClass, T, VK, OK, 
-           E->isTypeDependent(),
-           E->isValueDependent(), 
-           E->isInstantiationDependent(),
-           E->containsUnexpandedParameterPack()), 
-      Reflection(E), Reference(), Loc(Loc) {}
-  
-  CXXReflectedValueExpr(EmptyShell Empty)
-    : Expr(CXXReflectedValueExprClass, Empty) {}
+  CXXUnreflexprExpr(Expr *ReflectedDeclExpr, QualType T,
+                    ExprValueKind VK, ExprObjectKind OK, SourceLocation OpLoc,
+                    SourceLocation RParenLoc)
+    : Expr(CXXUnreflexprExprClass, T, VK, OK,
+           ReflectedDeclExpr->isTypeDependent(),
+           ReflectedDeclExpr->isValueDependent(),
+           ReflectedDeclExpr->isInstantiationDependent(),
+           ReflectedDeclExpr->containsUnexpandedParameterPack()),
+      ReflectedDeclExpr(ReflectedDeclExpr),
+      OpLoc(OpLoc), RParenLoc(RParenLoc) {}
 
-  /// \brief Returns the evaluated expression. 
-  Expr *getReflection() const { return cast<Expr>(Reflection); }
+  CXXUnreflexprExpr(EmptyShell Empty)
+    : Expr(CXXUnreflexprExprClass, Empty) {}
 
-  /// \brief The expression referring to a reflected entity.
-  Expr *getReference() const { 
-    assert(Reference && "reference not set");
-    return Reference; 
+  Expr *getReflectedDeclExpr() const { return ReflectedDeclExpr; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return OpLoc;
   }
 
-  /// \brief Sets the reference to the reflected entity.
-  void setReference(Expr *E) {
-    Reference = E;
-  }
-
-  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
-                            "Use getBeginLoc instead") {
-    return getBeginLoc();
-  }  
-  SourceLocation getBeginLoc() const LLVM_READONLY { 
-    return Loc;
-  }
-
-  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
-                            "Use getEndLoc instead") {
-    return getEndLoc();
-  }
   SourceLocation getEndLoc() const LLVM_READONLY {
-    return Reflection->getEndLoc();
+    return RParenLoc;
   }
 
-  child_range children() { 
-    return child_range(&Reflection, &Reflection + 1); 
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
   }
 
-  const_child_range children() const { 
-    return const_child_range(&Reflection, &Reflection + 1); 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
-  
+
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXReflectedValueExprClass;
+    return T->getStmtClass() == CXXUnreflexprExprClass;
   }
 };
 
-  
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

@@ -1208,8 +1208,8 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXReflectExpression();
     break;
 
-  case tok::kw_valueof:
-    Res = ParseCXXReflectedValueExpression();
+  case tok::kw_unreflexpr:
+    Res = ParseCXXUnreflexprExpression();
     break;
 
   case tok::annot_typename:
