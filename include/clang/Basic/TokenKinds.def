@@ -224,6 +224,8 @@ PUNCTUATOR(comma,               ",")
 PUNCTUATOR(hash,                "#")
 PUNCTUATOR(hashhash,            "##")
 PUNCTUATOR(hashat,              "#@")
+PUNCTUATOR(l_paren_period,      "(.")
+PUNCTUATOR(period_r_paren,      ".)")
 
 // C++ Support
 PUNCTUATOR(periodstar,          ".*")

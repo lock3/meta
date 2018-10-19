@@ -3439,7 +3439,13 @@ LexNextToken:
     Kind = tok::r_square;
     break;
   case '(':
-    Kind = tok::l_paren;
+    Char = getCharAndSize(CurPtr, SizeTmp);
+    if (LangOpts.CPlusPlus && Char == '.') {
+      Kind = tok::l_paren_period;
+      CurPtr += SizeTmp;
+    } else {
+      Kind = tok::l_paren;
+    }
     break;
   case ')':
     Kind = tok::r_paren;
@@ -3459,6 +3465,9 @@ LexNextToken:
       return LexNumericConstant(Result, ConsumeChar(CurPtr, SizeTmp, Result));
     } else if (LangOpts.CPlusPlus && Char == '*') {
       Kind = tok::periodstar;
+      CurPtr += SizeTmp;
+    } else if (LangOpts.CPlusPlus && Char == ')') {
+      Kind = tok::period_r_paren;
       CurPtr += SizeTmp;
     } else if (Char == '.' &&
                getCharAndSize(CurPtr+SizeTmp, SizeTmp2) == '.') {

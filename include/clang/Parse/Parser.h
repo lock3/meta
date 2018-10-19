@@ -74,7 +74,7 @@ class Parser : public CodeCompletionHandler {
   // a statement).
   SourceLocation PrevTokLocation;
 
-  unsigned short ParenCount = 0, BracketCount = 0, BraceCount = 0;
+  unsigned short ParenCount = 0, BracketCount = 0, BraceCount = 0, ParenPeriodCount = 0;
   unsigned short MisplacedModuleBeginCount = 0;
 
   /// Actions - These are the callbacks we invoke as we parse various constructs
@@ -438,6 +438,8 @@ public:
       return ConsumeBracket();
     if (isTokenBrace())
       return ConsumeBrace();
+    if (isTokenParenPeriod())
+      return ConsumeParenPeriod();
     if (isTokenStringLiteral())
       return ConsumeStringToken();
     if (Tok.is(tok::code_completion))
@@ -476,6 +478,10 @@ private:
   bool isTokenBrace() const {
     return Tok.isOneOf(tok::l_brace, tok::r_brace);
   }
+  /// isTokenParenPeriod - Return true if the cur token is '(.' or '.)'.
+  bool isTokenParenPeriod() const {
+    return Tok.isOneOf(tok::l_paren_period, tok::period_r_paren);
+  }
   /// isTokenStringLiteral - True if this token is a string-literal.
   bool isTokenStringLiteral() const {
     return tok::isStringLiteral(Tok.getKind());
@@ -483,7 +489,8 @@ private:
   /// isTokenSpecial - True if this token requires special consumption methods.
   bool isTokenSpecial() const {
     return isTokenStringLiteral() || isTokenParen() || isTokenBracket() ||
-           isTokenBrace() || Tok.is(tok::code_completion) || Tok.isAnnotation();
+           isTokenBrace() || isTokenParenPeriod() ||
+           Tok.is(tok::code_completion) || Tok.isAnnotation();
   }
 
   /// Returns true if the current token is '=' or is a type of '='.
@@ -547,6 +554,22 @@ private:
     else if (BraceCount) {
       AngleBrackets.clear(*this);
       --BraceCount;     // Don't let unbalanced }'s drive the count negative.
+    }
+
+    PrevTokLocation = Tok.getLocation();
+    PP.Lex(Tok);
+    return PrevTokLocation;
+  }
+
+  /// ConsumeBrace -- This consume method keeps the paren-period count up-to-date.
+  ///
+  SourceLocation ConsumeParenPeriod() {
+    assert(isTokenParenPeriod() && "wrong consume method");
+    if (Tok.getKind() == tok::l_paren_period)
+      ++ParenPeriodCount;
+    else if (BraceCount) {
+      AngleBrackets.clear(*this);
+      --ParenPeriodCount;     // Don't let unbalanced .)'s drive the count negative.
     }
 
     PrevTokLocation = Tok.getLocation();

@@ -375,6 +375,7 @@ namespace clang {
         case tok::l_brace: return P.BraceCount;
         case tok::l_square: return P.BracketCount;
         case tok::l_paren: return P.ParenCount;
+        case tok::l_paren_period: return P.ParenPeriodCount;
         default: llvm_unreachable("Wrong token kind");
       }
     }
@@ -398,11 +399,13 @@ namespace clang {
           Close = tok::r_paren;
           Consumer = &Parser::ConsumeParen;
           break;
-
         case tok::l_square:
           Close = tok::r_square;
           Consumer = &Parser::ConsumeBracket;
           break;
+        case tok::l_paren_period:
+          Close = tok::period_r_paren;
+          Consumer = &Parser::ConsumeParenPeriod;
       }
     }
 
