@@ -3747,6 +3747,18 @@ TreeTransform<Derived>
     NewNameInfo.setNamedTypeInfo(NewTInfo);
     return NewNameInfo;
   }
+  case DeclarationName::CXXReflectedIdName: {
+    llvm::ArrayRef<Expr *> OldArgs = Name.getCXXReflectedIdArguments();
+    SmallVector<Expr *, 4> NewArgs(OldArgs.size());
+    for (std::size_t I = 0; I < OldArgs.size(); ++I) {
+      ExprResult E = getDerived().TransformExpr(OldArgs[I]);
+      if (E.isInvalid())
+        return DeclarationNameInfo();
+      NewArgs[I] = E.get();
+    }
+    SourceRange Range = NameInfo.getCXXReflectedIdNameRange();
+    return getSema().BuildReflectedIdName(Range.getBegin(), NewArgs, Range.getEnd());
+  }
   }
 
   llvm_unreachable("Unknown name kind.");

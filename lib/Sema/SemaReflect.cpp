@@ -206,7 +206,6 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
   Source = Source.getUnqualifiedType();
   Source = SemaRef.Context.getCanonicalType(Source);
 
-  // FIXME: We should cache meta::info and simply compare against that.
   if (Source != SemaRef.Context.MetaInfoTy) {
     SemaRef.Diag(E->getBeginLoc(), diag::err_reflection_trait_wrong_type)
         << Source;
@@ -272,6 +271,229 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
 
   return new (Context) CXXReflectionTraitExpr(Context, ResultTy, Trait,
                                               TraitLoc, Operands, RParenLoc);
+}
+
+static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
+                              const APValue& Val) {
+  // Extracting the string valkue from the LValue.
+  //
+  // FIXME: We probably want something like EvaluateAsString in the Expr class.
+  APValue::LValueBase Base = Val.getLValueBase();
+  if (Base.is<const Expr *>()) {
+    const Expr *BaseExpr = Base.get<const Expr *>();
+    assert(isa<StringLiteral>(BaseExpr) && "Not a string literal");
+    const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
+    OS << Str->getString();
+  } else {
+    llvm_unreachable("Use of string variable not implemented");
+    // const ValueDecl *D = Base.get<const ValueDecl *>();
+    // return Error(E->getMessage());
+  }
+  return true;
+}
+
+
+static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
+                                 QualType T) {
+  assert(T->isArrayType() && "Not an array type");
+  const ArrayType *ArrayTy = cast<ArrayType>(T.getTypePtr());
+
+  // Check that the type is 'const char[N]' or 'char[N]'.
+  QualType ElemTy = ArrayTy->getElementType();
+  if (!ElemTy->isCharType()) {
+    S.Diag(E->getBeginLoc(), diag::err_reflected_id_invalid_operand_type) << T;
+    return false;
+  }
+
+  // Evaluate the expression.
+  Expr::EvalResult Result;
+  if (!E->EvaluateAsLValue(Result, S.Context)) {
+    // FIXME: Include notes in the diagnostics.
+    S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
+    return false;
+  }
+
+  return AppendStringValue(S, OS, Result.Val);
+}
+
+static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
+                                   QualType T) {
+  assert(T->isPointerType() && "Not a pointer type");
+  const PointerType* PtrTy = cast<PointerType>(T.getTypePtr());
+
+  // Check for 'const char*'.
+  QualType ElemTy = PtrTy->getPointeeType();
+  if (!ElemTy->isCharType() || !ElemTy.isConstQualified()) {
+    S.Diag(E->getBeginLoc(), diag::err_reflected_id_invalid_operand_type) << T;
+    return false;
+  }
+
+  // Try evaluating the expression as an rvalue and then extract the result.
+  Expr::EvalResult Result;
+  if (!E->EvaluateAsRValue(Result, S.Context)) {
+    // FIXME: This is not the right error.
+    S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
+    return false;
+  }
+
+  return AppendStringValue(S, OS, Result.Val);
+}
+
+static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
+  llvm::APSInt N;
+  if (!E->EvaluateAsInt(N, S.Context)) {
+    S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
+    return false;
+  }
+  OS << N;
+  return true;
+}
+
+static inline bool
+AppendReflectedDecl(Sema &S, llvm::raw_ostream &OS, const Expr *ReflExpr,
+                    const Decl *D) {
+  // If this is a named declaration, append its identifier.
+  if (!isa<NamedDecl>(D)) {
+    // FIXME: Improve diagnostics.
+    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflection_not_named);
+    return false;
+  }
+  const NamedDecl *ND = cast<NamedDecl>(D);
+
+  // FIXME: What if D has a special name? For example operator==?
+  // What would we append in that case?
+  DeclarationName Name = ND->getDeclName();
+  if (!Name.isIdentifier()) {
+    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer) << Name;
+    return false;
+  }
+
+  OS << ND->getName();
+  return true;
+}
+
+static inline bool
+AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
+                    const Type *T) {
+  // If this is a class type, append its identifier.
+  if (auto *RC = T->getAsCXXRecordDecl())
+    OS << RC->getName();
+  else {
+    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer)
+      << QualType(T, 0);
+    return false;
+  }
+  return true;
+}
+
+static bool
+AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
+  APValue Reflection = cast<CXXReflectExpr>(E)->getValue();
+
+  if (const Decl *D = getAsReflectedDeclaration(Reflection))
+    return AppendReflectedDecl(S, OS, E, D);
+
+  if (const Type *T = getAsReflectedType(Reflection))
+    return AppendReflectedType(S, OS, E, T);
+
+  if (const Expr *E = getAsReflectedStatement(Reflection))
+    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
+      return AppendReflectedDecl(S, OS, E, DRE->getDecl());
+
+  llvm_unreachable("Unsupported reflection type");
+}
+
+static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
+ return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
+    return E->isTypeDependent();
+  });
+}
+
+/// Constructs a new identifier from the expressions in Parts. Returns nullptr
+/// on error.
+DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
+                                               SmallVectorImpl<Expr *> &Parts,
+                                               SourceLocation EndLoc) {
+
+  // If any components are dependent, we can't compute the name.
+  if (HasDependentParts(Parts)) {
+    DeclarationName Name
+      = Context.DeclarationNames.getCXXReflectedIdName(Parts.size(), &Parts[0]);
+    DeclarationNameInfo NameInfo(Name, BeginLoc);
+    NameInfo.setCXXReflectedIdNameRange({BeginLoc, EndLoc});
+    return NameInfo;
+  }
+
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  for (std::size_t I = 0; I < Parts.size(); ++I) {
+    Expr *E = Parts[I];
+
+    assert(!E->isTypeDependent() && !E->isValueDependent()
+        && "Dependent name component");
+
+    // Get the type of the reflection.
+    QualType T = E->getType();
+    if (AutoType *D = T->getContainedAutoType()) {
+      T = D->getDeducedType();
+      if (!T.getTypePtr())
+        llvm_unreachable("Undeduced value reflection");
+    }
+    T = Context.getCanonicalType(T);
+
+    SourceLocation ExprLoc = E->getBeginLoc();
+
+    // Evaluate the sub-expression (depending on type) in order to compute
+    // a string part that will constitute a declaration name.
+    if (T->isConstantArrayType()) {
+      if (!AppendCharacterArray(*this, OS, E, T))
+        return DeclarationNameInfo();
+    }
+    else if (T->isPointerType()) {
+      if (!AppendCharacterPointer(*this, OS, E, T))
+        return DeclarationNameInfo();
+    }
+    else if (T->isIntegerType()) {
+      if (I == 0) {
+        // An identifier cannot start with an integer value.
+        Diag(ExprLoc, diag::err_reflected_id_with_integer_prefix);
+        return DeclarationNameInfo();
+      }
+      if (!AppendInteger(*this, OS, E, T))
+        return DeclarationNameInfo();
+    }
+    else if (CheckReflectionOperand(*this, E)) {
+      if (!AppendReflection(*this, OS, E))
+        return DeclarationNameInfo();
+    }
+    else {
+      Diag(ExprLoc, diag::err_reflected_id_invalid_operand_type) << T;
+      return DeclarationNameInfo();
+    }
+  }
+
+  // FIXME: Should we always return a declaration name?
+  IdentifierInfo *Id = &PP.getIdentifierTable().get(Buf);
+  DeclarationName Name = Context.DeclarationNames.getIdentifier(Id);
+  return DeclarationNameInfo(Name, BeginLoc);
+}
+
+/// Constructs a new identifier from the expressions in Parts. Returns false
+/// if no errors were encountered.
+bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *> &Parts,
+                           UnqualifiedId &Result,
+                           SourceLocation LParenLoc,
+                           SourceLocation RParenLoc) {
+  DeclarationNameInfo NameInfo = BuildReflectedIdName(LParenLoc, Parts, RParenLoc);
+  DeclarationName Name = NameInfo.getName();
+  if (!Name)
+    return true;
+  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName)
+    Result.setReflectedId(LParenLoc, Name.getCXXReflectedIdArguments(),
+                          RParenLoc);
+  else
+    Result.setIdentifier(Name.getAsIdentifierInfo(), LParenLoc);
+  return false;
 }
 
 ExprResult Sema::ActOnCXXUnreflexprExpression(SourceLocation Loc,

@@ -87,6 +87,11 @@ void ODRHash::AddDeclarationName(DeclarationName Name) {
       AddDecl(Template);
     }
   }
+  case DeclarationName::CXXReflectedIdName: {
+    for (Expr *E : Name.getCXXReflectedIdArguments())
+      AddStmt(E);
+    break;
+  }
   }
 }
 

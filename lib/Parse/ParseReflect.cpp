@@ -117,7 +117,7 @@ static unsigned ReflectionTraitArity(tok::TokenKind kind) {
   }
 }
 
-/// \brief Parse a reflection trait.
+/// Parse a reflection trait.
 ///
 /// \verbatim
 ///   primary-expression:
@@ -158,6 +158,37 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 
   ReflectionTrait Trait = ReflectionTraitKind(Kind);
   return Actions.ActOnCXXReflectionTrait(Loc, Trait, Args, RPLoc);
+}
+
+/// Parse a reflected id
+///
+///   unqualified-id:
+///      '(.' reflection '.)'
+///
+/// Returns true if parsing or semantic analysis fail.
+bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
+  assert(Tok.is(tok::l_paren_period));
+
+  BalancedDelimiterTracker T(*this, tok::l_paren_period);
+  if (T.expectAndConsume())
+    return true;
+
+  SmallVector<Expr *, 4> Parts;
+  while (true) {
+    ExprResult Result = ParseConstantExpression();
+    if (Result.isInvalid())
+      return true;
+    Parts.push_back(Result.get());
+    if (Tok.is(tok::period_r_paren))
+      break;
+    if (ExpectAndConsume(tok::comma))
+      return true;
+  }
+  if (T.consumeClose())
+    return true;
+
+  return Actions.BuildDeclnameId(Parts, Result,
+                                 T.getOpenLocation(), T.getCloseLocation());
 }
 
 /// Parse a reflected-value-expression.

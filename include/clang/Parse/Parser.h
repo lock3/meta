@@ -2773,6 +2773,8 @@ private:
   //===--------------------------------------------------------------------===//
   // Metaprogramming
 
+  bool ParseCXXReflectedId(UnqualifiedId &Result);
+
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXReflectionTrait();
   ExprResult ParseCXXUnreflexprExpression();

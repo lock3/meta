@@ -36,6 +36,7 @@ class CXXDeductionGuideNameExtra;
 class CXXLiteralOperatorIdName;
 class CXXOperatorIdName;
 class CXXSpecialName;
+class CXXReflectedIdNameExtra;
 class DeclarationNameExtra;
 class IdentifierInfo;
 class MultiKeywordSelector;
@@ -67,6 +68,7 @@ public:
     CXXDeductionGuideName,
     CXXOperatorName,
     CXXLiteralOperatorName,
+    CXXReflectedIdName,
     CXXUsingDirective
   };
 
@@ -164,6 +166,12 @@ private:
   CXXLiteralOperatorIdName *getAsCXXLiteralOperatorIdName() const {
     if (getNameKind() == CXXLiteralOperatorName)
       return reinterpret_cast<CXXLiteralOperatorIdName *>(getExtra());
+    return nullptr;
+  }
+
+  CXXReflectedIdNameExtra *getAsCXXReflectedIdName() const {
+    if (getNameKind() == CXXReflectedIdName)
+      return reinterpret_cast<CXXReflectedIdNameExtra *>(getExtra());
     return nullptr;
   }
 
@@ -268,6 +276,10 @@ public:
   /// getCXXLiteralIdentifier - If this name is the name of a literal
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
+
+  /// getCXXReflectIdArguments - If this is an idexpr name, retrieve the list
+  /// of arguments.
+  llvm::ArrayRef<Expr *> getCXXReflectedIdArguments() const;
 
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.
@@ -407,6 +419,23 @@ public:
   void Profile(llvm::FoldingSetNodeID &FSID) { FSID.AddPointer(ID); }
 };
 
+/// \brief Contains the set of operands used to compute an id-expr name.
+///
+/// Memory for the arguments is allocated by the AST context.
+class CXXReflectedIdNameExtra
+  : public DeclarationNameExtra, public llvm::FoldingSetNode {
+public:
+  const ASTContext *Ctx;
+  std::size_t NumArgs;
+  Expr **Args;
+
+  /// FETokenInfo - Extra information associated with this declaration
+  /// name that can be used by the front end.
+  void *FETokenInfo;
+
+  void Profile(llvm::FoldingSetNodeID &ID);
+};
+
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal
 /// identifiers, C++ constructor names, etc. This class contains
@@ -442,6 +471,8 @@ class DeclarationNameTable {
   /// getCXXDeductionGuideName can be used to obtain a DeclarationName
   /// from the corresponding template declaration.
   llvm::FoldingSet<CXXDeductionGuideNameExtra> CXXDeductionGuideNames;
+
+  llvm::FoldingSet<CXXReflectedIdNameExtra> CXXReflectedIdNames;
 
 public:
   DeclarationNameTable(const ASTContext &C);
@@ -485,6 +516,9 @@ public:
   /// getCXXLiteralOperatorName - Get the name of the literal operator function
   /// with II as the identifier.
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
+
+  /// getCXXReflectedIdName - Get a name computed from the given arguments.
+  DeclarationName getCXXReflectedIdName(std::size_t NumArgs, Expr **Args);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
@@ -619,6 +653,22 @@ public:
   void setCXXLiteralOperatorNameLoc(SourceLocation Loc) {
     assert(Name.getNameKind() == DeclarationName::CXXLiteralOperatorName);
     LocInfo.CXXLiteralOperatorName.OpNameLoc = Loc.getRawEncoding();
+  }
+
+  /// The source range of the idexpr operator.
+  /// Reuses the structure of operator names.
+  SourceRange getCXXReflectedIdNameRange() const {
+    assert(Name.getNameKind() == DeclarationName::CXXReflectedIdName);
+    return SourceRange(
+      SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.BeginOpNameLoc),
+      SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.EndOpNameLoc));
+  }
+
+  /// Sets the range of the operator name.
+  void setCXXReflectedIdNameRange(SourceRange R) {
+    assert(Name.getNameKind() == DeclarationName::CXXReflectedIdName);
+    LocInfo.CXXOperatorName.BeginOpNameLoc = R.getBegin().getRawEncoding();
+    LocInfo.CXXOperatorName.EndOpNameLoc = R.getEnd().getRawEncoding();
   }
 
   /// Determine whether this name involves a template parameter.

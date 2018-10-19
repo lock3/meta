@@ -1271,6 +1271,9 @@ ASTNodeImporter::ImportDeclarationNameLoc(const DeclarationNameInfo &From,
     To.setNamedTypeInfo(Importer.Import(FromTInfo));
     return;
   }
+  case DeclarationName::CXXReflectedIdName:
+    SourceRange Range = From.getCXXOperatorNameRange();
+    To.setCXXReflectedIdNameRange(Importer.Import(Range));
   }
   llvm_unreachable("Unknown name kind.");
 }
@@ -7597,6 +7600,9 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
   case DeclarationName::CXXLiteralOperatorName:
     return ToContext.DeclarationNames.getCXXLiteralOperatorName(
                                    Import(FromName.getCXXLiteralIdentifier()));
+
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
 
   case DeclarationName::CXXUsingDirective:
     // FIXME: STATICS!

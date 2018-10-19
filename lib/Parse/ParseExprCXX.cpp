@@ -2444,6 +2444,7 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
+/// [Meta]  (. reflection .)
 ///
 /// \endcode
 ///
@@ -2618,6 +2619,11 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
 
     return false;
   }
+
+  // unqualified-id:
+  //    '(.' reflection '.)'
+  if (Tok.is(tok::l_paren_period))
+    return ParseCXXReflectedId(Result);
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

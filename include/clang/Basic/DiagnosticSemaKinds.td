@@ -2467,6 +2467,7 @@ def err_need_header_before_reflexpr : Error<
 def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;
 def err_reflect_ambiguous_id : Error<"reflection of ambiguous identifier %0">;
 def err_reflect_overloaded_id : Error<"reflection of overloaded identifier %0">;
+def err_reflection_not_named : Error<"reflected entity is not named named">;
 def err_reflection_failed : Error<"reflection failed">;
 def err_reflection_trait_wrong_type : Error<
   "operand does not have type %0">;
@@ -2484,6 +2485,14 @@ def err_empty_type_reflection : Error<
   "cannot project a type for an empty reflection">;
 def err_cannot_project_value : Error<
   "cannot project a value for a %select{constructor|destructor}0">;
+
+// declaration names
+def err_reflected_id_with_integer_prefix : Error<
+  "declaration name begins with an integer">;
+def err_reflected_id_invalid_operand_type : Error<
+  "cannot include expression of type %0 in a declaration name">;
+def err_reflected_id_not_an_identifer : Error<
+  "declaration name %0 not is not an identifier">;
 
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<

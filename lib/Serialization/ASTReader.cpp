@@ -1124,6 +1124,8 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXUsingDirective:
     Data = 0;
     break;
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
   }
 
   return DeclarationNameKey(Kind, Data);
@@ -8654,6 +8656,9 @@ ASTReader::ReadDeclarationName(ModuleFile &F,
     return Context.DeclarationNames.getCXXLiteralOperatorName(
                                        GetIdentifierInfo(F, Record, Idx));
 
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
+
   case DeclarationName::CXXUsingDirective:
     return DeclarationName::getUsingDirectiveName();
   }
@@ -8690,6 +8695,13 @@ void ASTReader::ReadDeclarationNameLoc(ModuleFile &F,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
+    break;
+
+  case DeclarationName::CXXReflectedIdName:
+    DNLoc.CXXOperatorName.BeginOpNameLoc
+        = ReadSourceLocation(F, Record, Idx).getRawEncoding();
+    DNLoc.CXXOperatorName.EndOpNameLoc
+        = ReadSourceLocation(F, Record, Idx).getRawEncoding();
     break;
   }
 }
