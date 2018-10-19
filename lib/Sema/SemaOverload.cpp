@@ -8878,7 +8878,7 @@ void
 Sema::AddArgumentDependentLookupCandidates(DeclarationName Name,
                                            SourceLocation Loc,
                                            ArrayRef<Expr *> Args,
-                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
+					   TemplateArgumentListInfo *ExplicitTemplateArgs,
                                            OverloadCandidateSet& CandidateSet,
                                            bool PartialOverloading) {
   ADLResult Fns;
@@ -8903,6 +8903,7 @@ Sema::AddArgumentDependentLookupCandidates(DeclarationName Name,
         Fns.erase(FunTmpl);
     }
 
+
   // For each of the ADL candidates we found, add it to the overload
   // set.
   for (ADLResult::iterator I = Fns.begin(), E = Fns.end(); I != E; ++I) {
@@ -8918,6 +8919,7 @@ Sema::AddArgumentDependentLookupCandidates(DeclarationName Name,
                                    FoundDecl, ExplicitTemplateArgs,
                                    Args, CandidateSet, PartialOverloading);
   }
+
 }
 
 namespace {
@@ -11657,7 +11659,7 @@ void Sema::AddOverloadedCallCandidates(UnresolvedLookupExpr *ULE,
     ULE->copyTemplateArgumentsInto(TABuffer);
     ExplicitTemplateArgs = &TABuffer;
   }
-
+  
   for (UnresolvedLookupExpr::decls_iterator I = ULE->decls_begin(),
          E = ULE->decls_end(); I != E; ++I)
     AddOverloadedCallCandidate(*this, I.getPair(), ExplicitTemplateArgs, Args,
@@ -13588,6 +13590,49 @@ Sema::BuildForRangeBeginEndCall(SourceLocation Loc,
     }
   }
   return FRS_Success;
+}
+
+Sema::ForRangeStatus
+Sema::BuildExpansionNextCall(SourceLocation Loc,
+			     SourceLocation RangeLoc,
+			     const DeclarationNameInfo &NameInfo,
+			     OverloadCandidateSet *CandidateSet,
+			     Expr *Range, ExprResult *CallExpr) {
+  CandidateSet->clear(OverloadCandidateSet::CSK_Normal);
+    UnresolvedSet<0> FoundNames;
+    UnresolvedLookupExpr *Fn =
+      UnresolvedLookupExpr::Create(Context, /*NamingClass=*/nullptr,
+                                   NestedNameSpecifierLoc(), NameInfo,
+                                   /*NeedsADL=*/true, /*Overloaded=*/false,
+                                   FoundNames.begin(), FoundNames.end());
+    bool CandidateSetError = buildOverloadedCallSet(nullptr, Fn, Fn, Range, Loc,
+                                                    CandidateSet, CallExpr);
+    if (CandidateSet->empty() || CandidateSetError) {
+      *CallExpr = ExprError();
+      return FRS_NoViableFunction;
+    }
+
+    OverloadCandidateSet::iterator dude = CandidateSet->begin();
+    dude->Function->dump();
+
+    OverloadCandidateSet::iterator Best;
+    OverloadingResult OverloadResult =
+      CandidateSet->BestViableFunction(*this, Fn->getBeginLoc(), Best);
+
+    if (OverloadResult == OR_No_Viable_Function) {
+      *CallExpr = ExprError();
+      return FRS_NoViableFunction;
+    }
+    *CallExpr = FinishOverloadedCallExpr(*this, nullptr, Fn, Fn, Loc, Range,
+                                         Loc, nullptr, CandidateSet, &Best,
+                                         OverloadResult,
+                                         /*AllowTypoCorrection=*/false);
+    if (CallExpr->isInvalid() || OverloadResult != OR_Success) {
+      *CallExpr = ExprError();
+      return FRS_DiagnosticIssued;
+    }
+
+    return FRS_Success;
 }
 
 

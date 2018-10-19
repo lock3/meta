@@ -428,18 +428,25 @@ class CXXConstexprExpansionStmt : public CXXExpansionStmt {
   /// FIXME: Do constexpr expansions handle __N the same way as tupleexpansions?
   /// Abstractly, the size of the expansion. This is needed to construct
   /// the initializer for the loop variable.
-  TemplateParameterList *Parms;
+  // TemplateParameterList *Parms;
+
+  Stmt *BeginStmt = nullptr;
+  Stmt *EndStmt = nullptr;
+  Expr *BeginExpr = nullptr;
+  Expr *NextCall = nullptr;
   
 public:
-  CXXConstexprExpansionStmt(TemplateParameterList *TP, DeclStmt *RangeVar,
-                        DeclStmt *LoopVar, Stmt *Body, std::size_t N,
-                        SourceLocation FL, SourceLocation CEL,
-			SourceLocation CL, SourceLocation RPL);
+  CXXConstexprExpansionStmt(DeclStmt *RangeVar,
+			    DeclStmt *LoopVar, Stmt *Body, Stmt *BeginStmt,
+			    Stmt *EndStmt, Expr *BeginExpr,
+			    Expr *NextCall, SourceLocation FL,
+			    SourceLocation CEL, SourceLocation CL,
+			    SourceLocation RPL);
   CXXConstexprExpansionStmt(EmptyShell Empty)
       : CXXExpansionStmt(CXXConstexprExpansionStmtClass, Empty) {}
 
   /// Returns the template parameter list of the declaration.
-  TemplateParameterList *getTemplateParameters() { return Parms; }
+  TemplateParameterList *getTemplateParameters() { return nullptr; }
 
   /// Returns the placeholder value \c __N used in the loop variable
   /// initializer \c get\<__N\>(__range).
@@ -447,6 +454,10 @@ public:
 
   /// Returns the statement containing the range declaration.
   DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
+
+  Expr *getBeginExpr() const { return BeginExpr; }
+
+  Expr *getNextCall() const { return NextCall; }
 
   /// Returns the initializer of the range statement.
   Expr *getRangeInit() { return nullptr; }

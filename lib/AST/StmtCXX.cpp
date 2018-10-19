@@ -135,6 +135,22 @@ const Expr *CXXTupleExpansionStmt::getRangeInit() const {
   return const_cast<CXXTupleExpansionStmt *>(this)->getRangeInit();
 }
 
+CXXConstexprExpansionStmt::CXXConstexprExpansionStmt(DeclStmt *RangeVar,
+						     DeclStmt *LoopVar,
+						     Stmt *Body,
+						     Stmt *BeginStmt,
+						     Stmt *EndStmt,
+						     Expr *BeginExpr,
+						     Expr *NextCall,
+						     SourceLocation FL,
+						     SourceLocation CEL,
+						     SourceLocation CL,
+						     SourceLocation RPL)
+  : CXXExpansionStmt(CXXConstexprExpansionStmtClass, RangeVar, LoopVar,
+		     Body, std::size_t(), FL, CEL, CL, RPL),
+    BeginStmt(BeginStmt), EndStmt(EndStmt), BeginExpr(BeginExpr), NextCall(NextCall)
+{}
+
 CXXPackExpansionStmt::CXXPackExpansionStmt(DeclStmt *RangeVar,
                                            DeclStmt *LoopVar, Stmt *Body,
                                            SourceLocation FL, SourceLocation EL,

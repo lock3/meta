@@ -2934,6 +2934,12 @@ public:
                                            OverloadCandidateSet *CandidateSet,
                                            Expr *Range, ExprResult *CallExpr);
 
+  ForRangeStatus BuildExpansionNextCall(SourceLocation Loc,
+					SourceLocation RangeLoc,
+					const DeclarationNameInfo &NameInfo,
+					OverloadCandidateSet *CandidateSet,
+					Expr *Range, ExprResult *CallExpr);
+
   ExprResult BuildOverloadedCallExpr(Scope *S, Expr *Fn,
                                      UnresolvedLookupExpr *ULE,
                                      SourceLocation LParenLoc,
@@ -3817,7 +3823,8 @@ public:
                                    SourceLocation EllipsisLoc, Stmt *LoopVar,
                                    SourceLocation ColonLoc, Expr *Collection,
                                    SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind);
+                                   BuildForRangeKind Kind,
+                                   bool IsConstexpr);
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
   StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
                                         SourceLocation EllipsisLoc,
@@ -3825,6 +3832,13 @@ public:
                                         Stmt *RangeVarDecl, Stmt *LoopVarDecl,
                                         SourceLocation RParenLoc,
                                         BuildForRangeKind Kind);
+  StmtResult BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
+					    SourceLocation ConstexprLoc,
+					    SourceLocation ColonLoc,
+					    Stmt *RangeVarDecl,
+					    Stmt *LoopVarDecl,
+					    SourceLocation RParenLoc,
+					    BuildForRangeKind Kind);
   StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
                                        SourceLocation EllipsisLoc,
                                        SourceLocation ColonLoc, Expr *PackExpr,
@@ -3834,6 +3848,9 @@ public:
   StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
   StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion,
                                          Stmt *Body);
+  StmtResult FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt
+					     *Expansion,
+					     Stmt *Body);
   StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion,
                                         Stmt *Body);
 
@@ -7830,6 +7847,9 @@ public:
   StmtResult
   SubstForTupleBody(Stmt *Body,
                     const MultiLevelTemplateArgumentList &TemplateArgs);
+
+  StmtResult
+  SubstConstexprExpansionBody(Stmt *Body);
 
   TemplateParameterList *
   SubstTemplateParams(TemplateParameterList *Params, DeclContext *Owner,
