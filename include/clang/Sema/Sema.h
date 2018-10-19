@@ -8583,19 +8583,19 @@ public:
 
   ExprResult BuildConstantExpression(Expr *E);
 
-  bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-                        IdentifierInfo *Id, unsigned &Kind, 
+  bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
+                        IdentifierInfo *Id, unsigned &Kind,
                         ParsedReflectionPtr &Entity);
-  bool ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
+  bool ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
 				 IdentifierInfo *Id, unsigned &Kind,
 				 ParsedReflectionPtr &Entity);
-  bool ActOnReflectedType(Declarator &D, unsigned &Kind, 
+  bool ActOnReflectedType(Declarator &D, unsigned &Kind,
                           ParsedReflectionPtr &Entity);
-  ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc, unsigned Kind, 
+  ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc, unsigned Kind,
                                        ParsedReflectionPtr Entity,
                                        SourceLocation LP, SourceLocation RP);
 
-  ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc, 
+  ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc,
                                      ReflectionTrait Trait,
                                      ArrayRef<Expr *> Args,
                                      SourceLocation RPLoc);
