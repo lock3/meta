@@ -378,6 +378,8 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
   // If this is a class type, append its identifier.
   if (auto *RC = T->getAsCXXRecordDecl())
     OS << RC->getName();
+  else if (const BuiltinType *BT = T->getAs<BuiltinType>())
+    OS << BT->getName();
   else {
     S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer)
       << QualType(T, 0);
