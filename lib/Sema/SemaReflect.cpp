@@ -388,9 +388,33 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
   return true;
 }
 
+static void EvaluateReflection(Sema &S, Expr *E, APValue &Reflection, bool &Failed) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!E->EvaluateAsRValue(Result, S.Context)) {
+    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    Failed = true;
+    return;
+  }
+
+  Reflection = Result.Val;
+  if (isNullReflection(Reflection)) {
+    S.Diag(E->getExprLoc(), diag::err_empty_type_reflection);
+    Failed = true;
+  }
+}
+
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  APValue Reflection = cast<CXXReflectExpr>(E)->getValue();
+  APValue Reflection;
+  bool EvalFailed;
+  EvaluateReflection(S, E, Reflection, EvalFailed);
+
+  if (EvalFailed)
+    return false;
 
   if (const Decl *D = getAsReflectedDeclaration(Reflection))
     return AppendReflectedDecl(S, OS, E, D);
@@ -550,20 +574,11 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return QualType();
 
-  // Evaluate the reflection.
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  if (!E->EvaluateAsRValue(Result, Context)) {
-    Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      Diag(PD.first, PD.second);
-    return QualType();
-  }
+  APValue Reflection;
+  bool EvalFailed;
+  EvaluateReflection(*this, E, Reflection, EvalFailed);
 
-  APValue Reflection = Result.Val;
-  if (isNullReflection(Reflection)) {
-    Diag(E->getExprLoc(), diag::err_empty_type_reflection);
+  if (EvalFailed) {
     return QualType();
   }
 
