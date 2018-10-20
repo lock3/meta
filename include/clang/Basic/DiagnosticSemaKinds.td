@@ -2492,7 +2492,7 @@ def err_reflected_id_with_integer_prefix : Error<
 def err_reflected_id_invalid_operand_type : Error<
   "cannot include expression of type %0 in a declaration name">;
 def err_reflected_id_not_an_identifer : Error<
-  "declaration name %0 not is not an identifier">;
+  "declaration name %0 is not an identifier">;
 
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
