@@ -2658,6 +2658,11 @@ const char *Type::getTypeClassName() const {
   llvm_unreachable("Invalid type class.");
 }
 
+StringRef BuiltinType::getName() const {
+  LangOptions LO;
+  return getName(PrintingPolicy(LO));
+}
+
 StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
   switch (getKind()) {
   case Void:
