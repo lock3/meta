@@ -8595,10 +8595,21 @@ public:
                                                   Decl *D);
   ParsedReflectionOperand ActOnReflectedExpression(Expr *E);
 
-  ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc,
-                                       ParsedReflectionOperand Ref,
-                                       SourceLocation LParen,
-                                       SourceLocation RParen);
+  ExprResult ActOnCXXReflectExpr(SourceLocation KWLoc,
+                                 ParsedReflectionOperand Ref,
+                                 SourceLocation LParen, SourceLocation RParen);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, QualType T,
+                                 SourceLocation LParen,
+                                 SourceLocation RParen);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, TemplateName N,
+                                 SourceLocation LParen,
+                                 SourceLocation RParen);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, NamespaceName N,
+                                 SourceLocation LParen,
+                                 SourceLocation RParen);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Expr *E,
+                                 SourceLocation LParen,
+                                 SourceLocation RParen);
 
   ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc,
                                      ReflectionTrait Trait,

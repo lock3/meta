@@ -4893,8 +4893,8 @@ public:
                             "Use getBeginLoc instead") {
     return getBeginLoc();
   }
-  SourceLocation getBeginLoc() const LLVM_READONLY { 
-    return KWLoc; 
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return KWLoc;
   }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
@@ -4905,12 +4905,21 @@ public:
     return RParenLoc;
   }
 
+  /// Returns location of the `reflexpr` keyword.
+  SourceLocation getKeywordLoc() const { return KWLoc; }
+
+  /// Returns the location of the '(' token.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the location of the ')' token.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
   /// Sets the location of the `reflexpr` keyword.
   void setKeywordLoc(SourceLocation L) { KWLoc = L; }
-  
+
   /// Sets the location of the `(` token.
   void setLParenLoc(SourceLocation L) { LParenLoc = L; }
-  
+
   /// Sets the location of the `)` token.
   void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 

@@ -1426,14 +1426,6 @@ public:
     return getSema().BuildConstantExpression(E);
   }
 
-  /// \brief Rebuild a reflection expression from a source expression.
-  ExprResult RebuildCXXReflectExpr(SourceLocation KWLoc, unsigned Kind,
-                                   const void* Entity, SourceLocation RPLoc) {
-    // return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity,
-    //                                            SourceLocation(), RPLoc);
-    return ExprError();
-  }
-
   /// \brief Build a new reflection trait expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -7233,49 +7225,59 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
 {
-  return ExprError();
-  /*
-  using namespace clang::reflect;
-
-  APValue OldReflection = E->getValue();
-  ReflectionKind ReflKind;
-  const void *ReflEntity;
-  if (const Decl *D = getAsReflectedDeclaration(OldReflection)) {
-    ReflKind = REK_declaration;
-    ReflEntity = TransformDecl(D->getLocation(), const_cast<Decl*>(D));
-  } else if (const Type *T = getAsReflectedType(OldReflection)) {
-    QualType NewType = TransformType(QualType(T, 0));
-    ReflKind = REK_type;
-    ReflEntity = NewType.getTypePtr();
-  } else if (UnresolvedLookupExpr *ULE
-             = const_cast<UnresolvedLookupExpr *>(
-                 getAsReflectedULE(OldReflection))) {
-    ExprResult LookupResult = getDerived().TransformUnresolvedLookupExpr(ULE);
-
-    if (LookupResult.isInvalid())
+  const ReflectionOperand &Ref = E->getOperand();
+  switch (Ref.getKind()) {
+  case ReflectionOperand::Type: {
+    QualType Old = Ref.getAsType();
+    
+    // Adjust the type in case we get parsed type information.
+    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(Old))
+      Old = LIT->getType();
+    
+    QualType New  = getDerived().TransformType(Old);
+    if (New.isNull())
       return ExprError();
-
-    ReflKind = OldReflection.getReflectionKind();
-    ReflEntity = static_cast<UnresolvedLookupExpr *>(LookupResult.get());
-  } else if (Expr *E
-             = const_cast<Expr *>(getAsReflectedStatement(OldReflection))) {
-    ExprResult TransformResult = TransformExpr(E);
-
-    if (TransformResult.isInvalid())
-      return ExprError();
-
-    ReflKind = REK_statement;
-    ReflEntity = TransformResult.get();
-  } else {
-    ReflKind = REK_special;
-    ReflEntity = nullptr;
+    llvm::outs() << "SUBST TYPE\n";
+    New->dump();
+    return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New, 
+                                         E->getLParenLoc(),
+                                         E->getRParenLoc());
   }
-
-  return RebuildCXXReflectExpr(E->getBeginLoc(),
-                               ReflKind,
-                               ReflEntity,
-                               E->getEndLoc());
-  */
+  case ReflectionOperand::Template: {
+    TemplateName Old = Ref.getAsTemplate();
+    // FIXME: Extract the scope specifier from the old name and
+    // substitute through that (or rather, get the NNS, substitute
+    // through that and then make SS adopt it).
+    CXXScopeSpec SS;
+    SourceLocation Loc = E->getLParenLoc(); // FIXME: This is wrong.
+    TemplateName New = getDerived().TransformTemplateName(SS, Old, Loc);
+    if (New.isNull())
+      return ExprError();
+    llvm::outs() << "SUBST TEMPLATE\n";
+    New.getAsTemplateDecl()->dump();
+    return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New, 
+                                         E->getLParenLoc(),
+                                         E->getRParenLoc());
+  }
+  case ReflectionOperand::Namespace: {
+    // FIXME: Actually transform the name. For code injection, this
+    // might end up being a substitution.
+    return E;
+  }
+  case ReflectionOperand::Expression: {
+    Expr *Old = Ref.getAsExpression();
+    Old->dump();
+    ExprResult New = getDerived().TransformExpr(Old);
+    if (New.isInvalid())
+      return ExprError();
+    llvm::outs() << "SUBST EXPR\n";
+    New.get()->dump();
+    return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New.get(), 
+                                         E->getLParenLoc(),
+                                         E->getRParenLoc());
+  }
+  }
+  llvm_unreachable("invalid reflection");
 }
 
 template <typename Derived>
