@@ -167,7 +167,6 @@ class InvalidationReason {
     NOT_INITIALIZED,
     POINTEE_LEFT_SCOPE,
     TEMPORARY_LEFT_SCOPE,
-    POINTER_ARITHMETIC,
     FORBIDDEN_CAST,
     DEREFERENCED,
     MODIFIED
@@ -200,9 +199,6 @@ public:
     case FORBIDDEN_CAST:
       Reporter.noteForbiddenCast(getLoc());
       return;
-    case POINTER_ARITHMETIC:
-      Reporter.notePointerArithmetic(getLoc());
-      return;
     case DEREFERENCED:
       Reporter.noteDereferenced(getLoc());
       return;
@@ -225,10 +221,6 @@ public:
 
   static InvalidationReason TemporaryLeftScope(SourceRange Range) {
     return {Range, TEMPORARY_LEFT_SCOPE};
-  }
-
-  static InvalidationReason PointerArithmetic(SourceRange Range) {
-    return {Range, POINTER_ARITHMETIC};
   }
 
   static InvalidationReason Dereferenced(SourceRange Range) {

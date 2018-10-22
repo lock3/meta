@@ -840,7 +840,8 @@ def ThreadSafetyBeta : DiagGroup<"thread-safety-beta">;
 def Consumed       : DiagGroup<"consumed">;
 
 def LifetimeNull     : DiagGroup<"lifetime-null">;
-def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull]>;
+def LifetimePointerArithmetic     : DiagGroup<"lifetime-pointer-arithmetic">;
+def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull, LifetimePointerArithmetic]>;
 def LifetimeDebug    : DiagGroup<"lifetime-debug">;
 
 // Note that putting warnings in -Wall will not disable them by default. If a

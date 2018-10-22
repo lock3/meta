@@ -188,15 +188,18 @@ public:
     const auto *DeclRef =
         dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts());
 
-    // Unless we see the actual array, we assume it is pointer arithmetic.
-    PSet Ref = PSet::invalid(
-        InvalidationReason::PointerArithmetic(E->getSourceRange()));
+    PSet Ref;
     if (DeclRef) {
       const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
       assert(VD);
       if (VD->getType().getCanonicalType()->isArrayType())
         Ref = PSet::singleton(VD);
     }
+
+    // Unless we have seen the actual array, we assume it is pointer arithmetic.
+    if (Ref.isUnknown())
+      Reporter.warnPointerArithmetic(E->getLocStart());
+
     setPSet(E, Ref);
   }
 
@@ -313,8 +316,8 @@ public:
     if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
     } else if (BO->getType()->isPointerType()) {
-      setPSet(BO, PSet::invalid(InvalidationReason::PointerArithmetic(
-                      BO->getSourceRange())));
+      Reporter.warnPointerArithmetic(BO->getOperatorLoc());
+      setPSet(BO, {});
     } else if (BO->isLValue() && BO->isCompoundAssignmentOp()) {
       setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->isLValue() && BO->getOpcode() == BO_Comma) {
@@ -337,10 +340,8 @@ public:
     default:
       // Workaround: detecting compiler generated AST node.
       if (hasPSet(UO) && UO->getLocStart() != UO->getLocEnd()) {
-        setPSet(getPSet(UO->getSubExpr()),
-                PSet::invalid(InvalidationReason::PointerArithmetic(
-                    UO->getSourceRange())),
-                UO->getSourceRange());
+        Reporter.warnPointerArithmetic(UO->getOperatorLoc());
+        setPSet(getPSet(UO->getSubExpr()), {}, UO->getSourceRange());
       }
     }
 
@@ -814,7 +815,7 @@ public:
         // That pset is invalid, because array to pointer decay is forbidden
         // by the bounds profile.
         // TODO: Better diagnostic that explains the array to pointer decay
-        PS = PSet::invalid(InvalidationReason::PointerArithmetic(Range));
+        Reporter.warnPointerArithmetic(Range.getBegin());
       } else if (Initializer) {
         PS = getPSet(Initializer);
 

@@ -2022,6 +2022,10 @@ public:
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
   }
+  void warnPointerArithmetic(SourceLocation Loc) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_lifetime_pointer_arithmetic);
+  }
   void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_pointee_left_scope) << Name;
@@ -2033,10 +2037,6 @@ public:
   void noteTemporaryDestroyed(SourceLocation Loc) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_temporary_destroyed);
-  }
-  void notePointerArithmetic(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_pointer_arithmetic);
   }
   void noteForbiddenCast(SourceLocation Loc) final {
     if(!IgnoreCurrentWarning)
