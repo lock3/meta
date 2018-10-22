@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++1z -freflection -verify %s
 
 namespace bar {
   namespace fin { }
@@ -31,8 +31,17 @@ S test_non_template() {
   return foo_bar_fin;
 }
 
+void test_bad() {
+  auto not_a_reflexpr = 1;
+
+  S foo_bar_fin  = S();
+  int int_x = foo_bar_fin.(. "get_nothing" .)(); // expected-error {{no member named 'get_nothing' in 'S'}}
+  int int_y = foo_bar_fin.(. "get_", (. "not_a_reflexpr" .) .)(); // expected-error {{expression is not an integral constant expression}}
+}
+
 int main() {
   S s_x = test_template<S>();
   S s_y = test_non_template();
+  test_bad();
   return 0;
 }
