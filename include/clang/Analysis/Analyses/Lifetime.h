@@ -59,12 +59,11 @@ public:
   virtual void warnReturnNull(SourceLocation Loc, bool possibly) = 0;
   virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset,
                                    StringRef ExpectedPset) = 0;
+  virtual void warnPointerArithmetic(SourceLocation Loc) = 0;
   virtual void notePointeeLeftScope(SourceLocation Loc, std::string Name) = 0;
   virtual void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) = 0;
-
   virtual void noteNeverInitialized(SourceLocation Loc) = 0;
   virtual void noteTemporaryDestroyed(SourceLocation Loc) = 0;
-  virtual void notePointerArithmetic(SourceLocation Loc) = 0;
   virtual void noteForbiddenCast(SourceLocation Loc) = 0;
   virtual void noteDereferenced(SourceLocation Loc) = 0;
   virtual void noteModified(SourceLocation Loc) = 0;
