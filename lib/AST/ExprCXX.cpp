@@ -1450,6 +1450,69 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
 
 void ArrayTypeTraitExpr::anchor() {}
 
+
+// Returns true if E is type or value dependent.
+static bool isDependent(const Expr* E) {
+  return E->isTypeDependent() || E->isValueDependent();
+}
+
+CXXReflectExpr::CXXReflectExpr(QualType T, QualType Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary, 
+         false, Arg->isDependentType(), Arg->isDependentType(), false),
+         Ref(Arg) { }
+
+CXXReflectExpr::CXXReflectExpr(QualType T, TemplateName Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, Arg.isDependent(), Arg.isDependent(), false), Ref(Arg) { }
+
+CXXReflectExpr::CXXReflectExpr(QualType T, NamespaceName Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, false, false, false), Ref(Arg) { }
+
+CXXReflectExpr::CXXReflectExpr(QualType T, Expr *Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, isDependent(Arg), isDependent(Arg), false), Ref(Arg) { }
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+                                       SourceLocation KW, QualType Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(KW);
+  E->setRParenLoc(KW);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+                                       SourceLocation KW, TemplateName Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(KW);
+  E->setRParenLoc(KW);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+                                       SourceLocation KW, NamespaceName Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(KW);
+  E->setRParenLoc(KW);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+                                       SourceLocation KW, Expr *Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(KW);
+  E->setRParenLoc(KW);
+  return E;
+}
+
 CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T, 
                                                ReflectionTrait RT, 
                                                SourceLocation TraitLoc, 
@@ -1472,27 +1535,4 @@ CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T,
     TraitLoc(TraitLoc), RParenLoc(RParenLoc) {
 
   std::copy(Args.begin(), Args.end(), this->Args);
-}
-
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, SourceLocation KWLoc,
-                                       QualType T, APValue Value,
-                                       SourceLocation LPLoc,
-                                       SourceLocation RPLoc,
-                                       ExprValueKind VK, bool TD, bool VD,
-                                       bool ID, bool UPP) {
-  assert(Value.isReflection() && "Value is not a reflection");
-  // TODO Memory allocation may be wrong here
-  return new (C) CXXReflectExpr(KWLoc, T, Value, LPLoc,
-                                RPLoc, VK, TD, VD, ID, UPP);
-}
-
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, SourceLocation KWLoc,
-                                       QualType T, ReflectionKind Kind,
-                                       const void *ReflectedEntity,
-                                       SourceLocation LPLoc,
-                                       SourceLocation RPLoc,
-                                       ExprValueKind VK, bool TD, bool VD,
-                                       bool ID, bool UPP) {
-  APValue Value(Kind, ReflectedEntity);
-  return Create(C, KWLoc, T, Value, LPLoc, RPLoc, VK, TD, VD, ID, UPP);
 }

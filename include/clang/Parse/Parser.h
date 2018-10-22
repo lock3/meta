@@ -2660,6 +2660,7 @@ private:
                             SourceLocation UsingLoc,
                             SourceLocation &DeclEnd,
                             ParsedAttributes &attrs);
+  Decl *ParseNamespaceName(CXXScopeSpec &SS, SourceLocation &IdentLoc);
 
   struct UsingDeclarator {
     SourceLocation TypenameLoc;
@@ -2750,6 +2751,7 @@ private:
   //===--------------------------------------------------------------------===//
   // Metaprogramming
 
+  ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXReflectionTrait();
   ExprResult ParseCXXUnreflexprExpression();

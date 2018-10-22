@@ -5111,7 +5111,27 @@ public:
   }
 
   bool VisitCXXReflectExpr(const CXXReflectExpr *E) {
-    return DerivedSuccess(E->getValue(), E);
+    const ReflectionOperand &Ref = E->getOperand();
+    switch (Ref.getKind()) {
+    case ReflectionOperand::Type: {
+      APValue Result(REK_type, Ref.getAsType().getAsOpaquePtr());
+      return DerivedSuccess(Result, E);
+    }
+    case ReflectionOperand::Template: {
+      APValue Result(REK_declaration, Ref.getAsTemplate().getAsTemplateDecl());
+      return DerivedSuccess(Result, E);
+    }
+    case ReflectionOperand::Namespace: {
+      APValue Result(REK_declaration, Ref.getAsNamespace().getNamespace());
+      return DerivedSuccess(Result, E);
+    }
+    case ReflectionOperand::Expression: {
+      APValue Result(REK_statement, Ref.getAsExpression());
+      return DerivedSuccess(Result, E);
+    }
+    }
+
+    llvm_unreachable("invalid reflection");
   }
 
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);

@@ -9371,6 +9371,28 @@ void Sema::PushUsingDirective(Scope *S, UsingDirectiveDecl *UDir) {
     S->PushUsingDirective(UDir);
 }
 
+Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
+                               SourceLocation Loc) {
+  // Lookup namespace name.
+  LookupResult R(*this, Id, Loc, LookupNamespaceName);
+  LookupParsedName(R, S, &SS);
+  if (R.isAmbiguous())
+    return nullptr;
+
+  if (R.empty())
+    // If lookup was initially empty, attempt a correction.
+    TryNamespaceTypoCorrection(*this, R, S, SS, Loc, Id);
+
+  if (R.empty()) {
+    // FIXME: This is only ever called from the parse of a reflection
+    // expression (which is a tentative parse), so don't diagnose the
+    // error.
+    return nullptr;
+  }
+
+  return R.getAsSingle<NamespaceDecl>();
+}
+
 Decl *Sema::ActOnUsingDeclaration(Scope *S, AccessSpecifier AS,
                                   SourceLocation UsingLoc,
                                   SourceLocation TypenameLoc, CXXScopeSpec &SS,

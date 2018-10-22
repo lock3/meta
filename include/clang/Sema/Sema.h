@@ -4623,6 +4623,11 @@ public:
 
   void PushUsingDirective(Scope *S, UsingDirectiveDecl *UDir);
 
+  /// Resolve SS and Id as a namespace name or nullptr if the pair does not
+  /// denote a namespace.
+  Decl *ActOnNamespaceName(Scope *CurScope, CXXScopeSpec &SS, 
+                           IdentifierInfo *Id, SourceLocation IdLoc);
+
   Decl *ActOnNamespaceAliasDef(Scope *CurScope,
                                SourceLocation NamespaceLoc,
                                SourceLocation AliasLoc,
@@ -8583,17 +8588,17 @@ public:
 
   ExprResult BuildConstantExpression(Expr *E);
 
-  bool ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-                        IdentifierInfo *Id, unsigned &Kind, 
-                        ParsedReflectionPtr &Entity);
-  bool ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc, 
-				 IdentifierInfo *Id, unsigned &Kind,
-				 ParsedReflectionPtr &Entity);
-  bool ActOnReflectedType(Declarator &D, unsigned &Kind, 
-                          ParsedReflectionPtr &Entity);
-  ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc, unsigned Kind, 
-                                       ParsedReflectionPtr Entity,
-                                       SourceLocation LP, SourceLocation RP);
+  ParsedReflectionOperand ActOnReflectedType(TypeResult T);
+  ParsedReflectionOperand ActOnReflectedTemplate(ParsedTemplateArgument T);
+  ParsedReflectionOperand ActOnReflectedNamespace(CXXScopeSpec &SS,
+                                                  SourceLocation &Loc,
+                                                  Decl *D);
+  ParsedReflectionOperand ActOnReflectedExpression(Expr *E);
+
+  ExprResult ActOnCXXReflectExpression(SourceLocation KWLoc,
+                                       ParsedReflectionOperand Ref,
+                                       SourceLocation LParen, 
+                                       SourceLocation RParen);
 
   ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc, 
                                      ReflectionTrait Trait,

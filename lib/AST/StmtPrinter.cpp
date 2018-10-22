@@ -2650,6 +2650,8 @@ void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
 }
 
 void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
+  OS << "reflexpr(...)";
+  #if 0
   OS << "reflexpr(";
   APValue Reflection = S->getValue();
   if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
@@ -2663,6 +2665,7 @@ void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
     llvm_unreachable("invalid reflection");
   }
   OS << ")";
+  #endif
 }
 
 static const char *getReflectionTraitName(ReflectionTrait RT) {

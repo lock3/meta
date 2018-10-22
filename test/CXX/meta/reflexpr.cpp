@@ -1,31 +1,35 @@
 // RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -std=c++1z -freflection %s
 
-#include <experimental/meta>
+// #include <experimental/meta>
 
 using namespace std::experimental;
 
-namespace Ok {
-
 struct S { };
-enum E { e1, e2, e3 };
+enum E { A, B, C };
 
 namespace N {
   namespace M { }
 }
 
 void f(int n) {
-  constexpr meta::info meta1 = reflexpr(n);
-  constexpr meta::info meta2 = reflexpr(f);
+  constexpr auto ref_S = reflexpr(S);
+  constexpr auto ref_E = refelxpr(E);
+  constexpr auto ref_EA = reflexpr(A);
+  constexpr auto ref_N =  reflexpr(N);
+  constexpr auto ref_NM = reflexpr(N::M);
+
+  constexpr auto meta1 = reflexpr(n);
+  constexpr auto meta2 = reflexpr(f);
 
   double dub = 42.0;
   char character = 'a';
   
-  constexpr meta::info meta3 = reflexpr(dub);
-  constexpr meta::info meta4 = reflexpr(character);
+  constexpr auto meta3 = reflexpr(dub);
+  constexpr auto meta4 = reflexpr(character);
 }
 
-}
 
+#if 0
 namespace Bad {
 
 void g();
@@ -47,7 +51,7 @@ struct product{};
   
 template<typename T>
 constexpr int test() {
-  meta::info x = reflexpr(T);
+  auto x = reflexpr(T);
   return 0;
 }
 
@@ -58,3 +62,4 @@ void test_templates() {
 }
   
 }
+#endif

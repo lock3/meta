@@ -20,6 +20,8 @@
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/ParsedTemplate.h"
+#include "clang/Sema/ParsedReflection.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaInternal.h"
 #include "TypeLocBuilder.h"
@@ -27,159 +29,68 @@ using namespace clang;
 using namespace clang::reflect;
 using namespace sema;
 
-/// Lookup the declaration named by SS and Id. Populates the the kind
-/// and entity with the encoded reflection of the named entity.
-bool Sema::ActOnReflectedId(CXXScopeSpec &SS, SourceLocation IdLoc,
-                            IdentifierInfo *Id, unsigned &Kind,
-                            ParsedReflectionPtr &Entity) {
-  // Perform any declaration having the given name.
-  LookupResult R(*this, Id, IdLoc, LookupAnyName);
-  LookupParsedName(R, CurScope, &SS);
+ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
+  // Cheat by funneling this back through template argument processing
+  // because it's possible to end up with deduction guides.
+  ParsedTemplateArgument Arg = ActOnTemplateTypeArgument(T);
+  if (Arg.getKind() == ParsedTemplateArgument::Template)
+    return ActOnReflectedTemplate(Arg);
+  assert(Arg.getKind() == ParsedTemplateArgument::Type);
 
-  if (!R.isSingleResult()) {
-    // FIXME: Incorporate the scope specifier in the diagnostics. Also note
-    // alternatives for an ambiguous lookup.
-    //
-    // FIXME: I believe that we would eventually like to support overloaded
-    // declarations and templates.
-    if (R.isAmbiguous())
-      Diag(IdLoc, diag::err_reflect_ambiguous_id) << Id;
-    else if (R.isOverloadedResult())
-      Diag(IdLoc, diag::err_reflect_overloaded_id) << Id;
-    else
-      Diag(IdLoc, diag::err_reflect_undeclared_id) << Id;
-    Kind = REK_special;
-    Entity = nullptr;
-    return false;
-  }
-
-  Decl *D = R.getAsSingle<NamedDecl>();
-
-  if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
-    DeclRefExpr *Ref = new (Context) DeclRefExpr(
-      const_cast<ValueDecl*>(VD), false, VD->getType(),
-      VK_RValue, IdLoc);
-    Entity = Ref;
-    Kind = REK_statement;
-  } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-    QualType T = Context.getTypeDeclType(TD);
-
-    // FIXME: There are other types that can be declarations.
-    if (const TagDecl *Tag = T->getAsTagDecl()) {
-      Entity = Tag;
-      Kind = REK_declaration;
-    } else if (const BuiltinType *BT = T->getAs<BuiltinType>()) {
-      // As builtin types are builtin, there is not an available
-      // decl to use for reflection, thus this must be a type reflection.
-      Entity = BT;
-      Kind = REK_type;
-    } else {
-      Entity = T.getTypePtr();
-      Kind = REK_type;
-    }
-  } else {
-    // This is something like a namespace. Just use TransformDecl even
-    // though it's unlikely to change.
-    Entity = D;
-    Kind = REK_declaration;
-  }
-
-  return true;
+  return ParsedReflectionOperand(Arg.getAsType(), Arg.getLocation());
 }
 
-bool Sema::ActOnReflectedDependentId(CXXScopeSpec &SS, SourceLocation IdLoc,
-                                     IdentifierInfo *Id, unsigned &Kind,
-                                     ParsedReflectionPtr &Entity) {
-  LookupResult R(*this, Id, IdLoc, LookupAnyName);
-  LookupParsedName(R, CurScope, &SS, false, true);
-  DeclarationNameInfo DNI = R.getLookupNameInfo();
-
-  if (!R.isSingleResult()) {
-    // FIXME: Incorporate the scope specifier in the diagnostics. Also note
-    // alternatives for an ambiguous lookup.
-    //
-    // FIXME: I believe that we would eventually like to support overloaded
-    // declarations and templates.
-    if (R.isAmbiguous())
-      Diag(IdLoc, diag::err_reflect_ambiguous_id) << Id;
-    else if (R.isOverloadedResult())
-      Diag(IdLoc, diag::err_reflect_overloaded_id) << Id;
-    else
-      Diag(IdLoc, diag::err_reflect_undeclared_id) << Id;
-    Kind = REK_special;
-    Entity = nullptr;
-    return false;
-  }
-
-  const auto &decls = R.asUnresolvedSet();
-
-  Entity =
-    UnresolvedLookupExpr::Create(Context, /*NamingClass=*/ nullptr,
-                                 SS.getWithLocInContext(Context),
-                                 DNI, /*ADL=*/false, /*Overloaded=*/false,
-                                 decls.begin(), decls.end());
-  Kind = REK_statement;
-  return true;
+ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
+  assert(T.getKind() == ParsedTemplateArgument::Template);
+  const CXXScopeSpec& SS = T.getScopeSpec();
+  ParsedTemplateTy Temp = T.getAsTemplate();
+  
+  return ParsedReflectionOperand(SS, Temp, T.getLocation());
 }
 
-/// Populates the kind and entity with the encoded reflection of the type.
-/// Reflections of user-defined types are handled as entities.
-bool Sema::ActOnReflectedType(Declarator &D, unsigned &Kind,
-                              ParsedReflectionPtr &Entity) {
-  TypeSourceInfo *TSI = GetTypeForDeclarator(D, CurScope);
-  QualType T = TSI->getType();
-  // FIXME: There are other types that can be declarations.
-  if (TagDecl *TD = T->getAsTagDecl()) {
-    // Handle elaborated type specifiers as if they were declarations.
-    Entity = TD;
-    Kind = REK_declaration;
-  } else {
-    // Otherwise, this is a type reflection.
-    Entity = const_cast<Type*>(T.getTypePtr());
-    Kind = REK_type;
-  }
-  return true;
+ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
+                                                      SourceLocation &Loc,
+                                                      Decl *D) {
+  return ParsedReflectionOperand(SS, D, Loc);
+}
+
+ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
+  
+  return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
 /// Returns a constant expression that encodes the value of the reflection.
 /// The type of the reflection is meta::reflection, an enum class.
-ExprResult Sema::ActOnCXXReflectExpression(SourceLocation KWLoc,
-                                           unsigned Kind,
-                                           ParsedReflectionPtr Entity,
-                                           SourceLocation LPLoc,
-                                           SourceLocation RPLoc) {
-  ReflectionKind REK = (ReflectionKind)Kind;
-  APValue Reflection(REK, Entity);
+ExprResult Sema::ActOnCXXReflectExpression(SourceLocation Loc,
+                                           ParsedReflectionOperand Ref,
+                                           SourceLocation LP,
+                                           SourceLocation RP) {
+  QualType Ty = Context.MetaInfoTy;
 
-  bool IsValueDependent = false;
-  if (const Type* T = getAsReflectedType(Reflection)) {
-    // A type reflection is dependent if reflected T is dependent.
-    IsValueDependent = T->isDependentType();
-  } else if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
-      // A declaration reflection is value dependent if an id-expression
-      // referring to that declaration is type or value dependent. Reflections
-      // of non-value declarations (e.g., namespaces) are never dependent.
-      // Build a fake id-expression in order to determine dependence.
-      Expr *E = new (Context) DeclRefExpr(const_cast<ValueDecl*>(VD), false,
-                                          VD->getType(), VK_RValue, KWLoc);
-      IsValueDependent = E->isTypeDependent() || E->isValueDependent();
-    } else if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-      // A reflection of a type declaration is dependent if that type is
-      // dependent.
-      const Type* T = TD->getTypeForDecl();
-      IsValueDependent = T->isDependentType();
-    }
-  } else if (const UnresolvedLookupExpr *ULE = getAsReflectedULE(Reflection)) {
-    IsValueDependent = true;
+  // Determine if the operand is dependent.s
+  switch (Ref.getKind()) {
+  case ParsedReflectionOperand::Invalid:
+    break;
+  case ParsedReflectionOperand::Type: {
+    QualType Arg = Ref.getAsType().get();
+    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+  }
+  case ParsedReflectionOperand::Template: {
+    TemplateName Arg = Ref.getAsTemplate().get();
+    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+  }
+  case ParsedReflectionOperand::Namespace: {
+    // FIXME: If the ScopeSpec is non-empty, create a qualified namespace-name.
+    NamespaceName Arg(cast<NamespaceDecl>(Ref.getAsNamespace()));
+    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+  }
+  case ParsedReflectionOperand::Expression: {
+    Expr *Arg = Ref.getAsExpr();
+    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+  }
   }
 
-  return CXXReflectExpr::Create(Context, KWLoc, Context.MetaInfoTy, Reflection,
-                                LPLoc, RPLoc, VK_RValue,
-                                /*isTypeDependent=*/false,
-                                /*isValueDependent=*/IsValueDependent,
-                                /*isInstDependent=*/IsValueDependent,
-                                /*containsUnexpandedPacks=*/false);
+  return ExprError();
 }
 
 // Convert each operand to an rvalue.
