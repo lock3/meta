@@ -3440,7 +3440,9 @@ LexNextToken:
     break;
   case '(':
     Char = getCharAndSize(CurPtr, SizeTmp);
-    if (LangOpts.CPlusPlus && Char == '.') {
+    // Look ahead to watch out for conflicts with `catch (...)` and `(.5`
+    if (LangOpts.CPlusPlus && Char == '.'
+        && getCharAndSize(CurPtr + SizeTmp, SizeTmp2) == ' ') {
       Kind = tok::l_paren_period;
       CurPtr += SizeTmp;
     } else {
@@ -3466,14 +3468,16 @@ LexNextToken:
     } else if (LangOpts.CPlusPlus && Char == '*') {
       Kind = tok::periodstar;
       CurPtr += SizeTmp;
-    } else if (LangOpts.CPlusPlus && Char == ')') {
-      Kind = tok::period_r_paren;
-      CurPtr += SizeTmp;
     } else if (Char == '.' &&
                getCharAndSize(CurPtr+SizeTmp, SizeTmp2) == '.') {
       Kind = tok::ellipsis;
       CurPtr = ConsumeChar(ConsumeChar(CurPtr, SizeTmp, Result),
                            SizeTmp2, Result);
+    // Look back to watch out for conflicts with `(.)`
+    } else if (LangOpts.CPlusPlus && Char == ')'
+               && getCharAndSize(CurPtr - SizeTmp, SizeTmp2) == ' ') {
+      Kind = tok::period_r_paren;
+      CurPtr += SizeTmp;
     } else {
       Kind = tok::period;
     }
