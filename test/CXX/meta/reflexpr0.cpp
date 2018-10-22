@@ -1,4 +1,4 @@
-
+// RUN: %clang_cc1 -std=c++1z -freflection %s
 
 struct S {
   enum E { X, Y };
