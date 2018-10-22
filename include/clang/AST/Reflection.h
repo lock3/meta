@@ -140,13 +140,13 @@ public:
   { }
 
   ReflectionOperand(QualType T)
-    : Kind(Expression), Data(T.getAsOpaquePtr()) { }
+    : Kind(Type), Data(T.getAsOpaquePtr()) { }
 
   ReflectionOperand(TemplateName T)
-    : Kind(Expression), Data(T.getAsVoidPointer()) { }
+    : Kind(Template), Data(T.getAsVoidPointer()) { }
 
   ReflectionOperand(NamespaceName T)
-    : Kind(Expression), Data(T.getAsVoidPointer()) { }
+    : Kind(Namespace), Data(T.getAsVoidPointer()) { }
 
   ReflectionOperand(Expr *E)
     : Kind(Expression), Data(E) { }

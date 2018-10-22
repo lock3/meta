@@ -4905,6 +4905,15 @@ public:
     return RParenLoc;
   }
 
+  /// Returns location of the `reflexpr` keyword.
+  SourceLocation getKeywordLoc() const { return KWLoc; }
+  
+  /// Returns the location of the '(' token.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+  
+  /// Returns the location of the ')' token.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
   /// Sets the location of the `reflexpr` keyword.
   void setKeywordLoc(SourceLocation L) { KWLoc = L; }
   

@@ -95,9 +95,9 @@ ExprResult Parser::ParseCXXReflectExpression() {
   if (T.consumeClose())
     return ExprError();
   
-  return Actions.ActOnCXXReflectExpression(KWLoc, PR, 
-                                           T.getOpenLocation(), 
-                                           T.getCloseLocation());
+  return Actions.ActOnCXXReflectExpr(KWLoc, PR, 
+                                     T.getOpenLocation(), 
+                                     T.getCloseLocation());
 }
 
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {

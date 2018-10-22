@@ -37,7 +37,9 @@ ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
     return ActOnReflectedTemplate(Arg);
   assert(Arg.getKind() == ParsedTemplateArgument::Type);
 
-  return ParsedReflectionOperand(Arg.getAsType(), Arg.getLocation());
+  llvm::outs() << "GOT TYPE\n";
+  T.get().get()->dump();
+  return ParsedReflectionOperand(T.get(), Arg.getLocation());
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
@@ -45,52 +47,76 @@ ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
   const CXXScopeSpec& SS = T.getScopeSpec();
   ParsedTemplateTy Temp = T.getAsTemplate();
   
+  llvm::outs() << "GOT TEMPLATE\n";
+  Temp.get().getAsTemplateDecl()->dump();
   return ParsedReflectionOperand(SS, Temp, T.getLocation());
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
                                                       SourceLocation &Loc,
                                                       Decl *D) {
+  llvm::outs() << "GOT NAMESPACE\n";
+  D->dump();
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
   
+  llvm::outs() << "GOT EXPRESSION\n";
+  E->dump();
   return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
 /// Returns a constant expression that encodes the value of the reflection.
 /// The type of the reflection is meta::reflection, an enum class.
-ExprResult Sema::ActOnCXXReflectExpression(SourceLocation Loc,
-                                           ParsedReflectionOperand Ref,
-                                           SourceLocation LP,
-                                           SourceLocation RP) {
-  QualType Ty = Context.MetaInfoTy;
-
-  // Determine if the operand is dependent.s
+ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
+                                     ParsedReflectionOperand Ref, 
+                                     SourceLocation LP, 
+                                     SourceLocation RP) {
+  // Translated the parsed reflection operand into an AST operand.
   switch (Ref.getKind()) {
   case ParsedReflectionOperand::Invalid:
     break;
   case ParsedReflectionOperand::Type: {
     QualType Arg = Ref.getAsType().get();
-    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   case ParsedReflectionOperand::Template: {
     TemplateName Arg = Ref.getAsTemplate().get();
-    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   case ParsedReflectionOperand::Namespace: {
     // FIXME: If the ScopeSpec is non-empty, create a qualified namespace-name.
     NamespaceName Arg(cast<NamespaceDecl>(Ref.getAsNamespace()));
-    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   case ParsedReflectionOperand::Expression: {
     Expr *Arg = Ref.getAsExpr();
-    return CXXReflectExpr::Create(Context, Ty, Loc, Arg, LP, RP);
+    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   }
 
   return ExprError();
+}
+
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, QualType T,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, T, LP, RP);
+}
+
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, TemplateName N,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
+}
+
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, NamespaceName N,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
+}
+
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, Expr *E,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, E, LP, RP);
 }
 
 // Convert each operand to an rvalue.
