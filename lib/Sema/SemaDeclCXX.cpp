@@ -1682,6 +1682,12 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
   //  The definition of a constexpr function(p3) or constructor(p4) [...] shall
   //  contain only
   for (const auto *DclIt : DS->decls()) {
+    if (DclIt->isInvalidDecl()) {
+      // We've already complained about this decl, any further
+      // errors can be confusing and/or misleading.
+      return false;
+    }
+
     switch (DclIt->getKind()) {
     case Decl::StaticAssert:
     case Decl::Using:
