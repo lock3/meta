@@ -15,16 +15,70 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
+#include "clang/Sema/ParsedReflection.h"
 using namespace clang;
+
+/// Parse the operand of a reflexpr expression. This is almost exactly like
+/// parsing a template argument, except that we also allow namespace-names
+/// in this context.
+ParsedReflectionOperand Parser::ParseCXXReflectOperand()
+{
+  // The operand is unevaluated.
+  EnterExpressionEvaluationContext Unevaluated(
+      Actions, Sema::ExpressionEvaluationContext::Unevaluated);
+
+  // Perform the tentative parses first since isCXXTypeId tends to rewrite
+  // tokens, which can subsequent parses a bit wonky.
+
+  // Otherwise, tentatively parse a template-name.
+  {
+    TentativeParsingAction TPA(*this);
+    ParsedTemplateArgument T = ParseTemplateTemplateArgument();
+    if (!T.isInvalid()) {
+      TPA.Commit();
+      return Actions.ActOnReflectedTemplate(T);
+    }
+    TPA.Revert();
+  }
+
+  // Otherwise, tentatively parse a namespace-name.
+  {
+    TentativeParsingAction TPA(*this);
+    CXXScopeSpec SS;
+    SourceLocation IdLoc;
+    Decl *D = ParseNamespaceName(SS, IdLoc);
+    if (D) {
+      TPA.Commit();
+      return Actions.ActOnReflectedNamespace(SS, IdLoc, D);
+    }
+    TPA.Revert();
+  }
+
+  // Try parsing this as type-id first.
+  if (isCXXTypeId(TypeIdAsTemplateArgument)) {
+    // FIXME: Create a new DeclaratorContext?
+    TypeResult T =
+      ParseTypeName(nullptr, DeclaratorContext::TemplateArgContext);
+    return Actions.ActOnReflectedType(T.get());
+  }
+
+  // Parse an expression. template argument.
+  ExprResult E = ParseExpression(NotTypeCast);
+  if (E.isInvalid() || !E.get())
+    return ParsedReflectionOperand();
+
+  return Actions.ActOnReflectedExpression(E.get());
+}
 
 
 /// Parse a reflect-expression.
 ///
 /// \verbatim
 ///       reflect-expression:
-///         'reflexpr' '(' id-expression ')'
 ///         'reflexpr' '(' type-id ')'
+///         'reflexpr' '(' template-name ')'
 ///         'reflexpr' '(' namespace-name ')'
+///         'reflexpr' '(' id-expression ')'
 /// \endverbatim
 ExprResult Parser::ParseCXXReflectExpression() {
   assert(Tok.is(tok::kw_reflexpr) && "expected 'reflexpr'");
@@ -34,62 +88,16 @@ ExprResult Parser::ParseCXXReflectExpression() {
   if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
     return ExprError();
 
-  unsigned Kind; // The reflected entity kind.
-  ParsedReflectionPtr Entity; // The actual entity.
-
-  // FIXME: The operand parsing is a bit fragile. We could do a lot better
-  // by looking at tokens to characterize the parse before committing.
-  //
-  // Also, is it possible to reflect expressions within this framework?
-
-  CXXScopeSpec SS;
-  ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
-
-  // If the next token is an identifier, try to resolve that. This will likely
-  // match most uses of the reflection operator, but there are some cases
-  // of id-expressions and type-ids that must be handled separately.
-  //
-  // FIXME: This probably won't work for things operator and conversion
-  // functions.
-
-  NestedNameSpecifier* NNS = SS.getScopeRep();
-  if (!SS.isInvalid() && NNS && NNS->isDependent()) {
-    IdentifierInfo *Id = Tok.getIdentifierInfo();
-    SourceLocation IdLoc = ConsumeToken();
-    if (!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
-      return ExprError();
-  } else if (!SS.isInvalid() && Tok.is(tok::identifier)) {
-    IdentifierInfo *Id = Tok.getIdentifierInfo();
-    SourceLocation IdLoc = ConsumeToken();
-
-    if (!Actions.ActOnReflectedId(SS, IdLoc, Id, Kind, Entity))
-      return ExprError();
-
-  } else if (isCXXTypeId(TypeIdAsTemplateArgument)) {
-    DeclSpec DS(AttrFactory);
-    ParseSpecifierQualifierList(DS);
-    Declarator D(DS, DeclaratorContext::TypeNameContext);
-    ParseDeclarator(D);
-    if (D.isInvalidType())
-      return ExprError();
-    if (!Actions.ActOnReflectedType(D, Kind, Entity))
-      return ExprError();
-  }
-  // else if (!SS.isInvalid() && Tok.is(tok::annot_template_id)) {
-  //   TemplateIdAnnotation *IdAnn = takeTemplateIdAnnotation(Tok);
-    //   IdentifierInfo *Id = IdAnn->Name;
-    //   SourceLocation IdLoc = ConsumeAnnotationToken();
-
-    //   if(!Actions.ActOnReflectedDependentId(SS, IdLoc, Id, Kind, Entity))
-    // 	return ExprError();
-    // }
+  ParsedReflectionOperand PR = ParseCXXReflectOperand();
+  if (PR.isInvalid())
+    return ExprError();
 
   if (T.consumeClose())
     return ExprError();
-  
-  return Actions.ActOnCXXReflectExpression(KWLoc, Kind, Entity, 
-					   T.getOpenLocation(), 
-					   T.getCloseLocation());
+
+  return Actions.ActOnCXXReflectExpression(KWLoc, PR,
+                                           T.getOpenLocation(),
+                                           T.getCloseLocation());
 }
 
 static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {

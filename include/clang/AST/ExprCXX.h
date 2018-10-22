@@ -4847,40 +4847,47 @@ public:
   }
 };
 
-/// \brief Represents the compile-time reflection of an entity.
+/// \brief Represents expressions of the form `reflexpr(x)`. 
 ///
-/// If the operand is type dependent.
+/// The operand of the expression is either a type, an expression, a
+/// template-name, or a namespace-name.
+///
 class CXXReflectExpr : public Expr {
+  // The operand of the expression.
+  ReflectionOperand Ref;
+
+  // Source locations.
   SourceLocation KWLoc;
   SourceLocation LParenLoc;
   SourceLocation RParenLoc;
 
-  APValue Value;
-
-  CXXReflectExpr(SourceLocation KWLoc, QualType T, APValue Value,
-                 SourceLocation LPLoc, SourceLocation RPLoc,
-                 ExprValueKind VK, bool TD, bool VD, bool ID, bool UPP)
-    : Expr(CXXReflectExprClass, T, VK, OK_Ordinary, TD, VD, ID, UPP),
-      KWLoc(KWLoc), LParenLoc(LPLoc), RParenLoc(RPLoc), Value(Value) { }
+  CXXReflectExpr(QualType T, QualType Arg);
+  CXXReflectExpr(QualType T, TemplateName Arg);
+  CXXReflectExpr(QualType T, NamespaceName Arg);
+  CXXReflectExpr(QualType T, Expr *Arg);
 
   CXXReflectExpr(EmptyShell Empty)
     : Expr(CXXReflectExprClass, Empty) {}
 
 public:
-  static CXXReflectExpr *Create(ASTContext &C, SourceLocation KWLoc, QualType T,
-                                APValue Value,
-                                SourceLocation LPLoc, SourceLocation RPLoc,
-                                ExprValueKind VK, bool TD, bool VD, bool ID,
-                                bool UPP);
-  static CXXReflectExpr *Create(ASTContext &C, SourceLocation KWLoc, QualType T,
-                                ReflectionKind Kind,
-                                const void *ReflectedEntity,
-                                SourceLocation LPLoc, SourceLocation RPLoc,
-                                ExprValueKind VK, bool TD, bool VD, bool ID,
-                                bool UPP);
+  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+                                SourceLocation KW, QualType Arg,
+                                SourceLocation LP, SourceLocation RP);
+  
+  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+                                SourceLocation KW, TemplateName Arg,
+                                SourceLocation LP, SourceLocation RP);
 
-  /// \brief The reflection value.
-  APValue getValue() const { return Value; }
+  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+                                SourceLocation KW, NamespaceName Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+                                SourceLocation KW, Expr *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  /// Returns the reflection operand.
+  const ReflectionOperand &getOperand() const { return Ref; }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
@@ -4897,6 +4904,15 @@ public:
   SourceLocation getEndLoc() const LLVM_READONLY {
     return RParenLoc;
   }
+
+  /// Sets the location of the `reflexpr` keyword.
+  void setKeywordLoc(SourceLocation L) { KWLoc = L; }
+  
+  /// Sets the location of the `(` token.
+  void setLParenLoc(SourceLocation L) { LParenLoc = L; }
+  
+  /// Sets the location of the `)` token.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());

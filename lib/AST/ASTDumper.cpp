@@ -2482,12 +2482,7 @@ static const char* GetReflectionTraitName(const CXXReflectionTraitExpr *E) {
 
 void ASTDumper::VisitCXXReflectExpr(const CXXReflectExpr *Node) {
   VisitExpr(Node);
-
-  APValue Reflection = Node->getValue();
-  if (const Decl *D = getAsReflectedDeclaration(Reflection))
-    dumpDecl(D);
-  else if (const Type *T = getAsReflectedType(Reflection))
-    dumpType(QualType(T, 0));
+  // FIXME: Re-implement this.
 }
 
 void ASTDumper::VisitCXXReflectionTraitExpr(

@@ -1429,8 +1429,9 @@ public:
   /// \brief Rebuild a reflection expression from a source expression.
   ExprResult RebuildCXXReflectExpr(SourceLocation KWLoc, unsigned Kind,
                                    const void* Entity, SourceLocation RPLoc) {
-    return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity,
-                                               SourceLocation(), RPLoc);
+    // return getSema().ActOnCXXReflectExpression(KWLoc, Kind, Entity,
+    //                                            SourceLocation(), RPLoc);
+    return ExprError();
   }
 
   /// \brief Build a new reflection trait expression.
@@ -7232,6 +7233,8 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
 {
+  return ExprError();
+  /*
   using namespace clang::reflect;
 
   APValue OldReflection = E->getValue();
@@ -7272,6 +7275,7 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
                                ReflKind,
                                ReflEntity,
                                E->getEndLoc());
+  */
 }
 
 template <typename Derived>

@@ -495,8 +495,8 @@ Decl *Parser::ParseUsingDirective(DeclaratorContext Context,
     return nullptr;
   }
 
-  CXXScopeSpec SS;
   // Parse (optional) nested-name-specifier.
+  CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false,
                                  /*MayBePseudoDestructor=*/nullptr,
                                  /*IsTypename=*/false,
@@ -542,6 +542,37 @@ Decl *Parser::ParseUsingDirective(DeclaratorContext Context,
 
   return Actions.ActOnUsingDirective(getCurScope(), UsingLoc, NamespcLoc, SS,
                                      IdentLoc, NamespcName, attrs);
+}
+
+/// Parse a namespace-name.
+///
+/// FIXME: We should call this from ParseUsingDirective. This is also
+/// essentially duplicated in ParseNamespaceAlias. Unify all of those
+/// parsers to use this function (if possible).
+///
+/// Note, however, that we don't want diagnostics for failed parses or
+/// lookups when parsing reflection operands.
+Decl *Parser::ParseNamespaceName(CXXScopeSpec &SS, SourceLocation &IdentLoc) {
+  // Parse (optional) nested-name-specifier.
+  // Allow scope specifiers to be any prefix.
+  ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false,
+                                 /*MayBePseudoDestructor=*/nullptr,
+                                 /*IsTypename=*/false,
+                                 /*LastII=*/nullptr,
+                                 /*OnlyNamespace=*/false);
+
+  // Parse namespace-name.
+  if (Tok.isNot(tok::identifier)) {
+    // FIXME: If we're parsing a reflexpr(), then we mustn't diagnose
+    // errors. Just fail early so the tentative parse can reset and try
+    // the next match.
+    return nullptr;
+  }
+
+  IdentifierInfo *Ident = Tok.getIdentifierInfo();
+  IdentLoc = ConsumeToken();
+
+  return Actions.ActOnNamespaceName(getCurScope(), SS, Ident, IdentLoc);
 }
 
 /// Parse a using-declarator (or the identifier in a C++11 alias-declaration).

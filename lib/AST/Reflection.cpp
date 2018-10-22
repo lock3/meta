@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/Reflection.h"
+#include "clang/AST/ExprCXX.h"
 
 namespace clang {
 

@@ -35,6 +35,7 @@ class CXXCtorInitializer;
 class Decl;
 class Expr;
 class ParsedTemplateArgument;
+class ParsedReflectionOperand;
 class QualType;
 class Stmt;
 class TemplateName;
@@ -248,9 +249,6 @@ namespace clang {
   /// parser.
   using ParsedType = OpaquePtr<QualType>;
   using UnionParsedType = UnionOpaquePtr<QualType>;
-
-  // An opaque pointer for threading reflection pointers through the parser.
-  using ParsedReflectionPtr = const void *;
 
   // We can re-use the low bit of expression, statement, base, and
   // member-initializer pointers for the "invalid" flag of
