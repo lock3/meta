@@ -8620,7 +8620,7 @@ public:
                                            SmallVectorImpl<Expr *> &Parts,
                                            SourceLocation EndLoc);
   bool BuildDeclnameId(SmallVectorImpl<Expr *> &Parts, UnqualifiedId &Result,
-                       SourceLocation LParenLoc, SourceLocation RParenLoc);
+                       SourceLocation KWLoc, SourceLocation RParenLoc);
 
   ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
   ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);

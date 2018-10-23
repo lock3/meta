@@ -445,17 +445,17 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
 /// if no errors were encountered.
 bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *> &Parts,
                            UnqualifiedId &Result,
-                           SourceLocation LParenLoc,
+                           SourceLocation KWLoc,
                            SourceLocation RParenLoc) {
-  DeclarationNameInfo NameInfo = BuildReflectedIdName(LParenLoc, Parts, RParenLoc);
+  DeclarationNameInfo NameInfo = BuildReflectedIdName(KWLoc, Parts, RParenLoc);
   DeclarationName Name = NameInfo.getName();
   if (!Name)
     return true;
   if (Name.getNameKind() == DeclarationName::CXXReflectedIdName)
-    Result.setReflectedId(LParenLoc, Name.getCXXReflectedIdArguments(),
+    Result.setReflectedId(KWLoc, Name.getCXXReflectedIdArguments(),
                           RParenLoc);
   else
-    Result.setIdentifier(Name.getAsIdentifierInfo(), LParenLoc);
+    Result.setIdentifier(Name.getAsIdentifierInfo(), KWLoc);
   return false;
 }
 

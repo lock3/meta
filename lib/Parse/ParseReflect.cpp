@@ -171,14 +171,15 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 /// Parse a reflected id
 ///
 ///   unqualified-id:
-///      '(.' reflection '.)'
+///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
-  assert(Tok.is(tok::l_paren_period));
+  assert(Tok.is(tok::kw_unqualid));
+  SourceLocation KWLoc = ConsumeToken();
 
-  BalancedDelimiterTracker T(*this, tok::l_paren_period);
-  if (T.expectAndConsume())
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "unqualid"))
     return true;
 
   SmallVector<Expr *, 4> Parts;
@@ -187,7 +188,7 @@ bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
     if (Result.isInvalid())
       return true;
     Parts.push_back(Result.get());
-    if (Tok.is(tok::period_r_paren))
+    if (Tok.is(tok::r_paren))
       break;
     if (ExpectAndConsume(tok::comma))
       return true;
@@ -195,8 +196,8 @@ bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
   if (T.consumeClose())
     return true;
 
-  return Actions.BuildDeclnameId(Parts, Result,
-                                 T.getOpenLocation(), T.getCloseLocation());
+  return Actions.BuildDeclnameId(Parts, Result, KWLoc,
+                                 T.getCloseLocation());
 }
 
 /// Parse a reflected-value-expression.

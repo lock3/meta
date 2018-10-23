@@ -7,11 +7,11 @@ namespace bar {
 template<typename T>
 T test_template() {
   constexpr auto int_reflexpr = reflexpr(int);
-  T (. "foo_", reflexpr(bar), "_", reflexpr(bar::fin) .) = T();
+  T unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = T();
 
-  int int_x = foo_bar_fin.(. "get_", (. "int_reflexpr" .) .)();
-  int int_y = (. "foo_bar_fin" .).get_int();
-  int int_z = (. "foo_bar_fin" .).(. "get_int" .)();
+  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
+  int int_y = unqualid("foo_bar_fin").get_int();
+  int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
 
   return foo_bar_fin;
 }
@@ -22,11 +22,11 @@ struct S {
 
 S test_non_template() {
   constexpr auto int_reflexpr = reflexpr(int);
-  S (. "foo_", reflexpr(bar), "_", reflexpr(bar::fin) .) = S();
+  S unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = S();
 
-  int int_x = foo_bar_fin.(. "get_", (. "int_reflexpr" .) .)();
-  int int_y = (. "foo_bar_fin" .).get_int();
-  int int_z = (. "foo_bar_fin" .).(. "get_int" .)();
+  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
+  int int_y = unqualid("foo_bar_fin").get_int();
+  int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
 
   return foo_bar_fin;
 }
@@ -35,8 +35,8 @@ void test_bad() {
   auto not_a_reflexpr = 1;
 
   S foo_bar_fin  = S();
-  int int_x = foo_bar_fin.(. "get_nothing" .)(); // expected-error {{no member named 'get_nothing' in 'S'}}
-  int int_y = foo_bar_fin.(. "get_", (. "not_a_reflexpr" .) .)(); // expected-error {{expression is not an integral constant expression}}
+  int int_x = foo_bar_fin.unqualid("get_nothing")(); // expected-error {{no member named 'get_nothing' in 'S'}}
+  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}}
 }
 
 int main() {
