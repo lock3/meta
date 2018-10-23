@@ -3439,15 +3439,7 @@ LexNextToken:
     Kind = tok::r_square;
     break;
   case '(':
-    Char = getCharAndSize(CurPtr, SizeTmp);
-    // Look ahead to watch out for conflicts with `catch (...)` and `(.5`
-    if (LangOpts.CPlusPlus && Char == '.'
-        && getCharAndSize(CurPtr + SizeTmp, SizeTmp2) == ' ') {
-      Kind = tok::l_paren_period;
-      CurPtr += SizeTmp;
-    } else {
-      Kind = tok::l_paren;
-    }
+    Kind = tok::l_paren;
     break;
   case ')':
     Kind = tok::r_paren;
@@ -3473,11 +3465,6 @@ LexNextToken:
       Kind = tok::ellipsis;
       CurPtr = ConsumeChar(ConsumeChar(CurPtr, SizeTmp, Result),
                            SizeTmp2, Result);
-    // Look back to watch out for conflicts with `(.)`
-    } else if (LangOpts.CPlusPlus && Char == ')'
-               && getCharAndSize(CurPtr - SizeTmp, SizeTmp2) == ' ') {
-      Kind = tok::period_r_paren;
-      CurPtr += SizeTmp;
     } else {
       Kind = tok::period;
     }
