@@ -9373,8 +9373,9 @@ void Sema::PushUsingDirective(Scope *S, UsingDirectiveDecl *UDir) {
 
 Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
                                SourceLocation Loc) {
-  // Lookup namespace name.
-  LookupResult R(*this, Id, Loc, LookupNamespaceName);
+  // Lookup any name (not just a namespace name). We want to fail silently
+  // if we find something that isn't a namespace.
+  LookupResult R(*this, Id, Loc, LookupAnyName);
   LookupParsedName(R, S, &SS);
   if (R.isAmbiguous())
     return nullptr;
@@ -9390,6 +9391,7 @@ Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
     return nullptr;
   }
 
+  // Returns null if we found something other than a namespace.
   return R.getAsSingle<NamespaceDecl>();
 }
 

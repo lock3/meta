@@ -29,64 +29,67 @@ namespace N {
 }
 
 constexpr int test() {
-  auto r1 = reflexpr(S);
+  // auto r1 = reflexpr(S);
 
-  auto r2 = reflexpr(E);
+  // auto r2 = reflexpr(E);
   
-  auto r3 = reflexpr(A);
+  // auto r3 = reflexpr(A);
   
-  auto r4 = reflexpr(EC);
+  // auto r4 = reflexpr(EC);
 
-  auto r5 = reflexpr(EC::A);
+  // auto r5 = reflexpr(EC::A);
 
-  auto r6 = reflexpr(f);
+  // auto r6 = reflexpr(f);
 
-  auto r7 = reflexpr(global);
+  // auto r7 = reflexpr(global);
 
-  auto r8 = reflexpr(ovl);
+  // auto r8 = reflexpr(ovl);
 
-  auto r9 = reflexpr(fn_tmpl);
+  // auto r9 = reflexpr(fn_tmpl);
 
-  auto r10 = reflexpr(class_tmpl);
+  // auto r10 = reflexpr(class_tmpl);
 
   auto r11 = reflexpr(N);
   
   auto r12 = reflexpr(N::M);
 
-  auto r13 = reflexpr(S::E);
-  
-  auto r14 = reflexpr(S::X);
-  
-  auto r15 = reflexpr(S::EC);
-  
-  auto r16 = reflexpr(S::EC::X);
+  int N = 0;
+  auto r12a = reflexpr(N); // Finds int N, not namespace N
 
-  auto r17 = reflexpr(N::M::E);
+  // auto r13 = reflexpr(S::E);
   
-  auto r18 = reflexpr(N::M::A);
+  // auto r14 = reflexpr(S::X);
+  
+  // auto r15 = reflexpr(S::EC);
+  
+  // auto r16 = reflexpr(S::EC::X);
 
-  auto r19 = reflexpr(N::M::EC);
+  // auto r17 = reflexpr(N::M::E);
+  
+  // auto r18 = reflexpr(N::M::A);
 
-  auto r20 = reflexpr(N::M::EC::A);
+  // auto r19 = reflexpr(N::M::EC);
+
+  // auto r20 = reflexpr(N::M::EC::A);
 
   return 0;
 }
 
 template<typename T>
 constexpr int type_template() {
-  auto r = reflexpr(T);
+  // auto r = reflexpr(T);
   return 0;
 }
 
 template<int N>
 constexpr int nontype_template() {
-  auto r = reflexpr(N);
+  // auto r = reflexpr(N);
   return 0;
 }
 
 template<template<typename> class X>
 constexpr int template_template() {
-  auto r = reflexpr(X);
+  // auto r = reflexpr(X);
   return 0;
 }
 
