@@ -429,7 +429,7 @@ public:
   }
 
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
-    if(!TE->getSubExpr())
+    if (!TE->getSubExpr())
       return;
     if (!isPointer(TE->getSubExpr()))
       return;
