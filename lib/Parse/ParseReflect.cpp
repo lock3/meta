@@ -175,7 +175,7 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 ///
 /// Returns true if parsing or semantic analysis fail.
 bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
-  assert(Tok.is(tok::kw_unqualid));
+  assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
   SourceLocation KWLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
@@ -215,12 +215,12 @@ ExprResult Parser::ParseCXXUnreflexprExpression() {
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "unreflexpr"))
     return ExprError();
-  ExprResult Reflection = ParseConstantExpression();
+  ExprResult Result = ParseConstantExpression();
   if (T.consumeClose())
     return ExprError();
-  if (Reflection.isInvalid())
+  if (Result.isInvalid())
     return ExprError();
-  return Actions.ActOnCXXUnreflexprExpression(Loc, Reflection.get());
+  return Actions.ActOnCXXUnreflexprExpression(Loc, Result.get());
 }
 
 /// Parse a type reflection specifier.
