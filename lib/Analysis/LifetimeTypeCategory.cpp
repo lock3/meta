@@ -178,10 +178,11 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
     if (T->isVoidPointerType())
       return TypeCategory::Value;
 
+    if (T->isArrayType())
+      return TypeCategory::Value;
+
     // raw pointers and references
-    // Arrays are Pointers, because they implicitly convert into them
-    // and we don't track implicit conversions.
-    if (T->isArrayType() || T->isPointerType() || T->isReferenceType())
+    if (T->isPointerType() || T->isReferenceType())
       return {TypeCategory::Pointer, getPointeeType(T)};
 
     return TypeCategory::Value;

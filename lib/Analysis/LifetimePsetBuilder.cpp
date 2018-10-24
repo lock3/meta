@@ -74,6 +74,7 @@ public:
         case CK_LValueBitCast:
         case CK_IntegralToPointer:
         case CK_NullToPointer:
+        case CK_ArrayToPointerDecay:
           return E;
         case CK_LValueToRValue:
           if (!IgnoreLValueToRValue)
@@ -279,6 +280,11 @@ public:
       setPSet(E, PSet::invalid(
                      InvalidationReason::ForbiddenCast(E->getSourceRange())));
       return;
+    case CK_ArrayToPointerDecay:
+      // Decaying an array into a pointer is like taking the address of the
+      // first array member. The result is a pointer to the array.
+      setPSet(E, getPSet(E->getSubExpr()));
+      return;
     case CK_NullToPointer:
       setPSet(E, PSet::null(NullReason::nullptrConstant(E->getSourceRange())));
       return;
@@ -312,9 +318,48 @@ public:
     setPSet(BO, getPSet(BO->getLHS()));
   }
 
+  /// Returns true if all of the following is true
+  /// 1) BO is an addition,
+  /// 2) LHS is ImplicitCastExpr <ArrayToPointerDecay> of DeclRefExpr of array
+  /// type 3) RHS is IntegerLiteral 4) The value of the IntegerLiteral is
+  /// between 0 and the size of the array type
+  static bool isArrayPlusIndex(const BinaryOperator *BO) {
+    if (BO->getOpcode() != BO_Add)
+      return false;
+
+    auto *ImplCast = dyn_cast<ImplicitCastExpr>(BO->getLHS());
+    if (!ImplCast)
+      return false;
+
+    if (ImplCast->getCastKind() != CK_ArrayToPointerDecay)
+      return false;
+    auto *DeclRef = dyn_cast<DeclRefExpr>(ImplCast->getSubExpr());
+    if (!DeclRef)
+      return false;
+    auto *ArrayType = dyn_cast_or_null<ConstantArrayType>(
+        DeclRef->getType()->getAsArrayTypeUnsafe());
+    if (!ArrayType)
+      return false;
+    auto ArrayBound = ArrayType->getSize();
+
+    auto *Integer = dyn_cast<IntegerLiteral>(BO->getRHS());
+    if (!Integer)
+      return false;
+
+    // We explicitly allow to form the pointer one element after the array
+    // to support the compiler-generated code for the end iterator in a
+    // for-range loop.
+    // TODO: this allows to form an invalid pointer, where we would not detect
+    // dereferencing.
+    return Integer->getValue().isNonNegative() &&
+           Integer->getValue().ule(ArrayBound);
+  }
+
   void VisitBinaryOperator(const BinaryOperator *BO) {
     if (BO->getOpcode() == BO_Assign) {
       VisitBinAssign(BO);
+    } else if (isArrayPlusIndex(BO)) {
+      setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->getType()->isPointerType()) {
       Reporter.warnPointerArithmetic(BO->getOperatorLoc());
       setPSet(BO, {});
@@ -811,30 +856,26 @@ public:
     switch (classifyTypeCategory(VD->getType())) {
     case TypeCategory::Pointer: {
       PSet PS;
-      if (VD->getType()->isArrayType()) {
-        // That pset is invalid, because array to pointer decay is forbidden
-        // by the bounds profile.
-        // TODO: Better diagnostic that explains the array to pointer decay
-        Reporter.warnPointerArithmetic(Range.getBegin());
-      } else if (Initializer) {
+      if (Initializer) {
         PS = getPSet(Initializer);
 
         // For raw pointers, show here the assignment. For other Pointers,
         // we will have seen a CXXConstructor, which added a NullReason.
         if (PS.containsNull() && VD->getType()->isPointerType())
           PS.addNullReason(NullReason::assigned(Range));
-      } else {
+      } else if (VD->hasGlobalStorage()) {
         // Never treat local statics as uninitialized.
-        if (VD->hasGlobalStorage())
-          PS = PSet::staticVar(false);
-        else
-          PS = PSet::invalid(InvalidationReason::NotInitialized(Range));
+        PS = PSet::staticVar(/*TODO*/ false);
+      } else {
+        PS =
+          PSet::invalid(InvalidationReason::NotInitialized(VD->getLocation()));
       }
       setPSet(PSet::singleton(VD), PS, Range);
       break;
     }
     case TypeCategory::Owner: {
       setPSet(PSet::singleton(VD), PSet::singleton(VD, 1), Range);
+      break;
     }
     default:;
     }
@@ -869,8 +910,21 @@ PSet PSetsBuilder::getPSet(Variable P) {
   if (P.isField())
     return PSet::staticVar(false);
 
+  if (P.getType()->isArrayType()) {
+    // This triggers when we have an array of Pointers, and we
+    // do a subscript to obtain a Pointer.
+    // TODO: We currently have no idea what that Pointer may point at.
+    // The array itself should have a pset. It starts with (invalid) if there
+    // is not initialization done. Whenever there is an assignment to any array
+    // member, the pset of the array should grow by the pset of the assigment
+    // LHS. (This means that an uninitialized array can never become valid. This
+    // is reasonable, because we have no way to track if all array elements have
+    // been set at some later point.)
+    return {};
+  }
+
   if (auto VD = P.asVarDecl()) {
-    // To handle self-assignment during initialization
+    // Handle goto_forward_over_decl() in test attr-pset.cpp
     if (!isa<ParmVarDecl>(VD))
       return PSet::invalid(
           InvalidationReason::NotInitialized(VD->getLocation()));

@@ -150,9 +150,6 @@ void pointer_exprs() {
   S s;
   p = &s.m;
   __lifetime_pset(p); // expected-warning {{pset(p) = (s.m)}}
-  int a[2];
-  p = &a[0];
-  __lifetime_pset(p); // expected-warning {{pset(p) = (a)}}
 
   D d;
   S *ps = &d;          // Ignore implicit cast
@@ -225,36 +222,46 @@ void addr_and_dref() {
 }
 
 void forbidden() {
-
   int i;
   int *p = &i;
-  p++;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  p++;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
 
   p = &i;
-  p--;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  p--;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
 
   p = &i;
-  ++p;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  ++p;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
 
   p = &i;
-  --p;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  --p;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
 
-  p = &i + 3;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
+  p = &i + 3;         // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
 
-  int *q = &p[3];
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
+  int *q = &p[3];     // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((unknown))}}
 }
 
-void deref_array() {
+void array() {
+  int a[4];
+  int *p1 = &a[0];
+  __lifetime_pset(p1); // expected-warning {{(a)}}
+
+  int *p2 = a;
+  __lifetime_pset(p2); // expected-warning {{(a)}}
+
+  auto p3 = &a;
+  __lifetime_pset(p3); // expected-warning {{(a)}}
+}
+
+void pointer_in_array() {
   int *p[4];
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
   int *k = p[1];
-  __lifetime_pset(k); // expected-warning {{pset(k) = ((invalid))}}
+  __lifetime_pset(k); // expected-warning {{pset(k) = ((unknown))}}
 }
 
 int global_var;
@@ -976,9 +983,9 @@ void string_view_ctors(const char *c) {
 }
 
 void unary_operator(const char *p) {
-  const char *q = --p;
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
+  const char *q = --p; // expected-warning {{pointer arithmetic disables lifetime analysis}}
+  __lifetime_pset(p);  // expected-warning {{pset(p) = ((unknown))}}
+  __lifetime_pset(q);  // expected-warning {{pset(q) = ((unknown))}}
 }
 
 void funcptrs() {
@@ -1124,7 +1131,7 @@ void f() {
   int i;
   a.p1 = &i; // make a.p1 valid; a.p2 still invalid
   int *Aggregate::*memptr = &Aggregate::p2;
-  (void)*(a.*memptr); // .* is ignored
+  (void)*(a.*memptr); // expected-warning {{pointer arithmetic disables lifetime analysis}}
 }
 } // namespace PointerToMember
 
