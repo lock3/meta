@@ -359,8 +359,8 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   if (const Type *T = getAsReflectedType(Reflection))
     return AppendReflectedType(S, OS, E, T);
 
-  if (const Expr *E = getAsReflectedStatement(Reflection))
-    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
+  if (const Expr *RE = getAsReflectedStatement(Reflection))
+    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RE))
       return AppendReflectedDecl(S, OS, E, DRE->getDecl());
 
   llvm_unreachable("Unsupported reflection type");
