@@ -8625,8 +8625,8 @@ public:
   ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
   ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
 
-  TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
+  TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

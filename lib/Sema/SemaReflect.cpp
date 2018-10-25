@@ -488,21 +488,6 @@ ExprResult Sema::BuildCXXUnreflexprExpression(SourceLocation Loc,
 }
 
 /// Evaluates the given expression and yields the computed type.
-TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                             Expr *E) {
-  QualType T = BuildReflectedType(TypenameLoc, E);
-  if (T.isNull())
-    return TypeResult(true);
-
-  // FIXME: Add parens?
-  TypeLocBuilder TLB;
-  ReflectedTypeLoc TL = TLB.push<ReflectedTypeLoc>(T);
-  TL.setNameLoc(TypenameLoc);
-  TypeSourceInfo *TSI = TLB.getTypeSourceInfo(Context, T);
-  return CreateParsedType(T, TSI);
-}
-
-/// Evaluates the given expression and yields the computed type.
 QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (E->isTypeDependent() || E->isValueDependent())
     return Context.getReflectedType(E, Context.DependentTy);
@@ -538,4 +523,18 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   return Context.getReflectedType(E, Reflected);
 }
 
+/// Evaluates the given expression and yields the computed type.
+TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
+                                             Expr *E) {
+  QualType T = BuildReflectedType(TypenameLoc, E);
+  if (T.isNull())
+    return TypeResult(true);
+
+  // FIXME: Add parens?
+  TypeLocBuilder TLB;
+  ReflectedTypeLoc TL = TLB.push<ReflectedTypeLoc>(T);
+  TL.setNameLoc(TypenameLoc);
+  TypeSourceInfo *TSI = TLB.getTypeSourceInfo(Context, T);
+  return CreateParsedType(T, TSI);
+}
 
