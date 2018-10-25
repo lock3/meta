@@ -100,49 +100,21 @@ ExprResult Parser::ParseCXXReflectExpression() {
                                      T.getCloseLocation());
 }
 
-static ReflectionTrait ReflectionTraitKind(tok::TokenKind kind) {
-  switch (kind) {
-  default:
-    llvm_unreachable("Not a known type trait");
-#define REFLECTION_TRAIT_1(Spelling, K)                                        \
-  case tok::kw_##Spelling:                                                     \
-    return URT_##K;
-#define REFLECTION_TRAIT_2(Spelling, K)                                        \
-  case tok::kw_##Spelling:                                                     \
-    return BRT_##K;
-#include "clang/Basic/TokenKinds.def"
-  }
-}
-
-static unsigned ReflectionTraitArity(tok::TokenKind kind) {
-  switch (kind) {
-  default:
-    llvm_unreachable("Not a known type trait");
-#define REFLECTION_TRAIT(N, Spelling, K)                                       \
-  case tok::kw_##Spelling:                                                     \
-    return N;
-#include "clang/Basic/TokenKinds.def"
-  }
-}
-
 /// \brief Parse a reflection trait.
 ///
 /// \verbatim
 ///   primary-expression:
-///     unary-reflection-trait '(' expression ')'
-///     binary-reflection-trait '(' expression ',' expression ')'
-///
-///   unary-reflection-trait:
-///     '__reflect_index'
+///     __reflect '(' expression-list ')'
 /// \endverbatim
 ExprResult Parser::ParseCXXReflectionTrait() {
-  tok::TokenKind Kind = Tok.getKind();
+  assert(Tok.is(tok::kw___reflect) && "Not __reflect");
   SourceLocation Loc = ConsumeToken();
 
   // Parse any number of arguments in parens.
   BalancedDelimiterTracker Parens(*this, tok::l_paren);
   if (Parens.expectAndConsume())
     return ExprError();
+  
   SmallVector<Expr *, 2> Args;
   do {
     ExprResult Expr = ParseConstantExpression();
@@ -152,20 +124,13 @@ ExprResult Parser::ParseCXXReflectionTrait() {
     }
     Args.push_back(Expr.get());
   } while (TryConsumeToken(tok::comma));
+  
   if (Parens.consumeClose())
     return ExprError();
+ 
+  SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-
-  // Make sure that the number of arguments matches the arity of trait.
-  unsigned Arity = ReflectionTraitArity(Kind);
-  if (Args.size() != Arity) {
-    Diag(RPLoc, diag::err_type_trait_arity)
-        << Arity << 0 << (Arity > 1) << (int)Args.size() << SourceRange(Loc);
-    return ExprError();
-  }
-
-  ReflectionTrait Trait = ReflectionTraitKind(Kind);
-  return Actions.ActOnCXXReflectionTrait(Loc, Trait, Args, RPLoc);
+  return Actions.ActOnCXXReflectionTrait(Loc, Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflected-value-expression.

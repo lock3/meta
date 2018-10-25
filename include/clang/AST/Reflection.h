@@ -21,6 +21,7 @@
 
 namespace clang {
 
+class CXXBaseSpecifier;
 class Decl;
 class Expr;
 class NamespaceDecl;
@@ -179,26 +180,216 @@ public:
   }
 };
 
+enum ReflectionQuery {
+  RQ_unknown,
 
-namespace reflect {
+  RQ_is_invalid,
+  RQ_is_entity,
+  RQ_is_unnamed,
 
-bool isReflectedDeclaration(APValue &Reflection);
-bool isReflectedType(APValue &Reflection);
-bool isReflectedStatement(APValue &Reflection);
-bool isReflectedULE(APValue &Reflection);
-bool isNullReflection(APValue &Reflection);
+  // Objects, references, bitfields, and functions
+  RQ_is_variable,
+  RQ_is_enumerator,
+  RQ_is_static_data_member,
+  RQ_is_static_member_function,
+  RQ_is_nonstatic_data_member,
+  RQ_is_bitfield,
+  RQ_is_nonstatic_member_function,
+  RQ_is_constructor,
+  RQ_is_destructor,
+  
+  // Types
+  RQ_is_type,
+  RQ_is_class,
+  RQ_is_union,
+  RQ_is_enum,
+  RQ_is_scoped_enum,
+  RQ_is_void,
+  RQ_is_null_pointer,
+  RQ_is_integral,
+  RQ_is_floating_point,
+  RQ_is_array,
+  RQ_is_pointer,
+  RQ_is_lvalue_reference,
+  RQ_is_rvalue_reference,
+  RQ_is_member_object_pointer,
+  RQ_is_member_function_pointer,
+  RQ_is_closure,
 
-const Decl *getReflectedDeclaration(APValue &Reflection);
-const Type *getReflectedType(APValue &Reflection);
-const Expr *getReflectedStatement(APValue &Reflection);
-const UnresolvedLookupExpr *getReflectedULE(APValue &Reflection);
+  // Namespaces and aliases
+  RQ_is_namespace,
+  RQ_is_namespace_alias,
+  RQ_is_type_alias,
 
-const Decl *getAsReflectedDeclaration(APValue &Reflection);
-const Type *getAsReflectedType(APValue &Reflection);
-const Expr *getAsReflectedStatement(APValue &Reflection);
-const UnresolvedLookupExpr *getAsReflectedULE(APValue &Reflection);
+  // Templates and specializations
+  RQ_is_template,
+  RQ_is_class_template,
+  RQ_is_alias_template,
+  RQ_is_function_template,
+  RQ_is_variable_template,
+  RQ_is_member_function_template,
+  RQ_is_static_member_function_template,
+  RQ_is_nonstatic_member_function_template,
+  RQ_is_constructor_template,
+  RQ_is_destructor_template,
+  RQ_is_concept,
+  RQ_is_specialization,
+  RQ_is_partial_specialization,
+  RQ_is_explicit_specialization,
+  RQ_is_implicit_instantiation,
+  RQ_is_explicit_instantiation,
 
-} // namespace reflect
+  // Base class specifiers
+  RQ_is_direct_base,
+  RQ_is_virtual_base,
+
+  // Parameters
+  RQ_is_function_parameter,
+  RQ_is_template_parameter,
+  RQ_is_type_template_parameter,
+  RQ_is_nontype_template_parameter,
+  RQ_is_template_template_parameter,
+
+  // Expressions
+  RQ_is_expression,
+  RQ_is_lvalue,
+  RQ_is_xvalue,
+  RQ_is_rvalue,
+
+  // Scope
+  RQ_is_local,
+  RQ_is_class_member,
+  
+  // Traits
+  RQ_get_variable_traits,
+  RQ_get_function_traits,
+  RQ_get_namespace_traits,
+  RQ_get_linkage_traits,
+  RQ_get_access_traits,
+
+  // Associated reflections
+  RQ_get_entity,
+  RQ_get_parent,
+  RQ_get_type,
+  RQ_get_this_ref_type,
+  
+  // Traversal
+  RQ_get_begin,
+  RQ_get_end,
+
+  // Name
+  RQ_get_name,
+  RQ_get_display_name,
+
+  // Labels for kinds of queries. These need to be updated when new
+  // queries are added.
+
+  // Predicates -- these return bool.
+  RQ_first_predicate = RQ_is_invalid,
+  RQ_last_predicate = RQ_is_class_member,
+  // Traits -- these return unsigned.
+  RQ_first_trait = RQ_get_variable_traits,
+  RQ_last_trait = RQ_get_access_traits,
+  // Associated reflections -- these return meta::info.
+  RQ_first_assoc = RQ_get_entity,
+  RQ_last_assoc = RQ_get_end,
+  // Names -- these return const char*
+  RQ_first_name = RQ_get_name,
+  RQ_last_name = RQ_get_display_name,
+};
+
+/// True if Q is a predicate.
+inline bool isPredicateQuery(ReflectionQuery Q) {
+  return RQ_first_predicate <= Q && Q <= RQ_last_predicate;
+}
+
+/// True if Q returns trait information.
+inline bool isTraitQuery(ReflectionQuery Q) {
+  return RQ_first_trait <= Q && Q <= RQ_last_trait;
+}
+
+/// True if Q returns an associated reflection.
+inline bool isAssociatedReflectionQuery(ReflectionQuery Q) {
+  return RQ_first_assoc <= Q && Q <= RQ_last_assoc;
+}
+
+/// True if Q returns a name.
+inline bool isNameQuery(ReflectionQuery Q) {
+  return RQ_first_name <= Q && Q <= RQ_last_name;
+}
+
+/// The reflection class provides context for evaluating queries.
+class Reflection
+{
+  /// The AST context is needed for global information.
+  ASTContext &Ctx;
+
+  /// The reflected entity or construct.
+  const APValue &Ref;
+
+public:
+  Reflection(ASTContext &C, const APValue &R)
+    : Ctx(C), Ref(R) { 
+    assert(Ref.isReflection() && "not a reflection");
+  }
+
+  /// True if this is the invalid reflection.
+  bool isInvalid() const {
+    return Ref.isInvalidReflection();
+  }
+
+  /// True if this reflects a type.
+  bool isType() const {
+    return Ref.getReflectionKind() == RK_type;
+  }
+  
+  /// True if this reflects a declaration.
+  bool isDeclaration() const {
+    return Ref.getReflectionKind() == RK_declaration;
+  }
+  
+  /// True if this reflects an expression.
+  bool isExpression() const {
+    return Ref.getReflectionKind() == RK_expression;
+  }
+  
+  /// True if this reflects a base class specifier.
+  bool isBase() const {
+    return Ref.getReflectionKind() == RK_base_specifier;
+  }
+
+  /// Returns this as a type.
+  QualType getAsType() const {
+    return Ref.getReflectedType();
+  }
+  
+  /// Returns this as a declaration.
+  const Decl *getAsDeclaration() const {
+    return Ref.getReflectedDeclaration();
+  }
+  
+  /// Returns this as an expression.
+  const Expr *getAsExpression() const {
+    return Ref.getReflectedExpression();
+  }
+  
+  /// Returns this as a base class specifier.
+  const CXXBaseSpecifier *getAsBase() const { 
+    return Ref.getReflectedBaseSpecifier(); 
+  }
+
+  /// Evaluates the predicate designated by Q.
+  APValue EvaluatePredicate(ReflectionQuery Q);
+  
+  /// Returns the traits designated by Q.
+  APValue GetTraits(ReflectionQuery Q);
+
+  /// Returns the reflected construct designated by Q.
+  APValue GetAssociatedReflection(ReflectionQuery Q);
+
+  /// Returns the entity name designated by Q.
+  APValue GetName(ReflectionQuery);
+};
 
 } // namespace clang
 

@@ -100,25 +100,6 @@ namespace clang {
     UETT_VecStep,
     UETT_OpenMPRequiredSimdAlign,
   };
-
-  /// \brief Names for reflectors.
-  /// 
-  /// Unary reflectors (prefixed by 'U') take a single argument, an expression
-  /// yielding a reflected node, while binary reflectors (prefixed by 'B') take
-  /// two arguments, both expressions. The first is the reflected node, and the
-  /// second is usually an integer value that indexes into an array.
-  enum ReflectionTrait {
-    URT_ReflectIndex,
-    URT_ReflectContext,
-    URT_ReflectHome,
-    URT_ReflectBegin,
-    URT_ReflectEnd,
-    URT_ReflectNext,
-    URT_ReflectName,
-    URT_ReflectType,
-    URT_ReflectTraits,
-    URT_ReflectPrint,
-  };
 }
 
 #endif

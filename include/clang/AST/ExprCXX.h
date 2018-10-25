@@ -4943,29 +4943,24 @@ public:
 /// the AST node.
 class CXXReflectionTraitExpr : public Expr {
 protected:
-  ReflectionTrait Trait;
+  ReflectionQuery Query;
   unsigned NumArgs;
   Expr **Args;
-  SourceLocation TraitLoc;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
   SourceLocation RParenLoc;
 
 public:
-  CXXReflectionTraitExpr(ASTContext &C, QualType T, ReflectionTrait RT, 
-                         SourceLocation TraitLoc, ArrayRef<Expr *> Args, 
+  CXXReflectionTraitExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+                         ArrayRef<Expr *> Args,
+                         SourceLocation KeywordLoc,
+                         SourceLocation LParenLoc,
                          SourceLocation RParenLoc);
 
   CXXReflectionTraitExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
 
-  /// \brief Compute the reflected trait for Args.
-  ///
-  /// This is the main entry point for reflection-related operations. It is
-  /// called from during constexpr evaluation to compute the reflected value.
-  ///
-  /// The implementation of this function is in Reflect.cpp.
-  bool Reflect(EvalResult &Result, ASTContext &Ctx) const;
-
-  /// Returns the kind of reflection trait.
-  ReflectionTrait getTrait() const { return Trait; }
+  /// Returns the trait's query value.
+  ReflectionQuery getQuery() const { return Query; }
 
   /// Returns the arity of the trait.
   unsigned getNumArgs() const { return NumArgs; }
@@ -4979,21 +4974,20 @@ public:
   /// \brief Returns the array of arguments.
   Expr **getArgs() const { return Args; }
 
-  /// Returns the operand representing the reflected entity.
-  Expr *getASTNode() const { return cast<Expr>(Args[0]); }
-
   /// Returns the source code location of the trait keyword.
-  SourceLocation getTraitLoc() const { return TraitLoc; }
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
 
-  /// Returns the source code location of the closing parenthesis.
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
   SourceLocation getRParenLoc() const { return RParenLoc; }
-
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();
   }
-  SourceLocation getBeginLoc() const { return TraitLoc; }
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
                             "Use getEndLoc instead") {

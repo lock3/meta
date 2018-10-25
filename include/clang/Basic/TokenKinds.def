@@ -400,18 +400,7 @@ MODULES_KEYWORD(import)
 KEYWORD(constexpr_bang              , KEYCXX11)
 KEYWORD(reflexpr                    , KEYCXX11)
 KEYWORD(unreflexpr                  , KEYCXX11)
-
-// Reflection compiler/library interface
-REFLECTION_TRAIT_1(__reflect_index  , ReflectIndex)
-REFLECTION_TRAIT_1(__reflect_context, ReflectContext)
-REFLECTION_TRAIT_1(__reflect_home   , ReflectHome)
-REFLECTION_TRAIT_1(__reflect_begin  , ReflectBegin)
-REFLECTION_TRAIT_1(__reflect_end    , ReflectEnd)
-REFLECTION_TRAIT_1(__reflect_next   , ReflectNext)
-REFLECTION_TRAIT_1(__reflect_name   , ReflectName)
-REFLECTION_TRAIT_1(__reflect_type   , ReflectType)
-REFLECTION_TRAIT_1(__reflect_traits , ReflectTraits)
-REFLECTION_TRAIT_1(__reflect_print  , ReflectPrint)
+KEYWORD(__reflect                   , KEYCXX11)
 
 // C++ char8_t proposal
 KEYWORD(char8_t                     , CHAR8SUPPORT)

@@ -1513,26 +1513,23 @@ CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
   return E;
 }
 
-CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T, 
-                                               ReflectionTrait RT, 
-                                               SourceLocation TraitLoc, 
-                                               ArrayRef<Expr *> Args, 
-                                               SourceLocation RParenLoc) 
-  : Expr(CXXReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
-         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
-           return E->isTypeDependent(); 
-         }),
-         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
-           return E->isValueDependent(); 
-         }),
-         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
-           return E->isInstantiationDependent(); 
-         }),
-         std::any_of(Args.begin(), Args.end(), [](Expr *E) { 
-           return E->containsUnexpandedParameterPack();
-         })), 
-    Trait(RT), NumArgs(Args.size()), Args(new Expr *[NumArgs]),
-    TraitLoc(TraitLoc), RParenLoc(RParenLoc) {
+template<typename P>
+bool AnyOf(ArrayRef<Expr *> A, P pred) {
+  return std::any_of(A.begin(), A.end(), pred);
+}
 
+CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T, 
+                                               ReflectionQuery Q, 
+                                               ArrayRef<Expr *> Args, 
+                                               SourceLocation KW,
+                                               SourceLocation LP, 
+                                               SourceLocation RP) 
+  : Expr(CXXReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
+         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
+         false),
+    Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
+    KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
   std::copy(Args.begin(), Args.end(), this->Args);
 }

@@ -57,7 +57,6 @@
 #include <string>
 
 using namespace clang;
-using namespace clang::reflect;
 
 //===----------------------------------------------------------------------===//
 // StmtPrinter Visitor
@@ -2668,19 +2667,8 @@ void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
   #endif
 }
 
-static const char *getReflectionTraitName(ReflectionTrait RT) {
-  switch (RT) {
-#define REFLECTION_TRAIT_1(Spelling, Kind) \
-  case clang::URT_##Kind: return #Spelling;
-#define REFLECTION_TRAIT_2(Spelling, Kind) \
-  case clang::BRT_##Kind: return #Spelling;
-#include "clang/Basic/TokenKinds.def"
-  }
-  llvm_unreachable("Invalid trait");
-}
-
 void StmtPrinter::VisitCXXReflectionTraitExpr(CXXReflectionTraitExpr *E) {
-  OS << getReflectionTraitName(E->getTrait()) << '(';
+  OS << "__reflect(";
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
     PrintExpr(E->getArg(i));
     if (i + 1 != E->getNumArgs())
