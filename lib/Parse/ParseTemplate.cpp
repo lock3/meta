@@ -1218,7 +1218,16 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 ///         constant-expression
 ///         type-id
 ///         id-expression
+///         templarg ( reflection )
 ParsedTemplateArgument Parser::ParseTemplateArgument() {
+  EnterExpressionEvaluationContext EnterConstantEvaluated(
+    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
+    /*LambdaContextDecl=*/nullptr,
+    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
+  if (Tok.is(tok::kw_templarg)) {
+    return ParseReflectedTemplateArgument();
+  }
+
   // C++ [temp.arg]p2:
   //   In a template-argument, an ambiguity between a type-id and an
   //   expression is resolved to a type-id, regardless of the form of
@@ -1229,10 +1238,6 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
   // so enter the appropriate context for a constant expression template
   // argument before trying to disambiguate.
 
-  EnterExpressionEvaluationContext EnterConstantEvaluated(
-    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
-    /*LambdaContextDecl=*/nullptr,
-    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     TypeResult TypeArg = ParseTypeName(
         /*Range=*/nullptr, DeclaratorContext::TemplateArgContext);

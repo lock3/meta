@@ -538,3 +538,50 @@ TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
   return CreateParsedType(T, TSI);
 }
 
+static ParsedTemplateArgument
+DiagnoseDeclTemplarg(Sema &S, SourceLocation KWLoc,
+                     Expr *ReflExpr, const Decl *D) {
+  llvm::outs() << "Templarg - Decl\n";
+  return ParsedTemplateArgument();
+}
+
+static ParsedTemplateArgument
+BuildReflectedTypeTemplarg(Sema &S, SourceLocation KWLoc,
+                           Expr *ReflExpr, const Type *T) {
+  llvm::outs() << "Templarg - Type\n";
+  void *OpaqueT = reinterpret_cast<void *>(const_cast<Type *>(T));
+  return ParsedTemplateArgument(ParsedTemplateArgument::Type, OpaqueT, KWLoc);
+}
+
+static ParsedTemplateArgument
+BuildReflectedExprTemplarg(Sema &S, SourceLocation KWLoc,
+                           Expr *E, const Expr *RE) {
+  llvm::outs() << "Templarg - Expr\n";
+  void *OpaqueT = reinterpret_cast<void *>(const_cast<Expr *>(RE));
+  return ParsedTemplateArgument(ParsedTemplateArgument::NonType, OpaqueT, KWLoc);
+}
+
+ParsedTemplateArgument
+Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
+  if (!CheckReflectionOperand(*this, E))
+    return ParsedTemplateArgument();
+
+  APValue Reflection;
+  bool EvalFailed;
+  EvaluateReflection(*this, E, Reflection, EvalFailed);
+
+  if (EvalFailed)
+    return ParsedTemplateArgument();
+
+  if (const Decl *D = getAsReflectedDeclaration(Reflection))
+    return DiagnoseDeclTemplarg(*this, KWLoc, E, D);
+
+  if (const Type *T = getAsReflectedType(Reflection))
+    return BuildReflectedTypeTemplarg(*this, KWLoc, E, T);
+
+  if (const Expr *RE = getAsReflectedStatement(Reflection))
+    return BuildReflectedExprTemplarg(*this, KWLoc, E, RE);
+
+  llvm_unreachable("Unsupported reflection type");
+}
+

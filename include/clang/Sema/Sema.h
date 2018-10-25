@@ -8628,6 +8628,9 @@ public:
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
 
+  ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
+                                                        Expr *E);
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //

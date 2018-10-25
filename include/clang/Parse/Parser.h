@@ -2760,6 +2760,7 @@ private:
   ExprResult ParseCXXUnreflexprExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
                                         SourceLocation &EndLoc);
+  ParsedTemplateArgument ParseReflectedTemplateArgument();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
