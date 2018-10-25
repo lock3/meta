@@ -25,40 +25,36 @@ namespace clang {
   class ASTContext;
   class CharUnits;
   class DiagnosticBuilder;
+  class Stmt;
   class Expr;
-  class FieldDecl;
   class Decl;
   class ValueDecl;
+  class FieldDecl;
   class CXXRecordDecl;
+  class CXXBaseSpecifier;
   class QualType;
 
-/// \brief The kind of construct reflected. The corresponding AST objects
-/// for these constructs MUST have 8-bit aligned.
-///
-/// \todo Include
+/// \brief The kind of construct reflected.
 enum ReflectionKind {
-  /// \brief Used internally to represent empty reflections or values that
-  /// cannot be encoded directly in the address. If the corresponding
-  /// pointer value is null, then the reflection is empty. Otherwise, the
-  /// corresponding value is a key in lookup table (not implemented).
-  REK_special = 0,
+  /// \brief Represents the invalid reflection.
+  RK_invalid = 0,
 
   /// \brief A reflection of a named entity, possibly a namespace. Note
   /// that user-defined types are reflected as declarations, not types.
-  /// Corresponds to an object of type Decl.
-  REK_declaration = 1,
+  /// Corresponds to an object of type Decl*.
+  RK_declaration = 1,
 
   /// \brief A reflection of a non-user-defined type. Corresponds to
-  /// an object of type Type.
-  REK_type = 2,
+  /// an object of type QualType.
+  RK_type = 2,
 
-  /// \brief A reflection of a statement or expression. Corresponds to
-  /// an object of type Expr.
-  REK_statement = 3,
+  /// \brief A reflection of an expression. Corresponds to an object of 
+  /// type Expr*.
+  RK_expression = 3,
 
   /// \brief A base class specifier. Corresponds to an object of type
-  /// CXXBaseSpecifier.
-  REK_base_specifier = 4,
+  /// CXXBaseSpecifier*.
+  RK_base_specifier = 4,
 };
 
 /// APValue - This class implements a discriminated union of [uninitialized]
@@ -191,7 +187,7 @@ private:
   struct ReflectionData {
     ReflectionKind ReflKind;
     const void *ReflEntity;
-    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity);
+    ReflectionData(ReflectionKind ReflKind, const void *Ptr);
   };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
@@ -438,15 +434,32 @@ public:
     return ((const AddrLabelDiffData*)(const char*)Data.buffer)->RHSExpr;
   }
 
+  // Returns the kind of reflected value.
   ReflectionKind getReflectionKind() const {
     assert(isReflection() && "Invalid accessor");
     return ((const ReflectionData*)(const char*)Data.buffer)->ReflKind;
   }
 
-  const void *getReflectedEntity() const {
+  // Returns the opaque reflection pointer.
+  const void *getOpaqueReflectionValue() const {
     assert(isReflection() && "Invalid accessor");
     return ((const ReflectionData*)(const char*)Data.buffer)->ReflEntity;
   }
+
+  /// True if this is the invalid reflection.
+  bool isInvalidReflection() const;
+
+  /// Returns the reflected type.
+  QualType getReflectedType() const;
+  
+  /// Returns the reflected template declaration.
+  const Decl *getReflectedDeclaration() const;
+  
+  /// Returns the reflected expression.
+  const Expr *getReflectedExpression() const;
+  
+  /// Returns the reflected base class specifier.
+  const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
 
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");

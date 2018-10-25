@@ -26,7 +26,6 @@
 #include "clang/Sema/SemaInternal.h"
 #include "TypeLocBuilder.h"
 using namespace clang;
-using namespace clang::reflect;
 using namespace sema;
 
 ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
@@ -119,18 +118,13 @@ ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, Expr *E,
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, E, LP, RP);
 }
 
-// Convert each operand to an rvalue.
-static void ConvertTraitOperands(Sema &SemaRef, ArrayRef<Expr *> Args,
-                               SmallVectorImpl<Expr *> &Operands) {
-  for (std::size_t I = 0; I < Args.size(); ++I) {
-    if (Args[I]->isGLValue())
-      Operands[I] = ImplicitCastExpr::Create(SemaRef.Context,
-                                             Args[I]->getType(),
-                                             CK_LValueToRValue, Args[I],
-                                             nullptr, VK_RValue);
-    else
-      Operands[I] = Args[I];
-  }
+static bool SetType(QualType& Ret, QualType T) {
+  Ret = T;
+  return true;
+}
+
+static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
+  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
 }
 
 // Check that the argument has the right type. Ignore references and
@@ -144,70 +138,89 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
   Source = SemaRef.Context.getCanonicalType(Source);
 
   if (Source != SemaRef.Context.MetaInfoTy) {
-    SemaRef.Diag(E->getBeginLoc(), diag::err_reflection_trait_wrong_type)
-        << Source;
+    SemaRef.Diag(E->getBeginLoc(), diag::err_expression_not_reflection);
     return false;
   }
 
   return true;
 }
 
-ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation TraitLoc,
-                                         ReflectionTrait Trait,
-                                         ArrayRef<Expr *> Args,
+// Gets the type and query from Arg. Returns false on error.
+static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy, 
+                            ReflectionQuery& Query) {
+  // Guess these values initially.
+  ResultTy = SemaRef.Context.DependentTy;
+  Query = RQ_unknown;
+
+  if (Arg->isTypeDependent() || Arg->isValueDependent())
+    return true;
+
+  // Convert to an rvalue.
+  ExprResult Conv = SemaRef.DefaultLvalueConversion(Arg);
+  if (Conv.isInvalid())
+    return false;
+  Arg = Conv.get();
+
+  // FIXME: Should what type should this actually be?
+  QualType T = Arg->getType();
+  if (T != SemaRef.Context.IntTy) {
+    SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_wrong_type);
+    return false;
+  }
+
+  // Evaluate the query operand
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!Arg->EvaluateAsRValue(Result, SemaRef.Context)) {
+    // FIXME: This is not the right error.
+    SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_not_constant);
+    for (PartialDiagnosticAt PD : Diags)
+      SemaRef.Diag(PD.first, PD.second);
+    return false;
+  }
+
+  Query = static_cast<ReflectionQuery>(Result.Val.getInt().getExtValue());
+
+  if (isPredicateQuery(Query)) 
+    return SetType(ResultTy, SemaRef.Context.BoolTy);
+  if (isTraitQuery(Query))
+    return SetType(ResultTy, SemaRef.Context.UnsignedIntTy);
+  if (isAssociatedReflectionQuery(Query))
+    return SetType(ResultTy, SemaRef.Context.MetaInfoTy);
+  if (isNameQuery(Query))
+    return SetCStrType(ResultTy, SemaRef.Context);
+
+  SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_invalid);
+  return false;
+}
+
+ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation KWLoc,
+                                         SmallVectorImpl<Expr *> &Args,
+                                         SourceLocation LParenLoc,
                                          SourceLocation RParenLoc) {
-  // If any arguments are dependent, then the expression is dependent.
-  for (std::size_t I = 0; I < Args.size(); ++I) {
-    Expr *Arg = Args[0];
-    if (Arg->isTypeDependent() || Arg->isValueDependent())
-      return new (Context) CXXReflectionTraitExpr(Context, Context.DependentTy,
-                                                  Trait, TraitLoc, Args,
-                                                  RParenLoc);
+  // FIXME: There are likely unary and n-ary queries.
+  if (Args.size() != 2) {
+    Diag(KWLoc, diag::err_reflection_wrong_arity) << (int)Args.size();
+    return ExprError();
   }
 
-  // Build a set of converted arguments.
-  SmallVector<Expr *, 2> Operands(Args.size());
-  ConvertTraitOperands(*this, Args, Operands);
+  // Get the type of the query. Note that this will convert Args[0].
+  QualType Ty;
+  ReflectionQuery Query;
+  if (!GetTypeAndQuery(*this, Args[0], Ty, Query))
+    return ExprError();
 
-  // Check the type of the first operand. Note: ReflectPrint is polymorphic.
-  if (Trait != URT_ReflectPrint) {
-    if (!CheckReflectionOperand(*this, Operands[0]))
-      return false;
+  // Convert the remaining operands to rvalues.
+  for (std::size_t I = 1; I < Args.size(); ++I) {
+    ExprResult Arg = DefaultLvalueConversion(Args[I]);
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[I] = Arg.get();
   }
 
-  // FIXME: If the trait allows multiple arguments, check those.
-  QualType ResultTy;
-  switch (Trait) {
-    case URT_ReflectIndex: // meta::reflection_kind
-      ResultTy = Context.IntTy;
-      break;
-
-    case URT_ReflectContext:
-    case URT_ReflectHome:
-    case URT_ReflectBegin:
-    case URT_ReflectEnd:
-    case URT_ReflectNext:
-    case URT_ReflectType: // meta::info
-      ResultTy = Context.MetaInfoTy;
-      break;
-
-    case URT_ReflectName: // const char*
-      ResultTy = Context.getPointerType(Context.CharTy.withConst());
-      break;
-
-    case URT_ReflectTraits: // unsigned
-      ResultTy = Context.UnsignedIntTy;
-      break;
-
-    case URT_ReflectPrint: // int (always 0)
-      // Returns 0.
-      ResultTy = Context.IntTy;
-      break;
-  }
-  assert(!ResultTy.isNull() && "unknown reflection trait");
-
-  return new (Context) CXXReflectionTraitExpr(Context, ResultTy, Trait,
-                                              TraitLoc, Operands, RParenLoc);
+  return new (Context) CXXReflectionTraitExpr(Context, Ty, Query, Args, 
+                                              KWLoc, LParenLoc, RParenLoc);
 }
 
 static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
@@ -311,7 +324,9 @@ AppendReflectedDecl(Sema &S, llvm::raw_ostream &OS, const Expr *ReflExpr,
 
 static inline bool
 AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
-                    const Type *T) {
+                    const QualType &QT) {
+  const Type *T = QT.getTypePtr();
+
   // If this is a class type, append its identifier.
   if (auto *RC = T->getAsCXXRecordDecl())
     OS << RC->getName();
@@ -325,7 +340,7 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
   return true;
 }
 
-static void EvaluateReflection(Sema &S, Expr *E, APValue &Reflection, bool &Failed) {
+static Reflection EvaluateReflection(Sema &S, Expr *E) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
@@ -333,35 +348,39 @@ static void EvaluateReflection(Sema &S, Expr *E, APValue &Reflection, bool &Fail
     S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       S.Diag(PD.first, PD.second);
-    Failed = true;
-    return;
+    return Reflection();
   }
 
-  Reflection = Result.Val;
-  if (isNullReflection(Reflection)) {
-    S.Diag(E->getExprLoc(), diag::err_empty_type_reflection);
-    Failed = true;
-  }
+  return Reflection(S.Context, Result.Val);
 }
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  APValue Reflection;
-  bool EvalFailed;
-  EvaluateReflection(S, E, Reflection, EvalFailed);
+  Reflection Refl = EvaluateReflection(S, E);
 
-  if (EvalFailed)
-    return false;
+  switch(Refl.getKind()) {
+  case RK_invalid:
+    llvm_unreachable("Should already be validated");
 
-  if (const Decl *D = getAsReflectedDeclaration(Reflection))
+  case RK_type: {
+    const QualType QT = Refl.getAsType();
+    return AppendReflectedType(S, OS, E, QT);
+  }
+
+  case RK_declaration: {
+    const Decl *D = Refl.getAsDeclaration();
     return AppendReflectedDecl(S, OS, E, D);
+  }
 
-  if (const Type *T = getAsReflectedType(Reflection))
-    return AppendReflectedType(S, OS, E, T);
-
-  if (const Expr *RE = getAsReflectedStatement(Reflection))
+  case RK_expression: {
+    const Expr *RE = Refl.getAsExpression();
     if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RE))
       return AppendReflectedDecl(S, OS, E, DRE->getDecl());
+  }
+
+  case RK_base_specifier:
+    break;
+  }
 
   llvm_unreachable("Unsupported reflection type");
 }
@@ -474,8 +493,8 @@ ExprResult Sema::BuildCXXUnreflexprExpression(SourceLocation Loc,
   //                                          VK_RValue, OK_Ordinary, Loc);
 
   // The operand must be a reflection.
-  if (!CheckReflectionOperand(*this, E))
-    return ExprError();
+  // if (!CheckReflectionOperand(*this, E))
+  //   return ExprError();
 
   // TODO: Process the reflection E, into DeclRefExpr
 
@@ -496,29 +515,17 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return QualType();
 
-  APValue Reflection;
-  bool EvalFailed;
-  EvaluateReflection(*this, E, Reflection, EvalFailed);
+  Reflection Refl = EvaluateReflection(*this, E);
+  if (Refl.isInvalid())
+    return QualType();
 
-  if (EvalFailed) {
+  if (!Refl.isType()) {
+    Diag(E->getExprLoc(), diag::err_expression_not_type_reflection);
     return QualType();
   }
 
   // Get the type of the reflected entity.
-  QualType Reflected;
-  if (const Type* T = getAsReflectedType(Reflection)) {
-    Reflected = QualType(T, 0);
-  } else if (const Decl* D = getAsReflectedDeclaration(Reflection)) {
-    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
-      Reflected = Context.getTypeDeclType(TD);
-    } else {
-      Diag(E->getExprLoc(), diag::err_expression_not_type_reflection);
-      return QualType();
-    }
-  } else {
-    // FIXME: Handle things like base classes.
-    llvm_unreachable("unknown reflection");
-  }
+  QualType Reflected = Refl.getAsType();
 
   return Context.getReflectedType(E, Reflected);
 }
@@ -554,8 +561,9 @@ DiagnoseDeclTemplarg(Sema &S, SourceLocation KWLoc,
 
 static ParsedTemplateArgument
 BuildReflectedTypeTemplarg(Sema &S, SourceLocation KWLoc,
-                           Expr *ReflExpr, const Type *T) {
+                           Expr *ReflExpr, const QualType &QT) {
   llvm::outs() << "Templarg - Type\n";
+  const Type *T = QT.getTypePtr();
   void *OpaqueT = reinterpret_cast<void *>(const_cast<Type *>(T));
   return ParsedTemplateArgument(ParsedTemplateArgument::Type, OpaqueT, KWLoc);
 }
@@ -577,21 +585,30 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return ParsedTemplateArgument();
 
-  APValue Reflection;
-  bool EvalFailed;
-  EvaluateReflection(*this, E, Reflection, EvalFailed);
+  Reflection Refl = EvaluateReflection(*this, E);
 
-  if (EvalFailed)
+  switch(Refl.getKind()) {
+  case RK_invalid:
     return ParsedTemplateArgument();
 
-  if (const Decl *D = getAsReflectedDeclaration(Reflection))
+  case RK_type: {
+    const QualType QT = Refl.getAsType();
+    return BuildReflectedTypeTemplarg(*this, KWLoc, E, QT);
+  }
+
+  case RK_declaration: {
+    const Decl *D = Refl.getAsDeclaration();
     return DiagnoseDeclTemplarg(*this, KWLoc, E, D);
+  }
 
-  if (const Type *T = getAsReflectedType(Reflection))
-    return BuildReflectedTypeTemplarg(*this, KWLoc, E, T);
-
-  if (const Expr *RE = getAsReflectedStatement(Reflection))
+  case RK_expression: {
+    const Expr *RE = Refl.getAsExpression();
     return BuildReflectedExprTemplarg(*this, KWLoc, E, RE);
+  }
+
+  case RK_base_specifier:
+    break;
+  }
 
   llvm_unreachable("Unsupported reflection type");
 }

@@ -8599,24 +8599,26 @@ public:
 
   ExprResult ActOnCXXReflectExpr(SourceLocation KWLoc,
                                  ParsedReflectionOperand Ref,
-                                 SourceLocation LParen, SourceLocation RParen);
-  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, QualType T,
-                                 SourceLocation LParen,
-                                 SourceLocation RParen);
-  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, TemplateName N,
-                                 SourceLocation LParen,
-                                 SourceLocation RParen);
-  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, NamespaceName N,
-                                 SourceLocation LParen,
-                                 SourceLocation RParen);
-  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Expr *E,
-                                 SourceLocation LParen,
-                                 SourceLocation RParen);
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXReflectionTrait(SourceLocation TraitLoc,
-                                     ReflectionTrait Trait,
-                                     ArrayRef<Expr *> Args,
-                                     SourceLocation RPLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, QualType T,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, TemplateName N,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, NamespaceName N,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Expr *E,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+
+  ExprResult ActOnCXXReflectionTrait(SourceLocation KWLoc,
+                                     SmallVectorImpl<Expr *> &Args,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RparenLoc);
 
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,

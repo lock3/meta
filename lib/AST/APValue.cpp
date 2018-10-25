@@ -230,7 +230,7 @@ APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
   case Reflection:
-    MakeReflection(RHS.getReflectionKind(), RHS.getReflectedEntity());
+    MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue());
     break;
   }
 }
@@ -258,8 +258,6 @@ void APValue::DestroyDataAndMakeUninit() {
     ((MemberPointerData*)(char*)Data.buffer)->~MemberPointerData();
   else if (Kind == AddrLabelDiff)
     ((AddrLabelDiffData*)(char*)Data.buffer)->~AddrLabelDiffData();
-  else if (Kind == Reflection)
-    ((ReflectionData*)(char*)Data.buffer)->~ReflectionData();
   Kind = Uninitialized;
 }
 
@@ -267,12 +265,12 @@ bool APValue::needsCleanup() const {
   switch (getKind()) {
   case Uninitialized:
   case AddrLabelDiff:
+  case Reflection:
     return false;
   case Struct:
   case Union:
   case Array:
   case Vector:
-  case Reflection:
     return true;
   case Int:
     return getInt().needsCleanup();
@@ -305,6 +303,30 @@ void APValue::swap(APValue &RHS) {
   memcpy(TmpData, Data.buffer, DataSize);
   memcpy(Data.buffer, RHS.Data.buffer, DataSize);
   memcpy(RHS.Data.buffer, TmpData, DataSize);
+}
+
+bool APValue::isInvalidReflection() const {
+  return getReflectionKind() == RK_invalid;
+}
+
+QualType APValue::getReflectedType() const {
+  assert(getReflectionKind() == RK_type);
+  return QualType::getFromOpaquePtr(getOpaqueReflectionValue());
+}
+  
+const Decl *APValue::getReflectedDeclaration() const {
+  assert(getReflectionKind() == RK_declaration);
+  return reinterpret_cast<const Decl *>(getOpaqueReflectionValue());
+}
+  
+const Expr *APValue::getReflectedExpression() const {
+  assert(getReflectionKind() == RK_expression);
+  return reinterpret_cast<const Expr *>(getOpaqueReflectionValue());
+}
+  
+const CXXBaseSpecifier *APValue::getReflectedBaseSpecifier() const {
+  assert(getReflectionKind() == RK_base_specifier);
+  return reinterpret_cast<const CXXBaseSpecifier *>(getOpaqueReflectionValue());
 }
 
 LLVM_DUMP_METHOD void APValue::dump() const {

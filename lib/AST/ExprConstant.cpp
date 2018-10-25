@@ -51,7 +51,6 @@
 #define DEBUG_TYPE "exprconstant"
 
 using namespace clang;
-using namespace clang::reflect;
 using llvm::APSInt;
 using llvm::APFloat;
 
@@ -2032,7 +2031,7 @@ static bool HandleConversionToBool(const APValue &Val, bool &Result) {
     Result = Val.getMemberPointerDecl();
     return true;
   case APValue::Reflection:
-    Result = Val.getReflectedEntity();
+    Result = Val.isInvalidReflection();
     return true;
   case APValue::Vector:
   case APValue::Array:
@@ -5114,19 +5113,19 @@ public:
     const ReflectionOperand &Ref = E->getOperand();
     switch (Ref.getKind()) {
     case ReflectionOperand::Type: {
-      APValue Result(REK_type, Ref.getAsType().getAsOpaquePtr());
+      APValue Result(RK_type, Ref.getAsType().getAsOpaquePtr());
       return DerivedSuccess(Result, E);
     }
     case ReflectionOperand::Template: {
-      APValue Result(REK_declaration, Ref.getAsTemplate().getAsTemplateDecl());
+      APValue Result(RK_declaration, Ref.getAsTemplate().getAsTemplateDecl());
       return DerivedSuccess(Result, E);
     }
     case ReflectionOperand::Namespace: {
-      APValue Result(REK_declaration, Ref.getAsNamespace().getNamespace());
+      APValue Result(RK_declaration, Ref.getAsNamespace().getNamespace());
       return DerivedSuccess(Result, E);
     }
     case ReflectionOperand::Expression: {
-      APValue Result(REK_statement, Ref.getAsExpression());
+      APValue Result(RK_expression, Ref.getAsExpression());
       return DerivedSuccess(Result, E);
     }
     }
@@ -5158,116 +5157,15 @@ public:
   }
 };
 
-// TODO: Keep this in sync with cppx::meta::construct_kind.
-enum ConstructKind {
-  CK_Null = 0,
-
-  CK_TranslationUnit, 
-  CK_NamespaceDecl,
-  CK_VariableDecl,
-  CK_FunctionDecl,
-  CK_ParameterDecl,
-  CK_ClassDecl,
-  CK_DataMemberDecl,
-  CK_MemberFunctionDecl,
-  CK_AccessSpec,
-  CK_EnumDecl,
-  CK_EnumeratorDecl,
-
-  CK_VoidType,
-  CK_CharacterType,
-  CK_IntegralType,
-  CK_FloatingPointType,
-  CK_ReferenceType,
-  CK_FunctionType,
-  CK_PointerType,
-  CK_ArrayType,
-};
-
-static std::size_t ReflectIndex(ASTContext &Ctx, APValue Reflection) {
-  if (isNullReflection(Reflection))
-    return CK_Null;
-
-  if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
-    switch (D->getKind()) {
-    case Decl::TranslationUnit:
-      return CK_TranslationUnit;
-    case Decl::Namespace:
-      return CK_NamespaceDecl;
-    case Decl::Var: {
-      if (D->getDeclContext()->isRecord())
-        return CK_DataMemberDecl;
-      else
-        return CK_VariableDecl;
-    }
-    case Decl::Field:
-      return CK_DataMemberDecl;
-    case Decl::Function:
-      return CK_FunctionDecl;
-    case Decl::ParmVar:
-      return CK_ParameterDecl;
-    case Decl::CXXMethod:
-    case Decl::CXXConstructor:
-    case Decl::CXXDestructor:
-    case Decl::CXXConversion:
-      return CK_MemberFunctionDecl;
-    case Decl::AccessSpec:
-      return CK_AccessSpec;
-    case Decl::CXXRecord: 
-      return CK_ClassDecl;
-    case Decl::Enum:
-      return CK_EnumDecl;
-    case Decl::EnumConstant:
-      return CK_EnumeratorDecl;
-    default:
-#ifndef NDEBUG
-      D->dump();
-#endif
-      llvm_unreachable("reflection of unhandled declaration kind");
-    }
-  } else if (const Type *T = getAsReflectedType(Reflection)) {
-    switch (T->getTypeClass()) {
-    case Type::Builtin:
-      if (T->isVoidType())
-        return CK_VoidType;
-      if (T->isAnyCharacterType())
-        return CK_CharacterType;
-      if (T->isIntegralType(Ctx))
-        return CK_IntegralType;
-      if (T->isRealFloatingType())
-        return CK_FloatingPointType;
-      else
-        llvm_unreachable("unclassified builtin type");
-    case Type::LValueReference:
-    case Type::RValueReference:
-      return CK_ReferenceType;
-    case Type::FunctionProto:
-    case Type::FunctionNoProto:
-      return CK_FunctionType;
-    case Type::Pointer:
-      return CK_PointerType;
-    case Type::ConstantArray:
-    case Type::IncompleteArray:
-      return CK_ArrayType;
-    default:
-#ifndef NDEBUG
-      T->dump();
-#endif
-      llvm_unreachable("reflection of unhandled type kind");
-    }
-  } else {
-    llvm_unreachable("unhandled reflected construct");
-  }
-}
-
+#if 0
 /// Build a reflection of the declaration in Result.
 static void MakeReflection(const Decl *D, APValue &Result) {
-  Result = APValue(REK_declaration, D);
+  Result = APValue(RK_declaration, D);
 }
 
 /// Build a reflection of the declaration in Result.
 static void MakeReflection(const Type *T, APValue &Result) {
-  Result = APValue(REK_type, T);
+  Result = APValue(RK_type, QualType(T, 0));
 }
 
 enum LinkageTrait {
@@ -5573,6 +5471,12 @@ GetSemanticOrLexicalOwner(const Decl *D, bool Semantic) {
     return Decl::castFromDeclContext(DC);
   return nullptr;
 }
+#endif
+
+static bool SetResult(APValue &Ret, APValue const& Val) {
+  Ret = Val;
+  return true;
+}
 
 template<typename Derived>
 bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
@@ -5584,6 +5488,25 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
       return false;
   }
 
+  Reflection R(Info.Ctx, Args[1]);
+
+  APValue Result;
+  ReflectionQuery Query = E->getQuery();
+
+  if (isPredicateQuery(Query)) 
+    return SetResult(Result, R.EvaluatePredicate(Query));
+  if (isTraitQuery(Query))
+    return SetResult(Result, R.GetTraits(Query));
+  if (isAssociatedReflectionQuery(Query))
+    return SetResult(Result, R.GetAssociatedReflection(Query));
+  if (isNameQuery(Query))
+    return SetResult(Result, R.GetName(Query));
+
+  // FIXME: Pick a reasonable error.
+  Info.CCEDiag(E->getArg(0));
+  return false;
+
+#if 0
   if (E->getTrait() == URT_ReflectPrint) {
     // Never evaluate if we're not computing a value.
     if (Info.checkingPotentialConstantExpression())
@@ -5595,29 +5518,21 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     APValue Zero(Info.Ctx.MakeIntValue(0, Info.Ctx.IntTy));
     return DerivedSuccess(Zero, E);
   }
+#endif
 
-  APValue Reflection = Args[0];
-
-  // Selectively reject null reflections here.
+#if 0
   switch (E->getTrait()) {
-  case URT_ReflectIndex:
-    // Allow null reflections for these traits.
-    break;
-  default:
-    // Disallow them for all others.
-    //
-    // TODO: Diagnose which property was invalidly reflected.
-    if (isNullReflection(Reflection)) {
-      CCEDiag(E->getArg(0), diag::note_empty_reflection) << 0;
-      return false;
-    }
-  }
-
-  switch (E->getTrait()) {
-    case URT_ReflectIndex: {
-      unsigned CK = ReflectIndex(Info.Ctx, Reflection);
-      llvm::APSInt Index = Info.Ctx.MakeIntValue(CK, E->getType());
+    case BRT_ReflectIs: {
+      llvm::outs() << "REFL IS A?\n";
+      llvm::APSInt Index = Info.Ctx.MakeIntValue(false, E->getType());
       return DerivedSuccess(APValue(Index), E);
+    }
+    
+    case URT_ReflectIndex: {
+      llvm_unreachable("trait disabled");
+      // unsigned CK = ReflectIndex(Info.Ctx, Reflection);
+      // llvm::APSInt Index = Info.Ctx.MakeIntValue(CK, E->getType());
+      // return DerivedSuccess(APValue(Index), E);
     }
 
     case URT_ReflectContext:
@@ -5716,6 +5631,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
     case URT_ReflectPrint:
       llvm_unreachable("Should not be here");
   }
+  #endif
 
   return Error(E);
 }

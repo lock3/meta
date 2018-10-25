@@ -1430,12 +1430,12 @@ public:
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXReflectionTraitExpr(SourceLocation TraitLoc,
-                                        ReflectionTrait Trait,
-                                        ArrayRef<Expr *> Args,
-                                        SourceLocation RParenLoc) {
-    // TODO: Make a separate Build function.
-    return getSema().ActOnCXXReflectionTrait(TraitLoc, Trait, Args, RParenLoc);
+  ExprResult RebuildCXXReflectionTraitExpr(SmallVectorImpl<Expr *> &Args,
+                                           SourceLocation KeywordLoc,
+                                           SourceLocation LParenLoc, 
+                                           SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectionTrait(KeywordLoc, Args, 
+                                             LParenLoc, RParenLoc);
   }
 
   /// \brief Build a new reflected value expression.
@@ -7310,8 +7310,9 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
     Args[i] = Arg.get();
   }
 
-  return getDerived().RebuildCXXReflectionTraitExpr(
-      E->getTraitLoc(), E->getTrait(), Args, E->getRParenLoc());
+  return getDerived().RebuildCXXReflectionTraitExpr(Args, E->getKeywordLoc(),
+                                                    E->getLParenLoc(),
+                                                    E->getRParenLoc());
 }
 
 template <typename Derived>

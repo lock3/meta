@@ -29,7 +29,6 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
 using namespace clang::comments;
-using namespace clang::reflect;
 
 //===----------------------------------------------------------------------===//
 // ASTDumper Visitor
@@ -2460,31 +2459,6 @@ void ASTDumper::VisitCXXDependentScopeMemberExpr(
   OS << " " << (Node->isArrow() ? "->" : ".") << Node->getMember();
 }
 
-static const char* GetReflectionTraitName(const CXXReflectionTraitExpr *E) {
-  switch (E->getTrait()) {
-  case URT_ReflectIndex:
-    return "index";
-  case URT_ReflectContext:
-    return "context";
-  case URT_ReflectHome:
-    return "home";
-  case URT_ReflectBegin:
-    return "begin";
-  case URT_ReflectEnd:
-    return "end";
-  case URT_ReflectNext:
-    return "next";
-  case URT_ReflectName:
-    return "name";
-  case URT_ReflectType:
-    return "type";
-  case URT_ReflectTraits:
-    return "traits";
-  case URT_ReflectPrint:
-    return "print";
-  }
-}
-
 void ASTDumper::VisitCXXReflectExpr(const CXXReflectExpr *Node) {
   VisitExpr(Node);
   // FIXME: Re-implement this.
@@ -2493,7 +2467,7 @@ void ASTDumper::VisitCXXReflectExpr(const CXXReflectExpr *Node) {
 void ASTDumper::VisitCXXReflectionTraitExpr(
     const CXXReflectionTraitExpr *Node) {
   VisitExpr(Node);
-  OS << " " << GetReflectionTraitName(Node);
+  // FIXME: Emit a string for the name?
 }
 
 void ASTDumper::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *Node) {

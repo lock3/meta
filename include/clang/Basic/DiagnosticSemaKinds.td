@@ -2469,8 +2469,16 @@ def err_reflect_ambiguous_id : Error<"reflection of ambiguous identifier %0">;
 def err_reflect_overloaded_id : Error<"reflection of overloaded identifier %0">;
 def err_reflection_not_named : Error<"reflected entity is not named named">;
 def err_reflection_failed : Error<"reflection failed">;
-def err_reflection_trait_wrong_type : Error<
-  "operand does not have type %0">;
+
+def err_reflection_query_wrong_type : Error<
+  "query selector does not have type 'int'">;
+def err_reflection_query_not_constant : Error<
+  "query selector is not a constant expression">;
+def err_reflection_query_invalid : Error<
+  "invalid query selector">;
+def err_reflection_wrong_arity : Error<
+  "expected two arguments, %0 given">;
+
 def err_expression_not_reflection : Error<
   "expression is not a reflection">;
 def err_expression_not_type_reflection : Error<
