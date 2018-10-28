@@ -539,6 +539,13 @@ TypeResult Sema::ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc,
 }
 
 static ParsedTemplateArgument
+BuildDependentTemplarg(SourceLocation KWLoc, Expr *ReflExpr) {
+  void *OpaqueReflexpr = reinterpret_cast<void *>(ReflExpr);
+  return ParsedTemplateArgument(ParsedTemplateArgument::Dependent,
+                                OpaqueReflexpr, KWLoc);
+}
+
+static ParsedTemplateArgument
 DiagnoseDeclTemplarg(Sema &S, SourceLocation KWLoc,
                      Expr *ReflExpr, const Decl *D) {
   llvm::outs() << "Templarg - Decl\n";
@@ -563,6 +570,9 @@ BuildReflectedExprTemplarg(Sema &S, SourceLocation KWLoc,
 
 ParsedTemplateArgument
 Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
+  if (E->isTypeDependent() || E->isValueDependent())
+    return BuildDependentTemplarg(KWLoc, E);
+
   if (!CheckReflectionOperand(*this, E))
     return ParsedTemplateArgument();
 
