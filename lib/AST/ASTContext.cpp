@@ -4285,7 +4285,7 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
     if (NTTP->isParameterPack())
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
                                         None);
-    Arg = TemplateArgument(E);
+    Arg = TemplateArgument(E, TemplateArgument::Expression);
   } else {
     auto *TTP = cast<TemplateTemplateParmDecl>(Param);
     if (TTP->isParameterPack())

@@ -8830,7 +8830,7 @@ TemplateArgument ASTReader::ReadTemplateArgument(ModuleFile &F,
     return TemplateArgument(Name, NumTemplateExpansions);
   }
   case TemplateArgument::Expression:
-    return TemplateArgument(ReadExpr(F));
+    return TemplateArgument(ReadExpr(F), TemplateArgument::Expression);
   case TemplateArgument::Pack: {
     unsigned NumArgs = Record[Idx++];
     TemplateArgument *Args = new (Context) TemplateArgument[NumArgs];
@@ -11150,11 +11150,15 @@ void ASTReader::diagnoseOdrViolations() {
                 ODRDiagError(FirstTemplate->getLocation(),
                              FirstTemplate->getSourceRange(),
                              FunctionTemplateParameterDifferentDefaultArgument)
-                    << FirstTemplate << (i + 1) << FirstDefaultArgument;
+                    << FirstTemplate << (i + 1)
+                    << TemplateArgument(FirstDefaultArgument,
+                                        TemplateArgument::Expression);
                 ODRDiagNote(SecondTemplate->getLocation(),
                             SecondTemplate->getSourceRange(),
                             FunctionTemplateParameterDifferentDefaultArgument)
-                    << SecondTemplate << (i + 1) << SecondDefaultArgument;
+                    << SecondTemplate << (i + 1)
+                    << TemplateArgument(SecondDefaultArgument,
+                                        TemplateArgument::Expression);
                 ParameterMismatch = true;
                 break;
               }

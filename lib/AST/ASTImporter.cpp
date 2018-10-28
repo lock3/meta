@@ -1550,7 +1550,7 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
 
   case TemplateArgument::Expression:
     if (Expr *ToExpr = Importer.Import(From.getAsExpr()))
-      return TemplateArgument(ToExpr);
+      return TemplateArgument(ToExpr, TemplateArgument::Expression);
     return TemplateArgument();
 
   case TemplateArgument::Pack: {

@@ -11145,8 +11145,9 @@ OMPClause *Sema::ActOnOpenMPLinearClause(
     llvm::APSInt Result;
     bool IsConstant = StepExpr->isIntegerConstantExpr(Result, Context);
     if (IsConstant && !Result.isNegative() && !Result.isStrictlyPositive())
-      Diag(StepLoc, diag::warn_omp_linear_step_zero) << Vars[0]
-                                                     << (Vars.size() > 1);
+      Diag(StepLoc, diag::warn_omp_linear_step_zero)
+        << TemplateArgument(Vars[0], TemplateArgument::Expression)
+        << (Vars.size() > 1);
     if (!IsConstant && CalcStep.isUsable()) {
       // Calculate the step beforehand instead of doing this on each iteration.
       // (This is not used if the number of iterations may be kfold-ed).

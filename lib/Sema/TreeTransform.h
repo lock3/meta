@@ -3186,7 +3186,9 @@ public:
       if (Result.isInvalid())
         return TemplateArgumentLoc();
 
-      return TemplateArgumentLoc(Result.get(), Result.get());
+      return TemplateArgumentLoc(TemplateArgument(Result.get(),
+                                                  TemplateArgument::Expression),
+                                 Result.get());
     }
 
     case TemplateArgument::Template:
@@ -3451,7 +3453,8 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       Expr *Pattern = Expansion->getPattern();
 
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-      getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
+      getSema().collectUnexpandedParameterPacks(
+          TemplateArgument(Pattern, TemplateArgument::Expression), Unexpanded);
       assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
 
       // Determine whether the set of unexpanded parameter packs can and should
@@ -3964,7 +3967,8 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
     ExprResult E = getDerived().TransformExpr(InputExpr);
     E = SemaRef.ActOnConstantExpression(E);
     if (E.isInvalid()) return true;
-    Output = TemplateArgumentLoc(TemplateArgument(E.get()), E.get());
+    Output = TemplateArgumentLoc(
+        TemplateArgument(E.get(), TemplateArgument::Expression), E.get());
     return false;
   }
   }
@@ -11569,8 +11573,10 @@ TreeTransform<Derived>::TransformSizeOfPackExpr(SizeOfPackExpr *E) {
             E->getPackLoc());
         if (DRE.isInvalid())
           return ExprError();
-        ArgStorage = new (getSema().Context) PackExpansionExpr(
-            getSema().Context.DependentTy, DRE.get(), E->getPackLoc(), None);
+        ArgStorage = TemplateArgument(
+            new (getSema().Context) PackExpansionExpr(
+                getSema().Context.DependentTy, DRE.get(),
+                E->getPackLoc(), None), TemplateArgument::Expression);
       }
       PackArgs = ArgStorage;
     }
@@ -11700,7 +11706,8 @@ TreeTransform<Derived>::TransformCXXFoldExpr(CXXFoldExpr *E) {
   Expr *Pattern = E->getPattern();
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-  getSema().collectUnexpandedParameterPacks(Pattern, Unexpanded);
+  getSema().collectUnexpandedParameterPacks(
+      TemplateArgument(Pattern, TemplateArgument::Expression), Unexpanded);
   assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
 
   // Determine whether the set of unexpanded parameter packs can and should
@@ -11877,8 +11884,12 @@ TreeTransform<Derived>::TransformObjCDictionaryLiteral(
     if (OrigElement.isPackExpansion()) {
       // This key/value element is a pack expansion.
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-      getSema().collectUnexpandedParameterPacks(OrigElement.Key, Unexpanded);
-      getSema().collectUnexpandedParameterPacks(OrigElement.Value, Unexpanded);
+      getSema().collectUnexpandedParameterPacks(
+          TemplateArgument(OrigElement.Key, TemplateArgument::Expression),
+          Unexpanded);
+      getSema().collectUnexpandedParameterPacks(
+          TemplateArgument(OrigElement.Value, TemplateArgument::Expression),
+          Unexpanded);
       assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
 
       // Determine whether the set of unexpanded parameter packs can

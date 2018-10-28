@@ -374,7 +374,8 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
     return getAsType()->getAs<PackExpansionType>()->getPattern();
 
   case Expression:
-    return cast<PackExpansionExpr>(getAsExpr())->getPattern();
+    return TemplateArgument(cast<PackExpansionExpr>(getAsExpr())->getPattern(),
+                            TemplateArgument::Expression);
 
   case TemplateExpansion:
     return TemplateArgument(getAsTemplateOrTemplatePattern());

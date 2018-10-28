@@ -835,7 +835,8 @@ static bool SemaOpenCLBuiltinToAddr(Sema &S, unsigned BuiltinID,
   if (!RT->isPointerType() || RT->getPointeeType()
       .getAddressSpace() == LangAS::opencl_constant) {
     S.Diag(Call->getBeginLoc(), diag::err_opencl_builtin_to_addr_invalid_arg)
-        << Call->getArg(0) << Call->getDirectCallee() << Call->getSourceRange();
+        << TemplateArgument(Call->getArg(0), TemplateArgument::Expression)
+        << Call->getDirectCallee() << Call->getSourceRange();
     return true;
   }
 

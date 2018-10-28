@@ -442,8 +442,9 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
                           NullPtrType, CK_NullToPointer)
           .get();
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
-                                       Value->getType(), Info, Deduced);
+      DeducedTemplateArgument(
+          TemplateArgument(Value, TemplateArgument::Expression)),
+      Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -455,8 +456,9 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
-                                       Value->getType(), Info, Deduced);
+      DeducedTemplateArgument(
+          TemplateArgument(Value, TemplateArgument::Expression)),
+      Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -2455,7 +2457,8 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
       NTTPType = Arg.getParamTypeForDecl();
     Expr *E = BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
                   .getAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
   case TemplateArgument::NullPtr: {
@@ -2470,7 +2473,8 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
   case TemplateArgument::Integral: {
     Expr *E =
         BuildExpressionFromIntegralTemplateArgument(Arg, Loc).getAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
     case TemplateArgument::Template:

@@ -4347,8 +4347,9 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
 
         // Overwrite our input TemplateArgumentLoc so that we can recover
         // properly.
-        AL = TemplateArgumentLoc(TemplateArgument(ArgType),
-                                 TemplateArgumentLocInfo(TSI));
+        AL = TemplateArgumentLoc(
+            TemplateArgument(ArgType, TemplateArgument::Expression),
+            TemplateArgumentLocInfo(TSI));
 
         break;
       }
@@ -4600,7 +4601,8 @@ Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
       return TemplateArgumentLoc();
 
     Expr *ArgE = Arg.getAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(ArgE), ArgE);
+    return TemplateArgumentLoc(
+        TemplateArgument(ArgE, TemplateArgument::Expression), ArgE);
   }
 
   TemplateTemplateParmDecl *TempTempParm
@@ -4750,7 +4752,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
       // If the resulting expression is new, then use it in place of the
       // old expression in the template argument.
       if (Res.get() != Arg.getArgument().getAsExpr()) {
-        TemplateArgument TA(Res.get());
+        TemplateArgument TA(Res.get(), TemplateArgument::Expression);
         Arg = TemplateArgumentLoc(TA, Res.get());
       }
 
@@ -5150,8 +5152,9 @@ bool Sema::CheckTemplateArgumentList(
       if (!ArgType)
         return true;
 
-      Arg = TemplateArgumentLoc(TemplateArgument(ArgType->getType()),
-                                ArgType);
+      Arg = TemplateArgumentLoc(
+          TemplateArgument(ArgType->getType(), TemplateArgument::Expression),
+          ArgType);
     } else if (NonTypeTemplateParmDecl *NTTP
                  = dyn_cast<NonTypeTemplateParmDecl>(*Param)) {
       if (!hasVisibleDefaultArgument(NTTP))
@@ -5167,7 +5170,8 @@ bool Sema::CheckTemplateArgumentList(
         return true;
 
       Expr *Ex = E.getAs<Expr>();
-      Arg = TemplateArgumentLoc(TemplateArgument(Ex), Ex);
+      Arg = TemplateArgumentLoc(
+          TemplateArgument(Ex, TemplateArgument::Expression), Ex);
     } else {
       TemplateTemplateParmDecl *TempParm
         = cast<TemplateTemplateParmDecl>(*Param);
@@ -5821,7 +5825,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   // Stop checking the precise nature of the argument if it is value dependent,
   // it should be checked when instantiated.
   if (Arg->isValueDependent()) {
-    Converted = TemplateArgument(ArgIn);
+    Converted = TemplateArgument(ArgIn, TemplateArgument::Expression);
     return false;
   }
 
@@ -5830,7 +5834,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
                                                        ArgIn, Arg, ArgType))
       return true;
 
-    Converted = TemplateArgument(ArgIn);
+    Converted = TemplateArgument(ArgIn, TemplateArgument::Expression);
     return false;
   }
 
@@ -6039,7 +6043,7 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
     if (VD->getType()->isMemberPointerType()) {
       if (isa<NonTypeTemplateParmDecl>(VD)) {
         if (Arg->isTypeDependent() || Arg->isValueDependent()) {
-          Converted = TemplateArgument(Arg);
+          Converted = TemplateArgument(Arg, TemplateArgument::Expression);
         } else {
           VD = cast<ValueDecl>(VD->getCanonicalDecl());
           Converted = TemplateArgument(VD, ParamType);
@@ -6098,7 +6102,7 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
     // Okay: this is the address of a non-static member, and therefore
     // a member pointer constant.
     if (Arg->isTypeDependent() || Arg->isValueDependent()) {
-      Converted = TemplateArgument(Arg);
+      Converted = TemplateArgument(Arg, TemplateArgument::Expression);
     } else {
       ValueDecl *D = cast<ValueDecl>(DRE->getDecl()->getCanonicalDecl());
       Converted = TemplateArgument(D, ParamType);
@@ -6136,7 +6140,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     if (CTAK == CTAK_Deduced && Arg->isTypeDependent()) {
       auto *AT = dyn_cast<AutoType>(ParamType);
       if (AT && AT->isDecltypeAuto()) {
-        Converted = TemplateArgument(Arg);
+        Converted = TemplateArgument(Arg, TemplateArgument::Expression);
         return Arg;
       }
     }
@@ -6184,7 +6188,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     // work.
     if ((ParamType->isDependentType() || Arg->isTypeDependent()) &&
         !Arg->getType()->getContainedAutoType()) {
-      Converted = TemplateArgument(Arg);
+      Converted = TemplateArgument(Arg, TemplateArgument::Expression);
       return Arg;
     }
     // FIXME: This attempts to implement C++ [temp.deduct.type]p17. Per DR1770,
@@ -6202,7 +6206,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   // type-dependent, there's nothing we can check now.
   if (ParamType->isDependentType() || Arg->isTypeDependent()) {
     // FIXME: Produce a cloned, canonical expression?
-    Converted = TemplateArgument(Arg);
+    Converted = TemplateArgument(Arg, TemplateArgument::Expression);
     return Arg;
   }
 
@@ -6224,7 +6228,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     // For a value-dependent argument, CheckConvertedConstantExpression is
     // permitted (and expected) to be unable to determine a value.
     if (ArgResult.get()->isValueDependent()) {
-      Converted = TemplateArgument(ArgResult.get());
+      Converted = TemplateArgument(ArgResult.get(), TemplateArgument::Expression);
       return ArgResult;
     }
 
@@ -6269,7 +6273,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       // -- a predefined __func__ variable
       if (auto *E = Value.getLValueBase().dyn_cast<const Expr*>()) {
         if (isa<CXXUuidofExpr>(E)) {
-          Converted = TemplateArgument(ArgResult.get());
+          Converted = TemplateArgument(ArgResult.get(), TemplateArgument::Expression);
           break;
         }
         Diag(Arg->getBeginLoc(), diag::err_template_arg_not_decl_ref)
@@ -6349,7 +6353,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
 
       // We can't check arbitrary value-dependent arguments.
       if (ArgResult.get()->isValueDependent()) {
-        Converted = TemplateArgument(ArgResult.get());
+        Converted = TemplateArgument(ArgResult.get(), TemplateArgument::Expression);
         return ArgResult;
       }
 
@@ -6433,7 +6437,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     if (Arg->isValueDependent()) {
       // The argument is value-dependent. Create a new
       // TemplateArgument with the converted expression.
-      Converted = TemplateArgument(Arg);
+      Converted = TemplateArgument(Arg, TemplateArgument::Expression);
       return Arg;
     }
 
@@ -6593,7 +6597,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   // Deal with parameters of type std::nullptr_t.
   if (ParamType->isNullPtrType()) {
     if (Arg->isTypeDependent() || Arg->isValueDependent()) {
-      Converted = TemplateArgument(Arg);
+      Converted = TemplateArgument(Arg, TemplateArgument::Expression);
       return Arg;
     }
 

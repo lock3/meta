@@ -108,8 +108,10 @@ static void instantiateDependentAlignedAttr(
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   if (Aligned->isAlignmentExpr())
-    S.collectUnexpandedParameterPacks(Aligned->getAlignmentExpr(),
-                                      Unexpanded);
+    S.collectUnexpandedParameterPacks(
+        TemplateArgument(Aligned->getAlignmentExpr(),
+                         TemplateArgument::Expression),
+        Unexpanded);
   else
     S.collectUnexpandedParameterPacks(Aligned->getAlignmentType()->getTypeLoc(),
                                       Unexpanded);
@@ -4507,7 +4509,9 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       TypeLoc BaseTL = Init->getTypeSourceInfo()->getTypeLoc();
       SmallVector<UnexpandedParameterPack, 4> Unexpanded;
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
-      collectUnexpandedParameterPacks(Init->getInit(), Unexpanded);
+      collectUnexpandedParameterPacks(
+          TemplateArgument(Init->getInit(), TemplateArgument::Expression),
+          Unexpanded);
       bool ShouldExpand = false;
       bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;

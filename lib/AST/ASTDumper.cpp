@@ -1658,7 +1658,8 @@ void ASTDumper::VisitNonTypeTemplateParmDecl(const NonTypeTemplateParmDecl *D) {
     OS << " ...";
   dumpName(D);
   if (D->hasDefaultArgument())
-    dumpTemplateArgument(D->getDefaultArgument());
+    dumpTemplateArgument(TemplateArgument(D->getDefaultArgument(),
+                                          TemplateArgument::Expression));
 }
 
 void ASTDumper::VisitTemplateTemplateParmDecl(
