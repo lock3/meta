@@ -7075,6 +7075,7 @@ ASTReader::GetTemplateArgumentLocInfo(ModuleFile &F,
                                       const RecordData &Record,
                                       unsigned &Index) {
   switch (Kind) {
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return ReadExpr(F);
   case TemplateArgument::Type:
@@ -8829,8 +8830,9 @@ TemplateArgument ASTReader::ReadTemplateArgument(ModuleFile &F,
       NumTemplateExpansions = NumExpansions - 1;
     return TemplateArgument(Name, NumTemplateExpansions);
   }
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
-    return TemplateArgument(ReadExpr(F), TemplateArgument::Expression);
+    return TemplateArgument(ReadExpr(F), Kind);
   case TemplateArgument::Pack: {
     unsigned NumArgs = Record[Idx++];
     TemplateArgument *Args = new (Context) TemplateArgument[NumArgs];

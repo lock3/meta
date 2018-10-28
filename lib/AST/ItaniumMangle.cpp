@@ -4529,7 +4529,10 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     for (const auto &P : A.pack_elements())
       mangleTemplateArg(P);
     Out << 'E';
+    break;
   }
+  case TemplateArgument::Reflected:
+    llvm_unreachable("This should not exist at codegen");
   }
 }
 

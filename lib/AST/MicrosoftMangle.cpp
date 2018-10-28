@@ -1505,6 +1505,8 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     }
     break;
   }
+  case TemplateArgument::Reflected:
+    llvm_unreachable("This should not exist at codegen");
   }
 }
 

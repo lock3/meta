@@ -3178,7 +3178,9 @@ public:
   TemplateArgumentLoc RebuildPackExpansion(TemplateArgumentLoc Pattern,
                                            SourceLocation EllipsisLoc,
                                            Optional<unsigned> NumExpansions) {
-    switch (Pattern.getArgument().getKind()) {
+    auto TemplateArgKind = Pattern.getArgument().getKind();
+    switch (TemplateArgKind) {
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       ExprResult Result
         = getSema().CheckPackExpansion(Pattern.getSourceExpression(),
@@ -3187,7 +3189,7 @@ public:
         return TemplateArgumentLoc();
 
       return TemplateArgumentLoc(TemplateArgument(Result.get(),
-                                                  TemplateArgument::Expression),
+                                                  TemplateArgKind),
                                  Result.get());
     }
 
@@ -3888,6 +3890,7 @@ void TreeTransform<Derived>::InventTemplateArgumentLoc(
     break;
   }
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     Output = TemplateArgumentLoc(Arg, Arg.getAsExpr());
     break;

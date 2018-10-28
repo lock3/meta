@@ -844,6 +844,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(Arg.getAsExpr());
 
@@ -885,6 +886,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(ArgLoc.getSourceExpression());
 

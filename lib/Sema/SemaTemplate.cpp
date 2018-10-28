@@ -3506,6 +3506,7 @@ static bool isTemplateArgumentTemplateParameter(
            TPT->getDepth() == Depth && TPT->getIndex() == Index;
   }
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
     DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg.getAsExpr());
     if (!DRE || !DRE->getDecl())
@@ -4910,6 +4911,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     Converted.push_back(Arg.getArgument());
     break;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
   case TemplateArgument::Type:
     // We have a template template parameter but the template

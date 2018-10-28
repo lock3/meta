@@ -362,6 +362,10 @@ checkDeducedTemplateArguments(ASTContext &Context,
         TemplateArgument::CreatePackCopy(Context, NewPack),
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
+
+  case TemplateArgument::Reflected:
+    llvm_unreachable("You can not deduce to a reflected template argument");
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -2224,6 +2228,10 @@ DeduceTemplateArguments(Sema &S,
 
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
+
+  case TemplateArgument::Reflected:
+    llvm_unreachable("You can not deduce to a reflected template argument");
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -2404,6 +2412,7 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
       X.getAsExpr()->Profile(XID, Context, true);
@@ -2495,6 +2504,7 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
                                Loc, Loc);
   }
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
 
@@ -5613,6 +5623,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
                                OnlyDeduced, Depth, Used);
     break;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     MarkUsedTemplateParameters(Ctx, TemplateArg.getAsExpr(), OnlyDeduced,
                                Depth, Used);

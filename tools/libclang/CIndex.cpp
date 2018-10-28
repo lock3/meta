@@ -1481,6 +1481,7 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
     return false;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (Expr *E = TAL.getSourceExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));

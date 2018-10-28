@@ -162,6 +162,7 @@ void ODRHash::AddTemplateArgument(TemplateArgument TA) {
     case TemplateArgument::TemplateExpansion:
       AddTemplateName(TA.getAsTemplateOrTemplatePattern());
       break;
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       AddStmt(TA.getAsExpr());
       break;

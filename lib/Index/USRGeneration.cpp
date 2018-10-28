@@ -942,6 +942,7 @@ void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
     VisitTemplateName(Arg.getAsTemplateOrTemplatePattern());
     break;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     // FIXME: Visit expressions.
     break;

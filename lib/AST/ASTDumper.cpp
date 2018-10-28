@@ -1004,6 +1004,10 @@ void ASTDumper::dumpTemplateArgument(const TemplateArgument &A, SourceRange R) {
       OS << " template expansion";
       A.getAsTemplateOrTemplatePattern().dump(OS);
       break;
+    case TemplateArgument::Reflected:
+      OS << " reflected";
+      dumpStmt(A.getAsExpr());
+      break;
     case TemplateArgument::Expression:
       OS << " expr";
       dumpStmt(A.getAsExpr());

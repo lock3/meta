@@ -1498,7 +1498,8 @@ TemplateParameterList *ASTNodeImporter::ImportTemplateParameterList(
 
 TemplateArgument
 ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
-  switch (From.getKind()) {
+  auto TemplateArgKind = From.getKind();
+  switch (TemplateArgKind) {
   case TemplateArgument::Null:
     return TemplateArgument();
 
@@ -1548,9 +1549,10 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
     return TemplateArgument(ToTemplate, From.getNumTemplateExpansions());
   }
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (Expr *ToExpr = Importer.Import(From.getAsExpr()))
-      return TemplateArgument(ToExpr, TemplateArgument::Expression);
+      return TemplateArgument(ToExpr, TemplateArgKind);
     return TemplateArgument();
 
   case TemplateArgument::Pack: {

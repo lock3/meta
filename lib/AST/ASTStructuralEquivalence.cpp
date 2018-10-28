@@ -262,6 +262,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                     Arg1.getAsTemplateOrTemplatePattern(),
                                     Arg2.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return IsStructurallyEquivalent(Context, Arg1.getAsExpr(),
                                     Arg2.getAsExpr());

@@ -5288,6 +5288,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::Null:
       return Arg;
 
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       return Arg;
 
