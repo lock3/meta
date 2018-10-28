@@ -564,8 +564,9 @@ static ParsedTemplateArgument
 BuildReflectedExprTemplarg(Sema &S, SourceLocation KWLoc,
                            Expr *E, const Expr *RE) {
   llvm::outs() << "Templarg - Expr\n";
-  void *OpaqueT = reinterpret_cast<void *>(const_cast<Expr *>(RE));
-  return ParsedTemplateArgument(ParsedTemplateArgument::NonType, OpaqueT, KWLoc);
+  void *OpaqueRE = reinterpret_cast<void *>(const_cast<Expr *>(RE));
+  return ParsedTemplateArgument(ParsedTemplateArgument::NonType, OpaqueRE,
+                                KWLoc);
 }
 
 ParsedTemplateArgument
