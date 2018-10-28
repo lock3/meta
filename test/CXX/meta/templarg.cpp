@@ -47,30 +47,30 @@ void test_non_dependent() {
   // }
 }
 
-// template<typename R>
-// void test_dependent_container() {
-//   {
-//     constexpr auto reflection = reflexpr(R);
+template<typename R>
+void test_dependent_container() {
+  {
+    constexpr auto reflection = reflexpr(R);
 
-//     container<templarg(reflection)> k;
-//     k.val = 1;
-//   }
-// }
+    container<templarg(reflection)> k;
+    k.val = R();
+  }
+}
 
-// template<int V>
-// void test_dependent_default_val() {
-//   {
-//     constexpr auto reflection = reflexpr(V);
+template<int V>
+void test_dependent_default_val() {
+  {
+    constexpr auto reflection = reflexpr(V);
 
-//     defaulted_integer<templarg(reflection)> k;
-//     k.val = 1;
-//   }
-// }
+    defaulted_integer<templarg(reflection)> k;
+    k.val = 1;
+  }
+}
 
 void test_dependent() {
-  // test_dependent_container<int>();
-  // test_dependent_container<S>();
-  // test_dependent_default_val<0>();
+  test_dependent_container<int>();
+  test_dependent_container<S>();
+  test_dependent_default_val<0>();
 }
 
 int main() {
