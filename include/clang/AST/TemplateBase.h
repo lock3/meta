@@ -88,7 +88,12 @@ public:
 
     /// The template argument is actually a parameter pack. Arguments are stored
     /// in the Args struct.
-    Pack
+    Pack,
+
+    /// The template argument is an expression, representing a reflection,
+    /// and we've not resolved it to one of the other forms yet, because
+    /// it's dependent.
+    Reflected
   };
 
 private:

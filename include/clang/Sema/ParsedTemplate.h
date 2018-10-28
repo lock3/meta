@@ -36,7 +36,9 @@ namespace clang {
       /// A non-type template parameter, stored as an expression.
       NonType,
       /// A template template argument, stored as a template name.
-      Template
+      Template,
+      /// A dependent template argument, stored as an expression.
+      Dependent
     };
 
     /// Build an empty template argument.
