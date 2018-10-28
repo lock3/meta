@@ -31,7 +31,7 @@ struct class_tmpl {
   constexpr T constexpr_function() { return T(); }
 
   T variable;
-  static T static_variable = T();
+  static const T static_variable = T();
   static constexpr T constexpr_variable = T();
 };
 
