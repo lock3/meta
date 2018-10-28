@@ -4303,6 +4303,9 @@ bool Sema::CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
     diagnoseMissingTemplateArguments(Name, SR.getEnd());
     return true;
   }
+  case TemplateArgument::Reflected:
+    return false; // Delay checking until this is resolved,
+                  // assume all is well.
   case TemplateArgument::Expression: {
     // We have a template type parameter but the template argument is an
     // expression; see if maybe it is missing the "typename" keyword.
@@ -4742,6 +4745,9 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Null:
       llvm_unreachable("Should never see a NULL template argument here");
 
+    case TemplateArgument::Reflected:
+      return false; // Delay checking until this is resolved,
+                    // assume all is well.
     case TemplateArgument::Expression: {
       TemplateArgument Result;
       unsigned CurSFINAEErrors = NumSFINAEErrors;
