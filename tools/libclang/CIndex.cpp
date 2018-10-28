@@ -1465,12 +1465,12 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
     return false;
-      
+
   case TemplateArgument::Type:
     if (TypeSourceInfo *TSInfo = TAL.getTypeSourceInfo())
       return Visit(TSInfo->getTypeLoc());
     return false;
-      
+
   case TemplateArgument::Declaration:
     if (Expr *E = TAL.getSourceDeclExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
@@ -1486,12 +1486,12 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
     if (Expr *E = TAL.getSourceExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
     return false;
-  
+
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
     if (VisitNestedNameSpecifierLoc(TAL.getTemplateQualifierLoc()))
       return true;
-      
+
     return VisitTemplateName(TAL.getArgument().getAsTemplateOrTemplatePattern(), 
                              TAL.getTemplateNameLoc());
   }
