@@ -2477,23 +2477,23 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
         TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
-    case TemplateArgument::Template:
-    case TemplateArgument::TemplateExpansion: {
-      NestedNameSpecifierLocBuilder Builder;
-      TemplateName Template = Arg.getAsTemplate();
-      if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
-        Builder.MakeTrivial(Context, DTN->getQualifier(), Loc);
-      else if (QualifiedTemplateName *QTN =
-                   Template.getAsQualifiedTemplateName())
-        Builder.MakeTrivial(Context, QTN->getQualifier(), Loc);
+  case TemplateArgument::Template:
+  case TemplateArgument::TemplateExpansion: {
+    NestedNameSpecifierLocBuilder Builder;
+    TemplateName Template = Arg.getAsTemplate();
+    if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
+      Builder.MakeTrivial(Context, DTN->getQualifier(), Loc);
+    else if (QualifiedTemplateName *QTN =
+                 Template.getAsQualifiedTemplateName())
+      Builder.MakeTrivial(Context, QTN->getQualifier(), Loc);
 
-      if (Arg.getKind() == TemplateArgument::Template)
-        return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                                   Loc);
-
+    if (Arg.getKind() == TemplateArgument::Template)
       return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                                 Loc, Loc);
-    }
+                                 Loc);
+
+    return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
+                               Loc, Loc);
+  }
 
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
