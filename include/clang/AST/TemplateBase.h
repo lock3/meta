@@ -212,8 +212,12 @@ public:
   /// This form of template argument only occurs in template argument
   /// lists used for dependent types and for expression; it will not
   /// occur in a non-dependent, canonical template argument list.
-  TemplateArgument(Expr *E) {
-    TypeOrValue.Kind = Expression;
+  TemplateArgument(Expr *E, ArgKind ExpressionKind) {
+    assert((ExpressionKind == Expression
+            || ExpressionKind == Reflected)
+           && "For expressions the only valid ArgKinds are "
+              "Expression and Reflected");
+    TypeOrValue.Kind = ExpressionKind;
     TypeOrValue.V = reinterpret_cast<uintptr_t>(E);
   }
 
