@@ -337,7 +337,8 @@ public:
 
   /// Retrieve the template argument as an expression.
   Expr *getAsExpr() const {
-    assert(getKind() == Expression && "Unexpected kind");
+    assert((getKind() == Expression || getKind() == Reflected)
+           && "Unexpected kind");
     return reinterpret_cast<Expr *>(TypeOrValue.V);
   }
 
@@ -480,7 +481,8 @@ public:
     assert(Argument.getKind() == TemplateArgument::NullPtr ||
            Argument.getKind() == TemplateArgument::Integral ||
            Argument.getKind() == TemplateArgument::Declaration ||
-           Argument.getKind() == TemplateArgument::Expression);
+           Argument.getKind() == TemplateArgument::Expression ||
+           Argument.getKind() == TemplateArgument::Reflected);
   }
 
   TemplateArgumentLoc(const TemplateArgument &Argument,
@@ -519,7 +521,8 @@ public:
   }
 
   Expr *getSourceExpression() const {
-    assert(Argument.getKind() == TemplateArgument::Expression);
+    assert(Argument.getKind() == TemplateArgument::Expression
+           || Argument.getKind() == TemplateArgument::Reflected);
     return LocInfo.getAsExpr();
   }
 
