@@ -6241,6 +6241,8 @@ public:
                                                     QualType NTTPType,
                                                     SourceLocation Loc);
 
+  TemplateArgumentLoc translateTemplateArgument(
+                                             const ParsedTemplateArgument &Arg);
   void translateTemplateArguments(const ASTTemplateArgsPtr &In,
                                   TemplateArgumentListInfo &Out);
 

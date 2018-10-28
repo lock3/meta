@@ -791,21 +791,28 @@ ParsedTemplateArgument ParsedTemplateArgument::getTemplatePackExpansion(
   return Result;
 }
 
-static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
+TemplateArgumentLoc Sema::translateTemplateArgument(
                                             const ParsedTemplateArgument &Arg) {
 
   switch (Arg.getKind()) {
   case ParsedTemplateArgument::Type: {
     TypeSourceInfo *DI;
-    QualType T = SemaRef.GetTypeFromParser(Arg.getAsType(), &DI);
+    QualType T = GetTypeFromParser(Arg.getAsType(), &DI);
     if (!DI)
-      DI = SemaRef.Context.getTrivialTypeSourceInfo(T, Arg.getLocation());
+      DI = Context.getTrivialTypeSourceInfo(T, Arg.getLocation());
     return TemplateArgumentLoc(TemplateArgument(T), DI);
+  }
+
+  case ParsedTemplateArgument::Dependent: {
+    Expr *E = static_cast<Expr *>(Arg.getAsExpr());
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Reflected), E);
   }
 
   case ParsedTemplateArgument::NonType: {
     Expr *E = static_cast<Expr *>(Arg.getAsExpr());
-    return TemplateArgumentLoc(TemplateArgument(E), E);
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
   case ParsedTemplateArgument::Template: {
@@ -816,8 +823,7 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
     else
       TArg = Template;
     return TemplateArgumentLoc(TArg,
-                               Arg.getScopeSpec().getWithLocInContext(
-                                                              SemaRef.Context),
+                               Arg.getScopeSpec().getWithLocInContext(Context),
                                Arg.getLocation(),
                                Arg.getEllipsisLoc());
   }
@@ -831,8 +837,7 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
 void Sema::translateTemplateArguments(const ASTTemplateArgsPtr &TemplateArgsIn,
                                       TemplateArgumentListInfo &TemplateArgs) {
  for (unsigned I = 0, Last = TemplateArgsIn.size(); I != Last; ++I)
-   TemplateArgs.addArgument(translateTemplateArgument(*this,
-                                                      TemplateArgsIn[I]));
+   TemplateArgs.addArgument(translateTemplateArgument(TemplateArgsIn[I]));
 }
 
 static void maybeDiagnoseTemplateParameterShadow(Sema &SemaRef, Scope *S,
@@ -1216,7 +1221,7 @@ NamedDecl *Sema::ActOnTemplateTemplateParameter(Scope* S,
     // If none of the template template parameter's template arguments mention
     // other template parameters, we could actually perform more checking here.
     // However, it isn't worth doing.
-    TemplateArgumentLoc DefaultArg = translateTemplateArgument(*this, Default);
+    TemplateArgumentLoc DefaultArg = translateTemplateArgument(Default);
     if (DefaultArg.getArgument().getAsTemplate().isNull()) {
       Diag(DefaultArg.getLocation(), diag::err_template_arg_not_valid_template)
         << DefaultArg.getSourceRange();
