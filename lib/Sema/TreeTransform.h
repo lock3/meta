@@ -3954,6 +3954,17 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
   case TemplateArgument::TemplateExpansion:
     llvm_unreachable("Caller should expand pack expansions");
 
+  case TemplateArgument::Reflected: {
+    Expr *InputExpr = Input.getSourceExpression();
+    if (!InputExpr) InputExpr = Input.getArgument().getAsExpr();
+
+    ExprResult E = getDerived().TransformExpr(InputExpr);
+    if (E.isInvalid()) return true;
+
+    Output = SemaRef.translateTemplateArgument(
+        SemaRef.ActOnReflectedTemplateArgument(Input.getLocation(), E.get()));
+    return false;
+  }
   case TemplateArgument::Expression: {
     // Template argument expressions are constant expressions.
     EnterExpressionEvaluationContext Unevaluated(
