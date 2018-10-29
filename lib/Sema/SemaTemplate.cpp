@@ -5165,9 +5165,7 @@ bool Sema::CheckTemplateArgumentList(
       if (!ArgType)
         return true;
 
-      Arg = TemplateArgumentLoc(
-          TemplateArgument(ArgType->getType(), TemplateArgument::Expression),
-          ArgType);
+      Arg = TemplateArgumentLoc(TemplateArgument(ArgType->getType()), ArgType);
     } else if (NonTypeTemplateParmDecl *NTTP
                  = dyn_cast<NonTypeTemplateParmDecl>(*Param)) {
       if (!hasVisibleDefaultArgument(NTTP))
