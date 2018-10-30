@@ -36,8 +36,8 @@ ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
     return ActOnReflectedTemplate(Arg);
   assert(Arg.getKind() == ParsedTemplateArgument::Type);
 
-  llvm::outs() << "GOT TYPE\n";
-  T.get().get()->dump();
+  // llvm::outs() << "GOT TYPE\n";
+  // T.get().get()->dump();
   return ParsedReflectionOperand(T.get(), Arg.getLocation());
 }
 
@@ -46,23 +46,23 @@ ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
   const CXXScopeSpec& SS = T.getScopeSpec();
   ParsedTemplateTy Temp = T.getAsTemplate();
   
-  llvm::outs() << "GOT TEMPLATE\n";
-  Temp.get().getAsTemplateDecl()->dump();
+  // llvm::outs() << "GOT TEMPLATE\n";
+  // Temp.get().getAsTemplateDecl()->dump();
   return ParsedReflectionOperand(SS, Temp, T.getLocation());
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
                                                       SourceLocation &Loc,
                                                       Decl *D) {
-  llvm::outs() << "GOT NAMESPACE\n";
-  D->dump();
+  // llvm::outs() << "GOT NAMESPACE\n";
+  // D->dump();
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
   
-  llvm::outs() << "GOT EXPRESSION\n";
-  E->dump();
+  // llvm::outs() << "GOT EXPRESSION\n";
+  // E->dump();
   return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
@@ -145,7 +145,7 @@ static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy,
 
   // FIXME: Should what type should this actually be?
   QualType T = Arg->getType();
-  if (T != SemaRef.Context.IntTy) {
+  if (T->isIntegralType(SemaRef.Context)) {
     SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_wrong_type);
     return false;
   }

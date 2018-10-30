@@ -178,6 +178,11 @@ def note_constexpr_memcpy_unsupported : Note<
   "source is not a contiguous array of at least %4 elements of type %3|"
   "destination is not a contiguous array of at least %4 elements of type %3}2">;
 
+// Reflection errors
+def note_reflection_not_defined : Note<
+  "query is not defined for reflected construct"
+  >;
+
 def warn_integer_constant_overflow : Warning<
   "overflow in expression; result is %0 with type %1">,
   InGroup<DiagGroup<"integer-overflow">>;

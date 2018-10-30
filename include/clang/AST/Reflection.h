@@ -22,6 +22,7 @@
 namespace clang {
 
 class CXXBaseSpecifier;
+class CXXReflectionTraitExpr;
 class Decl;
 class Expr;
 class NamespaceDecl;
@@ -319,17 +320,31 @@ inline bool isNameQuery(ReflectionQuery Q) {
 }
 
 /// The reflection class provides context for evaluating queries.
-class Reflection
-{
+struct Reflection {
   /// The AST context is needed for global information.
   ASTContext &Ctx;
 
   /// The reflected entity or construct.
   const APValue &Ref;
 
-public:
+  /// The expression defining the query.
+  const CXXReflectionTraitExpr *Query;
+
+  /// Points to a vector of diagnostics, to be populated during query
+  /// evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *Diag;
+
+  /// Construct a reflection that will be used only to observe the
+  /// reflected value.
   Reflection(ASTContext &C, const APValue &R)
-    : Ctx(C), Ref(R) { 
+    : Ctx(C), Ref(R), Query(), Diag() { 
+    assert(Ref.isReflection() && "not a reflection");
+  }
+
+  /// Construct a reflection that will be used to evaluate a query.
+  Reflection(ASTContext &C, const APValue &R, const CXXReflectionTraitExpr *E, 
+             SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
+    : Ctx(C), Ref(R), Query(E), Diag(D) { 
     assert(Ref.isReflection() && "not a reflection");
   }
 
@@ -379,16 +394,16 @@ public:
   }
 
   /// Evaluates the predicate designated by Q.
-  APValue EvaluatePredicate(ReflectionQuery Q);
+  bool EvaluatePredicate(ReflectionQuery Q, APValue &Result);
   
   /// Returns the traits designated by Q.
-  APValue GetTraits(ReflectionQuery Q);
+  bool GetTraits(ReflectionQuery Q, APValue &Result);
 
   /// Returns the reflected construct designated by Q.
-  APValue GetAssociatedReflection(ReflectionQuery Q);
+  bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 
   /// Returns the entity name designated by Q.
-  APValue GetName(ReflectionQuery);
+  bool GetName(ReflectionQuery, APValue &Result);
 };
 
 } // namespace clang
