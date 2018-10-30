@@ -387,8 +387,8 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
 
 static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
  return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
-    return E->isTypeDependent();
-  });
+   return E->isTypeDependent() || E->isValueDependent();
+ });
 }
 
 /// Constructs a new identifier from the expressions in Parts. Returns nullptr
