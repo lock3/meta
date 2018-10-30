@@ -7255,8 +7255,8 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     QualType New  = getDerived().TransformType(Old);
     if (New.isNull())
       return ExprError();
-    llvm::outs() << "SUBST TYPE\n";
-    New->dump();
+    // llvm::outs() << "SUBST TYPE\n";
+    // New->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New, 
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
@@ -7271,8 +7271,8 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
     TemplateName New = getDerived().TransformTemplateName(SS, Old, Loc);
     if (New.isNull())
       return ExprError();
-    llvm::outs() << "SUBST TEMPLATE\n";
-    New.getAsTemplateDecl()->dump();
+    // llvm::outs() << "SUBST TEMPLATE\n";
+    // New.getAsTemplateDecl()->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New, 
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
@@ -7284,12 +7284,11 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   }
   case ReflectionOperand::Expression: {
     Expr *Old = Ref.getAsExpression();
-    Old->dump();
     ExprResult New = getDerived().TransformExpr(Old);
     if (New.isInvalid())
       return ExprError();
-    llvm::outs() << "SUBST EXPR\n";
-    New.get()->dump();
+    // llvm::outs() << "SUBST EXPR\n";
+    // New.get()->dump();
     return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New.get(), 
                                          E->getLParenLoc(),
                                          E->getRParenLoc());

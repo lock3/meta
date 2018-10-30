@@ -40,6 +40,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/Reflection.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Builtins.h"
@@ -5473,11 +5474,6 @@ GetSemanticOrLexicalOwner(const Decl *D, bool Semantic) {
 }
 #endif
 
-static bool SetResult(APValue &Ret, APValue const& Val) {
-  Ret = Val;
-  return true;
-}
-
 template<typename Derived>
 bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
                                               const CXXReflectionTraitExpr *E) {
@@ -5488,37 +5484,29 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
       return false;
   }
 
-  Reflection R(Info.Ctx, Args[1]);
-
-  APValue Result;
+  // This should be equal in integer value to Args[0].
   ReflectionQuery Query = E->getQuery();
 
-  if (isPredicateQuery(Query)) 
-    return SetResult(Result, R.EvaluatePredicate(Query));
-  if (isTraitQuery(Query))
-    return SetResult(Result, R.GetTraits(Query));
-  if (isAssociatedReflectionQuery(Query))
-    return SetResult(Result, R.GetAssociatedReflection(Query));
-  if (isNameQuery(Query))
-    return SetResult(Result, R.GetName(Query));
+  // Build the reflection.
+  Reflection R(Info.Ctx, Args[1], E, Info.EvalStatus.Diag);
 
-  // FIXME: Pick a reasonable error.
-  Info.CCEDiag(E->getArg(0));
-  return false;
+  APValue Result;
+  bool Ok;
+  if (isPredicateQuery(Query))
+    Ok = R.EvaluatePredicate(Query, Result);
+  else if (isTraitQuery(Query))
+    Ok = R.GetTraits(Query, Result);
+  else if (isAssociatedReflectionQuery(Query))
+    Ok = R.GetAssociatedReflection(Query, Result);
+  else if (isNameQuery(Query))
+    Ok = R.GetName(Query, Result);
+  else
+    return Error(E->getArg(0));
 
-#if 0
-  if (E->getTrait() == URT_ReflectPrint) {
-    // Never evaluate if we're not computing a value.
-    if (Info.checkingPotentialConstantExpression())
-      return false;
-    if (Info.checkingForOverflow())
-      return false;
-    if (!Print(Info, E, Args))
-      return false;
-    APValue Zero(Info.Ctx.MakeIntValue(0, Info.Ctx.IntTy));
-    return DerivedSuccess(Zero, E);
-  }
-#endif
+  if (!Ok)
+    return Error(E);
+
+  return DerivedSuccess(Result, E);
 
 #if 0
   switch (E->getTrait()) {
