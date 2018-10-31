@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++1z -freflection -verify %s
 
 template<typename T>
 struct container {
@@ -84,8 +84,35 @@ void test_dependent() {
   test_dependent_container_container<container, int>();
 }
 
+void test_bad() {
+  {
+    constexpr auto reflection = reflexpr(0); // expected-error {{template argument for template type parameter must be a type}}
+
+    container<templarg(reflection)> k;
+  }
+
+  {
+    constexpr auto reflection = reflexpr(int); // expected-error {{template argument for non-type template parameter must be an expression}}
+
+    defaulted_integer<templarg(reflection)> k;
+  }
+
+  {
+    constexpr auto reflection = reflexpr(0); // expected-error {{template argument for template template parameter must be a class template or type alias template}}
+
+    contained_container<templarg(reflection), int> k;
+  }
+
+  {
+    constexpr auto reflection = reflexpr(int); // expected-error {{template argument for template template parameter must be a class template or type alias template}}
+
+    contained_container<templarg(reflection), int> k;
+  }
+}
+
 int main() {
   test_non_dependent();
   test_dependent();
+  test_bad();
   return 0;
 }
