@@ -31,8 +31,7 @@ class Type;
 class UnresolvedLookupExpr;
 
 /// Represents a qualified namespace-name.
-class QualifiedNamespaceName
-{
+class QualifiedNamespaceName {
   // The optional nested name specifier for the namespace.
   NestedNameSpecifier *NNS;
 
@@ -54,8 +53,7 @@ public:
 };
 
 /// Represents a namespace-name within a reflection operand.
-class NamespaceName
-{
+class NamespaceName {
   /// This is either an unqualified or qualified namespace name.
   using StorageType =
     llvm::PointerUnion<NamespaceDecl *, QualifiedNamespaceName *>;
@@ -116,8 +114,7 @@ public:
 };
 
 /// Represents an operand to the reflection operator.
-class ReflectionOperand
-{
+class ReflectionOperand {
 public:
   enum ReflectionKind {
     Type,
@@ -199,7 +196,7 @@ enum ReflectionQuery {
   RQ_is_nonstatic_member_function,
   RQ_is_constructor,
   RQ_is_destructor,
-  
+
   // Types
   RQ_is_type,
   RQ_is_class,
@@ -261,7 +258,7 @@ enum ReflectionQuery {
   // Scope
   RQ_is_local,
   RQ_is_class_member,
-  
+
   // Traits
   RQ_get_variable_traits,
   RQ_get_function_traits,
@@ -274,7 +271,7 @@ enum ReflectionQuery {
   RQ_get_parent,
   RQ_get_type,
   RQ_get_this_ref_type,
-  
+
   // Traversal
   RQ_get_begin,
   RQ_get_end,

@@ -80,7 +80,7 @@ static const ValueDecl *getEntityDecl(const Expr *E) {
 /// or via a reflection, return that declaration.
 static const Decl *getReachableDecl(const Reflection &R) {
   if (const TypeDecl *TD = getAsTypeDecl(R))
-    return TD;  
+    return TD;
   if (R.isDeclaration())
     return R.getAsDeclaration();
   if (R.isExpression())
@@ -97,8 +97,7 @@ static const ValueDecl *getReachableValueDecl(const Reflection &R) {
 }
 
 /// A helper class to manage conditions involving types.
-struct MaybeType
-{
+struct MaybeType {
   MaybeType(QualType T) : Ty(T) { }
 
   explicit operator bool() const { return !Ty.isNull(); }
@@ -126,13 +125,13 @@ QualType getReachableType(const Reflection &R) {
     // See through "location types".
     if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
       T = LIT->getType();
-    
+
     return T;
   }
-  
-  if (const ValueDecl *VD = getReachableValueDecl(R)) 
+
+  if (const ValueDecl *VD = getReachableValueDecl(R))
     return VD->getType();
-  
+
   return QualType();
 }
 
@@ -145,6 +144,7 @@ QualType getReachableCanonicalType(const Reflection &R) {
   return R.Ctx->getCanonicalType(T);
 }
 
+/// Returns true if R is an invalid reflection.
 static bool isInvalid(const Reflection &R, APValue &Result) {
   return SuccessIf(R, Result, R.isInvalid());
 }
@@ -154,19 +154,19 @@ static bool isEntity(const Reflection &R, APValue &Result) {
   if (R.isType())
     // Types are entities.
     return SuccessTrue(R, Result);
-  
+
   if (R.isDeclaration()) {
     const Decl *D = R.getAsDeclaration();
-    
+
     if (isa<ValueDecl>(D))
       // Values, objects, references, functions, enumerators, class members,
       // and bit-fields are entities.
       return SuccessTrue(R, Result);
-    
+
     if (isa<TemplateDecl>(D))
       // Templates are entities (but not template template parameters).
       return SuccessIf(R, Result, !isa<TemplateTemplateParmDecl>(D));
-    
+
     if (isa<NamespaceDecl>(D))
       // Namespaces are entities.
       return SuccessTrue(R, Result);
@@ -186,14 +186,14 @@ static bool isUnnamed(const Reflection &R, APValue &Result) {
 }
 
 /// Returns true if R designates a variable.
-static bool isVariable(const Reflection &R, APValue& Result) {
+static bool isVariable(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessIf(R, Result, isa<VarDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an enumerator.
-static bool isEnumerator(const Reflection &R, APValue& Result) {
+static bool isEnumerator(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessIf(R, Result, isa<EnumConstantDecl>(D));
   return SuccessFalse(R, Result);
@@ -234,7 +234,7 @@ static const FieldDecl *getAsDataMember(const Reflection &R) {
   return nullptr;
 }
 
-/// Returns true if this a static member variable.
+/// Returns true if R designates a static member variable.
 static bool isStaticDataMember(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R)) {
     if (const VarDecl *Var = dyn_cast<VarDecl>(D))
@@ -272,12 +272,14 @@ static bool isDestructor(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a type.
 static bool isType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableType(R))
     return SuccessTrue(R, Result);
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a class.
 static bool isClass(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R)) {
     return SuccessIf(R, Result, T->isRecordType());
@@ -285,42 +287,49 @@ static bool isClass(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a union.
 static bool isUnion(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
     return SuccessIf(R, Result, T->isUnionType());
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an enum.
 static bool isEnum(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
     return SuccessIf(R, Result, T->isEnumeralType());
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a scoped enum.
 static bool isScopedEnum(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
     return SuccessIf(R, Result, T->isScopedEnumeralType());
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an type alias.
 static bool isTypeAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessIf(R, Result, isa<TypedefNameDecl>(D));
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a namespace.
 static bool isNamespace(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessIf(R, Result, isa<NamespaceDecl>(D));
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a namespace alias.
 static bool isNamespaceAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessIf(R, Result, isa<NamespaceAliasDecl>(D));
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an expression.
 static bool isExpression(const Reflection &R, APValue &Result) {
   return SuccessIf(R, Result, R.isExpression());
 }
@@ -355,7 +364,7 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isConstructor(*this, Result);
   case RQ_is_destructor:
     return isDestructor(*this, Result);
-  
+
   case RQ_is_type:
     return ::isType(*this, Result);
   case RQ_is_class:
@@ -366,7 +375,7 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isEnum(*this, Result);
   case RQ_is_scoped_enum:
     return isScopedEnum(*this, Result);
-  
+
   case RQ_is_void:
   case RQ_is_null_pointer:
   case RQ_is_integral:
@@ -380,7 +389,7 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   case RQ_is_closure:
     // FIXME: Implement these.
     return Error(*this);
-  
+
   case RQ_is_type_alias:
     return isTypeAlias(*this, Result);
 
@@ -431,15 +440,15 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   llvm_unreachable("invalid predicate selector");
 }
 
-bool Reflection::GetTraits(ReflectionQuery Q, APValue& Result) {
+bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   return {};
 }
 
-bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue& Result) {
+bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   return {};
 }
 
-bool Reflection::GetName(ReflectionQuery Q, APValue& Result) {
+bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
   return {};
 }
 
