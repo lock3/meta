@@ -199,6 +199,13 @@ static bool isEnumerator(const Reflection &R, APValue& Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a function.
+static bool isFunction(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessIf(R, Result, isa<FunctionDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
 /// Returns the reflected member function.
 static const CXXMethodDecl *getAsMemberFunction(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
@@ -332,6 +339,8 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isVariable(*this, Result);
   case RQ_is_enumerator:
     return isEnumerator(*this, Result);
+  case RQ_is_function:
+    return isFunction(*this, Result);
   case RQ_is_static_data_member:
     return isStaticDataMember(*this, Result);
   case RQ_is_static_member_function:

@@ -15,6 +15,7 @@ enum reflection_query {
   // Objects, references, bitfields, and functions
   query_is_variable,
   query_is_enumerator,
+  query_is_function,
   query_is_static_data_member,
   query_is_static_member_function,
   query_is_nonstatic_data_member,
@@ -174,7 +175,7 @@ constexpr int test() {
 
   auto r6 = reflexpr(f);
   assert(__reflect(query_is_expression, r6));
-  // assert(__reflect(query_is_function, r6));
+  assert(__reflect(query_is_function, r6));
 
   auto r7 = reflexpr(global);
 

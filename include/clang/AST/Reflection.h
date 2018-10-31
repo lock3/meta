@@ -191,6 +191,7 @@ enum ReflectionQuery {
   // Objects, references, bitfields, and functions
   RQ_is_variable,
   RQ_is_enumerator,
+  RQ_is_function,
   RQ_is_static_data_member,
   RQ_is_static_member_function,
   RQ_is_nonstatic_data_member,
