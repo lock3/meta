@@ -67,10 +67,21 @@ void test_dependent_default_val() {
   }
 }
 
+template<template<typename B> class A, typename B>
+void test_dependent_container_container() {
+  {
+    constexpr auto reflection = reflexpr(A);
+
+    contained_container<templarg(reflection), B> k;
+    k.inner_container.val = B();
+  }
+}
+
 void test_dependent() {
   test_dependent_container<int>();
   test_dependent_container<S>();
   test_dependent_default_val<0>();
+  test_dependent_container_container<container, int>();
 }
 
 int main() {

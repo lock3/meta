@@ -4903,6 +4903,9 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
   case TemplateArgument::Null:
     llvm_unreachable("Should never see a NULL template argument here");
 
+  case TemplateArgument::Reflected:
+    return false; // We have to defer checking until we know what this is
+
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
     if (CheckTemplateTemplateArgument(Params, Arg))
@@ -4911,7 +4914,6 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     Converted.push_back(Arg.getArgument());
     break;
 
-  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
   case TemplateArgument::Type:
     // We have a template template parameter but the template
