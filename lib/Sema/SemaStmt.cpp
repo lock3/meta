@@ -33,6 +33,7 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/Template.h"
+#include "TreeTransform.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -2885,7 +2886,7 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     // Build the actual call expression 'NNS::get<I>(__tuple)'.
     Expr *Args[] = {RangeRef.get()};
     ExprResult Call =
-        ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);
+        ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);    
 
     // And make that the initializer of the tuple argument.
     AddInitializerToDecl(LoopVar, Call.get(), false);
@@ -2907,12 +2908,12 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
 }
 
 StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
-					    SourceLocation ConstexprLoc,
-					    SourceLocation ColonLoc,
-					    Stmt *RangeVarDecl,
-					    Stmt *LoopVarDecl,
-					    SourceLocation RParenLoc,
-					    BuildForRangeKind Kind) {
+						SourceLocation ConstexprLoc,
+						SourceLocation ColonLoc,
+						Stmt *RangeVarDecl,
+						Stmt *LoopVarDecl,
+						SourceLocation RParenLoc,
+						BuildForRangeKind Kind) {
   
   DeclStmt *RangeVarDS = cast<DeclStmt>(RangeVarDecl);
   VarDecl *RangeVar = cast<VarDecl>(RangeVarDS->getSingleDecl());
@@ -2923,7 +2924,6 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
   VarDecl *LoopVar = cast<VarDecl>(LoopVarDS->getSingleDecl());
 
   llvm::APSInt Size = llvm::APSInt::get(0);
-  TemplateParameterList *ParmList = nullptr;
 
 
   // Get the begin and end statements
@@ -3019,136 +3019,120 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
   StmtResult EndDeclStmt =
     ActOnDeclStmt(ConvertDeclToDeclGroup(EndVar), ColonLoc, ColonLoc);
 
-    const QualType BeginRefNonRefType = BeginType.getNonReferenceType();
-    ExprResult BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
-                                           VK_LValue, ColonLoc);
-    if (BeginRef.isInvalid())
-      return StmtError();
+  const QualType BeginRefNonRefType = BeginType.getNonReferenceType();
+  ExprResult BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
+					 VK_LValue, ColonLoc);
+  if (BeginRef.isInvalid())
+    return StmtError();
 
-    ExprResult EndRef = BuildDeclRefExpr(EndVar, EndType.getNonReferenceType(),
-                                         VK_LValue, ColonLoc);
-    if (EndRef.isInvalid())
-      return StmtError();
+  ExprResult EndRef = BuildDeclRefExpr(EndVar, EndType.getNonReferenceType(),
+				       VK_LValue, ColonLoc);
+  if (EndRef.isInvalid())
+    return StmtError();
 
-    // Build and check *__begin  expression.
-    BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
-                                VK_LValue, ColonLoc);
-    if (BeginRef.isInvalid())
-      return StmtError();
+  // Build and check *__begin  expression.
+  BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
+			      VK_LValue, ColonLoc);
+  if (BeginRef.isInvalid())
+    return StmtError();
 
-    ExprResult DerefExpr = ActOnUnaryOp(S, ColonLoc, tok::star, BeginRef.get());
-    if (DerefExpr.isInvalid()) {
-      Diag(RangeLoc, diag::note_for_range_invalid_iterator)
-        << RangeLoc << 1 << BeginRangeRef.get()->getType();
-      NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
-      return StmtError();
-    }
-
-    // Build and check std::next(begin) expression
-    // DeclarationName NextName(&PP.getIdentifierTable().get("next"));
-    // DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
-
-    // ExprResult CallExpr;
-    // OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
-    // LookupResult MemberLookup(SemaRef, NextNameInfo, Sema::LookupMemberName);
-
-    // BuildExpansionNextCall(ColonLoc, RangeLoc, NextNameInfo, &CandidateSet2,
-    			   // BeginRangeRef.get(), &CallExpr);
-    // BuildForRangeBeginEndCall(ColonLoc, ColonLoc, NextNameInfo, &CandidateSet2,
-    // 			      MemberLookup, BeginRangeRef.get(),
-    // 			      &CallExpr);
-
-    // llvm::outs() << "std::next?:\n";
-    // CallExpr.get()->dump();
-
-    // Get the name information for 'NNS::next'
-    CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
-    NestedNameSpecifierLoc NNS =
-      GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
-    IdentifierInfo *Name = &PP.getIdentifierTable().get("next");
-    DeclarationNameInfo DNI(Name, ConstexprLoc);
-
-    // llvm::outs() << "NNS name: " << NNS.getNestedNameSpecifier()->getAsIdentifier()->getName() << "\n";
-
-  // Do an initial lookup for 'NNS::next' where 'NNS' is the
-  // declartion context of the range type.
-  LookupResult R(*this, DNI.getName(), ConstexprLoc, Sema::LookupOrdinaryName);
-  if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
-    CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
-    Diag(ConstexprLoc, diag::err_no_member) << Name << D->getParent();
+  ExprResult DerefExpr = ActOnUnaryOp(S, ColonLoc, tok::star, BeginRef.get());
+  if (DerefExpr.isInvalid()) {
+    Diag(RangeLoc, diag::note_for_range_invalid_iterator)
+      << RangeLoc << 1 << BeginRangeRef.get()->getType();
+    NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
     return StmtError();
   }
 
-  // const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
-
-  // const UnresolvedSetImpl &Dep = R.asUnresolvedSet();
-  // for(auto x : Dep) {
-  //   llvm::outs() << "Fn:\n";
-  //   x->dump();
-  //   llvm::outs() << "\n";
+  // Build and check __begin != __end expression.
+  // NotEqExpr = ActOnBinOp(S, ColonLoc, tok::exclaimequal,
+  //                        BeginRef.get(), EndRef.get());
+  // if (!NotEqExpr.isInvalid())
+  //   NotEqExpr = CheckBooleanCondition(ColonLoc, NotEqExpr.get());
+  // if (!NotEqExpr.isInvalid())
+  //   NotEqExpr = ActOnFinishFullExpr(NotEqExpr.get());
+  // if (NotEqExpr.isInvalid()) {
+  //   Diag(RangeLoc, diag::note_for_range_invalid_iterator)
+  //     << RangeLoc << 0 << BeginRangeRef.get()->getType();
+  //   NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+  //   if (!Context.hasSameType(BeginType, EndType))
+  //     NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
+  //   return StmtError();
   // }
 
-  // Fn->dump();
-  const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+  // Build and check std::next(begin) expression
+  // DeclarationName NextName(&PP.getIdentifierTable().get("next"));
+  // DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
 
-  // Build the lookup expression NNS::next;
-  UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+  // ExprResult CallExpr;
+  // OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
+  // LookupResult MemberLookup(SemaRef, NextNameInfo, Sema::LookupMemberName);
+
+  // BuildExpansionNextCall(ColonLoc, RangeLoc, NextNameInfo, &CandidateSet2,
+  // BeginRangeRef.get(), &CallExpr);
+  // BuildForRangeBeginEndCall(ColonLoc, ColonLoc, NextNameInfo, &CandidateSet2,
+  // 			      MemberLookup, BeginRangeRef.get(),
+  // 			      &CallExpr);
+
+  // llvm::outs() << "std::next?:\n";
+  // CallExpr.get()->dump();
+
+  // Get the name information for 'NNS::distance'
+  CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
+  NestedNameSpecifierLoc NNS =
+    GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
+  IdentifierInfo *DistanceName = &PP.getIdentifierTable().get("distance");
+  DeclarationNameInfo DistanceDNI(DistanceName, ConstexprLoc);
+
+  // Do an initial lookup for NNS::distance
+  LookupResult DistanceR(*this, DistanceDNI.getName(),
+			 ConstexprLoc, Sema::LookupOrdinaryName);
+  if (!LookupQualifiedName(DistanceR, RangeClass->getDeclContext())) {
+    CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
+    Diag(ConstexprLoc, diag::err_no_member) << DistanceName << D->getParent();
+    return StmtError();    
+  }
+
+  const UnresolvedSetImpl &DistanceNames = DistanceR.asUnresolvedSet();
+
+  // Build the lookup expression NNS::distance;
+  UnresolvedLookupExpr *DistanceFn = UnresolvedLookupExpr::Create(
     Context,
     /*NamingClass=*/nullptr, NNS,
-    DNI,
-    /*NeedsADL=*/false,/*Overloaded=*/false,
-    FoundNames.begin(), FoundNames.end());
+    DistanceDNI, /*NeedsADL=*/false,/*Overloaded=*/false,
+    DistanceNames.begin(), DistanceNames.end());  
 
-    // The '__range' argument.
-    ExprResult RangeRef =
-        BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
-    if (RangeRef.isInvalid())
-      return StmtError();
+  // Build the actual call expression 'NNS::distance(__begin, __end)'.
+  Expr *DistanceArgs[] = {BeginExpr.get(), EndExpr.get()};
+  ExprResult DistanceCall =
+    ActOnCallExpr(getCurScope(), DistanceFn, ColonLoc, DistanceArgs, ColonLoc);
 
+  DistanceCall.get()->EvaluateAsInt(Size, Context);
 
-    llvm::outs() << "BeginExpr:\n";
-    BeginExpr.get()->dump();
-    // Build the actual call expression 'NNS::next(__begin)'.
-    Expr *Args[] = {BeginExpr.get()};
-    ExprResult Call =
-      ActOnCallExpr(getCurScope(), Fn, ColonLoc, Args, ColonLoc);
+  // Attach  *__begin  as initializer for VD. Don't touch it if we're just
+  // trying to determine whether this would be a valid range.
+  if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
+    AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
+    if (LoopVar->isInvalidDecl())
+      NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+  }
+  LoopVar->setConstexpr(true);
+  BeginVar->setConstexpr(true);
 
-    llvm::outs() << "Call:\n";
-    Call.get()->dump();
+  Stmt *Ret = new (Context) CXXConstexprExpansionStmt(RangeVarDS,
+						      LoopVarDS,
+						      nullptr,
+						      Size.getExtValue(),
+						      BeginDeclStmt.get(),
+						      EndDeclStmt.get(),
+						      BeginExpr.get(),
+						      nullptr,
+						      ForLoc,
+						      ConstexprLoc,
+						      ColonLoc,
+						      RParenLoc);
 
-    // Expr::EvalResult ER;
-    bool eval = BeginExpr.get()->isEvaluatable(Context);
-    llvm::outs() << "Eval?: " << eval << '\n';
-    // ER.Val.dump();
-
-    // Attach  *__begin  as initializer for VD. Don't touch it if we're just
-    // trying to determine whether this would be a valid range.
-    if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
-      AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
-      if (LoopVar->isInvalidDecl())
-        NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
-    }
-    LoopVar->setConstexpr(true);
-
-    BeginVar->setConstexpr(true);
-    auto val = BeginVar->evaluateValue();
-    llvm::outs() << "BeginVar:\n";
-    BeginVar->dump();
-    val->dump();
-
-    Stmt *Ret = new (Context) CXXConstexprExpansionStmt(RangeVarDS,
-							LoopVarDS,
-							nullptr,
-							BeginDeclStmt.get(),
-							EndDeclStmt.get(),
-							BeginExpr.get(),
-							Call.get(),
-							ForLoc,
-							ConstexprLoc,
-							ColonLoc,
-							RParenLoc);
-
-    return Ret;
+  return Ret;
 }
 
 StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
@@ -3433,7 +3417,7 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
       return StmtError();
     Stmts.push_back(Instantiation.get());
   }
-
+  
   Stmt **Results = new (Context) Stmt *[Stmts.size()];
   std::copy(Stmts.begin(), Stmts.end(), Results);
   S->setInstantiatedStatements(Results);
@@ -3443,40 +3427,115 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
 
 StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 						 Stmt *B) {
+
   VarDecl *RangeVar = S->getRangeVariable();
   QualType RangeVarType = RangeVar->getType();
   QualType RangeClassType = RangeVarType.getNonReferenceType();
-  SourceLocation ConstexprLoc = S->getEllipsisLoc();
+
   VarDecl *LoopVar = S->getLoopVariable();
+  SourceLocation Loc = S->getColonLoc();
 
   Stmt *VarAndBody[] = {S->getLoopVarStmt(), B};
   Stmt *Body = CompoundStmt::Create
     (Context, VarAndBody, SourceLocation(), SourceLocation());
 
-  // Instantiate the loop body for each element of the tuple.
+  S->setBody(B);
+
   llvm::SmallVector<Stmt *, 8> Stmts;
-  // LoopVar->evaluateValue();
 
-  // Expr *NextCall = S->getNextCall();
+  for (std::size_t I = 0; I < S->getSize(); ++I) {
+    // Unlike in Tuple Expansion Statements, we do not actually
+    // use this template argument, however, we do need a valid
+    // template argument in order to instantiate our statements.
+    IntegerLiteral *E = IntegerLiteral::Create(
+        Context, llvm::APSInt::getUnsigned(I), Context.getSizeType(), Loc);
+    TemplateArgument Args[] = {TemplateArgument(
+        Context, llvm::APSInt(E->getValue(), true), E->getType())};
+    TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
+    MultiLevelTemplateArgumentList MultiArgs(TempArgs);
+
+    // // Don't call std::next(__begin) if we have not yet used __begin.
+    if(I > 0) {
+      SourceLocation ColonLoc = S->getColonLoc();
+      SourceLocation ConstexprLoc = S->getEllipsisLoc();
+
+      // Get the name information for 'NNS::next'
+      CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
+      NestedNameSpecifierLoc NNS =
+    	GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
+      IdentifierInfo *Name = &PP.getIdentifierTable().get("next");
+      DeclarationNameInfo DNI(Name, ConstexprLoc);
+
+      // Do an initial lookup for 'NNS::next' where 'NNS' is the
+      // declartion context of the range type.
+      LookupResult R(*this, DNI.getName(), ConstexprLoc, Sema::LookupOrdinaryName);
+      if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
+    	CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
+    	Diag(ConstexprLoc, diag::err_no_member) << Name << D->getParent();
+    	return StmtError();
+      }
+
+      const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+
+      // Build the lookup expression NNS::next;
+      UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+    	Context,
+    	/*NamingClass=*/nullptr, NNS,
+    	DNI,
+    	/*NeedsADL=*/false,/*Overloaded=*/false,
+    	FoundNames.begin(), FoundNames.end());
+
+      // Build the parameters and the actual call std::next(__begin, I)
+      Expr *NextArgs[] = {S->getBeginExpr(), E};
+      MultiExprArg MultiNextArgs(NextArgs);
+      ExprResult Call =
+    	ActOnCallExpr(getCurScope(), Fn, ColonLoc, MultiNextArgs, ColonLoc);
+
+      // Add '*std::next(__begin, I)' as the initializer of the loop var.
+      ExprResult DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, Call.get());
+      AddInitializerToDecl(LoopVar, DerefExpr.get(), false);
+    }
+
+    // We need a local instantiation scope with rewriting. This local
+    // instantiation scope should be considered to be part of the parent
+    // scope.
+    LocalInstantiationScope Locals(*this, true);
+
+    // Map the loop variable to itself in this context so that references
+    // to the tuple variable are correctly resolved. Consider:
+    //
+    //    template<typename T>
+    //    void f() {
+    //      for constexpr (auto x : non_dependent_expr)
+    //        // do stuff
+    //
+    // The loop is instantiated just after parsing, and the loop variable
+    // initializer refers to the non-instantiated range variable. However,
+    // the template instantiator believes that the declaration should be
+    // instantiated because that's a local in a dependent context and should
+    // be replaced.
+    //
+    // If the range expression is dependent, then there will eventually be
+    // two entries for the range variable: one created when instantiating
+    // the local in the function's scope, and the one here. This shouldn't
+    // have any effect on lookup.
+
+    Locals.InstantiatedLocal(S->getRangeVariable(), S->getRangeVariable());
+
+    InstantiatingTemplate Inst(*this, B->getBeginLoc(), S, Args,
+                               B->getSourceRange());
+    StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
+    if (Instantiation.isInvalid())
+      return StmtError();
+    Stmts.push_back(Instantiation.get());
+  }
+
+  Stmt **Results = new (Context) Stmt *[Stmts.size()];
+  std::copy(Stmts.begin(), Stmts.end(), Results);
   
+  S->setInstantiatedStatements(Results);
 
-  // Expr::EvalResult Res;
-  // llvm::APSInt value = llvm::APSInt::get(0);
-  // bool success = NextCall->EvaluateAsInt(value, Context);
-
-  // llvm::outs() << "*__begin: " << LoopVar->evaluateValue()->getInt() << '\n';
-  // llvm::outs() << "Success?: " << success << '\n';
-  // llvm::outs() << "Call to next: " << value << '\n';
-
-  
-  llvm_unreachable("incomplete.");
-
-  // Expr *Callee = new (Context) DeclRefExpr(Fn, false,
-  // 					   Context.getFunctionType(),
-  // 					   VK_RValue, SourceLocation());
-  // llvm::ArrayRef<Expr*> Args = {S->getBeginExpr()};
-  // ExprResult Call = new (Context) CallExpr(Context, Callee, Args, 
-					   
+  return S;
 }
 
 StmtResult Sema::FinishCXXPackExpansionStmt(CXXPackExpansionStmt *S, Stmt *B) {

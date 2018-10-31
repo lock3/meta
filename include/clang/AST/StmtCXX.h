@@ -433,12 +433,12 @@ class CXXConstexprExpansionStmt : public CXXExpansionStmt {
   Stmt *BeginStmt = nullptr;
   Stmt *EndStmt = nullptr;
   Expr *BeginExpr = nullptr;
-  Expr *NextCall = nullptr;
+  Expr *NextCall = nullptr;  
   
 public:
   CXXConstexprExpansionStmt(DeclStmt *RangeVar,
-			    DeclStmt *LoopVar, Stmt *Body, Stmt *BeginStmt,
-			    Stmt *EndStmt, Expr *BeginExpr,
+			    DeclStmt *LoopVar, Stmt *Body, std::size_t Size,
+			    Stmt *BeginStmt, Stmt *EndStmt, Expr *BeginExpr,
 			    Expr *NextCall, SourceLocation FL,
 			    SourceLocation CEL, SourceLocation CL,
 			    SourceLocation RPL);
@@ -462,6 +462,9 @@ public:
   /// Returns the initializer of the range statement.
   Expr *getRangeInit() { return nullptr; }
   const Expr *getRangeInit() const { return nullptr; }
+
+  VarDecl *getBeginVariable();
+  VarDecl *getEndVariable();
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXConstexprExpansionStmtClass;

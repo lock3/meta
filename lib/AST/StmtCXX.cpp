@@ -138,6 +138,7 @@ const Expr *CXXTupleExpansionStmt::getRangeInit() const {
 CXXConstexprExpansionStmt::CXXConstexprExpansionStmt(DeclStmt *RangeVar,
 						     DeclStmt *LoopVar,
 						     Stmt *Body,
+						     std::size_t Size,
 						     Stmt *BeginStmt,
 						     Stmt *EndStmt,
 						     Expr *BeginExpr,
@@ -147,9 +148,22 @@ CXXConstexprExpansionStmt::CXXConstexprExpansionStmt(DeclStmt *RangeVar,
 						     SourceLocation CL,
 						     SourceLocation RPL)
   : CXXExpansionStmt(CXXConstexprExpansionStmtClass, RangeVar, LoopVar,
-		     Body, std::size_t(), FL, CEL, CL, RPL),
-    BeginStmt(BeginStmt), EndStmt(EndStmt), BeginExpr(BeginExpr), NextCall(NextCall)
+		     Body, Size, FL, CEL, CL, RPL),
+    BeginStmt(BeginStmt), EndStmt(EndStmt), BeginExpr(BeginExpr),
+    NextCall(NextCall)
 {}
+
+VarDecl *CXXConstexprExpansionStmt::getEndVariable() {
+  Decl *LV = cast<DeclStmt>(EndStmt)->getSingleDecl();
+  assert(LV && "No loop variable in CXXForRangeStmt");
+  return cast<VarDecl>(LV);
+}
+
+VarDecl *CXXConstexprExpansionStmt::getBeginVariable() {
+  Decl *LV = cast<DeclStmt>(BeginStmt)->getSingleDecl();
+  assert(LV && "No loop variable in CXXForRangeStmt");
+  return cast<VarDecl>(LV);
+}
 
 CXXPackExpansionStmt::CXXPackExpansionStmt(DeclStmt *RangeVar,
                                            DeclStmt *LoopVar, Stmt *Body,

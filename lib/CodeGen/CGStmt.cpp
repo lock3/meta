@@ -192,6 +192,9 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   case Stmt::CXXTupleExpansionStmtClass:
     EmitCXXTupleExpansionStmt(cast<CXXTupleExpansionStmt>(*S));
     break;
+  case Stmt::CXXConstexprExpansionStmtClass:
+    EmitCXXConstexprExpansionStmt(cast<CXXConstexprExpansionStmt>(*S));
+    break;
   case Stmt::CXXPackExpansionStmtClass:
     EmitCXXPackExpansionStmt(cast<CXXPackExpansionStmt>(*S));
     break;
@@ -1023,6 +1026,39 @@ CodeGenFunction::EmitCXXTupleExpansionStmt(const CXXTupleExpansionStmt &S,
   // Evaluate the first pieces before the loop.
   EmitStmt(S.getRangeVarStmt());
 
+  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
+  for (std::size_t I = 0; I < S.getSize(); ++I) {
+    
+    LexicalScope BodyScope(*this, S.getSourceRange());
+    BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
+    BreakContinueStack.push_back(BC);
+    EmitBlock(Blocks[I]);
+    EmitStmt(Stmts[I]);
+    BreakContinueStack.pop_back();
+  }
+
+  EmitBlock(LoopExit.getBlock(), true);
+}
+
+void
+CodeGenFunction::EmitCXXConstexprExpansionStmt(
+  const CXXConstexprExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
+  JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
+  
+  // Create a basic block for each instantiation.
+  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
+  for (std::size_t I = 0; I < S.getSize(); ++I)
+    Blocks.push_back(createBasicBlock("expand.body"));
+
+  Blocks.push_back(LoopExit.getBlock());
+
+  SourceRange SR = S.getSourceRange();
+  
+  LexicalScope ForScope(*this, S.getSourceRange());
+  
+  // Evaluate the first pieces before the loop.
+  EmitStmt(S.getRangeVarStmt());
+  
   ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
   for (std::size_t I = 0; I < S.getSize(); ++I) {
     

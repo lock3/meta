@@ -2929,6 +2929,8 @@ public:
                            ArrayRef<const Attr *> Attrs = None);
   void EmitCXXTupleExpansionStmt(const CXXTupleExpansionStmt &S,
                                  ArrayRef<const Attr *> Attrs = None);
+  void EmitCXXConstexprExpansionStmt(const CXXConstexprExpansionStmt &S,
+				     ArrayRef<const Attr *> Attrs = None);
   void EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
                                 ArrayRef<const Attr *> Attrs = None);
 
