@@ -553,19 +553,29 @@ BuildDependentTemplarg(SourceLocation KWLoc, Expr *ReflExpr) {
 }
 
 static ParsedTemplateArgument
-DiagnoseDeclTemplarg(Sema &S, SourceLocation KWLoc,
-                     Expr *ReflExpr, const Decl *D) {
-  llvm::outs() << "Templarg - Decl\n";
-  return ParsedTemplateArgument();
-}
-
-static ParsedTemplateArgument
 BuildReflectedTypeTemplarg(Sema &S, SourceLocation KWLoc,
                            Expr *ReflExpr, const QualType &QT) {
   llvm::outs() << "Templarg - Type\n";
   const Type *T = QT.getTypePtr();
   void *OpaqueT = reinterpret_cast<void *>(const_cast<Type *>(T));
   return ParsedTemplateArgument(ParsedTemplateArgument::Type, OpaqueT, KWLoc);
+}
+
+static ParsedTemplateArgument
+BuildReflectedDeclTemplarg(Sema &S, SourceLocation KWLoc,
+                           Expr *ReflExpr, const Decl *D) {
+  llvm::outs() << "Templarg - Decl\n";
+  if (const TemplateDecl *TDecl = dyn_cast<TemplateDecl>(D)) {
+    using TemplateTy = OpaquePtr<TemplateName>;
+    TemplateTy Template = TemplateTy::make(
+        TemplateName(const_cast<TemplateDecl *>(TDecl)));
+
+    return ParsedTemplateArgument(ParsedTemplateArgument::Template,
+                                  Template.getAsOpaquePtr(),
+                                  KWLoc);
+  }
+
+  llvm_unreachable("Unsupported reflected declaration type");
 }
 
 static ParsedTemplateArgument
@@ -598,7 +608,7 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
 
   case RK_declaration: {
     const Decl *D = Refl.getAsDeclaration();
-    return DiagnoseDeclTemplarg(*this, KWLoc, E, D);
+    return BuildReflectedDeclTemplarg(*this, KWLoc, E, D);
   }
 
   case RK_expression: {

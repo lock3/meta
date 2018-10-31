@@ -10,10 +10,10 @@ struct defaulted_integer {
   int val = DefaultValue;
 };
 
-// template<template<typename T> class K, typename T>
-// struct contained_container {
-//   K inner_container;
-// };
+template<template<typename T> class K, typename T>
+struct contained_container {
+  K<T> inner_container;
+};
 
 struct S { };
 
@@ -39,12 +39,12 @@ void test_non_dependent() {
     k.val = 1;
   }
 
-  // {
-  //   constexpr auto reflection = reflexpr(container);
+  {
+    constexpr auto reflection = reflexpr(container);
 
-  //   contained_container<templarg(reflection), int> k;
-  //   k.inner_container.val = 1;
-  // }
+    contained_container<templarg(reflection), int> k;
+    k.inner_container.val = 1;
+  }
 }
 
 template<typename R>
