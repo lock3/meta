@@ -187,9 +187,9 @@ constexpr int test() {
 
   auto r11 = reflexpr(ClassTemplate<int>);
 
-  // auto r12 = reflexpr(ClassTemplate<int>::function);
+  auto r12 = reflexpr(ClassTemplate<int>::function);
 
-  // auto r13 = reflexpr(ClassTemplate<int>::constexpr_function);
+  auto r13 = reflexpr(ClassTemplate<int>::constexpr_function);
 
   auto r14 = reflexpr(ClassTemplate<int>::variable);
 
@@ -209,9 +209,9 @@ constexpr int test() {
 
   auto r22 = reflexpr(S::EC::X);
 
-  // auto r23 = reflexpr(S::function);
+  auto r23 = reflexpr(S::function);
 
-  // auto r24 = reflexpr(S::constexpr_function);
+  auto r24 = reflexpr(S::constexpr_function);
 
   auto r25 = reflexpr(S::variable);
 

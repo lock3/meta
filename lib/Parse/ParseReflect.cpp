@@ -21,8 +21,9 @@ using namespace clang;
 /// Parse the operand of a reflexpr expression. This is almost exactly like
 /// parsing a template argument, except that we also allow namespace-names
 /// in this context.
-ParsedReflectionOperand Parser::ParseCXXReflectOperand()
-{
+ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
+  ParseScope ReflectionScope(this, Scope::ReflectionScope);
+
   // The operand is unevaluated.
   EnterExpressionEvaluationContext Unevaluated(
       Actions, Sema::ExpressionEvaluationContext::Unevaluated);

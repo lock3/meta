@@ -131,6 +131,9 @@ public:
 
     /// We are between inheritance colon and the real class/struct definition scope.
     ClassInheritanceScope = 0x800000,
+
+    /// We are in the scope of a reflection.
+    ReflectionScope = 0x1000000,
   };
 
 private:
@@ -442,6 +445,11 @@ public:
   /// Determine whether this scope is a compound statement scope.
   bool isCompoundStmtScope() const {
     return getFlags() & Scope::CompoundStmtScope;
+  }
+
+  /// Determine whether this scope is a reflection scope.
+  bool isReflectionScope() const {
+    return getFlags() & Scope::ReflectionScope;
   }
 
   /// Returns if rhs has a higher scope depth than this.
