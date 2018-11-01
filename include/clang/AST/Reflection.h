@@ -185,10 +185,9 @@ enum ReflectionQuery {
   RQ_is_entity,
   RQ_is_unnamed,
 
-  // Objects, references, bitfields, and functions
+  // Declarations
   RQ_is_variable,
   RQ_is_enumerator,
-  RQ_is_function,
   RQ_is_static_data_member,
   RQ_is_static_member_function,
   RQ_is_nonstatic_data_member,
@@ -199,6 +198,7 @@ enum ReflectionQuery {
 
   // Types
   RQ_is_type,
+  RQ_is_function,
   RQ_is_class,
   RQ_is_union,
   RQ_is_enum,
@@ -274,7 +274,7 @@ enum ReflectionQuery {
 
   // Traversal
   RQ_get_begin,
-  RQ_get_end,
+  RQ_get_next,
 
   // Name
   RQ_get_name,
@@ -291,7 +291,7 @@ enum ReflectionQuery {
   RQ_last_trait = RQ_get_access_traits,
   // Associated reflections -- these return meta::info.
   RQ_first_assoc = RQ_get_entity,
-  RQ_last_assoc = RQ_get_end,
+  RQ_last_assoc = RQ_get_next,
   // Names -- these return const char*
   RQ_first_name = RQ_get_name,
   RQ_last_name = RQ_get_display_name,

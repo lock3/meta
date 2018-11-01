@@ -199,13 +199,6 @@ static bool isEnumerator(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a function.
-static bool isFunction(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<FunctionDecl>(D));
-  return SuccessFalse(R, Result);
-}
-
 /// Returns the reflected member function.
 static const CXXMethodDecl *getAsMemberFunction(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
@@ -279,6 +272,14 @@ static bool isType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a function.
+static bool isFunction(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getReachableCanonicalType(R)) {
+    return SuccessIf(R, Result, T->isFunctionType());
+  }
+  return SuccessFalse(R, Result);
+}
+
 /// Returns true if R designates a class.
 static bool isClass(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R)) {
@@ -335,7 +336,7 @@ static bool isExpression(const Reflection &R, APValue &Result) {
 }
 
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
-  assert(isPredicateQuery(Q));
+  assert(isPredicateQuery(Q) && "invalid query");
   switch (Q) {
   case RQ_is_invalid:
     return ::isInvalid(*this, Result);
@@ -348,8 +349,6 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isVariable(*this, Result);
   case RQ_is_enumerator:
     return isEnumerator(*this, Result);
-  case RQ_is_function:
-    return isFunction(*this, Result);
   case RQ_is_static_data_member:
     return isStaticDataMember(*this, Result);
   case RQ_is_static_member_function:
@@ -367,6 +366,8 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
 
   case RQ_is_type:
     return ::isType(*this, Result);
+  case RQ_is_function:
+    return isFunction(*this, Result);
   case RQ_is_class:
     return isClass(*this, Result);
   case RQ_is_union:
@@ -441,14 +442,199 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
 }
 
 bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
-  return {};
+  assert(isTraitQuery(Q) && "invalid query");
+  switch (Q) {
+  // Traits
+  case RQ_get_variable_traits:
+  case RQ_get_function_traits:
+  case RQ_get_namespace_traits:
+  case RQ_get_linkage_traits:
+  case RQ_get_access_traits:
+    return Error(*this);
+
+  default:
+    break;
+  }
+  llvm_unreachable("invalid traits selector");
 }
 
+/// Set Result to an invalid reflection.
+static bool makeReflection(APValue &Result) {
+  Result = APValue(RK_invalid, nullptr);
+  return true;
+}
+
+/// Set Result to a reflection of D.
+static bool makeReflection(const Decl *D, APValue &Result) {
+  if (!D)
+    return makeReflection(Result);
+  Result = APValue(RK_declaration, D);
+  return true;
+}
+
+/// Set Result to a reflection of D.
+static bool makeReflection(const DeclContext *DC, APValue &Result) {
+  if (!DC)
+    return makeReflection(Result);
+  Result = APValue(RK_declaration, Decl::castFromDeclContext(DC));
+  return true;
+}
+
+/// Set Result to a reflection of T.
+static bool makeReflection(QualType T, APValue &Result) {
+  if (T.isNull())
+    return makeReflection(Result);
+  Result = APValue(RK_type, T.getAsOpaquePtr());
+  return true;
+}
+
+/// Set Result to a reflection of E.
+static bool makeReflection(const Expr *E, APValue &Result) {
+  Result = APValue(RK_declaration, E);
+  return true;
+}
+
+/// Set Result to a reflection of B.
+static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
+  Result = APValue(RK_declaration, B);
+  return true;
+}
+
+static bool getEntity(const Reflection &R, APValue &Result) {
+  if (R.isType()) {
+    /// The entity is the canonical type.
+    QualType T = R.Ctx->getCanonicalType(R.getAsType());
+    return makeReflection(T, Result);
+  }
+  if (R.isDeclaration()) {
+    /// The entity is the canonical declaration.
+    const Decl *D = R.getAsDeclaration()->getCanonicalDecl();
+    return makeReflection(D, Result);
+  }
+  if (R.isExpression()) {
+    /// The entity is the reachable declaration.
+    if (const Decl *D = getReachableDecl(R))
+      return makeReflection(D, Result);
+
+    // FIXME: Give a better error message.
+    return Error(R);
+  }
+  if (R.isBase()) {
+    // The entity is the canonical type named by the specifier.
+    const CXXBaseSpecifier *Base = R.getAsBase();
+    QualType T = R.Ctx->getCanonicalType(Base->getType());
+    return makeReflection(T, Result);
+  }
+  return Error(R);
+}
+
+static bool getParent(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return makeReflection(D->getDeclContext(), Result);
+  return Error(R);
+}
+
+static bool getType(const Reflection &R, APValue &Result) {
+  if (const ValueDecl *VD = getReachableValueDecl(R))
+    return makeReflection(VD->getType(), Result);
+
+  // FIXME: Emit an appropriate error diagnostic.
+  return Error(R);
+}
+
+/// True if D is reflectable. Some declarations are not reflected (e.g.,
+/// access specifiers).
+static bool isReflectableDecl(const Decl *D) {
+  if (!D)
+    return false;
+  if (isa<AccessSpecDecl>(D))
+    return false;
+  if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
+    if (Class->isInjectedClassName())
+      return false;
+  return true;
+}
+
+/// Filter non-reflectable members.
+static const Decl *findNextMember(const Decl *D) {
+  while (!isReflectableDecl(D))
+    D = D->getNextDeclInContext();
+  return D;
+}
+
+/// Returns the first reflectable member.
+static const Decl *getFirstMember(const DeclContext *DC) {
+  return findNextMember(*DC->decls_begin());
+}
+
+/// Returns the next reflectable member
+static const Decl *getNextMember(const Decl *D) {
+  return findNextMember(D->getNextDeclInContext());
+}
+
+/// Returns the reachable declaration context for R, if any.
+static const DeclContext *getReachableDeclContext(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    if (const DeclContext *DC = dyn_cast<DeclContext>(D))
+      return DC;
+  return nullptr;
+}
+
+/// Returns the first member
+static bool getBegin(const Reflection &R, APValue &Result) {
+  if (const DeclContext *DC = getReachableDeclContext(R))
+    return makeReflection(getFirstMember(DC), Result);
+
+  // FIXME: Emit an appropriate error diagnostic.
+  return Error(R);
+}
+
+static bool getNext(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return makeReflection(getNextMember(D), Result);
+
+  // FIXME: Emit an appropriate error diagnostic.
+  return Error(R);
+}
+
+
 bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
-  return {};
+  assert(isAssociatedReflectionQuery(Q) && "invalid query");
+  switch (Q) {
+  // Associated reflections
+  case RQ_get_entity:
+    return getEntity(*this, Result);
+  case RQ_get_parent:
+    return getParent(*this, Result);
+  case RQ_get_type:
+    return getType(*this, Result);
+  case RQ_get_this_ref_type:
+    return Error(*this);
+
+  // Traversal
+  case RQ_get_begin:
+    return getBegin(*this, Result);
+  case RQ_get_next:
+    return getNext(*this, Result);
+
+  default:
+    break;
+  }
+  llvm_unreachable("invalid reflection selector");
 }
 
 bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
-  return {};
+  assert(isAssociatedReflectionQuery(Q) && "invalid query");
+  switch (Q) {
+  // Names
+  case RQ_get_name:
+  case RQ_get_display_name:
+    return Error(*this);
+
+  default:
+    break;
+  }
+
+  llvm_unreachable("invalid name selector");
 }
 
