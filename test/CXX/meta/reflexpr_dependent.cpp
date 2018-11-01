@@ -34,8 +34,8 @@ int test() {
   constexpr auto x3_print = ((void) __reflect_print(x3), 0);
   constexpr auto x4_print = ((void) __reflect_print(x4), 0);
   constexpr auto x5_print = ((void) __reflect_print(x5), 0);
-  // constexpr auto x6_print = ((void) __reflect_print(x6), 0);
-  // constexpr auto x7_print = ((void) __reflect_print(x7), 0);
+  constexpr auto x6_print = ((void) __reflect_print(x6), 0);
+  constexpr auto x7_print = ((void) __reflect_print(x7), 0);
 
   return 0;
 }
