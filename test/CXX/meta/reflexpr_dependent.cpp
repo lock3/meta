@@ -25,11 +25,8 @@ int test() {
   constexpr S1<T> y4 = S1<T>();
   constexpr auto x5 = reflexpr(y4);
 
-  // The ULE this creates is resolving as an implicit call with the current
-  // branch code.
-
-  // constexpr auto x6 = reflexpr(S1<T>::foo);
-  // constexpr auto x7 = reflexpr(S1<T>::variable);
+  constexpr auto x6 = reflexpr(S1<T>::foo);
+  constexpr auto x7 = reflexpr(S1<T>::variable);
 
   // Generate output
   constexpr auto x1_print = ((void) __reflect_print(x1), 0);

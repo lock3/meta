@@ -7284,7 +7284,12 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   }
   case ReflectionOperand::Expression: {
     Expr *Old = Ref.getAsExpression();
-    ExprResult New = getDerived().TransformExpr(Old);
+    /// FIXME: This is a hack, in the case of a reflection operand
+    /// there needs to be support for referencing a non-static member
+    /// functions without invoking it. This is also the case for a
+    /// address of operand. Thus, this is a hack using the address of
+    /// operand logic to get this behavior for free.
+    ExprResult New = getDerived().TransformAddressOfOperand(Old);
     if (New.isInvalid())
       return ExprError();
     // llvm::outs() << "SUBST EXPR\n";
