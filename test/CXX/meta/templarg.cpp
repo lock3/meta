@@ -1,11 +1,11 @@
 // RUN: %clang_cc1 -std=c++1z -freflection -verify %s
 
-template<typename T>
+template<typename T> // expected-note {{template parameter is declared here}}
 struct container {
   T val;
 };
 
-template<int DefaultValue>
+template<int DefaultValue> // expected-note {{template parameter is declared here}}
 struct defaulted_integer {
   int val = DefaultValue;
 };
