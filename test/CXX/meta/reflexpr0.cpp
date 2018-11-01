@@ -24,6 +24,7 @@ enum reflection_query {
   
   // Types
   query_is_type,
+  query_is_function,
   query_is_class,
   query_is_union,
   query_is_enum,
@@ -99,7 +100,7 @@ enum reflection_query {
   
   // Traversal
   query_get_begin,
-  query_get_end,
+  query_get_next,
 
   // Name
   query_get_name,
@@ -137,6 +138,10 @@ namespace N {
 }
 
 constexpr int test() {
+  // FIXME: 
+  // auto r0 = reflexpr(::);
+  // assert(__reflect(query_is_namespace(r0)));
+
   auto r1 = reflexpr(S);
   assert(__reflect(query_is_type, r1));
   assert(__reflect(query_is_class, r1));
@@ -180,8 +185,11 @@ constexpr int test() {
   auto r12a = reflexpr(N); // Finds int N, not namespace N
 
   auto r13 = reflexpr(S::E);
-  
+  // assert(__reflect(query_get_parent, r13) == reflexpr(S));
+  (void)__reflect(query_get_parent, r13);
+
   auto r14 = reflexpr(S::X);
+  (void)__reflect(query_get_type, r14);
   
   auto r15 = reflexpr(S::EC);
   
