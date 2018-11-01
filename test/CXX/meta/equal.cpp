@@ -2,11 +2,9 @@
 
 extern "C" int printf(const char*, ...);
 
-
 struct S {
   int a, b, c;
 };
-
 
 template<meta::info X, typename T>
 bool compare(const T& a, const T& b) {

@@ -19,7 +19,7 @@ void f(int n) {
 
   double dub = 42.0;
   char character = 'a';
-  
+
   constexpr auto meta3 = reflexpr(dub);
   constexpr auto meta4 = reflexpr(character);
 }
@@ -44,7 +44,7 @@ void f() {
 namespace OkDependent {
 
 struct product{};
-  
+
 template<typename T>
 constexpr int test() {
   auto x = reflexpr(T);
@@ -56,5 +56,5 @@ void test_templates() {
   constexpr int x2 = test<product>();
 
 }
-  
+
 }
