@@ -9,7 +9,7 @@ namespace N {
 
 void f(int n) {
   constexpr auto ref_S = reflexpr(S);
-  constexpr auto ref_E = refelxpr(E);
+  constexpr auto ref_E = reflexpr(E);
   constexpr auto ref_EA = reflexpr(A);
   constexpr auto ref_N =  reflexpr(N);
   constexpr auto ref_NM = reflexpr(N::M);
