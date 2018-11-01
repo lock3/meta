@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -std=c++1z -freflection -fsyntax-only -verify %s
+// RUN: %clang_cc1 -std=c++1z -freflection -fsyntax-only -verify %s
 
 constexpr! class C1 {}; // expected-error {{class cannot be marked 'constexpr!'}}
 constexpr! struct S1 {}; // expected-error {{struct cannot be marked 'constexpr!'}}

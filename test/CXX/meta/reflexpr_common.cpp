@@ -1,8 +1,4 @@
-// RUN: %clang -freflection -std=c++1z %s
-
-#include <experimental/meta>
-
-using namespace std::experimental;
+// RUN: %clang_cc1 -freflection -std=c++1z %s
 
 int x1;
 static int x2;
