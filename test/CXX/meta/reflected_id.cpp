@@ -48,7 +48,6 @@ void test_bad() {
 }
 
 int main() {
-  test_template<int>();
   test_template<S>();
   test_template_class_attribute<int>();
   test_template_class_attribute<S>();
