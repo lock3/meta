@@ -24,8 +24,6 @@ void f(int n) {
   constexpr auto meta4 = reflexpr(character);
 }
 
-
-#if 0
 namespace Bad {
 
 void g();
@@ -34,9 +32,11 @@ void g(int);
 template<typename T> void g2(T);
 
 void f() {
-  // reflexpr(x); // expected-error {{reflection of undeclared identifier 'x'}}
-  // reflexpr(g); // expected-error {{reflection of overloaded identifier 'g'}}
-  // reflexpr(g2); // expected-error {{reflection of overloaded identifier 'g2'}}
+  auto a = reflexpr(x); // expected-error {{use of undeclared identifier 'x'}}
+#if 0
+  auto b = reflexpr(g); // expected-error {{reflection of overloaded identifier 'g'}}
+  auto c = reflexpr(g2); // expected-error {{reflection of overloaded identifier 'g2'}}
+#endif
 }
 
 }
@@ -58,4 +58,3 @@ void test_templates() {
 }
   
 }
-#endif
