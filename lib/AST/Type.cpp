@@ -319,10 +319,11 @@ SplitQualType QualType::getSplitDesugaredType(QualType T) {
       if (!Ty->isSugared()) \
         return SplitQualType(Ty, Qs); \
       Cur = Ty->desugar(); \
-      break; \
+      continue; \
     }
 #include "clang/AST/TypeNodes.def"
     }
+    llvm_unreachable("bad type kind!");
   }
 }
 
