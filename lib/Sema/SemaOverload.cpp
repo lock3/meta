@@ -316,6 +316,7 @@ NarrowingKind StandardConversionSequence::getNarrowingKind(
       goto IntegralConversion;
     // Boolean conversions can be from pointers and pointers to members
     // [conv.bool], and those aren't considered narrowing conversions.
+    // This includes conversion from reflections to bool.
     return NK_Not_Narrowing;
 
   // -- from a floating-point type to an integer type, or
@@ -1753,7 +1754,8 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
               FromType->isAnyPointerType() ||
               FromType->isBlockPointerType() ||
               FromType->isMemberPointerType() ||
-              FromType->isNullPtrType())) {
+              FromType->isNullPtrType() ||
+              FromType->isReflectionType())) {
     // Boolean conversions (C++ 4.12).
     SCS.Second = ICK_Boolean_Conversion;
     FromType = S.Context.BoolTy;
@@ -5282,7 +5284,8 @@ static bool CheckConvertedConstantConversions(Sema &S,
     // FIXME: Per core issue 1407, we should not allow this, but that breaks
     // a lot of popular code. We should at least add a warning for this
     // (non-conforming) extension.
-    return SCS.getFromType()->isIntegralOrUnscopedEnumerationType() &&
+    return (SCS.getFromType()->isIntegralOrUnscopedEnumerationType() ||
+            SCS.getFromType()->isReflectionType()) &&
            SCS.getToType(2)->isBooleanType();
 
   case ICK_Pointer_Conversion:

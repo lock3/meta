@@ -2032,7 +2032,7 @@ static bool HandleConversionToBool(const APValue &Val, bool &Result) {
     Result = Val.getMemberPointerDecl();
     return true;
   case APValue::Reflection:
-    Result = Val.isInvalidReflection();
+    Result = !Val.isInvalidReflection();
     return true;
   case APValue::Vector:
   case APValue::Array:
@@ -9762,9 +9762,6 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
   QualType LHSTy = E->getLHS()->getType();
   QualType RHSTy = E->getRHS()->getType();
 
-  llvm::outs() << "BINOP\n";
-  E->dump();
-
   if (LHSTy->isPointerType() && RHSTy->isPointerType() &&
       E->getOpcode() == BO_Sub) {
     LValue LHSValue, RHSValue;
@@ -10078,7 +10075,8 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_FloatingToBoolean:
   case CK_BooleanToSignedIntegral:
   case CK_FloatingComplexToBoolean:
-  case CK_IntegralComplexToBoolean: {
+  case CK_IntegralComplexToBoolean: 
+  case CK_ReflectionToBoolean: {
     bool BoolResult;
     if (!EvaluateAsBooleanCondition(SubExpr, BoolResult, Info))
       return false;
@@ -10577,6 +10575,7 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_FloatingComplexToBoolean:
   case CK_IntegralComplexToReal:
   case CK_IntegralComplexToBoolean:
+  case CK_ReflectionToBoolean:
   case CK_ARCProduceObject:
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
@@ -11224,10 +11223,8 @@ static bool EvaluateAsRValue(EvalInfo &Info, const Expr *E, APValue &Result) {
   if (!CheckLiteralType(Info, E))
     return false;
 
-  if (!::Evaluate(Result, Info, E)) {
-    llvm::outs() << "EVAL\n";
+  if (!::Evaluate(Result, Info, E))
     return false;
-  }
 
   if (E->isGLValue()) {
     LValue LV;

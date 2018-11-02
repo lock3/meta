@@ -1929,6 +1929,9 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
                                          CE->getExprLoc());
   }
 
+  case CK_ReflectionToBoolean:
+    llvm_unreachable("reflection emitted as runtime value");
+
   case CK_ZeroToOCLEvent: {
     assert(DestTy->isEventT() && "CK_ZeroToOCLEvent cast on non-event type");
     return llvm::Constant::getNullValue(ConvertType(DestTy));
