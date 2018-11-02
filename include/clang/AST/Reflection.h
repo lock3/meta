@@ -321,6 +321,9 @@ inline bool isNameQuery(ReflectionQuery Q) {
 }
 
 /// The reflection class provides context for evaluating queries.
+///
+/// FIXME: This might not need diagnostics; we could simply return invalid
+/// reflections, which would make the class much, much easier to implement.
 struct Reflection {
   /// The AST context is needed for global information.
   ASTContext &Ctx;
@@ -348,6 +351,9 @@ struct Reflection {
     : Ctx(C), Ref(R), Query(E), Diag(D) { 
     assert(Ref.isReflection() && "not a reflection");
   }
+
+  /// Returns the reflection kind.
+  ReflectionKind getKind() const { return Ref.getReflectionKind(); }
 
   /// True if this is the invalid reflection.
   bool isInvalid() const {
@@ -405,6 +411,9 @@ struct Reflection {
 
   /// Returns the entity name designated by Q.
   bool GetName(ReflectionQuery, APValue &Result);
+
+  /// True if A and B reflect the same entity.
+  static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
 
 } // namespace clang

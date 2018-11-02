@@ -1919,6 +1919,7 @@ public:
   bool isRealType() const;         // C99 6.2.5p17 (real floating + integer)
   bool isArithmeticType() const;   // C99 6.2.5p18 (integer + floating)
   bool isVoidType() const;         // C99 6.2.5p19
+  bool isReflectionType() const;
   bool isScalarType() const;       // C99 6.2.5p21 (arithmetic + pointers)
   bool isAggregateType() const;
   bool isFundamentalType() const;
@@ -6485,6 +6486,12 @@ inline bool Type::isVoidType() const {
   return false;
 }
 
+inline bool Type::isReflectionType() const {
+  if (const auto *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() == BuiltinType::MetaInfo;
+  return false;
+}
+
 inline bool Type::isHalfType() const {
   if (const auto *BT = dyn_cast<BuiltinType>(CanonicalType))
     return BT->getKind() == BuiltinType::Half;
@@ -6581,9 +6588,8 @@ inline bool Type::isScalarType() const {
 
 inline bool Type::isIntegralOrEnumerationType() const {
   if (const auto *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return (BT->getKind() >= BuiltinType::Bool
-            && BT->getKind() <= BuiltinType::Int128)
-        || BT->getKind() == BuiltinType::MetaInfo;
+    return BT->getKind() >= BuiltinType::Bool && 
+           BT->getKind() <= BuiltinType::Int128;
 
   // Check for a complete enum type; incomplete enum types are not properly an
   // enumeration type in the sense required here.

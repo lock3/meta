@@ -628,3 +628,37 @@ bool Reflection::GetName(ReflectionQuery Q, APValue& Result) {
   llvm_unreachable("invalid name selector");  
 }
 
+/// Returns true if canonical types are equal.
+static bool EqualTypes(ASTContext &Ctx, QualType A, QualType B) {
+  CanQualType CanA = Ctx.getCanonicalType(A);
+  CanQualType CanB = Ctx.getCanonicalType(B);
+  return CanA == CanB;
+}
+
+/// Returns true if the declared entities are the same.
+static bool EqualDecls(const Decl *A, const Decl *B) {
+  const Decl *CanA = A->getCanonicalDecl();
+  const Decl *CanB = B->getCanonicalDecl();
+  return CanA == CanB;
+}
+
+bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
+  assert(A.isReflection() && B.isReflection());
+
+  if (A.getReflectionKind() != B.getReflectionKind())
+    return false;
+
+  switch (A.getReflectionKind()) {
+  case RK_invalid:
+    return true;
+  case RK_type:
+    return EqualTypes(Ctx, 
+                      A.getReflectedType(), 
+                      B.getReflectedType());
+  case RK_declaration:
+    return EqualDecls(A.getReflectedDeclaration(), 
+                      B.getReflectedDeclaration());
+  default:
+    return false;
+  }
+}

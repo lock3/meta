@@ -5110,30 +5110,6 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
-  bool VisitCXXReflectExpr(const CXXReflectExpr *E) {
-    const ReflectionOperand &Ref = E->getOperand();
-    switch (Ref.getKind()) {
-    case ReflectionOperand::Type: {
-      APValue Result(RK_type, Ref.getAsType().getAsOpaquePtr());
-      return DerivedSuccess(Result, E);
-    }
-    case ReflectionOperand::Template: {
-      APValue Result(RK_declaration, Ref.getAsTemplate().getAsTemplateDecl());
-      return DerivedSuccess(Result, E);
-    }
-    case ReflectionOperand::Namespace: {
-      APValue Result(RK_declaration, Ref.getAsNamespace().getNamespace());
-      return DerivedSuccess(Result, E);
-    }
-    case ReflectionOperand::Expression: {
-      APValue Result(RK_expression, Ref.getAsExpression());
-      return DerivedSuccess(Result, E);
-    }
-    }
-
-    llvm_unreachable("invalid reflection");
-  }
-
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
 
   bool VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
@@ -9515,6 +9491,7 @@ EvaluateComparisonBinaryOperator(EvalInfo &Info, const BinaryOperator *E,
       }
       llvm_unreachable("Unrecognised APFloat::cmpResult enum");
     };
+
     return Success(GetCmpRes(), E);
   }
 
@@ -9701,6 +9678,19 @@ EvaluateComparisonBinaryOperator(EvalInfo &Info, const BinaryOperator *E,
     return Success(CCR::Equal, E);
   }
 
+  if (LHSTy->isReflectionType() && RHSTy->isReflectionType()) {
+    APValue LHSValue, RHSValue;
+    if (!Evaluate(LHSValue, Info, E->getLHS()))
+      return false;
+    if (!Evaluate(RHSValue, Info, E->getRHS()))
+      return false;
+
+    if (Reflection::Equal(Info.Ctx, LHSValue, RHSValue))
+      return Success(CCR::Equal, E);
+    else
+      return Success(CCR::Nonequal, E);
+  }
+
   return DoAfter();
 }
 
@@ -9771,6 +9761,9 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
 
   QualType LHSTy = E->getLHS()->getType();
   QualType RHSTy = E->getRHS()->getType();
+
+  llvm::outs() << "BINOP\n";
+  E->dump();
 
   if (LHSTy->isPointerType() && RHSTy->isPointerType() &&
       E->getOpcode() == BO_Sub) {
@@ -11049,6 +11042,65 @@ static bool EvaluateVoid(const Expr *E, EvalInfo &Info) {
   return VoidExprEvaluator(Info).Visit(E);
 }
 
+namespace {
+class ReflectionEvaluator
+  : public ExprEvaluatorBase<ReflectionEvaluator> {
+
+  using BaseType = ExprEvaluatorBase<ReflectionEvaluator>;
+  
+  APValue &Result;
+public:
+  ReflectionEvaluator(EvalInfo &Info, APValue &Result) 
+    : ExprEvaluatorBaseTy(Info), Result(Result) {}
+
+  bool Success(const APValue &V, const Expr *e) { 
+    return Success(V);
+  }
+
+  bool Success(const APValue &V) { 
+    Result = V;
+    return true; 
+  }
+
+  bool VisitCXXReflectExpr(const CXXReflectExpr *E);
+  bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
+};
+
+bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
+  const ReflectionOperand &Ref = E->getOperand();
+  switch (Ref.getKind()) {
+  case ReflectionOperand::Type: {
+    APValue Result(RK_type, Ref.getAsType().getAsOpaquePtr());
+    return Success(Result, E);
+  }
+  case ReflectionOperand::Template: {
+    APValue Result(RK_declaration, Ref.getAsTemplate().getAsTemplateDecl());
+    return Success(Result, E);
+  }
+  case ReflectionOperand::Namespace: {
+    APValue Result(RK_declaration, Ref.getAsNamespace().getNamespace());
+    return Success(Result, E);
+  }
+  case ReflectionOperand::Expression: {
+    APValue Result(RK_expression, Ref.getAsExpression());
+    return Success(Result, E);
+  }
+  }
+  llvm_unreachable("invalid reflection");
+}
+
+bool ReflectionEvaluator::VisitCXXReflectionTraitExpr(
+                                              const CXXReflectionTraitExpr *E) {
+  return BaseType::VisitCXXReflectionTraitExpr(E);
+}
+
+} // end anonymous namespace
+
+static bool EvaluateReflection(const Expr *E, APValue &Result, EvalInfo &Info) {
+  assert(E->isRValue() && E->getType()->isReflectionType());
+  return ReflectionEvaluator(Info, Result).Visit(E);
+}
+
 //===----------------------------------------------------------------------===//
 // Top level Expr::EvaluateAsRValue method.
 //===----------------------------------------------------------------------===//
@@ -11067,6 +11119,9 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
       return false;
   } else if (T->isIntegralOrEnumerationType()) {
     if (!IntExprEvaluator(Info, Result).Visit(E))
+      return false;
+  } else if (T->isReflectionType()) {
+    if (!EvaluateReflection(E, Result, Info))
       return false;
   } else if (T->hasPointerRepresentation()) {
     LValue LV;
@@ -11169,8 +11224,10 @@ static bool EvaluateAsRValue(EvalInfo &Info, const Expr *E, APValue &Result) {
   if (!CheckLiteralType(Info, E))
     return false;
 
-  if (!::Evaluate(Result, Info, E))
+  if (!::Evaluate(Result, Info, E)) {
+    llvm::outs() << "EVAL\n";
     return false;
+  }
 
   if (E->isGLValue()) {
     LValue LV;
