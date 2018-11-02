@@ -13592,47 +13592,51 @@ Sema::BuildForRangeBeginEndCall(SourceLocation Loc,
   return FRS_Success;
 }
 
+/// Build a call to 'std::next' or 'std::distance' for a
+/// Constexpr Expansion Statement.
+/// Return values are the same as BuildForRangeBeginEndCall.
 Sema::ForRangeStatus
-Sema::BuildExpansionNextCall(SourceLocation Loc,
-			     SourceLocation RangeLoc,
-			     const DeclarationNameInfo &NameInfo,
-			     OverloadCandidateSet *CandidateSet,
-			     Expr *Range, ExprResult *CallExpr) {
+Sema::BuildConstexprExpansionCall(SourceLocation Loc,
+				  SourceLocation RangeLoc,
+				  const DeclarationNameInfo &NameInfo,
+				  OverloadCandidateSet *CandidateSet,
+				  MultiExprArg Args,
+				  ExprResult *CallExpr) {
+  Scope *S = nullptr;
+  
   CandidateSet->clear(OverloadCandidateSet::CSK_Normal);
-    UnresolvedSet<0> FoundNames;
-    UnresolvedLookupExpr *Fn =
-      UnresolvedLookupExpr::Create(Context, /*NamingClass=*/nullptr,
-                                   NestedNameSpecifierLoc(), NameInfo,
-                                   /*NeedsADL=*/true, /*Overloaded=*/false,
-                                   FoundNames.begin(), FoundNames.end());
-    bool CandidateSetError = buildOverloadedCallSet(nullptr, Fn, Fn, Range, Loc,
-                                                    CandidateSet, CallExpr);
-    if (CandidateSet->empty() || CandidateSetError) {
-      *CallExpr = ExprError();
-      return FRS_NoViableFunction;
-    }
+  UnresolvedSet<0> FoundNames;
+  UnresolvedLookupExpr *Fn =
+    UnresolvedLookupExpr::Create(Context, /*NamingClass=*/nullptr,
+				 NestedNameSpecifierLoc(), NameInfo,
+				 /*NeedsADL=*/true, /*Overloaded=*/false,
+				 FoundNames.begin(), FoundNames.end());
 
-    OverloadCandidateSet::iterator dude = CandidateSet->begin();
-    dude->Function->dump();
+  bool CandidateSetError = buildOverloadedCallSet(S, Fn, Fn, Args, Loc,
+						  CandidateSet, CallExpr);
+  if (CandidateSet->empty() || CandidateSetError) {
+    *CallExpr = ExprError();
+    return FRS_NoViableFunction;
+  }  
 
-    OverloadCandidateSet::iterator Best;
-    OverloadingResult OverloadResult =
-      CandidateSet->BestViableFunction(*this, Fn->getBeginLoc(), Best);
+  OverloadCandidateSet::iterator Best;
+  OverloadingResult OverloadResult =
+    CandidateSet->BestViableFunction(*this, Fn->getBeginLoc(), Best);
 
-    if (OverloadResult == OR_No_Viable_Function) {
-      *CallExpr = ExprError();
-      return FRS_NoViableFunction;
-    }
-    *CallExpr = FinishOverloadedCallExpr(*this, nullptr, Fn, Fn, Loc, Range,
-                                         Loc, nullptr, CandidateSet, &Best,
-                                         OverloadResult,
-                                         /*AllowTypoCorrection=*/false);
-    if (CallExpr->isInvalid() || OverloadResult != OR_Success) {
-      *CallExpr = ExprError();
-      return FRS_DiagnosticIssued;
-    }
+  if (OverloadResult == OR_No_Viable_Function) {
+    *CallExpr = ExprError();
+    return FRS_NoViableFunction;
+  }
+  *CallExpr = FinishOverloadedCallExpr(*this, S, Fn, Fn, Loc, Args,
+				       Loc, nullptr, CandidateSet, &Best,
+				       OverloadResult,
+				       /*AllowTypoCorrection=*/false);
+  if (CallExpr->isInvalid() || OverloadResult != OR_Success) {
+    *CallExpr = ExprError();
+    return FRS_DiagnosticIssued;
+  }
 
-    return FRS_Success;
+  return FRS_Success;
 }
 
 

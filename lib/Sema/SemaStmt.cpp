@@ -2965,41 +2965,93 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
 
   // FIXME: Support expansion over an array. For arrays, the loop variable
   // should be 'loop-var = __tuple[I]' instead of a get expression.
-  assert(!RangeClassType->isArrayType() &&
-	 "Expansion over arrays not implemented");
+  // assert(!RangeClassType->isArrayType() &&
+  // 	"Expansion over arrays not implemented");
+  if(const ArrayType *UnqAT = RangeType->getAsArrayTypeUnsafe()) {
+    // - if _RangeT is an array type, begin-expr and end-expr are __range and
+    //   __range + __bound, respectively, where __bound is the array bound. If
+    //   _RangeT is an array of unknown size or an array of incomplete type,
+    //   the program is ill-formed;
 
-  // Get the __range.begin() and __range.end() functions
-  OverloadCandidateSet CandidateSet(RangeLoc,
-				    OverloadCandidateSet::CSK_Normal);
-  BeginEndFunction BEFFailure;
-  ForRangeStatus RangeStatus = BuildNonArrayForRange(
-    *this, BeginRangeRef.get(), EndRangeRef.get(), RangeType, BeginVar,
-    EndVar, ColonLoc, SourceLocation(), &CandidateSet, &BeginExpr, &EndExpr,
-    &BEFFailure);
+    // begin-expr is __range.
+    BeginExpr = BeginRangeRef;
+    if (FinishForRangeVarDecl(*this, BeginVar, BeginRangeRef.get(), ColonLoc,
+			      diag::err_for_range_iter_deduction_failure)) {
+      NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+      return StmtError();
+    }
 
-  if (Kind == BFRK_Build && RangeStatus == FRS_NoViableFunction &&
-      BEFFailure == BEF_begin) {
-    // If building the range failed, try dereferencing the range expression
-    // unless a diagnostic was issued or the end function is problematic.
-    StmtResult SR = RebuildForRangeWithDereference(*this, S, ForLoc,
-						   SourceLocation(),
-						   LoopVarDecl, ColonLoc,
-						   Range, RangeLoc,
-						   RParenLoc);
-    if (SR.isInvalid() || SR.isUsable())
-      return SR;
+    // Find the array bound.
+    ExprResult BoundExpr;
+    if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(UnqAT)) {
+      BoundExpr = IntegerLiteral::Create(
+	Context, CAT->getSize(), Context.getPointerDiffType(), RangeLoc);
+      Size = CAT->getSize();
+    } else {
+      llvm_unreachable("Unexpected array type in for-range");
+    }
+
+    // end-expr is __range + __bound.
+    EndExpr = ActOnBinOp(S, ColonLoc, tok::plus, EndRangeRef.get(),
+			 BoundExpr.get());
+    if (EndExpr.isInvalid())
+      return StmtError();
+    if (FinishForRangeVarDecl(*this, EndVar, EndExpr.get(), ColonLoc,
+			      diag::err_for_range_iter_deduction_failure)) {
+      NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
+      return StmtError();
+    }
+  } else { // __range is not an array type
+    // Get the __range.begin() and __range.end() functions
+    OverloadCandidateSet CandidateSet(RangeLoc,
+				      OverloadCandidateSet::CSK_Normal);
+    BeginEndFunction BEFFailure;
+    ForRangeStatus RangeStatus = BuildNonArrayForRange(
+      *this, BeginRangeRef.get(), EndRangeRef.get(), RangeType, BeginVar,
+      EndVar, ColonLoc, SourceLocation(), &CandidateSet, &BeginExpr, &EndExpr,
+      &BEFFailure);
+
+    if (Kind == BFRK_Build && RangeStatus == FRS_NoViableFunction &&
+	BEFFailure == BEF_begin) {
+      // If building the range failed, try dereferencing the range expression
+      // unless a diagnostic was issued or the end function is problematic.
+      StmtResult SR = RebuildForRangeWithDereference(*this, S, ForLoc,
+						     SourceLocation(),
+						     LoopVarDecl, ColonLoc,
+						     Range, RangeLoc,
+						     RParenLoc);
+      if (SR.isInvalid() || SR.isUsable())
+	return SR;
+    }
+
+    // Otherwise, emit diagnostics if we haven't already.
+    if (RangeStatus == FRS_NoViableFunction) {
+      Expr *Range = BEFFailure ? EndRangeRef.get() : BeginRangeRef.get();
+      Diag(Range->getBeginLoc(), diag::err_for_range_invalid)
+	<< RangeLoc << Range->getType() << BEFFailure;
+      CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
+    }
+    // Return an error if no fix was discovered.
+    if (RangeStatus != FRS_Success)
+      return StmtError();
+      
+    // Build and evaluate std::distance(__begin, __end) expression
+    DeclarationName DistanceName(&PP.getIdentifierTable().get("distance"));
+    DeclarationNameInfo DistanceDNI(DistanceName, ColonLoc);
+
+    ExprResult DistanceCall;
+    OverloadCandidateSet DistanceCandidateSet
+      (ColonLoc, OverloadCandidateSet::CSK_Normal);
+    LookupResult DistanceLookup(*this, DistanceDNI, Sema::LookupOrdinaryName);
+
+    Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
+    MultiExprArg MultiArgs(Args);
+    BuildConstexprExpansionCall
+      (ColonLoc, RangeLoc, DistanceDNI,
+       &DistanceCandidateSet, MultiArgs, &DistanceCall);
+
+    DistanceCall.get()->EvaluateAsInt(Size, Context);
   }
-
-  // Otherwise, emit diagnostics if we haven't already.
-  if (RangeStatus == FRS_NoViableFunction) {
-    Expr *Range = BEFFailure ? EndRangeRef.get() : BeginRangeRef.get();
-    Diag(Range->getBeginLoc(), diag::err_for_range_invalid)
-      << RangeLoc << Range->getType() << BEFFailure;
-    CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
-  }
-  // Return an error if no fix was discovered.
-  if (RangeStatus != FRS_Success)
-    return StmtError();
 
   assert(!BeginExpr.isInvalid() && !EndExpr.isInvalid() &&
 	 "invalid range expression in for loop");
@@ -3044,71 +3096,6 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
     return StmtError();
   }
 
-  // Build and check __begin != __end expression.
-  // NotEqExpr = ActOnBinOp(S, ColonLoc, tok::exclaimequal,
-  //                        BeginRef.get(), EndRef.get());
-  // if (!NotEqExpr.isInvalid())
-  //   NotEqExpr = CheckBooleanCondition(ColonLoc, NotEqExpr.get());
-  // if (!NotEqExpr.isInvalid())
-  //   NotEqExpr = ActOnFinishFullExpr(NotEqExpr.get());
-  // if (NotEqExpr.isInvalid()) {
-  //   Diag(RangeLoc, diag::note_for_range_invalid_iterator)
-  //     << RangeLoc << 0 << BeginRangeRef.get()->getType();
-  //   NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
-  //   if (!Context.hasSameType(BeginType, EndType))
-  //     NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
-  //   return StmtError();
-  // }
-
-  // Build and check std::next(begin) expression
-  // DeclarationName NextName(&PP.getIdentifierTable().get("next"));
-  // DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
-
-  // ExprResult CallExpr;
-  // OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
-  // LookupResult MemberLookup(SemaRef, NextNameInfo, Sema::LookupMemberName);
-
-  // BuildExpansionNextCall(ColonLoc, RangeLoc, NextNameInfo, &CandidateSet2,
-  // BeginRangeRef.get(), &CallExpr);
-  // BuildForRangeBeginEndCall(ColonLoc, ColonLoc, NextNameInfo, &CandidateSet2,
-  // 			      MemberLookup, BeginRangeRef.get(),
-  // 			      &CallExpr);
-
-  // llvm::outs() << "std::next?:\n";
-  // CallExpr.get()->dump();
-
-  // Get the name information for 'NNS::distance'
-  CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
-  NestedNameSpecifierLoc NNS =
-    GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
-  IdentifierInfo *DistanceName = &PP.getIdentifierTable().get("distance");
-  DeclarationNameInfo DistanceDNI(DistanceName, ConstexprLoc);
-
-  // Do an initial lookup for NNS::distance
-  LookupResult DistanceR(*this, DistanceDNI.getName(),
-			 ConstexprLoc, Sema::LookupOrdinaryName);
-  if (!LookupQualifiedName(DistanceR, RangeClass->getDeclContext())) {
-    CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
-    Diag(ConstexprLoc, diag::err_no_member) << DistanceName << D->getParent();
-    return StmtError();    
-  }
-
-  const UnresolvedSetImpl &DistanceNames = DistanceR.asUnresolvedSet();
-
-  // Build the lookup expression NNS::distance;
-  UnresolvedLookupExpr *DistanceFn = UnresolvedLookupExpr::Create(
-    Context,
-    /*NamingClass=*/nullptr, NNS,
-    DistanceDNI, /*NeedsADL=*/false,/*Overloaded=*/false,
-    DistanceNames.begin(), DistanceNames.end());  
-
-  // Build the actual call expression 'NNS::distance(__begin, __end)'.
-  Expr *DistanceArgs[] = {BeginExpr.get(), EndExpr.get()};
-  ExprResult DistanceCall =
-    ActOnCallExpr(getCurScope(), DistanceFn, ColonLoc, DistanceArgs, ColonLoc);
-
-  DistanceCall.get()->EvaluateAsInt(Size, Context);
-
   // Attach  *__begin  as initializer for VD. Don't touch it if we're just
   // trying to determine whether this would be a valid range.
   if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
@@ -3116,6 +3103,7 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
     if (LoopVar->isInvalidDecl())
       NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
   }
+  
   LoopVar->setConstexpr(true);
   BeginVar->setConstexpr(true);
 
@@ -3428,6 +3416,9 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
 StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 						 Stmt *B) {
 
+  SourceLocation ColonLoc = S->getColonLoc();
+  SourceLocation ConstexprLoc = S->getEllipsisLoc();
+
   VarDecl *RangeVar = S->getRangeVariable();
   QualType RangeVarType = RangeVar->getType();
   QualType RangeClassType = RangeVarType.getNonReferenceType();
@@ -3454,46 +3445,67 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
     MultiLevelTemplateArgumentList MultiArgs(TempArgs);
 
-    // // Don't call std::next(__begin) if we have not yet used __begin.
-    if(I > 0) {
-      SourceLocation ColonLoc = S->getColonLoc();
-      SourceLocation ConstexprLoc = S->getEllipsisLoc();
+    // We don't need any standard library calls for an array.
+    if(!RangeClassType->isArrayType()) {
 
-      // Get the name information for 'NNS::next'
-      CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
-      NestedNameSpecifierLoc NNS =
-    	GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
-      IdentifierInfo *Name = &PP.getIdentifierTable().get("next");
-      DeclarationNameInfo DNI(Name, ConstexprLoc);
+      // // Get the name information for 'NNS::next'
+      // CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
+      // NestedNameSpecifierLoc NNS =
+      // 	GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
+      // IdentifierInfo *Name = &PP.getIdentifierTable().get("next");
+      // DeclarationNameInfo DNI(Name, ConstexprLoc);
 
-      // Do an initial lookup for 'NNS::next' where 'NNS' is the
-      // declartion context of the range type.
-      LookupResult R(*this, DNI.getName(), ConstexprLoc, Sema::LookupOrdinaryName);
-      if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
-    	CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
-    	Diag(ConstexprLoc, diag::err_no_member) << Name << D->getParent();
-    	return StmtError();
-      }
+      // // Do an initial lookup for 'NNS::next' where 'NNS' is the
+      // // declartion context of the range type.
+      // LookupResult R(*this, DNI.getName(), ConstexprLoc, Sema::LookupOrdinaryName);
+      // if (!LookupQualifiedName(R, RangeClass->getDeclContext())) {
+      // 	CXXRecordDecl *D = RangeClassType->getAsCXXRecordDecl();
+      // 	Diag(ConstexprLoc, diag::err_no_member) << Name << D->getParent();
+      // 	return StmtError();
+      // }
 
-      const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+      // const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
 
-      // Build the lookup expression NNS::next;
-      UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
-    	Context,
-    	/*NamingClass=*/nullptr, NNS,
-    	DNI,
-    	/*NeedsADL=*/false,/*Overloaded=*/false,
-    	FoundNames.begin(), FoundNames.end());
+      // // Build the lookup expression NNS::next;
+      // UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+      // 	Context,
+      // 	/*NamingClass=*/nullptr, NNS,
+      // 	DNI,
+      // 	/*NeedsADL=*/false,/*Overloaded=*/false,
+      // 	FoundNames.begin(), FoundNames.end());
 
-      // Build the parameters and the actual call std::next(__begin, I)
-      Expr *NextArgs[] = {S->getBeginExpr(), E};
-      MultiExprArg MultiNextArgs(NextArgs);
-      ExprResult Call =
-    	ActOnCallExpr(getCurScope(), Fn, ColonLoc, MultiNextArgs, ColonLoc);
+      // // Build the parameters and the actual call std::next(__begin, I)
+      // Expr *NextArgs[] = {S->getBeginExpr(), E};
+      // MultiExprArg MultiNextArgs(NextArgs);
+      // ExprResult Call =
+      // 	ActOnCallExpr(getCurScope(), Fn, ColonLoc, MultiNextArgs, ColonLoc);
+
+      DeclarationName NextName(&PP.getIdentifierTable().get("next"));
+      DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
+
+      ExprResult NextCallExpr;
+      OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
+      LookupResult NextCallLookup(*this, NextNameInfo, Sema::LookupOrdinaryName);
+
+      Expr *Args[] = {S->getBeginExpr(), E};
+      MultiExprArg MultiArgs(Args);
+
+      BuildConstexprExpansionCall(ColonLoc, ConstexprLoc,
+				  NextNameInfo, &CandidateSet2,
+				  MultiArgs, &NextCallExpr);
 
       // Add '*std::next(__begin, I)' as the initializer of the loop var.
-      ExprResult DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, Call.get());
+      ExprResult DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, NextCallExpr.get());
       AddInitializerToDecl(LoopVar, DerefExpr.get(), false);
+    } else {
+      ExprResult RangeRef =
+        BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
+      
+      ExprResult Subscript =
+	ActOnArraySubscriptExpr(getCurScope(), RangeRef.get(),
+				ColonLoc, E, ColonLoc);
+
+      AddInitializerToDecl(LoopVar, Subscript.get(), false);
     }
 
     // We need a local instantiation scope with rewriting. This local

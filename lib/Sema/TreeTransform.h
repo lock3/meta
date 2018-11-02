@@ -2087,7 +2087,7 @@ public:
                                                 Sema::BFRK_Rebuild);
   }
 
-  /// Build a new C++ tuple-based for expansion statement.
+  /// Build a new C++ constexpr expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
@@ -2096,7 +2096,9 @@ public:
                                           SourceLocation ColonLoc,
                                           Stmt *RangeVar, Stmt *LoopVar,
                                           SourceLocation RParenLoc) {
-    llvm_unreachable("unimplemented");
+    return getSema().BuildCXXConstexprExpansionStmt
+      (ForLoc, ConstexprLoc, ColonLoc,
+       RangeVar, LoopVar, RParenLoc, Sema::BFRK_Rebuild);
   }
 
   /// Build a new C++ tuple-based pack expansion statement.
@@ -7746,7 +7748,47 @@ TreeTransform<Derived>::TransformCXXTupleExpansionStmt(
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S) {
-  llvm_unreachable("unimplemented");
+  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
+  if (RangeVar.isInvalid())
+    return StmtError();
+
+  // FIXME: Is this actually an evaluated expression.
+  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVar.isInvalid())
+    return StmtError();
+
+  StmtResult NewStmt = S;
+  if (getDerived().AlwaysRebuild() || 
+      RangeVar.get() != S->getRangeVarStmt() ||
+      LoopVar.get() != S->getLoopVarStmt()) {
+    NewStmt = getDerived().RebuildCXXConstexprExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+        LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  StmtResult Body = getDerived().TransformStmt(S->getBody());
+  
+  if (Body.isInvalid())
+    return StmtError();
+
+  // Body has changed but we didn't rebuild the for-range statement. Rebuild
+  // it now so we have a new statement to attach the body to.
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
+    NewStmt = getDerived().RebuildCXXConstexprExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+        LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  if (NewStmt.get() == S)
+    return S;
+
+  CXXConstexprExpansionStmt *CES =
+    cast<CXXConstexprExpansionStmt>(NewStmt.get());
+  return getSema().FinishCXXConstexprExpansionStmt(CES, Body.get());
 }
 
 template <typename Derived>

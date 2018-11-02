@@ -1051,8 +1051,6 @@ CodeGenFunction::EmitCXXConstexprExpansionStmt(
     Blocks.push_back(createBasicBlock("expand.body"));
 
   Blocks.push_back(LoopExit.getBlock());
-
-  SourceRange SR = S.getSourceRange();
   
   LexicalScope ForScope(*this, S.getSourceRange());
   

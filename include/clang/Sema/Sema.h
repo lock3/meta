@@ -2934,11 +2934,14 @@ public:
                                            OverloadCandidateSet *CandidateSet,
                                            Expr *Range, ExprResult *CallExpr);
 
-  ForRangeStatus BuildExpansionNextCall(SourceLocation Loc,
-					SourceLocation RangeLoc,
-					const DeclarationNameInfo &NameInfo,
-					OverloadCandidateSet *CandidateSet,
-					Expr *Range, ExprResult *CallExpr);
+  ForRangeStatus BuildConstexprExpansionCall(SourceLocation Loc,
+					     SourceLocation RangeLoc,
+					     const DeclarationNameInfo
+					     &NameInfo,
+					     OverloadCandidateSet
+					     *CandidateSet,
+					     MultiExprArg Args,
+					     ExprResult *CallExpr);
 
   ExprResult BuildOverloadedCallExpr(Scope *S, Expr *Fn,
                                      UnresolvedLookupExpr *ULE,
