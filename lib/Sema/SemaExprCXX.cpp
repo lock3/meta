@@ -4111,6 +4111,13 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
       FromType = Context.FloatTy;
     }
 
+    // Reflections are not integral types.
+    if (From->getType()->isReflectionType()) {
+      From = ImpCastExprToType(From, Context.BoolTy, 
+                              CK_ReflectionToBoolean).get();
+      break;
+    }
+
     From = ImpCastExprToType(From, Context.BoolTy,
                              ScalarTypeToBooleanCastKind(FromType),
                              VK_RValue, /*BasePath=*/nullptr, CCK).get();

@@ -873,6 +873,8 @@ public:
     case CK_ZeroToOCLEvent:
     case CK_ZeroToOCLQueue:
       return nullptr;
+    case CK_ReflectionToBoolean:
+      llvm_unreachable("reflection emitted as runtime value");
     }
     llvm_unreachable("Invalid CastKind");
   }

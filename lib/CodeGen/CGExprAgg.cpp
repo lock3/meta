@@ -843,6 +843,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_IntegralComplexToBoolean:
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
+  case CK_ReflectionToBoolean:
   case CK_ARCProduceObject:
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:

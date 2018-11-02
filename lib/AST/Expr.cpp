@@ -1658,6 +1658,7 @@ bool CastExpr::CastConsistency() const {
   case CK_MemberPointerToBoolean:
   case CK_FloatingComplexToBoolean:
   case CK_IntegralComplexToBoolean:
+  case CK_ReflectionToBoolean:
   case CK_LValueBitCast:            // -> bool&
   case CK_UserDefinedConversion:    // operator bool()
   case CK_BuiltinFnToFnPtr:
