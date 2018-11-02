@@ -9762,9 +9762,6 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
   QualType LHSTy = E->getLHS()->getType();
   QualType RHSTy = E->getRHS()->getType();
 
-  llvm::outs() << "BINOP\n";
-  E->dump();
-
   if (LHSTy->isPointerType() && RHSTy->isPointerType() &&
       E->getOpcode() == BO_Sub) {
     LValue LHSValue, RHSValue;
@@ -11225,7 +11222,6 @@ static bool EvaluateAsRValue(EvalInfo &Info, const Expr *E, APValue &Result) {
     return false;
 
   if (!::Evaluate(Result, Info, E)) {
-    llvm::outs() << "EVAL\n";
     return false;
   }
 
