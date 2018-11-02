@@ -10434,6 +10434,15 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
     }
   }
 
+  // Reflection equality.
+  if (LHSType == Context.MetaInfoTy && RHSType == Context.MetaInfoTy) {
+    // Only == and != are defined for meta::info values.
+    if (!BinaryOperator::isEqualityOp(Opc))
+      return InvalidOperands(Loc, LHS, RHS);
+    
+    return computeResultTy();
+  }
+
   return InvalidOperands(Loc, LHS, RHS);
 }
 
