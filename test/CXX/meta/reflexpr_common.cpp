@@ -54,6 +54,7 @@ void S1::f3()
   constexpr auto r = reflexpr(y1);
   // assert(kind(r) == meta::data_member_decl);
 
+  assert(__reflect(query_is_void, r) == false);
   assert(__reflect(query_is_null_pointer, r) == false);
   // assert(is_declaration(r) == true);
   assert(__reflect(query_is_type, r) == false);
@@ -86,6 +87,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(x1);
     // assert(kind(r) == meta::variable_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -115,6 +117,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(x2);
     // assert(kind(r) == meta::variable_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -146,6 +149,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(f1);
     // assert(kind(r) == meta::function_decl);
 
+    assert(__reflect(query_is_void, r) == true);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -176,6 +180,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(f2);
     // assert(kind(r) == meta::function_decl);
 
+    assert(__reflect(query_is_void, r) == true);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -204,6 +209,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(f3);
     // assert(kind(r) == meta::function_decl);
 
+    assert(__reflect(query_is_void, r) == true);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -234,6 +240,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(f4);
     // assert(kind(r) == meta::function_decl);
 
+    assert(__reflect(query_is_void, r) == true);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -296,6 +303,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(N);
     // assert(kind(r) == meta::namespace_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -319,6 +327,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(N::M);
     // assert(kind(r) == meta::namespace_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -344,6 +353,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(C1);
     // assert(kind(r) == meta::class_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -371,6 +381,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(C2);
     // assert(kind(r) == meta::class_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -397,6 +408,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1);
     // assert(kind(r) == meta::class_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -420,6 +432,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::C);
     // assert(kind(r) == meta::class_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -444,6 +457,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(U1);
     // assert(kind(r) == meta::class_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -469,6 +483,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::x1);
     // assert(kind(r) == meta::data_member_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -498,6 +513,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::x2);
     // assert(kind(r) == meta::data_member_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -523,6 +539,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::x3);
     // assert(kind(r) == meta::data_member_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -548,6 +565,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::x4);
     // assert(kind(r) == meta::data_member_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -574,6 +592,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::x5);
     // assert(kind(r) == meta::data_member_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -601,6 +620,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::f1);
     // assert(kind(r) == meta::member_function_decl);
 
+    assert(__reflect(query_is_void, r) == true);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -635,6 +655,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S1::f2);
     // assert(kind(r) == meta::member_function_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -669,6 +690,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(S2::f1);
     // assert(kind(r) == meta::member_function_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -707,6 +729,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(E1);
     // assert(kind(r) == meta::enum_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -732,6 +755,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(E2);
     // assert(kind(r) == meta::enum_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -757,6 +781,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(E3);
     // assert(kind(r) == meta::enum_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -784,6 +809,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(X);
     // assert(kind(r) == meta::enumerator_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
@@ -807,6 +833,7 @@ int main(int argc, char* argv[]) {
     constexpr auto r = reflexpr(E2::X);
     // assert(kind(r) == meta::enumerator_decl);
 
+    assert(__reflect(query_is_void, r) == false);
     assert(__reflect(query_is_null_pointer, r) == false);
     // assert(is_declaration(r) == true);
     assert(__reflect(query_is_type, r) == false);
