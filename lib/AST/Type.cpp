@@ -22,6 +22,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateBase.h"
@@ -310,6 +311,8 @@ SplitQualType QualType::getSplitDesugaredType(QualType T) {
 
   QualType Cur = T;
   while (true) {
+    if (const LocInfoType *LITy = dyn_cast<LocInfoType>(Cur.getTypePtr()))
+      Cur = LITy->getType();
     const Type *CurTy = Qs.strip(Cur);
     switch (CurTy->getTypeClass()) {
 #define ABSTRACT_TYPE(Class, Parent)
@@ -378,6 +381,8 @@ QualType QualType::IgnoreParens(QualType T) {
 /// reaches a T or a non-sugared type.
 template<typename T> static const T *getAsSugar(const Type *Cur) {
   while (true) {
+    if (const LocInfoType *LITy = dyn_cast<LocInfoType>(Cur))
+      Cur = LITy->getType().getTypePtr();
     if (const auto *Sugar = dyn_cast<T>(Cur))
       return Sugar;
     switch (Cur->getTypeClass()) {
