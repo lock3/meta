@@ -309,6 +309,13 @@ static bool isScopedEnum(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R has nullptr type.
+static bool isNullPtr(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessIf(R, Result, T->isNullPtrType());
+  return SuccessFalse(R, Result);
+}
+
 /// Returns true if R designates an type alias.
 static bool isTypeAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -379,6 +386,7 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
 
   case RQ_is_void:
   case RQ_is_null_pointer:
+    return isNullPtr(*this, Result);
   case RQ_is_integral:
   case RQ_is_floating_point:
   case RQ_is_array:
