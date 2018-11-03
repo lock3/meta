@@ -2847,7 +2847,7 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     ExprResult ParmRef = BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
     if (ParmRef.isInvalid())
       return StmtError();
-    TemplateArgument Arg(ParmRef.get());
+    TemplateArgument Arg(ParmRef.get(), TemplateArgument::Expression);
     TemplateArgumentLocInfo ArgLocInfo(ParmRef.get());
     TemplateArgumentLoc ArgLoc(Arg, ArgLocInfo);
     TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
