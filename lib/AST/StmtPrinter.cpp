@@ -2725,6 +2725,14 @@ void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   OS << "))";
 }
 
+void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
+  OS << "idexpr(...)"; // TODO Finish this
+}
+
+void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
+  OS << "valueof(...)"; // TODO Finish this
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

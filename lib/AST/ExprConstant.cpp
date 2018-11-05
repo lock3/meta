@@ -11611,6 +11611,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXIdExprExprClass:
+  case Expr::CXXValueOfExprClass:
     return NoDiag();
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass: {

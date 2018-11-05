@@ -8686,6 +8686,16 @@ public:
                                      SourceLocation LParenLoc,
                                      SourceLocation RparenLoc);
 
+  ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
+                                Expr *Refl,
+                                SourceLocation LParenLoc,
+                                SourceLocation RParenLoc);
+
+  ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
+                                 Expr *Refl,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,
                                            SourceLocation EndLoc);

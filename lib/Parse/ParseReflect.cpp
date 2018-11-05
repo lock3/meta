@@ -134,6 +134,65 @@ ExprResult Parser::ParseCXXReflectionTrait() {
   return Actions.ActOnCXXReflectionTrait(Loc, Args, LPLoc, RPLoc);
 }
 
+/// Parse an idexpr expression.
+///
+/// \verbatim
+///   primary-expression:
+///     idexpr '(' constant-expression ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXIdExprExpression() {
+  assert(Tok.is(tok::kw_idexpr) && "Not idexpr");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXIdExprExpr(Loc, Expr.get(), LPLoc, RPLoc);
+}
+
+/// Parse a valueof expression.
+///
+/// \verbatim
+///   primary-expression:
+///     valueof '(' constant-expression ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXValueOfExpression() {
+  assert(Tok.is(tok::kw_valueof) && "Not valueof");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
+}
+
+
 /// Parse a reflected id
 ///
 ///   unqualified-id:

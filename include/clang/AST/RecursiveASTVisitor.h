@@ -2607,6 +2607,8 @@ DEF_TRAVERSE_STMT(CXXConstantExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectionTraitExpr, {})
 DEF_TRAVERSE_STMT(CXXUnreflexprExpr, {})
+DEF_TRAVERSE_STMT(CXXIdExprExpr, {})
+DEF_TRAVERSE_STMT(CXXValueOfExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

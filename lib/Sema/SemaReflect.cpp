@@ -223,9 +223,79 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation KWLoc,
                                               KWLoc, LParenLoc, RParenLoc);
 }
 
+static Reflection EvaluateReflection(Sema &S, Expr *E) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!E->EvaluateAsRValue(Result, S.Context)) {
+    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return Reflection();
+  }
+
+  return Reflection(S.Context, Result.Val);
+}
+
+ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
+                                    Expr *Refl,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation RParenLoc)
+{
+  if (Refl->isTypeDependent() || Refl->isValueDependent())
+    return new (Context) CXXIdExprExpr(Context.DependentTy, Refl, KWLoc,
+                                       LParenLoc, LParenLoc);
+
+  Reflection R = EvaluateReflection(*this, Refl);
+  if (R.isInvalid())
+    return ExprError();
+
+  if (R.isDeclaration()) {
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+      QualType T = VD->getType();
+      ExprValueKind VK = Expr::getValueKindForType(T);
+      return BuildDeclRefExpr(const_cast<ValueDecl *>(VD), T, VK, KWLoc);
+    }
+  }
+
+  // FIXME: Emit a better error diagnostic.
+  Diag(Refl->getExprLoc(), diag::err_expression_not_value_reflection);
+  return ExprError();
+}
+
+ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
+                                     Expr *Refl,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc)
+{
+  if (Refl->isTypeDependent() || Refl->isValueDependent())
+    return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
+                                        LParenLoc, LParenLoc);
+
+  // Process the reflection as if it were a non-dependent idexpr expressio.
+  ExprResult DRE = Sema::ActOnCXXIdExprExpr(KWLoc, Refl, LParenLoc, RParenLoc);
+  if (DRE.isInvalid())
+    return ExprError();
+  Expr *Entity = DRE.get();
+
+  // Evaluate the resulting expression.
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!Entity->EvaluateAsAnyValue(Result, Context)) {
+    Diag(Refl->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      Diag(PD.first, PD.second);
+    return ExprError();
+  }
+
+  return new (Context) CXXConstantExpr(Entity, std::move(Result.Val));
+}
+
+
 static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
                               const APValue& Val) {
-  // Extracting the string valkue from the LValue.
+  // Extracting the string value from the LValue.
   //
   // FIXME: We probably want something like EvaluateAsString in the Expr class.
   APValue::LValueBase Base = Val.getLValueBase();
@@ -241,7 +311,6 @@ static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
   }
   return true;
 }
-
 
 static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
                                  QualType T) {
@@ -338,20 +407,6 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
     return false;
   }
   return true;
-}
-
-static Reflection EvaluateReflection(Sema &S, Expr *E) {
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  if (!E->EvaluateAsRValue(Result, S.Context)) {
-    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      S.Diag(PD.first, PD.second);
-    return Reflection();
-  }
-
-  return Reflection(S.Context, Result.Val);
 }
 
 static bool

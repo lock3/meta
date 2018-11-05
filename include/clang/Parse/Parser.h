@@ -2758,6 +2758,8 @@ private:
 
   bool ParseCXXReflectedId(UnqualifiedId &Result);
   ExprResult ParseCXXUnreflexprExpression();
+  ExprResult ParseCXXIdExprExpression();
+  ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
                                         SourceLocation &EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();

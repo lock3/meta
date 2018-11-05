@@ -352,6 +352,14 @@ void ASTStmtWriter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
+void ASTStmtWriter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getKeywordLoc());

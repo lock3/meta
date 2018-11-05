@@ -5051,6 +5051,106 @@ public:
   }
 };
 
+class CXXIdExprExpr : public Expr {
+  Expr *Reflection;
+
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXIdExprExpr(QualType T, Expr *Reflection,
+                SourceLocation KeywordLoc,
+                SourceLocation LParenLoc, SourceLocation RParenLoc)
+    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection),
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXIdExprExpr(EmptyShell Empty)
+    : Expr(CXXIdExprExprClass, Empty) {}
+
+  /// Returns the reflection operand.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXIdExprExprClass;
+  }
+};
+
+class CXXValueOfExpr : public Expr {
+  Expr *Reflection;
+
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXValueOfExpr(QualType T, Expr *Reflection,
+                 SourceLocation KeywordLoc,
+                 SourceLocation LParenLoc, SourceLocation RParenLoc)
+    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection),
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXValueOfExpr(EmptyShell Empty)
+    : Expr(CXXValueOfExprClass, Empty) {}
+
+  /// Returns the reflection operand.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXValueOfExprClass;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

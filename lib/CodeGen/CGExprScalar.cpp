@@ -786,8 +786,7 @@ public:
   }
   Value *VisitAsTypeExpr(AsTypeExpr *CE);
   Value *VisitAtomicExpr(AtomicExpr *AE);
-
-  Value* VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
+  Value *VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
     return Visit(E->getReflectedDeclExpr());
   }
 };

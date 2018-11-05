@@ -7360,6 +7360,28 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
 
 template <typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
+  ExprResult Refl = getDerived().TransformExpr(E->getReflection());
+  if (Refl.isInvalid())
+    return ExprError();
+
+  return getSema().ActOnCXXIdExprExpr(E->getKeywordLoc(), Refl.get(),
+                                      E->getLParenLoc(), E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
+  ExprResult Refl = getDerived().TransformExpr(E->getReflection());
+  if (Refl.isInvalid())
+    return ExprError();
+
+  return getSema().ActOnCXXValueOfExpr(E->getKeywordLoc(), Refl.get(),
+                                       E->getLParenLoc(), E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   ExprResult ReflectedDeclExpr = TransformExpr(E->getReflectedDeclExpr());
 

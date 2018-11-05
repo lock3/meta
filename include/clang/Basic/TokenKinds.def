@@ -402,6 +402,8 @@ KEYWORD(reflexpr                    , KEYCXX11)
 KEYWORD(templarg                    , KEYCXX11)
 KEYWORD(unqualid                    , KEYCXX11)
 KEYWORD(unreflexpr                  , KEYCXX11)
+KEYWORD(idexpr                      , KEYCXX11)
+KEYWORD(valueof                     , KEYCXX11)
 KEYWORD(__reflect                   , KEYCXX11)
 
 // C++ char8_t proposal

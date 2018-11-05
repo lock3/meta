@@ -1878,6 +1878,14 @@ void StmtProfiler::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }
