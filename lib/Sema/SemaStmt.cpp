@@ -2497,6 +2497,8 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
           EndVar, ColonLoc, CoawaitLoc, &CandidateSet, &BeginExpr, &EndExpr,
           &BEFFailure);
 
+      BeginVar->dump();
+
       if (Kind == BFRK_Build && RangeStatus == FRS_NoViableFunction &&
           BEFFailure == BEF_begin) {
         // If the range is being built from an array parameter, emit a
@@ -2551,7 +2553,6 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
       NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
       NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
     }
-
     BeginDeclStmt =
         ActOnDeclStmt(ConvertDeclToDeclGroup(BeginVar), ColonLoc, ColonLoc);
     EndDeclStmt =
@@ -2923,189 +2924,211 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
   DeclStmt *LoopVarDS = cast<DeclStmt>(LoopVarDecl);
   VarDecl *LoopVar = cast<VarDecl>(LoopVarDS->getSingleDecl());
 
-  llvm::APSInt Size = llvm::APSInt::get(0);
-
-
-  // Get the begin and end statements
-  SourceLocation RangeLoc = RangeVar->getLocation();
-  // RangeClassType == RangeVarNonRefType
-  ExprResult BeginRangeRef = BuildDeclRefExpr(RangeVar, RangeClassType,
-					      VK_LValue, ColonLoc);
-
-  if (BeginRangeRef.isInvalid())
-    return StmtError();
-
-  ExprResult EndRangeRef = BuildDeclRefExpr(RangeVar, RangeClassType,
-					    VK_LValue, ColonLoc);
-
-  if (EndRangeRef.isInvalid())
-    return StmtError();
-
-  QualType AutoType = Context.getAutoDeductType();
-  Expr *Range = RangeVar->getInit();
-  if(!Range)
-    return StmtError();
-  QualType RangeType = Range->getType();
-
-  if (RequireCompleteType(RangeLoc, RangeType,
-			  diag::err_for_range_incomplete_type))
-    return StmtError();
-
-  // Build auto __begin = begin-expr, __end = end-expr.
-  // Divide by 2, since the variables are in the inner scope (loop body).
-  Scope *S = getCurScope();
-  const auto DepthStr = std::to_string(S->getDepth() / 2);
-  VarDecl *BeginVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
-					   std::string("__begin") + DepthStr);
-  VarDecl *EndVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
-					 std::string("__end") + DepthStr);
+  Stmt *BeginStmt = nullptr;
+  Stmt *EndStmt = nullptr;
+  StmtResult BeginDeclStmt = BeginStmt;;
+  StmtResult EndDeclStmt = EndStmt;
 
   // Build begin-expr and end-expr and attach to __begin and __end variables.
   ExprResult BeginExpr, EndExpr;
 
-  // FIXME: Support expansion over an array. For arrays, the loop variable
-  // should be 'loop-var = __tuple[I]' instead of a get expression.
-  // assert(!RangeClassType->isArrayType() &&
-  // 	"Expansion over arrays not implemented");
-  if(const ArrayType *UnqAT = RangeType->getAsArrayTypeUnsafe()) {
-    // - if _RangeT is an array type, begin-expr and end-expr are __range and
-    //   __range + __bound, respectively, where __bound is the array bound. If
-    //   _RangeT is an array of unknown size or an array of incomplete type,
-    //   the program is ill-formed;
+  llvm::APSInt Size = llvm::APSInt::get(0);
 
-    // begin-expr is __range.
-    BeginExpr = BeginRangeRef;
-    if (FinishForRangeVarDecl(*this, BeginVar, BeginRangeRef.get(), ColonLoc,
-			      diag::err_for_range_iter_deduction_failure)) {
-      NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+  if (RangeVarType->isDependentType()) {
+    // The range is implicitly used as a placeholder when it is dependent.
+    RangeVar->markUsed(Context);
+
+    // Deduce any 'auto's in the loop variable as 'DependentTy'. We'll fill
+    // them in properly when we instantiate the loop.
+    if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
+      if (auto *DD = dyn_cast<DecompositionDecl>(LoopVar))
+        for (auto *Binding : DD->bindings())
+          Binding->setType(Context.DependentTy);
+      LoopVar->setType(SubstAutoType(LoopVar->getType(), Context.DependentTy));
+    }
+  } else if (!BeginDeclStmt.get()) {
+
+    // Get the begin and end statements
+    SourceLocation RangeLoc = RangeVar->getLocation();
+    // RangeClassType == RangeVarNonRefType
+    ExprResult BeginRangeRef = BuildDeclRefExpr(RangeVar, RangeClassType,
+						VK_LValue, ColonLoc);
+
+    if (BeginRangeRef.isInvalid())
       return StmtError();
-    }
 
-    // Find the array bound.
-    ExprResult BoundExpr;
-    if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(UnqAT)) {
-      BoundExpr = IntegerLiteral::Create(
-	Context, CAT->getSize(), Context.getPointerDiffType(), RangeLoc);
-      Size = CAT->getSize();
-    } else {
-      llvm_unreachable("Unexpected array type in for-range");
-    }
+    ExprResult EndRangeRef = BuildDeclRefExpr(RangeVar, RangeClassType,
+					      VK_LValue, ColonLoc);
 
-    // end-expr is __range + __bound.
-    EndExpr = ActOnBinOp(S, ColonLoc, tok::plus, EndRangeRef.get(),
-			 BoundExpr.get());
-    if (EndExpr.isInvalid())
+    if (EndRangeRef.isInvalid())
       return StmtError();
-    if (FinishForRangeVarDecl(*this, EndVar, EndExpr.get(), ColonLoc,
-			      diag::err_for_range_iter_deduction_failure)) {
-      NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
-      return StmtError();
-    }
-  } else { // __range is not an array type
-    // Get the __range.begin() and __range.end() functions
-    OverloadCandidateSet CandidateSet(RangeLoc,
-				      OverloadCandidateSet::CSK_Normal);
-    BeginEndFunction BEFFailure;
-    ForRangeStatus RangeStatus = BuildNonArrayForRange(
-      *this, BeginRangeRef.get(), EndRangeRef.get(), RangeType, BeginVar,
-      EndVar, ColonLoc, SourceLocation(), &CandidateSet, &BeginExpr, &EndExpr,
-      &BEFFailure);
 
-    if (Kind == BFRK_Build && RangeStatus == FRS_NoViableFunction &&
-	BEFFailure == BEF_begin) {
-      // If building the range failed, try dereferencing the range expression
-      // unless a diagnostic was issued or the end function is problematic.
-      StmtResult SR = RebuildForRangeWithDereference(*this, S, ForLoc,
-						     SourceLocation(),
-						     LoopVarDecl, ColonLoc,
-						     Range, RangeLoc,
-						     RParenLoc);
-      if (SR.isInvalid() || SR.isUsable())
-	return SR;
-    }
-
-    // Otherwise, emit diagnostics if we haven't already.
-    if (RangeStatus == FRS_NoViableFunction) {
-      Expr *Range = BEFFailure ? EndRangeRef.get() : BeginRangeRef.get();
-      Diag(Range->getBeginLoc(), diag::err_for_range_invalid)
-	<< RangeLoc << Range->getType() << BEFFailure;
-      CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
-    }
-    // Return an error if no fix was discovered.
-    if (RangeStatus != FRS_Success)
+    QualType AutoType = Context.getAutoDeductType();
+    Expr *Range = RangeVar->getInit();
+    if(!Range)
       return StmtError();
+    QualType RangeType = Range->getType();
+
+    if (RequireCompleteType(RangeLoc, RangeType,
+			    diag::err_for_range_incomplete_type))
+      return StmtError();
+
+    // Build auto __begin = begin-expr, __end = end-expr.
+    // Divide by 2, since the variables are in the inner scope (loop body).
+    Scope *S = getCurScope();
+    const auto DepthStr = std::to_string(S->getDepth() / 2);
+    VarDecl *BeginVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
+					     std::string("__begin") + DepthStr);
+    VarDecl *EndVar = BuildForRangeVarDecl(*this, ColonLoc, AutoType,
+					   std::string("__end") + DepthStr);
+
+    // FIXME: Support expansion over an array. For arrays, the loop variable
+    // should be 'loop-var = __tuple[I]' instead of a get expression.
+    // assert(!RangeClassType->isArrayType() &&
+    // 	"Expansion over arrays not implemented");
+    if(const ArrayType *UnqAT = RangeType->getAsArrayTypeUnsafe()) {
+      // - if _RangeT is an array type, begin-expr and end-expr are __range and
+      //   __range + __bound, respectively, where __bound is the array bound. If
+      //   _RangeT is an array of unknown size or an array of incomplete type,
+      //   the program is ill-formed;
+
+      // begin-expr is __range.
+      BeginExpr = BeginRangeRef;
+      if (FinishForRangeVarDecl(*this, BeginVar, BeginRangeRef.get(), ColonLoc,
+				diag::err_for_range_iter_deduction_failure)) {
+	NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+	return StmtError();
+      }
+
+      // Find the array bound.
+      ExprResult BoundExpr;
+      if (const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(UnqAT)) {
+	BoundExpr = IntegerLiteral::Create(
+	  Context, CAT->getSize(), Context.getPointerDiffType(), RangeLoc);
+	Size = CAT->getSize();
+      } else {
+	llvm_unreachable("Unexpected array type in for-range");
+      }
+
+      // end-expr is __range + __bound.
+      EndExpr = ActOnBinOp(S, ColonLoc, tok::plus, EndRangeRef.get(),
+			   BoundExpr.get());
+      if (EndExpr.isInvalid())
+	return StmtError();
+      if (FinishForRangeVarDecl(*this, EndVar, EndExpr.get(), ColonLoc,
+				diag::err_for_range_iter_deduction_failure)) {
+	NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
+	return StmtError();
+      }
+    } else { // __range is not an array type
+      // Get the __range.begin() and __range.end() functions
+      OverloadCandidateSet CandidateSet(RangeLoc,
+					OverloadCandidateSet::CSK_Normal);
+      BeginEndFunction BEFFailure;
+      ForRangeStatus RangeStatus = BuildNonArrayForRange(
+	*this, BeginRangeRef.get(), EndRangeRef.get(), RangeType, BeginVar,
+	EndVar, ColonLoc, SourceLocation(), &CandidateSet, &BeginExpr, &EndExpr,
+	&BEFFailure);
+
+      BeginVar->dump();
+    
+      if (Kind == BFRK_Build && RangeStatus == FRS_NoViableFunction &&
+	  BEFFailure == BEF_begin) {
+	// If building the range failed, try dereferencing the range expression
+	// unless a diagnostic was issued or the end function is problematic.
+	StmtResult SR = RebuildForRangeWithDereference(*this, S, ForLoc,
+						       SourceLocation(),
+						       LoopVarDecl, ColonLoc,
+						       Range, RangeLoc,
+						       RParenLoc);
+	if (SR.isInvalid() || SR.isUsable())
+	  return SR;
+      }
+
+      // Otherwise, emit diagnostics if we haven't already.
+      if (RangeStatus == FRS_NoViableFunction) {
+	Expr *Range = BEFFailure ? EndRangeRef.get() : BeginRangeRef.get();
+	Diag(Range->getBeginLoc(), diag::err_for_range_invalid)
+	  << RangeLoc << Range->getType() << BEFFailure;
+	CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Range);
+      }
+      // Return an error if no fix was discovered.
+      if (RangeStatus != FRS_Success)
+	return StmtError();
       
-    // Build and evaluate std::distance(__begin, __end) expression
-    DeclarationName DistanceName(&PP.getIdentifierTable().get("distance"));
-    DeclarationNameInfo DistanceDNI(DistanceName, ColonLoc);
+      // Build and evaluate std::distance(__begin, __end) expression
+      DeclarationName DistanceName(&PP.getIdentifierTable().get("distance"));
+      DeclarationNameInfo DistanceDNI(DistanceName, ColonLoc);
 
-    ExprResult DistanceCall;
-    OverloadCandidateSet DistanceCandidateSet
-      (ColonLoc, OverloadCandidateSet::CSK_Normal);
-    LookupResult DistanceLookup(*this, DistanceDNI, Sema::LookupOrdinaryName);
+      ExprResult DistanceCall;
+      OverloadCandidateSet DistanceCandidateSet
+	(ColonLoc, OverloadCandidateSet::CSK_Normal);
+      LookupResult DistanceLookup(*this, DistanceDNI, Sema::LookupOrdinaryName);
 
-    Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
-    MultiExprArg MultiArgs(Args);
-    BuildConstexprExpansionCall
-      (ColonLoc, RangeLoc, DistanceDNI,
-       &DistanceCandidateSet, MultiArgs, &DistanceCall);
+      Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
+      MultiExprArg MultiArgs(Args);
+      BuildConstexprExpansionCall
+	(ColonLoc, RangeLoc, DistanceDNI,
+	 &DistanceCandidateSet, MultiArgs, &DistanceCall);
 
-    DistanceCall.get()->EvaluateAsInt(Size, Context);
-  }
+      DistanceCall.get()->EvaluateAsInt(Size, Context);
+    }
 
-  assert(!BeginExpr.isInvalid() && !EndExpr.isInvalid() &&
-	 "invalid range expression in for loop");
+    assert(!BeginExpr.isInvalid() && !EndExpr.isInvalid() &&
+	   "invalid range expression in for loop");
 
-  // Warn if begin and end type are not the same.
-  QualType BeginType = BeginVar->getType(), EndType = EndVar->getType();
-  if (!Context.hasSameType(BeginType, EndType)) {
-    // FIXME: make this diagnostic constexprexpansion specific
-    Diag(RangeLoc, diag::warn_for_range_begin_end_types_differ)
-      << BeginType << EndType;
-    NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
-    NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
-  }
-
-  StmtResult BeginDeclStmt =
-    ActOnDeclStmt(ConvertDeclToDeclGroup(BeginVar), ColonLoc, ColonLoc);
-  StmtResult EndDeclStmt =
-    ActOnDeclStmt(ConvertDeclToDeclGroup(EndVar), ColonLoc, ColonLoc);
-
-  const QualType BeginRefNonRefType = BeginType.getNonReferenceType();
-  ExprResult BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
-					 VK_LValue, ColonLoc);
-  if (BeginRef.isInvalid())
-    return StmtError();
-
-  ExprResult EndRef = BuildDeclRefExpr(EndVar, EndType.getNonReferenceType(),
-				       VK_LValue, ColonLoc);
-  if (EndRef.isInvalid())
-    return StmtError();
-
-  // Build and check *__begin  expression.
-  BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
-			      VK_LValue, ColonLoc);
-  if (BeginRef.isInvalid())
-    return StmtError();
-
-  ExprResult DerefExpr = ActOnUnaryOp(S, ColonLoc, tok::star, BeginRef.get());
-  if (DerefExpr.isInvalid()) {
-    Diag(RangeLoc, diag::note_for_range_invalid_iterator)
-      << RangeLoc << 1 << BeginRangeRef.get()->getType();
-    NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
-    return StmtError();
-  }
-
-  // Attach  *__begin  as initializer for VD. Don't touch it if we're just
-  // trying to determine whether this would be a valid range.
-  if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
-    AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
-    if (LoopVar->isInvalidDecl())
+    // Warn if begin and end type are not the same.
+    QualType BeginType = BeginVar->getType(), EndType = EndVar->getType();
+    if (!Context.hasSameType(BeginType, EndType)) {
+      // FIXME: make this diagnostic constexprexpansion specific
+      Diag(RangeLoc, diag::warn_for_range_begin_end_types_differ)
+	<< BeginType << EndType;
       NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+      NoteForRangeBeginEndFunction(*this, EndExpr.get(), BEF_end);
+    }
+
+    BeginDeclStmt =
+      ActOnDeclStmt(ConvertDeclToDeclGroup(BeginVar), ColonLoc, ColonLoc);
+    EndDeclStmt =
+      ActOnDeclStmt(ConvertDeclToDeclGroup(EndVar), ColonLoc, ColonLoc);
+
+    const QualType BeginRefNonRefType = BeginType.getNonReferenceType();
+    ExprResult BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
+					   VK_LValue, ColonLoc);
+    if (BeginRef.isInvalid())
+      return StmtError();
+
+    ExprResult EndRef = BuildDeclRefExpr(EndVar, EndType.getNonReferenceType(),
+					 VK_LValue, ColonLoc);
+    if (EndRef.isInvalid())
+      return StmtError();
+
+    // Build and check *__begin  expression.
+    BeginRef = BuildDeclRefExpr(BeginVar, BeginRefNonRefType,
+				VK_LValue, ColonLoc);
+    if (BeginRef.isInvalid())
+      return StmtError();
+
+    ExprResult DerefExpr = ActOnUnaryOp(S, ColonLoc, tok::star, BeginRef.get());
+    if (DerefExpr.isInvalid()) {
+      Diag(RangeLoc, diag::note_for_range_invalid_iterator)
+	<< RangeLoc << 1 << BeginRangeRef.get()->getType();
+      NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+      return StmtError();
+    }
+
+    // Attach  *__begin  as initializer for VD. Don't touch it if we're just
+    // trying to determine whether this would be a valid range.
+    if (!LoopVar->isInvalidDecl() && Kind != BFRK_Check) {
+      AddInitializerToDecl(LoopVar, DerefExpr.get(), /*DirectInit=*/false);
+      if (LoopVar->isInvalidDecl())
+	NoteForRangeBeginEndFunction(*this, BeginExpr.get(), BEF_begin);
+    }
+
+    LoopVar->setConstexpr(true);
+    BeginVar->setConstexpr(true);
   }
-  
-  LoopVar->setConstexpr(true);
-  BeginVar->setConstexpr(true);
+ 
 
   Stmt *Ret = new (Context) CXXConstexprExpansionStmt(RangeVarDS,
 						      LoopVarDS,
