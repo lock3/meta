@@ -250,12 +250,9 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
   if (R.isInvalid())
     return ExprError();
 
-  if (R.isDeclaration()) {
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
-      QualType T = VD->getType();
-      ExprValueKind VK = Expr::getValueKindForType(T);
-      return BuildDeclRefExpr(const_cast<ValueDecl *>(VD), T, VK, KWLoc);
-    }
+  if (R.isExpression()) {
+    if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(R.getAsExpression()))
+      return const_cast<DeclRefExpr *>(Ref);
   }
 
   // FIXME: Emit a better error diagnostic.
