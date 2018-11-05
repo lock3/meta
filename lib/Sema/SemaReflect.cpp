@@ -272,24 +272,49 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
                                         LParenLoc, LParenLoc);
 
-  // Process the reflection as if it were a non-dependent idexpr expressio.
-  ExprResult DRE = Sema::ActOnCXXIdExprExpr(KWLoc, Refl, LParenLoc, RParenLoc);
-  if (DRE.isInvalid())
+  Reflection R = EvaluateReflection(*this, Refl);
+  if (R.isInvalid())
     return ExprError();
-  Expr *Entity = DRE.get();
+
+  Expr *Eval = nullptr;
+  if (R.isDeclaration()) {
+    // If this is a value declaration, the build a DeclRefExpr to evaluate.
+    // Otherwise, it's not evaluable.
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+      QualType T = VD->getType();
+      ExprValueKind VK = Expr::getValueKindForType(T);
+      Eval = BuildDeclRefExpr(const_cast<ValueDecl *>(VD), T, VK, KWLoc).get();
+    }
+  } else if (R.isExpression()) {
+    // Just evaluate the expression.
+    Eval = const_cast<Expr *>(R.getAsExpression());
+
+    // But if the expression is a reference to a field. Adjust this to
+    // be a pointer to that field.
+    if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
+      if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
+        QualType Ty = F->getType();
+        const Type *Cls = Context.getTagDeclType(F->getParent()).getTypePtr();
+        Ty = Context.getMemberPointerType(Ty, Cls);
+        Eval = new (Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue, 
+                                           OK_Ordinary, Ref->getExprLoc(), 
+                                           false);
+      }
+    }
+  }
 
   // Evaluate the resulting expression.
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
-  if (!Entity->EvaluateAsAnyValue(Result, Context)) {
-    Diag(Refl->getExprLoc(), diag::reflection_not_constant_expression);
+  if (!Eval->EvaluateAsAnyValue(Result, Context)) {
+    Diag(Eval->getExprLoc(), diag::reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();
   }
 
-  return new (Context) CXXConstantExpr(Entity, std::move(Result.Val));
+  return new (Context) CXXConstantExpr(Eval, std::move(Result.Val));
 }
 
 
