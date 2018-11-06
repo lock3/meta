@@ -1746,7 +1746,8 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
           ExprResult IdExpr = ParseCXXIdExprExpression();
 
           if (IdExpr.isInvalid())
-            llvm_unreachable("Replace with real diagnostic");
+            return ExprError(); // Errors should already be reported
+                                // by ParseCXXIdExprExpression.
 
           LHS = Actions.ActOnMemberAccessExpr(LHS.get(), OpLoc,
                                               OpKind, IdExpr.get());
