@@ -17,6 +17,12 @@ constexpr S s1;
 
 int f() { return 0; }
 
+template<typename T>
+void foo() {
+  static_assert(s1.idexpr(reflexpr(T::num)) == 12);
+  static_assert(s1.idexpr(reflexpr(T::f1))() == 42);
+}
+
 int main() {
   // static_assert(idexpr(reflexpr(42)) == 42); // expected-error
 
@@ -34,4 +40,6 @@ int main() {
   
   static_assert(s1.idexpr(reflexpr(S::num)) == 12);
   static_assert(s1.idexpr(reflexpr(S::f1))() == 42);
+
+  foo<S>();
 }

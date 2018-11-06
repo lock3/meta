@@ -1158,6 +1158,17 @@ CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
   }
 }
 
+CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
+    const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
+    SourceLocation OperatorLoc, Expr *IdExpr)
+    : Expr(CXXDependentScopeMemberExprClass, C.DependentTy, VK_LValue,
+           OK_Ordinary, true, true, true,
+           (Base && Base->containsUnexpandedParameterPack())),
+      Base(Base), BaseType(BaseType), IsArrow(IsArrow),
+      HasTemplateKWAndArgsInfo(false),
+      OperatorLoc(OperatorLoc), IdExpr(IdExpr) {
+}
+
 CXXDependentScopeMemberExpr *
 CXXDependentScopeMemberExpr::Create(const ASTContext &C,
                                 Expr *Base, QualType BaseType, bool IsArrow,
@@ -1180,6 +1191,15 @@ CXXDependentScopeMemberExpr::Create(const ASTContext &C,
                                                TemplateKWLoc,
                                                FirstQualifierFoundInScope,
                                                MemberNameInfo, TemplateArgs);
+}
+
+CXXDependentScopeMemberExpr *
+CXXDependentScopeMemberExpr::Create(const ASTContext &C,
+                                Expr *Base, QualType BaseType, bool IsArrow,
+                                SourceLocation OperatorLoc,
+                                Expr *IdExpr) {
+  return new (C) CXXDependentScopeMemberExpr(C, Base, BaseType, IsArrow,
+                                             OperatorLoc, IdExpr);
 }
 
 CXXDependentScopeMemberExpr *

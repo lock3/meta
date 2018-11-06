@@ -2958,6 +2958,20 @@ public:
                                             TemplateArgs, /*S*/nullptr);
   }
 
+  /// Build a new reflected member reference expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXDependentScopeMemberExpr(Expr *BaseE,
+                                                QualType BaseType,
+                                                bool IsArrow,
+                                                SourceLocation OperatorLoc,
+                                                Expr *IdExpr) {
+    return SemaRef.BuildMemberReferenceExpr(BaseE, BaseType,
+                                            OperatorLoc, IsArrow,
+                                            IdExpr);
+  }
+
   /// Build a new member reference expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -11532,6 +11546,17 @@ TreeTransform<Derived>::TransformCXXDependentScopeMemberExpr(
     OldBase = nullptr;
     BaseType = getDerived().TransformType(E->getBaseType());
     ObjectType = BaseType->getAs<PointerType>()->getPointeeType();
+  }
+
+  // Handle reflection case
+  if (E->getIdExpr()) {
+    ExprResult IdExpr = getDerived().TransformExpr(E->getIdExpr());
+
+    if (IdExpr.isInvalid())
+      return ExprError();
+
+    return getDerived().RebuildCXXDependentScopeMemberExpr(Base.get(),
+        BaseType, E->isArrow(), E->getOperatorLoc(), IdExpr.get());
   }
 
   // Transform the first part of the nested-name-specifier that qualifies

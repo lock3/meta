@@ -700,14 +700,34 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   llvm_unreachable("Unsupported reflection type");
 }
 
-ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
+ExprResult
+Sema::ActOnDependentMemberExpr(Expr *BaseExpr, QualType BaseType,
+                               SourceLocation OpLoc, bool IsArrow,
+                               Expr *IdExpr) {
+  // TODO The non-reflection variant of this provides diagnostics
+  // for some situations even in the dependent context. This is
+  // something we should consider implementing for the reflection
+  // variant.
+  assert(BaseType->isDependentType() ||
+         IdExpr->isTypeDependent() ||
+         IdExpr->isValueDependent());
+
+  // Get the type being accessed in BaseType.  If this is an arrow, the BaseExpr
+  // must have pointer type, and the accessed type is the pointee.
+  return CXXDependentScopeMemberExpr::Create(Context, BaseExpr, BaseType,
+                                             IsArrow, OpLoc, IdExpr);
+}
+
+
+ExprResult Sema::ActOnMemberAccessExpr(Expr *Base,
                                        SourceLocation OpLoc,
                                        tok::TokenKind OpKind,
                                        Expr *IdExpr) {
   bool IsArrow = (OpKind == tok::arrow);
 
   if (IdExpr->isTypeDependent() || IdExpr->isValueDependent()) {
-    llvm_unreachable("Not yet supported");
+    return ActOnDependentMemberExpr(Base, Base->getType(), OpLoc, IsArrow,
+                                    IdExpr);
   }
 
   return BuildMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow,
@@ -729,7 +749,7 @@ static MemberExpr *BuildMemberExpr(
   MemberExpr *E = MemberExpr::Create(
       C, Base, isArrow, OpLoc, /*QualifierLoc=*/NestedNameSpecifierLoc(),
       /*TemplateKWLoc=*/SourceLocation(), ModMember, DeclAccessPair,
-      DeclNameInfo, nullptr, Ty, VK, OK);
+      DeclNameInfo, /*TemplateArgs=*/nullptr, Ty, VK, OK);
   SemaRef.MarkMemberReferenced(E);
   return E;
 }

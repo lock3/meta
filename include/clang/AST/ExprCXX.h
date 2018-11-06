@@ -3536,6 +3536,10 @@ class CXXDependentScopeMemberExpr final
   /// FIXME: could also be a template-id
   DeclarationNameInfo MemberNameInfo;
 
+  /// This is a hack which allows us to work in reflections to the existing
+  /// structure.
+  Expr *IdExpr;
+
   size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
     return HasTemplateKWAndArgsInfo ? 1 : 0;
   }
@@ -3548,6 +3552,11 @@ class CXXDependentScopeMemberExpr final
                               NamedDecl *FirstQualifierFoundInScope,
                               DeclarationNameInfo MemberNameInfo,
                               const TemplateArgumentListInfo *TemplateArgs);
+
+  CXXDependentScopeMemberExpr(const ASTContext &C, Expr *Base,
+                              QualType BaseType, bool IsArrow,
+                              SourceLocation OperatorLoc,
+                              Expr *IdExpr);
 
 public:
   friend class ASTStmtReader;
@@ -3567,6 +3576,10 @@ public:
          SourceLocation TemplateKWLoc, NamedDecl *FirstQualifierFoundInScope,
          DeclarationNameInfo MemberNameInfo,
          const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXDependentScopeMemberExpr *
+  Create(const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
+         SourceLocation OperatorLoc, Expr *IdExpr);
 
   static CXXDependentScopeMemberExpr *
   CreateEmpty(const ASTContext &C, bool HasTemplateKWAndArgsInfo,
@@ -3688,6 +3701,10 @@ public:
 
   ArrayRef<TemplateArgumentLoc> template_arguments() const {
     return {getTemplateArgs(), getNumTemplateArgs()};
+  }
+
+  Expr *getIdExpr() const {
+    return IdExpr;
   }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,

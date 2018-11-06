@@ -8711,7 +8711,10 @@ public:
   ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
                                                         Expr *E);
 
-  ExprResult ActOnMemberAccessExpr(Scope *S, Expr *Base,
+  ExprResult ActOnDependentMemberExpr(Expr *BaseExpr, QualType BaseType,
+                                      SourceLocation OpLoc, bool IsArrow,
+                                      Expr *IdExpr);
+  ExprResult ActOnMemberAccessExpr(Expr *Base,
                                    SourceLocation OpLoc,
                                    tok::TokenKind OpKind,
                                    Expr *IdExpr);
