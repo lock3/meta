@@ -25,17 +25,17 @@ static APValue MakeBool(ASTContext *C, bool B) {
 }
 
 /// Sets result to the truth value of B and returns true.
-static bool SuccessIf(const Reflection &R, APValue &Result, bool B) {
+static bool SuccessBool(const Reflection &R, APValue &Result, bool B) {
   Result = MakeBool(R.Ctx, B);
   return true;
 }
 
 static bool SuccessTrue(const Reflection &R, APValue &Result) {
-  return SuccessIf(R, Result, true);
+  return SuccessBool(R, Result, true);
 }
 
 static bool SuccessFalse(const Reflection &R, APValue &Result) {
-  return SuccessIf(R, Result, false);
+  return SuccessBool(R, Result, false);
 }
 
 // Returns false, possibly saving the diagnostic.
@@ -146,7 +146,7 @@ QualType getReachableCanonicalType(const Reflection &R) {
 
 /// Returns true if R is an invalid reflection.
 static bool isInvalid(const Reflection &R, APValue &Result) {
-  return SuccessIf(R, Result, R.isInvalid());
+  return SuccessBool(R, Result, R.isInvalid());
 }
 
 /// Sets Result to true if R reflects an entity.
@@ -165,7 +165,7 @@ static bool isEntity(const Reflection &R, APValue &Result) {
 
     if (isa<TemplateDecl>(D))
       // Templates are entities (but not template template parameters).
-      return SuccessIf(R, Result, !isa<TemplateTemplateParmDecl>(D));
+      return SuccessBool(R, Result, !isa<TemplateTemplateParmDecl>(D));
 
     if (isa<NamespaceDecl>(D))
       // Namespaces are entities.
@@ -180,7 +180,7 @@ static bool isEntity(const Reflection &R, APValue &Result) {
 static bool isUnnamed(const Reflection &R, APValue &Result) {
   if (const Decl *D = R.getAsDeclaration()) {
     if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
-      return SuccessIf(R, Result, ND->getIdentifier() == nullptr);
+      return SuccessBool(R, Result, ND->getIdentifier() == nullptr);
   }
   return Error(R);
 }
@@ -188,14 +188,14 @@ static bool isUnnamed(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a variable.
 static bool isVariable(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<VarDecl>(D));
+    return SuccessBool(R, Result, isa<VarDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an enumerator.
 static bool isEnumerator(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<EnumConstantDecl>(D));
+    return SuccessBool(R, Result, isa<EnumConstantDecl>(D));
   return SuccessFalse(R, Result);
 }
 
@@ -209,14 +209,14 @@ static const CXXMethodDecl *getAsMemberFunction(const Reflection &R) {
 /// Returns true if R designates a static member function
 static bool isStaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
-    return SuccessIf(R, Result, M->isStatic());
+    return SuccessBool(R, Result, M->isStatic());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a nonstatic member function
 static bool isNonstaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
-    return SuccessIf(R, Result, M->isInstance());
+    return SuccessBool(R, Result, M->isInstance());
   return SuccessFalse(R, Result);
 }
 
@@ -231,7 +231,7 @@ static const FieldDecl *getAsDataMember(const Reflection &R) {
 static bool isStaticDataMember(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R)) {
     if (const VarDecl *Var = dyn_cast<VarDecl>(D))
-      return SuccessIf(R, Result, Var->isStaticDataMember());
+      return SuccessBool(R, Result, Var->isStaticDataMember());
   }
   return SuccessFalse(R, Result);
 }
@@ -247,21 +247,21 @@ static bool isNonstaticDataMember(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a nonstatic data member.
 static bool isBitField(const Reflection &R, APValue &Result) {
   if (const FieldDecl *D = getAsDataMember(R))
-    return SuccessIf(R, Result, D->isBitField());
+    return SuccessBool(R, Result, D->isBitField());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an constructor.
 static bool isConstructor(const Reflection &R,APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<CXXConstructorDecl>(D));
+    return SuccessBool(R, Result, isa<CXXConstructorDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an enumerator.
 static bool isDestructor(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<CXXDestructorDecl>(D));
+    return SuccessBool(R, Result, isa<CXXDestructorDecl>(D));
   return SuccessFalse(R, Result);
 }
 
@@ -275,7 +275,7 @@ static bool isType(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a function.
 static bool isFunction(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R)) {
-    return SuccessIf(R, Result, T->isFunctionType());
+    return SuccessBool(R, Result, T->isFunctionType());
   }
   return SuccessFalse(R, Result);
 }
@@ -283,7 +283,7 @@ static bool isFunction(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a class.
 static bool isClass(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R)) {
-    return SuccessIf(R, Result, T->isRecordType());
+    return SuccessBool(R, Result, T->isRecordType());
   }
   return SuccessFalse(R, Result);
 }
@@ -291,62 +291,62 @@ static bool isClass(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a union.
 static bool isUnion(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
-    return SuccessIf(R, Result, T->isUnionType());
+    return SuccessBool(R, Result, T->isUnionType());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an enum.
 static bool isEnum(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
-    return SuccessIf(R, Result, T->isEnumeralType());
+    return SuccessBool(R, Result, T->isEnumeralType());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a scoped enum.
 static bool isScopedEnum(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
-    return SuccessIf(R, Result, T->isScopedEnumeralType());
+    return SuccessBool(R, Result, T->isScopedEnumeralType());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has void type.
 static bool isVoid(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
-    return SuccessIf(R, Result, T->isVoidType());
+    return SuccessBool(R, Result, T->isVoidType());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has nullptr type.
 static bool isNullPtr(const Reflection &R, APValue &Result) {
   if (MaybeType T = getReachableCanonicalType(R))
-    return SuccessIf(R, Result, T->isNullPtrType());
+    return SuccessBool(R, Result, T->isNullPtrType());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an type alias.
 static bool isTypeAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<TypedefNameDecl>(D));
+    return SuccessBool(R, Result, isa<TypedefNameDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a namespace.
 static bool isNamespace(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<NamespaceDecl>(D));
+    return SuccessBool(R, Result, isa<NamespaceDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a namespace alias.
 static bool isNamespaceAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessIf(R, Result, isa<NamespaceAliasDecl>(D));
+    return SuccessBool(R, Result, isa<NamespaceAliasDecl>(D));
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an expression.
 static bool isExpression(const Reflection &R, APValue &Result) {
-  return SuccessIf(R, Result, R.isExpression());
+  return SuccessBool(R, Result, R.isExpression());
 }
 
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
@@ -561,8 +561,7 @@ static bool getType(const Reflection &R, APValue &Result) {
 /// True if D is reflectable. Some declarations are not reflected (e.g.,
 /// access specifiers).
 static bool isReflectableDecl(const Decl *D) {
-  if (!D)
-    return false;
+  assert(D && "null declaration");
   if (isa<AccessSpecDecl>(D))
     return false;
   if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
@@ -573,7 +572,7 @@ static bool isReflectableDecl(const Decl *D) {
 
 /// Filter non-reflectable members.
 static const Decl *findNextMember(const Decl *D) {
-  while (!isReflectableDecl(D))
+  while (D && !isReflectableDecl(D))
     D = D->getNextDeclInContext();
   return D;
 }
@@ -639,13 +638,59 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   llvm_unreachable("invalid reflection selector");
 }
 
+static StringLiteral *makeString(const Reflection &R, StringRef Str) {
+  QualType StrTy = R.Ctx->getConstantArrayType(R.Ctx->CharTy.withConst(), 
+                                               llvm::APInt(32, Str.size() + 1), 
+                                               ArrayType::Normal, 0);
+  return StringLiteral::Create(*R.Ctx, Str, StringLiteral::Ascii, false, 
+                               StrTy, SourceLocation());
+}
+
+bool getName(const Reflection R, APValue &Result) {
+  if (R.isType()) {
+    QualType T = R.getAsType();
+    
+    // See through loc infos.
+    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+      T = LIT->getType();
+
+    // Render the string of the type.
+    PrintingPolicy PP = R.Ctx->getPrintingPolicy();
+    PP.SuppressTagKeyword = true;
+    StringLiteral *Str = makeString(R, T.getAsString(PP));
+
+    // Generate the result value.
+    Expr::EvalResult Eval;
+    if (!Str->EvaluateAsLValue(Eval, *R.Ctx))
+      return false;
+    Result = Eval.Val;
+    return true;
+  }
+
+  if (const NamedDecl *ND = dyn_cast<NamedDecl>(getReachableDecl(R))) {
+    if (IdentifierInfo *II = ND->getIdentifier()) {
+      // Get the identifier of the declaration.
+      StringLiteral *Str = makeString(R, II->getName());
+      
+      // Generate the result value.
+      Expr::EvalResult Eval;
+      if (!Str->EvaluateAsLValue(Eval, *R.Ctx))
+        return false;
+      Result = Eval.Val;
+      return true;
+    }
+  }
+
+  return Error(R);
+}
+
 bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
-  assert(isAssociatedReflectionQuery(Q) && "invalid query");
+  assert(isNameQuery(Q) && "invalid query");
   switch (Q) {
   // Names
   case RQ_get_name:
   case RQ_get_display_name:
-    return Error(*this);
+    return getName(*this, Result);
 
   default:
     break;
