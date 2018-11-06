@@ -28,16 +28,16 @@ int main() {
 
   static_assert(&idexpr(reflexpr(global0)) == &global0);
   static_assert(idexpr(reflexpr(global1)) == 75);
-  
+
   static_assert(idexpr(reflexpr(A)) == 0);
   static_assert(idexpr(reflexpr(S::value)) == 4);
   static_assert(&idexpr(reflexpr(S::value)) == &S::value);
-  
+
   // static_assert(idexpr(reflexpr(s1.num)) == 12); // expected-error
-  
+
   static_assert(idexpr(reflexpr(f)) == &f);
   static_assert(idexpr(reflexpr(f)) == f);
-  
+
   static_assert(s1.idexpr(reflexpr(S::num)) == 12);
   static_assert(s1.idexpr(reflexpr(S::f1))() == 42);
 
