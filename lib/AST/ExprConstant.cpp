@@ -5817,7 +5817,6 @@ bool LValueExprEvaluator::VisitDeclRefExpr(const DeclRefExpr *E) {
 
 
 bool LValueExprEvaluator::VisitVarDecl(const Expr *E, const VarDecl *VD) {
-
   // If we are within a lambda's call operator, check whether the 'VD' referred
   // to within 'E' actually represents a lambda-capture that maps to a
   // data-member/field within the closure object, and if so, evaluate to the
@@ -11063,6 +11062,8 @@ public:
 
   bool VisitCXXReflectExpr(const CXXReflectExpr *E);
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
+
+  bool ZeroInitialization(const Expr *E);
 };
 
 bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
@@ -11091,6 +11092,11 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
 bool ReflectionEvaluator::VisitCXXReflectionTraitExpr(
                                               const CXXReflectionTraitExpr *E) {
   return BaseType::VisitCXXReflectionTraitExpr(E);
+}
+
+bool ReflectionEvaluator::ZeroInitialization(const Expr *E) {
+  APValue Result(RK_invalid, nullptr);
+  return Success(Result);
 }
 
 } // end anonymous namespace
