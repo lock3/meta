@@ -9,6 +9,8 @@ enum E { A, B, C };
 struct S {
   static constexpr int value = 4;
   int num = 12;
+
+  constexpr int f1() const { return 42; }
 };
 
 constexpr S s1;
@@ -31,4 +33,5 @@ int main() {
   static_assert(idexpr(reflexpr(f)) == f);
   
   static_assert(s1.idexpr(reflexpr(S::num)) == 12);
+  static_assert(s1.idexpr(reflexpr(S::f1))() == 42);
 }

@@ -700,3 +700,123 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   llvm_unreachable("Unsupported reflection type");
 }
 
+ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
+                                       SourceLocation OpLoc,
+                                       tok::TokenKind OpKind,
+                                       Expr *IdExpr) {
+  bool IsArrow = (OpKind == tok::arrow);
+
+  if (IdExpr->isTypeDependent() || IdExpr->isValueDependent()) {
+    llvm_unreachable("Not yet supported");
+  }
+
+  return BuildMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow,
+                                  IdExpr);
+}
+
+static MemberExpr *BuildMemberExpr(
+    Sema &SemaRef, ASTContext &C, Expr *Base, bool isArrow,
+    SourceLocation OpLoc, const ValueDecl *Member, QualType Ty, ExprValueKind VK,
+    ExprObjectKind OK) {
+  assert((!isArrow || Base->isRValue()) && "-> base must be a pointer rvalue");
+  ValueDecl *ModMember = const_cast<ValueDecl *>(Member);
+
+  // TODO: See if we can improve the source code location information here
+  DeclarationNameInfo DeclNameInfo(Member->getDeclName(), SourceLocation());
+  DeclAccessPair DeclAccessPair = DeclAccessPair::make(ModMember,
+                                                       ModMember->getAccess());
+
+  MemberExpr *E = MemberExpr::Create(
+      C, Base, isArrow, OpLoc, /*QualifierLoc=*/NestedNameSpecifierLoc(),
+      /*TemplateKWLoc=*/SourceLocation(), ModMember, DeclAccessPair,
+      DeclNameInfo, nullptr, Ty, VK, OK);
+  SemaRef.MarkMemberReferenced(E);
+  return E;
+}
+
+// TODO there is a lot of logic that has been duplicated between
+// this and the non-reflection variant of BuildMemberReferenceExpr,
+// we should examine how we might be able to reduce said duplication.
+ExprResult
+Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
+                               SourceLocation OpLoc, bool IsArrow,
+                               Expr *IdExpr) {
+  assert(isa<DeclRefExpr>(IdExpr) && "must be a DeclRefExpr");
+
+  // C++1z [expr.ref]p2:
+  //   For the first option (dot) the first expression shall be a glvalue [...]
+  if (!IsArrow && BaseExpr && BaseExpr->isRValue()) {
+    ExprResult Converted = TemporaryMaterializationConversion(BaseExpr);
+    if (Converted.isInvalid())
+      return ExprError();
+    BaseExpr = Converted.get();
+  }
+
+  const Decl *D = cast<DeclRefExpr>(IdExpr)->getDecl();
+
+  if (const FieldDecl *FD = dyn_cast<FieldDecl>(D)) {
+    // x.a is an l-value if 'a' has a reference type. Otherwise:
+    // x.a is an l-value/x-value/pr-value if the base is (and note
+    //   that *x is always an l-value), except that if the base isn't
+    //   an ordinary object then we must have an rvalue.
+    ExprValueKind VK = VK_LValue;
+    ExprObjectKind OK = OK_Ordinary;
+    if (!IsArrow) {
+      if (BaseExpr->getObjectKind() == OK_Ordinary)
+        VK = BaseExpr->getValueKind();
+      else
+        VK = VK_RValue;
+    }
+    if (VK != VK_RValue && FD->isBitField())
+      OK = OK_BitField;
+
+    // Figure out the type of the member; see C99 6.5.2.3p3, C++ [expr.ref]
+    QualType MemberType = FD->getType();
+    if (const ReferenceType *Ref = MemberType->getAs<ReferenceType>()) {
+      MemberType = Ref->getPointeeType();
+      VK = VK_LValue;
+    } else {
+      QualType BaseType = BaseExpr->getType();
+      if (IsArrow) BaseType = BaseType->getAs<PointerType>()->getPointeeType();
+
+      Qualifiers BaseQuals = BaseType.getQualifiers();
+
+      // GC attributes are never picked up by members.
+      BaseQuals.removeObjCGCAttr();
+
+      // CVR attributes from the base are picked up by members,
+      // except that 'mutable' members don't pick up 'const'.
+      if (FD->isMutable()) BaseQuals.removeConst();
+
+      Qualifiers MemberQuals =
+          Context.getCanonicalType(MemberType).getQualifiers();
+
+      assert(!MemberQuals.hasAddressSpace());
+
+      Qualifiers Combined = BaseQuals + MemberQuals;
+      if (Combined != MemberQuals)
+        MemberType = Context.getQualifiedType(MemberType, Combined);
+    }
+
+    return BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
+                           FD, MemberType, VK, OK);
+  }
+
+  if (const CXXMethodDecl *MemberFn = dyn_cast<CXXMethodDecl>(D)) {
+    QualType MemberTy;
+    ExprValueKind VK;
+    if (MemberFn->isInstance()) {
+      MemberTy = Context.BoundMemberTy;
+      VK = VK_RValue;
+    } else {
+      MemberTy = MemberFn->getType();
+      VK = VK_LValue;
+    }
+
+    return BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
+                           MemberFn, MemberTy, VK, OK_Ordinary);
+  }
+
+  llvm_unreachable("Unsupported decl type");
+}
+

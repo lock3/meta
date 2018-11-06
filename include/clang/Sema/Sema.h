@@ -8711,6 +8711,14 @@ public:
   ParsedTemplateArgument ActOnReflectedTemplateArgument(SourceLocation KWLoc,
                                                         Expr *E);
 
+  ExprResult ActOnMemberAccessExpr(Scope *S, Expr *Base,
+                                   SourceLocation OpLoc,
+                                   tok::TokenKind OpKind,
+                                   Expr *IdExpr);
+  ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
+                                      SourceLocation OpLoc, bool IsArrow,
+                                      Expr *IdExpr);
+
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
   //

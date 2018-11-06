@@ -1742,6 +1742,17 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         if (LHS.isInvalid())
           break;
 
+        if (getLangOpts().CPlusPlus && Tok.is(tok::kw_idexpr)) {
+          ExprResult IdExpr = ParseCXXIdExprExpression();
+
+          if (IdExpr.isInvalid())
+            llvm_unreachable("Replace with real diagnostic");
+
+          LHS = Actions.ActOnMemberAccessExpr(getCurScope(), LHS.get(), OpLoc,
+                                              OpKind, IdExpr.get());
+          break;
+        }
+
         ParseOptionalCXXScopeSpecifier(SS, ObjectType,
                                        /*EnteringContext=*/false,
                                        &MayBePseudoDestructor);
