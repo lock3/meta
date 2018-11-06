@@ -1142,7 +1142,7 @@ CXXDependentScopeMemberExpr::CXXDependentScopeMemberExpr(
                                TemplateKWLoc.isValid()),
       OperatorLoc(OperatorLoc), QualifierLoc(QualifierLoc),
       FirstQualifierFoundInScope(FirstQualifierFoundInScope),
-      MemberNameInfo(MemberNameInfo) {
+      MemberNameInfo(MemberNameInfo), IdExpr(nullptr) {
   if (TemplateArgs) {
     bool Dependent = true;
     bool InstantiationDependent = true;
