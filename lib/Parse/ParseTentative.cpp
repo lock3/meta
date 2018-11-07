@@ -1316,11 +1316,11 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
     //   'friend'
     //   'typedef'
     //   'constexpr'
-    //   'immediate'
+    //   'consteval'
   case tok::kw_friend:
   case tok::kw_typedef:
   case tok::kw_constexpr:
-  case tok::kw_constexpr_bang:
+  case tok::kw_consteval:
     // storage-class-specifier
   case tok::kw_register:
   case tok::kw_static:

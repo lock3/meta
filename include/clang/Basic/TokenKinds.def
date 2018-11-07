@@ -397,7 +397,7 @@ MODULES_KEYWORD(import)
 // C++ metaprogramming keywords
 //
 // FIXME: These should have KEYREFLECT
-KEYWORD(constexpr_bang              , KEYCXX11)
+KEYWORD(consteval                   , KEYCXX11)
 KEYWORD(reflexpr                    , KEYCXX11)
 KEYWORD(templarg                    , KEYCXX11)
 KEYWORD(unqualid                    , KEYCXX11)

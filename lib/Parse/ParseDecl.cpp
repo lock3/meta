@@ -3504,8 +3504,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.setModulePrivateSpec(Loc, PrevSpec, DiagID);
       break;
 
-    // immediate
-    case tok::kw_constexpr_bang:
+    // consteval
+    case tok::kw_consteval:
       isInvalid = DS.SetImmediateSpec(Loc, PrevSpec, DiagID);
       break;
 
@@ -4930,8 +4930,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     // C++ Concepts TS - concept
   case tok::kw_concept:
 
-    // [Meta] immediate
-  case tok::kw_constexpr_bang:
+    // [Meta] consteval keyword
+  case tok::kw_consteval:
 
     // [Meta] reflected-type-specifier
   case tok::annot_refltype:
