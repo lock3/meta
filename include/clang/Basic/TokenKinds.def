@@ -395,19 +395,17 @@ MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
 
 // C++ metaprogramming keywords
-//
-// FIXME: These should have KEYREFLECT
-KEYWORD(consteval                   , KEYCXX11)
-KEYWORD(reflexpr                    , KEYCXX11)
-KEYWORD(templarg                    , KEYCXX11)
-KEYWORD(unqualid                    , KEYCXX11)
-KEYWORD(unreflexpr                  , KEYCXX11)
-KEYWORD(idexpr                      , KEYCXX11)
-KEYWORD(valueof                     , KEYCXX11)
-KEYWORD(__reflect                   , KEYCXX11)
-KEYWORD(__reflect_print             , KEYCXX11)
-KEYWORD(__reflect_pretty_print      , KEYCXX11)
-KEYWORD(__reflect_dump              , KEYCXX11)
+KEYWORD(consteval                   , KEYREFLECT)
+KEYWORD(reflexpr                    , KEYREFLECT)
+KEYWORD(templarg                    , KEYREFLECT)
+KEYWORD(unqualid                    , KEYREFLECT)
+KEYWORD(unreflexpr                  , KEYREFLECT)
+KEYWORD(idexpr                      , KEYREFLECT)
+KEYWORD(valueof                     , KEYREFLECT)
+KEYWORD(__reflect                   , KEYREFLECT)
+KEYWORD(__reflect_print             , KEYREFLECT)
+KEYWORD(__reflect_pretty_print      , KEYREFLECT)
+KEYWORD(__reflect_dump              , KEYREFLECT)
 
 // C++ char8_t proposal
 KEYWORD(char8_t                     , CHAR8SUPPORT)
