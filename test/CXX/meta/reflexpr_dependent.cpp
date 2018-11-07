@@ -29,13 +29,13 @@ int test() {
   constexpr auto x7 = reflexpr(S1<T>::variable);
 
   // Generate output
-  constexpr auto x1_print = ((void) __reflect_print(x1), 0);
-  constexpr auto x2_print = ((void) __reflect_print(x2), 0);
-  constexpr auto x3_print = ((void) __reflect_print(x3), 0);
-  constexpr auto x4_print = ((void) __reflect_print(x4), 0);
-  constexpr auto x5_print = ((void) __reflect_print(x5), 0);
-  constexpr auto x6_print = ((void) __reflect_print(x6), 0);
-  constexpr auto x7_print = ((void) __reflect_print(x7), 0);
+  constexpr auto x1_print = __reflect_pretty_print(x1);
+  constexpr auto x2_print = __reflect_pretty_print(x2);
+  constexpr auto x3_print = __reflect_pretty_print(x3);
+  constexpr auto x4_print = __reflect_pretty_print(x4);
+  constexpr auto x5_print = __reflect_pretty_print(x5);
+  constexpr auto x6_print = __reflect_pretty_print(x6);
+  constexpr auto x7_print = __reflect_pretty_print(x7);
 
   return 0;
 }

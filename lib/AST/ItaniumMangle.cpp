@@ -3580,6 +3580,9 @@ recurse:
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectPrintLiteralExprClass:
+  case Expr::CXXReflectPrintReflectionExprClass:
+  case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::FixedPointLiteralClass:
   {
     if (!NullOut) {

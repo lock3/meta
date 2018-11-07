@@ -5022,6 +5022,174 @@ public:
   }
 };
 
+/// \brief A reflection printing intrinsic for integer and string values.
+class CXXReflectPrintLiteralExpr : public Expr {
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectPrintLiteralExpr(ASTContext &C, QualType T, ArrayRef<Expr *> Args,
+                             SourceLocation KeywordLoc,
+                             SourceLocation LParenLoc,
+                             SourceLocation RParenLoc);
+
+  CXXReflectPrintLiteralExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectPrintLiteralExprClass;
+  }
+};
+
+/// \brief A reflection printing intrinsic for reflections.
+class CXXReflectPrintReflectionExpr : public Expr {
+  Expr *Reflection;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectPrintReflectionExpr(ASTContext &C, QualType T, Expr* Reflection,
+                                SourceLocation KeywordLoc,
+                                SourceLocation LParenLoc,
+                                SourceLocation RParenLoc)
+    : Expr(CXXReflectPrintReflectionExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection), KeywordLoc(KeywordLoc),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXReflectPrintReflectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the reflection to be printed.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectPrintReflectionExprClass;
+  }
+};
+
+/// \brief A reflection dumping intrinsic for reflections.
+class CXXReflectDumpReflectionExpr : public Expr {
+  Expr *Reflection;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectDumpReflectionExpr(ASTContext &C, QualType T, Expr* Reflection,
+                               SourceLocation KeywordLoc,
+                               SourceLocation LParenLoc,
+                               SourceLocation RParenLoc)
+    : Expr(CXXReflectDumpReflectionExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection), KeywordLoc(KeywordLoc),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXReflectDumpReflectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the reflection to be printed.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectDumpReflectionExprClass;
+  }
+};
+
 class CXXUnreflexprExpr : public Expr {
   Expr *ReflectedDeclExpr;
 

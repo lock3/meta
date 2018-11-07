@@ -134,6 +134,99 @@ ExprResult Parser::ParseCXXReflectionTrait() {
   return Actions.ActOnCXXReflectionTrait(Loc, Args, LPLoc, RPLoc);
 }
 
+/// Parse a reflective pretty print of integer and string values.
+///
+/// \verbatim
+///   primary-expression:
+///     __reflect_print '(' expression-list ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXReflectPrintLiteralExpression() {
+  assert(Tok.is(tok::kw___reflect_print) && "Not __reflect_print");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  SmallVector<Expr *, 2> Args;
+  do {
+    ExprResult Expr = ParseConstantExpression();
+    if (Expr.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+    Args.push_back(Expr.get());
+  } while (TryConsumeToken(tok::comma));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXReflectPrintLiteral(Loc, Args, LPLoc, RPLoc);
+}
+
+/// Parse a reflective pretty print of a reflection.
+///
+/// \verbatim
+///   primary-expression:
+///     __reflect_pretty_print '(' reflection ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXReflectPrintReflectionExpression() {
+  assert(Tok.is(tok::kw___reflect_pretty_print) && "Not __reflect_pretty_print");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXReflectPrintReflection(Loc, Reflection.get(),
+                                                LPLoc, RPLoc);
+}
+
+/// Parse a reflective dump of a reflection.
+///
+/// \verbatim
+///   primary-expression:
+///     __reflect_dump '(' reflection ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXReflectDumpReflectionExpression() {
+  assert(Tok.is(tok::kw___reflect_dump) && "Not __reflect_dump");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXReflectDumpReflection(Loc, Reflection.get(),
+                                               LPLoc, RPLoc);
+}
+
 /// Parse an idexpr expression.
 ///
 /// \verbatim

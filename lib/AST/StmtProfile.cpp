@@ -1874,6 +1874,21 @@ void StmtProfiler::VisitCXXReflectionTraitExpr(
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXReflectPrintLiteralExpr(
+                                          const CXXReflectPrintLiteralExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectPrintReflectionExpr(
+                                       const CXXReflectPrintReflectionExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectDumpReflectionExpr(
+                                        const CXXReflectDumpReflectionExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
   VisitExpr(E);
 }

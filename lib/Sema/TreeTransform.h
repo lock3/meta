@@ -1439,6 +1439,42 @@ public:
                                              LParenLoc, RParenLoc);
   }
 
+  /// \brief Build a new reflect print literal expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectPrintLiteralExpr(SmallVectorImpl<Expr *> &Args,
+                                               SourceLocation KeywordLoc,
+                                               SourceLocation LParenLoc,
+                                               SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectPrintLiteral(KeywordLoc, Args,
+                                                 LParenLoc, RParenLoc);
+  }
+
+  /// \brief Build a new reflect print reflection expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectPrintReflectionExpr(Expr *Reflection,
+                                               SourceLocation KeywordLoc,
+                                               SourceLocation LParenLoc,
+                                               SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectPrintReflection(KeywordLoc, Reflection,
+                                                    LParenLoc, RParenLoc);
+  }
+
+  /// \brief Build a new reflect dump reflection expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectDumpReflectionExpr(Expr *Reflection,
+                                                 SourceLocation KeywordLoc,
+                                                 SourceLocation LParenLoc,
+                                                 SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectDumpReflection(KeywordLoc, Reflection,
+                                                   LParenLoc, RParenLoc);
+  }
+
   /// \brief Build a new reflected value expression.
   ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
     return getSema().BuildCXXUnreflexprExpression(Loc, E);
@@ -7370,6 +7406,54 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
   return getDerived().RebuildCXXReflectionTraitExpr(Args, E->getKeywordLoc(),
                                                     E->getLParenLoc(),
                                                     E->getRParenLoc());
+}
+
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectPrintLiteralExpr(
+                                                CXXReflectPrintLiteralExpr *E) {
+  SmallVector<Expr *, 2> Args(E->getNumArgs());
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[i] = Arg.get();
+  }
+
+  return getDerived().RebuildCXXReflectPrintLiteralExpr(Args, E->getKeywordLoc(),
+                                                        E->getLParenLoc(),
+                                                        E->getRParenLoc());
+}
+
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectPrintReflectionExpr(
+                                             CXXReflectPrintReflectionExpr *E) {
+  ExprResult Reflection = getDerived().TransformExpr(E->getReflection());
+  if (Reflection.isInvalid())
+    return ExprError();
+
+  return getDerived().RebuildCXXReflectPrintReflectionExpr(Reflection.get(),
+                                                           E->getKeywordLoc(),
+                                                           E->getLParenLoc(),
+                                                           E->getRParenLoc());
+}
+
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectDumpReflectionExpr(
+                                              CXXReflectDumpReflectionExpr *E) {
+  ExprResult Reflection = getDerived().TransformExpr(E->getReflection());
+  if (Reflection.isInvalid())
+    return ExprError();
+
+  return getDerived().RebuildCXXReflectDumpReflectionExpr(Reflection.get(),
+                                                          E->getKeywordLoc(),
+                                                          E->getLParenLoc(),
+                                                          E->getRParenLoc());
 }
 
 template <typename Derived>

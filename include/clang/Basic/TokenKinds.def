@@ -405,6 +405,9 @@ KEYWORD(unreflexpr                  , KEYCXX11)
 KEYWORD(idexpr                      , KEYCXX11)
 KEYWORD(valueof                     , KEYCXX11)
 KEYWORD(__reflect                   , KEYCXX11)
+KEYWORD(__reflect_print             , KEYCXX11)
+KEYWORD(__reflect_pretty_print      , KEYCXX11)
+KEYWORD(__reflect_dump              , KEYCXX11)
 
 // C++ char8_t proposal
 KEYWORD(char8_t                     , CHAR8SUPPORT)

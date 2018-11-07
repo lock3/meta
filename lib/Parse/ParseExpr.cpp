@@ -1423,6 +1423,15 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___reflect:
     return ParseCXXReflectionTrait();
 
+  case tok::kw___reflect_print:
+    return ParseCXXReflectPrintLiteralExpression();
+
+  case tok::kw___reflect_pretty_print:
+    return ParseCXXReflectPrintReflectionExpression();
+
+  case tok::kw___reflect_dump:
+    return ParseCXXReflectDumpReflectionExpression();
+
 #define REFLECTION_TRAIT(N,Spelling,K)		\
     case tok::kw_##Spelling:
 #include "clang/Basic/TokenKinds.def"

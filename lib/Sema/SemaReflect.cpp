@@ -223,6 +223,100 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation KWLoc,
                                               KWLoc, LParenLoc, RParenLoc);
 }
 
+static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
+ return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
+   return E->isTypeDependent() || E->isValueDependent();
+ });
+}
+
+ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
+                                             SmallVectorImpl<Expr *> &Args,
+                                             SourceLocation LParenLoc,
+                                             SourceLocation RParenLoc) {
+  if (HasDependentParts(Args))
+    return new (Context) CXXReflectPrintLiteralExpr(
+        Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
+
+  for (std::size_t I = 0; I < Args.size(); ++I) {
+    Expr *E = Args[I];
+
+    assert(!E->isTypeDependent() && !E->isValueDependent()
+        && "Dependent element");
+
+    // Get the canonical type of the expression.
+    QualType T = E->getType();
+    if (AutoType *D = T->getContainedAutoType()) {
+      T = D->getDeducedType();
+      if (!T.getTypePtr())
+        llvm_unreachable("Undeduced value reflection");
+    }
+    T = Context.getCanonicalType(T);
+
+    // Ensure we are either working with valid
+    // operands.
+    if (T->isConstantArrayType()) {
+      QualType ElemTy = cast<ArrayType>(T.getTypePtr())->getElementType();
+      if (ElemTy->isCharType())
+        continue;
+    }
+
+    if (T->isIntegerType())
+      continue;
+
+    Diag(E->getExprLoc(), diag::err_reflect_print_literal_wrong_operand_type);
+    return ExprError();
+  }
+
+  // Convert the remaining operands to rvalues.
+  for (std::size_t I = 1; I < Args.size(); ++I) {
+    ExprResult Arg = DefaultLvalueConversion(Args[I]);
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[I] = Arg.get();
+  }
+
+  return new (Context) CXXReflectPrintLiteralExpr(
+    Context, Context.IntTy, Args, KWLoc, LParenLoc, RParenLoc);
+}
+
+ExprResult Sema::ActOnCXXReflectPrintReflection(SourceLocation KWLoc,
+                                                Expr *Reflection,
+                                                SourceLocation LParenLoc,
+                                                SourceLocation RParenLoc) {
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent())
+    return new (Context) CXXReflectPrintReflectionExpr(
+        Context, Context.DependentTy, Reflection, KWLoc, LParenLoc, RParenLoc);
+
+  if (!CheckReflectionOperand(*this, Reflection))
+    return ExprError();
+
+  ExprResult Arg = DefaultLvalueConversion(Reflection);
+  if (Arg.isInvalid())
+    return ExprError();
+
+  return new (Context) CXXReflectPrintReflectionExpr(
+      Context, Context.IntTy, Arg.get(), KWLoc, LParenLoc, RParenLoc);
+}
+
+ExprResult Sema::ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
+                                               Expr *Reflection,
+                                               SourceLocation LParenLoc,
+                                               SourceLocation RParenLoc) {
+  if (Reflection->isTypeDependent() || Reflection->isValueDependent())
+    return new (Context) CXXReflectDumpReflectionExpr(
+        Context, Context.DependentTy, Reflection, KWLoc, LParenLoc, RParenLoc);
+
+  if (!CheckReflectionOperand(*this, Reflection))
+    return ExprError();
+
+  ExprResult Arg = DefaultLvalueConversion(Reflection);
+  if (Arg.isInvalid())
+    return ExprError();
+
+  return new (Context) CXXReflectDumpReflectionExpr(
+      Context, Context.IntTy, Arg.get(), KWLoc, LParenLoc, RParenLoc);
+}
+
 static Reflection EvaluateReflection(Sema &S, Expr *E) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
@@ -460,12 +554,6 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   }
 
   llvm_unreachable("Unsupported reflection type");
-}
-
-static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
- return std::any_of(Parts.begin(), Parts.end(), [](const Expr *E) {
-   return E->isTypeDependent() || E->isValueDependent();
- });
 }
 
 /// Constructs a new identifier from the expressions in Parts. Returns nullptr

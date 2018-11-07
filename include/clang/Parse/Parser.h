@@ -2755,6 +2755,9 @@ private:
   ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXReflectionTrait();
+  ExprResult ParseCXXReflectPrintLiteralExpression();
+  ExprResult ParseCXXReflectPrintReflectionExpression();
+  ExprResult ParseCXXReflectDumpReflectionExpression();
 
   bool ParseCXXReflectedId(UnqualifiedId &Result);
   ExprResult ParseCXXUnreflexprExpression();

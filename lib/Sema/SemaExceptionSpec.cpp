@@ -1277,6 +1277,9 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectPrintLiteralExprClass:
+  case Expr::CXXReflectPrintReflectionExprClass:
+  case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXUnreflexprExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:

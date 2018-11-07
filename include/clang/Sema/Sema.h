@@ -8686,6 +8686,19 @@ public:
                                      SourceLocation LParenLoc,
                                      SourceLocation RparenLoc);
 
+  ExprResult ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
+                                         SmallVectorImpl<Expr *> &Args,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RparenLoc);
+  ExprResult ActOnCXXReflectPrintReflection(SourceLocation KWLoc,
+                                            Expr *Reflection,
+                                            SourceLocation LParenLoc,
+                                            SourceLocation RparenLoc);
+  ExprResult ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
+                                           Expr *Reflection,
+                                           SourceLocation LParenLoc,
+                                           SourceLocation RparenLoc);
+
   ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
                                 Expr *Refl,
                                 SourceLocation LParenLoc,

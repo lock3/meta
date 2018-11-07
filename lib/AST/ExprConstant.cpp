@@ -784,7 +784,7 @@ namespace {
     /// Are we checking an expression for overflow?
     // FIXME: We should check for any kind of undefined or suspicious behavior
     // in such constructs, not just overflow.
-    bool checkingForOverflow() { return EvalMode == EM_EvaluateForOverflow; }
+    bool checkingForOverflow() const { return EvalMode == EM_EvaluateForOverflow; }
 
     EvalInfo(const ASTContext &C, Expr::EvalStatus &S, EvaluationMode Mode)
       : Ctx(const_cast<ASTContext &>(C)), EvalStatus(S), CurrentCall(nullptr),
@@ -5134,6 +5134,125 @@ public:
   }
 };
 
+// Returns true if T is 'const char*' or 'const char[N]'.
+static bool isStringLiteralType(QualType T) {
+  if (const PointerType *P = T->getAs<PointerType>()) {
+    QualType PtType = P->getPointeeType();
+    return PtType->isCharType() && PtType.isConstQualified();
+  } else if (const ArrayType *A = T->getAsArrayTypeUnsafe()) {
+    QualType ElType = A->getElementType();
+    return ElType->isCharType() && T.isConstQualified();
+  }
+
+  return false;
+}
+
+static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
+  QualType T = Info.Ctx.getCanonicalType(PE->getType());
+  if (T->isIntegralType(Info.Ctx)) {
+    llvm::errs() << EV.getInt().getExtValue();
+    return true;
+  } else if (isStringLiteralType(T)) {
+    assert(EV.isLValue() && "Expected lvalue");
+    APValue::LValueBase Base = EV.getLValueBase();
+    assert(Base.is<const Expr *>() && "Expected a string literal initializer");
+    const StringLiteral *Message
+        = cast<StringLiteral>(Base.get<const Expr *>());
+
+    // Evaluate the message so that we can transform it into a string.
+    SmallString<256> Buf;
+    llvm::raw_svector_ostream OS(Buf);
+    Message->outputString(OS);
+    std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+    llvm::errs() << NonQuote;
+    return true;
+  } else if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
+    assert(Ty->getKind() == BuiltinType::MetaInfo && "Must be reflection");
+
+    switch(EV.getReflectionKind()) {
+    case RK_invalid: {
+      llvm::errs() << "<null>";
+      return true;
+    }
+
+    case RK_declaration: {
+      const Decl *D = EV.getReflectedDeclaration();
+      D->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
+      return true;
+    }
+
+    case RK_type: {
+      QualType QT = EV.getReflectedType();
+      QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
+      return true;
+    }
+
+    case RK_expression: {
+      const Expr *E = EV.getReflectedExpression();
+      E->printPretty(llvm::errs(), nullptr, Info.Ctx.getPrintingPolicy());
+      return true;
+    }
+
+    default:
+      break;
+    }
+
+    // TODO We should be able to handle all types of reflections
+    llvm_unreachable("unhandled reflection");
+  }
+
+  llvm_unreachable("unhandled expression type");
+}
+
+static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
+  QualType T = Info.Ctx.getCanonicalType(PE->getType());
+  if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
+    assert(Ty->getKind() == BuiltinType::MetaInfo && "Must be reflection");
+
+    switch(EV.getReflectionKind()) {
+    case RK_invalid: {
+      llvm::errs() << "<null>";
+      return true;
+    }
+
+    case RK_declaration: {
+      const Decl *D = EV.getReflectedDeclaration();
+      D->dump();
+      return true;
+    }
+
+    case RK_type: {
+      QualType QT = EV.getReflectedType();
+      QT.dump();
+      return true;
+    }
+
+    case RK_expression: {
+      const Expr *E = EV.getReflectedExpression();
+      if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
+        DRE->getDecl()->dump();
+        return true;
+      } else {
+        E->dump();
+        return true;
+      }
+    }
+
+    default:
+      break;
+    }
+
+    // TODO We should be able to handle all types of reflections
+    llvm_unreachable("unhandled reflection");
+  }
+
+  llvm_unreachable("unhandled expression type");
+}
+
+static void CompletePrint() {
+  llvm::outs() << '\n';
+}
+
 #if 0
 /// Build a reflection of the declaration in Result.
 static void MakeReflection(const Decl *D, APValue &Result) {
@@ -5361,72 +5480,6 @@ static bool MakeTraits(EvalInfo &Info, APValue &Reflection,
     // return true;
   }
   llvm_unreachable("unhandled reflected construct");
-}
-
-// Returns true if T is 'const char*' or 'const char[N]'.
-static bool isStringLiteralType(QualType T) {
-  if (const PointerType *P = T->getAs<PointerType>())
-    T = P->getPointeeType();
-  else if (const ArrayType *A = T->getAsArrayTypeUnsafe())
-    T = A->getElementType();
-  else
-    return false;
-  return T->isCharType() && T.isConstQualified();
-}
-
-static bool Print(EvalInfo &Info, const CXXReflectionTraitExpr *E, 
-                  SmallVectorImpl<APValue> &Args) {
-  Expr *E0 = E->getArg(0);
-  QualType T = Info.Ctx.getCanonicalType(E0->getType());
-  if (T->isIntegralType(Info.Ctx)) {
-    llvm::errs() << Args[0].getInt().getExtValue() << '\n';
-    return true;
-  } else if (isStringLiteralType(T)) {
-    assert(Args[0].isLValue() && "Expected lvalue");
-    APValue::LValueBase Base = Args[0].getLValueBase();
-    assert(Base.is<const Expr *>() && "Expected a string literal initializer");
-    const StringLiteral *Message 
-        = cast<StringLiteral>(Base.get<const Expr *>());
-
-    // Evaluate the message so that we can transform it into a string.
-    SmallString<256> Buf;
-    llvm::raw_svector_ostream OS(Buf);
-    Message->outputString(OS);
-    std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
-    llvm::errs() << NonQuote << '\n';
-    return true;
-  } else if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
-    if (Ty->getKind() == BuiltinType::MetaInfo) {
-      APValue Reflection = Args[0];
-      if (isNullReflection(Reflection)) {
-        llvm::errs() << "<null>\n";
-      } else if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
-        D->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
-      } else if (const Type *T = getAsReflectedType(Reflection)) {
-        QualType QT(T, 0);
-        QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
-      } else if (const Expr *E = getAsReflectedStatement(Reflection)) {
-        if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
-          DRE->getDecl()->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
-        else
-          llvm_unreachable("unknown statement reflection");
-      } else {
-        // FIXME: we should be able to print things.
-        llvm_unreachable("unknown reflection");
-      }
-      llvm::errs() << '\n';
-      return true;
-    } else {
-      // FIXME: Lookup the value in the enum? Note that it might not
-      // be unique.
-      llvm::errs() << Args[0].getInt().getExtValue() << '\n';
-      return true;
-    }
-  }
-
-  // FIXME: Provide a better diagnostic.
-  Info.CCEDiag(E0, diag::note_invalid_subexpr_in_const_expr);
-  return false;
 }
 
 static StringLiteral *
@@ -7881,6 +7934,10 @@ public:
   bool VisitCXXNoexceptExpr(const CXXNoexceptExpr *E);
   bool VisitSizeOfPackExpr(const SizeOfPackExpr *E);
 
+  bool VisitCXXReflectPrintLiteralExpr(const CXXReflectPrintLiteralExpr *E);
+  bool VisitCXXReflectPrintReflectionExpr(
+                                        const CXXReflectPrintReflectionExpr *E);
+  bool VisitCXXReflectDumpReflectionExpr(const CXXReflectDumpReflectionExpr *E);
   // FIXME: Missing: array subscript of vector, member of vector
 };
 
@@ -10192,6 +10249,63 @@ bool IntExprEvaluator::VisitCXXNoexceptExpr(const CXXNoexceptExpr *E) {
   return Success(E->getValue(), E);
 }
 
+static bool ShouldIgnoreReflectPrintingRequest(const EvalInfo &Info) {
+  return Info.checkingPotentialConstantExpression()
+      || Info.checkingForOverflow();
+}
+
+bool IntExprEvaluator::VisitCXXReflectPrintLiteralExpr(
+                                          const CXXReflectPrintLiteralExpr *E) {
+  if (ShouldIgnoreReflectPrintingRequest(Info))
+    return false;
+
+  for (std::size_t I = 0; I < E->getNumArgs(); ++I) {
+    const Expr *PE = E->getArg(I);
+    APValue EV;
+
+    if (!Evaluate(EV, Info, PE))
+      return false;
+
+    ::Print(Info, PE, EV);
+  }
+  ::CompletePrint();
+
+  return Success(0, E);
+}
+
+bool IntExprEvaluator::VisitCXXReflectPrintReflectionExpr(
+                                    const CXXReflectPrintReflectionExpr *E) {
+  if (ShouldIgnoreReflectPrintingRequest(Info))
+    return false;
+
+  const Expr *PE = E->getReflection();
+  APValue EV;
+
+  if (!Evaluate(EV, Info, PE))
+    return false;
+
+  ::Print(Info, PE, EV);
+  ::CompletePrint();
+
+  return Success(0, E);
+}
+
+bool IntExprEvaluator::VisitCXXReflectDumpReflectionExpr(
+                                        const CXXReflectDumpReflectionExpr *E) {
+  if (ShouldIgnoreReflectPrintingRequest(Info))
+    return false;
+
+  const Expr *PE = E->getReflection();
+  APValue EV;
+
+  if (!Evaluate(EV, Info, PE))
+    return false;
+
+  ::Dump(Info, PE, EV);
+
+  return Success(0, E);
+}
+
 bool FixedPointExprEvaluator::VisitUnaryOperator(const UnaryOperator *E) {
   switch (E->getOpcode()) {
     default:
@@ -11617,6 +11731,9 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectPrintLiteralExprClass:
+  case Expr::CXXReflectPrintReflectionExprClass:
+  case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
     return NoDiag();

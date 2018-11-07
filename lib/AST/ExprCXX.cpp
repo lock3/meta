@@ -1553,3 +1553,17 @@ CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T,
     KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
   std::copy(Args.begin(), Args.end(), this->Args);
 }
+
+CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
+    ASTContext &C, QualType T, ArrayRef<Expr *> Args,
+    SourceLocation KeywordLoc,
+    SourceLocation LParenLoc, SourceLocation RParenLoc)
+  : Expr(CXXReflectPrintLiteralExprClass, T, VK_RValue, OK_Ordinary,
+         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
+         false),
+    NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
+    KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
+  std::copy(Args.begin(), Args.end(), this->Args);
+}

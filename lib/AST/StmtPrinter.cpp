@@ -2719,6 +2719,31 @@ void StmtPrinter::VisitCXXReflectionTraitExpr(CXXReflectionTraitExpr *E) {
   OS << ')';
 }
 
+void StmtPrinter::VisitCXXReflectPrintLiteralExpr(
+                                                CXXReflectPrintLiteralExpr *E) {
+  OS << "__reflect_print(";
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectPrintReflectionExpr(
+                                             CXXReflectPrintReflectionExpr *E) {
+  OS << "__reflect_pretty_print(";
+  PrintExpr(E->getReflection());
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectDumpReflectionExpr(
+                                              CXXReflectDumpReflectionExpr *E) {
+  OS << "__reflect_dump(";
+  PrintExpr(E->getReflection());
+  OS << ')';
+}
+
 void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   OS << "unreflexpr(reflexpr(";
   PrintExpr(E->getReflectedDeclExpr());
