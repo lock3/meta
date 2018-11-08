@@ -2733,13 +2733,15 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   // as a tuple or structure bindings).
   //
   // Build 'auto && __tuple = range-init'.
+  QualType RangeType = IsConstexpr 
+      ? Context.getAutoDeductType()
+      : Context.getAutoRRefDeductType();
   SourceLocation RangeLoc = Range->getBeginLoc();
-  VarDecl *RangeVar = BuildForRangeVarDecl(
-      *this, RangeLoc, Context.getAutoRRefDeductType(),
-      IsConstexpr ? "__range" : "__tuple");
+  VarDecl *RangeVar = BuildForRangeVarDecl(*this, RangeLoc, RangeType, 
+                                           IsConstexpr ? "__range" : "__tuple");
 
-  // FIXME: why doesn't this work?
-  // RangeVar->setConstexpr(IsConstexpr);
+  if (IsConstexpr)
+    RangeVar->setConstexpr(IsConstexpr);
   
   if (FinishForRangeVarDecl(*this, RangeVar, Range, RangeLoc,
                             diag::err_for_range_deduction_failure)) {
@@ -3005,7 +3007,7 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
 					   std::string("__end") + DepthStr);
 
     // Expansion over arrays.
-    if (const ArrayType *UnqAT = RangeType->getAsArrayTypeUnsafe()) {
+    if(const ArrayType *UnqAT = RangeType->getAsArrayTypeUnsafe()) {
       // - if _RangeT is an array type, begin-expr and end-expr are __range and
       //   __range + __bound, respectively, where __bound is the array bound. If
       //   _RangeT is an array of unknown size or an array of incomplete type,
@@ -3094,10 +3096,10 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
       // Build and evaluate std::distance(__begin, __end) expression
       DeclarationName DistanceName(&PP.getIdentifierTable().get("distance"));
       DeclarationNameInfo DistanceDNI(DistanceName, ColonLoc);
-
       ExprResult DistanceCall;
-      OverloadCandidateSet DistanceCandidateSet
-	(ColonLoc, OverloadCandidateSet::CSK_Normal);
+      OverloadCandidateSet DistanceCandidateSet(
+          ColonLoc, 
+          OverloadCandidateSet::CSK_Normal);
       LookupResult DistanceLookup(*this, DistanceDNI, Sema::LookupOrdinaryName);
 
       Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
@@ -3158,7 +3160,7 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
     LoopVar->setConstexpr(true);
     BeginVar->setConstexpr(true);
   }
-
+ 
   Stmt *Ret = new (Context) CXXConstexprExpansionStmt(RangeVarDS,
 						      LoopVarDS,
 						      nullptr,
@@ -3174,6 +3176,7 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
 
   return Ret;
 }
+
 
 StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,
                                            SourceLocation EllipsisLoc,
@@ -3534,7 +3537,6 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 
       DeclarationName NextName(&PP.getIdentifierTable().get("next"));
       DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
-
       ExprResult NextCallExpr;
       OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
       LookupResult NextCallLookup(*this, NextNameInfo, Sema::LookupOrdinaryName);
