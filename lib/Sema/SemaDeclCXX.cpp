@@ -641,7 +641,7 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
 
   if (New->isImmediate() != Old->isImmediate()) {
     TemplateSpecializationKind TSK = New->getTemplateSpecializationKind();
-    // Template specializations may be redeclared constexpr!
+    // Template specializations may be redeclared consteval!
     if ((TSK != TSK_ExplicitSpecialization && New->isImmediate()) ||
 	(TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
       Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
@@ -6394,7 +6394,7 @@ static bool defaultedSpecialMemberIsConstexpr(
     }
   }
 
-  // All OK, it's constexpr!
+  // All OK, it's consteval
   return true;
 }
 

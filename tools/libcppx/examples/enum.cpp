@@ -11,7 +11,7 @@ enum Enum {
 };
 
 template<meta::info enumerator, typename E, E e>
-constexpr! const char* to_string_helper() {
+consteval const char* to_string_helper() {
   constexpr auto meta_enum = valueof(enumerator);
 
   if constexpr(meta_enum == e)
@@ -24,7 +24,7 @@ constexpr! const char* to_string_helper() {
 }
 
 template<meta::info enumeration, typename E, E e>
-constexpr! const char* to_string() {
+consteval const char* to_string() {
   constexpr meta::info first = meta::front(enumeration);
 
   if constexpr(first == 0)

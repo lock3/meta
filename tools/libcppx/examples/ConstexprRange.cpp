@@ -27,10 +27,10 @@ struct array {
 };
 
 template<typename forward_it>
-constexpr! forward_it next(forward_it it, int n = 1) { return forward_it(it.ptr + n); }
+consteval forward_it next(forward_it it, int n = 1) { return forward_it(it.ptr + n); }
 
 template<typename input_it>
-constexpr! int distance(input_it begin, input_it end) {
+consteval int distance(input_it begin, input_it end) {
   return end - begin;
 }
 

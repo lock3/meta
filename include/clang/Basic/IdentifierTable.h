@@ -101,8 +101,8 @@ class IdentifierInfo {
   // True if this is the 'import' contextual keyword.
   unsigned IsModulesImport : 1;
 
-  // True if this is the 'constexpr!' keyword.
-  bool IsConstexprBang : 1;
+  // True if this is the 'consteval' keyword.
+  bool IsConsteval : 1;
   // 29 bits left in a 64-bit word.
 
   // Managed by the language front-end.
@@ -379,11 +379,11 @@ public:
       RecomputeNeedsHandleIdentifier();
   }
 
-  /// Determine whether this is the constexpr! keyword
-  bool isConstexprBang() const { return IsConstexprBang; }
+  /// Determine whether this is the consteval keyword
+  bool isConsteval() const { return IsConsteval; }
 
-  void setConstexprBang(bool I) {
-    IsConstexprBang = I;
+  void setConsteval(bool I = true) {
+    IsConsteval = I;
     if (I)
       NeedsHandleIdentifier = true;
     else
@@ -419,7 +419,7 @@ private:
     NeedsHandleIdentifier = isPoisoned() || hasMacroDefinition() ||
                             isExtensionToken() || isFutureCompatKeyword() ||
                             isOutOfDate() || isModulesImport() ||
-                            isConstexprBang();
+                            isConsteval();
   }
 };
 

@@ -7,7 +7,7 @@ namespace N1 {
   int x;
 }
 
-constexpr! int nesting(meta::info d) {
+consteval int nesting(meta::info d) {
   int n = 0;
   meta::info p = parent(d);
   while (!is_translation_unit(p)) {

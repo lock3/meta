@@ -2421,7 +2421,7 @@ def err_function_concept_exception_spec : Error<
   "function concept cannot have exception specification">;
 def err_concept_decl_invalid_specifiers : Error<
   "%select{variable|function}0 concept cannot be declared "
-  "'%select{thread_local|inline|friend|constexpr|constexpr!}1'">;
+  "'%select{thread_local|inline|friend|constexpr|consteval}1'">;
 def err_function_concept_with_params : Error<
   "function concept cannot have any parameters">;
 def err_function_concept_bool_ret : Error<
@@ -2445,21 +2445,21 @@ def err_incorrect_defaulted_immediate : Error<
   "defaulted definition of %sub{select_special_member_kind}0 "
   "is not implicitly constexpr">;
 def err_immediate_tag : Error<
-  "%select{class|struct|interface|union|enum}0 cannot be marked 'constexpr!'">;
+  "%select{class|struct|interface|union|enum}0 cannot be marked 'consteval'">;
 def err_immediate_no_declarators : Error<
-  "'constexpr!' can only be used in function definitions">;
+  "'consteval' can only be used in function definitions">;
 def err_immediate_var : Error<
-  "variable cannot be marked 'constexpr!'">;
+  "variable cannot be marked 'consteval'">;
 def err_immediate_dtor : Error<
-  "destructor cannot be marked 'constexpr!'">;
+  "destructor cannot be marked 'consteval'">;
 def err_cannot_evaluate_immedate : Error<
-  "cannot evaluate call to constexpr! %select{function|member function}0">;
+  "cannot evaluate call to consteval %select{function|member function}0">;
 def err_immediate_redecl_mismatch : Error<
-  "%select{non-constexpr! declaration of %0 follows constexpr! declaration"
-  "|constexpr! declaration of %0 follows non-constexpr! declaration}1">;
+  "%select{non-consteval declaration of %0 follows consteval declaration"
+  "|consteval declaration of %0 follows non-consteval declaration}1">;
 def err_invalid_immediate : Error<
   "%select{function parameter|function pointer}0 "
-  "cannot be constexpr!">;  
+  "cannot be consteval">;
 
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<

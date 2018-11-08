@@ -53,7 +53,7 @@ IdentifierInfo::IdentifierInfo() {
   RevertedTokenID = false;
   OutOfDate = false;
   IsModulesImport = false;
-  IsConstexprBang = false;
+  IsConsteval = false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -249,9 +249,9 @@ void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
   // Add the '_experimental_modules_import' contextual keyword.
   get("import").setModulesImport(true);
 
-  // Add the 'constexpr!' keyword
-  if(LangOpts.CPlusPlus17)
-    get("constexpr!").setConstexprBang(true);
+  // Add the 'consteval' keyword
+  if (LangOpts.CPlusPlus17)
+    get("consteval").setConsteval();
 }
 
 /// Checks if the specified token kind represents a keyword in the
