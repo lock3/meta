@@ -3096,18 +3096,36 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
       // Build and evaluate std::distance(__begin, __end) expression
       DeclarationName DistanceName(&PP.getIdentifierTable().get("distance"));
       DeclarationNameInfo DistanceDNI(DistanceName, ColonLoc);
+
       ExprResult DistanceCall;
       OverloadCandidateSet DistanceCandidateSet(
           ColonLoc, 
           OverloadCandidateSet::CSK_Normal);
       LookupResult DistanceLookup(*this, DistanceDNI, Sema::LookupOrdinaryName);
 
-      Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
+      llvm::outs() << "__begin\n";
+      BeginExpr.get()->dump();
+      llvm::outs() << "__end\n";
+      EndExpr.get()->dump();
+
+      Expr *Args[] = {BeginExpr.get(), EndExpr.get()};      
       MultiExprArg MultiArgs(Args);
-      BuildConstexprExpansionCall
+      ForRangeStatus DistanceStatus = BuildConstexprExpansionCall
 	(ColonLoc, RangeLoc, DistanceDNI,
 	 &DistanceCandidateSet, MultiArgs, &DistanceCall);
+      llvm::outs() << "FRS: " << DistanceStatus << '\n';
+      if (DistanceStatus != FRS_Success) {
+        if (DistanceStatus == FRS_DiagnosticIssued)
+          Diag(BeginRangeRef.get()->getBeginLoc(), diag::note_in_for_range)
+            << ColonLoc << BEF_begin << BeginRangeRef.get()->getType();
+        return StmtError();
+      }
 
+      llvm::outs() << "Try to get type.\n";
+      DistanceCall.get()->getType();
+      llvm::outs() << "Success\n";
+
+      
       DistanceCall.get()->EvaluateAsInt(Size, Context);
     }
 
@@ -3489,6 +3507,8 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 
   llvm::SmallVector<Stmt *, 8> Stmts;
 
+  Expr *CurrentIterator = S->getBeginExpr();
+
   for (std::size_t I = 0; I < S->getSize(); ++I) {
     // Unlike in Tuple Expansion Statements, we do not actually
     // use this template argument, however, we do need a valid
@@ -3502,13 +3522,6 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 
     // We don't need any standard library calls for an array.
     if(!RangeClassType->isArrayType()) {
-
-      // // Get the name information for 'NNS::next'
-      // CXXRecordDecl *RangeClass = RangeClassType->getAsCXXRecordDecl();
-      // NestedNameSpecifierLoc NNS =
-      // 	GetQualifiedNameForDecl(Context, RangeClass, ColonLoc);
-      // IdentifierInfo *Name = &PP.getIdentifierTable().get("next");
-      // DeclarationNameInfo DNI(Name, ConstexprLoc);
 
       // // Do an initial lookup for 'NNS::next' where 'NNS' is the
       // // declartion context of the range type.
@@ -3535,22 +3548,30 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
       // ExprResult Call =
       // 	ActOnCallExpr(getCurScope(), Fn, ColonLoc, MultiNextArgs, ColonLoc);
 
-      DeclarationName NextName(&PP.getIdentifierTable().get("next"));
-      DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
-      ExprResult NextCallExpr;
-      OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
-      LookupResult NextCallLookup(*this, NextNameInfo, Sema::LookupOrdinaryName);
+      ExprResult DerefExpr;
+      if(I > 0) {
+        DeclarationName NextName(&PP.getIdentifierTable().get("next"));
+        DeclarationNameInfo NextNameInfo(NextName, ColonLoc);
+        ExprResult NextCallExpr;
+        OverloadCandidateSet CandidateSet2(ColonLoc, OverloadCandidateSet::CSK_Normal);
+        LookupResult NextCallLookup(*this, NextNameInfo, Sema::LookupOrdinaryName);
+      
+        Expr *Args[] = {CurrentIterator};
+        MultiExprArg MultiArgs(Args);
 
-      Expr *Args[] = {S->getBeginExpr(), E};
-      MultiExprArg MultiArgs(Args);
+        BuildConstexprExpansionCall(ColonLoc, ConstexprLoc,
+                                    NextNameInfo, &CandidateSet2,
+                                    MultiArgs, &NextCallExpr);      
 
-      BuildConstexprExpansionCall(ColonLoc, ConstexprLoc,
-				  NextNameInfo, &CandidateSet2,
-				  MultiArgs, &NextCallExpr);
-
-      // Add '*std::next(__begin, I)' as the initializer of the loop var.
-      ExprResult DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, NextCallExpr.get());
+        // Add '*std::next(__begin)' as the initializer of the loop var.
+        DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, NextCallExpr.get());
+        CurrentIterator = NextCallExpr.get();
+      } else {
+        DerefExpr = ActOnUnaryOp(getCurScope(), ConstexprLoc, tok::star, S->getBeginExpr());
+      }      
+      
       AddInitializerToDecl(LoopVar, DerefExpr.get(), false);
+
     } else {
       ExprResult RangeRef =
         BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);

@@ -1,4 +1,4 @@
-#include "query.h"
+#include "reflection_query.h"
 
 namespace std {
 
@@ -84,6 +84,9 @@ consteval char const* name_of(meta::info x) {
 
 enum E { A, B, C };
 
+struct S {
+  int a, b, c;
+};
 
 // template<typename T> // requires Enum<T>
 char const* to_string(E val) {
@@ -96,10 +99,10 @@ char const* to_string(E val) {
 
 
 int main() {
-  constexpr int n = count_members(reflexpr(S));
   puts(name_of(reflexpr(S)));
   puts(name_of(reflexpr(S::a)));
 
   puts(to_string(A));
-  return n;
+
+  return 0;
 }
