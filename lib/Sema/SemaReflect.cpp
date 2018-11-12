@@ -237,6 +237,14 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     return new (Context) CXXReflectPrintLiteralExpr(
         Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
 
+  // Convert the remaining operands to rvalues.
+  for (std::size_t I = 1; I < Args.size(); ++I) {
+    ExprResult Arg = DefaultLvalueConversion(Args[I]);
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[I] = Arg.get();
+  }
+
   for (std::size_t I = 0; I < Args.size(); ++I) {
     Expr *E = Args[I];
 
@@ -267,14 +275,6 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     return ExprError();
   }
 
-  // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
-    ExprResult Arg = DefaultLvalueConversion(Args[I]);
-    if (Arg.isInvalid())
-      return ExprError();
-    Args[I] = Arg.get();
-  }
-
   return new (Context) CXXReflectPrintLiteralExpr(
     Context, Context.IntTy, Args, KWLoc, LParenLoc, RParenLoc);
 }
@@ -287,11 +287,11 @@ ExprResult Sema::ActOnCXXReflectPrintReflection(SourceLocation KWLoc,
     return new (Context) CXXReflectPrintReflectionExpr(
         Context, Context.DependentTy, Reflection, KWLoc, LParenLoc, RParenLoc);
 
-  if (!CheckReflectionOperand(*this, Reflection))
-    return ExprError();
-
   ExprResult Arg = DefaultLvalueConversion(Reflection);
   if (Arg.isInvalid())
+    return ExprError();
+
+  if (!CheckReflectionOperand(*this, Reflection))
     return ExprError();
 
   return new (Context) CXXReflectPrintReflectionExpr(
@@ -306,11 +306,11 @@ ExprResult Sema::ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
     return new (Context) CXXReflectDumpReflectionExpr(
         Context, Context.DependentTy, Reflection, KWLoc, LParenLoc, RParenLoc);
 
-  if (!CheckReflectionOperand(*this, Reflection))
-    return ExprError();
-
   ExprResult Arg = DefaultLvalueConversion(Reflection);
   if (Arg.isInvalid())
+    return ExprError();
+
+  if (!CheckReflectionOperand(*this, Reflection))
     return ExprError();
 
   return new (Context) CXXReflectDumpReflectionExpr(
