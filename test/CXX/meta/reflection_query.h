@@ -83,9 +83,7 @@ enum reflection_query {
   query_is_class_member,
 
   // Traits
-  query_get_variable_traits,
-  query_get_function_traits,
-  query_get_namespace_traits,
+  query_get_decl_traits,
   query_get_linkage_traits,
   query_get_access_traits,
 

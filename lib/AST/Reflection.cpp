@@ -461,9 +461,7 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
   // Traits
-  case RQ_get_variable_traits:
-  case RQ_get_function_traits:
-  case RQ_get_namespace_traits:
+  case RQ_get_decl_traits:
   case RQ_get_linkage_traits:
   case RQ_get_access_traits:
     return Error(*this);
