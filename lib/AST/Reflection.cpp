@@ -457,11 +457,326 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   llvm_unreachable("invalid predicate selector");
 }
 
+/// Convert a bit-field structure into a uint32.
+template <typename Traits>
+static std::uint32_t TraitsToUnsignedInt(Traits S) {
+  static_assert(sizeof(std::uint32_t) == sizeof(Traits), "size mismatch");
+  unsigned ret = 0;
+  std::memcpy(&ret, &S, sizeof(S));
+  return ret;
+}
+
+template <typename Traits>
+static APValue makeTraits(ASTContext *C, Traits S) {
+  return APValue(C->MakeIntValue(TraitsToUnsignedInt(S), C->UnsignedIntTy));
+}
+
+template <typename Traits>
+static bool SuccessTraits(const Reflection &R, Traits S, APValue &Result) {
+  Result = makeTraits(R.Ctx, S);
+  return true;
+}
+
+enum LinkageTrait : unsigned { LinkNone, LinkInternal, LinkExternal };
+
+/// Remap linkage specifiers into a 2-bit value.
+static LinkageTrait getLinkage(const NamedDecl *D) {
+  switch (D->getFormalLinkage()) {
+  case NoLinkage:
+    return LinkNone;
+  case InternalLinkage:
+    return LinkInternal;
+  case ExternalLinkage:
+    return LinkExternal;
+  default:
+    break;
+  }
+  llvm_unreachable("Invalid linkage specification");
+}
+
+enum AccessTrait : unsigned {
+  AccessNone,
+  AccessPublic,
+  AccessPrivate,
+  AccessProtected
+};
+
+/// Returns the access specifiers for \p D.
+static AccessTrait getAccess(const Decl *D) {
+  switch (D->getAccess()) {
+  case AS_public:
+    return AccessPublic;
+  case AS_private:
+    return AccessPrivate;
+  case AS_protected:
+    return AccessProtected;
+  case AS_none:
+    return AccessNone;
+  }
+  llvm_unreachable("Invalid access specifier");
+}
+
+/// This gives the storage duration of declared objects, not the storage
+/// specifier, which incorporates aspects of duration and linkage.
+enum StorageTrait : unsigned {
+  NoStorage,
+  StaticStorage,
+  AutomaticStorage,
+  ThreadStorage,
+};
+
+/// Returns the storage duration of \p D.
+static StorageTrait getStorage(const VarDecl *D) {
+  switch (D->getStorageDuration()) {
+  case SD_Automatic:
+    return AutomaticStorage;
+  case SD_Thread:
+    return ThreadStorage;
+  case SD_Static:
+    return StaticStorage;
+  default:
+    break;
+  }
+  return NoStorage;
+}
+
+/// Traits for named objects.
+///
+/// Note that a variable can be declared \c extern and not be defined.
+struct VariableTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  StorageTrait Storage : 2;
+  unsigned Constexpr : 1;
+  unsigned Defined : 1;
+  unsigned Inline : 1; ///< Valid only when defined.
+  unsigned Rest : 23;
+};
+
+static VariableTraits getVariableTraits(const VarDecl *D) {
+  VariableTraits T = VariableTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Storage = getStorage(D);
+  T.Constexpr = D->isConstexpr();
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInline();
+  return T;
+}
+
+/// Traits for named sub-objects of a class (or union?).
+struct FieldTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  unsigned Mutable : 1;
+  unsigned Rest : 27;
+};
+
+/// Get the traits for a non-static member of a class or union.
+static FieldTraits getFieldTraits(const FieldDecl *D) {
+  FieldTraits T = FieldTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Mutable = D->isMutable();
+  return T;
+}
+
+/// Computed traits of normal, extern local, and static class functions.
+///
+// TODO: Add calling conventions to function traits.
+struct FunctionTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  unsigned Constexpr : 1;
+  unsigned Nothrow : 1; ///< Called \c noexcept in C++.
+  unsigned Defined : 1;
+  unsigned Inline : 1;  ///< Valid only when defined.
+  unsigned Deleted : 1; ///< Valid only when defined.
+  unsigned Rest : 23;
+};
+
+static bool getNothrow(const FunctionDecl *D) {
+  if (const FunctionProtoType *Ty = D->getType()->getAs<FunctionProtoType>())
+    return Ty->isNothrow();
+  return false;
+}
+
+static FunctionTraits getFunctionTraits(const FunctionDecl *D) {
+  FunctionTraits T = FunctionTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Constexpr = D->isConstexpr();
+  T.Nothrow = getNothrow(D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  return T;
+}
+
+enum MethodKind : unsigned {
+  Method,
+  Constructor,
+  Destructor,
+  Conversion
+};
+
+/// Traits for normal member functions.
+struct MethodTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  MethodKind Kind : 2;
+  unsigned Constexpr : 1;
+  unsigned Explicit : 1;
+  unsigned Virtual : 1;
+  unsigned Pure : 1;
+  unsigned Final : 1;
+  unsigned Override : 1;
+  unsigned Nothrow : 1; ///< Called \c noexcept in C++.
+  unsigned Defined : 1;
+  unsigned Inline : 1;
+  unsigned Deleted : 1;
+  unsigned Defaulted : 1;
+  unsigned Trivial : 1;
+  unsigned DefaultCtor : 1;
+  unsigned CopyCtor : 1;
+  unsigned MoveCtor : 1;
+  unsigned CopyAssign : 1;
+  unsigned MoveAssign : 1;
+  unsigned Rest : 9;
+};
+
+static MethodTraits getMethodTraits(const CXXConstructorDecl *D) {
+  MethodTraits T = MethodTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Kind = Constructor;
+  T.Constexpr = D->isConstexpr();
+  T.Nothrow = getNothrow(D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  T.Defaulted = D->isDefaulted();
+  T.Trivial = D->isTrivial();
+  T.DefaultCtor = D->isDefaultConstructor();
+  T.CopyCtor = D->isCopyConstructor();
+  T.MoveCtor = D->isMoveConstructor();
+  return T;
+}
+
+static MethodTraits getMethodTraits(const CXXDestructorDecl *D) {
+  MethodTraits T = MethodTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Kind = Destructor;
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  T.Defaulted = D->isDefaulted();
+  T.Trivial = D->isTrivial();
+  return T;
+}
+
+static MethodTraits getMethodTraits(const CXXConversionDecl *D) {
+  MethodTraits T = MethodTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Kind = Conversion;
+  T.Constexpr = D->isConstexpr();
+  T.Explicit = D->isExplicit();
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  return T;
+}
+
+static MethodTraits getMethodTraits(const CXXMethodDecl *D) {
+  MethodTraits T = MethodTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Kind = Method;
+  T.Constexpr = D->isConstexpr();
+  T.Virtual = D->isVirtual();
+  T.Pure = D->isPure();
+  T.Final = D->hasAttr<FinalAttr>();
+  T.Override = D->hasAttr<OverrideAttr>();
+  T.Nothrow = getNothrow(D);
+  T.Defined = D->getDefinition() != nullptr;
+  T.Inline = D->isInlined();
+  T.Deleted = D->isDeleted();
+  T.CopyAssign = D->isCopyAssignmentOperator();
+  T.MoveAssign = D->isMoveAssignmentOperator();
+  return T;
+}
+
+struct ValueTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  unsigned Rest : 28;
+};
+
+static ValueTraits getValueTraits(const EnumConstantDecl *D) {
+  ValueTraits T = ValueTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  return T;
+}
+
+struct NamespaceTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  bool Inline : 1;
+  unsigned Rest : 27;
+};
+
+static NamespaceTraits getNamespaceTraits(const NamespaceDecl *D) {
+  NamespaceTraits T = NamespaceTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Inline = D->isInline();
+  return T;
+}
+
+static bool makeDeclTraits(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const VarDecl *Var = dyn_cast<VarDecl>(D))
+      return SuccessTraits(R, getVariableTraits(Var), Result);
+    else if (const FieldDecl *Field = dyn_cast<FieldDecl>(D))
+      return SuccessTraits(R, getFieldTraits(Field), Result);
+    else if (const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D))
+      return SuccessTraits(R, getMethodTraits(Ctor), Result);
+    else if (const CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D))
+      return SuccessTraits(R, getMethodTraits(Dtor), Result);
+    else if (const CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D))
+      return SuccessTraits(R, getMethodTraits(Conv), Result);
+    else if (const CXXMethodDecl *Meth = dyn_cast<CXXMethodDecl>(D))
+      return SuccessTraits(R, getMethodTraits(Meth), Result);
+    else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
+      return SuccessTraits(R, getFunctionTraits(Fn), Result);
+    else if (const EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(D))
+      return SuccessTraits(R, getValueTraits(Enum), Result);
+    else if (const NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
+      return SuccessTraits(R, getNamespaceTraits(Ns), Result);
+  }
+
+  return Error(R);
+}
+
 bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
   // Traits
   case RQ_get_decl_traits:
+    return makeDeclTraits(*this, Result);
   case RQ_get_linkage_traits:
   case RQ_get_access_traits:
     return Error(*this);
