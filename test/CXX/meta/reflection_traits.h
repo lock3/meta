@@ -120,13 +120,11 @@ struct field_traits {
   constexpr explicit field_traits(unsigned n)
     : linkage      (get_linkage(n)), // 0x01 | 0x02
       access       (get_access(n)),  // 0x04 | 0x08
-      storage      (get_storage(n)), // 0x10 | 0x20
-      is_mutable   (n & 0x40)
+      is_mutable   (n & 0x10)
   { }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
-  storage_kind storage : 2;
   bool is_mutable : 1;
 };
 
