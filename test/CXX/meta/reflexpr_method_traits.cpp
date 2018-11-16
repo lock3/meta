@@ -72,7 +72,7 @@ int main() {
   //   constexpr auto refl = reflexpr(ImplicitDefaultCtorClass::ImplicitDefaultCtorClass);
   //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_method(traits.kind) == method_ctor);
+  //   static_assert(traits.kind == method_ctor);
   //   static_assert(traits.is_constexpr == false);
   //   static_assert(traits.is_explicit == false);
   //   static_assert(traits.is_virtual == false);
@@ -97,7 +97,7 @@ int main() {
   //   constexpr auto refl = reflexpr(ImplicitDefaultCtorClass::~ImplicitDefaultCtorClass);
   //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_method(traits.kind) == method_dtor);
+  //   static_assert(traits.kind == method_dtor);
   //   static_assert(traits.is_constexpr == false);
   //   static_assert(traits.is_explicit == false);
   //   static_assert(traits.is_virtual == false);
@@ -122,7 +122,7 @@ int main() {
   //   constexpr auto refl = reflexpr(ExplicitDefaultCtorClass::ExplicitDefaultCtorClass);
   //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_method(traits.kind) == method_ctor);
+  //   static_assert(traits.kind == method_ctor);
   //   static_assert(traits.is_noexcept == true);
   //   static_assert(traits.is_defaulted == true);
   //   static_assert(traits.is_default_ctor == true);
@@ -133,7 +133,7 @@ int main() {
   //   constexpr auto refl = reflexpr(ExplicitCtorClass::ExplicitCtorClass);
   //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_method(traits.kind) == method_ctor);
+  //   static_assert(traits.kind == method_ctor);
   //   static_assert(traits.is_explicit == true);
   //   static_assert(traits.is_default_ctor == false);
   // }
@@ -143,7 +143,7 @@ int main() {
   //   constexpr auto refl = reflexpr(ConstexprCtorClass::ConstexprCtorClass);
   //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_method(traits.kind) == method_ctor);
+  //   static_assert(traits.kind == method_ctor);
   //   static_assert(traits.is_constexpr == true);
   //   static_assert(traits.is_default_ctor == false);
   // }
@@ -153,9 +153,9 @@ int main() {
     constexpr auto refl = reflexpr(Class::method);
     constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
-    static_assert(get_method(traits.kind) == method_normal);
+    static_assert(traits.linkage == external_linkage);
+    // static_assert(traits.storage == no_storage);
+    static_assert(traits.kind == method_normal);
     static_assert(traits.is_constexpr == false);
     static_assert(traits.is_explicit == false);
     static_assert(traits.is_virtual == false);
@@ -180,9 +180,9 @@ int main() {
     constexpr auto refl = reflexpr(InternalClass::method);
     constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == internal_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
-    static_assert(get_method(traits.kind) == method_normal);
+    static_assert(traits.linkage == internal_linkage);
+    // static_assert(traits.storage == no_storage);
+    static_assert(traits.kind == method_normal);
     static_assert(traits.is_constexpr == false);
     static_assert(traits.is_explicit == false);
     static_assert(traits.is_virtual == false);
@@ -309,28 +309,28 @@ int main() {
     //   constexpr auto refl = reflexpr(Class::default_access);
     //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
 
-    // {
-    //   constexpr auto refl = reflexpr(Class::public_access);
-    //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
+    {
+      constexpr auto refl = reflexpr(Class::public_access);
+      constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == public_access);
-    // }
+      static_assert(traits.access == public_access);
+    }
 
     // {
     //   constexpr auto refl = reflexpr(Class::protected_access);
     //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == protected_access);
+    //   static_assert(traits.access == protected_access);
     // }
 
     // {
     //   constexpr auto refl = reflexpr(Class::private_access);
     //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
   }
 

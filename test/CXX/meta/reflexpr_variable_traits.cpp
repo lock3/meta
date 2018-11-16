@@ -26,8 +26,8 @@ int main() {
     constexpr auto refl = reflexpr(local_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == no_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == no_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -39,8 +39,8 @@ int main() {
     constexpr auto refl = reflexpr(static_local_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == no_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == no_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -50,8 +50,8 @@ int main() {
     constexpr auto refl = reflexpr(global_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == external_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -61,8 +61,8 @@ int main() {
     constexpr auto refl = reflexpr(static_global_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == internal_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == internal_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -72,8 +72,8 @@ int main() {
     constexpr auto refl = reflexpr(static_inline_global_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == internal_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == internal_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == true);
   }
@@ -83,8 +83,8 @@ int main() {
     constexpr auto refl = reflexpr(external_global_var);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == external_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == false);
     static_assert(traits.is_inline == false);
   }
@@ -94,8 +94,8 @@ int main() {
     constexpr auto refl = reflexpr(Class::public_access_static);
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == external_linkage);
+    // static_assert(traits.storage == no_storage);
     static_assert(traits.is_defined == false);
     static_assert(traits.is_inline == false);
   }
@@ -128,35 +128,35 @@ int main() {
       constexpr auto refl = reflexpr(local_var);
       constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-      static_assert(get_access(traits.access) == no_access);
+      static_assert(traits.access == no_access);
     }
 
     // {
     //   constexpr auto refl = reflexpr(Class::default_access_static);
     //   constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
 
-    // {
-    //   constexpr auto refl = reflexpr(Class::public_access_static);
-    //   constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
+    {
+      constexpr auto refl = reflexpr(Class::public_access_static);
+      constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == public_access);
-    // }
+      static_assert(traits.access == public_access);
+    }
 
     // {
     //   constexpr auto refl = reflexpr(Class::protected_access_static);
     //   constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == protected_access);
+    //   static_assert(traits.access == protected_access);
     // }
 
     // {
     //   constexpr auto refl = reflexpr(Class::private_access_static);
     //   constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
   }
 

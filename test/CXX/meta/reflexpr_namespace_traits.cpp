@@ -19,8 +19,8 @@ int main() {
     constexpr auto refl = reflexpr(A);
     constexpr auto traits = namespace_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    static_assert(get_access(traits.access) == no_access);
+    static_assert(traits.linkage == external_linkage);
+    static_assert(traits.access == no_access);
     static_assert(traits.is_inline == false);
   }
 
@@ -29,8 +29,8 @@ int main() {
     constexpr auto refl = reflexpr(A::InlineA);
     constexpr auto traits = namespace_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    static_assert(get_access(traits.access) == no_access);
+    static_assert(traits.linkage == external_linkage);
+    static_assert(traits.access == no_access);
     static_assert(traits.is_inline == true);
   }
 
@@ -39,8 +39,8 @@ int main() {
     constexpr auto refl = reflexpr(InnerA);
     constexpr auto traits = namespace_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == internal_linkage);
-    static_assert(get_access(traits.access) == no_access);
+    static_assert(traits.linkage == internal_linkage);
+    static_assert(traits.access == no_access);
     static_assert(traits.is_inline == false);
   }
 

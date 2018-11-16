@@ -31,8 +31,8 @@ int main() {
     constexpr auto refl = reflexpr(Class::data_member);
     constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == external_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == external_linkage);
+    // static_assert(traits.storage == no_storage);
   }
 
   // data member of internal class traits
@@ -40,8 +40,8 @@ int main() {
     constexpr auto refl = reflexpr(InternalClass::data_member);
     constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    static_assert(get_linkage(traits.linkage) == internal_linkage);
-    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.linkage == internal_linkage);
+    // static_assert(traits.storage == no_storage);
   }
 
   // mutablability
@@ -74,28 +74,28 @@ int main() {
     //   constexpr auto refl = reflexpr(Class::default_access);
     //   constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
 
-    // {
-    //   constexpr auto refl = reflexpr(Class::public_access);
-    //   constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
+    {
+      constexpr auto refl = reflexpr(Class::public_access);
+      constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == public_access);
-    // }
+      static_assert(traits.access == public_access);
+    }
 
     // {
     //   constexpr auto refl = reflexpr(Class::protected_access);
     //   constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == protected_access);
+    //   static_assert(traits.access == protected_access);
     // }
 
     // {
     //   constexpr auto refl = reflexpr(Class::private_access);
     //   constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
-    //   static_assert(get_access(traits.access) == private_access);
+    //   static_assert(traits.access == private_access);
     // }
   }
 
