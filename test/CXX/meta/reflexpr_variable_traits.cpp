@@ -7,6 +7,7 @@ int global_var = 0;
 static int static_global_var = 0;
 static inline int static_inline_global_var = 0;
 extern int external_global_var;
+thread_local int thread_local_global_var = 0;
 
 class Class {
   const static int default_access_static = 0;
@@ -27,7 +28,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == no_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == automatic_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -40,7 +41,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == no_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -51,7 +52,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == external_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -62,7 +63,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == internal_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
@@ -73,7 +74,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == internal_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == true);
   }
@@ -84,8 +85,19 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == external_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == false);
+    static_assert(traits.is_inline == false);
+  }
+
+  // thread local global var traits
+  {
+    constexpr auto refl = reflexpr(thread_local_global_var);
+    constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
+
+    static_assert(traits.linkage == external_linkage);
+    static_assert(traits.storage == thread_storage);
+    static_assert(traits.is_defined == true);
     static_assert(traits.is_inline == false);
   }
 
@@ -95,7 +107,7 @@ int main() {
     constexpr auto traits = variable_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == external_linkage);
-    // static_assert(traits.storage == no_storage);
+    static_assert(traits.storage == static_storage);
     static_assert(traits.is_defined == false);
     static_assert(traits.is_inline == false);
   }

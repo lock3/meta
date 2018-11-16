@@ -32,7 +32,6 @@ int main() {
     constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == external_linkage);
-    // static_assert(traits.storage == no_storage);
   }
 
   // data member of internal class traits
@@ -41,7 +40,6 @@ int main() {
     constexpr auto traits = field_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == internal_linkage);
-    // static_assert(traits.storage == no_storage);
   }
 
   // mutablability

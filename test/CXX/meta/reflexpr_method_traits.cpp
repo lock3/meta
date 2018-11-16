@@ -154,7 +154,6 @@ int main() {
     constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == external_linkage);
-    // static_assert(traits.storage == no_storage);
     static_assert(traits.kind == method_normal);
     static_assert(traits.is_constexpr == false);
     static_assert(traits.is_explicit == false);
@@ -181,7 +180,6 @@ int main() {
     constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
     static_assert(traits.linkage == internal_linkage);
-    // static_assert(traits.storage == no_storage);
     static_assert(traits.kind == method_normal);
     static_assert(traits.is_constexpr == false);
     static_assert(traits.is_explicit == false);
