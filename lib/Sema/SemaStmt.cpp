@@ -3184,7 +3184,6 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
       ForRangeStatus DistanceStatus = BuildConstexprExpansionCall
         (ColonLoc, RangeLoc, DistanceDNI,
          &DistanceCandidateSet, MultiArgs, &DistanceCall);
-      llvm::outs() << "FRS: " << DistanceStatus << '\n';
       if (DistanceStatus != FRS_Success) {
         if (DistanceStatus == FRS_DiagnosticIssued)
           Diag(BeginRangeRef.get()->getBeginLoc(), diag::note_in_for_range)
