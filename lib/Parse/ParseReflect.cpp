@@ -22,7 +22,7 @@ using namespace clang;
 /// parsing a template argument, except that we also allow namespace-names
 /// in this context.
 ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
-  ParseScope ReflectionScope(this, Scope::ReflectionScope);
+  Sema::CXXReflectionScopeRAII ReflectionScope(Actions);
 
   // The operand is unevaluated.
   EnterExpressionEvaluationContext Unevaluated(

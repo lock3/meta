@@ -7330,17 +7330,18 @@ TreeTransform<Derived>::TransformCXXConstantExpr(CXXConstantExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) 
-{
+TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
+  Sema::CXXReflectionScopeRAII ReflectionScope(getSema());
+
   const ReflectionOperand &Ref = E->getOperand();
   switch (Ref.getKind()) {
   case ReflectionOperand::Type: {
     QualType Old = Ref.getAsType();
-    
+
     // Adjust the type in case we get parsed type information.
     if (const LocInfoType *LIT = dyn_cast<LocInfoType>(Old))
       Old = LIT->getType();
-    
+
     QualType New  = getDerived().TransformType(Old);
     if (New.isNull())
       return ExprError();
@@ -7373,12 +7374,7 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E)
   }
   case ReflectionOperand::Expression: {
     Expr *Old = Ref.getAsExpression();
-    /// FIXME: This is a hack, in the case of a reflection operand
-    /// there needs to be support for referencing a non-static member
-    /// functions without invoking it. This is also the case for a
-    /// address of operand. Thus, this is a hack using the address of
-    /// operand logic to get this behavior for free.
-    ExprResult New = getDerived().TransformAddressOfOperand(Old);
+    ExprResult New = getDerived().TransformExpr(Old);
     if (New.isInvalid())
       return ExprError();
     // llvm::outs() << "SUBST EXPR\n";

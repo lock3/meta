@@ -1141,7 +1141,7 @@ Corrected:
     return ParsedType::make(T);
   }
 
-  if (FirstDecl->isCXXClassMember() && !S->isReflectionScope())
+  if (FirstDecl->isCXXClassMember() && !isReflecting())
     return BuildPossibleImplicitMemberExpr(SS, SourceLocation(), Result,
                                            nullptr, S);
 

@@ -35,15 +35,15 @@ int main() {
   }
 
   // global deleted function traits
-  // {
-  //   constexpr auto refl = reflexpr(deleted_global_function);
-  //   constexpr auto traits = function_traits(__reflect(query_get_decl_traits, refl));
+  {
+    constexpr auto refl = reflexpr(deleted_global_function);
+    constexpr auto traits = function_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(get_linkage(traits.linkage) == external_linkage);
-  //   // static_assert(get_storage(traits.storage) == no_storage);
-  //   static_assert(traits.is_defined == true);
-  //   static_assert(traits.is_deleted == true);
-  // }
+    static_assert(get_linkage(traits.linkage) == external_linkage);
+    // static_assert(get_storage(traits.storage) == no_storage);
+    static_assert(traits.is_defined == true);
+    static_assert(traits.is_deleted == true);
+  }
 
   // global noexcept function traits
   {

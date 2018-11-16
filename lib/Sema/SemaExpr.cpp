@@ -243,7 +243,7 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, ArrayRef<SourceLocation> Locs,
 
   // See if this is a deleted function.
   if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-    if (FD->isDeleted()) {
+    if (FD->isDeleted() && !isReflecting()) {
       auto *Ctor = dyn_cast<CXXConstructorDecl>(FD);
       if (Ctor && Ctor->isInheritingConstructor())
         Diag(Loc, diag::err_deleted_inherited_ctor_use)
@@ -2334,7 +2334,8 @@ ExprResult Sema::BuildQualifiedDeclarationNameExpr(
   // won't get here if this might be a legitimate a class member (we end up in
   // BuildMemberReferenceExpr instead), but this can be valid if we're forming
   // a pointer-to-member or in an unevaluated context in C++11.
-  if (!R.empty() && (*R.begin())->isCXXClassMember() && !IsAddressOfOperand)
+  if (!R.empty() && (*R.begin())->isCXXClassMember() && !IsAddressOfOperand
+      && !isReflecting())
     return BuildPossibleImplicitMemberExpr(SS,
                                            /*TemplateKWLoc=*/SourceLocation(),
                                            R, /*TemplateArgs=*/nullptr, S);

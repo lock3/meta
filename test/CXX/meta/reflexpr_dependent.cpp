@@ -7,6 +7,8 @@ struct S1 {
   constexpr S1() = default;
   constexpr T foo() { return T(); }
   T variable;
+
+  void deleted_function() = delete;
 };
 
 template<typename T>
@@ -28,6 +30,8 @@ int test() {
   constexpr auto x6 = reflexpr(S1<T>::foo);
   constexpr auto x7 = reflexpr(S1<T>::variable);
 
+  constexpr auto x8 = reflexpr(S1<T>::deleted_function);
+
   // Generate output
   constexpr auto x1_print = __reflect_pretty_print(x1);
   constexpr auto x2_print = __reflect_pretty_print(x2);
@@ -36,6 +40,7 @@ int test() {
   constexpr auto x5_print = __reflect_pretty_print(x5);
   constexpr auto x6_print = __reflect_pretty_print(x6);
   constexpr auto x7_print = __reflect_pretty_print(x7);
+  constexpr auto x8_print = __reflect_pretty_print(x8);
 
   return 0;
 }

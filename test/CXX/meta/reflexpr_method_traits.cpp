@@ -252,12 +252,12 @@ int main() {
   }
 
   // deleted method
-  // {
-  //   constexpr auto refl = reflexpr(Class::deleted_method);
-  //   constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
+  {
+    constexpr auto refl = reflexpr(Class::deleted_method);
+    constexpr auto traits = method_traits(__reflect(query_get_decl_traits, refl));
 
-  //   static_assert(traits.is_deleted == true);
-  // }
+    static_assert(traits.is_deleted == true);
+  }
 
   // virtual destructor
   // {

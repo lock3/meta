@@ -8654,6 +8654,14 @@ public:
   // Metaprogramming
   //
 
+private:
+  bool ReflectionScope = false;
+
+public:
+  bool isReflecting() const {
+    return ReflectionScope;
+  }
+
   ExprResult BuildConstantExpression(Expr *E);
 
   ParsedReflectionOperand ActOnReflectedType(TypeResult T);
@@ -8734,6 +8742,23 @@ public:
   ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                       SourceLocation OpLoc, bool IsArrow,
                                       Expr *IdExpr);
+
+  /// RAII object used to temporarily disable semantic diagnostics
+  /// for sematics valid only in reflections.
+  class CXXReflectionScopeRAII {
+    Sema &S;
+    bool PreviouslyInReflection;
+
+  public:
+    CXXReflectionScopeRAII(Sema &S)
+        : S(S), PreviouslyInReflection(S.ReflectionScope) {
+      S.ReflectionScope = true;
+    }
+
+    ~CXXReflectionScopeRAII() {
+      S.ReflectionScope = PreviouslyInReflection;
+    }
+  };
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.
