@@ -28,7 +28,7 @@ enum access_kind : unsigned {
 
 // Access specifiers are always stored in bits 3 and 4.
 static constexpr access_kind get_access(unsigned n) {
-  return access_kind((n & 0x0c) >> 2);
+  return access_kind((n >> 2) & 0x03);
 }
 
 enum storage_kind : unsigned {
@@ -42,7 +42,7 @@ enum storage_kind : unsigned {
 //
 // FIXME: This isn't accurate.
 static constexpr storage_kind get_storage(unsigned n) {
-  return storage_kind((n & 0x30) >> 2);
+  return storage_kind((n >> 4) & 0x03);
 }
 
 // All named declarations have linkage and access.
