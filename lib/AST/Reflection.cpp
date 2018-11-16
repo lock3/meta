@@ -772,6 +772,44 @@ static bool makeDeclTraits(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+struct LinkageTraits {
+  LinkageTrait Kind : 2;
+  unsigned Rest : 30;
+};
+
+static LinkageTraits getLinkageTraits(const NamedDecl *D) {
+  LinkageTraits T = LinkageTraits();
+  T.Kind = getLinkage(D);
+  return T;
+};
+
+static bool makeLinkageTraits(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
+      return SuccessTraits(R, getLinkageTraits(ND), Result);
+
+  return Error(R);
+}
+
+struct AccessTraits {
+  unsigned Padding : 2; ///< Padded for library implementation ease.
+  AccessTrait Kind : 2;
+  unsigned Rest : 28;
+};
+
+static AccessTraits getAccessTraits(const Decl *D) {
+  AccessTraits T = AccessTraits();
+  T.Kind = getAccess(D);
+  return T;
+};
+
+static bool makeAccessTraits(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessTraits(R, getAccessTraits(D), Result);
+
+  return Error(R);
+}
+
 bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
@@ -779,8 +817,9 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   case RQ_get_decl_traits:
     return makeDeclTraits(*this, Result);
   case RQ_get_linkage_traits:
+    return makeLinkageTraits(*this, Result);
   case RQ_get_access_traits:
-    return Error(*this);
+    return makeAccessTraits(*this, Result);
 
   default:
     break;

@@ -189,6 +189,21 @@ struct method_traits {
   bool is_move_assign : 1;
 };
 
+// Basic Traits
+struct linkage_traits {
+  constexpr explicit linkage_traits(unsigned n)
+    : kind(get_linkage(n)) { }
+
+  linkage_kind kind : 2;
+};
+
+struct access_traits {
+  constexpr explicit access_traits(unsigned n)
+    : kind(get_access(n)) { }
+
+  access_kind kind : 2;
+};
+
 // Classes
 
 // TODO: Accumulate all known type traits for classes.
