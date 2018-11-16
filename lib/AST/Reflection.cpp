@@ -519,25 +519,26 @@ static AccessTrait getAccess(const Decl *D) {
 /// This gives the storage duration of declared objects, not the storage
 /// specifier, which incorporates aspects of duration and linkage.
 enum StorageTrait : unsigned {
-  NoStorage,
-  StaticStorage,
   AutomaticStorage,
+  StaticStorage,
   ThreadStorage,
+  DynamicStorage
 };
 
 /// Returns the storage duration of \p D.
 static StorageTrait getStorage(const VarDecl *D) {
   switch (D->getStorageDuration()) {
+  case SD_FullExpression:
   case SD_Automatic:
     return AutomaticStorage;
   case SD_Thread:
     return ThreadStorage;
   case SD_Static:
     return StaticStorage;
-  default:
-    break;
+  case SD_Dynamic:
+    return DynamicStorage;
   }
-  return NoStorage;
+  llvm_unreachable("Invalid storage duration");
 }
 
 /// Traits for named objects.

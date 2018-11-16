@@ -32,10 +32,10 @@ static constexpr access_kind get_access(unsigned n) {
 }
 
 enum storage_kind : unsigned {
-  no_storage,
-  static_storage,
   automatic_storage,
+  static_storage,
   thread_storage,
+  allocated_storage
 };
 
 // When present, storage specifiers are stored in bits 5 and 6.
