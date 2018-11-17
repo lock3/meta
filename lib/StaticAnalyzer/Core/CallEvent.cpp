@@ -359,11 +359,41 @@ bool CallEvent::isCalled(const CallDescription &CD) const {
     return false;
   if (!CD.IsLookupDone) {
     CD.IsLookupDone = true;
-    CD.II = &getState()->getStateManager().getContext().Idents.get(CD.FuncName);
+    CD.II = &getState()->getStateManager().getContext().Idents.get(
+        CD.getFunctionName());
   }
   const IdentifierInfo *II = getCalleeIdentifier();
   if (!II || II != CD.II)
     return false;
+
+  const Decl *D = getDecl();
+  // If CallDescription provides prefix names, use them to improve matching
+  // accuracy.
+  if (CD.QualifiedName.size() > 1 && D) {
+    const DeclContext *Ctx = D->getDeclContext();
+    // See if we'll be able to match them all.
+    size_t NumUnmatched = CD.QualifiedName.size() - 1;
+    for (; Ctx && isa<NamedDecl>(Ctx); Ctx = Ctx->getParent()) {
+      if (NumUnmatched == 0)
+        break;
+
+      if (const auto *ND = dyn_cast<NamespaceDecl>(Ctx)) {
+        if (ND->getName() == CD.QualifiedName[NumUnmatched - 1])
+          --NumUnmatched;
+        continue;
+      }
+
+      if (const auto *RD = dyn_cast<RecordDecl>(Ctx)) {
+        if (RD->getName() == CD.QualifiedName[NumUnmatched - 1])
+          --NumUnmatched;
+        continue;
+      }
+    }
+
+    if (NumUnmatched > 0)
+      return false;
+  }
+
   return (CD.RequiredArgs == CallDescription::NoArgRequirement ||
           CD.RequiredArgs == getNumArgs());
 }
@@ -473,10 +503,14 @@ static void addParameterValuesToBindings(const StackFrameContext *CalleeCtx,
     const ParmVarDecl *ParamDecl = *I;
     assert(ParamDecl && "Formal parameter has no decl?");
 
+    // TODO: Support allocator calls.
     if (Call.getKind() != CE_CXXAllocator)
       if (Call.isArgumentConstructedDirectly(Idx))
         continue;
 
+    // TODO: Allocators should receive the correct size and possibly alignment,
+    // determined in compile-time but not represented as arg-expressions,
+    // which makes getArgSVal() fail and return UnknownVal.
     SVal ArgVal = Call.getArgSVal(Idx);
     if (!ArgVal.isUnknown()) {
       Loc ParamLoc = SVB.makeLoc(MRMgr.getVarRegion(ParamDecl, CalleeCtx));

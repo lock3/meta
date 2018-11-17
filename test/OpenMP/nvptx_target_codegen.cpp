@@ -554,13 +554,30 @@ int baz(int f, double &a) {
   // CHECK: ret void
 
   // CHECK: define i32 [[BAZ]](i32 [[F:%.*]], double* dereferenceable{{.*}})
+  // CHECK: alloca i32,
+  // CHECK: [[LOCAL_F_PTR:%.+]] = alloca i32,
   // CHECK: [[ZERO_ADDR:%.+]] = alloca i32,
-  // CHECK: [[GTID:%.+]] = call i32 @__kmpc_global_thread_num(%struct.ident_t*
-  // CHECK: [[GTID_ADDR:%.+]] = alloca i32,
   // CHECK: store i32 0, i32* [[ZERO_ADDR]]
-  // CHECK: [[PTR:%.+]] = call i8* @__kmpc_data_sharing_push_stack(i{{64|32}} 4, i16 0)
-  // CHECK: [[REC_ADDR:%.+]] = bitcast i8* [[PTR]] to %struct._globalized_locals_ty*
-  // CHECK: [[F_PTR:%.+]] = getelementptr inbounds %struct._globalized_locals_ty, %struct._globalized_locals_ty* [[REC_ADDR]], i32 0, i32 0
+  // CHECK: [[GTID:%.+]] = call i32 @__kmpc_global_thread_num(%struct.ident_t*
+  // CHECK: [[PAR_LEVEL:%.+]] = call i16 @__kmpc_parallel_level(%struct.ident_t* @0, i32 [[GTID]])
+  // CHECK: [[IS_TTD:%.+]] = icmp eq i16 %1, 0
+  // CHECK: [[RES:%.+]] = call i8 @__kmpc_is_spmd_exec_mode()
+  // CHECK: [[IS_SPMD:%.+]] = icmp ne i8 [[RES]], 0
+  // CHECK: br i1 [[IS_SPMD]], label
+  // CHECK: br label
+  // CHECK: [[SIZE:%.+]] = select i1 [[IS_TTD]], i{{64|32}} 4, i{{64|32}} 128
+  // CHECK: [[PTR:%.+]] = call i8* @__kmpc_data_sharing_coalesced_push_stack(i{{64|32}} [[SIZE]], i16 0)
+  // CHECK: [[REC_ADDR:%.+]] = bitcast i8* [[PTR]] to [[GLOBAL_ST:%.+]]*
+  // CHECK: br label
+  // CHECK: [[ITEMS:%.+]] = phi [[GLOBAL_ST]]* [ null, {{.+}} ], [ [[REC_ADDR]], {{.+}} ]
+  // CHECK: [[TTD_ITEMS:%.+]] = bitcast [[GLOBAL_ST]]* [[ITEMS]] to [[SEC_GLOBAL_ST:%.+]]*
+  // CHECK: [[F_PTR_ARR:%.+]] = getelementptr inbounds [[GLOBAL_ST]], [[GLOBAL_ST]]* [[ITEMS]], i32 0, i32 0
+  // CHECK: [[TID:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
+  // CHECK: [[LID:%.+]] = and i32 [[TID]], 31
+  // CHECK: [[GLOBAL_F_PTR_PAR:%.+]] = getelementptr inbounds [32 x i32], [32 x i32]* [[F_PTR_ARR]], i32 0, i32 [[LID]]
+  // CHECK: [[GLOBAL_F_PTR_TTD:%.+]] = getelementptr inbounds [[SEC_GLOBAL_ST]], [[SEC_GLOBAL_ST]]* [[TTD_ITEMS]], i32 0, i32 0
+  // CHECK: [[GLOBAL_F_PTR:%.+]] = select i1 [[IS_TTD]], i32* [[GLOBAL_F_PTR_TTD]], i32* [[GLOBAL_F_PTR_PAR]]
+  // CHECK: [[F_PTR:%.+]] = select i1 [[IS_SPMD]], i32* [[LOCAL_F_PTR]], i32* [[GLOBAL_F_PTR]]
   // CHECK: store i32 %{{.+}}, i32* [[F_PTR]],
 
   // CHECK: [[RES:%.+]] = call i8 @__kmpc_is_spmd_exec_mode()
@@ -576,9 +593,6 @@ int baz(int f, double &a) {
   // CHECK: call void @__kmpc_end_serialized_parallel(%struct.ident_t* @{{.+}}, i32 [[GTID]])
   // CHECK: br label
 
-  // CHECK: icmp eq i32
-  // CHECK: br i1
-
   // CHECK: call void @__kmpc_kernel_prepare_parallel(i8* bitcast (void (i16, i32)* @{{.+}} to i8*), i16 1)
   // CHECK: call void @__kmpc_begin_sharing_variables(i8*** [[SHARED_PTR:%.+]], i{{64|32}} 2)
   // CHECK: [[SHARED:%.+]] = load i8**, i8*** [[SHARED_PTR]],
@@ -590,12 +604,13 @@ int baz(int f, double &a) {
   // CHECK: call void @__kmpc_end_sharing_variables()
   // CHECK: br label
 
-  // CHECK: store i32 [[GTID]], i32* [[GTID_ADDR]],
-  // CHECK: call void [[OUTLINED]](i32* [[GTID_ADDR]], i32* [[ZERO_ADDR]], i32* [[F_PTR]], double* %{{.+}})
-  // CHECK: br label
-
   // CHECK: [[RES:%.+]] = load i32, i32* [[F_PTR]],
-  // CHECK: call void @__kmpc_data_sharing_pop_stack(i8* [[PTR]])
+  // CHECK: store i32 [[RES]], i32* [[RET:%.+]],
+  // CHECK: br i1 [[IS_SPMD]], label
+  // CHECK: [[BC:%.+]] = bitcast [[GLOBAL_ST]]* [[ITEMS]] to i8*
+  // CHECK: call void @__kmpc_data_sharing_pop_stack(i8* [[BC]])
+  // CHECK: br label
+  // CHECK: [[RES:%.+]] = load i32, i32* [[RET]],
   // CHECK: ret i32 [[RES]]
 
 

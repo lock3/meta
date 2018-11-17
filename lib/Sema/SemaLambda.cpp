@@ -493,7 +493,9 @@ void Sema::finishLambdaExplicitCaptures(LambdaScopeInfo *LSI) {
   LSI->finishedExplicitCaptures();
 }
 
-void Sema::addLambdaParameters(CXXMethodDecl *CallOperator, Scope *CurScope) {
+void Sema::addLambdaParameters(
+    ArrayRef<LambdaIntroducer::LambdaCapture> Captures,
+    CXXMethodDecl *CallOperator, Scope *CurScope) {
   // Introduce our parameters into the function scope
   for (unsigned p = 0, NumParams = CallOperator->getNumParams();
        p < NumParams; ++p) {
@@ -501,7 +503,19 @@ void Sema::addLambdaParameters(CXXMethodDecl *CallOperator, Scope *CurScope) {
 
     // If this has an identifier, add it to the scope stack.
     if (CurScope && Param->getIdentifier()) {
-      CheckShadow(CurScope, Param);
+      bool Error = false;
+      // Resolution of CWG 2211 in C++17 renders shadowing ill-formed, but we
+      // retroactively apply it.
+      for (const auto &Capture : Captures) {
+        if (Capture.Id == Param->getIdentifier()) {
+          Error = true;
+          Diag(Param->getLocation(), diag::err_parameter_shadow_capture);
+          Diag(Capture.Loc, diag::note_var_explicitly_captured_here)
+              << Capture.Id << true;
+        }
+      }
+      if (!Error)
+        CheckShadow(CurScope, Param);
 
       PushOnScopeChains(Param, CurScope);
     }
@@ -773,16 +787,6 @@ QualType Sema::buildLambdaInitCaptureInitialization(SourceLocation Loc,
   InitializationSequence InitSeq(*this, Entity, Kind, Args);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind, Args, &DclT);
 
-  if (Result.isInvalid())
-    return QualType();
-  Init = Result.getAs<Expr>();
-
-  // The init-capture initialization is a full-expression that must be
-  // processed as one before we enter the declcontext of the lambda's
-  // call-operator.
-  Result = ActOnFinishFullExpr(Init, Loc, /*DiscardedValue*/ false,
-                               /*IsConstexpr*/ false,
-                               /*IsLambdaInitCaptureInitializer*/ true);
   if (Result.isInvalid())
     return QualType();
 
@@ -1152,7 +1156,7 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
   LSI->ContainsUnexpandedParameterPack = ContainsUnexpandedParameterPack;
 
   // Add lambda parameters into scope.
-  addLambdaParameters(Method, CurScope);
+  addLambdaParameters(Intro.Captures, Method, CurScope);
 
   // Enter a new evaluation context to insulate the lambda from any
   // cleanups from the enclosing full-expression.
@@ -1392,13 +1396,14 @@ static void addBlockPointerConversion(Sema &S,
   Class->addDecl(Conversion);
 }
 
-static ExprResult performLambdaVarCaptureInitialization(Sema &S,
-                                                        const Capture &Capture,
-                                                        FieldDecl *Field) {
+static ExprResult performLambdaVarCaptureInitialization(
+    Sema &S, const Capture &Capture, FieldDecl *Field,
+    SourceLocation ImplicitCaptureLoc, bool IsImplicitCapture) {
   assert(Capture.isVariableCapture() && "not a variable capture");
 
   auto *Var = Capture.getVariable();
-  SourceLocation Loc = Capture.getLocation();
+  SourceLocation Loc =
+      IsImplicitCapture ? ImplicitCaptureLoc : Capture.getLocation();
 
   // C++11 [expr.prim.lambda]p21:
   //   When the lambda-expression is evaluated, the entities that
@@ -1607,8 +1612,8 @@ ExprResult Sema::BuildLambdaExpr(SourceLocation StartLoc, SourceLocation EndLoc,
                                        Var, From.getEllipsisLoc()));
       Expr *Init = From.getInitExpr();
       if (!Init) {
-        auto InitResult =
-            performLambdaVarCaptureInitialization(*this, From, *CurField);
+        auto InitResult = performLambdaVarCaptureInitialization(
+            *this, From, *CurField, CaptureDefaultLoc, IsImplicit);
         if (InitResult.isInvalid())
           return ExprError();
         Init = InitResult.get();
@@ -1631,7 +1636,7 @@ ExprResult Sema::BuildLambdaExpr(SourceLocation StartLoc, SourceLocation EndLoc,
     //   same parameter and return types as the closure type's function call
     //   operator.
     // FIXME: Fix generic lambda to block conversions.
-    if (getLangOpts().Blocks && getLangOpts().ObjC1 && !IsGenericLambda)
+    if (getLangOpts().Blocks && getLangOpts().ObjC && !IsGenericLambda)
       addBlockPointerConversion(*this, IntroducerRange, Class, CallOperator);
 
     // Finalize the lambda class.

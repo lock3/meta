@@ -139,7 +139,6 @@ private:
     }
 
     std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
                                                    BugReporterContext &BRC,
                                                    BugReport &BR) override;
 
@@ -175,7 +174,8 @@ private:
       if (Error == ErrorKind::NilAssignedToNonnull ||
           Error == ErrorKind::NilPassedToNonnull ||
           Error == ErrorKind::NilReturnedToNonnull)
-        bugreporter::trackNullOrUndefValue(N, ValueExpr, *R);
+        if (const auto *Ex = dyn_cast<Expr>(ValueExpr))
+          bugreporter::trackExpressionValue(N, Ex, *R);
     }
     BR.emitReport(std::move(R));
   }
@@ -293,11 +293,10 @@ NullabilityChecker::getTrackRegion(SVal Val, bool CheckSuperRegion) const {
 
 std::shared_ptr<PathDiagnosticPiece>
 NullabilityChecker::NullabilityBugVisitor::VisitNode(const ExplodedNode *N,
-                                                     const ExplodedNode *PrevN,
                                                      BugReporterContext &BRC,
                                                      BugReport &BR) {
   ProgramStateRef State = N->getState();
-  ProgramStateRef StatePrev = PrevN->getState();
+  ProgramStateRef StatePrev = N->getFirstPred()->getState();
 
   const NullabilityState *TrackedNullab = State->get<NullabilityMap>(Region);
   const NullabilityState *TrackedNullabPrev =
@@ -1194,7 +1193,7 @@ void NullabilityChecker::printState(raw_ostream &Out, ProgramStateRef State,
     checker->NeedTracking = checker->NeedTracking || trackingRequired;         \
     checker->NoDiagnoseCallsToSystemHeaders =                                  \
         checker->NoDiagnoseCallsToSystemHeaders ||                             \
-        mgr.getAnalyzerOptions().getBooleanOption(                             \
+        mgr.getAnalyzerOptions().getCheckerBooleanOption(                             \
                       "NoDiagnoseCallsToSystemHeaders", false, checker, true); \
   }
 

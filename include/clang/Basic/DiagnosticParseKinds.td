@@ -88,9 +88,12 @@ def err_enumerator_unnamed_no_def : Error<
 def ext_cxx11_enum_fixed_underlying_type : Extension<
   "enumeration types with a fixed underlying type are a C++11 extension">,
   InGroup<CXX11>;
-def ext_c_enum_fixed_underlying_type : Extension<
+def ext_ms_c_enum_fixed_underlying_type : Extension<
   "enumeration types with a fixed underlying type are a Microsoft extension">,
   InGroup<MicrosoftFixedEnum>;
+def ext_clang_c_enum_fixed_underlying_type : Extension<
+  "enumeration types with a fixed underlying type are a Clang extension">,
+  InGroup<DiagGroup<"fixed-enum-extension">>;
 def warn_cxx98_compat_enum_fixed_underlying_type : Warning<
   "enumeration types with a fixed underlying type are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
@@ -219,6 +222,11 @@ def ext_nested_namespace_definition : ExtWarn<
 def warn_cxx14_compat_nested_namespace_definition : Warning<
   "nested namespace definition is incompatible with C++ standards before C++17">,
   InGroup<CXXPre17Compat>, DefaultIgnore;
+def ext_inline_nested_namespace_definition : ExtWarn<
+  "inline nested namespace definition is a C++2a extension">, InGroup<CXX2a>;
+def warn_cxx17_compat_inline_nested_namespace_definition : Warning<
+  "inline nested namespace definition is incompatible with C++ standards before"
+  " C++2a">, InGroup<CXXPre2aCompat>, DefaultIgnore;
 def err_inline_nested_namespace_definition : Error<
   "nested namespace definition cannot be 'inline'">;
 def err_expected_semi_after_attribute_list : Error<
@@ -543,6 +551,12 @@ def ext_init_statement : ExtWarn<
 def warn_cxx14_compat_init_statement : Warning<
   "%select{if|switch}0 initialization statements are incompatible with "
   "C++ standards before C++17">, DefaultIgnore, InGroup<CXXPre17Compat>;
+def ext_for_range_init_stmt : ExtWarn<
+  "range-based for loop initialization statements are a C++2a extension">,
+  InGroup<CXX2a>;
+def warn_cxx17_compat_for_range_init_stmt : Warning<
+  "range-based for loop initialization statements are incompatible with "
+  "C++ standards before C++2a">, DefaultIgnore, InGroup<CXXPre2aCompat>;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
@@ -569,6 +583,9 @@ def warn_cxx98_compat_noexcept_expr : Warning<
 def warn_cxx98_compat_nullptr : Warning<
   "'nullptr' is incompatible with C++98">, InGroup<CXX98Compat>, DefaultIgnore;
 
+def warn_wrong_clang_attr_namespace : Warning<
+  "'__clang__' is a predefined macro name, not an attribute scope specifier; "
+  "did you mean '_Clang' instead?">, InGroup<IgnoredAttributes>;
 def ext_ns_enum_attribute : Extension<
   "attributes on %select{a namespace|an enumerator}0 declaration are "
   "a C++17 extension">, InGroup<CXX17>;
@@ -1026,8 +1043,8 @@ def err_pragma_optimize_invalid_argument : Error<
 def err_pragma_optimize_extra_argument : Error<
   "unexpected extra argument '%0' to '#pragma clang optimize'">;
 // - #pragma clang attribute
-def err_pragma_attribute_expected_push_pop : Error<
-  "expected 'push' or 'pop' after '#pragma clang attribute'">;
+def err_pragma_attribute_expected_push_pop_paren : Error<
+  "expected 'push', 'pop', or '(' after '#pragma clang attribute'">;
 def err_pragma_attribute_invalid_argument : Error<
   "unexpected argument '%0' to '#pragma clang attribute'; "
   "expected 'push' or 'pop'">;
@@ -1128,6 +1145,8 @@ def err_expected_end_declare_target : Error<
   "expected '#pragma omp end declare target'">;
 def err_omp_declare_target_unexpected_clause: Error<
   "unexpected '%0' clause, only 'to' or 'link' clauses expected">;
+def err_omp_expected_clause: Error<
+  "expected at least one clause on '#pragma omp %0' directive">;
 
 // Pragma loop support.
 def err_pragma_loop_missing_argument : Error<

@@ -517,7 +517,6 @@ private:
     }
 
     std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
                                                    BugReporterContext &BRC,
                                                    BugReport &BR) override;
 
@@ -713,10 +712,8 @@ bool MallocChecker::isCMemFunction(const FunctionDecl *FD,
   return false;
 }
 
-// Tells if the callee is one of the following:
-// 1) A global non-placement new/delete operator function.
-// 2) A global placement operator function with the single placement argument
-//    of type std::nothrow_t.
+// Tells if the callee is one of the builtin new/delete operators, including
+// placement operators and other standard overloads.
 bool MallocChecker::isStandardNewDelete(const FunctionDecl *FD,
                                         ASTContext &C) const {
   if (!FD)
@@ -727,23 +724,11 @@ bool MallocChecker::isStandardNewDelete(const FunctionDecl *FD,
       Kind != OO_Delete && Kind != OO_Array_Delete)
     return false;
 
-  // Skip all operator new/delete methods.
-  if (isa<CXXMethodDecl>(FD))
-    return false;
-
-  // Return true if tested operator is a standard placement nothrow operator.
-  if (FD->getNumParams() == 2) {
-    QualType T = FD->getParamDecl(1)->getType();
-    if (const IdentifierInfo *II = T.getBaseTypeIdentifier())
-      return II->getName().equals("nothrow_t");
-  }
-
-  // Skip placement operators.
-  if (FD->getNumParams() != 1 || FD->isVariadic())
-    return false;
-
-  // One of the standard new/new[]/delete/delete[] non-placement operators.
-  return true;
+  // This is standard if and only if it's not defined in a user file.
+  SourceLocation L = FD->getLocation();
+  // If the header for operator delete is not included, it's still defined
+  // in an invalid source location. Check to make sure we don't crash.
+  return !L.isValid() || C.getSourceManager().isInSystemHeader(L);
 }
 
 llvm::Optional<ProgramStateRef> MallocChecker::performKernelMalloc(
@@ -1088,12 +1073,6 @@ static bool treatUnusedNewEscaped(const CXXNewExpr *NE) {
 void MallocChecker::processNewAllocation(const CXXNewExpr *NE,
                                          CheckerContext &C,
                                          SVal Target) const {
-  if (NE->getNumPlacementArgs())
-    for (CXXNewExpr::const_arg_iterator I = NE->placement_arg_begin(),
-         E = NE->placement_arg_end(); I != E; ++I)
-      if (SymbolRef Sym = C.getSVal(*I).getAsSymbol())
-        checkUseAfterFree(Sym, C, *I);
-
   if (!isStandardNewDelete(NE->getOperatorNew(), C.getASTContext()))
     return;
 
@@ -2439,10 +2418,6 @@ void MallocChecker::checkPreCall(const CallEvent &Call,
          isCMemFunction(FD, Ctx, AF_IfNameIndex,
                         MemoryOperationKind::MOK_Free)))
       return;
-
-    if (ChecksEnabled[CK_NewDeleteChecker] &&
-        isStandardNewDelete(FD, Ctx))
-      return;
   }
 
   // Check if the callee of a method is deleted.
@@ -2540,8 +2515,7 @@ void MallocChecker::checkPostStmt(const BlockExpr *BE,
   }
 
   state =
-    state->scanReachableSymbols<StopTrackingCallback>(Regions.data(),
-                                    Regions.data() + Regions.size()).getState();
+    state->scanReachableSymbols<StopTrackingCallback>(Regions).getState();
   C.addTransition(state);
 }
 
@@ -2889,11 +2863,10 @@ static bool isReferenceCountingPointerDestructor(const CXXDestructorDecl *DD) {
 }
 
 std::shared_ptr<PathDiagnosticPiece> MallocChecker::MallocBugVisitor::VisitNode(
-    const ExplodedNode *N, const ExplodedNode *PrevN, BugReporterContext &BRC,
-    BugReport &BR) {
+    const ExplodedNode *N, BugReporterContext &BRC, BugReport &BR) {
 
   ProgramStateRef state = N->getState();
-  ProgramStateRef statePrev = PrevN->getState();
+  ProgramStateRef statePrev = N->getFirstPred()->getState();
 
   const RefState *RS = state->get<RegionState>(Sym);
   const RefState *RSPrev = statePrev->get<RegionState>(Sym);
@@ -3111,7 +3084,7 @@ markReleased(ProgramStateRef State, SymbolRef Sym, const Expr *Origin) {
 void ento::registerNewDeleteLeaksChecker(CheckerManager &mgr) {
   registerCStringCheckerBasic(mgr);
   MallocChecker *checker = mgr.registerChecker<MallocChecker>();
-  checker->IsOptimistic = mgr.getAnalyzerOptions().getBooleanOption(
+  checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(
       "Optimistic", false, checker);
   checker->ChecksEnabled[MallocChecker::CK_NewDeleteLeaksChecker] = true;
   checker->CheckNames[MallocChecker::CK_NewDeleteLeaksChecker] =
@@ -3132,7 +3105,7 @@ void ento::registerNewDeleteLeaksChecker(CheckerManager &mgr) {
 void ento::registerInnerPointerCheckerAux(CheckerManager &mgr) {
     registerCStringCheckerBasic(mgr);
     MallocChecker *checker = mgr.registerChecker<MallocChecker>();
-    checker->IsOptimistic = mgr.getAnalyzerOptions().getBooleanOption(
+    checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(
         "Optimistic", false, checker);
     checker->ChecksEnabled[MallocChecker::CK_InnerPointerChecker] = true;
     checker->CheckNames[MallocChecker::CK_InnerPointerChecker] =
@@ -3143,7 +3116,7 @@ void ento::registerInnerPointerCheckerAux(CheckerManager &mgr) {
   void ento::register##name(CheckerManager &mgr) {                             \
     registerCStringCheckerBasic(mgr);                                          \
     MallocChecker *checker = mgr.registerChecker<MallocChecker>();             \
-    checker->IsOptimistic = mgr.getAnalyzerOptions().getBooleanOption(         \
+    checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(  \
         "Optimistic", false, checker);                                         \
     checker->ChecksEnabled[MallocChecker::CK_##name] = true;                   \
     checker->CheckNames[MallocChecker::CK_##name] = mgr.getCurrentCheckName(); \

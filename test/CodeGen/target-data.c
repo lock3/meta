@@ -32,25 +32,53 @@
 
 // RUN: %clang_cc1 -triple mipsel-linux-gnu -o - -emit-llvm %s |     \
 // RUN: FileCheck %s -check-prefix=MIPS-32EL
+// RUN: %clang_cc1 -triple mipsisa32r6el-linux-gnu -o - -emit-llvm %s |     \
+// RUN: FileCheck %s -check-prefix=MIPS-32EL
 // MIPS-32EL: target datalayout = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64"
 
 // RUN: %clang_cc1 -triple mips-linux-gnu -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-32EB
+// RUN: %clang_cc1 -triple mipsisa32r6-linux-gnu -o - -emit-llvm %s | \
 // RUN: FileCheck %s -check-prefix=MIPS-32EB
 // MIPS-32EB: target datalayout = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64"
 
 // RUN: %clang_cc1 -triple mips64el-linux-gnu -o - -emit-llvm %s | \
 // RUN: FileCheck %s -check-prefix=MIPS-64EL
+// RUN: %clang_cc1 -triple mips64el-linux-gnuabi64 -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EL
+// RUN: %clang_cc1 -triple mipsisa64r6el-linux-gnu -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EL
+// RUN: %clang_cc1 -triple mipsisa64r6el-linux-gnuabi64 -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EL
 // MIPS-64EL: target datalayout = "e-m:e-i8:8:32-i16:16:32-i64:64-n32:64-S128"
 
 // RUN: %clang_cc1 -triple mips64el-linux-gnu -o - -emit-llvm -target-abi n32 \
+// RUN: %s | FileCheck %s -check-prefix=MIPS-64EL-N32
+// RUN: %clang_cc1 -triple mips64el-linux-gnuabin32 -o - -emit-llvm \
+// RUN: %s | FileCheck %s -check-prefix=MIPS-64EL-N32
+// RUN: %clang_cc1 -triple mipsisa64r6el-linux-gnu -o - -emit-llvm -target-abi n32 \
+// RUN: %s | FileCheck %s -check-prefix=MIPS-64EL-N32
+// RUN: %clang_cc1 -triple mipsisa64r6el-linux-gnuabin32 -o - -emit-llvm \
 // RUN: %s | FileCheck %s -check-prefix=MIPS-64EL-N32
 // MIPS-64EL-N32: target datalayout = "e-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128"
 
 // RUN: %clang_cc1 -triple mips64-linux-gnu -o - -emit-llvm %s | \
 // RUN: FileCheck %s -check-prefix=MIPS-64EB
+// RUN: %clang_cc1 -triple mips64-linux-gnuabi64 -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EB
+// RUN: %clang_cc1 -triple mipsisa64r6-linux-gnu -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EB
+// RUN: %clang_cc1 -triple mipsisa64r6-linux-gnuabi64 -o - -emit-llvm %s | \
+// RUN: FileCheck %s -check-prefix=MIPS-64EB
 // MIPS-64EB: target datalayout = "E-m:e-i8:8:32-i16:16:32-i64:64-n32:64-S128"
 
 // RUN: %clang_cc1 -triple mips64-linux-gnu -o - -emit-llvm %s -target-abi n32 \
+// RUN: | FileCheck %s -check-prefix=MIPS-64EB-N32
+// RUN: %clang_cc1 -triple mips64-linux-gnuabin32 -o - -emit-llvm %s \
+// RUN: | FileCheck %s -check-prefix=MIPS-64EB-N32
+// RUN: %clang_cc1 -triple mipsisa64r6-linux-gnu -o - -emit-llvm %s -target-abi n32 \
+// RUN: | FileCheck %s -check-prefix=MIPS-64EB-N32
+// RUN: %clang_cc1 -triple mipsisa64r6-linux-gnuabin32 -o - -emit-llvm %s \
 // RUN: | FileCheck %s -check-prefix=MIPS-64EB-N32
 // MIPS-64EB-N32: target datalayout = "E-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128"
 
@@ -105,14 +133,6 @@
 // RUN: %clang_cc1 -triple powerpc64le-linux -o - -emit-llvm %s | \
 // RUN: FileCheck %s -check-prefix=PPC64LE-LINUX
 // PPC64LE-LINUX: target datalayout = "e-m:e-i64:64-n32:64"
-
-// RUN: %clang_cc1 -triple powerpc-darwin -o - -emit-llvm %s | \
-// RUN: FileCheck %s -check-prefix=PPC32-DARWIN
-// PPC32-DARWIN: target datalayout = "E-m:o-p:32:32-f64:32:64-n32"
-
-// RUN: %clang_cc1 -triple powerpc64-darwin -o - -emit-llvm %s | \
-// RUN: FileCheck %s -check-prefix=PPC64-DARWIN
-// PPC64-DARWIN: target datalayout = "E-m:o-i64:64-n32:64"
 
 // RUN: %clang_cc1 -triple nvptx-unknown -o - -emit-llvm %s | \
 // RUN: FileCheck %s -check-prefix=NVPTX

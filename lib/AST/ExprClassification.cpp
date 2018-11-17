@@ -201,6 +201,9 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXValueOfExprClass:
     return Cl::CL_PRValue;
 
+  case Expr::ConstantExprClass:
+    return ClassifyInternal(Ctx, cast<ConstantExpr>(E)->getSubExpr());
+
     // Next come the complicated cases.
   case Expr::SubstNonTypeTemplateParmExprClass:
     return ClassifyInternal(Ctx,

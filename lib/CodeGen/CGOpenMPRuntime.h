@@ -19,8 +19,8 @@
 #include "clang/Basic/OpenMPKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueHandle.h"
 
@@ -278,6 +278,10 @@ protected:
   /// stored.
   virtual Address emitThreadIDAddress(CodeGenFunction &CGF, SourceLocation Loc);
 
+  void setLocThreadIdInsertPt(CodeGenFunction &CGF,
+                              bool AtCurrentPoint = false);
+  void clearLocThreadIdInsertPt(CodeGenFunction &CGF);
+
 private:
   /// Default const ident_t object used for initialization of all other
   /// ident_t objects.
@@ -300,6 +304,8 @@ private:
   struct DebugLocThreadIdTy {
     llvm::Value *DebugLoc;
     llvm::Value *ThreadID;
+    /// Insert point for the service instructions.
+    llvm::AssertingVH<llvm::Instruction> ServiceInsertPt = nullptr;
   };
   /// Map of local debug location, ThreadId and functions.
   typedef llvm::DenseMap<llvm::Function *, DebugLocThreadIdTy>
@@ -315,10 +321,6 @@ private:
                          SmallVector<const OMPDeclareReductionDecl *, 4>>
       FunctionUDRMapTy;
   FunctionUDRMapTy FunctionUDRMap;
-  IdentifierInfo *In = nullptr;
-  IdentifierInfo *Out = nullptr;
-  IdentifierInfo *Priv = nullptr;
-  IdentifierInfo *Orig = nullptr;
   /// Type kmp_critical_name, originally defined as typedef kmp_int32
   /// kmp_critical_name[8];
   llvm::ArrayType *KmpCriticalNameTy;
@@ -600,7 +602,11 @@ private:
   OffloadEntriesInfoManagerTy OffloadEntriesInfoManager;
 
   bool ShouldMarkAsGlobal = true;
-  llvm::SmallDenseSet<const FunctionDecl *> AlreadyEmittedTargetFunctions;
+  /// List of the emitted functions.
+  llvm::StringSet<> AlreadyEmittedTargetFunctions;
+  /// List of the global variables with their addresses that should not be
+  /// emitted for the target.
+  llvm::StringMap<llvm::WeakTrackingVH> EmittedNonTargetVariables;
 
   /// List of variables that can become declare target implicitly and, thus,
   /// must be emitted.
@@ -677,10 +683,10 @@ private:
                                               const llvm::Twine &Name);
 
   /// Set of threadprivate variables with the generated initializer.
-  llvm::SmallPtrSet<const VarDecl *, 4> ThreadPrivateWithDefinition;
+  llvm::StringSet<> ThreadPrivateWithDefinition;
 
   /// Set of declare target variables with the generated initializer.
-  llvm::SmallPtrSet<const VarDecl *, 4> DeclareTargetWithDefinition;
+  llvm::StringSet<> DeclareTargetWithDefinition;
 
   /// Emits initialization code for the threadprivate variables.
   /// \param VDAddr Address of the global variable \a VD.
@@ -887,6 +893,20 @@ public:
   ///
   virtual bool isStaticNonchunked(OpenMPDistScheduleClauseKind ScheduleKind,
                                   bool Chunked) const;
+
+  /// Check if the specified \a ScheduleKind is static chunked.
+  /// \param ScheduleKind Schedule kind specified in the 'schedule' clause.
+  /// \param Chunked True if chunk is specified in the clause.
+  ///
+  virtual bool isStaticChunked(OpenMPScheduleClauseKind ScheduleKind,
+                               bool Chunked) const;
+
+  /// Check if the specified \a ScheduleKind is static non-chunked.
+  /// \param ScheduleKind Schedule kind specified in the 'dist_schedule' clause.
+  /// \param Chunked True if chunk is specified in the clause.
+  ///
+  virtual bool isStaticChunked(OpenMPDistScheduleClauseKind ScheduleKind,
+                               bool Chunked) const;
 
   /// Check if the specified \a ScheduleKind is dynamic.
   /// This kind of worksharing directive is emitted without outer loop.
@@ -1494,6 +1514,18 @@ public:
                                       const VarDecl *NativeParam,
                                       const VarDecl *TargetParam) const;
 
+  /// Choose default schedule type and chunk value for the
+  /// dist_schedule clause.
+  virtual void getDefaultDistScheduleAndChunk(CodeGenFunction &CGF,
+      const OMPLoopDirective &S, OpenMPDistScheduleClauseKind &ScheduleKind,
+      llvm::Value *&Chunk) const {}
+
+  /// Choose default schedule type and chunk value for the
+  /// schedule clause.
+  virtual void getDefaultScheduleAndChunk(CodeGenFunction &CGF,
+      const OMPLoopDirective &S, OpenMPScheduleClauseKind &ScheduleKind,
+      const Expr *&ChunkExpr) const {}
+
   /// Emits call of the outlined function with the provided arguments,
   /// translating these arguments to correct target-specific arguments.
   virtual void
@@ -1515,6 +1547,12 @@ public:
 
   /// Emit deferred declare target variables marked for deferred emission.
   void emitDeferredTargetDecls() const;
+
+  /// Adjust some parameters for the target-based directives, like addresses of
+  /// the variables captured by reference in lambdas.
+  virtual void
+  adjustTargetSpecificDataForLambdas(CodeGenFunction &CGF,
+                                     const OMPExecutableDirective &D) const;
 };
 
 /// Class supports emissionof SIMD-only code.

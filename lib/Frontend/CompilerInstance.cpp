@@ -38,6 +38,7 @@
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/GlobalModuleIndex.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
@@ -177,18 +178,18 @@ static void collectIncludePCH(CompilerInstance &CI,
   std::error_code EC;
   SmallString<128> DirNative;
   llvm::sys::path::native(PCHDir->getName(), DirNative);
-  vfs::FileSystem &FS = *FileMgr.getVirtualFileSystem();
+  llvm::vfs::FileSystem &FS = *FileMgr.getVirtualFileSystem();
   SimpleASTReaderListener Validator(CI.getPreprocessor());
-  for (vfs::directory_iterator Dir = FS.dir_begin(DirNative, EC), DirEnd;
+  for (llvm::vfs::directory_iterator Dir = FS.dir_begin(DirNative, EC), DirEnd;
        Dir != DirEnd && !EC; Dir.increment(EC)) {
     // Check whether this is an AST file. ASTReader::isAcceptableASTFile is not
     // used here since we're not interested in validating the PCH at this time,
     // but only to check whether this is a file containing an AST.
     if (!ASTReader::readASTFileControlBlock(
-            Dir->getName(), FileMgr, CI.getPCHContainerReader(),
+            Dir->path(), FileMgr, CI.getPCHContainerReader(),
             /*FindModuleFileExtensions=*/false, Validator,
             /*ValidateDiagnosticOptions=*/false))
-      MDC->addFile(Dir->getName());
+      MDC->addFile(Dir->path());
   }
 }
 
@@ -198,14 +199,14 @@ static void collectVFSEntries(CompilerInstance &CI,
     return;
 
   // Collect all VFS found.
-  SmallVector<vfs::YAMLVFSEntry, 16> VFSEntries;
+  SmallVector<llvm::vfs::YAMLVFSEntry, 16> VFSEntries;
   for (const std::string &VFSFile : CI.getHeaderSearchOpts().VFSOverlayFiles) {
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
         llvm::MemoryBuffer::getFile(VFSFile);
     if (!Buffer)
       return;
-    vfs::collectVFSFromYAML(std::move(Buffer.get()), /*DiagHandler*/ nullptr,
-                            VFSFile, VFSEntries);
+    llvm::vfs::collectVFSFromYAML(std::move(Buffer.get()),
+                                  /*DiagHandler*/ nullptr, VFSFile, VFSEntries);
   }
 
   for (auto &E : VFSEntries)
@@ -303,7 +304,7 @@ CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
 
 FileManager *CompilerInstance::createFileManager() {
   if (!hasVirtualFileSystem()) {
-    IntrusiveRefCntPtr<vfs::FileSystem> VFS =
+    IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
         createVFSFromCompilerInvocation(getInvocation(), getDiagnostics());
     setVirtualFileSystem(VFS);
   }
@@ -371,6 +372,9 @@ static void InitializeFileRemapping(DiagnosticsEngine &Diags,
 
 void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   const PreprocessorOptions &PPOpts = getPreprocessorOpts();
+
+  // The module manager holds a reference to the old preprocessor (if any).
+  ModuleManager.reset();
 
   // Create a PTH manager if we are using some form of a token cache.
   PTHManager *PTHMgr = nullptr;
@@ -911,6 +915,9 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   // taking it as an input instead of hard-coding llvm::errs.
   raw_ostream &OS = llvm::errs();
 
+  if (!Act.PrepareToExecute(*this))
+    return false;
+
   // Create the target instance.
   setTarget(TargetInfo::CreateTargetInfo(getDiagnostics(),
                                          getInvocation().TargetOpts));
@@ -1021,7 +1028,7 @@ static InputKind::Language getLanguageFromOptions(const LangOptions &LangOpts) {
     return InputKind::OpenCL;
   if (LangOpts.CUDA)
     return InputKind::CUDA;
-  if (LangOpts.ObjC1)
+  if (LangOpts.ObjC)
     return LangOpts.CPlusPlus ? InputKind::ObjCXX : InputKind::ObjC;
   return LangOpts.CPlusPlus ? InputKind::CXX : InputKind::C;
 }
@@ -1266,7 +1273,7 @@ static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
           << Module->Name << Locked.getErrorMessage();
       // Clear out any potential leftover.
       Locked.unsafeRemoveLockFile();
-      // FALLTHROUGH
+      LLVM_FALLTHROUGH;
     case llvm::LockFileManager::LFS_Owned:
       // We're responsible for building the module ourselves.
       if (!compileModuleImpl(ImportingInstance, ModuleNameLoc, Module,
@@ -1615,22 +1622,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
                              Module::NameVisibilityKind Visibility,
                              bool IsInclusionDirective) {
   // Determine what file we're searching from.
-  // FIXME: Should we be deciding whether this is a submodule (here and
-  // below) based on -fmodules-ts or should we pass a flag and make the
-  // caller decide?
-  std::string ModuleName;
-  if (getLangOpts().ModulesTS) {
-    // FIXME: Same code as Sema::ActOnModuleDecl() so there is probably a
-    // better place/way to do this.
-    for (auto &Piece : Path) {
-      if (!ModuleName.empty())
-        ModuleName += ".";
-      ModuleName += Piece.first->getName();
-    }
-  }
-  else
-    ModuleName = Path[0].first->getName();
-
+  StringRef ModuleName = Path[0].first->getName();
   SourceLocation ModuleNameLoc = Path[0].second;
 
   // If we've already handled this import, just return the cached result.
@@ -1736,7 +1728,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     // module cache, we don't know how to rebuild modules.
     unsigned ARRFlags = Source == ModuleCache ?
                         ASTReader::ARR_OutOfDate | ASTReader::ARR_Missing :
-                        ASTReader::ARR_ConfigurationMismatch;
+                        Source == PrebuiltModulePath ?
+                            0 :
+                            ASTReader::ARR_ConfigurationMismatch;
     switch (ModuleManager->ReadAST(ModuleFileName,
                                    Source == PrebuiltModulePath
                                        ? serialization::MK_PrebuiltModule
@@ -1859,7 +1853,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   // Verify that the rest of the module path actually corresponds to
   // a submodule.
   bool MapPrivateSubModToTopLevel = false;
-  if (!getLangOpts().ModulesTS && Path.size() > 1) {
+  if (Path.size() > 1) {
     for (unsigned I = 1, N = Path.size(); I != N; ++I) {
       StringRef Name = Path[I].first->getName();
       clang::Module *Sub = Module->findSubmodule(Name);
@@ -2139,7 +2133,7 @@ CompilerInstance::lookupMissingImports(StringRef Name,
 
   return false;
 }
-void CompilerInstance::resetAndLeakSema() { BuryPointer(takeSema()); }
+void CompilerInstance::resetAndLeakSema() { llvm::BuryPointer(takeSema()); }
 
 void CompilerInstance::setExternalSemaSource(
     IntrusiveRefCntPtr<ExternalSemaSource> ESS) {

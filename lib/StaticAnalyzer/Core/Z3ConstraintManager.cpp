@@ -11,10 +11,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SMTConstraintManager.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/SMTContext.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/SMTExpr.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/SMTSolver.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/SMTSort.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/SMTConv.h"
 
 #include "clang/Config/config.h"
 
@@ -49,15 +46,15 @@ public:
 // Function used to report errors
 void Z3ErrorHandler(Z3_context Context, Z3_error_code Error) {
   llvm::report_fatal_error("Z3 error: " +
-                           llvm::Twine(Z3_get_error_msg_ex(Context, Error)));
+                           llvm::Twine(Z3_get_error_msg(Context, Error)));
 }
 
 /// Wrapper for Z3 context
-class Z3Context : public SMTContext {
+class Z3Context {
 public:
   Z3_context Context;
 
-  Z3Context() : SMTContext() {
+  Z3Context() {
     Context = Z3_mk_context_rc(Z3Config().Config);
     // The error function is set here because the context is the first object
     // created by the backend
@@ -674,7 +671,7 @@ public:
                               toZ3Expr(*From).AST, toZ3Sort(*To).Sort)));
   }
 
-  SMTExprRef mkFPtoSBV(const SMTExprRef &From, const SMTSortRef &To) override {
+  SMTExprRef mkSBVtoFP(const SMTExprRef &From, const SMTSortRef &To) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(Z3Expr(
         Context,
@@ -682,7 +679,7 @@ public:
                                toZ3Expr(*From).AST, toZ3Sort(*To).Sort)));
   }
 
-  SMTExprRef mkFPtoUBV(const SMTExprRef &From, const SMTSortRef &To) override {
+  SMTExprRef mkUBVtoFP(const SMTExprRef &From, const SMTSortRef &To) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(Z3Expr(
         Context,
@@ -690,14 +687,14 @@ public:
                                  toZ3Expr(*From).AST, toZ3Sort(*To).Sort)));
   }
 
-  SMTExprRef mkSBVtoFP(const SMTExprRef &From, unsigned ToWidth) override {
+  SMTExprRef mkFPtoSBV(const SMTExprRef &From, unsigned ToWidth) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(Z3Expr(
         Context, Z3_mk_fpa_to_sbv(Context.Context, toZ3Expr(*RoundingMode).AST,
                                   toZ3Expr(*From).AST, ToWidth)));
   }
 
-  SMTExprRef mkUBVtoFP(const SMTExprRef &From, unsigned ToWidth) override {
+  SMTExprRef mkFPtoUBV(const SMTExprRef &From, unsigned ToWidth) override {
     SMTExprRef RoundingMode = getFloatRoundingMode();
     return newExprRef(Z3Expr(
         Context, Z3_mk_fpa_to_ubv(Context.Context, toZ3Expr(*RoundingMode).AST,
@@ -736,9 +733,11 @@ public:
 
   llvm::APSInt getBitvector(const SMTExprRef &Exp, unsigned BitWidth,
                             bool isUnsigned) override {
-    return llvm::APSInt(llvm::APInt(
-        BitWidth, Z3_get_numeral_string(Context.Context, toZ3Expr(*Exp).AST),
-        10));
+    return llvm::APSInt(
+        llvm::APInt(BitWidth,
+                    Z3_get_numeral_string(Context.Context, toZ3Expr(*Exp).AST),
+                    10),
+        isUnsigned);
   }
 
   bool getBoolean(const SMTExprRef &Exp) override {
@@ -748,42 +747,6 @@ public:
   SMTExprRef getFloatRoundingMode() override {
     // TODO: Don't assume nearest ties to even rounding mode
     return newExprRef(Z3Expr(Context, Z3_mk_fpa_rne(Context.Context)));
-  }
-
-  SMTExprRef fromData(const SymbolID ID, const QualType &Ty,
-                      uint64_t BitWidth) override {
-    llvm::Twine Name = "$" + llvm::Twine(ID);
-    return mkSymbol(Name.str().c_str(), mkSort(Ty, BitWidth));
-  }
-
-  SMTExprRef fromBoolean(const bool Bool) override {
-    Z3_ast AST =
-        Bool ? Z3_mk_true(Context.Context) : Z3_mk_false(Context.Context);
-    return newExprRef(Z3Expr(Context, AST));
-  }
-
-  SMTExprRef fromAPFloat(const llvm::APFloat &Float) override {
-    SMTSortRef Sort =
-        getFloatSort(llvm::APFloat::semanticsSizeInBits(Float.getSemantics()));
-
-    llvm::APSInt Int = llvm::APSInt(Float.bitcastToAPInt(), false);
-    SMTExprRef Z3Int = fromAPSInt(Int);
-    return newExprRef(Z3Expr(
-        Context, Z3_mk_fpa_to_fp_bv(Context.Context, toZ3Expr(*Z3Int).AST,
-                                    toZ3Sort(*Sort).Sort)));
-  }
-
-  SMTExprRef fromAPSInt(const llvm::APSInt &Int) override {
-    SMTSortRef Sort = getBitvectorSort(Int.getBitWidth());
-    Z3_ast AST = Z3_mk_numeral(Context.Context, Int.toString(10).c_str(),
-                               toZ3Sort(*Sort).Sort);
-    return newExprRef(Z3Expr(Context, AST));
-  }
-
-  SMTExprRef fromInt(const char *Int, uint64_t BitWidth) override {
-    SMTSortRef Sort = getBitvectorSort(BitWidth);
-    Z3_ast AST = Z3_mk_numeral(Context.Context, Int, toZ3Sort(*Sort).Sort);
-    return newExprRef(Z3Expr(Context, AST));
   }
 
   bool toAPFloat(const SMTSortRef &Sort, const SMTExprRef &AST,
@@ -873,7 +836,7 @@ public:
     return toAPFloat(Sort, Assign, Float, true);
   }
 
-  ConditionTruthVal check() const override {
+  Optional<bool> check() const override {
     Z3_lbool res = Z3_solver_check(Context.Context, Solver);
     if (res == Z3_L_TRUE)
       return true;
@@ -881,7 +844,7 @@ public:
     if (res == Z3_L_FALSE)
       return false;
 
-    return ConditionTruthVal();
+    return Optional<bool>();
   }
 
   void push() override { return Z3_solver_push(Context.Context, Solver); }
@@ -897,132 +860,34 @@ public:
     return Z3Model(Context, Z3_solver_get_model(Context.Context, Solver));
   }
 
+  bool isFPSupported() override { return true; }
+
   /// Reset the solver and remove all constraints.
-  void reset() const override { Z3_solver_reset(Context.Context, Solver); }
+  void reset() override { Z3_solver_reset(Context.Context, Solver); }
 
   void print(raw_ostream &OS) const override {
     OS << Z3_solver_to_string(Context.Context, Solver);
   }
 }; // end class Z3Solver
 
-class Z3ConstraintManager : public SMTConstraintManager {
+class Z3ConstraintManager : public SMTConstraintManager<ConstraintZ3, Z3Expr> {
   SMTSolverRef Solver = CreateZ3Solver();
 
 public:
   Z3ConstraintManager(SubEngine *SE, SValBuilder &SB)
       : SMTConstraintManager(SE, SB, Solver) {}
-
-  void addStateConstraints(ProgramStateRef State) const override {
-    // TODO: Don't add all the constraints, only the relevant ones
-    ConstraintZ3Ty CZ = State->get<ConstraintZ3>();
-    ConstraintZ3Ty::iterator I = CZ.begin(), IE = CZ.end();
-
-    // Construct the logical AND of all the constraints
-    if (I != IE) {
-      std::vector<SMTExprRef> ASTs;
-
-      SMTExprRef Constraint = Solver->newExprRef(I++->second);
-      while (I != IE) {
-        Constraint = Solver->mkAnd(Constraint, Solver->newExprRef(I++->second));
-      }
-
-      Solver->addConstraint(Constraint);
-    }
-  }
-
-  bool canReasonAbout(SVal X) const override {
-    const TargetInfo &TI = getBasicVals().getContext().getTargetInfo();
-
-    Optional<nonloc::SymbolVal> SymVal = X.getAs<nonloc::SymbolVal>();
-    if (!SymVal)
-      return true;
-
-    const SymExpr *Sym = SymVal->getSymbol();
-    QualType Ty = Sym->getType();
-
-    // Complex types are not modeled
-    if (Ty->isComplexType() || Ty->isComplexIntegerType())
-      return false;
-
-    // Non-IEEE 754 floating-point types are not modeled
-    if ((Ty->isSpecificBuiltinType(BuiltinType::LongDouble) &&
-         (&TI.getLongDoubleFormat() == &llvm::APFloat::x87DoubleExtended() ||
-          &TI.getLongDoubleFormat() == &llvm::APFloat::PPCDoubleDouble())))
-      return false;
-
-    if (isa<SymbolData>(Sym))
-      return true;
-
-    SValBuilder &SVB = getSValBuilder();
-
-    if (const SymbolCast *SC = dyn_cast<SymbolCast>(Sym))
-      return canReasonAbout(SVB.makeSymbolVal(SC->getOperand()));
-
-    if (const BinarySymExpr *BSE = dyn_cast<BinarySymExpr>(Sym)) {
-      if (const SymIntExpr *SIE = dyn_cast<SymIntExpr>(BSE))
-        return canReasonAbout(SVB.makeSymbolVal(SIE->getLHS()));
-
-      if (const IntSymExpr *ISE = dyn_cast<IntSymExpr>(BSE))
-        return canReasonAbout(SVB.makeSymbolVal(ISE->getRHS()));
-
-      if (const SymSymExpr *SSE = dyn_cast<SymSymExpr>(BSE))
-        return canReasonAbout(SVB.makeSymbolVal(SSE->getLHS())) &&
-               canReasonAbout(SVB.makeSymbolVal(SSE->getRHS()));
-    }
-
-    llvm_unreachable("Unsupported expression to reason about!");
-  }
-
-  ProgramStateRef removeDeadBindings(ProgramStateRef State,
-                                     SymbolReaper &SymReaper) override {
-    ConstraintZ3Ty CZ = State->get<ConstraintZ3>();
-    ConstraintZ3Ty::Factory &CZFactory = State->get_context<ConstraintZ3>();
-
-    for (ConstraintZ3Ty::iterator I = CZ.begin(), E = CZ.end(); I != E; ++I) {
-      if (SymReaper.maybeDead(I->first))
-        CZ = CZFactory.remove(CZ, *I);
-    }
-
-    return State->set<ConstraintZ3>(CZ);
-  }
-
-  ProgramStateRef assumeExpr(ProgramStateRef State, SymbolRef Sym,
-                             const SMTExprRef &Exp) override {
-    // Check the model, avoid simplifying AST to save time
-    if (checkModel(State, Exp).isConstrainedTrue())
-      return State->add<ConstraintZ3>(std::make_pair(Sym, toZ3Expr(*Exp)));
-
-    return nullptr;
-  }
-
-  //==------------------------------------------------------------------------==/
-  // Pretty-printing.
-  //==------------------------------------------------------------------------==/
-
-  void print(ProgramStateRef St, raw_ostream &OS, const char *nl,
-             const char *sep) override {
-
-    ConstraintZ3Ty CZ = St->get<ConstraintZ3>();
-
-    OS << nl << sep << "Constraints:";
-    for (ConstraintZ3Ty::iterator I = CZ.begin(), E = CZ.end(); I != E; ++I) {
-      OS << nl << ' ' << I->first << " : ";
-      I->second.print(OS);
-    }
-    OS << nl;
-  }
 }; // end class Z3ConstraintManager
 
 } // end anonymous namespace
 
 #endif
 
-std::unique_ptr<SMTSolver> clang::ento::CreateZ3Solver() {
+SMTSolverRef clang::ento::CreateZ3Solver() {
 #if CLANG_ANALYZER_WITH_Z3
   return llvm::make_unique<Z3Solver>();
 #else
   llvm::report_fatal_error("Clang was not compiled with Z3 support, rebuild "
-                           "with -DCLANG_ANALYZER_BUILD_Z3=ON",
+                           "with -DCLANG_ANALYZER_ENABLE_Z3_SOLVER=ON",
                            false);
   return nullptr;
 #endif
@@ -1034,7 +899,7 @@ ento::CreateZ3ConstraintManager(ProgramStateManager &StMgr, SubEngine *Eng) {
   return llvm::make_unique<Z3ConstraintManager>(Eng, StMgr.getSValBuilder());
 #else
   llvm::report_fatal_error("Clang was not compiled with Z3 support, rebuild "
-                           "with -DCLANG_ANALYZER_BUILD_Z3=ON",
+                           "with -DCLANG_ANALYZER_ENABLE_Z3_SOLVER=ON",
                            false);
   return nullptr;
 #endif

@@ -810,6 +810,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case ObjCCategoryImpl:
     case Import:
     case OMPThreadPrivate:
+    case OMPRequires:
     case OMPCapturedExpr:
     case Empty:
       // Never looked up by name.
@@ -834,6 +835,29 @@ void Decl::dropAttrs() {
 
   HasAttrs = false;
   getASTContext().eraseDeclAttrs(this);
+}
+
+void Decl::addAttr(Attr *A) {
+  if (!hasAttrs()) {
+    setAttrs(AttrVec(1, A));
+    return;
+  }
+
+  AttrVec &Attrs = getAttrs();
+  if (!A->isInherited()) {
+    Attrs.push_back(A);
+    return;
+  }
+
+  // Attribute inheritance is processed after attribute parsing. To keep the
+  // order as in the source code, add inherited attributes before non-inherited
+  // ones.
+  auto I = Attrs.begin(), E = Attrs.end();
+  for (; I != E; ++I) {
+    if (!(*I)->isInherited())
+      break;
+  }
+  Attrs.insert(I, A);
 }
 
 const AttrVec &Decl::getAttrs() const {
@@ -929,6 +953,13 @@ bool Decl::AccessDeclContextSanity() const {
 
 static Decl::Kind getKind(const Decl *D) { return D->getKind(); }
 static Decl::Kind getKind(const DeclContext *DC) { return DC->getDeclKind(); }
+
+int64_t Decl::getID() const {
+  Optional<int64_t> Out = getASTContext().getAllocator().identifyObject(this);
+  assert(Out && "Wrong allocator used");
+  assert(*Out % alignof(Decl) == 0 && "Wrong alignment information");
+  return *Out / alignof(Decl);
+}
 
 const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
   QualType Ty;
@@ -1693,8 +1724,18 @@ void DeclContext::localUncachedLookup(DeclarationName Name,
 
 DeclContext *DeclContext::getRedeclContext() {
   DeclContext *Ctx = this;
-  // Skip through transparent contexts.
-  while (Ctx->isTransparentContext())
+
+  // In C, a record type is the redeclaration context for its fields only. If
+  // we arrive at a record context after skipping anything else, we should skip
+  // the record as well. Currently, this means skipping enumerations because
+  // they're the only transparent context that can exist within a struct or
+  // union.
+  bool SkipRecords = getDeclKind() == Decl::Kind::Enum &&
+                     !getParentASTContext().getLangOpts().CPlusPlus;
+
+  // Skip through contexts to get to the redeclaration context. Transparent
+  // contexts are always skipped.
+  while ((SkipRecords && Ctx->isRecord()) || Ctx->isTransparentContext())
     Ctx = Ctx->getParent();
   return Ctx;
 }

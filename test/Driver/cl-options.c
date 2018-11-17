@@ -101,7 +101,7 @@
 // Gy_-NOT: -ffunction-sections
 
 // RUN: %clang_cl /Gs -### -- %s 2>&1 | FileCheck -check-prefix=Gs %s
-// Gs: "-mstack-probe-size=0"
+// Gs: "-mstack-probe-size=4096"
 // RUN: %clang_cl /Gs0 -### -- %s 2>&1 | FileCheck -check-prefix=Gs0 %s
 // Gs0: "-mstack-probe-size=0"
 // RUN: %clang_cl /Gs4096 -### -- %s 2>&1 | FileCheck -check-prefix=Gs4096 %s
@@ -490,6 +490,13 @@
 // RUN: %clang_cl /Zc:threadSafeInit /c -### -- %s 2>&1 | FileCheck -check-prefix=ThreadSafeStatics %s
 // ThreadSafeStatics-NOT: "-fno-threadsafe-statics"
 
+// RUN: %clang_cl /Zc:dllexportInlines- /c -### -- %s 2>&1 | FileCheck -check-prefix=NoDllExportInlines %s
+// NoDllExportInlines: "-fno-dllexport-inlines"
+// RUN: %clang_cl /Zc:dllexportInlines /c -### -- %s 2>&1 | FileCheck -check-prefix=DllExportInlines %s
+// DllExportInlines-NOT: "-fno-dllexport-inlines"
+// RUN: %clang_cl /fallback /Zc:dllexportInlines- /c -### -- %s 2>&1 | FileCheck -check-prefix=DllExportInlinesFallback %s
+// DllExportInlinesFallback: error: option '/Zc:dllexportInlines-' is ABI-changing and not compatible with '/fallback'
+
 // RUN: %clang_cl /Zi /c -### -- %s 2>&1 | FileCheck -check-prefix=Zi %s
 // Zi: "-gcodeview"
 // Zi: "-debug-info-kind=limited"
@@ -562,7 +569,7 @@
 
 // RUN: %clang_cl  -### -- %s 2>&1 | FileCheck -check-prefix=NOCFGUARD %s
 // RUN: %clang_cl /guard:cf- -### -- %s 2>&1 | FileCheck -check-prefix=NOCFGUARD %s
-// NOCFGUARD-NOT: -guardcf
+// NOCFGUARD-NOT: -cfguard
 
 // RUN: %clang_cl /guard:cf -### -- %s 2>&1 | FileCheck -check-prefix=CFGUARD %s
 // RUN: %clang_cl /guard:cf,nochecks -### -- %s 2>&1 | FileCheck -check-prefix=CFGUARD %s
@@ -610,8 +617,23 @@
 // RUN:     -flto \
 // RUN:     -fmerge-all-constants \
 // RUN:     -no-canonical-prefixes \
+// RUN:     -march=skylake \
 // RUN:     --version \
 // RUN:     -Werror /Zs -- %s 2>&1
 
+// Accept clang options under the /clang: flag.
+// The first test case ensures that the SLP vectorizer is on by default and that
+// it's being turned off by the /clang:-fno-slp-vectorize flag.
+
+// RUN: %clang_cl -O2 -### -- %s 2>&1 | FileCheck -check-prefix=NOCLANG %s
+// NOCLANG: "--dependent-lib=libcmt"
+// NOCLANG-SAME: "-vectorize-slp"
+// NOCLANG-NOT: "--dependent-lib=msvcrt"
+
+// RUN: %clang_cl -O2 -MD /clang:-fno-slp-vectorize /clang:-MD /clang:-MF /clang:my_dependency_file.dep -### -- %s 2>&1 | FileCheck -check-prefix=CLANG %s
+// CLANG: "--dependent-lib=msvcrt"
+// CLANG-SAME: "-dependency-file" "my_dependency_file.dep"
+// CLANG-NOT: "--dependent-lib=libcmt"
+// CLANG-NOT: "-vectorize-slp"
 
 void f() { }

@@ -598,28 +598,6 @@ bool Type::isObjCClassOrClassKindOfType() const {
   return OPT->isObjCClassType() || OPT->isObjCQualifiedClassType();
 }
 
-/// Was this type written with the special inert-in-MRC __unsafe_unretained
-/// qualifier?
-///
-/// This approximates the answer to the following question: if this
-/// translation unit were compiled in ARC, would this type be qualified
-/// with __unsafe_unretained?
-bool Type::isObjCInertUnsafeUnretainedType() const {
-  const Type *cur = this;
-  while (true) {
-    if (const auto attributed = dyn_cast<AttributedType>(cur)) {
-      if (attributed->getAttrKind() ==
-            AttributedType::attr_objc_inert_unsafe_unretained)
-        return true;
-    }
-
-    // Single-step desugar until we run out of sugar.
-    QualType next = cur->getLocallyUnqualifiedSingleStepDesugaredType();
-    if (next.getTypePtr() == cur) return false;
-    cur = next.getTypePtr();
-  }
-}
-
 ObjCTypeParamType::ObjCTypeParamType(const ObjCTypeParamDecl *D,
                                      QualType can,
                                      ArrayRef<ObjCProtocolDecl *> protocols)
@@ -1648,6 +1626,16 @@ TagDecl *Type::getAsTagDecl() const {
   return nullptr;
 }
 
+bool Type::hasAttr(attr::Kind AK) const {
+  const Type *Cur = this;
+  while (const auto *AT = Cur->getAs<AttributedType>()) {
+    if (AT->getAttrKind() == AK)
+      return true;
+    Cur = AT->getEquivalentType().getTypePtr();
+  }
+  return false;
+}
+
 namespace {
 
   class GetContainedDeducedTypeVisitor :
@@ -1985,6 +1973,7 @@ Type::ScalarTypeKind Type::getScalarTypeKind() const {
     if (BT->getKind() == BuiltinType::MetaInfo) return STK_Integral;
     if (BT->isInteger()) return STK_Integral;
     if (BT->isFloatingPoint()) return STK_Floating;
+    if (BT->isFixedPointType()) return STK_FixedPoint;
     llvm_unreachable("unknown scalar builtin type");
   } else if (isa<PointerType>(T)) {
     return STK_CPointer;
@@ -2812,6 +2801,10 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
     return "reserve_id_t";
   case OMPArraySection:
     return "<OpenMP array section type>";
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+  case Id: \
+    return #ExtType;
+#include "clang/Basic/OpenCLExtensionTypes.def"
   }
 
   llvm_unreachable("Invalid builtin type.");
@@ -2860,24 +2853,28 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
                                      QualType canonical,
                                      const ExtProtoInfo &epi)
-    : FunctionType(FunctionProto, result, canonical,
-                   result->isDependentType(),
+    : FunctionType(FunctionProto, result, canonical, result->isDependentType(),
                    result->isInstantiationDependentType(),
                    result->isVariablyModifiedType(),
-                   result->containsUnexpandedParameterPack(), epi.ExtInfo),
-      NumParams(params.size()),
-      NumExceptions(epi.ExceptionSpec.Exceptions.size()),
-      ExceptionSpecType(epi.ExceptionSpec.Type),
-      HasExtParameterInfos(epi.ExtParameterInfos != nullptr),
-      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn) {
-  assert(NumParams == params.size() && "function has too many parameters");
-
+                   result->containsUnexpandedParameterPack(), epi.ExtInfo) {
   FunctionTypeBits.TypeQuals = epi.TypeQuals;
   FunctionTypeBits.RefQualifier = epi.RefQualifier;
+  FunctionTypeBits.NumParams = params.size();
+  assert(getNumParams() == params.size() && "NumParams overflow!");
+  FunctionTypeBits.ExceptionSpecType = epi.ExceptionSpec.Type;
+  FunctionTypeBits.HasExtParameterInfos = !!epi.ExtParameterInfos;
+  FunctionTypeBits.Variadic = epi.Variadic;
+  FunctionTypeBits.HasTrailingReturn = epi.HasTrailingReturn;
+
+  // Fill in the extra trailing bitfields if present.
+  if (hasExtraBitfields(epi.ExceptionSpec.Type)) {
+    auto &ExtraBits = *getTrailingObjects<FunctionTypeExtraBitfields>();
+    ExtraBits.NumExceptionType = epi.ExceptionSpec.Exceptions.size();
+  }
 
   // Fill in the trailing argument array.
-  auto *argSlot = reinterpret_cast<QualType *>(this+1);
-  for (unsigned i = 0; i != NumParams; ++i) {
+  auto *argSlot = getTrailingObjects<QualType>();
+  for (unsigned i = 0; i != getNumParams(); ++i) {
     if (params[i]->isDependentType())
       setDependent();
     else if (params[i]->isInstantiationDependentType())
@@ -2889,9 +2886,11 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
     argSlot[i] = params[i];
   }
 
+  // Fill in the exception type array if present.
   if (getExceptionSpecType() == EST_Dynamic) {
-    // Fill in the exception array.
-    QualType *exnSlot = argSlot + NumParams;
+    assert(hasExtraBitfields() && "missing trailing extra bitfields!");
+    auto *exnSlot =
+        reinterpret_cast<QualType *>(getTrailingObjects<ExceptionType>());
     unsigned I = 0;
     for (QualType ExceptionType : epi.ExceptionSpec.Exceptions) {
       // Note that, before C++17, a dependent exception specification does
@@ -2905,14 +2904,15 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
       exnSlot[I++] = ExceptionType;
     }
-  } else if (isComputedNoexcept(getExceptionSpecType())) {
+  }
+  // Fill in the Expr * in the exception specification if present.
+  else if (isComputedNoexcept(getExceptionSpecType())) {
     assert(epi.ExceptionSpec.NoexceptExpr && "computed noexcept with no expr");
     assert((getExceptionSpecType() == EST_DependentNoexcept) ==
            epi.ExceptionSpec.NoexceptExpr->isValueDependent());
 
     // Store the noexcept expression and context.
-    auto **noexSlot = reinterpret_cast<Expr **>(argSlot + NumParams);
-    *noexSlot = epi.ExceptionSpec.NoexceptExpr;
+    *getTrailingObjects<Expr *>() = epi.ExceptionSpec.NoexceptExpr;
 
     if (epi.ExceptionSpec.NoexceptExpr->isValueDependent() ||
         epi.ExceptionSpec.NoexceptExpr->isInstantiationDependent())
@@ -2920,10 +2920,12 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
     if (epi.ExceptionSpec.NoexceptExpr->containsUnexpandedParameterPack())
       setContainsUnexpandedParameterPack();
-  } else if (getExceptionSpecType() == EST_Uninstantiated) {
+  }
+  // Fill in the FunctionDecl * in the exception specification if present.
+  else if (getExceptionSpecType() == EST_Uninstantiated) {
     // Store the function decl from which we will resolve our
     // exception specification.
-    auto **slot = reinterpret_cast<FunctionDecl **>(argSlot + NumParams);
+    auto **slot = getTrailingObjects<FunctionDecl *>();
     slot[0] = epi.ExceptionSpec.SourceDecl;
     slot[1] = epi.ExceptionSpec.SourceTemplate;
     // This exception specification doesn't make the type dependent, because
@@ -2931,7 +2933,7 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
   } else if (getExceptionSpecType() == EST_Unevaluated) {
     // Store the function decl from which we will resolve our
     // exception specification.
-    auto **slot = reinterpret_cast<FunctionDecl **>(argSlot + NumParams);
+    auto **slot = getTrailingObjects<FunctionDecl *>();
     slot[0] = epi.ExceptionSpec.SourceDecl;
   }
 
@@ -2948,10 +2950,10 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
     setDependent();
   }
 
+  // Fill in the extra parameter info if present.
   if (epi.ExtParameterInfos) {
-    auto *extParamInfos =
-      const_cast<ExtParameterInfo *>(getExtParameterInfosBuffer());
-    for (unsigned i = 0; i != NumParams; ++i)
+    auto *extParamInfos = getTrailingObjects<ExtParameterInfo>();
+    for (unsigned i = 0; i != getNumParams(); ++i)
       extParamInfos[i] = epi.ExtParameterInfos[i];
   }
 }
@@ -2997,7 +2999,7 @@ CanThrowResult FunctionProtoType::canThrow() const {
   case EST_Dynamic:
     // A dynamic exception specification is throwing unless every exception
     // type is an (unexpanded) pack expansion type.
-    for (unsigned I = 0, N = NumExceptions; I != N; ++I)
+    for (unsigned I = 0; I != getNumExceptions(); ++I)
       if (!getExceptionType(I)->getAs<PackExpansionType>())
         return CT_Can;
     return CT_Dependent;
@@ -3072,8 +3074,8 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
 
 void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID,
                                 const ASTContext &Ctx) {
-  Profile(ID, getReturnType(), param_type_begin(), NumParams, getExtProtoInfo(),
-          Ctx, isCanonicalUnqualified());
+  Profile(ID, getReturnType(), param_type_begin(), getNumParams(),
+          getExtProtoInfo(), Ctx, isCanonicalUnqualified());
 }
 
 QualType TypedefType::desugar() const {
@@ -3211,105 +3213,58 @@ bool RecordType::hasConstFields() const {
 }
 
 bool AttributedType::isQualifier() const {
+  // FIXME: Generate this with TableGen.
   switch (getAttrKind()) {
   // These are type qualifiers in the traditional C sense: they annotate
   // something about a specific value/variable of a type.  (They aren't
   // always part of the canonical type, though.)
-  case AttributedType::attr_address_space:
-  case AttributedType::attr_objc_gc:
-  case AttributedType::attr_objc_ownership:
-  case AttributedType::attr_objc_inert_unsafe_unretained:
-  case AttributedType::attr_nonnull:
-  case AttributedType::attr_nullable:
-  case AttributedType::attr_null_unspecified:
-  case AttributedType::attr_lifetimebound:
+  case attr::ObjCGC:
+  case attr::ObjCOwnership:
+  case attr::ObjCInertUnsafeUnretained:
+  case attr::TypeNonNull:
+  case attr::TypeNullable:
+  case attr::TypeNullUnspecified:
+  case attr::LifetimeBound:
     return true;
 
-  // These aren't qualifiers; they rewrite the modified type to be a
-  // semantically different type.
-  case AttributedType::attr_regparm:
-  case AttributedType::attr_vector_size:
-  case AttributedType::attr_neon_vector_type:
-  case AttributedType::attr_neon_polyvector_type:
-  case AttributedType::attr_pcs:
-  case AttributedType::attr_pcs_vfp:
-  case AttributedType::attr_noreturn:
-  case AttributedType::attr_cdecl:
-  case AttributedType::attr_fastcall:
-  case AttributedType::attr_stdcall:
-  case AttributedType::attr_thiscall:
-  case AttributedType::attr_regcall:
-  case AttributedType::attr_pascal:
-  case AttributedType::attr_swiftcall:
-  case AttributedType::attr_vectorcall:
-  case AttributedType::attr_inteloclbicc:
-  case AttributedType::attr_preserve_most:
-  case AttributedType::attr_preserve_all:
-  case AttributedType::attr_ms_abi:
-  case AttributedType::attr_sysv_abi:
-  case AttributedType::attr_ptr32:
-  case AttributedType::attr_ptr64:
-  case AttributedType::attr_sptr:
-  case AttributedType::attr_uptr:
-  case AttributedType::attr_objc_kindof:
-  case AttributedType::attr_ns_returns_retained:
-  case AttributedType::attr_nocf_check:
+  // All other type attributes aren't qualifiers; they rewrite the modified
+  // type to be a semantically different type.
+  default:
     return false;
   }
-  llvm_unreachable("bad attributed type kind");
 }
 
 bool AttributedType::isMSTypeSpec() const {
+  // FIXME: Generate this with TableGen?
   switch (getAttrKind()) {
-  default:  return false;
-  case attr_ptr32:
-  case attr_ptr64:
-  case attr_sptr:
-  case attr_uptr:
+  default: return false;
+  case attr::Ptr32:
+  case attr::Ptr64:
+  case attr::SPtr:
+  case attr::UPtr:
     return true;
   }
   llvm_unreachable("invalid attr kind");
 }
 
 bool AttributedType::isCallingConv() const {
+  // FIXME: Generate this with TableGen.
   switch (getAttrKind()) {
-  case attr_ptr32:
-  case attr_ptr64:
-  case attr_sptr:
-  case attr_uptr:
-  case attr_address_space:
-  case attr_regparm:
-  case attr_vector_size:
-  case attr_neon_vector_type:
-  case attr_neon_polyvector_type:
-  case attr_objc_gc:
-  case attr_objc_ownership:
-  case attr_objc_inert_unsafe_unretained:
-  case attr_noreturn:
-  case attr_nonnull:
-  case attr_ns_returns_retained:
-  case attr_nullable:
-  case attr_null_unspecified:
-  case attr_objc_kindof:
-  case attr_nocf_check:
-  case attr_lifetimebound:
-    return false;
-
-  case attr_pcs:
-  case attr_pcs_vfp:
-  case attr_cdecl:
-  case attr_fastcall:
-  case attr_stdcall:
-  case attr_thiscall:
-  case attr_regcall:
-  case attr_swiftcall:
-  case attr_vectorcall:
-  case attr_pascal:
-  case attr_ms_abi:
-  case attr_sysv_abi:
-  case attr_inteloclbicc:
-  case attr_preserve_most:
-  case attr_preserve_all:
+  default: return false;
+  case attr::Pcs:
+  case attr::CDecl:
+  case attr::FastCall:
+  case attr::StdCall:
+  case attr::ThisCall:
+  case attr::RegCall:
+  case attr::SwiftCall:
+  case attr::VectorCall:
+  case attr::Pascal:
+  case attr::MSABI:
+  case attr::SysVABI:
+  case attr::IntelOclBicc:
+  case attr::PreserveMost:
+  case attr::PreserveAll:
     return true;
   }
   llvm_unreachable("invalid attr kind");
@@ -3755,23 +3710,18 @@ LinkageInfo Type::getLinkageAndVisibility() const {
   return LinkageComputer{}.getTypeLinkageAndVisibility(this);
 }
 
-Optional<NullabilityKind> Type::getNullability(const ASTContext &context) const {
-  QualType type(this, 0);
-  do {
+Optional<NullabilityKind>
+Type::getNullability(const ASTContext &Context) const {
+  QualType Type(this, 0);
+  while (const auto *AT = Type->getAs<AttributedType>()) {
     // Check whether this is an attributed type with nullability
     // information.
-    if (auto attributed = dyn_cast<AttributedType>(type.getTypePtr())) {
-      if (auto nullability = attributed->getImmediateNullability())
-        return nullability;
-    }
+    if (auto Nullability = AT->getImmediateNullability())
+      return Nullability;
 
-    // Desugar the type. If desugaring does nothing, we're done.
-    QualType desugared = type.getSingleStepDesugaredType(context);
-    if (desugared.getTypePtr() == type.getTypePtr())
-      return None;
-
-    type = desugared;
-  } while (true);
+    Type = AT->getEquivalentType();
+  }
+  return None;
 }
 
 bool Type::canHaveNullability(bool ResultIfUnknown) const {
@@ -3844,6 +3794,9 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
     case BuiltinType::Id:
 #include "clang/Basic/OpenCLImageTypes.def"
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+    case BuiltinType::Id:
+#include "clang/Basic/OpenCLExtensionTypes.def"
     case BuiltinType::OCLSampler:
     case BuiltinType::OCLEvent:
     case BuiltinType::OCLClkEvent:
@@ -3886,12 +3839,13 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   llvm_unreachable("bad type kind!");
 }
 
-llvm::Optional<NullabilityKind> AttributedType::getImmediateNullability() const {
-  if (getAttrKind() == AttributedType::attr_nonnull)
+llvm::Optional<NullabilityKind>
+AttributedType::getImmediateNullability() const {
+  if (getAttrKind() == attr::TypeNonNull)
     return NullabilityKind::NonNull;
-  if (getAttrKind() == AttributedType::attr_nullable)
+  if (getAttrKind() == attr::TypeNullable)
     return NullabilityKind::Nullable;
-  if (getAttrKind() == AttributedType::attr_null_unspecified)
+  if (getAttrKind() == attr::TypeNullUnspecified)
     return NullabilityKind::Unspecified;
   return None;
 }

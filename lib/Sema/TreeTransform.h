@@ -2080,11 +2080,10 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   StmtResult RebuildCXXForRangeStmt(SourceLocation ForLoc,
-                                    SourceLocation CoawaitLoc,
-                                    SourceLocation ColonLoc,
-                                    Stmt *Range, Stmt *Begin, Stmt *End,
-                                    Expr *Cond, Expr *Inc,
-                                    Stmt *LoopVar,
+                                    SourceLocation CoawaitLoc, Stmt *Init,
+                                    SourceLocation ColonLoc, Stmt *Range,
+                                    Stmt *Begin, Stmt *End, Expr *Cond,
+                                    Expr *Inc, Stmt *LoopVar,
                                     SourceLocation RParenLoc) {
     // If we've just learned that the range is actually an Objective-C
     // collection, treat this as an Objective-C fast enumeration loop.
@@ -2096,17 +2095,24 @@ public:
 
           Expr *RangeExpr = RangeVar->getInit();
           if (!RangeExpr->isTypeDependent() &&
-              RangeExpr->getType()->isObjCObjectPointerType())
-            return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar, RangeExpr,
-                                                        RParenLoc);
+              RangeExpr->getType()->isObjCObjectPointerType()) {
+            // FIXME: Support init-statements in Objective-C++20 ranged for
+            // statement.
+            if (Init) {
+              return SemaRef.Diag(Init->getBeginLoc(),
+                                  diag::err_objc_for_range_init_stmt)
+                         << Init->getSourceRange();
+            }
+            return getSema().ActOnObjCForCollectionStmt(ForLoc, LoopVar,
+                                                        RangeExpr, RParenLoc);
+          }
         }
       }
     }
 
-    return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, ColonLoc,
-                                          Range, Begin, End,
-                                          Cond, Inc, LoopVar, RParenLoc,
-                                          Sema::BFRK_Rebuild);
+    return getSema().BuildCXXForRangeStmt(ForLoc, CoawaitLoc, Init, ColonLoc,
+                                          Range, Begin, End, Cond, Inc, LoopVar,
+                                          RParenLoc, Sema::BFRK_Rebuild);
   }
 
   /// Build a new C++ tuple-based for expansion statement.
@@ -2187,8 +2193,8 @@ public:
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildPredefinedExpr(SourceLocation Loc,
-                                   PredefinedExpr::IdentType IT) {
-    return getSema().BuildPredefinedExpr(Loc, IT);
+                                   PredefinedExpr::IdentKind IK) {
+    return getSema().BuildPredefinedExpr(Loc, IK);
   }
 
   /// Build a new expression that references a declaration.
@@ -3453,8 +3459,8 @@ ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
   if (!Init)
     return Init;
 
-  if (ExprWithCleanups *ExprTemp = dyn_cast<ExprWithCleanups>(Init))
-    Init = ExprTemp->getSubExpr();
+  if (auto *FE = dyn_cast<FullExpr>(Init))
+    Init = FE->getSubExpr();
 
   if (auto *AIL = dyn_cast<ArrayInitLoopExpr>(Init))
     Init = AIL->getCommonExpr();
@@ -3500,6 +3506,11 @@ ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
   // std::initializer_list object, unwrap the std::initializer_list too.
   if (Construct && Construct->isStdInitListInitialization())
     return TransformInitializer(Construct->getArg(0), NotCopyInit);
+
+  // Enter a list-init context if this was list initialization.
+  EnterExpressionEvaluationContext Context(
+      getSema(), EnterExpressionEvaluationContext::InitList,
+      Construct->isListInitialization());
 
   SmallVector<Expr*, 8> NewArgs;
   bool ArgChanged = false;
@@ -4393,14 +4404,20 @@ QualType TreeTransform<Derived>::RebuildQualifiedType(QualType T,
   // C++ [dcl.fct]p7:
   //   [When] adding cv-qualifications on top of the function type [...] the
   //   cv-qualifiers are ignored.
+  if (T->isFunctionType())
+    return T;
+
   // C++ [dcl.ref]p1:
   //   when the cv-qualifiers are introduced through the use of a typedef-name
   //   or decltype-specifier [...] the cv-qualifiers are ignored.
   // Note that [dcl.ref]p1 lists all cases in which cv-qualifiers can be
   // applied to a reference type.
-  // FIXME: This removes all qualifiers, not just cv-qualifiers!
-  if (T->isFunctionType() || T->isReferenceType())
-    return T;
+  if (T->isReferenceType()) {
+    // The only qualifier that applies to a reference type is restrict.
+    if (!Quals.hasRestrict())
+      return T;
+    Quals = Qualifiers::fromCVRMask(Qualifiers::Restrict);
+  }
 
   // Suppress Objective-C lifetime qualifiers if they don't make sense for the
   // resulting type.
@@ -6230,6 +6247,12 @@ QualType TreeTransform<Derived>::TransformAttributedType(
   if (modifiedType.isNull())
     return QualType();
 
+  // oldAttr can be null if we started with a QualType rather than a TypeLoc.
+  const Attr *oldAttr = TL.getAttr();
+  const Attr *newAttr = oldAttr ? getDerived().TransformAttr(oldAttr) : nullptr;
+  if (oldAttr && !newAttr)
+    return QualType();
+
   QualType result = TL.getType();
 
   // FIXME: dependent operand expressions?
@@ -6246,26 +6269,20 @@ QualType TreeTransform<Derived>::TransformAttributedType(
     // type sugar, and therefore cannot be diagnosed in any other way.
     if (auto nullability = oldType->getImmediateNullability()) {
       if (!modifiedType->canHaveNullability()) {
-        SemaRef.Diag(TL.getAttrNameLoc(), diag::err_nullability_nonpointer)
-          << DiagNullabilityKind(*nullability, false) << modifiedType;
+        SemaRef.Diag(TL.getAttr()->getLocation(),
+                     diag::err_nullability_nonpointer)
+            << DiagNullabilityKind(*nullability, false) << modifiedType;
         return QualType();
       }
     }
 
-    result = SemaRef.Context.getAttributedType(oldType->getAttrKind(),
+    result = SemaRef.Context.getAttributedType(TL.getAttrKind(),
                                                modifiedType,
                                                equivalentType);
   }
 
   AttributedTypeLoc newTL = TLB.push<AttributedTypeLoc>(result);
-  newTL.setAttrNameLoc(TL.getAttrNameLoc());
-  if (TL.hasAttrOperand())
-    newTL.setAttrOperandParensRange(TL.getAttrOperandParensRange());
-  if (TL.hasAttrExprOperand())
-    newTL.setAttrExprOperand(TL.getAttrExprOperand());
-  else if (TL.hasAttrEnumOperand())
-    newTL.setAttrEnumOperandLoc(TL.getAttrEnumOperandLoc());
-
+  newTL.setAttr(newAttr);
   return result;
 }
 
@@ -7741,6 +7758,11 @@ StmtResult TreeTransform<Derived>::TransformCXXTryStmt(CXXTryStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
+  StmtResult Init =
+      S->getInit() ? getDerived().TransformStmt(S->getInit()) : StmtResult();
+  if (Init.isInvalid())
+    return StmtError();
+
   StmtResult Range = getDerived().TransformStmt(S->getRangeStmt());
   if (Range.isInvalid())
     return StmtError();
@@ -7774,6 +7796,7 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
+      Init.get() != S->getInit() ||
       Range.get() != S->getRangeStmt() ||
       Begin.get() != S->getBeginStmt() ||
       End.get() != S->getEndStmt() ||
@@ -7781,7 +7804,7 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
       Inc.get() != S->getInc() ||
       LoopVar.get() != S->getLoopVarStmt()) {
     NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
-                                                  S->getCoawaitLoc(),
+                                                  S->getCoawaitLoc(), Init.get(),
                                                   S->getColonLoc(), Range.get(),
                                                   Begin.get(), End.get(),
                                                   Cond.get(),
@@ -7799,7 +7822,7 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
   // it now so we have a new statement to attach the body to.
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
     NewStmt = getDerived().RebuildCXXForRangeStmt(S->getForLoc(),
-                                                  S->getCoawaitLoc(),
+                                                  S->getCoawaitLoc(), Init.get(),
                                                   S->getColonLoc(), Range.get(),
                                                   Begin.get(), End.get(),
                                                   Cond.get(),
@@ -8846,6 +8869,39 @@ TreeTransform<Derived>::TransformOMPNogroupClause(OMPNogroupClause *C) {
 }
 
 template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPUnifiedAddressClause(
+    OMPUnifiedAddressClause *C) {
+  llvm_unreachable("unified_address clause cannot appear in dependent context");
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPUnifiedSharedMemoryClause(
+    OMPUnifiedSharedMemoryClause *C) {
+  llvm_unreachable(
+      "unified_shared_memory clause cannot appear in dependent context");
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPReverseOffloadClause(
+    OMPReverseOffloadClause *C) {
+  llvm_unreachable("reverse_offload clause cannot appear in dependent context");
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPDynamicAllocatorsClause(
+    OMPDynamicAllocatorsClause *C) {
+  llvm_unreachable(
+      "dynamic_allocators clause cannot appear in dependent context");
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPAtomicDefaultMemOrderClause(
+    OMPAtomicDefaultMemOrderClause *C) {
+  llvm_unreachable(
+      "atomic_default_mem_order clause cannot appear in dependent context");
+}
+
+template <typename Derived>
 OMPClause *
 TreeTransform<Derived>::TransformOMPPrivateClause(OMPPrivateClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
@@ -9305,12 +9361,18 @@ TreeTransform<Derived>::TransformOMPIsDevicePtrClause(OMPIsDevicePtrClause *C) {
 //===----------------------------------------------------------------------===//
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformConstantExpr(ConstantExpr *E) {
+  return TransformExpr(E->getSubExpr());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformPredefinedExpr(PredefinedExpr *E) {
   if (!E->isTypeDependent())
     return E;
 
   return getDerived().RebuildPredefinedExpr(E->getLocation(),
-                                            E->getIdentType());
+                                            E->getIdentKind());
 }
 
 template<typename Derived>
@@ -9974,6 +10036,9 @@ TreeTransform<Derived>::TransformInitListExpr(InitListExpr *E) {
     E = Syntactic;
 
   bool InitChanged = false;
+
+  EnterExpressionEvaluationContext Context(
+      getSema(), EnterExpressionEvaluationContext::InitList);
 
   SmallVector<Expr*, 4> Inits;
   if (getDerived().TransformExprs(E->getInits(), E->getNumInits(), false,
@@ -11201,9 +11266,14 @@ TreeTransform<Derived>::TransformCXXConstructExpr(CXXConstructExpr *E) {
 
   bool ArgumentChanged = false;
   SmallVector<Expr*, 8> Args;
-  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
-                                  &ArgumentChanged))
-    return ExprError();
+  {
+    EnterExpressionEvaluationContext Context(
+        getSema(), EnterExpressionEvaluationContext::InitList,
+        E->isListInitialization());
+    if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                                    &ArgumentChanged))
+      return ExprError();
+  }
 
   if (!getDerived().AlwaysRebuild() &&
       T == E->getType() &&
@@ -11286,9 +11356,14 @@ TreeTransform<Derived>::TransformCXXTemporaryObjectExpr(
   bool ArgumentChanged = false;
   SmallVector<Expr*, 8> Args;
   Args.reserve(E->getNumArgs());
-  if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
-                     &ArgumentChanged))
-    return ExprError();
+  {
+    EnterExpressionEvaluationContext Context(
+        getSema(), EnterExpressionEvaluationContext::InitList,
+        E->isListInitialization());
+    if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                       &ArgumentChanged))
+      return ExprError();
+  }
 
   if (!getDerived().AlwaysRebuild() &&
       T == E->getTypeSourceInfo() &&
@@ -11580,9 +11655,14 @@ TreeTransform<Derived>::TransformCXXUnresolvedConstructExpr(
   bool ArgumentChanged = false;
   SmallVector<Expr*, 8> Args;
   Args.reserve(E->arg_size());
-  if (getDerived().TransformExprs(E->arg_begin(), E->arg_size(), true, Args,
-                                  &ArgumentChanged))
-    return ExprError();
+  {
+    EnterExpressionEvaluationContext Context(
+        getSema(), EnterExpressionEvaluationContext::InitList,
+        E->isListInitialization());
+    if (getDerived().TransformExprs(E->arg_begin(), E->arg_size(), true, Args,
+                                    &ArgumentChanged))
+      return ExprError();
+  }
 
   if (!getDerived().AlwaysRebuild() &&
       T == E->getTypeSourceInfo() &&

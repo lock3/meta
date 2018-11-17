@@ -200,6 +200,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
   case DefaultTemplateArgumentChecking:
   case DeclaringSpecialMember:
   case DefiningSynthesizedFunction:
+  case ExceptionSpecEvaluation:
     return false;
 
   // This function should never be called when Kind's value is Memoization.
@@ -642,6 +643,12 @@ void Sema::PrintInstantiationStack() {
       break;
     }
 
+    case CodeSynthesisContext::ExceptionSpecEvaluation:
+      Diags.Report(Active->PointOfInstantiation,
+                   diag::note_evaluating_exception_spec_here)
+          << cast<FunctionDecl>(Active->Entity);
+      break;
+
     case CodeSynthesisContext::ExceptionSpecInstantiation:
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_template_exception_spec_instantiation_here)
@@ -695,7 +702,8 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       // context, depending on what else is on the stack.
       if (isa<TypeAliasTemplateDecl>(Active->Entity))
         break;
-      // Fall through.
+      LLVM_FALLTHROUGH;
+
     case CodeSynthesisContext::ForLoopInstantiation:
     case CodeSynthesisContext::DefaultFunctionArgumentInstantiation:
     case CodeSynthesisContext::ExceptionSpecInstantiation:
@@ -722,6 +730,12 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       // This happens in a context unrelated to template instantiation, so
       // there is no SFINAE.
       return None;
+
+    case CodeSynthesisContext::ExceptionSpecEvaluation:
+      // FIXME: This should not be treated as a SFINAE context, because
+      // we will cache an incorrect exception specification. However, clang
+      // bootstrap relies this! See PR31692.
+      break;
 
     case CodeSynthesisContext::Memoization:
       break;
@@ -1182,7 +1196,7 @@ TemplateInstantiator::TransformPredefinedExpr(PredefinedExpr *E) {
   if (!E->isTypeDependent())
     return E;
 
-  return getSema().BuildPredefinedExpr(E->getLocation(), E->getIdentType());
+  return getSema().BuildPredefinedExpr(E->getLocation(), E->getIdentKind());
 }
 
 ExprResult
@@ -2589,10 +2603,14 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
   for (auto *D : Instantiation->decls()) {
     bool SuppressNew = false;
     if (auto *Function = dyn_cast<FunctionDecl>(D)) {
-      if (FunctionDecl *Pattern
-            = Function->getInstantiatedFromMemberFunction()) {
-        MemberSpecializationInfo *MSInfo
-          = Function->getMemberSpecializationInfo();
+      if (FunctionDecl *Pattern =
+              Function->getInstantiatedFromMemberFunction()) {
+
+        if (Function->hasAttr<ExcludeFromExplicitInstantiationAttr>())
+          continue;
+
+        MemberSpecializationInfo *MSInfo =
+            Function->getMemberSpecializationInfo();
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
                                                  == TSK_ExplicitSpecialization)
@@ -2633,6 +2651,9 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
         continue;
 
       if (Var->isStaticDataMember()) {
+        if (Var->hasAttr<ExcludeFromExplicitInstantiationAttr>())
+          continue;
+
         MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
         assert(MSInfo && "No member specialization information?");
         if (MSInfo->getTemplateSpecializationKind()
@@ -2664,6 +2685,9 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
         }
       }
     } else if (auto *Record = dyn_cast<CXXRecordDecl>(D)) {
+      if (Record->hasAttr<ExcludeFromExplicitInstantiationAttr>())
+        continue;
+
       // Always skip the injected-class-name, along with any
       // redeclarations of nested classes, since both would cause us
       // to try to instantiate the members of a class twice.

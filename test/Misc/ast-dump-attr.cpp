@@ -35,7 +35,8 @@ int TestAlignedNull __attribute__((aligned));
 int TestAlignedExpr __attribute__((aligned(4)));
 // CHECK:      VarDecl{{.*}}TestAlignedExpr
 // CHECK-NEXT:   AlignedAttr {{.*}} aligned
-// CHECK-NEXT:     IntegerLiteral
+// CHECK-NEXT:     ConstantExpr
+// CHECK-NEXT:       IntegerLiteral
 
 int TestEnum __attribute__((visibility("default")));
 // CHECK:      VarDecl{{.*}}TestEnum
@@ -209,3 +210,24 @@ namespace TestSuppress {
       }
     }
 }
+
+// Verify the order of attributes in the Ast. It must reflect the order
+// in the parsed source.
+int mergeAttrTest() __attribute__((deprecated)) __attribute__((warn_unused_result));
+int mergeAttrTest() __attribute__((annotate("test")));
+int mergeAttrTest() __attribute__((unused,no_thread_safety_analysis));
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr
+// CHECK-NEXT: WarnUnusedResultAttr
+
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr{{.*}} Inherited
+// CHECK-NEXT: WarnUnusedResultAttr{{.*}} Inherited
+// CHECK-NEXT: AnnotateAttr{{.*}}
+
+// CHECK: FunctionDecl{{.*}} mergeAttrTest
+// CHECK-NEXT: DeprecatedAttr{{.*}} Inherited
+// CHECK-NEXT: WarnUnusedResultAttr{{.*}} Inherited
+// CHECK-NEXT: AnnotateAttr{{.*}} Inherited
+// CHECK-NEXT: UnusedAttr
+// CHECK-NEXT: NoThreadSafetyAnalysisAttr

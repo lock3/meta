@@ -49,7 +49,7 @@ using namespace clang;
 //===----------------------------------------------------------------------===//
 
 FileManager::FileManager(const FileSystemOptions &FSO,
-                         IntrusiveRefCntPtr<vfs::FileSystem> FS)
+                         IntrusiveRefCntPtr<llvm::vfs::FileSystem> FS)
     : FS(std::move(FS)), FileSystemOpts(FSO), SeenDirEntries(64),
       SeenFileEntries(64), NextFileUID(0) {
   NumDirLookups = NumFileLookups = 0;
@@ -58,7 +58,7 @@ FileManager::FileManager(const FileSystemOptions &FSO,
   // If the caller doesn't provide a virtual file system, just grab the real
   // file system.
   if (!this->FS)
-    this->FS = vfs::getRealFileSystem();
+    this->FS = llvm::vfs::getRealFileSystem();
 }
 
 FileManager::~FileManager() = default;
@@ -252,7 +252,7 @@ const FileEntry *FileManager::getFile(StringRef Filename, bool openFile,
   // FIXME: This will reduce the # syscalls.
 
   // Nope, there isn't.  Check to see if the file exists.
-  std::unique_ptr<vfs::File> F;
+  std::unique_ptr<llvm::vfs::File> F;
   FileData Data;
   if (getStatValue(InterndFileName, Data, true, openFile ? &F : nullptr)) {
     // There's no real file at the given path.
@@ -316,10 +316,18 @@ const FileEntry *FileManager::getFile(StringRef Filename, bool openFile,
   UFE.File = std::move(F);
   UFE.IsValid = true;
 
-  SmallString<128> RealPathName;
-  if (!FS->getRealPath(InterndFileName, RealPathName))
-    UFE.RealPathName = RealPathName.str();
-
+  if (UFE.File) {
+    if (auto PathName = UFE.File->getName()) {
+      llvm::SmallString<128> AbsPath(*PathName);
+      // This is not the same as `VFS::getRealPath()`, which resolves symlinks
+      // but can be very expensive on real file systems.
+      // FIXME: the semantic of RealPathName is unclear, and the name might be
+      // misleading. We need to clean up the interface here.
+      makeAbsolutePath(AbsPath);
+      llvm::sys::path::remove_dots(AbsPath, /*remove_dot_dot=*/true);
+      UFE.RealPathName = AbsPath.str();
+    }
+  }
   return &UFE;
 }
 
@@ -467,7 +475,7 @@ FileManager::getBufferForFile(StringRef Filename, bool isVolatile) {
 /// false if it's an existent real file.  If FileDescriptor is NULL,
 /// do directory look-up instead of file look-up.
 bool FileManager::getStatValue(StringRef Path, FileData &Data, bool isFile,
-                               std::unique_ptr<vfs::File> *F) {
+                               std::unique_ptr<llvm::vfs::File> *F) {
   // FIXME: FileSystemOpts shouldn't be passed in here, all paths should be
   // absolute!
   if (FileSystemOpts.WorkingDir.empty())
@@ -481,11 +489,11 @@ bool FileManager::getStatValue(StringRef Path, FileData &Data, bool isFile,
 }
 
 bool FileManager::getNoncachedStatValue(StringRef Path,
-                                        vfs::Status &Result) {
+                                        llvm::vfs::Status &Result) {
   SmallString<128> FilePath(Path);
   FixupRelativePath(FilePath);
 
-  llvm::ErrorOr<vfs::Status> S = FS->status(FilePath.c_str());
+  llvm::ErrorOr<llvm::vfs::Status> S = FS->status(FilePath.c_str());
   if (!S)
     return true;
   Result = *S;

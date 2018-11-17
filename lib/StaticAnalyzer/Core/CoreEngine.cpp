@@ -53,26 +53,28 @@ STATISTIC(NumPathsExplored,
 // Core analysis engine.
 //===----------------------------------------------------------------------===//
 
-static std::unique_ptr<WorkList> generateWorkList(AnalyzerOptions &Opts) {
+static std::unique_ptr<WorkList> generateWorkList(AnalyzerOptions &Opts,
+                                                  SubEngine &subengine) {
   switch (Opts.getExplorationStrategy()) {
-    case AnalyzerOptions::ExplorationStrategyKind::DFS:
+    case ExplorationStrategyKind::DFS:
       return WorkList::makeDFS();
-    case AnalyzerOptions::ExplorationStrategyKind::BFS:
+    case ExplorationStrategyKind::BFS:
       return WorkList::makeBFS();
-    case AnalyzerOptions::ExplorationStrategyKind::BFSBlockDFSContents:
+    case ExplorationStrategyKind::BFSBlockDFSContents:
       return WorkList::makeBFSBlockDFSContents();
-    case AnalyzerOptions::ExplorationStrategyKind::UnexploredFirst:
+    case ExplorationStrategyKind::UnexploredFirst:
       return WorkList::makeUnexploredFirst();
-    case AnalyzerOptions::ExplorationStrategyKind::UnexploredFirstQueue:
+    case ExplorationStrategyKind::UnexploredFirstQueue:
       return WorkList::makeUnexploredFirstPriorityQueue();
-    default:
-      llvm_unreachable("Unexpected case");
+    case ExplorationStrategyKind::UnexploredFirstLocationQueue:
+      return WorkList::makeUnexploredFirstPriorityLocationQueue();
   }
+  llvm_unreachable("Unknown AnalyzerOptions::ExplorationStrategyKind");
 }
 
 CoreEngine::CoreEngine(SubEngine &subengine, FunctionSummariesTy *FS,
                        AnalyzerOptions &Opts)
-    : SubEng(subengine), WList(generateWorkList(Opts)),
+    : SubEng(subengine), WList(generateWorkList(Opts, subengine)),
       BCounterFactory(G.getAllocator()), FunctionSummaries(FS) {}
 
 /// ExecuteWorkList - Run the worklist algorithm for a maximum number of steps.
@@ -146,7 +148,7 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
 
     dispatchWorkItem(Node, Node->getLocation(), WU);
   }
-  SubEng.processEndWorklist(hasWorkRemaining());
+  SubEng.processEndWorklist();
   return WList->hasWork();
 }
 
@@ -396,8 +398,8 @@ void CoreEngine::HandleBranch(const Stmt *Cond, const Stmt *Term,
   assert(B->succ_size() == 2);
   NodeBuilderContext Ctx(*this, B, Pred);
   ExplodedNodeSet Dst;
-  SubEng.processBranch(Cond, Term, Ctx, Pred, Dst,
-                       *(B->succ_begin()), *(B->succ_begin()+1));
+  SubEng.processBranch(Cond, Ctx, Pred, Dst, *(B->succ_begin()),
+                       *(B->succ_begin() + 1));
   // Enqueue the new frontier onto the worklist.
   enqueue(Dst);
 }

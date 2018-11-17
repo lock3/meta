@@ -690,7 +690,7 @@ Preprocessor::getModuleHeaderToIncludeForDiagnostics(SourceLocation IncLoc,
 
   // If we have a module import syntax, we shouldn't include a header to
   // make a particular module visible.
-  if (getLangOpts().ObjC2)
+  if (getLangOpts().ObjC)
     return nullptr;
 
   Module *TopM = M->getTopLevelModule();
@@ -887,18 +887,29 @@ private:
   bool save;
 };
 
-/// Process a directive while looking for the through header.
-/// Only #include (to check if it is the through header) and #define (to warn
-/// about macros that don't match the PCH) are handled. All other directives
-/// are completely discarded.
-void Preprocessor::HandleSkippedThroughHeaderDirective(Token &Result,
+/// Process a directive while looking for the through header or a #pragma
+/// hdrstop. The following directives are handled:
+/// #include (to check if it is the through header)
+/// #define (to warn about macros that don't match the PCH)
+/// #pragma (to check for pragma hdrstop).
+/// All other directives are completely discarded.
+void Preprocessor::HandleSkippedDirectiveWhileUsingPCH(Token &Result,
                                                        SourceLocation HashLoc) {
   if (const IdentifierInfo *II = Result.getIdentifierInfo()) {
-    if (II->getPPKeywordID() == tok::pp_include)
-      return HandleIncludeDirective(HashLoc, Result);
-    if (II->getPPKeywordID() == tok::pp_define)
+    if (II->getPPKeywordID() == tok::pp_define) {
       return HandleDefineDirective(Result,
                                    /*ImmediatelyAfterHeaderGuard=*/false);
+    }
+    if (SkippingUntilPCHThroughHeader &&
+        II->getPPKeywordID() == tok::pp_include) {
+      return HandleIncludeDirective(HashLoc, Result);
+    }
+    if (SkippingUntilPragmaHdrStop && II->getPPKeywordID() == tok::pp_pragma) {
+      Token P = LookAhead(0);
+      auto *II = P.getIdentifierInfo();
+      if (II && II->getName() == "hdrstop")
+        return HandlePragmaDirective(HashLoc, PIK_HashPragma);
+    }
   }
   DiscardUntilEndOfDirective();
 }
@@ -964,8 +975,8 @@ void Preprocessor::HandleDirective(Token &Result) {
   // and reset to previous state when returning from this function.
   ResetMacroExpansionHelper helper(this);
 
-  if (SkippingUntilPCHThroughHeader)
-    return HandleSkippedThroughHeaderDirective(Result, SavedHash.getLocation());
+  if (SkippingUntilPCHThroughHeader || SkippingUntilPragmaHdrStop)
+    return HandleSkippedDirectiveWhileUsingPCH(Result, SavedHash.getLocation());
 
   switch (Result.getKind()) {
   case tok::eod:
@@ -1618,7 +1629,7 @@ static void diagnoseAutoModuleImport(
     Preprocessor &PP, SourceLocation HashLoc, Token &IncludeTok,
     ArrayRef<std::pair<IdentifierInfo *, SourceLocation>> Path,
     SourceLocation PathEnd) {
-  assert(PP.getLangOpts().ObjC2 && "no import syntax available");
+  assert(PP.getLangOpts().ObjC && "no import syntax available");
 
   SmallString<128> PathString;
   for (size_t I = 0, N = Path.size(); I != N; ++I) {
@@ -1868,15 +1879,50 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
             Callbacks ? &RelativePath : nullptr, &SuggestedModule, &IsMapped);
         if (File) {
           SourceRange Range(FilenameTok.getLocation(), CharEnd);
-          Diag(FilenameTok, diag::err_pp_file_not_found_not_fatal) <<
+          Diag(FilenameTok, diag::err_pp_file_not_found_angled_include_not_fatal) <<
             Filename <<
             FixItHint::CreateReplacement(Range, "\"" + Filename.str() + "\"");
         }
       }
 
+      // Check for likely typos due to leading or trailing non-isAlphanumeric
+      // characters
+      StringRef OriginalFilename = Filename;
+      if (LangOpts.SpellChecking && !File) {
+        // A heuristic to correct a typo file name by removing leading and
+        // trailing non-isAlphanumeric characters.
+        auto CorrectTypoFilename = [](llvm::StringRef Filename) {
+          Filename = Filename.drop_until(isAlphanumeric);
+          while (!Filename.empty() && !isAlphanumeric(Filename.back())) {
+            Filename = Filename.drop_back();
+          }
+          return Filename;
+        };
+        StringRef TypoCorrectionName = CorrectTypoFilename(Filename);
+        File = LookupFile(
+            FilenameLoc,
+            LangOpts.MSVCCompat ? NormalizedPath.c_str() : TypoCorrectionName,
+            isAngled, LookupFrom, LookupFromFile, CurDir,
+            Callbacks ? &SearchPath : nullptr,
+            Callbacks ? &RelativePath : nullptr, &SuggestedModule, &IsMapped);
+        if (File) {
+          SourceRange Range(FilenameTok.getLocation(), CharEnd);
+          auto Hint = isAngled
+                          ? FixItHint::CreateReplacement(
+                                Range, "<" + TypoCorrectionName.str() + ">")
+                          : FixItHint::CreateReplacement(
+                                Range, "\"" + TypoCorrectionName.str() + "\"");
+          Diag(FilenameTok, diag::err_pp_file_not_found_typo_not_fatal)
+              << OriginalFilename << TypoCorrectionName << Hint;
+          // We found the file, so set the Filename to the name after typo
+          // correction.
+          Filename = TypoCorrectionName;
+        }
+      }
+
       // If the file is still not found, just go with the vanilla diagnostic
       if (!File)
-        Diag(FilenameTok, diag::err_pp_file_not_found) << Filename
+        Diag(FilenameTok, diag::err_pp_file_not_found) << OriginalFilename
                                                        << FilenameRange;
     }
   }
@@ -1932,7 +1978,7 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
 
     // Warn that we're replacing the include/import with a module import.
     // We only do this in Objective-C, where we have a module-import syntax.
-    if (getLangOpts().ObjC2)
+    if (getLangOpts().ObjC)
       diagnoseAutoModuleImport(*this, HashLoc, IncludeTok, Path, CharEnd);
 
     // Load the module to import its macros. We'll make the declarations
@@ -2169,7 +2215,7 @@ void Preprocessor::HandleMicrosoftImportDirective(Token &Tok) {
 ///
 void Preprocessor::HandleImportDirective(SourceLocation HashLoc,
                                          Token &ImportTok) {
-  if (!LangOpts.ObjC1) {  // #import is standard for ObjC.
+  if (!LangOpts.ObjC) {  // #import is standard for ObjC.
     if (LangOpts.MSVCCompat)
       return HandleMicrosoftImportDirective(ImportTok);
     Diag(ImportTok, diag::ext_pp_import_directive);
@@ -2640,7 +2686,7 @@ void Preprocessor::HandleDefineDirective(
              II->isStr("__unsafe_unretained") ||
              II->isStr("__autoreleasing");
     };
-   if (getLangOpts().ObjC1 &&
+   if (getLangOpts().ObjC &&
         SourceMgr.getFileID(OtherMI->getDefinitionLoc())
           == getPredefinesFileID() &&
         isObjCProtectedMacro(MacroNameTok.getIdentifierInfo())) {

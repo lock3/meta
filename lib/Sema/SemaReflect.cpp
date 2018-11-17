@@ -547,6 +547,7 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
     const Expr *RE = Refl.getAsExpression();
     if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RE))
       return AppendReflectedDecl(S, OS, E, DRE->getDecl());
+    break;
   }
 
   case RK_base_specifier:

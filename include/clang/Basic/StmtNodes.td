@@ -97,6 +97,10 @@ def VAArgExpr : DStmt<Expr>;
 def GenericSelectionExpr : DStmt<Expr>;
 def PseudoObjectExpr : DStmt<Expr>;
 
+// Wrapper expressions
+def FullExpr : DStmt<Expr, 1>;
+def ConstantExpr : DStmt<FullExpr>;
+
 // Atomic expressions
 def AtomicExpr : DStmt<Expr>;
 
@@ -135,7 +139,7 @@ def DependentScopeDeclRefExpr : DStmt<Expr>;
 def CXXConstructExpr : DStmt<Expr>;
 def CXXInheritedCtorInitExpr : DStmt<Expr>;
 def CXXBindTemporaryExpr : DStmt<Expr>;
-def ExprWithCleanups : DStmt<Expr>;
+def ExprWithCleanups : DStmt<FullExpr>;
 def CXXTemporaryObjectExpr : DStmt<CXXConstructExpr>;
 def CXXUnresolvedConstructExpr : DStmt<Expr>;
 def CXXDependentScopeMemberExpr : DStmt<Expr>;

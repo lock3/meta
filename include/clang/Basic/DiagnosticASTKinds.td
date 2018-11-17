@@ -163,12 +163,19 @@ def note_constexpr_unsupported_unsized_array : Note<
 def note_constexpr_unsized_array_indexed : Note<
   "indexing of array without known bound is not allowed "
   "in a constant expression">;
+def note_constexpr_memcpy_null : Note<
+  "%select{source|destination}2 of "
+  "'%select{%select{memcpy|wmemcpy}1|%select{memmove|wmemmove}1}0' "
+  "is %3">;
 def note_constexpr_memcpy_type_pun : Note<
   "cannot constant evaluate '%select{memcpy|memmove}0' from object of "
   "type %1 to object of type %2">;
 def note_constexpr_memcpy_nontrivial : Note<
   "cannot constant evaluate '%select{memcpy|memmove}0' between objects of "
   "non-trivially-copyable type %1">;
+def note_constexpr_memcpy_incomplete_type : Note<
+  "cannot constant evaluate '%select{memcpy|memmove}0' between objects of "
+  "incomplete type %1">;
 def note_constexpr_memcpy_overlap : Note<
   "'%select{memcpy|wmemcpy}0' between overlapping memory regions">;
 def note_constexpr_memcpy_unsupported : Note<

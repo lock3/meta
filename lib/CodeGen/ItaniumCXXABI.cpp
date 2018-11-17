@@ -1562,9 +1562,8 @@ void ItaniumCXXABI::EmitDestructorCall(CodeGenFunction &CGF,
       Type != Dtor_Base && DD->isVirtual())
     Callee = CGF.BuildAppleKextVirtualDestructorCall(DD, Type, DD->getParent());
   else
-    Callee =
-      CGCallee::forDirect(CGM.getAddrOfCXXStructor(DD, getFromDtorType(Type)),
-                          DD);
+    Callee = CGCallee::forDirect(
+        CGM.getAddrOfCXXStructor(DD, getFromDtorType(Type)), GD);
 
   CGF.EmitCXXMemberOrOperatorCall(DD, Callee, ReturnValueSlot(),
                                   This.getPointer(), VTT, VTTTy,
@@ -1597,12 +1596,6 @@ void ItaniumCXXABI::emitVTableDefinitions(CodeGenVTables &CGVT,
 
   // Set the right visibility.
   CGM.setGVProperties(VTable, RD);
-
-  // Use pointer alignment for the vtable. Otherwise we would align them based
-  // on the size of the initializer which doesn't make sense as only single
-  // values are read.
-  unsigned PAlign = CGM.getTarget().getPointerAlign(0);
-  VTable->setAlignment(getContext().toCharUnitsFromBits(PAlign).getQuantity());
 
   // If this is the magic class __cxxabiv1::__fundamental_type_info,
   // we will emit the typeinfo for the fundamental types. This is the
@@ -1703,8 +1696,14 @@ llvm::GlobalVariable *ItaniumCXXABI::getAddrOfVTable(const CXXRecordDecl *RD,
       CGM.getItaniumVTableContext().getVTableLayout(RD);
   llvm::Type *VTableType = CGM.getVTables().getVTableType(VTLayout);
 
+  // Use pointer alignment for the vtable. Otherwise we would align them based
+  // on the size of the initializer which doesn't make sense as only single
+  // values are read.
+  unsigned PAlign = CGM.getTarget().getPointerAlign(0);
+
   VTable = CGM.CreateOrReplaceCXXRuntimeVariable(
-      Name, VTableType, llvm::GlobalValue::ExternalLinkage);
+      Name, VTableType, llvm::GlobalValue::ExternalLinkage,
+      getContext().toCharUnitsFromBits(PAlign).getQuantity());
   VTable->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
 
   CGM.setGVProperties(VTable, RD);
@@ -1750,7 +1749,7 @@ CGCallee ItaniumCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
     VFunc = VFuncLoad;
   }
 
-  CGCallee Callee(MethodDecl->getCanonicalDecl(), VFunc);
+  CGCallee Callee(GD, VFunc);
   return Callee;
 }
 
@@ -1916,7 +1915,7 @@ Address ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
   // Handle the array cookie specially in ASan.
   if (CGM.getLangOpts().Sanitize.has(SanitizerKind::Address) && AS == 0 &&
       (expr->getOperatorNew()->isReplaceableGlobalAllocationFunction() ||
-       CGM.getCodeGenOpts().SanitizeAddressPoisonClassMemberArrayNewCookie)) {
+       CGM.getCodeGenOpts().SanitizeAddressPoisonCustomArrayCookie)) {
     // The store to the CookiePtr does not need to be instrumented.
     CGM.getSanitizerMetadata()->disableSanitizerForInstruction(SI);
     llvm::FunctionType *FTy =
@@ -2315,11 +2314,13 @@ void CodeGenModule::registerGlobalDtorsWithAtExit() {
         FTy, GlobalInitFnName, getTypes().arrangeNullaryFunction(),
         SourceLocation());
     ASTContext &Ctx = getContext();
+    QualType ReturnTy = Ctx.VoidTy;
+    QualType FunctionTy = Ctx.getFunctionType(ReturnTy, llvm::None, {});
     FunctionDecl *FD = FunctionDecl::Create(
         Ctx, Ctx.getTranslationUnitDecl(), SourceLocation(), SourceLocation(),
-        &Ctx.Idents.get(GlobalInitFnName), Ctx.VoidTy, nullptr, SC_Static,
+        &Ctx.Idents.get(GlobalInitFnName), FunctionTy, nullptr, SC_Static,
         false, false);
-    CGF.StartFunction(GlobalDecl(FD), getContext().VoidTy, GlobalInitFn,
+    CGF.StartFunction(GlobalDecl(FD), ReturnTy, GlobalInitFn,
                       getTypes().arrangeNullaryFunction(), FunctionArgList(),
                       SourceLocation(), SourceLocation());
 
@@ -2342,6 +2343,9 @@ void ItaniumCXXABI::registerGlobalDtor(CodeGenFunction &CGF,
                                        const VarDecl &D,
                                        llvm::Constant *dtor,
                                        llvm::Constant *addr) {
+  if (D.isNoDestroy(CGM.getContext()))
+    return;
+
   // Use __cxa_atexit if available.
   if (CGM.getCodeGenOpts().CXAAtExit)
     return emitGlobalDtorWithCXAAtExit(CGF, dtor, addr, D.getTLSKind());
@@ -2415,7 +2419,7 @@ ItaniumCXXABI::getOrCreateThreadLocalWrapper(const VarDecl *VD,
       llvm::Function::Create(FnTy, getThreadLocalWrapperLinkage(VD, CGM),
                              WrapperName.str(), &CGM.getModule());
 
-  CGM.SetLLVMFunctionAttributes(nullptr, FI, Wrapper);
+  CGM.SetLLVMFunctionAttributes(GlobalDecl(), FI, Wrapper);
 
   if (VD->hasDefinition())
     CGM.SetLLVMFunctionAttributesForDefinition(nullptr, Wrapper);
@@ -2469,8 +2473,8 @@ void ItaniumCXXABI::EmitThreadLocalInitFuncs(
     CharUnits GuardAlign = CharUnits::One();
     Guard->setAlignment(GuardAlign.getQuantity());
 
-    CodeGenFunction(CGM).GenerateCXXGlobalInitFunc(InitFunc, OrderedInits,
-                                                   Address(Guard, GuardAlign));
+    CodeGenFunction(CGM).GenerateCXXGlobalInitFunc(
+        InitFunc, OrderedInits, ConstantAddress(Guard, GuardAlign));
     // On Darwin platforms, use CXX_FAST_TLS calling convention.
     if (CGM.getTarget().getTriple().isOSDarwin()) {
       InitFunc->setCallingConv(llvm::CallingConv::CXX_FAST_TLS);
@@ -2522,7 +2526,8 @@ void ItaniumCXXABI::EmitThreadLocalInitFuncs(
                                     llvm::GlobalVariable::ExternalWeakLinkage,
                                     InitFnName.str(), &CGM.getModule());
       const CGFunctionInfo &FI = CGM.getTypes().arrangeNullaryFunction();
-      CGM.SetLLVMFunctionAttributes(nullptr, FI, cast<llvm::Function>(Init));
+      CGM.SetLLVMFunctionAttributes(GlobalDecl(), FI,
+                                    cast<llvm::Function>(Init));
     }
 
     if (Init) {
@@ -2722,9 +2727,10 @@ llvm::GlobalVariable *ItaniumRTTIBuilder::GetAddrOfTypeName(
   // get the mangled name of the type.
   llvm::Constant *Init = llvm::ConstantDataArray::getString(VMContext,
                                                             Name.substr(4));
+  auto Align = CGM.getContext().getTypeAlignInChars(CGM.getContext().CharTy);
 
-  llvm::GlobalVariable *GV =
-    CGM.CreateOrReplaceCXXRuntimeVariable(Name, Init->getType(), Linkage);
+  llvm::GlobalVariable *GV = CGM.CreateOrReplaceCXXRuntimeVariable(
+      Name, Init->getType(), Linkage, Align.getQuantity());
 
   GV->setInitializer(Init);
 
@@ -2809,6 +2815,9 @@ static bool TypeInfoIsInStandardLibrary(const BuiltinType *Ty) {
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
     case BuiltinType::Id:
 #include "clang/Basic/OpenCLImageTypes.def"
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+    case BuiltinType::Id:
+#include "clang/Basic/OpenCLExtensionTypes.def"
     case BuiltinType::OCLSampler:
     case BuiltinType::OCLEvent:
     case BuiltinType::OCLClkEvent:
@@ -3085,7 +3094,7 @@ void ItaniumRTTIBuilder::BuildVTablePointer(const Type *Ty) {
     }
 
     assert(isa<ObjCInterfaceType>(Ty));
-    // Fall through.
+    LLVM_FALLTHROUGH;
 
   case Type::ObjCInterface:
     if (cast<ObjCInterfaceType>(Ty)->getDecl()->getSuperClass()) {
@@ -3363,6 +3372,10 @@ llvm::Constant *ItaniumRTTIBuilder::BuildTypeInfo(
 
   if (CGM.supportsCOMDAT() && GV->isWeakForLinker())
     GV->setComdat(M.getOrInsertComdat(GV->getName()));
+
+  CharUnits Align =
+      CGM.getContext().toCharUnitsFromBits(CGM.getTarget().getPointerAlign(0));
+  GV->setAlignment(Align.getQuantity());
 
   // The Itanium ABI specifies that type_info objects must be globally
   // unique, with one exception: if the type is an incomplete class
@@ -4018,7 +4031,7 @@ static void InitCatchParam(CodeGenFunction &CGF,
       switch (CatchType.getQualifiers().getObjCLifetime()) {
       case Qualifiers::OCL_Strong:
         CastExn = CGF.EmitARCRetainNonBlock(CastExn);
-        // fallthrough
+        LLVM_FALLTHROUGH;
 
       case Qualifiers::OCL_None:
       case Qualifiers::OCL_ExplicitNone:

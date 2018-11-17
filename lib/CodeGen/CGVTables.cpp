@@ -304,7 +304,7 @@ void CodeGenFunction::EmitCallAndReturnForThunk(llvm::Constant *CalleePtr,
         CGM.ErrorUnsupported(
             MD, "non-trivial argument copy for return-adjusting thunk");
     }
-    EmitMustTailThunk(MD, AdjustedThisPtr, CalleePtr);
+    EmitMustTailThunk(CurGD, AdjustedThisPtr, CalleePtr);
     return;
   }
 
@@ -356,7 +356,7 @@ void CodeGenFunction::EmitCallAndReturnForThunk(llvm::Constant *CalleePtr,
 
   // Now emit our call.
   llvm::Instruction *CallOrInvoke;
-  CGCallee Callee = CGCallee::forDirect(CalleePtr, MD);
+  CGCallee Callee = CGCallee::forDirect(CalleePtr, CurGD);
   RValue RV = EmitCall(*CurFnInfo, Callee, Slot, CallArgs, &CallOrInvoke);
 
   // Consider return adjustment if we have ThunkInfo.
@@ -375,7 +375,7 @@ void CodeGenFunction::EmitCallAndReturnForThunk(llvm::Constant *CalleePtr,
   FinishThunk();
 }
 
-void CodeGenFunction::EmitMustTailThunk(const CXXMethodDecl *MD,
+void CodeGenFunction::EmitMustTailThunk(GlobalDecl GD,
                                         llvm::Value *AdjustedThisPtr,
                                         llvm::Value *CalleePtr) {
   // Emitting a musttail call thunk doesn't use any of the CGCall.cpp machinery
@@ -412,7 +412,7 @@ void CodeGenFunction::EmitMustTailThunk(const CXXMethodDecl *MD,
   // Apply the standard set of call attributes.
   unsigned CallingConv;
   llvm::AttributeList Attrs;
-  CGM.ConstructAttributeList(CalleePtr->getName(), *CurFnInfo, MD, Attrs,
+  CGM.ConstructAttributeList(CalleePtr->getName(), *CurFnInfo, GD, Attrs,
                              CallingConv, /*AttrOnCallSite=*/true);
   Call->setAttributes(Attrs);
   Call->setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));
@@ -756,9 +756,11 @@ CodeGenVTables::GenerateConstructionVTable(const CXXRecordDecl *RD,
   if (Linkage == llvm::GlobalVariable::AvailableExternallyLinkage)
     Linkage = llvm::GlobalVariable::InternalLinkage;
 
+  unsigned Align = CGM.getDataLayout().getABITypeAlignment(VTType);
+
   // Create the variable that will hold the construction vtable.
   llvm::GlobalVariable *VTable =
-    CGM.CreateOrReplaceCXXRuntimeVariable(Name, VTType, Linkage);
+      CGM.CreateOrReplaceCXXRuntimeVariable(Name, VTType, Linkage, Align);
   CGM.setGVProperties(VTable, RD);
 
   // V-tables are always unnamed_addr.
@@ -1020,8 +1022,8 @@ void CodeGenModule::EmitVTableTypeMetadata(llvm::GlobalVariable *VTable,
                                 AP.second.AddressPointIndex));
 
   // Sort the address points for determinism.
-  llvm::sort(AddressPoints.begin(), AddressPoints.end(),
-             [this](const AddressPoint &AP1, const AddressPoint &AP2) {
+  llvm::sort(AddressPoints, [this](const AddressPoint &AP1,
+                                   const AddressPoint &AP2) {
     if (&AP1 == &AP2)
       return false;
 

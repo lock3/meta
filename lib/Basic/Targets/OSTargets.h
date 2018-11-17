@@ -397,7 +397,7 @@ public:
     case llvm::Triple::x86:
     case llvm::Triple::x86_64:
       this->HasFloat128 = true;
-      // FALLTHROUGH
+      LLVM_FALLTHROUGH;
     default:
       this->MCountName = "__mcount";
       break;
@@ -643,6 +643,7 @@ public:
   WindowsTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
       : OSTargetInfo<Target>(Triple, Opts) {
     this->WCharType = TargetInfo::UnsignedShort;
+    this->WIntType = TargetInfo::UnsignedShort;
   }
 };
 

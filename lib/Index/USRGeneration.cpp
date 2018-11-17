@@ -97,6 +97,7 @@ public:
   void VisitTypedefDecl(const TypedefDecl *D);
   void VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *D);
   void VisitVarDecl(const VarDecl *D);
+  void VisitBindingDecl(const BindingDecl *D);
   void VisitNonTypeTemplateParmDecl(const NonTypeTemplateParmDecl *D);
   void VisitTemplateTemplateParmDecl(const TemplateTemplateParmDecl *D);
   void VisitUnresolvedUsingValueDecl(const UnresolvedUsingValueDecl *D);
@@ -332,6 +333,12 @@ void USRGenerator::VisitVarDecl(const VarDecl *D) {
       VisitTemplateArgument(Args.get(I));
     }
   }
+}
+
+void USRGenerator::VisitBindingDecl(const BindingDecl *D) {
+  if (isLocal(D) && GenLoc(D, /*IncludeOffset=*/true))
+    return;
+  VisitNamedDecl(D);
 }
 
 void USRGenerator::VisitNonTypeTemplateParmDecl(
@@ -706,6 +713,9 @@ void USRGenerator::VisitType(QualType T) {
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
         case BuiltinType::Id:
 #include "clang/Basic/OpenCLImageTypes.def"
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+        case BuiltinType::Id:
+#include "clang/Basic/OpenCLExtensionTypes.def"
         case BuiltinType::OCLEvent:
         case BuiltinType::OCLClkEvent:
         case BuiltinType::OCLQueue:
@@ -937,7 +947,7 @@ void USRGenerator::VisitTemplateArgument(const TemplateArgument &Arg) {
 
   case TemplateArgument::TemplateExpansion:
     Out << 'P'; // pack expansion of...
-    // Fall through
+    LLVM_FALLTHROUGH;
   case TemplateArgument::Template:
     VisitTemplateName(Arg.getAsTemplateOrTemplatePattern());
     break;
@@ -1095,5 +1105,31 @@ bool clang::index::generateUSRForMacro(StringRef MacroName, SourceLocation Loc,
     printLoc(Out, Loc, SM, /*IncludeOffset=*/true);
   Out << "@macro@";
   Out << MacroName;
+  return false;
+}
+
+bool clang::index::generateFullUSRForModule(const Module *Mod,
+                                            raw_ostream &OS) {
+  if (!Mod->Parent)
+    return generateFullUSRForTopLevelModuleName(Mod->Name, OS);
+  if (generateFullUSRForModule(Mod->Parent, OS))
+    return true;
+  return generateUSRFragmentForModule(Mod, OS);
+}
+
+bool clang::index::generateFullUSRForTopLevelModuleName(StringRef ModName,
+                                                        raw_ostream &OS) {
+  OS << getUSRSpacePrefix();
+  return generateUSRFragmentForModuleName(ModName, OS);
+}
+
+bool clang::index::generateUSRFragmentForModule(const Module *Mod,
+                                                raw_ostream &OS) {
+  return generateUSRFragmentForModuleName(Mod->Name, OS);
+}
+
+bool clang::index::generateUSRFragmentForModuleName(StringRef ModName,
+                                                    raw_ostream &OS) {
+  OS << "@M@" << ModName;
   return false;
 }

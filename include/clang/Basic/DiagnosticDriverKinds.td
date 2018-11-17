@@ -151,9 +151,6 @@ def warn_drv_unknown_argument_clang_cl_with_suggestion : Warning<
   "unknown argument ignored in clang-cl '%0' (did you mean '%1'?)">,
   InGroup<UnknownArgument>;
 
-def warn_drv_ycyu_no_arg_clang_cl : Warning<
-  "support for '%0' without a filename not implemented yet; flag ignored">,
-  InGroup<ClangClPch>;
 def warn_drv_ycyu_different_arg_clang_cl : Warning<
   "support for '/Yc' and '/Yu' with different filenames not implemented yet; flags ignored">,
   InGroup<ClangClPch>;
@@ -163,6 +160,9 @@ def warn_drv_ycyu_no_fi_arg_clang_cl : Warning<
 def warn_drv_yc_multiple_inputs_clang_cl : Warning<
   "support for '/Yc' with more than one source file not implemented yet; flag ignored">,
   InGroup<ClangClPch>;
+
+def err_drv_dllexport_inlines_and_fallback : Error<
+  "option '/Zc:dllexportInlines-' is ABI-changing and not compatible with '/fallback'">;
 
 def err_drv_invalid_value : Error<"invalid value '%1' in '%0'">;
 def err_drv_invalid_int_value : Error<"invalid integral value '%1' in '%0'">;
@@ -193,6 +193,9 @@ def err_drv_mg_requires_m_or_mm : Error<
   "option '-MG' requires '-M' or '-MM'">;
 def err_drv_unknown_objc_runtime : Error<
   "unknown or ill-formed Objective-C runtime '%0'">;
+def err_drv_invalid_cf_runtime_abi
+  : Error<"invalid CoreFoundation Runtime ABI '%0'; must be one of "
+          "'objc', 'standalone', 'swift', 'swift-5.0', 'swift-4.2', 'swift-4.1'">;
 def err_drv_gnustep_objc_runtime_incompatible_binary : Error<
   "GNUstep Objective-C runtime version %0 incompatible with target binary format">;
 def err_drv_emit_llvm_link : Error<
@@ -213,6 +216,8 @@ def warn_drv_omp_offload_target_duplicate : Warning<
 def warn_drv_omp_offload_target_missingbcruntime : Warning<
   "No library '%0' found in the default clang lib directory or in LIBRARY_PATH. Expect degraded performance due to no inlining of runtime functions on target devices.">,
   InGroup<OpenMPTarget>;
+def err_drv_unsupported_embed_bitcode
+    : Error<"%0 is not supported with -fembed-bitcode">;
 def err_drv_bitcode_unsupported_on_toolchain : Error<
   "-fembed-bitcode is not supported on versions of iOS prior to 6.0">;
 
@@ -277,6 +282,8 @@ def warn_drv_disabling_vptr_no_rtti_default : Warning<
 def warn_drv_object_size_disabled_O0 : Warning<
   "the object size sanitizer has no effect at -O0, but is explicitly enabled: %0">,
   InGroup<InvalidCommandLineArgument>, DefaultWarnNoWerror;
+def err_invalid_branch_protection: Error <
+  "invalid branch protection option '%0' in '%1'">;
 
 def note_drv_command_failed_diag_msg : Note<
   "diagnostic msg: %0">;
@@ -299,6 +306,9 @@ def warn_drv_vectorize_needs_hvx : Warning<
   "auto-vectorization requires HVX, use -mhvx to enable it">,
   InGroup<OptionIgnored>;
 
+def err_drv_module_header_wrong_kind : Error<
+  "header file '%0' input type '%1' does not match type of prior input "
+  "in module compilation; use '-x %2' to override">;
 def err_drv_modules_validate_once_requires_timestamp : Error<
   "option '-fmodules-validate-once-per-build-session' requires "
   "'-fbuild-session-timestamp=<seconds since Epoch>' or '-fbuild-session-file=<file>'">;

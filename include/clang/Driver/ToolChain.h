@@ -12,6 +12,7 @@
 
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/Sanitizers.h"
+#include "clang/Basic/DebugInfoOptions.h"
 #include "clang/Driver/Action.h"
 #include "clang/Driver/Multilib.h"
 #include "clang/Driver/Types.h"
@@ -36,17 +37,16 @@ class ArgList;
 class DerivedArgList;
 
 } // namespace opt
-} // namespace llvm
-
-namespace clang {
-
-class ObjCRuntime;
-
 namespace vfs {
 
 class FileSystem;
 
 } // namespace vfs
+} // namespace llvm
+
+namespace clang {
+
+class ObjCRuntime;
 
 namespace driver {
 
@@ -116,6 +116,9 @@ private:
 
   const RTTIMode CachedRTTIMode;
 
+  /// The list of toolchain specific path prefixes to search for libraries.
+  path_list LibraryPaths;
+
   /// The list of toolchain specific path prefixes to search for files.
   path_list FilePaths;
 
@@ -146,6 +149,7 @@ private:
 
 protected:
   MultilibSet Multilibs;
+  Multilib SelectedMultilib;
 
   ToolChain(const Driver &D, const llvm::Triple &T,
             const llvm::opt::ArgList &Args);
@@ -179,7 +183,7 @@ public:
   // Accessors
 
   const Driver &getDriver() const { return D; }
-  vfs::FileSystem &getVFS() const;
+  llvm::vfs::FileSystem &getVFS() const;
   const llvm::Triple &getTriple() const { return Triple; }
 
   /// Get the toolchain's aux triple, if it has one.
@@ -213,6 +217,9 @@ public:
     return EffectiveTriple;
   }
 
+  path_list &getLibraryPaths() { return LibraryPaths; }
+  const path_list &getLibraryPaths() const { return LibraryPaths; }
+
   path_list &getFilePaths() { return FilePaths; }
   const path_list &getFilePaths() const { return FilePaths; }
 
@@ -220,6 +227,8 @@ public:
   const path_list &getProgramPaths() const { return ProgramPaths; }
 
   const MultilibSet &getMultilibs() const { return Multilibs; }
+
+  const Multilib &getMultilib() const { return SelectedMultilib; }
 
   const SanitizerArgs& getSanitizerArgs() const;
 
@@ -393,6 +402,11 @@ public:
 
   /// Complain if this tool chain doesn't support Objective-C ARC.
   virtual void CheckObjCARC() const {}
+
+  /// Get the default debug info format. Typically, this is DWARF.
+  virtual codegenoptions::DebugInfoFormat getDefaultDebugFormat() const {
+    return codegenoptions::DIF_DWARF;
+  }
 
   /// UseDwarfDebugFlags - Embed the compile options to clang into the Dwarf
   /// compile unit information.

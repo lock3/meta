@@ -62,6 +62,8 @@ CODEGENOPT(ExperimentalNewPassManager, 1, 0) ///< Enables the new, experimental
 CODEGENOPT(DebugPassManager, 1, 0) ///< Prints debug information for the new
                                    ///< pass manager.
 CODEGENOPT(DisableRedZone    , 1, 0) ///< Set when -mno-red-zone is enabled.
+CODEGENOPT(IndirectTlsSegRefs, 1, 0) ///< Set when -mno-tls-direct-seg-refs
+                                     ///< is specified.
 CODEGENOPT(DisableTailCalls  , 1, 0) ///< Do not emit tail calls.
 CODEGENOPT(NoEscapingBlockTailCalls, 1, 0) ///< Do not emit tail calls from
                                            ///< escaping blocks.
@@ -172,7 +174,7 @@ CODEGENOPT(NewStructPathTBAA , 1, 0) ///< Whether or not to use enhanced struct-
 CODEGENOPT(SaveTempLabels    , 1, 0) ///< Save temporary labels.
 CODEGENOPT(SanitizeAddressUseAfterScope , 1, 0) ///< Enable use-after-scope detection
                                                 ///< in AddressSanitizer
-CODEGENOPT(SanitizeAddressPoisonClassMemberArrayNewCookie, 1,
+CODEGENOPT(SanitizeAddressPoisonCustomArrayCookie, 1,
            0) ///< Enable poisoning operator new[] which is not a replaceable
               ///< global allocation function in AddressSanitizer
 CODEGENOPT(SanitizeAddressGlobalsDeadStripping, 1, 0) ///< Enable linker dead stripping
@@ -211,6 +213,7 @@ CODEGENOPT(SanitizeCoverageStackDepth, 1, 0) ///< Enable max stack depth tracing
 CODEGENOPT(SanitizeStats     , 1, 0) ///< Collect statistics for sanitizers.
 CODEGENOPT(SimplifyLibCalls  , 1, 1) ///< Set when -fbuiltin is enabled.
 CODEGENOPT(SoftFloat         , 1, 0) ///< -soft-float.
+CODEGENOPT(SpeculativeLoadHardening, 1, 0) ///< Enable speculative load hardening.
 CODEGENOPT(FineGrainedBitfieldAccesses, 1, 0) ///< Enable fine-grained bitfield accesses.
 CODEGENOPT(StrictEnums       , 1, 0) ///< Optimize based on strict enum definition.
 CODEGENOPT(StrictVTablePointers, 1, 0) ///< Optimize based on the strict vtable pointers
@@ -249,7 +252,9 @@ CODEGENOPT(DebugTypeExtRefs, 1, 0) ///< Whether or not debug info should contain
 CODEGENOPT(DebugExplicitImport, 1, 0)  ///< Whether or not debug info should
                                        ///< contain explicit imports for
                                        ///< anonymous namespaces
-CODEGENOPT(EnableSplitDwarf, 1, 0) ///< Whether to enable split DWARF
+
+ENUM_CODEGENOPT(SplitDwarfMode, DwarfFissionKind, 2, NoFission) ///< DWARF fission mode to use.
+
 CODEGENOPT(SplitDwarfInlining, 1, 1) ///< Whether to include inlining info in the
                                      ///< skeleton CU to allow for symbolication
                                      ///< of inline stack frames without .dwo files.
@@ -292,6 +297,9 @@ VALUE_CODEGENOPT(DwarfVersion, 3, 0)
 /// CodeView and DWARF into the same object.
 CODEGENOPT(EmitCodeView, 1, 0)
 
+/// Whether to emit the .debug$H section containing hashes of CodeView types.
+CODEGENOPT(CodeViewGHash, 1, 0)
+
 /// The kind of inlining to perform.
 ENUM_CODEGENOPT(Inlining, InliningMethod, 2, NormalInlining)
 
@@ -326,7 +334,10 @@ CODEGENOPT(DebugInfoForProfiling, 1, 0)
 CODEGENOPT(PreserveVec3Type, 1, 0)
 
 /// Whether to emit .debug_gnu_pubnames section instead of .debug_pubnames.
-CODEGENOPT(GnuPubnames, 1, 0)
+CODEGENOPT(DebugNameTable, 2, 0)
+
+/// Whether to use DWARF base address specifiers in .debug_ranges.
+CODEGENOPT(DebugRangesBaseAddress, 1, 0)
 
 CODEGENOPT(NoPLT, 1, 0)
 
@@ -340,6 +351,11 @@ CODEGENOPT(ForceEmitVTables, 1, 0)
 CODEGENOPT(Addrsig, 1, 0)
 
 ENUM_CODEGENOPT(SignReturnAddress, SignReturnAddressScope, 2, None)
+ENUM_CODEGENOPT(SignReturnAddressKey, SignReturnAddressKeyValue, 1, AKey)
+CODEGENOPT(BranchTargetEnforcement, 1, 0)
+
+/// Whether to emit unused static constants.
+CODEGENOPT(KeepStaticConsts, 1, 0)
 
 #undef CODEGENOPT
 #undef ENUM_CODEGENOPT

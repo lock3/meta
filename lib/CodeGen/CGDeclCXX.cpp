@@ -63,15 +63,24 @@ static void EmitDeclInit(CodeGenFunction &CGF, const VarDecl &D,
 /// Emit code to cause the destruction of the given variable with
 /// static storage duration.
 static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
-                            ConstantAddress addr) {
+                            ConstantAddress Addr) {
+  // Honor __attribute__((no_destroy)) and bail instead of attempting
+  // to emit a reference to a possibly nonexistent destructor, which
+  // in turn can cause a crash. This will result in a global constructor
+  // that isn't balanced out by a destructor call as intended by the
+  // attribute. This also checks for -fno-c++-static-destructors and
+  // bails even if the attribute is not present.
+  if (D.isNoDestroy(CGF.getContext()))
+    return;
+  
   CodeGenModule &CGM = CGF.CGM;
 
   // FIXME:  __attribute__((cleanup)) ?
 
-  QualType type = D.getType();
-  QualType::DestructionKind dtorKind = type.isDestructedType();
+  QualType Type = D.getType();
+  QualType::DestructionKind DtorKind = Type.isDestructedType();
 
-  switch (dtorKind) {
+  switch (DtorKind) {
   case QualType::DK_none:
     return;
 
@@ -86,13 +95,14 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
     return;
   }
 
-  llvm::Constant *function;
-  llvm::Constant *argument;
+  llvm::Constant *Func;
+  llvm::Constant *Argument;
 
   // Special-case non-array C++ destructors, if they have the right signature.
   // Under some ABIs, destructors return this instead of void, and cannot be
-  // passed directly to __cxa_atexit if the target does not allow this mismatch.
-  const CXXRecordDecl *Record = type->getAsCXXRecordDecl();
+  // passed directly to __cxa_atexit if the target does not allow this
+  // mismatch.
+  const CXXRecordDecl *Record = Type->getAsCXXRecordDecl();
   bool CanRegisterDestructor =
       Record && (!CGM.getCXXABI().HasThisReturn(
                      GlobalDecl(Record->getDestructor(), Dtor_Complete)) ||
@@ -103,43 +113,47 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
   bool UsingExternalHelper = !CGM.getCodeGenOpts().CXAAtExit;
   if (Record && (CanRegisterDestructor || UsingExternalHelper)) {
     assert(!Record->hasTrivialDestructor());
-    CXXDestructorDecl *dtor = Record->getDestructor();
+    CXXDestructorDecl *Dtor = Record->getDestructor();
 
-    function = CGM.getAddrOfCXXStructor(dtor, StructorType::Complete);
-    argument = llvm::ConstantExpr::getBitCast(
-        addr.getPointer(), CGF.getTypes().ConvertType(type)->getPointerTo());
+    Func = CGM.getAddrOfCXXStructor(Dtor, StructorType::Complete);
+    Argument = llvm::ConstantExpr::getBitCast(
+        Addr.getPointer(), CGF.getTypes().ConvertType(Type)->getPointerTo());
 
   // Otherwise, the standard logic requires a helper function.
   } else {
-    function = CodeGenFunction(CGM)
-        .generateDestroyHelper(addr, type, CGF.getDestroyer(dtorKind),
-                               CGF.needsEHCleanup(dtorKind), &D);
-    argument = llvm::Constant::getNullValue(CGF.Int8PtrTy);
+    Func = CodeGenFunction(CGM)
+           .generateDestroyHelper(Addr, Type, CGF.getDestroyer(DtorKind),
+                                  CGF.needsEHCleanup(DtorKind), &D);
+    Argument = llvm::Constant::getNullValue(CGF.Int8PtrTy);
   }
 
-  CGM.getCXXABI().registerGlobalDtor(CGF, D, function, argument);
+  CGM.getCXXABI().registerGlobalDtor(CGF, D, Func, Argument);
 }
 
 /// Emit code to cause the variable at the given address to be considered as
 /// constant from this point onwards.
 static void EmitDeclInvariant(CodeGenFunction &CGF, const VarDecl &D,
                               llvm::Constant *Addr) {
+  return CGF.EmitInvariantStart(
+      Addr, CGF.getContext().getTypeSizeInChars(D.getType()));
+}
+
+void CodeGenFunction::EmitInvariantStart(llvm::Constant *Addr, CharUnits Size) {
   // Do not emit the intrinsic if we're not optimizing.
-  if (!CGF.CGM.getCodeGenOpts().OptimizationLevel)
+  if (!CGM.getCodeGenOpts().OptimizationLevel)
     return;
 
   // Grab the llvm.invariant.start intrinsic.
   llvm::Intrinsic::ID InvStartID = llvm::Intrinsic::invariant_start;
   // Overloaded address space type.
-  llvm::Type *ObjectPtr[1] = {CGF.Int8PtrTy};
-  llvm::Constant *InvariantStart = CGF.CGM.getIntrinsic(InvStartID, ObjectPtr);
+  llvm::Type *ObjectPtr[1] = {Int8PtrTy};
+  llvm::Constant *InvariantStart = CGM.getIntrinsic(InvStartID, ObjectPtr);
 
   // Emit a call with the size in bytes of the object.
-  CharUnits WidthChars = CGF.getContext().getTypeSizeInChars(D.getType());
-  uint64_t Width = WidthChars.getQuantity();
-  llvm::Value *Args[2] = { llvm::ConstantInt::getSigned(CGF.Int64Ty, Width),
-                           llvm::ConstantExpr::getBitCast(Addr, CGF.Int8PtrTy)};
-  CGF.Builder.CreateCall(InvariantStart, Args);
+  uint64_t Width = Size.getQuantity();
+  llvm::Value *Args[2] = { llvm::ConstantInt::getSigned(Int64Ty, Width),
+                           llvm::ConstantExpr::getBitCast(Addr, Int8PtrTy)};
+  Builder.CreateCall(InvariantStart, Args);
 }
 
 void CodeGenFunction::EmitCXXGlobalVarDeclInit(const VarDecl &D,
@@ -347,6 +361,10 @@ llvm::Function *CodeGenModule::CreateGlobalInitOrDestructFunction(
       !isInSanitizerBlacklist(SanitizerKind::Memory, Fn, Loc))
     Fn->addFnAttr(llvm::Attribute::SanitizeMemory);
 
+  if (getLangOpts().Sanitize.has(SanitizerKind::KernelMemory) &&
+      !isInSanitizerBlacklist(SanitizerKind::KernelMemory, Fn, Loc))
+    Fn->addFnAttr(llvm::Attribute::SanitizeMemory);
+
   if (getLangOpts().Sanitize.has(SanitizerKind::SafeStack) &&
       !isInSanitizerBlacklist(SanitizerKind::SafeStack, Fn, Loc))
     Fn->addFnAttr(llvm::Attribute::SafeStack);
@@ -354,6 +372,22 @@ llvm::Function *CodeGenModule::CreateGlobalInitOrDestructFunction(
   if (getLangOpts().Sanitize.has(SanitizerKind::ShadowCallStack) &&
       !isInSanitizerBlacklist(SanitizerKind::ShadowCallStack, Fn, Loc))
     Fn->addFnAttr(llvm::Attribute::ShadowCallStack);
+
+  auto RASignKind = getCodeGenOpts().getSignReturnAddress();
+  if (RASignKind != CodeGenOptions::SignReturnAddressScope::None) {
+    Fn->addFnAttr("sign-return-address",
+                  RASignKind == CodeGenOptions::SignReturnAddressScope::All
+                      ? "all"
+                      : "non-leaf");
+    auto RASignKey = getCodeGenOpts().getSignReturnAddressKey();
+    Fn->addFnAttr("sign-return-address-key",
+                  RASignKey == CodeGenOptions::SignReturnAddressKeyValue::AKey
+                      ? "a_key"
+                      : "b_key");
+  }
+
+  if (getCodeGenOpts().BranchTargetEnforcement)
+    Fn->addFnAttr("branch-target-enforcement");
 
   return Fn;
 }
@@ -587,7 +621,7 @@ void CodeGenFunction::GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
 void
 CodeGenFunction::GenerateCXXGlobalInitFunc(llvm::Function *Fn,
                                            ArrayRef<llvm::Function *> Decls,
-                                           Address Guard) {
+                                           ConstantAddress Guard) {
   {
     auto NL = ApplyDebugLocation::CreateEmpty(*this);
     StartFunction(GlobalDecl(), getContext().VoidTy, Fn,
@@ -611,6 +645,12 @@ CodeGenFunction::GenerateCXXGlobalInitFunc(llvm::Function *Fn,
       // initializers use previously-initialized thread_local vars, that's
       // probably supposed to be OK, but the standard doesn't say.
       Builder.CreateStore(llvm::ConstantInt::get(GuardVal->getType(),1), Guard);
+
+      // The guard variable can't ever change again.
+      EmitInvariantStart(
+          Guard.getPointer(),
+          CharUnits::fromQuantity(
+              CGM.getDataLayout().getTypeAllocSize(GuardVal->getType())));
     }
 
     RunCleanupsScope Scope(*this);

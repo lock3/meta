@@ -20,8 +20,8 @@
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/IdentifierTable.h"
-#include "clang/Sema/Sema.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/Sema.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -29,6 +29,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -48,6 +49,8 @@ bool CodeCompletionContext::wantConstructorResults() const {
   case CCC_Expression:
   case CCC_ObjCMessageReceiver:
   case CCC_ParenthesizedExpression:
+  case CCC_Symbol:
+  case CCC_SymbolOrNewName:
     return true;
 
   case CCC_TopLevel:
@@ -64,8 +67,7 @@ bool CodeCompletionContext::wantConstructorResults() const {
   case CCC_ObjCProtocolName:
   case CCC_Namespace:
   case CCC_Type:
-  case CCC_Name:
-  case CCC_PotentiallyQualifiedName:
+  case CCC_NewName:
   case CCC_MacroName:
   case CCC_MacroNameUse:
   case CCC_PreprocessorExpression:
@@ -79,6 +81,7 @@ bool CodeCompletionContext::wantConstructorResults() const {
   case CCC_ObjCClassMessage:
   case CCC_ObjCInterfaceName:
   case CCC_ObjCCategoryName:
+  case CCC_IncludedFile:
     return false;
   }
 
@@ -126,10 +129,12 @@ StringRef clang::getCompletionKindString(CodeCompletionContext::Kind Kind) {
     return "Namespace";
   case CCKind::CCC_Type:
     return "Type";
-  case CCKind::CCC_Name:
-    return "Name";
-  case CCKind::CCC_PotentiallyQualifiedName:
-    return "PotentiallyQualifiedName";
+  case CCKind::CCC_NewName:
+    return "NewName";
+  case CCKind::CCC_Symbol:
+    return "Symbol";
+  case CCKind::CCC_SymbolOrNewName:
+    return "SymbolOrNewName";
   case CCKind::CCC_MacroName:
     return "MacroName";
   case CCKind::CCC_MacroNameUse:
@@ -154,6 +159,8 @@ StringRef clang::getCompletionKindString(CodeCompletionContext::Kind Kind) {
     return "ObjCInterfaceName";
   case CCKind::CCC_ObjCCategoryName:
     return "ObjCCategoryName";
+  case CCKind::CCC_IncludedFile:
+    return "IncludedFile";
   case CCKind::CCC_Recovery:
     return "Recovery";
   }
@@ -521,7 +528,8 @@ bool PrintingCodeCompleteConsumer::isResultFilteredOut(StringRef Filter,
   case CodeCompletionResult::RK_Macro:
     return !Result.Macro->getName().startswith(Filter);
   case CodeCompletionResult::RK_Pattern:
-    return !StringRef(Result.Pattern->getAsString()).startswith(Filter);
+    return !(Result.Pattern->getTypedText() &&
+             StringRef(Result.Pattern->getTypedText()).startswith(Filter));
   }
   llvm_unreachable("Unknown code completion result Kind.");
 }
@@ -543,13 +551,18 @@ PrintingCodeCompleteConsumer::ProcessCodeCompleteResults(Sema &SemaRef,
     switch (Results[I].Kind) {
     case CodeCompletionResult::RK_Declaration:
       OS << *Results[I].Declaration;
-      if (Results[I].Hidden)
-        OS << " (Hidden)";
-      if (CodeCompletionString *CCS
-            = Results[I].CreateCodeCompletionString(SemaRef, Context,
-                                                    getAllocator(),
-                                                    CCTUInfo,
-                                                    includeBriefComments())) {
+      {
+        std::vector<std::string> Tags;
+        if (Results[I].Hidden)
+          Tags.push_back("Hidden");
+        if (Results[I].InBaseClass)
+          Tags.push_back("InBase");
+        if (!Tags.empty())
+          OS << " (" << llvm::join(Tags, ",") << ")";
+      }
+      if (CodeCompletionString *CCS = Results[I].CreateCodeCompletionString(
+              SemaRef, Context, getAllocator(), CCTUInfo,
+              includeBriefComments())) {
         OS << " : " << CCS->getAsString();
         if (const char *BriefComment = CCS->getBriefComment())
           OS << " : " << BriefComment;
@@ -618,22 +631,27 @@ static std::string getOverloadAsString(const CodeCompletionString &CCS) {
       OS << "<#" << C.Text << "#>";
       break;
 
+    // FIXME: We can also print optional parameters of an overload.
+    case CodeCompletionString::CK_Optional:
+      break;
+
     default: OS << C.Text; break;
     }
   }
   return OS.str();
 }
 
-void
-PrintingCodeCompleteConsumer::ProcessOverloadCandidates(Sema &SemaRef,
-                                                        unsigned CurrentArg,
-                                              OverloadCandidate *Candidates,
-                                                     unsigned NumCandidates) {
+void PrintingCodeCompleteConsumer::ProcessOverloadCandidates(
+    Sema &SemaRef, unsigned CurrentArg, OverloadCandidate *Candidates,
+    unsigned NumCandidates, SourceLocation OpenParLoc) {
+  OS << "OPENING_PAREN_LOC: ";
+  OpenParLoc.print(OS, SemaRef.getSourceManager());
+  OS << "\n";
+
   for (unsigned I = 0; I != NumCandidates; ++I) {
-    if (CodeCompletionString *CCS
-          = Candidates[I].CreateSignatureString(CurrentArg, SemaRef,
-                                                getAllocator(), CCTUInfo,
-                                                includeBriefComments())) {
+    if (CodeCompletionString *CCS = Candidates[I].CreateSignatureString(
+            CurrentArg, SemaRef, getAllocator(), CCTUInfo,
+            includeBriefComments())) {
       OS << "OVERLOAD: " << getOverloadAsString(*CCS) << "\n";
     }
   }

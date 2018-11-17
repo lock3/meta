@@ -1,42 +1,8 @@
-//RUN: %clang_analyze_cc1 -analyzer-checker=cplusplus.InnerPointer %s -analyzer-output=text -verify
+// RUN: %clang_analyze_cc1 -analyzer-checker=cplusplus.InnerPointer \
+// RUN:   %s -analyzer-output=text -verify
 
+#include "Inputs/system-header-simulator-cxx.h"
 namespace std {
-
-typedef int size_type;
-
-template <typename CharT>
-class basic_string {
-public:
-  basic_string();
-  basic_string(const CharT *s);
-
-  ~basic_string();
-  void clear();
-
-  basic_string &operator=(const basic_string &str);
-  basic_string &operator+=(const basic_string &str);
-
-  const CharT *c_str() const;
-  const CharT *data() const;
-  CharT *data();
-
-  basic_string &append(size_type count, CharT ch);
-  basic_string &assign(size_type count, CharT ch);
-  basic_string &erase(size_type index, size_type count);
-  basic_string &insert(size_type index, size_type count, CharT ch);
-  basic_string &replace(size_type pos, size_type count, const basic_string &str);
-  void pop_back();
-  void push_back(CharT ch);
-  void reserve(size_type new_cap);
-  void resize(size_type count);
-  void shrink_to_fit();
-  void swap(basic_string &other);
-};
-
-typedef basic_string<char> string;
-typedef basic_string<wchar_t> wstring;
-typedef basic_string<char16_t> u16string;
-typedef basic_string<char32_t> u32string;
 
 template <typename T>
 void func_ref(T &a);
@@ -412,8 +378,9 @@ const char *escape_via_return_local() {
   std::string s;
   return s.c_str(); // expected-note {{Pointer to inner buffer of 'std::string' obtained here}}
                     // expected-note@-1 {{Inner buffer of 'std::string' deallocated by call to destructor}}
-} // expected-warning {{Inner pointer of container used after re/deallocation}}
-// expected-note@-1 {{Inner pointer of container used after re/deallocation}}
+                    // expected-warning@-2 {{Inner pointer of container used after re/deallocation}}
+                    // expected-note@-3 {{Inner pointer of container used after re/deallocation}}
+}
 
 
 char *c();
@@ -423,4 +390,8 @@ void no_CXXRecordDecl() {
   A a, *b;
   *(void **)&b = c() + 1;
   *b = a; // no-crash
+}
+
+void checkReference(std::string &s) {
+  const char *c = s.c_str();
 }

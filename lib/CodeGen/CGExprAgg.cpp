@@ -127,6 +127,10 @@ public:
 
   void VisitCXXConstantExpr(CXXConstantExpr *E);
 
+  void VisitConstantExpr(ConstantExpr *E) {
+    return Visit(E->getSubExpr());
+  }
+
   // l-values.
   void VisitDeclRefExpr(DeclRefExpr *E) { EmitAggLoadOfLValue(E); }
   void VisitMemberExpr(MemberExpr *ME) { EmitAggLoadOfLValue(ME); }
@@ -850,10 +854,11 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_ARCExtendBlockObject:
   case CK_CopyAndAutoreleaseBlockObject:
   case CK_BuiltinFnToFnPtr:
-  case CK_ZeroToOCLEvent:
-  case CK_ZeroToOCLQueue:
+  case CK_ZeroToOCLOpaqueType:
   case CK_AddressSpaceConversion:
   case CK_IntToOCLSampler:
+  case CK_FixedPointCast:
+  case CK_FixedPointToBoolean:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }

@@ -30,6 +30,7 @@
 #include "clang/Basic/TargetInfo.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
 #include "clang/Frontend/CodeGenOptions.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Intrinsics.h"
@@ -104,6 +105,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::Import:
   case Decl::OMPThreadPrivate:
   case Decl::OMPCapturedExpr:
+  case Decl::OMPRequires:
   case Decl::Empty:
     // None of these decls require codegen support.
     return;
@@ -752,9 +754,9 @@ void CodeGenFunction::EmitScalarInit(const Expr *init, const ValueDecl *D,
 
   // If we're emitting a value with lifetime, we have to do the
   // initialization *before* we leave the cleanup scopes.
-  if (const ExprWithCleanups *ewc = dyn_cast<ExprWithCleanups>(init)) {
-    enterFullExpression(ewc);
-    init = ewc->getSubExpr();
+  if (const FullExpr *fe = dyn_cast<FullExpr>(init)) {
+    enterFullExpression(fe);
+    init = fe->getSubExpr();
   }
   CodeGenFunction::RunCleanupsScope Scope(*this);
 
@@ -948,111 +950,60 @@ static bool shouldUseBZeroPlusStoresToInitialize(llvm::Constant *Init,
          canEmitInitWithFewStoresAfterBZero(Init, StoreBudget);
 }
 
-/// A byte pattern.
-///
-/// Can be "any" pattern if the value was padding or known to be undef.
-/// Can be "none" pattern if a sequence doesn't exist.
-class BytePattern {
-  uint8_t Val;
-  enum class ValueType : uint8_t { Specific, Any, None } Type;
-  BytePattern(ValueType Type) : Type(Type) {}
-
-public:
-  BytePattern(uint8_t Value) : Val(Value), Type(ValueType::Specific) {}
-  static BytePattern Any() { return BytePattern(ValueType::Any); }
-  static BytePattern None() { return BytePattern(ValueType::None); }
-  bool isAny() const { return Type == ValueType::Any; }
-  bool isNone() const { return Type == ValueType::None; }
-  bool isValued() const { return Type == ValueType::Specific; }
-  uint8_t getValue() const {
-    assert(isValued());
-    return Val;
-  }
-  BytePattern merge(const BytePattern Other) const {
-    if (isNone() || Other.isNone())
-      return None();
-    if (isAny())
-      return Other;
-    if (Other.isAny())
-      return *this;
-    if (getValue() == Other.getValue())
-      return *this;
-    return None();
-  }
-};
-
-/// Figures out whether the constant can be initialized with memset.
-static BytePattern constantIsRepeatedBytePattern(llvm::Constant *C) {
-  if (isa<llvm::ConstantAggregateZero>(C) || isa<llvm::ConstantPointerNull>(C))
-    return BytePattern(0x00);
-  if (isa<llvm::UndefValue>(C))
-    return BytePattern::Any();
-
-  if (isa<llvm::ConstantInt>(C)) {
-    auto *Int = cast<llvm::ConstantInt>(C);
-    if (Int->getBitWidth() % 8 != 0)
-      return BytePattern::None();
-    const llvm::APInt &Value = Int->getValue();
-    if (Value.isSplat(8))
-      return BytePattern(Value.getLoBits(8).getLimitedValue());
-    return BytePattern::None();
-  }
-
-  if (isa<llvm::ConstantFP>(C)) {
-    auto *FP = cast<llvm::ConstantFP>(C);
-    llvm::APInt Bits = FP->getValueAPF().bitcastToAPInt();
-    if (Bits.getBitWidth() % 8 != 0)
-      return BytePattern::None();
-    if (!Bits.isSplat(8))
-      return BytePattern::None();
-    return BytePattern(Bits.getLimitedValue() & 0xFF);
-  }
-
-  if (isa<llvm::ConstantVector>(C)) {
-    llvm::Constant *Splat = cast<llvm::ConstantVector>(C)->getSplatValue();
-    if (Splat)
-      return constantIsRepeatedBytePattern(Splat);
-    return BytePattern::None();
-  }
-
-  if (isa<llvm::ConstantArray>(C) || isa<llvm::ConstantStruct>(C)) {
-    BytePattern Pattern(BytePattern::Any());
-    for (unsigned I = 0, E = C->getNumOperands(); I != E; ++I) {
-      llvm::Constant *Elt = cast<llvm::Constant>(C->getOperand(I));
-      Pattern = Pattern.merge(constantIsRepeatedBytePattern(Elt));
-      if (Pattern.isNone())
-        return Pattern;
-    }
-    return Pattern;
-  }
-
-  if (llvm::ConstantDataSequential *CDS =
-          dyn_cast<llvm::ConstantDataSequential>(C)) {
-    BytePattern Pattern(BytePattern::Any());
-    for (unsigned I = 0, E = CDS->getNumElements(); I != E; ++I) {
-      llvm::Constant *Elt = CDS->getElementAsConstant(I);
-      Pattern = Pattern.merge(constantIsRepeatedBytePattern(Elt));
-      if (Pattern.isNone())
-        return Pattern;
-    }
-    return Pattern;
-  }
-
-  // BlockAddress, ConstantExpr, and everything else is scary.
-  return BytePattern::None();
-}
-
 /// Decide whether we should use memset to initialize a local variable instead
 /// of using a memcpy from a constant global. Assumes we've already decided to
 /// not user bzero.
 /// FIXME We could be more clever, as we are for bzero above, and generate
 ///       memset followed by stores. It's unclear that's worth the effort.
-static BytePattern shouldUseMemSetToInitialize(llvm::Constant *Init,
-                                               uint64_t GlobalSize) {
+static llvm::Value *shouldUseMemSetToInitialize(llvm::Constant *Init,
+                                                uint64_t GlobalSize) {
   uint64_t SizeLimit = 32;
   if (GlobalSize <= SizeLimit)
-    return BytePattern::None();
-  return constantIsRepeatedBytePattern(Init);
+    return nullptr;
+  return llvm::isBytewiseValue(Init);
+}
+
+static Address createUnnamedGlobalFrom(CodeGenModule &CGM, const VarDecl &D,
+                                       CGBuilderTy &Builder,
+                                       llvm::Constant *Constant,
+                                       CharUnits Align) {
+  auto FunctionName = [&](const DeclContext *DC) -> std::string {
+    if (const auto *FD = dyn_cast<FunctionDecl>(DC)) {
+      if (const auto *CC = dyn_cast<CXXConstructorDecl>(FD))
+        return CC->getNameAsString();
+      if (const auto *CD = dyn_cast<CXXDestructorDecl>(FD))
+        return CD->getNameAsString();
+      return CGM.getMangledName(FD);
+    } else if (const auto *OM = dyn_cast<ObjCMethodDecl>(DC)) {
+      return OM->getNameAsString();
+    } else if (isa<BlockDecl>(DC)) {
+      return "<block>";
+    } else if (isa<CapturedDecl>(DC)) {
+      return "<captured>";
+    } else {
+      llvm::llvm_unreachable_internal("expected a function or method");
+    }
+  };
+
+  auto *Ty = Constant->getType();
+  bool isConstant = true;
+  llvm::GlobalVariable *InsertBefore = nullptr;
+  unsigned AS = CGM.getContext().getTargetAddressSpace(
+      CGM.getStringLiteralAddressSpace());
+  llvm::GlobalVariable *GV = new llvm::GlobalVariable(
+      CGM.getModule(), Ty, isConstant, llvm::GlobalValue::PrivateLinkage,
+      Constant,
+      "__const." + FunctionName(D.getParentFunctionOrMethod()) + "." +
+          D.getName(),
+      InsertBefore, llvm::GlobalValue::NotThreadLocal, AS);
+  GV->setAlignment(Align.getQuantity());
+  GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  Address SrcPtr = Address(GV, Align);
+  llvm::Type *BP = llvm::PointerType::getInt8PtrTy(CGM.getLLVMContext(), AS);
+  if (SrcPtr.getType() != BP)
+    SrcPtr = Builder.CreateBitCast(SrcPtr, BP);
+  return SrcPtr;
 }
 
 static void emitStoresForConstant(CodeGenModule &CGM, const VarDecl &D,
@@ -1081,33 +1032,23 @@ static void emitStoresForConstant(CodeGenModule &CGM, const VarDecl &D,
     return;
   }
 
-  BytePattern Pattern = shouldUseMemSetToInitialize(constant, ConstantSize);
-  if (!Pattern.isNone()) {
-    uint8_t Value = Pattern.isAny() ? 0x00 : Pattern.getValue();
+  llvm::Value *Pattern = shouldUseMemSetToInitialize(constant, ConstantSize);
+  if (Pattern) {
+    uint64_t Value = 0x00;
+    if (!isa<llvm::UndefValue>(Pattern)) {
+      const llvm::APInt &AP = cast<llvm::ConstantInt>(Pattern)->getValue();
+      assert(AP.getBitWidth() <= 8);
+      Value = AP.getLimitedValue();
+    }
     Builder.CreateMemSet(Loc, llvm::ConstantInt::get(Int8Ty, Value), SizeVal,
                          isVolatile);
     return;
   }
 
-  // Otherwise, create a temporary global with the initializer then memcpy from
-  // the global to the alloca.
-  std::string Name = getStaticDeclName(CGM, D);
-  unsigned AS = CGM.getContext().getTargetAddressSpace(
-      CGM.getStringLiteralAddressSpace());
-  llvm::Type *BP = llvm::PointerType::getInt8PtrTy(CGM.getLLVMContext(), AS);
-
-  llvm::GlobalVariable *GV = new llvm::GlobalVariable(
-      CGM.getModule(), constant->getType(), true,
-      llvm::GlobalValue::PrivateLinkage, constant, Name, nullptr,
-      llvm::GlobalValue::NotThreadLocal, AS);
-  GV->setAlignment(Loc.getAlignment().getQuantity());
-  GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-  Address SrcPtr = Address(GV, Loc.getAlignment());
-  if (SrcPtr.getType() != BP)
-    SrcPtr = Builder.CreateBitCast(SrcPtr, BP);
-
-  Builder.CreateMemCpy(Loc, SrcPtr, SizeVal, isVolatile);
+  Builder.CreateMemCpy(
+      Loc,
+      createUnnamedGlobalFrom(CGM, D, Builder, constant, Loc.getAlignment()),
+      SizeVal, isVolatile);
 }
 
 /// EmitAutoVarDecl - Emit code and set up an entry in LocalDeclMap for a
@@ -1153,6 +1094,7 @@ void CodeGenFunction::EmitAndRegisterVariableArrayDimensions(
   // For each dimension stores its QualType and corresponding
   // size-expression Value.
   SmallVector<CodeGenFunction::VlaSizePair, 4> Dimensions;
+  SmallVector<IdentifierInfo *, 4> VLAExprNames;
 
   // Break down the array into individual dimensions.
   QualType Type1D = D.getType();
@@ -1161,8 +1103,14 @@ void CodeGenFunction::EmitAndRegisterVariableArrayDimensions(
     if (auto *C = dyn_cast<llvm::ConstantInt>(VlaSize.NumElts))
       Dimensions.emplace_back(C, Type1D.getUnqualifiedType());
     else {
-      auto SizeExprAddr = CreateDefaultAlignTempAlloca(
-          VlaSize.NumElts->getType(), "__vla_expr");
+      // Generate a locally unique name for the size expression.
+      Twine Name = Twine("__vla_expr") + Twine(VLAExprCounter++);
+      SmallString<12> Buffer;
+      StringRef NameRef = Name.toStringRef(Buffer);
+      auto &Ident = getContext().Idents.getOwn(NameRef);
+      VLAExprNames.push_back(&Ident);
+      auto SizeExprAddr =
+          CreateDefaultAlignTempAlloca(VlaSize.NumElts->getType(), NameRef);
       Builder.CreateStore(VlaSize.NumElts, SizeExprAddr);
       Dimensions.emplace_back(SizeExprAddr.getPointer(),
                               Type1D.getUnqualifiedType());
@@ -1176,20 +1124,20 @@ void CodeGenFunction::EmitAndRegisterVariableArrayDimensions(
   // Register each dimension's size-expression with a DILocalVariable,
   // so that it can be used by CGDebugInfo when instantiating a DISubrange
   // to describe this array.
+  unsigned NameIdx = 0;
   for (auto &VlaSize : Dimensions) {
     llvm::Metadata *MD;
     if (auto *C = dyn_cast<llvm::ConstantInt>(VlaSize.NumElts))
       MD = llvm::ConstantAsMetadata::get(C);
     else {
       // Create an artificial VarDecl to generate debug info for.
-      IdentifierInfo &NameIdent = getContext().Idents.getOwn(
-          cast<llvm::AllocaInst>(VlaSize.NumElts)->getName());
+      IdentifierInfo *NameIdent = VLAExprNames[NameIdx++];
       auto VlaExprTy = VlaSize.NumElts->getType()->getPointerElementType();
       auto QT = getContext().getIntTypeForBitwidth(
           VlaExprTy->getScalarSizeInBits(), false);
       auto *ArtificialDecl = VarDecl::Create(
           getContext(), const_cast<DeclContext *>(D.getDeclContext()),
-          D.getLocation(), D.getLocation(), &NameIdent, QT,
+          D.getLocation(), D.getLocation(), NameIdent, QT,
           getContext().CreateTypeSourceInfo(QT), SC_Auto);
       ArtificialDecl->setImplicit();
 
@@ -1212,8 +1160,8 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
 
   AutoVarEmission emission(D);
 
-  bool isByRef = D.hasAttr<BlocksAttr>();
-  emission.IsByRef = isByRef;
+  bool isEscapingByRef = D.isEscapingByref();
+  emission.IsEscapingByRef = isEscapingByRef;
 
   CharUnits alignment = getContext().getDeclAlign(&D);
 
@@ -1252,8 +1200,8 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
       // in OpenCL.
       if ((!getLangOpts().OpenCL ||
            Ty.getAddressSpace() == LangAS::opencl_constant) &&
-          (CGM.getCodeGenOpts().MergeAllConstants && !NRVO && !isByRef &&
-           CGM.isTypeConstant(Ty, true))) {
+          (CGM.getCodeGenOpts().MergeAllConstants && !NRVO &&
+           !isEscapingByRef && CGM.isTypeConstant(Ty, true))) {
         EmitStaticVarDecl(D, llvm::GlobalValue::InternalLinkage);
 
         // Signal this condition to later callbacks.
@@ -1305,7 +1253,7 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
     } else {
       CharUnits allocaAlignment;
       llvm::Type *allocaTy;
-      if (isByRef) {
+      if (isEscapingByRef) {
         auto &byrefInfo = getBlockByrefInfo(&D);
         allocaTy = byrefInfo.Type;
         allocaAlignment = byrefInfo.ByrefAlignment;
@@ -1505,7 +1453,7 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   }
 
   // Initialize the structure of a __block variable.
-  if (emission.IsByRef)
+  if (emission.IsEscapingByRef)
     emitByrefStructureInit(emission);
 
   // Initialize the variable here if it doesn't have a initializer and it is a
@@ -1515,7 +1463,7 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
       type.isNonTrivialToPrimitiveDefaultInitialize() ==
           QualType::PDIK_Struct) {
     LValue Dst = MakeAddrLValue(emission.getAllocatedAddress(), type);
-    if (emission.IsByRef)
+    if (emission.IsEscapingByRef)
       drillIntoBlockVariable(*this, Dst, &D);
     defaultInitNonTrivialCStructVar(Dst);
     return;
@@ -1527,7 +1475,7 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   // Check whether this is a byref variable that's potentially
   // captured and moved by its own initializer.  If so, we'll need to
   // emit the initializer first, then copy into the variable.
-  bool capturedByInit = emission.IsByRef && isCapturedBy(D, Init);
+  bool capturedByInit = emission.IsEscapingByRef && isCapturedBy(D, Init);
 
   Address Loc =
     capturedByInit ? emission.Addr : emission.getObjectAddress(*this);
@@ -1721,7 +1669,8 @@ void CodeGenFunction::EmitAutoVarCleanups(const AutoVarEmission &emission) {
   // If this is a block variable, call _Block_object_destroy
   // (on the unforwarded address). Don't enter this cleanup if we're in pure-GC
   // mode.
-  if (emission.IsByRef && CGM.getLangOpts().getGC() != LangOptions::GCOnly) {
+  if (emission.IsEscapingByRef &&
+      CGM.getLangOpts().getGC() != LangOptions::GCOnly) {
     BlockFieldFlags Flags = BLOCK_FIELD_IS_BYREF;
     if (emission.Variable->getType().isObjCGCWeak())
       Flags |= BLOCK_FIELD_IS_WEAK;
@@ -2233,4 +2182,8 @@ void CodeGenModule::EmitOMPDeclareReduction(const OMPDeclareReductionDecl *D,
   if (!LangOpts.OpenMP || (!LangOpts.EmitAllDecls && !D->isUsed()))
     return;
   getOpenMPRuntime().emitUserDefinedReduction(CGF, D);
+}
+
+void CodeGenModule::EmitOMPRequiresDecl(const OMPRequiresDecl *D) {
+  //Do nothing - here to avoid build errors
 }

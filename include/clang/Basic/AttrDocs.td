@@ -38,6 +38,10 @@ Attributes in Clang
 .. contents::
    :local:
 
+.. |br| raw:: html
+
+  <br/>
+
 Introduction
 ============
 
@@ -51,7 +55,7 @@ def SectionDocs : Documentation {
 The ``section`` attribute allows you to specify a specific section a
 global variable or function should be in after translation.
   }];
-  let Heading = "section (gnu::section, __declspec(allocate))";
+  let Heading = "section, __declspec(allocate)";
 }
 
 def InitSegDocs : Documentation {
@@ -270,7 +274,7 @@ that appears to be capable of returning to its caller.
 
 def AssertCapabilityDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "assert_capability (assert_shared_capability, clang::assert_capability, clang::assert_shared_capability)";
+  let Heading = "assert_capability, assert_shared_capability";
   let Content = [{
 Marks a function that dynamically tests whether a capability is held, and halts
 the program if it is not held.
@@ -279,7 +283,7 @@ the program if it is not held.
 
 def AcquireCapabilityDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "acquire_capability (acquire_shared_capability, clang::acquire_capability, clang::acquire_shared_capability)";
+  let Heading = "acquire_capability, acquire_shared_capability";
   let Content = [{
 Marks a function as acquiring a capability.
   }];
@@ -287,7 +291,7 @@ Marks a function as acquiring a capability.
 
 def TryAcquireCapabilityDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "try_acquire_capability (try_acquire_shared_capability, clang::try_acquire_capability, clang::try_acquire_shared_capability)";
+  let Heading = "try_acquire_capability, try_acquire_shared_capability";
   let Content = [{
 Marks a function that attempts to acquire a capability. This function may fail to
 actually acquire the capability; they accept a Boolean value determining
@@ -298,7 +302,7 @@ the capability means success (false).
 
 def ReleaseCapabilityDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "release_capability (release_shared_capability, clang::release_capability, clang::release_shared_capability)";
+  let Heading = "release_capability, release_shared_capability";
   let Content = [{
 Marks a function as releasing a capability.
   }];
@@ -1261,7 +1265,7 @@ of silently falling back on dynamic initialization.
 
 def WarnMaybeUnusedDocs : Documentation {
   let Category = DocCatVariable;
-  let Heading = "maybe_unused, unused, gnu::unused";
+  let Heading = "maybe_unused, unused";
   let Content = [{
 When passing the ``-Wunused`` flag to Clang, entities that are unused by the
 program may be diagnosed. The ``[[maybe_unused]]`` (or
@@ -1287,7 +1291,7 @@ enumerator, a non-static data member, or a label.
 
 def WarnUnusedResultsDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "nodiscard, warn_unused_result, clang::warn_unused_result, gnu::warn_unused_result";
+  let Heading = "nodiscard, warn_unused_result";
   let Content  = [{
 Clang supports the ability to diagnose when the results of a function call
 expression are discarded under suspicious circumstances. A diagnostic is
@@ -1312,7 +1316,7 @@ potentially-evaluated discarded-value expression that is not explicitly cast to
 
 def FallthroughDocs : Documentation {
   let Category = DocCatStmt;
-  let Heading = "fallthrough, clang::fallthrough";
+  let Heading = "fallthrough";
   let Content = [{
 The ``fallthrough`` (or ``clang::fallthrough``) attribute is used
 to annotate intentional fall-through
@@ -1460,7 +1464,7 @@ on the command line.
 
 def MipsLongCallStyleDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "long_call (gnu::long_call, gnu::far)";
+  let Heading = "long_call, far";
   let Content = [{
 Clang supports the ``__attribute__((long_call))``, ``__attribute__((far))``,
 and ``__attribute__((near))`` attributes on MIPS targets. These attributes may
@@ -1481,7 +1485,7 @@ as ``-mlong-calls`` and ``-mno-long-calls``.
 
 def MipsShortCallStyleDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "short_call (gnu::short_call, gnu::near)";
+  let Heading = "short_call, near";
   let Content = [{
 Clang supports the ``__attribute__((long_call))``, ``__attribute__((far))``,
 ``__attribute__((short__call))``, and ``__attribute__((near))`` attributes
@@ -1940,7 +1944,7 @@ def NoSanitizeAddressDocs : Documentation {
   let Category = DocCatFunction;
   // This function has multiple distinct spellings, and so it requires a custom
   // heading to be specified. The most common spelling is sufficient.
-  let Heading = "no_sanitize_address (no_address_safety_analysis, gnu::no_address_safety_analysis, gnu::no_sanitize_address)";
+  let Heading = "no_sanitize_address, no_address_safety_analysis";
   let Content = [{
 .. _langext-address_sanitizer:
 
@@ -2563,7 +2567,6 @@ for further details including limitations of the unroll hints.
 
 def OpenCLUnrollHintDocs : Documentation {
   let Category = DocCatStmt;
-  let Heading = "__attribute__((opencl_unroll_hint))";
   let Content = [{
 The opencl_unroll_hint attribute qualifier can be used to specify that a loop
 (for, while and do loops) can be unrolled. This attribute qualifier can be
@@ -2576,7 +2579,6 @@ s6.11.5 for details.
 
 def OpenCLIntelReqdSubGroupSizeDocs : Documentation {
   let Category = DocCatStmt;
-  let Heading = "__attribute__((intel_reqd_sub_group_size))";
   let Content = [{
 The optional attribute intel_reqd_sub_group_size can be used to indicate that
 the kernel must be compiled and executed with the specified subgroup size. When
@@ -2973,6 +2975,68 @@ This can be used to contain the ABI of a C++ library by excluding unwanted class
   }];
 }
 
+def ExcludeFromExplicitInstantiationDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``exclude_from_explicit_instantiation`` attribute opts-out a member of a
+class template from being part of explicit template instantiations of that
+class template. This means that an explicit instantiation will not instantiate
+members of the class template marked with the attribute, but also that code
+where an extern template declaration of the enclosing class template is visible
+will not take for granted that an external instantiation of the class template
+would provide those members (which would otherwise be a link error, since the
+explicit instantiation won't provide those members). For example, let's say we
+don't want the ``data()`` method to be part of libc++'s ABI. To make sure it
+is not exported from the dylib, we give it hidden visibility:
+
+  .. code-block:: c++
+
+    // in <string>
+    template <class CharT>
+    class basic_string {
+    public:
+      __attribute__((__visibility__("hidden")))
+      const value_type* data() const noexcept { ... }
+    };
+
+    template class basic_string<char>;
+
+Since an explicit template instantiation declaration for ``basic_string<char>``
+is provided, the compiler is free to assume that ``basic_string<char>::data()``
+will be provided by another translation unit, and it is free to produce an
+external call to this function. However, since ``data()`` has hidden visibility
+and the explicit template instantiation is provided in a shared library (as
+opposed to simply another translation unit), ``basic_string<char>::data()``
+won't be found and a link error will ensue. This happens because the compiler
+assumes that ``basic_string<char>::data()`` is part of the explicit template
+instantiation declaration, when it really isn't. To tell the compiler that
+``data()`` is not part of the explicit template instantiation declaration, the
+``exclude_from_explicit_instantiation`` attribute can be used:
+
+  .. code-block:: c++
+
+    // in <string>
+    template <class CharT>
+    class basic_string {
+    public:
+      __attribute__((__visibility__("hidden")))
+      __attribute__((exclude_from_explicit_instantiation))
+      const value_type* data() const noexcept { ... }
+    };
+
+    template class basic_string<char>;
+
+Now, the compiler won't assume that ``basic_string<char>::data()`` is provided
+externally despite there being an explicit template instantiation declaration:
+the compiler will implicitly instantiate ``basic_string<char>::data()`` in the
+TUs where it is used.
+
+This attribute can be used on static and non-static member functions of class
+templates, static data members of class templates and member classes of class
+templates.
+  }];
+}
+
 def DisableTailCallsDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
@@ -3364,11 +3428,11 @@ def IFuncDocs : Documentation {
   let Content = [{
 ``__attribute__((ifunc("resolver")))`` is used to mark that the address of a declaration should be resolved at runtime by calling a resolver function.
 
-The symbol name of the resolver function is given in quotes.  A function with this name (after mangling) must be defined in the current translation unit; it may be ``static``.  The resolver function should take no arguments and return a pointer.
+The symbol name of the resolver function is given in quotes.  A function with this name (after mangling) must be defined in the current translation unit; it may be ``static``.  The resolver function should return a pointer.
 
 The ``ifunc`` attribute may only be used on a function declaration.  A function declaration with an ``ifunc`` attribute is considered to be a definition of the declared entity.  The entity must not have weak linkage; for example, in C++, it cannot be applied to a declaration if a definition at that location would be considered inline.
 
-Not all targets support this attribute.  ELF targets support this attribute when using binutils v2.20.1 or higher and glibc v2.11.1 or higher.  Non-ELF targets currently do not support this attribute.
+Not all targets support this attribute. ELF target support depends on both the linker and runtime linker, and is available in at least lld 4.0 and later, binutils 2.20.1 and later, glibc v2.11.1 and later, and FreeBSD 9.1 and later. Non-ELF targets currently do not support this attribute.
   }];
 }
 
@@ -3396,7 +3460,7 @@ See the RenderScript_ documentation for more information.
 
 def XRayDocs : Documentation {
   let Category = DocCatFunction;
-  let Heading = "xray_always_instrument (clang::xray_always_instrument), xray_never_instrument (clang::xray_never_instrument), xray_log_args (clang::xray_log_args)";
+  let Heading = "xray_always_instrument, xray_never_instrument, xray_log_args";
   let Content = [{
 ``__attribute__((xray_always_instrument))`` or ``[[clang::xray_always_instrument]]`` is used to mark member functions (in C++), methods (in Objective C), and free functions (in C, C++, and Objective C) to be instrumented with XRay. This will cause the function to always have space at the beginning and exit points to allow for runtime patching.
 
@@ -3484,5 +3548,59 @@ a container class:
     [[clang::reinitializes]] void Clear();
     ...
   };
+  }];
+}
+
+def AlwaysDestroyDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+The ``always_destroy`` attribute specifies that a variable with static or thread
+storage duration should have its exit-time destructor run. This attribute is the
+default unless clang was invoked with -fno-c++-static-destructors.
+  }];
+}
+
+def NoDestroyDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+The ``no_destroy`` attribute specifies that a variable with static or thread
+storage duration shouldn't have its exit-time destructor run. Annotating every
+static and thread duration variable with this attribute is equivalent to
+invoking clang with -fno-c++-static-destructors.
+  }];
+}
+
+def GnuInlineDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+The ``gnu_inline`` changes the meaning of ``extern inline`` to use GNU inline
+semantics, meaning:
+
+* If any declaration that is declared ``inline`` is not declared ``extern``,
+then the ``inline`` keyword is just a hint. In particular, an out-of-line
+definition is still emitted for a function with external linkage, even if all
+call sites are inlined, unlike in C99 and C++ inline semantics.
+
+* If all declarations that are declared ``inline`` are also declared
+``extern``, then the function body is present only for inlining and no
+out-of-line version is emitted.
+
+Some important consequences: ``static inline`` emits an out-of-line
+version if needed, a plain ``inline`` definition emits an out-of-line version
+always, and an ``extern inline`` definition (in a header) followed by a
+(non-``extern``) ``inline`` declaration in a source file emits an out-of-line
+version of the function in that source file but provides the function body for
+inlining to all includers of the header.
+
+Either ``__GNUC_GNU_INLINE__`` (GNU inline semantics) or
+``__GNUC_STDC_INLINE__`` (C99 semantics) will be defined (they are mutually
+exclusive). If ``__GNUC_STDC_INLINE__`` is defined, then the ``gnu_inline``
+function attribute can be used to get GNU inline semantics on a per function
+basis. If ``__GNUC_GNU_INLINE__`` is defined, then the translation unit is
+already being compiled with GNU inline semantics as the implied default. It is
+unspecified which macro is defined in a C++ compilation.
+
+GNU inline semantics are the default behavior with ``-std=gnu89``,
+``-std=c89``, ``-std=c94``, or ``-fgnu89-inline``.
   }];
 }

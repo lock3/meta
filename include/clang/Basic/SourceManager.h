@@ -449,7 +449,7 @@ namespace SrcMgr {
     }
 
     static SLocEntry get(unsigned Offset, const FileInfo &FI) {
-      assert(!(Offset & (1 << 31)) && "Offset is too large");
+      assert(!(Offset & (1u << 31)) && "Offset is too large");
       SLocEntry E;
       E.Offset = Offset;
       E.IsExpansion = false;
@@ -458,7 +458,7 @@ namespace SrcMgr {
     }
 
     static SLocEntry get(unsigned Offset, const ExpansionInfo &Expansion) {
-      assert(!(Offset & (1 << 31)) && "Offset is too large");
+      assert(!(Offset & (1u << 31)) && "Offset is too large");
       SLocEntry E;
       E.Offset = Offset;
       E.IsExpansion = true;
@@ -1426,6 +1426,18 @@ public:
   /// This check ignores line marker directives.
   bool isWrittenInMainFile(SourceLocation Loc) const {
     return getFileID(Loc) == getMainFileID();
+  }
+
+  /// Returns whether \p Loc is located in a <built-in> file.
+  bool isWrittenInBuiltinFile(SourceLocation Loc) const {
+    StringRef Filename(getPresumedLoc(Loc).getFilename());
+    return Filename.equals("<built-in>");
+  }
+
+  /// Returns whether \p Loc is located in a <command line> file.
+  bool isWrittenInCommandLineFile(SourceLocation Loc) const {
+    StringRef Filename(getPresumedLoc(Loc).getFilename());
+    return Filename.equals("<command line>");
   }
 
   /// Returns if a SourceLocation is in a system header.

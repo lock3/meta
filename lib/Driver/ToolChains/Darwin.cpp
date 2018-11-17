@@ -12,7 +12,6 @@
 #include "CommonArgs.h"
 #include "clang/Basic/AlignedAllocation.h"
 #include "clang/Basic/ObjCRuntime.h"
-#include "clang/Basic/VirtualFileSystem.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
@@ -23,6 +22,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/TargetParser.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include <cstdlib> // ::getenv
 
 using namespace clang::driver;
@@ -1037,6 +1037,8 @@ void Darwin::addProfileRTLibs(const ArgList &Args,
     addExportedSymbol(CmdArgs, "___llvm_profile_filename");
     addExportedSymbol(CmdArgs, "___llvm_profile_raw_version");
     addExportedSymbol(CmdArgs, "_lprofCurFilename");
+    addExportedSymbol(CmdArgs, "_lprofDirMode");
+    addExportedSymbol(CmdArgs, "_lprofMergeValueProfData");
   }
 }
 
@@ -1104,6 +1106,13 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
   }
   if (Sanitize.needsEsanRt())
     AddLinkSanitizerLibArgs(Args, CmdArgs, "esan");
+
+  const XRayArgs &XRay = getXRayArgs();
+  if (XRay.needsXRayRt()) {
+    AddLinkRuntimeLib(Args, CmdArgs, "xray");
+    AddLinkRuntimeLib(Args, CmdArgs, "xray-basic");
+    AddLinkRuntimeLib(Args, CmdArgs, "xray-fdr");
+  }
 
   // Otherwise link libSystem, then the dynamic runtime library, and finally any
   // target specific static runtime library.
@@ -2251,9 +2260,15 @@ SanitizerMask Darwin::getSupportedSanitizers() const {
   Res |= SanitizerKind::Fuzzer;
   Res |= SanitizerKind::FuzzerNoLink;
   Res |= SanitizerKind::Function;
+
+  // Prior to 10.9, macOS shipped a version of the C++ standard library without
+  // C++11 support. The same is true of iOS prior to version 5. These OS'es are
+  // incompatible with -fsanitize=vptr.
+  if (!(isTargetMacOS() && isMacosxVersionLT(10, 9))
+      && !(isTargetIPhoneOS() && isIPhoneOSVersionLT(5, 0)))
+    Res |= SanitizerKind::Vptr;
+
   if (isTargetMacOS()) {
-    if (!isMacosxVersionLT(10, 9))
-      Res |= SanitizerKind::Vptr;
     if (IsX86_64)
       Res |= SanitizerKind::Thread;
   } else if (isTargetIOSSimulator() || isTargetTvOSSimulator()) {

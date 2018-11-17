@@ -351,7 +351,8 @@ DeclRefExpr::DeclRefExpr(const ASTContext &Ctx,
                          const TemplateArgumentListInfo *TemplateArgs,
                          QualType T, ExprValueKind VK)
   : Expr(DeclRefExprClass, T, VK, OK_Ordinary, false, false, false, false),
-    D(D), Loc(NameInfo.getLoc()), DNLoc(NameInfo.getInfo()) {
+    D(D), DNLoc(NameInfo.getInfo()) {
+  DeclRefExprBits.Loc = NameInfo.getLoc();
   DeclRefExprBits.HasQualifier = QualifierLoc ? 1 : 0;
   if (QualifierLoc) {
     new (getTrailingObjects<NestedNameSpecifierLoc>())
@@ -458,20 +459,45 @@ SourceLocation DeclRefExpr::getEndLoc() const {
   return getNameInfo().getEndLoc();
 }
 
-PredefinedExpr::PredefinedExpr(SourceLocation L, QualType FNTy, IdentType IT,
+PredefinedExpr::PredefinedExpr(SourceLocation L, QualType FNTy, IdentKind IK,
                                StringLiteral *SL)
     : Expr(PredefinedExprClass, FNTy, VK_LValue, OK_Ordinary,
            FNTy->isDependentType(), FNTy->isDependentType(),
            FNTy->isInstantiationDependentType(),
-           /*ContainsUnexpandedParameterPack=*/false),
-      Loc(L), Type(IT), FnName(SL) {}
-
-StringLiteral *PredefinedExpr::getFunctionName() {
-  return cast_or_null<StringLiteral>(FnName);
+           /*ContainsUnexpandedParameterPack=*/false) {
+  PredefinedExprBits.Kind = IK;
+  assert((getIdentKind() == IK) &&
+         "IdentKind do not fit in PredefinedExprBitfields!");
+  bool HasFunctionName = SL != nullptr;
+  PredefinedExprBits.HasFunctionName = HasFunctionName;
+  PredefinedExprBits.Loc = L;
+  if (HasFunctionName)
+    setFunctionName(SL);
 }
 
-StringRef PredefinedExpr::getIdentTypeName(PredefinedExpr::IdentType IT) {
-  switch (IT) {
+PredefinedExpr::PredefinedExpr(EmptyShell Empty, bool HasFunctionName)
+    : Expr(PredefinedExprClass, Empty) {
+  PredefinedExprBits.HasFunctionName = HasFunctionName;
+}
+
+PredefinedExpr *PredefinedExpr::Create(const ASTContext &Ctx, SourceLocation L,
+                                       QualType FNTy, IdentKind IK,
+                                       StringLiteral *SL) {
+  bool HasFunctionName = SL != nullptr;
+  void *Mem = Ctx.Allocate(totalSizeToAlloc<Stmt *>(HasFunctionName),
+                           alignof(PredefinedExpr));
+  return new (Mem) PredefinedExpr(L, FNTy, IK, SL);
+}
+
+PredefinedExpr *PredefinedExpr::CreateEmpty(const ASTContext &Ctx,
+                                            bool HasFunctionName) {
+  void *Mem = Ctx.Allocate(totalSizeToAlloc<Stmt *>(HasFunctionName),
+                           alignof(PredefinedExpr));
+  return new (Mem) PredefinedExpr(EmptyShell(), HasFunctionName);
+}
+
+StringRef PredefinedExpr::getIdentKindName(PredefinedExpr::IdentKind IK) {
+  switch (IK) {
   case Func:
     return "__func__";
   case Function:
@@ -489,15 +515,15 @@ StringRef PredefinedExpr::getIdentTypeName(PredefinedExpr::IdentType IT) {
   case PrettyFunctionNoVirtual:
     break;
   }
-  llvm_unreachable("Unknown ident type for PredefinedExpr");
+  llvm_unreachable("Unknown ident kind for PredefinedExpr");
 }
 
 // FIXME: Maybe this should use DeclPrinter with a special "print predefined
 // expr" policy instead.
-std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
+std::string PredefinedExpr::ComputeName(IdentKind IK, const Decl *CurrentDecl) {
   ASTContext &Context = CurrentDecl->getASTContext();
 
-  if (IT == PredefinedExpr::FuncDName) {
+  if (IK == PredefinedExpr::FuncDName) {
     if (const NamedDecl *ND = dyn_cast<NamedDecl>(CurrentDecl)) {
       std::unique_ptr<MangleContext> MC;
       MC.reset(Context.createMangleContext());
@@ -532,21 +558,21 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
     llvm::raw_svector_ostream Out(Buffer);
     if (auto *DCBlock = dyn_cast<BlockDecl>(DC))
       // For nested blocks, propagate up to the parent.
-      Out << ComputeName(IT, DCBlock);
+      Out << ComputeName(IK, DCBlock);
     else if (auto *DCDecl = dyn_cast<Decl>(DC))
-      Out << ComputeName(IT, DCDecl) << "_block_invoke";
+      Out << ComputeName(IK, DCDecl) << "_block_invoke";
     return Out.str();
   }
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(CurrentDecl)) {
-    if (IT != PrettyFunction && IT != PrettyFunctionNoVirtual &&
-        IT != FuncSig && IT != LFuncSig)
+    if (IK != PrettyFunction && IK != PrettyFunctionNoVirtual &&
+        IK != FuncSig && IK != LFuncSig)
       return FD->getNameAsString();
 
     SmallString<256> Name;
     llvm::raw_svector_ostream Out(Name);
 
     if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(FD)) {
-      if (MD->isVirtual() && IT != PrettyFunctionNoVirtual)
+      if (MD->isVirtual() && IK != PrettyFunctionNoVirtual)
         Out << "virtual ";
       if (MD->isStatic())
         Out << "static ";
@@ -564,7 +590,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
     if (FD->hasWrittenPrototype())
       FT = dyn_cast<FunctionProtoType>(AFT);
 
-    if (IT == FuncSig || IT == LFuncSig) {
+    if (IK == FuncSig || IK == LFuncSig) {
       switch (AFT->getCallConv()) {
       case CC_C: POut << "__cdecl "; break;
       case CC_X86StdCall: POut << "__stdcall "; break;
@@ -589,7 +615,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
       if (FT->isVariadic()) {
         if (FD->getNumParams()) POut << ", ";
         POut << "...";
-      } else if ((IT == FuncSig || IT == LFuncSig ||
+      } else if ((IK == FuncSig || IK == LFuncSig ||
                   !Context.getLangOpts().CPlusPlus) &&
                  !Decl->getNumParams()) {
         POut << "void";
@@ -688,7 +714,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
       // CapturedDecl.
       if (DC->isFunctionOrMethod() && (DC->getDeclKind() != Decl::Captured)) {
         const Decl *D = Decl::castFromDeclContext(DC);
-        return ComputeName(IT, D);
+        return ComputeName(IK, D);
       }
     llvm_unreachable("CapturedDecl not inside a function or method");
   }
@@ -713,7 +739,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
 
     return Name.str().str();
   }
-  if (isa<TranslationUnitDecl>(CurrentDecl) && IT == PrettyFunction) {
+  if (isa<TranslationUnitDecl>(CurrentDecl) && IK == PrettyFunction) {
     // __PRETTY_FUNCTION__ -> "top level", the others produce an empty string.
     return "top level";
   }
@@ -861,66 +887,105 @@ double FloatingLiteral::getValueAsApproximateDouble() const {
   return V.convertToDouble();
 }
 
-int StringLiteral::mapCharByteWidth(TargetInfo const &target,StringKind k) {
-  int CharByteWidth = 0;
-  switch(k) {
-    case Ascii:
-    case UTF8:
-      CharByteWidth = target.getCharWidth();
-      break;
-    case Wide:
-      CharByteWidth = target.getWCharWidth();
-      break;
-    case UTF16:
-      CharByteWidth = target.getChar16Width();
-      break;
-    case UTF32:
-      CharByteWidth = target.getChar32Width();
-      break;
+unsigned StringLiteral::mapCharByteWidth(TargetInfo const &Target,
+                                         StringKind SK) {
+  unsigned CharByteWidth = 0;
+  switch (SK) {
+  case Ascii:
+  case UTF8:
+    CharByteWidth = Target.getCharWidth();
+    break;
+  case Wide:
+    CharByteWidth = Target.getWCharWidth();
+    break;
+  case UTF16:
+    CharByteWidth = Target.getChar16Width();
+    break;
+  case UTF32:
+    CharByteWidth = Target.getChar32Width();
+    break;
   }
   assert((CharByteWidth & 7) == 0 && "Assumes character size is byte multiple");
   CharByteWidth /= 8;
-  assert((CharByteWidth==1 || CharByteWidth==2 || CharByteWidth==4)
-         && "character byte widths supported are 1, 2, and 4 only");
+  assert((CharByteWidth == 1 || CharByteWidth == 2 || CharByteWidth == 4) &&
+         "The only supported character byte widths are 1,2 and 4!");
   return CharByteWidth;
 }
 
-StringLiteral *StringLiteral::Create(const ASTContext &C, StringRef Str,
-                                     StringKind Kind, bool Pascal, QualType Ty,
-                                     const SourceLocation *Loc,
-                                     unsigned NumStrs) {
-  assert(C.getAsConstantArrayType(Ty) &&
+StringLiteral::StringLiteral(const ASTContext &Ctx, StringRef Str,
+                             StringKind Kind, bool Pascal, QualType Ty,
+                             const SourceLocation *Loc,
+                             unsigned NumConcatenated)
+    : Expr(StringLiteralClass, Ty, VK_LValue, OK_Ordinary, false, false, false,
+           false) {
+  assert(Ctx.getAsConstantArrayType(Ty) &&
          "StringLiteral must be of constant array type!");
+  unsigned CharByteWidth = mapCharByteWidth(Ctx.getTargetInfo(), Kind);
+  unsigned ByteLength = Str.size();
+  assert((ByteLength % CharByteWidth == 0) &&
+         "The size of the data must be a multiple of CharByteWidth!");
 
-  // Allocate enough space for the StringLiteral plus an array of locations for
-  // any concatenated string tokens.
-  void *Mem =
-      C.Allocate(sizeof(StringLiteral) + sizeof(SourceLocation) * (NumStrs - 1),
-                 alignof(StringLiteral));
-  StringLiteral *SL = new (Mem) StringLiteral(Ty);
+  // Avoid the expensive division. The compiler should be able to figure it
+  // out by itself. However as of clang 7, even with the appropriate
+  // llvm_unreachable added just here, it is not able to do so.
+  unsigned Length;
+  switch (CharByteWidth) {
+  case 1:
+    Length = ByteLength;
+    break;
+  case 2:
+    Length = ByteLength / 2;
+    break;
+  case 4:
+    Length = ByteLength / 4;
+    break;
+  default:
+    llvm_unreachable("Unsupported character width!");
+  }
 
-  // OPTIMIZE: could allocate this appended to the StringLiteral.
-  SL->setString(C,Str,Kind,Pascal);
+  StringLiteralBits.Kind = Kind;
+  StringLiteralBits.CharByteWidth = CharByteWidth;
+  StringLiteralBits.IsPascal = Pascal;
+  StringLiteralBits.NumConcatenated = NumConcatenated;
+  *getTrailingObjects<unsigned>() = Length;
 
-  SL->TokLocs[0] = Loc[0];
-  SL->NumConcatenated = NumStrs;
+  // Initialize the trailing array of SourceLocation.
+  // This is safe since SourceLocation is POD-like.
+  std::memcpy(getTrailingObjects<SourceLocation>(), Loc,
+              NumConcatenated * sizeof(SourceLocation));
 
-  if (NumStrs != 1)
-    memcpy(&SL->TokLocs[1], Loc+1, sizeof(SourceLocation)*(NumStrs-1));
-  return SL;
+  // Initialize the trailing array of char holding the string data.
+  std::memcpy(getTrailingObjects<char>(), Str.data(), ByteLength);
 }
 
-StringLiteral *StringLiteral::CreateEmpty(const ASTContext &C,
-                                          unsigned NumStrs) {
-  void *Mem =
-      C.Allocate(sizeof(StringLiteral) + sizeof(SourceLocation) * (NumStrs - 1),
-                 alignof(StringLiteral));
-  StringLiteral *SL =
-      new (Mem) StringLiteral(C.adjustStringLiteralBaseType(QualType()));
-  SL->CharByteWidth = 0;
-  SL->Length = 0;
-  SL->NumConcatenated = NumStrs;
-  return SL;
+StringLiteral::StringLiteral(EmptyShell Empty, unsigned NumConcatenated,
+                             unsigned Length, unsigned CharByteWidth)
+    : Expr(StringLiteralClass, Empty) {
+  StringLiteralBits.CharByteWidth = CharByteWidth;
+  StringLiteralBits.NumConcatenated = NumConcatenated;
+  *getTrailingObjects<unsigned>() = Length;
+}
+
+StringLiteral *StringLiteral::Create(const ASTContext &Ctx, StringRef Str,
+                                     StringKind Kind, bool Pascal, QualType Ty,
+                                     const SourceLocation *Loc,
+                                     unsigned NumConcatenated) {
+  void *Mem = Ctx.Allocate(totalSizeToAlloc<unsigned, SourceLocation, char>(
+                               1, NumConcatenated, Str.size()),
+                           alignof(StringLiteral));
+  return new (Mem)
+      StringLiteral(Ctx, Str, Kind, Pascal, Ty, Loc, NumConcatenated);
+}
+
+StringLiteral *StringLiteral::CreateEmpty(const ASTContext &Ctx,
+                                          unsigned NumConcatenated,
+                                          unsigned Length,
+                                          unsigned CharByteWidth) {
+  void *Mem = Ctx.Allocate(totalSizeToAlloc<unsigned, SourceLocation, char>(
+                               1, NumConcatenated, Length * CharByteWidth),
+                           alignof(StringLiteral));
+  return new (Mem)
+      StringLiteral(EmptyShell(), NumConcatenated, Length, CharByteWidth);
 }
 
 void StringLiteral::outputString(raw_ostream &OS) const {
@@ -1019,42 +1084,6 @@ void StringLiteral::outputString(raw_ostream &OS) const {
   OS << '"';
 }
 
-void StringLiteral::setString(const ASTContext &C, StringRef Str,
-                              StringKind Kind, bool IsPascal) {
-  //FIXME: we assume that the string data comes from a target that uses the same
-  // code unit size and endianness for the type of string.
-  this->Kind = Kind;
-  this->IsPascal = IsPascal;
-
-  CharByteWidth = mapCharByteWidth(C.getTargetInfo(),Kind);
-  assert((Str.size()%CharByteWidth == 0)
-         && "size of data must be multiple of CharByteWidth");
-  Length = Str.size()/CharByteWidth;
-
-  switch(CharByteWidth) {
-    case 1: {
-      char *AStrData = new (C) char[Length];
-      std::memcpy(AStrData,Str.data(),Length*sizeof(*AStrData));
-      StrData.asChar = AStrData;
-      break;
-    }
-    case 2: {
-      uint16_t *AStrData = new (C) uint16_t[Length];
-      std::memcpy(AStrData,Str.data(),Length*sizeof(*AStrData));
-      StrData.asUInt16 = AStrData;
-      break;
-    }
-    case 4: {
-      uint32_t *AStrData = new (C) uint32_t[Length];
-      std::memcpy(AStrData,Str.data(),Length*sizeof(*AStrData));
-      StrData.asUInt32 = AStrData;
-      break;
-    }
-    default:
-      llvm_unreachable("unsupported CharByteWidth");
-  }
-}
-
 /// getLocationOfByte - Return a source location that points to the specified
 /// byte of this string literal.
 ///
@@ -1076,7 +1105,8 @@ StringLiteral::getLocationOfByte(unsigned ByteNo, const SourceManager &SM,
                                  const LangOptions &Features,
                                  const TargetInfo &Target, unsigned *StartToken,
                                  unsigned *StartTokenByteOffset) const {
-  assert((Kind == StringLiteral::Ascii || Kind == StringLiteral::UTF8) &&
+  assert((getKind() == StringLiteral::Ascii ||
+          getKind() == StringLiteral::UTF8) &&
          "Only narrow string literals are currently supported");
 
   // Loop over all of the tokens in this string until we find the one that
@@ -1143,8 +1173,6 @@ StringLiteral::getLocationOfByte(unsigned ByteNo, const SourceManager &SM,
     ByteNo -= TokNumBytes;
   }
 }
-
-
 
 /// getOpcodeStr - Turn an Opcode enum value into the punctuation char it
 /// corresponds to, e.g. "sizeof" or "[pre]++".
@@ -1446,7 +1474,7 @@ UnaryExprOrTypeTraitExpr::UnaryExprOrTypeTraitExpr(
 
   // Check to see if we are in the situation where alignof(decl) should be
   // dependent because decl's alignment is dependent.
-  if (ExprKind == UETT_AlignOf) {
+  if (ExprKind == UETT_AlignOf || ExprKind == UETT_PreferredAlignOf) {
     if (!isValueDependent() || !isInstantiationDependent()) {
       E = E->IgnoreParens();
 
@@ -1502,7 +1530,7 @@ MemberExpr *MemberExpr::Create(
              QualifierLoc.getNestedNameSpecifier()->isInstantiationDependent())
       E->setInstantiationDependent(true);
 
-    E->HasQualifierOrFoundDecl = true;
+    E->MemberExprBits.HasQualifierOrFoundDecl = true;
 
     MemberExprNameQualifier *NQ =
         E->getTrailingObjects<MemberExprNameQualifier>();
@@ -1510,7 +1538,8 @@ MemberExpr *MemberExpr::Create(
     NQ->FoundDecl = founddecl;
   }
 
-  E->HasTemplateKWAndArgsInfo = (targs || TemplateKWLoc.isValid());
+  E->MemberExprBits.HasTemplateKWAndArgsInfo =
+      (targs || TemplateKWLoc.isValid());
 
   if (targs) {
     bool Dependent = false;
@@ -1605,13 +1634,18 @@ bool CastExpr::CastConsistency() const {
     assert(getSubExpr()->getType()->isFunctionType());
     goto CheckNoBasePath;
 
-  case CK_AddressSpaceConversion:
-    assert(getType()->isPointerType() || getType()->isBlockPointerType());
-    assert(getSubExpr()->getType()->isPointerType() ||
-           getSubExpr()->getType()->isBlockPointerType());
-    assert(getType()->getPointeeType().getAddressSpace() !=
-           getSubExpr()->getType()->getPointeeType().getAddressSpace());
-    LLVM_FALLTHROUGH;
+  case CK_AddressSpaceConversion: {
+    auto Ty = getType();
+    auto SETy = getSubExpr()->getType();
+    assert(getValueKindForType(Ty) == Expr::getValueKindForType(SETy));
+    if (!isGLValue())
+      Ty = Ty->getPointeeType();
+    if (!isGLValue())
+      SETy = SETy->getPointeeType();
+    assert(!Ty.isNull() && !SETy.isNull() &&
+           Ty.getAddressSpace() != SETy.getAddressSpace());
+    goto CheckNoBasePath;
+  }
   // These should not have an inheritance path.
   case CK_Dynamic:
   case CK_ToUnion:
@@ -1641,9 +1675,9 @@ bool CastExpr::CastConsistency() const {
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
-  case CK_ZeroToOCLEvent:
-  case CK_ZeroToOCLQueue:
+  case CK_ZeroToOCLOpaqueType:
   case CK_IntToOCLSampler:
+  case CK_FixedPointCast:
     assert(!getType()->isBooleanType() && "unheralded conversion to bool");
     goto CheckNoBasePath;
 
@@ -1662,6 +1696,7 @@ bool CastExpr::CastConsistency() const {
   case CK_LValueBitCast:            // -> bool&
   case CK_UserDefinedConversion:    // operator bool()
   case CK_BuiltinFnToFnPtr:
+  case CK_FixedPointToBoolean:
   CheckNoBasePath:
     assert(path_empty() && "Cast kind should not have a base path!");
     break;
@@ -2560,6 +2595,10 @@ Expr *Expr::IgnoreParenCasts() {
       E = NTTP->getReplacement();
       continue;
     }
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E)) {
+      E = CE->getSubExpr();
+      continue;
+    }
     return E;
   }
 }
@@ -2579,6 +2618,10 @@ Expr *Expr::IgnoreCasts() {
     if (SubstNonTypeTemplateParmExpr *NTTP
         = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
       E = NTTP->getReplacement();
+      continue;
+    }
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E)) {
+      E = CE->getSubExpr();
       continue;
     }
     return E;
@@ -2605,6 +2648,9 @@ Expr *Expr::IgnoreParenLValueCasts() {
     } else if (SubstNonTypeTemplateParmExpr *NTTP
                                   = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
       E = NTTP->getReplacement();
+      continue;
+    } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E)) {
+      E = CE->getSubExpr();
       continue;
     }
     break;
@@ -2645,6 +2691,10 @@ Expr *Expr::IgnoreParenImpCasts() {
     if (SubstNonTypeTemplateParmExpr *NTTP
                                   = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
       E = NTTP->getReplacement();
+      continue;
+    }
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E)) {
+      E = CE->getSubExpr();
       continue;
     }
     return E;
@@ -3105,6 +3155,11 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
     // These never have a side-effect.
     return false;
 
+  case ConstantExprClass:
+    // FIXME: Move this into the "return false;" block above.
+    return cast<ConstantExpr>(this)->getSubExpr()->HasSideEffects(
+        Ctx, IncludePossibleEffects);
+
   case CallExprClass:
   case CXXOperatorCallExprClass:
   case CXXMemberCallExprClass:
@@ -3264,11 +3319,8 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
 
   case LambdaExprClass: {
     const LambdaExpr *LE = cast<LambdaExpr>(this);
-    for (LambdaExpr::capture_iterator I = LE->capture_begin(),
-                                      E = LE->capture_end(); I != E; ++I)
-      if (I->getCaptureKind() == LCK_ByCopy)
-        // FIXME: Only has a side-effect if the variable is volatile or if
-        // the copy would invoke a non-trivial copy constructor.
+    for (Expr *E : LE->capture_inits())
+      if (E->HasSideEffects(Ctx, IncludePossibleEffects))
         return true;
     return false;
   }

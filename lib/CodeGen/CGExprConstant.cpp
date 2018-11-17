@@ -48,7 +48,7 @@ class ConstStructBuilder {
 public:
   static llvm::Constant *BuildStruct(ConstantEmitter &Emitter,
                                      ConstExprEmitter *ExprEmitter,
-                                     llvm::ConstantStruct *Base,
+                                     llvm::Constant *Base,
                                      InitListExpr *Updater,
                                      QualType ValTy);
   static llvm::Constant *BuildStruct(ConstantEmitter &Emitter,
@@ -77,7 +77,7 @@ private:
   void ConvertStructToPacked();
 
   bool Build(InitListExpr *ILE);
-  bool Build(ConstExprEmitter *Emitter, llvm::ConstantStruct *Base,
+  bool Build(ConstExprEmitter *Emitter, llvm::Constant *Base,
              InitListExpr *Updater);
   bool Build(const APValue &Val, const RecordDecl *RD, bool IsPrimaryBase,
              const CXXRecordDecl *VTableClass, CharUnits BaseOffset);
@@ -567,7 +567,7 @@ llvm::Constant *ConstStructBuilder::Finalize(QualType Ty) {
 
 llvm::Constant *ConstStructBuilder::BuildStruct(ConstantEmitter &Emitter,
                                                 ConstExprEmitter *ExprEmitter,
-                                                llvm::ConstantStruct *Base,
+                                                llvm::Constant *Base,
                                                 InitListExpr *Updater,
                                                 QualType ValTy) {
   ConstStructBuilder Builder(Emitter);
@@ -724,6 +724,10 @@ public:
     return nullptr;
   }
 
+  llvm::Constant *VisitConstantExpr(ConstantExpr *CE, QualType T) {
+    return Visit(CE->getSubExpr(), T);
+  }
+
   llvm::Constant *VisitParenExpr(ParenExpr *PE, QualType T) {
     return Visit(PE->getSubExpr(), T);
   }
@@ -870,8 +874,9 @@ public:
     case CK_FloatingToIntegral:
     case CK_FloatingToBoolean:
     case CK_FloatingCast:
-    case CK_ZeroToOCLEvent:
-    case CK_ZeroToOCLQueue:
+    case CK_FixedPointCast:
+    case CK_FixedPointToBoolean:
+    case CK_ZeroToOCLOpaqueType:
       return nullptr;
     case CK_ReflectionToBoolean:
       llvm_unreachable("reflection emitted as runtime value");
@@ -1029,8 +1034,8 @@ public:
     }
 
     if (destType->isRecordType())
-      return ConstStructBuilder::BuildStruct(Emitter, this,
-                 dyn_cast<llvm::ConstantStruct>(Base), Updater, destType);
+      return ConstStructBuilder::BuildStruct(Emitter, this, Base, Updater,
+                                             destType);
 
     return nullptr;
   }
@@ -1160,11 +1165,11 @@ public:
       return C.getElementBitCast(ConvertType(E->getType()));
     }
     case Expr::PredefinedExprClass: {
-      unsigned Type = cast<PredefinedExpr>(E)->getIdentType();
+      PredefinedExpr::IdentKind Kind = cast<PredefinedExpr>(E)->getIdentKind();
       if (Emitter.CGF) {
         LValue Res = Emitter.CGF->EmitPredefinedLValue(cast<PredefinedExpr>(E));
         return cast<ConstantAddress>(Res.getAddress());
-      } else if (Type == PredefinedExpr::PrettyFunction) {
+      } else if (Kind == PredefinedExpr::PrettyFunction) {
         return CGM.GetAddrOfConstantCString("top level", ".tmp");
       }
 
@@ -1237,7 +1242,7 @@ public:
 }  // end anonymous namespace.
 
 bool ConstStructBuilder::Build(ConstExprEmitter *ExprEmitter,
-                               llvm::ConstantStruct *Base,
+                               llvm::Constant *Base,
                                InitListExpr *Updater) {
   assert(Base && "base expression should not be empty");
 
@@ -1245,7 +1250,7 @@ bool ConstStructBuilder::Build(ConstExprEmitter *ExprEmitter,
   RecordDecl *RD = ExprType->getAs<RecordType>()->getDecl();
   const ASTRecordLayout &Layout = CGM.getContext().getASTRecordLayout(RD);
   const llvm::StructLayout *BaseLayout = CGM.getDataLayout().getStructLayout(
-                                           Base->getType());
+      cast<llvm::StructType>(Base->getType()));
   unsigned FieldNo = -1;
   unsigned ElementNo = 0;
 
@@ -1266,7 +1271,7 @@ bool ConstStructBuilder::Build(ConstExprEmitter *ExprEmitter,
     if (Field->isUnnamedBitfield())
       continue;
 
-    llvm::Constant *EltInit = Base->getOperand(ElementNo);
+    llvm::Constant *EltInit = Base->getAggregateElement(ElementNo);
 
     // Bail out if the type of the ConstantStruct does not have the same layout
     // as the type of the InitListExpr.
@@ -1994,6 +1999,7 @@ private:
   ConstantLValue tryEmitBase(const APValue::LValueBase &base);
 
   ConstantLValue VisitStmt(const Stmt *S) { return nullptr; }
+  ConstantLValue VisitConstantExpr(const ConstantExpr *E);
   ConstantLValue VisitCompoundLiteralExpr(const CompoundLiteralExpr *E);
   ConstantLValue VisitStringLiteral(const StringLiteral *E);
   ConstantLValue VisitObjCEncodeExpr(const ObjCEncodeExpr *E);
@@ -2149,6 +2155,11 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
 }
 
 ConstantLValue
+ConstantLValueEmitter::VisitConstantExpr(const ConstantExpr *E) {
+  return Visit(E->getSubExpr());
+}
+
+ConstantLValue
 ConstantLValueEmitter::VisitCompoundLiteralExpr(const CompoundLiteralExpr *E) {
   return tryEmitGlobalCompoundLiteral(CGM, Emitter.CGF, E);
 }
@@ -2176,7 +2187,7 @@ ConstantLValueEmitter::VisitPredefinedExpr(const PredefinedExpr *E) {
     return cast<ConstantAddress>(Res.getAddress());
   }
 
-  auto kind = E->getIdentType();
+  auto kind = E->getIdentKind();
   if (kind == PredefinedExpr::PrettyFunction) {
     return CGM.GetAddrOfConstantCString("top level", ".tmp");
   }

@@ -359,6 +359,10 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     K = CXCursor_CharacterLiteral;
     break;
 
+  case Stmt::ConstantExprClass:
+    return MakeCXCursor(cast<ConstantExpr>(S)->getSubExpr(),
+                        Parent, TU, RegionOfInterest);
+
   case Stmt::ParenExprClass:
     K = CXCursor_ParenExpr;
     break;
@@ -1429,16 +1433,16 @@ CXCompletionString clang_getCursorCompletionString(CXCursor cursor) {
     }
   } else if (kind == CXCursor_MacroDefinition) {
     const MacroDefinitionRecord *definition = getCursorMacroDefinition(cursor);
-    const IdentifierInfo *MacroInfo = definition->getName();
+    const IdentifierInfo *Macro = definition->getName();
     ASTUnit *unit = getCursorASTUnit(cursor);
-    CodeCompletionResult Result(MacroInfo);
-    CodeCompletionString *String
-      = Result.CreateCodeCompletionString(unit->getASTContext(),
-                                          unit->getPreprocessor(),
-                                          CodeCompletionContext::CCC_Other,
-                                 unit->getCodeCompletionTUInfo().getAllocator(),
-                                 unit->getCodeCompletionTUInfo(),
-                                 false);
+    CodeCompletionResult Result(
+        Macro,
+        unit->getPreprocessor().getMacroDefinition(Macro).getMacroInfo());
+    CodeCompletionString *String = Result.CreateCodeCompletionString(
+        unit->getASTContext(), unit->getPreprocessor(),
+        CodeCompletionContext::CCC_Other,
+        unit->getCodeCompletionTUInfo().getAllocator(),
+        unit->getCodeCompletionTUInfo(), false);
     return String;
   }
   return nullptr;

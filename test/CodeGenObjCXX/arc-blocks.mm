@@ -3,9 +3,9 @@
 // RUN: %clang_cc1 -std=gnu++98 -triple x86_64-apple-darwin10 -emit-llvm -fobjc-runtime-has-weak -fblocks -fobjc-arc -o - %s | FileCheck -check-prefix CHECK-NOEXCP %s
 
 // CHECK: [[A:.*]] = type { i64, [10 x i8*] }
+// CHECK: %[[STRUCT_BLOCK_DESCRIPTOR:.*]] = type { i64, i64 }
 // CHECK: %[[STRUCT_TEST1_S0:.*]] = type { i32 }
 // CHECK: %[[STRUCT_TRIVIAL_INTERNAL:.*]] = type { i32 }
-// CHECK: %[[STRUCT_BLOCK_DESCRIPTOR:.*]] = type { i64, i64 }
 
 // CHECK: [[LAYOUT0:@.*]] = private unnamed_addr constant [3 x i8] c" 9\00"
 
@@ -20,6 +20,7 @@ namespace test0 {
 
   void foo() {
     __block A v;
+    ^{ (void)v; };
   }
   // CHECK-LABEL:    define void @_ZN5test03fooEv() 
   // CHECK:      [[V:%.*]] = alloca [[BYREF_A:%.*]], align 8
@@ -32,7 +33,8 @@ namespace test0 {
   // CHECK-NEXT: [[T0:%.*]] = getelementptr inbounds [[BYREF_A]], [[BYREF_A]]* [[V]], i32 0, i32 7
   // CHECK-NEXT: call void @_ZN5test01AC1Ev([[A]]* [[T0]])
   // CHECK-NEXT: [[T0:%.*]] = getelementptr inbounds [[BYREF_A]], [[BYREF_A]]* [[V]], i32 0, i32 7
-  // CHECK-NEXT: [[T1:%.*]] = bitcast [[BYREF_A]]* [[V]] to i8*
+  // CHECK: bitcast [[BYREF_A]]* [[V]] to i8*
+  // CHECK: [[T1:%.*]] = bitcast [[BYREF_A]]* [[V]] to i8*
   // CHECK-NEXT: call void @_Block_object_dispose(i8* [[T1]], i32 8)
   // CHECK-NEXT: call void @_ZN5test01AD1Ev([[A]]* [[T0]])
   // CHECK-NEXT: ret void
@@ -52,6 +54,11 @@ namespace test0 {
   // CHECK-NEXT: call void @_ZN5test01AD1Ev([[A]]* [[T1]])
   // CHECK-NEXT: ret void
 }
+
+// CHECK-LABEL: define linkonce_odr hidden void @__copy_helper_block_
+// CHECK-LABEL: define linkonce_odr hidden void @__destroy_helper_block_
+// CHECK-LABEL-O1: define linkonce_odr hidden void @__copy_helper_block_
+// CHECK-LABEL-O1: define linkonce_odr hidden void @__destroy_helper_block_
 
 namespace test1 {
 
@@ -141,7 +148,7 @@ namespace test1 {
 
 // CHECK: [[LPAD]]:
 // CHECK: invoke void @_ZN5test12S0D1Ev(%[[STRUCT_TEST1_S0]]* %[[V5]])
-// CHECK: to label %[[INVOKE_CONT3:.*]] unwind label %[[TERMINATE_LPAD]]
+// CHECK: to label %[[INVOKE_CONT3:.*]] unwind label %[[TERMINATE_LPAD:.*]]
 
 // CHECK: [[LPAD1]]
 // CHECK: br label %[[EHCLEANUP:.*]]
@@ -154,7 +161,7 @@ namespace test1 {
 // CHECK: %[[V14:.*]] = load i8*, i8** %[[V2]], align 8
 // CHECK: call void @_Block_object_dispose(i8* %[[V14]], i32 8)
 // CHECK: call void @objc_storeStrong(i8** %[[V4]], i8* null)
-// CHECK: br label %[[EH_RESUME]]
+// CHECK: br label %[[EH_RESUME:.*]]
 
 // CHECK: [[EH_RESUME]]:
 // CHECK: resume { i8*, i32 }

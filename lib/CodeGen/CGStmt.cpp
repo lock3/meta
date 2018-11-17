@@ -941,6 +941,8 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
   LexicalScope ForScope(*this, S.getSourceRange());
 
   // Evaluate the first pieces before the loop.
+  if (S.getInit())
+    EmitStmt(S.getInit());
   EmitStmt(S.getRangeStmt());
   EmitStmt(S.getBeginStmt());
   EmitStmt(S.getEndStmt());
@@ -1122,10 +1124,9 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   // exception to our over-conservative rules about not jumping to
   // statements following block literals with non-trivial cleanups.
   RunCleanupsScope cleanupScope(*this);
-  if (const ExprWithCleanups *cleanups =
-        dyn_cast_or_null<ExprWithCleanups>(RV)) {
-    enterFullExpression(cleanups);
-    RV = cleanups->getSubExpr();
+  if (const FullExpr *fe = dyn_cast_or_null<FullExpr>(RV)) {
+    enterFullExpression(fe);
+    RV = fe->getSubExpr();
   }
 
   // FIXME: Clean this up by using an LValue for ReturnTemp,

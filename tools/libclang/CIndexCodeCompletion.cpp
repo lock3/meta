@@ -487,7 +487,8 @@ static unsigned long long getContextsForContextKind(
       contexts = CXCompletionContext_Namespace;
       break;
     }
-    case CodeCompletionContext::CCC_PotentiallyQualifiedName: {
+    case CodeCompletionContext::CCC_SymbolOrNewName:
+    case CodeCompletionContext::CCC_Symbol: {
       contexts = CXCompletionContext_NestedNameSpecifier;
       break;
     }
@@ -497,6 +498,10 @@ static unsigned long long getContextsForContextKind(
     }
     case CodeCompletionContext::CCC_NaturalLanguage: {
       contexts = CXCompletionContext_NaturalLanguage;
+      break;
+    }
+    case CodeCompletionContext::CCC_IncludedFile: {
+      contexts = CXCompletionContext_IncludedFile;
       break;
     }
     case CodeCompletionContext::CCC_SelectorName: {
@@ -535,7 +540,7 @@ static unsigned long long getContextsForContextKind(
     case CodeCompletionContext::CCC_Other:
     case CodeCompletionContext::CCC_ObjCInterface:
     case CodeCompletionContext::CCC_ObjCImplementation:
-    case CodeCompletionContext::CCC_Name:
+    case CodeCompletionContext::CCC_NewName:
     case CodeCompletionContext::CCC_MacroName:
     case CodeCompletionContext::CCC_PreprocessorExpression:
     case CodeCompletionContext::CCC_PreprocessorDirective:
@@ -653,7 +658,8 @@ namespace {
 
     void ProcessOverloadCandidates(Sema &S, unsigned CurrentArg,
                                    OverloadCandidate *Candidates,
-                                   unsigned NumCandidates) override {
+                                   unsigned NumCandidates,
+                                   SourceLocation OpenParLoc) override {
       StoredResults.reserve(StoredResults.size() + NumCandidates);
       for (unsigned I = 0; I != NumCandidates; ++I) {
         CodeCompletionString *StoredCompletion
