@@ -263,6 +263,7 @@ enum ReflectionQuery {
   RQ_get_decl_traits,
   RQ_get_linkage_traits,
   RQ_get_access_traits,
+  RQ_get_type_traits,
 
   // Associated reflections
   RQ_get_entity,
@@ -286,7 +287,7 @@ enum ReflectionQuery {
   RQ_last_predicate = RQ_is_class_member,
   // Traits -- these return unsigned.
   RQ_first_trait = RQ_get_decl_traits,
-  RQ_last_trait = RQ_get_access_traits,
+  RQ_last_trait = RQ_get_type_traits,
   // Associated reflections -- these return meta::info.
   RQ_first_assoc = RQ_get_entity,
   RQ_last_assoc = RQ_get_next,

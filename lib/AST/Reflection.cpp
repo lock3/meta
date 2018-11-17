@@ -810,6 +810,64 @@ static bool makeAccessTraits(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+// TODO: Accumulate all known type traits for classes.
+struct ClassTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  unsigned Complete : 1;
+  unsigned Polymoprhic : 1;
+  unsigned Abstract : 1;
+  unsigned Final : 1;
+  unsigned Empty : 1;
+  unsigned Rest : 23;
+};
+
+static ClassTraits getClassTraits(const CXXRecordDecl *D) {
+  ClassTraits T = ClassTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Complete = D->getDefinition() != nullptr;
+  if (T.Complete) {
+    T.Polymoprhic = D->isPolymorphic();
+    T.Abstract = D->isAbstract();
+    T.Final = D->hasAttr<FinalAttr>();
+    T.Empty = D->isEmpty();
+  }
+  return T;
+}
+
+struct EnumTraits {
+  LinkageTrait Linkage : 2;
+  AccessTrait Access : 2;
+  unsigned Scoped : 1;
+  unsigned Complete : 1;
+  unsigned Rest : 26;
+};
+
+static EnumTraits getEnumTraits(const EnumDecl *D) {
+  EnumTraits T = EnumTraits();
+  T.Linkage = getLinkage(D);
+  T.Access = getAccess(D);
+  T.Scoped = D->isScoped();
+  T.Complete = D->isComplete();
+  return T;
+}
+
+static bool makeTypeTraits(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getReachableType(R)) {
+    if (const TagDecl *TD = T->getAsTagDecl()) {
+      if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD))
+        return SuccessTraits(R, getClassTraits(Class), Result);
+      else if (const EnumDecl *Enum = dyn_cast<EnumDecl>(TD))
+        return SuccessTraits(R, getEnumTraits(Enum), Result);
+      else
+        llvm_unreachable("unsupported type");
+    }
+  }
+
+  return Error(R);
+}
+
 bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
@@ -820,6 +878,8 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
     return makeLinkageTraits(*this, Result);
   case RQ_get_access_traits:
     return makeAccessTraits(*this, Result);
+  case RQ_get_type_traits:
+    return makeTypeTraits(*this, Result);
 
   default:
     break;

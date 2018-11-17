@@ -86,6 +86,7 @@ enum reflection_query {
   query_get_decl_traits,
   query_get_linkage_traits,
   query_get_access_traits,
+  query_get_type_traits,
 
   // Associated reflections
   query_get_entity,
