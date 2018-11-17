@@ -7,8 +7,6 @@ enum SimpleEnum { A };
 
 enum class ScopedEnum { A };
 
-enum IncompleteEnum;
-
 class Class {
 public:
   enum class NestedEnum { A };
@@ -39,28 +37,6 @@ int main() {
     static_assert(traits.access == no_access);
     static_assert(traits.is_scoped == true);
     static_assert(traits.is_complete == true);
-  }
-
-  // incomplete enum traits
-  {
-    constexpr auto refl = reflexpr(IncompleteEnum);
-    constexpr auto traits = enum_traits(__reflect(query_get_type_traits, refl));
-
-    static_assert(traits.linkage == external_linkage);
-    static_assert(traits.access == no_access);
-    static_assert(traits.is_scoped == false);
-    static_assert(traits.is_complete == false);
-  }
-
-  // incomplete enum traits
-  {
-    constexpr auto refl = reflexpr(IncompleteEnum);
-    constexpr auto traits = enum_traits(__reflect(query_get_type_traits, refl));
-
-    static_assert(traits.linkage == external_linkage);
-    static_assert(traits.access == no_access);
-    static_assert(traits.is_scoped == false);
-    static_assert(traits.is_complete == false);
   }
 
   // nested enum traits
