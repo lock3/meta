@@ -253,16 +253,4 @@ struct base_traits {
   bool is_virtual : 1;
 };
 
-
-// Specifies the ways in which a declaration can be modified.
-struct modification_traits
-{
-  linkage_kind new_linkage : 2;
-  access_kind new_access : 2;
-  storage_kind new_storage : 2;
-  bool make_constexpr : 1;
-  bool make_virtual : 1;
-  bool make_pure : 1;
-};
-
 #endif
