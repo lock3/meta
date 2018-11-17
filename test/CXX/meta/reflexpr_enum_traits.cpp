@@ -70,18 +70,18 @@ int main() {
 
     static_assert(traits.linkage == external_linkage);
     static_assert(traits.access == public_access);
-    static_assert(traits.is_scoped == false);
+    static_assert(traits.is_scoped == true);
     static_assert(traits.is_complete == true);
   }
 
   // internal enum traits
   {
     constexpr auto refl = reflexpr(InternalEnum);
-    constexpr auto traits = class_traits(__reflect(query_get_type_traits, refl));
+    constexpr auto traits = enum_traits(__reflect(query_get_type_traits, refl));
 
     static_assert(traits.linkage == internal_linkage);
     static_assert(traits.access == no_access);
-    static_assert(traits.is_scoped == false);
+    static_assert(traits.is_scoped == true);
     static_assert(traits.is_complete == true);
   }
 
