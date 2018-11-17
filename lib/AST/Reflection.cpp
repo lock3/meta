@@ -20,13 +20,13 @@
 using namespace clang;
 
 /// Returns an APValue-packaged truth value.
-static APValue MakeBool(ASTContext *C, bool B) {
+static APValue makeBool(ASTContext *C, bool B) {
   return APValue(C->MakeIntValue(B, C->BoolTy));
 }
 
 /// Sets result to the truth value of B and returns true.
 static bool SuccessBool(const Reflection &R, APValue &Result, bool B) {
-  Result = MakeBool(R.Ctx, B);
+  Result = makeBool(R.Ctx, B);
   return true;
 }
 
