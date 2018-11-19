@@ -421,84 +421,173 @@ static bool isNamespaceAlias(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a template.
 static bool isTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->isTemplateDecl());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a class template.
 static bool isClassTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<ClassTemplateDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an alias template.
 static bool isAliasTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<TypeAliasTemplateDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a function template.
 static bool isFunctionTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<FunctionTemplateDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a variable template.
 static bool isVariableTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<VarTemplateDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
+/// Returns the reflected template member function.
+static const CXXMethodDecl *getAsTemplateMemberFunction(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    if (const FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(D))
+      return dyn_cast<CXXMethodDecl>(D->getAsFunction());
+  return nullptr;
 }
 
 /// Returns true if R designates a member function template.
 static bool isMemberFunctionTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
+    return SuccessTrue(R, Result);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a static member function template.
 static bool isStaticMemberFunctionTemplate(const Reflection &R,
                                            APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
+    return SuccessBool(R, Result, D->isStatic());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a nonstatic member function template.
 static bool isNonstaticMemberFunctionTemplate(const Reflection &R,
                                               APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
+    return SuccessBool(R, Result, D->isInstance());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a constructor template.
 static bool isConstructorTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
+    return SuccessBool(R, Result, isa<CXXConstructorDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a destructor template.
 static bool isDestructorTemplate(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
+    return SuccessBool(R, Result, isa<CXXDestructorDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a destructor template.
+/// Returns true if R designates a concept.
 static bool isConcept(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    if (const TemplateDecl *TD = dyn_cast<TemplateDecl>(D))
+      return SuccessBool(R, Result, TD->isConcept());
+  return SuccessFalse(R, Result);
+}
+
+static bool isPartialTemplateSpecialization(const Decl *D) {
+  if (isa<ClassTemplatePartialSpecializationDecl>(D))
+    return true;
+
+  if (isa<VarTemplatePartialSpecializationDecl>(D))
+    return true;
+
+  return false;
+}
+
+static bool isTemplateSpecialization(const Decl *D) {
+  if (isa<ClassTemplateSpecializationDecl>(D))
+    return true;
+
+  if (isa<ClassScopeFunctionSpecializationDecl>(D))
+    return true;
+
+  if (isa<VarTemplateSpecializationDecl>(D))
+    return true;
+
+  return isPartialTemplateSpecialization(D);
 }
 
 /// Returns true if R designates a specialized template.
 static bool isSpecialization(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isTemplateSpecialization(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a partially specialized template.
 static bool isPartialSpecialization(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isPartialTemplateSpecialization(D));
+  return SuccessFalse(R, Result);
+}
+
+// TODO: This currently uses TSK_Undeclared as a catch all
+// for any issues, should this be a different state?
+static TemplateSpecializationKind
+getTemplateSpecializationKind(const Reflection &R) {
+  const Decl *D = getReachableDecl(R);
+
+  if (!D)
+    return TSK_Undeclared;
+
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+    return RD->getTemplateSpecializationKind();
+
+  if (const VarDecl *VD = dyn_cast<VarDecl>(D))
+    return VD->getTemplateSpecializationKind();
+
+  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+    return FD->getTemplateSpecializationKind();
+
+  if (const EnumDecl *ED = dyn_cast<EnumDecl>(D))
+    return ED->getTemplateSpecializationKind();
+
+  return TSK_Undeclared;
 }
 
 /// Returns true if R designates a explicitly specialized template.
 static bool isExplicitSpecialization(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (TemplateSpecializationKind TSK = getTemplateSpecializationKind(R))
+    return SuccessBool(R, Result, TSK == TSK_ExplicitSpecialization);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an implicitly instantiated template.
 static bool isImplicitInstantiation(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (TemplateSpecializationKind TSK = getTemplateSpecializationKind(R))
+    return SuccessBool(R, Result, TSK == TSK_ImplicitInstantiation);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an explicitly instantiated template.
 static bool isExplicitInstantiation(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (TemplateSpecializationKind TSK = getTemplateSpecializationKind(R))
+    return SuccessBool(R, Result, TSK == TSK_ExplicitInstantiationDeclaration
+                               || TSK == TSK_ExplicitInstantiationDefinition);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a direct base.
