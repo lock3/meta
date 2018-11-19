@@ -1710,6 +1710,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     // [Meta] injection-declaration
     if (NextToken().is(tok::arrow))
       return ParseCXXInjectionDeclaration();
+    LLVM_FALLTHROUGH;
 
   default:
     return ParseSimpleDeclaration(Context, DeclEnd, attrs, true);
