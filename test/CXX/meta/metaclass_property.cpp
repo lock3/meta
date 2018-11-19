@@ -1,6 +1,6 @@
-// RUN: %clangxx -std=c++1z -freflection %s
+// RUN: %clang_cc1 -freflection -std=c++1z %s
 
-#include <experimental/meta>
+#define assert(E) if (!(E)) __builtin_abort();
 
 template<typename T>
 constexpr void property(T source) {

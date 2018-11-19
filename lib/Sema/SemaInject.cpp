@@ -1209,6 +1209,28 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   return SynthesizeFragmentExpr(S, Loc, FD, Reflection, Captures);
 }
 
+static
+ExprResult BuildReflectExpr(Sema &S, CXXFragmentDecl *FD) {
+  Decl *FragmentContent = FD->getContent();
+
+  if (RecordDecl *RD = dyn_cast<RecordDecl>(FragmentContent)) {
+    return S.BuildCXXReflectExpr(/*Loc*/SourceLocation(),
+                                 S.Context.getRecordType(RD),
+                                 /*LP=*/SourceLocation(),
+                                 /*RP=*/SourceLocation());
+  }
+
+  if (NamespaceDecl *ND = dyn_cast<NamespaceDecl>(FragmentContent)) {
+    NamespaceName NamespaceName(ND);
+    return S.BuildCXXReflectExpr(/*Loc=*/SourceLocation(),
+                                 NamespaceName,
+                                 /*LP=*/SourceLocation(),
+                                 /*RP=*/SourceLocation());
+  }
+
+  llvm_unreachable("unspported reflection type");
+}
+
 /// \brief Builds a new fragment expression.
 /// Consider the following:
 ///
@@ -1252,10 +1274,8 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
   //
   // TODO: We should be able to compute the type without generating an
   // expression. We're not actually using the expression.
-  ExprResult Reflection = ActOnCXXReflectExpression(
-    /*KWLoc=*/SourceLocation(), /*Kind=*/ReflectionKind::REK_declaration,
-    /*Entity=*/FD->getContent(), /*LPLoc=*/SourceLocation(),
-    /*RPLoc=*/SourceLocation());
+
+  ExprResult Reflection = BuildReflectExpr(*this, FD);
   if (Reflection.isInvalid())
     return ExprError();
 
@@ -1417,8 +1437,18 @@ bool Sema::InjectFragment(SourceLocation POI,
 
 static const Decl *
 GetFragDeclFromClosure(APValue FragmentData) {
-  Reflection Refl(FragmentData.getStructField(0));
-  return Refl.getDeclaration();
+  APValue Refl = FragmentData.getStructField(0);
+  switch (Refl.getReflectionKind()) {
+  case RK_declaration:
+    return Refl.getReflectedDeclaration();
+  case RK_type:
+    return Refl.getReflectedType()->getAsTagDecl();
+
+  default:
+    break;
+  }
+
+  llvm_unreachable("unsupported reflection kind");
 }
 
 static const SmallVector<APValue, 8>
@@ -1456,7 +1486,7 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionInfo &II) {
   }
 
   assert(II.FragmentClosureData.isStruct()
-	 && "expected FragmentData to be a struct value");
+         && "expected FragmentData to be a struct value");
 
   APValue FragmentClosureData = II.FragmentClosureData;
   const Decl *Injection = GetFragDeclFromClosure(FragmentClosureData);
@@ -1483,27 +1513,30 @@ PrintDecl(Sema &SemaRef, const Decl *D) {
 }
 
 static void
-PrintType(Sema &SemaRef, const Type *T) {
-  if (TagDecl *TD = T->getAsTagDecl())
+PrintType(Sema &SemaRef, const QualType &QT) {
+  if (TagDecl *TD = QT->getAsTagDecl())
     return PrintDecl(SemaRef, TD);
   PrintingPolicy PP = SemaRef.Context.getPrintingPolicy();
-  QualType QT(T, 0);
   QT.print(llvm::errs(), PP);
   llvm::errs() << '\n';
 }
 
 static bool
 ApplyDiagnostic(Sema &SemaRef, SourceLocation Loc, const APValue &Arg) {
-  Reflection R(Arg);
-  if (const Decl *D = R.getAsDeclaration()) {
-    PrintDecl(SemaRef, D);
+  switch (Arg.getReflectionKind()) {
+  case RK_declaration:
+    PrintDecl(SemaRef, Arg.getReflectedDeclaration());
+    return true;
+
+  case RK_type:
+    PrintType(SemaRef, Arg.getReflectedType());
+    return true;
+
+  default:
+    break;
   }
-  else if (const Type *T = R.getAsType()) {
-    PrintType(SemaRef, T);
-  }
-  else
-    llvm_unreachable("printing invalid reflection");
-  return true;
+
+  llvm_unreachable("printing invalid reflection");
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -2109,16 +2142,6 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   // FIXME: This isn't a particularly good idea.
   SourceLocation Loc = Proto->getLocation();
 
-  // Insert 'using prototype = <proto>'.
-  QualType ProtoTy = Context.getRecordType(Proto);
-  TypeSourceInfo *ProtoTSI = Context.getTrivialTypeSourceInfo(ProtoTy);
-  IdentifierInfo *ProtoId = &Context.Idents.get("prototype");
-  TypeDecl *Alias = TypeAliasDecl::Create(Context, Class, Loc, Loc, ProtoId,
-                                          ProtoTSI);
-  Alias->setImplicit(true);
-  Alias->setAccess(AS_public);
-  Class->addDecl(Alias);
-
   // Add 'constexpr { M(reflexpr(prototype)); }' to the class.
   unsigned ScopeFlags;
   Decl *CD = ActOnCXXMetaprogramDecl(CurScope, Loc, ScopeFlags);
@@ -2130,13 +2153,15 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   // Build the expression reflexpr(prototype).
   // This technically is performing the equivalent
   // addition of 'constexpr { M(reflexpr(__fake__::C)); }'.
-  ExprResult Input = ActOnCXXReflectExpression(
-      /*KWLoc=*/SourceLocation(), /*Kind=*/ReflectionKind::REK_declaration,
-      /*Entity=*/Proto, /*LPLoc=*/SourceLocation(),
-      /*RPLoc=*/SourceLocation());
+  QualType ProtoTy = Context.getRecordType(Proto);
+  ExprResult Input = BuildCXXReflectExpr(/*Loc=*/SourceLocation(),
+                                         ProtoTy,
+                                         /*LP=*/SourceLocation(),
+                                         /*RP=*/SourceLocation());
 
   // Build the call to <gen>(<ref>)
-  Expr *Args[] {Input.get()};
+  Expr *InputExpr = Input.get();
+  MultiExprArg Args(InputExpr);
   ExprResult Call = ActOnCallExpr(CurScope, Metafunction, Loc, Args, Loc);
   if (Call.isInvalid()) {
     ActOnCXXMetaprogramDeclError(nullptr, CD);

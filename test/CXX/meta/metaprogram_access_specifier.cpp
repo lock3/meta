@@ -1,6 +1,4 @@
-// RUN: %clang_cc1 -I%S/usr/include -I%S/usr/local/include/c++/v1 -fsyntax-only -verify -std=c++1z -freflection %s
-
-#include <experimental/meta>
+// RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++1z %s
 
 namespace class_default_tests {
   constexpr auto frag = __fragment class {

@@ -59,10 +59,8 @@ Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
 
   // Parse the declarations within the namespace. Note that this will match
   // the closing brace. We don't allow nested specifiers for the vector.
-  std::vector<IdentifierInfo *> NsIds;
-  std::vector<SourceLocation> NsIdLocs;
-  std::vector<SourceLocation> NsLocs;
-  ParseInnerNamespace(NsIdLocs, NsIds, NsLocs, 0, InlineLoc, Attrs, T);
+  InnerNamespaceInfoList InnerNSs;
+  ParseInnerNamespace(InnerNSs, 0, InlineLoc, Attrs, T);
 
   NamespaceScope.Exit();
 

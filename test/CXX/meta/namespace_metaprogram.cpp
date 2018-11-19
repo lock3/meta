@@ -1,6 +1,6 @@
 // RUN: %clangxx -std=c++1z -freflection %s
 
-#include <experimental/meta>
+#define assert(E) if (!(E)) __builtin_abort();
 
 constexpr auto fragment = __fragment namespace {
   int v_one = 1;
