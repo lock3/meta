@@ -96,6 +96,8 @@ static const ValueDecl *getReachableValueDecl(const Reflection &R) {
   return nullptr;
 }
 
+namespace {
+
 /// A helper class to manage conditions involving types.
 struct MaybeType {
   MaybeType(QualType T) : Ty(T) { }
@@ -114,11 +116,13 @@ struct MaybeType {
   QualType Ty;
 };
 
+} // end anonymous namespace
+
 /// Returns a type if one is reachable from R. If an entity is reachable from
 /// R, this returns the declared type of the entity (a la decltype).
 ///
 /// Note that this does not get the canonical type.
-QualType getReachableType(const Reflection &R) {
+static QualType getReachableType(const Reflection &R) {
   if (R.isType()) {
     QualType T = R.getAsType();
 
@@ -137,7 +141,7 @@ QualType getReachableType(const Reflection &R) {
 
 /// Returns the reachable canonical type. This is used for queries concerned
 /// with type entities rather than e.g., aliases.
-QualType getReachableCanonicalType(const Reflection &R) {
+static QualType getReachableCanonicalType(const Reflection &R) {
   QualType T = getReachableType(R);
   if (T.isNull())
     return T;
