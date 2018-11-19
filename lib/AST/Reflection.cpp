@@ -50,6 +50,10 @@ static bool Error(const Reflection &R,
   return false;
 }
 
+static bool ErrorUnimplemented(const Reflection &R) {
+  return Error(R, diag::note_reflection_query_unimplemented);
+}
+
 /// Returns the TypeDecl for a reflected Type, if any.
 static const TypeDecl *getAsTypeDecl(const Reflection &R) {
   if (R.isType()) {
@@ -327,6 +331,51 @@ static bool isNullPtr(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R has integral type.
+static bool isIntegral(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has floating point type.
+static bool isFloatingPoint(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has array type.
+static bool isArray(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has pointer type.
+static bool isPointer(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has lvalue reference type.
+static bool isLValueReference(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has rvalue reference type.
+static bool isRValueReference(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has member object pointer type.
+static bool isMemberObjectPointer(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R has member function pointer type.
+static bool isMemberFunctionPointer(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a closure.
+static bool isClosure(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
 /// Returns true if R designates an type alias.
 static bool isTypeAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -348,9 +397,151 @@ static bool isNamespaceAlias(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a template.
+static bool isTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a class template.
+static bool isClassTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates an alias template.
+static bool isAliasTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a function template.
+static bool isFunctionTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a variable template.
+static bool isVariableTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a member function template.
+static bool isMemberFunctionTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a static member function template.
+static bool isStaticMemberFunctionTemplate(const Reflection &R,
+                                           APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a nonstatic member function template.
+static bool isNonstaticMemberFunctionTemplate(const Reflection &R,
+                                              APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a constructor template.
+static bool isConstructorTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a destructor template.
+static bool isDestructorTemplate(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a destructor template.
+static bool isConcept(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a specialized template.
+static bool isSpecialization(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a partially specialized template.
+static bool isPartialSpecialization(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a explicitly specialized template.
+static bool isExplicitSpecialization(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates an implicitly instantiated template.
+static bool isImplicitInstantiation(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates an explicitly instantiated template.
+static bool isExplicitInstantiation(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a direct base.
+static bool isDirectBase(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a virtual base.
+static bool isVirtualBase(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a function parameter.
+static bool isFunctionParameter(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a template parameter.
+static bool isTemplateParameter(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a type template parameter.
+static bool isTypeTemplateParameter(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a nontype template parameter.
+static bool isNontypeTemplateParameter(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Return true if R designates a template template parameter.
+static bool isTemplateTemplateParameter(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
 /// Returns true if R designates an expression.
 static bool isExpression(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, R.isExpression());
+}
+
+/// Returns true if R designates an LValue expression.
+static bool isLValue(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates an XValue expression.
+static bool isXValue(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates an RValue expression.
+static bool isRValue(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a local entity.
+static bool isLocal(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Returns true if R designates a class emmber.
+static bool isClassMember(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
 }
 
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
@@ -400,16 +591,23 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   case RQ_is_null_pointer:
     return isNullPtr(*this, Result);
   case RQ_is_integral:
+    return isIntegral(*this, Result);
   case RQ_is_floating_point:
+    return isFloatingPoint(*this, Result);
   case RQ_is_array:
+    return isArray(*this, Result);
   case RQ_is_pointer:
+    return isPointer(*this, Result);
   case RQ_is_lvalue_reference:
+    return isLValueReference(*this, Result);
   case RQ_is_rvalue_reference:
+    return isRValueReference(*this, Result);
   case RQ_is_member_object_pointer:
+    return isMemberObjectPointer(*this, Result);
   case RQ_is_member_function_pointer:
+    return isMemberFunctionPointer(*this, Result);
   case RQ_is_closure:
-    // FIXME: Implement these.
-    return Error(*this);
+    return isClosure(*this, Result);
 
   case RQ_is_type_alias:
     return isTypeAlias(*this, Result);
@@ -420,40 +618,67 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isNamespaceAlias(*this, Result);
 
   case RQ_is_template:
+    return isTemplate(*this, Result);
   case RQ_is_class_template:
+    return isClassTemplate(*this, Result);
   case RQ_is_alias_template:
+    return isAliasTemplate(*this, Result);
   case RQ_is_function_template:
+    return isFunctionTemplate(*this, Result);
   case RQ_is_variable_template:
+    return isVariableTemplate(*this, Result);
   case RQ_is_member_function_template:
+    return isMemberFunctionTemplate(*this, Result);
   case RQ_is_static_member_function_template:
+    return isStaticMemberFunctionTemplate(*this, Result);
   case RQ_is_nonstatic_member_function_template:
+    return isNonstaticMemberFunctionTemplate(*this, Result);
   case RQ_is_constructor_template:
+    return isConstructorTemplate(*this, Result);
   case RQ_is_destructor_template:
+    return isDestructorTemplate(*this, Result);
   case RQ_is_concept:
+    return isConcept(*this, Result);
   case RQ_is_specialization:
+    return isSpecialization(*this, Result);
   case RQ_is_partial_specialization:
+    return isPartialSpecialization(*this, Result);
   case RQ_is_explicit_specialization:
+    return isExplicitSpecialization(*this, Result);
   case RQ_is_implicit_instantiation:
+    return isImplicitInstantiation(*this, Result);
   case RQ_is_explicit_instantiation:
+    return isExplicitInstantiation(*this, Result);
 
   case RQ_is_direct_base:
+    return isDirectBase(*this, Result);
   case RQ_is_virtual_base:
+    return isVirtualBase(*this, Result);
 
   case RQ_is_function_parameter:
+    return isFunctionParameter(*this, Result);
   case RQ_is_template_parameter:
+    return isTemplateParameter(*this, Result);
   case RQ_is_type_template_parameter:
+    return isTypeTemplateParameter(*this, Result);
   case RQ_is_nontype_template_parameter:
+    return isNontypeTemplateParameter(*this, Result);
   case RQ_is_template_template_parameter:
+    return isTemplateTemplateParameter(*this, Result);
 
   case RQ_is_expression:
     return ::isExpression(*this, Result);
   case RQ_is_lvalue:
+    return isLValue(*this, Result);
   case RQ_is_xvalue:
+    return isXValue(*this, Result);
   case RQ_is_rvalue:
+    return isRValue(*this, Result);
 
   case RQ_is_local:
+    return isLocal(*this, Result);
   case RQ_is_class_member:
-    return Error(*this);
+    return isClassMember(*this, Result);
 
   default:
     break;
