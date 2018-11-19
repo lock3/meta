@@ -339,42 +339,58 @@ static bool isNullPtr(const Reflection &R, APValue &Result) {
 
 /// Returns true if R has integral type.
 static bool isIntegral(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isIntegralOrEnumerationType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has floating point type.
 static bool isFloatingPoint(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isFloatingType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has array type.
 static bool isArray(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isArrayType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has pointer type.
 static bool isPointer(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isPointerType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has lvalue reference type.
 static bool isLValueReference(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isLValueReferenceType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has rvalue reference type.
 static bool isRValueReference(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isRValueReferenceType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has member object pointer type.
 static bool isMemberObjectPointer(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isMemberDataPointerType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R has member function pointer type.
 static bool isMemberFunctionPointer(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (MaybeType T = getReachableCanonicalType(R))
+    return SuccessBool(R, Result, T->isMemberFunctionPointerType());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a closure.
