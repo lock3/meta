@@ -152,6 +152,12 @@ static QualType getReachableCanonicalType(const Reflection &R) {
   return R.Ctx->getCanonicalType(T);
 }
 
+static const Expr *getReachableExpr(const Reflection &R) {
+  if (R.isExpression())
+    return R.getAsExpression();
+  return nullptr;
+}
+
 /// Returns true if R is an invalid reflection.
 static bool isInvalid(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, R.isInvalid());
@@ -521,17 +527,23 @@ static bool isExpression(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates an LValue expression.
 static bool isLValue(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Expr *E = getReachableExpr(R))
+    return SuccessBool(R, Result, E->isLValue());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an XValue expression.
 static bool isXValue(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Expr *E = getReachableExpr(R))
+    return SuccessBool(R, Result, E->isXValue());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an RValue expression.
 static bool isRValue(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Expr *E = getReachableExpr(R))
+    return SuccessBool(R, Result, E->isRValue());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a local entity.
