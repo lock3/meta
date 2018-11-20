@@ -1375,7 +1375,6 @@ static bool getNext(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
-
 bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   assert(isAssociatedReflectionQuery(Q) && "invalid query");
   switch (Q) {
@@ -1402,17 +1401,17 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
 }
 
 static StringLiteral *makeString(const Reflection &R, StringRef Str) {
-  QualType StrTy = R.Ctx->getConstantArrayType(R.Ctx->CharTy.withConst(), 
-                                               llvm::APInt(32, Str.size() + 1), 
+  QualType StrTy = R.Ctx->getConstantArrayType(R.Ctx->CharTy.withConst(),
+                                               llvm::APInt(32, Str.size() + 1),
                                                ArrayType::Normal, 0);
-  return StringLiteral::Create(*R.Ctx, Str, StringLiteral::Ascii, false, 
+  return StringLiteral::Create(*R.Ctx, Str, StringLiteral::Ascii, false,
                                StrTy, SourceLocation());
 }
 
 bool getName(const Reflection R, APValue &Result) {
   if (R.isType()) {
     QualType T = R.getAsType();
-    
+
     // See through loc infos.
     if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
       T = LIT->getType();
@@ -1434,7 +1433,7 @@ bool getName(const Reflection R, APValue &Result) {
     if (IdentifierInfo *II = ND->getIdentifier()) {
       // Get the identifier of the declaration.
       StringLiteral *Str = makeString(R, II->getName());
-      
+
       // Generate the result value.
       Expr::EvalResult Eval;
       if (!Str->EvaluateAsLValue(Eval, *R.Ctx))
@@ -1486,11 +1485,11 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
   case RK_invalid:
     return true;
   case RK_type:
-    return EqualTypes(Ctx, 
-                      A.getReflectedType(), 
+    return EqualTypes(Ctx,
+                      A.getReflectedType(),
                       B.getReflectedType());
   case RK_declaration:
-    return EqualDecls(A.getReflectedDeclaration(), 
+    return EqualDecls(A.getReflectedDeclaration(),
                       B.getReflectedDeclaration());
   default:
     return false;
