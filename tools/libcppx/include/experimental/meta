@@ -12,7 +12,7 @@ namespace std::experimental
 {
 namespace meta {
 inline namespace v1 {
-	 
+
 // FIXME: Find a better way of forcing constexpr errors.
 
 struct compile_time_error { };
@@ -25,13 +25,13 @@ constexpr! void require(bool b) {
 
 // An opaque handle to a reflected entity.
 //
-// FIXME: This should be an enum class, but those don't 
-// readily convert to bool. Most likely, this should be a 
-// special type that prevents all forms of construction 
+// FIXME: This should be an enum class, but those don't
+// readily convert to bool. Most likely, this should be a
+// special type that prevents all forms of construction
 // but value construction.
 using info = decltype(reflexpr(void));
 
-// TODO: Keep this in sync and in order with the 
+// TODO: Keep this in sync and in order with the
 // corresponding enum in ExprConstant.cpp.
 enum reflection_kind {
   null_construct = 0,
@@ -101,7 +101,7 @@ enum memun_kind {
 
 // Returns the kind (discriminator) of the meta info.
 constexpr! reflection_kind kind(info x) {
-  return (reflection_kind)__reflect_index(x); 
+  return (reflection_kind)__reflect_index(x);
 }
 
 // True if x is a null reflection.
@@ -180,7 +180,7 @@ constexpr! bool is_enumerator(info x) {
 
 // -------------------------------------------------------------------------- //
 // Traversal queries
-	 
+
 // Returns the lexical context of the declaration.
 constexpr! info parent(info x) {
   return __reflect_context(x);
@@ -207,9 +207,9 @@ public:
   constexpr! info operator*() const { return curr; }
   constexpr! info operator->() const { return curr; }
 
-  constexpr! iterator& operator++() { 
+  constexpr! iterator& operator++() {
     if (!is_null(curr))
-      curr = __reflect_next(curr); 
+      curr = __reflect_next(curr);
     return *this;
   }
 
@@ -222,18 +222,18 @@ public:
   constexpr! bool operator==(iterator i) const { return curr == i.curr; }
   constexpr! bool operator!=(iterator i) const { return curr != i.curr; }
 
-private:  
+private:
   info curr;
 };
 
-// Returns the first sub-object of x. Objects behave 
+// Returns the first sub-object of x. Objects behave
 // as forward iterators.
 constexpr! iterator begin(info x) {
   return iterator(__reflect_begin(x));
   return {};
 }
 
-// Returns a null sub-object of x, indicating 
+// Returns a null sub-object of x, indicating
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
@@ -299,13 +299,13 @@ struct namespace_traits {
   constexpr! explicit namespace_traits(info x)
     : namespace_traits(__reflect_traits(x))
   { require(is_namespace(x)); }
-  
+
   unsigned is_inline : 1;
 };
 
 // FIXME: A variable can be declared but not defined.
 struct variable_traits {
-  constexpr! explicit variable_traits(unsigned n) 
+  constexpr! explicit variable_traits(unsigned n)
     : linkage(n),
       storage(n >> 2),
       is_static(n >> 4),
@@ -317,7 +317,7 @@ struct variable_traits {
   constexpr! explicit variable_traits(info x)
     : variable_traits(__reflect_traits(x))
   { require(is_variable(x)); }
-  
+
   unsigned linkage : 2;
   unsigned storage : 2;
   unsigned is_static : 1;
@@ -327,20 +327,20 @@ struct variable_traits {
 };
 
 struct function_traits {
-  constexpr! explicit function_traits(unsigned n) 
-    : linkage(n), 
+  constexpr! explicit function_traits(unsigned n)
+    : linkage(n),
       is_static(n >> 2),
       is_extern(n >> 3),
       is_constexpr(n >> 4),
       is_defined(n >> 5),
-      is_inline(n >> 6), 
+      is_inline(n >> 6),
       is_deleted(n >> 7)
   { }
 
   constexpr! explicit function_traits(info x)
     : function_traits(__reflect_traits(x))
   { require(is_function(x)); }
-  
+
   unsigned linkage : 2;
   unsigned is_static : 1;
   unsigned is_extern : 1;
@@ -351,7 +351,7 @@ struct function_traits {
 };
 
 struct class_traits {
-  constexpr! explicit class_traits(unsigned n) 
+  constexpr! explicit class_traits(unsigned n)
     : linkage(n),
       access(n >> 2),
       key(n >> 4),
@@ -362,7 +362,7 @@ struct class_traits {
   constexpr! explicit class_traits(info x)
     : class_traits(__reflect_traits(x))
   { }
-  
+
   unsigned linkage : 2;
   unsigned access : 2;
   unsigned key : 2;
@@ -371,8 +371,8 @@ struct class_traits {
 };
 
 struct data_member_traits {
-  constexpr! explicit data_member_traits(unsigned n) 
-    : storage(n), 
+  constexpr! explicit data_member_traits(unsigned n)
+    : storage(n),
       access(n >> 2),
       is_static(n >> 4),
       is_mutable(n >> 5),
@@ -384,7 +384,7 @@ struct data_member_traits {
   constexpr! explicit data_member_traits(info x)
     : data_member_traits(__reflect_traits(x))
   { require(is_data_member(x)); }
-  
+
   unsigned storage : 2;
   unsigned access : 2;
   unsigned is_static : 1;
@@ -395,7 +395,7 @@ struct data_member_traits {
 };
 
 struct member_function_traits {
-  constexpr! explicit member_function_traits(unsigned n) 
+  constexpr! explicit member_function_traits(unsigned n)
     : access(n),
       kind(n >> 2),
       is_static(n >> 4),
@@ -431,7 +431,7 @@ struct member_function_traits {
 };
 
 struct enum_traits {
-  constexpr! explicit enum_traits(unsigned n) 
+  constexpr! explicit enum_traits(unsigned n)
     : linkage(n),
       access(n >> 2),
       is_scoped(n >> 4)
@@ -440,21 +440,21 @@ struct enum_traits {
   constexpr! explicit enum_traits(info x)
     : enum_traits(__reflect_traits(x))
   { require(is_enum(x)); }
-  
+
   unsigned linkage : 2;
   unsigned access : 2;
   unsigned is_scoped : 1;
 };
 
 struct enumerator_traits {
-  constexpr! explicit enumerator_traits(unsigned n) 
+  constexpr! explicit enumerator_traits(unsigned n)
     : access(n)
   { }
 
   constexpr! explicit enumerator_traits(info x)
     : enumerator_traits(__reflect_traits(x))
   { }
-  
+
   unsigned access : 2;
 };
 
@@ -462,14 +462,14 @@ struct enumerator_traits {
 // Access specifiers
 
 struct access_traits {
-  constexpr! explicit access_traits(unsigned n) 
+  constexpr! explicit access_traits(unsigned n)
     : access(n)
   { }
-  
+
   constexpr! explicit access_traits(info x)
     : access_traits(__reflect_traits(x))
   { }
-  
+
   unsigned access : 2;
 };
 
@@ -535,7 +535,7 @@ constexpr! bool has_automatic_storage(info x) {
       return data_member_traits(x).storage == automatic_storage;
     default:
       __builtin_unreachable();
-  }  
+  }
 }
 
 constexpr! bool has_static_storage(info x) {
@@ -546,7 +546,7 @@ constexpr! bool has_static_storage(info x) {
       return data_member_traits(x).storage == static_storage;
     default:
       __builtin_unreachable();
-  }  
+  }
 }
 
 constexpr! bool has_thread_storage(info x) {
