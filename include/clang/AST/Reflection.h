@@ -116,7 +116,7 @@ public:
 /// Represents an operand to the reflection operator.
 class ReflectionOperand {
 public:
-  enum ReflectionKind {
+  enum ReflectionOpKind {
     Type,
     Template,
     Namespace,
@@ -124,7 +124,7 @@ public:
   };
 
 private:
-  ReflectionKind Kind;
+  ReflectionOpKind Kind;
 
   /// Points to the representation of the operand. For type operands, this is
   /// the opaque pointer of a QualType. For template-name operands, this is
@@ -151,7 +151,7 @@ public:
     : Kind(Expression), Data(E) { }
 
   /// Returns the kind of reflection.
-  ReflectionKind getKind() const { return Kind; }
+  ReflectionOpKind getKind() const { return Kind; }
 
   /// Returns true if the reflection is invalid.
   bool isInvalid() const { return !Data; }
