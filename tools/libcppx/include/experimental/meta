@@ -100,81 +100,81 @@ enum memun_kind {
 // Kind and kind testing
 
 // Returns the kind (discriminator) of the meta info.
-constexpr! reflection_kind kind(info x) {
+consteval reflection_kind kind(info x) {
   return (reflection_kind)__reflect_index(x);
 }
 
 // True if x is a null reflection.
-constexpr! bool is_null(info x) {
+consteval bool is_null(info x) {
   return kind(x) == null_construct;
 }
 
 // True if x reflects a declaration.
 //
 // TODO: Make sure this stays in agreement with reflection_kind.
-constexpr! bool is_declaration(info x) {
+consteval bool is_declaration(info x) {
   reflection_kind k = kind(x);
   return translation_unit <= k && k <= enumerator_decl;
 }
 
 // True if x reflects a fundamental or non-user-defined type.
-constexpr! bool is_type(info x) {
+consteval bool is_type(info x) {
   reflection_kind k = kind(x);
   return void_type <= k && k <= array_type;
 }
 
 // True if x reflects a translation unit.
-constexpr! bool is_translation_unit(info x) {
+consteval bool is_translation_unit(info x) {
   return kind(x) == translation_unit;
 }
 
 // True if x reflects a namespace.
-constexpr! bool is_namespace(info x) {
+consteval bool is_namespace(info x) {
   return kind(x) == namespace_decl;
 }
 
 // True if x reflects a variable.
-constexpr! bool is_variable(info x) {
+consteval bool is_variable(info x) {
   return kind(x) == variable_decl;
 }
 
 // True if x reflects a function.
-constexpr! bool is_function(info x) {
+consteval bool is_function(info x) {
   return kind(x) == function_decl;
 }
 
 // True if x reflects a parameter.
-constexpr! bool is_parameter(info x) {
+consteval bool is_parameter(info x) {
   return kind(x) == parameter_decl;
 }
 
 // True if x reflects a class.
-constexpr! bool is_class(info x) {
+consteval bool is_class(info x) {
   return kind(x) == class_decl;
 }
 
 // True if x reflects a data member.
-constexpr! bool is_data_member(info x) {
+consteval bool is_data_member(info x) {
   return kind(x) == data_member_decl;
 }
 
 // True if x reflects a member function.
-constexpr! bool is_member_function(info x) {
+consteval bool is_member_function(info x) {
   return kind(x) == member_function_decl;
 }
 
 // True if x reflects an access specifier.
-constexpr! bool is_access_specifier(info x) {
+consteval bool is_access_specifier(info x) {
   return kind(x) == access_spec;
 }
 
 // True if x reflections an enum.
-constexpr! bool is_enum(info x) {
+consteval bool is_enum(info x) {
   return kind(x) == enum_decl;
 }
 
 // True if x reflects an enumerator.
-constexpr! bool is_enumerator(info x) {
+consteval bool is_enumerator(info x) {
   return kind(x) == enumerator_decl;
 }
 
@@ -182,13 +182,13 @@ constexpr! bool is_enumerator(info x) {
 // Traversal queries
 
 // Returns the lexical context of the declaration.
-constexpr! info parent(info x) {
+consteval info parent(info x) {
   return __reflect_context(x);
   return {};
 }
 
 // Returns the home context of the declaration.
-constexpr! info home(info x) {
+consteval info home(info x) {
   return __reflect_home(x);
   return {};
 }
@@ -201,26 +201,26 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
-  constexpr! iterator() : curr() { }
-  constexpr! iterator(info x) : curr(x) { }
+  consteval iterator() : curr() { }
+  consteval iterator(info x) : curr(x) { }
 
-  constexpr! info operator*() const { return curr; }
-  constexpr! info operator->() const { return curr; }
+  consteval info operator*() const { return curr; }
+  consteval info operator->() const { return curr; }
 
-  constexpr! iterator& operator++() {
+  consteval iterator& operator++() {
     if (!is_null(curr))
       curr = __reflect_next(curr);
     return *this;
   }
 
-  constexpr! iterator operator++(int) {
+  consteval iterator operator++(int) {
     iterator tmp = *this;
     operator++();
     return tmp;
   }
 
-  constexpr! bool operator==(iterator i) const { return curr == i.curr; }
-  constexpr! bool operator!=(iterator i) const { return curr != i.curr; }
+  consteval bool operator==(iterator i) const { return curr == i.curr; }
+  consteval bool operator!=(iterator i) const { return curr != i.curr; }
 
 private:
   info curr;
@@ -228,7 +228,7 @@ private:
 
 // Returns the first sub-object of x. Objects behave
 // as forward iterators.
-constexpr! iterator begin(info x) {
+consteval iterator begin(info x) {
   return iterator(__reflect_begin(x));
   return {};
 }
@@ -237,26 +237,26 @@ constexpr! iterator begin(info x) {
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
-constexpr! iterator end(info x) {
+consteval iterator end(info x) {
   return iterator();
 }
 
 // Returns the first child of declaration context. This can be used with
 // next() to traverse contexts as template arguments (iterators don't work
 // as template arguments).
-constexpr! info front(info x) {
+consteval info front(info x) {
   return __reflect_begin(x);
   return {};
 }
 
 // Returns the next info in the sequence.
-constexpr! info next(info x) {
+consteval info next(info x) {
   return __reflect_next(x);
   return {};
 }
 
-// Overload distance so that it's constexpr!.
-constexpr! std::ptrdiff_t distance(iterator first, iterator last) {
+// Overload distance so that it's consteval.
+consteval std::ptrdiff_t distance(iterator first, iterator last) {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
     ++n;
@@ -267,14 +267,14 @@ constexpr! std::ptrdiff_t distance(iterator first, iterator last) {
 // Traversal queries
 
 // True if x is a member of a class.
-constexpr! bool is_class_member(info x) {
+consteval bool is_class_member(info x) {
   return is_class(parent(x));
 }
 
 // -------------------------------------------------------------------------- //
 // Name
 
-constexpr! const char* name(info x) {
+consteval const char* name(info x) {
   return __reflect_name(x);
   return "";
 }
@@ -283,7 +283,7 @@ constexpr! const char* name(info x) {
 // Type
 
 // Returns the reflected type of a variable or function.
-constexpr! info type(info x) {
+consteval info type(info x) {
   return __reflect_type(x);
   return {};
 }
@@ -292,11 +292,11 @@ constexpr! info type(info x) {
 // Declaration traits
 
 struct namespace_traits {
-  constexpr! explicit namespace_traits(unsigned n)
+  consteval explicit namespace_traits(unsigned n)
     : is_inline(n)
   { }
 
-  constexpr! explicit namespace_traits(info x)
+  consteval explicit namespace_traits(info x)
     : namespace_traits(__reflect_traits(x))
   { require(is_namespace(x)); }
 
@@ -305,7 +305,7 @@ struct namespace_traits {
 
 // FIXME: A variable can be declared but not defined.
 struct variable_traits {
-  constexpr! explicit variable_traits(unsigned n)
+  consteval explicit variable_traits(unsigned n)
     : linkage(n),
       storage(n >> 2),
       is_static(n >> 4),
@@ -314,7 +314,7 @@ struct variable_traits {
       is_constexpr(n >> 7)
   { }
 
-  constexpr! explicit variable_traits(info x)
+  consteval explicit variable_traits(info x)
     : variable_traits(__reflect_traits(x))
   { require(is_variable(x)); }
 
@@ -327,7 +327,7 @@ struct variable_traits {
 };
 
 struct function_traits {
-  constexpr! explicit function_traits(unsigned n)
+  consteval explicit function_traits(unsigned n)
     : linkage(n),
       is_static(n >> 2),
       is_extern(n >> 3),
@@ -337,7 +337,7 @@ struct function_traits {
       is_deleted(n >> 7)
   { }
 
-  constexpr! explicit function_traits(info x)
+  consteval explicit function_traits(info x)
     : function_traits(__reflect_traits(x))
   { require(is_function(x)); }
 
@@ -351,7 +351,7 @@ struct function_traits {
 };
 
 struct class_traits {
-  constexpr! explicit class_traits(unsigned n)
+  consteval explicit class_traits(unsigned n)
     : linkage(n),
       access(n >> 2),
       key(n >> 4),
@@ -359,7 +359,7 @@ struct class_traits {
       is_injected(n >> 7)
   { }
 
-  constexpr! explicit class_traits(info x)
+  consteval explicit class_traits(info x)
     : class_traits(__reflect_traits(x))
   { }
 
@@ -371,7 +371,7 @@ struct class_traits {
 };
 
 struct data_member_traits {
-  constexpr! explicit data_member_traits(unsigned n)
+  consteval explicit data_member_traits(unsigned n)
     : storage(n),
       access(n >> 2),
       is_static(n >> 4),
@@ -381,7 +381,7 @@ struct data_member_traits {
       is_bitfield(n >> 8)
   { }
 
-  constexpr! explicit data_member_traits(info x)
+  consteval explicit data_member_traits(info x)
     : data_member_traits(__reflect_traits(x))
   { require(is_data_member(x)); }
 
@@ -395,7 +395,7 @@ struct data_member_traits {
 };
 
 struct member_function_traits {
-  constexpr! explicit member_function_traits(unsigned n)
+  consteval explicit member_function_traits(unsigned n)
     : access(n),
       kind(n >> 2),
       is_static(n >> 4),
@@ -411,7 +411,7 @@ struct member_function_traits {
       is_defaulted(n >> 14)
   { }
 
-  constexpr! explicit member_function_traits(info x)
+  consteval explicit member_function_traits(info x)
     : member_function_traits(__reflect_traits(x))
   { require(is_member_function(x)); }
 
@@ -431,13 +431,13 @@ struct member_function_traits {
 };
 
 struct enum_traits {
-  constexpr! explicit enum_traits(unsigned n)
+  consteval explicit enum_traits(unsigned n)
     : linkage(n),
       access(n >> 2),
       is_scoped(n >> 4)
   { }
 
-  constexpr! explicit enum_traits(info x)
+  consteval explicit enum_traits(info x)
     : enum_traits(__reflect_traits(x))
   { require(is_enum(x)); }
 
@@ -447,11 +447,11 @@ struct enum_traits {
 };
 
 struct enumerator_traits {
-  constexpr! explicit enumerator_traits(unsigned n)
+  consteval explicit enumerator_traits(unsigned n)
     : access(n)
   { }
 
-  constexpr! explicit enumerator_traits(info x)
+  consteval explicit enumerator_traits(info x)
     : enumerator_traits(__reflect_traits(x))
   { }
 
@@ -462,11 +462,11 @@ struct enumerator_traits {
 // Access specifiers
 
 struct access_traits {
-  constexpr! explicit access_traits(unsigned n)
+  consteval explicit access_traits(unsigned n)
     : access(n)
   { }
 
-  constexpr! explicit access_traits(info x)
+  consteval explicit access_traits(info x)
     : access_traits(__reflect_traits(x))
   { }
 
@@ -476,7 +476,7 @@ struct access_traits {
 // -------------------------------------------------------------------------- //
 // General purpose queries
 
-constexpr! bool has_linkage(info x) {
+consteval bool has_linkage(info x) {
   switch (kind(x)) {
   case namespace_decl:
     return true;
@@ -493,7 +493,7 @@ constexpr! bool has_linkage(info x) {
   }
 }
 
-constexpr! bool has_external_linkage(info x) {
+consteval bool has_external_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return true;
@@ -510,7 +510,7 @@ constexpr! bool has_external_linkage(info x) {
   }
 }
 
-constexpr! bool has_internal_linkage(info x) {
+consteval bool has_internal_linkage(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return false;
@@ -527,7 +527,7 @@ constexpr! bool has_internal_linkage(info x) {
   }
 }
 
-constexpr! bool has_automatic_storage(info x) {
+consteval bool has_automatic_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == automatic_storage;
@@ -538,7 +538,7 @@ constexpr! bool has_automatic_storage(info x) {
   }
 }
 
-constexpr! bool has_static_storage(info x) {
+consteval bool has_static_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == static_storage;
@@ -549,7 +549,7 @@ constexpr! bool has_static_storage(info x) {
   }
 }
 
-constexpr! bool has_thread_storage(info x) {
+consteval bool has_thread_storage(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).storage == thread_storage;
@@ -560,7 +560,7 @@ constexpr! bool has_thread_storage(info x) {
   }
 }
 
-constexpr! bool has_access(info x) {
+consteval bool has_access(info x) {
   switch (kind(x)) {
     default:
       return false;
@@ -590,7 +590,7 @@ constexpr bool has_default_access(info x) {
   __builtin_unreachable();
 }
 
-constexpr! bool is_public(info x) {
+consteval bool is_public(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -610,7 +610,7 @@ constexpr! bool is_public(info x) {
   }
 }
 
-constexpr! bool is_private(info x) {
+consteval bool is_private(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -630,7 +630,7 @@ constexpr! bool is_private(info x) {
   }
 }
 
-constexpr! bool is_protected(info x) {
+consteval bool is_protected(info x) {
   assert(has_access(x));
   switch (kind(x)) {
     case data_member_decl:
@@ -650,7 +650,7 @@ constexpr! bool is_protected(info x) {
   }
 }
 
-constexpr! bool is_static(info x) {
+consteval bool is_static(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_static;
@@ -665,7 +665,7 @@ constexpr! bool is_static(info x) {
   }
 }
 
-constexpr! bool is_extern(info x) {
+consteval bool is_extern(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_extern;
@@ -676,7 +676,7 @@ constexpr! bool is_extern(info x) {
   }
 }
 
-constexpr! bool is_inline(info x) {
+consteval bool is_inline(info x) {
   switch (kind(x)) {
     case namespace_decl:
       return namespace_traits(x).is_inline;
@@ -693,7 +693,7 @@ constexpr! bool is_inline(info x) {
   }
 }
 
-constexpr! bool is_constexpr(info x) {
+consteval bool is_constexpr(info x) {
   switch (kind(x)) {
     case variable_decl:
       return variable_traits(x).is_constexpr;
@@ -708,56 +708,56 @@ constexpr! bool is_constexpr(info x) {
   }
 }
 
-constexpr! bool is_normal(info x) {
+consteval bool is_normal(info x) {
   return member_function_traits(x).kind == normal;
 }
 
-constexpr! bool is_constructor(info x) {
+consteval bool is_constructor(info x) {
   return member_function_traits(x).kind == constructor;
 }
 
-constexpr! bool is_destructor(info x) {
+consteval bool is_destructor(info x) {
   return member_function_traits(x).kind == destructor;
 }
 
-constexpr! bool is_conversion(info x) {
+consteval bool is_conversion(info x) {
   return member_function_traits(x).kind == conversion;
 }
 
-constexpr! bool is_explicit(info x) {
+consteval bool is_explicit(info x) {
   return member_function_traits(x).is_explicit;
 }
 
-constexpr! bool is_virtual(info x) {
+consteval bool is_virtual(info x) {
   return member_function_traits(x).is_virtual;
 }
 
-constexpr! bool is_pure_virtual(info x) {
+consteval bool is_pure_virtual(info x) {
   return member_function_traits(x).is_pure;
 }
 
-constexpr! bool is_override(info x) {
+consteval bool is_override(info x) {
   return member_function_traits(x).is_override;
 }
 
-constexpr! bool is_final(info x) {
+consteval bool is_final(info x) {
   return member_function_traits(x).is_final;
 }
 
-constexpr! bool is_defaulted(info x) {
+consteval bool is_defaulted(info x) {
   return member_function_traits(x).is_defaulted;
 }
 
-constexpr! bool is_mutable(info x) {
+consteval bool is_mutable(info x) {
   return data_member_traits(x).is_mutable;
 }
 
 // TODO: Add an accessor for the bit width.
-constexpr! bool is_bitfield(info x) {
+consteval bool is_bitfield(info x) {
   return data_member_traits(x).is_bitfield;
 }
 
-constexpr! bool is_defined(info x) {
+consteval bool is_defined(info x) {
   switch (kind(x)) {
     case variable_decl:
       // FIXME: This is not accurate.
@@ -775,7 +775,7 @@ constexpr! bool is_defined(info x) {
   }
 }
 
-constexpr! bool is_deleted(info x) {
+consteval bool is_deleted(info x) {
   switch (kind(x)) {
     case function_decl:
       return function_traits(x).is_deleted;
@@ -786,27 +786,27 @@ constexpr! bool is_deleted(info x) {
   }
 }
 
-constexpr! bool is_declared_struct(info x) {
+consteval bool is_declared_struct(info x) {
   return class_traits(x).key == struct_key;
 }
 
-constexpr! bool is_declared_class(info x) {
+consteval bool is_declared_class(info x) {
   return class_traits(x).key == class_key;
 }
 
-constexpr! bool is_union(info x) {
+consteval bool is_union(info x) {
   return class_traits(x).key == union_key;
 }
 
-constexpr! bool is_complete(info x) {
+consteval bool is_complete(info x) {
   return class_traits(x).is_complete;
 }
 
-constexpr! bool is_injected_class_name(info x) {
+consteval bool is_injected_class_name(info x) {
   return class_traits(x).is_injected;
 }
 
-constexpr! bool is_scoped(info x) {
+consteval bool is_scoped(info x) {
   return enum_traits(x).is_scoped;
 }
 
