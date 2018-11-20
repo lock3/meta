@@ -607,22 +607,30 @@ static bool isFunctionParameter(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a template parameter.
 static bool isTemplateParameter(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->isTemplateParameter());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a type template parameter.
 static bool isTypeTemplateParameter(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getKind() == Decl::TemplateTypeParm);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a nontype template parameter.
 static bool isNontypeTemplateParameter(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getKind() == Decl::NonTypeTemplateParm);
+  return SuccessFalse(R, Result);
 }
 
 /// Return true if R designates a template template parameter.
 static bool isTemplateTemplateParameter(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getKind() == Decl::TemplateTemplateParm);
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an expression.
