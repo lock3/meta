@@ -1317,6 +1317,10 @@ static bool getType(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static bool getThisRefType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
 /// True if D is reflectable. Some declarations are not reflected (e.g.,
 /// access specifiers).
 static bool isReflectableDecl(const Decl *D) {
@@ -1383,7 +1387,7 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   case RQ_get_type:
     return getType(*this, Result);
   case RQ_get_this_ref_type:
-    return Error(*this);
+    return getThisRefType(*this, Result);
 
   // Traversal
   case RQ_get_begin:
