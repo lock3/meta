@@ -24,33 +24,37 @@ enum reflection_query {
 
   // Objects, references, bitfields, and functions
   query_is_variable,
-  query_is_enumerator,
-  query_is_static_data_member,
-  query_is_static_member_function,
-  query_is_nonstatic_data_member,
-  query_is_bitfield,
-  query_is_nonstatic_member_function,
-  query_is_constructor,
-  query_is_destructor,
-
-  // Types
-  query_is_type,
   query_is_function,
   query_is_class,
   query_is_union,
   query_is_enum,
   query_is_scoped_enum,
-  query_is_void,
-  query_is_null_pointer,
-  query_is_integral,
-  query_is_floating_point,
-  query_is_array,
-  query_is_pointer,
-  query_is_lvalue_reference,
-  query_is_rvalue_reference,
-  query_is_member_object_pointer,
-  query_is_member_function_pointer,
-  query_is_closure,
+  query_is_enumerator,
+  query_is_bitfield,
+  query_is_static_data_member,
+  query_is_nonstatic_data_member,
+  query_is_static_member_function,
+  query_is_nonstatic_member_function,
+  query_is_constructor,
+  query_is_destructor,
+
+  // Types
+  query_is_function_type,
+  query_is_class_type,
+  query_is_union_type,
+  query_is_enum_type,
+  query_is_scoped_enum_type,
+  query_is_void_type,
+  query_is_null_pointer_type,
+  query_is_integral_type,
+  query_is_floating_point_type,
+  query_is_array_type,
+  query_is_pointer_type,
+  query_is_lvalue_reference_type,
+  query_is_rvalue_reference_type,
+  query_is_member_object_pointer_type,
+  query_is_member_function_pointer_type,
+  query_is_closure_type,
 
   // Namespaces and aliases
   query_is_namespace,
@@ -63,7 +67,6 @@ enum reflection_query {
   query_is_alias_template,
   query_is_function_template,
   query_is_variable_template,
-  query_is_member_function_template,
   query_is_static_member_function_template,
   query_is_nonstatic_member_function_template,
   query_is_constructor_template,
@@ -81,16 +84,15 @@ enum reflection_query {
 
   // Parameters
   query_is_function_parameter,
-  query_is_template_parameter,
   query_is_type_template_parameter,
   query_is_nontype_template_parameter,
   query_is_template_template_parameter,
 
   // Expressions
-  query_is_expression,
   query_is_lvalue,
   query_is_xvalue,
   query_is_rvalue,
+  query_is_literal,
 
   // Scope
   query_is_local,
@@ -137,58 +139,29 @@ constexpr! void require(bool b) {
 // but value construction.
 using info = decltype(reflexpr(void));
 
-// TODO: Keep this in sync and in order with the
-// corresponding enum in ExprConstant.cpp.
-enum reflection_kind {
-  null_construct = 0,
-
-  // Declarations
-  translation_unit,
-  namespace_decl,
-  variable_decl,
-  function_decl,
-  parameter_decl,
-  class_decl,
-  data_member_decl,
-  member_function_decl,
-  access_spec,
-  enum_decl,
-  enumerator_decl,
-
-  // Types
-  void_type,
-  character_type,
-  integral_type,
-  floating_point_type,
-  reference_type,
-  function_type,
-  pointer_type,
-  array_type,
-};
-
 // Kinds of linkage.
-enum linkage_kind {
+enum class linkage_kind {
   external_linkage,
   internal_linkage,
   no_linkage,
 };
 
 // Kinds of (detectable) storage duration.
-enum storage_kind {
+enum class storage_kind {
   automatic_storage,
   thread_storage,
   static_storage,
 };
 
 // Kinds of class types.
-enum class_key {
+enum class class_key {
   struct_key,
   class_key,
   union_key
 };
 
 // Kinds of access.
-enum access_kind {
+enum class access_kind {
   public_access,
   protected_access,
   private_access,
@@ -196,92 +169,316 @@ enum access_kind {
 };
 
 // Kinds of member functions.
-enum memun_kind {
+enum class member_kind {
   normal,
   constructor,
   destructor,
   conversion,
 };
 
-// Kind and kind testing
-
-// Returns the kind (discriminator) of the meta info.
-consteval reflection_kind kind(info x) {
-  return (reflection_kind)__reflect_index(x);
-}
-
-// True if x is a null reflection.
-consteval bool is_null(info x) {
-  return kind(x) == null_construct;
-}
-
-// True if x reflects a declaration.
-//
-// TODO: Make sure this stays in agreement with reflection_kind.
-consteval bool is_declaration(info x) {
-  reflection_kind k = kind(x);
-  return translation_unit <= k && k <= enumerator_decl;
-}
-
-// True if x reflects a fundamental or non-user-defined type.
-consteval bool is_type(info x) {
-  reflection_kind k = kind(x);
-  return void_type <= k && k <= array_type;
-}
-
-// True if x reflects a translation unit.
-consteval bool is_translation_unit(info x) {
-  return kind(x) == translation_unit;
-}
-
-// True if x reflects a namespace.
-consteval bool is_namespace(info x) {
-  return kind(x) == namespace_decl;
+// True if x is an invalid reflection.
+consteval bool is_invalid(info x) {
+  return __reflect(__internal::query_is_invalid, x);
 }
 
 // True if x reflects a variable.
 consteval bool is_variable(info x) {
-  return kind(x) == variable_decl;
+  return __reflect(__internal::query_is_variable, x);
 }
 
 // True if x reflects a function.
 consteval bool is_function(info x) {
-  return kind(x) == function_decl;
-}
-
-// True if x reflects a parameter.
-consteval bool is_parameter(info x) {
-  return kind(x) == parameter_decl;
+  return __reflect(__internal::query_is_function, x);
 }
 
 // True if x reflects a class.
 consteval bool is_class(info x) {
-  return kind(x) == class_decl;
+  return __reflect(__internal::query_is_class, x);
 }
 
-// True if x reflects a data member.
-consteval bool is_data_member(info x) {
-  return kind(x) == data_member_decl;
+// True if x reflects a union.
+consteval bool is_union(info x) {
+  return __reflect(__internal::query_is_union, x);
 }
 
-// True if x reflects a member function.
-consteval bool is_member_function(info x) {
-  return kind(x) == member_function_decl;
-}
-
-// True if x reflects an access specifier.
-consteval bool is_access_specifier(info x) {
-  return kind(x) == access_spec;
-}
-
-// True if x reflections an enum.
+// True if x reflects an enum.
 consteval bool is_enum(info x) {
-  return kind(x) == enum_decl;
+  return __reflect(__internal::query_is_enum, x);
+}
+
+// True if x reflects a scoped enum.
+consteval bool is_scoped_enum(info x) {
+  return __reflect(__internal::query_is_scoped_enum, x);
 }
 
 // True if x reflects an enumerator.
 consteval bool is_enumerator(info x) {
-  return kind(x) == enumerator_decl;
+  return __reflect(__internal::query_is_enumerator, x);
+}
+
+// True if x reflects a bitfield.
+consteval bool is_bitfield(info x) {
+  return __reflect(__internal::query_is_bitfield, x);
+}
+
+// True if x reflects a static data member.
+consteval bool is_static_data_member(info x) {
+  return __reflect(__internal::query_is_static_data_member, x);
+}
+
+// True if x reflects a static member function.
+consteval bool is_static_member_function(info x) {
+  return __reflect(__internal::query_is_static_member_function, x);
+}
+
+// True if x reflects a nonstatic data member.
+consteval bool is_data_member(info x) {
+  return __reflect(__internal::query_is_nonstatic_data_member, x);
+}
+
+// True if x reflects a nonstatic member function.
+consteval bool is_member_function(info x) {
+  return __reflect(__internal::query_is_nonstatic_member_function, x);
+}
+
+// True if x reflects a constructor.
+consteval bool is_constructor(info x) {
+  return __reflect(__internal::query_is_constructor, x);
+}
+
+// True if x reflects a destructor.
+consteval bool is_destructor(info x) {
+  return __reflect(__internal::query_is_destructor, x);
+}
+
+// True if x reflects an entity with function type.
+consteval bool is_function_type(info x) {
+  return __reflect(__internal::query_is_function_type, x);
+}
+
+// True if x reflects an entity with class type.
+consteval bool is_class_type(info x) {
+  return __reflect(__internal::query_is_class_type, x);
+}
+
+// True if x reflects an entity with union type.
+consteval bool is_union_type(info x) {
+  return __reflect(__interal::query_is_union_type, x);
+}
+
+// True if x reflects an entity with enum type.
+consteval bool is_enum_type(info x) {
+  return __reflect(__internal::query_is_enum_type, x);
+}
+
+// True if x reflects an entity with scoped enum type.
+consteval bool is_scoped_enum_type(info x) {
+  return __reflect(__internal::query_is_scoped_enum_type, x);
+}
+
+// True if x reflects an entity with void type.
+consteval bool is_void_type(info x) {
+  return __reflect(__internal::query_is_void_type, x);
+}
+
+// True if x reflects an entity with null pointer type.
+consteval bool is_null_pointer_type(info x) {
+  return __reflect(__internal::query_is_null_pointer_type, x);
+}
+
+// True if x reflects an entity with integral type.
+consteval bool is_integeral_type(info x) {
+  return __reflect(__internal::query_is_integral_type, x);
+}
+
+// True if x reflects an entity with floating point type.
+consteval bool is_floating_point_type(info x) {
+  return __reflect(__internal::query_is_integral_type, x);
+}
+
+// True if x reflects an entity with array type.
+consteval bool is_array_type(info x) {
+  return __reflect(__internal::query_is_array_type, x);
+}
+
+// True if x reflects an entity with pointer type.
+consteval bool is_pointer_type(info x) {
+  return __reflect(__internal::query_is_pointer_type, x);
+}
+
+// True if x reflects an entity with lvalue reference type.
+consteval bool is_lvalue_reference_type(info x) {
+  return __reflect(__internal::query_is_lvaue_reference_type, x);
+}
+
+// True if x reflets an entity with rvalue reference type.
+consteval bool is_rvalue_reference_type(info x) {
+  return __reflect(__internal::query_is_rvaue_reference_type, x);
+}
+
+// True if x reflects an entity with member object pointer type.
+consteval bool is_member_object_pointer_type(info x) {
+  return __reflect(__internal::query_is_member_object_pointer_type, x);
+}
+
+// True if x reflects an entity with member function pointer type.
+consteval bool is_member_function_pointer_type(info x) {
+  return __reflect(__internal::query_is_member_object_pointer_type, x);
+}
+
+// True if x reflects an entity with closure type.
+consteval bool is_closure_type(info x) {
+  return __reflect(__internal::query_is_closure_type, x);
+}
+
+// True if x reflects a namespace.
+consteval bool is_namespace(info x) {
+  return __reflect(__internal::query_is_namespace, x);
+}
+
+// True if x reflects a namespace alias.
+consteval bool is_namespace_alias(info x) {
+  return __reflect(__internal::query_is_namespace_alias, x);
+}
+
+// True if x reflects a type alias.
+consteval bool is_type_alias(info x) {
+  return __reflect(__internal::query_is_type_alias, x);
+}
+
+// True if x reflects a template.
+consteval bool is_template(info x) {
+  return __reflect(__internal::query_is_template, x);
+}
+
+// True if x reflects a class template.
+consteval bool is_class_template(info x) {
+  return __reflect(__internal::query_is_class_template, x);
+}
+
+// True if x reflects a alias template.
+consteval bool is_alias_template(info x) {
+  return __reflect(__internal::query_is_alias_template, x);
+}
+
+// True if x reflects a function template.
+consteval bool is_function_template(info x) {
+  return __reflect(__internal::query_is_function_template, x);
+}
+
+// True if x reflects a variable template.
+consteval bool is_variable_template(info x) {
+  return __reflect(__internal::query_is_variable_template, x);
+}
+
+// True if x refects a static member function template.
+consteval bool is_static_member_function_template(info x) {
+  return __reflect(__internal::query_is_static_member_function_template, x);
+}
+
+// True if x reflects a nonstatic member function template.
+consteval bool is_member_function_template(info x) {
+  return __reflect(__internal::query_is_non_static_member_function_template, x);
+}
+
+// True if x reflects a constructor template.
+consteval bool is_constructor_template(info x) {
+  return __reflect(__internal::query_is_constructor_template, x);
+}
+
+// True if x reflects a destructor template.
+consteval bool is_destructor_template(info x) {
+  return __reflect(__internal::query_is_destructor_template, x);
+}
+
+// True if x reflects a concept.
+consteval bool is_concept(info x) {
+  return __reflect(__internal::query_is_concept, x);
+}
+
+// True if x reflects a specialization.
+consteval bool is_specialization(info x) {
+  return __reflect(__internal::query_is_specialization, x);
+}
+
+// True if x reflects a partial specialization.
+consteval bool is_partial_specialization(info x) {
+  return __reflect(__internal::query_is_partial_specialization, x);
+}
+
+// True if x reflects an explicit specialization.
+consteval bool is_explicit_specialization(info x) {
+  return __reflect(__internal::query_is_explicit_specialization, x);
+}
+
+// True if x reflects an implicit instantiation.
+consteval bool is_implicit_instantiation(info x) {
+  return __reflect(__internal::query_is_implicit_instantiation, x);
+}
+
+// True if x reflects an explicit instantiation.
+consteval bool is_explicit_instantiation(info x) {
+  return __reflect(__internal::query_is_explicit_instantiation, x);
+}
+
+// True if x reflects a direct base.
+consteval bool is_direct_base(info x) {
+  return __reflect(__internal::query_is_direct_base, x);
+}
+
+// True if x reflects a virtual base.
+consteval bool is_virtual_base(info x) {
+  return __reflect(__internal::query_is_virtual_base, x);
+}
+
+// True if x reflects a function parameter.
+consteval bool is_function_parameter(info x) {
+  return __reflect(__internal::query_is_function_parameter, x);
+}
+
+// True if x reflects a type template parameter.
+consteval bool is_type_template_parameter(info x) {
+  return __reflect(__internal::query_is_type_template_parameter, x);
+}
+
+// True if x reflects a type template parameter.
+consteval bool is_nontype_template_parameter(info x) {
+  return __reflect(__internal::query_is_nontype_template_parameter, x);
+}
+
+// True if x reflects a template template parameter.
+consteval bool is_template_template_parameter(info x) {
+  return __reflect(__internal::query_is_template_template_parameter, x);
+}
+
+// True if x reflects an lvalue expression.
+consteval bool is_lvalue(info x) {
+  return __reflect(__internal::query_is_lvalue, x);
+}
+
+// True if x reflects an xvalue expression.
+consteval bool is_xvalue(info x) {
+  return __reflect(__internal::query_is_xvalue, x);
+}
+
+// True if x reflects an rvalue expression.
+consteval bool is_rvalue(info x) {
+  return __reflect(__internal::query_is_xvalue, x);
+}
+
+// True if x reflects a literal value.
+consteval bool is_literal(info x) {
+  return __reflect(__internal::query_is_literal, x);
+}
+
+// True if x reflects a local.
+consteval bool is_local(info x) {
+  return __reflect(__internal::query_is_local, x);
+}
+
+// True if x reflects a class member.
+consteval bool is_class_member(info x) {
+  return __reflect(__internal::query_is_class_member, x);
 }
 
 // -------------------------------------------------------------------------- //
