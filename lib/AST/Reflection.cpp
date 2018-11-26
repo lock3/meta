@@ -734,7 +734,7 @@ static bool isLocal(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a class emmber.
+/// Returns true if R designates a class member.
 static bool isClassMember(const Reflection &R, APValue &Result) {
   if (const DeclContext *DC = getReachableRedeclContext(R))
     return SuccessBool(R, Result, DC->isRecord());
