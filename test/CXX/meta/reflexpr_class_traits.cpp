@@ -32,6 +32,10 @@ public:
   virtual ~FinalChildClass() { };
 };
 
+class ClassClass { };
+struct StructClass { };
+union UnionClass { };
+
 namespace {
   class InternalClass {
   };
@@ -148,6 +152,33 @@ int main() {
     static_assert(traits.is_abstract == false);
     static_assert(traits.is_final == false);
     static_assert(traits.is_empty == true);
+  }
+
+  // class kind
+  {
+    // class class traits
+    {
+      constexpr auto refl = reflexpr(ClassClassTraits);
+      constexpr auto traits = class_traits(__reflect(query_get_type_traits, refl));
+
+      static_assert(traits.kind == class_kind);
+    }
+
+    // struct class traits
+    {
+      constexpr auto refl = reflexpr(StructClassTraits);
+      constexpr auto traits = class_traits(__reflect(query_get_type_traits, refl));
+
+      static_assert(traits.kind == struct_kind);
+    }
+
+    // union class traits
+    {
+      constexpr auto refl = reflexpr(UnionClassTraits);
+      constexpr auto traits = class_traits(__reflect(query_get_type_traits, refl));
+
+      static_assert(traits.kind == union_kind);
+    }
   }
 
   return 0;

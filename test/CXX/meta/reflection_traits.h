@@ -140,7 +140,7 @@ enum method_kind : unsigned {
 
 // For methods, the kind is stored in bits 5 and 6.
 static constexpr method_kind get_method(unsigned n) {
-  return method_kind((n & 0x30) >> 4);
+  return method_kind((n >> 4) & 0x03);
 }
 
 struct method_traits {
@@ -206,11 +206,22 @@ struct access_traits {
 
 // Classes
 
+// For classes, the kind is stored in bits 5 and 6.
+static constexpr class_kind get_class_kind(unsigned n) {
+  return class_kind((n >> 4) & 0x03);
+}
+
+// For classes, the kind is stored in bits 5 and 6.
+static constexpr class_kind get_class_kind(unsigned n) {
+  return class_kind((n >> 4) & 0x03);
+}
+
 // TODO: Accumulate all known type traits for classes.
 struct class_traits {
   constexpr explicit class_traits(unsigned n)
-    : linkage       (get_linkage(n)), // 0x01 | 0x02
-      access        (get_access(n)),  // 0x04 | 0x08
+    : linkage       (get_linkage(n)),    // 0x01 | 0x02
+      access        (get_access(n)),     // 0x04 | 0x08
+      kind          (get_class_kind(n)), // 0x10 | 0x20
       is_complete   (n & 0x10),
       is_polymorphic(n & 0x20),
       is_abstract   (n & 0x40),
@@ -220,6 +231,7 @@ struct class_traits {
 
   linkage_kind linkage : 2;
   access_kind access : 2;
+  class_kind kind : 2;
   bool is_complete : 1;
   bool is_polymorphic : 1;
   bool is_abstract : 1;

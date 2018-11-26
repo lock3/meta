@@ -1175,22 +1175,39 @@ static bool makeAccessTraits(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+enum ClassKindTrait : unsigned { StructKind, ClassKind, UnionKind };
+
 // TODO: Accumulate all known type traits for classes.
 struct ClassTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
+  ClassKindTrait Kind : 2;
   unsigned Complete : 1;
   unsigned Polymoprhic : 1;
   unsigned Abstract : 1;
   unsigned Final : 1;
   unsigned Empty : 1;
-  unsigned Rest : 23;
+  unsigned Rest : 21;
 };
+
+static ClassKindTrait getClassKind(const CXXRecordDecl *D) {
+  switch(D->getTagKind()) {
+  case TTK_Struct:
+    return StructKind;
+  case TTK_Class:
+    return ClassKind;
+  case TTK_Union:
+    return UnionKind;
+  default:
+    llvm_unreachable("unsupported kind");
+  }
+}
 
 static ClassTraits getClassTraits(const CXXRecordDecl *D) {
   ClassTraits T = ClassTraits();
   T.Linkage = getLinkage(D);
   T.Access = getAccess(D);
+  T.Kind = getClassKind(D);
   T.Complete = D->getDefinition() != nullptr;
   if (T.Complete) {
     T.Polymoprhic = D->isPolymorphic();
