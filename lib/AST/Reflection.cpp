@@ -203,10 +203,87 @@ static bool isVariable(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a function.
+static bool isFunction(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<FunctionDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
+static const CXXRecordDecl *getReachableRecordDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return dyn_cast<CXXRecordDecl>(D);
+  return nullptr;
+}
+
+/// Returns true if R designates a class.
+static bool isClass(const Reflection &R, APValue &Result) {
+  if (const CXXRecordDecl *D = getReachableRecordDecl(R))
+    return SuccessBool(R, Result, D->isClass() || D->isStruct());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a union.
+static bool isUnion(const Reflection &R, APValue &Result) {
+  if (const CXXRecordDecl *D = getReachableRecordDecl(R))
+    return SuccessBool(R, Result, D->isUnion());
+  return SuccessFalse(R, Result);
+}
+
+static const EnumDecl *getReachableEnumDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return dyn_cast<EnumDecl>(D);
+  return nullptr;
+}
+
+/// Returns true if R designates an unscoped enum.
+static bool isUnscopedEnum(const Reflection &R, APValue &Result) {
+  if (const EnumDecl *D = getReachableEnumDecl(R))
+    return SuccessBool(R, Result, !D->isScoped());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a scoped enum.
+static bool isScopedEnum(const Reflection &R, APValue &Result) {
+  if (const EnumDecl *D = getReachableEnumDecl(R))
+    return SuccessBool(R, Result, D->isScoped());
+  return SuccessFalse(R, Result);
+}
+
 /// Returns true if R designates an enumerator.
 static bool isEnumerator(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessBool(R, Result, isa<EnumConstantDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
+/// Returns the reflected data member.
+static const FieldDecl *getAsDataMember(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return dyn_cast<FieldDecl>(D);
+  return nullptr;
+}
+
+/// Returns true if R designates a nonstatic data member.
+static bool isBitField(const Reflection &R, APValue &Result) {
+  if (const FieldDecl *D = getAsDataMember(R))
+    return SuccessBool(R, Result, D->isBitField());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a static member variable.
+static bool isStaticDataMember(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    if (const VarDecl *Var = dyn_cast<VarDecl>(D))
+      return SuccessBool(R, Result, Var->isStaticDataMember());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a nonstatic data member.
+static bool isNonstaticDataMember(const Reflection &R, APValue &Result) {
+  if (const FieldDecl *D = getAsDataMember(R))
+    // FIXME: Is a bitfield a non-static data member?
+    return SuccessTrue(R, Result);
   return SuccessFalse(R, Result);
 }
 
@@ -228,37 +305,6 @@ static bool isStaticMemberFunction(const Reflection &R, APValue &Result) {
 static bool isNonstaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
     return SuccessBool(R, Result, M->isInstance());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns the reflected data member.
-static const FieldDecl *getAsDataMember(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<FieldDecl>(D);
-  return nullptr;
-}
-
-/// Returns true if R designates a static member variable.
-static bool isStaticDataMember(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R)) {
-    if (const VarDecl *Var = dyn_cast<VarDecl>(D))
-      return SuccessBool(R, Result, Var->isStaticDataMember());
-  }
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a nonstatic data member.
-static bool isNonstaticDataMember(const Reflection &R, APValue &Result) {
-  if (const FieldDecl *D = getAsDataMember(R))
-    // FIXME: Is a bitfield a non-static data member?
-    return SuccessTrue(R, Result);
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a nonstatic data member.
-static bool isBitField(const Reflection &R, APValue &Result) {
-  if (const FieldDecl *D = getAsDataMember(R))
-    return SuccessBool(R, Result, D->isBitField());
   return SuccessFalse(R, Result);
 }
 
@@ -687,16 +733,26 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
 
   case RQ_is_variable:
     return isVariable(*this, Result);
+  case RQ_is_function:
+    return isFunction(*this, Result);
+  case RQ_is_class:
+    return isClass(*this, Result);
+  case RQ_is_union:
+    return isUnion(*this, Result);
+  case RQ_is_unscoped_enum:
+    return isUnscopedEnum(*this, Result);
+  case RQ_is_scoped_enum:
+    return isScopedEnum(*this, Result);
   case RQ_is_enumerator:
     return isEnumerator(*this, Result);
-  case RQ_is_static_data_member:
-    return isStaticDataMember(*this, Result);
-  case RQ_is_static_member_function:
-    return isStaticMemberFunction(*this, Result);
-  case RQ_is_nonstatic_data_member:
-    return isNonstaticDataMember(*this, Result);
   case RQ_is_bitfield:
     return isBitField(*this, Result);
+  case RQ_is_static_data_member:
+    return isStaticDataMember(*this, Result);
+  case RQ_is_nonstatic_data_member:
+    return isNonstaticDataMember(*this, Result);
+  case RQ_is_static_member_function:
+    return isStaticMemberFunction(*this, Result);
   case RQ_is_nonstatic_member_function:
     return isNonstaticMemberFunction(*this, Result);
   case RQ_is_constructor:
