@@ -741,6 +741,21 @@ static bool isClassMember(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R has default access.
+static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
+      for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
+        if (isa<AccessSpecDecl>(CurDecl))
+          return false;
+        if (CurDecl == D)
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   assert(isPredicateQuery(Q) && "invalid query");
   switch (Q) {
@@ -885,12 +900,15 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   case RQ_is_class_member:
     return isClassMember(*this, Result);
 
+  case RQ_has_default_access:
+    return hasDefaultAccess(*this, Result);
+
   default:
     break;
   }
   llvm_unreachable("invalid predicate selector");
 }
-
+\
 /// Convert a bit-field structure into a uint32.
 template <typename Traits>
 static std::uint32_t TraitsToUnsignedInt(Traits S) {
