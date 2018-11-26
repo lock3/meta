@@ -149,7 +149,7 @@ static QualType getCanonicalType(const Reflection &R) {
   return QualType();
 }
 
-static const Expr *getReachableExpr(const Reflection &R) {
+static const Expr *getExpr(const Reflection &R) {
   if (R.isExpression())
     return R.getAsExpression();
   return nullptr;
@@ -635,21 +635,21 @@ static bool isExpression(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates an LValue expression.
 static bool isLValue(const Reflection &R, APValue &Result) {
-  if (const Expr *E = getReachableExpr(R))
+  if (const Expr *E = getExpr(R))
     return SuccessBool(R, Result, E->isLValue());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an XValue expression.
 static bool isXValue(const Reflection &R, APValue &Result) {
-  if (const Expr *E = getReachableExpr(R))
+  if (const Expr *E = getExpr(R))
     return SuccessBool(R, Result, E->isXValue());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates an RValue expression.
 static bool isRValue(const Reflection &R, APValue &Result) {
-  if (const Expr *E = getReachableExpr(R))
+  if (const Expr *E = getExpr(R))
     return SuccessBool(R, Result, E->isRValue());
   return SuccessFalse(R, Result);
 }
