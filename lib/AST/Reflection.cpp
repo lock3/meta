@@ -439,13 +439,6 @@ static bool isClosureType(const Reflection &R, APValue &Result) {
   return ErrorUnimplemented(R);
 }
 
-/// Returns true if R designates an type alias.
-static bool isTypeAlias(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<TypedefNameDecl>(D));
-  return SuccessFalse(R, Result);
-}
-
 /// Returns true if R designates a namespace.
 static bool isNamespace(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -457,6 +450,13 @@ static bool isNamespace(const Reflection &R, APValue &Result) {
 static bool isNamespaceAlias(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessBool(R, Result, isa<NamespaceAliasDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates an type alias.
+static bool isTypeAlias(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<TypedefNameDecl>(D));
   return SuccessFalse(R, Result);
 }
 
@@ -795,13 +795,12 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   case RQ_is_closure_type:
     return isClosureType(*this, Result);
 
-  case RQ_is_type_alias:
-    return isTypeAlias(*this, Result);
-
   case RQ_is_namespace:
     return isNamespace(*this, Result);
   case RQ_is_namespace_alias:
     return isNamespaceAlias(*this, Result);
+  case RQ_is_type_alias:
+    return isTypeAlias(*this, Result);
 
   case RQ_is_template:
     return isTemplate(*this, Result);
