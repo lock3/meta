@@ -503,13 +503,6 @@ static const CXXMethodDecl *getAsTemplateMemberFunction(const Reflection &R) {
   return nullptr;
 }
 
-/// Returns true if R designates a member function template.
-static bool isMemberFunctionTemplate(const Reflection &R, APValue &Result) {
-  if (const CXXMethodDecl *D = getAsTemplateMemberFunction(R))
-    return SuccessTrue(R, Result);
-  return SuccessFalse(R, Result);
-}
-
 /// Returns true if R designates a static member function template.
 static bool isStaticMemberFunctionTemplate(const Reflection &R,
                                            APValue &Result) {
@@ -812,8 +805,6 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isFunctionTemplate(*this, Result);
   case RQ_is_variable_template:
     return isVariableTemplate(*this, Result);
-  case RQ_is_member_function_template:
-    return isMemberFunctionTemplate(*this, Result);
   case RQ_is_static_member_function_template:
     return isStaticMemberFunctionTemplate(*this, Result);
   case RQ_is_nonstatic_member_function_template:
