@@ -693,6 +693,33 @@ static bool isRValue(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a value.
+static bool isValue(const Reflection &R, APValue &Result) {
+  if (const Expr *E = getExpr(R)) {
+    if (isa<IntegerLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<FixedPointLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<FloatingLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<CharacterLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<ImaginaryLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<StringLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<CompoundLiteralExpr>(E))
+      return SuccessTrue(R, Result);
+    if (isa<UserDefinedLiteral>(E))
+      return SuccessTrue(R, Result);
+    if (isa<CXXBoolLiteralExpr>(E))
+      return SuccessTrue(R, Result);
+    if (isa<CXXNullPtrLiteralExpr>(E))
+      return SuccessTrue(R, Result);
+  }
+  return SuccessFalse(R, Result);
+}
+
 static const DeclContext *getReachableRedeclContext(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
     if (const DeclContext *DC = D->getLexicalDeclContext())
@@ -850,6 +877,8 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isXValue(*this, Result);
   case RQ_is_rvalue:
     return isRValue(*this, Result);
+  case RQ_is_value:
+    return isValue(*this, Result);
 
   case RQ_is_local:
     return isLocal(*this, Result);
