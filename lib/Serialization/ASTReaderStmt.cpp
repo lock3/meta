@@ -1318,17 +1318,7 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
-  VisitStmt(S);
-  // FIXME: Implement me.
-}
-
-void ASTStmtReader::VisitCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S) {
-  VisitStmt(S);
-  // FIXME: Implement me.
-}
-
-void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+void ASTStmtReader::VisitCXXExpansionStmt(CXXExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
 }
@@ -1697,6 +1687,11 @@ void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
   E->EllipsisLoc = ReadSourceLocation();
   E->NumExpansions = Record.readInt();
   E->Pattern = Record.readSubExpr();
+}
+
+void ASTStmtReader::VisitPackSelectionExpr(PackSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
 }
 
 void ASTStmtReader::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
@@ -3628,16 +3623,8 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CXXForRangeStmt(Empty);
       break;
 
-    case STMT_CXX_TUPLE_EXPANSION:
-      S = new (Context) CXXTupleExpansionStmt(Empty);
-      break;
-
-    case STMT_CXX_CONSTEXPR_EXPANSION:
-      S = new (Context) CXXConstexprExpansionStmt(Empty);
-      break;
-      
-    case STMT_CXX_PACK_EXPANSION:
-      S = new (Context) CXXPackExpansionStmt(Empty);
+    case STMT_CXX_EXPANSION:
+      S = new (Context) CXXExpansionStmt(Empty);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

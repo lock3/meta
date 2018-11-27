@@ -201,6 +201,10 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXValueOfExprClass:
     return Cl::CL_PRValue;
 
+  case Expr::PackSelectionExprClass:
+    /// This is always dependent, so we'll treat it as a prvalue.
+    return Cl::CL_PRValue;
+
     // Next come the complicated cases.
   case Expr::SubstNonTypeTemplateParmExprClass:
     return ClassifyInternal(Ctx,

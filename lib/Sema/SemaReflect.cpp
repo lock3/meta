@@ -243,6 +243,14 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     assert(!E->isTypeDependent() && !E->isValueDependent()
         && "Dependent element");
 
+    /// Convert to rvalue.
+    ExprResult Conv = DefaultLvalueConversion(E);
+    if (Conv.isInvalid())
+      return ExprError();
+    E = Conv.get();
+
+    E->dump();
+
     // Get the canonical type of the expression.
     QualType T = E->getType();
     if (AutoType *D = T->getContainedAutoType()) {

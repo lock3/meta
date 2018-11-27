@@ -236,16 +236,16 @@ public:
   }
 };
 
-/// \brief The base class of tuple and pack expansion statements.
+/// \brief The base class of all expansion statements.
 ///
 /// Tuple and pack expansion statements have the following form:
 ///
 /// \verbatim
-///   for (auto x : expandable) statement
+///   for... (auto x : expandable) statement
 /// \endverbatim
 ///
-/// The "expandable" expression is either a tuple-like construct or an
-/// unexpanded parameter pack.
+/// The "expandable" expression is a parameter pack, an array, a tuple, or
+/// a constexpr range.
 class CXXExpansionStmt : public Stmt {
 protected:
   /// \brief The subexpressions of an expression include the loop variable,
@@ -263,6 +263,10 @@ protected:
   SourceLocation ColonLoc;
   SourceLocation RParenLoc;
 
+  /// The template parameter stores the induction variable used to form
+  /// the dependent structure of the loop body.
+  TemplateParameterList *Parms;
+
   /// \brief The expansion size of the range. When the range is dependent
   /// this value is not meaningful.
   std::size_t Size;
@@ -274,10 +278,17 @@ protected:
   friend class ASTStmtReader;
 
 public:
-  CXXExpansionStmt(StmtClass SC, DeclStmt *Range, DeclStmt *LoopVar, Stmt *Body,
+  CXXExpansionStmt(DeclStmt *Range, DeclStmt *LoopVar,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL);
-  CXXExpansionStmt(StmtClass SC, EmptyShell Empty) : Stmt(SC, Empty) {}
+                   SourceLocation CL, SourceLocation RPL)
+      : Stmt(CXXExpansionStmtClass), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), 
+        Size(N), InstantiatedStmts(nullptr) {
+    SubExprs[RANGE] = Range;
+    SubExprs[LOOP] = LoopVar;
+    SubExprs[BODY] = nullptr;
+  }
+  
+  CXXExpansionStmt(EmptyShell Empty) : Stmt(CXXExpansionStmtClass, Empty) {}
 
   /// \brief Returns the statement containing the range declaration.
   Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
@@ -286,12 +297,22 @@ public:
   const VarDecl *getRangeVariable() const;  
   VarDecl *getRangeVariable();
 
+  /// \brief The original range expression.
+  const Expr *getRangeInit() const { return getRangeVariable()->getInit(); }
+  Expr *getRangeInit() { return getRangeVariable()->getInit(); }
+
   /// \brief Returns the dependent loop variable declaration.
   DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
 
   /// \brief Get the loop variable.
   const VarDecl *getLoopVariable() const;
   VarDecl *getLoopVariable();
+
+  /// Returns the template parameter list of the declaration.
+  TemplateParameterList *getTemplateParameters() { return Parms; }
+
+  /// Returns loop induction variable.
+  NonTypeTemplateParmDecl *getInductionVariable();
 
   /// \brief Returns the parsed body of the loop.
   const Stmt *getBody() const { return SubExprs[BODY]; }
@@ -337,156 +358,18 @@ public:
 
   SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
-    return SubExprs[BODY]->getEndLoc();
+    if (SubExprs[BODY])
+      return SubExprs[BODY]->getEndLoc();
+    return RParenLoc;
   }
 
   // Iterators
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
-};
-
-/// Represents the expansion of a loop body for each element of a tuple.
-///
-/// For example:
-///
-/// \code
-///   for (auto x : make_tuple(0, 1.2, "3"_s)) cout << x;
-/// \endcode
-///
-/// Internally, the statement is represented in a partially desugared form like
-/// this:
-///
-/// \verbatim
-///   {
-///     auto&& __tuple = range-init;
-///     for<int __N> {
-///       for-range-declaration = get<__N>(__tuple);
-///       statement
-///   }
-/// \endverbatim
-///
-/// When the loop is finished (i.e., after parsing or instantiation), the
-/// inner block of the \c for\<\> is expanded for each value \c __N from 0 to
-/// the number of elements determined from the type of \c __tuple.
-class CXXTupleExpansionStmt : public CXXExpansionStmt {
-  /// Abstractly, the size of the expansion. This is needed to construct
-  /// the initializer for the loop variable.
-  TemplateParameterList *Parms;
-
-public:
-  CXXTupleExpansionStmt(TemplateParameterList *TP, DeclStmt *RangeVar,
-                        DeclStmt *LoopVar, Stmt *Body, std::size_t N,
-                        SourceLocation FL, SourceLocation EL, SourceLocation CL,
-                        SourceLocation RPL);
-  CXXTupleExpansionStmt(EmptyShell Empty)
-      : CXXExpansionStmt(CXXTupleExpansionStmtClass, Empty) {}
-
-  /// Returns the template parameter list of the declaration.
-  TemplateParameterList *getTemplateParameters() { return Parms; }
-
-  /// Returns the placeholder value \c __N used in the loop variable
-  /// initializer \c get\<__N\>(__range).
-  NonTypeTemplateParmDecl *getPlaceholderParameter();
-
-  /// Returns the statement containing the range declaration.
-  DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
-
-  /// Returns the initializer of the range statement.
-  Expr *getRangeInit();
-  const Expr *getRangeInit() const;
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXTupleExpansionStmtClass;
+    return T->getStmtClass() == CXXExpansionStmtClass;
   }
-};
 
-/// Represents the expansion of a loop body for each element of
-/// a constexpr range.
-///
-/// A constexpr range is range whose begin and end operations are
-/// constexpr and whose iterator type is a literal type with all
-/// salient iterator operations being constexpr.
-/// For example:
-///
-/// \code
-///   for constexpr (auto x : constexpr_range) cout << x;
-/// \endcode
-///
-/// Internally, the statement is represented in a partially desugared form like
-/// this:
-///
-/// \verbatim
-///   {
-///     auto&& __range = range-init;
-///     for<iter> {
-///       constexpr for-range-declaration = *__iter; 
-///       statement
-///       std::next(__iter);
-///   }
-/// \endverbatim
-class CXXConstexprExpansionStmt : public CXXExpansionStmt {
-
-  /// FIXME: Do constexpr expansions handle __N the same way as tupleexpansions?
-  /// Abstractly, the size of the expansion. This is needed to construct
-  /// the initializer for the loop variable.
-  // TemplateParameterList *Parms;
-
-  Stmt *BeginStmt = nullptr;
-  Stmt *EndStmt = nullptr;
-  Expr *BeginExpr = nullptr;
-  Expr *NextCall = nullptr;  
-  
-public:
-  CXXConstexprExpansionStmt(DeclStmt *RangeVar,
-			    DeclStmt *LoopVar, Stmt *Body, std::size_t Size,
-			    Stmt *BeginStmt, Stmt *EndStmt, Expr *BeginExpr,
-			    Expr *NextCall, SourceLocation FL,
-			    SourceLocation CEL, SourceLocation CL,
-			    SourceLocation RPL);
-  CXXConstexprExpansionStmt(EmptyShell Empty)
-      : CXXExpansionStmt(CXXConstexprExpansionStmtClass, Empty) {}
-
-  /// Returns the template parameter list of the declaration.
-  TemplateParameterList *getTemplateParameters() { return nullptr; }
-
-  /// Returns the placeholder value \c __N used in the loop variable
-  /// initializer \c get\<__N\>(__range).
-  NonTypeTemplateParmDecl *getPlaceholderParameter() { return nullptr; }
-
-  /// Returns the statement containing the range declaration.
-  DeclStmt *getRangeVarStmt() const { return cast<DeclStmt>(SubExprs[RANGE]); }
-
-  Expr *getBeginExpr() const { return BeginExpr; }
-
-  Expr *getNextCall() const { return NextCall; }
-
-  /// Returns the initializer of the range statement.
-  Expr *getRangeInit() { return nullptr; }
-  const Expr *getRangeInit() const { return nullptr; }
-
-  VarDecl *getBeginVariable();
-  VarDecl *getEndVariable();
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXConstexprExpansionStmtClass;
-  }
-};
-
-/// \brief Represents the expansion of a parameter pack over a loop body.
-class CXXPackExpansionStmt : public CXXExpansionStmt {
-public:
-  CXXPackExpansionStmt(DeclStmt *RangeVar, DeclStmt *LoopVar, Stmt *Body,
-                       SourceLocation FL, SourceLocation EL, SourceLocation CL,
-                       SourceLocation RPL);
-  CXXPackExpansionStmt(EmptyShell Empty)
-      : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
-
-  /// \brief Returns the unexpanded parameter pack being ranged over.
-  Expr *getUnexpandedPack() { return cast<Expr>(SubExprs[RANGE]); }
-  const Expr *getUnexpandedPack() const;
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXPackExpansionStmtClass;
-  }
 };
 
 /// Representation of a Microsoft __if_exists or __if_not_exists

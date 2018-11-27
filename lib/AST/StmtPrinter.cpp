@@ -360,41 +360,13 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   if (Policy.IncludeNewlines) OS << "\n";
 }
 
-void StmtPrinter::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *Node) {
+void StmtPrinter::VisitCXXExpansionStmt(CXXExpansionStmt *Node) {
   Indent() << "for... (";
   PrintingPolicy SubPolicy(Policy);
   SubPolicy.SuppressInitializers = true;
   Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
   OS << " : ";
   PrintExpr(Node->getRangeInit());
-  OS << ") {\n";
-  PrintStmt(Node->getBody());
-  Indent() << "}";
-  if (Policy.IncludeNewlines)
-    OS << "\n";
-}
-
-void StmtPrinter::VisitCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *Node) {
-  Indent() << "for... (";
-  PrintingPolicy SubPolicy(Policy);
-  SubPolicy.SuppressInitializers = true;
-  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
-  OS << " : ";
-  PrintExpr(Node->getRangeInit());
-  OS << ") {\n";
-  PrintStmt(Node->getBody());
-  Indent() << "}";
-  if (Policy.IncludeNewlines)
-    OS << "\n";
-}
-
-void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
-  Indent() << "for... (";
-  PrintingPolicy SubPolicy(Policy);
-  SubPolicy.SuppressInitializers = true;
-  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
-  OS << " : ";
-  PrintExpr(Node->getUnexpandedPack());
   OS << ") {\n";
   PrintStmt(Node->getBody());
   Indent() << "}";
@@ -2618,6 +2590,14 @@ void StmtPrinter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
   PrintExpr(E->getPattern());
   OS << "...";
+}
+
+void StmtPrinter::VisitPackSelectionExpr(PackSelectionExpr *E) {
+  OS << "__select(";
+  PrintExpr(E->getPack());
+  OS << ", ";
+  PrintExpr(E->getSelector());
+  OS << ")";
 }
 
 void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {

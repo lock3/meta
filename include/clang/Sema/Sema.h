@@ -3824,38 +3824,18 @@ public:
 
   StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                    SourceLocation EllipsisLoc, Stmt *LoopVar,
-                                   SourceLocation ColonLoc, Expr *Collection,
+                                   SourceLocation ColonLoc, Expr *RangeVar,
                                    SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind,
-                                   bool IsConstexpr);
+                                   BuildForRangeKind Kind, bool IsConstexpr);  
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar, 
+                                   SourceLocation ColonLoc, Stmt *RangeVar, 
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
+
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
-  StmtResult BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
-                                        SourceLocation EllipsisLoc,
-                                        SourceLocation ColonLoc,
-                                        Stmt *RangeVarDecl, Stmt *LoopVarDecl,
-                                        SourceLocation RParenLoc,
-                                        BuildForRangeKind Kind);
-  StmtResult BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
-					    SourceLocation ConstexprLoc,
-					    SourceLocation ColonLoc,
-					    Stmt *RangeVarDecl,
-					    Stmt *LoopVarDecl,
-					    SourceLocation RParenLoc,
-					    BuildForRangeKind Kind);
-  StmtResult BuildCXXPackExpansionStmt(SourceLocation ForLoc,
-                                       SourceLocation EllipsisLoc,
-                                       SourceLocation ColonLoc, Expr *PackExpr,
-                                       Stmt *LoopVarDecl,
-                                       SourceLocation RParenLoc,
-                                       BuildForRangeKind Kind);
+  
   StmtResult FinishCXXExpansionStmt(Stmt *Expansion, Stmt *Body);
-  StmtResult FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *Expansion,
-                                         Stmt *Body);
-  StmtResult FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt
-					     *Expansion,
-					     Stmt *Body);
-  StmtResult FinishCXXPackExpansionStmt(CXXPackExpansionStmt *Expansion,
-                                        Stmt *Body);
 
   StmtResult ActOnGotoStmt(SourceLocation GotoLoc,
                            SourceLocation LabelLoc,

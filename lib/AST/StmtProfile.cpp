@@ -342,15 +342,7 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *S) {
-  VisitStmt(S);
-}
-
-void StmtProfiler::VisitCXXConstexprExpansionStmt(const CXXConstexprExpansionStmt *S) {
-  VisitStmt(S);
-}
-
-void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+void StmtProfiler::VisitCXXExpansionStmt(const CXXExpansionStmt *S) {
   VisitStmt(S);
 }
 
@@ -1790,6 +1782,10 @@ void StmtProfiler::VisitCXXNoexceptExpr(const CXXNoexceptExpr *S) {
 }
 
 void StmtProfiler::VisitPackExpansionExpr(const PackExpansionExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitPackSelectionExpr(const PackSelectionExpr *S) {
   VisitExpr(S);
 }
 

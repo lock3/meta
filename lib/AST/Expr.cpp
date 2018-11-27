@@ -3102,6 +3102,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXUnreflexprExprClass:
   case CXXIdExprExprClass:
   case CXXValueOfExprClass:
+  case PackSelectionExprClass:
     // These never have a side-effect.
     return false;
 
