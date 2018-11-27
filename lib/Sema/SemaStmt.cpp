@@ -2893,7 +2893,7 @@ ExpansionStatementBuilder::Build()
   // If the range is type dependent, then we don't know which of the
   // cases above match.
   if (RangeType->isDependentType())
-    return BuildDependentExpansion();
+    return Finish(BuildDependentExpansion());
 
   // Explicitly build this for array types.
   if (RangeType->isConstantArrayType())
