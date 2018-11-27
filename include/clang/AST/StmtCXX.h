@@ -251,21 +251,21 @@ protected:
   /// \brief The subexpressions of an expression include the loop variable,
   /// the tuple or pack being expanded, and the loop body.
   enum {
-    RANGE, ///< The expression or captured variable being expanded.
     LOOP,  ///< The variable bound to each member of the expansion.
+    RANGE, ///< The expression or captured variable being expanded.
     BODY,  ///< The uninstantiated loop body.
     END
   };
   Stmt *SubExprs[END];
 
+  /// The template parameter stores the induction variable used to form
+  /// the dependent structure of the loop body.
+  TemplateParameterList *Parms;
+
   SourceLocation ForLoc;
   SourceLocation EllipsisLoc;
   SourceLocation ColonLoc;
   SourceLocation RParenLoc;
-
-  /// The template parameter stores the induction variable used to form
-  /// the dependent structure of the loop body.
-  TemplateParameterList *Parms;
 
   /// \brief The expansion size of the range. When the range is dependent
   /// this value is not meaningful.
@@ -278,13 +278,14 @@ protected:
   friend class ASTStmtReader;
 
 public:
-  CXXExpansionStmt(DeclStmt *Range, DeclStmt *LoopVar,
+  CXXExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
+                   TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
                    SourceLocation CL, SourceLocation RPL)
-      : Stmt(CXXExpansionStmtClass), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), 
-        Size(N), InstantiatedStmts(nullptr) {
-    SubExprs[RANGE] = Range;
+      : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), ColonLoc(CL),
+        RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr) {
     SubExprs[LOOP] = LoopVar;
+    SubExprs[RANGE] = RangeVar;
     SubExprs[BODY] = nullptr;
   }
   

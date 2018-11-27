@@ -3032,15 +3032,10 @@ ExpansionStatementBuilder::BuildInductionVar()
 StmtResult
 ExpansionStatementBuilder::BuildDependentExpansion()
 {
-  // return new (SemaRef.Context) CXXExpansionStmt(TemplateParms, 
-  //                                               RangeDeclStmt, 
-  //                                                    LoopDeclStmt, 
-  //                                                    /*Body=*/nullptr, 
-  //                                                    /*Size=*/0, ForLoc, 
-  //                                                    AnnotationLoc, ColonLoc, 
-  //                                                    RParenLoc);
-
-  return StmtError();
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                                                TemplateParms, /*Size=*/-1,
+                                                ForLoc, AnnotationLoc, ColonLoc,
+                                                RParenLoc);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3118,16 +3113,11 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
   ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(RangeType);
   llvm::APSInt Size(ArrayTy->getSize(), true);
 
-  // FIXME: Make this a CXXArrayExpansionStmt?
-  // return new (SemaRef.Context) CXXTupleExpansionStmt(TemplateParms, 
-  //                                                    RangeDeclStmt, 
-  //                                                    LoopDeclStmt, 
-  //                                                    /*Body=*/nullptr, 
-  //                                                    Size.getExtValue(), 
-  //                                                    ForLoc, 
-  //                                                    AnnotationLoc, ColonLoc, 
-  //                                                    RParenLoc);
-  return StmtError();
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                                                TemplateParms, 
+                                                Size.getExtValue(), ForLoc, 
+                                                AnnotationLoc, ColonLoc,
+                                                RParenLoc);
 }
 
 /// When range-expr denotes an tuple, expand over the elements of the array.
@@ -3206,15 +3196,11 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
     return StmtError();
 
-  // return new (SemaRef.Context) CXXTupleExpansionStmt(TemplateParms, 
-  //                                                    RangeDeclStmt, 
-  //                                                    LoopDeclStmt, 
-  //                                                    /*Body=*/nullptr, 
-  //                                                    Size.getExtValue(), 
-  //                                                    ForLoc, 
-  //                                                    AnnotationLoc, ColonLoc, 
-  //                                                    RParenLoc);
-  return StmtError();
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                                                TemplateParms, 
+                                                Size.getExtValue(), ForLoc, 
+                                                AnnotationLoc, ColonLoc,
+                                                RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3432,19 +3418,11 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   if (!CountCall->EvaluateAsInt(Count, SemaRef.Context))
     return StmtError();
 
-  // FIXME: return a CXXRangeExpansion statement.
-  // return new (SemaRef.Context) CXXConstexprExpansionStmt(RangeDeclStmt, 
-  //                                                        LoopDeclStmt, 
-  //                                                        nullptr, 
-  //                                                        Count.getExtValue(), 
-  //                                                        BeginDecl.get(), 
-  //                                                        EndDecl.get(), 
-  //                                                        BeginExpr.get(), 
-  //                                                        NextCall.get(), 
-  //                                                        ForLoc, 
-  //                                                        AnnotationLoc, 
-  //                                                        ColonLoc, RParenLoc);
-  return StmtError();
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                                                TemplateParms, 
+                                                Count.getExtValue(), ForLoc, 
+                                                AnnotationLoc, ColonLoc,
+                                                RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3518,10 +3496,11 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
   if (!Ret.isInvalid()) {
-    llvm::outs() << "BUILT LOOP\n";
+    llvm::outs() << "INSTANITATED LOOP\n";
     Ret.get()->dump();
   }
-  return Ret;}
+  return Ret;
+}
 
 #if 0
 /// Given an initial decomposition of the expansion syntax, enough information
@@ -4374,25 +4353,87 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
-  return StmtError();
+  CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(S);
+  SourceLocation Loc = Expansion->getColonLoc();
 
-  if (!S || !B)
-    return StmtError();
-
-  // Exit the expansion context prior to instantiating statements.
-  //
-  // FIXME: Wrap this into the expansion statement instantiator.
+  // We're no longer in a dependent loop body context.
   PopLoopExpansion();
 
-#if 0
-  if (CXXTupleExpansionStmt *TES = dyn_cast<CXXTupleExpansionStmt>(S))
-    return FinishCXXTupleExpansionStmt(TES, B);
-  if (CXXConstexprExpansionStmt *CES = dyn_cast<CXXConstexprExpansionStmt>(S))
-    return FinishCXXConstexprExpansionStmt(CES, B);
-  if (CXXPackExpansionStmt *PES = dyn_cast<CXXPackExpansionStmt>(S))
-    return FinishCXXPackExpansionStmt(PES, B);
-  llvm_unreachable("Invalid expansion statement");
-#endif
+  // The loop body is the pre-instantiated version of the composed loop body.
+  Expansion->setBody(B);
+
+  // If the range initializer is dependent, then we can't deduce the tuple
+  // type or instantiate the body. Just return the statement as-is.
+  if (Expansion->getRangeInit()->isTypeDependent())
+    return Expansion;
+
+  // When there are no members, return an empty compound statement.
+  if (Expansion->getSize() == 0) {
+    return CompoundStmt::Create
+      (Context, None, SourceLocation(), SourceLocation());
+  }
+
+  // Create a new compound statement that binds the loop variable with the
+  // parsed body. This is what we're going to instantiate.
+  Stmt *VarAndBody[] = {Expansion->getLoopVarStmt(), B};
+  Stmt *Body = CompoundStmt::Create
+    (Context, VarAndBody, SourceLocation(), SourceLocation());
+
+  // Instantiate the loop body for each element of the tuple.
+  llvm::SmallVector<Stmt *, 8> Stmts;
+  for (std::size_t I = 0; I < Expansion->getSize(); ++I) {
+    IntegerLiteral *E = 
+        IntegerLiteral::Create(Context, llvm::APSInt::getUnsigned(I),
+                               Context.getSizeType(), Loc);
+    TemplateArgument Args[] = {
+      TemplateArgument(Context, llvm::APSInt(E->getValue(), true),
+      E->getType())
+    };
+    TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
+    MultiLevelTemplateArgumentList MultiArgs(TempArgs);
+
+    // We need a local instantiation scope with rewriting. This local
+    // instantiation scope should be considered to be part of the parent
+    // scope.
+    LocalInstantiationScope Locals(*this, true);
+
+    // Map the loop variable to itself in this context so that references
+    // to the tuple variable are correctly resolved. Consider:
+    //
+    //    template<typename T>
+    //    void f() {
+    //      for... (auto x : non_dependent_expr)
+    //        // do stuff
+    //
+    // The loop is instantiated just after parsing, and the loop variable
+    // initializer refers to the non-instantiated range variable. However,
+    // the template instantiator believes that the declaration should be
+    // instantiated because that's a local in a dependent context and should
+    // be replaced.
+    //
+    // If the tuple expression is dependent, then there will eventually be
+    // two entries for the range variable: one created when instantiating
+    // the local in the function's scope, and the one here. This shouldn't
+    // have any effect on lookup.
+    Locals.InstantiatedLocal(Expansion->getRangeVariable(),
+                             Expansion->getRangeVariable());
+
+    InstantiatingTemplate Inst(*this, B->getBeginLoc(), Expansion, Args,
+                               B->getSourceRange());
+    StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
+    if (Instantiation.isInvalid())
+      return StmtError();
+    Stmts.push_back(Instantiation.get());
+  }
+  
+  Stmt **Results = new (Context) Stmt *[Stmts.size()];
+  std::copy(Stmts.begin(), Stmts.end(), Results);
+  Expansion->setInstantiatedStatements(Results);
+
+  llvm::outs() << "EXPANDED STATEMENT\n";
+  Expansion->dump();
+
+  return Expansion;
 }
 
 StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,
