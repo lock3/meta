@@ -21,16 +21,6 @@ inline namespace v1 {
 // but value construction.
 using info = decltype(reflexpr(void));
 
-// FIXME: Find a better way of forcing constexpr errors.
-
-struct compile_time_error { };
-
-// Like assert, but always runs and guarantees non-compilation.
-consteval void require(bool b) {
-  if (!b)
-    throw compile_time_error();
-}
-
 consteval bool is_variable(info x);
 consteval bool is_function(info x);
 consteval bool is_enumerator(info x);
@@ -251,7 +241,7 @@ struct variable_traits {
 
   constexpr explicit variable_traits(info x)
     : variable_traits(get_decl_traits(x))
-  { require(is_variable(x)); }
+  { assert(is_variable(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -274,7 +264,7 @@ struct function_traits {
 
   constexpr explicit function_traits(info x)
     : function_traits(get_decl_traits(x))
-  { require(is_function(x)); }
+  { assert(is_function(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -293,7 +283,7 @@ struct value_traits {
 
   constexpr explicit value_traits(info x)
     : value_traits(get_decl_traits(x))
-  { require(is_enumerator(x)); }
+  { assert(is_enumerator(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -308,7 +298,7 @@ struct namespace_traits {
 
   constexpr explicit namespace_traits(info x)
     : namespace_traits(get_decl_traits(x))
-  { require(is_namespace(x)); }
+  { assert(is_namespace(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -324,7 +314,7 @@ struct field_traits {
 
   constexpr explicit field_traits(info x)
     : field_traits(get_decl_traits(x))
-  { require(is_data_member(x)); }
+  { assert(is_data_member(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -365,7 +355,7 @@ struct method_traits {
 
   constexpr explicit method_traits(info x)
     : method_traits(get_decl_traits(x))
-  { require(is_member_function(x)); }
+  { assert(is_member_function(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -434,7 +424,7 @@ struct class_traits {
 
   constexpr explicit class_traits(info x)
     : class_traits(get_type_traits(x))
-  { require(is_class_type(x)); }
+  { assert(is_class_type(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -456,7 +446,7 @@ struct enum_traits {
 
   constexpr explicit enum_traits(info x)
     : enum_traits(get_type_traits(x))
-  { require(is_enum_type(x)); }
+  { assert(is_enum_type(x)); }
 
   linkage_kind linkage : 2;
   access_kind access : 2;
@@ -1048,22 +1038,6 @@ consteval bool is_protected(info x) {
   return detail::access_traits(x).kind != detail::protected_access;
 }
 
-consteval bool is_static(info x) {
-  if (is_static_data_member(x))
-    return true;
-  if (is_static_member_function(x))
-    return true;
-  // TODO Should we check templates?
-  // if (is_static_member_function_template(x))
-  //   return true;
-
-  if (is_variable(x))
-    return detail::variable_traits(x).storage == detail::static_storage;
-
-  // TODO Should this be some kind of failure state?
-  return false;
-}
-
 consteval bool is_extern(info x) {
   assert(has_linkage(x));
   return detail::linkage_traits(x).kind == detail::external_linkage;
@@ -1074,46 +1048,32 @@ consteval bool is_inline(info x) {
     return detail::namespace_traits(x).is_inline;
   if (is_variable(x))
     return detail::variable_traits(x).is_inline;
-  if (is_function(x))
-    return detail::function_traits(x).is_inline;
-  // TODO can we just use the function traits result above?
   if (is_member_function(x))
     return detail::method_traits(x).is_inline;
-  // TODO Should we check templates?
-  // if (is_member_function_template(x))
-  //   return detail::method_traits(x).is_inline;
+  if (is_function(x))
+    return detail::function_traits(x).is_inline;
+  if (is_member_function_template(x))
+    return detail::method_traits(x).is_inline;
 
-  // TODO Should this be some kind of failure state?
-  return false;
+  assert(false);
 }
 
 consteval bool is_constexpr(info x) {
   if (is_variable(x))
     return detail::variable_traits(x).is_constexpr;
-  if (is_function(x))
-    return detail::function_traits(x).is_constexpr;
-  // TODO can we just use the function traits result above?
   if (is_member_function(x))
     return detail::method_traits(x).is_constexpr;
-  // TODO Should we check templates?
-  // if (is_member_function_template(x))
-  //   return detail::method_traits(x).is_constexpr;
+  if (is_function(x))
+    return detail::function_traits(x).is_constexpr;
+  if (is_member_function_template(x))
+    return detail::method_traits(x).is_constexpr;
 
-  // TODO Should this be some kind of failure state?
-  return false;
+  assert(false);
 }
 
 consteval bool is_normal(info x) {
   return detail::method_traits(x).kind == detail::normal;
 }
-
-// consteval bool is_constructor(info x) {
-//   return detail::method_traits(x).kind == detail::constructor;
-// }
-
-// consteval bool is_destructor(info x) {
-//   return detail::method_traits(x).kind == detail::destructor;
-// }
 
 consteval bool is_conversion(info x) {
   return detail::method_traits(x).kind == detail::conversion;
@@ -1141,8 +1101,7 @@ consteval bool is_final(info x) {
   if (is_member_function(x))
     return detail::method_traits(x).is_final;
 
-  // TODO Should this be some kind of failure state?
-  return false;
+  assert(false);
 }
 
 consteval bool is_defaulted(info x) {
@@ -1156,28 +1115,24 @@ consteval bool is_mutable(info x) {
 consteval bool is_defined(info x) {
   if (is_variable(x))
     return detail::variable_traits(x).is_defined;
+  if (is_member_function(x))
+    return detail::method_traits(x).is_defined;
   if (is_function(x))
     return detail::function_traits(x).is_defined;
   if (is_class_type(x))
     return detail::class_traits(x).is_complete;
   if (is_data_member(x))
     return true;
-  // TODO can we just use the function traits result above?
-  if (is_member_function(x))
-    return detail::method_traits(x).is_defined;
 
-  // TODO Should this be some kind of failure state?
-  return false;
+  assert(false);
 }
 
 consteval bool is_deleted(info x) {
-  if (is_function(x))
-    return detail::function_traits(x).is_deleted;
-  // TODO can we just use the function traits result above?
   if (is_member_function(x))
     return detail::method_traits(x).is_deleted;
+  if (is_function(x))
+    return detail::function_traits(x).is_deleted;
 
-  // TODO Should this be some kind of failure state?
   return false;
 }
 
@@ -1189,18 +1144,13 @@ consteval bool is_declared_class(info x) {
   return detail::class_traits(x).kind == detail::class_class_kind;
 }
 
-// consteval bool is_union(info x) {
-//   return detail::class_traits(x).kind == detail::union_class_kind;
-// }
-
 consteval bool is_complete(info x) {
   if (is_class_type(x))
     return detail::class_traits(x).is_complete;
   if (is_enum_type(x))
     return detail::enum_traits(x).is_complete;
 
-  // TODO Should this be some kind of failure state?
-  return false;
+  assert(false);
 }
 
 // consteval bool is_injected_class_name(info x) {
