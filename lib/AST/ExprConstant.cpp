@@ -4266,11 +4266,16 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
   case Stmt::CXXExpansionStmtClass: {
     const CXXExpansionStmt *ES = cast<CXXExpansionStmt>(S);
+    BlockScopeRAII Scope(Info);
+
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeVarStmt());
+    if (ESR != ESR_Succeeded)
+      return ESR;
 
     for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
-      BlockScopeRAII SS(Info);
+      BlockScopeRAII InnerScope(Info);
 
-      EvalStmtResult ESR = EvaluateStmt(Result, Info, SubStmt);
+      ESR = EvaluateStmt(Result, Info, SubStmt);
       if (ESR != ESR_Succeeded)
         return ESR;
     }
