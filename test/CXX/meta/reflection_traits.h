@@ -206,10 +206,12 @@ struct access_traits {
 
 // Classes
 
-// For classes, the kind is stored in bits 5 and 6.
-static constexpr class_kind get_class_kind(unsigned n) {
-  return class_kind((n >> 4) & 0x03);
-}
+// Kinds of class types.
+enum class_kind {
+  struct_class_kind,
+  class_class_kind,
+  union_class_kind
+};
 
 // For classes, the kind is stored in bits 5 and 6.
 static constexpr class_kind get_class_kind(unsigned n) {
@@ -222,11 +224,11 @@ struct class_traits {
     : linkage       (get_linkage(n)),    // 0x01 | 0x02
       access        (get_access(n)),     // 0x04 | 0x08
       kind          (get_class_kind(n)), // 0x10 | 0x20
-      is_complete   (n & 0x10),
-      is_polymorphic(n & 0x20),
-      is_abstract   (n & 0x40),
-      is_final      (n & 0x80),
-      is_empty      (n & 0x0100)
+      is_complete   (n & 0x40),
+      is_polymorphic(n & 0x80),
+      is_abstract   (n & 0x100),
+      is_final      (n & 0x200),
+      is_empty      (n & 0x400)
   { }
 
   linkage_kind linkage : 2;
@@ -251,18 +253,6 @@ struct enum_traits {
   access_kind access : 2;
   bool is_scoped : 1;
   bool is_complete : 1;
-};
-
-// All named declarations have linkage and access.
-struct base_traits {
-  constexpr explicit base_traits(unsigned n)
-    : access(get_access(n)),   // 0x04 | 0x08
-      is_virtual(n & 0x10)
-  { }
-
-  unsigned : 2;
-  access_kind access : 2;
-  bool is_virtual : 1;
 };
 
 #endif
