@@ -415,11 +415,11 @@ struct class_traits {
     : linkage       (get_linkage(n)),    // 0x01 | 0x02
       access        (get_access(n)),     // 0x04 | 0x08
       kind          (get_class_kind(n)), // 0x10 | 0x20
-      is_complete   (n & 0x10),
-      is_polymorphic(n & 0x20),
-      is_abstract   (n & 0x40),
-      is_final      (n & 0x80),
-      is_empty      (n & 0x0100)
+      is_complete   (n & 0x40),
+      is_polymorphic(n & 0x80),
+      is_abstract   (n & 0x100),
+      is_final      (n & 0x200),
+      is_empty      (n & 0x400)
   { }
 
   constexpr explicit class_traits(info x)
