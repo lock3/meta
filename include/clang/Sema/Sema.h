@@ -7827,13 +7827,6 @@ public:
   StmtResult SubstStmt(Stmt *S,
                        const MultiLevelTemplateArgumentList &TemplateArgs);
 
-  StmtResult
-  SubstForTupleBody(Stmt *Body,
-                    const MultiLevelTemplateArgumentList &TemplateArgs);
-
-  StmtResult
-  SubstConstexprExpansionBody(Stmt *Body);
-
   TemplateParameterList *
   SubstTemplateParams(TemplateParameterList *Params, DeclContext *Owner,
                       const MultiLevelTemplateArgumentList &TemplateArgs);

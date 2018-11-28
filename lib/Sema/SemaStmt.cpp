@@ -4362,7 +4362,7 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   // The loop body is the pre-instantiated version of the composed loop body.
   Expansion->setBody(B);
 
-  // If the range initializer is dependent, then we can't deduce the tuple
+  // If the range initializer is dependent, then we can't deduce its
   // type or instantiate the body. Just return the statement as-is.
   if (Expansion->getRangeInit()->isTypeDependent())
     return Expansion;
@@ -4379,10 +4379,10 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   Stmt *Body = CompoundStmt::Create
     (Context, VarAndBody, SourceLocation(), SourceLocation());
 
-  // Instantiate the loop body for each element of the tuple.
+  // Instantiate the loop body for each element.
   llvm::SmallVector<Stmt *, 8> Stmts;
   for (std::size_t I = 0; I < Expansion->getSize(); ++I) {
-    IntegerLiteral *E = 
+    IntegerLiteral *E =
         IntegerLiteral::Create(Context, llvm::APSInt::getUnsigned(I),
                                Context.getSizeType(), Loc);
     TemplateArgument Args[] = {
@@ -4395,37 +4395,17 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
     // We need a local instantiation scope with rewriting. This local
     // instantiation scope should be considered to be part of the parent
     // scope.
-    LocalInstantiationScope Locals(*this, true);
-
-    // Map the loop variable to itself in this context so that references
-    // to the tuple variable are correctly resolved. Consider:
-    //
-    //    template<typename T>
-    //    void f() {
-    //      for... (auto x : non_dependent_expr)
-    //        // do stuff
-    //
-    // The loop is instantiated just after parsing, and the loop variable
-    // initializer refers to the non-instantiated range variable. However,
-    // the template instantiator believes that the declaration should be
-    // instantiated because that's a local in a dependent context and should
-    // be replaced.
-    //
-    // If the tuple expression is dependent, then there will eventually be
-    // two entries for the range variable: one created when instantiating
-    // the local in the function's scope, and the one here. This shouldn't
-    // have any effect on lookup.
-    Locals.InstantiatedLocal(Expansion->getRangeVariable(),
-                             Expansion->getRangeVariable());
+    LocalInstantiationScope Locals(*this, /*CombineWithOuterScope=*/true,
+                                   /*AllowUninstantiated=*/true);
 
     InstantiatingTemplate Inst(*this, B->getBeginLoc(), Expansion, Args,
                                B->getSourceRange());
-    StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
+    StmtResult Instantiation = SubstStmt(Body, MultiArgs);
     if (Instantiation.isInvalid())
       return StmtError();
     Stmts.push_back(Instantiation.get());
   }
-  
+
   Stmt **Results = new (Context) Stmt *[Stmts.size()];
   std::copy(Stmts.begin(), Stmts.end(), Results);
   Expansion->setInstantiatedStatements(Results);
