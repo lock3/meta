@@ -3298,7 +3298,6 @@ public:
 
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflection:
     case TemplateArgument::Declaration:
     case TemplateArgument::Pack:
     case TemplateArgument::TemplateExpansion:
@@ -3998,7 +3997,6 @@ void TreeTransform<Derived>::InventTemplateArgumentLoc(
 
   case TemplateArgument::Declaration:
   case TemplateArgument::Integral:
-  case TemplateArgument::Reflection:
   case TemplateArgument::Pack:
   case TemplateArgument::NullPtr:
     Output = TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
@@ -4018,7 +4016,6 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
   switch (Arg.getKind()) {
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
-  case TemplateArgument::Reflection:
   case TemplateArgument::Pack:
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:

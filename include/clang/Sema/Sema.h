@@ -6508,10 +6508,6 @@ public:
   BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
                                               SourceLocation Loc);
 
-  ExprResult
-  BuildExpressionFromReflectionTemplateArgument(const TemplateArgument &Arg,
-                                                SourceLocation Loc);
-
   /// Enumeration describing how template parameter lists are compared
   /// for equality.
   enum TemplateParameterListEqualKind {
@@ -8711,6 +8707,8 @@ public:
   ExprResult BuildInvalidCXXReflectExpr(SourceLocation KWLoc,
                                         SourceLocation LParenLoc,
                                         SourceLocation RParenLoc);
+
+  ExprResult BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc);
 
   ExprResult ActOnCXXReflectionTrait(SourceLocation KWLoc,
                                      SmallVectorImpl<Expr *> &Args,

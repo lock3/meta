@@ -2050,10 +2050,6 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     VisitType(Arg.getIntegralType());
     break;
 
-  case TemplateArgument::Reflection:
-    // FIXME: We should be able to profile reflections
-    break;
-
   case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     Visit(Arg.getAsExpr());

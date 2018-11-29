@@ -1004,10 +1004,6 @@ void ASTDumper::dumpTemplateArgument(const TemplateArgument &A, SourceRange R) {
     case TemplateArgument::Integral:
       OS << " integral " << A.getAsIntegral();
       break;
-    case TemplateArgument::Reflection:
-      // FIXME: We could provide more here
-      OS << " reflection";
-      break;
     case TemplateArgument::Template:
       OS << " template ";
       A.getAsTemplate().dump(OS);

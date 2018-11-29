@@ -5443,7 +5443,6 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
     break;
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
-  case TemplateArgument::Reflection:
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Pack:
@@ -5897,9 +5896,6 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
   case TemplateArgument::Integral:
     AddAPSInt(Arg.getAsIntegral());
     AddTypeRef(Arg.getIntegralType());
-    break;
-  case TemplateArgument::Reflection:
-    llvm_unreachable("FIXME");
     break;
   case TemplateArgument::Template:
     AddTemplateName(Arg.getAsTemplateOrTemplatePattern());

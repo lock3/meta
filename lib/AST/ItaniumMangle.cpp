@@ -3571,7 +3571,6 @@ recurse:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
-  case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
@@ -3586,6 +3585,11 @@ recurse:
       Diags.Report(E->getExprLoc(), DiagID)
         << E->getStmtClassName() << E->getSourceRange();
     }
+    break;
+  }
+
+  case Expr::CXXReflectExprClass: {
+    Out << "refl" << reinterpret_cast<std::size_t>(E);
     break;
   }
 
@@ -4492,12 +4496,6 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   case TemplateArgument::Integral:
     mangleIntegerLiteral(A.getIntegralType(), A.getAsIntegral());
     break;
-  case TemplateArgument::Reflection: {
-    // FIXME: This has ODR issues
-    const void *OpaqueHandle = A.getAsReflection().getOpaqueReflectionValue();
-    Out << "Refl" << reinterpret_cast<int64_t>(OpaqueHandle);
-    break;
-  }
   case TemplateArgument::Declaration: {
     //  <expr-primary> ::= L <mangled-name> E # external name
     // Clang produces AST's where pointer-to-member-function expressions

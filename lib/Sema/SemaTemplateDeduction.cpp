@@ -131,11 +131,6 @@ static bool hasSameExtendedValue(llvm::APSInt X, llvm::APSInt Y) {
   return X == Y;
 }
 
-static bool reflectsSameEntity(APValue X, APValue Y) {
-  return X.getReflectionKind() == Y.getReflectionKind()
-    && X.getOpaqueReflectionValue() == Y.getOpaqueReflectionValue();
-}
-
 static Sema::TemplateDeductionResult
 DeduceTemplateArguments(Sema &S,
                         TemplateParameterList *TemplateParams,
@@ -368,8 +363,6 @@ checkDeducedTemplateArguments(ASTContext &Context,
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
 
-  case TemplateArgument::Reflection:
-    llvm_unreachable("You cannot deduce a reflection template argument");
   case TemplateArgument::Reflected:
     llvm_unreachable("You cannot deduce a reflected template argument");
 
@@ -2236,9 +2229,6 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
 
-  case TemplateArgument::Reflection:
-    llvm_unreachable("You cannot deduce a reflection template argument");
-
   case TemplateArgument::Reflected:
     llvm_unreachable("You cannot deduce a reflected template argument");
 
@@ -2422,11 +2412,6 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
-    case TemplateArgument::Reflection:
-      llvm_unreachable("unimplemented");
-      // return false;
-      // return reflectsSameEntity(X.getAsReflection(), Y.getAsReflection());
-
     case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
@@ -2500,9 +2485,6 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
     return TemplateArgumentLoc(
         TemplateArgument(E, TemplateArgument::Expression), E);
   }
-
-  case TemplateArgument::Reflection:
-    llvm_unreachable("Not implemented");
 
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion: {
@@ -5621,7 +5603,6 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   switch (TemplateArg.getKind()) {
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
-  case TemplateArgument::Reflection:
   case TemplateArgument::Declaration:
     break;
 

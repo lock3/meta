@@ -15,7 +15,6 @@
 #ifndef LLVM_CLANG_AST_TEMPLATEBASE_H
 #define LLVM_CLANG_AST_TEMPLATEBASE_H
 
-#include "clang/AST/APValue.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -72,9 +71,6 @@ public:
     /// that was provided for an integral non-type template parameter.
     Integral,
 
-    /// The template argument is a resolved reflection.
-    Reflection,
-
     /// The template argument is a template name that was provided for a
     /// template template parameter.
     Template,
@@ -86,8 +82,11 @@ public:
     /// The template argument is an expression, and we've not resolved it to one
     /// of the other forms yet, either because it's dependent or because we're
     /// representing a non-canonical template argument (for instance, in a
-    /// TemplateSpecializationType). Also used to represent a non-dependent
-    /// __uuidof expression (a Microsoft extension).
+    /// TemplateSpecializationType).
+    ///
+    /// Also used to represent:
+    /// - a non-dependent __uuidof expression (a Microsoft extension).
+    /// - a non-dependent reflection expression (C++ Reflection).
     Expression,
 
     /// The template argument is actually a parameter pack. Arguments are stored
@@ -138,19 +137,12 @@ private:
     unsigned Kind;
     uintptr_t V;
   };
-  struct RV {
-    unsigned Kind;
-    ReflectionKind ReflKind;
-    const void *ReflEntity;
-    void *Type;
-  };
   union {
     struct DA DeclArg;
     struct I Integer;
     struct A Args;
     struct TA TemplateArg;
     struct TV TypeOrValue;
-    struct RV ReflectionArg;
   };
 
 public:
@@ -176,19 +168,6 @@ public:
   /// Construct an integral constant template argument. The memory to
   /// store the value is allocated with Ctx.
   TemplateArgument(ASTContext &Ctx, const llvm::APSInt &Value, QualType Type);
-
-  /// Construct a reflection template argument.
-  TemplateArgument(ReflectionKind ReflKind,
-                   const void *ReflEntity, QualType Type) {
-    ReflectionArg.Kind = Reflection;
-    ReflectionArg.ReflKind = ReflKind;
-    ReflectionArg.ReflEntity = ReflEntity;
-
-    ReflectionArg.Type = Type.getAsOpaquePtr();
-  }
-
-  TemplateArgument(ASTContext &Ctx, ReflectionKind ReflKind,
-                   const void *ReflEntity);
 
   /// Construct an integral constant template argument with the same
   /// value as Other but a different type.
@@ -355,18 +334,6 @@ public:
     Integer.Type = T.getAsOpaquePtr();
   }
 
-  /// Retrieve the template argument as a reflection.
-  APValue getAsReflection() const {
-    assert(getKind() == Reflection && "Unexpected kind");
-    return APValue(ReflectionArg.ReflKind, ReflectionArg.ReflEntity);
-  }
-
-  /// Retrieve the type of the reflection value.
-  QualType getReflectionType() const {
-    assert(getKind() == Reflection && "Unexpected kind");
-    return QualType::getFromOpaquePtr(ReflectionArg.Type);
-  }
-
   /// If this is a non-type template argument, get its type. Otherwise,
   /// returns a null QualType.
   QualType getNonTypeTemplateArgumentType() const;
@@ -516,7 +483,6 @@ public:
     // expression.
     assert(Argument.getKind() == TemplateArgument::NullPtr ||
            Argument.getKind() == TemplateArgument::Integral ||
-           Argument.getKind() == TemplateArgument::Reflection ||
            Argument.getKind() == TemplateArgument::Declaration ||
            Argument.getKind() == TemplateArgument::Expression ||
            Argument.getKind() == TemplateArgument::Reflected);

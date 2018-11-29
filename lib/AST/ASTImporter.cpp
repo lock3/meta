@@ -781,11 +781,6 @@ ASTNodeImporter::import(const TemplateArgument &From) {
     return TemplateArgument(From, *ToTypeOrErr);
   }
 
-  case TemplateArgument::Reflection: {
-    llvm_unreachable("FIXME");
-    break;
-  }
-
   case TemplateArgument::Declaration: {
     Expected<ValueDecl *> ToOrErr = import(From.getAsDecl());
     if (!ToOrErr)

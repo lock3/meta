@@ -134,6 +134,42 @@ ExprResult Sema::BuildInvalidCXXReflectExpr(SourceLocation Loc,
                                        LP, RP);
 }
 
+ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
+  assert(Reflection.isReflection());
+
+  switch (Reflection.getReflectionKind()) {
+  case RK_invalid:
+    return BuildInvalidCXXReflectExpr(/*Loc=*/Loc, /*LP=*/SourceLocation(),
+                                      /*RP=*/SourceLocation());
+  case RK_declaration: {
+    auto ReflOp = const_cast<Decl *>(Reflection.getReflectedDeclaration());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_type: {
+    auto ReflOp = Reflection.getReflectedType();
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_expression: {
+    auto ReflOp = const_cast<Expr *>(Reflection.getReflectedExpression());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_base_specifier: {
+    auto ReflOp = const_cast<CXXBaseSpecifier *>(
+                                        Reflection.getReflectedBaseSpecifier());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+  }
+
+  llvm_unreachable("invalid reflection kind");
+}
+
 static bool SetType(QualType& Ret, QualType T) {
   Ret = T;
   return true;

@@ -136,7 +136,6 @@ bool TemplateArgument::isDependent() const {
     return false;
 
   case Integral:
-  case Reflection:
     // Never dependent
     return false;
 
@@ -178,7 +177,6 @@ bool TemplateArgument::isInstantiationDependent() const {
     return false;
 
   case Integral:
-  case Reflection:
     // Never dependent
     return false;
 
@@ -201,7 +199,6 @@ bool TemplateArgument::isPackExpansion() const {
   case Null:
   case Declaration:
   case Integral:
-  case Reflection:
   case Pack:
   case Template:
   case NullPtr:
@@ -226,7 +223,6 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   case Null:
   case Declaration:
   case Integral:
-  case Reflection:
   case TemplateExpansion:
   case NullPtr:
     break;
@@ -277,9 +273,6 @@ QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
 
   case TemplateArgument::Integral:
     return getIntegralType();
-
-  case TemplateArgument::Reflection:
-    return getReflectionType();
 
   case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
@@ -337,12 +330,6 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     getIntegralType().Profile(ID);
     break;
 
-  case Reflection:
-    // FIXME: We should be able to profile reflections
-    // getAsReflection().Profile(ID);
-    getReflectionType().Profile(ID);
-    break;
-
   case Reflected:
   case Expression:
     getAsExpr()->Profile(ID, Context, true);
@@ -375,12 +362,6 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
     return getIntegralType() == Other.getIntegralType() &&
            getAsIntegral() == Other.getAsIntegral();
 
-  case Reflection:
-    // return ReflectionArg.ReflKind == Other.ReflectionArg.ReflKind
-      // && ReflectionArg.ReflEntity == Other.ReflectionArg.ReflEntity
-      // && getReflectionType() == Other.getReflectionType();
-    return false;
-
   case Pack:
     if (Args.NumArgs != Other.Args.NumArgs) return false;
     for (unsigned I = 0, E = Args.NumArgs; I != E; ++I)
@@ -410,7 +391,6 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
 
   case Declaration:
   case Integral:
-  case Reflection:
   case Pack:
   case Null:
   case Template:
@@ -462,10 +442,6 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
 
   case Integral:
     printIntegral(*this, Out, Policy);
-    break;
-
-  case Reflection:
-    Out << "reflexpr(...)"; // FIXME: Implement better printing
     break;
 
   case Reflected:
@@ -535,7 +511,6 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
   case TemplateArgument::Integral:
     return getSourceIntegralExpression()->getSourceRange();
 
-  case TemplateArgument::Reflection:
   case TemplateArgument::Pack:
   case TemplateArgument::Null:
     return SourceRange();
@@ -563,9 +538,6 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
 
   case TemplateArgument::Integral:
     return DB << Arg.getAsIntegral().toString(10);
-
-  case TemplateArgument::Reflection:
-    return DB << "reflexpr(...)"; // FIXME: Implement better printing
 
   case TemplateArgument::Template:
     return DB << Arg.getAsTemplate();

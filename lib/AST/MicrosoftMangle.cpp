@@ -1448,9 +1448,6 @@ void MicrosoftCXXNameMangler::mangleTemplateArg(const TemplateDecl *TD,
     mangleIntegerLiteral(TA.getAsIntegral(),
                          TA.getIntegralType()->isBooleanType());
     break;
-  case TemplateArgument::Reflection:
-    llvm_unreachable("FIXME");
-    break;
   case TemplateArgument::NullPtr: {
     QualType T = TA.getNullPtrType();
     if (const MemberPointerType *MPT = T->getAs<MemberPointerType>()) {

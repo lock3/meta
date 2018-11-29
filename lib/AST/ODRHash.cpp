@@ -170,7 +170,6 @@ void ODRHash::AddTemplateArgument(TemplateArgument TA) {
       break;
     case TemplateArgument::NullPtr:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflection:
       break;
     case TemplateArgument::Template:
     case TemplateArgument::TemplateExpansion:

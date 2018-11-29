@@ -1327,9 +1327,6 @@ ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
     // Note that this type can be different from the type of 'result',
     // e.g. if it's an enum type.
     type = arg.getIntegralType();
-  } else if (arg.getKind() == TemplateArgument::Reflection) {
-    result = SemaRef.BuildExpressionFromReflectionTemplateArgument(arg, loc);
-    type = arg.getReflectionType();
   } else {
     llvm_unreachable("unsupported nontype template parameter");
   }

@@ -3509,7 +3509,6 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Null:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Integral:
-  case TemplateArgument::Reflection:
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
@@ -4791,7 +4790,6 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
-    case TemplateArgument::Reflection:
     case TemplateArgument::NullPtr:
       // We've already checked this template argument, so just copy
       // it to the list of converted arguments.
@@ -4944,8 +4942,6 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     llvm_unreachable("Declaration argument with template template parameter");
   case TemplateArgument::Integral:
     llvm_unreachable("Integral argument with template template parameter");
-  case TemplateArgument::Reflection:
-    llvm_unreachable("Reflection argument with template template parameter");
   case TemplateArgument::NullPtr:
     llvm_unreachable("Null pointer argument with template template parameter");
 
@@ -6277,12 +6273,12 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
       break;
-    case APValue::Reflection:
+    case APValue::Reflection: {
       assert(ParamType->isReflectionType());
-      Converted = TemplateArgument(Value.getReflectionKind(),
-                                   Value.getOpaqueReflectionValue(),
-                                   CanonParamType);
+      ExprResult ReflExpr = BuildCXXReflectExpr(Value, StartLoc);
+      Converted = TemplateArgument(ReflExpr.get(), TemplateArgument::Expression);
       break;
+    }
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
 
@@ -6311,7 +6307,8 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       // -- a predefined __func__ variable
       if (auto *E = Value.getLValueBase().dyn_cast<const Expr*>()) {
         if (isa<CXXUuidofExpr>(E)) {
-          Converted = TemplateArgument(ArgResult.get(), TemplateArgument::Expression);
+          Converted = TemplateArgument(ArgResult.get(),
+                                       TemplateArgument::Expression);
           break;
         }
         Diag(Arg->getBeginLoc(), diag::err_template_arg_not_decl_ref)
@@ -6919,48 +6916,6 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
   }
 
   return E;
-}
-
-ExprResult
-Sema::BuildExpressionFromReflectionTemplateArgument(const TemplateArgument &Arg,
-                                                    SourceLocation Loc) {
-  assert(Arg.getKind() == TemplateArgument::Reflection &&
-         "Operation is only valid for integral template arguments");
-  assert(Arg.getReflectionType() == Context.MetaInfoTy);
-
-  APValue Refl = Arg.getAsReflection();
-
-  switch (Refl.getReflectionKind()) {
-  case RK_invalid:
-    return BuildInvalidCXXReflectExpr(/*Loc=*/Loc, /*LP=*/SourceLocation(),
-                                      /*RP=*/SourceLocation());
-  case RK_declaration: {
-    auto ReflOp = const_cast<Decl *>(Refl.getReflectedDeclaration());
-    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
-                               /*RP=*/SourceLocation());
-  }
-
-  case RK_type: {
-    auto ReflOp = Refl.getReflectedType();
-    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
-                               /*RP=*/SourceLocation());
-  }
-
-  case RK_expression: {
-    auto ReflOp = const_cast<Expr *>(Refl.getReflectedExpression());
-    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
-                               /*RP=*/SourceLocation());
-  }
-
-  case RK_base_specifier: {
-    auto ReflOp = const_cast<CXXBaseSpecifier *>(
-                                              Refl.getReflectedBaseSpecifier());
-    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
-                               /*RP=*/SourceLocation());
-  }
-  }
-
-  llvm_unreachable("invalid reflection kind");
 }
 
 /// Match two template parameters within template parameter lists.
