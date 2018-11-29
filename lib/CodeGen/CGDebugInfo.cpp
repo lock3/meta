@@ -1691,6 +1691,9 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
           TheCU, Name, TTy,
           llvm::ConstantInt::get(CGM.getLLVMContext(), TA.getAsIntegral())));
     } break;
+    case TemplateArgument::Reflection: {
+      llvm_unreachable("FIXME");
+    } break;
     case TemplateArgument::Declaration: {
       const ValueDecl *D = TA.getAsDecl();
       QualType T = TA.getParamTypeForDecl().getDesugaredType(CGM.getContext());

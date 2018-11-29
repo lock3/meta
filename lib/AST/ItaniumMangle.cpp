@@ -4492,6 +4492,12 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   case TemplateArgument::Integral:
     mangleIntegerLiteral(A.getIntegralType(), A.getAsIntegral());
     break;
+  case TemplateArgument::Reflection: {
+    // FIXME: This has ODR issues
+    const void *OpaqueHandle = A.getAsReflection().getOpaqueReflectionValue();
+    Out << "Refl" << reinterpret_cast<int64_t>(OpaqueHandle);
+    break;
+  }
   case TemplateArgument::Declaration: {
     //  <expr-primary> ::= L <mangled-name> E # external name
     // Clang produces AST's where pointer-to-member-function expressions

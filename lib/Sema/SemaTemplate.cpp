@@ -1014,6 +1014,8 @@ QualType Sema::CheckNonTypeTemplateParameterType(QualType T,
       T->isMemberPointerType() ||
       //   -- std::nullptr_t.
       T->isNullPtrType() ||
+      //   -- meta::info
+      T->isReflectionType() ||
       // If T is a dependent type, we can't do the check now, so we
       // assume that it is well-formed.
       T->isDependentType() ||
@@ -3507,6 +3509,7 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Null:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Integral:
+  case TemplateArgument::Reflection:
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
@@ -4788,6 +4791,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
+    case TemplateArgument::Reflection:
     case TemplateArgument::NullPtr:
       // We've already checked this template argument, so just copy
       // it to the list of converted arguments.
@@ -4940,6 +4944,8 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     llvm_unreachable("Declaration argument with template template parameter");
   case TemplateArgument::Integral:
     llvm_unreachable("Integral argument with template template parameter");
+  case TemplateArgument::Reflection:
+    llvm_unreachable("Reflection argument with template template parameter");
   case TemplateArgument::NullPtr:
     llvm_unreachable("Null pointer argument with template template parameter");
 
@@ -6268,9 +6274,14 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Converted = TemplateArgument(CanonParamType, /*isNullPtr*/true);
       break;
     case APValue::Int:
-    case APValue::Reflection:
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
+      break;
+    case APValue::Reflection:
+      assert(ParamType->isReflectionType());
+      Converted = TemplateArgument(Value.getReflectionKind(),
+                                   Value.getOpaqueReflectionValue(),
+                                   CanonParamType);
       break;
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
@@ -6908,6 +6919,48 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
   }
 
   return E;
+}
+
+ExprResult
+Sema::BuildExpressionFromReflectionTemplateArgument(const TemplateArgument &Arg,
+                                                    SourceLocation Loc) {
+  assert(Arg.getKind() == TemplateArgument::Reflection &&
+         "Operation is only valid for integral template arguments");
+  assert(Arg.getReflectionType() == Context.MetaInfoTy);
+
+  APValue Refl = Arg.getAsReflection();
+
+  switch (Refl.getReflectionKind()) {
+  case RK_invalid:
+    return BuildInvalidCXXReflectExpr(/*Loc=*/Loc, /*LP=*/SourceLocation(),
+                                      /*RP=*/SourceLocation());
+  case RK_declaration: {
+    auto ReflOp = const_cast<Decl *>(Refl.getReflectedDeclaration());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_type: {
+    auto ReflOp = Refl.getReflectedType();
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_expression: {
+    auto ReflOp = const_cast<Expr *>(Refl.getReflectedExpression());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+
+  case RK_base_specifier: {
+    auto ReflOp = const_cast<CXXBaseSpecifier *>(
+                                              Refl.getReflectedBaseSpecifier());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
+  }
+
+  llvm_unreachable("invalid reflection kind");
 }
 
 /// Match two template parameters within template parameter lists.

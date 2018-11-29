@@ -2482,6 +2482,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
+    case TemplateArgument::Reflection:
     case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:

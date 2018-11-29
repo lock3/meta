@@ -1294,12 +1294,13 @@ enum CXTemplateArgumentKind clang_Cursor_getTemplateArgumentKind(CXCursor C,
       return CXTemplateArgumentKind_Declaration;
     case TemplateArgument::NullPtr: return CXTemplateArgumentKind_NullPtr;
     case TemplateArgument::Integral: return CXTemplateArgumentKind_Integral;
+    case TemplateArgument::Reflection: return CXTemplateArgumentKind_Reflection;
     case TemplateArgument::Template: return CXTemplateArgumentKind_Template;
     case TemplateArgument::TemplateExpansion:
       return CXTemplateArgumentKind_TemplateExpansion;
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: return CXTemplateArgumentKind_Expression;
     case TemplateArgument::Pack: return CXTemplateArgumentKind_Pack;
+    case TemplateArgument::Reflected: return CXTemplateArgumentKind_Reflected;
   }
 
   return CXTemplateArgumentKind_Invalid;

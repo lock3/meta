@@ -7086,6 +7086,7 @@ ASTReader::GetTemplateArgumentLocInfo(ModuleFile &F,
   }
   case TemplateArgument::Null:
   case TemplateArgument::Integral:
+  case TemplateArgument::Reflection:
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Pack:
@@ -8809,6 +8810,10 @@ TemplateArgument ASTReader::ReadTemplateArgument(ModuleFile &F,
     llvm::APSInt Value = ReadAPSInt(Record, Idx);
     QualType T = readType(F, Record, Idx);
     return TemplateArgument(Context, Value, T);
+  }
+  case TemplateArgument::Reflection: {
+    llvm_unreachable("FIXME");
+    break;
   }
   case TemplateArgument::Template:
     return TemplateArgument(ReadTemplateName(F, Record, Idx));
