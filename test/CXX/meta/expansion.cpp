@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 -std=c++1z -freflection -verify %s
+// expected-no-diagnostics
 
 /// Tuple stuff
 
