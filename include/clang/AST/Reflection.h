@@ -117,10 +117,14 @@ public:
 class ReflectionOperand {
 public:
   enum ReflectionOpKind {
-    Type,
+    Type,        // Begin parseable kinds
     Template,
     Namespace,
-    Expression,
+    Expression,  // End parseable kinds
+
+    Invalid,
+    Declaration,
+    BaseSpecifier
   };
 
 private:
@@ -135,7 +139,7 @@ private:
 
 public:
   ReflectionOperand()
-    : Kind(Type), Data()
+    : Kind(Invalid), Data()
   { }
 
   ReflectionOperand(QualType T)
@@ -149,6 +153,12 @@ public:
 
   ReflectionOperand(Expr *E)
     : Kind(Expression), Data(E) { }
+
+  ReflectionOperand(Decl *D)
+    : Kind(Declaration), Data(D) { }
+
+  ReflectionOperand(CXXBaseSpecifier *B)
+    : Kind(BaseSpecifier), Data(B) { }
 
   /// Returns the kind of reflection.
   ReflectionOpKind getKind() const { return Kind; }
@@ -175,6 +185,16 @@ public:
   Expr *getAsExpression() const {
     assert(getKind() == Expression && "not an expression");
     return reinterpret_cast<Expr *>(Data);
+  }
+
+  Decl *getAsDeclaration() const {
+    assert(getKind() == Declaration && "not a declaration");
+    return reinterpret_cast<Decl *>(Data);
+  }
+
+  CXXBaseSpecifier *getAsBaseSpecifier() const {
+    assert(getKind() == BaseSpecifier && "not a base specifier");
+    return reinterpret_cast<CXXBaseSpecifier *>(Data);
   }
 };
 

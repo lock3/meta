@@ -118,6 +118,22 @@ ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, Expr *E,
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, E, LP, RP);
 }
 
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, Decl *D,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, D, LP, RP);
+}
+
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, CXXBaseSpecifier *B,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, B, LP, RP);
+}
+
+ExprResult Sema::BuildInvalidCXXReflectExpr(SourceLocation Loc,
+                                         SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::CreateInvalid(Context, Context.MetaInfoTy, Loc,
+                                       LP, RP);
+}
+
 static bool SetType(QualType& Ret, QualType T) {
   Ret = T;
   return true;
