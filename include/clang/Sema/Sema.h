@@ -3820,10 +3820,10 @@ public:
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
   StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation AnnotationLoc, Stmt *LoopVar,
                                    SourceLocation ColonLoc, Expr *RangeVar,
                                    SourceLocation RParenLoc,
-                                   BuildForRangeKind Kind, bool IsConstexpr);  
+                                   BuildForRangeKind Kind, bool IsConstexpr);
   StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
                                    SourceLocation EllipsisLoc, Stmt *LoopVar, 
                                    SourceLocation ColonLoc, Stmt *RangeVar, 

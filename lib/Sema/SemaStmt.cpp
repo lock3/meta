@@ -3537,12 +3537,13 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
 /// containing that information. Note that the body will be parsed and
 /// instantiated later.
 StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                       SourceLocation AnnotationLoc, Stmt *Init,
-                                       SourceLocation ColonLoc, Expr *Range,
+                                       SourceLocation AnnotationLoc,
+                                       Stmt *LoopVar, SourceLocation ColonLoc,
+                                       Expr *Range,
                                        SourceLocation RParenLoc,
                                        BuildForRangeKind Kind,
                                        bool IsConstexpr) {
-  ExpansionStatementBuilder Builder(*this, S, Kind, Init, Range, IsConstexpr);
+  ExpansionStatementBuilder Builder(*this, S, Kind, LoopVar, Range, IsConstexpr);
   Builder.ForLoc = ForLoc;
   Builder.AnnotationLoc = AnnotationLoc;
   Builder.ColonLoc = ColonLoc;

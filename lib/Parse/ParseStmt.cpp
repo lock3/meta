@@ -1794,7 +1794,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
       SourceLocation ModifierLoc =
           EllipsisLoc.isValid() ? EllipsisLoc : ConstexprLoc;
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
-          getCurScope(), ForLoc, ModifierLoc, FirstPart.get(),
+          getCurScope(), ForLoc, ModifierLoc, ForRangeInfo.LoopVar.get(),
           ForRangeInfo.ColonLoc, CorrectedRange.get(),
           T.getCloseLocation(), Sema::BFRK_Build,
           ConstexprLoc.isValid());
