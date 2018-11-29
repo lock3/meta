@@ -4985,15 +4985,24 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
       return cast<TypeDecl>(Inst);
     }
 
-    // If we didn't find the decl, then we must have a label decl that hasn't
-    // been found yet.  Lazily instantiate it and return it now.
-    assert(isa<LabelDecl>(D));
+    // If we didn't find the decl, then our scope must either be allowing
+    // uninstantiated resolutions, or we have a label decl that hasn't
+    // been found yet. If we have a label decl, prefer lazy instantiation
+    // of the label over falling back to the uninstantiated decl.
+    if (isa<LabelDecl>(D)) {
+      // Lazily instantiate and return the label now.
+      Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
+      assert(Inst && "Failed to instantiate label??");
 
-    Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
-    assert(Inst && "Failed to instantiate label??");
+      CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+      return cast<LabelDecl>(Inst);
+    }
 
-    CurrentInstantiationScope->InstantiatedLocal(D, Inst);
-    return cast<LabelDecl>(Inst);
+    // Fall back to the uninstantiated decl.
+    assert(CurrentInstantiationScope);
+    assert(CurrentInstantiationScope->AllowUninstantiated);
+
+    return D;
   }
 
   // For certain instantiations (e.g., for loop instantiations, and code

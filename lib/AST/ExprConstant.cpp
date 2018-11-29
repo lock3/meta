@@ -4257,6 +4257,25 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
+  case Stmt::CXXExpansionStmtClass: {
+    const CXXExpansionStmt *ES = cast<CXXExpansionStmt>(S);
+    BlockScopeRAII Scope(Info);
+
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeVarStmt());
+    if (ESR != ESR_Succeeded)
+      return ESR;
+
+    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+      BlockScopeRAII InnerScope(Info);
+
+      ESR = EvaluateStmt(Result, Info, SubStmt);
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
+
+    return ESR_Succeeded;
+  }
+
   case Stmt::SwitchStmtClass:
     return EvaluateSwitch(Result, Info, cast<SwitchStmt>(S));
 
@@ -5147,7 +5166,7 @@ static bool isStringLiteralType(QualType T) {
 
 static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   QualType T = Info.Ctx.getCanonicalType(PE->getType());
-  if (T->isIntegralType(Info.Ctx)) {
+  if (T->isIntegralOrEnumerationType()) {
     llvm::errs() << EV.getInt().getExtValue();
     return true;
   } else if (isStringLiteralType(T)) {
@@ -11799,6 +11818,11 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
     return NoDiag();
+  
+  case Expr::PackSelectionExprClass:
+    // FIXME: expression is type-dependent so we don't really know.
+    return NoDiag();
+
   case Expr::CallExprClass:
   case Expr::CXXOperatorCallExprClass: {
     // C99 6.6/3 allows function calls within unevaluated subexpressions of

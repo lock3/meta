@@ -274,6 +274,13 @@ class VarDecl;
     /// lookup will search our outer scope.
     bool CombineWithOuterScope;
 
+  public:
+    /// Whether we should allow uninstatiated decls to be used
+    /// if no instantiated version can be found. Used for
+    /// expansion statements.
+    const bool AllowUninstantiated;
+
+  private:
     /// If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack = nullptr;
@@ -288,9 +295,11 @@ class VarDecl;
     unsigned NumArgsInPartiallySubstitutedPack;
 
   public:
-    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
+    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false,
+                            bool AllowUninstantiated = false)
         : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
-          CombineWithOuterScope(CombineWithOuterScope) {
+          CombineWithOuterScope(CombineWithOuterScope),
+          AllowUninstantiated(AllowUninstantiated) {
       SemaRef.CurrentInstantiationScope = this;
     }
 

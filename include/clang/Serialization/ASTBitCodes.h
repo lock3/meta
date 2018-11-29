@@ -1828,14 +1828,8 @@ namespace serialization {
       /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
 
-      /// A CXXTupleExpansion record.
-      STMT_CXX_TUPLE_EXPANSION,
-
-      /// A CXXConstexprExpansion record.
-      STMT_CXX_CONSTEXPR_EXPANSION,
-      
-      /// A CXXPackExpansion record.
-      STMT_CXX_PACK_EXPANSION,
+      /// A CXXExpansionStmt record.
+      STMT_CXX_EXPANSION,
 
       /// A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,
