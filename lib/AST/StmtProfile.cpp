@@ -1886,6 +1886,9 @@ void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
 
 void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *S) {
   VisitExpr(S);
+  const ReflectionOperand &Operand = S->getOperand();
+  ID.AddInteger(Operand.getKind());
+  ID.AddInteger(reinterpret_cast<std::size_t>(Operand.getOpaqueReflectionValue()));
 }
 
 void StmtProfiler::VisitCXXReflectionTraitExpr(

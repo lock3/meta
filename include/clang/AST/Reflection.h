@@ -166,6 +166,12 @@ public:
   /// Returns true if the reflection is invalid.
   bool isInvalid() const { return !Data; }
 
+  /// Returns the opaque reflection pointer.
+  const void *getOpaqueReflectionValue() const {
+    assert(!isInvalid() && "Invalid reflection");
+    return Data;
+  }
+
   /// Returns this as a type operand.
   QualType getAsType() const {
     assert(getKind() == Type && "not a type");
