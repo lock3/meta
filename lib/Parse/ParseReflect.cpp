@@ -271,6 +271,10 @@ ExprResult Parser::ParseCXXIdExprExpression() {
   if (Parens.expectAndConsume())
     return ExprError();
 
+  // Grab the ellipsis (if given).
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
   ExprResult Expr = ParseConstantExpression();
   if (Expr.isInvalid()) {
     Parens.skipToEnd();
@@ -311,7 +315,8 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
+  return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, EllipsisLoc,
+                                     RPLoc);
 }
 
 

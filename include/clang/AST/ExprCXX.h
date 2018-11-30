@@ -5001,6 +5001,9 @@ public:
   /// Returns the source code location of the left parenthesis.
   SourceLocation getLParenLoc() const { return LParenLoc; }
 
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+
   /// Returns the source code location of the right parenthesis.
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
@@ -5026,18 +5029,21 @@ class CXXValueOfExpr : public Expr {
 
   SourceLocation KeywordLoc;
   SourceLocation LParenLoc;
+  SourceLocation EllipsisLoc;
   SourceLocation RParenLoc;
 public:
   CXXValueOfExpr(QualType T, Expr *Reflection,
                  SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc, SourceLocation RParenLoc)
+                 SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+                 SourceLocation RParenLoc)
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
            Reflection->isValueDependent() || Reflection->isTypeDependent(),
            Reflection->isValueDependent(),
            Reflection->isInstantiationDependent(),
            Reflection->containsUnexpandedParameterPack()),
       Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
+      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
 
   CXXValueOfExpr(EmptyShell Empty)
     : Expr(CXXValueOfExprClass, Empty) {}
