@@ -1571,6 +1571,11 @@ bool getName(const Reflection R, APValue &Result) {
 
 bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
   assert(isNameQuery(Q) && "invalid query");
+
+  if (isInvalid()) {
+    return Error(*this);
+  }
+
   switch (Q) {
   // Names
   case RQ_get_name:
