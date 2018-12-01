@@ -139,7 +139,7 @@ private:
 
 public:
   ReflectionOperand()
-    : Kind(Invalid), Data()
+    : Kind(Invalid), Data(nullptr)
   { }
 
   ReflectionOperand(QualType T)
@@ -168,7 +168,6 @@ public:
 
   /// Returns the opaque reflection pointer.
   const void *getOpaqueReflectionValue() const {
-    assert(!isInvalid() && "Invalid reflection");
     return Data;
   }
 
