@@ -3589,7 +3589,7 @@ recurse:
   }
 
   case Expr::CXXReflectExprClass: {
-    Out << "refl" << reinterpret_cast<std::size_t>(E);
+    Out << "Re" << reinterpret_cast<std::size_t>(E);
     break;
   }
 
