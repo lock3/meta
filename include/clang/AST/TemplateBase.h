@@ -82,8 +82,11 @@ public:
     /// The template argument is an expression, and we've not resolved it to one
     /// of the other forms yet, either because it's dependent or because we're
     /// representing a non-canonical template argument (for instance, in a
-    /// TemplateSpecializationType). Also used to represent a non-dependent
-    /// __uuidof expression (a Microsoft extension).
+    /// TemplateSpecializationType).
+    ///
+    /// Also used to represent:
+    /// - a non-dependent __uuidof expression (a Microsoft extension).
+    /// - a non-dependent reflection expression (C++ Reflection).
     Expression,
 
     /// The template argument is actually a parameter pack. Arguments are stored

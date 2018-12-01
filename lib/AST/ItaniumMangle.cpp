@@ -3534,6 +3534,7 @@ recurse:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
+  case Expr::PackSelectionExprClass:
     llvm_unreachable("unexpected statement kind");
 
   case Expr::ConstantExprClass:
@@ -3574,7 +3575,6 @@ recurse:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
-  case Expr::CXXReflectExprClass:
   case Expr::CXXReflectionTraitExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
@@ -3590,6 +3590,11 @@ recurse:
       Diags.Report(E->getExprLoc(), DiagID)
         << E->getStmtClassName() << E->getSourceRange();
     }
+    break;
+  }
+
+  case Expr::CXXReflectExprClass: {
+    Out << "Re" << reinterpret_cast<std::size_t>(E);
     break;
   }
 

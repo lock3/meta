@@ -189,6 +189,9 @@ def note_constexpr_memcpy_unsupported : Note<
 def note_reflection_not_defined : Note<
   "query is not defined for reflected construct"
   >;
+def note_reflection_query_unimplemented : Note<
+  "query is not yet implemented"
+  >;
 
 // [Meta] Compile-time code generation
 def err_user_defined_error : Error<"%0">;

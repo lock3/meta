@@ -242,9 +242,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     K = CXCursor_SEHLeaveStmt;
     break;
 
-  case Stmt::CXXPackExpansionStmtClass:
-  case Stmt::CXXTupleExpansionStmtClass:
-  case Stmt::CXXConstexprExpansionStmtClass:
+  case Stmt::CXXExpansionStmtClass:
     // FIXME: These should be exposed.
     K = CXCursor_UnexposedStmt;
     break;
@@ -513,6 +511,11 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
 
   case Stmt::PackExpansionExprClass:
     K = CXCursor_PackExpansionExpr;
+    break;
+
+  case Stmt::PackSelectionExprClass:
+    /// FIXME
+    K = CXCursor_UnexposedExpr;
     break;
 
   case Stmt::SizeOfPackExprClass:
@@ -1303,9 +1306,9 @@ enum CXTemplateArgumentKind clang_Cursor_getTemplateArgumentKind(CXCursor C,
     case TemplateArgument::Template: return CXTemplateArgumentKind_Template;
     case TemplateArgument::TemplateExpansion:
       return CXTemplateArgumentKind_TemplateExpansion;
-    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: return CXTemplateArgumentKind_Expression;
     case TemplateArgument::Pack: return CXTemplateArgumentKind_Pack;
+    case TemplateArgument::Reflected: return CXTemplateArgumentKind_Reflected;
   }
 
   return CXTemplateArgumentKind_Invalid;

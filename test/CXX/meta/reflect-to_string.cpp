@@ -1,3 +1,5 @@
+// RUN: %clang_cc1 -freflection -std=c++1z %s
+
 #include "reflection_query.h"
 
 namespace std {

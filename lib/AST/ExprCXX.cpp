@@ -1468,14 +1468,25 @@ void ArrayTypeTraitExpr::anchor() {}
 
 
 // Returns true if E is type or value dependent.
-static bool isDependent(const Expr* E) {
+static bool isDependent(const Expr *E) {
   return E->isTypeDependent() || E->isValueDependent();
 }
 
+static bool isDependentType(const Decl *D) {
+  if (const TagDecl *TD = dyn_cast<TagDecl>(D))
+    return TD->isDependentType();
+
+  return false;
+}
+
+CXXReflectExpr::CXXReflectExpr(QualType T)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, false, false, false), Ref() { }
+
 CXXReflectExpr::CXXReflectExpr(QualType T, QualType Arg)
-  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary, 
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, Arg->isDependentType(), Arg->isDependentType(), false),
-         Ref(Arg) { }
+    Ref(Arg) { }
 
 CXXReflectExpr::CXXReflectExpr(QualType T, TemplateName Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
@@ -1489,43 +1500,81 @@ CXXReflectExpr::CXXReflectExpr(QualType T, Expr *Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, isDependent(Arg), isDependent(Arg), false), Ref(Arg) { }
 
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+CXXReflectExpr::CXXReflectExpr(QualType T, Decl *Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, isDependentType(Arg), false, false), Ref(Arg) { }
+
+CXXReflectExpr::CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, false, false, false), Ref(Arg) { }
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, QualType Arg,
                                        SourceLocation LP, SourceLocation RP) {
   CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
   E->setKeywordLoc(KW);
-  E->setLParenLoc(KW);
-  E->setRParenLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
   return E;
 }
 
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, TemplateName Arg,
                                        SourceLocation LP, SourceLocation RP) {
   CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
   E->setKeywordLoc(KW);
-  E->setLParenLoc(KW);
-  E->setRParenLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
   return E;
 }
 
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, NamespaceName Arg,
                                        SourceLocation LP, SourceLocation RP) {
   CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
   E->setKeywordLoc(KW);
-  E->setLParenLoc(KW);
-  E->setRParenLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
   return E;
 }
 
-CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T, 
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, Expr *Arg,
                                        SourceLocation LP, SourceLocation RP) {
   CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
   E->setKeywordLoc(KW);
-  E->setLParenLoc(KW);
-  E->setRParenLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
+                                       SourceLocation KW, Decl *Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
+                                       SourceLocation KW, CXXBaseSpecifier *Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
+  return E;
+}
+
+CXXReflectExpr *CXXReflectExpr::CreateInvalid(ASTContext &C, QualType T,
+                                         SourceLocation KW,
+                                         SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
   return E;
 }
 

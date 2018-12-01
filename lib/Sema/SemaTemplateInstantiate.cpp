@@ -1321,12 +1321,14 @@ ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
     result = SemaRef.BuildExpressionFromDeclTemplateArgument(arg, type, loc);
 
     if (!result.isInvalid()) type = result.get()->getType();
-  } else {
+  } else if (arg.getKind() == TemplateArgument::Integral) {
     result = SemaRef.BuildExpressionFromIntegralTemplateArgument(arg, loc);
 
     // Note that this type can be different from the type of 'result',
     // e.g. if it's an enum type.
     type = arg.getIntegralType();
+  } else {
+    llvm_unreachable("unsupported nontype template parameter");
   }
   if (result.isInvalid()) return ExprError();
 
@@ -2852,20 +2854,6 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs,
   return Instantiator.TransformStmt(S);
 }
 
-/// Substitution into a loop body is different than substitution in other
-/// contexts. In particular, we are not actually instantiating a template.
-/// We're just rebuilding a tree and rewiring expressions that refer to
-/// newly instantiated declarations.
-StmtResult
-Sema::SubstForTupleBody(Stmt *S,
-                        const MultiLevelTemplateArgumentList &TemplateArgs) {
-  TemplateInstantiator Instantiator(*this, 
-                                    TemplateArgs, 
-                                    SourceLocation(), 
-                                    DeclarationName());
-  return Instantiator.TransformStmt(S);
-}
-
 ExprResult
 Sema::SubstExpr(Expr *E, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!E)
@@ -3006,10 +2994,13 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
   if (isa<EnumDecl>(D))
     return nullptr;
 
-  // If we didn't find the decl, then we either have a sema bug, or we have a
-  // forward reference to a label declaration.  Return null to indicate that
-  // we have an uninstantiated label.
-  assert(isa<LabelDecl>(D) && "declaration not instantiated in this scope");
+  // Handle forward references to a label declaration.
+  if (isa<LabelDecl>(D))
+    return nullptr;
+
+  // If we reach this point, and we're not allowing uninstantiated decls,
+  // then we have a sema bug.
+  assert(AllowUninstantiated && "declaration not instantiated in this scope");
   return nullptr;
 }
 

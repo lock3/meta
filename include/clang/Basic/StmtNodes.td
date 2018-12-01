@@ -47,10 +47,7 @@ def ObjCAutoreleasePoolStmt : Stmt;
 def CXXCatchStmt : Stmt;
 def CXXTryStmt : Stmt;
 def CXXForRangeStmt : Stmt;
-def CXXExpansionStmt : Stmt<1>;
-def CXXTupleExpansionStmt : DStmt<CXXExpansionStmt>;
-def CXXConstexprExpansionStmt : DStmt<CXXExpansionStmt>;
-def CXXPackExpansionStmt : DStmt<CXXExpansionStmt>;
+def CXXExpansionStmt : Stmt;
 def CXXInjectionStmt : Stmt;
 
 // C++ Coroutines TS statements
@@ -149,6 +146,7 @@ def UnresolvedLookupExpr : DStmt<OverloadExpr>;
 def UnresolvedMemberExpr : DStmt<OverloadExpr>;
 def CXXNoexceptExpr : DStmt<Expr>;
 def PackExpansionExpr : DStmt<Expr>;
+def PackSelectionExpr : DStmt<Expr>;
 def SizeOfPackExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmPackExpr : DStmt<Expr>;

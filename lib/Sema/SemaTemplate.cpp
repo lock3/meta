@@ -1014,6 +1014,8 @@ QualType Sema::CheckNonTypeTemplateParameterType(QualType T,
       T->isMemberPointerType() ||
       //   -- std::nullptr_t.
       T->isNullPtrType() ||
+      //   -- meta::info
+      T->isReflectionType() ||
       // If T is a dependent type, we can't do the check now, so we
       // assume that it is well-formed.
       T->isDependentType() ||
@@ -6270,10 +6272,15 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Converted = TemplateArgument(CanonParamType, /*isNullPtr*/true);
       break;
     case APValue::Int:
-    case APValue::Reflection:
       assert(ParamType->isIntegralOrEnumerationType());
       Converted = TemplateArgument(Context, Value.getInt(), CanonParamType);
       break;
+    case APValue::Reflection: {
+      assert(ParamType->isReflectionType());
+      ExprResult ReflExpr = BuildCXXReflectExpr(Value, StartLoc);
+      Converted = TemplateArgument(ReflExpr.get(), TemplateArgument::Expression);
+      break;
+    }
     case APValue::MemberPointer: {
       assert(ParamType->isMemberPointerType());
 
@@ -6302,7 +6309,8 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       // -- a predefined __func__ variable
       if (auto *E = Value.getLValueBase().dyn_cast<const Expr*>()) {
         if (isa<CXXUuidofExpr>(E)) {
-          Converted = TemplateArgument(ArgResult.get(), TemplateArgument::Expression);
+          Converted = TemplateArgument(ArgResult.get(),
+                                       TemplateArgument::Expression);
           break;
         }
         Diag(Arg->getBeginLoc(), diag::err_template_arg_not_decl_ref)

@@ -342,15 +342,7 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXTupleExpansionStmt(const CXXTupleExpansionStmt *S) {
-  VisitStmt(S);
-}
-
-void StmtProfiler::VisitCXXConstexprExpansionStmt(const CXXConstexprExpansionStmt *S) {
-  VisitStmt(S);
-}
-
-void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+void StmtProfiler::VisitCXXExpansionStmt(const CXXExpansionStmt *S) {
   VisitStmt(S);
 }
 
@@ -1816,6 +1808,10 @@ void StmtProfiler::VisitPackExpansionExpr(const PackExpansionExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitPackSelectionExpr(const PackSelectionExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitSizeOfPackExpr(const SizeOfPackExpr *S) {
   VisitExpr(S);
   VisitDecl(S->getPack());
@@ -1890,6 +1886,9 @@ void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
 
 void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *S) {
   VisitExpr(S);
+  const ReflectionOperand &Operand = S->getOperand();
+  ID.AddInteger(Operand.getKind());
+  ID.AddInteger(reinterpret_cast<std::size_t>(Operand.getOpaqueReflectionValue()));
 }
 
 void StmtProfiler::VisitCXXReflectionTraitExpr(

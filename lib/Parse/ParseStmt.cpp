@@ -1536,30 +1536,19 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
-  // [Meta]: Check 'for ...' or 'for constexpr'.
-  // TODO: What does 'for... co_await' mean?
+  // Parse 'for...', 'for constexpr', or 'for co_await'.
   SourceLocation EllipsisLoc;
-  bool IsConstexpr = false;
-  if (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)) {
-    if (getLangOpts().CPlusPlus17 && getLangOpts().Reflection &&
-	(Tok.is(tok::ellipsis))) {
-      EllipsisLoc = ConsumeToken();
-    }
-    else if(getLangOpts().CPlusPlus17 && getLangOpts().Reflection &&
-	    (Tok.is(tok::kw_constexpr))) {
-      IsConstexpr = true;
-      EllipsisLoc = ConsumeToken();
-    }
-    else {
-      Diag(Tok, diag::ext_expansion_stmt);
-    }
-  }
-
+  SourceLocation ConstexprLoc;
   SourceLocation CoawaitLoc;
-  if (Tok.is(tok::kw_co_await))
+  if (getLangOpts().Reflection && Tok.is(tok::ellipsis))
+    EllipsisLoc = ConsumeToken();
+  else if(getLangOpts().Reflection && Tok.is(tok::kw_constexpr))
+    ConstexprLoc = ConsumeToken();
+  else if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
 
   if (Tok.isNot(tok::l_paren)) {
+    // FIXME: Update the error based on the presence of modifiers.
     Diag(Tok, diag::err_expected_lparen_after) << "for";
     SkipUntil(tok::semi);
     return StmtError();
@@ -1801,16 +1790,20 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInfo.RangeExpr.get());
 
-    if (EllipsisLoc.isInvalid())
+    if (EllipsisLoc.isInvalid() && ConstexprLoc.isInvalid()) {
       ForRangeStmt = Actions.ActOnCXXForRangeStmt(
-          getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
-          ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
-          T.getCloseLocation(), Sema::BFRK_Build);
-    else
+        getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
+        ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
+        T.getCloseLocation(), Sema::BFRK_Build);
+    } else {
+      SourceLocation ModifierLoc =
+          EllipsisLoc.isValid() ? EllipsisLoc : ConstexprLoc;
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
-          getCurScope(), ForLoc, EllipsisLoc, FirstPart.get(),
-          ForRangeInfo.ColonLoc, CorrectedRange.get(), T.getCloseLocation(),
-          Sema::BFRK_Build, IsConstexpr);
+          getCurScope(), ForLoc, ModifierLoc, ForRangeInfo.LoopVar.get(),
+          ForRangeInfo.ColonLoc, CorrectedRange.get(),
+          T.getCloseLocation(), Sema::BFRK_Build,
+          ConstexprLoc.isValid());
+    }
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -1868,7 +1861,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
                                               Body.get());
 
   if (ForRangeInfo.ParsedForRangeDecl()) {
-    if (EllipsisLoc.isInvalid()) {
+    if (EllipsisLoc.isInvalid() && ConstexprLoc.isInvalid()) {
       return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
     }
     return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());

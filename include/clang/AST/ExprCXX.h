@@ -3751,6 +3751,64 @@ public:
   }
 };
 
+/// Represents a C++11 pack selection that yields a single expression from
+/// a parameter pack or destructurable class. 
+///
+/// This is used internally to define the bodies of expansion statements.
+class PackSelectionExpr : public Expr {
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+
+  SourceLocation SelectLoc;
+  
+  Stmt *Args[2];
+
+public:
+  PackSelectionExpr(QualType T, Expr *Pack, Expr *Sel, SourceLocation SelectLoc)
+      : Expr(PackSelectionExprClass, T, Pack->getValueKind(),
+             Pack->getObjectKind(), /*TypeDependent=*/true,
+             /*ValueDependent=*/true, /*InstantiationDependent=*/true,
+             /*ContainsUnexpandedParameterPack=*/false),
+        SelectLoc(SelectLoc), Args{Pack, Sel} {}
+
+  PackSelectionExpr(EmptyShell Empty) : Expr(PackSelectionExprClass, Empty) {}
+
+  /// Retrieve the unexpanded pack or class object reference.
+  const Expr *getPack() const { return reinterpret_cast<Expr *>(Args[0]); }
+  Expr *getPack() { return reinterpret_cast<Expr *>(Args[0]); }
+
+  /// Retrieve selector integral selector argument.
+  const Expr *getSelector() const { return reinterpret_cast<Expr *>(Args[1]); }
+  Expr *getSelector() { return reinterpret_cast<Expr *>(Args[1]); }
+
+  /// Retrieve the location of the ellipsis that describes this pack
+  /// expansion.
+  SourceLocation getSelectLoc() const { return SelectLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return SelectLoc;
+  }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY { return SelectLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == PackSelectionExprClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(&Args[0], &Args[0] + 2);
+  }
+};
+
 /// Represents an expression that computes the length of a parameter
 /// pack.
 ///
@@ -4503,10 +4561,13 @@ class CXXReflectExpr : public Expr {
   SourceLocation LParenLoc;
   SourceLocation RParenLoc;
 
+  CXXReflectExpr(QualType T);
   CXXReflectExpr(QualType T, QualType Arg);
   CXXReflectExpr(QualType T, TemplateName Arg);
   CXXReflectExpr(QualType T, NamespaceName Arg);
   CXXReflectExpr(QualType T, Expr *Arg);
+  CXXReflectExpr(QualType T, Decl *Arg);
+  CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg);
 
   CXXReflectExpr(EmptyShell Empty)
     : Expr(CXXReflectExprClass, Empty) {}
@@ -4527,6 +4588,18 @@ public:
   static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, Expr *Arg,
                                 SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, Decl *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, CXXBaseSpecifier *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *CreateInvalid(ASTContext &C, QualType T,
+                                       SourceLocation KW,
+                                       SourceLocation LP, SourceLocation RP);
 
   /// Returns the reflection operand.
   const ReflectionOperand &getOperand() const { return Ref; }

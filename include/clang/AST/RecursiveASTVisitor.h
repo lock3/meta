@@ -2227,27 +2227,7 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
-DEF_TRAVERSE_STMT(CXXTupleExpansionStmt, {
-  if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
-    // Visit everything else only if shouldVisitImplicitCode().
-    ShouldVisitChildren = false;
-  }
-})
-
-DEF_TRAVERSE_STMT(CXXConstexprExpansionStmt, {
-  if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
-    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
-    // Visit everything else only if shouldVisitImplicitCode().
-    ShouldVisitChildren = false;
-  }
-})
-
-DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
+DEF_TRAVERSE_STMT(CXXExpansionStmt, {
   if (!getDerived().shouldVisitImplicitCode()) {
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
     TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
@@ -2632,6 +2612,7 @@ DEF_TRAVERSE_STMT(BinaryOperator, {})
 DEF_TRAVERSE_STMT(CompoundAssignOperator, {})
 DEF_TRAVERSE_STMT(CXXNoexceptExpr, {})
 DEF_TRAVERSE_STMT(PackExpansionExpr, {})
+DEF_TRAVERSE_STMT(PackSelectionExpr, {})
 DEF_TRAVERSE_STMT(SizeOfPackExpr, {})
 DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmPackExpr, {})
 DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, {})
