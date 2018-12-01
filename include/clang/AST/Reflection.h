@@ -116,7 +116,7 @@ public:
 /// Represents an operand to the reflection operator.
 class ReflectionOperand {
 public:
-  enum ReflectionKind {
+  enum ReflectionOpKind {
     Type,
     Template,
     Namespace,
@@ -124,7 +124,7 @@ public:
   };
 
 private:
-  ReflectionKind Kind;
+  ReflectionOpKind Kind;
 
   /// Points to the representation of the operand. For type operands, this is
   /// the opaque pointer of a QualType. For template-name operands, this is
@@ -151,7 +151,7 @@ public:
     : Kind(Expression), Data(E) { }
 
   /// Returns the kind of reflection.
-  ReflectionKind getKind() const { return Kind; }
+  ReflectionOpKind getKind() const { return Kind; }
 
   /// Returns true if the reflection is invalid.
   bool isInvalid() const { return !Data; }
@@ -187,33 +187,38 @@ enum ReflectionQuery {
 
   // Declarations
   RQ_is_variable,
+  RQ_is_function,
+  RQ_is_class,
+  RQ_is_union,
+  RQ_is_unscoped_enum,
+  RQ_is_scoped_enum,
   RQ_is_enumerator,
-  RQ_is_static_data_member,
-  RQ_is_static_member_function,
-  RQ_is_nonstatic_data_member,
   RQ_is_bitfield,
+  RQ_is_static_data_member,
+  RQ_is_nonstatic_data_member,
+  RQ_is_static_member_function,
   RQ_is_nonstatic_member_function,
   RQ_is_constructor,
   RQ_is_destructor,
 
   // Types
   RQ_is_type,
-  RQ_is_function,
-  RQ_is_class,
-  RQ_is_union,
-  RQ_is_enum,
-  RQ_is_scoped_enum,
-  RQ_is_void,
-  RQ_is_null_pointer,
-  RQ_is_integral,
-  RQ_is_floating_point,
-  RQ_is_array,
-  RQ_is_pointer,
-  RQ_is_lvalue_reference,
-  RQ_is_rvalue_reference,
-  RQ_is_member_object_pointer,
-  RQ_is_member_function_pointer,
-  RQ_is_closure,
+  RQ_is_function_type,
+  RQ_is_class_type,
+  RQ_is_union_type,
+  RQ_is_enum_type,
+  RQ_is_scoped_enum_type,
+  RQ_is_void_type,
+  RQ_is_null_pointer_type,
+  RQ_is_integral_type,
+  RQ_is_floating_point_type,
+  RQ_is_array_type,
+  RQ_is_pointer_type,
+  RQ_is_lvalue_reference_type,
+  RQ_is_rvalue_reference_type,
+  RQ_is_member_object_pointer_type,
+  RQ_is_member_function_pointer_type,
+  RQ_is_closure_type,
 
   // Namespaces and aliases
   RQ_is_namespace,
@@ -226,7 +231,6 @@ enum ReflectionQuery {
   RQ_is_alias_template,
   RQ_is_function_template,
   RQ_is_variable_template,
-  RQ_is_member_function_template,
   RQ_is_static_member_function_template,
   RQ_is_nonstatic_member_function_template,
   RQ_is_constructor_template,
@@ -254,10 +258,14 @@ enum ReflectionQuery {
   RQ_is_lvalue,
   RQ_is_xvalue,
   RQ_is_rvalue,
+  RQ_is_value,
 
   // Scope
   RQ_is_local,
   RQ_is_class_member,
+
+  // Access queries
+  RQ_has_default_access,
 
   // Traits
   RQ_get_decl_traits,
@@ -284,7 +292,7 @@ enum ReflectionQuery {
 
   // Predicates -- these return bool.
   RQ_first_predicate = RQ_is_invalid,
-  RQ_last_predicate = RQ_is_class_member,
+  RQ_last_predicate = RQ_has_default_access,
   // Traits -- these return unsigned.
   RQ_first_trait = RQ_get_decl_traits,
   RQ_last_trait = RQ_get_type_traits,

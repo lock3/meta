@@ -12,53 +12,153 @@ namespace std::experimental
 {
 namespace meta {
 inline namespace v1 {
-	 
-// FIXME: Find a better way of forcing constexpr errors.
-
-struct compile_time_error { };
-
-// Like assert, but always runs and guarantees non-compilation.
-constexpr! void require(bool b) {
-  if (!b)
-    throw compile_time_error();
-}
 
 // An opaque handle to a reflected entity.
 //
-// FIXME: This should be an enum class, but those don't 
-// readily convert to bool. Most likely, this should be a 
-// special type that prevents all forms of construction 
+// FIXME: This should be an enum class, but those don't
+// readily convert to bool. Most likely, this should be a
+// special type that prevents all forms of construction
 // but value construction.
 using info = decltype(reflexpr(void));
 
-// TODO: Keep this in sync and in order with the 
-// corresponding enum in ExprConstant.cpp.
-enum reflection_kind {
-  null_construct = 0,
+consteval bool is_variable(info x);
+consteval bool is_function(info x);
+consteval bool is_enumerator(info x);
+consteval bool is_namespace(info x);
+consteval bool is_data_member(info x);
+consteval bool is_member_function(info x);
+consteval bool is_class_type(info x);
+consteval bool is_enum_type(info x);
 
-  // Declarations
-  translation_unit,
-  namespace_decl,
-  variable_decl,
-  function_decl,
-  parameter_decl,
-  class_decl,
-  data_member_decl,
-  member_function_decl,
-  access_spec,
-  enum_decl,
-  enumerator_decl,
+consteval info get_type(info x);
+
+namespace detail {
+
+enum reflection_query {
+  query_unknown,
+
+  query_is_invalid,
+  query_is_entity,
+  query_is_unnamed,
+
+  // Objects, references, bitfields, and functions
+  query_is_variable,
+  query_is_function,
+  query_is_class,
+  query_is_union,
+  query_is_unscoped_enum,
+  query_is_scoped_enum,
+  query_is_enumerator,
+  query_is_bitfield,
+  query_is_static_data_member,
+  query_is_nonstatic_data_member,
+  query_is_static_member_function,
+  query_is_nonstatic_member_function,
+  query_is_constructor,
+  query_is_destructor,
 
   // Types
-  void_type,
-  character_type,
-  integral_type,
-  floating_point_type,
-  reference_type,
-  function_type,
-  pointer_type,
-  array_type,
+  query_is_type,
+  query_is_function_type,
+  query_is_class_type,
+  query_is_union_type,
+  query_is_enum_type,
+  query_is_scoped_enum_type,
+  query_is_void_type,
+  query_is_null_pointer_type,
+  query_is_integral_type,
+  query_is_floating_point_type,
+  query_is_array_type,
+  query_is_pointer_type,
+  query_is_lvalue_reference_type,
+  query_is_rvalue_reference_type,
+  query_is_member_object_pointer_type,
+  query_is_member_function_pointer_type,
+  query_is_closure_type,
+
+  // Namespaces and aliases
+  query_is_namespace,
+  query_is_namespace_alias,
+  query_is_type_alias,
+
+  // Templates and specializations
+  query_is_template,
+  query_is_class_template,
+  query_is_alias_template,
+  query_is_function_template,
+  query_is_variable_template,
+  query_is_static_member_function_template,
+  query_is_nonstatic_member_function_template,
+  query_is_constructor_template,
+  query_is_destructor_template,
+  query_is_concept,
+  query_is_specialization,
+  query_is_partial_specialization,
+  query_is_explicit_specialization,
+  query_is_implicit_instantiation,
+  query_is_explicit_instantiation,
+
+  // Base class specifiers
+  query_is_direct_base,
+  query_is_virtual_base,
+
+  // Parameters
+  query_is_function_parameter,
+  query_is_template_parameter,
+  query_is_type_template_parameter,
+  query_is_nontype_template_parameter,
+  query_is_template_template_parameter,
+
+  // Expressions
+  query_is_expression,
+  query_is_lvalue,
+  query_is_xvalue,
+  query_is_rvalue,
+  query_is_value,
+
+  // Scope
+  query_is_local,
+  query_is_class_member,
+
+  // Access queries
+  query_has_default_access,
+
+  // Traits
+  query_get_decl_traits,
+  query_get_linkage_traits,
+  query_get_access_traits,
+  query_get_type_traits,
+
+  // Associated reflections
+  query_get_entity,
+  query_get_parent,
+  query_get_type,
+  query_get_this_ref_type,
+
+  // Traversal
+  query_get_begin,
+  query_get_next,
+
+  // Name
+  query_get_name,
+  query_get_display_name
 };
+
+static constexpr unsigned get_decl_traits(info x) {
+  return __reflect(query_get_decl_traits, x);
+}
+
+static constexpr unsigned get_linkage_traits(info x) {
+  return __reflect(query_get_linkage_traits, x);
+}
+
+static constexpr unsigned get_access_traits(info x) {
+  return __reflect(query_get_access_traits, x);
+}
+
+static constexpr unsigned get_type_traits(info x) {
+  return __reflect(query_get_type_traits, x);
+}
 
 // Kinds of linkage.
 enum linkage_kind {
@@ -75,10 +175,10 @@ enum storage_kind {
 };
 
 // Kinds of class types.
-enum class_key {
-  struct_key,
-  class_key,
-  union_key
+enum class_kind {
+  struct_class_kind,
+  class_class_kind,
+  union_class_kind
 };
 
 // Kinds of access.
@@ -90,110 +190,698 @@ enum access_kind {
 };
 
 // Kinds of member functions.
-enum memun_kind {
+enum member_kind {
   normal,
   constructor,
   destructor,
   conversion,
 };
 
-// Kind and kind testing
-
-// Returns the kind (discriminator) of the meta info.
-constexpr! reflection_kind kind(info x) {
-  return (reflection_kind)__reflect_index(x); 
+// The linkage of a bitfield is always stored in the first 2 bits.
+static constexpr linkage_kind get_linkage(unsigned n) {
+  return linkage_kind(n & 0x03);
 }
 
-// True if x is a null reflection.
-constexpr! bool is_null(info x) {
-  return kind(x) == null_construct;
+// Access specifiers are always stored in bits 3 and 4.
+static constexpr access_kind get_access(unsigned n) {
+  return access_kind((n >> 2) & 0x03);
 }
 
-// True if x reflects a declaration.
+// When present, storage specifiers are stored in bits 5 and 6.
 //
-// TODO: Make sure this stays in agreement with reflection_kind.
-constexpr! bool is_declaration(info x) {
-  reflection_kind k = kind(x);
-  return translation_unit <= k && k <= enumerator_decl;
+// FIXME: This isn't accurate.
+static constexpr storage_kind get_storage(unsigned n) {
+  return storage_kind((n >> 4) & 0x03);
 }
 
-// True if x reflects a fundamental or non-user-defined type.
-constexpr! bool is_type(info x) {
-  reflection_kind k = kind(x);
-  return void_type <= k && k <= array_type;
+// All named declarations have linkage and access.
+struct decl_traits {
+  constexpr explicit decl_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n))   // 0x04 | 0x08
+  { }
+
+  constexpr explicit decl_traits(info x)
+    : decl_traits(get_decl_traits(x))
+  { }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+};
+
+struct variable_traits {
+  constexpr explicit variable_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n)),  // 0x04 | 0x08
+      storage      (get_storage(n)), // 0x10 | 0x20
+      is_constexpr (n & 0x40),
+      is_defined   (n & 0x80),
+      is_inline    (n & 0x0100)
+  { }
+
+  constexpr explicit variable_traits(info x)
+    : variable_traits(get_decl_traits(x))
+  { assert(is_variable(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  storage_kind storage : 2;
+  bool is_constexpr : 1;
+  bool is_defined : 1;
+  bool is_inline : 1;
+};
+
+struct function_traits {
+  constexpr explicit function_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n)),  // 0x04 | 0x08
+      is_constexpr (n & 0x10),
+      is_noexcept  (n & 0x20),
+      is_defined   (n & 0x40),
+      is_inline    (n & 0x80),
+      is_deleted   (n & 0x0100)
+  { }
+
+  constexpr explicit function_traits(info x)
+    : function_traits(get_decl_traits(x))
+  { assert(is_function(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  bool is_constexpr : 1;
+  bool is_noexcept : 1;
+  bool is_defined : 1;
+  bool is_inline : 1;
+  bool is_deleted : 1;
+};
+
+struct value_traits {
+  constexpr explicit value_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n))   // 0x04 | 0x08
+  { }
+
+  constexpr explicit value_traits(info x)
+    : value_traits(get_decl_traits(x))
+  { assert(is_enumerator(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+};
+
+struct namespace_traits {
+  constexpr explicit namespace_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n)),  // 0x04 | 0x08
+      is_inline    (n & 0x10)
+  { }
+
+  constexpr explicit namespace_traits(info x)
+    : namespace_traits(get_decl_traits(x))
+  { assert(is_namespace(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  bool is_inline : 1;
+};
+
+struct field_traits {
+  constexpr explicit field_traits(unsigned n)
+    : linkage      (get_linkage(n)), // 0x01 | 0x02
+      access       (get_access(n)),  // 0x04 | 0x08
+      is_mutable   (n & 0x10)
+  { }
+
+  constexpr explicit field_traits(info x)
+    : field_traits(get_decl_traits(x))
+  { assert(is_data_member(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  bool is_mutable : 1;
+};
+
+
+// Methods
+
+// For methods, the kind is stored in bits 5 and 6.
+static constexpr member_kind get_method(unsigned n) {
+  return member_kind((n >> 4) & 0x03);
 }
 
-// True if x reflects a translation unit.
-constexpr! bool is_translation_unit(info x) {
-  return kind(x) == translation_unit;
+struct method_traits {
+  constexpr explicit method_traits(unsigned n)
+    : linkage        (get_linkage(n)), // 0x01 | 0x02
+      access         (get_access(n)),  // 0x04 | 0x08
+      kind           (get_method(n)),  // 0x10 | 0x20
+      is_constexpr   (n & 0x40),
+      is_explicit    (n & 0x80),
+      is_virtual     (n & 0x100),
+      is_pure        (n & 0x200),
+      is_final       (n & 0x400),
+      is_override    (n & 0x800),
+      is_noexcept    (n & 0x1000),
+      is_defined     (n & 0x2000),
+      is_inline      (n & 0x4000),
+      is_deleted     (n & 0x8000),
+      is_defaulted   (n & 0x10000),
+      is_trivial     (n & 0x20000),
+      is_default_ctor(n & 0x40000),
+      is_copy_ctor   (n & 0x80000),
+      is_move_ctor   (n & 0x100000),
+      is_copy_assign (n & 0x200000),
+      is_move_assign (n & 0x400000)
+  { }
+
+  constexpr explicit method_traits(info x)
+    : method_traits(get_decl_traits(x))
+  { assert(is_member_function(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  member_kind kind : 2;
+  bool is_constexpr : 1;
+  bool is_explicit : 1;
+  bool is_virtual : 1;
+  bool is_pure : 1;
+  bool is_final : 1;
+  bool is_override : 1;
+  bool is_noexcept : 1;
+  bool is_defined : 1;
+  bool is_inline : 1;
+  bool is_deleted : 1;
+  bool is_defaulted : 1;
+  bool is_trivial : 1;
+  bool is_default_ctor : 1;
+  bool is_copy_ctor : 1;
+  bool is_move_ctor : 1;
+  bool is_copy_assign : 1;
+  bool is_move_assign : 1;
+};
+
+// Basic Traits
+struct linkage_traits {
+  constexpr explicit linkage_traits(unsigned n)
+    : kind(get_linkage(n)) { }
+
+  constexpr explicit linkage_traits(info x)
+    : linkage_traits(get_linkage_traits(x))
+  { }
+
+  linkage_kind kind : 2;
+};
+
+struct access_traits {
+  constexpr explicit access_traits(unsigned n)
+    : kind(get_access(n)) { }
+
+  constexpr explicit access_traits(info x)
+    : access_traits(get_access_traits(x))
+  { }
+
+  access_kind kind : 2;
+};
+
+// Classes
+
+// For classes, the kind is stored in bits 5 and 6.
+static constexpr class_kind get_class_kind(unsigned n) {
+  return class_kind((n >> 4) & 0x03);
 }
 
-// True if x reflects a namespace.
-constexpr! bool is_namespace(info x) {
-  return kind(x) == namespace_decl;
+// TODO: Accumulate all known type traits for classes.
+struct class_traits {
+  constexpr explicit class_traits(unsigned n)
+    : linkage       (get_linkage(n)),    // 0x01 | 0x02
+      access        (get_access(n)),     // 0x04 | 0x08
+      kind          (get_class_kind(n)), // 0x10 | 0x20
+      is_complete   (n & 0x40),
+      is_polymorphic(n & 0x80),
+      is_abstract   (n & 0x100),
+      is_final      (n & 0x200),
+      is_empty      (n & 0x400)
+  { }
+
+  constexpr explicit class_traits(info x)
+    : class_traits(get_type_traits(x))
+  { assert(is_class_type(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  class_kind kind : 2;
+  bool is_complete : 1;
+  bool is_polymorphic : 1;
+  bool is_abstract : 1;
+  bool is_final : 1;
+  bool is_empty : 1;
+};
+
+struct enum_traits {
+  constexpr explicit enum_traits(unsigned n)
+    : linkage    (get_linkage(n)), // 0x01 | 0x02
+      access     (get_access(n)),  // 0x04 | 0x08
+      is_scoped  (n & 0x10),
+      is_complete(n & 0x20)
+  { }
+
+  constexpr explicit enum_traits(info x)
+    : enum_traits(get_type_traits(x))
+  { assert(is_enum_type(x)); }
+
+  linkage_kind linkage : 2;
+  access_kind access : 2;
+  bool is_scoped : 1;
+  bool is_complete : 1;
+};
+
+} // end internal namespace
+
+// True if x is an invalid reflection.
+consteval bool is_invalid(info x) {
+  return __reflect(detail::query_is_invalid, x);
 }
 
 // True if x reflects a variable.
-constexpr! bool is_variable(info x) {
-  return kind(x) == variable_decl;
+consteval bool is_variable(info x) {
+  return __reflect(detail::query_is_variable, x);
 }
 
 // True if x reflects a function.
-constexpr! bool is_function(info x) {
-  return kind(x) == function_decl;
-}
-
-// True if x reflects a parameter.
-constexpr! bool is_parameter(info x) {
-  return kind(x) == parameter_decl;
+consteval bool is_function(info x) {
+  return __reflect(detail::query_is_function, x);
 }
 
 // True if x reflects a class.
-constexpr! bool is_class(info x) {
-  return kind(x) == class_decl;
+consteval bool is_class(info x) {
+  return __reflect(detail::query_is_class, x);
 }
 
-// True if x reflects a data member.
-constexpr! bool is_data_member(info x) {
-  return kind(x) == data_member_decl;
+// True if x reflects a union.
+consteval bool is_union(info x) {
+  return __reflect(detail::query_is_union, x);
 }
 
-// True if x reflects a member function.
-constexpr! bool is_member_function(info x) {
-  return kind(x) == member_function_decl;
+// True if x reflects an enum.
+consteval bool is_enum(info x) {
+  return __reflect(detail::query_is_unscoped_enum, x);
 }
 
-// True if x reflects an access specifier.
-constexpr! bool is_access_specifier(info x) {
-  return kind(x) == access_spec;
-}
-
-// True if x reflections an enum.
-constexpr! bool is_enum(info x) {
-  return kind(x) == enum_decl;
+// True if x reflects a scoped enum.
+consteval bool is_scoped_enum(info x) {
+  return __reflect(detail::query_is_scoped_enum, x);
 }
 
 // True if x reflects an enumerator.
-constexpr! bool is_enumerator(info x) {
-  return kind(x) == enumerator_decl;
+consteval bool is_enumerator(info x) {
+  return __reflect(detail::query_is_enumerator, x);
+}
+
+// True if x reflects a bitfield.
+consteval bool is_bitfield(info x) {
+  return __reflect(detail::query_is_bitfield, x);
+}
+
+// True if x reflects a static data member.
+consteval bool is_static_data_member(info x) {
+  return __reflect(detail::query_is_static_data_member, x);
+}
+
+// True if x reflects a static member function.
+consteval bool is_static_member_function(info x) {
+  return __reflect(detail::query_is_static_member_function, x);
+}
+
+// True if x reflects a nonstatic data member.
+consteval bool is_data_member(info x) {
+  return __reflect(detail::query_is_nonstatic_data_member, x);
+}
+
+// True if x reflects a nonstatic member function.
+consteval bool is_member_function(info x) {
+  return __reflect(detail::query_is_nonstatic_member_function, x);
+}
+
+// True if x reflects a constructor.
+consteval bool is_constructor(info x) {
+  return __reflect(detail::query_is_constructor, x);
+}
+
+// True if x reflects a destructor.
+consteval bool is_destructor(info x) {
+  return __reflect(detail::query_is_destructor, x);
+}
+
+// True if x reflects a type.
+consteval bool is_type(info x) {
+  return __reflect(detail::query_is_type, x);
+}
+
+// True if x reflects a function type.
+consteval bool is_function_type(info x) {
+  return __reflect(detail::query_is_function_type, x);
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_function_type(info x) {
+  return is_function_type(get_type(x));
+}
+
+// True if x reflects a class type.
+consteval bool is_class_type(info x) {
+  return __reflect(detail::query_is_class_type, x);
+}
+
+// True if x reflects an entity with class type.
+consteval bool has_class_type(info x) {
+  return is_class_type(get_type(x));
+}
+
+// True if x reflects a union type.
+consteval bool is_union_type(info x) {
+  return __reflect(detail::query_is_union_type, x);
+}
+
+// True if x reflects an entity with union type.
+consteval bool has_union_type(info x) {
+  return is_union_type(get_type(x));
+}
+
+// True if x reflects an enum type.
+consteval bool is_enum_type(info x) {
+  return __reflect(detail::query_is_enum_type, x);
+}
+
+// True if x reflects an entity with enum type.
+consteval bool has_enum_type(info x) {
+  return is_enum_type(get_type(x));
+}
+
+// True if x reflects a scoped enum type.
+consteval bool is_scoped_enum_type(info x) {
+  return __reflect(detail::query_is_scoped_enum_type, x);
+}
+
+// True if x reflects an entity with scoped enum type.
+consteval bool has_scoped_enum_type(info x) {
+  return is_scoped_enum_type(get_type(x));
+}
+
+// True if x reflects an entity with void type.
+consteval bool is_void_type(info x) {
+  return __reflect(detail::query_is_void_type, x);
+}
+
+// True if x reflects an entity with void type.
+consteval bool has_void_type(info x) {
+  return is_void_type(get_type(x));
+}
+
+// True if x reflects a null pointer type.
+consteval bool is_null_pointer_type(info x) {
+  return __reflect(detail::query_is_null_pointer_type, x);
+}
+
+// True if x reflects an entity with null pointer type.
+consteval bool has_null_pointer_type(info x) {
+  return is_null_pointer_type(get_type(x));
+}
+
+// True if x reflects an integral type.
+consteval bool is_integral_type(info x) {
+  return __reflect(detail::query_is_integral_type, x);
+}
+
+// True if x reflects an entity with integral type.
+consteval bool has_integeral_type(info x) {
+  return is_integral_type(get_type(x));
+}
+
+// True if x reflects a floating point type.
+consteval bool is_floating_point_type(info x) {
+  return __reflect(detail::query_is_integral_type, x);
+}
+
+// True if x reflects an entity with floating point type.
+consteval bool has_floating_point_type(info x) {
+  return is_floating_point_type(get_type(x));
+}
+
+// True if x reflects an array type.
+consteval bool is_array_type(info x) {
+  return __reflect(detail::query_is_array_type, x);
+}
+
+// True if x reflects an entity with array type.
+consteval bool has_array_type(info x) {
+  return is_array_type(get_type(x));
+}
+
+// True if x reflects a pointer type.
+consteval bool is_pointer_type(info x) {
+  return __reflect(detail::query_is_pointer_type, x);
+}
+
+// True if x reflects an entity with pointer type.
+consteval bool has_pointer_type(info x) {
+  return is_pointer_type(get_type(x));
+}
+
+// True if x reflects a lvalue reference type.
+consteval bool is_lvalue_reference_type(info x) {
+  return __reflect(detail::query_is_lvalue_reference_type, x);
+}
+
+// True if x reflects an entity with lvalue reference type.
+consteval bool has_lvalue_reference_type(info x) {
+  return is_lvalue_reference_type(get_type(x));
+}
+
+// True if x reflets a rvalue reference type.
+consteval bool is_rvalue_reference_type(info x) {
+  return __reflect(detail::query_is_rvalue_reference_type, x);
+}
+
+// True if x reflets an entity with rvalue reference type.
+consteval bool has_rvalue_reference_type(info x) {
+  return is_rvalue_reference_type(get_type(x));
+}
+
+// True if x reflects a member object pointer type.
+consteval bool is_member_object_pointer_type(info x) {
+  return __reflect(detail::query_is_member_object_pointer_type, x);
+}
+
+// True if x reflects an entity with member object pointer type.
+consteval bool has_member_object_pointer_type(info x) {
+  return is_member_object_pointer_type(get_type(x));
+}
+
+// True if x reflects a member function pointer type.
+consteval bool is_member_function_pointer_type(info x) {
+  return __reflect(detail::query_is_member_object_pointer_type, x);
+}
+
+// True if x reflects an entity with member function pointer type.
+consteval bool has_member_function_pointer_type(info x) {
+  return is_member_function_pointer_type(get_type(x));
+}
+
+// True if x reflects a closure type.
+consteval bool is_closure_type(info x) {
+  return __reflect(detail::query_is_closure_type, x);
+}
+
+// True if x reflects an entity with closure type.
+consteval bool has_closure_type(info x) {
+  return is_closure_type(get_type(x));
+}
+
+// True if x reflects a namespace.
+consteval bool is_namespace(info x) {
+  return __reflect(detail::query_is_namespace, x);
+}
+
+// True if x reflects a namespace alias.
+consteval bool is_namespace_alias(info x) {
+  return __reflect(detail::query_is_namespace_alias, x);
+}
+
+// True if x reflects a type alias.
+consteval bool is_type_alias(info x) {
+  return __reflect(detail::query_is_type_alias, x);
+}
+
+// True if x reflects a template.
+consteval bool is_template(info x) {
+  return __reflect(detail::query_is_template, x);
+}
+
+// True if x reflects a class template.
+consteval bool is_class_template(info x) {
+  return __reflect(detail::query_is_class_template, x);
+}
+
+// True if x reflects a alias template.
+consteval bool is_alias_template(info x) {
+  return __reflect(detail::query_is_alias_template, x);
+}
+
+// True if x reflects a function template.
+consteval bool is_function_template(info x) {
+  return __reflect(detail::query_is_function_template, x);
+}
+
+// True if x reflects a variable template.
+consteval bool is_variable_template(info x) {
+  return __reflect(detail::query_is_variable_template, x);
+}
+
+// True if x refects a static member function template.
+consteval bool is_static_member_function_template(info x) {
+  return __reflect(detail::query_is_static_member_function_template, x);
+}
+
+// True if x reflects a nonstatic member function template.
+consteval bool is_member_function_template(info x) {
+  return __reflect(detail::query_is_nonstatic_member_function_template, x);
+}
+
+// True if x reflects a constructor template.
+consteval bool is_constructor_template(info x) {
+  return __reflect(detail::query_is_constructor_template, x);
+}
+
+// True if x reflects a destructor template.
+consteval bool is_destructor_template(info x) {
+  return __reflect(detail::query_is_destructor_template, x);
+}
+
+// True if x reflects a concept.
+consteval bool is_concept(info x) {
+  return __reflect(detail::query_is_concept, x);
+}
+
+// True if x reflects a specialization.
+consteval bool is_specialization(info x) {
+  return __reflect(detail::query_is_specialization, x);
+}
+
+// True if x reflects a partial specialization.
+consteval bool is_partial_specialization(info x) {
+  return __reflect(detail::query_is_partial_specialization, x);
+}
+
+// True if x reflects an explicit specialization.
+consteval bool is_explicit_specialization(info x) {
+  return __reflect(detail::query_is_explicit_specialization, x);
+}
+
+// True if x reflects an implicit instantiation.
+consteval bool is_implicit_instantiation(info x) {
+  return __reflect(detail::query_is_implicit_instantiation, x);
+}
+
+// True if x reflects an explicit instantiation.
+consteval bool is_explicit_instantiation(info x) {
+  return __reflect(detail::query_is_explicit_instantiation, x);
+}
+
+// True if x reflects a direct base.
+consteval bool is_direct_base(info x) {
+  return __reflect(detail::query_is_direct_base, x);
+}
+
+// True if x reflects a virtual base.
+consteval bool is_virtual_base(info x) {
+  return __reflect(detail::query_is_virtual_base, x);
+}
+
+// True if x reflects a function parameter.
+consteval bool is_function_parameter(info x) {
+  return __reflect(detail::query_is_function_parameter, x);
+}
+
+// True if x reflects a template parameter.
+consteval bool is_template_parameter(info x) {
+  return __reflect(detail::query_is_template_parameter, x);
+}
+
+// True if x reflects a type template parameter.
+consteval bool is_type_template_parameter(info x) {
+  return __reflect(detail::query_is_type_template_parameter, x);
+}
+
+// True if x reflects a type template parameter.
+consteval bool is_nontype_template_parameter(info x) {
+  return __reflect(detail::query_is_nontype_template_parameter, x);
+}
+
+// True if x reflects a template template parameter.
+consteval bool is_template_template_parameter(info x) {
+  return __reflect(detail::query_is_template_template_parameter, x);
+}
+
+// True if x reflects an expression.
+consteval bool is_expression(info x) {
+  return __reflect(detail::query_is_expression, x);
+}
+
+// True if x reflects an lvalue expression.
+consteval bool is_lvalue(info x) {
+  return __reflect(detail::query_is_lvalue, x);
+}
+
+// True if x reflects an xvalue expression.
+consteval bool is_xvalue(info x) {
+  return __reflect(detail::query_is_xvalue, x);
+}
+
+// True if x reflects an rvalue expression.
+consteval bool is_rvalue(info x) {
+  return __reflect(detail::query_is_xvalue, x);
+}
+
+// True if x reflects a value.
+consteval bool is_value(info x) {
+  return __reflect(detail::query_is_value, x);
+}
+
+// -------------------------------------------------------------------------- //
+// Associated reflection queries
+
+// Returns the reflected entity.
+consteval info get_entity(info x) {
+  return __reflect(detail::query_get_entity, x);
+}
+
+// Returns the lexical context of the declaration.
+consteval info get_parent(info x) {
+  return __reflect(detail::query_get_parent, x);
+}
+
+// Returns the type of the entity.
+consteval info get_type(info x) {
+  return __reflect(detail::query_get_type, x);
 }
 
 // -------------------------------------------------------------------------- //
 // Traversal queries
-	 
-// Returns the lexical context of the declaration.
-constexpr! info parent(info x) {
-  return __reflect_context(x);
-  return {};
+
+// Returns the first child of declaration context. This can be used with
+// next() to traverse contexts as template arguments (iterators don't work
+// as template arguments).
+consteval info front(info x) {
+  return __reflect(detail::query_get_begin, x);
 }
 
-// Returns the home context of the declaration.
-constexpr! info home(info x) {
-  return __reflect_home(x);
-  return {};
+// Returns the next info in the sequence.
+consteval info next(info x) {
+  return __reflect(detail::query_get_next, x);
 }
 
 class iterator {
+  meta::info m_info;
+
 public:
   using value_type = info;
   using reference = info;
@@ -201,62 +889,70 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
-  constexpr! iterator() : curr() { }
-  constexpr! iterator(info x) : curr(x) { }
+  constexpr iterator()
+    : m_info()
+  { }
 
-  constexpr! info operator*() const { return curr; }
-  constexpr! info operator->() const { return curr; }
+  constexpr iterator(meta::info x)
+    : m_info(front(x))
+  { }
 
-  constexpr! iterator& operator++() { 
-    if (!is_null(curr))
-      curr = __reflect_next(curr); 
+  constexpr meta::info operator*() const {
+    return m_info;
+  }
+
+  constexpr iterator operator++() {
+    m_info = next(m_info);
     return *this;
   }
 
-  constexpr! iterator operator++(int) {
+  constexpr iterator operator++(int) {
     iterator tmp = *this;
     operator++();
     return tmp;
   }
 
-  constexpr! bool operator==(iterator i) const { return curr == i.curr; }
-  constexpr! bool operator!=(iterator i) const { return curr != i.curr; }
+  constexpr friend bool operator==(iterator a, iterator b) {
+    return a.m_info == b.m_info;
+  }
 
-private:  
-  info curr;
+  constexpr friend bool operator!=(iterator a, iterator b) {
+    return a.m_info != b.m_info;
+  }
 };
 
-// Returns the first sub-object of x. Objects behave 
+class range {
+  iterator m_first;
+  iterator m_last;
+
+public:
+  constexpr range() { }
+
+  constexpr range(info cxt)
+    : m_first(cxt), m_last()
+  { }
+
+  constexpr iterator begin() const { return m_first; }
+
+  constexpr iterator end() const { return m_last; }
+};
+
+// Returns the first sub-object of x. Objects behave
 // as forward iterators.
-constexpr! iterator begin(info x) {
-  return iterator(__reflect_begin(x));
-  return {};
+consteval iterator begin(info x) {
+  return __reflect(detail::query_get_begin, x);
 }
 
-// Returns a null sub-object of x, indicating 
+// Returns a null sub-object of x, indicating
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
-constexpr! iterator end(info x) {
+consteval iterator end(info x) {
   return iterator();
 }
 
-// Returns the first child of declaration context. This can be used with
-// next() to traverse contexts as template arguments (iterators don't work
-// as template arguments).
-constexpr! info front(info x) {
-  return __reflect_begin(x);
-  return {};
-}
-
-// Returns the next info in the sequence.
-constexpr! info next(info x) {
-  return __reflect_next(x);
-  return {};
-}
-
-// Overload distance so that it's constexpr!.
-constexpr! std::ptrdiff_t distance(iterator first, iterator last) {
+// Overload distance so that it's consteval.
+consteval std::ptrdiff_t distance(iterator first, iterator last) {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
     ++n;
@@ -264,550 +960,205 @@ constexpr! std::ptrdiff_t distance(iterator first, iterator last) {
 }
 
 // -------------------------------------------------------------------------- //
-// Traversal queries
+// Scope queries
+
+// True if x is in local scope.
+consteval bool is_local(info x) {
+  return __reflect(detail::query_is_local, x);
+}
 
 // True if x is a member of a class.
-constexpr! bool is_class_member(info x) {
-  return is_class(parent(x));
+consteval bool is_class_member(info x) {
+  return __reflect(detail::query_is_class_member, x);
 }
 
 // -------------------------------------------------------------------------- //
 // Name
 
-constexpr! const char* name(info x) {
-  return __reflect_name(x);
-  return "";
+// Placeholder for constexpr string.
+using string_type = const char*;
+
+consteval string_type get_name(info x) {
+  return __reflect(detail::query_get_name, x);
 }
 
-// -------------------------------------------------------------------------- //
-// Type
-
-// Returns the reflected type of a variable or function.
-constexpr! info type(info x) {
-  return __reflect_type(x);
-  return {};
+consteval string_type get_display_name(info x) {
+  return __reflect(detail::query_get_display_name, x);
 }
-
-// -------------------------------------------------------------------------- //
-// Declaration traits
-
-struct namespace_traits {
-  constexpr! explicit namespace_traits(unsigned n)
-    : is_inline(n)
-  { }
-
-  constexpr! explicit namespace_traits(info x)
-    : namespace_traits(__reflect_traits(x))
-  { require(is_namespace(x)); }
-  
-  unsigned is_inline : 1;
-};
-
-// FIXME: A variable can be declared but not defined.
-struct variable_traits {
-  constexpr! explicit variable_traits(unsigned n) 
-    : linkage(n),
-      storage(n >> 2),
-      is_static(n >> 4),
-      is_extern(n >> 5),
-      is_inline(n >> 6),
-      is_constexpr(n >> 7)
-  { }
-
-  constexpr! explicit variable_traits(info x)
-    : variable_traits(__reflect_traits(x))
-  { require(is_variable(x)); }
-  
-  unsigned linkage : 2;
-  unsigned storage : 2;
-  unsigned is_static : 1;
-  unsigned is_extern : 1;
-  unsigned is_inline : 1;
-  unsigned is_constexpr : 1;
-};
-
-struct function_traits {
-  constexpr! explicit function_traits(unsigned n) 
-    : linkage(n), 
-      is_static(n >> 2),
-      is_extern(n >> 3),
-      is_constexpr(n >> 4),
-      is_defined(n >> 5),
-      is_inline(n >> 6), 
-      is_deleted(n >> 7)
-  { }
-
-  constexpr! explicit function_traits(info x)
-    : function_traits(__reflect_traits(x))
-  { require(is_function(x)); }
-  
-  unsigned linkage : 2;
-  unsigned is_static : 1;
-  unsigned is_extern : 1;
-  unsigned is_constexpr : 1;
-  unsigned is_defined : 1;
-  unsigned is_inline : 1;
-  unsigned is_deleted : 1;
-};
-
-struct class_traits {
-  constexpr! explicit class_traits(unsigned n) 
-    : linkage(n),
-      access(n >> 2),
-      key(n >> 4),
-      is_complete(n >> 6),
-      is_injected(n >> 7)
-  { }
-
-  constexpr! explicit class_traits(info x)
-    : class_traits(__reflect_traits(x))
-  { }
-  
-  unsigned linkage : 2;
-  unsigned access : 2;
-  unsigned key : 2;
-  unsigned is_complete : 1;
-  unsigned is_injected : 1;
-};
-
-struct data_member_traits {
-  constexpr! explicit data_member_traits(unsigned n) 
-    : storage(n), 
-      access(n >> 2),
-      is_static(n >> 4),
-      is_mutable(n >> 5),
-      is_inline(n >> 6),
-      is_constexpr(n >> 7),
-      is_bitfield(n >> 8)
-  { }
-
-  constexpr! explicit data_member_traits(info x)
-    : data_member_traits(__reflect_traits(x))
-  { require(is_data_member(x)); }
-  
-  unsigned storage : 2;
-  unsigned access : 2;
-  unsigned is_static : 1;
-  unsigned is_mutable : 1;
-  unsigned is_inline : 1;
-  unsigned is_constexpr : 1;
-  unsigned is_bitfield : 1;
-};
-
-struct member_function_traits {
-  constexpr! explicit member_function_traits(unsigned n) 
-    : access(n),
-      kind(n >> 2),
-      is_static(n >> 4),
-      is_constexpr(n >> 5),
-      is_explicit(n >> 6),
-      is_virtual(n >> 7),
-      is_pure(n >> 8),
-      is_override(n >> 9),
-      is_final(n >> 10),
-      is_defined(n >> 11),
-      is_inline(n >> 12),
-      is_deleted(n >> 13),
-      is_defaulted(n >> 14)
-  { }
-
-  constexpr! explicit member_function_traits(info x)
-    : member_function_traits(__reflect_traits(x))
-  { require(is_member_function(x)); }
-
-  unsigned access : 2;
-  unsigned kind : 2;
-  unsigned is_static : 1;
-  unsigned is_constexpr : 1;
-  unsigned is_explicit : 1;
-  unsigned is_virtual : 1;
-  unsigned is_pure : 1;
-  unsigned is_override : 1;
-  unsigned is_final : 1;
-  unsigned is_defined : 1;
-  unsigned is_inline : 1;
-  unsigned is_deleted : 1;
-  unsigned is_defaulted : 1;
-};
-
-struct enum_traits {
-  constexpr! explicit enum_traits(unsigned n) 
-    : linkage(n),
-      access(n >> 2),
-      is_scoped(n >> 4)
-  { }
-
-  constexpr! explicit enum_traits(info x)
-    : enum_traits(__reflect_traits(x))
-  { require(is_enum(x)); }
-  
-  unsigned linkage : 2;
-  unsigned access : 2;
-  unsigned is_scoped : 1;
-};
-
-struct enumerator_traits {
-  constexpr! explicit enumerator_traits(unsigned n) 
-    : access(n)
-  { }
-
-  constexpr! explicit enumerator_traits(info x)
-    : enumerator_traits(__reflect_traits(x))
-  { }
-  
-  unsigned access : 2;
-};
-
-// -------------------------------------------------------------------------- //
-// Access specifiers
-
-struct access_traits {
-  constexpr! explicit access_traits(unsigned n) 
-    : access(n)
-  { }
-  
-  constexpr! explicit access_traits(info x)
-    : access_traits(__reflect_traits(x))
-  { }
-  
-  unsigned access : 2;
-};
 
 // -------------------------------------------------------------------------- //
 // General purpose queries
 
-constexpr! bool has_linkage(info x) {
-  switch (kind(x)) {
-  case namespace_decl:
-    return true;
-  case variable_decl:
-    return variable_traits(x).linkage != no_linkage;
-  case function_decl:
-    return function_traits(x).linkage != no_linkage;
-  case class_decl:
-    return class_traits(x).linkage != no_linkage;
-  case enum_decl:
-    return enum_traits(x).linkage != no_linkage;
-  default:
-    __builtin_unreachable();
-  }
+consteval bool has_linkage(info x) {
+  return detail::linkage_traits(x).kind != detail::no_linkage;
 }
 
-constexpr! bool has_external_linkage(info x) {
-  switch (kind(x)) {
-    case namespace_decl:
-      return true;
-    case variable_decl:
-      return variable_traits(x).linkage == external_linkage;
-    case function_decl:
-      return function_traits(x).linkage == external_linkage;
-    case class_decl:
-      return class_traits(x).linkage == external_linkage;
-    case enum_decl:
-      return enum_traits(x).linkage == external_linkage;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool has_external_linkage(info x) {
+  return detail::linkage_traits(x).kind == detail::external_linkage;
 }
 
-constexpr! bool has_internal_linkage(info x) {
-  switch (kind(x)) {
-    case namespace_decl:
-      return false;
-    case variable_decl:
-      return variable_traits(x).linkage == internal_linkage;
-    case function_decl:
-      return function_traits(x).linkage == internal_linkage;
-    case class_decl:
-      return class_traits(x).linkage == internal_linkage;
-    case enum_decl:
-      return enum_traits(x).linkage == internal_linkage;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool has_internal_linkage(info x) {
+  return detail::linkage_traits(x).kind == detail::internal_linkage;
 }
 
-constexpr! bool has_automatic_storage(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).storage == automatic_storage;
-    case data_member_decl:
-      return data_member_traits(x).storage == automatic_storage;
-    default:
-      __builtin_unreachable();
-  }  
+consteval bool has_automatic_storage(info x) {
+  return detail::variable_traits(x).storage == detail::automatic_storage;
 }
 
-constexpr! bool has_static_storage(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).storage == static_storage;
-    case data_member_decl:
-      return data_member_traits(x).storage == static_storage;
-    default:
-      __builtin_unreachable();
-  }  
+consteval bool has_static_storage(info x) {
+  return detail::variable_traits(x).storage == detail::static_storage;
 }
 
-constexpr! bool has_thread_storage(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).storage == thread_storage;
-    case data_member_decl:
-      return data_member_traits(x).storage == thread_storage;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool has_thread_storage(info x) {
+  return detail::variable_traits(x).storage == detail::thread_storage;
 }
 
-constexpr! bool has_access(info x) {
-  switch (kind(x)) {
-    default:
-      return false;
-    case data_member_decl:
-    case member_function_decl:
-    case access_spec:
-      return true;
-    case class_decl:
-      return class_traits(x).access != no_access;
-    case enum_decl:
-      return class_traits(x).access != no_access;
-    case enumerator_decl:
-      return enumerator_traits(x).access != no_access;
-  }
+consteval bool has_access(info x) {
+  return detail::access_traits(x).kind != detail::no_access;
 }
 
 // True if x's access specifier is determined by the default access of
 // the enclosing class.
-constexpr bool has_default_access(info x) {
-  assert(is_class_member(x));
-  for (info m : parent(x)) {
-    if (is_access_specifier(m))
-      return false;
-    if (m == x)
-      return true;
-  }
-  __builtin_unreachable();
+consteval bool has_default_access(info x) {
+  return __reflect(detail::query_has_default_access, x);
 }
 
-constexpr! bool is_public(info x) {
+consteval bool is_public(info x) {
   assert(has_access(x));
-  switch (kind(x)) {
-    case data_member_decl:
-      return data_member_traits(x).access ==  public_access;
-    case member_function_decl:
-      return member_function_traits(x).access ==  public_access;
-    case access_spec:
-      return access_traits(x).access ==  public_access;
-    case class_decl:
-      return class_traits(x).access == public_access;
-    case enum_decl:
-      return class_traits(x).access == public_access;
-    case enumerator_decl:
-      return enumerator_traits(x).access == public_access;
-    default:
-      __builtin_unreachable();
-  }
+  return detail::access_traits(x).kind != detail::public_access;
 }
 
-constexpr! bool is_private(info x) {
+consteval bool is_private(info x) {
   assert(has_access(x));
-  switch (kind(x)) {
-    case data_member_decl:
-      return data_member_traits(x).access ==  private_access;
-    case member_function_decl:
-      return member_function_traits(x).access ==  private_access;
-    case access_spec:
-      return access_traits(x).access ==  private_access;
-    case class_decl:
-      return class_traits(x).access == private_access;
-    case enum_decl:
-      return class_traits(x).access == private_access;
-    case enumerator_decl:
-      return enumerator_traits(x).access == private_access;
-    default:
-      __builtin_unreachable();
-  }
+  return detail::access_traits(x).kind != detail::private_access;
 }
 
-constexpr! bool is_protected(info x) {
+consteval bool is_protected(info x) {
   assert(has_access(x));
-  switch (kind(x)) {
-    case data_member_decl:
-      return data_member_traits(x).access ==  protected_access;
-    case member_function_decl:
-      return member_function_traits(x).access ==  protected_access;
-    case access_spec:
-      return access_traits(x).access ==  protected_access;
-    case class_decl:
-      return class_traits(x).access == protected_access;
-    case enum_decl:
-      return class_traits(x).access == protected_access;
-    case enumerator_decl:
-      return enumerator_traits(x).access == protected_access;
-    default:
-      __builtin_unreachable();
-  }
+  return detail::access_traits(x).kind != detail::protected_access;
 }
 
-constexpr! bool is_static(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).is_static;
-    case function_decl:
-      return function_traits(x).is_static;
-    case data_member_decl:
-      return data_member_traits(x).is_static;
-    case member_function_decl:
-      return member_function_traits(x).is_static;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool is_extern(info x) {
+  assert(has_linkage(x));
+  return detail::linkage_traits(x).kind == detail::external_linkage;
 }
 
-constexpr! bool is_extern(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).is_extern;
-    case function_decl:
-      return function_traits(x).is_extern;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool is_inline(info x) {
+  if (is_namespace(x))
+    return detail::namespace_traits(x).is_inline;
+  if (is_variable(x))
+    return detail::variable_traits(x).is_inline;
+  if (is_member_function(x))
+    return detail::method_traits(x).is_inline;
+  if (is_function(x))
+    return detail::function_traits(x).is_inline;
+  if (is_member_function_template(x))
+    return detail::method_traits(x).is_inline;
+
+  assert(false);
 }
 
-constexpr! bool is_inline(info x) {
-  switch (kind(x)) {
-    case namespace_decl:
-      return namespace_traits(x).is_inline;
-    case variable_decl:
-      return variable_traits(x).is_inline;
-    case function_decl:
-      return function_traits(x).is_inline;
-    case data_member_decl:
-      return data_member_traits(x).is_inline;
-    case member_function_decl:
-      return member_function_traits(x).is_inline;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool is_constexpr(info x) {
+  if (is_variable(x))
+    return detail::variable_traits(x).is_constexpr;
+  if (is_member_function(x))
+    return detail::method_traits(x).is_constexpr;
+  if (is_function(x))
+    return detail::function_traits(x).is_constexpr;
+  if (is_member_function_template(x))
+    return detail::method_traits(x).is_constexpr;
+
+  assert(false);
 }
 
-constexpr! bool is_constexpr(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      return variable_traits(x).is_constexpr;
-    case function_decl:
-      return function_traits(x).is_constexpr;
-    case data_member_decl:
-      return data_member_traits(x).is_constexpr;
-    case member_function_decl:
-      return member_function_traits(x).is_constexpr;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool is_normal(info x) {
+  return detail::method_traits(x).kind == detail::normal;
 }
 
-constexpr! bool is_normal(info x) {
-  return member_function_traits(x).kind == normal;
+consteval bool is_conversion(info x) {
+  return detail::method_traits(x).kind == detail::conversion;
 }
 
-constexpr! bool is_constructor(info x) {
-  return member_function_traits(x).kind == constructor;
+consteval bool is_explicit(info x) {
+  return detail::method_traits(x).is_explicit;
 }
 
-constexpr! bool is_destructor(info x) {
-  return member_function_traits(x).kind == destructor;
+consteval bool is_virtual(info x) {
+  return detail::method_traits(x).is_virtual;
 }
 
-constexpr! bool is_conversion(info x) {
-  return member_function_traits(x).kind == conversion;
+consteval bool is_pure_virtual(info x) {
+  return detail::method_traits(x).is_pure;
 }
 
-constexpr! bool is_explicit(info x) {
-  return member_function_traits(x).is_explicit;
+consteval bool is_override(info x) {
+  return detail::method_traits(x).is_override;
 }
 
-constexpr! bool is_virtual(info x) {
-  return member_function_traits(x).is_virtual;
+consteval bool is_final(info x) {
+  if (is_class_type(x))
+    return detail::class_traits(x).is_final;
+  if (is_member_function(x))
+    return detail::method_traits(x).is_final;
+
+  assert(false);
 }
 
-constexpr! bool is_pure_virtual(info x) {
-  return member_function_traits(x).is_pure;
+consteval bool is_defaulted(info x) {
+  return detail::method_traits(x).is_defaulted;
 }
 
-constexpr! bool is_override(info x) {
-  return member_function_traits(x).is_override;
+consteval bool is_mutable(info x) {
+  return detail::field_traits(x).is_mutable;
 }
 
-constexpr! bool is_final(info x) {
-  return member_function_traits(x).is_final;
+consteval bool is_defined(info x) {
+  if (is_variable(x))
+    return detail::variable_traits(x).is_defined;
+  if (is_member_function(x))
+    return detail::method_traits(x).is_defined;
+  if (is_function(x))
+    return detail::function_traits(x).is_defined;
+  if (is_class_type(x))
+    return detail::class_traits(x).is_complete;
+  if (is_data_member(x))
+    return true;
+
+  assert(false);
 }
 
-constexpr! bool is_defaulted(info x) {
-  return member_function_traits(x).is_defaulted;
+consteval bool is_deleted(info x) {
+  if (is_member_function(x))
+    return detail::method_traits(x).is_deleted;
+  if (is_function(x))
+    return detail::function_traits(x).is_deleted;
+
+  return false;
 }
 
-constexpr! bool is_mutable(info x) {
-  return data_member_traits(x).is_mutable;
+consteval bool is_declared_struct(info x) {
+  return detail::class_traits(x).kind == detail::struct_class_kind;
 }
 
-// TODO: Add an accessor for the bit width.
-constexpr! bool is_bitfield(info x) {
-  return data_member_traits(x).is_bitfield;
+consteval bool is_declared_class(info x) {
+  return detail::class_traits(x).kind == detail::class_class_kind;
 }
 
-constexpr! bool is_defined(info x) {
-  switch (kind(x)) {
-    case variable_decl:
-      // FIXME: This is not accurate.
-      return !is_extern(x);
-    case function_decl:
-      return function_traits(x).is_defined;
-    case class_decl:
-      return class_traits(x).is_complete;
-    case data_member_decl:
-      return true;
-    case member_function_decl:
-      return member_function_traits(x).is_defined;
-    default:
-      __builtin_unreachable();
-  }
+consteval bool is_complete(info x) {
+  if (is_class_type(x))
+    return detail::class_traits(x).is_complete;
+  if (is_enum_type(x))
+    return detail::enum_traits(x).is_complete;
+
+  assert(false);
 }
 
-constexpr! bool is_deleted(info x) {
-  switch (kind(x)) {
-    case function_decl:
-      return function_traits(x).is_deleted;
-    case member_function_decl:
-      return member_function_traits(x).is_deleted;
-    default:
-      __builtin_unreachable();
-  }
-}
+// consteval bool is_injected_class_name(info x) {
+//   return detail::class_traits(x).is_injected;
+// }
 
-constexpr! bool is_declared_struct(info x) {
-  return class_traits(x).key == struct_key;
-}
-
-constexpr! bool is_declared_class(info x) {
-  return class_traits(x).key == class_key;
-}
-
-constexpr! bool is_union(info x) {
-  return class_traits(x).key == union_key;
-}
-
-constexpr! bool is_complete(info x) {
-  return class_traits(x).is_complete;
-}
-
-constexpr! bool is_injected_class_name(info x) {
-  return class_traits(x).is_injected;
-}
-
-constexpr! bool is_scoped(info x) {
-  return enum_traits(x).is_scoped;
+consteval bool is_scoped(info x) {
+  return detail::enum_traits(x).is_scoped;
 }
 
 } // inline namespace v1

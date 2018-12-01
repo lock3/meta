@@ -3911,7 +3911,7 @@ StmtResult Sema::BuildCXXConstexprExpansionStmt(SourceLocation ForLoc,
       Expr *Args[] = {BeginExpr.get(), EndExpr.get()};
       MultiExprArg MultiArgs(Args);
       ForRangeStatus DistanceStatus = BuildConstexprExpansionCall(
-          ColonLoc, RangeLoc, DistanceDNI, &DistanceCandidateSet, MultiArgs, 
+          ColonLoc, RangeLoc, DistanceDNI, &DistanceCandidateSet, MultiArgs,
           &DistanceCall);
       if (DistanceStatus != FRS_Success) {
         if (DistanceStatus == FRS_DiagnosticIssued)
