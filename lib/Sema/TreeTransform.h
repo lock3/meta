@@ -7378,6 +7378,31 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
                                          E->getLParenLoc(),
                                          E->getRParenLoc());
   }
+
+  case ReflectionOperand::Declaration: {
+    Decl *Old = Ref.getAsDeclaration();
+    Decl *New = getDerived().TransformDecl(Old->getLocation(), Old);
+    if (!New)
+      return ExprError();
+
+    return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), New,
+                                         E->getLParenLoc(),
+                                         E->getRParenLoc());
+  }
+
+  case ReflectionOperand::BaseSpecifier: {
+    // FIXME: Is this right? Is there something we should be transforming.
+    CXXBaseSpecifier *Old = Ref.getAsBaseSpecifier();
+    return getSema().BuildCXXReflectExpr(E->getKeywordLoc(), Old,
+                                         E->getLParenLoc(),
+                                         E->getRParenLoc());
+  }
+
+  case ReflectionOperand::Invalid: {
+    return getSema().BuildInvalidCXXReflectExpr(E->getKeywordLoc(),
+                                                E->getLParenLoc(),
+                                                E->getRParenLoc());
+  }
   }
   llvm_unreachable("invalid reflection");
 }

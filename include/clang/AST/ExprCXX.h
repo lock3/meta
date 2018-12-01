@@ -4557,30 +4557,45 @@ class CXXReflectExpr : public Expr {
   SourceLocation LParenLoc;
   SourceLocation RParenLoc;
 
+  CXXReflectExpr(QualType T);
   CXXReflectExpr(QualType T, QualType Arg);
   CXXReflectExpr(QualType T, TemplateName Arg);
   CXXReflectExpr(QualType T, NamespaceName Arg);
   CXXReflectExpr(QualType T, Expr *Arg);
+  CXXReflectExpr(QualType T, Decl *Arg);
+  CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg);
 
   CXXReflectExpr(EmptyShell Empty)
     : Expr(CXXReflectExprClass, Empty) {}
 
 public:
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, QualType Arg,
                                 SourceLocation LP, SourceLocation RP);
-  
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, TemplateName Arg,
                                 SourceLocation LP, SourceLocation RP);
 
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, NamespaceName Arg,
                                 SourceLocation LP, SourceLocation RP);
 
-  static CXXReflectExpr *Create(ASTContext &C, QualType T, 
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, Expr *Arg,
                                 SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, Decl *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, CXXBaseSpecifier *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *CreateInvalid(ASTContext &C, QualType T,
+                                       SourceLocation KW,
+                                       SourceLocation LP, SourceLocation RP);
 
   /// Returns the reflection operand.
   const ReflectionOperand &getOperand() const { return Ref; }

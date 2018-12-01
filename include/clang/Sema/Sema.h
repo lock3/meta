@@ -8671,6 +8671,17 @@ public:
   ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Expr *E,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Decl *D,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, CXXBaseSpecifier *B,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
+  ExprResult BuildInvalidCXXReflectExpr(SourceLocation KWLoc,
+                                        SourceLocation LParenLoc,
+                                        SourceLocation RParenLoc);
+
+  ExprResult BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc);
 
   ExprResult ActOnCXXReflectionTrait(SourceLocation KWLoc,
                                      SmallVectorImpl<Expr *> &Args,

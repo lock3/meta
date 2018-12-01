@@ -31,6 +31,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExternalASTSource.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/MangleNumberingContext.h"
 #include "clang/AST/NestedNameSpecifier.h"
@@ -4824,6 +4825,11 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
 
 QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
   ReflectedType *RT;
+
+  const Type *UnderlyingType = &(*T);
+  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingType)) {
+    T = LITy->getType();
+  }
 
   if (E->isInstantiationDependent()) {
     llvm::FoldingSetNodeID ID;

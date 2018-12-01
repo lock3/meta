@@ -364,7 +364,7 @@ checkDeducedTemplateArguments(ASTContext &Context,
   }
 
   case TemplateArgument::Reflected:
-    llvm_unreachable("You can not deduce to a reflected template argument");
+    llvm_unreachable("You cannot deduce a reflected template argument");
 
   }
 
@@ -2230,7 +2230,7 @@ DeduceTemplateArguments(Sema &S,
     llvm_unreachable("Argument packs should be expanded by the caller!");
 
   case TemplateArgument::Reflected:
-    llvm_unreachable("You can not deduce to a reflected template argument");
+    llvm_unreachable("You cannot deduce a reflected template argument");
 
   }
 

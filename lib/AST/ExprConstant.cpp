@@ -10899,6 +10899,18 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
     APValue Result(RK_expression, Ref.getAsExpression());
     return Success(Result, E);
   }
+  case ReflectionOperand::Declaration: {
+    APValue Result(RK_declaration, Ref.getAsDeclaration());
+    return Success(Result, E);
+  }
+  case ReflectionOperand::BaseSpecifier: {
+    APValue Result(RK_base_specifier, Ref.getAsBaseSpecifier());
+    return Success(Result, E);
+  }
+  case ReflectionOperand::Invalid: {
+    APValue Result(RK_invalid, nullptr);
+    return Success(Result, E);
+  }
   }
   llvm_unreachable("invalid reflection");
 }

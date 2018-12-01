@@ -418,6 +418,8 @@ const Type *Type::getUnqualifiedDesugaredType() const {
   const Type *Cur = this;
 
   while (true) {
+    if (const LocInfoType *LITy = dyn_cast<LocInfoType>(Cur))
+      Cur = LITy->getType().getTypePtr();
     switch (Cur->getTypeClass()) {
 #define ABSTRACT_TYPE(Class, Parent)
 #define TYPE(Class, Parent) \

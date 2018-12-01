@@ -1321,12 +1321,14 @@ ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
     result = SemaRef.BuildExpressionFromDeclTemplateArgument(arg, type, loc);
 
     if (!result.isInvalid()) type = result.get()->getType();
-  } else {
+  } else if (arg.getKind() == TemplateArgument::Integral) {
     result = SemaRef.BuildExpressionFromIntegralTemplateArgument(arg, loc);
 
     // Note that this type can be different from the type of 'result',
     // e.g. if it's an enum type.
     type = arg.getIntegralType();
+  } else {
+    llvm_unreachable("unsupported nontype template parameter");
   }
   if (result.isInvalid()) return ExprError();
 
