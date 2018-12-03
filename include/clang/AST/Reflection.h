@@ -30,57 +30,79 @@ class NestedNameSpecifier;
 class Type;
 class UnresolvedLookupExpr;
 
+using ReflectedNamespace =
+  llvm::PointerUnion<NamespaceDecl *, TranslationUnitDecl *>;
+
 /// Represents a qualified namespace-name.
 class QualifiedNamespaceName {
-  // The optional nested name specifier for the namespace.
-  NestedNameSpecifier *NNS;
-
   /// The namespace designated by the operand.
-  NamespaceDecl *NS;
+  ReflectedNamespace NS;
 
+  // The qualifying nested name specifier for the namespace.
+  NestedNameSpecifier *NNS;
 public:
-  QualifiedNamespaceName(NamespaceDecl *NS)
-    : QualifiedNamespaceName(nullptr, NS) { }
+  QualifiedNamespaceName(
+      ReflectedNamespace NS, NestedNameSpecifier *NNS)
+    : NS(NS), NNS(NNS) {
+    // Namespace must always be set.
+    assert(!NS.isNull());
+  }
 
-  QualifiedNamespaceName(NestedNameSpecifier *NNS, NamespaceDecl *NS)
-    : NNS(NNS), NS(NS) { }
+  /// Returns the designated namespace.
+  ReflectedNamespace getNamespace() const { return NS; }
 
   /// Returns the nested-name-specifier, if any.
   NestedNameSpecifier *getQualifier() const { return NNS; }
-
-  /// Returns the designated namespace.
-  NamespaceDecl *getNamespace() const { return NS; }
 };
 
 /// Represents a namespace-name within a reflection operand.
 class NamespaceName {
-  /// This is either an unqualified or qualified namespace name.
+  // This is either an a reflected namespace or a qualified namespace name.
   using StorageType =
-    llvm::PointerUnion<NamespaceDecl *, QualifiedNamespaceName *>;
+    llvm::PointerUnion3<
+        NamespaceDecl *, TranslationUnitDecl *, QualifiedNamespaceName *>;
 
   StorageType Storage;
 
   explicit NamespaceName(void *Ptr)
-    : Storage(StorageType::getFromOpaqueValue(Ptr)) { }
-
+    : Storage(StorageType::getFromOpaqueValue(Ptr)) {
+    // Storage must always be set.
+    assert(!Storage.isNull());
+  }
 public:
   enum NameKind {
     /// An unqualified namespace-name.
     Namespace,
 
     /// A qualified namespace-name.
-    QualifiedNamespace,
+    QualifiedNamespace
   };
 
-  explicit NamespaceName(NamespaceDecl *NS) : Storage(NS) { }
-  explicit NamespaceName(QualifiedNamespaceName *Q) : Storage(Q) { }
+  explicit NamespaceName(ReflectedNamespace NS)
+    : Storage(StorageType::getFromOpaqueValue(NS.getOpaqueValue())) {
+    // Ensure the translation from ReflectedNamespace to StorageType
+    // is working correctly since these are two different pointer unions.
+    //
+    // The transition should be one of the following:
+    // - a Namespace to a Namespace
+    // - a TranslationUnit to a TranslationUnit.
+    assert(Storage.is<TranslationUnitDecl *>() || Storage.is<NamespaceDecl *>());
+    assert(NS.is<NamespaceDecl *>() == Storage.is<NamespaceDecl *>());
+    assert(
+         NS.is<TranslationUnitDecl *>() == Storage.is<TranslationUnitDecl *>());
+  }
+
+  explicit NamespaceName(QualifiedNamespaceName *Q) : Storage(Q) {
+    // Storage must always be set.
+    assert(!Storage.isNull());
+  }
 
   /// Returns the kind of name stored.
   NameKind getKind() const {
-    if (Storage.is<NamespaceDecl *>())
-      return Namespace;
-    else
+    if (Storage.is<QualifiedNamespaceName *>())
       return QualifiedNamespace;
+
+    return Namespace;
   }
 
   /// Returns true if this is qualified.
@@ -88,18 +110,31 @@ public:
 
   /// Returns the designated namespace, if any.
   NestedNameSpecifier *getQualifier() const {
-    if (getKind() == QualifiedNamespace)
+    if (isQualified())
       return Storage.get<QualifiedNamespaceName *>()->getQualifier();
-    else
-      return nullptr;
+
+    return nullptr;
   }
 
   /// Returns the designated namespace.
-  NamespaceDecl *getNamespace() const {
-    if (getKind() == Namespace)
-      return Storage.get<NamespaceDecl *>();
-    else
-      return Storage.get<QualifiedNamespaceName *>()->getNamespace();
+  ReflectedNamespace getNamespace() const {
+    if (NamespaceDecl *NS = Storage.dyn_cast<NamespaceDecl *>())
+      return { NS };
+
+    if (TranslationUnitDecl *TU = Storage.dyn_cast<TranslationUnitDecl *>())
+      return { TU };
+
+    return Storage.get<QualifiedNamespaceName *>()->getNamespace();
+  }
+
+  /// Returns the designated namespace as a Decl.
+  Decl *getNamespaceAsDecl() const {
+    ReflectedNamespace ReflNs = getNamespace();
+
+    if (NamespaceDecl *NS = ReflNs.dyn_cast<NamespaceDecl *>())
+      return NS;
+
+    return ReflNs.get<TranslationUnitDecl *>();
   }
 
   /// Returns this as an opaque pointer.

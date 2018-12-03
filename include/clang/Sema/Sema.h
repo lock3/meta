@@ -8652,6 +8652,7 @@ public:
   ParsedReflectionOperand ActOnReflectedNamespace(CXXScopeSpec &SS,
                                                   SourceLocation &Loc,
                                                   Decl *D);
+  ParsedReflectionOperand ActOnReflectedNamespace(SourceLocation Loc);
   ParsedReflectionOperand ActOnReflectedExpression(Expr *E);
 
   ExprResult ActOnCXXReflectExpr(SourceLocation KWLoc,

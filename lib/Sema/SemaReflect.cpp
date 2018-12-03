@@ -59,6 +59,13 @@ ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
+ParsedReflectionOperand Sema::ActOnReflectedNamespace(SourceLocation Loc) {
+  // llvm::outs() << "GOT NAMESPACE\n";
+  // D->dump();
+  // Clang uses TUDecl in place of having a global namespace.
+  return ParsedReflectionOperand(Context.getTranslationUnitDecl(), Loc);
+}
+
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
   
   // llvm::outs() << "GOT EXPRESSION\n";
@@ -84,10 +91,19 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
     TemplateName Arg = Ref.getAsTemplate().get();
     return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
+  case ParsedReflectionOperand::GlobalNamespace:
   case ParsedReflectionOperand::Namespace: {
-    // FIXME: If the ScopeSpec is non-empty, create a qualified namespace-name.
-    NamespaceName Arg(cast<NamespaceDecl>(Ref.getAsNamespace()));
-    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
+    ReflectedNamespace RNS = Ref.getAsNamespace();
+    const CXXScopeSpec SS = Ref.getScopeSpec();
+
+    bool IsQualified = !SS.isEmpty();
+    if (IsQualified) {
+      QualifiedNamespaceName *QNS
+        = new (Context) QualifiedNamespaceName(RNS, SS.getScopeRep());
+      return BuildCXXReflectExpr(Loc, NamespaceName(QNS), LP, RP);
+    }
+
+    return BuildCXXReflectExpr(Loc, NamespaceName(RNS), LP, RP);
   }
   case ParsedReflectionOperand::Expression: {
     Expr *Arg = Ref.getAsExpr();
