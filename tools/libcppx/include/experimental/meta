@@ -894,7 +894,7 @@ public:
   { }
 
   constexpr iterator(meta::info x)
-    : m_info(front(x))
+    : m_info(x)
   { }
 
   constexpr meta::info operator*() const {
