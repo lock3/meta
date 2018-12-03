@@ -360,7 +360,6 @@ struct Reflection {
   /// The reflected entity or construct.
   const APValue Ref;
 
-public:
   /// The expression defining the query.
   const CXXReflectionTraitExpr *Query;
 
