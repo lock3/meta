@@ -92,14 +92,6 @@ static const Decl *getReachableDecl(const Reflection &R) {
   return nullptr;
 }
 
-/// Returns the designated value declaration if reachable through
-/// the reflection.
-static const ValueDecl *getReachableValueDecl(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<ValueDecl>(D);
-  return nullptr;
-}
-
 namespace {
 
 /// A helper class to manage conditions involving types.
@@ -1386,6 +1378,12 @@ static bool makeReflection(QualType T, APValue &Result) {
   return true;
 }
 
+/// Set Result to a reflection of T.
+static bool makeReflection(const Type *T, APValue &Result) {
+  assert(T);
+  return makeReflection(QualType(T, 0), Result);
+}
+
 /// Set Result to a reflection of E.
 static bool makeReflection(const Expr *E, APValue &Result) {
   Result = APValue(RK_declaration, E);
@@ -1433,8 +1431,14 @@ static bool getParent(const Reflection &R, APValue &Result) {
 }
 
 static bool getType(const Reflection &R, APValue &Result) {
-  if (const ValueDecl *VD = getReachableValueDecl(R))
-    return makeReflection(VD->getType(), Result);
+  if (const Expr *E = getExpr(R))
+    return makeReflection(E->getType(), Result);
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D))
+      return makeReflection(TD->getTypeForDecl(), Result);
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
+      return makeReflection(VD->getType(), Result);
+  }
 
   // FIXME: Emit an appropriate error diagnostic.
   return Error(R);
