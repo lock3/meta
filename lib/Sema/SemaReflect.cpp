@@ -414,6 +414,40 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
   return ExprError();
 }
 
+static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
+                                   SourceLocation SL) {
+  Expr *Eval = nullptr;
+
+  if (R.isDeclaration()) {
+    // If this is a value declaration, the build a DeclRefExpr to evaluate.
+    // Otherwise, it's not evaluable.
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+      QualType T = VD->getType();
+      ExprValueKind VK = Expr::getValueKindForType(T);
+      ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
+      Eval = S.BuildDeclRefExpr(NCVD, T, VK, SL).get();
+    }
+  } else if (R.isExpression()) {
+    // Just evaluate the expression.
+    Eval = const_cast<Expr *>(R.getAsExpression());
+  }
+
+  // If the expression we're going to evaluate is a reference to a field.
+  // Adjust this to be a pointer to that field.
+  if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
+    if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
+      QualType Ty = F->getType();
+      const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
+      Ty = S.Context.getMemberPointerType(Ty, Cls);
+      Eval = new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue,
+                                           OK_Ordinary, Ref->getExprLoc(),
+                                           false);
+    }
+  }
+
+  return Eval;
+}
+
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      Expr *Refl,
                                      SourceLocation LParenLoc,
@@ -427,38 +461,14 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (R.isInvalid())
     return ExprError();
 
-  Expr *Eval = nullptr;
-  if (R.isDeclaration()) {
-    // If this is a value declaration, the build a DeclRefExpr to evaluate.
-    // Otherwise, it's not evaluable.
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
-      QualType T = VD->getType();
-      ExprValueKind VK = Expr::getValueKindForType(T);
-      Eval = BuildDeclRefExpr(const_cast<ValueDecl *>(VD), T, VK, KWLoc).get();
-    }
-  } else if (R.isExpression()) {
-    // Just evaluate the expression.
-    Eval = const_cast<Expr *>(R.getAsExpression());
-
-    // But if the expression is a reference to a field. Adjust this to
-    // be a pointer to that field.
-    if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
-      if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
-        QualType Ty = F->getType();
-        const Type *Cls = Context.getTagDeclType(F->getParent()).getTypePtr();
-        Ty = Context.getMemberPointerType(Ty, Cls);
-        Eval = new (Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue, 
-                                           OK_Ordinary, Ref->getExprLoc(), 
-                                           false);
-      }
-    }
-  }
+  Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
 
   // Evaluate the resulting expression.
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!Eval->EvaluateAsAnyValue(Result, Context)) {
+    // FIXME: This could be a better diagnostic.
     Diag(Eval->getExprLoc(), diag::reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
