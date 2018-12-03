@@ -49,9 +49,8 @@ namespace N {
 }
 
 constexpr int test() {
-  // FIXME: 
-  // auto r0 = reflexpr(::);
-  // assert(__reflect(query_is_namespace(r0)));
+  constexpr auto r0 = reflexpr(::);
+  static_assert(__reflect(query_is_namespace, r0));
 
   constexpr auto r1 = reflexpr(S);
   static_assert(__reflect(query_is_type, __reflect(query_get_type, r1)));

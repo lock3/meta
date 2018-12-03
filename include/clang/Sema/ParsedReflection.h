@@ -26,6 +26,9 @@
 #include <new>
 
 namespace clang {
+  using ReflectedNamespace =
+    llvm::PointerUnion<NamespaceDecl *, TranslationUnitDecl *>;
+
   /// Represents the parsed operand of a reflexpr expression. Note that this
   /// is essentially the same as a ParsedTemplateArgument, except that it
   /// also allows namespace-names, but not pack expansions.
@@ -41,6 +44,8 @@ namespace clang {
       Template,
       /// A reflection of a namespace-name.
       Namespace,
+      /// A reflection of the global namespace.
+      GlobalNamespace,
       /// A reflection of an expression.
       Expression,
     };
@@ -68,6 +73,12 @@ namespace clang {
                             SourceLocation Loc)
       : Kind(Namespace), Operand(Ns), SS(SS), Loc(Loc) { }
 
+    /// Create a global namespace operand.
+    ParsedReflectionOperand(TranslationUnitDecl *Ns,
+                            SourceLocation Loc)
+      : Kind(GlobalNamespace), Operand(Ns), SS(), Loc(Loc) { }
+
+
     /// Determine whether this operand is invalid.
     bool isInvalid() const { return Kind == Invalid; }
 
@@ -93,9 +104,13 @@ namespace clang {
     }
 
     /// Retrieve the template template argument's template name.
-    Decl *getAsNamespace() const {
-      assert (Kind == Namespace && "Not a namespace");
-      return reinterpret_cast<Decl *>(Operand);
+    ReflectedNamespace getAsNamespace() const {
+      assert((Kind == Namespace || Kind == GlobalNamespace)
+             && "Not a namespace");
+      if (Kind == Namespace)
+        return static_cast<NamespaceDecl *>(Operand);
+      else
+        return static_cast<TranslationUnitDecl *>(Operand);
     }
 
     /// Retrieve the location of the template argument.
@@ -104,7 +119,7 @@ namespace clang {
     /// Retrieve the nested-name-specifier that precedes the template
     /// name in a template template argument.
     const CXXScopeSpec &getScopeSpec() const {
-      assert((Kind == Template || Kind == Namespace) &&
+      assert((Kind == Template || Kind == Namespace || Kind == GlobalNamespace) &&
              "Only template template arguments can have a scope specifier");
       return SS;
     }

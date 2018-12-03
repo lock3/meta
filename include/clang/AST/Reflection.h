@@ -30,38 +30,16 @@ class NestedNameSpecifier;
 class Type;
 class UnresolvedLookupExpr;
 
-/// Represents a qualified namespace-name.
-class QualifiedNamespaceName {
-  // The optional nested name specifier for the namespace.
-  NestedNameSpecifier *NNS;
-
-  /// The namespace designated by the operand.
-  NamespaceDecl *NS;
-
-public:
-  QualifiedNamespaceName(NamespaceDecl *NS)
-    : QualifiedNamespaceName(nullptr, NS) { }
-
-  QualifiedNamespaceName(NestedNameSpecifier *NNS, NamespaceDecl *NS)
-    : NNS(NNS), NS(NS) { }
-
-  /// Returns the nested-name-specifier, if any.
-  NestedNameSpecifier *getQualifier() const { return NNS; }
-
-  /// Returns the designated namespace.
-  NamespaceDecl *getNamespace() const { return NS; }
-};
+using ReflectedNamespace =
+  llvm::PointerUnion<NamespaceDecl *, TranslationUnitDecl *>;
 
 /// Represents a namespace-name within a reflection operand.
 class NamespaceName {
-  /// This is either an unqualified or qualified namespace name.
-  using StorageType =
-    llvm::PointerUnion<NamespaceDecl *, QualifiedNamespaceName *>;
+  // The reflected namespace.
+  ReflectedNamespace ReflNs;
 
-  StorageType Storage;
-
-  explicit NamespaceName(void *Ptr)
-    : Storage(StorageType::getFromOpaqueValue(Ptr)) { }
+  // The optional nested name specifier for the namespace.
+  NestedNameSpecifier *NNS;
 
 public:
   enum NameKind {
@@ -72,15 +50,15 @@ public:
     QualifiedNamespace,
   };
 
-  explicit NamespaceName(NamespaceDecl *NS) : Storage(NS) { }
-  explicit NamespaceName(QualifiedNamespaceName *Q) : Storage(Q) { }
+  NamespaceName(ReflectedNamespace NS, NestedNameSpecifier *NNS = nullptr)
+    : ReflNs(NS), NNS(NNS) { }
 
   /// Returns the kind of name stored.
   NameKind getKind() const {
-    if (Storage.is<NamespaceDecl *>())
-      return Namespace;
-    else
+    if (NNS)
       return QualifiedNamespace;
+
+    return Namespace;
   }
 
   /// Returns true if this is qualified.
@@ -88,28 +66,22 @@ public:
 
   /// Returns the designated namespace, if any.
   NestedNameSpecifier *getQualifier() const {
-    if (getKind() == QualifiedNamespace)
-      return Storage.get<QualifiedNamespaceName *>()->getQualifier();
-    else
-      return nullptr;
+    return NNS;
   }
 
   /// Returns the designated namespace.
-  NamespaceDecl *getNamespace() const {
-    if (getKind() == Namespace)
-      return Storage.get<NamespaceDecl *>();
-    else
-      return Storage.get<QualifiedNamespaceName *>()->getNamespace();
+  ReflectedNamespace getNamespace() const {
+    return ReflNs;
   }
 
-  /// Returns this as an opaque pointer.
-  void *getAsVoidPointer() const {
-    return Storage.getOpaqueValue();
-  }
+  /// Returns the designated namespace as a Decl.
+  Decl *getNamespaceAsDecl() const {
+    assert(!ReflNs.isNull());
 
-  /// Returns this as an opaque pointer.
-  static NamespaceName getFromVoidPointer(void *P) {
-    return NamespaceName(P);
+    if (ReflNs.is<NamespaceDecl *>())
+      return ReflNs.get<NamespaceDecl *>();
+
+    return ReflNs.get<TranslationUnitDecl *>();
   }
 };
 
@@ -148,8 +120,8 @@ public:
   ReflectionOperand(TemplateName T)
     : Kind(Template), Data(T.getAsVoidPointer()) { }
 
-  ReflectionOperand(NamespaceName T)
-    : Kind(Namespace), Data(T.getAsVoidPointer()) { }
+  ReflectionOperand(NamespaceName* T)
+    : Kind(Namespace), Data(T) { }
 
   ReflectionOperand(Expr *E)
     : Kind(Expression), Data(E) { }
@@ -182,9 +154,9 @@ public:
     return TemplateName::getFromVoidPointer(Data);
   }
 
-  NamespaceName getAsNamespace() const {
+  NamespaceName *getAsNamespace() const {
     assert(getKind() == Namespace && "not a namespace");
-    return NamespaceName::getFromVoidPointer(Data);
+    return reinterpret_cast<NamespaceName *>(Data);
   }
 
   Expr *getAsExpression() const {

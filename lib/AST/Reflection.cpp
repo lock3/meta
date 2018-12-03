@@ -433,8 +433,10 @@ static bool isClosureType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a namespace.
 static bool isNamespace(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<NamespaceDecl>(D));
+  if (const Decl *D = getReachableDecl(R)) {
+    bool IsNamespace = isa<NamespaceDecl>(D) || isa<TranslationUnitDecl>(D);
+    return SuccessBool(R, Result, IsNamespace);
+  }
   return SuccessFalse(R, Result);
 }
 
