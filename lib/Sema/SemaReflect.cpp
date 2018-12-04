@@ -62,6 +62,13 @@ ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
+ParsedReflectionOperand Sema::ActOnReflectedNamespace(SourceLocation Loc) {
+  // llvm::outs() << "GOT NAMESPACE\n";
+  // D->dump();
+  // Clang uses TUDecl in place of having a global namespace.
+  return ParsedReflectionOperand(Context.getTranslationUnitDecl(), Loc);
+}
+
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
   
   // llvm::outs() << "GOT EXPRESSION\n";
@@ -87,9 +94,18 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
     TemplateName Arg = Ref.getAsTemplate().get();
     return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
+  case ParsedReflectionOperand::GlobalNamespace:
   case ParsedReflectionOperand::Namespace: {
-    // FIXME: If the ScopeSpec is non-empty, create a qualified namespace-name.
-    NamespaceName Arg(cast<NamespaceDecl>(Ref.getAsNamespace()));
+    ReflectedNamespace RNS = Ref.getAsNamespace();
+    const CXXScopeSpec SS = Ref.getScopeSpec();
+
+    bool IsQualified = !SS.isEmpty();
+    if (IsQualified) {
+      NamespaceName *Arg = new (Context) NamespaceName(RNS, SS.getScopeRep());
+      return BuildCXXReflectExpr(Loc, Arg, LP, RP);
+    }
+
+    NamespaceName *Arg = new (Context) NamespaceName(RNS);
     return BuildCXXReflectExpr(Loc, Arg, LP, RP);
   }
   case ParsedReflectionOperand::Expression: {
@@ -111,7 +127,7 @@ ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, TemplateName N,
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
 }
 
-ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, NamespaceName N,
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, NamespaceName *N,
                                      SourceLocation LP, SourceLocation RP) {
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
 }
@@ -417,6 +433,40 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
   return ExprError();
 }
 
+static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
+                                   SourceLocation SL) {
+  Expr *Eval = nullptr;
+
+  if (R.isDeclaration()) {
+    // If this is a value declaration, the build a DeclRefExpr to evaluate.
+    // Otherwise, it's not evaluable.
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+      QualType T = VD->getType();
+      ExprValueKind VK = Expr::getValueKindForType(T);
+      ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
+      Eval = S.BuildDeclRefExpr(NCVD, T, VK, SL).get();
+    }
+  } else if (R.isExpression()) {
+    // Just evaluate the expression.
+    Eval = const_cast<Expr *>(R.getAsExpression());
+  }
+
+  // If the expression we're going to evaluate is a reference to a field.
+  // Adjust this to be a pointer to that field.
+  if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
+    if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
+      QualType Ty = F->getType();
+      const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
+      Ty = S.Context.getMemberPointerType(Ty, Cls);
+      Eval = new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue,
+                                           OK_Ordinary, Ref->getExprLoc(),
+                                           false);
+    }
+  }
+
+  return Eval;
+}
+
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      Expr *Refl,
                                      SourceLocation LParenLoc,
@@ -430,38 +480,14 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (R.isInvalid())
     return ExprError();
 
-  Expr *Eval = nullptr;
-  if (R.isDeclaration()) {
-    // If this is a value declaration, the build a DeclRefExpr to evaluate.
-    // Otherwise, it's not evaluable.
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
-      QualType T = VD->getType();
-      ExprValueKind VK = Expr::getValueKindForType(T);
-      Eval = BuildDeclRefExpr(const_cast<ValueDecl *>(VD), T, VK, KWLoc).get();
-    }
-  } else if (R.isExpression()) {
-    // Just evaluate the expression.
-    Eval = const_cast<Expr *>(R.getAsExpression());
-
-    // But if the expression is a reference to a field. Adjust this to
-    // be a pointer to that field.
-    if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
-      if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
-        QualType Ty = F->getType();
-        const Type *Cls = Context.getTagDeclType(F->getParent()).getTypePtr();
-        Ty = Context.getMemberPointerType(Ty, Cls);
-        Eval = new (Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue, 
-                                           OK_Ordinary, Ref->getExprLoc(), 
-                                           false);
-      }
-    }
-  }
+  Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
 
   // Evaluate the resulting expression.
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!Eval->EvaluateAsAnyValue(Result, Context)) {
+    // FIXME: This could be a better diagnostic.
     Diag(Eval->getExprLoc(), diag::reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);

@@ -4430,6 +4430,9 @@ StmtResult Sema::FinishCXXConstexprExpansionStmt(CXXConstexprExpansionStmt *S,
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
+  if (!S || !B)
+    return StmtError();
+
   CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(S);
   SourceLocation Loc = Expansion->getColonLoc();
 

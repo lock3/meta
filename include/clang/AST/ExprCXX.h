@@ -4564,7 +4564,7 @@ class CXXReflectExpr : public Expr {
   CXXReflectExpr(QualType T);
   CXXReflectExpr(QualType T, QualType Arg);
   CXXReflectExpr(QualType T, TemplateName Arg);
-  CXXReflectExpr(QualType T, NamespaceName Arg);
+  CXXReflectExpr(QualType T, NamespaceName *Arg);
   CXXReflectExpr(QualType T, Expr *Arg);
   CXXReflectExpr(QualType T, Decl *Arg);
   CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg);
@@ -4582,7 +4582,7 @@ public:
                                 SourceLocation LP, SourceLocation RP);
 
   static CXXReflectExpr *Create(ASTContext &C, QualType T,
-                                SourceLocation KW, NamespaceName Arg,
+                                SourceLocation KW, NamespaceName *Arg,
                                 SourceLocation LP, SourceLocation RP);
 
   static CXXReflectExpr *Create(ASTContext &C, QualType T,

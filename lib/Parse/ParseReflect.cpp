@@ -43,6 +43,12 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
     TPA.Revert();
   }
 
+  // Otherwise, check for the global namespace
+  if (Tok.is(tok::coloncolon) && NextToken().is(tok::r_paren)) {
+    SourceLocation ColonColonLoc = ConsumeToken();
+    return Actions.ActOnReflectedNamespace(ColonColonLoc);
+  }
+
   // Otherwise, tentatively parse a namespace-name.
   {
     TentativeParsingAction TPA(*this);
