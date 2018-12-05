@@ -640,27 +640,27 @@ public:
 class CXXInjectionStmt : public Stmt {
   SourceLocation IntroLoc;
 
-  /// The fragment being injected.
-  Stmt *Fragment;
+  /// The reflection or fragment being injected.
+  Stmt *Operand;
 
 public:
-  CXXInjectionStmt(SourceLocation IntroLoc, Expr *Frag)
-    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Fragment(Frag) {}
+  CXXInjectionStmt(SourceLocation IntroLoc, Expr *Operand)
+    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Operand(Operand) {}
 
   explicit CXXInjectionStmt(EmptyShell Empty)
-      : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Fragment() {}
+      : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Operand() {}
 
-  /// \brief The introduced fragment.
-  Expr *getFragment() const { return reinterpret_cast<Expr*>(Fragment); }
+  /// Retrieve the operand of the injection statement.
+  Expr *getOperand() const { return reinterpret_cast<Expr *>(Operand); }
 
-  /// \brief The location of introducer token.
+  /// The location of introducer token.
   SourceLocation getIntroLoc() const { return IntroLoc; }
 
   SourceLocation getBeginLoc() const LLVM_READONLY {
     return IntroLoc;
   }
   SourceLocation getEndLoc() const LLVM_READONLY {
-    return Fragment->getEndLoc();
+    return Operand->getEndLoc();
   }
 
   static bool classof(const Stmt *T) {
@@ -668,7 +668,7 @@ public:
   }
 
   child_range children() {
-    return child_range(&Fragment, &Fragment + 1);
+    return child_range(&Operand, &Operand + 1);
   }
 
   friend class ASTStmtReader;

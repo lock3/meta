@@ -8,7 +8,7 @@ struct ExistingClass {
 
 class NewClass {
   constexpr {
-    -> reflexpr(ExistingClass);
+    -> reflexpr(ExistingClass::inner);
   }
 };
 

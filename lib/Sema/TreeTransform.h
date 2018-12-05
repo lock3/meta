@@ -7954,7 +7954,7 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
-  ExprResult E = TransformExpr(S->getFragment());
+  ExprResult E = TransformExpr(S->getOperand());
   if (E.isInvalid())
     return StmtError();
   return RebuildCXXInjectionStmt(S->getBeginLoc(), E.get());

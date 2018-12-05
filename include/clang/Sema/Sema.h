@@ -10124,14 +10124,9 @@ public:
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
 
-  bool InjectFragment(SourceLocation POI, const Decl *Injection,
-                      const ArrayRef<FieldDecl *> CaptureDecls,
-                      const ArrayRef<APValue> Captures,
-                      Decl *Injectee);
-
-  bool ApplyInjection(SourceLocation POI, InjectionInfo &II);
+  bool ApplyInjection(SourceLocation POI, InjectionEffect &IE);
   bool ApplyEffects(SourceLocation POI,
-		    SmallVectorImpl<EvalEffect> &Injections);
+                    SmallVectorImpl<InjectionEffect> &Injections);
   bool HasPendingInjections(DeclContext *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();

@@ -147,6 +147,10 @@ static const Expr *getExpr(const Reflection &R) {
   return nullptr;
 }
 
+const Decl *Reflection::getAsReachableDeclaration() const {
+  return getReachableDecl(*this);
+}
+
 /// Returns true if R is an invalid reflection.
 static bool isInvalid(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, R.isInvalid());

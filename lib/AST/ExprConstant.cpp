@@ -4280,7 +4280,7 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (Info.checkingPotentialConstantExpression())
       return ESR_Succeeded;
 
-    if (!Info.EvalStatus.Effects) {
+    if (!Info.EvalStatus.InjectionEffects) {
       // Only metapgrams can produce injection results.
       Info.CCEDiag(S->getBeginLoc(), diag::note_injection_outside_constexpr_decl);
       return ESR_Failed;
@@ -4288,20 +4288,16 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
     // Compute the value of the injected reflection and its modifications.
     const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
-    Expr *Fragment = IS->getFragment();
-    APValue FragmentClosureData;
-    if (!Evaluate(FragmentClosureData, Info, Fragment))
+    Expr *Operand = IS->getOperand();
+    APValue OperandValue;
+    if (!Evaluate(OperandValue, Info, Operand))
       return ESR_Failed;
 
-    CXXRecordDecl *FragmentClosureDecl =
-      Fragment->getType()->getAsCXXRecordDecl();
+    QualType OperandType = Operand->getType();
 
     // Queue the injection as a side effect.
-    Info.EvalStatus.Effects->emplace_back();
-    EvalEffect &Effect = Info.EvalStatus.Effects->back();
-    Effect.Kind = EvalEffect::InjectionEffect;
-    Effect.Injection = new InjectionInfo{FragmentClosureDecl,
-                                         FragmentClosureData};
+    Info.EvalStatus.InjectionEffects->emplace_back(OperandType,
+                                                   OperandValue);
     return ESR_Succeeded;
   }
 

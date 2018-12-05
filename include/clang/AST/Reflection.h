@@ -397,6 +397,10 @@ struct Reflection {
     return Ref.getReflectedDeclaration();
   }
 
+  /// If R designates some kind of declaration, either directly, as a type,
+  /// or via a reflection, return that declaration.
+  const Decl *getAsReachableDeclaration() const;
+
   /// Returns this as an expression.
   const Expr *getAsExpression() const {
     return Ref.getReflectedExpression();

@@ -101,42 +101,17 @@ struct SubobjectAdjustment {
 };
 
 /// An injection records a code generation effect resulting from evaluation.
-/// This is a set containing the values of captured declarations and the
-/// expression into which those will be substituted.
-struct InjectionInfo {
-  /// The class of the fragment clojure used in the injection.
-  CXXRecordDecl *FragmentClosureDecl;
+/// This is a set containing type and evaluated value information,
+/// which shall be used in the injection process.
+struct InjectionEffect {
+  /// The type of the expression evaluated to produce this effect.
+  QualType ExprType;
 
-  /// The actual value computed by the injection statement.
-  APValue FragmentClosureData;
-};
+  /// The evaluated value of the expression evaluated to produce this effect.
+  APValue ExprValue;
 
-/// Represents a side-effect to constexpr evaluation. When recorded,
-/// these are returned to the semantic analyzer for subsequent processing.
-struct EvalEffect {
-  enum {
-    InjectionEffect,
-    DiagnosticEffect,
-  } Kind;
-
-  union {
-    /// Information about the injected entity.
-    InjectionInfo *Injection;
-
-    /// The argument to the print function: a reflection value.
-    APValue *DiagnosticArg;
-  };
-
-  EvalEffect()
-    : Injection(nullptr)
-  { }
-
-  ~EvalEffect() {
-    if (Kind == InjectionEffect)
-      delete Injection;
-    else
-      delete DiagnosticArg;
-  }
+  InjectionEffect(QualType ExprType, APValue ExprValue)
+    : ExprType(ExprType), ExprValue(ExprValue) { }
 };
 
 /// This represents one expression.  Note that Expr's are subclasses of Stmt.
@@ -596,14 +571,13 @@ public:
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
-    /// \brief A list of certain kinds of side effects encountered during
-    /// evaluation.
+    /// A list of injection side effects encountered during evaluation.
     ///
     /// If evaluation encounters an source code injection when this is not
     /// set, the expression has undefined behavior. This is only set for the
     /// evaluation of metaprograms. No other evaluations should modify source
     /// code.
-    SmallVectorImpl<EvalEffect> *Effects;
+    SmallVectorImpl<InjectionEffect> *InjectionEffects;
 
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr) {}

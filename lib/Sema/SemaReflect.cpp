@@ -396,6 +396,7 @@ ExprResult Sema::ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
       Context, Context.IntTy, Arg.get(), KWLoc, LParenLoc, RParenLoc);
 }
 
+// FIXME: Duplicated in SemaInject
 static Reflection EvaluateReflection(Sema &S, Expr *E) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
