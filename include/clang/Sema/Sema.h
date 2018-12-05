@@ -8713,6 +8713,13 @@ public:
                                 SourceLocation LParenLoc,
                                 SourceLocation RParenLoc);
 
+  ExprResult ActOnVariadicReification(SourceLocation KWLoc,
+                                      Expr *Range,
+                                      ParsedAttributes &Attrs,
+                                      SourceLocation LParenLoc,
+                                      SourceLocation EllipsisLoc,
+                                      SourceLocation RParenLoc);
+
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
                                  SourceLocation LParenLoc,

@@ -493,6 +493,32 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   return Eval;
 }
 
+ExprResult Sema::ActOnVariadicReification(SourceLocation KWLoc,
+                                          Expr *Range,
+                                          ParsedAttributes &Attrs,
+                                          SourceLocation LParenLoc,
+                                          SourceLocation EllipsisLoc,
+                                          SourceLocation RParenLoc)
+{
+  IdentifierInfo II;
+  StmtResult LoopVar = ActOnCXXForRangeIdentifier(getCurScope(),
+                                                  SourceLocation(),
+                                                  &II,
+                                                  Attrs,
+                                                  SourceLocation());
+
+  StmtResult Expansion = ActOnCXXExpansionStmt(getCurScope(), SourceLocation(),
+                                               SourceLocation(), LoopVar.get(),
+                                               SourceLocation(), Range,
+                                               SourceLocation(), BFRK_Build,
+                                               /*isConstexpr=*/true);
+
+
+  llvm::outs() << "Expansion on reification:\n";
+  // Expansion.get()->dump();
+
+}
+
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      Expr *Refl,
                                      SourceLocation LParenLoc,

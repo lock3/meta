@@ -315,6 +315,16 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
+
+  /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+  /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+  if(EllipsisLoc.isValid()) {
+    ParsedAttributesWithRange attrs(AttrFactory);
+    return Actions.ActOnVariadicReification(Loc, Expr.get(), attrs,
+                                            LPLoc, EllipsisLoc,
+                                            RPLoc);
+  }
+
   return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, EllipsisLoc,
                                      RPLoc);
 }
