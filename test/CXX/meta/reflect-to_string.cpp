@@ -15,15 +15,27 @@ constexpr int distance(I first, I last) {
 }
 
 template<typename I>
-constexpr I next(I iter) {
-  ++iter;
+constexpr I next(I iter, int advancement) {
+  for (int i = 0; i < advancement; ++i)
+    ++iter;
   return iter;
 }
+
+template<class ...TupleValType>
+class tuple {
+};
 
 } // namespace std
 
 namespace meta {
   using info = decltype(reflexpr(void));
+}
+
+// Dummy to satisfy lookup requirements of
+// expansion statements.
+template<int Index, class ...TupleValType>
+int get(std::tuple<TupleValType...>& t) {
+  return 0;
 }
 
 struct member_iterator
@@ -78,7 +90,6 @@ struct member_range
   member_iterator m_last;
 };
 
-extern "C" int puts(char const* str);
 
 consteval char const* name_of(meta::info x) {
   return __reflect(query_get_name, x);
@@ -87,14 +98,17 @@ consteval char const* name_of(meta::info x) {
 enum E { A, B, C };
 
 struct S {
-  int a, b, c;
+  int a = 0, b = 1, c = 2;
 };
 
-// template<typename T> // requires Enum<T>
-char const* to_string(E val) {
-  for constexpr (meta::info member : member_range(reflexpr(E))) {
-    // if (valueof(member) == val)
-    //   return name_of(member);
+extern "C" int puts(char const* str);
+
+template<typename T> // requires Enum<T>
+char const* to_string(T val) {
+  static constexpr auto range = member_range(reflexpr(T));
+  for constexpr (meta::info member : range) {
+    if (valueof(member) == val)
+      return name_of(member);
   }
   return "<unknown>";
 }
@@ -104,7 +118,7 @@ int main() {
   puts(name_of(reflexpr(S)));
   puts(name_of(reflexpr(S::a)));
 
-  puts(to_string(A));
+  puts(to_string<E>(A));
 
   return 0;
 }
