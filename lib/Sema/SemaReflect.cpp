@@ -468,8 +468,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!Eval->EvaluateAsAnyValue(Result, Context)) {
-    // FIXME: This could be a better diagnostic.
-    Diag(Eval->getExprLoc(), diag::reflection_not_constant_expression);
+    Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();
