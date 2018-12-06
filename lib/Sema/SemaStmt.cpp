@@ -2975,9 +2975,12 @@ ExpansionStatementBuilder::Build()
   // I think we need (want?) to insert ranges before classes although
   // range expansion only works when constexpr is true.
 
+  // Do not attempt to build an expansion over a dependent range.
   // If the range is type dependent, then we don't know which of the
   // cases above match.
-  if (RangeType->isDependentType())
+  // If the range is value dependent, then we'll be unsuccessful in
+  // our attempt to build the valid expansion. Length will be non-computable.
+  if (RangeType->isDependentType() || RangeVar->getInit()->isValueDependent())
     return Finish(BuildDependentExpansion());
 
   // Explicitly build this for array types.
@@ -3065,18 +3068,31 @@ ExpansionStatementBuilder::BuildRangeVar()
 void
 ExpansionStatementBuilder::FinishRangeVar()
 {
+  bool IsTypeDependent = RangeType->isDependentType();
+  bool IsValueDependent = RangeVar->getInit()->isValueDependent();
+
   // Update the loop variable's type when the range is dependent.
-  if (RangeType->isDependentType()) {
+  if (IsTypeDependent || IsValueDependent) {
     // The range is implicitly used as a placeholder when it is dependent.
     RangeVar->markUsed(SemaRef.Context);
 
-    // Substitute any 'auto's in the loop variable as 'DependentTy'. We'll 
-    /// fill them in properly when we instantiate the loop.
+    // Substitute any 'auto's in the loop variable as 'DependentTy'. We'll
+    // fill them in properly when we instantiate the loop.
     if (!LoopVar->isInvalidDecl() && Kind != Sema::BFRK_Check) {
-      QualType SubstType = 
-          SemaRef.SubstAutoType(LoopVar->getType(), 
-                                SemaRef.Context.DependentTy);
-      LoopVar->setType(SubstType);
+      // FIXME: This a hack, we need to set the loop var to a temporary
+      // dependent initializer, or use some other means to convey that while
+      // the loop var is not type dependent, it is indeed value dependent.
+      //
+      // In the mean time, this seems to be enough to trick the DeclRefExprs
+      // referencing the loop var into marking themselves as dependent, and
+      // preventing constexpr evaluation before all values are in place.
+      if (IsValueDependent) {
+        LoopVar->setType(SemaRef.Context.DependentTy);
+      } else {
+        QualType SubstType = SemaRef.SubstAutoType(LoopVar->getType(),
+                                                   SemaRef.Context.DependentTy);
+        LoopVar->setType(SubstType);
+      }
     }
   }
 }
@@ -4460,7 +4476,8 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
 
   // If the range initializer is dependent, then we can't deduce its
   // type or instantiate the body. Just return the statement as-is.
-  if (Expansion->getRangeInit()->isTypeDependent())
+  Expr *RangeInit = Expansion->getRangeInit();
+  if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
     return Expansion;
 
   // When there are no members, return an empty compound statement.
