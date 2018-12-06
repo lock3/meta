@@ -3018,16 +3018,7 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  // FIXME: Binding to a prvalue can trigger a materialized temporary,
-  // which seems to be a non-constexpr operation. Not sure why. However,
-  // we still want to bind to array references, so using plan auto as
-  // the deduction type doesn't work. We get decay and lose the extent
-  // of the array.
   RangeType = SemaRef.Context.getAutoRRefDeductType();
-
-  // QualType RangeType = 
-  //     IsConstexpr ? SemaRef.Context.getAutoDeductType()
-  //                 : SemaRef.Context.getAutoRRefDeductType();
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
