@@ -2807,8 +2807,18 @@ struct ExpansionStatementBuilder
     //
     // FIXME: The constexpr should be permitted on the declaration, not
     // required before the loop.
-    if (IsConstexpr)
-      cast<VarDecl>(LoopVar)->setConstexpr(true);  
+    if (IsConstexpr) {
+      VarDecl *VD = cast<VarDecl>(LoopVar);
+      VD->setConstexpr(true);
+      VD->setType(VD->getType().withConst());
+
+      // FIXME: This is a hack, and it can be removed after we allow
+      // constexpr on the declaration.
+      // This stops the const qualifier from being removed during template
+      // instantiation.
+      QualType UpdatedSourceTy = VD->getTypeSourceInfo()->getType().withConst();
+      VD->getTypeSourceInfo()->overrideType(UpdatedSourceTy);
+    }
   }
 
   /// Used during instantiation. Note that all of the statements and
@@ -3018,8 +3028,12 @@ ExpansionStatementBuilder::BuildRangeVar()
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
-  if (IsConstexpr)
+
+  if (IsConstexpr) {
     RangeVar->setConstexpr(IsConstexpr);
+    RangeVar->setType(RangeType = RangeType.withConst());
+  }
+
   if (FinishForRangeVarDecl(SemaRef, RangeVar, RangeExpr, RangeLoc,
                             diag::err_for_range_deduction_failure)) {
     LoopVar->setInvalidDecl();
@@ -3313,11 +3327,13 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   VarDecl *BeginVar = 
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__begin");
   BeginVar->setConstexpr(true);
+  BeginVar->setType(BeginVar->getType().withConst());
 
   ///  Build 'constexpr auto __end = ...'
   VarDecl *EndVar = 
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__end");
   EndVar->setConstexpr(true);
+  EndVar->setType(EndVar->getType().withConst());
 
   // Build decl refs for the __range in each of the begin and end expressions.  
   ExprResult BeginRangeRef = 
