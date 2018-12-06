@@ -456,6 +456,8 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (Refl->isTypeDependent() || Refl->isValueDependent())
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
                                         LParenLoc, LParenLoc);
+  if (!CheckReflectionOperand(*this, Refl))
+    return ExprError();
 
   Reflection R = EvaluateReflection(*this, Refl);
   if (R.isInvalid())
