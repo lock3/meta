@@ -189,15 +189,6 @@ ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
   llvm_unreachable("invalid reflection kind");
 }
 
-static bool SetType(QualType& Ret, QualType T) {
-  Ret = T;
-  return true;
-}
-
-static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
-  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
-}
-
 // Check that the argument has the right type. Ignore references and
 // cv-qualifiers on the expression.
 static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
@@ -216,29 +207,44 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
   return true;
 }
 
-// Gets the type and query from Arg. Returns false on error.
-static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy, 
-                            ReflectionQuery& Query) {
-  // Guess these values initially.
+// Validates a query intrinsics' argument count.
+//
+// FIXME: There are likely unary and n-ary queries,
+// this will likely need to become query dependent.
+static bool CheckQueryArgumentLength(Sema &SemaRef,
+                                     SourceLocation KWLoc,
+                                     const SmallVectorImpl<Expr *> &Args,
+                                     const int ExpectedLength) {
+  if (Args.size() != ExpectedLength) {
+    SemaRef.Diag(KWLoc, diag::err_reflection_wrong_arity)
+      << ExpectedLength << (int) Args.size();
+    return false;
+  }
+
+  return true;
+}
+
+// Sets the query as an unknown query of dependent type. This state
+// will be kept, until we either find the correct query and type,
+// or fail trying to do so.
+static void SetQueryAndTypeUnresolved(Sema &SemaRef, QualType &ResultTy,
+                                      ReflectionQuery &Query) {
   ResultTy = SemaRef.Context.DependentTy;
   Query = RQ_unknown;
+}
 
-  if (Arg->isTypeDependent() || Arg->isValueDependent())
-    return true;
-
-  // Convert to an rvalue.
-  ExprResult Conv = SemaRef.DefaultLvalueConversion(Arg);
-  if (Conv.isInvalid())
-    return false;
-  Arg = Conv.get();
-
-  // FIXME: Should what type should this actually be?
+static bool CheckQueryType(Sema &SemaRef, Expr *&Arg) {
+  // FIXME: What type should this actually be?
   QualType T = Arg->getType();
   if (T->isIntegralType(SemaRef.Context)) {
     SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_wrong_type);
     return false;
   }
 
+  return true;
+}
+
+static bool SetQuery(Sema &SemaRef, Expr *&Arg, ReflectionQuery &Query) {
   // Evaluate the query operand
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
@@ -252,8 +258,43 @@ static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy,
   }
 
   Query = static_cast<ReflectionQuery>(Result.Val.getInt().getExtValue());
+  return true;
+}
 
-  if (isPredicateQuery(Query)) 
+static bool SetType(QualType& Ret, QualType T) {
+  Ret = T;
+  return true;
+}
+
+static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
+  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
+}
+
+// Gets the type and query from Arg for a query read operation.
+// Returns false on error.
+static bool GetTypeAndQueryForRead(Sema &SemaRef, Expr *&Arg,
+                                   QualType &ResultTy,
+                                   ReflectionQuery &Query) {
+  SetQueryAndTypeUnresolved(SemaRef, ResultTy, Query);
+
+  if (Arg->isTypeDependent() || Arg->isValueDependent())
+    return true;
+
+  // Convert to an rvalue.
+  ExprResult Conv = SemaRef.DefaultLvalueConversion(Arg);
+  if (Conv.isInvalid())
+    return false;
+  Arg = Conv.get();
+
+  if (!CheckQueryType(SemaRef, Arg))
+    return false;
+
+  // Resolve the query.
+  if (!SetQuery(SemaRef, Arg, Query))
+    return false;
+
+  // Resolve the type.
+  if (isPredicateQuery(Query))
     return SetType(ResultTy, SemaRef.Context.BoolTy);
   if (isTraitQuery(Query))
     return SetType(ResultTy, SemaRef.Context.UnsignedIntTy);
@@ -266,20 +307,17 @@ static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy,
   return false;
 }
 
-ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation KWLoc,
-                                         SmallVectorImpl<Expr *> &Args,
-                                         SourceLocation LParenLoc,
-                                         SourceLocation RParenLoc) {
-  // FIXME: There are likely unary and n-ary queries.
-  if (Args.size() != 2) {
-    Diag(KWLoc, diag::err_reflection_wrong_arity) << (int)Args.size();
+ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
+                                             SmallVectorImpl<Expr *> &Args,
+                                             SourceLocation LParenLoc,
+                                             SourceLocation RParenLoc) {
+  if (!CheckQueryArgumentLength(*this, KWLoc, Args, 2))
     return ExprError();
-  }
 
   // Get the type of the query. Note that this will convert Args[0].
   QualType Ty;
   ReflectionQuery Query;
-  if (!GetTypeAndQuery(*this, Args[0], Ty, Query))
+  if (!GetTypeAndQueryForRead(*this, Args[0], Ty, Query))
     return ExprError();
 
   // Convert the remaining operands to rvalues.
@@ -290,8 +328,58 @@ ExprResult Sema::ActOnCXXReflectionTrait(SourceLocation KWLoc,
     Args[I] = Arg.get();
   }
 
-  return new (Context) CXXReflectionTraitExpr(Context, Ty, Query, Args, 
-                                              KWLoc, LParenLoc, RParenLoc);
+  return new (Context) CXXReflectionReadQueryExpr(Context, Ty, Query, Args,
+                                                  KWLoc, LParenLoc, RParenLoc);
+}
+
+// Gets the type and query from Arg for a query write operation.
+// Returns false on error.
+static bool GetTypeAndQueryForWrite(Sema &SemaRef, Expr *&Arg,
+                                    QualType &ResultTy,
+                                    ReflectionQuery &Query) {
+  SetQueryAndTypeUnresolved(SemaRef, ResultTy, Query);
+
+  if (Arg->isTypeDependent() || Arg->isValueDependent())
+    return true;
+
+  if (!CheckQueryType(SemaRef, Arg))
+    return false;
+
+  // Resolve the query.
+  if (!SetQuery(SemaRef, Arg, Query))
+    return false;
+
+  // Resolve the type.
+  if (isModifierUpdateQuery(Query))
+    return SetType(ResultTy, SemaRef.Context.VoidTy);
+
+  SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_invalid);
+  return false;
+}
+
+ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
+                                              SmallVectorImpl<Expr *> &Args,
+                                              SourceLocation LParenLoc,
+                                              SourceLocation RParenLoc) {
+  if (!CheckQueryArgumentLength(*this, KWLoc, Args, 3))
+    return ExprError();
+
+  // Get the type of the query. Note that this will convert Args[0].
+  QualType Ty;
+  ReflectionQuery Query;
+  if (!GetTypeAndQueryForWrite(*this, Args[0], Ty, Query))
+    return ExprError();
+
+  // Convert the remaining operands to rvalues.
+  for (std::size_t I = 1; I < Args.size(); ++I) {
+    ExprResult Arg = DefaultLvalueConversion(Args[I]);
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[I] = Arg.get();
+  }
+
+  return new (Context) CXXReflectionWriteQueryExpr(Context, Ty, Query, Args,
+                                                   KWLoc, LParenLoc, RParenLoc);
 }
 
 static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {

@@ -571,7 +571,8 @@ namespace  {
     void
     VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *Node);
     void VisitCXXReflectExpr(const CXXReflectExpr *Node);
-    void VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *Node);
+    void VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *Node);
+    void VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *Node);
     void VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *Node);
     void VisitCXXIdExprExpr(const CXXIdExprExpr *Node);
     void VisitCXXValueOfExpr(const CXXValueOfExpr *Node);
@@ -2544,8 +2545,14 @@ void ASTDumper::VisitCXXReflectExpr(const CXXReflectExpr *Node) {
   // FIXME: Re-implement this.
 }
 
-void ASTDumper::VisitCXXReflectionTraitExpr(
-    const CXXReflectionTraitExpr *Node) {
+void ASTDumper::VisitCXXReflectionReadQueryExpr(
+                                       const CXXReflectionReadQueryExpr *Node) {
+  VisitExpr(Node);
+  // FIXME: Emit a string for the name?
+}
+
+void ASTDumper::VisitCXXReflectionWriteQueryExpr(
+                                      const CXXReflectionWriteQueryExpr *Node) {
   VisitExpr(Node);
   // FIXME: Emit a string for the name?
 }

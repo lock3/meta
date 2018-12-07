@@ -8702,10 +8702,14 @@ public:
 
   ExprResult BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc);
 
-  ExprResult ActOnCXXReflectionTrait(SourceLocation KWLoc,
-                                     SmallVectorImpl<Expr *> &Args,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RparenLoc);
+  ExprResult ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
+                                         SmallVectorImpl<Expr *> &Args,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RparenLoc);
+  ExprResult ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
+                                          SmallVectorImpl<Expr *> &Args,
+                                          SourceLocation LParenLoc,
+                                          SourceLocation RparenLoc);
 
   ExprResult ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                          SmallVectorImpl<Expr *> &Args,

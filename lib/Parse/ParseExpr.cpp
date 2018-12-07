@@ -1440,7 +1440,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseExpressionTrait();
 
   case tok::kw___reflect:
-    return ParseCXXReflectionTrait();
+    return ParseCXXReflectionReadQuery();
+
+  case tok::kw___reflect_mod:
+    return ParseCXXReflectionWriteQuery();
 
   case tok::kw___reflect_print:
     return ParseCXXReflectPrintLiteralExpression();
@@ -1450,11 +1453,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw___reflect_dump:
     return ParseCXXReflectDumpReflectionExpression();
-
-#define REFLECTION_TRAIT(N,Spelling,K)		\
-    case tok::kw_##Spelling:
-#include "clang/Basic/TokenKinds.def"
-    return ParseCXXReflectionTrait();
 
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();

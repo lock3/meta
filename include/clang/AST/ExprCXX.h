@@ -4643,12 +4643,13 @@ public:
   }
 };
 
-/// \brief A reflection trait intrinsic.
+/// A reflection read query intrinsic.
 ///
-/// A reflection trait is a query of an AST node. All traits accept a sequence
-/// of arguments (expressions), the first of which is the encoded value of
-/// the AST node.
-class CXXReflectionTraitExpr : public Expr {
+/// A reflection read query is a query to retreive information
+/// about a reflected entity.
+/// All write querys accept a sequence of arguments (expressions,
+/// the first of which is the reflection needing updated.
+class CXXReflectionReadQueryExpr : public Expr {
 protected:
   ReflectionQuery Query;
   unsigned NumArgs;
@@ -4658,13 +4659,76 @@ protected:
   SourceLocation RParenLoc;
 
 public:
-  CXXReflectionTraitExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+  CXXReflectionReadQueryExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+                             ArrayRef<Expr *> Args,
+                             SourceLocation KeywordLoc,
+                             SourceLocation LParenLoc,
+                             SourceLocation RParenLoc);
+
+  CXXReflectionReadQueryExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the trait's query value.
+  ReflectionQuery getQuery() const { return Query; }
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+};
+
+/// A reflection write query intrinsic.
+///
+/// A reflection write query is an update to a reflection's modifiers.
+/// All write querys accept a sequence of arguments (expressions,
+/// the first of which is the reflection needing updated.
+class CXXReflectionWriteQueryExpr : public Expr {
+protected:
+  ReflectionQuery Query;
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectionWriteQueryExpr(ASTContext &C, QualType T, ReflectionQuery Q,
                          ArrayRef<Expr *> Args,
                          SourceLocation KeywordLoc,
                          SourceLocation LParenLoc,
                          SourceLocation RParenLoc);
 
-  CXXReflectionTraitExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
+  CXXReflectionWriteQueryExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
 
   /// Returns the trait's query value.
   ReflectionQuery getQuery() const { return Query; }

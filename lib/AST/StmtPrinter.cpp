@@ -2269,8 +2269,20 @@ void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
   #endif
 }
 
-void StmtPrinter::VisitCXXReflectionTraitExpr(CXXReflectionTraitExpr *E) {
+void StmtPrinter::VisitCXXReflectionReadQueryExpr(
+                                                CXXReflectionReadQueryExpr *E) {
   OS << "__reflect(";
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  OS << "__reflect_mod(";
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
     PrintExpr(E->getArg(i));
     if (i + 1 != E->getNumArgs())

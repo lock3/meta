@@ -22,7 +22,6 @@
 namespace clang {
 
 class CXXBaseSpecifier;
-class CXXReflectionTraitExpr;
 class Decl;
 class Expr;
 class NamespaceDecl;
@@ -284,6 +283,9 @@ enum ReflectionQuery {
   RQ_get_name,
   RQ_get_display_name,
 
+  // Modifier updates
+  RQ_set_access,
+
   // Labels for kinds of queries. These need to be updated when new
   // queries are added.
 
@@ -299,6 +301,9 @@ enum ReflectionQuery {
   // Names -- these return const char*
   RQ_first_name = RQ_get_name,
   RQ_last_name = RQ_get_display_name,
+  // Modifier updates -- these return meta::info.
+  RQ_first_modifier_update = RQ_set_access,
+  RQ_last_modifier_update = RQ_set_access
 };
 
 /// True if Q is a predicate.
@@ -321,6 +326,26 @@ inline bool isNameQuery(ReflectionQuery Q) {
   return RQ_first_name <= Q && Q <= RQ_last_name;
 }
 
+/// True if Q updates modifiers.
+inline bool isModifierUpdateQuery(ReflectionQuery Q) {
+  return RQ_first_modifier_update <= Q && Q <= RQ_last_modifier_update;
+}
+
+enum AccessLevel : unsigned {
+  AccessNone,
+  AccessPublic,
+  AccessPrivate,
+  AccessProtected
+};
+
+class ReflectionModifiers {
+public:
+  AccessLevel Access : 2;
+
+  ReflectionModifiers()
+    : Access(AccessNone) { }
+};
+
 /// The reflection class provides context for evaluating queries.
 ///
 /// FIXME: This might not need diagnostics; we could simply return invalid
@@ -333,7 +358,7 @@ struct Reflection {
   const APValue Ref;
 
   /// The expression defining the query.
-  const CXXReflectionTraitExpr *Query;
+  const Expr *Query;
 
   /// Points to a vector of diagnostics, to be populated during query
   /// evaluation.
@@ -351,15 +376,20 @@ struct Reflection {
   }
 
   /// Construct a reflection that will be used to evaluate a query.
-  Reflection(ASTContext &C, const APValue &R, const CXXReflectionTraitExpr *E,
+  Reflection(ASTContext &C, const APValue &R, const Expr *Query,
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
-    : Ctx(&C), Ref(R), Query(E), Diag(D) {
+    : Ctx(&C), Ref(R), Query(Query), Diag(D) {
     assert(Ref.isReflection() && "not a reflection");
   }
 
   /// Returns the reflection kind.
   ReflectionKind getKind() const {
     return Ref.getReflectionKind();
+  }
+
+  // Returns the opaque reflection pointer.
+  const void *getOpaqueValue() const {
+    return Ref.getOpaqueReflectionValue();
   }
 
   /// True if this is the invalid reflection.
@@ -411,6 +441,11 @@ struct Reflection {
     return Ref.getReflectedBaseSpecifier();
   }
 
+  /// Returns the modifiers associated with this reflection.
+  const ReflectionModifiers &getModifiers() const {
+    return Ref.getReflectionModifiers();
+  }
+
   /// Evaluates the predicate designated by Q.
   bool EvaluatePredicate(ReflectionQuery Q, APValue &Result);
 
@@ -421,7 +456,12 @@ struct Reflection {
   bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 
   /// Returns the entity name designated by Q.
-  bool GetName(ReflectionQuery, APValue &Result);
+  bool GetName(ReflectionQuery Q, APValue &Result);
+
+  /// Returns a copy of the reflection, with the given modifier changed.
+  bool UpdateModifier(ReflectionQuery Q,
+                      const ArrayRef<APValue> &ContextualArgs,
+                      APValue &Result);
 
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);

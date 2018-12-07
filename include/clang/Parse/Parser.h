@@ -2783,7 +2783,8 @@ private:
 
   ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
-  ExprResult ParseCXXReflectionTrait();
+  ExprResult ParseCXXReflectionReadQuery();
+  ExprResult ParseCXXReflectionWriteQuery();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();

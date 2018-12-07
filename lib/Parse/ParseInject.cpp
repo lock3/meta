@@ -207,7 +207,7 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   SourceLocation Loc = ConsumeToken();
 
   /// Get a fragment as the operand of the decl.
-  ExprResult FragmentOrReflection = ParseConstantExpression();
+  ExprResult FragmentOrReflection = ParseExpression();
   if (FragmentOrReflection.isInvalid())
     return StmtResult();
 

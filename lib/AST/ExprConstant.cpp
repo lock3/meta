@@ -5152,7 +5152,8 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
-  bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
+  bool VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *E);
+  bool VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *E);
 
   bool VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
     APValue Result;
@@ -5309,8 +5310,11 @@ static void CompletePrint() {
 }
 
 template<typename Derived>
-bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
-                                              const CXXReflectionTraitExpr *E) {
+bool ExprEvaluatorBase<Derived>::VisitCXXReflectionReadQueryExpr(
+                                          const CXXReflectionReadQueryExpr *E) {
+  const int QUERY_ARG_INDEX             = 0;
+  const int REFLECTION_ARG_INDEX        = 1;
+
   SmallVector<APValue, 2> Args(E->getNumArgs());
   for (std::size_t I = 0; I < Args.size(); ++I) {
     const Expr *Arg = E->getArg(I);
@@ -5322,7 +5326,7 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
   ReflectionQuery Query = E->getQuery();
 
   // Build the reflection.
-  Reflection R(Info.Ctx, Args[1], E, Info.EvalStatus.Diag);
+  Reflection R(Info.Ctx, Args[REFLECTION_ARG_INDEX], E, Info.EvalStatus.Diag);
 
   APValue Result;
   bool Ok;
@@ -5335,7 +5339,42 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionTraitExpr(
   else if (isNameQuery(Query))
     Ok = R.GetName(Query, Result);
   else
-    return Error(E->getArg(0));
+    return Error(E->getArg(QUERY_ARG_INDEX));
+
+  if (!Ok)
+    return Error(E);
+
+  return DerivedSuccess(Result, E);
+}
+
+template<typename Derived>
+bool ExprEvaluatorBase<Derived>::VisitCXXReflectionWriteQueryExpr(
+                                         const CXXReflectionWriteQueryExpr *E) {
+  const int QUERY_ARG_INDEX             = 0;
+  const int REFLECTION_ARG_INDEX        = 1;
+  const int CONTEXTUAL_ARGS_BEGIN_INDEX = 2;
+
+  SmallVector<APValue, 2> Args(E->getNumArgs());
+  for (std::size_t I = 0; I < Args.size(); ++I) {
+    const Expr *Arg = E->getArg(I);
+    if (!Evaluate(Args[I], Info, Arg))
+      return false;
+  }
+
+  // This should be equal in integer value to Args[0].
+  ReflectionQuery Query = E->getQuery();
+
+  // Build the reflection.
+  Reflection R(Info.Ctx, Args[REFLECTION_ARG_INDEX], E, Info.EvalStatus.Diag);
+
+  APValue Result;
+  bool Ok;
+  if (isModifierUpdateQuery(Query)) {
+    ArrayRef<APValue> ContextualArgs(Args.begin() + CONTEXTUAL_ARGS_BEGIN_INDEX,
+                                     Args.end());
+    Ok = R.UpdateModifier(Query, ContextualArgs, Result);
+  } else
+    return Error(E->getArg(QUERY_ARG_INDEX));
 
   if (!Ok)
     return Error(E);
@@ -10913,7 +10952,8 @@ public:
   }
 
   bool VisitCXXReflectExpr(const CXXReflectExpr *E);
-  bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
+  bool VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *E);
+  bool VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *E);
 
   bool ZeroInitialization(const Expr *E);
 };
@@ -10954,9 +10994,14 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
   llvm_unreachable("invalid reflection");
 }
 
-bool ReflectionEvaluator::VisitCXXReflectionTraitExpr(
-                                              const CXXReflectionTraitExpr *E) {
-  return BaseType::VisitCXXReflectionTraitExpr(E);
+bool ReflectionEvaluator::VisitCXXReflectionReadQueryExpr(
+                                          const CXXReflectionReadQueryExpr *E) {
+  return BaseType::VisitCXXReflectionReadQueryExpr(E);
+}
+
+bool ReflectionEvaluator::VisitCXXReflectionWriteQueryExpr(
+                                         const CXXReflectionWriteQueryExpr *E) {
+  return BaseType::VisitCXXReflectionWriteQueryExpr(E);
 }
 
 bool ReflectionEvaluator::ZeroInitialization(const Expr *E) {
@@ -11498,7 +11543,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXNoexceptExprClass:
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
-  case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectionReadQueryExprClass:
+  case Expr::CXXReflectionWriteQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:

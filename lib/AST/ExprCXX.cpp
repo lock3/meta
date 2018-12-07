@@ -1583,13 +1583,30 @@ bool AnyOf(ArrayRef<Expr *> A, P pred) {
   return std::any_of(A.begin(), A.end(), pred);
 }
 
-CXXReflectionTraitExpr::CXXReflectionTraitExpr(ASTContext &C, QualType T, 
-                                               ReflectionQuery Q, 
-                                               ArrayRef<Expr *> Args, 
-                                               SourceLocation KW,
-                                               SourceLocation LP, 
-                                               SourceLocation RP) 
-  : Expr(CXXReflectionTraitExprClass, T, VK_RValue, OK_Ordinary,
+CXXReflectionReadQueryExpr::CXXReflectionReadQueryExpr(ASTContext &C, QualType T,
+                                                       ReflectionQuery Q,
+                                                       ArrayRef<Expr *> Args,
+                                                       SourceLocation KW,
+                                                       SourceLocation LP,
+                                                       SourceLocation RP)
+  : Expr(CXXReflectionReadQueryExprClass, T, VK_RValue, OK_Ordinary,
+         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
+         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
+         false),
+    Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
+    KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
+  std::copy(Args.begin(), Args.end(), this->Args);
+}
+
+CXXReflectionWriteQueryExpr::CXXReflectionWriteQueryExpr(ASTContext &C,
+                                                         QualType T,
+                                                         ReflectionQuery Q,
+                                                         ArrayRef<Expr *> Args,
+                                                         SourceLocation KW,
+                                                         SourceLocation LP,
+                                                         SourceLocation RP)
+  : Expr(CXXReflectionWriteQueryExprClass, T, VK_RValue, OK_Ordinary,
          AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
          AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
          AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),

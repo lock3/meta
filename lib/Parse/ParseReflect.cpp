@@ -114,7 +114,7 @@ ExprResult Parser::ParseCXXReflectExpression() {
 ///   primary-expression:
 ///     __reflect '(' expression-list ')'
 /// \endverbatim
-ExprResult Parser::ParseCXXReflectionTrait() {
+ExprResult Parser::ParseCXXReflectionReadQuery() {
   assert(Tok.is(tok::kw___reflect) && "Not __reflect");
   SourceLocation Loc = ConsumeToken();
 
@@ -138,7 +138,40 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXReflectionTrait(Loc, Args, LPLoc, RPLoc);
+  return Actions.ActOnCXXReflectionReadQuery(Loc, Args, LPLoc, RPLoc);
+}
+
+/// Parse a reflection modification.
+///
+/// \verbatim
+///   primary-expression:
+///     __reflect_mod '(' expression-list ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXReflectionWriteQuery() {
+  assert(Tok.is(tok::kw___reflect_mod) && "Not __reflect_mod");
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  SmallVector<Expr *, 2> Args;
+  do {
+    ExprResult Expr = ParseConstantExpression();
+    if (Expr.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+    Args.push_back(Expr.get());
+  } while (TryConsumeToken(tok::comma));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXReflectionWriteQuery(Loc, Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflective pretty print of integer and string values.

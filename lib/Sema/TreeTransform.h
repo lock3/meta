@@ -1422,24 +1422,36 @@ public:
     return getSema().BuildCoroutineBodyStmt(Args);
   }
 
-  /// \brief Rebuild a constant expression from a source expression.
+  /// Rebuild a constant expression from a source expression.
   ExprResult RebuildCXXConstantExpr(Expr *E) {
     return getSema().BuildConstantExpression(E);
   }
 
-  /// \brief Build a new reflection trait expression.
+  /// Build a new reflection query read expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXReflectionTraitExpr(SmallVectorImpl<Expr *> &Args,
-                                           SourceLocation KeywordLoc,
-                                           SourceLocation LParenLoc, 
-                                           SourceLocation RParenLoc) {
-    return getSema().ActOnCXXReflectionTrait(KeywordLoc, Args, 
-                                             LParenLoc, RParenLoc);
+  ExprResult RebuildCXXReflectionReadQueryExpr(SmallVectorImpl<Expr *> &Args,
+                                               SourceLocation KeywordLoc,
+                                               SourceLocation LParenLoc,
+                                               SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectionReadQuery(KeywordLoc, Args,
+                                                 LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect print literal expression.
+  /// Build a new reflection query write expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectionWriteQueryExpr(SmallVectorImpl<Expr *> &Args,
+                                                SourceLocation KeywordLoc,
+                                                SourceLocation LParenLoc,
+                                                SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectionWriteQuery(KeywordLoc, Args,
+                                                  LParenLoc, RParenLoc);
+  }
+
+  /// Build a new reflect print literal expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -7419,8 +7431,8 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
-                                                    CXXReflectionTraitExpr *E) {
+TreeTransform<Derived>::TransformCXXReflectionReadQueryExpr(
+                                                CXXReflectionReadQueryExpr *E) {
   SmallVector<Expr *, 2> Args(E->getNumArgs());
   for (unsigned i = 0; i < E->getNumArgs(); ++i) {
     ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
@@ -7429,11 +7441,29 @@ TreeTransform<Derived>::TransformCXXReflectionTraitExpr(
     Args[i] = Arg.get();
   }
 
-  return getDerived().RebuildCXXReflectionTraitExpr(Args, E->getKeywordLoc(),
-                                                    E->getLParenLoc(),
-                                                    E->getRParenLoc());
+  return getDerived().RebuildCXXReflectionReadQueryExpr(Args,
+                                                        E->getKeywordLoc(),
+                                                        E->getLParenLoc(),
+                                                        E->getRParenLoc());
 }
 
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  SmallVector<Expr *, 2> Args(E->getNumArgs());
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[i] = Arg.get();
+  }
+
+  return getDerived().RebuildCXXReflectionWriteQueryExpr(Args,
+                                                         E->getKeywordLoc(),
+                                                         E->getLParenLoc(),
+                                                         E->getRParenLoc());
+}
 
 template <typename Derived>
 ExprResult

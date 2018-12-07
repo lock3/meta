@@ -33,6 +33,7 @@ namespace clang {
   class CXXRecordDecl;
   class CXXBaseSpecifier;
   class QualType;
+  class ReflectionModifiers;
 
 /// \brief The kind of construct reflected.
 enum ReflectionKind {
@@ -185,9 +186,13 @@ private:
   };
   struct MemberPointerData;
   struct ReflectionData {
-    ReflectionKind ReflKind;
+    const ReflectionKind ReflKind;
     const void *ReflEntity;
-    ReflectionData(ReflectionKind ReflKind, const void *Ptr);
+    const ReflectionModifiers *ReflModifiers;
+
+    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
+                   const ReflectionModifiers& ReflModifiers);
+    ~ReflectionData();
   };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
@@ -245,9 +250,11 @@ public:
       : Kind(Uninitialized) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
-  APValue(ReflectionKind ReflKind, const void *ReflEntity)
+  APValue(ReflectionKind ReflKind, const void *ReflEntity);
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+    const ReflectionModifiers &ReflModifiers)
     : Kind(Uninitialized) {
-    MakeReflection(ReflKind, ReflEntity);
+    MakeReflection(ReflKind, ReflEntity, ReflModifiers);
   }
 
   ~APValue() {
@@ -451,15 +458,18 @@ public:
 
   /// Returns the reflected type.
   QualType getReflectedType() const;
-  
+
   /// Returns the reflected template declaration.
   const Decl *getReflectedDeclaration() const;
-  
+
   /// Returns the reflected expression.
   const Expr *getReflectedExpression() const;
-  
+
   /// Returns the reflected base class specifier.
   const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
+
+  // Returns the modifiers to be applied to the reflection, upon injection.
+  const ReflectionModifiers &getReflectionModifiers() const;
 
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
@@ -562,9 +572,11 @@ private:
     new ((void*)(char*)Data.buffer) AddrLabelDiffData();
     Kind = AddrLabelDiff;
   }
-  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity) {
+  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
+                      const ReflectionModifiers &ReflModifiers) {
     assert(isUninit() && "Bad state change");
-    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity);
+    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
+                                                   ReflModifiers);
     Kind = Reflection;
   }
 };
