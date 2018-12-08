@@ -1960,15 +1960,15 @@ DEF_TRAVERSE_DECL(MSPropertyDecl, { TRY_TO(TraverseDeclaratorHelper(D)); })
 
 DEF_TRAVERSE_DECL(CXXMetaprogramDecl, {
   // FIXME: Not sure if we can do anything useful here.
-});
+})
 
 DEF_TRAVERSE_DECL(CXXInjectionDecl, {
   // FIXME: Not sure if we can do anything useful here.
-});
+})
 
 DEF_TRAVERSE_DECL(CXXFragmentDecl, {
   TRY_TO(TraverseDecl(D->getContent()));
-});
+})
 
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
