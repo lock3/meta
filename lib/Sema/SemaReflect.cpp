@@ -396,8 +396,8 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     return new (Context) CXXReflectPrintLiteralExpr(
         Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
 
-  // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
+  // Convert all operands to rvalues.
+  for (std::size_t I = 0; I < Args.size(); ++I) {
     ExprResult Arg = DefaultLvalueConversion(Args[I]);
     if (Arg.isInvalid())
       return ExprError();
