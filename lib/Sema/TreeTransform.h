@@ -1463,7 +1463,7 @@ public:
                                                  LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect print reflection expression.
+  /// Build a new reflect print reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1475,7 +1475,7 @@ public:
                                                     LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect dump reflection expression.
+  /// Build a new reflect dump reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1487,12 +1487,12 @@ public:
                                                    LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflected value expression.
+  /// Build a new reflected value expression.
   ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
     return getSema().BuildCXXUnreflexprExpression(Loc, E);
   }
-  
-  /// \brief Build a new fragment expression.
+
+  /// Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                     SmallVectorImpl<Expr *> &Captures) {
     return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);

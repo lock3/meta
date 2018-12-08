@@ -4768,7 +4768,7 @@ public:
   }
 };
 
-/// \brief A reflection printing intrinsic for integer and string values.
+/// A reflection printing intrinsic for integer and string values.
 class CXXReflectPrintLiteralExpr : public Expr {
   unsigned NumArgs;
   Expr **Args;
