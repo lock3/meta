@@ -944,8 +944,15 @@ static LinkageTrait getLinkage(const NamedDecl *D) {
   llvm_unreachable("Invalid linkage specification");
 }
 
+enum AccessTrait : unsigned {
+  AccessNone,
+  AccessPublic,
+  AccessPrivate,
+  AccessProtected
+};
+
 /// Returns the access specifiers for \p D.
-static AccessLevel getAccess(const Decl *D) {
+static AccessTrait getAccess(const Decl *D) {
   switch (D->getAccess()) {
   case AS_public:
     return AccessPublic;
@@ -989,7 +996,7 @@ static StorageTrait getStorage(const VarDecl *D) {
 /// Note that a variable can be declared \c extern and not be defined.
 struct VariableTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   StorageTrait Storage : 2;
   unsigned Constexpr : 1;
   unsigned Defined : 1;
@@ -1011,7 +1018,7 @@ static VariableTraits getVariableTraits(const VarDecl *D) {
 /// Traits for named sub-objects of a class (or union?).
 struct FieldTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   unsigned Mutable : 1;
   unsigned Rest : 27;
 };
@@ -1030,7 +1037,7 @@ static FieldTraits getFieldTraits(const FieldDecl *D) {
 // TODO: Add calling conventions to function traits.
 struct FunctionTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   unsigned Constexpr : 1;
   unsigned Nothrow : 1; ///< Called \c noexcept in C++.
   unsigned Defined : 1;
@@ -1067,7 +1074,7 @@ enum MethodKind : unsigned {
 /// Traits for normal member functions.
 struct MethodTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   MethodKind Kind : 2;
   unsigned Constexpr : 1;
   unsigned Explicit : 1;
@@ -1164,7 +1171,7 @@ static MethodTraits getMethodTraits(const CXXMethodDecl *D) {
 
 struct ValueTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   unsigned Rest : 28;
 };
 
@@ -1177,7 +1184,7 @@ static ValueTraits getValueTraits(const EnumConstantDecl *D) {
 
 struct NamespaceTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   bool Inline : 1;
   unsigned Rest : 27;
 };
@@ -1224,7 +1231,7 @@ static LinkageTraits getLinkageTraits(const NamedDecl *D) {
   LinkageTraits T = LinkageTraits();
   T.Kind = getLinkage(D);
   return T;
-};
+}
 
 static bool makeLinkageTraits(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -1236,7 +1243,7 @@ static bool makeLinkageTraits(const Reflection &R, APValue &Result) {
 
 struct AccessTraits {
   unsigned Padding : 2; ///< Padded for library implementation ease.
-  AccessLevel Kind : 2;
+  AccessTrait Kind : 2;
   unsigned Rest : 28;
 };
 
@@ -1244,7 +1251,7 @@ static AccessTraits getAccessTraits(const Decl *D) {
   AccessTraits T = AccessTraits();
   T.Kind = getAccess(D);
   return T;
-};
+}
 
 static bool makeAccessTraits(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -1258,7 +1265,7 @@ enum ClassKindTrait : unsigned { StructKind, ClassKind, UnionKind };
 // TODO: Accumulate all known type traits for classes.
 struct ClassTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   ClassKindTrait Kind : 2;
   unsigned Complete : 1;
   unsigned Polymoprhic : 1;
@@ -1298,7 +1305,7 @@ static ClassTraits getClassTraits(const CXXRecordDecl *D) {
 
 struct EnumTraits {
   LinkageTrait Linkage : 2;
-  AccessLevel Access : 2;
+  AccessTrait Access : 2;
   unsigned Scoped : 1;
   unsigned Complete : 1;
   unsigned Rest : 26;
@@ -1395,9 +1402,9 @@ static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
   return true;
 }
 
-/// Set Result to R, with the specified modifiers of M.
-static bool makeReflection(const Reflection &R, const ReflectionModifiers &M,
-                           APValue &Result) {
+/// Set Result to a copy of R with modifiers M applied.
+static bool makeReflection(const Reflection &R,
+                           const ReflectionModifiers &M, APValue &Result) {
   Result = APValue(R.getKind(), R.getOpaqueValue(), M);
   return true;
 }
@@ -1626,10 +1633,9 @@ getArgAsUInt(const ArrayRef<APValue> &Args, std::size_t I) {
   return { };
 }
 
-static ReflectionModifiers
-withAccess(const Reflection &R, std::uint64_t Val) {
+static ReflectionModifiers withAccess(const Reflection &R, std::uint64_t Val) {
   ReflectionModifiers M = R.getModifiers();
-  M.Access = static_cast<AccessLevel>(Val);
+  M.setAccessModifier(static_cast<AccessModifier>(Val));
   return M;
 }
 
@@ -1638,7 +1644,6 @@ setAccessSpecifier(const Reflection &R, const ArrayRef<APValue> &Args,
                    APValue &Result) {
   if (OptionalUInt V = getArgAsUInt(Args, 0))
     return makeReflection(R, withAccess(R, *V), Result);
-
   return Error(R);
 }
 

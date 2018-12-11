@@ -191,7 +191,7 @@ private:
     const ReflectionModifiers *ReflModifiers;
 
     ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
-                   const ReflectionModifiers& ReflModifiers);
+                   const ReflectionModifiers &ReflModifiers);
     ~ReflectionData();
   };
 
@@ -252,10 +252,7 @@ public:
   }
   APValue(ReflectionKind ReflKind, const void *ReflEntity);
   APValue(ReflectionKind ReflKind, const void *ReflEntity,
-    const ReflectionModifiers &ReflModifiers)
-    : Kind(Uninitialized) {
-    MakeReflection(ReflKind, ReflEntity, ReflModifiers);
-  }
+          const ReflectionModifiers &ReflModifiers);
 
   ~APValue() {
     MakeUninit();

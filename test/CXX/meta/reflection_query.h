@@ -108,7 +108,10 @@ enum reflection_query {
 
   // Name
   query_get_name,
-  query_get_display_name
+  query_get_display_name,
+
+  // Modifier updates
+  query_set_access
 };
 
 #endif

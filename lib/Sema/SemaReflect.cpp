@@ -214,10 +214,10 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
 static bool CheckQueryArgumentLength(Sema &SemaRef,
                                      SourceLocation KWLoc,
                                      const SmallVectorImpl<Expr *> &Args,
-                                     const int ExpectedLength) {
+                                     const std::size_t ExpectedLength) {
   if (Args.size() != ExpectedLength) {
     SemaRef.Diag(KWLoc, diag::err_reflection_wrong_arity)
-      << ExpectedLength << (int) Args.size();
+      << (int) ExpectedLength << (int) Args.size();
     return false;
   }
 
@@ -321,7 +321,7 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
     return ExprError();
 
   // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
+  for (std::size_t I = 0; I < Args.size(); ++I) {
     ExprResult Arg = DefaultLvalueConversion(Args[I]);
     if (Arg.isInvalid())
       return ExprError();
@@ -371,7 +371,10 @@ ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
     return ExprError();
 
   // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
+  for (std::size_t I = 0; I < Args.size(); ++I) {
+    if (I == 1)
+      continue;
+
     ExprResult Arg = DefaultLvalueConversion(Args[I]);
     if (Arg.isInvalid())
       return ExprError();
@@ -484,7 +487,6 @@ ExprResult Sema::ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
       Context, Context.IntTy, Arg.get(), KWLoc, LParenLoc, RParenLoc);
 }
 
-// FIXME: Duplicated in SemaInject
 static Reflection EvaluateReflection(Sema &S, Expr *E) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;

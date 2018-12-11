@@ -331,19 +331,31 @@ inline bool isModifierUpdateQuery(ReflectionQuery Q) {
   return RQ_first_modifier_update <= Q && Q <= RQ_last_modifier_update;
 }
 
-enum AccessLevel : unsigned {
-  AccessNone,
-  AccessPublic,
-  AccessPrivate,
-  AccessProtected
+enum class AccessModifier : unsigned {
+ NotModified,
+ Default,
+ Public,
+ Protected,
+ Private
 };
 
 class ReflectionModifiers {
+  AccessModifier Access : 3;
 public:
-  AccessLevel Access : 2;
-
   ReflectionModifiers()
-    : Access(AccessNone) { }
+    : Access(AccessModifier::NotModified) { }
+
+  void setAccessModifier(AccessModifier Access) {
+    this->Access = Access;
+  }
+
+  bool modifyAccess() const {
+    return Access != AccessModifier::NotModified;
+  }
+
+  AccessModifier getAccessModifier() const {
+    return Access;
+  }
 };
 
 /// The reflection class provides context for evaluating queries.
@@ -458,7 +470,8 @@ struct Reflection {
   /// Returns the entity name designated by Q.
   bool GetName(ReflectionQuery Q, APValue &Result);
 
-  /// Returns a copy of the reflection, with the given modifier changed.
+  /// Updates this reflections reflection modifiers with the
+  /// requested changes.
   bool UpdateModifier(ReflectionQuery Q,
                       const ArrayRef<APValue> &ContextualArgs,
                       APValue &Result);

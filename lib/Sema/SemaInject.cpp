@@ -70,13 +70,17 @@ class InjectionContext;
 class InjectionContext : public TreeTransform<InjectionContext> {
    using Base = TreeTransform<InjectionContext>;
 public:
-  InjectionContext(Sema &SemaRef) : Base(SemaRef) { }
+  InjectionContext(Sema &SemaRef) : Base(SemaRef), Modifiers() { }
 
   ASTContext &getContext() { return getSema().Context; }
 
   /// Detach the context from the semantics object. Returns this object for
   /// convenience.
   InjectionContext *Detach() {
+    // Reset the declaration modifiers. They're already been applied and
+    // must not apply to nested declarations in a definition.
+    Modifiers = ReflectionModifiers();
+
     return this;
   }
 
@@ -151,6 +155,11 @@ public:
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool IsInInjection(Decl *D);
 
+  /// Sets the declaration modifiers.
+  void SetModifiers(const ReflectionModifiers& Modifiers) {
+    this->Modifiers = Modifiers;
+  }
+
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
     return TransformDeclarationNameInfo(DNI);
@@ -199,6 +208,9 @@ public:
   /// injected. These are processed when a class receiving injections is
   /// completed.
   llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
+
+  /// The modifiers to apply to injection.
+  ReflectionModifiers Modifiers;
 };
 
 bool InjectionContext::IsInInjection(Decl *D) {
@@ -592,6 +604,55 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   return Class;
 }
 
+// Returns the default access specifier for the given decl context.
+// This should be used with the destination decl context, not the
+// original decl context, as we want to make sure we don't pick up
+// the default access specifier of the source.
+static AccessSpecifier GetDefaultAccessSpecifier(DeclContext *DC) {
+  TagDecl *TD = cast<TagDecl>(DC);
+  switch (TD->getTagKind()) {
+  case TTK_Struct:
+  case TTK_Union:
+  case TTK_Enum:
+    return AS_public;
+  case TTK_Class:
+    return AS_private;
+  case TTK_Interface:
+    break;
+  }
+  llvm_unreachable("Invalid tag kind");
+}
+
+static AccessSpecifier Transform(AccessModifier Modifier) {
+  switch(Modifier) {
+  case AccessModifier::Public:
+    return AS_public;
+  case AccessModifier::Protected:
+    return AS_protected;
+  case AccessModifier::Private:
+    return AS_private;
+  default:
+    llvm_unreachable("Invalid access modifier transformation");
+  }
+}
+
+template<typename T>
+static void ApplyAccess(ReflectionModifiers Modifiers, T* Decl, T* OriginalDecl) {
+  if (Modifiers.modifyAccess()) {
+    AccessModifier Modifier = Modifiers.getAccessModifier();
+
+    if (Modifier == AccessModifier::Default) {
+      Decl->setAccess(GetDefaultAccessSpecifier(Decl->getDeclContext()));
+      return;
+    }
+
+    Decl->setAccess(Transform(Modifier));
+    return;
+  }
+
+  Decl->setAccess(OriginalDecl->getAccess());
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
@@ -615,7 +676,7 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
 
   // Propagate semantic properties.
   Field->setImplicit(D->isImplicit());
-  Field->setAccess(D->getAccess());
+  ApplyAccess(Modifiers, Field, D);
 
   if (!Field->isInvalidDecl())
     Field->setInvalidDecl(Invalid);
@@ -1258,27 +1319,6 @@ isTypeOrValueDependent(Expr *FragmentOrReflection) {
       || FragmentOrReflection->isValueDependent();
 }
 
-// FIXME: Duplicated in SemaReflect
-static Reflection EvaluateReflection(Sema &S, Expr *E) {
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  if (!E->EvaluateAsRValue(Result, S.Context)) {
-    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      S.Diag(PD.first, PD.second);
-    return Reflection();
-  }
-
-  return Reflection(S.Context, Result.Val);
-}
-
-static bool
-hasReachableDecl(Sema &S, Expr *ReflectExpr) {
-  Reflection Reflection = EvaluateReflection(S, ReflectExpr);
-  return Reflection.getAsReachableDeclaration();
-}
-
 static bool
 isFragmentType(QualType Type) {
   if (CXXRecordDecl *RD = Type->getAsCXXRecordDecl())
@@ -1292,14 +1332,8 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
   if (isFragmentType(Type))
     return true;
 
-  if (Type->isReflectionType()) {
-    if (hasReachableDecl(S, Operand)) {
-      return true;
-    }
-
-    S.Diag(Operand->getExprLoc(), diag::err_injecting_non_decl_reflection);
-    return false;
-  }
+  if (Type->isReflectionType())
+    return true;
 
   S.Diag(Operand->getExprLoc(), diag::err_invalid_injection_operand)
     << Type;
@@ -1429,6 +1463,7 @@ static bool InjectFragment(Sema &S,
 // Inject a reflected declaration into the current context.
 static bool CopyDeclaration(Sema &S, SourceLocation POI,
                             Decl *Injection,
+                            const ReflectionModifiers &Modifiers,
                             Decl *Injectee) {
   DeclContext *InjectionDC = Injection->getDeclContext();
   Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
@@ -1449,6 +1484,8 @@ static bool CopyDeclaration(Sema &S, SourceLocation POI,
     // Setup substitutions
     Ctx->AddDeclSubstitution(InjectionOwner, Injectee);
 
+    Ctx->SetModifiers(Modifiers);
+
     // Inject the declaration.
     Decl* Result = Ctx->InjectDecl(Injection);
     if (!Result || Result->isInvalidDecl()) {
@@ -1457,10 +1494,19 @@ static bool CopyDeclaration(Sema &S, SourceLocation POI,
   });
 }
 
+static Reflection
+GetReflectionFromFrag(Sema &S, InjectionEffect &IE) {
+  const int REFLECTION_INDEX = 0;
+
+  APValue FragmentData = IE.ExprValue;
+  APValue APRefl = FragmentData.getStructField(REFLECTION_INDEX);
+
+  return Reflection(S.Context, APRefl);
+}
+
 static const Decl *
 GetFragInjectionDecl(Sema &S, InjectionEffect &IE) {
-  Reflection Refl(S.Context, IE.ExprValue.getStructField(0));
-
+  Reflection &&Refl = GetReflectionFromFrag(S, IE);
   const Decl *Decl = Refl.getAsDeclaration();
 
   // Verify that our fragment contained a declaration.
@@ -1512,21 +1558,33 @@ static bool ApplyFragmentInjection(Sema &S, SourceLocation POI,
   return InjectFragment(S, POI, Injection, Captures, Injectee);
 }
 
-static const Decl *
-GetReflectionInjectionDecl(Sema &S, InjectionEffect &IE) {
-  Reflection Refl(S.Context, IE.ExprValue);
+static Reflection
+GetReflectionFromInjection(Sema &S, InjectionEffect &IE) {
+  return Reflection(S.Context, IE.ExprValue);
+}
 
+static Decl *
+GetInjectionDecl(const Reflection &Refl) {
   const Decl *ReachableDecl = Refl.getAsReachableDeclaration();
 
   // Verify that our reflection contains a reachable declaration.
   assert(ReachableDecl);
-  return ReachableDecl;
+  return const_cast<Decl *>(ReachableDecl);
+}
+
+static const ReflectionModifiers &
+GetModifiers(const Reflection &Refl) {
+  return Refl.getModifiers();
 }
 
 static bool ApplyReflectionInjection(Sema &S, SourceLocation POI,
                                      InjectionEffect &IE, Decl *Injectee) {
-  Decl *Injection = const_cast<Decl *>(GetReflectionInjectionDecl(S, IE));
-  return CopyDeclaration(S, POI, Injection, Injectee);
+  Reflection &&Refl = GetReflectionFromInjection(S, IE);
+
+  Decl *Injection = GetInjectionDecl(Refl);
+  ReflectionModifiers Modifiers = GetModifiers(Refl);
+
+  return CopyDeclaration(S, POI, Injection, Modifiers, Injectee);
 }
 
 bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {

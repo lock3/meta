@@ -9385,8 +9385,6 @@ def err_invalid_injection : Error<
   "%select{a function|a class|a namespace|global scope}1">;
 def err_injecting_local_into_invalid_scope : Error<
   "cannot inject a local variable into %select{namespace|class}0 scope">;
-def err_injecting_non_decl_reflection : Error<
-  "cannot inject a reflection which does not reflect a declaration">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

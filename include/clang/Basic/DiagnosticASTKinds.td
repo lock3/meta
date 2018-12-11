@@ -202,6 +202,9 @@ def warn_integer_constant_overflow : Warning<
   "overflow in expression; result is %0 with type %1">,
   InGroup<DiagGroup<"integer-overflow">>;
 
+def err_injecting_non_decl_reflection : Error<
+  "cannot inject a reflection which does not reflect a declaration">;
+
 // This is a temporary diagnostic, and shall be removed once our
 // implementation is complete, and like the preceding constexpr notes belongs
 // in Sema.

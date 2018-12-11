@@ -170,7 +170,6 @@ APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
                                      const ReflectionModifiers &ReflModifiers) :
   ReflKind(ReflKind), ReflEntity(ReflEntity),
   ReflModifiers(new ReflectionModifiers(ReflModifiers)) { }
-
 APValue::ReflectionData::~ReflectionData() {
   delete ReflModifiers;
 }
@@ -244,8 +243,15 @@ APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
 }
 
 APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity)
-  : APValue(ReflKind, ReflEntity, ReflectionModifiers()){
+  : APValue(ReflKind, ReflEntity, ReflectionModifiers()) {
 }
+
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
+                 const ReflectionModifiers &ReflModifiers)
+    : Kind(Uninitialized) {
+  MakeReflection(ReflKind, ReflEntity, ReflModifiers);
+}
+
 
 void APValue::DestroyDataAndMakeUninit() {
   if (Kind == Int)

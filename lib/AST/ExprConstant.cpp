@@ -4293,6 +4293,12 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (!Evaluate(OperandValue, Info, Operand))
       return ESR_Failed;
 
+    Reflection R(Info.Ctx, OperandValue);
+    if (!R.getAsReachableDeclaration()) {
+      Info.CCEDiag(S->getBeginLoc(), diag::err_injecting_non_decl_reflection);
+      return ESR_Failed;
+    }
+
     QualType OperandType = Operand->getType();
 
     // Queue the injection as a side effect.
@@ -5356,6 +5362,9 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionWriteQueryExpr(
 
   SmallVector<APValue, 2> Args(E->getNumArgs());
   for (std::size_t I = 0; I < Args.size(); ++I) {
+    if (I == REFLECTION_ARG_INDEX)
+      continue;
+
     const Expr *Arg = E->getArg(I);
     if (!Evaluate(Args[I], Info, Arg))
       return false;
@@ -5364,8 +5373,19 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionWriteQueryExpr(
   // This should be equal in integer value to Args[0].
   ReflectionQuery Query = E->getQuery();
 
+  // Get the reflection's LValue.
+  LValue ReflLVal;
+  if (!EvaluateLValue(E->getArg(REFLECTION_ARG_INDEX), ReflLVal, Info))
+    return false;
+
+  // Get the reflection as an RValue.
+  APValue ReflRVal;
+  if (!handleLValueToRValueConversion(Info, E, E->getType(), ReflLVal,
+                                      ReflRVal))
+    return false;
+
   // Build the reflection.
-  Reflection R(Info.Ctx, Args[REFLECTION_ARG_INDEX], E, Info.EvalStatus.Diag);
+  Reflection R(Info.Ctx, ReflRVal, E, Info.EvalStatus.Diag);
 
   APValue Result;
   bool Ok;
@@ -5379,7 +5399,11 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionWriteQueryExpr(
   if (!Ok)
     return Error(E);
 
-  return DerivedSuccess(Result, E);
+  // Update the reflection's LValue with the new RValue.
+  if (!handleAssignment(Info, E, ReflLVal, E->getType(), Result))
+    return false;
+
+  return true;
 }
 
 } // namespace
