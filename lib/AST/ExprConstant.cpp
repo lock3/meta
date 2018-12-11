@@ -4293,6 +4293,8 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (!Evaluate(OperandValue, Info, Operand))
       return ESR_Failed;
 
+    // If we are injecting a reflection, as apposed to a fragment.
+    // We need to verify that it's actually a reflection of a declaration.
     QualType OperandType = Operand->getType();
     if (OperandType->isReflectionType()) {
       Reflection R(Info.Ctx, OperandValue);
