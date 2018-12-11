@@ -4,10 +4,11 @@
 #include "reflection_mod.h"
 
 class Existing {
-  int foo = 1;
+  int field_1 = 1;
+  int field_2 = 2;
 };
 
-class New {
+struct New {
   constexpr {
     auto refl = reflexpr(Existing);
 
@@ -15,6 +16,11 @@ class New {
     __reflect_mod(query_set_access, field_1, AccessModifier::Public);
 
     -> field_1;
+
+    auto field_2 = __reflect(query_get_next, field_1);
+    __reflect_mod(query_set_access, field_2, AccessModifier::Default);
+
+    -> field_2;
   }
 
 public:
@@ -23,6 +29,7 @@ public:
 
 int main() {
   constexpr New n;
-  static_assert(n.foo == 1);
+  static_assert(n.field_1 == 1);
+  static_assert(n.field_2 == 2);
   return 0;
 }
