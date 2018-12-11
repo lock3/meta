@@ -4293,15 +4293,18 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (!Evaluate(OperandValue, Info, Operand))
       return ESR_Failed;
 
-    if (Operand->getType() == Info.Ctx.MetaInfoTy) {
+    QualType OperandType = Operand->getType();
+    if (OperandType->isReflectionType()) {
       Reflection R(Info.Ctx, OperandValue);
+      if (R.isInvalid()) {
+        return ESR_Failed;
+      }
+
       if (!R.getAsReachableDeclaration()) {
         Info.CCEDiag(S->getBeginLoc(), diag::err_injecting_non_decl_reflection);
         return ESR_Failed;
       }
     }
-
-    QualType OperandType = Operand->getType();
 
     // Queue the injection as a side effect.
     Info.EvalStatus.InjectionEffects->emplace_back(OperandType,
