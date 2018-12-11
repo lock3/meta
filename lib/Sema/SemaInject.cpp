@@ -744,7 +744,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Propagate semantic properties.
   Method->setImplicit(D->isImplicit());
-  Method->setAccess(D->getAccess());
+  ApplyAccess(Modifiers, Method, D);
 
   // Propagate virtual flags.
   Method->setVirtualAsWritten(D->isVirtualAsWritten());

@@ -6,12 +6,21 @@
 class Existing {
   int field_1 = 1;
   int field_2 = 2;
+
+  constexpr int method_1() const {
+    return 1;
+  }
+
+  constexpr int method_2() const {
+    return 2;
+  }
 };
 
 struct New {
   constexpr {
     auto refl = reflexpr(Existing);
 
+    // Fields
     auto field_1 = __reflect(query_get_begin, refl);
     __reflect_mod(query_set_access, field_1, AccessModifier::Public);
 
@@ -21,6 +30,17 @@ struct New {
     __reflect_mod(query_set_access, field_2, AccessModifier::Default);
 
     -> field_2;
+
+    // Methods
+    auto method_1 = __reflect(query_get_next, field_2);
+    __reflect_mod(query_set_access, method_1, AccessModifier::Public);
+
+    -> method_1;
+
+    auto method_2 = __reflect(query_get_next, method_1);
+    __reflect_mod(query_set_access, method_2, AccessModifier::Default);
+
+    -> method_2;
   }
 
 public:
@@ -29,7 +49,14 @@ public:
 
 int main() {
   constexpr New n;
+
+  // Fields
   static_assert(n.field_1 == 1);
   static_assert(n.field_2 == 2);
+
+  // Methods
+  static_assert(n.method_1() == 1);
+  static_assert(n.method_2() == 2);
+
   return 0;
 }
