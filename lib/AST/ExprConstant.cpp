@@ -4293,10 +4293,12 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (!Evaluate(OperandValue, Info, Operand))
       return ESR_Failed;
 
-    Reflection R(Info.Ctx, OperandValue);
-    if (!R.getAsReachableDeclaration()) {
-      Info.CCEDiag(S->getBeginLoc(), diag::err_injecting_non_decl_reflection);
-      return ESR_Failed;
+    if (Operand->getType() == Info.Ctx.MetaInfoTy) {
+      Reflection R(Info.Ctx, OperandValue);
+      if (!R.getAsReachableDeclaration()) {
+        Info.CCEDiag(S->getBeginLoc(), diag::err_injecting_non_decl_reflection);
+        return ESR_Failed;
+      }
     }
 
     QualType OperandType = Operand->getType();
