@@ -9,4 +9,11 @@ enum class AccessModifier : unsigned {
  Private
 };
 
+enum class StorageModifier : unsigned {
+  NotModified,
+  Static,
+  Automatic,
+  ThreadLocal
+};
+
 #endif

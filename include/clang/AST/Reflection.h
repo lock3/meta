@@ -285,6 +285,7 @@ enum ReflectionQuery {
 
   // Modifier updates
   RQ_set_access,
+  RQ_set_storage,
 
   // Labels for kinds of queries. These need to be updated when new
   // queries are added.
@@ -303,7 +304,7 @@ enum ReflectionQuery {
   RQ_last_name = RQ_get_display_name,
   // Modifier updates -- these return meta::info.
   RQ_first_modifier_update = RQ_set_access,
-  RQ_last_modifier_update = RQ_set_access
+  RQ_last_modifier_update = RQ_set_storage
 };
 
 /// True if Q is a predicate.
@@ -332,18 +333,27 @@ inline bool isModifierUpdateQuery(ReflectionQuery Q) {
 }
 
 enum class AccessModifier : unsigned {
- NotModified,
- Default,
- Public,
- Protected,
- Private
+  NotModified,
+  Default,
+  Public,
+  Protected,
+  Private
+};
+
+enum class StorageModifier : unsigned {
+  NotModified,
+  Static,
+  Automatic,
+  ThreadLocal
 };
 
 class ReflectionModifiers {
   AccessModifier Access : 3;
+  StorageModifier Storage : 2;
 public:
   ReflectionModifiers()
-    : Access(AccessModifier::NotModified) { }
+    : Access(AccessModifier::NotModified),
+      Storage(StorageModifier::NotModified) { }
 
   void setAccessModifier(AccessModifier Access) {
     this->Access = Access;
@@ -355,6 +365,21 @@ public:
 
   AccessModifier getAccessModifier() const {
     return Access;
+  }
+
+  void setStorageModifier(StorageModifier Storage) {
+    assert((Storage == StorageModifier::NotModifier
+            || Storage == StorageModifier::Static)
+           && "Currently only static storage modification is supported");
+    this->Storage = Storage;
+  }
+
+  bool modifyStorage() const {
+    return Storage != StorageModifier::NotModified;
+  }
+
+  StorageModifier getStorageModifier() const {
+    return Storage;
   }
 };
 

@@ -1640,10 +1640,24 @@ static ReflectionModifiers withAccess(const Reflection &R, std::uint64_t Val) {
 }
 
 static bool
-setAccessSpecifier(const Reflection &R, const ArrayRef<APValue> &Args,
-                   APValue &Result) {
+setAccessMod(const Reflection &R, const ArrayRef<APValue> &Args,
+             APValue &Result) {
   if (OptionalUInt V = getArgAsUInt(Args, 0))
     return makeReflection(R, withAccess(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withStorage(const Reflection &R, std::uint64_t Val) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setStorageModifier(static_cast<StorageModifier>(Val));
+  return M;
+}
+
+static bool
+setStorageMod(const Reflection &R, const ArrayRef<APValue> &Args,
+              APValue &Result) {
+  if (OptionalUInt V = getArgAsUInt(Args, 0))
+    return makeReflection(R, withStorage(R, *V), Result);
   return Error(R);
 }
 
@@ -1654,7 +1668,9 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
 
   switch(Q) {
   case RQ_set_access:
-    return setAccessSpecifier(*this, ContextualArgs, Result);
+    return setAccessMod(*this, ContextualArgs, Result);
+  case RQ_set_storage:
+    return setStorageMod(*this, ContextualArgs, Result);
   default:
     break;
   }

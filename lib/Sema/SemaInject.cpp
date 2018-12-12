@@ -185,6 +185,7 @@ public:
   Decl *InjectFunctionDecl(FunctionDecl *D);
   Decl *InjectVarDecl(VarDecl *D);
   Decl *InjectCXXRecordDecl(CXXRecordDecl *D);
+  Decl *InjectStaticDataMemberDecl(FieldDecl *D);
   Decl *InjectFieldDecl(FieldDecl *D);
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
@@ -341,8 +342,9 @@ static AccessSpecifier Transform(AccessModifier Modifier) {
   }
 }
 
-template<typename T>
-static void ApplyAccess(ReflectionModifiers Modifiers, T* Decl, T* OriginalDecl) {
+template<typename NewType, typename OldType>
+static void ApplyAccess(ReflectionModifiers Modifiers,
+                        NewType* Decl, OldType* OriginalDecl) {
   if (Modifiers.modifyAccess()) {
     AccessModifier Modifier = Modifiers.getAccessModifier();
 
@@ -653,7 +655,37 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   return Class;
 }
 
+// FIXME: This needs a LOT of work.
+Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
+  DeclarationNameInfo DNI;
+  TypeSourceInfo *TSI;
+  CXXRecordDecl *Owner;
+  bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
+
+  VarDecl *Var = VarDecl::Create(
+      getContext(), Owner, D->getLocation(), DNI, TSI->getType(),
+      TSI, SC_Static);
+  AddDeclSubstitution(D, Var);
+
+  ApplyAccess(Modifiers, Var, D);
+  Var->setInvalidDecl(Invalid);
+  Owner->addDecl(Var);
+
+  // FIXME: This is almost certainly going to break when it runs.
+  // if (D->hasInClassInitializer())
+  //   InjectedDefinitions.push_back(InjectedDef(D, Var));
+
+  if (D->hasInClassInitializer())
+    llvm_unreachable("Initialization of static members not implemented");
+
+  return Var;
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
+  if (Modifiers.getStorageModifier() == StorageModifier::Static) {
+    return InjectStaticDataMemberDecl(D);
+  }
+
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   CXXRecordDecl *Owner;

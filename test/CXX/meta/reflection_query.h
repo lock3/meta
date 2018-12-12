@@ -111,7 +111,8 @@ enum reflection_query {
   query_get_display_name,
 
   // Modifier updates
-  query_set_access
+  query_set_access,
+  query_set_storage
 };
 
 #endif
