@@ -913,7 +913,7 @@ Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
 
   // FIXME: Other attributes to process?
   Fn->setDescribedFunctionTemplate(Template);
-  Template->setAccess(D->getAccess());
+  ApplyAccess(Modifiers, Template, D);
 
   // Add the declaration.
   Owner->addDecl(Template);

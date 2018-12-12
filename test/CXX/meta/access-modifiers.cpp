@@ -3,6 +3,11 @@
 #include "reflection_query.h"
 #include "reflection_mod.h"
 
+// template<int a>
+// constexpr int template_a() {
+//   return a;
+// }
+
 class Existing {
   int field_1 = 1;
   int field_2 = 2;
@@ -55,6 +60,12 @@ struct New {
     __reflect_mod(query_set_access, typedef_2, AccessModifier::Default);
 
     -> typedef_2;
+
+    // Template Function
+    // auto template_refl_a = reflexpr(template_a);
+    // __reflect_mod(query_set_access, template_refl_a, AccessModifier::Public);
+
+    // -> template_refl_a;
   }
 
 public:
