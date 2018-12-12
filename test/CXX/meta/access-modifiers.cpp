@@ -14,6 +14,9 @@ class Existing {
   constexpr int method_2() const {
     return 2;
   }
+
+  typedef int typedef_1;
+  typedef int typedef_2;
 };
 
 struct New {
@@ -41,6 +44,17 @@ struct New {
     __reflect_mod(query_set_access, method_2, AccessModifier::Default);
 
     -> method_2;
+
+    // Typedef
+    auto typedef_1 = __reflect(query_get_next, method_2);
+    __reflect_mod(query_set_access, typedef_1, AccessModifier::Public);
+
+    -> typedef_1;
+
+    auto typedef_2 = __reflect(query_get_next, typedef_1);
+    __reflect_mod(query_set_access, typedef_2, AccessModifier::Default);
+
+    -> typedef_2;
   }
 
 public:
@@ -57,6 +71,10 @@ int main() {
   // Methods
   static_assert(n.method_1() == 1);
   static_assert(n.method_2() == 2);
+
+  // Typdefs
+  New::typedef_1 typedef_1_val = 0;
+  New::typedef_2 typedef_2_val = 0;
 
   return 0;
 }
