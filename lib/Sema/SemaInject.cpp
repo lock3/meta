@@ -156,13 +156,38 @@ public:
   bool IsInInjection(Decl *D);
 
   /// Sets the declaration modifiers.
-  void SetModifiers(const ReflectionModifiers& Modifiers) {
+  void SetModifiers(const ReflectionModifiers &Modifiers) {
     this->Modifiers = Modifiers;
+  }
+
+  /// True if a rename is requested.
+  bool hasRename() const { return Modifiers.hasRename(); }
+
+  DeclarationName applyRename() {
+    std::string NewName = Modifiers.getNewNameAsString();
+    IdentifierInfo *II = &SemaRef.Context.Idents.get(NewName);
+
+    // Reset the rename, so that it applies once, at the top level
+    // of the injection (hopefully).
+    //
+    // FIXME: This is a sign of some fragility. We'd like the rename to
+    // associate only with the fragment/decl we're replaying. This is
+    // true of other modifiers also.
+    Modifiers.setNewName(nullptr);
+
+    return DeclarationName(II);
   }
 
   DeclarationNameInfo TransformDeclarationName(NamedDecl *ND) {
     DeclarationNameInfo DNI(ND->getDeclName(), ND->getLocation());
     return TransformDeclarationNameInfo(DNI);
+  }
+
+  DeclarationNameInfo TransformDeclarationNameInfo(DeclarationNameInfo DNI) {
+    if (hasRename())
+      DNI = DeclarationNameInfo(applyRename(), DNI.getLoc());
+
+    return Base::TransformDeclarationNameInfo(DNI);
   }
 
   ExprResult TransformDeclRefExpr(DeclRefExpr *E) {

@@ -1610,6 +1610,7 @@ using OptionalAPValue = llvm::Optional<APValue>;
 using OptionalAPSInt  = llvm::Optional<llvm::APSInt>;
 using OptionalUInt    = llvm::Optional<std::uint64_t>;
 using OptionalBool    = llvm::Optional<bool>;
+using OptionalExpr    = llvm::Optional<const Expr *>;
 
 static OptionalAPValue getArgAtIndex(const ArrayRef<APValue> &Args,
                                      std::size_t I) {
@@ -1638,6 +1639,14 @@ static OptionalBool
 getArgAsBool(const ArrayRef<APValue> &Args, std::size_t I) {
   if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
     return V->getExtValue();
+  return { };
+}
+
+static OptionalExpr
+getArgAsExpr(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPValue V = getArgAtIndex(Args, I))
+    if (V->isLValue())
+      return V->getLValueBase().get<const Expr *>();
   return { };
 }
 
@@ -1712,6 +1721,20 @@ setAddPureVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
   return Error(R);
 }
 
+static ReflectionModifiers withNewName(const Reflection &R, const Expr *NewName) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setNewName(NewName);
+  return M;
+}
+
+static bool
+setNewNameMod(const Reflection &R, const ArrayRef<APValue> &Args,
+              APValue &Result) {
+  if (OptionalExpr V = getArgAsExpr(Args, 0))
+    return makeReflection(R, withNewName(R, *V), Result);
+  return Error(R);
+}
+
 bool Reflection::UpdateModifier(ReflectionQuery Q,
                                 const ArrayRef<APValue> &ContextualArgs,
                                 APValue &Result) {
@@ -1728,6 +1751,8 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
     return setAddVirtualMod(*this, ContextualArgs, Result);
   case RQ_set_add_pure_virtual:
     return setAddPureVirtualMod(*this, ContextualArgs, Result);
+  case RQ_set_new_name:
+    return setNewNameMod(*this, ContextualArgs, Result);
   default:
     break;
   }

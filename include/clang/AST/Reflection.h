@@ -289,6 +289,7 @@ enum ReflectionQuery {
   RQ_set_add_constexpr,
   RQ_set_add_virtual,
   RQ_set_add_pure_virtual,
+  RQ_set_new_name,
 
   // Labels for kinds of queries. These need to be updated when new
   // queries are added.
@@ -307,7 +308,7 @@ enum ReflectionQuery {
   RQ_last_name = RQ_get_display_name,
   // Modifier updates -- these return meta::info.
   RQ_first_modifier_update = RQ_set_access,
-  RQ_last_modifier_update = RQ_set_add_pure_virtual
+  RQ_last_modifier_update = RQ_set_new_name
 };
 
 /// True if Q is a predicate.
@@ -356,11 +357,13 @@ class ReflectionModifiers {
   unsigned AddConstexpr : 1;
   unsigned AddVirtual : 1;
   unsigned AddPureVirtual : 1;
+  const Expr *NewName;
 public:
   ReflectionModifiers()
     : Access(AccessModifier::NotModified),
       Storage(StorageModifier::NotModified),
-      AddConstexpr(false), AddVirtual(false), AddPureVirtual(false) { }
+      AddConstexpr(false), AddVirtual(false), AddPureVirtual(false),
+      NewName(nullptr) { }
 
   void setAccessModifier(AccessModifier Access) {
     this->Access = Access;
@@ -411,6 +414,22 @@ public:
 
   bool addPureVirtual() const {
     return AddPureVirtual;
+  }
+
+  void setNewName(const Expr *NewName) {
+    this->NewName = NewName;
+  }
+
+  bool hasRename() const {
+    return NewName != nullptr;
+  }
+
+  const Expr *getNewName() const {
+    return NewName;
+  }
+
+  std::string getNewNameAsString() const {
+    return cast<StringLiteral>(NewName)->getString();
   }
 };
 
