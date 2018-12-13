@@ -286,6 +286,9 @@ enum ReflectionQuery {
   // Modifier updates
   RQ_set_access,
   RQ_set_storage,
+  RQ_set_add_constexpr,
+  RQ_set_add_virtual,
+  RQ_set_add_pure_virtual,
 
   // Labels for kinds of queries. These need to be updated when new
   // queries are added.
@@ -304,7 +307,7 @@ enum ReflectionQuery {
   RQ_last_name = RQ_get_display_name,
   // Modifier updates -- these return meta::info.
   RQ_first_modifier_update = RQ_set_access,
-  RQ_last_modifier_update = RQ_set_storage
+  RQ_last_modifier_update = RQ_set_add_pure_virtual
 };
 
 /// True if Q is a predicate.
@@ -350,10 +353,14 @@ enum class StorageModifier : unsigned {
 class ReflectionModifiers {
   AccessModifier Access : 3;
   StorageModifier Storage : 2;
+  unsigned AddConstexpr : 1;
+  unsigned AddVirtual : 1;
+  unsigned AddPureVirtual : 1;
 public:
   ReflectionModifiers()
     : Access(AccessModifier::NotModified),
-      Storage(StorageModifier::NotModified) { }
+      Storage(StorageModifier::NotModified),
+      AddConstexpr(false), AddVirtual(false), AddPureVirtual(false) { }
 
   void setAccessModifier(AccessModifier Access) {
     this->Access = Access;
@@ -368,7 +375,7 @@ public:
   }
 
   void setStorageModifier(StorageModifier Storage) {
-    assert((Storage == StorageModifier::NotModifier
+    assert((Storage == StorageModifier::NotModified
             || Storage == StorageModifier::Static)
            && "Currently only static storage modification is supported");
     this->Storage = Storage;
@@ -380,6 +387,30 @@ public:
 
   StorageModifier getStorageModifier() const {
     return Storage;
+  }
+
+  void setAddConstexpr(bool AddConstexpr) {
+    this->AddConstexpr = AddConstexpr;
+  }
+
+  bool addConstexpr() const {
+    return AddConstexpr;
+  }
+
+  void setAddVirtual(bool AddVirtual) {
+    this->AddVirtual = AddVirtual;
+  }
+
+  bool addVirtual() const {
+    return AddVirtual;
+  }
+
+  void setAddPureVirtual(bool AddPureVirtual) {
+    this->AddPureVirtual = AddPureVirtual;
+  }
+
+  bool addPureVirtual() const {
+    return AddPureVirtual;
   }
 };
 

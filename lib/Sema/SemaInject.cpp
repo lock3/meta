@@ -524,7 +524,13 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   Var->setTSCSpec(D->getTSCSpec());
   Var->setInitStyle(D->getInitStyle());
   Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
-  Var->setConstexpr(D->isConstexpr());
+
+  if (Modifiers.addConstexpr()) {
+    Var->setConstexpr(true);
+  } else {
+    Var->setConstexpr(D->isConstexpr());
+  }
+
   Var->setInitCapture(D->isInitCapture());
   Var->setPreviousDeclInSameBlockScope(D->isPreviousDeclInSameBlockScope());
   Var->setAccess(D->getAccess());
@@ -706,6 +712,12 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // FIXME: In general, see VisitFieldDecl in the template instantiatior.
   // There are some interesting cases we probably need to handle.
 
+  // Can't make
+  if (Modifiers.addConstexpr()) {
+    SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field);
+    Field->setInvalidDecl(true);
+  }
+
   // Propagate semantic properties.
   Field->setImplicit(D->isImplicit());
   ApplyAccess(Modifiers, Field, D);
@@ -778,10 +790,35 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   Method->setImplicit(D->isImplicit());
   ApplyAccess(Modifiers, Method, D);
 
+  // Update the constexpr specifier.
+  if (Modifiers.addConstexpr()) {
+    if (isa<CXXDestructorDecl>(Method)) {
+      SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor);
+      Method->setInvalidDecl(true);
+    }
+    Method->setConstexpr(true);
+  } else {
+    Method->setConstexpr(D->isConstexpr());
+  }
+
   // Propagate virtual flags.
   Method->setVirtualAsWritten(D->isVirtualAsWritten());
   if (D->isPure())
     SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+
+  // Request to make function virtual. Note that the original may have
+  // a definition. When the original is defined, we'll ignore the definition.
+  if (Modifiers.addVirtual() || Modifiers.addPureVirtual()) {
+    // FIXME: Actually generate a diagnostic here.
+    if (isa<CXXConstructorDecl>(Method)) {
+      SemaRef.Diag(D->getLocation(), diag::err_modify_virtual_constructor);
+      Method->setInvalidDecl(true);
+    } else {
+      Method->setVirtualAsWritten(true);
+      if (Modifiers.addPureVirtual())
+        SemaRef.CheckPureMethod(Method, Method->getSourceRange());
+    }
+  }
 
   Method->setDeletedAsWritten(D->isDeletedAsWritten());
   Method->setDefaulted(D->isDefaulted());

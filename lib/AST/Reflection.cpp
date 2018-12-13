@@ -1609,6 +1609,7 @@ bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
 using OptionalAPValue = llvm::Optional<APValue>;
 using OptionalAPSInt  = llvm::Optional<llvm::APSInt>;
 using OptionalUInt    = llvm::Optional<std::uint64_t>;
+using OptionalBool    = llvm::Optional<bool>;
 
 static OptionalAPValue getArgAtIndex(const ArrayRef<APValue> &Args,
                                      std::size_t I) {
@@ -1630,6 +1631,13 @@ getArgAsUInt(const ArrayRef<APValue> &Args, std::size_t I) {
   if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
     if (V->isUnsigned())
       return V->getZExtValue();
+  return { };
+}
+
+static OptionalBool
+getArgAsBool(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
+    return V->getExtValue();
   return { };
 }
 
@@ -1661,6 +1669,49 @@ setStorageMod(const Reflection &R, const ArrayRef<APValue> &Args,
   return Error(R);
 }
 
+static ReflectionModifiers withConstexpr(const Reflection &R, bool AddConstexpr) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddConstexpr(AddConstexpr);
+  return M;
+}
+
+static bool
+setAddConstexprMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                   APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withConstexpr(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withVirtual(const Reflection &R, bool AddVirtual) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddVirtual(AddVirtual);
+  return M;
+}
+
+static bool
+setAddVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                 APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withVirtual(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withPureVirtual(const Reflection &R,
+                                           bool AddPureVirtual) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddPureVirtual(AddPureVirtual);
+  return M;
+}
+
+static bool
+setAddPureVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                     APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withPureVirtual(R, *V), Result);
+  return Error(R);
+}
+
 bool Reflection::UpdateModifier(ReflectionQuery Q,
                                 const ArrayRef<APValue> &ContextualArgs,
                                 APValue &Result) {
@@ -1671,6 +1722,12 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
     return setAccessMod(*this, ContextualArgs, Result);
   case RQ_set_storage:
     return setStorageMod(*this, ContextualArgs, Result);
+  case RQ_set_add_constexpr:
+    return setAddConstexprMod(*this, ContextualArgs, Result);
+  case RQ_set_add_virtual:
+    return setAddVirtualMod(*this, ContextualArgs, Result);
+  case RQ_set_add_pure_virtual:
+    return setAddPureVirtualMod(*this, ContextualArgs, Result);
   default:
     break;
   }

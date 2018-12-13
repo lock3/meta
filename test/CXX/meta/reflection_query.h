@@ -112,7 +112,10 @@ enum reflection_query {
 
   // Modifier updates
   query_set_access,
-  query_set_storage
+  query_set_storage,
+  query_set_add_constexpr,
+  query_set_add_virtual,
+  query_set_add_pure_virtual
 };
 
 #endif
