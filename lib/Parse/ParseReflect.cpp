@@ -108,6 +108,23 @@ ExprResult Parser::ParseCXXReflectExpression() {
                                      T.getCloseLocation());
 }
 
+template<int BaseArgCount>
+static llvm::Optional<SmallVector<Expr *, BaseArgCount>>
+ParseConstexprFunctionArgs(Parser &P, BalancedDelimiterTracker &ParenTracker) {
+  SmallVector<Expr *, BaseArgCount> Args;
+
+  do {
+    ExprResult Expr = P.ParseConstantExpression();
+    if (Expr.isInvalid()) {
+      ParenTracker.skipToEnd();
+      return { };
+    }
+    Args.push_back(Expr.get());
+  } while (P.TryConsumeToken(tok::comma));
+
+  return Args;
+}
+
 /// Parse a reflection trait.
 ///
 /// \verbatim
@@ -123,22 +140,16 @@ ExprResult Parser::ParseCXXReflectionReadQuery() {
   if (Parens.expectAndConsume())
     return ExprError();
 
-  SmallVector<Expr *, 2> Args;
-  do {
-    ExprResult Expr = ParseConstantExpression();
-    if (Expr.isInvalid()) {
-      Parens.skipToEnd();
-      return ExprError();
-    }
-    Args.push_back(Expr.get());
-  } while (TryConsumeToken(tok::comma));
+  auto Args = ParseConstexprFunctionArgs<2>(*this, Parens);
+  if (!Args)
+    return ExprError();
 
   if (Parens.consumeClose())
     return ExprError();
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXReflectionReadQuery(Loc, Args, LPLoc, RPLoc);
+  return Actions.ActOnCXXReflectionReadQuery(Loc, *Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflection modification.
@@ -156,22 +167,16 @@ ExprResult Parser::ParseCXXReflectionWriteQuery() {
   if (Parens.expectAndConsume())
     return ExprError();
 
-  SmallVector<Expr *, 2> Args;
-  do {
-    ExprResult Expr = ParseConstantExpression();
-    if (Expr.isInvalid()) {
-      Parens.skipToEnd();
-      return ExprError();
-    }
-    Args.push_back(Expr.get());
-  } while (TryConsumeToken(tok::comma));
+  auto Args = ParseConstexprFunctionArgs<3>(*this, Parens);
+  if (!Args)
+    return ExprError();
 
   if (Parens.consumeClose())
     return ExprError();
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXReflectionWriteQuery(Loc, Args, LPLoc, RPLoc);
+  return Actions.ActOnCXXReflectionWriteQuery(Loc, *Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflective pretty print of integer and string values.
@@ -189,22 +194,16 @@ ExprResult Parser::ParseCXXReflectPrintLiteralExpression() {
   if (Parens.expectAndConsume())
     return ExprError();
 
-  SmallVector<Expr *, 2> Args;
-  do {
-    ExprResult Expr = ParseConstantExpression();
-    if (Expr.isInvalid()) {
-      Parens.skipToEnd();
-      return ExprError();
-    }
-    Args.push_back(Expr.get());
-  } while (TryConsumeToken(tok::comma));
+  auto Args = ParseConstexprFunctionArgs<2>(*this, Parens);
+  if (!Args)
+    return ExprError();
 
   if (Parens.consumeClose())
     return ExprError();
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXReflectPrintLiteral(Loc, Args, LPLoc, RPLoc);
+  return Actions.ActOnCXXReflectPrintLiteral(Loc, *Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflective pretty print of a reflection.
