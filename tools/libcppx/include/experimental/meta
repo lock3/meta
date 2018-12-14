@@ -1025,17 +1025,17 @@ consteval bool has_default_access(info x) {
 
 consteval bool is_public(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::public_access;
+  return detail::access_traits(x).kind == detail::public_access;
 }
 
 consteval bool is_private(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::private_access;
+  return detail::access_traits(x).kind == detail::private_access;
 }
 
 consteval bool is_protected(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::protected_access;
+  return detail::access_traits(x).kind == detail::protected_access;
 }
 
 consteval bool is_extern(info x) {
