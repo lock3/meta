@@ -2037,7 +2037,7 @@ DoneWithMetaprogram(MetaType *MD) {
   MD->getDeclContext()->removeDecl(MD);
 }
 
-/// Evaluate the expression.
+/// Evaluates a call expression for a metaprogram declaration.
 ///
 /// \returns  \c true if the expression \p E can be evaluated, \c false
 ///           otherwise.
@@ -2087,10 +2087,11 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   return Notes.empty();
 }
 
-/// Process a metaprogram decl
+/// Process a metaprogram-declaration.
 ///
-/// This builds an unnamed constexpr void function whose body is that of
-/// the metaprogram delaration, and evaluates a call to that function.
+/// This handles the construction and evaluation
+/// -- via its call to EvaluateMetaDeclCall -- of the call expression used
+/// for metaprogram declarations represented as a function.
 template <typename MetaType>
 static bool
 EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
@@ -2112,8 +2113,9 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
 
 /// Process a metaprogram-declaration.
 ///
-/// This builds an unnamed \c constexpr \c void function whose body is that of
-/// the metaprogram delaration, and evaluates a call to that function.
+/// This handles the construction and evaluation
+/// -- via its call to EvaluateMetaDeclCall -- of the call expression used
+/// for metaprogram declarations represented as a lambda.
 template <typename MetaType>
 static bool
 EvaluateMetaDecl(Sema &Sema, MetaType *MD, Expr *E) {
@@ -2211,7 +2213,7 @@ void Sema::ActOnCXXInjectionDeclError(Scope *S, Decl *D) {
   ActOnCXXMetaError<CXXInjectionDecl>(*this, S, D);
 }
 
-/// Given an  input like this:
+/// Given an input like this:
 ///
 ///    class(metafn) Proto { ... };
 ///
