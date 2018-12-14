@@ -5035,7 +5035,7 @@ public:
                  SourceLocation KeywordLoc,
                  SourceLocation LParenLoc, SourceLocation RParenLoc)
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
-           Reflection->isTypeDependent(),
+           Reflection->isValueDependent() || Reflection->isTypeDependent(),
            Reflection->isValueDependent(),
            Reflection->isInstantiationDependent(),
            Reflection->containsUnexpandedParameterPack()),

@@ -98,7 +98,6 @@ void test_array() {
 }
 
 void test_constexpr_array() {
-  // FIXME: Why does this need to be static?
   static constexpr int arr[] = { 1, 2, 3, 4 };
   for constexpr (int a : arr)
     ;

@@ -566,6 +566,8 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (Refl->isTypeDependent() || Refl->isValueDependent())
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
                                         LParenLoc, LParenLoc);
+  if (!CheckReflectionOperand(*this, Refl))
+    return ExprError();
 
   Reflection R = EvaluateReflection(*this, Refl);
   if (R.isInvalid())
@@ -578,8 +580,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!Eval->EvaluateAsAnyValue(Result, Context)) {
-    // FIXME: This could be a better diagnostic.
-    Diag(Eval->getExprLoc(), diag::reflection_not_constant_expression);
+    Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();
