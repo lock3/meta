@@ -2951,6 +2951,11 @@ ExpansionStatementBuilder::Build()
   if (LoopVar->isInvalidDecl())
     return StmtError();
 
+  if (!RangeExpr) {
+    LoopVar->setInvalidDecl();
+    return StmtError();
+  }
+
   // Build the induction variable. This is used in all expansions.
   BuildInductionVar();
 
