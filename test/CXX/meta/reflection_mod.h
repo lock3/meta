@@ -2,11 +2,11 @@
 #define REFLECTION_MOD_H
 
 enum class AccessModifier : unsigned {
- NotModified,
- Default,
- Public,
- Protected,
- Private
+  NotModified,
+  Default,
+  Public,
+  Protected,
+  Private
 };
 
 enum class StorageModifier : unsigned {
