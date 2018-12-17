@@ -3029,7 +3029,7 @@ ExpansionStatementBuilder::BuildRangeVar()
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
 
   if (IsConstexpr) {
-    RangeVar->setConstexpr(IsConstexpr);
+    RangeVar->setConstexpr(true);
     RangeVar->setType(RangeType = RangeType.withConst());
   }
 
@@ -3338,14 +3338,18 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   ///  Build 'constexpr auto __begin = ...'
   VarDecl *BeginVar = 
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__begin");
-  BeginVar->setConstexpr(true);
-  BeginVar->setType(BeginVar->getType().withConst());
+  if (IsConstexpr) {
+    BeginVar->setConstexpr(true);
+    BeginVar->setType(BeginVar->getType().withConst());
+  }
 
   ///  Build 'constexpr auto __end = ...'
   VarDecl *EndVar = 
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__end");
-  EndVar->setConstexpr(true);
-  EndVar->setType(EndVar->getType().withConst());
+  if (IsConstexpr) {
+    EndVar->setConstexpr(true);
+    EndVar->setType(EndVar->getType().withConst());
+  }
 
   // Build decl refs for the __range in each of the begin and end expressions.  
   ExprResult BeginRangeRef = 
