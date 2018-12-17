@@ -1858,6 +1858,10 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
     SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
     // FIXME: We should run diagnostics here
     // DiagnoseUninitializedFields(*this, Constructor);
+  } else if (isa<CXXDestructorDecl>(OldMethod)) {
+    CXXDestructorDecl *NewDtor = cast<CXXDestructorDecl>(NewMethod);
+
+    CheckDestructor(NewDtor);
   }
 }
 
