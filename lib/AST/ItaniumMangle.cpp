@@ -3532,6 +3532,7 @@ recurse:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::PackSelectionExprClass:
+  case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 
   case Expr::ConstantExprClass:

@@ -167,6 +167,7 @@ def CXXReflectionTraitExpr : DStmt<Expr>;
 def CXXReflectPrintLiteralExpr : DStmt<Expr>;
 def CXXReflectPrintReflectionExpr : DStmt<Expr>;
 def CXXReflectDumpReflectionExpr : DStmt<Expr>;
+def CXXCompilerErrorExpr : DStmt<Expr>;
 def CXXUnreflexprExpr : DStmt<Expr>;
 def CXXIdExprExpr : DStmt<Expr>;
 def CXXValueOfExpr : DStmt<Expr>;

@@ -8700,6 +8700,12 @@ public:
                                            Expr *Reflection,
                                            SourceLocation LParenLoc,
                                            SourceLocation RparenLoc);
+  ExprResult ActOnCXXCompilerErrorExpr(Expr *MessageExpr,
+                                       SourceLocation BuiltinLoc,
+                                       SourceLocation RParenLoc);
+  ExprResult BuildCXXCompilerErrorExpr(Expr *MessageExpr,
+                                       SourceLocation BuiltinLoc,
+                                       SourceLocation RParenLoc);
 
   ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
                                 Expr *Refl,

@@ -343,6 +343,6 @@ def note_reflection_no_members : Note<
   "reflected %select{declaration|entity|construct}0 does not have members">;
 def note_assignment_to_object_of_different_type : Note<
   "cannot assign to an object of different type">;
-
+def err_user_defined_error : Error<"%0">;
 }
 }

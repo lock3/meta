@@ -2779,13 +2779,14 @@ private:
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
+  ExprResult ParseCXXCompilerErrorExpression();
 
   bool ParseCXXReflectedId(UnqualifiedId &Result);
   ExprResult ParseCXXUnreflexprExpression();
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                        SourceLocation &EndLoc);
+                                         SourceLocation &EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
 
   //===--------------------------------------------------------------------===//

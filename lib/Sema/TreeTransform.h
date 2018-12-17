@@ -1422,12 +1422,12 @@ public:
     return getSema().BuildCoroutineBodyStmt(Args);
   }
 
-  /// \brief Rebuild a constant expression from a source expression.
+  /// Rebuild a constant expression from a source expression.
   ExprResult RebuildCXXConstantExpr(Expr *E) {
     return getSema().BuildConstantExpression(E);
   }
 
-  /// \brief Build a new reflection trait expression.
+  /// Build a new reflection trait expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1439,7 +1439,7 @@ public:
                                              LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect print literal expression.
+  /// Build a new reflect print literal expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1451,7 +1451,7 @@ public:
                                                  LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect print reflection expression.
+  /// Build a new reflect print reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1463,7 +1463,7 @@ public:
                                                     LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflect dump reflection expression.
+  /// Build a new reflect dump reflection expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
@@ -1475,7 +1475,17 @@ public:
                                                    LParenLoc, RParenLoc);
   }
 
-  /// \brief Build a new reflected value expression.
+  /// Build a new \c __compiler_error expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXCompilerErrorExpr(Expr *Message,
+                                         SourceLocation BuiltinLoc,
+                                         SourceLocation RParenLoc) {
+    return getSema().ActOnCXXCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
+  }
+
+  /// Build a new reflected value expression.
   ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
     return getSema().BuildCXXUnreflexprExpression(Loc, E);
   }
@@ -7492,6 +7502,19 @@ TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
 
   return getSema().ActOnCXXValueOfExpr(E->getKeywordLoc(), Refl.get(),
                                        E->getLParenLoc(), E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  ExprResult Message = getDerived().TransformExpr(E->getMessage());
+  if (Message.isInvalid())
+    return ExprError();
+
+  // Always rebuild so that __compiler_error diagnostics can be emitted within
+  // template instantiations.
+  return getDerived().RebuildCXXCompilerErrorExpr(
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
 }
 
 template <typename Derived>

@@ -403,6 +403,7 @@ KEYWORD(__reflect                   , KEYREFLECT)
 KEYWORD(__reflect_print             , KEYREFLECT)
 KEYWORD(__reflect_pretty_print      , KEYREFLECT)
 KEYWORD(__reflect_dump              , KEYREFLECT)
+KEYWORD(__compiler_error            , KEYREFLECT)
 
 // C++ char8_t proposal
 KEYWORD(char8_t                     , CHAR8SUPPORT)

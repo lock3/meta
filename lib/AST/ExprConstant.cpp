@@ -10846,7 +10846,40 @@ public:
       return true;
     }
   }
+
+  bool VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E);
 };
+
+bool VoidExprEvaluator::VisitCXXCompilerErrorExpr(
+                                                const CXXCompilerErrorExpr *E) {
+  // This never produces a value.
+  //
+  // FIXME: We probably want to evaluate the sub-expression for potential
+  // errors before stopping at these conditions.
+  if (Info.checkingPotentialConstantExpression())
+    return false;
+  if (Info.checkingForOverflow())
+    return false;
+
+  APValue Result;
+  if (!Evaluate(Result, Info, E->getMessage()))
+    return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
+
+  const Expr *BaseExpr = Result.getLValueBase().get<const Expr *>();
+  const StringLiteral *Message = cast<StringLiteral>(BaseExpr);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+
+  // Evaluating a __compiler_error in a constexpr evaluation context
+  // results in compiler error.
+  Info.FFDiag(E, diag::err_user_defined_error) << NonQuote;
+  return false;
+}
+
 } // end anonymous namespace
 
 static bool EvaluateVoid(const Expr *E, EvalInfo &Info) {
@@ -11462,6 +11495,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
+  case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
     return NoDiag();

@@ -227,6 +227,29 @@ ExprResult Parser::ParseCXXReflectDumpReflectionExpression() {
                                                LPLoc, RPLoc);
 }
 
+ExprResult Parser::ParseCXXCompilerErrorExpression() {
+  assert(Tok.is(tok::kw___compiler_error) && "Not '__compiler_error'");
+
+  SourceLocation BuiltinLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
+    return ExprError();
+
+  ExprResult MessageExpr = ParseConstantExpression();
+
+  if (MessageExpr.isInvalid()) {
+    SkipUntil(tok::r_paren, StopAtSemi);
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCXXCompilerErrorExpr(MessageExpr.get(), BuiltinLoc,
+                                           T.getCloseLocation());
+}
+
 /// Parse an idexpr expression.
 ///
 /// \verbatim

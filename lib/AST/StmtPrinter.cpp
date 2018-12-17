@@ -2298,6 +2298,12 @@ void StmtPrinter::VisitCXXReflectDumpReflectionExpr(
   OS << ')';
 }
 
+void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  OS << "__compiler_error(";
+  PrintExpr(E->getMessage());
+  OS << ')';
+}
+
 void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   OS << "unreflexpr(reflexpr(";
   PrintExpr(E->getReflectedDeclExpr());

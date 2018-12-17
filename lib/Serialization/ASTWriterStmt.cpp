@@ -403,6 +403,10 @@ void ASTStmtWriter::VisitCXXReflectDumpReflectionExpr(
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   llvm_unreachable("unimplemented");
 }

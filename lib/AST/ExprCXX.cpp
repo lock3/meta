@@ -1612,3 +1612,17 @@ CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
     KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
   std::copy(Args.begin(), Args.end(), this->Args);
 }
+
+CXXCompilerErrorExpr *CXXCompilerErrorExpr::Create(const ASTContext &C,
+                                                   QualType Type,
+                                                   Expr *Message,
+                                                   SourceLocation BuiltinLoc,
+                                                   SourceLocation RParenLoc) {
+  assert(Type->isVoidType() && "Invalid type for CXXCompilerErrorExpr");
+  return new (C) CXXCompilerErrorExpr(Type, Message, BuiltinLoc, RParenLoc);
+}
+
+CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
+                                                        EmptyShell Empty) {
+  return new (C) CXXCompilerErrorExpr(Empty);
+}
