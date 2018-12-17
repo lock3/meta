@@ -400,7 +400,7 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
         Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
 
   for (std::size_t I = 0; I < Args.size(); ++I) {
-    Expr *E = Args[I];
+    Expr *&E = Args[I];
 
     assert(!E->isTypeDependent() && !E->isValueDependent()
         && "Dependent element");
@@ -410,8 +410,6 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     if (Conv.isInvalid())
       return ExprError();
     E = Conv.get();
-
-    E->dump();
 
     // Get the canonical type of the expression.
     QualType T = E->getType();
