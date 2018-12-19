@@ -2531,6 +2531,10 @@ def err_cannot_project_value : Error<
   "cannot project a value for a %select{constructor|destructor}0">;
 def err_reflect_print_literal_wrong_operand_type : Error<
   "expected either integer or string operand">;
+def err_compiler_error_wrong_operand_type : Error<
+  "expected a string operand">;
+def err_concatenate_wrong_operand_type : Error<
+  "expected either integer or string operand">;
 
 // declaration names
 def err_reflected_id_with_integer_prefix : Error<

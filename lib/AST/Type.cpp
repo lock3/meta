@@ -2436,6 +2436,26 @@ bool QualType::isCXX11PODType(const ASTContext &Context) const {
   return false;
 }
 
+static bool isConstCharPtr(QualType Ty) {
+  if (const PointerType *Ptr = dyn_cast<PointerType>(Ty))
+    Ty = Ptr->getPointeeType();
+  return Ty.isConstQualified() && Ty->isCharType();
+}
+
+static bool isCharArray(QualType Ty) {
+  if (Ty->isConstantArrayType())
+    Ty = cast<ArrayType>(Ty.getTypePtr())->getElementType();
+  return Ty->isCharType();
+}
+
+bool QualType::isCXXStringLiteralType() const {
+  if (isConstCharPtr(*this))
+    return true;
+  if (isCharArray(*this))
+    return true;
+  return false;
+}
+
 bool Type::isAlignValT() const {
   if (const auto *ET = getAs<EnumType>()) {
     IdentifierInfo *II = ET->getDecl()->getIdentifier();

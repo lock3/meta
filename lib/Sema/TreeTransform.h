@@ -1427,6 +1427,7 @@ public:
     return getSema().BuildConstantExpression(E);
   }
 
+
   /// Build a new reflection query read expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -1485,6 +1486,22 @@ public:
                                                  SourceLocation RParenLoc) {
     return getSema().ActOnCXXReflectDumpReflection(KeywordLoc, Reflection,
                                                    LParenLoc, RParenLoc);
+  }
+
+  /// Build a new concatenation expression.
+  ExprResult RebuildCXXConcatenateExpr(SourceLocation Loc,
+                                       SmallVectorImpl<Expr *> &Parts) {
+    return getSema().BuildCXXConcatenateExpr(Parts, Loc);
+  }
+
+  /// Build a new \c __compiler_error expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXCompilerErrorExpr(Expr *Message,
+                                         SourceLocation BuiltinLoc,
+                                         SourceLocation RParenLoc) {
+    return getSema().ActOnCXXCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
 
   /// Build a new reflected value expression.
@@ -7536,6 +7553,19 @@ TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
 
 template <typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  ExprResult Message = getDerived().TransformExpr(E->getMessage());
+  if (Message.isInvalid())
+    return ExprError();
+
+  // Always rebuild so that __compiler_error diagnostics can be emitted within
+  // template instantiations.
+  return getDerived().RebuildCXXCompilerErrorExpr(
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   ExprResult ReflectedDeclExpr = TransformExpr(E->getReflectedDeclExpr());
 
@@ -7544,6 +7574,19 @@ TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
 
   return getDerived().RebuildCXXUnreflexprExpr(E->getExprLoc(),
                                                ReflectedDeclExpr.get());
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  SmallVector<Expr *, 4> Parts;
+  for (Stmt *S : E->children()) {
+    ExprResult Part = TransformExpr(cast<Expr>(S));
+    if (Part.isInvalid())
+      return ExprError();
+    Parts.push_back(Part.get());
+  }
+  return RebuildCXXConcatenateExpr(E->getBeginLoc(), Parts);
 }
 
 template<typename Derived>

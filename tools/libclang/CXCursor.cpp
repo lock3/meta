@@ -276,6 +276,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXUnreflexprExprClass:
   case Stmt::CXXIdExprExprClass:
   case Stmt::CXXValueOfExprClass:
+  case Stmt::CXXConcatenateExprClass:
   case Stmt::CXXStdInitializerListExprClass:
   case Stmt::CXXScalarValueInitExprClass:
   case Stmt::CXXUuidofExprClass:
@@ -302,6 +303,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ObjCDictionaryLiteralClass:
   case Stmt::ObjCBoxedExprClass:
   case Stmt::ObjCSubscriptRefExprClass:
+  case Stmt::CXXCompilerErrorExprClass:
   case Stmt::CXXFragmentExprClass:
     K = CXCursor_UnexposedExpr;
     break;

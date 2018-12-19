@@ -3150,9 +3150,11 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXReflectPrintLiteralExprClass:
   case CXXReflectPrintReflectionExprClass:
   case CXXReflectDumpReflectionExprClass:
+  case CXXCompilerErrorExprClass:
   case CXXUnreflexprExprClass:
   case CXXIdExprExprClass:
   case CXXValueOfExprClass:
+  case CXXConcatenateExprClass:
   case PackSelectionExprClass:
   case CXXFragmentExprClass:
     // These never have a side-effect.

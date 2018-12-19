@@ -8723,6 +8723,12 @@ public:
                                            Expr *Reflection,
                                            SourceLocation LParenLoc,
                                            SourceLocation RparenLoc);
+  ExprResult ActOnCXXCompilerErrorExpr(Expr *MessageExpr,
+                                       SourceLocation BuiltinLoc,
+                                       SourceLocation RParenLoc);
+  ExprResult BuildCXXCompilerErrorExpr(Expr *MessageExpr,
+                                       SourceLocation BuiltinLoc,
+                                       SourceLocation RParenLoc);
 
   ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
                                 Expr *Refl,
@@ -8759,6 +8765,14 @@ public:
   ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                       SourceLocation OpLoc, bool IsArrow,
                                       Expr *IdExpr);
+
+  ExprResult ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc);
+
+  ExprResult BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc);
 
   /// RAII object used to temporarily disable semantic diagnostics
   /// for sematics valid only in reflections.

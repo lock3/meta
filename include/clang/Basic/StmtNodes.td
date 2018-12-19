@@ -170,9 +170,11 @@ def CXXReflectionWriteQueryExpr : DStmt<Expr>;
 def CXXReflectPrintLiteralExpr : DStmt<Expr>;
 def CXXReflectPrintReflectionExpr : DStmt<Expr>;
 def CXXReflectDumpReflectionExpr : DStmt<Expr>;
+def CXXCompilerErrorExpr : DStmt<Expr>;
 def CXXUnreflexprExpr : DStmt<Expr>;
 def CXXIdExprExpr : DStmt<Expr>;
 def CXXValueOfExpr : DStmt<Expr>;
+def CXXConcatenateExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

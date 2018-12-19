@@ -391,6 +391,16 @@ static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
  });
 }
 
+static QualType DeduceCanonicalType(Sema &S, Expr *E) {
+  QualType Ty = E->getType();
+  if (AutoType *D = Ty->getContainedAutoType()) {
+    Ty = D->getDeducedType();
+    if (!Ty.getTypePtr())
+      llvm_unreachable("Undeduced value reflection");
+  }
+  return S.Context.getCanonicalType(Ty);
+}
+
 ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                              SmallVectorImpl<Expr *> &Args,
                                              SourceLocation LParenLoc,
@@ -406,27 +416,17 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
         && "Dependent element");
 
     /// Convert to rvalue.
-    ExprResult Conv = DefaultLvalueConversion(E);
+    ExprResult Conv = DefaultFunctionArrayLvalueConversion(E);
     if (Conv.isInvalid())
       return ExprError();
     E = Conv.get();
 
     // Get the canonical type of the expression.
-    QualType T = E->getType();
-    if (AutoType *D = T->getContainedAutoType()) {
-      T = D->getDeducedType();
-      if (!T.getTypePtr())
-        llvm_unreachable("Undeduced value reflection");
-    }
-    T = Context.getCanonicalType(T);
+    QualType T = DeduceCanonicalType(*this, E);
 
-    // Ensure we are either working with valid
-    // operands.
-    if (T->isConstantArrayType()) {
-      QualType ElemTy = cast<ArrayType>(T.getTypePtr())->getElementType();
-      if (ElemTy->isCharType())
-        continue;
-    }
+    // Ensure we're working with a valid operand.
+    if (T.isCXXStringLiteralType())
+      continue;
 
     if (T->isIntegerType())
       continue;
@@ -475,6 +475,41 @@ ExprResult Sema::ActOnCXXReflectDumpReflection(SourceLocation KWLoc,
 
   return new (Context) CXXReflectDumpReflectionExpr(
       Context, Context.IntTy, Arg.get(), KWLoc, LParenLoc, RParenLoc);
+}
+
+/// Handle a call to \c __compiler_error.
+ExprResult Sema::ActOnCXXCompilerErrorExpr(Expr *MessageExpr,
+                                           SourceLocation BuiltinLoc,
+                                           SourceLocation RParenLoc) {
+  if (DiagnoseUnexpandedParameterPack(MessageExpr))
+    return ExprError();
+
+  return BuildCXXCompilerErrorExpr(MessageExpr, BuiltinLoc, RParenLoc);
+}
+
+/// Build a \c __compiler_error expression.
+ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
+                                           SourceLocation BuiltinLoc,
+                                           SourceLocation RParenLoc) {
+  assert(MessageExpr != nullptr);
+
+  ExprResult Converted = DefaultFunctionArrayLvalueConversion(MessageExpr);
+  if (Converted.isInvalid())
+    return ExprError();
+  MessageExpr = Converted.get();
+
+  // Get the canonical type of the expression.
+  QualType T = DeduceCanonicalType(*this, MessageExpr);
+
+  // Ensure we're working with a valid operand.
+  if (!T.isCXXStringLiteralType()) {
+    SourceLocation &&Loc = MessageExpr->getExprLoc();
+    Diag(Loc, diag::err_compiler_error_wrong_operand_type);
+    return ExprError();
+  }
+
+  return CXXCompilerErrorExpr::Create(Context, Context.VoidTy, MessageExpr,
+                                      BuiltinLoc, RParenLoc);
 }
 
 static Reflection EvaluateReflection(Sema &S, Expr *E) {
@@ -752,13 +787,7 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
         && "Dependent name component");
 
     // Get the type of the reflection.
-    QualType T = E->getType();
-    if (AutoType *D = T->getContainedAutoType()) {
-      T = D->getDeducedType();
-      if (!T.getTypePtr())
-        llvm_unreachable("Undeduced value reflection");
-    }
-    T = Context.getCanonicalType(T);
+    QualType T = DeduceCanonicalType(*this, E);
 
     SourceLocation ExprLoc = E->getBeginLoc();
 
@@ -1098,4 +1127,59 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
   }
 
   llvm_unreachable("Unsupported decl type");
+}
+
+ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RParenLoc) {
+  return BuildCXXConcatenateExpr(Parts, KWLoc);
+}
+
+static bool CheckConcatenateOperand(QualType T) {
+  if (T.isCXXStringLiteralType())
+    return true;
+  if (T->isIntegerType())
+    return true;
+
+  return false;
+}
+
+static bool CheckConcatenateOperand(Sema &SemaRef, Expr *E) {
+  QualType T = E->getType();
+  if (CheckConcatenateOperand(T))
+    return true;
+
+  SemaRef.Diag(E->getExprLoc(), diag::err_concatenate_wrong_operand_type);
+  return false;
+}
+
+ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc) {
+  // The type of the expression is 'const char *'.
+  QualType StrTy = Context.getPointerType(Context.getConstType(Context.CharTy));
+
+  // Look for dependent arguments.
+  for (Expr *E : Parts) {
+    if (E->isTypeDependent() || E->isValueDependent())
+      return new (Context) CXXConcatenateExpr(Context, StrTy, KWLoc, Parts);
+  }
+
+  // Convert operands to rvalues.
+  SmallVector<Expr*, 4> Converted;
+  for (Expr *E : Parts) {
+    // Decay arrays first.
+    ExprResult R = DefaultFunctionArrayLvalueConversion(E);
+    if (R.isInvalid())
+      return ExprError();
+    E = R.get();
+
+    // Check that the operand (type) is acceptable.
+    if (!CheckConcatenateOperand(*this, E))
+      return ExprError();
+
+    Converted.push_back(E);
+  }
+
+  return new (Context) CXXConcatenateExpr(Context, StrTy, KWLoc, Converted);
 }

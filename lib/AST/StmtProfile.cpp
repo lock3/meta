@@ -1916,6 +1916,10 @@ void StmtProfiler::VisitCXXReflectDumpReflectionExpr(
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
   VisitExpr(E);
 }
@@ -1925,6 +1929,10 @@ void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
 }
 
 void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
   VisitExpr(E);
 }
 

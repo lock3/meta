@@ -409,6 +409,10 @@ void ASTStmtWriter::VisitCXXReflectDumpReflectionExpr(
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   llvm_unreachable("unimplemented");
 }
@@ -419,6 +423,10 @@ void ASTStmtWriter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
 
 void ASTStmtWriter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
+}
+
+void ASTStmtWriter::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  llvm_unreachable("not implemented");
 }
 
 void ASTStmtWriter::VisitCXXFragmentExpr(CXXFragmentExpr *E) {

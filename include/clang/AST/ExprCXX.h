@@ -4928,6 +4928,71 @@ public:
   }
 };
 
+
+/// Represents a call to the builtin function \c __compiler_error.
+///
+/// This AST node provides support for issuing a compile-time error. It takes a
+/// single constant string argument. Its effect is similar to that of an \c
+/// \#error directive or a failed static assertion: the program becomes
+/// ill-formed, and the text of the given string is included in the resulting
+/// diagnostic message.
+class CXXCompilerErrorExpr : public Expr {
+  Stmt *Message;
+  SourceLocation BuiltinLoc, RParenLoc;
+
+  CXXCompilerErrorExpr(QualType Type, Expr *Message, SourceLocation BuiltinLoc,
+                    SourceLocation RParenLoc)
+      : Expr(CXXCompilerErrorExprClass, Type, VK_RValue, OK_Ordinary, false,
+             Message->isTypeDependent() || Message->isValueDependent(),
+             Message->isInstantiationDependent(),
+             Message->containsUnexpandedParameterPack()),
+        Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
+
+  explicit CXXCompilerErrorExpr(EmptyShell Empty)
+      : Expr(CXXCompilerErrorExprClass, Empty) {}
+
+public:
+  /// Construct a \c __compiler_error expression.
+  static CXXCompilerErrorExpr *Create(const ASTContext &C, QualType Type,
+                                      Expr *Message, SourceLocation BuiltinLoc,
+                                      SourceLocation RParenLoc);
+
+  /// Construct an empty \c __compiler_error expression.
+  static CXXCompilerErrorExpr *CreateEmpty(const ASTContext &C,
+                                           EmptyShell Empty);
+
+  /// Return the string to be included in the diagnostic message.
+  Expr *getMessage() { return cast<Expr>(Message); }
+
+  /// Return the string to be included in the diagnostic message.
+  const Expr *getMessage() const { return cast<Expr>(Message); }
+
+  /// Set the string to be included in the diagnostic message.
+  void setMessage(Expr *M) { Message = M; }
+
+  /// Return the location of the \c __compiler_error token.
+  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
+
+  /// Set the location of the \c __compiler_error token.
+  void setBuiltinLoc(SourceLocation L) { BuiltinLoc = L; }
+
+  /// Return the location of final right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Set the location of final right parenthesis.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return BuiltinLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXCompilerErrorExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Message, &Message + 1); }
+};
+
 class CXXUnreflexprExpr : public Expr {
   Expr *ReflectedDeclExpr;
 
@@ -5071,6 +5136,51 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXValueOfExprClass;
+  }
+};
+
+/// Represents the expression __concatenate(...)
+class CXXConcatenateExpr : public Expr {
+  /// The location of the introducer token.
+  SourceLocation Loc;
+
+  /// The number operands of the expression.
+  std::size_t NumOperands;
+
+  /// The operands of the expression.
+  Stmt **Operands;
+
+public:
+  CXXConcatenateExpr(ASTContext &Ctx, QualType T, SourceLocation Loc,
+                     ArrayRef<Expr *> Parts);
+
+  explicit CXXConcatenateExpr(EmptyShell Empty)
+      : Expr(CXXConcatenateExprClass, Empty), Loc(), NumOperands(),
+        Operands() {}
+
+  /// The number of captured declarations.
+  std::size_t getNumOperands() const { return NumOperands; }
+
+  /// The Ith capture of the injection statement.
+  const Expr *getOperand(std::size_t I) const { return (Expr *)Operands[I]; }
+  Expr *getOperand(std::size_t I) { return (Expr *)Operands[I]; }
+
+  child_range children() {
+    return child_range(Operands, Operands + NumOperands);
+  }
+
+  const_child_range children() const {
+    return const_child_range(Operands, Operands + NumOperands);
+  }
+
+  /// The location of the introducer token.
+  SourceLocation getIntroLoc() const { return Loc; }
+
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConcatenateExprClass;
   }
 };
 

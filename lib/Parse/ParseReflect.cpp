@@ -266,6 +266,29 @@ ExprResult Parser::ParseCXXReflectDumpReflectionExpression() {
                                                LPLoc, RPLoc);
 }
 
+ExprResult Parser::ParseCXXCompilerErrorExpression() {
+  assert(Tok.is(tok::kw___compiler_error) && "Not '__compiler_error'");
+
+  SourceLocation BuiltinLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "__compiler_error"))
+    return ExprError();
+
+  ExprResult MessageExpr = ParseConstantExpression();
+
+  if (MessageExpr.isInvalid()) {
+    SkipUntil(tok::r_paren, StopAtSemi);
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCXXCompilerErrorExpr(MessageExpr.get(), BuiltinLoc,
+                                           T.getCloseLocation());
+}
+
 /// Parse an idexpr expression.
 ///
 /// \verbatim
@@ -425,4 +448,38 @@ Parser::ParseReflectedTemplateArgument() {
     return ParsedTemplateArgument();
 
   return Actions.ActOnReflectedTemplateArgument(Loc, Result.get());
+}
+
+/// Parse a concatenation expression.
+///
+///   primary-expression:
+///      '__concatenate' '(' constant-argument-list ')'
+///
+/// Each argument in the constant-argument-list must be a constant expression.
+///
+/// Returns true if parsing or semantic analysis fail.
+ExprResult Parser::ParseCXXConcatenateExpression() {
+  assert(Tok.is(tok::kw___concatenate));
+  SourceLocation KeyLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  SmallVector<Expr *, 4> Parts;
+  do {
+    ExprResult Expr = ParseConditionalExpression();
+    if (Expr.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+    Parts.push_back(Expr.get());
+  } while (TryConsumeToken(tok::comma));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
+                                         Parens.getOpenLocation(),
+                                         Parens.getCloseLocation());
 }

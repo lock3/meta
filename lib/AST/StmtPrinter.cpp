@@ -2316,6 +2316,12 @@ void StmtPrinter::VisitCXXReflectDumpReflectionExpr(
   OS << ')';
 }
 
+void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  OS << "__compiler_error(";
+  PrintExpr(E->getMessage());
+  OS << ')';
+}
+
 void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
   OS << "unreflexpr(reflexpr(";
   PrintExpr(E->getReflectedDeclExpr());
@@ -2328,6 +2334,17 @@ void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
 
 void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   OS << "valueof(...)"; // TODO Finish this
+}
+
+void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
+  OS << "__concatenate" << '(';
+  CXXConcatenateExpr::child_range Ch = Node->children();
+  for (auto I = Ch.begin(); I != Ch.end(); ++I) {
+    if (I != Ch.begin())
+      OS << ", ";
+    PrintStmt(*I);
+  }
+  OS << ')';
 }
 
 void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {

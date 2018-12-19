@@ -1588,6 +1588,7 @@ public:
   ExprResult ParseExpression(TypeCastState isTypeCast = NotTypeCast);
   ExprResult ParseConstantExpressionInExprEvalContext(
       TypeCastState isTypeCast = NotTypeCast);
+  ExprResult ParseConditionalExpression(TypeCastState isTypecast = NotTypeCast);
   ExprResult ParseConstantExpression(TypeCastState isTypeCast = NotTypeCast);
   ExprResult ParseCaseExpression(SourceLocation CaseLoc);
   ExprResult ParseConstraintExpression();
@@ -2788,14 +2789,16 @@ private:
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
+  ExprResult ParseCXXCompilerErrorExpression();
 
   bool ParseCXXReflectedId(UnqualifiedId &Result);
   ExprResult ParseCXXUnreflexprExpression();
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
-                                        SourceLocation &EndLoc);
+                                         SourceLocation &EndLoc);
   ParsedTemplateArgument ParseReflectedTemplateArgument();
+  ExprResult ParseCXXConcatenateExpression();
 
   // C++ Code Fragments
   Decl *ParseCXXNamespaceFragment(Decl *Fragment);
