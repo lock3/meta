@@ -5151,25 +5151,12 @@ public:
   }
 };
 
-// Returns true if T is 'const char*' or 'const char[N]'.
-static bool isStringLiteralType(QualType T) {
-  if (const PointerType *P = T->getAs<PointerType>()) {
-    QualType PtType = P->getPointeeType();
-    return PtType->isCharType() && PtType.isConstQualified();
-  } else if (const ArrayType *A = T->getAsArrayTypeUnsafe()) {
-    QualType ElType = A->getElementType();
-    return ElType->isCharType() && T.isConstQualified();
-  }
-
-  return false;
-}
-
 static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   QualType T = Info.Ctx.getCanonicalType(PE->getType());
   if (T->isIntegralOrEnumerationType()) {
     llvm::errs() << EV.getInt().getExtValue();
     return true;
-  } else if (isStringLiteralType(T)) {
+  } else if (T.isCXXStringLiteralType()) {
     assert(EV.isLValue() && "Expected lvalue");
     APValue::LValueBase Base = EV.getLValueBase();
     assert(Base.is<const Expr *>() && "Expected a string literal initializer");

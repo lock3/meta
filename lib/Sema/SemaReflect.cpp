@@ -291,17 +291,6 @@ static QualType DeduceCanonicalType(Sema &S, Expr *E) {
   return S.Context.getCanonicalType(Ty);
 }
 
-static bool isStringLikeType(QualType Ty) {
-  if (Ty->isPointerType()) {
-    return Ty->getPointeeType()->isCharType();
-  }
-  if (Ty->isConstantArrayType()) {
-    QualType ElemTy = cast<ArrayType>(Ty.getTypePtr())->getElementType();
-    return ElemTy->isCharType();
-  }
-  return false;
-}
-
 ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                              SmallVectorImpl<Expr *> &Args,
                                              SourceLocation LParenLoc,
@@ -310,33 +299,23 @@ ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
     return new (Context) CXXReflectPrintLiteralExpr(
         Context, Context.DependentTy, Args, KWLoc, LParenLoc, RParenLoc);
 
-  // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
-    ExprResult Arg = DefaultLvalueConversion(Args[I]);
-    if (Arg.isInvalid())
-      return ExprError();
-    Args[I] = Arg.get();
-  }
-
   for (std::size_t I = 0; I < Args.size(); ++I) {
-    Expr *E = Args[I];
+    Expr *&E = Args[I];
 
     assert(!E->isTypeDependent() && !E->isValueDependent()
         && "Dependent element");
 
     /// Convert to rvalue.
-    ExprResult Conv = DefaultLvalueConversion(E);
+    ExprResult Conv = DefaultFunctionArrayLvalueConversion(E);
     if (Conv.isInvalid())
       return ExprError();
     E = Conv.get();
-
-    E->dump();
 
     // Get the canonical type of the expression.
     QualType T = DeduceCanonicalType(*this, E);
 
     // Ensure we're working with a valid operand.
-    if (isStringLikeType(T))
+    if (T.isCXXStringLiteralType())
       continue;
 
     if (T->isIntegerType())
@@ -404,7 +383,7 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                            SourceLocation RParenLoc) {
   assert(MessageExpr != nullptr);
 
-  ExprResult Converted = DefaultLvalueConversion(MessageExpr);
+  ExprResult Converted = DefaultFunctionArrayLvalueConversion(MessageExpr);
   if (Converted.isInvalid())
     return ExprError();
   MessageExpr = Converted.get();
@@ -413,7 +392,7 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
   QualType T = DeduceCanonicalType(*this, MessageExpr);
 
   // Ensure we're working with a valid operand.
-  if (!isStringLikeType(T)) {
+  if (!T.isCXXStringLiteralType()) {
     SourceLocation &&Loc = MessageExpr->getExprLoc();
     Diag(Loc, diag::err_compiler_error_wrong_operand_type);
     return ExprError();
