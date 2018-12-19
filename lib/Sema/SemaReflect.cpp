@@ -493,30 +493,22 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   return Eval;
 }
 
-ExprResult Sema::ActOnVariadicReification(SourceLocation KWLoc,
-                                          Expr *Range,
-                                          ParsedAttributes &Attrs,
-                                          SourceLocation LParenLoc,
-                                          SourceLocation EllipsisLoc,
-                                          SourceLocation RParenLoc)
+llvm::SmallVector<Expr *, 4>
+Sema::ActOnVariadicReification(SourceLocation KWLoc,
+                               Expr *Range,
+                               SourceLocation LParenLoc,
+                               SourceLocation EllipsisLoc,
+                               SourceLocation RParenLoc)
 {
-  IdentifierInfo II;
-  StmtResult LoopVar = ActOnCXXForRangeIdentifier(getCurScope(),
-                                                  SourceLocation(),
-                                                  &II,
-                                                  Attrs,
-                                                  SourceLocation());
-
-  StmtResult Expansion = ActOnCXXExpansionStmt(getCurScope(), SourceLocation(),
-                                               SourceLocation(), LoopVar.get(),
-                                               SourceLocation(), Range,
-                                               SourceLocation(), BFRK_Build,
-                                               /*isConstexpr=*/true);
 
 
   llvm::outs() << "Expansion on reification:\n";
+  Range->dump();
+  llvm::outs() << "Is range array type?: " << Range->getType()->isConstantArrayType() << '\n';
+  Range->getType()->dump();
   // Expansion.get()->dump();
-
+  llvm::outs() << "End\n";
+  RangeGenerator RG(*this, Range);
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
@@ -1110,7 +1102,6 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
 
   llvm_unreachable("Unsupported decl type");
 }
-
 
 ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
                                          SourceLocation KWLoc,

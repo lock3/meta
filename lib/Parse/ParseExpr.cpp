@@ -2896,6 +2896,7 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                                  SmallVectorImpl<SourceLocation> &CommaLocs,
                                  llvm::function_ref<void()> Completer) {
+  llvm::outs() << "ParseExpressionList\n";
   bool SawError = false;
   while (1) {
     if (Tok.is(tok::code_completion)) {
@@ -2907,19 +2908,55 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       return true;
     }
 
+    bool isVariadicReification = false;
     ExprResult Expr;
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
       Expr = ParseBraceInitializer();
+    } else if(getLangOpts().Reflection && Tok.is(tok::kw_valueof)) {
+      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+      llvm::outs() << "Variadic Reif\n";
+      ConsumeToken();
+      // Parse any number of arguments in parens.
+      BalancedDelimiterTracker Parens(*this, tok::l_paren);
+      if (Parens.expectAndConsume())
+        return false;
+
+      SourceLocation EllipsisLoc;
+      TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+      ExprResult ReflRange = ParseConstantExpression();
+      if (ReflRange.isInvalid()) {
+        Parens.skipToEnd();
+        return false;
+      }
+
+      if (Parens.consumeClose()) 
+        return false;
+
+      // FIXME: this will disallow reifications from being
+      // used as parameters, we'll just have to unwind
+      // from here.
+      if(!EllipsisLoc.isValid())
+        return false;
+      isVariadicReification = true;
+
+      SourceLocation LPLoc = Parens.getOpenLocation();
+      SourceLocation RPLoc = Parens.getCloseLocation();
+      auto ExpandedExprs =
+        Actions.ActOnVariadicReification(SourceLocation(), ReflRange.get(),
+                                         LPLoc, EllipsisLoc, RPLoc);
+      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else
       Expr = ParseAssignmentExpression();
 
     if (Tok.is(tok::ellipsis))
       Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());
-    if (Expr.isInvalid()) {
+    if (Expr.isInvalid() && !isVariadicReification) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else {
+    } else if(!isVariadicReification) {
       Exprs.push_back(Expr.get());
     }
 

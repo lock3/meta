@@ -2787,6 +2787,106 @@ static int NewTemplateParameterDepth(DeclContext *DC) {
   return 0;
 }
 
+Sema::RangeGenerator::RangeGenerator(Sema &SemaRef, Expr *Range)
+  : SemaRef(SemaRef)
+{
+  // This is an implicit range, there are no real source locations.
+  SourceLocation Loc = SourceLocation();
+  
+  // We're going to build a (long) list of statements.
+  llvm::SmallVector<Stmt *, 8> Stmts;
+  QualType AutoType = SemaRef.Context.getAutoDeductType();
+
+  llvm::outs() << "Haven't made variables yet.\n";
+  /// Build 'constexpr auto __begin = ...'
+  VarDecl *BeginVar =
+    BuildForRangeVarDecl(SemaRef, Loc, AutoType, "__begin");
+  BeginVar->setConstexpr(true);
+
+  /// Build 'constexpr auto __end = ...'
+  VarDecl *EndVar = 
+    BuildForRangeVarDecl(SemaRef, Loc, AutoType, "__end");
+  EndVar->setConstexpr(true);
+  llvm::outs() << "Made them.\n";
+
+  // Create the loop var
+  // DeclStmt *LoopVar;
+  // VarDecl *LoopVariable;
+  // LoopVariable->setCXXForRangeDecl(true);
+  // LoopVariable->setType(AutoType);
+
+  IdentifierInfo &RangeIdentifier = SemaRef.Context.Idents.get("__range");
+  // DeclStmt *RangeVar = new (Context) DeclStmt(Stmt::EmptyShell());
+
+  // We need to get the range as a decl to construct the range variable.
+  // All ranges are CXXRecordDecls.
+  llvm::outs() << "Try get range class\n";
+  const CXXRecordDecl *RangeClass = Range->getBestDynamicClassType();
+  llvm::outs() << "RANGE CLASS\n";
+  RangeClass->dump();
+
+  #if 0
+
+  QualType RangeType = RangeClass->getType().getNonReferenceType();
+
+  // Build decl refs for the __range in each of the begin and end expressions.  
+  ExprResult BeginRangeRef = 
+      SemaRef.BuildDeclRefExpr(RangeClass, RangeType, VK_LValue, Loc);
+  if (BeginRangeRef.isInvalid())
+    llvm_unreachable("BeginRangeRef");
+  ExprResult EndRangeRef = 
+      SemaRef.BuildDeclRefExpr(RangeClass, RangeType, VK_LValue, Loc);
+  if (EndRangeRef.isInvalid())
+    llvm_unreachable("EndRangeRef invalid.");
+
+  // Construct decl groups to construct a for-range.
+  DeclGroupPtrTy BeginGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&BeginVar, 1));
+  StmtResult BeginDecl = SemaRef.ActOnDeclStmt(BeginGroup, Loc, Loc);
+  if (BeginDecl.isInvalid())
+    llvm_unreachable("BeginDecl is invalid."); // FIXME: proper error
+
+  DeclGroupPtrTy EndGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&EndVar, 1));
+  StmtResult EndDecl = SemaRef.ActOnDeclStmt(EndGroup, Loc, Loc);
+  if (EndDecl.isInvalid())
+    llvm_unreachable("End is invalid."); // FIXME: proper error
+
+  // Get the __range.begin() and __range.end() functions
+  ExprResult BeginExpr;
+  ExprResult EndExpr;
+  BeginEndFunction BEFFailure;
+  OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+  ForRangeStatus RangeStatus = 
+    BuildNonArrayForRange(SemaRef, BeginRangeRef.get(), EndRangeRef.get(), 
+    RangeType, BeginVar, EndVar, Loc, /*CoroutineLoc=*/Loc, 
+    &CandidateSet, &BeginExpr, &EndExpr, &BEFFailure);
+
+  // Don't bother diagnosing errors. We have more cases to diagnose.
+  if (RangeStatus != FRS_Success)
+    llvm_unreachable("RangeStatus unsuccessful.");
+
+  // Build references to the new variables.
+  QualType BeginType = BeginVar->getType().getNonReferenceType();
+  ExprResult BeginRef = 
+      SemaRef.BuildDeclRefExpr(BeginVar, BeginType, VK_LValue, Loc);
+  if (BeginRef.isInvalid())
+    llvm_unreachable("BeginRef is invalid.");
+
+  QualType EndType = EndVar->getType().getNonReferenceType();
+  ExprResult EndRef = 
+      SemaRef.BuildDeclRefExpr(EndVar, EndType, VK_LValue, Loc);
+  if (EndRef.isInvalid())
+    llvm_unreachable("EndRef is invalid.");
+
+  // Used below.
+  NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
+  #endif
+}
+
+
 /// A facility used to unpack and build the dependent body of an expansion
 /// statement.
 struct ExpansionStatementBuilder
@@ -3578,8 +3678,8 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
   if (!Ret.isInvalid()) {
-    llvm::outs() << "BUILT LOOP\n";
-    Ret.get()->dump();
+    // llvm::outs() << "BUILT LOOP\n";
+    // Ret.get()->dump();
   }
   return Ret;
 }
@@ -3600,8 +3700,8 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
   if (!Ret.isInvalid()) {
-    llvm::outs() << "INSTANITATED LOOP\n";
-    Ret.get()->dump();
+    // llvm::outs() << "INSTANITATED LOOP\n";
+    // Ret.get()->dump();
   }
   return Ret;
 }
@@ -4519,8 +4619,8 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   std::copy(Stmts.begin(), Stmts.end(), Results);
   Expansion->setInstantiatedStatements(Results);
 
-  llvm::outs() << "EXPANDED STATEMENT\n";
-  Expansion->dump();
+  // llvm::outs() << "EXPANDED STATEMENT\n";
+  // Expansion->dump();
 
   return Expansion;
 }

@@ -8713,12 +8713,23 @@ public:
                                 SourceLocation LParenLoc,
                                 SourceLocation RParenLoc);
 
-  ExprResult ActOnVariadicReification(SourceLocation KWLoc,
-                                      Expr *Range,
-                                      ParsedAttributes &Attrs,
-                                      SourceLocation LParenLoc,
-                                      SourceLocation EllipsisLoc,
-                                      SourceLocation RParenLoc);
+  /// Generate a constexpr range from a parsed constant expression and
+  /// traverse it.
+  struct RangeGenerator {
+    RangeGenerator(Sema &SemaRef, Expr *Range);
+
+    explicit operator bool();
+    APValue operator()();
+
+    Sema& SemaRef;
+  };
+
+  llvm::SmallVector<Expr *, 4>
+  ActOnVariadicReification(SourceLocation KWLoc,
+                           Expr *Range,
+                           SourceLocation LParenLoc,
+                           SourceLocation EllipsisLoc,
+                           SourceLocation RParenLoc);
 
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
