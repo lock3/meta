@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -verify -std=c++1z %s
+// RUN: %clang_cc1 -freflection -std=c++1z %s
 
 constexpr bool string_eq(const char *s1, const char *s2) {
   while (*s1 != '\0' && *s1 == *s2) {
