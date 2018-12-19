@@ -1069,9 +1069,6 @@ ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
     if (!CheckConcatenateOperand(*this, E))
       return ExprError();
 
-    // TODO: Perform a tentative evaluation to see if this
-    // is a constant expression or no?
-
     Converted.push_back(E);
   }
 

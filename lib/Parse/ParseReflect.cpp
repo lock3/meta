@@ -429,7 +429,7 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
 
   SmallVector<Expr *, 4> Parts;
   do {
-    ExprResult Expr = ParseConstantExpression();
+    ExprResult Expr = ParseConditionalExpression();
     if (Expr.isInvalid()) {
       Parens.skipToEnd();
       return ExprError();
