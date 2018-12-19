@@ -4966,7 +4966,7 @@ class CXXValueOfExpr : public Expr {
 public:
   CXXValueOfExpr(QualType T, Expr *Reflection,
                  SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+                 SourceLocation LParenLoc, 
                  SourceLocation RParenLoc)
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
            Reflection->isValueDependent() || Reflection->isTypeDependent(),
@@ -4975,7 +4975,7 @@ public:
            Reflection->containsUnexpandedParameterPack()),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
-      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
+      EllipsisLoc(), RParenLoc(RParenLoc) {}
 
   CXXValueOfExpr(EmptyShell Empty)
     : Expr(CXXValueOfExprClass, Empty) {}

@@ -7491,8 +7491,7 @@ TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
     return ExprError();
 
   return getSema().ActOnCXXValueOfExpr(E->getKeywordLoc(), Refl.get(),
-                                       E->getLParenLoc(), E->getEllipsisLoc(),
-                                       E->getRParenLoc());
+                                       E->getLParenLoc(), E->getRParenLoc());
 }
 
 template <typename Derived>
