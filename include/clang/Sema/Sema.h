@@ -8734,7 +8734,6 @@ public:
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
                                  SourceLocation LParenLoc,
-                                 SourceLocation EllipsisLoc,
                                  SourceLocation RParenLoc);
 
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
