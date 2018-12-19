@@ -5071,6 +5071,51 @@ public:
   }
 };
 
+/// Represents the expression __concatenate(...)
+class CXXConcatenateExpr : public Expr {
+  /// The location of the introducer token.
+  SourceLocation Loc;
+
+  /// The number operands of the expression.
+  std::size_t NumOperands;
+
+  /// The operands of the expression.
+  Stmt **Operands;
+
+public:
+  CXXConcatenateExpr(ASTContext &Ctx, QualType T, SourceLocation Loc,
+                     ArrayRef<Expr *> Parts);
+
+  explicit CXXConcatenateExpr(EmptyShell Empty)
+      : Expr(CXXConcatenateExprClass, Empty), Loc(), NumOperands(),
+        Operands() {}
+
+  /// The number of captured declarations.
+  std::size_t getNumOperands() const { return NumOperands; }
+
+  /// The Ith capture of the injection statement.
+  const Expr *getOperand(std::size_t I) const { return (Expr *)Operands[I]; }
+  Expr *getOperand(std::size_t I) { return (Expr *)Operands[I]; }
+
+  child_range children() {
+    return child_range(Operands, Operands + NumOperands);
+  }
+
+  const_child_range children() const {
+    return const_child_range(Operands, Operands + NumOperands);
+  }
+
+  /// The location of the introducer token.
+  SourceLocation getIntroLoc() const { return Loc; }
+
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConcatenateExprClass;
+  }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_EXPRCXX_H

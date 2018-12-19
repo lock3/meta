@@ -1923,6 +1923,10 @@ void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }

@@ -1019,3 +1019,61 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
   llvm_unreachable("Unsupported decl type");
 }
 
+
+ExprResult Sema::ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RParenLoc) {
+  return BuildCXXConcatenateExpr(Parts, KWLoc);
+}
+
+static bool CheckConcatenateOperand(QualType T) {
+  if (T.isCXXStringLiteralType())
+    return true;
+  if (T->isIntegerType())
+    return true;
+
+  return false;
+}
+
+static bool CheckConcatenateOperand(Sema &SemaRef, Expr *E) {
+  QualType T = E->getType();
+  if (CheckConcatenateOperand(T))
+    return true;
+
+  SemaRef.Diag(E->getExprLoc(), diag::err_concatenate_wrong_operand_type);
+  return false;
+}
+
+ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                         SourceLocation KWLoc) {
+  // The type of the expression is 'const char *'.
+  QualType StrTy = Context.getPointerType(Context.getConstType(Context.CharTy));
+
+  // Look for dependent arguments.
+  for (Expr *E : Parts) {
+    if (E->isTypeDependent() || E->isValueDependent())
+      return new (Context) CXXConcatenateExpr(Context, StrTy, KWLoc, Parts);
+  }
+
+  // Convert operands to rvalues.
+  SmallVector<Expr*, 4> Converted;
+  for (Expr *E : Parts) {
+    // Decay arrays first.
+    ExprResult R = DefaultFunctionArrayLvalueConversion(E);
+    if (R.isInvalid())
+      return ExprError();
+    E = R.get();
+
+    // Check that the operand (type) is acceptable.
+    if (!CheckConcatenateOperand(*this, E))
+      return ExprError();
+
+    // TODO: Perform a tentative evaluation to see if this
+    // is a constant expression or no?
+
+    Converted.push_back(E);
+  }
+
+  return new (Context) CXXConcatenateExpr(Context, StrTy, KWLoc, Converted);
+}

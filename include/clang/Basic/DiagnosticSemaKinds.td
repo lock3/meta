@@ -2533,6 +2533,8 @@ def err_reflect_print_literal_wrong_operand_type : Error<
   "expected either integer or string operand">;
 def err_compiler_error_wrong_operand_type : Error<
   "expected a string operand">;
+def err_concatenate_wrong_operand_type : Error<
+  "expected either integer or string operand">;
 
 // declaration names
 def err_reflected_id_with_integer_prefix : Error<

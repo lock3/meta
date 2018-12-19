@@ -1448,6 +1448,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___compiler_error:
     return ParseCXXCompilerErrorExpression();
 
+  case tok::kw___concatenate:
+    return ParseCXXConcatenateExpression();
+
 #define REFLECTION_TRAIT(N,Spelling,K)		\
     case tok::kw_##Spelling:
 #include "clang/Basic/TokenKinds.def"

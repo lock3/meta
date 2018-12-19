@@ -410,3 +410,37 @@ Parser::ParseReflectedTemplateArgument() {
 
   return Actions.ActOnReflectedTemplateArgument(Loc, Result.get());
 }
+
+/// Parse a concatenation expression.
+///
+///   primary-expression:
+///      '__concatenate' '(' constant-argument-list ')'
+///
+/// Each argument in the constant-argument-list must be a constant expression.
+///
+/// Returns true if parsing or semantic analysis fail.
+ExprResult Parser::ParseCXXConcatenateExpression() {
+  assert(Tok.is(tok::kw___concatenate));
+  SourceLocation KeyLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  SmallVector<Expr *, 4> Parts;
+  do {
+    ExprResult Expr = ParseConstantExpression();
+    if (Expr.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+    Parts.push_back(Expr.get());
+  } while (TryConsumeToken(tok::comma));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
+                                         Parens.getOpenLocation(),
+                                         Parens.getCloseLocation());
+}

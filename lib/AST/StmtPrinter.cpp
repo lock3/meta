@@ -2318,6 +2318,17 @@ void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   OS << "valueof(...)"; // TODO Finish this
 }
 
+void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
+  OS << "__concatenate" << '(';
+  CXXConcatenateExpr::child_range Ch = Node->children();
+  for (auto I = Ch.begin(); I != Ch.end(); ++I) {
+    if (I != Ch.begin())
+      OS << ", ";
+    PrintStmt(*I);
+  }
+  OS << ')';
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

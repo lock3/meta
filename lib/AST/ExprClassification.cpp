@@ -200,6 +200,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
+  case Expr::CXXConcatenateExprClass:
     return Cl::CL_PRValue;
 
   case Expr::PackSelectionExprClass:

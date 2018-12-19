@@ -521,6 +521,10 @@ void ASTStmtReader::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
 void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
   VisitExpr(E);
   E->KeywordLoc = ReadSourceLocation();

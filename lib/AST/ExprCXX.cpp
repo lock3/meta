@@ -1626,3 +1626,15 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
                                                         EmptyShell Empty) {
   return new (C) CXXCompilerErrorExpr(Empty);
 }
+
+CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
+                                       QualType T, SourceLocation L,
+                                       ArrayRef<Expr *> Parts)
+  : Expr(CXXConcatenateExprClass, T, VK_RValue, OK_Ordinary,
+         false, AnyOf(Parts, [](Expr *E) { return E->isValueDependent(); }),
+         AnyOf(Parts, [](Expr *E) { return E->isInstantiationDependent(); }),
+         false),
+    Loc(L), NumOperands(Parts.size()), Operands(new (Ctx) Stmt*[NumOperands])
+{
+  std::copy(Parts.begin(), Parts.end(), Operands);
+}

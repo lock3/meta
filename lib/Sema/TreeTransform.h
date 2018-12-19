@@ -1475,6 +1475,12 @@ public:
                                                    LParenLoc, RParenLoc);
   }
 
+  /// Build a new concatenation expression.
+  ExprResult RebuildCXXConcatenateExpr(SourceLocation Loc,
+                                       SmallVectorImpl<Expr *> &Parts) {
+    return getSema().BuildCXXConcatenateExpr(Parts, Loc);
+  }
+
   /// Build a new \c __compiler_error expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -7527,6 +7533,19 @@ TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
 
   return getDerived().RebuildCXXUnreflexprExpr(E->getExprLoc(),
                                                ReflectedDeclExpr.get());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  SmallVector<Expr *, 4> Parts;
+  for (Stmt *S : E->children()) {
+    ExprResult Part = TransformExpr(cast<Expr>(S));
+    if (Part.isInvalid())
+      return ExprError();
+    Parts.push_back(Part.get());
+  }
+  return RebuildCXXConcatenateExpr(E->getBeginLoc(), Parts);
 }
 
 // Objective-C Statements.

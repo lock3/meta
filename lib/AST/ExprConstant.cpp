@@ -4646,6 +4646,28 @@ static bool HandleConstructorCall(const Expr *E, const LValue &This,
                                Info, Result);
 }
 
+// Creates a c-string of type const char *.
+//
+// This is morally equivalent to creating a global string.
+// During codegen, that's exactly how this is interpreted.
+static Expr *
+MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
+                                            llvm::APInt(32, Str.size() + 1),
+                                            ArrayType::Normal, 0);
+
+  // Create a string literal of type const char [L] where L
+  // is the number of characters in the StringRef.
+  StringLiteral *StrLit = StringLiteral::Create(Ctx, Str, StringLiteral::Ascii,
+                                                false, StrLitTy, Loc);
+
+  // Create an implicit cast expr so that we convert our const char [L]
+  // into an actual const char * for proper evaluation.
+  QualType StrTy = Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
+  return ImplicitCastExpr::Create(Ctx, StrTy, CK_ArrayToPointerDecay, StrLit,
+                                  /*BasePath=*/nullptr, VK_RValue);
+}
+
 //===----------------------------------------------------------------------===//
 // Generic Evaluation
 //===----------------------------------------------------------------------===//
@@ -5134,6 +5156,44 @@ public:
     if (!Evaluate(Result, Info, E->getReflectedDeclExpr()))
       return false;
     return DerivedSuccess(Result, E);
+  }
+
+  bool VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
+    SmallString<256> Buf;
+    llvm::raw_svector_ostream OS(Buf);
+    SmallVector<APValue, 4> Args;
+    for (Stmt const *S : E->children()) {
+      Expr const* P = cast<Expr>(S);
+
+      // Evaluate the expression.
+      Args.emplace_back();
+      APValue &Part = Args.back();
+      if (!Evaluate(Part, Info, P))
+        return false;
+
+      if (Part.isLValue()) {
+        assert(P->getType().isCXXStringLiteralType());
+
+        const Expr *BaseExpr = Part.getLValueBase().get<const Expr *>();
+        const StringLiteral *Str = cast<StringLiteral>(BaseExpr);
+
+        // Strip quotes from the literal.
+        SmallString<256> StrBuf;
+        llvm::raw_svector_ostream StrOS(StrBuf);
+        Str->outputString(StrOS);
+        std::string NonQuote(StrBuf.str(), 1, StrBuf.size() - 2);
+        OS << NonQuote;
+      } else if (Part.isInt()) {
+        // FIXME: respect the signedness of the type.
+        OS << Part.getInt();
+      }
+    }
+
+    Expr *Str = MakeConstCharPointer(Info.Ctx, Buf, E->getBeginLoc());
+    APValue Val;
+    if (!Evaluate(Val, Info, Str))
+      return false;
+    return DerivedSuccess(Val, E);
   }
 
   /// Visit a value which is evaluated, but whose value is ignored.
@@ -11433,6 +11493,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CoawaitExprClass:
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:
+  case Expr::CXXConcatenateExprClass:
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
   case Expr::CXXUnreflexprExprClass:

@@ -3531,6 +3531,7 @@ recurse:
   case Expr::CXXInheritedCtorInitExprClass:
   case Expr::CXXIdExprExprClass:
   case Expr::CXXValueOfExprClass:
+  case Expr::CXXConcatenateExprClass:
   case Expr::PackSelectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");

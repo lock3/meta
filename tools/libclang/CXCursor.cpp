@@ -270,6 +270,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXUnreflexprExprClass:
   case Stmt::CXXIdExprExprClass:
   case Stmt::CXXValueOfExprClass:
+  case Stmt::CXXConcatenateExprClass:
   case Stmt::CXXStdInitializerListExprClass:
   case Stmt::CXXScalarValueInitExprClass:
   case Stmt::CXXUuidofExprClass:

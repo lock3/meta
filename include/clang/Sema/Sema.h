@@ -8743,6 +8743,14 @@ public:
                                       SourceLocation OpLoc, bool IsArrow,
                                       Expr *IdExpr);
 
+  ExprResult ActOnCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation RParenLoc);
+
+  ExprResult BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
+                                     SourceLocation KWLoc);
+
   /// RAII object used to temporarily disable semantic diagnostics
   /// for sematics valid only in reflections.
   class CXXReflectionScopeRAII {
