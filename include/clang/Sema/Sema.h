@@ -8721,7 +8721,60 @@ public:
     explicit operator bool();
     APValue operator()();
 
+    /// Build the range variable.
+    bool BuildRangeVar();
+
+    /// Perform some final analysis on the range variable.
+    void FinishRangeVar();
+
+    /// Build the induction variable.
+    bool BuildInductionVar();
+
+    /// Construct a bodyless expansion over a constexpr range.
+    StmtResult BuildExpansionOverRange();
+
+    /// Instantiate (and return a vector of)
+    /// each individual expression in the range.
+    llvm::SmallVector<Expr *, 4> InstantiateExpressions();
+
+    /// The translation semantics
     Sema& SemaRef;
+
+    /// The Scope in which analysis is performed.
+    Scope* CurScope;
+
+    /// The non-reference type of the range.
+    QualType RangeType = {};
+
+    /// The range variable declaration.
+    VarDecl *RangeVar;
+
+    /// The kind of expansion construction happening.
+    Sema::BuildForRangeKind Kind;
+
+    /// The expression denoting the collection of elements for which we are
+    /// expanding the body. In 'for... (auto x : y)', this contains the
+    /// expression 'y'. This also becomes the initializer of the range variable.
+    Expr *RangeExpr;
+
+    // This class generates implicit ranges, so all locations are default.
+    SourceLocation Loc = SourceLocation();
+
+    /// A reference to the range variable.
+    DeclRefExpr *RangeRef;
+
+    /// The statement declaring the range variable.
+    DeclStmt *RangeDeclStmt = nullptr;
+
+    /// The template parameter list for the induction variable.
+    TemplateParameterList *TemplateParms = nullptr;
+
+    /// The induction variable is an integer template parameter used to compute 
+    /// the nth value of an expanded statement.
+    NonTypeTemplateParmDecl *InductionVar = nullptr;
+
+    /// A reference to the induction variable.
+    DeclRefExpr *InductionRef;
   };
 
   llvm::SmallVector<Expr *, 4>

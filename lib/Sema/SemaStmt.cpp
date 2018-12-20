@@ -2786,13 +2786,43 @@ static int NewTemplateParameterDepth(DeclContext *DC) {
   }
   return 0;
 }
-
 Sema::RangeGenerator::RangeGenerator(Sema &SemaRef, Expr *Range)
-  : SemaRef(SemaRef)
+  : SemaRef(SemaRef), CurScope(SemaRef.getCurScope()), Kind()
 {
-  // This is an implicit range, there are no real source locations.
-  SourceLocation Loc = SourceLocation();
-  
+  // FIXME: make this work for arrays.
+  assert(!Range->getType()->isConstantArrayType() && "Cannot expand over arrays.");
+
+  RangeRef = cast<DeclRefExpr>(Range);
+  RangeVar = cast<VarDecl>(RangeRef->getFoundDecl());
+  if (RangeVar->isInvalidDecl())
+    return;
+  RangeExpr = RangeVar->getInit();
+  RangeType = RangeVar->getType().getNonReferenceType();
+
+  RangeVar = BuildForRangeVarDecl(SemaRef, Loc, RangeType, "__range");
+
+  RangeVar->setConstexpr(true);
+  RangeVar->setType(RangeType = RangeType.withConst());  
+
+  // Claim the type doesn't contain 'auto': we've already done the checking.
+  Sema::DeclGroupPtrTy RangeGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&RangeVar, 1));
+  StmtResult RangeDecl = SemaRef.ActOnDeclStmt(RangeGroup, Loc, Loc);
+  if (RangeDecl.isInvalid()) {
+    return;
+  }
+
+  if (FinishForRangeVarDecl(SemaRef, RangeVar, RangeExpr, Loc,
+                            diag::err_for_range_deduction_failure))
+    llvm_unreachable("could not finish range var.");
+
+  BuildInductionVar();
+  BuildExpansionOverRange();
+}
+
+StmtResult
+Sema::RangeGenerator::BuildExpansionOverRange() {
   // We're going to build a (long) list of statements.
   llvm::SmallVector<Stmt *, 8> Stmts;
   QualType AutoType = SemaRef.Context.getAutoDeductType();
@@ -2809,33 +2839,13 @@ Sema::RangeGenerator::RangeGenerator(Sema &SemaRef, Expr *Range)
   EndVar->setConstexpr(true);
   llvm::outs() << "Made them.\n";
 
-  // Create the loop var
-  // DeclStmt *LoopVar;
-  // VarDecl *LoopVariable;
-  // LoopVariable->setCXXForRangeDecl(true);
-  // LoopVariable->setType(AutoType);
-
-  IdentifierInfo &RangeIdentifier = SemaRef.Context.Idents.get("__range");
-  // DeclStmt *RangeVar = new (Context) DeclStmt(Stmt::EmptyShell());
-
-  // We need to get the range as a decl to construct the range variable.
-  // All ranges are CXXRecordDecls.
-  llvm::outs() << "Try get range class\n";
-  const CXXRecordDecl *RangeClass = Range->getBestDynamicClassType();
-  llvm::outs() << "RANGE CLASS\n";
-  RangeClass->dump();
-
-  #if 0
-
-  QualType RangeType = RangeClass->getType().getNonReferenceType();
-
   // Build decl refs for the __range in each of the begin and end expressions.  
   ExprResult BeginRangeRef = 
-      SemaRef.BuildDeclRefExpr(RangeClass, RangeType, VK_LValue, Loc);
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Loc);
   if (BeginRangeRef.isInvalid())
     llvm_unreachable("BeginRangeRef");
   ExprResult EndRangeRef = 
-      SemaRef.BuildDeclRefExpr(RangeClass, RangeType, VK_LValue, Loc);
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Loc);
   if (EndRangeRef.isInvalid())
     llvm_unreachable("EndRangeRef invalid.");
 
@@ -2883,9 +2893,147 @@ Sema::RangeGenerator::RangeGenerator(Sema &SemaRef, Expr *Range)
 
   // Used below.
   NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
-  #endif
+
+  // Build the next element accessor. For now, this is *std::next(__begin, I).
+  //
+  // FIXME: This forces loops to be quadratic for non-random-access iterators.
+  // We really want to precompute an array of iterators and force the next
+  // statement to index into that. In other words we want something like this:
+  //
+  //    static constexpr auto __iters[] = __expansion(__range);
+  //
+  // When non-dependent, this would produce an initializer that precomputes
+  // the sequence of iterators into the range.
+  //
+  // The loop variable would then be this:
+  //
+  //    constexpr var-decl = __iters[__N];
+  //
+  // Note that we kind of need to jump through these hoops in order to ensure
+  // the loop variable has an initializer that we can just instantiate N times.
+  // We don't want to manually construct the body each time. Although we might
+  // just do that.
+  DeclarationNameInfo NextNameInfo(
+      &SemaRef.Context.Idents.get("next"), Loc);
+  LookupResult NextCallLookup(SemaRef, NextNameInfo, Sema::LookupOrdinaryName);
+  if (!SemaRef.LookupQualifiedName(NextCallLookup, Std))
+    return StmtError();
+  if (NextCallLookup.getResultKind() != LookupResult::FoundOverloaded)
+    return StmtError();
+    
+  UnresolvedLookupExpr *NextFn =
+    UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
+                                 NestedNameSpecifierLoc(), NextNameInfo,
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 NextCallLookup.begin(), 
+                                 NextCallLookup.end());
+
+  Expr *Args[] = {BeginRef.get(), InductionRef};
+  ExprResult NextCall = 
+      SemaRef.ActOnCallExpr(CurScope, NextFn, Loc, Args, Loc);
+  if (NextCall.isInvalid())
+    return StmtError();
+
+  // Build *next-call.
+  ExprResult NextDeref = 
+      SemaRef.ActOnUnaryOp(CurScope, Loc, tok::star, NextCall.get());
+  if (NextDeref.isInvalid())
+    return StmtError();
+
+  // If the range is a class, search for a nested size member.
+  CallExpr *CountCall = nullptr;
+  if (CXXRecordDecl *Class = RangeType->getAsCXXRecordDecl()) {
+    DeclarationNameInfo SizeNameInfo(
+      &SemaRef.Context.Idents.get("size"), Loc);
+    LookupResult SizeMemberLookup(
+      SemaRef, SizeNameInfo, Sema::LookupMemberName);
+    SemaRef.LookupQualifiedName(SizeMemberLookup, Class);
+    if (!SizeMemberLookup.empty()) {
+      ExprResult MemberRef =
+        SemaRef.BuildMemberReferenceExpr(RangeRef, RangeRef->getType(), 
+                                         Loc, 
+                                         /*IsPtr=*/false, CXXScopeSpec(), 
+                                         /*TemplateKWLoc=*/SourceLocation(), 
+                                         /*FirstQualifierInScope=*/nullptr, 
+                                         SizeMemberLookup, 
+                                         /*TemplateArgs=*/nullptr, 
+                                         CurScope);
+
+      ExprResult Call = 
+        SemaRef.ActOnCallExpr(CurScope, MemberRef.get(), Loc, None, 
+                              Loc, nullptr);
+      if (!Call.isInvalid())
+        CountCall = cast<CallExpr>(Call.get());
+    }
+  }
 }
 
+// For constexpr-expansions, build the range variable as:
+//
+//    constexpr auto __range = range-expr.
+bool
+Sema::RangeGenerator::BuildRangeVar()
+{
+  RangeType = SemaRef.Context.getAutoRRefDeductType();
+
+  RangeVar = BuildForRangeVarDecl(SemaRef, Loc, RangeType, "__range");
+
+  RangeVar->setConstexpr(true);
+  RangeVar->setType(RangeType = RangeType.withConst());
+
+  if (FinishForRangeVarDecl(SemaRef, RangeVar, RangeExpr, Loc,
+                            diag::err_for_range_deduction_failure))
+    return false;
+
+  // Update the range's expression type.
+  RangeType = RangeVar->getType().getNonReferenceType();
+
+  /// Build the expression __range for various uses.
+  ExprResult RangeDRE =
+    SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Loc);
+  RangeRef = cast<DeclRefExpr>(RangeDRE.get());
+
+  // Claim the type doesn't contain 'auto': we've already done the checking.
+  Sema::DeclGroupPtrTy RangeGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&RangeVar, 1));
+  StmtResult RangeDecl = SemaRef.ActOnDeclStmt(RangeGroup, Loc, Loc);
+  if (RangeDecl.isInvalid())
+    return false;
+  
+  RangeDeclStmt = cast<DeclStmt>(RangeDecl.get());
+  
+  return true;
+}
+
+bool
+Sema::RangeGenerator::BuildInductionVar()
+{
+  int Depth = NewTemplateParameterDepth(SemaRef.CurContext);
+  IdentifierInfo *ParmName = &SemaRef.Context.Idents.get("__N");
+  const QualType ParmTy = SemaRef.Context.getSizeType();
+  TypeSourceInfo *ParmTI = 
+      SemaRef.Context.getTrivialTypeSourceInfo(ParmTy, Loc);
+  NonTypeTemplateParmDecl *Parm = 
+      NonTypeTemplateParmDecl::Create(SemaRef.Context, 
+                                      SemaRef.Context.getTranslationUnitDecl(),
+                                      Loc, Loc, Depth, 
+                                      /*Position=*/0, ParmName, ParmTy, false, 
+                                      ParmTI);
+  NamedDecl *Parms[] = {Parm};
+  TemplateParms = 
+      TemplateParameterList::Create(SemaRef.Context, Loc, Loc, Parms,
+                                    Loc, nullptr);
+
+  // Build the expression __N.
+  ExprResult ParmRef = 
+      SemaRef.BuildDeclRefExpr(Parm, ParmTy, VK_RValue, Loc);
+  if (ParmRef.isInvalid())
+    return false;
+  InductionRef = cast<DeclRefExpr>(ParmRef.get());
+
+  return true;
+}
 
 /// A facility used to unpack and build the dependent body of an expansion
 /// statement.
@@ -2950,10 +3098,23 @@ struct ExpansionStatementBuilder
     RangeRef = cast<DeclRefExpr>(RangeDRE.get());
   }
 
+  /// Construct a range without a body, using minimal information.
+  /// Used in variadic reification expressions.
+  ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
+                            Expr *RangeExpr)
+    : SemaRef(S), CurScope(CS), Kind(K),
+      RangeExpr(RangeExpr), IsConstexpr(true)
+    {
+    }
+  
   /// Build a statement that contains the "pattern" of the expansion
   /// denoted by the loop. This needs to be declared in a way that it 
   /// can be repeatedly instantiated.
   StmtResult Build();
+
+  /// Build a statement without an instantiated body. Used in variadic
+  /// reifications, where the body is unneeded.
+  StmtResult BuildUninstantiated();
 
   /// Build the range variable.
   bool BuildRangeVar();
@@ -3094,20 +3255,53 @@ ExpansionStatementBuilder::Build()
 
   StmtResult ForStmt;
 
-  // Try building a tuple expansion.
-  ForStmt = BuildExpansionOverTuple();
-  if (!ForStmt.isInvalid())
-    return Finish(ForStmt);
-
-  // If that doesn't succeed, try with a constexpr range.
-  ForStmt = BuildExpansionOverRange();
-  if (!ForStmt.isInvalid())
-    return Finish(ForStmt);
+  // Build a constexpr or tuple expansion statement, depending on the syntax
+  // FIXME: if the lookup of NNS::get fails, assume this is is not a tuple
+  // rather than outputting an error. Replace !IsConstexpr check with
+  // failure to find NNS::get.
+  if(!IsConstexpr) {
+    ForStmt = BuildExpansionOverTuple();
+    if (!ForStmt.isInvalid())
+      return Finish(ForStmt);
+  } else {
+    ForStmt = BuildExpansionOverRange();
+    if (!ForStmt.isInvalid())
+      return Finish(ForStmt);
+  }
 
   // If that doesn't succeed, try with a destructurable class.
   ForStmt = BuildExpansionOverClass();
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
+
+  // FIXME: Diagnose this error.
+  return StmtError();
+}
+
+StmtResult
+ExpansionStatementBuilder::BuildUninstantiated()
+{
+  // Build the induction var. Although we are not instantiating anything,
+  // we still need a way to access each element in the range, which this
+  // provides.
+  BuildInductionVar();
+
+  // If the range variable is non-null at this point, the wrong
+  // constructor has been called. RangeVar must be implicitly
+  // built with auto&& type and then deduced here.
+  if (!BuildRangeVar())
+    return StmtError();
+  FinishRangeVar();
+
+  if (RangeType->isDependentType() || RangeVar->getInit()->isValueDependent())
+    llvm_unreachable("Unimplemented.");
+
+  if (RangeType->isConstantArrayType())
+    llvm_unreachable("Unimplemented.");
+
+  StmtResult ForStmt = BuildUninstantiatedExpansionOverRange();
+
+  return Finish(ForStmt);
 
   // FIXME: Diagnose this error.
   return StmtError();
@@ -3124,7 +3318,7 @@ bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
   RangeType = SemaRef.Context.getAutoRRefDeductType();
-
+  
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
 
@@ -3626,6 +3820,79 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
                                                 Count.getExtValue(), ForLoc, 
                                                 AnnotationLoc, ColonLoc,
                                                 RParenLoc);
+}
+
+/// Build an expansion over a range with uninstantiated body.
+/// This retains the same semantic properties as an expansion
+/// over a range, but simply does not get completed.
+StmtResult
+ExpansionStatementBuilder::BuildUninstantiatedExpansionOverRange()
+{
+  QualType AutoType = SemaRef.Context.getAutoDeductType();
+
+  llvm::outs() << "Haven't made variables yet.\n";
+  /// Build 'constexpr auto __begin = ...'
+  VarDecl *BeginVar =
+    BuildForRangeVarDecl(SemaRef, Loc, AutoType, "__begin");
+  BeginVar->setConstexpr(true);
+
+  /// Build 'constexpr auto __end = ...'
+  VarDecl *EndVar = 
+    BuildForRangeVarDecl(SemaRef, Loc, AutoType, "__end");
+  EndVar->setConstexpr(true);
+  llvm::outs() << "Made them.\n";
+
+  // Build decl refs for the __range in each of the begin and end expressions.  
+  ExprResult BeginRangeRef = 
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Loc);
+  if (BeginRangeRef.isInvalid())
+    llvm_unreachable("BeginRangeRef");
+  ExprResult EndRangeRef = 
+      SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, Loc);
+  if (EndRangeRef.isInvalid())
+    llvm_unreachable("EndRangeRef invalid.");
+
+  // Construct decl groups to construct a for-range.
+  DeclGroupPtrTy BeginGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&BeginVar, 1));
+  StmtResult BeginDecl = SemaRef.ActOnDeclStmt(BeginGroup, Loc, Loc);
+  if (BeginDecl.isInvalid())
+    llvm_unreachable("BeginDecl is invalid."); // FIXME: proper error
+
+  DeclGroupPtrTy EndGroup = 
+  SemaRef.BuildDeclaratorGroup(
+        MutableArrayRef<Decl *>((Decl **)&EndVar, 1));
+  StmtResult EndDecl = SemaRef.ActOnDeclStmt(EndGroup, Loc, Loc);
+  if (EndDecl.isInvalid())
+    llvm_unreachable("End is invalid."); // FIXME: proper error
+
+  // Get the __range.begin() and __range.end() functions
+  ExprResult BeginExpr;
+  ExprResult EndExpr;
+  BeginEndFunction BEFFailure;
+  OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+  ForRangeStatus RangeStatus = 
+    BuildNonArrayForRange(SemaRef, BeginRangeRef.get(), EndRangeRef.get(), 
+    RangeType, BeginVar, EndVar, Loc, /*CoroutineLoc=*/Loc, 
+    &CandidateSet, &BeginExpr, &EndExpr, &BEFFailure);
+
+  // Don't bother diagnosing errors. We have more cases to diagnose.
+  if (RangeStatus != FRS_Success)
+    llvm_unreachable("RangeStatus unsuccessful.");
+
+  // Build references to the new variables.
+  QualType BeginType = BeginVar->getType().getNonReferenceType();
+  ExprResult BeginRef = 
+      SemaRef.BuildDeclRefExpr(BeginVar, BeginType, VK_LValue, Loc);
+  if (BeginRef.isInvalid())
+    llvm_unreachable("BeginRef is invalid.");
+
+  QualType EndType = EndVar->getType().getNonReferenceType();
+  ExprResult EndRef = 
+      SemaRef.BuildDeclRefExpr(EndVar, EndType, VK_LValue, Loc);
+  if (EndRef.isInvalid())
+    llvm_unreachable("EndRef is invalid.");
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
