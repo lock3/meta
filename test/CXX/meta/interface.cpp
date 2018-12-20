@@ -102,8 +102,8 @@ int main() {
   return 0;
 }
 
-consteval void dump_declaration(meta::info class_reflection) {
-  (void) __reflect_dump(__reflect(query_get_parent, __reflect(query_get_begin, class_reflection)));
+consteval void print_declaration(meta::info class_reflection) {
+  (void) __reflect_pretty_print(__reflect(query_get_parent, __reflect(query_get_begin, class_reflection)));
 }
 
 consteval void print_lines(int count) {
@@ -112,7 +112,7 @@ consteval void print_lines(int count) {
 }
 
 constexpr {
-  dump_declaration(reflexpr(Shape));
-  print_lines(3);
-  dump_declaration(reflexpr(X));
+  print_declaration(reflexpr(Shape));
+  print_lines(1);
+  print_declaration(reflexpr(X));
 }
