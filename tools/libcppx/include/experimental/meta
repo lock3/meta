@@ -14,11 +14,6 @@ namespace meta {
 inline namespace v1 {
 
 // An opaque handle to a reflected entity.
-//
-// FIXME: This should be an enum class, but those don't
-// readily convert to bool. Most likely, this should be a
-// special type that prevents all forms of construction
-// but value construction.
 using info = decltype(reflexpr(void));
 
 consteval bool is_variable(info x);
