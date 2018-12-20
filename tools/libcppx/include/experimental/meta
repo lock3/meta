@@ -1145,6 +1145,16 @@ consteval bool is_conversion(info x) {
   return detail::method_traits(x).kind == detail::mk_conversion;
 }
 
+consteval bool is_copy(info x) {
+  detail::method_traits traits(x);
+  return traits.is_copy_ctor || traits.is_copy_assign;
+}
+
+consteval bool is_move(info x) {
+  detail::method_traits traits(x);
+  return traits.is_move_ctor || traits.is_move_assign;
+}
+
 consteval bool is_explicit(info x) {
   return detail::method_traits(x).is_explicit;
 }
