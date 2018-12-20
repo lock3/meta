@@ -5,6 +5,10 @@
 #include "reflection_mod.h"
 #include "reflection_iterator.h"
 
+//====================================================================
+// Library code: assisting the metaclass implementation, and providing
+//               methods otherwise undefined in the test suite.
+
 consteval void compiler_require(bool condition, const char* error_msg) {
   if (!condition)
     __compiler_error(error_msg);
@@ -18,17 +22,6 @@ consteval bool is_data_member(meta::info refl) {
 consteval bool is_member_function(meta::info refl) {
   return __reflect(query_is_nonstatic_member_function, refl)
       || __reflect(query_is_static_member_function, refl);
-}
-
-consteval int count_data_members(meta::info refl) {
-  int total = 0;
-
-  for (meta::info member : member_range(refl)) {
-    if (is_data_member(member))
-      ++total;
-  }
-
-  return total;
 }
 
 consteval bool is_copy(meta::info refl) {
@@ -55,7 +48,28 @@ consteval void make_public(meta::info &refl) {
 }
 
 consteval void make_pure_virtual(meta::info &refl) {
-   __reflect_mod(query_set_add_pure_virtual, refl, true);
+  __reflect_mod(query_set_add_pure_virtual, refl, true);
+}
+
+consteval int count_data_members(meta::info refl) {
+  int total = 0;
+
+  for (meta::info member : member_range(refl)) {
+    if (is_data_member(member))
+      ++total;
+  }
+
+  return total;
+}
+
+consteval void print_declaration(meta::info class_reflection) {
+  auto class_decl_reflection = __reflect(query_get_parent, __reflect(query_get_begin, class_reflection));
+  (void) __reflect_pretty_print(class_decl_reflection);
+}
+
+consteval void print_lines(int count) {
+  for (int i = 0; i < count; ++i)
+    (void) __reflect_print("");
 }
 
 //====================================================================
@@ -100,15 +114,6 @@ class X : public Shape {
 int main() {
   X x;
   return 0;
-}
-
-consteval void print_declaration(meta::info class_reflection) {
-  (void) __reflect_pretty_print(__reflect(query_get_parent, __reflect(query_get_begin, class_reflection)));
-}
-
-consteval void print_lines(int count) {
-  for (int i = 0; i < count; ++i)
-    (void) __reflect_print("");
 }
 
 consteval {
