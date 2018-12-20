@@ -165,39 +165,56 @@ static constexpr unsigned get_type_traits(info x) {
 
 // Kinds of linkage.
 enum linkage_kind {
-  external_linkage,
-  internal_linkage,
-  no_linkage,
+  lk_external,
+  lk_internal,
+  lk_none
 };
 
 // Kinds of (detectable) storage duration.
 enum storage_kind {
-  automatic_storage,
-  thread_storage,
-  static_storage,
+  sk_automatic,
+  sk_thread,
+  sk_static
+};
+
+// Kinds of storage modifiers.
+enum storage_modifier {
+  sm_not_modified,
+  sm_static,
+  sm_automatic,
+  sm_thread_local
 };
 
 // Kinds of class types.
 enum class_kind {
-  struct_class_kind,
-  class_class_kind,
-  union_class_kind
+  ck_struct,
+  ck_class,
+  ck_union
 };
 
 // Kinds of access.
 enum access_kind {
-  public_access,
-  protected_access,
-  private_access,
-  no_access,
+  ak_public,
+  ak_protected,
+  ak_private,
+  ak_none,
+};
+
+// Kinds of access modifiers.
+enum access_modifier {
+  am_not_modified,
+  am_default,
+  am_public,
+  am_protected,
+  am_private
 };
 
 // Kinds of member functions.
 enum member_kind {
-  normal,
-  constructor,
-  destructor,
-  conversion,
+  mk_normal,
+  mk_constructor,
+  mk_destructor,
+  mk_conversion,
 };
 
 // The linkage of a bitfield is always stored in the first 2 bits.
@@ -993,57 +1010,99 @@ consteval string_type get_display_name(info x) {
 // General purpose queries
 
 consteval bool has_linkage(info x) {
-  return detail::linkage_traits(x).kind != detail::no_linkage;
+  return detail::linkage_traits(x).kind != detail::lk_none;
 }
 
 consteval bool has_external_linkage(info x) {
-  return detail::linkage_traits(x).kind == detail::external_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_external;
 }
 
 consteval bool has_internal_linkage(info x) {
-  return detail::linkage_traits(x).kind == detail::internal_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_internal;
 }
 
 consteval bool has_automatic_storage(info x) {
-  return detail::variable_traits(x).storage == detail::automatic_storage;
+  return detail::variable_traits(x).storage == detail::sk_automatic;
+}
+
+consteval void make_automatic(info& x) {
+  __reflect_mod(detail::query_set_storage, x, detail::sm_automatic);
 }
 
 consteval bool has_static_storage(info x) {
-  return detail::variable_traits(x).storage == detail::static_storage;
+  return detail::variable_traits(x).storage == detail::sk_static;
+}
+
+consteval void make_static(info& x) {
+  __reflect_mod(detail::query_set_storage, x, detail::sm_static);
 }
 
 consteval bool has_thread_storage(info x) {
-  return detail::variable_traits(x).storage == detail::thread_storage;
+  return detail::variable_traits(x).storage == detail::sk_thread;
+}
+
+consteval void make_thread_local(info& x) {
+  __reflect_mod(detail::query_set_storage, x, detail::sm_thread_local);
+}
+
+consteval void clear_storage_modifier(info& x) {
+  __reflect_mod(detail::query_set_storage, x, detail::sm_not_modified);
 }
 
 consteval bool has_access(info x) {
-  return detail::access_traits(x).kind != detail::no_access;
+  return detail::access_traits(x).kind != detail::ak_none;
 }
 
 // True if x's access specifier is determined by the default access of
 // the enclosing class.
 consteval bool has_default_access(info x) {
+  assert(has_access(x));
   return __reflect(detail::query_has_default_access, x);
+}
+
+consteval void make_default(info& x) {
+  assert(has_access(x));
+  __reflect_mod(detail::query_set_access, x, detail::am_default);
 }
 
 consteval bool is_public(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind == detail::public_access;
+  return detail::access_traits(x).kind == detail::ak_public;
 }
 
-consteval bool is_private(info x) {
+consteval void make_public(info& x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind == detail::private_access;
+  __reflect_mod(detail::query_set_access, x, detail::am_public);
 }
 
 consteval bool is_protected(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind == detail::protected_access;
+  return detail::access_traits(x).kind == detail::ak_protected;
+}
+
+consteval void make_protected(info& x) {
+  assert(has_access(x));
+  __reflect_mod(detail::query_set_access, x, detail::am_protected);
+}
+
+consteval bool is_private(info x) {
+  assert(has_access(x));
+  return detail::access_traits(x).kind == detail::ak_private;
+}
+
+consteval void make_private(info& x) {
+  assert(has_access(x));
+  __reflect_mod(detail::query_set_access, x, detail::am_public);
+}
+
+consteval void clear_access_modifier(info& x) {
+  assert(has_access(x));
+  __reflect_mod(detail::query_set_access, x, detail::am_not_modified);
 }
 
 consteval bool is_extern(info x) {
   assert(has_linkage(x));
-  return detail::linkage_traits(x).kind == detail::external_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_external;
 }
 
 consteval bool is_inline(info x) {
@@ -1074,12 +1133,16 @@ consteval bool is_constexpr(info x) {
   assert(false);
 }
 
+consteval void make_constexpr(info& x, bool mark_constexpr = true) {
+  __reflect_mod(detail::query_set_add_constexpr, x, mark_constexpr);
+}
+
 consteval bool is_normal(info x) {
-  return detail::method_traits(x).kind == detail::normal;
+  return detail::method_traits(x).kind == detail::mk_normal;
 }
 
 consteval bool is_conversion(info x) {
-  return detail::method_traits(x).kind == detail::conversion;
+  return detail::method_traits(x).kind == detail::mk_conversion;
 }
 
 consteval bool is_explicit(info x) {
@@ -1090,8 +1153,16 @@ consteval bool is_virtual(info x) {
   return detail::method_traits(x).is_virtual;
 }
 
+consteval void make_virtual(info& x, bool mark_virtual = true) {
+  __reflect_mod(detail::query_set_add_virtual, x, mark_virtual);
+}
+
 consteval bool is_pure_virtual(info x) {
   return detail::method_traits(x).is_pure;
+}
+
+consteval void make_pure_virtual(info& x, bool mark_pure_virtual = true) {
+  __reflect_mod(detail::query_set_add_pure_virtual, x, mark_pure_virtual);
 }
 
 consteval bool is_override(info x) {
@@ -1140,11 +1211,11 @@ consteval bool is_deleted(info x) {
 }
 
 consteval bool is_declared_struct(info x) {
-  return detail::class_traits(x).kind == detail::struct_class_kind;
+  return detail::class_traits(x).kind == detail::ck_struct;
 }
 
 consteval bool is_declared_class(info x) {
-  return detail::class_traits(x).kind == detail::class_class_kind;
+  return detail::class_traits(x).kind == detail::ck_class;
 }
 
 consteval bool is_complete(info x) {
@@ -1162,6 +1233,10 @@ consteval bool is_complete(info x) {
 
 consteval bool is_scoped(info x) {
   return detail::enum_traits(x).is_scoped;
+}
+
+consteval void set_new_name(info& x, const char* new_name) {
+  __reflect_mod(detail::query_set_new_name, x, new_name);
 }
 
 } // inline namespace v1
