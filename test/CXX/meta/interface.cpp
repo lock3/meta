@@ -6,8 +6,8 @@
 #include "reflection_iterator.h"
 
 consteval void compiler_require(bool condition, const char* error_msg) {
-  // if (!condition)
-    // __reflect_print(error_msg);
+  if (!condition)
+    __compiler_error(error_msg);
 }
 
 consteval bool is_data_member(meta::info refl) {
@@ -23,7 +23,7 @@ consteval bool is_member_function(meta::info refl) {
 consteval int count_data_members(meta::info refl) {
   int total = 0;
 
-  for... (auto member : member_range(refl)) {
+  for (meta::info member : member_range(refl)) {
     if (is_data_member(member))
       ++total;
   }
@@ -61,11 +61,11 @@ consteval void make_pure_virtual(meta::info &refl) {
 //====================================================================
 // Library code: implementing the metaclass (once)
 
-constexpr void interface(meta::info source) {
+consteval void interface(meta::info source) {
   compiler_require(count_data_members(source) == 0,
                    "interfaces may not contain data");
 
-  for... (auto f : member_range(source)) {
+  for (meta::info f : member_range(source)) {
     compiler_require(!is_copy(f) && !is_move(f),
        "interfaces may not copy or move; consider"
        " a virtual clone() instead");
@@ -92,17 +92,27 @@ struct(interface) Shape {
     void scale_by(double factor);
 };
 
-class X : Shape {
+class X : public Shape {
     int area() const { return 42; }
     void scale_by(double factor) { }
 };
 
 int main() {
-    X x;
-    return 0;
+  X x;
+  return 0;
+}
+
+consteval void dump_declaration(meta::info class_reflection) {
+  (void) __reflect_dump(__reflect(query_get_parent, __reflect(query_get_begin, class_reflection)));
+}
+
+consteval void print_lines(int count) {
+  for (int i = 0; i < count; ++i)
+    (void) __reflect_print("");
 }
 
 constexpr {
-  __reflect_dump(reflexpr(Shape));
-  __reflect_dump(reflexpr(X));
+  dump_declaration(reflexpr(Shape));
+  print_lines(3);
+  dump_declaration(reflexpr(X));
 }
