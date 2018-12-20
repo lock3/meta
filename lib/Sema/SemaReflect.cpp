@@ -508,7 +508,12 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
   Range->getType()->dump();
   // Expansion.get()->dump();
   llvm::outs() << "End\n";
-  RangeGenerator RG(*this, Range);
+  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
+  StmtResult Expansion = Bldr.BuildUninstantiated();
+  // Traverse the range now and add the exprs to the vector
+  RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
+                           Bldr.getBeginRef(), Bldr.getEndRef(),
+                           Bldr.getInductionRef());
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

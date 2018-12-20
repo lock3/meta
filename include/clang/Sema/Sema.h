@@ -8713,13 +8713,67 @@ public:
                                 SourceLocation LParenLoc,
                                 SourceLocation RParenLoc);
 
-  /// Generate a constexpr range from a parsed constant expression and
-  /// traverse it.
-  struct RangeGenerator {
-    RangeGenerator(Sema &SemaRef, Expr *Range);
+  /// Traverse a C++ Constexpr Range
+  struct RangeTraverser {
+    RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range, Expr *RangeBegin,
+                   Expr *RangeEnd, Expr *Induction);
 
     explicit operator bool();
     APValue operator()();
+    RangeTraverser &operator++();
+
+    Sema &SemaRef;
+
+    // The "range" we are expanding over, built as an expansion statement
+    // over a range or constexpr array.
+    CXXExpansionStmt *Range;
+
+    // The begin and end iterators of the range.
+    Expr *RangeBegin;
+    Expr *RangeEnd;
+
+    // An index used by a call to std::next
+    Expr *Induction;
+
+    // The current element in the traversal
+    Expr *Current;
+  };
+
+  /// A facility used to unpack and build the dependent body of an expansion
+  /// statement.
+  struct ExpansionStatementBuilder
+  {
+    /// Used during parsing to initially build the various statements and
+    /// declarations necessary to parse the loop body.
+    ///
+    /// FIXME: Detect constexpr-ness from the loop var.
+    ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K, 
+                              Stmt *LoopVarDS, Expr *RangeExpr,
+                              bool IsConstexpr);
+
+    /// Used during instantiation. Note that all of the statements and
+    /// declarations have been instantiated, so we just need to unpack that
+    /// information for subsequent analysis.
+    ///
+    /// FIXME: Detect constexpr-ness from the loop var.
+    ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
+                              Stmt *LoopVarDS, Stmt *RangeVarDS,
+                              bool IsConstexpr);
+
+    /// Construct a range without a body, using minimal information.
+    /// Used in variadic reification expressions.
+    /// No source locations exist and are thus default-constructed.
+    ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
+                              Expr *RangeExpr);
+  
+    /// Build a statement that contains the "pattern" of the expansion
+    /// denoted by the loop. This needs to be declared in a way that it 
+    /// can be repeatedly instantiated.
+    StmtResult Build();
+
+    /// Build a statement without an instantiated body. Used in variadic
+    /// reifications, where the body is unneeded.
+    StmtResult BuildUninstantiated();
 
     /// Build the range variable.
     bool BuildRangeVar();
@@ -8730,35 +8784,74 @@ public:
     /// Build the induction variable.
     bool BuildInductionVar();
 
-    /// Construct a bodyless expansion over a constexpr range.
-    StmtResult BuildExpansionOverRange();
+    /// Builds an expansion when the range is dependent.
+    StmtResult BuildDependentExpansion();
 
-    /// Instantiate (and return a vector of)
-    /// each individual expression in the range.
-    llvm::SmallVector<Expr *, 4> InstantiateExpressions();
+    /// Build the expansion over an unexpanded parameter pack.
+    StmtResult BuildExpansionOverPack();
+
+    /// Build the expansion over an array of known bound.
+    StmtResult BuildExpansionOverArray();
+
+    /// Build the expansion over a tuple.
+    StmtResult BuildExpansionOverTuple();
+
+    /// Build the expansion over a constexpr range.
+    /// \param Determine if the body will be instantiated or not.
+    StmtResult BuildExpansionOverRange(bool Instantiate = true);
+
+    /// Build the expansion over a destructurable class.
+    StmtResult BuildExpansionOverClass();
+
+    /// Used by Build() to push the expansion context just before returning.
+    StmtResult Finish(StmtResult S) {
+      if (!S.isInvalid())
+        SemaRef.PushLoopExpansion(S.get());
+      return S;
+    }
+
+    Expr *getBeginRef() const { return BeginRef; }
+    Expr *getEndRef() const { return EndRef; }
+    Expr *getInductionRef() const { return InductionRef; }
 
     /// The translation semantics
-    Sema& SemaRef;
+    Sema &SemaRef;
 
     /// The Scope in which analysis is performed.
     Scope* CurScope;
 
-    /// The non-reference type of the range.
-    QualType RangeType = {};
-
-    /// The range variable declaration.
-    VarDecl *RangeVar;
-
-    /// The kind of expansion construction happening.
+    /// The kind of construction happening.
     Sema::BuildForRangeKind Kind;
+
+    /// Contains the loop variable declaration. In 'for... (auto x : y)',
+    /// this contains the statement that will declare 'x', as in
+    /// 'auto x = <some-initilializer>'.
+    DeclStmt *LoopDeclStmt;
 
     /// The expression denoting the collection of elements for which we are
     /// expanding the body. In 'for... (auto x : y)', this contains the
     /// expression 'y'. This also becomes the initializer of the range variable.
     Expr *RangeExpr;
 
-    // This class generates implicit ranges, so all locations are default.
-    SourceLocation Loc = SourceLocation();
+    /// True if this is a constexpr expansion.
+    bool IsConstexpr;
+
+    // Source locations
+    SourceLocation ForLoc;
+    SourceLocation AnnotationLoc; // constexpr or ...
+    SourceLocation ColonLoc;
+    SourceLocation RParenLoc;
+
+    // Computed values.
+
+    /// The declared loop variable.
+    VarDecl *LoopVar = nullptr;
+
+    /// The range variable declaration.
+    VarDecl *RangeVar = nullptr;
+
+    /// The non-reference type of the range.
+    QualType RangeType = {};
 
     /// A reference to the range variable.
     DeclRefExpr *RangeRef;
@@ -8775,7 +8868,12 @@ public:
 
     /// A reference to the induction variable.
     DeclRefExpr *InductionRef;
+
+    // DeclRef to __range.begin() and __range.end()
+    Expr *BeginRef;
+    Expr *EndRef;
   };
+
 
   llvm::SmallVector<Expr *, 4>
   ActOnVariadicReification(SourceLocation KWLoc,
