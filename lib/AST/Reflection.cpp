@@ -739,13 +739,13 @@ static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
     if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
       for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
         if (isa<AccessSpecDecl>(CurDecl))
-          return false;
+          return SuccessFalse(R, Result);
         if (CurDecl == D)
-          return true;
+          return SuccessTrue(R, Result);
       }
     }
   }
-  return false;
+  return SuccessFalse(R, Result);
 }
 
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
