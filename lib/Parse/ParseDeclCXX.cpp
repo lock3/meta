@@ -2619,7 +2619,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
-  if (Tok.is(tok::kw_constexpr)) {
+  if (Tok.is(tok::kw_consteval)) {
     // [Meta] metaprogram-declaration
     if (NextToken().is(tok::l_brace))
       return ParseCXXMetaprogramDeclaration();

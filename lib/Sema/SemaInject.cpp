@@ -1875,7 +1875,7 @@ static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {
 
 template <typename MetaType>
 static MetaType *
-ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
+ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstevalLoc,
               unsigned &ScopeFlags) {
 
   Preprocessor &PP = Sema.PP;
@@ -1895,7 +1895,7 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
     // constexpr-declaration.
     IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
     DeclarationName Name(II);
-    DeclarationNameInfo NameInfo(Name, ConstexprLoc);
+    DeclarationNameInfo NameInfo(Name, ConstevalLoc);
 
     FunctionProtoType::ExtProtoInfo EPI(
         Context.getDefaultCallingConvention(/*IsVariadic=*/false,
@@ -1908,7 +1908,7 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
     // this to the constexpr-decl later on. Maybe the owner should be the
     // nearest file context, since this is essentially a non-member function.
     FunctionDecl *Function =
-        FunctionDecl::Create(Context, CurContext, ConstexprLoc, NameInfo,
+        FunctionDecl::Create(Context, CurContext, ConstevalLoc, NameInfo,
                              FunctionTy, FunctionTyInfo, SC_None,
                              /*isInlineSpecified=*/false,
                              /*hasWrittenPrototype=*/true,
@@ -1917,7 +1917,7 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
     Function->setMetaprogram();
 
     // Build the meta declaration around the function.
-    MD = MetaType::Create(Context, CurContext, ConstexprLoc, Function);
+    MD = MetaType::Create(Context, CurContext, ConstevalLoc, Function);
   } else if (CurContext->isFunctionOrMethod()) {
     ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
 
@@ -1944,14 +1944,14 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
     TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
 
     LambdaIntroducer Intro;
-    Intro.Range = SourceRange(ConstexprLoc);
+    Intro.Range = SourceRange(ConstevalLoc);
     Intro.Default = LCD_None;
 
     CXXRecordDecl *Closure = Sema.createLambdaClosureType(
         Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
     CXXMethodDecl *Method =
         Sema.startLambdaDefinition(Closure, Intro.Range, MethodTyInfo,
-                                   ConstexprLoc, None,
+                                   ConstevalLoc, None,
                                    /*IsConstexprSpecified=*/true);
     Sema.buildLambdaScope(LSI, Method, Intro.Range, Intro.Default,
                           Intro.DefaultLoc,
@@ -1963,7 +1963,7 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
     // NOTE: The call operator is not yet attached to the closure type. That
     // happens in ActOnFinishCXXMetaprogramDecl(). The operator is, however,
     // available in the LSI.
-    MD = MetaType::Create(Context, CurContext, ConstexprLoc, Closure);
+    MD = MetaType::Create(Context, CurContext, ConstevalLoc, Closure);
   } else
     llvm_unreachable("constexpr declaration in unsupported context");
 
@@ -1978,9 +1978,9 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstexprLoc,
 ///
 /// \p ScopeFlags is set to the value that should be used to create the scope
 /// containing the metaprogram-declaration body.
-Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
+Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstevalLoc,
                                     unsigned &ScopeFlags) {
-  return ActOnMetaDecl<CXXMetaprogramDecl>(*this, S, ConstexprLoc, ScopeFlags);
+  return ActOnMetaDecl<CXXMetaprogramDecl>(*this, S, ConstevalLoc, ScopeFlags);
 }
 
 /// Create a injection-declaration that will hold the body of the
@@ -1988,9 +1988,9 @@ Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
 ///
 /// \p ScopeFlags is set to the value that should be used to create the scope
 /// containing the injection-declaration body.
-Decl *Sema::ActOnCXXInjectionDecl(Scope *S, SourceLocation ConstexprLoc,
+Decl *Sema::ActOnCXXInjectionDecl(Scope *S, SourceLocation ConstevalLoc,
                                   unsigned &ScopeFlags) {
-  return ActOnMetaDecl<CXXInjectionDecl>(*this, S, ConstexprLoc, ScopeFlags);
+  return ActOnMetaDecl<CXXInjectionDecl>(*this, S, ConstevalLoc, ScopeFlags);
 }
 
 template <typename MetaType>

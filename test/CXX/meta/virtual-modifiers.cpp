@@ -14,7 +14,7 @@ struct Existing {
 };
 
 struct New {
-  constexpr {
+  consteval {
     // Methods
     auto method_1 = reflexpr(Existing::method_1);
     __reflect_mod(query_set_add_virtual, method_1, true);

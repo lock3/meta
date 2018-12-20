@@ -42,7 +42,7 @@ constexpr auto inner_fragment = __fragment struct S {
 };
 
 constexpr auto fragment = __fragment struct X {
-  constexpr -> inner_fragment;
+  consteval -> inner_fragment;
 
   InternalFragClass FragClass;
   int x = 1;
@@ -77,11 +77,11 @@ constexpr auto fragment = __fragment struct X {
 class Foo {
   int y = 55;
 
-  constexpr {
+  consteval {
     -> fragment;
   }
 
-  constexpr {
+  consteval {
     int captured_int_val = 7;
     -> __fragment struct {
       int captured_int = captured_int_val;

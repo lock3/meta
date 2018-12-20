@@ -16,7 +16,7 @@ constexpr auto fragment = __fragment namespace {
 };
 
 namespace foo {
-  constexpr {
+  consteval {
     -> fragment;
   }
 };

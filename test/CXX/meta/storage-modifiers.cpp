@@ -8,7 +8,7 @@ struct Existing {
 };
 
 struct New {
-  constexpr {
+  consteval {
     auto refl = reflexpr(Existing);
 
     // Fields

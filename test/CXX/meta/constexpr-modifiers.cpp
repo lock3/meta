@@ -14,7 +14,7 @@ struct Existing {
 };
 
 struct New {
-  constexpr {
+  consteval {
     // Methods
     auto method_1 = reflexpr(Existing::method_1);
     __reflect_mod(query_set_add_constexpr, method_1, true);
@@ -27,7 +27,7 @@ public:
 };
 
 struct NewBrokenField {
-  constexpr {
+  consteval {
     auto field_1 = reflexpr(Existing::field_1);
     __reflect_mod(query_set_add_constexpr, field_1, true);
 
@@ -43,7 +43,7 @@ struct ExistingDestructorOnly {
 
 
 struct NewBrokenDestructor {
-  constexpr {
+  consteval {
     auto refl = reflexpr(ExistingDestructorOnly);
 
     auto destructor_1 = __reflect(query_get_begin, refl);

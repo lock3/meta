@@ -219,15 +219,15 @@ StmtResult Parser::ParseCXXInjectionStatement() {
 ///
 /// \verbatim
 ///   metaprogram-declaration:
-///     'constexpr' compound-statement
+///     'consteval' compound-statement
 /// \endverbatim
 Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
-  assert(Tok.is(tok::kw_constexpr));
-  SourceLocation ConstexprLoc = ConsumeToken();
+  assert(Tok.is(tok::kw_consteval));
+  SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::l_brace));
 
   unsigned ScopeFlags;
-  Decl *D = Actions.ActOnCXXMetaprogramDecl(getCurScope(), ConstexprLoc,
+  Decl *D = Actions.ActOnCXXMetaprogramDecl(getCurScope(), ConstevalLoc,
                                             ScopeFlags);
 
   // Enter a scope for the metaprogram declaration body.
@@ -235,7 +235,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
 
   Actions.ActOnStartCXXMetaprogramDecl(getCurScope(), D);
 
-  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
+  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstevalLoc,
                                       "parsing metaprogram declaration body");
 
   // Parse the body of the metaprogram declaration.
@@ -249,20 +249,20 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
 }
 
 
-/// \brief Parse a C++ injection declaration.
+/// Parse a C++ injection declaration.
 ///
 ///   injection-declaration:
-///     'constexpr' '->' fragment ';'
-///     'constexpr' '->' reflection ';'
+///     'consteval' '->' fragment ';'
+///     'consteval' '->' reflection ';'
 ///
 /// Returns the group of declarations parsed.
 Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
-  assert(Tok.is(tok::kw_constexpr));
-  SourceLocation ConstexprLoc = ConsumeToken();
+  assert(Tok.is(tok::kw_consteval));
+  SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::arrow) && "expected '->' token");
 
   unsigned ScopeFlags;
-  Decl *D = Actions.ActOnCXXInjectionDecl(getCurScope(), ConstexprLoc,
+  Decl *D = Actions.ActOnCXXInjectionDecl(getCurScope(), ConstevalLoc,
                                           ScopeFlags);
 
   // Enter a scope for the constexpr declaration body.
@@ -270,7 +270,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
 
   Actions.ActOnStartCXXInjectionDecl(getCurScope(), D);
 
-  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstexprLoc,
+  PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstevalLoc,
                                       "parsing injection declaration body");
 
   // Parse the injection statement of the metaprogram declaration.

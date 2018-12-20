@@ -9,7 +9,7 @@ namespace class_default_tests {
   };
 
   class Foo {
-    constexpr {
+    consteval {
       -> frag;
     }
   };
@@ -30,7 +30,7 @@ namespace struct_default_tests {
   };
 
   class Foo {
-    constexpr {
+    consteval {
       -> frag;
     }
   };
@@ -52,7 +52,7 @@ namespace class_modified_tests {
   };
 
   class Foo {
-    constexpr {
+    consteval {
       -> frag;
     }
   };
@@ -74,7 +74,7 @@ namespace struct_modified_tests {
   };
 
   class Foo {
-    constexpr {
+    consteval {
       -> frag;
     }
   };

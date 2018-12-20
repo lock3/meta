@@ -104,9 +104,6 @@ int main() {
   // constexpr auto test_ns_self_frag_wrapper = SomeClass<test_ns_self_frag>();
   // constexpr auto test_ns_empty_frag_wrapper = SomeClass<test_ns_empty_frag>();
 
-  constexpr {
-  };
-
   return 0;
 };
 

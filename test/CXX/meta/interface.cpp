@@ -111,7 +111,7 @@ consteval void print_lines(int count) {
     (void) __reflect_print("");
 }
 
-constexpr {
+consteval {
   print_declaration(reflexpr(Shape));
   print_lines(1);
   print_declaration(reflexpr(X));

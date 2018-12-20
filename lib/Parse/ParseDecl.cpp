@@ -1703,7 +1703,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     ProhibitAttributes(attrs);
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
-  case tok::kw_constexpr:
+  case tok::kw_consteval:
     // [Meta] metaprogram-declaration
     if (NextToken().is(tok::l_brace))
       return ParseCXXMetaprogramDeclaration();

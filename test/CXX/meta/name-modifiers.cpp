@@ -12,7 +12,7 @@ struct Existing {
 };
 
 struct New {
-  constexpr {
+  consteval {
     // Fields
     auto field_1 = reflexpr(Existing::field_1);
     __reflect_mod(query_set_new_name, field_1, "ns_field_1");
