@@ -552,6 +552,7 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 
   if (Modifiers.addConstexpr()) {
     Var->setConstexpr(true);
+    Var->setType(Var->getType().withConst());
   } else {
     Var->setConstexpr(D->isConstexpr());
   }
@@ -822,6 +823,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
       Method->setInvalidDecl(true);
     }
     Method->setConstexpr(true);
+    Method->setType(Method->getType().withConst());
   } else {
     Method->setConstexpr(D->isConstexpr());
   }
