@@ -488,6 +488,14 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   AddDeclSubstitution(D, Fn);
   UpdateFunctionParms(D, Fn);
 
+  // Update the constexpr specifier.
+  if (Modifiers.addConstexpr()) {
+    Fn->setConstexpr(true);
+    Fn->setType(Fn->getType().withConst());
+  } else {
+    Fn->setConstexpr(D->isConstexpr());
+  }
+
   // Set properties.
   Fn->setInlineSpecified(D->isInlineSpecified());
   Fn->setInvalidDecl(Invalid);
