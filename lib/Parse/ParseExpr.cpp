@@ -2896,7 +2896,6 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                                  SmallVectorImpl<SourceLocation> &CommaLocs,
                                  llvm::function_ref<void()> Completer) {
-  llvm::outs() << "ParseExpressionList\n";
   bool SawError = false;
   while (1) {
     if (Tok.is(tok::code_completion)) {
