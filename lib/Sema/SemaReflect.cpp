@@ -500,20 +500,24 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
                                SourceLocation EllipsisLoc,
                                SourceLocation RParenLoc)
 {
-
-
-  llvm::outs() << "Expansion on reification:\n";
-  Range->dump();
-  llvm::outs() << "Is range array type?: " << Range->getType()->isConstantArrayType() << '\n';
-  Range->getType()->dump();
-  // Expansion.get()->dump();
-  llvm::outs() << "End\n";
   ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   StmtResult Expansion = Bldr.BuildUninstantiated();
+
   // Traverse the range now and add the exprs to the vector
   RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
-                           Bldr.getBeginRef(), Bldr.getEndRef(),
-                           Bldr.getInductionRef());
+                           Bldr.getBeginCallRef(), Bldr.getEndCallRef());
+
+  llvm::SmallVector<Expr *, 4> Expressions;
+
+  while(!Traverser) {
+    ExprResult C = Traverser.getAsValueOf();
+
+    Expressions.push_back(C.get());
+
+    ++Traverser;
+  }
+
+  return Expressions;
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

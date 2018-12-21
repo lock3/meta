@@ -8716,26 +8716,43 @@ public:
   /// Traverse a C++ Constexpr Range
   struct RangeTraverser {
     RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range, Expr *RangeBegin,
-                   Expr *RangeEnd, Expr *Induction);
+                   Expr *RangeEnd);
 
+    /// Current == RangeEnd
     explicit operator bool();
+
+    /// Dereference and evaluate the current value as a constant expression.
     APValue operator()();
+
+    /// Call std::next(Current, 1)
     RangeTraverser &operator++();
 
+    /// Get the dereferenced Current as a CXXReflectExpr.
+    /// Used when unpacking a variadic reification.
+    Expr *getAsCXXReflectExpr();
+
+    /// Get the dereferenced current as a valueof reifier.
+    /// (Returns a CXXConstantExpr)
+    ExprResult getAsValueOf();
+
+  private:
     Sema &SemaRef;
 
-    // The "range" we are expanding over, built as an expansion statement
-    // over a range or constexpr array.
+    /// The "range" we are expanding over, built as an expansion statement
+    /// over a range or constexpr array.
     CXXExpansionStmt *Range;
 
-    // The begin and end iterators of the range.
+    /// The begin and end iterators of the range.
     Expr *RangeBegin;
     Expr *RangeEnd;
 
-    // An index used by a call to std::next
-    Expr *Induction;
+    /// The size of the range.
+    std::size_t Size;
 
-    // The current element in the traversal
+    /// An Index that keeps track of the current element.
+    std::size_t I;
+
+    /// The current element in the traversal
     Expr *Current;
   };
 
@@ -8810,8 +8827,8 @@ public:
       return S;
     }
 
-    Expr *getBeginRef() const { return BeginRef; }
-    Expr *getEndRef() const { return EndRef; }
+    Expr *getBeginCallRef() const { return BeginCallRef; }
+    Expr *getEndCallRef() const { return EndCallRef; }
     Expr *getInductionRef() const { return InductionRef; }
 
     /// The translation semantics
@@ -8870,8 +8887,8 @@ public:
     DeclRefExpr *InductionRef;
 
     // DeclRef to __range.begin() and __range.end()
-    Expr *BeginRef;
-    Expr *EndRef;
+    Expr *BeginCallRef;
+    Expr *EndCallRef;
   };
 
 

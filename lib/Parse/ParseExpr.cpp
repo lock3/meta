@@ -2916,7 +2916,6 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     } else if(getLangOpts().Reflection && Tok.is(tok::kw_valueof)) {
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      llvm::outs() << "Variadic Reif\n";
       ConsumeToken();
       // Parse any number of arguments in parens.
       BalancedDelimiterTracker Parens(*this, tok::l_paren);
@@ -2947,6 +2946,14 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       auto ExpandedExprs =
         Actions.ActOnVariadicReification(SourceLocation(), ReflRange.get(),
                                          LPLoc, EllipsisLoc, RPLoc);
+      // We need to insert several fake commas to get around error checking here.
+      // We only need size() - 1, since there is already a comma in front of
+      // the reification parameter.
+      for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+        CommaLocs.push_back(SourceLocation());
+      // Add our expanded expressions into the parameter list.
+      // TODO: is the optimized append function faster than pushing
+      // back each Expr in the above loop?
       Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else
       Expr = ParseAssignmentExpression();

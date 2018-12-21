@@ -2828,17 +2828,17 @@ static ExprResult BuildDeref(Sema &SemaRef, Expr *NextCall)
 }
 
 Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range,
-                                     Expr *RangeBegin, Expr *RangeEnd,
-                                     Expr *Induction)
+                                     Expr *RangeBegin, Expr *RangeEnd)
   : SemaRef(SemaRef), Range(Range), RangeBegin(RangeBegin), RangeEnd(RangeEnd),
-    Induction(Induction)
+    I()
 {
   Current = RangeBegin;
+  Size = Range->getSize();
 }
 
 Sema::RangeTraverser::operator bool()
-{  
-  return Current == RangeEnd;
+{
+  return I == Size;
 }
 
 APValue
@@ -2846,20 +2846,54 @@ Sema::RangeTraverser::operator()()
 {
   Expr *Deref = BuildDeref(SemaRef, Current).get();
   Expr::EvalResult Res;
-  if(Deref->EvaluateAsAnyValue(Res, SemaRef.Context))
+
+  ExprResult RvalueDeref = SemaRef.DefaultLvalueConversion(Deref);
+  
+  if(RvalueDeref.get()->EvaluateAsConstantExpr
+     (Res, Expr::EvaluateForCodeGen, SemaRef.Context))
     return Res.Val;
   else
     llvm_unreachable("Could not evaluate range member.");
 }
 
-Sema::RangeTraverser&
+Sema::RangeTraverser &
 Sema::RangeTraverser::operator++()
 {
+  IntegerLiteral *Index =
+  IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(1),
+                         SemaRef.Context.getSizeType(), SourceLocation());
   const auto done = operator bool();
   if(!done) {
-    ExprResult Next = BuildNextCall(SemaRef, Current, Induction);
+    ExprResult Next = BuildNextCall(SemaRef, Current, Index);
+    if(Next.isInvalid())
+      llvm_unreachable("Could not build next call.");
+
     Current = Next.get();
+    ++I;
   }
+
+  return *this;
+}
+
+Expr *
+Sema::RangeTraverser::getAsCXXReflectExpr()
+{  
+  Expr *Deref = BuildDeref(SemaRef, Current).get();
+
+  return dyn_cast_or_null<CXXReflectExpr>(Deref);
+}
+
+ExprResult
+Sema::RangeTraverser::getAsValueOf()
+{
+  Expr *Deref = BuildDeref(SemaRef, Current).get();
+  
+  ExprResult Res = SemaRef.ActOnCXXValueOfExpr
+    (SourceLocation(), Deref, SourceLocation(), SourceLocation());
+
+  if(!Res.isInvalid())
+    return Res;
+  return ExprError();
 }
 
 Sema::ExpansionStatementBuilder::
@@ -3411,6 +3445,11 @@ Sema::ExpansionStatementBuilder::BuildExpansionOverRange(bool Instantiate)
       SemaRef.BuildDeclRefExpr(EndVar, EndType, VK_LValue, ColonLoc);
   if (EndRef.isInvalid())
     return StmtError();
+
+  // Store the calls to __range.begin() and __range.end() so that we can
+  // use them in a traverser.
+  BeginCallRef = BeginRef.get();
+  EndCallRef = EndRef.get();
 
   // Build the next element accessor. For now, this is *std::next(__begin, I).
   //
