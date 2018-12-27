@@ -488,13 +488,21 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
       return FD->getOverloadedOperator() == OO_Subscript ||
              FD->getOverloadedOperator() == OO_Star ||
              FD->getOverloadedOperator() == OO_Arrow;
-    } else {
-      return FD->getDeclName().isIdentifier() &&
-             (FD->getName() == "at" || FD->getName() == "data" ||
-              FD->getName() == "begin" || FD->getName() == "end" ||
-              FD->getName() == "rbegin" || FD->getName() == "rend" ||
-              FD->getName() == "back" || FD->getName() == "front");
     }
+    const CXXRecordDecl *RD = MD->getParent();
+    StringRef ClassName = RD->getName();
+    if (RD->isInStdNamespace() &&
+        (ClassName.endswith("map") || ClassName.endswith("set"))) {
+      if (FD->getDeclName().isIdentifier() &&
+          (FD->getName() == "insert" || FD->getName() == "emplace" ||
+           FD->getName() == "emplace_hint"))
+        return true;
+    }
+    return FD->getDeclName().isIdentifier() &&
+           (FD->getName() == "at" || FD->getName() == "data" ||
+            FD->getName() == "begin" || FD->getName() == "end" ||
+            FD->getName() == "rbegin" || FD->getName() == "rend" ||
+            FD->getName() == "back" || FD->getName() == "front");
   }
   return false;
 }

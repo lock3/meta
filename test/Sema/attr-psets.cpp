@@ -16,13 +16,13 @@ template <typename T>
 typename T::iterator begin(T &);
 
 template <typename T>
-struct vector_iterator {
+struct general_iterator {
   T &operator*() const;
 };
 
 template <typename T>
 struct vector {
-  using iterator = vector_iterator<T>;
+  using iterator = general_iterator<T>;
   vector(unsigned = 0);
   iterator begin();
   iterator end();
@@ -30,6 +30,24 @@ struct vector {
   T &at(unsigned);
   T *data();
   ~vector();
+};
+
+template <typename F, typename S>
+struct pair {
+  F first;
+  S second;
+};
+
+template <typename T>
+struct set {
+  using iterator = general_iterator<T>;
+  set();
+  iterator begin();
+  iterator end();
+  pair<iterator, bool> insert(const T &);
+  template <class... Args>
+  pair<iterator, bool> emplace(Args &&... args);
+  ~set();
 };
 
 template <typename T>
@@ -821,6 +839,16 @@ void lifetime_const() {
 
   O.reset();
   __lifetime_pset(P); // expected-warning {{pset(P) = ((invalid))}}
+}
+
+void associative_lifetime_const() {
+  std::set<int> s;
+  std::set<int>::iterator it = s.begin();
+  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
+  s.insert(5);
+  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
+  s.emplace(5);
+  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
 }
 
 void ambiguous_pointers(bool cond) {
