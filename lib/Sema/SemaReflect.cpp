@@ -430,8 +430,12 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
     return ExprError();
 
   if (R.isExpression()) {
-    if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(R.getAsExpression()))
+    if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(R.getAsExpression())) {
+      Decl *ReferencedDecl = const_cast<NamedDecl *>(Ref->getFoundDecl());
+      ReferencedDecl->markUsed(Context);
+
       return const_cast<DeclRefExpr *>(Ref);
+    }
   }
 
   // FIXME: Emit a better error diagnostic.
