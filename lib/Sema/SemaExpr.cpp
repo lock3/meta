@@ -2092,11 +2092,14 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   //     -- a conversion-function-id that specifies a dependent type,
   //     -- a nested-name-specifier that contains a class-name that
   //        names a dependent type.
+  //     -- a unresolved reified name.
   // Determine whether this is a member of an unknown specialization;
   // we need to handle these differently.
   bool DependentID = false;
   if (Name.getNameKind() == DeclarationName::CXXConversionFunctionName &&
       Name.getCXXNameType()->isDependentType()) {
+    DependentID = true;
+  } else if (Name.getNameKind() == DeclarationName::CXXReflectedIdName) {
     DependentID = true;
   } else if (SS.isSet()) {
     if (DeclContext *DC = computeDeclContext(SS, false)) {
