@@ -11298,11 +11298,14 @@ TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
                                                DependentScopeDeclRefExpr *E,
                                                bool IsAddressOfOperand,
                                                TypeSourceInfo **RecoveryTSI) {
-  assert(E->getQualifierLoc());
-  NestedNameSpecifierLoc QualifierLoc
-  = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
-  if (!QualifierLoc)
-    return ExprError();
+  // assert(E->getQualifierLoc());
+  NestedNameSpecifierLoc QualifierLoc;
+  if (E->getQualifierLoc()) {
+    QualifierLoc
+      = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
+    if (!QualifierLoc)
+      return ExprError();
+  }
   SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
 
   // TODO: If this is a conversion-function-id, verify that the

@@ -6307,21 +6307,24 @@ NamedDecl *Sema::ActOnVariableDeclarator(
     LookupResult &Previous, MultiTemplateParamsArg TemplateParamLists,
     bool &AddToScope, ArrayRef<BindingDecl *> Bindings) {
   QualType R = TInfo->getType();
-  DeclarationName Name = GetNameForDeclarator(D).getName();
+  DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
+  DeclarationName Name = NameInfo.getName();
 
   IdentifierInfo *II = Name.getAsIdentifierInfo();
 
-  if (D.isDecompositionDeclarator()) {
-    // Take the name of the first declarator as our name for diagnostic
-    // purposes.
-    auto &Decomp = D.getDecompositionDeclarator();
-    if (!Decomp.bindings().empty()) {
-      II = Decomp.bindings()[0].Name;
-      Name = II;
+  if (Name.getNameKind() != DeclarationName::CXXReflectedIdName) {
+    if (D.isDecompositionDeclarator()) {
+      // Take the name of the first declarator as our name for diagnostic
+      // purposes.
+      auto &Decomp = D.getDecompositionDeclarator();
+      if (!Decomp.bindings().empty()) {
+        II = Decomp.bindings()[0].Name;
+        Name = II;
+      }
+    } else if (!II) {
+      Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
+      return nullptr;
     }
-  } else if (!II) {
-    Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
-    return nullptr;
   }
 
   if (getLangOpts().OpenCL) {
@@ -6595,7 +6598,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                                         Bindings);
     } else
       NewVD = VarDecl::Create(Context, DC, D.getBeginLoc(),
-                              D.getIdentifierLoc(), II, R, TInfo, SC);
+                              NameInfo, R, TInfo, SC);
 
     // If this is supposed to be a variable template, create it as such.
     if (IsVariableTemplate) {
