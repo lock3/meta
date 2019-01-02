@@ -2931,7 +2931,10 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       // the reification parameter.
       for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
         CommaLocs.emplace_back();
-      
+
+      if(SawError)
+        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
+
       // Add our expanded expressions into the parameter list.
       Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else

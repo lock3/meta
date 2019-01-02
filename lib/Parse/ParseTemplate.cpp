@@ -1313,7 +1313,6 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 
   do {
 
-    bool isVariadicReification = false;
     IdentifierInfo *TokII = Tok.getIdentifierInfo();
     if (getLangOpts().Reflection && TokII &&
        TokII->isVariadicReificationKeyword(getLangOpts())) {
@@ -1321,17 +1320,24 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SourceLocation KWLoc = Tok.getLocation();
       llvm::SmallVector<Expr *, 4> ExpandedExprs;
+
+      bool isVariadicReification = false;
       if (ParseVariadicReification(ExpandedExprs, isVariadicReification))
         return true;
 
       for(auto ConstantValue : ExpandedExprs) {
         ParsedTemplateArgument Arg
           (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
+
+        if (Arg.isInvalid()) {
+          SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+          return true;
+        }
+
         TemplateArgs.push_back(Arg);
       }
     }
-
-    if (!isVariadicReification) {
+    else {
       ParsedTemplateArgument Arg = ParseTemplateArgument();
       SourceLocation EllipsisLoc;
       if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
