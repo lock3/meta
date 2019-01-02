@@ -2926,17 +2926,22 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SawError = ParseVariadicReification(ExpandedExprs, isVariadicReification);
 
-      // We need to insert several fake commas to get around error checking here.
-      // We only need size() - 1, since there is already a comma in front of
-      // the reification parameter.
-      for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
-        CommaLocs.emplace_back();
+      if(isVariadicReification) {
+        // We need to insert several fake commas to get around error checking.
+        // We only need size() - 1, since there is already a comma in front of
+        // the reification parameter.
+        for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+          CommaLocs.emplace_back();
 
-      if(SawError)
-        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
+        if(SawError)
+          SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
 
-      // Add our expanded expressions into the parameter list.
-      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
+        // Add our expanded expressions into the parameter list.
+        Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
+      } else {
+        // This was a regular reification.
+        ArgExpr = Exprs.front();
+      }
     } else
       ArgExpr = ParseAssignmentExpression();
 

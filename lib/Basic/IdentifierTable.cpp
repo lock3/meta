@@ -309,13 +309,19 @@ IdentifierInfo::isVariadicReificationKeyword(const LangOptions &LangOpts) const
 
   using namespace tok;
   TokenKind ID = getTokenID();
+
   // Check each reifier keyword manually.
-  return (ID == kw_valueof) ||
-    (ID == kw_unqualid) ||
-    (ID == kw_typename) ||
-    (ID == kw_idexpr) ||
-    (ID == kw_templarg) ||
-    (ID == kw_namespace);
+  switch(ID) {
+  case kw_valueof:
+  case kw_unqualid:
+  case kw_typename:
+  case kw_idexpr:
+  case kw_templarg:
+  case kw_namespace:
+    return true;
+  default:
+    return false;
+  }
 }
 
 tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {

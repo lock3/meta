@@ -2829,8 +2829,7 @@ static ExprResult BuildDeref(Sema &SemaRef, Expr *NextCall)
 
 Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range,
                                      Expr *RangeBegin)
-  : SemaRef(SemaRef), Range(Range), RangeBegin(RangeBegin),
-    I()
+  : SemaRef(SemaRef), I()
 {
   Current = RangeBegin;
   Size = Range->getSize();

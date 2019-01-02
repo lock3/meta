@@ -8729,13 +8729,6 @@ public:
   private:
     Sema &SemaRef;
 
-    /// The "range" we are expanding over, built as an expansion statement
-    /// over a range or constexpr array.
-    CXXExpansionStmt *Range;
-
-    /// Iterator to the first element of the range.
-    Expr *RangeBegin;
-
     /// The size of the range.
     std::size_t Size;
 
@@ -8884,6 +8877,7 @@ public:
 
   llvm::SmallVector<Expr *, 4>
   ActOnVariadicReification(SourceLocation KWLoc,
+                           IdentifierInfo *KW,
                            Expr *Range,
                            SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc,

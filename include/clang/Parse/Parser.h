@@ -2793,7 +2793,7 @@ private:
 
   // Parse a variadic reification. Returns true on error.
   bool ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
-    bool& isVariadicReification);
+                                bool& isVariadicReification);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

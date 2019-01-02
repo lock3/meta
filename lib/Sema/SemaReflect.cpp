@@ -512,6 +512,7 @@ getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
 
 llvm::SmallVector<Expr *, 4>
 Sema::ActOnVariadicReification(SourceLocation KWLoc,
+                               IdentifierInfo *KW,
                                Expr *Range,
                                SourceLocation LParenLoc,
                                SourceLocation EllipsisLoc,
@@ -526,8 +527,21 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
 
   llvm::SmallVector<Expr *, 4> Expressions;
 
+  ExprResult C;
+  
   while(!Traverser) {
-    ExprResult C = getAsCXXValueOfExpr(*this, *Traverser);
+    switch(KW->getTokenID()) {
+    case tok::kw_valueof:
+      C = getAsCXXValueOfExpr(*this, *Traverser);
+      break;
+    case tok::kw_typename:
+    case tok::kw_namespace:
+    case tok::kw_unqualid:
+    case tok::kw_idexpr:
+      break;
+    default: // silence warning
+      break;
+    }
 
     Expressions.push_back(C.get());
 
