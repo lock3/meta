@@ -2844,13 +2844,11 @@ Expr *
 Sema::RangeTraverser::operator*()
 {
   Expr *Deref = BuildDeref(SemaRef, Current).get();
-  Expr::EvalResult Res;
 
   ExprResult RvalueDeref = SemaRef.DefaultLvalueConversion(Deref);
 
-  if(!RvalueDeref.isInvalid())
-    return RvalueDeref.get();
-  llvm_unreachable("Could not dereference range member.");
+  assert(!RvalueDeref.isInvalid() && "Could not dereference range member.");
+  return RvalueDeref.get();
 }
 
 Sema::RangeTraverser &

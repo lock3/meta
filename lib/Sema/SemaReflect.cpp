@@ -496,12 +496,8 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
 static ExprResult
 getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
 {
-  ExprResult Res = SemaRef.ActOnCXXValueOfExpr
+  return SemaRef.ActOnCXXValueOfExpr
     (SourceLocation(), Expression, SourceLocation(), SourceLocation());
-
-  if(!Res.isInvalid())
-    return Res;
-  return ExprError();
 }
 
 static QualType
