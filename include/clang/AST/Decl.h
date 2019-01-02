@@ -977,7 +977,7 @@ protected:
   };
 
   VarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-          SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
+          SourceLocation NameLoc, const DeclarationName &Name, QualType T,
           TypeSourceInfo *TInfo, StorageClass SC);
 
   VarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
@@ -1010,9 +1010,9 @@ public:
   using redeclarable_base::isFirstDecl;
 
   static VarDecl *Create(ASTContext &C, DeclContext *DC,
-                         SourceLocation StartLoc, SourceLocation IdLoc,
-                         IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
-                         StorageClass S);
+                         SourceLocation StartLoc,
+                         SourceLocation NameLoc, const DeclarationName &Name,
+                         QualType T, TypeSourceInfo *TInfo, StorageClass S);
 
   static VarDecl *Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartLoc, DeclarationNameInfo NameInfo, 
@@ -1539,7 +1539,7 @@ public:
 
   ImplicitParamDecl(ASTContext &C, QualType Type, ImplicitParamKind ParamKind)
       : VarDecl(ImplicitParam, C, /*DC=*/nullptr, SourceLocation(),
-                SourceLocation(), /*Id=*/nullptr, Type,
+                SourceLocation(), DeclarationName(), Type,
                 /*TInfo=*/nullptr, SC_None) {
     NonParmVarDeclBits.ImplicitParamKind = ParamKind;
     setImplicit();

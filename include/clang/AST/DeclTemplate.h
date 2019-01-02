@@ -2537,7 +2537,7 @@ class VarTemplateSpecializationDecl : public VarDecl,
 
 protected:
   VarTemplateSpecializationDecl(Kind DK, ASTContext &Context, DeclContext *DC,
-                                SourceLocation StartLoc, SourceLocation IdLoc,
+                                SourceLocation StartLoc, SourceLocation NameLoc,
                                 VarTemplateDecl *SpecializedTemplate,
                                 QualType T, TypeSourceInfo *TInfo,
                                 StorageClass S,
@@ -2552,8 +2552,8 @@ public:
 
   static VarTemplateSpecializationDecl *
   Create(ASTContext &Context, DeclContext *DC, SourceLocation StartLoc,
-         SourceLocation IdLoc, VarTemplateDecl *SpecializedTemplate, QualType T,
-         TypeSourceInfo *TInfo, StorageClass S,
+         SourceLocation NameLoc, VarTemplateDecl *SpecializedTemplate,
+         QualType T, TypeSourceInfo *TInfo, StorageClass S,
          ArrayRef<TemplateArgument> Args);
   static VarTemplateSpecializationDecl *CreateDeserialized(ASTContext &C,
                                                            unsigned ID);
