@@ -2828,8 +2828,8 @@ static ExprResult BuildDeref(Sema &SemaRef, Expr *NextCall)
 }
 
 Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range,
-                                     Expr *RangeBegin, Expr *RangeEnd)
-  : SemaRef(SemaRef), Range(Range), RangeBegin(RangeBegin), RangeEnd(RangeEnd),
+                                     Expr *RangeBegin)
+  : SemaRef(SemaRef), Range(Range), RangeBegin(RangeBegin),
     I()
 {
   Current = RangeBegin;
@@ -2841,19 +2841,17 @@ Sema::RangeTraverser::operator bool()
   return I == Size;
 }
 
-APValue
-Sema::RangeTraverser::operator()()
+Expr *
+Sema::RangeTraverser::operator*()
 {
   Expr *Deref = BuildDeref(SemaRef, Current).get();
   Expr::EvalResult Res;
 
   ExprResult RvalueDeref = SemaRef.DefaultLvalueConversion(Deref);
-  
-  if(RvalueDeref.get()->EvaluateAsConstantExpr
-     (Res, Expr::EvaluateForCodeGen, SemaRef.Context))
-    return Res.Val;
-  else
-    llvm_unreachable("Could not evaluate range member.");
+
+  if(!RvalueDeref.isInvalid())
+    return RvalueDeref.get();
+  llvm_unreachable("Could not dereference range member.");
 }
 
 Sema::RangeTraverser &
@@ -2873,35 +2871,6 @@ Sema::RangeTraverser::operator++()
   }
 
   return *this;
-}
-
-Expr *
-Sema::RangeTraverser::getAsCXXReflectExpr()
-{  
-  Expr *Deref = BuildDeref(SemaRef, Current).get();
-
-  return dyn_cast_or_null<CXXReflectExpr>(Deref);
-}
-
-ExprResult
-Sema::RangeTraverser::getAsValueOf()
-{
-  Expr *Deref = BuildDeref(SemaRef, Current).get();
-  
-  ExprResult Res = SemaRef.ActOnCXXValueOfExpr
-    (SourceLocation(), Deref, SourceLocation(), SourceLocation());
-
-  if(!Res.isInvalid())
-    return Res;
-  return ExprError();
-}
-
-QualType
-Sema::RangeTraverser::getAsTypename()
-{
-  Expr *Deref = BuildDeref(SemaRef, Current).get();
-
-  return SemaRef.BuildReflectedType(SourceLocation(), Deref);
 }
 
 Sema::ExpansionStatementBuilder::

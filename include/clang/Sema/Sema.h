@@ -8715,28 +8715,16 @@ public:
 
   /// Traverse a C++ Constexpr Range
   struct RangeTraverser {
-    RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range, Expr *RangeBegin,
-                   Expr *RangeEnd);
+    RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range, Expr *RangeBegin);
 
     /// Current == RangeEnd
     explicit operator bool();
 
     /// Dereference and evaluate the current value as a constant expression.
-    APValue operator()();
+    Expr *operator*();
 
     /// Call std::next(Current, 1)
     RangeTraverser &operator++();
-
-    /// Get the dereferenced Current as a CXXReflectExpr.
-    /// Used when unpacking a variadic reification.
-    Expr *getAsCXXReflectExpr();
-
-    /// Get the dereferenced current as a valueof reifier.
-    /// (Returns a CXXConstantExpr)
-    ExprResult getAsValueOf();
-
-    /// Get the dereferenced current as a typename reifier.
-    QualType getAsTypename();
 
   private:
     Sema &SemaRef;
@@ -8745,14 +8733,13 @@ public:
     /// over a range or constexpr array.
     CXXExpansionStmt *Range;
 
-    /// The begin and end iterators of the range.
+    /// Iterator to the first element of the range.
     Expr *RangeBegin;
-    Expr *RangeEnd;
 
     /// The size of the range.
     std::size_t Size;
 
-    /// An Index that keeps track of the current element.
+    /// An integer Index that keeps track of the current element.
     std::size_t I;
 
     /// The current element in the traversal

@@ -493,6 +493,23 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   return Eval;
 }
 
+static ExprResult
+getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
+{
+  ExprResult Res = SemaRef.ActOnCXXValueOfExpr
+    (SourceLocation(), Expression, SourceLocation(), SourceLocation());
+
+  if(!Res.isInvalid())
+    return Res;
+  return ExprError();
+}
+
+static QualType
+getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
+{
+  return SemaRef.BuildReflectedType(SourceLocation(), Expression);
+}
+
 llvm::SmallVector<Expr *, 4>
 Sema::ActOnVariadicReification(SourceLocation KWLoc,
                                Expr *Range,
@@ -505,12 +522,12 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
 
   // Traverse the range now and add the exprs to the vector
   RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
-                           Bldr.getBeginCallRef(), Bldr.getEndCallRef());
+                           Bldr.getBeginCallRef());
 
   llvm::SmallVector<Expr *, 4> Expressions;
 
   while(!Traverser) {
-    ExprResult C = Traverser.getAsValueOf();
+    ExprResult C = getAsCXXValueOfExpr(*this, *Traverser);
 
     Expressions.push_back(C.get());
 
