@@ -2896,6 +2896,14 @@ Sema::RangeTraverser::getAsValueOf()
   return ExprError();
 }
 
+QualType
+Sema::RangeTraverser::getAsTypename()
+{
+  Expr *Deref = BuildDeref(SemaRef, Current).get();
+
+  return SemaRef.BuildReflectedType(SourceLocation(), Deref);
+}
+
 Sema::ExpansionStatementBuilder::
 ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
                           Stmt *LoopVarDS, Expr *RangeExpr, bool IsConstexpr)

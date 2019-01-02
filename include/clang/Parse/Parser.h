@@ -2791,6 +2791,10 @@ private:
   ParsedTemplateArgument ParseReflectedTemplateArgument();
   ExprResult ParseCXXConcatenateExpression();
 
+  // Parse a variadic reification. Returns true on error.
+  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
+    bool& isVariadicReification);
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

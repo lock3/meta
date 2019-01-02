@@ -8735,6 +8735,9 @@ public:
     /// (Returns a CXXConstantExpr)
     ExprResult getAsValueOf();
 
+    /// Get the dereferenced current as a typename reifier.
+    QualType getAsTypename();
+
   private:
     Sema &SemaRef;
 

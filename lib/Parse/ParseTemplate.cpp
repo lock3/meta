@@ -1309,60 +1309,29 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
 ///         template-argument-list ',' template-argument
 bool
 Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
-  llvm::outs() << "ParseTemplateArgumentList\n";
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
 
     bool isVariadicReification = false;
-    // TODO: make this a function somewhere in the parser
-    if(getLangOpts().Reflection && Tok.is(tok::kw_valueof)) {
-      llvm::outs() << "1\n";
+    IdentifierInfo *TokII = Tok.getIdentifierInfo();
+    if (getLangOpts().Reflection && TokII &&
+       TokII->isVariadicReificationKeyword(getLangOpts())) {
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SourceLocation ValueOfLoc = ConsumeToken();
-      // Parse any number of arguments in parens.
-      BalancedDelimiterTracker Parens(*this, tok::l_paren);
-      if (Parens.expectAndConsume())
-        return false;
-
-      llvm::outs() << "2\n";
-
-      SourceLocation ReifEllipsisLoc;
-      TryConsumeToken(tok::ellipsis, ReifEllipsisLoc);
-
-      ExprResult ReflRange = ParseConstantExpression();
-      if (ReflRange.isInvalid()) {
-        Parens.skipToEnd();
+      SourceLocation KWLoc = Tok.getLocation();
+      llvm::SmallVector<Expr *, 4> ExpandedExprs;
+      if (ParseVariadicReification(ExpandedExprs, isVariadicReification))
         return true;
-      }
 
-      llvm::outs() << "3\n";
-      if (Parens.consumeClose()) 
-        return true;
-      llvm::outs() << "4\n";
-      // FIXME: this will disallow reifications from being
-      // used as parameters, we'll just have to unwind
-      // from here.
-      if(!ReifEllipsisLoc.isValid())
-        return true;
-      isVariadicReification = true;
-      llvm::outs() << "5\n";
-
-      SourceLocation LPLoc = Parens.getOpenLocation();
-      SourceLocation RPLoc = Parens.getCloseLocation();
-      auto ExpandedExprs =
-        Actions.ActOnVariadicReification(SourceLocation(), ReflRange.get(),
-                                         LPLoc, ReifEllipsisLoc, RPLoc);
-      
       for(auto ConstantValue : ExpandedExprs) {
         ParsedTemplateArgument Arg
-          (ParsedTemplateArgument::NonType, ConstantValue, ValueOfLoc);
+          (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
         TemplateArgs.push_back(Arg);
       }
     }
-    
-    if(!isVariadicReification) {
+
+    if (!isVariadicReification) {
       ParsedTemplateArgument Arg = ParseTemplateArgument();
       SourceLocation EllipsisLoc;
       if (TryConsumeToken(tok::ellipsis, EllipsisLoc))

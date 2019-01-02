@@ -318,6 +318,11 @@ public:
   /// language.
   bool isCPlusPlusKeyword(const LangOptions &LangOpts) const;
 
+  // Return true if this token is a C++ Reflection keyword
+  bool isReflectionKeyword(const LangOptions &LangOpts) const;
+
+  bool isVariadicReificationKeyword(const LangOptions &LangOpts) const;
+
   /// Get and set FETokenInfo. The language front-end is allowed to associate
   /// arbitrary metadata with this token.
   void *getFETokenInfo() const { return FETokenInfo; }
