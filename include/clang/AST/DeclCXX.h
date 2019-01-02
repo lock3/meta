@@ -3852,8 +3852,8 @@ class DecompositionDecl final
                     SourceLocation LSquareLoc, QualType T,
                     TypeSourceInfo *TInfo, StorageClass SC,
                     ArrayRef<BindingDecl *> Bindings)
-      : VarDecl(Decomposition, C, DC, StartLoc, LSquareLoc, nullptr, T, TInfo,
-                SC),
+      : VarDecl(Decomposition, C, DC, StartLoc,
+                LSquareLoc, DeclarationName(), T, TInfo, SC),
         NumBindings(Bindings.size()) {
     std::uninitialized_copy(Bindings.begin(), Bindings.end(),
                             getTrailingObjects<BindingDecl *>());

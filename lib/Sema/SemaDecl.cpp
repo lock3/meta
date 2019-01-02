@@ -4843,7 +4843,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
     }
 
     Anon = VarDecl::Create(Context, Owner, DS.getBeginLoc(),
-                           Record->getLocation(), /*IdentifierInfo=*/nullptr,
+                           Record->getLocation(), DeclarationName(),
                            Context.getTypeDeclType(Record), TInfo, SC);
 
     // Default-initialize the implicit variable. This initialization will be
@@ -6299,8 +6299,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
     LookupResult &Previous, MultiTemplateParamsArg TemplateParamLists,
     bool &AddToScope, ArrayRef<BindingDecl *> Bindings) {
   QualType R = TInfo->getType();
-  DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
-  DeclarationName Name = NameInfo.getName();
+  DeclarationName Name = GetNameForDeclarator(D).getName();
 
   bool IsReflectionName
       = Name.getNameKind() == DeclarationName::CXXReflectedIdName;
@@ -6311,7 +6310,6 @@ NamedDecl *Sema::ActOnVariableDeclarator(
       auto &Decomp = D.getDecompositionDeclarator();
       if (!Decomp.bindings().empty()) {
         Name = Decomp.bindings()[0].Name;
-        NameInfo = DeclarationNameInfo(Name, D.getIdentifierLoc());
       }
     } else if (!Name.getAsIdentifierInfo()) {
       Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
@@ -6464,7 +6462,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
   TemplateParameterList *TemplateParams = nullptr;
   if (!getLangOpts().CPlusPlus) {
     NewVD = VarDecl::Create(Context, DC, D.getBeginLoc(),
-                            NameInfo, R, TInfo, SC);
+                            D.getIdentifierLoc(), Name, R, TInfo, SC);
 
     if (R->getContainedDeducedType())
       ParsingInitForAutoVars.insert(NewVD);
@@ -6590,7 +6588,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                                         Bindings);
     } else
       NewVD = VarDecl::Create(Context, DC, D.getBeginLoc(),
-                              NameInfo, R, TInfo, SC);
+                              D.getIdentifierLoc(), Name, R, TInfo, SC);
 
     // If this is supposed to be a variable template, create it as such.
     if (IsVariableTemplate) {

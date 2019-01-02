@@ -1900,10 +1900,10 @@ const char *VarDecl::getStorageClassSpecifierString(StorageClass SC) {
 }
 
 VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
-                 SourceLocation StartLoc, SourceLocation IdLoc,
-                 IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                 SourceLocation StartLoc, SourceLocation NameLoc,
+                 const DeclarationName &Name, QualType T, TypeSourceInfo *TInfo,
                  StorageClass SC)
-    : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
+    : DeclaratorDecl(DK, DC, NameLoc, Name, T, TInfo, StartLoc),
       redeclarable_base(C) {
   static_assert(sizeof(VarDeclBitfields) <= sizeof(unsigned),
                 "VarDeclBitfields too large!");
@@ -1916,40 +1916,16 @@ VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
   // Everything else is implicitly initialized to false.
 }
 
-VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
-                 SourceLocation StartLoc, DeclarationNameInfo NameInfo,
-                 QualType T, TypeSourceInfo *TInfo,
-                 StorageClass SC)
-    : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
-                     StartLoc),
-      redeclarable_base(C), Init() {
-  static_assert(sizeof(VarDeclBitfields) <= sizeof(unsigned),
-                "VarDeclBitfields too large!");
-  static_assert(sizeof(ParmVarDeclBitfields) <= sizeof(unsigned),
-                "ParmVarDeclBitfields too large!");
-  static_assert(sizeof(NonParmVarDeclBitfields) <= sizeof(unsigned),
-                "NonParmVarDeclBitfields too large!");
-  AllBits = 0;
-  VarDeclBits.SClass = SC;
-  // Everything else is implicitly initialized to false.
-}
-
 VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
-                         SourceLocation StartL, SourceLocation IdL,
-                         IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
-                         StorageClass S) {
-  return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, Id, T, TInfo, S);
-}
-
-VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
-                         SourceLocation StartL, DeclarationNameInfo NameInfo, 
+                         SourceLocation StartL,
+                         SourceLocation NameLoc, const DeclarationName &Name,
                          QualType T, TypeSourceInfo *TInfo, StorageClass S) {
-  return new (C, DC) VarDecl(Var, C, DC, StartL, NameInfo, T, TInfo, S);
+  return new (C, DC) VarDecl(Var, C, DC, StartL, NameLoc, Name, T, TInfo, S);
 }
 
 VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
-      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), DeclarationName(),
               QualType(), nullptr, SC_None);
 }
 
