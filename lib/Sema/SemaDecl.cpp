@@ -6302,18 +6302,18 @@ NamedDecl *Sema::ActOnVariableDeclarator(
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
 
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
-
-  if (Name.getNameKind() != DeclarationName::CXXReflectedIdName) {
+  bool IsReflectionName
+      = Name.getNameKind() == DeclarationName::CXXReflectedIdName;
+  if (!IsReflectionName) {
     if (D.isDecompositionDeclarator()) {
       // Take the name of the first declarator as our name for diagnostic
       // purposes.
       auto &Decomp = D.getDecompositionDeclarator();
       if (!Decomp.bindings().empty()) {
-        II = Decomp.bindings()[0].Name;
-        Name = II;
+        Name = Decomp.bindings()[0].Name;
+        NameInfo = DeclarationNameInfo(Name, D.getIdentifierLoc());
       }
-    } else if (!II) {
+    } else if (!Name.getAsIdentifierInfo()) {
       Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
       return nullptr;
     }
@@ -6463,8 +6463,8 @@ NamedDecl *Sema::ActOnVariableDeclarator(
   VarTemplateDecl *NewTemplate = nullptr;
   TemplateParameterList *TemplateParams = nullptr;
   if (!getLangOpts().CPlusPlus) {
-    NewVD = VarDecl::Create(Context, DC, D.getBeginLoc(), D.getIdentifierLoc(),
-                            II, R, TInfo, SC);
+    NewVD = VarDecl::Create(Context, DC, D.getBeginLoc(),
+                            NameInfo, R, TInfo, SC);
 
     if (R->getContainedDeducedType())
       ParsingInitForAutoVars.insert(NewVD);
@@ -6541,7 +6541,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
         // about it, but allow the declaration of the variable.
         Diag(TemplateParams->getTemplateLoc(),
              diag::err_template_variable_noparams)
-          << II
+          << Name.getAsIdentifierInfo()
           << SourceRange(TemplateParams->getTemplateLoc(),
                          TemplateParams->getRAngleLoc());
         TemplateParams = nullptr;
