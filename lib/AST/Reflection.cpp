@@ -1527,12 +1527,26 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   llvm_unreachable("invalid reflection selector");
 }
 
-static StringLiteral *makeString(const Reflection &R, StringRef Str) {
-  QualType StrTy = R.Ctx->getConstantArrayType(R.Ctx->CharTy.withConst(),
-                                               llvm::APInt(32, Str.size() + 1),
-                                               ArrayType::Normal, 0);
-  return StringLiteral::Create(*R.Ctx, Str, StringLiteral::Ascii, false,
-                               StrTy, SourceLocation());
+// Creates a c-string of type const char *.
+//
+// This is morally equivalent to creating a global string.
+// During codegen, that's exactly how this is interpreted.
+static Expr *
+MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+  QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
+                                            llvm::APInt(32, Str.size() + 1),
+                                            ArrayType::Normal, 0);
+
+  // Create a string literal of type const char [L] where L
+  // is the number of characters in the StringRef.
+  StringLiteral *StrLit = StringLiteral::Create(Ctx, Str, StringLiteral::Ascii,
+                                                false, StrLitTy, Loc);
+
+  // Create an implicit cast expr so that we convert our const char [L]
+  // into an actual const char * for proper evaluation.
+  QualType StrTy = Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
+  return ImplicitCastExpr::Create(Ctx, StrTy, CK_ArrayToPointerDecay, StrLit,
+                                  /*BasePath=*/nullptr, VK_RValue);
 }
 
 bool getName(const Reflection R, APValue &Result) {
@@ -1546,11 +1560,12 @@ bool getName(const Reflection R, APValue &Result) {
     // Render the string of the type.
     PrintingPolicy PP = R.Ctx->getPrintingPolicy();
     PP.SuppressTagKeyword = true;
-    StringLiteral *Str = makeString(R, T.getAsString(PP));
+    Expr *Str = MakeConstCharPointer(*R.Ctx, T.getAsString(PP),
+                                     SourceLocation());
 
     // Generate the result value.
     Expr::EvalResult Eval;
-    if (!Str->EvaluateAsLValue(Eval, *R.Ctx))
+    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, *R.Ctx))
       return false;
     Result = Eval.Val;
     return true;
@@ -1559,11 +1574,12 @@ bool getName(const Reflection R, APValue &Result) {
   if (const NamedDecl *ND = dyn_cast<NamedDecl>(getReachableDecl(R))) {
     if (IdentifierInfo *II = ND->getIdentifier()) {
       // Get the identifier of the declaration.
-      StringLiteral *Str = makeString(R, II->getName());
+      Expr *Str = MakeConstCharPointer(*R.Ctx, II->getName(),
+                                       SourceLocation());
 
       // Generate the result value.
       Expr::EvalResult Eval;
-      if (!Str->EvaluateAsLValue(Eval, *R.Ctx))
+      if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, *R.Ctx))
         return false;
       Result = Eval.Val;
       return true;
