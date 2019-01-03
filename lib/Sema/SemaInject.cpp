@@ -529,8 +529,8 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   // FIXME: Check for re-declaration.
 
   VarDecl *Var = VarDecl::Create(
-      getContext(), Owner, D->getInnerLocStart(), DNI, TSI->getType(),
-      TSI, D->getStorageClass());
+      getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
+      TSI->getType(), TSI, D->getStorageClass());
   AddDeclSubstitution(D, Var);
 
   if (D->isNRVOVariable()) {
@@ -703,8 +703,8 @@ Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
   VarDecl *Var = VarDecl::Create(
-      getContext(), Owner, D->getLocation(), DNI, TSI->getType(),
-      TSI, SC_Static);
+      getContext(), Owner, D->getLocation(), DNI.getLoc(), DNI.getName(),
+      TSI->getType(), TSI, SC_Static);
   AddDeclSubstitution(D, Var);
 
   ApplyAccess(Modifiers, Var, D);
@@ -1117,17 +1117,17 @@ static VarDecl *GetVariableFromCapture(Expr *E) {
 // These are replaced by their values during injection.
 static void CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
   ValueDecl *Var = GetVariableFromCapture(E);
-  SourceLocation IdLoc = Var->getLocation();
-  IdentifierInfo *Id = Var->getIdentifier();
+  SourceLocation NameLoc = Var->getLocation();
+  DeclarationName Name = Var->getDeclName();
   QualType T = SemaRef.Context.DependentTy;
   TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
-  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, IdLoc, IdLoc,
-                                         Id, T, TSI, SC_Static);
+  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, NameLoc, NameLoc,
+                                         Name, T, TSI, SC_Static);
   Placeholder->setConstexpr(true);
   Placeholder->setImplicit(true);
   Placeholder->setInitStyle(VarDecl::CInit);
   Placeholder->setInit(
-      new (SemaRef.Context) OpaqueValueExpr(IdLoc, T, VK_RValue));
+      new (SemaRef.Context) OpaqueValueExpr(NameLoc, T, VK_RValue));
   Placeholder->setReferenced(true);
   Placeholder->markUsed(SemaRef.Context);
   Frag->addDecl(Placeholder);

@@ -980,10 +980,6 @@ protected:
           SourceLocation NameLoc, const DeclarationName &Name, QualType T,
           TypeSourceInfo *TInfo, StorageClass SC);
 
-  VarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-          DeclarationNameInfo NameInfo, QualType T, TypeSourceInfo *TInfo, 
-          StorageClass SC);
-
   using redeclarable_base = Redeclarable<VarDecl>;
 
   VarDecl *getNextRedeclarationImpl() override {
@@ -1012,10 +1008,6 @@ public:
   static VarDecl *Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartLoc,
                          SourceLocation NameLoc, const DeclarationName &Name,
-                         QualType T, TypeSourceInfo *TInfo, StorageClass S);
-
-  static VarDecl *Create(ASTContext &C, DeclContext *DC,
-                         SourceLocation StartLoc, DeclarationNameInfo NameInfo, 
                          QualType T, TypeSourceInfo *TInfo, StorageClass S);
 
   static VarDecl *CreateDeserialized(ASTContext &C, unsigned ID);
