@@ -11081,8 +11081,8 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
     return Success(Result, E);
   }
   case ReflectionOperand::Namespace: {
-    NamespaceName *NsName = Ref.getAsNamespace();
-    APValue Result(RK_declaration, NsName->getNamespaceAsDecl());
+    NamespaceName &&NsName = Ref.getAsNamespace();
+    APValue Result(RK_declaration, NsName.getNamespaceAsDecl());
     return Success(Result, E);
   }
   case ReflectionOperand::Expression: {

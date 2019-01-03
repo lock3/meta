@@ -8684,7 +8684,7 @@ public:
   ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, TemplateName N,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
-  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, NamespaceName *N,
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, NamespaceName N,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
   ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, Expr *E,

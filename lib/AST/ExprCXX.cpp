@@ -1492,7 +1492,7 @@ CXXReflectExpr::CXXReflectExpr(QualType T, TemplateName Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, Arg.isDependent(), Arg.isDependent(), false), Ref(Arg) { }
 
-CXXReflectExpr::CXXReflectExpr(QualType T, NamespaceName *Arg)
+CXXReflectExpr::CXXReflectExpr(QualType T, NamespaceName Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, false, false, false), Ref(Arg) { }
 
@@ -1529,7 +1529,7 @@ CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
 }
 
 CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
-                                       SourceLocation KW, NamespaceName *Arg,
+                                       SourceLocation KW, NamespaceName Arg,
                                        SourceLocation LP, SourceLocation RP) {
   CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
   E->setKeywordLoc(KW);

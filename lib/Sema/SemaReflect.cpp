@@ -101,12 +101,12 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
 
     bool IsQualified = !SS.isEmpty();
     if (IsQualified) {
-      NamespaceName *Arg = new (Context) NamespaceName(RNS, SS.getScopeRep());
-      return BuildCXXReflectExpr(Loc, Arg, LP, RP);
+      QualifiedNamespaceName *QNS
+        = new (Context) QualifiedNamespaceName(RNS, SS.getScopeRep());
+      return BuildCXXReflectExpr(Loc, NamespaceName(QNS), LP, RP);
     }
 
-    NamespaceName *Arg = new (Context) NamespaceName(RNS);
-    return BuildCXXReflectExpr(Loc, Arg, LP, RP);
+    return BuildCXXReflectExpr(Loc, NamespaceName(RNS), LP, RP);
   }
   case ParsedReflectionOperand::Expression: {
     Expr *Arg = Ref.getAsExpr();
@@ -127,7 +127,7 @@ ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, TemplateName N,
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
 }
 
-ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, NamespaceName *N,
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, NamespaceName N,
                                      SourceLocation LP, SourceLocation RP) {
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, N, LP, RP);
 }
