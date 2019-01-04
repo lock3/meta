@@ -2773,6 +2773,8 @@ private:
   //===--------------------------------------------------------------------===//
   // Metaprogramming
 
+  // C++ 14.3: Template arguments [temp.arg]
+  typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
   ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
@@ -2792,8 +2794,14 @@ private:
   ExprResult ParseCXXConcatenateExpression();
 
   // Parse a variadic reification. Returns true on error.
-  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
+  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
                                 bool& isVariadicReification);
+  bool ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types,
+                                bool& isVariadicReification);
+  bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc,
+                               bool &isVariadicReification);
+  bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc,
+                            bool &isVariadicReification);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
@@ -2949,8 +2957,6 @@ private:
                                  bool IdentifierHasName);
   void DiagnoseMisplacedEllipsisInDeclarator(SourceLocation EllipsisLoc,
                                              Declarator &D);
-  // C++ 14.3: Template arguments [temp.arg]
-  typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
   bool ParseGreaterThanInTemplateList(SourceLocation &RAngleLoc,
                                       bool ConsumeLastToken,

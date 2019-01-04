@@ -1301,6 +1301,67 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
   return Tok.isOneOf(tok::greater, tok::comma);
 }
 
+/// Parse a non-type variadic reification (valueof, unqualid, idexpr)
+/// Returns true on error.
+bool
+Parser::ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc,
+                                bool &isVariadicReification)
+{
+  llvm::SmallVector<Expr *, 4> Exprs;
+  isVariadicReification = false;
+
+  if (ParseVariadicReification(Exprs, isVariadicReification))
+    return true;
+  
+  // If the parse succeeded, this is a variadic reification.
+  isVariadicReification = true;
+
+  // Check each argument and add it to the argument list.n
+  for (auto ConstantValue : Exprs) {
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
+/// Parse a type variadic reification (typename)
+/// Returns true on error.
+bool
+Parser::ParseTypeReification(TemplateArgList &Args,
+                             SourceLocation KWLoc, bool &isVariadicReification)
+{
+  llvm::SmallVector<QualType, 4> Types;
+  isVariadicReification = false;
+
+  if (ParseVariadicReification(Types, isVariadicReification))
+    return true;
+  isVariadicReification = true;
+
+  for (auto ReflectedType : Types) {
+    const Type *T = ReflectedType.getTypePtr();
+    void *OpaqueT = reinterpret_cast<void*>(const_cast<Type *>(T));
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::Type, OpaqueT, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
 /// ParseTemplateArgumentList - Parse a C++ template-argument-list
 /// (C++ [temp.names]). Returns true if there was an error.
 ///
@@ -1319,22 +1380,22 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SourceLocation KWLoc = Tok.getLocation();
-      llvm::SmallVector<Expr *, 4> ExpandedExprs;
+      bool isVariadicReification;
 
-      bool isVariadicReification = false;
-      if (ParseVariadicReification(ExpandedExprs, isVariadicReification))
-        return true;
-
-      for(auto ConstantValue : ExpandedExprs) {
-        ParsedTemplateArgument Arg
-          (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
-
-        if (Arg.isInvalid()) {
-          SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-          return true;
-        }
-
-        TemplateArgs.push_back(Arg);
+      // Note that failure to parse a variadic reification is not necessarily
+      // a failure. It could have been a regular reification.
+      switch(TokII->getTokenID()) {
+      case tok::kw_typename:
+        return ParseTypeReification(TemplateArgs, KWLoc, isVariadicReification);
+      case tok::kw_valueof:
+        return ParseNonTypeReification(TemplateArgs, KWLoc, isVariadicReification);
+      // TODO: implement
+      case tok::kw_unqualid:
+      case tok::kw_idexpr:
+        return false;
+      // namespace has no meaning here.
+      default:
+        return false;
       }
     }
     else {

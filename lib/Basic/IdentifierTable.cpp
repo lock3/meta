@@ -298,7 +298,15 @@ bool IdentifierInfo::isReflectionKeyword(const LangOptions &LangOpts) const {
   // using LangOptions without Reflection support.
   LangOptions LangOptsNoRefl = LangOpts;
   LangOptsNoRefl.Reflection = false;
-  return !isKeyword(LangOptsNoRefl);
+
+  // typename and namespace serve non-Reflection purposes and thus
+  // will still be valid keywords if Reflection is not available.
+  bool MultipurposeKW = (getTokenID() == tok::kw_typename) ||
+    (getTokenID() == tok::kw_namespace);
+  // If this is not a keyword without Reflection enabled
+  // (except for multipurpose keywords), then this is a
+  // a Reflection keyword.
+  return !isKeyword(LangOptsNoRefl) || MultipurposeKW;
 }
 
 bool

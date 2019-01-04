@@ -2940,7 +2940,7 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
         Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
       } else {
         // This was a regular reification.
-        ArgExpr = Exprs.front();
+        SawError = true;
       }
     } else
       ArgExpr = ParseAssignmentExpression();

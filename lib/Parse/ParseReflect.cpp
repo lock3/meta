@@ -452,7 +452,7 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
                                          Parens.getCloseLocation());
 
 bool
-Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
+Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
                                  bool& isVariadicReification)
 {
   IdentifierInfo *KW = Tok.getIdentifierInfo();
@@ -467,10 +467,8 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
 
   // FIXME: differentiate this return from an error, as
   // returning here means we have a non-variadic reification.
-  if(!EllipsisLoc.isValid()) {
-    
+  if(!EllipsisLoc.isValid())
     return false;
-  }
   isVariadicReification = true;
 
   ExprResult ReflRange = ParseConstantExpression();
@@ -497,5 +495,52 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4>& Exprs,
   SourceLocation RPLoc = Parens.getCloseLocation();
   Exprs = Actions.ActOnVariadicReification(KWLoc, KW, ReflRange.get(),
                                            LPLoc, EllipsisLoc, RPLoc);
+  return false;
+}
+
+bool
+Parser::ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types,
+                                 bool& isVariadicReification)
+{
+  IdentifierInfo *KW = Tok.getIdentifierInfo();
+  SourceLocation KWLoc = ConsumeToken();
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return false;
+
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  // FIXME: differentiate this return from an error, as
+  // returning here means we have a non-variadic reification.
+  if(!EllipsisLoc.isValid())
+    return false;
+  isVariadicReification = true;
+
+  ExprResult ReflRange = ParseConstantExpression();
+
+  // ReflRange has to be a range, so therefore it must be a declref
+  DeclRefExpr *ReflRangeDeclRef =
+    dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
+  // TODO: output error explaining this must be a declaration
+  if(!ReflRangeDeclRef)
+    return true;
+
+  // TODO: only mark this in a non-dependent context?
+  ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
+  
+  if (ReflRange.isInvalid()) {
+    Parens.skipToEnd();
+    return true;
+  }
+
+  if (Parens.consumeClose()) 
+    return true;
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  Types = Actions.ActOnVariadicTypename(KWLoc, ReflRange.get(),
+                                        LPLoc, EllipsisLoc, RPLoc);
   return false;
 }

@@ -500,6 +500,19 @@ getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
     (SourceLocation(), Expression, SourceLocation(), SourceLocation());
 }
 
+static ExprResult
+getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression)
+{
+  return SemaRef.ActOnCXXIdExprExpr
+    (SourceLocation(), Expression, SourceLocation(), SourceLocation());
+}
+
+static ExprResult
+getAsCXXUnqualidExpr(Sema &SemaRef, Expr *Expression)
+{
+  return ExprError();
+}
+
 static QualType
 getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
 {
@@ -530,11 +543,14 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
     case tok::kw_valueof:
       C = getAsCXXValueOfExpr(*this, *Traverser);
       break;
+    case tok::kw_idexpr:
+      C = getAsCXXIdExprExpr(*this, *Traverser);
+      break;
+    case tok::kw_unqualid:
+      C = getAsCXXUnqualidExpr(*this, *Traverser);
+      break;
     case tok::kw_typename:
     case tok::kw_namespace:
-    case tok::kw_unqualid:
-    case tok::kw_idexpr:
-      break;
     default: // silence warning
       break;
     }
@@ -545,6 +561,31 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
   }
 
   return Expressions;
+}
+
+llvm::SmallVector<QualType, 4>
+Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
+                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+                            SourceLocation RParenLoc)
+{
+  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
+  StmtResult Expansion = Bldr.BuildUninstantiated();
+
+  // Traverse the range now and add the exprs to the vector
+  RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
+                           Bldr.getBeginCallRef());
+
+  llvm::SmallVector<QualType, 4> Types;
+
+  while(!Traverser) {
+    QualType T = getAsCXXReflectedType(*this, *Traverser);
+    Types.push_back(T);
+
+    ++Traverser;
+  }
+
+  return Types;
+  
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

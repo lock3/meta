@@ -2986,15 +2986,13 @@ Sema::ExpansionStatementBuilder::Build()
   // FIXME: if the lookup of NNS::get fails, assume this is is not a tuple
   // rather than outputting an error. Replace !IsConstexpr check with
   // failure to find NNS::get.
-  if(!IsConstexpr) {
-    ForStmt = BuildExpansionOverTuple();
-    if (!ForStmt.isInvalid())
-      return Finish(ForStmt);
-  } else {
-    ForStmt = BuildExpansionOverRange();
-    if (!ForStmt.isInvalid())
-      return Finish(ForStmt);
-  }
+  ForStmt = BuildExpansionOverTuple();
+  if (!ForStmt.isInvalid())
+    return Finish(ForStmt);
+    
+  ForStmt = BuildExpansionOverRange();
+  if (!ForStmt.isInvalid())
+    return Finish(ForStmt);
 
   // If that doesn't succeed, try with a destructurable class.
   ForStmt = BuildExpansionOverClass();

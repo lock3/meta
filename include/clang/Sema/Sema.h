@@ -8882,6 +8882,12 @@ public:
                            SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc,
                            SourceLocation RParenLoc);
+  llvm::SmallVector<QualType, 4>
+  ActOnVariadicTypename(SourceLocation KWLoc,
+                        Expr *Range,
+                        SourceLocation LParenLoc,
+                        SourceLocation EllipsisLoc,
+                        SourceLocation RParenLoc);
 
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
