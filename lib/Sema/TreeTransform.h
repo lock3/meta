@@ -2166,8 +2166,10 @@ public:
                                            Sema::BFRK_Rebuild, false);
   }
 
-  StmtResult RebuildCXXInjectionStmt(SourceLocation Loc, Expr *Ref) {
-    return getSema().BuildCXXInjectionStmt(Loc, Ref);
+  StmtResult RebuildCXXInjectionStmt(SourceLocation Loc,
+                           const CXXInjectionContextSpecifier &ContextSpecifier,
+                                     Expr *Ref) {
+    return getSema().BuildCXXInjectionStmt(Loc, ContextSpecifier, Ref);
   }
 
   /// Build a new C++0x range-based for statement.
@@ -8030,7 +8032,7 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
   ExprResult E = TransformExpr(S->getOperand());
   if (E.isInvalid())
     return StmtError();
-  return RebuildCXXInjectionStmt(S->getBeginLoc(), E.get());
+  return RebuildCXXInjectionStmt(S->getBeginLoc(), S->getContextSpecifier(), E.get());
 }
 
 template<typename Derived>

@@ -1800,6 +1800,9 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ Code Injection
 
+  Decl *ParseNamespaceDeclForInjectionContext();
+  bool ParseOptionalCXXInjectionContextSpecifier(
+                                       CXXInjectionContextSpecifier &Specifier);
   StmtResult ParseCXXInjectionStatement();
 
   //===--------------------------------------------------------------------===//

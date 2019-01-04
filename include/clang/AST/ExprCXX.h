@@ -19,6 +19,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclarationName.h"
+#include "clang/AST/CXXInjectionContextSpecifier.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
@@ -58,6 +59,26 @@ class IdentifierInfo;
 class LambdaCapture;
 class NonTypeTemplateParmDecl;
 class TemplateParameterList;
+
+/// An injection records a code generation effect resulting from evaluation.
+/// This is a set containing type and evaluated value information,
+/// which shall be used in the injection process.
+struct InjectionEffect {
+  /// The type of the expression evaluated to produce this effect.
+  const QualType ExprType;
+
+  /// The evaluated value of the expression evaluated to produce this effect.
+  const APValue ExprValue;
+
+  /// The context specifier describing where this
+  /// effect should be injected into.
+  const CXXInjectionContextSpecifier ContextSpecifier;
+
+  InjectionEffect(QualType ExprType, APValue ExprValue,
+                  const CXXInjectionContextSpecifier &ContextSpecifier)
+    : ExprType(ExprType), ExprValue(ExprValue),
+      ContextSpecifier(ContextSpecifier) { }
+};
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.

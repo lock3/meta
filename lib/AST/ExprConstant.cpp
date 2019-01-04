@@ -4308,9 +4308,12 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       }
     }
 
+    CXXInjectionContextSpecifier &&ContextSpecifier = IS->getContextSpecifier();
+
     // Queue the injection as a side effect.
     Info.EvalStatus.InjectionEffects->emplace_back(OperandType,
-                                                   OperandValue);
+                                                   OperandValue,
+                                                   ContextSpecifier);
     return ESR_Succeeded;
   }
 

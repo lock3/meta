@@ -10139,8 +10139,17 @@ public:
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                   SmallVectorImpl<Expr *> &Captures);
 
-  StmtResult ActOnCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
-  StmtResult BuildCXXInjectionStmt(SourceLocation Loc, Expr *Fragment);
+  bool ActOnCXXSpecifiedNamespaceInjectionContext(SourceLocation BeginLoc,
+                                                  Decl *NamespaceDecl,
+                                        CXXInjectionContextSpecifier &Specifier,
+                                                  SourceLocation EndLoc);
+  bool ActOnCXXParentNamespaceInjectionContext(SourceLocation KWLoc,
+                                       CXXInjectionContextSpecifier &Specifier);
+
+  StmtResult ActOnCXXInjectionStmt(SourceLocation Loc,
+          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Fragment);
+  StmtResult BuildCXXInjectionStmt(SourceLocation Loc,
+          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Fragment);
 
   bool ApplyInjection(SourceLocation POI, InjectionEffect &IE);
   bool ApplyEffects(SourceLocation POI,

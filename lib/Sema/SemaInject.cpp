@@ -1411,10 +1411,31 @@ ExprResult Sema::BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
       Captures);
 }
 
+
+/// Returns true if invalid.
+bool
+Sema::ActOnCXXSpecifiedNamespaceInjectionContext(SourceLocation BeginLoc,
+                                                 Decl *NamespaceDecl,
+                                        CXXInjectionContextSpecifier &Specifier,
+                                                 SourceLocation EndLoc) {
+  Specifier = CXXInjectionContextSpecifier(BeginLoc, NamespaceDecl, EndLoc);
+  return false;
+}
+
+/// Returns true if invalid.
+bool
+Sema::ActOnCXXParentNamespaceInjectionContext(SourceLocation KWLoc,
+                                      CXXInjectionContextSpecifier &Specifier) {
+  Specifier = CXXInjectionContextSpecifier(
+                          KWLoc, CXXInjectionContextSpecifier::ParentNamespace);
+  return false;
+}
+
 /// Returns an injection statement.
 StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc,
+                           const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *FragmentOrReflection) {
-  return BuildCXXInjectionStmt(Loc, FragmentOrReflection);
+  return BuildCXXInjectionStmt(Loc, ContextSpecifier, FragmentOrReflection);
 }
 
 static bool
@@ -1445,7 +1466,9 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
 }
 
 /// Returns an injection statement.
-StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Operand) {
+StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
+                           const CXXInjectionContextSpecifier &ContextSpecifier,
+                                       Expr *Operand) {
   // If the operand is not dependent, it must be resolveable either
   // to an injectable reflection, or a fragment.
   //
@@ -1463,7 +1486,7 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc, Expr *Operand) {
                                        CK_LValueToRValue, Operand,
                                        nullptr, VK_RValue);
 
-  return new (Context) CXXInjectionStmt(Loc, Operand);
+  return new (Context) CXXInjectionStmt(Loc, ContextSpecifier, Operand);
 }
 
 // Returns an integer value describing the target context of the injection.
@@ -1608,6 +1631,32 @@ GetReflectionFromFrag(Sema &S, InjectionEffect &IE) {
   return Reflection(S.Context, APRefl);
 }
 
+static Decl *
+GetInjecteeDecl(Sema &S, DeclContext *CurContext,
+                const CXXInjectionContextSpecifier& ContextSpecifier) {
+  Decl *CurContextDecl = Decl::castFromDeclContext(CurContext);
+
+  switch (ContextSpecifier.getContextKind()) {
+  case CXXInjectionContextSpecifier::CurrentContext:
+    return CurContextDecl;
+
+  case CXXInjectionContextSpecifier::ParentNamespace: {
+    if (isa<TranslationUnitDecl>(CurContextDecl)) {
+      S.Diag(ContextSpecifier.getBeginLoc(),
+             diag::err_injecting_into_parent_of_global_namespace);
+      return nullptr;
+    }
+
+    return Decl::castFromDeclContext(CurContextDecl->getDeclContext());
+  }
+
+  case CXXInjectionContextSpecifier::SpecifiedNamespace:
+    return ContextSpecifier.getSpecifiedNamespace();
+  }
+
+  llvm_unreachable("Invalid injection context specifier.");
+}
+
 static const Decl *
 GetFragInjectionDecl(Sema &S, InjectionEffect &IE) {
   Reflection &&Refl = GetReflectionFromFrag(S, IE);
@@ -1692,7 +1741,7 @@ static bool ApplyReflectionInjection(Sema &S, SourceLocation POI,
 }
 
 bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
-  Decl *Injectee = Decl::castFromDeclContext(CurContext);
+  Decl *Injectee = GetInjecteeDecl(*this, CurContext, IE.ContextSpecifier);
   if (!Injectee)
     return false;
 

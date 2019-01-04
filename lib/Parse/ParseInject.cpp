@@ -195,7 +195,50 @@ ExprResult Parser::ParseCXXFragmentExpression() {
   return Actions.ActOnCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
-/// \brief Parse a C++ injection statement.
+Decl *Parser::ParseNamespaceDeclForInjectionContext() {
+  // Check for the global namespace
+  if (Tok.is(tok::coloncolon) && NextToken().is(tok::r_paren)) {
+    ConsumeToken(); // Eat `::`
+    return Actions.Context.getTranslationUnitDecl();
+  }
+
+  CXXScopeSpec SS;
+  SourceLocation IdLoc;
+  return ParseNamespaceName(SS, IdLoc);
+}
+
+/// Parses an optional injection context specifier.
+///
+/// Returns true if invalid.
+bool
+Parser::ParseOptionalCXXInjectionContextSpecifier(
+                                      CXXInjectionContextSpecifier &Specifier) {
+  if (Tok.is(tok::kw_namespace)) {
+    SourceLocation KWLocation = ConsumeToken();
+    if (Tok.is(tok::l_paren)) {
+      BalancedDelimiterTracker T(*this, tok::l_paren);
+      T.expectAndConsume();
+
+      Decl *NamespaceDecl = ParseNamespaceDeclForInjectionContext();
+      if (!NamespaceDecl) {
+        T.skipToEnd();
+        return true;
+      }
+
+      T.consumeClose();
+
+      return Actions.ActOnCXXSpecifiedNamespaceInjectionContext(
+                    KWLocation, NamespaceDecl, Specifier, T.getCloseLocation());
+    } else {
+      return Actions.ActOnCXXParentNamespaceInjectionContext(
+                                                         KWLocation, Specifier);
+    }
+  }
+
+  return false;
+}
+
+/// Parse a C++ injection statement.
 ///
 ///   injection-statement:
 ///     '->' fragment ';'
@@ -206,12 +249,16 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   assert(Tok.is(tok::arrow) && "expected '->' token");
   SourceLocation Loc = ConsumeToken();
 
+  CXXInjectionContextSpecifier ICS;
+  if (ParseOptionalCXXInjectionContextSpecifier(ICS))
+    return StmtError();
+
   /// Get a fragment as the operand of the decl.
   ExprResult FragmentOrReflection = ParseExpression();
   if (FragmentOrReflection.isInvalid())
     return StmtResult();
 
-  return Actions.ActOnCXXInjectionStmt(Loc, FragmentOrReflection.get());
+  return Actions.ActOnCXXInjectionStmt(Loc, ICS, FragmentOrReflection.get());
 }
 
 

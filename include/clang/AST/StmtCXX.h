@@ -17,6 +17,7 @@
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/CXXInjectionContextSpecifier.h"
 #include "clang/AST/Stmt.h"
 #include "llvm/Support/Compiler.h"
 
@@ -640,15 +641,24 @@ public:
 class CXXInjectionStmt : public Stmt {
   SourceLocation IntroLoc;
 
+  /// The context to inject into.
+  CXXInjectionContextSpecifier InjectionContext;
+
   /// The reflection or fragment being injected.
   Stmt *Operand;
-
 public:
-  CXXInjectionStmt(SourceLocation IntroLoc, Expr *Operand)
-    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc), Operand(Operand) {}
+  CXXInjectionStmt(SourceLocation IntroLoc,
+                   CXXInjectionContextSpecifier InjectionContext, Expr *Operand)
+    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc),
+      InjectionContext(InjectionContext), Operand(Operand) {}
 
   explicit CXXInjectionStmt(EmptyShell Empty)
       : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Operand() {}
+
+  /// Retrieve the destination context information.
+  CXXInjectionContextSpecifier getContextSpecifier() const {
+    return InjectionContext;
+  }
 
   /// Retrieve the operand of the injection statement.
   Expr *getOperand() const { return reinterpret_cast<Expr *>(Operand); }

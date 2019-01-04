@@ -78,7 +78,6 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
   return Actions.ActOnReflectedExpression(E.get());
 }
 
-
 /// Parse a reflect-expression.
 ///
 /// \verbatim
@@ -97,8 +96,10 @@ ExprResult Parser::ParseCXXReflectExpression() {
     return ExprError();
 
   ParsedReflectionOperand PR = ParseCXXReflectOperand();
-  if (PR.isInvalid())
+  if (PR.isInvalid()) {
+    T.skipToEnd();
     return ExprError();
+  }
 
   if (T.consumeClose())
     return ExprError();

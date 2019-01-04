@@ -52,6 +52,7 @@ namespace clang {
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
+  class InjectionEffect;
 
 /// A simple array of base specifiers.
 typedef SmallVector<CXXBaseSpecifier*, 4> CXXCastPath;
@@ -98,20 +99,6 @@ struct SubobjectAdjustment {
     this->Ptr.MPT = MPT;
     this->Ptr.RHS = RHS;
   }
-};
-
-/// An injection records a code generation effect resulting from evaluation.
-/// This is a set containing type and evaluated value information,
-/// which shall be used in the injection process.
-struct InjectionEffect {
-  /// The type of the expression evaluated to produce this effect.
-  QualType ExprType;
-
-  /// The evaluated value of the expression evaluated to produce this effect.
-  APValue ExprValue;
-
-  InjectionEffect(QualType ExprType, APValue ExprValue)
-    : ExprType(ExprType), ExprValue(ExprValue) { }
 };
 
 /// This represents one expression.  Note that Expr's are subclasses of Stmt.
