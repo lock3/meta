@@ -496,6 +496,8 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
 static ExprResult
 getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
 {
+  llvm::outs() << "The expression:\n";
+  Expression->dump();
   return SemaRef.ActOnCXXValueOfExpr
     (SourceLocation(), Expression, SourceLocation(), SourceLocation());
 }
@@ -508,9 +510,44 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression)
 }
 
 static ExprResult
-getAsCXXUnqualidExpr(Sema &SemaRef, Expr *Expression)
+getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
-  return ExprError();
+  llvm::SmallVector<Expr *, 1> Parts = {Expression};
+  // Reflection(Expression->EvaluateAsRvalue
+  // ExprResult Ref = SemaRef.DefaultLvalueConversion(Expression);
+  // Expr::EvalResult Evaluation;
+  // // Ref.get()->EvaluateAsConstantExpr(Evaluation, Expr::EvaluateForCodeGen,
+  // //                                   SemaRef.Context);
+  // Expression->EvaluateAsConstantExpr(Evaluation, Expr::EvaluateForCodeGen,
+  //                                    SemaRef.Context);
+
+  UnqualifiedId Result;
+  if(SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
+    return ExprError();
+
+  CXXScopeSpec TempSS;
+  ExprResult BuiltExpr =
+    SemaRef.ActOnIdExpression(SemaRef.getCurScope(), TempSS,
+                              SourceLocation(), Result,
+                              /*HasTrailingLParen=*/false,
+                              /*IsAddresOfOperand=*/false);
+
+  if(BuiltExpr.isInvalid())
+    return ExprError();
+  return BuiltExpr;
+  // DeclarationNameInfo DNI =
+  //   SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
+
+  // if (!DNI.getName())
+  //   return ExprError();
+
+  // UnresolvedSetImpl US;
+  // US.addDecl();
+
+  // UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr, nullptr,
+  //                              DNI, /*ADL=*/false, /*Overloaded=*/false,
+  //                              ...);
+
 }
 
 static QualType
@@ -547,7 +584,7 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
       C = getAsCXXIdExprExpr(*this, *Traverser);
       break;
     case tok::kw_unqualid:
-      C = getAsCXXUnqualidExpr(*this, *Traverser);
+      C = getAsCXXReflectedDeclname(*this, *Traverser);
       break;
     case tok::kw_typename:
     case tok::kw_namespace:
@@ -586,6 +623,32 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
 
   return Types;
   
+}
+
+llvm::SmallVector<UnqualifiedId, 4>
+Sema::ActOnVariadicDeclname(SourceLocation KWLoc, Expr *Range,
+                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+                            SourceLocation RParenLoc)
+{
+  // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
+  // StmtResult Expansion = Bldr.BuildUninstantiated();
+
+  // // Traverse the range now and add the Ids to the vector
+  // RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
+  //                          Bldr.getBeginCallRef());
+
+  // llvm::SmallVector<UnqualifiedId, 4> Ids;
+
+  // while(!Traverser) {
+  //   UnqualifiedId Name;
+  //   getAsCXXReflectedDeclname(*this, *Traverser, Name);
+  //   Ids.push_back(Name);
+
+  //   ++Traverser;
+  // }
+
+  // return Ids;
+
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

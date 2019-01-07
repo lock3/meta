@@ -2793,6 +2793,10 @@ private:
   ParsedTemplateArgument ParseReflectedTemplateArgument();
   ExprResult ParseCXXConcatenateExpression();
 
+  /// Returns true if reflection is enabled and the
+  /// current expression appears to be a variadic reifier.
+  bool isVariadicReification() const;
+  
   // Parse a variadic reification. Returns true on error.
   bool ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
                                 bool& isVariadicReification);

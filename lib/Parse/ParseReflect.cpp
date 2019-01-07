@@ -450,6 +450,24 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
   return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
                                          Parens.getOpenLocation(),
                                          Parens.getCloseLocation());
+/// Returns true if reflection is enabled and the
+/// current expression appears to be a variadic reifier.
+bool
+Parser::isVariadicReification() const
+{
+  // if(!tok::isAnyIdentifier(Tok.getKind()))
+  //   return false;
+  if(tok::isAnnotation(Tok.getKind()) || Tok.is(tok::raw_identifier))
+     return false;
+  IdentifierInfo *TokII = Tok.getIdentifierInfo();
+  // If Reflection is enabled, the current token is a
+  // a reification keyword, followed by an open parentheses,
+  // followed by an ellipsis, this is a variadic reifier.
+  return getLangOpts().Reflection && TokII &&
+    TokII->isReificationKeyword(getLangOpts())
+    && PP.LookAhead(0).getKind() == tok::l_paren
+    && PP.LookAhead(1).getKind() == tok::ellipsis;
+}
 
 bool
 Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,

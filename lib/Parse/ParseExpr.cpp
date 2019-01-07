@@ -2907,15 +2907,13 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       return true;
     }
 
-    bool isVariadicReification = false;
-    IdentifierInfo *TokII = Tok.getIdentifierInfo();
+    bool isVariadicReifier = isVariadicReification();
     ExprResult ArgExpr;
 
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
       ArgExpr = ParseBraceInitializer();
-    } else if (getLangOpts().Reflection && TokII &&
-              TokII->isVariadicReificationKeyword(getLangOpts())) {
+    } else if (isVariadicReifier) {
       llvm::SmallVector<Expr *, 4> ExpandedExprs;
 
       // If Reflection is enabled and a Reification keyword has appeared,
@@ -2924,9 +2922,9 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
 
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SawError = ParseVariadicReification(ExpandedExprs, isVariadicReification);
+      SawError = ParseVariadicReification(ExpandedExprs, isVariadicReifier);
 
-      if(isVariadicReification) {
+      if(isVariadicReifier) {
         // We need to insert several fake commas to get around error checking.
         // We only need size() - 1, since there is already a comma in front of
         // the reification parameter.
@@ -2947,10 +2945,10 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
 
     if (Tok.is(tok::ellipsis))
       ArgExpr = Actions.ActOnPackExpansion(ArgExpr.get(), ConsumeToken());
-    if (ArgExpr.isInvalid() && !isVariadicReification) {
+    if (ArgExpr.isInvalid() && !isVariadicReifier) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else if(!isVariadicReification) {
+    } else if(!isVariadicReifier) {
       Exprs.push_back(ArgExpr.get());
     }
 

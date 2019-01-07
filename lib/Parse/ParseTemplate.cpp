@@ -1374,9 +1374,7 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 
   do {
 
-    IdentifierInfo *TokII = Tok.getIdentifierInfo();
-    if (getLangOpts().Reflection && TokII &&
-       TokII->isVariadicReificationKeyword(getLangOpts())) {
+    if (isVariadicReification()) {
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SourceLocation KWLoc = Tok.getLocation();
@@ -1384,9 +1382,11 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 
       // Note that failure to parse a variadic reification is not necessarily
       // a failure. It could have been a regular reification.
-      switch(TokII->getTokenID()) {
+      switch(Tok.getIdentifierInfo()->getTokenID()) {
       case tok::kw_typename:
-        return ParseTypeReification(TemplateArgs, KWLoc, isVariadicReification);
+        llvm::outs() << "Hello world\n";
+          return ParseTypeReification(TemplateArgs, KWLoc, isVariadicReification);
+        break;
       case tok::kw_valueof:
         return ParseNonTypeReification(TemplateArgs, KWLoc, isVariadicReification);
       // TODO: implement

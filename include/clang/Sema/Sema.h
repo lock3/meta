@@ -8875,6 +8875,8 @@ public:
   };
 
 
+  bool isVariadicReification() const;
+  
   llvm::SmallVector<Expr *, 4>
   ActOnVariadicReification(SourceLocation KWLoc,
                            IdentifierInfo *KW,
@@ -8884,6 +8886,12 @@ public:
                            SourceLocation RParenLoc);
   llvm::SmallVector<QualType, 4>
   ActOnVariadicTypename(SourceLocation KWLoc,
+                        Expr *Range,
+                        SourceLocation LParenLoc,
+                        SourceLocation EllipsisLoc,
+                        SourceLocation RParenLoc);
+  llvm::SmallVector<UnqualifiedId, 4>
+  ActOnVariadicDeclname(SourceLocation KWLoc,
                         Expr *Range,
                         SourceLocation LParenLoc,
                         SourceLocation EllipsisLoc,
