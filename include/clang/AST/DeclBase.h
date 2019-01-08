@@ -1116,6 +1116,11 @@ public:
     IdentifierNamespace |= IDNS_NonMemberOperator;
   }
 
+  /// Specifies that this declaration was created implicitly in a
+  /// variadic reification expansion.
+  void setImplicitReifier() { isImplicitReifier = true; }
+  bool IsImplicitReifier() const { return isImplicitReifier; }
+
   static bool classofKind(Kind K) { return true; }
   static DeclContext *castToDeclContext(const Decl *);
   static Decl *castFromDeclContext(const DeclContext *);
@@ -1149,8 +1154,10 @@ private:
   void setDeclContextsImpl(DeclContext *SemaDC, DeclContext *LexicalDC,
                            ASTContext &Ctx);
 
+  bool isImplicitReifier = false;
+
 protected:
-  ASTMutationListener *getASTMutationListener() const;
+  ASTMutationListener *getASTMutationListener() const;  
 };
 
 /// Determine whether two declarations declare the same entity.

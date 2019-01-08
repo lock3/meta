@@ -3027,7 +3027,7 @@ Sema::ExpansionStatementBuilder::BuildUninstantiated()
   StmtResult ForStmt = BuildExpansionOverRange(/*Instantiate=*/false);
 
   if(!ForStmt.isInvalid())
-    return Finish(ForStmt);
+    return ForStmt;
 
   // FIXME: Diagnose this error.
   return StmtError();
@@ -6093,6 +6093,7 @@ StmtResult Sema::ActOnCapturedRegionEnd(Stmt *S) {
 void
 Sema::PushLoopExpansion(Stmt *S)
 {
+  llvm::outs() << "LOOP EXPANSION CONTEXT: " << CurContext->getDeclKindName() << '\n';
   assert(isa<FunctionDecl>(CurContext));
   FunctionDecl *F = cast<FunctionDecl>(CurContext);
   if (LoopExpansionStack.empty())

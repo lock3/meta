@@ -5984,7 +5984,8 @@ public:
                                        SourceRange SpecifierRange,
                                        bool Virtual, AccessSpecifier Access,
                                        TypeSourceInfo *TInfo,
-                                       SourceLocation EllipsisLoc);
+                                       SourceLocation EllipsisLoc,
+                                       bool VariadicReification = false);
 
   BaseResult ActOnBaseSpecifier(Decl *classdecl,
                                 SourceRange SpecifierRange,
@@ -5992,7 +5993,8 @@ public:
                                 bool Virtual, AccessSpecifier Access,
                                 ParsedType basetype,
                                 SourceLocation BaseLoc,
-                                SourceLocation EllipsisLoc);
+                                SourceLocation EllipsisLoc,
+                                bool VariadicReification = false);
 
   bool AttachBaseSpecifiers(CXXRecordDecl *Class,
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
@@ -8875,8 +8877,6 @@ public:
   };
 
 
-  bool isVariadicReification() const;
-  
   llvm::SmallVector<Expr *, 4>
   ActOnVariadicReification(SourceLocation KWLoc,
                            IdentifierInfo *KW,

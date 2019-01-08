@@ -15398,6 +15398,8 @@ void Sema::CleanupVarDeclMarking() {
     VarDecl *Var;
     SourceLocation Loc;
     if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
+      llvm::outs() << "Marking:\n";
+      DRE->dump();
       Var = cast<VarDecl>(DRE->getDecl());
       Loc = DRE->getLocation();
     } else if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
