@@ -1882,21 +1882,12 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
   if (CXXConstructorDecl *OldCtor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
     CXXConstructorDecl *NewCtor = cast<CXXConstructorDecl>(NewMethod);
 
-    int NumCtorInits = OldCtor->getNumCtorInitializers();
-    CXXCtorInitializer** NewCtorMem = new CXXCtorInitializer*[NumCtorInits]();
-
-    MutableArrayRef<CXXCtorInitializer *> NewInitArgs(NewCtorMem, NumCtorInits);
+    SmallVector<CXXCtorInitializer *, 4> NewInitArgs;
 
     auto OldIterator = OldCtor->init_begin();
     auto OldIteratorEnd = OldCtor->init_end();
-    auto NewIterator = NewInitArgs.begin();
-    auto NewIteratorEnd = NewInitArgs.end();
 
-    while (OldIterator != OldIteratorEnd && NewIterator != NewIteratorEnd) {
-      CXXCtorInitializer* OldInitializer = *OldIterator;
-
-      ASTContext &AST = getASTContext();
-
+    for (CXXCtorInitializer *OldInitializer : OldCtor->inits()) {
       FieldDecl *NewField = cast<FieldDecl>(
              Cxt->TransformDecl(SourceLocation(), OldInitializer->getMember()));
       ExprResult NewInit = Cxt->TransformExpr(OldInitializer->getInit());
@@ -1904,15 +1895,12 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
       // TODO: this assumes a member initializer
       // there are other ctor initializer types we need to
       // handle
-      CXXCtorInitializer* NewInitializer = new CXXCtorInitializer(
-        AST, NewField, OldInitializer->getMemberLocation(),
+      CXXCtorInitializer *NewInitializer = new (Context) CXXCtorInitializer(
+        Context, NewField, OldInitializer->getMemberLocation(),
         OldInitializer->getLParenLoc(), NewInit.get(),
         OldInitializer->getRParenLoc());
 
-      *NewIterator = NewInitializer;
-
-      OldIterator++;
-      NewIterator++;
+      NewInitArgs.push_back(NewInitializer);
     }
 
     SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
