@@ -2906,9 +2906,9 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       cutOffParsing();
       return true;
     }
-
-    bool isVariadicReifier = isVariadicReification();
+    
     ExprResult ArgExpr;
+    bool isVariadicReifier = isVariadicReification();
 
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
@@ -2922,24 +2922,19 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
 
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SawError = ParseVariadicReification(ExpandedExprs, isVariadicReifier);
+      SawError = ParseVariadicReification(ExpandedExprs);
 
-      if(isVariadicReifier) {
-        // We need to insert several fake commas to get around error checking.
-        // We only need size() - 1, since there is already a comma in front of
-        // the reification parameter.
-        for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
-          CommaLocs.emplace_back();
+      // We need to insert several fake commas to get around error checking.
+      // We only need size() - 1, since there is already a comma in front of
+      // the reification parameter.
+      for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+        CommaLocs.emplace_back();
 
-        if(SawError)
-          SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
+      if(SawError)
+        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
 
-        // Add our expanded expressions into the parameter list.
-        Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
-      } else {
-        // This was a regular reification.
-        SawError = true;
-      }
+      // Add our expanded expressions into the parameter list.
+      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else
       ArgExpr = ParseAssignmentExpression();
 

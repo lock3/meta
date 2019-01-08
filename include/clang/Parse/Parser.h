@@ -2798,14 +2798,11 @@ private:
   bool isVariadicReification() const;
   
   // Parse a variadic reification. Returns true on error.
-  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
-                                bool& isVariadicReification);
-  bool ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types,
-                                bool& isVariadicReification);
-  bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc,
-                               bool &isVariadicReification);
-  bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc,
-                            bool &isVariadicReification);
+  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs);
+  bool ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types);
+  bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
+  bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
+  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

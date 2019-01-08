@@ -2135,6 +2135,11 @@ BaseResult Parser::ParseBaseSpecifier(Decl *ClassDecl) {
                                     EllipsisLoc);
 }
 
+void
+Parser::ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>)
+{
+}
+
 /// getAccessSpecifierIfPresent - Determine whether the next token is
 /// a C++ access-specifier.
 ///

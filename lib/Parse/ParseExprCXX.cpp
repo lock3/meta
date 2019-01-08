@@ -834,7 +834,23 @@ Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
         }
       }
 
-      if (Tok.is(tok::identifier)) {
+      if (isVariadicReification()) {
+        llvm::SmallVector<Expr*, 4> ExpandedExprs;
+        if(ParseVariadicReification(ExpandedExprs))
+          return DiagResult(diag::err_expected_capture);
+
+        for(auto E : ExpandedExprs) {
+          ParsedType InitCaptureType;
+          SourceLocation TempLoc = SourceLocation();
+          // This performs any lvalue-to-rvalue conversions if necessary, which
+          // can affect what gets captured in the containing decl-context.
+          InitCaptureType = Actions.actOnLambdaInitCaptureInitialization(
+            TempLoc, Kind == LCK_ByRef, Id, InitKind, E);
+
+          Intro.addCapture(Kind, Loc, Id, EllipsisLoc, InitKind, Init,
+                           InitCaptureType, SourceRange(TempLoc, TempLoc));
+        }
+      } else if (Tok.is(tok::identifier)) {
         Id = Tok.getIdentifierInfo();
         Loc = ConsumeToken();
       } else if (Tok.is(tok::kw_this)) {

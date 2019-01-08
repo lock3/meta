@@ -496,8 +496,8 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
 static ExprResult
 getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
 {
-  llvm::outs() << "The expression:\n";
-  Expression->dump();
+  // llvm::outs() << "The expression:\n";
+  // Expression->dump();
   return SemaRef.ActOnCXXValueOfExpr
     (SourceLocation(), Expression, SourceLocation(), SourceLocation());
 }
@@ -592,7 +592,8 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
       break;
     }
 
-    Expressions.push_back(C.get());
+    if(!C.isInvalid() && C.isUsable())
+      Expressions.push_back(C.get());
 
     ++Traverser;
   }

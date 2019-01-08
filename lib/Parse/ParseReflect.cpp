@@ -470,8 +470,7 @@ Parser::isVariadicReification() const
 }
 
 bool
-Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
-                                 bool& isVariadicReification)
+Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs)
 {
   IdentifierInfo *KW = Tok.getIdentifierInfo();
   SourceLocation KWLoc = ConsumeToken();
@@ -487,7 +486,6 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
   // returning here means we have a non-variadic reification.
   if(!EllipsisLoc.isValid())
     return false;
-  isVariadicReification = true;
 
   ExprResult ReflRange = ParseConstantExpression();
 
@@ -517,8 +515,7 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs,
 }
 
 bool
-Parser::ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types,
-                                 bool& isVariadicReification)
+Parser::ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types)
 {
   IdentifierInfo *KW = Tok.getIdentifierInfo();
   SourceLocation KWLoc = ConsumeToken();
@@ -534,7 +531,6 @@ Parser::ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types,
   // returning here means we have a non-variadic reification.
   if(!EllipsisLoc.isValid())
     return false;
-  isVariadicReification = true;
 
   ExprResult ReflRange = ParseConstantExpression();
 
