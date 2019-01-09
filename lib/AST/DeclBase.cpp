@@ -1092,6 +1092,11 @@ bool DeclContext::isStdNamespace() const {
 }
 
 bool DeclContext::isDependentContext() const {
+  // We need to check this first, as it can contain
+  // other contexts, that would cause it to not get triggered.
+  if (getParent() && isa<CXXFragmentDecl>(getParent()))
+    return true;
+
   if (isFileContext())
     return false;
 
@@ -1114,10 +1119,6 @@ bool DeclContext::isDependentContext() const {
     // context is dependent.
     if (cast<Decl>(this)->getFriendObjectKind())
       return getLexicalParent()->isDependentContext();
-  }
-
-  if (getParent() && isa<CXXFragmentDecl>(getParent())) {
-    return true;
   }
 
   // FIXME: A variable template is a dependent context, but is not a
