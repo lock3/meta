@@ -338,6 +338,7 @@ enum ReflectionQuery {
   RQ_get_parent,
   RQ_get_type,
   RQ_get_this_ref_type,
+  RQ_get_definition,
 
   // Traversal
   RQ_get_begin,
