@@ -1481,9 +1481,20 @@ static bool isReflectableDecl(const Decl *D) {
   return true;
 }
 
+/// True if D is both reflectable, and should be iterated upon when
+/// iterating over the children in a decl context.
+static bool isIterableReflectableDecl(const Decl *D) {
+  const DeclContext *CurContext = D->getDeclContext();
+
+  if (isa<FunctionDecl>(CurContext))
+    return isa<ParmVarDecl>(D);
+
+  return isReflectableDecl(D);
+}
+
 /// Filter non-reflectable members.
 static const Decl *findNextMember(const Decl *D) {
-  while (D && !isReflectableDecl(D))
+  while (D && !isIterableReflectableDecl(D))
     D = D->getNextDeclInContext();
   return D;
 }
