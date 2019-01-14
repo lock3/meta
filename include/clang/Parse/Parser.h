@@ -2765,8 +2765,9 @@ private:
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
-  void ParseBaseSpecifier(Decl *ClassDecl,
-                          llvm::SmallVectorImpl<BaseResult> &Results);
+  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
+                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
+  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -2813,7 +2814,6 @@ private:
   bool ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types);
   bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
   bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
-  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   //===--------------------------------------------------------------------===//
