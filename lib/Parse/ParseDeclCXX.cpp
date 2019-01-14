@@ -4165,6 +4165,19 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
     SourceLocation ScopeLoc, AttrLoc;
     IdentifierInfo *ScopeName = nullptr, *AttrName = nullptr;
 
+    if(isVariadicReification()) {
+      llvm::SmallVector<Expr *, 4> ExpandedAttrs;
+      if(ParseVariadicReification(ExpandedAttrs))
+        SkipUntil(tok::r_square, tok::comma, StopAtSemi | StopBeforeMatch);
+      for(Expr *E : ExpandedAttrs) {
+        DeclRefExpr *ExpandedDeclRef = dyn_cast_or_null<DeclRefExpr>(E);
+        assert(ExpandedDeclRef && "Attribute must be a declaration.");
+        IdentifierInfo *II = ExpandedDeclRef->getFoundDecl()->getIdentifier();
+        SeenAttrs.insert({II, SourceLocation()});
+      }
+        
+    }
+
     AttrName = TryParseCXX11AttributeIdentifier(AttrLoc);
     if (!AttrName)
       // Break out to the "expected ']'" diagnostic.
