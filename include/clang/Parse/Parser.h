@@ -2746,10 +2746,12 @@ private:
       AccessSpecifier &AS, ParsedAttributesWithRange &AccessAttrs,
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
-  void ParseMemInitializer(Decl *ConstructorDecl,
-                           llvm::SmallVectorImpl<MemInitResult> &Results);
-  void ParseMemInitExprList(Decl *ConstructorDecl,
-                            llvm::SmallVectorImpl<MemInitResult> &Results,
+  MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
+  void
+  ParseReifMemInitializer(Decl *ConstructorDecl,
+                          llvm::SmallVectorImpl<QualType> &Typenames,
+                          llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);
+  bool ParseMemInitExprList(Decl *ConstructorDecl,
                             CXXScopeSpec &SS, IdentifierInfo *II,
                             DeclSpec const &DS, ParsedType const &TemplateTypeTy,
                             SourceLocation IdLoc, SourceLocation &LParen,

@@ -3454,13 +3454,20 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       return cutOffParsing();
     }
 
-    llvm::SmallVector<MemInitResult, 1> MemInits;
-    ParseMemInitializer(ConstructorDecl, MemInits);
-    for (auto MemInit : MemInits) {
-      if (!MemInit.isInvalid())
+    if(isVariadicReification()) {
+      llvm::SmallVector<QualType, 4> ExpandedTypes;
+      if (ParseVariadicReification(ExpandedTypes)) {
+        // invalid expansion of reification
+        SkipUntil(tok::l_brace, StopAtSemi | StopBeforeMatch);
+      }
+
+      ParseReifMemInitializer(ConstructorDecl, ExpandedTypes,
+                              MemInitializers);
+    } else {
+      MemInitResult MemInit = ParseMemInitializer(ConstructorDecl);
+
+      if(!MemInit.isInvalid())
         MemInitializers.push_back(MemInit.get());
-      else
-        AnyErrors = true;
     }
 
     if (Tok.is(tok::comma))
@@ -3500,9 +3507,8 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 /// [C++] mem-initializer-id:
 ///         '::'[opt] nested-name-specifier[opt] class-name
 ///         identifier
-void
-Parser::ParseMemInitializer(Decl *ConstructorDecl,
-                            llvm::SmallVectorImpl<MemInitResult> &Results) {
+MemInitResult
+Parser::ParseMemInitializer(Decl *ConstructorDecl) {
   // parse '::'[opt] nested-name-specifier[opt]
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
@@ -3514,7 +3520,7 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl,
   DeclSpec DS(AttrFactory);
   // : template_name<...>
   ParsedType TemplateTypeTy;
-  // : unqualid(...base_range), idexpr(...base_range)
+  // : typename(...base_range)
   llvm::SmallVector<QualType, 4> BaseIds;
 
   if (Tok.is(tok::identifier) && !isVariadicReification()) {
@@ -3529,45 +3535,11 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl,
     // FIXME: Can we get here with a scope specifier?
     ParseDecltypeSpecifier(DS);
   } else if (isVariadicReification()) {
-    if(ParseVariadicReification(BaseIds)) {
-      Results.push_back(true);
-      return;
-    }
-    
-    // We only need to parse the expression list once.
-    // Only parameter lists are allowed for now.
-    if(!Tok.is(tok::l_paren))
-    {
-      Results.push_back(Diag(Tok, diag::err_expected) << tok::l_paren);
-      return;
-    }
-
-    SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
-    ExprVector ArgExprs;
-      
-    ParseMemInitExprList(ConstructorDecl, Results, SS, II, DS,
-                         TemplateTypeTy, IdLoc, LParenLoc, ArgExprs, RParenLoc,
-                         EllipsisLoc);
-
-    for(auto FoundId : BaseIds) {
-      // Get II from reflection
-      // DeclRefExpr *ReflectedDecl = dyn_cast_or_null<DeclRefExpr>(FoundId);
-      // assert(ReflectedDecl && "Invalid reifier used in member initializer list.");
-      // II = ReflectedDecl->getFoundDecl()->getIdentifier();
-      II = const_cast<IdentifierInfo*>(FoundId.getBaseTypeIdentifier());
-      
-      Results.push_back(
-        Actions.ActOnMemInitializer
-        (ConstructorDecl, getCurScope(), SS, II,
-         TemplateTypeTy, DS, IdLoc,
-         LParenLoc, ArgExprs, RParenLoc, EllipsisLoc));
-    }
-
-    return;
+    llvm_unreachable("Parsing variadic reification in wrong function.");
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
-                                           ? takeTemplateIdAnnotation(Tok)
-                                           : nullptr;
+      ? takeTemplateIdAnnotation(Tok)
+      : nullptr;
     if (TemplateId && (TemplateId->Kind == TNK_Type_template ||
                        TemplateId->Kind == TNK_Dependent_template_name)) {
       AnnotateTemplateIdTokenAsType(/*IsClassName*/true);
@@ -3575,8 +3547,7 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl,
       TemplateTypeTy = getTypeAnnotation(Tok);
       ConsumeAnnotationToken();
     } else {
-      Diag(Tok, diag::err_expected_member_or_base_name);
-      Results.push_back(true);
+      return Diag(Tok, diag::err_expected_member_or_base_name);
     }
   }
 
@@ -3586,48 +3557,77 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl,
 
     // FIXME: Add support for signature help inside initializer lists.
     ExprResult InitList = ParseBraceInitializer();
-    if (InitList.isInvalid()) {
-      Results.push_back(true);
-      return;
-    }
-      
+    if (InitList.isInvalid())
+      return true;
+
 
     SourceLocation EllipsisLoc;
     TryConsumeToken(tok::ellipsis, EllipsisLoc);
 
-    Results.push_back(
-      Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
-                                  TemplateTypeTy, DS, IdLoc,
-                                  InitList.get(), EllipsisLoc));
-    return;
+    return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
+                                       TemplateTypeTy, DS, IdLoc,
+                                       InitList.get(), EllipsisLoc);
   } else if(Tok.is(tok::l_paren)) {
     SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
     ExprVector ArgExprs;
 
-    ParseMemInitExprList(ConstructorDecl, Results, SS, II, DS,
-                         TemplateTypeTy, IdLoc, LParenLoc, ArgExprs,
-                         RParenLoc, EllipsisLoc);
-    Results.push_back(
-      Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
-                                  TemplateTypeTy, DS, IdLoc,
-                                  LParenLoc, ArgExprs, RParenLoc, EllipsisLoc));
-    return;
+    if(ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
+                            LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
+      return true;
+
+    return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
+                                       TemplateTypeTy, DS, IdLoc,
+                                       LParenLoc, ArgExprs, RParenLoc,
+                                       EllipsisLoc);
   }
 
-  if (getLangOpts().CPlusPlus11) {
-    Results.push_back
-      (Diag(Tok, diag::err_expected_either) << tok::l_paren << tok::l_brace);
-    return;
-  }
-  else {
-    Results.push_back(Diag(Tok, diag::err_expected) << tok::l_paren);
-    return;
-  }
+  if (getLangOpts().CPlusPlus11)
+    return Diag(Tok, diag::err_expected_either) << tok::l_paren << tok::l_brace;
+  else
+    return Diag(Tok, diag::err_expected) << tok::l_paren;
 }
 
 void
+Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
+                                llvm::SmallVectorImpl<QualType> &Typenames,
+                                llvm::SmallVectorImpl<CXXCtorInitializer *>
+                                &MemInits)
+{
+  // Parse the constructor function parameter list. We only need to parse
+  // the expression list once.
+  if (!Tok.is(tok::l_paren)) {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return;
+  }
+
+  SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
+  CXXScopeSpec SS;
+  ExprVector ArgExprs;
+  IdentifierInfo *II = nullptr;
+  SourceLocation IdLoc = Tok.getLocation();
+  DeclSpec DS(AttrFactory);
+  ParsedType TemplateTypeTy;
+
+  if(ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
+                          LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
+    ; // TODO: diagnostic here
+
+  for (auto Typename : Typenames) {
+    IdentifierInfo *II =
+      const_cast<IdentifierInfo*>(Typename.getBaseTypeIdentifier());
+
+    MemInitResult MemInit =
+      Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
+                                  TemplateTypeTy, DS, IdLoc, LParenLoc,
+                                  ArgExprs, RParenLoc, EllipsisLoc);
+
+    if(!MemInit.isInvalid())
+      MemInits.push_back(MemInit.get());
+  }
+}
+
+bool
 Parser::ParseMemInitExprList(Decl *ConstructorDecl,
-                             llvm::SmallVectorImpl<MemInitResult> &Results,
                              CXXScopeSpec &SS, IdentifierInfo *II,
                              DeclSpec const &DS,
                              ParsedType const &TemplateTypeTy,
@@ -3655,8 +3655,7 @@ Parser::ParseMemInitExprList(Decl *ConstructorDecl,
       CalledSignatureHelp = true;
     }
     SkipUntil(tok::r_paren, StopAtSemi);
-    Results.push_back(true);
-    return;
+    return true;
   }
 
   T.consumeClose();
@@ -3665,6 +3664,7 @@ Parser::ParseMemInitExprList(Decl *ConstructorDecl,
 
   LParen = T.getOpenLocation();
   RParen = T.getCloseLocation();
+  return false;
 }
 
 /// Parse a C++ exception-specification if present (C++0x [except.spec]).
