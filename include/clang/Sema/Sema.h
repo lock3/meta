@@ -8739,6 +8739,8 @@ public:
 
     /// The current element in the traversal
     Expr *Current;
+
+    CXXExpansionStmt::RangeKind RangeKind;
   };
 
   /// A facility used to unpack and build the dependent body of an expansion
@@ -8793,7 +8795,7 @@ public:
     StmtResult BuildExpansionOverPack();
 
     /// Build the expansion over an array of known bound.
-    StmtResult BuildExpansionOverArray();
+    StmtResult BuildExpansionOverArray(bool Instantiate = true);
 
     /// Build the expansion over a tuple.
     StmtResult BuildExpansionOverTuple();

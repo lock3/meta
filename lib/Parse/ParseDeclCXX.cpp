@@ -3439,7 +3439,6 @@ void Parser::DiagnoseUnexpectedNamespace(NamedDecl *D) {
 void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
   assert(Tok.is(tok::colon) &&
          "Constructor initializer always starts with ':'");
-
   // Poison the SEH identifiers so they are flagged as illegal in constructor
   // initializers.
   PoisonSEHIdentifiersRAIIObject PoisonSEHIdentifiers(*this, true);
@@ -3455,11 +3454,14 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       return cutOffParsing();
     }
 
-    MemInitResult MemInit = ParseMemInitializer(ConstructorDecl);
-    if (!MemInit.isInvalid())
-      MemInitializers.push_back(MemInit.get());
-    else
-      AnyErrors = true;
+    llvm::SmallVector<MemInitResult, 1> MemInits;
+    ParseMemInitializer(ConstructorDecl, MemInits);
+    for (auto MemInit : MemInits) {
+      if (!MemInit.isInvalid())
+        MemInitializers.push_back(MemInit.get());
+      else
+        AnyErrors = true;
+    }
 
     if (Tok.is(tok::comma))
       ConsumeToken();
@@ -3467,14 +3469,14 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       break;
     // If the previous initializer was valid and the next token looks like a
     // base or member initializer, assume that we're just missing a comma.
-    else if (!MemInit.isInvalid() &&
+    else if (!AnyErrors &&
              Tok.isOneOf(tok::identifier, tok::coloncolon)) {
       SourceLocation Loc = PP.getLocForEndOfToken(PrevTokLocation);
       Diag(Loc, diag::err_ctor_init_missing_comma)
         << FixItHint::CreateInsertion(Loc, ", ");
     } else {
       // Skip over garbage, until we get to '{'.  Don't eat the '{'.
-      if (!MemInit.isInvalid())
+      if (!AnyErrors)
         Diag(Tok.getLocation(), diag::err_expected_either) << tok::l_brace
                                                            << tok::comma;
       SkipUntil(tok::l_brace, StopAtSemi | StopBeforeMatch);
@@ -3498,7 +3500,9 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 /// [C++] mem-initializer-id:
 ///         '::'[opt] nested-name-specifier[opt] class-name
 ///         identifier
-MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
+void
+Parser::ParseMemInitializer(Decl *ConstructorDecl,
+                            llvm::SmallVectorImpl<MemInitResult> &Results) {
   // parse '::'[opt] nested-name-specifier[opt]
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
@@ -3510,8 +3514,10 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
   DeclSpec DS(AttrFactory);
   // : template_name<...>
   ParsedType TemplateTypeTy;
+  // : unqualid(...base_range), idexpr(...base_range)
+  llvm::SmallVector<QualType, 4> BaseIds;
 
-  if (Tok.is(tok::identifier)) {
+  if (Tok.is(tok::identifier) && !isVariadicReification()) {
     // Get the identifier. This may be a member name or a class name,
     // but we'll let the semantic analysis determine which it is.
     II = Tok.getIdentifierInfo();
@@ -3522,6 +3528,42 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     // ParseOptionalCXXScopeSpecifier at this point.
     // FIXME: Can we get here with a scope specifier?
     ParseDecltypeSpecifier(DS);
+  } else if (isVariadicReification()) {
+    if(ParseVariadicReification(BaseIds)) {
+      Results.push_back(true);
+      return;
+    }
+    
+    // We only need to parse the expression list once.
+    // Only parameter lists are allowed for now.
+    if(!Tok.is(tok::l_paren))
+    {
+      Results.push_back(Diag(Tok, diag::err_expected) << tok::l_paren);
+      return;
+    }
+
+    SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
+    ExprVector ArgExprs;
+      
+    ParseMemInitExprList(ConstructorDecl, Results, SS, II, DS,
+                         TemplateTypeTy, IdLoc, LParenLoc, ArgExprs, RParenLoc,
+                         EllipsisLoc);
+
+    for(auto FoundId : BaseIds) {
+      // Get II from reflection
+      // DeclRefExpr *ReflectedDecl = dyn_cast_or_null<DeclRefExpr>(FoundId);
+      // assert(ReflectedDecl && "Invalid reifier used in member initializer list.");
+      // II = ReflectedDecl->getFoundDecl()->getIdentifier();
+      II = const_cast<IdentifierInfo*>(FoundId.getBaseTypeIdentifier());
+      
+      Results.push_back(
+        Actions.ActOnMemInitializer
+        (ConstructorDecl, getCurScope(), SS, II,
+         TemplateTypeTy, DS, IdLoc,
+         LParenLoc, ArgExprs, RParenLoc, EllipsisLoc));
+    }
+
+    return;
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
                                            ? takeTemplateIdAnnotation(Tok)
@@ -3534,7 +3576,7 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
       ConsumeAnnotationToken();
     } else {
       Diag(Tok, diag::err_expected_member_or_base_name);
-      return true;
+      Results.push_back(true);
     }
   }
 
@@ -3544,55 +3586,85 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
 
     // FIXME: Add support for signature help inside initializer lists.
     ExprResult InitList = ParseBraceInitializer();
-    if (InitList.isInvalid())
-      return true;
+    if (InitList.isInvalid()) {
+      Results.push_back(true);
+      return;
+    }
+      
 
     SourceLocation EllipsisLoc;
     TryConsumeToken(tok::ellipsis, EllipsisLoc);
 
-    return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
-                                       TemplateTypeTy, DS, IdLoc,
-                                       InitList.get(), EllipsisLoc);
+    Results.push_back(
+      Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
+                                  TemplateTypeTy, DS, IdLoc,
+                                  InitList.get(), EllipsisLoc));
+    return;
   } else if(Tok.is(tok::l_paren)) {
-    BalancedDelimiterTracker T(*this, tok::l_paren);
-    T.consumeOpen();
-
-    // Parse the optional expression-list.
+    SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
     ExprVector ArgExprs;
-    CommaLocsTy CommaLocs;
-    if (Tok.isNot(tok::r_paren) &&
-        ParseExpressionList(ArgExprs, CommaLocs, [&] {
-          QualType PreferredType = Actions.ProduceCtorInitMemberSignatureHelp(
-              getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
-              T.getOpenLocation());
-          CalledSignatureHelp = true;
-          Actions.CodeCompleteExpression(getCurScope(), PreferredType);
-        })) {
-      if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
-        Actions.ProduceCtorInitMemberSignatureHelp(
+
+    ParseMemInitExprList(ConstructorDecl, Results, SS, II, DS,
+                         TemplateTypeTy, IdLoc, LParenLoc, ArgExprs,
+                         RParenLoc, EllipsisLoc);
+    Results.push_back(
+      Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
+                                  TemplateTypeTy, DS, IdLoc,
+                                  LParenLoc, ArgExprs, RParenLoc, EllipsisLoc));
+    return;
+  }
+
+  if (getLangOpts().CPlusPlus11) {
+    Results.push_back
+      (Diag(Tok, diag::err_expected_either) << tok::l_paren << tok::l_brace);
+    return;
+  }
+  else {
+    Results.push_back(Diag(Tok, diag::err_expected) << tok::l_paren);
+    return;
+  }
+}
+
+void
+Parser::ParseMemInitExprList(Decl *ConstructorDecl,
+                             llvm::SmallVectorImpl<MemInitResult> &Results,
+                             CXXScopeSpec &SS, IdentifierInfo *II,
+                             DeclSpec const &DS,
+                             ParsedType const &TemplateTypeTy,
+                             SourceLocation IdLoc, SourceLocation &LParen,
+                             ExprVector &ArgExprs,
+                             SourceLocation &RParen, SourceLocation &Ellipsis)
+{
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  T.consumeOpen();
+
+  // Parse the optional expression-list.
+  CommaLocsTy CommaLocs;
+  if (Tok.isNot(tok::r_paren) &&
+      ParseExpressionList(ArgExprs, CommaLocs, [&] {
+        QualType PreferredType = Actions.ProduceCtorInitMemberSignatureHelp(
             getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
             T.getOpenLocation());
         CalledSignatureHelp = true;
-      }
-      SkipUntil(tok::r_paren, StopAtSemi);
-      return true;
+        Actions.CodeCompleteExpression(getCurScope(), PreferredType);
+      })) {
+    if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
+      Actions.ProduceCtorInitMemberSignatureHelp(
+          getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
+          T.getOpenLocation());
+      CalledSignatureHelp = true;
     }
-
-    T.consumeClose();
-
-    SourceLocation EllipsisLoc;
-    TryConsumeToken(tok::ellipsis, EllipsisLoc);
-
-    return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
-                                       TemplateTypeTy, DS, IdLoc,
-                                       T.getOpenLocation(), ArgExprs,
-                                       T.getCloseLocation(), EllipsisLoc);
+    SkipUntil(tok::r_paren, StopAtSemi);
+    Results.push_back(true);
+    return;
   }
 
-  if (getLangOpts().CPlusPlus11)
-    return Diag(Tok, diag::err_expected_either) << tok::l_paren << tok::l_brace;
-  else
-    return Diag(Tok, diag::err_expected) << tok::l_paren;
+  T.consumeClose();
+
+  TryConsumeToken(tok::ellipsis, Ellipsis);
+
+  LParen = T.getOpenLocation();
+  RParen = T.getCloseLocation();
 }
 
 /// Parse a C++ exception-specification if present (C++0x [except.spec]).

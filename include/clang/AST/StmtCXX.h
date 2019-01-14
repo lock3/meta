@@ -257,12 +257,20 @@ protected:
   friend class ASTStmtReader;
 
 public:
+  enum RangeKind {
+    RK_Array,
+    RK_Range,
+    RK_Tuple,
+    RK_Struct,
+    RK_Unknown,
+  };
+
   CXXExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
                    TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL)
+                   SourceLocation CL, SourceLocation RPL, RangeKind RK)
       : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), ColonLoc(CL),
-        RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr) {
+        RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr), StmtRangeKind(RK) {
     SubExprs[LOOP] = LoopVar;
     SubExprs[RANGE] = RangeVar;
     SubExprs[BODY] = nullptr;
@@ -327,6 +335,12 @@ public:
   SourceLocation getColonLoc() const { return ColonLoc; }
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
+  RangeKind getRangeKind() const { return StmtRangeKind; }
+
+private:
+  RangeKind StmtRangeKind;
+
+public:
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();

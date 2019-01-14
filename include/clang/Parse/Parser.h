@@ -2746,7 +2746,15 @@ private:
       AccessSpecifier &AS, ParsedAttributesWithRange &AccessAttrs,
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
-  MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
+  void ParseMemInitializer(Decl *ConstructorDecl,
+                           llvm::SmallVectorImpl<MemInitResult> &Results);
+  void ParseMemInitExprList(Decl *ConstructorDecl,
+                            llvm::SmallVectorImpl<MemInitResult> &Results,
+                            CXXScopeSpec &SS, IdentifierInfo *II,
+                            DeclSpec const &DS, ParsedType const &TemplateTypeTy,
+                            SourceLocation IdLoc, SourceLocation &LParen,
+                            ExprVector &ArgExprs,
+                            SourceLocation &RParen, SourceLocation &Ellipsis);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
                                       Decl *ThisDecl);
 
@@ -2804,6 +2812,7 @@ private:
   bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
   bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
   void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
+  void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

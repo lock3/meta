@@ -2787,8 +2787,32 @@ static int NewTemplateParameterDepth(DeclContext *DC) {
   return 0;
 }
 
+static ExprResult
+BuildSubscriptAccess(Sema &SemaRef, Expr *Current, std::size_t Index)
+{
+  ASTContext &Context = SemaRef.Context;
+
+  // The subscript.
+  IntegerLiteral *E =
+    IntegerLiteral::Create(Context, llvm::APSInt::getUnsigned(Index),
+                           Context.getSizeType(), SourceLocation());
+
+  // Get the actual array base to create an incremented subscript access.
+  ArraySubscriptExpr *CurrentSubscript =
+    static_cast<ArraySubscriptExpr*>(Current);
+  Expr *Base = CurrentSubscript->getBase();
+  
+  ExprResult RangeAccessor = 
+    SemaRef.ActOnArraySubscriptExpr(SemaRef.getCurScope(), Base,
+                                    SourceLocation(), E, SourceLocation());
+  if (RangeAccessor.isInvalid())
+    return ExprError();
+  return RangeAccessor;
+}
+
 // Build a call to std::next(Arg, Induction) for the range traverser
-static ExprResult BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
+static ExprResult
+BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
 {
   NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
   SourceLocation Loc = SourceLocation();
@@ -2817,7 +2841,8 @@ static ExprResult BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
 }
 
 // Dereference a call to an iterator (as built in BuildNextCall)
-static ExprResult BuildDeref(Sema &SemaRef, Expr *NextCall)
+static ExprResult
+BuildDeref(Sema &SemaRef, Expr *NextCall)
 {
   ExprResult NextDeref = 
     SemaRef.ActOnUnaryOp(SemaRef.getCurScope(), SourceLocation(),
@@ -2833,6 +2858,7 @@ Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range,
 {
   Current = RangeBegin;
   Size = Range->getSize();
+  RangeKind = Range->getRangeKind();
 }
 
 Sema::RangeTraverser::operator bool()
@@ -2843,7 +2869,17 @@ Sema::RangeTraverser::operator bool()
 Expr *
 Sema::RangeTraverser::operator*()
 {
-  Expr *Deref = BuildDeref(SemaRef, Current).get();
+  Expr *Deref = nullptr;
+  switch(RangeKind) {
+  case CXXExpansionStmt::RK_Range:
+    Deref = BuildDeref(SemaRef, Current).get();
+    break;
+  case CXXExpansionStmt::RK_Array:
+    Deref = Current;
+    break;
+  default:
+    break;
+  }
 
   ExprResult RvalueDeref = SemaRef.DefaultLvalueConversion(Deref);
 
@@ -2859,12 +2895,22 @@ Sema::RangeTraverser::operator++()
                          SemaRef.Context.getSizeType(), SourceLocation());
   const auto done = operator bool();
   if(!done) {
-    ExprResult Next = BuildNextCall(SemaRef, Current, Index);
+    ++I;
+    ExprResult Next;
+    switch(RangeKind) {
+    case CXXExpansionStmt::RK_Range:
+      Next = BuildNextCall(SemaRef, Current, Index);
+      break;
+    case CXXExpansionStmt::RK_Array:
+      Next = BuildSubscriptAccess(SemaRef, Current, I);
+      break;
+    default:
+      break;
+    }
+
     if(Next.isInvalid())
       llvm_unreachable("Could not build next call.");
-
     Current = Next.get();
-    ++I;
   }
 
   return *this;
@@ -3022,9 +3068,9 @@ Sema::ExpansionStatementBuilder::BuildUninstantiated()
     llvm_unreachable("Unimplemented.");
 
   if (RangeType->isConstantArrayType())
-    llvm_unreachable("Unimplemented.");
+    return BuildExpansionOverArray(/*Instantiate=*/false);
 
-  StmtResult ForStmt = BuildExpansionOverRange(/*Instantiate=*/false);
+   StmtResult ForStmt = BuildExpansionOverRange(/*Instantiate=*/false);
 
   if(!ForStmt.isInvalid())
     return ForStmt;
@@ -3156,7 +3202,8 @@ Sema::ExpansionStatementBuilder::BuildDependentExpansion()
   return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
                                                 TemplateParms, /*Size=*/-1,
                                                 ForLoc, AnnotationLoc, ColonLoc,
-                                                RParenLoc);
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Unknown);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3216,29 +3263,45 @@ Sema::ExpansionStatementBuilder::BuildExpansionOverPack()
 /// Note that there is no range-variable in pack expansion. We can't bind
 /// to anything.
 StmtResult
-Sema::ExpansionStatementBuilder::BuildExpansionOverArray()
+Sema::ExpansionStatementBuilder::BuildExpansionOverArray(bool Instantiate)
 {
   // Build the expression __range[__N].
-  ExprResult RangeAccessor = 
+  ExprResult RangeAccessor;
+  if(Instantiate) {
+    RangeAccessor = 
       SemaRef.ActOnArraySubscriptExpr(CurScope, RangeRef, ColonLoc, 
                                       InductionRef, ColonLoc);
+  } else {
+    IntegerLiteral *ZeroIndex =
+      IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(0),
+                             SemaRef.Context.getSizeType(), SourceLocation());
+    RangeAccessor =
+      SemaRef.ActOnArraySubscriptExpr(CurScope, RangeRef, SourceLocation(),
+                                      ZeroIndex, SourceLocation());
+    BeginCallRef = RangeAccessor.get();
+  }
   if (RangeAccessor.isInvalid())
     return false;
 
   // Make the range accessor the initializer of the loop variable.
-  SemaRef.AddInitializerToDecl(LoopVar, RangeAccessor.get(), false);
-  if (LoopVar->isInvalidDecl())
-    return StmtError();
+  if(Instantiate) {
+    SemaRef.AddInitializerToDecl(LoopVar, RangeAccessor.get(), false);
+    if (LoopVar->isInvalidDecl())
+      return StmtError();
+  }
 
   // Pre-compute the array size.
   ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(RangeType);
   llvm::APSInt Size(ArrayTy->getSize(), true);
 
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+  return new (SemaRef.Context) CXXExpansionStmt(Instantiate ?
+                                                LoopDeclStmt : nullptr,
+                                                RangeDeclStmt,
                                                 TemplateParms, 
                                                 Size.getExtValue(), ForLoc, 
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc);
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Array);
 }
 
 /// When range-expr denotes an tuple, expand over the elements of the array.
@@ -3321,7 +3384,8 @@ Sema::ExpansionStatementBuilder::BuildExpansionOverTuple()
                                                 TemplateParms, 
                                                 Size.getExtValue(), ForLoc, 
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc);
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Tuple);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3551,7 +3615,8 @@ Sema::ExpansionStatementBuilder::BuildExpansionOverRange(bool Instantiate)
                                                 TemplateParms, 
                                                 Count.getExtValue(), ForLoc, 
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc);
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Range);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
