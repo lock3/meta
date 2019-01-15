@@ -2047,6 +2047,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 
     // Check and push any reified types.
     for(auto Typename : ReifiedTypes) {
+      llvm::outs() << "THERE WAS A REIFICATION\n";
       if (Typename.isInvalid()) {
         // Skip the rest of this base specifier, up until the comma or
         // opening brace.
@@ -2059,6 +2060,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 
     // If this base spec wasn't a variadic reification, then add it.
     if (ReifiedTypes.empty()) {
+      llvm::outs() << "BASE PARSED\n";
       if (Result.isInvalid())
         SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
       else
@@ -3458,7 +3460,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 
   SmallVector<CXXCtorInitializer*, 4> MemInitializers;
   bool AnyErrors = false;
-
+  
   do {
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteConstructorInitializer(ConstructorDecl,
@@ -3480,6 +3482,26 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 
       if(!MemInit.isInvalid())
         MemInitializers.push_back(MemInit.get());
+      else {
+        AnyErrors = true;
+      //   auto Init = MemInit.get();
+      //   if(!Init)
+      //     llvm::outs() << "null init\n";
+      //   if (Init->isAnyMemberInitializer()) {
+      //     llvm::outs() << "here\n";
+      //     llvm::outs() << ' ';
+      //     Init->getAnyMember()->dump();
+      //   } else if (Init->isBaseInitializer()) {
+      //     llvm::outs() << "here\n";
+      //     QualType(Init->getBaseClass(), 0).dump();
+      //   } else if (Init->isDelegatingInitializer()) {
+      //     llvm::outs() << "here\n";
+      //     Init->getTypeSourceInfo()->getType()->dump();
+      //   } else {
+      //     llvm_unreachable("Unknown initializer type");
+      //   }
+      //   Init->getInit()->dump();
+      }
     }
 
     if (Tok.is(tok::comma))
@@ -3502,6 +3524,24 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       break;
     }
   } while (true);
+  // llvm::outs() << "FINISHED PARSE\n";
+  // if(MemInitializers.empty())
+  //   llvm::outs() << "NO INITIALIZERS\n";
+
+  // for(auto Init : MemInitializers) {
+  //   llvm::outs() << "CXXCtorInitializer";
+  //   if (Init->isAnyMemberInitializer()) {
+  //     llvm::outs() << ' ';
+  //     Init->getAnyMember()->dump();
+  //   } else if (Init->isBaseInitializer()) {
+  //     QualType(Init->getBaseClass(), 0).dump();
+  //   } else if (Init->isDelegatingInitializer()) {
+  //     Init->getTypeSourceInfo()->getType()->dump();
+  //   } else {
+  //     llvm_unreachable("Unknown initializer type");
+  //   }
+  //   Init->getInit()->dump();
+  // }
 
   Actions.ActOnMemInitializers(ConstructorDecl, ColonLoc, MemInitializers,
                                AnyErrors);
@@ -3586,6 +3626,10 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     if(ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
                             LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
       return true;
+
+    llvm::outs() << "ARGUMENTS\n";
+    for(auto arg : ArgExprs)
+      arg->dump();
 
     return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
                                        TemplateTypeTy, DS, IdLoc,
