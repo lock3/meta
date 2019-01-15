@@ -4011,13 +4011,13 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
     // Initialize the member.
     InitializedEntity MemberEntity =
       DirectMember ? InitializedEntity::InitializeMember(DirectMember, nullptr)
-                   : InitializedEntity::InitializeMember(IndirectMember,
-                                                         nullptr);
+      : InitializedEntity::InitializeMember(IndirectMember,
+                                            nullptr);
     InitializationKind Kind =
-        InitList ? InitializationKind::CreateDirectList(
-                       IdLoc, Init->getBeginLoc(), Init->getEndLoc())
-                 : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
-                                                    InitRange.getEnd());
+      InitList ? InitializationKind::CreateDirectList(
+        IdLoc, Init->getBeginLoc(), Init->getEndLoc())
+      : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
+                                         InitRange.getEnd());
 
     InitializationSequence InitSeq(*this, MemberEntity, Kind, Args);
     ExprResult MemberInit = InitSeq.Perform(*this, MemberEntity, Kind, Args,
