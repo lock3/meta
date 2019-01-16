@@ -8944,6 +8944,9 @@ public:
   void ActOnCXXMetaprogramDeclError(Scope *S, Decl *D);
   void ActOnCXXInjectionDeclError(Scope *S, Decl *D);
 
+  bool ActOnCXXInjectedParameter(SourceLocation ArrowLoc, Expr *Reflection,
+                            SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms);
+
   void EvaluateCXXMetaDecl(CXXMetaprogramDecl *D, FunctionDecl *FD);
   void EvaluateCXXMetaDecl(CXXInjectionDecl *D, FunctionDecl *FD);
 
@@ -10301,8 +10304,10 @@ public:
   void InjectPendingMethodDefinitions();
   void InjectPendingFieldDefinitions(InjectionContext *Cxt);
   void InjectPendingMethodDefinitions(InjectionContext *Cxt);
-  void InjectPendingDefinition(InjectionContext *Cxt, FieldDecl *Frag, FieldDecl *New);
-  void InjectPendingDefinition(InjectionContext *Cxt, CXXMethodDecl *Frag, CXXMethodDecl *New);
+  void InjectPendingDefinition(InjectionContext *Cxt, FieldDecl *Frag,
+                               FieldDecl *New);
+  void InjectPendingDefinition(InjectionContext *Cxt, CXXMethodDecl *Frag,
+                               CXXMethodDecl *New);
 
   CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,
                                      TagUseKind TUK = TUK_Definition);

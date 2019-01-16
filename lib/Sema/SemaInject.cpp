@@ -198,6 +198,28 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
+  ArrayRef<ParmVarDecl *> ExpandInjectedParameters(
+                                         ArrayRef<ParmVarDecl *> SourceParams) {
+    auto Params = new (SemaRef.Context) SmallVector<ParmVarDecl *, 8>();
+    for (ParmVarDecl *PVD : SourceParams) {
+      if (const CXXInjectedParmsInfo *IPI = PVD->InjectedParmsInfo) {
+        SmallVector<ParmVarDecl *, 4> ExpandedParms;
+
+        // TODO: Evaluate reflection and extract the parameter decls
+        Expr *Reflection = IPI->Reflection;
+
+        // Add the new Params.
+        Params->append(ExpandedParms.begin(), ExpandedParms.end());
+
+        // Add the substitition.
+        InjectedParms[PVD] = ExpandedParms;
+        continue;
+      }
+      Params->push_back(PVD);
+    }
+    return *Params;
+  }
+
   bool InjectDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                         TypeSourceInfo *&TSI);
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
@@ -229,6 +251,17 @@ public:
   /// values. This is used by TreeTransformer to replace references with
   /// constant expressions.
   llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
+
+  /// A mapping of injected parameters to their corresponding
+  /// expansions.
+  llvm::DenseMap<ParmVarDecl *, SmallVector<ParmVarDecl *, 4>> InjectedParms;
+
+  SmallVectorImpl<ParmVarDecl *> *FindInjectedParms(ParmVarDecl *P) {
+    auto Iter = InjectedParms.find(P);
+    if (Iter == InjectedParms.end())
+      return nullptr;
+    return &Iter->second;
+  }
 
   /// A list of declarations whose definitions have not yet been
   /// injected. These are processed when a class receiving injections is
@@ -300,9 +333,16 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
   if (OldParms.size() > 0) {
     do {
       ParmVarDecl *OldParm = OldParms[OldIndex++];
-      ParmVarDecl *NewParm = NewParms[NewIndex++];
-      NewParm->setOwningFunction(New);
-      AddDeclSubstitution(OldParm, NewParm);
+      if (auto *Injected = FindInjectedParms(OldParm)) {
+        for (unsigned I = 0; I < Injected->size(); ++I) {
+          ParmVarDecl *NewParm = NewParms[NewIndex++];
+          NewParm->setOwningFunction(New);
+        }
+      } else {
+        ParmVarDecl *NewParm = NewParms[NewIndex++];
+        NewParm->setOwningFunction(New);
+        AddDeclSubstitution(OldParm, NewParm);
+      }
     } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
   } else {
     assert(NewParms.size() == 0);
@@ -2263,6 +2303,18 @@ void Sema::ActOnCXXMetaprogramDeclError(Scope *S, Decl *D) {
 /// Called when an error occurs while parsing the injection-declaration body.
 void Sema::ActOnCXXInjectionDeclError(Scope *S, Decl *D) {
   ActOnCXXMetaError<CXXInjectionDecl>(*this, S, D);
+}
+
+bool Sema::ActOnCXXInjectedParameter(SourceLocation ArrowLoc, Expr *Reflection,
+                           SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms) {
+  CXXInjectedParmsInfo ParmInjectionInfo(ArrowLoc, Reflection);
+  ParmVarDecl *New = ParmVarDecl::Create(Context, ParmInjectionInfo);
+
+  New->setScopeInfo(CurScope->getFunctionPrototypeDepth(),
+                    CurScope->getNextFunctionPrototypeIndex());
+
+  Parms.push_back(DeclaratorChunk::ParamInfo(nullptr, ArrowLoc, New));
+  return true;
 }
 
 /// Given an input like this:

@@ -2843,6 +2843,9 @@ private:
   DeclGroupPtrTy ParseCXXMetaprogramDeclaration();
   DeclGroupPtrTy ParseCXXInjectionDeclaration();
 
+  bool ParseCXXInjectedParameter(
+                        SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

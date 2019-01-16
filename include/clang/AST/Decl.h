@@ -1547,17 +1547,28 @@ public:
   static bool classofKind(Kind K) { return K == ImplicitParam; }
 };
 
+/// This is a hack to allow parameters to be injected.
+struct CXXInjectedParmsInfo {
+  SourceLocation ArrowLoc;
+  Expr *Reflection;
+
+  CXXInjectedParmsInfo(const SourceLocation &ArrowLoc, Expr *Reflection)
+      : ArrowLoc(ArrowLoc), Reflection(Reflection) { }
+};
+
 /// Represents a parameter to a function.
 class ParmVarDecl : public VarDecl {
 public:
   enum { MaxFunctionScopeDepth = 255 };
   enum { MaxFunctionScopeIndex = 255 };
 
+  const CXXInjectedParmsInfo *InjectedParmsInfo;
 protected:
-  ParmVarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
+  ParmVarDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
               SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
               TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
-      : VarDecl(DK, C, DC, StartLoc, IdLoc, Id, T, TInfo, S) {
+      : VarDecl(ParmVar, C, DC, StartLoc, IdLoc, Id, T, TInfo, S),
+        InjectedParmsInfo(nullptr) {
     assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
     assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
     assert(ParmVarDeclBits.IsKNRPromoted == false);
@@ -1565,12 +1576,17 @@ protected:
     setDefaultArg(DefArg);
   }
 
+  ParmVarDecl(ASTContext &C, DeclContext *DC, const CXXInjectedParmsInfo &IPI);
+
 public:
   static ParmVarDecl *Create(ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc,
                              SourceLocation IdLoc, IdentifierInfo *Id,
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, Expr *DefArg);
+
+  static ParmVarDecl *Create(ASTContext &C,
+                             const CXXInjectedParmsInfo& InjectedParmsInfo);
 
   static ParmVarDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 

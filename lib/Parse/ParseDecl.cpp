@@ -6440,6 +6440,11 @@ void Parser::ParseParameterDeclarationClause(
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
       break;
 
+    if (Tok.is(tok::arrow)) {
+      ParseCXXInjectedParameter(ParamInfo);
+      continue;
+    }
+
     // Parse the declaration-specifiers.
     // Just use the ParsingDeclaration "scope" of the declarator.
     DeclSpec DS(AttrFactory);

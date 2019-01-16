@@ -329,3 +329,21 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
 
   return Actions.ConvertDeclToDeclGroup(D);
 }
+
+/// Parse a C++ injected parameter.
+///
+///   parameter:
+///     '->' constant-expression
+///
+bool Parser::ParseCXXInjectedParameter(
+                       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo) {
+  assert(Tok.is(tok::arrow) && "Expected '->' token");
+  SourceLocation Loc = ConsumeToken();
+
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid())
+    return false;
+
+  Actions.ActOnCXXInjectedParameter(Loc, Reflection.get(), ParamInfo);
+  return true;
+}

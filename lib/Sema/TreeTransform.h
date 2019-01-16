@@ -626,6 +626,9 @@ public:
       TypeLocBuilder &TLB, DependentTemplateSpecializationTypeLoc TL,
       NestedNameSpecifierLoc QualifierLoc);
 
+  ArrayRef<ParmVarDecl *> ExpandInjectedParameters(
+                                          ArrayRef<ParmVarDecl *> SourceParams);
+
   /// Transforms the parameters of a function type into the
   /// given vectors.
   ///
@@ -634,7 +637,7 @@ public:
   ///
   /// Return true on error.
   bool TransformFunctionTypeParams(
-      SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
+      SourceLocation Loc, ArrayRef<ParmVarDecl *> SourceParams,
       const QualType *ParamTypes,
       const FunctionProtoType::ExtParameterInfo *ParamInfos,
       SmallVectorImpl<QualType> &PTypes, SmallVectorImpl<ParmVarDecl *> *PVars,
@@ -5205,8 +5208,14 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
 }
 
 template <typename Derived>
+ArrayRef<ParmVarDecl *> TreeTransform<Derived>::ExpandInjectedParameters(
+                                         ArrayRef<ParmVarDecl *> SourceParams) {
+  return SourceParams;
+}
+
+template <typename Derived>
 bool TreeTransform<Derived>::TransformFunctionTypeParams(
-    SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
+    SourceLocation Loc, ArrayRef<ParmVarDecl *> SourceParams,
     const QualType *ParamTypes,
     const FunctionProtoType::ExtParameterInfo *ParamInfos,
     SmallVectorImpl<QualType> &OutParamTypes,
@@ -5214,10 +5223,20 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     Sema::ExtParameterInfoBuilder &PInfos) {
   int indexAdjustment = 0;
 
+  ArrayRef<ParmVarDecl *> Params
+                          = getDerived().ExpandInjectedParameters(SourceParams);
+
   unsigned NumParams = Params.size();
   for (unsigned i = 0; i != NumParams; ++i) {
     if (ParmVarDecl *OldParm = Params[i]) {
       assert(OldParm->getFunctionScopeIndex() == i);
+
+      // If this is an injection parameter, wait til we hit an injection
+      // context.
+      if (OldParm->InjectedParmsInfo) {
+        PVars->push_back(OldParm);
+        continue;
+      }
 
       Optional<unsigned> NumExpansions;
       ParmVarDecl *NewParm = nullptr;
