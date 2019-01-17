@@ -27,6 +27,7 @@ class Decl;
 class Expr;
 class NamespaceDecl;
 class NestedNameSpecifier;
+class Sema;
 class Type;
 class UnresolvedLookupExpr;
 
@@ -619,6 +620,9 @@ struct Reflection {
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
+
+Reflection EvaluateReflection(Sema &S, Expr *E);
+
 } // namespace clang
 
 #endif

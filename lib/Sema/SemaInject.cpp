@@ -72,6 +72,13 @@ class InjectionContext : public TreeTransform<InjectionContext> {
 public:
   InjectionContext(Sema &SemaRef) : Base(SemaRef), Modifiers() { }
 
+  ~InjectionContext() {
+    // Cleanup any allocated parameter injection arrays
+    for (auto *ParmVectorPtr : ParamInjectionCleanups) {
+      delete ParmVectorPtr;
+    }
+  }
+
   ASTContext &getContext() { return getSema().Context; }
 
   /// Detach the context from the semantics object. Returns this object for
@@ -198,26 +205,61 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
-  ArrayRef<ParmVarDecl *> ExpandInjectedParameters(
-                                         ArrayRef<ParmVarDecl *> SourceParams) {
-    auto Params = new (SemaRef.Context) SmallVector<ParmVarDecl *, 8>();
-    for (ParmVarDecl *PVD : SourceParams) {
-      if (const CXXInjectedParmsInfo *IPI = PVD->InjectedParmsInfo) {
-        SmallVector<ParmVarDecl *, 4> ExpandedParms;
+  bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
+                               SmallVectorImpl<ParmVarDecl *> &Parms) {
+    ExprResult TransformedOperand = getDerived().TransformExpr(
+                                                              Injected.Operand);
+    if (TransformedOperand.isInvalid())
+      return true;
 
-        // TODO: Evaluate reflection and extract the parameter decls
-        Expr *Reflection = IPI->Reflection;
+    Expr *Operand = TransformedOperand.get();
+    Sema::ExpansionContextBuilder CtxBldr(SemaRef, SemaRef.getCurScope(),
+                                          Operand);
+    if (CtxBldr.BuildCalls())
+      ; // TODO: Diag << failed to build calls
+
+    // Traverse the range now and add the exprs to the vector
+    Sema::RangeTraverser Traverser(SemaRef, CtxBldr.getKind(),
+                                   CtxBldr.getRangeBeginCall(),
+                                   CtxBldr.getRangeEndCall());
+
+    while (!Traverser) {
+      Reflection R = EvaluateReflection(SemaRef, *Traverser);
+      Decl *ReflectD = const_cast<Decl *>(R.getAsDeclaration());
+      Parms.push_back(cast<ParmVarDecl>(ReflectD));
+
+      ++Traverser;
+    }
+
+    return false;
+  }
+
+  bool ExpandInjectedParameters(
+     ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams) {
+    // Create a new vector to hold the expanded params.
+    auto *Params = new SmallVector<ParmVarDecl *, 8>();
+
+    // Register the vector for cleanup during injection context teardown.
+    ParamInjectionCleanups.push_back(Params);
+
+    for (ParmVarDecl *Parm : SourceParams) {
+      if (const CXXInjectedParmsInfo *Injected = Parm->InjectedParmsInfo) {
+        SmallVector<ParmVarDecl *, 4> ExpandedParms;
+        if (ExpandInjectedParameter(*Injected, ExpandedParms))
+          return true;
 
         // Add the new Params.
         Params->append(ExpandedParms.begin(), ExpandedParms.end());
 
         // Add the substitition.
-        InjectedParms[PVD] = ExpandedParms;
-        continue;
+        InjectedParms[Parm] = ExpandedParms;
+      } else {
+        Params->push_back(Parm);
       }
-      Params->push_back(PVD);
     }
-    return *Params;
+
+    OutParams = *Params;
+    return false;
   }
 
   bool InjectDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
@@ -255,6 +297,9 @@ public:
   /// A mapping of injected parameters to their corresponding
   /// expansions.
   llvm::DenseMap<ParmVarDecl *, SmallVector<ParmVarDecl *, 4>> InjectedParms;
+
+  /// A list of expanded parameter injections to be cleaned up.
+  llvm::SmallVector<SmallVector<ParmVarDecl *, 8> *, 4> ParamInjectionCleanups;
 
   SmallVectorImpl<ParmVarDecl *> *FindInjectedParms(ParmVarDecl *P) {
     auto Iter = InjectedParms.find(P);
@@ -1923,10 +1968,6 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
     CXXConstructorDecl *NewCtor = cast<CXXConstructorDecl>(NewMethod);
 
     SmallVector<CXXCtorInitializer *, 4> NewInitArgs;
-
-    auto OldIterator = OldCtor->init_begin();
-    auto OldIteratorEnd = OldCtor->init_end();
-
     for (CXXCtorInitializer *OldInitializer : OldCtor->inits()) {
       FieldDecl *NewField = cast<FieldDecl>(
              Cxt->TransformDecl(SourceLocation(), OldInitializer->getMember()));

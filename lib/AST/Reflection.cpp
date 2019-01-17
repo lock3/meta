@@ -17,6 +17,9 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
+#include "clang/Sema/Sema.h"
+#include "clang/Sema/SemaDiagnostic.h"
+
 using namespace clang;
 
 /// Returns an APValue-packaged truth value.
@@ -1830,4 +1833,22 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
   default:
     return false;
   }
+}
+
+namespace clang {
+
+Reflection EvaluateReflection(Sema &S, Expr *E) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  if (!E->EvaluateAsRValue(Result, S.Context)) {
+    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return Reflection();
+  }
+
+  return Reflection(S.Context, Result.Val);
+}
+
 }

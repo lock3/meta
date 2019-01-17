@@ -257,15 +257,10 @@ protected:
 
   friend class ASTStmtReader;
 
-public:
-  enum RangeKind {
-    RK_Array,
-    RK_Range,
-    RK_Tuple,
-    RK_Struct,
-    RK_Unknown,
-  };
+private:
+  RangeKind StmtRangeKind;
 
+public:
   CXXExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
                    TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
@@ -276,14 +271,14 @@ public:
     SubExprs[RANGE] = RangeVar;
     SubExprs[BODY] = nullptr;
   }
-  
+
   CXXExpansionStmt(EmptyShell Empty) : Stmt(CXXExpansionStmtClass, Empty) {}
 
   /// \brief Returns the statement containing the range declaration.
   Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
 
   /// \brief The range variable.
-  const VarDecl *getRangeVariable() const;  
+  const VarDecl *getRangeVariable() const;
   VarDecl *getRangeVariable();
 
   /// \brief The original range expression.
@@ -338,10 +333,6 @@ public:
 
   RangeKind getRangeKind() const { return StmtRangeKind; }
 
-private:
-  RangeKind StmtRangeKind;
-
-public:
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();
@@ -349,7 +340,7 @@ public:
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
                             "Use getEndLoc instead") {
     return getEndLoc();
-  }  
+  }
 
   SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
@@ -364,7 +355,6 @@ public:
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXExpansionStmtClass;
   }
-
 };
 
 /// Representation of a Microsoft __if_exists or __if_not_exists

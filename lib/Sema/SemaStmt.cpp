@@ -3173,7 +3173,7 @@ ExpansionStatementBuilder::BuildDependentExpansion()
   return new (SemaRef.Context)
     CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
                      TemplateParms, /*Size=*/-1, ForLoc, AnnotationLoc,
-                     ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
+                     ColonLoc, RParenLoc, RK_Unknown);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3256,8 +3256,7 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
                                                 TemplateParms,
                                                 Size.getExtValue(), ForLoc,
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Array);
+                                                RParenLoc, RK_Array);
 }
 
 /// When range-expr denotes an tuple, expand over the elements of the array.
@@ -3337,11 +3336,10 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
     return StmtError();
 
   return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
-                                                TemplateParms, 
-                                                Size.getExtValue(), ForLoc, 
+                                                TemplateParms,
+                                                Size.getExtValue(), ForLoc,
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Tuple);
+                                                RParenLoc, RK_Tuple);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3556,20 +3554,18 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   // Note the constant evaluation of the expression.
-  EnterExpressionEvaluationContext EvalContext(SemaRef, 
-    Sema::ExpressionEvaluationContext::ConstantEvaluated);
+  EnterExpressionEvaluationContext EvalContext(SemaRef,
+      Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   llvm::APSInt Count;
   if (!CountCall->EvaluateAsInt(Count, SemaRef.Context))
     return StmtError();
 
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
-                                                RangeDeclStmt,
-                                                TemplateParms, 
-                                                Count.getExtValue(), ForLoc, 
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                                                TemplateParms,
+                                                Count.getExtValue(), ForLoc,
                                                 AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Range);
+                                                RParenLoc, RK_Range);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.

@@ -8778,6 +8778,78 @@ public:
                        SourceLocation EllipsisLoc,
                        SourceLocation RParenLoc);
 
+  /// A facility used to determine the begin and end of a constexpr range
+  /// or array.
+  struct ExpansionContextBuilder {
+    ExpansionContextBuilder(Sema &S, Scope *CS, Expr *Range)
+      : SemaRef(S), CurScope(CS), Range(Range) { }
+
+    /// Construct calls to std::begin(Range) and std::end(Range)
+    /// Returns true on error.
+    bool BuildCalls();
+
+    Expr *getRangeBeginCall() const { return RangeBegin; }
+    Expr *getRangeEndCall() const { return RangeEnd; }
+
+    Expr *getRange() const { return Range; }
+
+    RangeKind getKind() const { return Kind; }
+  private:
+    bool BuildArrayCalls();
+    bool BuildRangeCalls();
+
+  private:
+    Sema &SemaRef;
+
+    /// The scope in which analysis will be performed.
+    Scope *CurScope;
+
+    /// Calls to std::begin(range) and std::end(range), respectively.
+    Expr *RangeBegin = nullptr;
+    Expr *RangeEnd = nullptr;
+
+    /// The Range that we are constructing an expansion context from.
+    Expr *Range;
+
+    RangeKind Kind;
+  };
+
+  /// Traverse a C++ Constexpr Range
+  struct RangeTraverser {
+    RangeTraverser(Sema &SemaRef, RangeKind Kind, Expr *RangeBegin,
+                   Expr *RangeEnd)
+      : SemaRef(SemaRef), Current(RangeBegin), RangeEnd(RangeEnd),
+      Kind(Kind), I() { }
+
+    /// Current == RangeEnd
+    explicit operator bool();
+
+    /// Dereference and evaluate the current value as a constant expression.
+    Expr *operator*();
+
+    /// Call std::next(Current, 1) if this is a constexpr range,
+    /// Increment the array subscript if it is an array.
+    RangeTraverser &operator++();
+
+    /// Get the range kind.
+    RangeKind getKind() const { return Kind; }
+
+  private:
+    Sema &SemaRef;
+
+    /// The current element in the traversal
+    Expr *Current;
+
+    /// One-past-the-end iterator (std::end) of the range we are traversing.
+    Expr *RangeEnd = nullptr;
+
+    /// The kind of product type we are traversing.
+    RangeKind Kind;
+
+    /// An integer Index that keeps track of the current element.
+    std::size_t I;
+  };
+
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
                                  SourceLocation LParenLoc,

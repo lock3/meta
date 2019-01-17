@@ -1550,10 +1550,10 @@ public:
 /// This is a hack to allow parameters to be injected.
 struct CXXInjectedParmsInfo {
   SourceLocation ArrowLoc;
-  Expr *Reflection;
+  Expr *Operand;
 
-  CXXInjectedParmsInfo(const SourceLocation &ArrowLoc, Expr *Reflection)
-      : ArrowLoc(ArrowLoc), Reflection(Reflection) { }
+  CXXInjectedParmsInfo(const SourceLocation &ArrowLoc, Expr *Operand)
+      : ArrowLoc(ArrowLoc), Operand(Operand) { }
 };
 
 /// Represents a parameter to a function.

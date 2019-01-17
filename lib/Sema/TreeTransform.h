@@ -626,8 +626,11 @@ public:
       TypeLocBuilder &TLB, DependentTemplateSpecializationTypeLoc TL,
       NestedNameSpecifierLoc QualifierLoc);
 
-  ArrayRef<ParmVarDecl *> ExpandInjectedParameters(
-                                          ArrayRef<ParmVarDecl *> SourceParams);
+  bool ExpandInjectedParameters(
+      ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams);
+
+  bool TransformInjectedParameter(
+              ParmVarDecl *OldParm, ParmVarDecl *&NewParm, int IndexAdjustment);
 
   /// Transforms the parameters of a function type into the
   /// given vectors.
@@ -5208,9 +5211,27 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
 }
 
 template <typename Derived>
-ArrayRef<ParmVarDecl *> TreeTransform<Derived>::ExpandInjectedParameters(
-                                         ArrayRef<ParmVarDecl *> SourceParams) {
-  return SourceParams;
+bool TreeTransform<Derived>::ExpandInjectedParameters(
+     ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams) {
+  OutParams = SourceParams;
+  return false;
+}
+
+template <typename Derived>
+bool TreeTransform<Derived>::TransformInjectedParameter(
+             ParmVarDecl *OldParm, ParmVarDecl *&NewParm, int IndexAdjustment) {
+  const CXXInjectedParmsInfo *Injected = OldParm->InjectedParmsInfo;
+  assert(Injected && "Expected injection ParmVarDecl");
+
+  ExprResult NewOperand = getDerived().TransformExpr(Injected->Operand);
+  if (!NewOperand.isInvalid())
+    return true;
+
+  CXXInjectedParmsInfo ParmInjectionInfo(Injected->ArrowLoc, NewOperand.get());
+  NewParm = ParmVarDecl::Create(SemaRef.Context, ParmInjectionInfo);
+  NewParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
+                        OldParm->getFunctionScopeIndex() + IndexAdjustment);
+  return false;
 }
 
 template <typename Derived>
@@ -5223,18 +5244,25 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     Sema::ExtParameterInfoBuilder &PInfos) {
   int indexAdjustment = 0;
 
-  ArrayRef<ParmVarDecl *> Params
-                          = getDerived().ExpandInjectedParameters(SourceParams);
+  ArrayRef<ParmVarDecl *> Params;
+  if (getDerived().ExpandInjectedParameters(SourceParams, Params))
+    return true;
 
   unsigned NumParams = Params.size();
   for (unsigned i = 0; i != NumParams; ++i) {
     if (ParmVarDecl *OldParm = Params[i]) {
       assert(OldParm->getFunctionScopeIndex() == i);
 
-      // If this is an injection parameter, wait til we hit an injection
-      // context.
+      // If this is an injection parameter, perform transform, and rebuild.
+      //
+      // The actual expansion will occur later in ExpandInjectedParameters
+      // once we've hit an injection transform.
       if (OldParm->InjectedParmsInfo) {
-        PVars->push_back(OldParm);
+        ParmVarDecl *NewParm = nullptr;
+        if (TransformInjectedParameter(OldParm, NewParm, indexAdjustment))
+          return true;
+
+        PVars->push_back(NewParm);
         continue;
       }
 
