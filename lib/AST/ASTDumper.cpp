@@ -575,6 +575,8 @@ namespace  {
     void VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *Node);
     void VisitCXXIdExprExpr(const CXXIdExprExpr *Node);
     void VisitCXXValueOfExpr(const CXXValueOfExpr *Node);
+    void VisitCXXDependentVariadicReifierExpr(
+      const CXXDependentVariadicReifierExpr *Node);
 
     // ObjC
     void VisitObjCAtCatchStmt(const ObjCAtCatchStmt *Node);
@@ -2558,6 +2560,11 @@ void ASTDumper::VisitCXXIdExprExpr(const CXXIdExprExpr *Node) {
 }
 
 void ASTDumper::VisitCXXValueOfExpr(const CXXValueOfExpr *Node) {
+  VisitExpr(Node);
+}
+
+void ASTDumper::VisitCXXDependentVariadicReifierExpr(
+  const CXXDependentVariadicReifierExpr *Node) {
   VisitExpr(Node);
 }
 

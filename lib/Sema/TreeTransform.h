@@ -122,7 +122,7 @@ protected:
 
 public:
   /// Initializes a new tree transformer.
-  TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) { }
+  TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) {}
 
   /// Retrieves a reference to the derived class.
   Derived &getDerived() { return static_cast<Derived&>(*this); }
@@ -668,6 +668,11 @@ public:
       TypeSourceInfo **RecoveryTSI);
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
+
+  // Check if the current expression is a dependent C++ variadic reifier that
+  // still needs expansion. If so, transform and expand it.
+  bool
+  MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -3629,9 +3634,13 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       continue;
     }
 
+    if(!MaybeTransformVariadicReifier(Inputs[I], Outputs))
+      continue;
+
     ExprResult Result =
-      IsCall ? getDerived().TransformInitializer(Inputs[I], /*DirectInit*/false)
-             : getDerived().TransformExpr(Inputs[I]);
+      IsCall ? getDerived().TransformInitializer(Inputs[I],
+                                                 /*DirectInit*/false)
+      : getDerived().TransformExpr(Inputs[I]);
     if (Result.isInvalid())
       return true;
 
@@ -7501,7 +7510,7 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
+TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {  
   ExprResult Refl = getDerived().TransformExpr(E->getReflection());
   if (Refl.isInvalid())
     return ExprError();
@@ -7546,6 +7555,62 @@ TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
     Parts.push_back(Part.get());
   }
   return RebuildCXXConcatenateExpr(E->getBeginLoc(), Parts);
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXDependentVariadicReifierExpr(
+  CXXDependentVariadicReifierExpr* E) {
+  return ExprError();
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
+  if (E->getStmtClass() == Stmt::CXXDependentVariadicReifierExprClass) {
+    CXXDependentVariadicReifierExpr *DependentReifier =
+      cast<CXXDependentVariadicReifierExpr>(E);
+
+    // If this is a dependent variadic reification, go ahead and transform it.
+    if (DependentReifier->getEllipsisLoc().isValid()) {
+      Expr *OldRange = DependentReifier->getRange();
+      ExprResult NewRange = TransformExpr(OldRange);
+
+      if(NewRange.isInvalid())
+        return true;
+
+      llvm::SmallVector<Expr *, 8> ExpandedReifiers;
+      IdentifierInfo *Keyword;
+
+      switch(DependentReifier->getKeywordId())
+      {
+      case tok::kw_valueof:
+        Keyword = &(getSema().Context.Idents.get("valueof"));
+        break;
+      case tok::kw_idexpr:
+        Keyword = &(getSema().Context.Idents.get("idexpr"));
+        break;
+      case tok::kw_unqualid:
+        Keyword = &(getSema().Context.Idents.get("unqualid"));
+        break;
+      default:
+        // TODO: Diag << err_invalid_reification
+        return true;
+      }
+
+      ExpandedReifiers =
+        getSema().ActOnVariadicReification(SourceLocation(), Keyword,
+                                           NewRange.get(), SourceLocation(),
+                                           SourceLocation(),
+                                           SourceLocation());
+
+      Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // Objective-C Statements.

@@ -8713,7 +8713,8 @@ public:
   ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
                                 Expr *Refl,
                                 SourceLocation LParenLoc,
-                                SourceLocation RParenLoc);
+                                SourceLocation RParenLoc,
+                                SourceLocation EllipsisLoc = SourceLocation());
 
   /// Traverse a C++ Constexpr Range
   struct RangeTraverser {
@@ -8725,7 +8726,8 @@ public:
     /// Dereference and evaluate the current value as a constant expression.
     Expr *operator*();
 
-    /// Call std::next(Current, 1)
+    /// Call std::next(Current, 1) if this is a constexpr range,
+    /// Increment the array subscript if it is an array.
     RangeTraverser &operator++();
 
   private:
@@ -8783,13 +8785,13 @@ public:
     bool BuildRangeVar();
 
     /// Perform some final analysis on the range variable.
-    void FinishRangeVar();
+    void FinishRangeVar(bool Instantiate = true);
 
     /// Build the induction variable.
     bool BuildInductionVar();
 
     /// Builds an expansion when the range is dependent.
-    StmtResult BuildDependentExpansion();
+    StmtResult BuildDependentExpansion(bool Instantiate = true);
 
     /// Build the expansion over an unexpanded parameter pack.
     StmtResult BuildExpansionOverPack();
@@ -8886,6 +8888,13 @@ public:
                            SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc,
                            SourceLocation RParenLoc);
+  llvm::SmallVector<Expr *, 4>
+  ActOnDependentVariadicReification(SourceLocation KWLoc,
+                                    IdentifierInfo *KW,
+                                    Expr *Range,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation EllipsisLoc,
+                                    SourceLocation RParenLoc);
   llvm::SmallVector<QualType, 4>
   ActOnVariadicTypename(SourceLocation KWLoc,
                         Expr *Range,
@@ -8902,7 +8911,15 @@ public:
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
                                  SourceLocation LParenLoc,
-                                 SourceLocation RParenLoc);
+                                 SourceLocation RParenLoc,
+                                 SourceLocation EllipsisLoc = SourceLocation());
+
+  ExprResult ActOnCXXDependentVariadicReifierExpr(Expr *Range,
+                                                  SourceLocation KWLoc,
+                                                  IdentifierInfo *KW,
+                                                  SourceLocation LParenLoc,
+                                                  SourceLocation EllipsisLoc,
+                                                  SourceLocation RParenLoc);
 
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,

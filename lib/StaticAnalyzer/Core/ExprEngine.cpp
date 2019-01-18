@@ -1174,6 +1174,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXIdExprExprClass:
     case Stmt::CXXValueOfExprClass:
     case Stmt::CXXConcatenateExprClass:
+    case Stmt::CXXDependentVariadicReifierExprClass:
     case Stmt::CXXExpansionStmtClass:
     case Stmt::MSPropertyRefExprClass:
     case Stmt::MSPropertySubscriptExprClass:

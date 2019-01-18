@@ -940,7 +940,7 @@ public:
 
 // Returns the first sub-object of x. Objects behave
 // as forward iterators.
-consteval iterator begin(info x) {
+constexpr iterator begin(info x) {
   return __reflect(detail::query_get_begin, x);
 }
 
@@ -948,12 +948,12 @@ consteval iterator begin(info x) {
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
-consteval iterator end(info x) {
+constexpr iterator end(info x) {
   return iterator();
 }
 
-// Overload distance so that it's consteval.
-consteval std::ptrdiff_t distance(iterator first, iterator last) {
+// Overload distance so that it's constexpr.
+constexpr std::ptrdiff_t distance(iterator first, iterator last) {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
     ++n;

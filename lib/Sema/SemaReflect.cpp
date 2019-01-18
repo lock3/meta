@@ -435,7 +435,8 @@ static Reflection EvaluateReflection(Sema &S, Expr *E) {
 ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
                                     Expr *Refl,
                                     SourceLocation LParenLoc,
-                                    SourceLocation RParenLoc)
+                                    SourceLocation RParenLoc,
+                                    SourceLocation EllipsisLoc)
 {
   if (Refl->isTypeDependent() || Refl->isValueDependent())
     return new (Context) CXXIdExprExpr(Context.DependentTy, Refl, KWLoc,
@@ -494,32 +495,29 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
 }
 
 static ExprResult
-getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression)
+getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
+                    SourceLocation EllipsisLoc = SourceLocation())
 {
   // llvm::outs() << "The expression:\n";
   // Expression->dump();
-  return SemaRef.ActOnCXXValueOfExpr
-    (SourceLocation(), Expression, SourceLocation(), SourceLocation());
+  return SemaRef.ActOnCXXValueOfExpr (SourceLocation(), Expression,
+                                      SourceLocation(), SourceLocation(),
+                                      EllipsisLoc);
 }
 
 static ExprResult
-getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression)
+getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
+                   SourceLocation EllipsisLoc = SourceLocation())
 {
-  return SemaRef.ActOnCXXIdExprExpr
-    (SourceLocation(), Expression, SourceLocation(), SourceLocation());
+  return SemaRef.ActOnCXXIdExprExpr(SourceLocation(), Expression,
+                                    SourceLocation(), SourceLocation(),
+                                    EllipsisLoc);
 }
 
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
   llvm::SmallVector<Expr *, 1> Parts = {Expression};
-  // Reflection(Expression->EvaluateAsRvalue
-  // ExprResult Ref = SemaRef.DefaultLvalueConversion(Expression);
-  // Expr::EvalResult Evaluation;
-  // // Ref.get()->EvaluateAsConstantExpr(Evaluation, Expr::EvaluateForCodeGen,
-  // //                                   SemaRef.Context);
-  // Expression->EvaluateAsConstantExpr(Evaluation, Expr::EvaluateForCodeGen,
-  //                                    SemaRef.Context);
 
   UnqualifiedId Result;
   if(SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
@@ -535,18 +533,6 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
   if(BuiltExpr.isInvalid())
     return ExprError();
   return BuiltExpr;
-  // DeclarationNameInfo DNI =
-  //   SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
-
-  // if (!DNI.getName())
-  //   return ExprError();
-
-  // UnresolvedSetImpl US;
-  // US.addDecl();
-
-  // UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr, nullptr,
-  //                              DNI, /*ADL=*/false, /*Overloaded=*/false,
-  //                              ...);
 
 }
 
@@ -564,16 +550,39 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
                                SourceLocation EllipsisLoc,
                                SourceLocation RParenLoc)
 {
-  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
-  StmtResult Expansion = Bldr.BuildUninstantiated();
 
-  // Traverse the range now and add the exprs to the vector
-  RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
-                           Bldr.getBeginCallRef());
+  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
+  StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
+  CXXExpansionStmt *Expansion =
+    static_cast<CXXExpansionStmt *>(ExpansionResult.get());
 
   llvm::SmallVector<Expr *, 4> Expressions;
-
   ExprResult C;
+
+  // If the expansion is dependent, we cannot expand on it yet.
+  // Just return an empty reifier containing the Range and EllipsisLoc.
+  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
+  //   llvm::outs() << "DEPENDENT EXPANSION\n";
+  //   switch(KW->getTokenID()) {
+  //   case tok::kw_valueof:
+  //     C = getAsCXXValueOfExpr(*this, Range, EllipsisLoc);
+  //     break;
+  //   case tok::kw_idexpr:
+  //     C = getAsCXXIdExprExpr(*this, Range, EllipsisLoc);
+  //     break;
+  //   default:
+  //     llvm_unreachable("Unimplemented");
+  //   }
+    C = ActOnCXXDependentVariadicReifierExpr(Range, KWLoc, KW, LParenLoc,
+                                             EllipsisLoc, RParenLoc);
+
+    Expressions.push_back(C.get());
+    return Expressions;
+  }
+  // Traverse the range now and add the exprs to the vector
+  RangeTraverser Traverser(*this, Expansion, Bldr.getBeginCallRef());
+
+
   
   while(!Traverser) {
     switch(KW->getTokenID()) {
@@ -597,6 +606,43 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
 
     ++Traverser;
   }
+
+  return Expressions;
+}
+
+llvm::SmallVector<Expr *, 4>
+ActOnDependentVariadicReification(SourceLocation KWLoc,
+                                  IdentifierInfo *KW,
+                                  CXXExpansionStmt *Expansion,
+                                  SourceLocation LParenLoc,
+                                  SourceLocation EllipsisLoc,
+                                  SourceLocation RParenLoc)
+{
+  llvm::SmallVector<Expr *, 4> Expressions;
+  // ExprResult C;
+
+  // while(!Traverser) {
+  //   switch(KW->getTokenID()) {
+  //   case tok::kw_valueof:
+  //     C = getAsCXXValueOfExpr(*this, *Traverser);
+  //     break;
+  //   case tok::kw_idexpr:
+  //     C = getAsCXXIdExprExpr(*this, *Traverser);
+  //     break;
+  //   case tok::kw_unqualid:
+  //     C = getAsCXXReflectedDeclname(*this, *Traverser);
+  //     break;
+  //   case tok::kw_typename:
+  //   case tok::kw_namespace:
+  //   default: // silence warning
+  //     break;
+  //   }
+
+  //   if(!C.isInvalid() && C.isUsable())
+  //     Expressions.push_back(C.get());
+
+  //   ++Traverser;
+  // }
 
   return Expressions;
 }
@@ -655,11 +701,17 @@ Sema::ActOnVariadicDeclname(SourceLocation KWLoc, Expr *Range,
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      Expr *Refl,
                                      SourceLocation LParenLoc,
-                                     SourceLocation RParenLoc)
+                                     SourceLocation RParenLoc,
+                                     SourceLocation EllipsisLoc)
 {
-  if (Refl->isTypeDependent() || Refl->isValueDependent())
+  // llvm::outs() << "REFL:\n";
+  // if(!Refl) llvm::outs() << "NULL\n";
+  // Refl->dump();
+  
+  if (Refl->isTypeDependent() || Refl->isValueDependent()) 
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
-                                        LParenLoc, LParenLoc);
+                                        LParenLoc, LParenLoc, EllipsisLoc);
+  
   if (!CheckReflectionOperand(*this, Refl))
     return ExprError();
 
@@ -682,6 +734,24 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
 
   return new (Context) CXXConstantExpr(Eval, std::move(Result.Val));
 }
+
+ExprResult Sema::ActOnCXXDependentVariadicReifierExpr(Expr *Range,
+                                                      SourceLocation KWLoc,
+                                                      IdentifierInfo *KW,
+                                                      SourceLocation LParenLoc,
+                                                      SourceLocation EllipsisLoc,
+                                                      SourceLocation RParenLoc)
+{
+  // If the dependent reifier isn't dependent, something has gone wrong.
+  assert((Range->isTypeDependent() || Range->isValueDependent()) &&
+         "Marked a non-dependent variadic reification as dependent.");
+
+  return new (Context) CXXDependentVariadicReifierExpr(Context.DependentTy,
+                                                       Range, KWLoc, KW,
+                                                       LParenLoc, LParenLoc,
+                                                       EllipsisLoc);
+}
+
 
 static bool AppendStringValue(Sema& S, llvm::raw_ostream& OS,
                               const APValue& Val) {

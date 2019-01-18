@@ -5024,6 +5024,58 @@ public:
   }
 };
 
+class CXXDependentVariadicReifierExpr : public Expr {
+
+  Expr *Range;
+
+  SourceLocation KeywordLoc;
+  IdentifierInfo *Keyword;
+
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+  SourceLocation EllipsisLoc;
+public:
+  CXXDependentVariadicReifierExpr(QualType DependentTy,
+                                  Expr *Range,
+                                  SourceLocation KeywordLoc,
+                                  IdentifierInfo *Keyword,
+                                  SourceLocation LParenLoc,
+                                  SourceLocation RParenLoc,
+                                  SourceLocation EllipsisLoc)
+    : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
+           OK_Ordinary, Range->isTypeDependent(), Range->isValueDependent(),
+           Range->isInstantiationDependent(),
+           Range->containsUnexpandedParameterPack()),
+      Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {}
+
+  CXXDependentVariadicReifierExpr(EmptyShell Empty)
+    : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+
+  tok::TokenKind getKeywordId() const { return Keyword->getTokenID(); }
+
+  Expr *getRange() const { return Range; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
+  }
+};
+
 class CXXValueOfExpr : public Expr {
   Expr *Reflection;
 
@@ -5035,7 +5087,8 @@ public:
   CXXValueOfExpr(QualType T, Expr *Reflection,
                  SourceLocation KeywordLoc,
                  SourceLocation LParenLoc, 
-                 SourceLocation RParenLoc)
+                 SourceLocation RParenLoc,
+                 SourceLocation EllipsisLoc = SourceLocation())
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
            Reflection->isValueDependent() || Reflection->isTypeDependent(),
            Reflection->isValueDependent(),
@@ -5043,7 +5096,7 @@ public:
            Reflection->containsUnexpandedParameterPack()),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
-      EllipsisLoc(), RParenLoc(RParenLoc) {}
+      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
 
   CXXValueOfExpr(EmptyShell Empty)
     : Expr(CXXValueOfExprClass, Empty) {}

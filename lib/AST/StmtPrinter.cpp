@@ -2329,6 +2329,26 @@ void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
   OS << ')';
 }
 
+void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
+  CXXDependentVariadicReifierExpr *E) {
+  // TODO Finish this
+  switch(E->getKeywordId()) {
+  case tok::kw_valueof:
+    OS << "valueof(...)";
+    break;
+  case tok::kw_idexpr:
+    OS << "idexpr(...)";
+    break;
+  case tok::kw_unqualid:
+    OS << "unqualid(...)";
+    break;
+  case tok::kw_typename:
+    OS << "typename(...)";
+    break;
+  default:
+    break;
+  }
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {

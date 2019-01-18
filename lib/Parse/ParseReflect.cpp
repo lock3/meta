@@ -450,6 +450,8 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
   return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
                                          Parens.getOpenLocation(),
                                          Parens.getCloseLocation());
+}
+
 /// Returns true if reflection is enabled and the
 /// current expression appears to be a variadic reifier.
 bool

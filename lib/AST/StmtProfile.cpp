@@ -1927,6 +1927,11 @@ void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXDependentVariadicReifierExpr(
+  const CXXDependentVariadicReifierExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }

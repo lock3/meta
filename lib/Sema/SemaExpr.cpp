@@ -5355,7 +5355,7 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
   ExprResult Result = MaybeConvertParenListExprToParenExpr(Scope, Fn);
   if (Result.isInvalid()) return ExprError();
   Fn = Result.get();
-
+  
   if (checkArgsForPlaceholders(*this, ArgExprs))
     return ExprError();
 
@@ -5381,7 +5381,8 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
 
     // Determine whether this is a dependent call inside a C++ template,
     // in which case we won't do any semantic analysis now.
-    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)) {
+    if (Fn->isTypeDependent() || Expr::hasAnyTypeDependentArguments(ArgExprs)
+        || Expr::hasDependentVariadicReifierArguments(ArgExprs)) {
       if (ExecConfig) {
         return new (Context) CUDAKernelCallExpr(
             Context, Fn, cast<CallExpr>(ExecConfig), ArgExprs,
@@ -15398,8 +15399,6 @@ void Sema::CleanupVarDeclMarking() {
     VarDecl *Var;
     SourceLocation Loc;
     if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
-      llvm::outs() << "Marking:\n";
-      DRE->dump();
       Var = cast<VarDecl>(DRE->getDecl());
       Loc = DRE->getLocation();
     } else if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
