@@ -740,11 +740,6 @@ private:
   /// declaration that we skipped. This only happens when \c LookupKind
   /// is \c LookupRedeclarationWithLinkage.
   bool Shadowed = false;
-
-public:
-  /// True if we need to allow parm vars to be found in addition to class
-  /// members -- used during tree transform for reflected id exprs.
-  bool EnableParmVarLookupHack = false;
 };
 
 /// Consumes visible declarations found when searching for

@@ -1628,11 +1628,15 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
 }
 
 // Assume that the name is an ordinary lvalue for now.
-CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T)
+CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
+      const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
+            bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs)
   : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary,
          /*TD=*/true, /*VD=*/true, /*ID=*/true,
          /*ContainsUnexpandedParameterPack=*/false),
-    NameInfo(DNI) {}
+    NameInfo(DNI), SS(SS), TemplateKWLoc(TemplateKWLoc),
+    TrailingLParen(TrailingLParen), AddressOfOperand(AddressOfOperand),
+    TemplateArgs(TemplateArgs) { }
 
 CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
                                        QualType T, SourceLocation L,

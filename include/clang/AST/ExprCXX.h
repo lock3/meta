@@ -5077,14 +5077,36 @@ public:
 /// Some of the arguments in args are dependent.
 class CXXReflectedIdExpr : public Expr {
   DeclarationNameInfo NameInfo;
+
+  const CXXScopeSpec SS;
+  SourceLocation TemplateKWLoc;
+  bool TrailingLParen;
+  bool AddressOfOperand;
+  const TemplateArgumentListInfo *TemplateArgs;
 public:
-  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T);
+  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
+                     const CXXScopeSpec &SS,
+                     SourceLocation TemplateKWLoc,
+                     bool TrailingLParen, bool AddressOfOperand,
+                     const TemplateArgumentListInfo *TemplateArgs);
 
   CXXReflectedIdExpr(EmptyShell Empty)
     : Expr(CXXReflectedIdExprClass, Empty) { }
 
   /// Returns the evaluated expression.
   DeclarationNameInfo getNameInfo() const { return NameInfo; }
+
+  CXXScopeSpec getScopeSpecifier() const { return SS; }
+
+  SourceLocation getTemplateKWLoc() const { return TemplateKWLoc; }
+
+  bool HasTrailingLParen() const { return TrailingLParen; }
+
+  bool IsAddressOfOperand() const { return AddressOfOperand; }
+
+  const TemplateArgumentListInfo *getTemplateArgs() const {
+    return TemplateArgs;
+  }
 
   SourceRange getSourceRange() const {
     return NameInfo.getCXXReflectedIdNameRange();

@@ -1006,9 +1006,10 @@ Corrected:
     // perform some heroics to see if we actually have a
     // template-argument-list, which would indicate a missing 'template'
     // keyword here.
-    return ActOnDependentIdExpression(SS, /*TemplateKWLoc=*/SourceLocation(),
-                                      NameInfo, IsAddressOfOperand,
-                                      /*TemplateArgs=*/nullptr);
+    return ActOnDependentIdExpression(
+        SS, /*TemplateKWLoc=*/SourceLocation(), NameInfo,
+        /*HasTrailingLParen=*/false, IsAddressOfOperand,
+        /*TemplateArgs=*/nullptr);
   }
 
   case LookupResult::Found:
@@ -1302,7 +1303,7 @@ void Sema::ActOnReenterFunctionContext(Scope* S, Decl *D) {
     // If the parameter has an identifier, then add it to the scope
     if (Param->getIdentifier()) {
       S->AddDecl(Param);
-      IdResolver.AddDecl(Param);
+      IdResolver->AddDecl(Param);
     }
   }
 }
@@ -1366,12 +1367,12 @@ void Sema::PushOnScopeChains(NamedDecl *D, Scope *S, bool AddToContext) {
     return;
 
   // If this replaces anything in the current scope,
-  IdentifierResolver::iterator I = IdResolver.begin(D->getDeclName()),
-                               IEnd = IdResolver.end();
+  IdentifierResolver::iterator I = IdResolver->begin(D->getDeclName()),
+                               IEnd = IdResolver->end();
   for (; I != IEnd; ++I) {
     if (S->isDeclScope(*I) && D->declarationReplaces(*I)) {
       S->RemoveDecl(*I);
-      IdResolver.RemoveDecl(*I);
+      IdResolver->RemoveDecl(*I);
 
       // Should only need to replace one decl.
       break;
@@ -1384,7 +1385,7 @@ void Sema::PushOnScopeChains(NamedDecl *D, Scope *S, bool AddToContext) {
     // Implicitly-generated labels may end up getting generated in an order that
     // isn't strictly lexical, which breaks name lookup. Be careful to insert
     // the label at the appropriate place in the identifier chain.
-    for (I = IdResolver.begin(D->getDeclName()); I != IEnd; ++I) {
+    for (I = IdResolver->begin(D->getDeclName()); I != IEnd; ++I) {
       DeclContext *IDC = (*I)->getLexicalDeclContext()->getRedeclContext();
       if (IDC == CurContext) {
         if (!S->isDeclScope(*I))
@@ -1393,20 +1394,20 @@ void Sema::PushOnScopeChains(NamedDecl *D, Scope *S, bool AddToContext) {
         break;
     }
 
-    IdResolver.InsertDeclAfter(I, D);
+    IdResolver->InsertDeclAfter(I, D);
   } else {
-    IdResolver.AddDecl(D);
+    IdResolver->AddDecl(D);
   }
 }
 
 void Sema::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
-  if (IdResolver.tryAddTopLevelDecl(D, Name) && TUScope)
+  if (IdResolver->tryAddTopLevelDecl(D, Name) && TUScope)
     TUScope->AddDecl(D);
 }
 
 bool Sema::isDeclInScope(NamedDecl *D, DeclContext *Ctx, Scope *S,
                          bool AllowInlineNamespace) {
-  return IdResolver.isDeclInScope(D, Ctx, S, AllowInlineNamespace);
+  return IdResolver->isDeclInScope(D, Ctx, S, AllowInlineNamespace);
 }
 
 Scope *Sema::getScopeForDeclContext(Scope *S, DeclContext *DC) {
@@ -1826,7 +1827,7 @@ void Sema::ActOnPopScope(SourceLocation Loc, Scope *S) {
 
     // Remove this name from our lexical scope, and warn on it if we haven't
     // already.
-    IdResolver.RemoveDecl(D);
+    IdResolver->RemoveDecl(D);
     auto ShadowI = ShadowingDecls.find(D);
     if (ShadowI != ShadowingDecls.end()) {
       if (const auto *FD = dyn_cast<FieldDecl>(ShadowI->second)) {
@@ -2194,7 +2195,7 @@ void Sema::MergeTypedefNameDecl(Scope *S, TypedefNameDecl *New,
           auto *ED = cast<EnumConstantDecl>(D);
           assert(EnumScope->isDeclScope(ED));
           EnumScope->RemoveDecl(ED);
-          IdResolver.RemoveDecl(ED);
+          IdResolver->RemoveDecl(ED);
           ED->getLexicalDeclContext()->removeDecl(ED);
         }
       }
@@ -12610,7 +12611,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // Add the parameter declaration into this scope.
   S->AddDecl(New);
   if (II)
-    IdResolver.AddDecl(New);
+    IdResolver->AddDecl(New);
 
   ProcessDeclAttributes(S, New, D);
 
@@ -15760,7 +15761,7 @@ Decl *Sema::ActOnIvar(Scope *S,
     // FIXME: When interfaces are DeclContexts, we'll need to add
     // these to the interface.
     S->AddDecl(NewID);
-    IdResolver.AddDecl(NewID);
+    IdResolver->AddDecl(NewID);
   }
 
   if (LangOpts.ObjCRuntime.isNonFragile() &&

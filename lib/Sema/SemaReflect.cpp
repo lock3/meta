@@ -1586,3 +1586,7 @@ ExprResult Sema::BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
 
   return new (Context) CXXConcatenateExpr(Context, StrTy, KWLoc, Converted);
 }
+
+DiagnosticsEngine &Sema::FakeParseScope::getDiagnostics() {
+  return SemaRef.PP.getDiagnostics();
+}

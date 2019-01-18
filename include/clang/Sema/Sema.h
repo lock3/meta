@@ -814,7 +814,7 @@ public:
   /// It would be best to refactor this.
   SmallVector<Decl*,2> WeakTopLevelDecl;
 
-  IdentifierResolver IdResolver;
+  IdentifierResolver *IdResolver;
 
   /// Translation Unit Scope - useful to Objective-C actions that need
   /// to lookup file scope declarations in the "ordinary" C decl namespace.
@@ -4172,6 +4172,15 @@ public:
       std::unique_ptr<CorrectionCandidateCallback> CCC = nullptr,
       bool IsInlineAsmIdentifier = false, Token *KeywordReplacement = nullptr);
 
+  ExprResult ActOnIdExpression(
+      Scope *S, CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+      DeclarationNameInfo NameInfo,
+      const TemplateArgumentListInfo *TemplateArgs,
+      UnqualifiedIdKind IdKind, TemplateIdAnnotation *TemplateId,
+      bool HasTrailingLParen, bool IsAddressOfOperand,
+      std::unique_ptr<CorrectionCandidateCallback> CCC = nullptr,
+      bool IsInlineAsmIdentifier = false, Token *KeywordReplacement = nullptr);
+
   void DecomposeUnqualifiedId(const UnqualifiedId &Id,
                               TemplateArgumentListInfo &Buffer,
                               DeclarationNameInfo &NameInfo,
@@ -4190,6 +4199,7 @@ public:
   ExprResult ActOnDependentIdExpression(const CXXScopeSpec &SS,
                                         SourceLocation TemplateKWLoc,
                                         const DeclarationNameInfo &NameInfo,
+                                        bool HasTrailingLParen,
                                         bool isAddressOfOperand,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
@@ -8809,6 +8819,52 @@ public:
       S.ReflectionScope = PreviouslyInReflection;
     }
   };
+
+private:
+  /// A vector of parse scopes used by tree transform to perform
+  /// delayed lookup.
+  SmallVector<Scope *, 4> TTParseScopes;
+
+public:
+  /// A class for managing fake parse scopes during tree transform
+  /// evaluation in an RAII fashion.
+  class FakeParseScope {
+    Sema &SemaRef;
+
+    DiagnosticsEngine &getDiagnostics();
+
+    void PushNewScope(unsigned ScopeFlags) {
+      Scope *LastScope = SemaRef.getMostRecentTTParseScope();
+      Scope *NewScope = new Scope(LastScope, ScopeFlags, getDiagnostics());
+      SemaRef.TTParseScopes.push_back(NewScope);
+    }
+
+    void PopOldScope() {
+      delete SemaRef.TTParseScopes.pop_back_val();
+    }
+
+  public:
+    FakeParseScope(Sema &SemaRef, unsigned ScopeFlags)
+      : SemaRef(SemaRef) {
+      PushNewScope(ScopeFlags);
+    }
+
+    ~FakeParseScope() {
+      PopOldScope();
+    }
+  };
+
+  /// Returns a read only view of the current fake parse scopes
+  /// for use by tree transform.
+  const SmallVector<Scope *, 4> getTTParseScopes() const {
+    return TTParseScopes;
+  }
+
+  /// Returns the most recent fake parse scope or nullptr if there
+  /// isn't one for use by tree transform.
+  Scope *getMostRecentTTParseScope() const {
+    return TTParseScopes.empty() ? nullptr : TTParseScopes.back();
+  }
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

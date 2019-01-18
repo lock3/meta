@@ -600,17 +600,15 @@ void Sema::diagnoseExprIntendedAsTemplateName(Scope *S, ExprResult TemplateName,
 /// specifier naming a dependent type.
 ExprResult
 Sema::ActOnDependentIdExpression(const CXXScopeSpec &SS,
-                                 SourceLocation TemplateKWLoc,
-                                 const DeclarationNameInfo &NameInfo,
-                                 bool isAddressOfOperand,
-                           const TemplateArgumentListInfo *TemplateArgs) {
+        SourceLocation TemplateKWLoc, const DeclarationNameInfo &NameInfo,
+        bool HasTrailingLParen, bool isAddressOfOperand,
+        const TemplateArgumentListInfo *TemplateArgs) {
   // If the name is a CXXReflectedIdName, then one or more of the
   // operands is dependent, and we cannot form an identifier. Simply preserve
   // the name as it is.
-  if (NameInfo.getName().getNameKind() == DeclarationName::CXXReflectedIdName) {
-    assert(SS.isEmpty() && "Scoped reflected id names not implemented");
-    return new (Context) CXXReflectedIdExpr(NameInfo, Context.DependentTy);
-  }
+  if (NameInfo.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
+    return new (Context) CXXReflectedIdExpr(NameInfo, Context.DependentTy,
+        SS, TemplateKWLoc, HasTrailingLParen, isAddressOfOperand, TemplateArgs);
 
   DeclContext *DC = getFunctionLevelDeclContext();
 
@@ -943,7 +941,7 @@ NamedDecl *Sema::ActOnTypeParameter(Scope *S, bool Typename,
 
     // Add the template parameter into the current scope.
     S->AddDecl(Param);
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
   }
 
   // C++0x [temp.param]p9:
@@ -1142,7 +1140,7 @@ NamedDecl *Sema::ActOnNonTypeTemplateParameter(Scope *S, Declarator &D,
 
     // Add the template parameter into the current scope.
     S->AddDecl(Param);
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
   }
 
   // C++0x [temp.param]p9:
@@ -1205,7 +1203,7 @@ NamedDecl *Sema::ActOnTemplateTemplateParameter(Scope* S,
     maybeDiagnoseTemplateParameterShadow(*this, S, NameLoc, Name);
 
     S->AddDecl(Param);
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
   }
 
   if (Params->size() == 0) {

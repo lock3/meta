@@ -454,6 +454,9 @@ public:
   /// By default, invokes TransformDecl() to transform the declaration.
   /// Subclasses may override this function to provide alternate behavior.
   Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+    if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
+      FakeParseScope->AddDecl(D);
+
     return getDerived().TransformDecl(Loc, D);
   }
 
@@ -6706,6 +6709,7 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
+  Sema::FakeParseScope FakeParseScope(getSema(), 0);
   Sema::CompoundScopeRAII CompoundScope(getSema());
 
   bool SubStmtInvalid = false;
@@ -7548,6 +7552,115 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
                                       E->getLParenLoc(), E->getRParenLoc());
 }
 
+class ParserLookupSetup : public DeclVisitor<ParserLookupSetup> {
+  Sema &SemaRef;
+
+  IdentifierResolver *IdResolver;
+  Scope *CurScope = nullptr;
+public:
+  ParserLookupSetup(Sema &SemaRef, DeclContext *CurContext)
+    : SemaRef(SemaRef),
+      IdResolver(new (SemaRef.Context) IdentifierResolver(SemaRef.PP)) {
+    // FIXME: This a built on a bad memory model, which we're forced
+    // into by the identifier resolver
+    VisitParentsInOrder(CurContext);
+    MergeWithSemaState();
+
+    std::swap(SemaRef.IdResolver, IdResolver);
+  }
+
+  ~ParserLookupSetup() {
+    std::swap(SemaRef.IdResolver, IdResolver);
+    // delete IdResolver;
+
+    while (CurScope) {
+      Scope *ParentScope = CurScope->getParent();
+      delete CurScope;
+      CurScope = ParentScope;
+    }
+  }
+
+  Scope *getCurScope() {
+    return CurScope;
+  }
+
+  void AddScope(unsigned ScopeFlags) {
+    CurScope = new Scope(CurScope, ScopeFlags, SemaRef.PP.getDiagnostics());
+  }
+
+  void AddDecl(NamedDecl *ND) {
+    CurScope->AddDecl(ND);
+    IdResolver->AddDecl(ND);
+  }
+
+  void AddDecl(Decl *D) {
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(D))
+      AddDecl(ND);
+  }
+
+  void VisitParentsInOrder(DeclContext *DC) {
+    if (DeclContext *PCD = DC->getParent())
+      VisitParentsInOrder(PCD);
+
+    Visit(DC);
+  }
+
+  void MergeWithSemaState() {
+    for (Scope *Scope : SemaRef.getTTParseScopes()) {
+      AddScope(Scope->getFlags());
+
+      for (Decl *D : Scope->decls())
+        AddDecl(D);
+    }
+  }
+
+  void Visit(DeclContext *S) {
+    DeclVisitor<ParserLookupSetup>::Visit(Decl::castFromDeclContext(S));
+  }
+
+  void VisitTranslationUnitDecl(TranslationUnitDecl *TUD) {
+    AddScope(Scope::DeclScope);
+
+    for (Decl *D : TUD->decls())
+      AddDecl(D);
+  }
+
+  void VisitNamespaceDecl(NamespaceDecl *NSD) {
+    AddScope(Scope::DeclScope);
+
+    for (Decl *D : NSD->decls())
+      AddDecl(D);
+  }
+
+  void VisitCXXRecordDecl(CXXRecordDecl *RD) {
+    AddScope(Scope::ClassScope | Scope::DeclScope);
+
+    for (Decl *D : RD->decls())
+      AddDecl(D);
+
+
+    // Add the base class decls to the scope for this class.
+    for (CXXBaseSpecifier Base : RD->bases()) {
+      QualType &&BaseQt = Base.getTypeSourceInfo()->getType();
+      CXXRecordDecl *BRD = BaseQt->getAsCXXRecordDecl();
+
+      for (Decl *D : BRD->decls())
+        AddDecl(D);
+    }
+  }
+
+  void VisitFunctionDecl(FunctionDecl *FD) {
+    AddScope(Scope::FnScope | Scope::DeclScope | Scope::CompoundStmtScope);
+
+    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
+      ParmVarDecl *Param = FD->getParamDecl(P);
+
+      if (Param->getIdentifier())
+        AddDecl(Param);
+    }
+  }
+};
+
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
@@ -7557,105 +7670,24 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
 
   // Some components are still dependent.
   if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
-    return new (getSema().Context) CXXReflectedIdExpr(DNI, E->getType());
+    return new (getSema().Context) CXXReflectedIdExpr(
+            DNI, E->getType(), E->getScopeSpecifier(), E->getTemplateKWLoc(),
+            E->HasTrailingLParen(), E->IsAddressOfOperand(),
+            E->getTemplateArgs());
 
-  // FIXME: What follows is a hack to allow lookup to succeed for function
-  // parameters, during tree transform. Specifically we're allowing
-  // the following to work, which becomes important for paramater injection:
-  //
-  // template<int y>
-  // constexpr int foo(int x1) {
-  //   return unqualid("x", y);
-  // }
-  //
-  // int main() {
-  //   assert(foo<1>(2) == 2);
-  //   return 0;
-  // }
-  //
-  // ActOnReenterFunctionContext exists, but the corresponding
-  // ActOnExitFunctionContext does not perform cleanup to a satisfactory
-  // degree. It assumes that we're operating from within the parser,
-  // and we're currently in a parse scope for the function.
-  //
-  // Since CXXReflectedIdExpr can appear virtually anywhere, and TreeTransform
-  // can make no gaurantees about parser state, we simply hack in the function
-  // paramaters to the current scope, and then remove them after performing
-  // lookup.
-  //
-  // This does not improve the situation for local variables in said
-  // function however. For instances, given the following:
-  //
-  // template<int y>
-  // constexpr int foo() {
-  //   int unfound_local_1 = 0;
-  //   return unqualid("unfound_local_", y);
-  // }
-  //
-  // When foo is instantiated with a y value of 1, lookup will be unable
-  // to find the unfound_local_1 variable, as this hack does not attempt
-  // to find the position of the current reflected id, and add the
-  // corresponding locals into the scope.
+  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+  CXXScopeSpec SS = E->getScopeSpecifier();
 
-  Scope *CurScope = getSema().getCurScope();
-
-  bool IsFunctionScope = getSema().getCurFunction();
-  if (IsFunctionScope) {
-    FunctionDecl *FD = cast<FunctionDecl>(getSema().CurContext);
-    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
-      ParmVarDecl *Param = FD->getParamDecl(P);
-
-      if (Param->getIdentifier()) {
-        assert(!CurScope->isDeclScope(Param)
-               && "Param is somehow already in scope");
-        CurScope->AddDecl(Param);
-        getSema().IdResolver.AddDecl(Param);
-      }
-    }
-  }
-
-  // FIXME: We should be able to get a scope specifier from the
-  // expression. We would need to transform that here.
-  CXXScopeSpec SS;
-
-  // FIXME: In addition to the above stated issues, our lookup approach
-  // here in general also leads to some noteably strange behavior.
-  // For instance, given the following:
-  //
-  // template<int y>
-  // constexpr int foo() {
-  //   return unqualid("caller_local_", y);
-  // }
-  //
-  // int main() {
-  //   int caller_local_1 = 0;
-  //   foo<1>();
-  //   return 0;
-  // }
-  //
-  // unqualid will find caller_local_1 in main, due to the current parser
-  // state when instantiated. Fortunately, other mechanisms detect the scoping
-  // issue and prevent a exemplarily incorrect program from being compiled.
-  LookupResult R(getSema(), DNI, Sema::LookupOrdinaryName);
-  R.EnableParmVarLookupHack = true;
-  getSema().LookupName(R, CurScope, false);
-
-  // Cleanup portion of hack to allow parameters to be found.
-  if (IsFunctionScope) {
-    FunctionDecl *FD = cast<FunctionDecl>(getSema().CurContext);
-    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
-      ParmVarDecl *Param = FD->getParamDecl(P);
-
-      if (Param->getIdentifier()) {
-        CurScope->RemoveDecl(Param);
-        getSema().IdResolver.RemoveDecl(Param);
-      }
-    }
-  }
-
-  // FIXME: How do we know if we need ADL or not? Assume for now that we
-  // don't -- although it might be safer to assume that we do.
-  return getDerived().RebuildDeclarationNameExpr(SS, R, false);
+  return getSema().ActOnIdExpression(ParserLookup.getCurScope(), SS,
+                                     E->getTemplateKWLoc(),
+                                     DNI, E->getTemplateArgs(),
+                                     UnqualifiedIdKind::IK_ReflectedId,
+                                     /*TemplateId=*/nullptr,
+                                     E->HasTrailingLParen(),
+                                     E->IsAddressOfOperand(),
+                                     /*CCC=*/nullptr,
+                                     /*IsInlineAsmIdentifier=*/false,
+                                     /*KeywordReplacement=*/nullptr);
 }
 
 template <typename Derived>

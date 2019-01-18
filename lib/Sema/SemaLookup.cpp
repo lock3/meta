@@ -1065,8 +1065,8 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
 
   Scope *Initial = S;
   IdentifierResolver::iterator
-    I = IdResolver.begin(Name),
-    IEnd = IdResolver.end();
+    I = IdResolver->begin(Name),
+    IEnd = IdResolver->end();
 
   // First we lookup local scope.
   // We don't consider using-directives, as per 7.3.4.p1 [namespace.udir]
@@ -1756,8 +1756,8 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
     // deep shadowing is extremely uncommon.
     bool LeftStartingScope = false;
 
-    for (IdentifierResolver::iterator I = IdResolver.begin(Name),
-                                   IEnd = IdResolver.end();
+    for (IdentifierResolver::iterator I = IdResolver->begin(Name),
+                                   IEnd = IdResolver->end();
          I != IEnd; ++I)
       if (NamedDecl *D = R.getAcceptableDecl(*I)) {
         if (NameKind == LookupRedeclarationWithLinkage) {
@@ -3523,10 +3523,10 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
 
     // Walk all lookup results in the TU for each identifier.
     for (const auto &Ident : Idents) {
-      for (auto I = S.IdResolver.begin(Ident.getValue()),
-                E = S.IdResolver.end();
+      for (auto I = S.IdResolver->begin(Ident.getValue()),
+                E = S.IdResolver->end();
            I != E; ++I) {
-        if (S.IdResolver.isDeclInScope(*I, Ctx)) {
+        if (S.IdResolver->isDeclInScope(*I, Ctx)) {
           if (NamedDecl *ND = Result.getAcceptableDecl(*I)) {
             Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
             Visited.add(ND);

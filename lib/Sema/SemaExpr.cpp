@@ -2073,6 +2073,23 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   const TemplateArgumentListInfo *TemplateArgs;
   DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs);
 
+  return ActOnIdExpression(S, SS, TemplateKWLoc, NameInfo, TemplateArgs,
+                           Id.getKind(), Id.TemplateId,
+                           HasTrailingLParen, IsAddressOfOperand,
+                           std::move(CCC), IsInlineAsmIdentifier,
+                           KeywordReplacement);
+}
+
+ExprResult
+Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
+                        SourceLocation TemplateKWLoc,
+                        DeclarationNameInfo NameInfo,
+                        const TemplateArgumentListInfo *TemplateArgs,
+                        UnqualifiedIdKind IdKind,
+                        TemplateIdAnnotation *TemplateId,
+                        bool HasTrailingLParen, bool IsAddressOfOperand,
+                        std::unique_ptr<CorrectionCandidateCallback> CCC,
+                        bool IsInlineAsmIdentifier, Token *KeywordReplacement) {
   DeclarationName Name = NameInfo.getName();
   IdentifierInfo *II = Name.getAsIdentifierInfo();
   SourceLocation NameLoc = NameInfo.getLoc();
@@ -2112,13 +2129,14 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
 
   if (DependentID)
     return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                                      IsAddressOfOperand, TemplateArgs);
+                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
 
   // Perform the required lookup.
-  LookupResult R(*this, NameInfo,
-                 (Id.getKind() == UnqualifiedIdKind::IK_ImplicitSelfParam)
-                     ? LookupObjCImplicitSelfParam
-                     : LookupOrdinaryName);
+  bool IsImplicitSelfParam = IdKind == UnqualifiedIdKind::IK_ImplicitSelfParam;
+  Sema::LookupNameKind LookupKind =
+         IsImplicitSelfParam ? LookupObjCImplicitSelfParam : LookupOrdinaryName;
+
+  LookupResult R(*this, NameInfo, LookupKind);
   if (TemplateKWLoc.isValid() || TemplateArgs) {
     // Lookup the template name again to correctly establish the context in
     // which it was found. This is really unfortunate as we already did the
@@ -2133,7 +2151,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     if (MemberOfUnknownSpecialization ||
         (R.getResultKind() == LookupResult::NotFoundInCurrentInstantiation))
       return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                                        IsAddressOfOperand, TemplateArgs);
+                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
   } else {
     bool IvarLookupFollowUp = II && !SS.isSet() && getCurMethodDecl();
     LookupParsedName(R, S, &SS, !IvarLookupFollowUp);
@@ -2142,7 +2160,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     // id-expression.
     if (R.getResultKind() == LookupResult::NotFoundInCurrentInstantiation)
       return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
-                                        IsAddressOfOperand, TemplateArgs);
+                           HasTrailingLParen, IsAddressOfOperand, TemplateArgs);
 
     // If this reference is in an Objective-C method, then we need to do
     // some special Objective-C lookup, too.
@@ -2293,8 +2311,8 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     // In C++1y, if this is a variable template id, then check it
     // in BuildTemplateIdExpr().
     // The single lookup result must be a variable template declaration.
-    if (Id.getKind() == UnqualifiedIdKind::IK_TemplateId && Id.TemplateId &&
-        Id.TemplateId->Kind == TNK_Var_template) {
+    if (IdKind == UnqualifiedIdKind::IK_TemplateId && TemplateId &&
+        TemplateId->Kind == TNK_Var_template) {
       assert(R.getAsSingle<VarTemplateDecl>() &&
              "There should only be one declaration found.");
     }

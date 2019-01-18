@@ -1863,9 +1863,6 @@ void Sema::CheckLookupAccess(const LookupResult &R) {
   assert(R.getNamingClass() && "performing access check without naming class");
 
   for (LookupResult::iterator I = R.begin(), E = R.end(); I != E; ++I) {
-    if (R.EnableParmVarLookupHack && isa<ParmVarDecl>(*I))
-      continue;
-
     if (I.getAccess() != AS_public) {
       AccessTarget Entity(Context, AccessedEntity::Member,
                           R.getNamingClass(), I.getPair(),

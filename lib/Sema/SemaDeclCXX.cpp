@@ -8070,7 +8070,7 @@ unsigned Sema::ActOnReenterTemplateScope(Scope *S, Decl *D) {
     for (NamedDecl *Param : *Params) {
       if (Param->getDeclName()) {
         S->AddDecl(Param);
-        IdResolver.AddDecl(Param);
+        IdResolver->AddDecl(Param);
       }
     }
   }
@@ -8099,7 +8099,7 @@ void Sema::ActOnReenterCXXMethodParameter(Scope *S, ParmVarDecl *Param) {
 
   S->AddDecl(Param);
   if (Param->getDeclName())
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
 }
 
 /// ActOnStartDelayedCXXMethodDeclaration - We have completed
@@ -8131,7 +8131,7 @@ void Sema::ActOnDelayedCXXMethodParameter(Scope *S, Decl *ParamD) {
 
   S->AddDecl(Param);
   if (Param->getDeclName())
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
 }
 
 /// ActOnFinishDelayedCXXMethodDeclaration - We have finished
@@ -9856,7 +9856,7 @@ void Sema::HideUsingShadowDecl(Scope *S, UsingShadowDecl *Shadow) {
   // ...and the scope, if applicable...
   if (S) {
     S->RemoveDecl(Shadow);
-    IdResolver.RemoveDecl(Shadow);
+    IdResolver->RemoveDecl(Shadow);
   }
 
   // ...and the using decl.

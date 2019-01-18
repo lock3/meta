@@ -1037,6 +1037,9 @@ Decl *TemplateInstantiator::TransformDefinition(SourceLocation Loc, Decl *D) {
   if (!Inst)
     return nullptr;
 
+  if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
+    FakeParseScope->AddDecl(Inst);
+
   getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
   return Inst;
 }
