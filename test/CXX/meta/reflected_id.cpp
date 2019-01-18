@@ -47,11 +47,21 @@ void test_bad() {
   int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}}
 }
 
+template<int y>
+constexpr int template_parm_function(int x1) {
+  return unqualid("x", y);
+}
+
+int test_template_param() {
+  static_assert(template_parm_function<1>(3) == 3);
+}
+
 int main() {
   test_template<S>();
   test_template_class_attribute<int>();
   test_template_class_attribute<S>();
   test_non_template();
   test_bad();
+  test_template_param();
   return 0;
 }

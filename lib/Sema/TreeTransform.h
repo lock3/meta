@@ -7548,6 +7548,116 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
                                       E->getLParenLoc(), E->getRParenLoc());
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+  DeclarationNameInfo DNI = TransformDeclarationNameInfo(E->getNameInfo());
+  if (!DNI.getName())
+    return ExprError();
+
+  // Some components are still dependent.
+  if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
+    return new (getSema().Context) CXXReflectedIdExpr(DNI, E->getType());
+
+  // FIXME: What follows is a hack to allow lookup to succeed for function
+  // parameters, during tree transform. Specifically we're allowing
+  // the following to work, which becomes important for paramater injection:
+  //
+  // template<int y>
+  // constexpr int foo(int x1) {
+  //   return unqualid("x", y);
+  // }
+  //
+  // int main() {
+  //   assert(foo<1>(2) == 2);
+  //   return 0;
+  // }
+  //
+  // ActOnReenterFunctionContext exists, but the corresponding
+  // ActOnExitFunctionContext does not perform cleanup to a satisfactory
+  // degree. It assumes that we're operating from within the parser,
+  // and we're currently in a parse scope for the function.
+  //
+  // Since CXXReflectedIdExpr can appear virtually anywhere, and TreeTransform
+  // can make no gaurantees about parser state, we simply hack in the function
+  // paramaters to the current scope, and then remove them after performing
+  // lookup.
+  //
+  // This does not improve the situation for local variables in said
+  // function however. For instances, given the following:
+  //
+  // template<int y>
+  // constexpr int foo() {
+  //   int unfound_local_1 = 0;
+  //   return unqualid("unfound_local_", y);
+  // }
+  //
+  // When foo is instantiated with a y value of 1, lookup will be unable
+  // to find the unfound_local_1 variable, as this hack does not attempt
+  // to find the position of the current reflected id, and add the
+  // corresponding locals into the scope.
+
+  Scope *CurScope = getSema().getCurScope();
+
+  bool IsFunctionScope = getSema().getCurFunction();
+  if (IsFunctionScope) {
+    FunctionDecl *FD = cast<FunctionDecl>(getSema().CurContext);
+    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
+      ParmVarDecl *Param = FD->getParamDecl(P);
+
+      if (Param->getIdentifier()) {
+        assert(!CurScope->isDeclScope(Param)
+               && "Param is somehow already in scope");
+        CurScope->AddDecl(Param);
+        getSema().IdResolver.AddDecl(Param);
+      }
+    }
+  }
+
+  // FIXME: We should be able to get a scope specifier from the
+  // expression. We would need to transform that here.
+  CXXScopeSpec SS;
+
+  // FIXME: In addition to the above stated issues, our lookup approach
+  // here in general also leads to some noteably strange behavior.
+  // For instance, given the following:
+  //
+  // template<int y>
+  // constexpr int foo() {
+  //   return unqualid("caller_local_", y);
+  // }
+  //
+  // int main() {
+  //   int caller_local_1 = 0;
+  //   foo<1>();
+  //   return 0;
+  // }
+  //
+  // unqualid will find caller_local_1 in main, due to the current parser
+  // state when instantiated. Fortunately, other mechanisms detect the scoping
+  // issue and prevent a exemplarily incorrect program from being compiled.
+  LookupResult R(getSema(), DNI, Sema::LookupOrdinaryName);
+  R.EnableParmVarLookupHack = true;
+  getSema().LookupName(R, CurScope, false);
+
+  // Cleanup portion of hack to allow parameters to be found.
+  if (IsFunctionScope) {
+    FunctionDecl *FD = cast<FunctionDecl>(getSema().CurContext);
+    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
+      ParmVarDecl *Param = FD->getParamDecl(P);
+
+      if (Param->getIdentifier()) {
+        CurScope->RemoveDecl(Param);
+        getSema().IdResolver.RemoveDecl(Param);
+      }
+    }
+  }
+
+  // FIXME: How do we know if we need ADL or not? Assume for now that we
+  // don't -- although it might be safer to assume that we do.
+  return getDerived().RebuildDeclarationNameExpr(SS, R, false);
+}
+
 template <typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
@@ -11369,14 +11479,11 @@ TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
                                                DependentScopeDeclRefExpr *E,
                                                bool IsAddressOfOperand,
                                                TypeSourceInfo **RecoveryTSI) {
-  // assert(E->getQualifierLoc());
-  NestedNameSpecifierLoc QualifierLoc;
-  if (E->getQualifierLoc()) {
-    QualifierLoc
-      = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
-    if (!QualifierLoc)
-      return ExprError();
-  }
+  assert(E->getQualifierLoc());
+  NestedNameSpecifierLoc QualifierLoc
+           = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
+  if (!QualifierLoc)
+    return ExprError();
   SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
 
   // TODO: If this is a conversion-function-id, verify that the

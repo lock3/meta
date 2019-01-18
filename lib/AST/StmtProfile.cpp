@@ -1919,6 +1919,10 @@ void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXReflectedIdExpr(const CXXReflectedIdExpr *E) {
+  VisitName(E->getNameInfo().getName());
+}
+
 void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
   VisitExpr(E);
 }

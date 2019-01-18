@@ -3161,6 +3161,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXUnreflexprExprClass:
   case CXXIdExprExprClass:
   case CXXValueOfExprClass:
+  case CXXReflectedIdExprClass:
   case CXXConcatenateExprClass:
   case CXXDependentVariadicReifierExprClass:
   case PackSelectionExprClass:

@@ -522,12 +522,16 @@ void ASTStmtReader::VisitCXXDependentVariadicReifierExpr(
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtReader::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
 void ASTStmtReader::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
-  llvm_unreachable("not implemented");
+  llvm_unreachable("unimplemented");
 }
 
 void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {

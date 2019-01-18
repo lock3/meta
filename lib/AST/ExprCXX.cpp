@@ -423,7 +423,7 @@ DependentScopeDeclRefExpr::Create(const ASTContext &C,
                                   SourceLocation TemplateKWLoc,
                                   const DeclarationNameInfo &NameInfo,
                                   const TemplateArgumentListInfo *Args) {
-  // assert(QualifierLoc && "should be created for dependent qualifiers");
+  assert(QualifierLoc && "should be created for dependent qualifiers");
   bool HasTemplateKWAndArgsInfo = Args || TemplateKWLoc.isValid();
   std::size_t Size =
       totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
@@ -1626,6 +1626,13 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
                                                         EmptyShell Empty) {
   return new (C) CXXCompilerErrorExpr(Empty);
 }
+
+// Assume that the name is an ordinary lvalue for now.
+CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T)
+  : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary,
+         /*TD=*/true, /*VD=*/true, /*ID=*/true,
+         /*ContainsUnexpandedParameterPack=*/false),
+    NameInfo(DNI) {}
 
 CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
                                        QualType T, SourceLocation L,

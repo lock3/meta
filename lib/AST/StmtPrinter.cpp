@@ -2314,6 +2314,10 @@ void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
   OS << "idexpr(...)"; // TODO Finish this
 }
 
+void StmtPrinter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *Node) {
+  OS << "(. " << Node->getNameInfo() << " .)";
+}
+
 void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   OS << "valueof(...)"; // TODO Finish this
 }

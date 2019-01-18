@@ -170,6 +170,7 @@ def CXXReflectDumpReflectionExpr : DStmt<Expr>;
 def CXXCompilerErrorExpr : DStmt<Expr>;
 def CXXUnreflexprExpr : DStmt<Expr>;
 def CXXIdExprExpr : DStmt<Expr>;
+def CXXReflectedIdExpr : DStmt<Expr>;
 def CXXValueOfExpr : DStmt<Expr>;
 def CXXConcatenateExpr : DStmt<Expr>;
 def CXXDependentVariadicReifierExpr : DStmt<Expr>;

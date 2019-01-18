@@ -1300,6 +1300,7 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXUnreflexprExprClass:
   case Expr::CXXIdExprExprClass:
+  case Expr::CXXReflectedIdExprClass:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:

@@ -5073,6 +5073,39 @@ public:
   }
 };
 
+/// Represents a reflected id-expression of the form '(. args .)'.
+/// Some of the arguments in args are dependent.
+class CXXReflectedIdExpr : public Expr {
+  DeclarationNameInfo NameInfo;
+public:
+  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T);
+
+  CXXReflectedIdExpr(EmptyShell Empty)
+    : Expr(CXXReflectedIdExprClass, Empty) { }
+
+  /// Returns the evaluated expression.
+  DeclarationNameInfo getNameInfo() const { return NameInfo; }
+
+  SourceRange getSourceRange() const {
+    return NameInfo.getCXXReflectedIdNameRange();
+  }
+
+  SourceLocation getBeginLoc() const { return getSourceRange().getBegin(); }
+  SourceLocation getEndLoc() const { return getSourceRange().getEnd(); }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectedIdExprClass;
+  }
+};
+
 class CXXValueOfExpr : public Expr {
   Expr *Reflection;
 
