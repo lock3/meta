@@ -3,12 +3,11 @@
 #ifndef CPPX_COMPILER
 #define CPPX_COMPILER
 
-namespace cppx
+namespace std::experimental
 {
-namespace meta
-{
-inline namespace v1
-{
+
+namespace meta {
+inline namespace v1 {
 
   consteval void compiler_error(const char* message) {
     __compiler_error(message);
