@@ -1847,8 +1847,9 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
       CXXCtorInitializer* OldInitializer = *OldIterator;
 
       ASTContext &AST = getASTContext();
-      FieldDecl* NewField = cast<FieldDecl>(
-        Cxt->GetDeclReplacement(OldInitializer->getMember()));
+
+      FieldDecl *NewField = cast<FieldDecl>(
+             Cxt->TransformDecl(SourceLocation(), OldInitializer->getMember()));
       ExprResult NewInit = Cxt->TransformExpr(OldInitializer->getInit());
 
       // TODO: this assumes a member initializer
