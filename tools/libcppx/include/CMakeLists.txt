@@ -12,6 +12,7 @@ set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
 
 set(LIBCPPX_HEADER_PATTERN
   PATTERN "meta"
+  PATTERN "compiler"
   PATTERN "*.hpp")
 
 # Copy the headers to the build tree if we're building Clang.
