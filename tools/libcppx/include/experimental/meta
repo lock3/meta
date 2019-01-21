@@ -1092,7 +1092,7 @@ consteval bool is_private(info x) {
 
 consteval void make_private(info& x) {
   assert(has_access(x));
-  __reflect_mod(detail::query_set_access, x, detail::am_public);
+  __reflect_mod(detail::query_set_access, x, detail::am_private);
 }
 
 consteval void clear_access_modifier(info& x) {
