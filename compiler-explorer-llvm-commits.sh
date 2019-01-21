@@ -1,0 +1,5 @@
+#!/bin/sh
+
+export CE_LLVM_COMMIT=7175874d889263bcf034ea35884eed73c51b003e
+export CE_LIBCXX_COMMIT=2917004aedb591cb697af2de6482e4544bee1e4b
+export CE_LIBCXXABI_COMMIT=2ecedcc0a1605ebeaa0afe3ab6fabe5dc8d5a2f8
