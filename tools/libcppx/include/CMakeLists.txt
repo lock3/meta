@@ -34,7 +34,7 @@ endif()
 
 if(LIBCPPX_INSTALL_HEADERS)
   # Add install rules for the library's header files.
-  install(DIRECTORY cppx
+  install(DIRECTORY experimental
     DESTINATION ${LIBCPPX_INSTALL_INCLUDE_DIR}
     COMPONENT cppx-headers
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
