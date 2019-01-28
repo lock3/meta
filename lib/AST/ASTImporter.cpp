@@ -376,6 +376,8 @@ namespace clang {
     ExpectedType VisitElaboratedType(const ElaboratedType *T);
     ExpectedType VisitDependentNameType(const DependentNameType *T);
     ExpectedType VisitPackExpansionType(const PackExpansionType *T);
+    ExpectedType VisitCXXDependentVariadicReifierType
+    (const CXXDependentVariadicReifierType *T);
     ExpectedType VisitDependentTemplateSpecializationType(
         const DependentTemplateSpecializationType *T);
     ExpectedType VisitObjCInterfaceType(const ObjCInterfaceType *T);
@@ -1452,6 +1454,12 @@ ASTNodeImporter::VisitPackExpansionType(const PackExpansionType *T) {
 
   return Importer.getToContext().getPackExpansionType(*ToPatternOrErr,
                                                       T->getNumExpansions());
+}
+
+ExpectedType
+ASTNodeImporter::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType *T) {
+  return Importer.getToContext().getCXXDependentVariadicReifierType(T->getRange());
 }
 
 ExpectedType ASTNodeImporter::VisitDependentTemplateSpecializationType(

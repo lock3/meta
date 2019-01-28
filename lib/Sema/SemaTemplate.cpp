@@ -5476,6 +5476,11 @@ bool UnnamedLocalNoLinkageFinder::VisitPackExpansionType(
   return Visit(T->getPattern());
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType* T) {
+  return Visit(T->getRange()->getType());
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitObjCObjectType(const ObjCObjectType *) {
   return false;
 }

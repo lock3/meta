@@ -518,6 +518,12 @@ void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   Code = TYPE_PACK_EXPANSION;
 }
 
+void ASTTypeWriter::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType *T) {
+  Record.AddTypeRef(T->getRange()->getType());
+  Code = TYPE_CXX_DEPENDENT_VARIADIC_REIFIER;
+}
+
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
   Record.AddTypeRef(T->getInnerType());
   Code = TYPE_PAREN;
@@ -842,6 +848,11 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+}
+
+void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
 }
 

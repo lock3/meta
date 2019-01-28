@@ -2861,6 +2861,14 @@ Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range,
   RangeKind = Range->getRangeKind();
 }
 
+Sema::RangeTraverser::RangeTraverser(Sema &SemaRef, Expr *RangeBegin)
+  : SemaRef(SemaRef), I()
+{
+  Current = RangeBegin;
+  Size = Range->getSize();
+  RangeKind = Range->getRangeKind();
+}
+
 Sema::RangeTraverser::operator bool()
 {
   return I == Size;

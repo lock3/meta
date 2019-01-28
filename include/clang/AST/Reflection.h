@@ -18,6 +18,7 @@
 #include "clang/AST/APValue.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TemplateName.h"
+#include "clang/AST/ASTContext.h"
 
 namespace clang {
 
@@ -486,7 +487,6 @@ struct Reflection {
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
-
 } // namespace clang
 
 #endif

@@ -2386,6 +2386,8 @@ NoteIndirectBases(ASTContext &Context, IndirectBaseSet &Set,
 /// specifiers to a C++ class.
 bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class,
                                 MutableArrayRef<CXXBaseSpecifier *> Bases) {
+  llvm::outs() << "ATTACHBASESPECIFIERS\n";
+  Class->dump();
  if (Bases.empty())
     return false;
 
@@ -2424,6 +2426,8 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class,
       // Okay, add this new base class.
       KnownBase = Bases[idx];
       Bases[NumGoodBases++] = Bases[idx];
+      llvm::outs() << "CLASS AFTER BASES[" << idx << "]\n";
+      Class->dump();
 
       // Note this base's direct & indirect bases, if there could be ambiguity.
       if (Bases.size() > 1)
@@ -2448,6 +2452,8 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class,
   }
 
   // Attach the remaining base class specifiers to the derived class.
+  llvm::outs() << "CLASS BEFORE SETBASES\n";
+  Class->dump();
   Class->setBases(Bases.data(), NumGoodBases);
 
   // Check that the only base classes that are duplicate are virtual.
@@ -2457,8 +2463,14 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class,
 
     // Skip all dependent types in templates being used as base specifiers.
     // Checks below assume that the base specifier is a CXXRecord.
-    if (BaseType->isDependentType())
+    if (BaseType->isDependentType()) {
+      llvm::outs() << "the base is dependent.\n";
+      BaseType->dump();
       continue;
+    } else {
+      llvm::outs() << "the base is ok\n";
+      BaseType->dump();
+    }
 
     CanQualType CanonicalBase = Context.getCanonicalType(BaseType)
       .getUnqualifiedType();
@@ -2497,6 +2509,8 @@ void Sema::ActOnBaseSpecifiers(Decl *ClassDecl,
 
   AdjustDeclIfTemplate(ClassDecl);
   AttachBaseSpecifiers(cast<CXXRecordDecl>(ClassDecl), Bases);
+  llvm::outs() << "CLASSDECL WITH ATTACHED SPECS\n";
+  ClassDecl->dump();
 }
 
 /// Determine whether the type \p Derived is a C++ class that is

@@ -4394,6 +4394,13 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   return QualType(T, 0);
 }
 
+QualType ASTContext::getCXXDependentVariadicReifierType(Expr *Range) {
+  CXXDependentVariadicReifierType *T =
+    new (*this, TypeAlignment) CXXDependentVariadicReifierType(Range);
+  Types.push_back(T);
+  return QualType(T, 0);
+}
+
 /// CmpProtocolNames - Comparison predicate for sorting protocols
 /// alphabetically.
 static int CmpProtocolNames(ObjCProtocolDecl *const *LHS,

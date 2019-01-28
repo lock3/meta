@@ -1368,6 +1368,17 @@ void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
   OS << "...";
 }
 
+void TypePrinter::printCXXDependentVariadicReifierBefore(
+  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
+  printBefore(T->getRange()->getType(), OS);
+}
+
+void TypePrinter::printCXXDependentVariadicReifierAfter(
+  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
+  printAfter(T->getRange()->getType(), OS);
+  OS << "...";
+}
+
 void TypePrinter::printAttributedBefore(const AttributedType *T,
                                         raw_ostream &OS) {
   // FIXME: Generate this with TableGen.

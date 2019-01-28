@@ -426,6 +426,11 @@ namespace  {
       if (!T->isSugared())
         dumpTypeAsChild(T->getPattern());
     }
+
+    void VisitCXXDependentVariadicReifierType
+    (const CXXDependentVariadicReifierType *T) {
+      dumpTypeAsChild(T->getRange()->getType());
+    }
     // FIXME: ElaboratedType, DependentNameType,
     // DependentTemplateSpecializationType, ObjCObjectType
 

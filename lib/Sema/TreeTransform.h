@@ -673,6 +673,10 @@ public:
   // still needs expansion. If so, transform and expand it.
   bool
   MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
+  bool
+  MaybeTransformVariadicReifier(Expr *E, TemplateArgumentListInfo &Outputs);
+  bool
+  MaybeTransformVariadicReifier(Type const *T, SmallVectorImpl<QualType> &Outputs);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -1133,6 +1137,7 @@ public:
     return getSema().CheckPackExpansion(Pattern, PatternRange, EllipsisLoc,
                                         NumExpansions);
   }
+
 
   /// Build a new atomic type given its value type.
   ///
@@ -4262,6 +4267,9 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
       continue;
     }
 
+    if(In.getArgument().getKind())
+      ;
+
     // The simple case:
     if (getDerived().TransformTemplateArgument(In, Out, Uneval))
       return true;
@@ -4279,11 +4287,18 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformType(QualType T) {
+  llvm::outs() << "transformtype(qualtype)\n";
   if (getDerived().AlreadyTransformed(T))
     return T;
+  llvm::outs() << "the type\n";
+  T.dump();
 
   // Temporary workaround.  All of these transformations should
   // eventually turn into transformations on TypeLocs.
+  if(T.isVariadicReifier) {
+    llvm::outs() << "hello cruel world\n";
+  }
+  
   TypeSourceInfo *DI = getSema().Context.getTrivialTypeSourceInfo(T,
                                                 getDerived().getBaseLocation());
 
@@ -4292,11 +4307,18 @@ QualType TreeTransform<Derived>::TransformType(QualType T) {
   if (!NewDI)
     return QualType();
 
+  llvm::outs() << "the transformed type\n";
+  NewDI->getType().dump();
   return NewDI->getType();
 }
 
 template<typename Derived>
 TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
+  llvm::outs() << "transformtype(tsi)\n";
+  if(DI->getType().isVariadicReifier) {
+    llvm::outs() << "HIT\n";
+    DI->getType().dump();
+  }
   // Refine the base location to the type's location.
   TemporaryBase Rebase(*this, DI->getTypeLoc().getBeginLoc(),
                        getDerived().getBaseEntity());
@@ -4318,6 +4340,12 @@ TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
 template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformType(TypeLocBuilder &TLB, TypeLoc T) {
+  llvm::outs() << "transformtype(tlb, tl)\n";
+  T.getType().dump();
+  if(T.getType().isVariadicReifier) { 
+    llvm::outs() << "HIT\n";
+    T.getType().dump();
+  }
   switch (T.getTypeLocClass()) {
 #define ABSTRACT_TYPELOC(CLASS, PARENT)
 #define TYPELOC(CLASS, PARENT)                                                 \
@@ -6460,6 +6488,21 @@ QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
+QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
+(TypeLocBuilder &TLB, CXXDependentVariadicReifierTypeLoc TL) {
+  llvm::outs() << "TRANSFORMCXXDEPENDENTVARIADICREIFIERTYPE\n";
+  // ExprResult NewRange = getDerived().
+  //   TransformExpr(TL.getRange());
+
+  // if(NewRange.isInvalid())
+  //   return QualType();
+  
+  // return
+  //   getDerived().RebuildCXXDependentVariadicReifierType(NewRange.get(), TL);
+  return QualType();
+}
+
+template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformObjCInterfaceType(TypeLocBuilder &TLB,
                                                    ObjCInterfaceTypeLoc TL) {
@@ -7611,6 +7654,40 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   }
 
   return true;
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
+  if(!CXXDependentVariadicReifierType::classof(T))
+    return false;
+
+  CXXDependentVariadicReifierType *DependentReifier =
+    cast<CXXDependentVariadicReifierType>(const_cast<Type*>(T));
+
+  // If this is a dependent variadic reification, go ahead and transform it.
+  // if (DependentReifier->getEllipsisLoc().isValid())
+    Expr *OldRange = DependentReifier->getRange();
+    llvm::outs() << "TRANSFORMING RANGE...\n";
+    ExprResult NewRange = TransformExpr(OldRange);
+    llvm::outs() << "RANGE TRANSFORMED\n";
+
+    if(NewRange.isInvalid())
+      return true;
+
+    llvm::SmallVector<QualType, 8> ExpandedReifiers;
+
+    ExpandedReifiers =
+      getSema().ActOnVariadicTypename(SourceLocation(), NewRange.get(),
+                                      SourceLocation(), SourceLocation(),
+                                      SourceLocation());
+
+    Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+    return false;
+  // }
+
+  // return true;
 }
 
 // Objective-C Statements.

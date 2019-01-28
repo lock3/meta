@@ -553,8 +553,7 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
 
   ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
-  CXXExpansionStmt *Expansion =
-    static_cast<CXXExpansionStmt *>(ExpansionResult.get());
+  CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
   llvm::SmallVector<Expr *, 4> Expressions;
   ExprResult C;
@@ -610,56 +609,32 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
   return Expressions;
 }
 
-llvm::SmallVector<Expr *, 4>
-ActOnDependentVariadicReification(SourceLocation KWLoc,
-                                  IdentifierInfo *KW,
-                                  CXXExpansionStmt *Expansion,
-                                  SourceLocation LParenLoc,
-                                  SourceLocation EllipsisLoc,
-                                  SourceLocation RParenLoc)
-{
-  llvm::SmallVector<Expr *, 4> Expressions;
-  // ExprResult C;
-
-  // while(!Traverser) {
-  //   switch(KW->getTokenID()) {
-  //   case tok::kw_valueof:
-  //     C = getAsCXXValueOfExpr(*this, *Traverser);
-  //     break;
-  //   case tok::kw_idexpr:
-  //     C = getAsCXXIdExprExpr(*this, *Traverser);
-  //     break;
-  //   case tok::kw_unqualid:
-  //     C = getAsCXXReflectedDeclname(*this, *Traverser);
-  //     break;
-  //   case tok::kw_typename:
-  //   case tok::kw_namespace:
-  //   default: // silence warning
-  //     break;
-  //   }
-
-  //   if(!C.isInvalid() && C.isUsable())
-  //     Expressions.push_back(C.get());
-
-  //   ++Traverser;
-  // }
-
-  return Expressions;
-}
-
 llvm::SmallVector<QualType, 4>
 Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
                             SourceLocation LParenLoc, SourceLocation EllipsisLoc,
                             SourceLocation RParenLoc)
 {
-  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
-  StmtResult Expansion = Bldr.BuildUninstantiated();
-
-  // Traverse the range now and add the exprs to the vector
-  RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
-                           Bldr.getBeginCallRef());
+  llvm::outs() << "SCOPE OF BUILDER\n";
+  getCurScope()->dump();
+  ExpansionStatementBuilder Bldr(*this, getCurScope()->getParent(), BFRK_Build, Range);
+  StmtResult ExpansionResult = Bldr.BuildUninstantiated();
+  CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
   llvm::SmallVector<QualType, 4> Types;
+
+  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
+    QualType T = Context.getCXXDependentVariadicReifierType(Range);
+    // TODO: remove this flag from qualtype
+    // T.isVariadicReifier = true;
+    // CXXDependentVariadicReifierType T(Context, Range);
+    Types.push_back(T);
+    return Types;
+  }
+
+  // Traverse the range now and add the exprs to the vector
+  RangeTraverser Traverser(*this, Expansion,
+                           Bldr.getBeginCallRef());
+
 
   while(!Traverser) {
     QualType T = getAsCXXReflectedType(*this, *Traverser);
@@ -670,32 +645,6 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
 
   return Types;
   
-}
-
-llvm::SmallVector<UnqualifiedId, 4>
-Sema::ActOnVariadicDeclname(SourceLocation KWLoc, Expr *Range,
-                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
-                            SourceLocation RParenLoc)
-{
-  // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
-  // StmtResult Expansion = Bldr.BuildUninstantiated();
-
-  // // Traverse the range now and add the Ids to the vector
-  // RangeTraverser Traverser(*this, cast<CXXExpansionStmt>(Expansion.get()),
-  //                          Bldr.getBeginCallRef());
-
-  // llvm::SmallVector<UnqualifiedId, 4> Ids;
-
-  // while(!Traverser) {
-  //   UnqualifiedId Name;
-  //   getAsCXXReflectedDeclname(*this, *Traverser, Name);
-  //   Ids.push_back(Name);
-
-  //   ++Traverser;
-  // }
-
-  // return Ids;
-
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

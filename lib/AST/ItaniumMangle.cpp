@@ -1941,6 +1941,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
+  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -3171,6 +3172,12 @@ void CXXNameMangler::mangleType(const PackExpansionType *T) {
   // <type>  ::= Dp <type>          # pack expansion (C++0x)
   Out << "Dp";
   mangleType(T->getPattern());
+}
+
+void CXXNameMangler::mangleType(const CXXDependentVariadicReifierType *T) {
+  // <type>  ::= Dp <type>          # pack expansion (C++0x)
+  Out << "Dp";
+  mangleType(T->getRange()->getType());
 }
 
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {

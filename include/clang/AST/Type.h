@@ -703,6 +703,8 @@ public:
   bool isCanonical() const;
   bool isCanonicalAsParam() const;
 
+  bool isVariadicReifier = false;
+
   /// Return true if this QualType doesn't point to a type yet.
   bool isNull() const {
     return Value.getPointer().isNull();
@@ -1709,6 +1711,12 @@ protected:
     /// packs that occur within the pattern have been substituted but others
     /// have not.
     unsigned NumExpansions;
+  };
+
+  class CXXDependentVariadicReifierTypeBitfields {
+    friend class CXXDependentVariadicReifierType;
+
+    unsigned : NumTypeBits;
   };
 
   union {
@@ -5435,6 +5443,40 @@ public:
     return T->getTypeClass() == PackExpansion;
   }
 };
+
+class CXXDependentVariadicReifierType : public Type {
+  Expr *Range;
+  llvm::SmallVector<QualType, 4> ExpandedTypes;
+
+public:
+  CXXDependentVariadicReifierType(Expr *Range)
+    : Type(CXXDependentVariadicReifier, QualType(), /*Dependent=*/true,
+           /*InstantiationDependent=*/true, /*VariablyModified=*/false,
+           /*Unexpanded parameter pack=*/false), Range(Range)
+    {}
+
+  Expr *getRange() const { return Range; }
+  llvm::SmallVector<QualType, 4> &getExpandedTypes();
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    // Profile(ID, Context, Range);
+    // TODO: Implement me
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      ASTContext const& Context, Expr *Range) {
+    // Range->Profile(ID, Context, /*Canonical=*/false);
+    // TODO: Implement me
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == CXXDependentVariadicReifier;
+  }
+};
+
 
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.

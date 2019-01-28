@@ -1180,7 +1180,10 @@ namespace serialization {
       TYPE_DEPENDENT_SIZED_VECTOR = 48,
 
       /// \brief A ReflectedType record.
-      TYPE_REFLECTED  = 49
+      TYPE_REFLECTED  = 49,
+
+      /// A CXXDependentVariadicReifier record.
+      TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 50,
     };
 
     /// The type IDs for special types constructed by semantic

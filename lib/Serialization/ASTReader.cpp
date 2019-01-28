@@ -6202,6 +6202,11 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getPackExpansionType(Pattern, NumExpansions);
   }
 
+  case TYPE_CXX_DEPENDENT_VARIADIC_REIFIER: {
+    // TODO: IMPLEMENT ME
+    return Context.getCXXDependentVariadicReifierType(nullptr);
+  }
+
   case TYPE_ELABORATED: {
     unsigned Idx = 0;
     ElaboratedTypeKeyword Keyword = (ElaboratedTypeKeyword)Record[Idx++];
@@ -6721,6 +6726,11 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  TL.setEllipsisLoc(ReadSourceLocation());
+}
+
+void TypeLocReader::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation());
 }
 

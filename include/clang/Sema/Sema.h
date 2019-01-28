@@ -8719,6 +8719,7 @@ public:
   /// Traverse a C++ Constexpr Range
   struct RangeTraverser {
     RangeTraverser(Sema &SemaRef, CXXExpansionStmt *Range, Expr *RangeBegin);
+    RangeTraverser(Sema &SemaRef, Expr *Range);
 
     /// Current == RangeEnd
     explicit operator bool();
@@ -8888,21 +8889,8 @@ public:
                            SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc,
                            SourceLocation RParenLoc);
-  llvm::SmallVector<Expr *, 4>
-  ActOnDependentVariadicReification(SourceLocation KWLoc,
-                                    IdentifierInfo *KW,
-                                    Expr *Range,
-                                    SourceLocation LParenLoc,
-                                    SourceLocation EllipsisLoc,
-                                    SourceLocation RParenLoc);
   llvm::SmallVector<QualType, 4>
   ActOnVariadicTypename(SourceLocation KWLoc,
-                        Expr *Range,
-                        SourceLocation LParenLoc,
-                        SourceLocation EllipsisLoc,
-                        SourceLocation RParenLoc);
-  llvm::SmallVector<UnqualifiedId, 4>
-  ActOnVariadicDeclname(SourceLocation KWLoc,
                         Expr *Range,
                         SourceLocation LParenLoc,
                         SourceLocation EllipsisLoc,

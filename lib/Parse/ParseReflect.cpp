@@ -491,6 +491,16 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs)
 
   ExprResult ReflRange = ParseConstantExpression();
 
+  if(ReflRange.isInvalid()) {
+    // TODO: Diag << KWLoc, err_invalid_reflection in parse
+    return true;
+  }
+
+  if(ReflRange.get()->isTypeDependent())
+    llvm::outs() << "RANGE IS TYPEDEPENDENT\n";
+  if(ReflRange.get()->isValueDependent())
+    llvm::outs() << "RANGE IS VALUEDEPENDENT\n";
+
   // ReflRange has to be a range, so therefore it must be a declref
   DeclRefExpr *ReflRangeDeclRef =
     dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
@@ -536,15 +546,15 @@ Parser::ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types)
 
   ExprResult ReflRange = ParseConstantExpression();
 
-  // ReflRange has to be a range, so therefore it must be a declref
-  DeclRefExpr *ReflRangeDeclRef =
-    dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
-  // TODO: output error explaining this must be a declaration
-  if(!ReflRangeDeclRef)
-    return true;
+  // // ReflRange has to be a range, so therefore it must be a declref
+  // DeclRefExpr *ReflRangeDeclRef =
+  //   dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
+  // // TODO: output error explaining this must be a declaration
+  // if(!ReflRangeDeclRef)
+  //   return true;
 
-  // TODO: only mark this in a non-dependent context?
-  ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
+  // // TODO: only mark this in a non-dependent context?
+  // ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
   
   if (ReflRange.isInvalid()) {
     Parens.skipToEnd();

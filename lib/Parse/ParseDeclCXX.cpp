@@ -2051,7 +2051,9 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
         // Skip the rest of this base specifier, up until the comma or
         // opening brace.
         SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
+        llvm::outs() << "THE TYPENAME IS INVALID\n";
       } else {
+        llvm::outs() << "THE TYPENAME IS VALID\n";
         // Add this to our array of base specifiers.
         BaseInfo.push_back(Typename.get());
       }
@@ -2089,6 +2091,8 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 BaseResult
 Parser::ParseBaseSpecifier(Decl *ClassDecl,
                            llvm::SmallVectorImpl<BaseResult> &ReifiedTypes) {
+  llvm::outs() << "THE CLASS\n";
+  ClassDecl->dump();
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
@@ -2125,12 +2129,18 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
   // Parse a variadic reifier
   if(isVariadicReification()) {
+    llvm::outs() << "PARSE REIFICATION\n";
+    llvm::outs() << "CLASS BEFORE REIFICATION PARSE\n";
+    ClassDecl->dump();
     // TODO: make sure only typename is allowed here
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
     if(ParseVariadicReification(SpecList))
       return true;
 
+    llvm::outs() << "SPECLIST SIZE: " << SpecList.size() << '\n';
+    llvm::outs() << "CLASS AFTER TREETRANSFORMS\n";
+    ClassDecl->dump();
     for(auto BaseTy : SpecList) {
       OpaquePtr<QualType> BaseTyPtr;
       BaseTyPtr.set(BaseTy);
@@ -2140,41 +2150,42 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
                                    Access, BaseTyPtr, SourceLocation(),
                                    SourceLocation(), /*VariadicReif=*/true));
     }
-  } else {
-  
-    // Parse the class-name.
 
-    // HACK: MSVC doesn't consider _Atomic to be a keyword and its STL
-    // implementation for VS2013 uses _Atomic as an identifier for one of the
-    // classes in <atomic>.  Treat '_Atomic' to be an identifier when we are
-    // parsing the class-name for a base specifier.
-    if (getLangOpts().MSVCCompat && Tok.is(tok::kw__Atomic) &&
-        NextToken().is(tok::less))
-      Tok.setKind(tok::identifier);
+    llvm::outs() << "CLASS AFTER REIFICATION PARSE\n";
+    ClassDecl->dump();
 
-    SourceLocation EndLocation;
-    SourceLocation BaseLoc;
-    TypeResult BaseType = ParseBaseTypeSpecifier(BaseLoc, EndLocation);
-    if (BaseType.isInvalid())
-      return true;
-
-    // Parse the optional ellipsis (for a pack expansion). The ellipsis is
-    // actually part of the base-specifier-list grammar productions, but we
-    // parse it here for convenience.
-    SourceLocation EllipsisLoc;
-    TryConsumeToken(tok::ellipsis, EllipsisLoc);
-
-    // Find the complete source range for the base-specifier.
-    SourceRange Range(StartLoc, EndLocation);
-
-    // Notify semantic analysis that we have parsed a complete
-    // base-specifier.
-    return Actions.ActOnBaseSpecifier(ClassDecl, Range, Attributes, IsVirtual,
-                                      Access, BaseType.get(), BaseLoc,
-                                      EllipsisLoc);
+    return false;
   }
+  // Parse the class-name.
 
-  return true;
+  // HACK: MSVC doesn't consider _Atomic to be a keyword and its STL
+  // implementation for VS2013 uses _Atomic as an identifier for one of the
+  // classes in <atomic>.  Treat '_Atomic' to be an identifier when we are
+  // parsing the class-name for a base specifier.
+  if (getLangOpts().MSVCCompat && Tok.is(tok::kw__Atomic) &&
+      NextToken().is(tok::less))
+    Tok.setKind(tok::identifier);
+
+  SourceLocation EndLocation;
+  SourceLocation BaseLoc;
+  TypeResult BaseType = ParseBaseTypeSpecifier(BaseLoc, EndLocation);
+  if (BaseType.isInvalid())
+    return true;
+
+  // Parse the optional ellipsis (for a pack expansion). The ellipsis is
+  // actually part of the base-specifier-list grammar productions, but we
+  // parse it here for convenience.
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  // Find the complete source range for the base-specifier.
+  SourceRange Range(StartLoc, EndLocation);
+
+  // Notify semantic analysis that we have parsed a complete
+  // base-specifier.
+  return Actions.ActOnBaseSpecifier(ClassDecl, Range, Attributes, IsVirtual,
+                                    Access, BaseType.get(), BaseLoc,
+                                    EllipsisLoc);
 }
 
 void

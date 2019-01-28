@@ -1226,6 +1226,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
                                    unsigned TDF,
                                    bool PartialOrdering,
                                    bool DeducedFromArrayBound) {
+  llvm::outs() << "DEDUCETEMPLATEARGUMENTSBYTYPEMATCH\n";
   // We only want to look at the canonical types, since typedefs and
   // sugar are not part of template argument deduction.
   QualType Param = S.Context.getCanonicalType(ParamIn);
@@ -2111,6 +2112,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::DeducedTemplateSpecialization:
     case Type::DependentTemplateSpecialization:
     case Type::PackExpansion:
+    case Type::CXXDependentVariadicReifier:
     case Type::Pipe:
       // No template argument deduction for these types
       return Sema::TDK_Success;
@@ -2982,6 +2984,7 @@ Sema::SubstituteExplicitTemplateArguments(
                                  SmallVectorImpl<QualType> &ParamTypes,
                                           QualType *FunctionType,
                                           TemplateDeductionInfo &Info) {
+  llvm::outs() << "SUBSTITUTEEXPLICITTEMPLATEARGUMENTS\n";
   FunctionDecl *Function = FunctionTemplate->getTemplatedDecl();
   TemplateParameterList *TemplateParams
     = FunctionTemplate->getTemplateParameters();
@@ -5583,6 +5586,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::ObjCObjectPointer:
   case Type::UnresolvedUsing:
   case Type::Pipe:
+  case Type::CXXDependentVariadicReifier:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)
