@@ -2051,9 +2051,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
         // Skip the rest of this base specifier, up until the comma or
         // opening brace.
         SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-        llvm::outs() << "THE TYPENAME IS INVALID\n";
       } else {
-        llvm::outs() << "THE TYPENAME IS VALID\n";
         // Add this to our array of base specifiers.
         BaseInfo.push_back(Typename.get());
       }
@@ -2091,8 +2089,6 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 BaseResult
 Parser::ParseBaseSpecifier(Decl *ClassDecl,
                            llvm::SmallVectorImpl<BaseResult> &ReifiedTypes) {
-  llvm::outs() << "THE CLASS\n";
-  ClassDecl->dump();
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
@@ -2129,18 +2125,12 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
   // Parse a variadic reifier
   if(isVariadicReification()) {
-    llvm::outs() << "PARSE REIFICATION\n";
-    llvm::outs() << "CLASS BEFORE REIFICATION PARSE\n";
-    ClassDecl->dump();
     // TODO: make sure only typename is allowed here
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
     if(ParseVariadicReification(SpecList))
       return true;
 
-    llvm::outs() << "SPECLIST SIZE: " << SpecList.size() << '\n';
-    llvm::outs() << "CLASS AFTER TREETRANSFORMS\n";
-    ClassDecl->dump();
     for(auto BaseTy : SpecList) {
       OpaquePtr<QualType> BaseTyPtr;
       BaseTyPtr.set(BaseTy);
@@ -2150,9 +2140,6 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
                                    Access, BaseTyPtr, SourceLocation(),
                                    SourceLocation(), /*VariadicReif=*/true));
     }
-
-    llvm::outs() << "CLASS AFTER REIFICATION PARSE\n";
-    ClassDecl->dump();
 
     return false;
   }

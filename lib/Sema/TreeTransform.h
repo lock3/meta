@@ -4287,11 +4287,8 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformType(QualType T) {
-  llvm::outs() << "transformtype(qualtype)\n";
   if (getDerived().AlreadyTransformed(T))
     return T;
-  llvm::outs() << "the type\n";
-  T.dump();
 
   // Temporary workaround.  All of these transformations should
   // eventually turn into transformations on TypeLocs.
@@ -4307,18 +4304,11 @@ QualType TreeTransform<Derived>::TransformType(QualType T) {
   if (!NewDI)
     return QualType();
 
-  llvm::outs() << "the transformed type\n";
-  NewDI->getType().dump();
   return NewDI->getType();
 }
 
 template<typename Derived>
 TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
-  llvm::outs() << "transformtype(tsi)\n";
-  if(DI->getType().isVariadicReifier) {
-    llvm::outs() << "HIT\n";
-    DI->getType().dump();
-  }
   // Refine the base location to the type's location.
   TemporaryBase Rebase(*this, DI->getTypeLoc().getBeginLoc(),
                        getDerived().getBaseEntity());
@@ -4340,12 +4330,6 @@ TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
 template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformType(TypeLocBuilder &TLB, TypeLoc T) {
-  llvm::outs() << "transformtype(tlb, tl)\n";
-  T.getType().dump();
-  if(T.getType().isVariadicReifier) { 
-    llvm::outs() << "HIT\n";
-    T.getType().dump();
-  }
   switch (T.getTypeLocClass()) {
 #define ABSTRACT_TYPELOC(CLASS, PARENT)
 #define TYPELOC(CLASS, PARENT)                                                 \
@@ -6490,7 +6474,6 @@ QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
 (TypeLocBuilder &TLB, CXXDependentVariadicReifierTypeLoc TL) {
-  llvm::outs() << "TRANSFORMCXXDEPENDENTVARIADICREIFIERTYPE\n";
   // ExprResult NewRange = getDerived().
   //   TransformExpr(TL.getRange());
 

@@ -494,6 +494,314 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   return Eval;
 }
 
+enum RangeKind {
+  RK_Array,
+  RK_Range,
+  RK_Tuple,
+  RK_Struct,
+  RK_Unknown,
+};
+
+/// A facility used to determine the begin and end of a constexpr range
+/// or array.
+struct ExpansionContextBuilder {
+  ExpansionContextBuilder(Sema &S, Scope *CS, Expr *Range)
+    : SemaRef(S), CurScope(CS), Range(Range)
+    {}
+
+  /// Construct calls to std::begin(Range) and std::end(Range)
+  /// Returns true on error.
+  bool BuildCalls();
+
+  Expr *getRangeBeginCall() const { return RangeBegin; }
+  Expr *getRangeEndCall() const { return RangeEnd; }
+
+  Expr *getRange() const { return Range; }
+
+  RangeKind getKind() const { return Kind; }
+private:
+  bool BuildArrayCalls();
+  bool BuildRangeCalls();
+  
+private:
+  Sema &SemaRef;
+
+  /// The scope in which analysis will be performed.
+  Scope *CurScope;
+
+  /// Calls to std::begin(range) and std::end(range), respectively.
+  Expr *RangeBegin = nullptr;
+  Expr *RangeEnd = nullptr;
+
+  /// The Range that we are constructing an expansion context from.
+  Expr *Range;
+
+  RangeKind Kind;
+};
+
+bool
+ExpansionContextBuilder::BuildCalls()
+{
+  SourceLocation Loc;
+
+  if (Range->getType()->isConstantArrayType()) {
+    Kind = RK_Array;
+    return BuildArrayCalls();
+  }
+
+  Kind = RK_Range;
+
+  // Get the std namespace for std::begin and std::end
+  NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
+
+  // Get the info for a call to std::begin
+  DeclarationNameInfo BeginNameInfo(
+      &SemaRef.Context.Idents.get("begin"), Loc);
+  LookupResult BeginCallLookup(SemaRef, BeginNameInfo, Sema::LookupOrdinaryName);
+  if (!SemaRef.LookupQualifiedName(BeginCallLookup, Std))
+    return true;
+  if (BeginCallLookup.getResultKind() != LookupResult::FoundOverloaded)
+    return true;
+  UnresolvedLookupExpr *BeginFn =
+    UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
+                                 NestedNameSpecifierLoc(), BeginNameInfo,
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 BeginCallLookup.begin(), 
+                                 BeginCallLookup.end());
+  
+  // Get the info for a call to std::end
+  DeclarationNameInfo EndNameInfo(
+      &SemaRef.Context.Idents.get("end"), Loc);
+  LookupResult EndCallLookup(SemaRef, EndNameInfo, Sema::LookupOrdinaryName);
+  if (!SemaRef.LookupQualifiedName(EndCallLookup, Std))
+    return true;
+  if (EndCallLookup.getResultKind() != LookupResult::FoundOverloaded)
+    return true;
+  UnresolvedLookupExpr *EndFn =
+    UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
+                                 NestedNameSpecifierLoc(), EndNameInfo,
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 EndCallLookup.begin(), 
+                                 EndCallLookup.end());
+
+  // Build the actual calls
+  Expr *Args[] = {Range};
+  ExprResult BeginCall =
+    SemaRef.ActOnCallExpr(CurScope, BeginFn, Loc, Args, Loc);
+  if (BeginCall.isInvalid())
+    return true; 
+  ExprResult EndCall =
+    SemaRef.ActOnCallExpr(CurScope, EndFn, Loc, Args, Loc);
+  if (EndCall.isInvalid())
+    return true; 
+  
+  RangeBegin = BeginCall.get();
+  RangeEnd = EndCall.get();
+
+  return false;
+}
+
+bool
+ExpansionContextBuilder::BuildArrayCalls()
+{
+  // For an array arr, RangeBegin is arr[0]
+  IntegerLiteral *ZeroIndex =
+    IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(0),
+                           SemaRef.Context.getSizeType(), SourceLocation());
+  
+  ExprResult BeginAccessor =
+    SemaRef.ActOnArraySubscriptExpr(CurScope, Range, SourceLocation(),
+                                    ZeroIndex, SourceLocation());
+  if (BeginAccessor.isInvalid())
+    return true;
+  
+  RangeBegin = BeginAccessor.get();
+
+  // For an array of size N, RangeEnd is N (not arr[N])
+  ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(Range->getType());
+  llvm::APSInt Last(ArrayTy->getSize(), true);  
+  IntegerLiteral *LastIndex =
+    IntegerLiteral::Create(SemaRef.Context, Last,
+                           SemaRef.Context.getSizeType(), SourceLocation());  
+  RangeEnd = LastIndex;
+  return false;
+}
+
+/// Traverse a C++ Constexpr Range
+struct RangeTraverser {
+  RangeTraverser(Sema &SemaRef, RangeKind Kind, Expr *RangeBegin,
+                 Expr *RangeEnd)
+    : SemaRef(SemaRef), Current(RangeBegin), RangeEnd(RangeEnd),
+    Kind(Kind), I()
+    {}
+
+  /// Current == RangeEnd
+  explicit operator bool();
+
+  /// Dereference and evaluate the current value as a constant expression.
+  Expr *operator*();
+
+  /// Call std::next(Current, 1) if this is a constexpr range,
+  /// Increment the array subscript if it is an array.
+  RangeTraverser &operator++();
+
+  /// Get the range kind.
+  RangeKind getKind() const { return Kind; }
+
+private:
+  Sema &SemaRef;
+
+  /// The current element in the traversal
+  Expr *Current;
+
+  /// One-past-the-end iterator (std::end) of the range we are traversing.
+  Expr *RangeEnd = nullptr;
+
+  /// The kind of product type we are traversing.
+  RangeKind Kind;
+
+  /// An integer Index that keeps track of the current element.
+  std::size_t I;
+};
+
+static ExprResult
+BuildSubscriptAccess(Sema &SemaRef, Expr *Current, std::size_t Index)
+{
+  ASTContext &Context = SemaRef.Context;
+
+  // The subscript.
+  IntegerLiteral *E =
+    IntegerLiteral::Create(Context, llvm::APSInt::getUnsigned(Index),
+                           Context.getSizeType(), SourceLocation());
+
+  // Get the actual array base to create an incremented subscript access.
+  ArraySubscriptExpr *CurrentSubscript =
+    static_cast<ArraySubscriptExpr*>(Current);
+  Expr *Base = CurrentSubscript->getBase();
+  
+  ExprResult RangeAccessor = 
+    SemaRef.ActOnArraySubscriptExpr(SemaRef.getCurScope(), Base,
+                                    SourceLocation(), E, SourceLocation());
+  if (RangeAccessor.isInvalid())
+    return ExprError();
+  return RangeAccessor;
+}
+
+// Build a call to std::next(Arg, Induction) for the range traverser
+static ExprResult
+BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
+{
+  NamespaceDecl *Std = SemaRef.getOrCreateStdNamespace();
+  SourceLocation Loc = SourceLocation();
+
+  DeclarationNameInfo NextNameInfo(
+    &SemaRef.Context.Idents.get("next"), Loc);
+  LookupResult NextCallLookup(SemaRef, NextNameInfo, Sema::LookupOrdinaryName);
+  if (!SemaRef.LookupQualifiedName(NextCallLookup, Std))
+    return ExprError();
+  if (NextCallLookup.getResultKind() != LookupResult::FoundOverloaded)
+    return ExprError();
+
+  UnresolvedLookupExpr *NextFn =
+    UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
+                                 NestedNameSpecifierLoc(), NextNameInfo,
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 NextCallLookup.begin(), 
+                                 NextCallLookup.end());
+  Expr *Args[] = {Arg, Induction};
+  ExprResult NextCall = 
+    SemaRef.ActOnCallExpr(SemaRef.getCurScope(), NextFn, Loc, Args, Loc);
+  if (NextCall.isInvalid())
+    return ExprError();
+
+  return NextCall;
+}
+
+// Dereference a call to an iterator (as built in BuildNextCall)
+static ExprResult
+BuildDeref(Sema &SemaRef, Expr *NextCall)
+{
+  ExprResult NextDeref = 
+    SemaRef.ActOnUnaryOp(SemaRef.getCurScope(), SourceLocation(),
+                         tok::star, NextCall);
+  if (NextDeref.isInvalid())
+    return ExprError();
+  return NextDeref;
+}
+
+RangeTraverser::operator bool()
+{
+  switch (Kind) {
+  case RK_Array:
+  // If this is an array, we will simply see if we have iterated
+  // N times.
+    return I == cast<IntegerLiteral>(RangeEnd)->getValue();
+
+  case RK_Range: {
+    Expr::EvalResult EqualRes;
+    ExprResult Equal =
+      SemaRef.ActOnBinOp(SemaRef.getCurScope(), SourceLocation(), tok::equalequal,
+                         Current, RangeEnd);
+    Equal.get()->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
+                                        SemaRef.Context);
+
+    return EqualRes.Val.getInt() == 1;
+  }
+  default:
+    llvm_unreachable("Invalid Range Kind.");
+  }
+}
+
+Expr *
+RangeTraverser::operator*()
+{
+  Expr *Deref = nullptr;
+  switch (Kind) {
+  case RK_Range:
+    Deref = BuildDeref(SemaRef, Current).get();
+    break;
+  case RK_Array:
+    Deref = Current;
+    break;
+  default:
+    break;
+  }
+
+  ExprResult RvalueDeref = SemaRef.DefaultLvalueConversion(Deref);
+
+  assert(!RvalueDeref.isInvalid() && "Could not dereference range member.");
+  return RvalueDeref.get();
+}
+
+RangeTraverser &
+RangeTraverser::operator++()
+{
+  IntegerLiteral *Index =
+  IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(1),
+                         SemaRef.Context.getSizeType(), SourceLocation());
+  const auto done = operator bool();
+  if (!done) {
+    ++I;
+    ExprResult Next;
+    switch (Kind) {
+    case RK_Range:
+      Next = BuildNextCall(SemaRef, Current, Index);
+      break;
+    case RK_Array:
+      Next = BuildSubscriptAccess(SemaRef, Current, I);
+      break;
+    default:
+      break;
+    }
+
+    if (Next.isInvalid())
+      llvm_unreachable("Could not build next call.");
+    Current = Next.get();
+  }
+
+  return *this;
+}
+
 static ExprResult
 getAsCXXValueOfExpr(Sema &SemaRef, Expr *Expression,
                     SourceLocation EllipsisLoc = SourceLocation())
@@ -520,7 +828,7 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
   llvm::SmallVector<Expr *, 1> Parts = {Expression};
 
   UnqualifiedId Result;
-  if(SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
+  if (SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
     return ExprError();
 
   CXXScopeSpec TempSS;
@@ -530,7 +838,7 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
                               /*HasTrailingLParen=*/false,
                               /*IsAddresOfOperand=*/false);
 
-  if(BuiltExpr.isInvalid())
+  if (BuiltExpr.isInvalid())
     return ExprError();
   return BuiltExpr;
 
@@ -551,27 +859,18 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
                                SourceLocation RParenLoc)
 {
 
-  ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
-  StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
-  CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
+  // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
+  ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
+  CtxBldr.BuildCalls();
+  // StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
+  // CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
   llvm::SmallVector<Expr *, 4> Expressions;
   ExprResult C;
 
   // If the expansion is dependent, we cannot expand on it yet.
   // Just return an empty reifier containing the Range and EllipsisLoc.
-  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
-  //   llvm::outs() << "DEPENDENT EXPANSION\n";
-  //   switch(KW->getTokenID()) {
-  //   case tok::kw_valueof:
-  //     C = getAsCXXValueOfExpr(*this, Range, EllipsisLoc);
-  //     break;
-  //   case tok::kw_idexpr:
-  //     C = getAsCXXIdExprExpr(*this, Range, EllipsisLoc);
-  //     break;
-  //   default:
-  //     llvm_unreachable("Unimplemented");
-  //   }
+  if (CtxBldr.getKind() == RK_Unknown) {
     C = ActOnCXXDependentVariadicReifierExpr(Range, KWLoc, KW, LParenLoc,
                                              EllipsisLoc, RParenLoc);
 
@@ -579,12 +878,15 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
     return Expressions;
   }
   // Traverse the range now and add the exprs to the vector
-  RangeTraverser Traverser(*this, Expansion, Bldr.getBeginCallRef());
+  RangeTraverser Traverser(*this,
+                           CtxBldr.getKind(),
+                           CtxBldr.getRangeBeginCall(),
+                           CtxBldr.getRangeEndCall());
 
 
   
-  while(!Traverser) {
-    switch(KW->getTokenID()) {
+  while (!Traverser) {
+    switch (KW->getTokenID()) {
     case tok::kw_valueof:
       C = getAsCXXValueOfExpr(*this, *Traverser);
       break;
@@ -600,7 +902,7 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
       break;
     }
 
-    if(!C.isInvalid() && C.isUsable())
+    if (!C.isInvalid() && C.isUsable())
       Expressions.push_back(C.get());
 
     ++Traverser;
@@ -614,15 +916,12 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
                             SourceLocation LParenLoc, SourceLocation EllipsisLoc,
                             SourceLocation RParenLoc)
 {
-  llvm::outs() << "SCOPE OF BUILDER\n";
-  getCurScope()->dump();
-  ExpansionStatementBuilder Bldr(*this, getCurScope()->getParent(), BFRK_Build, Range);
-  StmtResult ExpansionResult = Bldr.BuildUninstantiated();
-  CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
+  ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
+  CtxBldr.BuildCalls();
 
   llvm::SmallVector<QualType, 4> Types;
 
-  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
+  if (CtxBldr.getKind() == RK_Unknown) {
     QualType T = Context.getCXXDependentVariadicReifierType(Range);
     // TODO: remove this flag from qualtype
     // T.isVariadicReifier = true;
@@ -632,9 +931,10 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
   }
 
   // Traverse the range now and add the exprs to the vector
-  RangeTraverser Traverser(*this, Expansion,
-                           Bldr.getBeginCallRef());
-
+  RangeTraverser Traverser(*this,
+                           CtxBldr.getKind(),
+                           CtxBldr.getRangeBeginCall(),
+                           CtxBldr.getRangeEndCall());
 
   while(!Traverser) {
     QualType T = getAsCXXReflectedType(*this, *Traverser);
@@ -654,7 +954,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      SourceLocation EllipsisLoc)
 {
   // llvm::outs() << "REFL:\n";
-  // if(!Refl) llvm::outs() << "NULL\n";
+  // if (!Refl) llvm::outs() << "NULL\n";
   // Refl->dump();
   
   if (Refl->isTypeDependent() || Refl->isValueDependent()) 
@@ -822,7 +1122,7 @@ static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   Reflection Refl = EvaluateReflection(S, E);
 
-  switch(Refl.getKind()) {
+  switch (Refl.getKind()) {
   case RK_invalid:
     llvm_unreachable("Should already be validated");
 
@@ -1050,7 +1350,7 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
 
   Reflection Refl = EvaluateReflection(*this, E);
 
-  switch(Refl.getKind()) {
+  switch (Refl.getKind()) {
   case RK_invalid:
     return ParsedTemplateArgument();
 

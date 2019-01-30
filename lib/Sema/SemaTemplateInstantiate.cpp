@@ -1033,7 +1033,6 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 }
 
 Decl *TemplateInstantiator::TransformDefinition(SourceLocation Loc, Decl *D) {
-  llvm::outs() << "TRANSFORM DEFINITION\n";
   Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
   if (!Inst)
     return nullptr;
@@ -1897,11 +1896,6 @@ bool
 Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                           CXXRecordDecl *Pattern,
                           const MultiLevelTemplateArgumentList &TemplateArgs) {
-  llvm::outs() << "SUBST BASE SPECIFIERS\n";
-  llvm::outs() << "PATTERN\n";
-  Pattern->dump();
-  llvm::outs() << "Instantiation pretransform\n";
-  Instantiation->dump();
   bool Invalid = false;
   SmallVector<CXXBaseSpecifier*, 4> InstantiatedBases;
   for (const auto &Base : Pattern->bases()) {
@@ -1972,7 +1966,6 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                               Base.getSourceRange().getBegin(),
                               DeclarationName());
     } else if(CXXDependentVariadicReifierType::classof(Base.getType().getTypePtr())) {
-      llvm::outs() << "BASE SPECIFIER IS A VARIADIC REIFIER\n";
       TemplateInstantiator::TreeTransform Transformer(*this);
       llvm::SmallVector<QualType, 8> ReifiedTypes;
       Transformer.MaybeTransformVariadicReifier(Base.getType().getTypePtr(), ReifiedTypes);
@@ -2023,10 +2016,6 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
 
   if (!Invalid && AttachBaseSpecifiers(Instantiation, InstantiatedBases))
     Invalid = true;
-
-  llvm::outs() << "NUMBER OF BASES: " << InstantiatedBases.size() << '\n';
-  llvm::outs() << "INSTANTIATION POST TRANSFORMATION\n";
-  Instantiation->dump();
 
   return Invalid;
 }
