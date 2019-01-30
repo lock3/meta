@@ -618,7 +618,10 @@ ExpansionContextBuilder::BuildArrayCalls()
   RangeBegin = BeginAccessor.get();
 
   // For an array of size N, RangeEnd is N (not arr[N])
-  ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(Range->getType());
+  // Get the canonical type here, as some transformations may
+  // have been applied earlier on.
+  ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(
+    Range->getType()->getCanonicalTypeInternal());
   llvm::APSInt Last(ArrayTy->getSize(), true);  
   IntegerLiteral *LastIndex =
     IntegerLiteral::Create(SemaRef.Context, Last,
