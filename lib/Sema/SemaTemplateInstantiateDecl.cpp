@@ -4182,7 +4182,7 @@ void Sema::BuildVariableInstantiation(
 /// Instantiate the initializer of a variable.
 void Sema::InstantiateVariableInitializer(
     VarDecl *Var, VarDecl *OldVar,
-    const MultiLevelTemplateArgumentList &TemplateArgs) {
+    const MultiLevelTemplateArgumentList &TemplateArgs) {  
   if (ASTMutationListener *L = getASTContext().getASTMutationListener())
     L->VariableDefinitionInstantiated(Var);
 

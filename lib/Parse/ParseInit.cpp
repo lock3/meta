@@ -432,8 +432,8 @@ ExprResult Parser::ParseBraceInitializer() {
     ExprResult SubElt;
     if (MayBeDesignationStart())
       SubElt = ParseInitializerWithPotentialDesignator();
-    else if(isVariadicReification())
-      InitExprsOk = ParseVariadicReification(ExpandedExprs);
+    else if(isVariadicReifier)
+      InitExprsOk = !ParseVariadicReification(ExpandedExprs);
     else
       SubElt = ParseInitializer();
 

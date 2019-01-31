@@ -4187,7 +4187,7 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
         IdentifierInfo *II = ExpandedDeclRef->getFoundDecl()->getIdentifier();
         SeenAttrs.insert({II, SourceLocation()});
       }
-        
+      
     }
 
     AttrName = TryParseCXX11AttributeIdentifier(AttrLoc);

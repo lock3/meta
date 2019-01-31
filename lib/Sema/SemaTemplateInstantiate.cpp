@@ -1965,12 +1965,12 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                               TemplateArgs,
                               Base.getSourceRange().getBegin(),
                               DeclarationName());
-    } else if(CXXDependentVariadicReifierType::classof(Base.getType().getTypePtr())) {
+    } else if (CXXDependentVariadicReifierType::classof(Base.getType().getTypePtr())) {
       TemplateInstantiator::TreeTransform Transformer(*this);
       llvm::SmallVector<QualType, 8> ReifiedTypes;
       Transformer.MaybeTransformVariadicReifier(Base.getType().getTypePtr(), ReifiedTypes);
 
-      for(auto ReifiedType : ReifiedTypes) {
+      for (auto ReifiedType : ReifiedTypes) {
         TypeSourceInfo *BaseTypeLoc = Context.CreateTypeSourceInfo(ReifiedType);
         if (!BaseTypeLoc) {
           Invalid = true;

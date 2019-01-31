@@ -3442,7 +3442,7 @@ template<typename Derived>
 ExprResult TreeTransform<Derived>::TransformExpr(Expr *E) {
   if (!E)
     return E;
-
+  
   switch (E->getStmtClass()) {
     case Stmt::NoStmtClass: break;
 #define STMT(Node, Parent) case Stmt::Node##Class: break;
@@ -4292,10 +4292,6 @@ QualType TreeTransform<Derived>::TransformType(QualType T) {
 
   // Temporary workaround.  All of these transformations should
   // eventually turn into transformations on TypeLocs.
-  if(T.isVariadicReifier) {
-    llvm::outs() << "hello cruel world\n";
-  }
-  
   TypeSourceInfo *DI = getSema().Context.getTrivialTypeSourceInfo(T,
                                                 getDerived().getBaseLocation());
 
@@ -7620,6 +7616,9 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
       case tok::kw_unqualid:
         Keyword = &(getSema().Context.Idents.get("unqualid"));
         break;
+      case tok::kw_typename:
+        llvm_unreachable("Typename as expression unimplemented.\n");
+        break;
       default:
         // TODO: Diag << err_invalid_reification
         return true;
@@ -7652,9 +7651,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   // If this is a dependent variadic reification, go ahead and transform it.
   // if (DependentReifier->getEllipsisLoc().isValid())
     Expr *OldRange = DependentReifier->getRange();
-    llvm::outs() << "TRANSFORMING RANGE...\n";
     ExprResult NewRange = TransformExpr(OldRange);
-    llvm::outs() << "RANGE TRANSFORMED\n";
 
     if(NewRange.isInvalid())
       return true;

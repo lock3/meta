@@ -496,11 +496,6 @@ Parser::ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs)
     return true;
   }
 
-  if(ReflRange.get()->isTypeDependent())
-    llvm::outs() << "RANGE IS TYPEDEPENDENT\n";
-  if(ReflRange.get()->isValueDependent())
-    llvm::outs() << "RANGE IS VALUEDEPENDENT\n";
-
   // ReflRange has to be a range, so therefore it must be a declref
   DeclRefExpr *ReflRangeDeclRef =
     dyn_cast_or_null<DeclRefExpr>(ReflRange.get());

@@ -544,6 +544,12 @@ ExpansionContextBuilder::BuildCalls()
 {
   SourceLocation Loc;
 
+  // If the range is dependent, mark it and return. We'll transform it later.
+  if (Range->getType()->isDependentType() || Range->isValueDependent()) {
+    Kind = RK_Unknown;
+    return false;
+  }
+
   if (Range->getType()->isConstantArrayType()) {
     Kind = RK_Array;
     return BuildArrayCalls();
@@ -861,10 +867,10 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
                                SourceLocation EllipsisLoc,
                                SourceLocation RParenLoc)
 {
-
   // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
-  CtxBldr.BuildCalls();
+  if (CtxBldr.BuildCalls())
+    ; // TODO: Diag << failed to build calls
   // StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
   // CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
@@ -876,7 +882,6 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
   if (CtxBldr.getKind() == RK_Unknown) {
     C = ActOnCXXDependentVariadicReifierExpr(Range, KWLoc, KW, LParenLoc,
                                              EllipsisLoc, RParenLoc);
-
     Expressions.push_back(C.get());
     return Expressions;
   }
