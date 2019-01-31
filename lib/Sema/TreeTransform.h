@@ -7668,19 +7668,34 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
   if (!DNI.getName())
     return ExprError();
 
-  // Some components are still dependent.
-  if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
-    return new (getSema().Context) CXXReflectedIdExpr(
-            DNI, E->getType(), E->getScopeSpecifier(), E->getTemplateKWLoc(),
-            E->HasTrailingLParen(), E->IsAddressOfOperand(),
-            E->getTemplateArgs());
-
-  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
   CXXScopeSpec SS = E->getScopeSpecifier();
 
+  TemplateArgumentLoc TemplateArgLocInfo;
+  TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
+
+  SourceLocation TemplateKWLoc = SourceLocation();
+
+  if (E->hasExplicitTemplateArgs()) {
+    TemplateArgs.setLAngleLoc(E->getLAngleLoc());
+    TemplateArgs.setRAngleLoc(E->getRAngleLoc());
+
+    if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                E->getNumTemplateArgs(),
+                                                TemplateArgs))
+      return ExprError();
+
+    TemplateArgsPtr = &TemplateArgs;
+  }
+
+  // Some components are still dependent.
+  if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
+    return CXXReflectedIdExpr::Create(
+            getSema().Context, DNI, E->getType(), SS, TemplateKWLoc,
+            E->HasTrailingLParen(), E->IsAddressOfOperand(), TemplateArgsPtr);
+
+  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
   return getSema().ActOnIdExpression(ParserLookup.getCurScope(), SS,
-                                     E->getTemplateKWLoc(),
-                                     DNI, E->getTemplateArgs(),
+                                     TemplateKWLoc, DNI, TemplateArgsPtr,
                                      UnqualifiedIdKind::IK_ReflectedId,
                                      /*TemplateId=*/nullptr,
                                      E->HasTrailingLParen(),

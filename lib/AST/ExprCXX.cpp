@@ -1634,9 +1634,39 @@ CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
   : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary,
          /*TD=*/true, /*VD=*/true, /*ID=*/true,
          /*ContainsUnexpandedParameterPack=*/false),
-    NameInfo(DNI), SS(SS), TemplateKWLoc(TemplateKWLoc),
-    TrailingLParen(TrailingLParen), AddressOfOperand(AddressOfOperand),
-    TemplateArgs(TemplateArgs) { }
+    NameInfo(DNI), SS(SS), TrailingLParen(TrailingLParen),
+    AddressOfOperand(AddressOfOperand),
+    HasTemplateKWAndArgsInfo(TemplateArgs != nullptr
+                             || TemplateKWLoc.isValid()) {
+  // If we have explicit template arguments, check for dependent
+  // template arguments and whether they contain any unexpanded pack
+  // expansions.
+  if (TemplateArgs) {
+    getTrailingASTTemplateKWAndArgsInfo()->initializeFrom(
+        TemplateKWLoc, *TemplateArgs, getTrailingTemplateArgumentLoc());
+  } else if (TemplateKWLoc.isValid()) {
+    getTrailingASTTemplateKWAndArgsInfo()->initializeFrom(TemplateKWLoc);
+  }
+}
+
+CXXReflectedIdExpr *CXXReflectedIdExpr::Create(
+    const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+    const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
+    bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs) {
+  bool HasTemplateKWAndArgsInfo = TemplateArgs || TemplateKWLoc.isValid();
+  std::size_t Size =
+    totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
+        HasTemplateKWAndArgsInfo, TemplateArgs ? TemplateArgs->size() : 0);
+
+  void *Mem = C.Allocate(Size, alignof(CXXReflectedIdExpr));
+  return new (Mem) CXXReflectedIdExpr(DNI, T, SS, TemplateKWLoc, TrailingLParen,
+                                      AddressOfOperand, TemplateArgs);
+}
+
+CXXReflectedIdExpr *CXXReflectedIdExpr::CreateEmpty(const ASTContext &C,
+                                                    EmptyShell Empty) {
+  return new (C) CXXReflectedIdExpr(Empty);
+}
 
 CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
                                        QualType T, SourceLocation L,

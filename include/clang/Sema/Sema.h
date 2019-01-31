@@ -8772,8 +8772,11 @@ public:
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,
                                            SourceLocation EndLoc);
-  bool BuildDeclnameId(SmallVectorImpl<Expr *> &Parts, UnqualifiedId &Result,
-                       SourceLocation KWLoc, SourceLocation RParenLoc);
+  bool BuildDeclnameId(SourceLocation BeginLoc, const DeclarationName &Name,
+                       SourceLocation LAngleLoc,
+                       ASTTemplateArgsPtr TemplateArgs,
+                       SourceLocation RAngleLoc, UnqualifiedId &Result,
+                       SourceLocation EndLoc);
 
   ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
   ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);

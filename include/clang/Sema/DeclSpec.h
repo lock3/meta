@@ -829,9 +829,8 @@ public:
     /// template arguments.
     TemplateIdAnnotation *TemplateId;
 
-    /// When Kind == IK_ReflectedId. Memory for this array is allocated
-    /// by the context.
-    llvm::ArrayRef<Expr *> NameComponents;
+    /// When Kind == IK_ReflectedId.
+    ReflectedIdentifierInfo *ReflectedIdentifier;
   };
 
   /// The location of the first token that describes this unqualified-id,
@@ -984,10 +983,10 @@ public:
   /// \param BeginLoc The location of the starting token.
   /// \param Args The array of arguments for the reflected id.
   /// \param EndLoc The location of the ending token.
-  void setReflectedId(SourceLocation BeginLoc, llvm::ArrayRef<Expr *> Args,
+  void setReflectedId(SourceLocation BeginLoc, ReflectedIdentifierInfo *ReflectedId,
                       SourceLocation EndLoc) {
     Kind = UnqualifiedIdKind::IK_ReflectedId;
-    NameComponents = Args;
+    ReflectedIdentifier = ReflectedId;
     StartLocation = BeginLoc;
     EndLocation = EndLoc;
   }

@@ -87,7 +87,7 @@ void test_bad() {
 
   S foo_bar_fin  = S();
   int int_x = foo_bar_fin.unqualid("get_nothing")(); // expected-error {{no member named 'get_nothing' in 'S'}}
-  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}}
+  int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}} expected-error {{no member named '' in 'S'}}
   template_bad_local_var_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_function<1>' requested here}}
 }
 
@@ -123,7 +123,7 @@ constexpr int template_proxy_function_1() {
 
 template<int y>
 constexpr int template_template_unqualid_call_function() {
-  return unqualid("template_proxy_function_", y)<y>();
+  return template unqualid("template_proxy_function_", y)<y>();
 }
 
 namespace namespace_a {

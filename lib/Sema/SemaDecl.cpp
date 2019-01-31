@@ -5072,7 +5072,7 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
     // declaration name (meaning canonical). Then, we try to reconstruct it.
     // We should just store the internal bit of the name in the UnqualifiedId
     // instead of the arguments.
-    llvm::ArrayRef<Expr *> Args = Name.NameComponents;
+    llvm::ArrayRef<Expr *> Args = Name.ReflectedIdentifier->getNameComponents();
     NameInfo.setName(Context.DeclarationNames.getCXXReflectedIdName(Args.size(),
                                               const_cast<Expr **>(&Args[0])));
     SourceRange Range(Name.StartLocation, Name.EndLocation);

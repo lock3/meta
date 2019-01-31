@@ -5075,15 +5075,26 @@ public:
 
 /// Represents a reflected id-expression of the form '(. args .)'.
 /// Some of the arguments in args are dependent.
-class CXXReflectedIdExpr : public Expr {
+class CXXReflectedIdExpr final
+    : public Expr,
+      private llvm::TrailingObjects<
+          CXXReflectedIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
+  friend TrailingObjects;
+
   DeclarationNameInfo NameInfo;
 
   const CXXScopeSpec SS;
-  SourceLocation TemplateKWLoc;
   bool TrailingLParen;
   bool AddressOfOperand;
-  const TemplateArgumentListInfo *TemplateArgs;
-public:
+
+  /// Whether the name includes info for explicit template
+  /// keyword and arguments.
+  bool HasTemplateKWAndArgsInfo = false;
+
+  size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
+    return HasTemplateKWAndArgsInfo ? 1 : 0;
+  }
+
   CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
                      const CXXScopeSpec &SS,
                      SourceLocation TemplateKWLoc,
@@ -5093,19 +5104,69 @@ public:
   CXXReflectedIdExpr(EmptyShell Empty)
     : Expr(CXXReflectedIdExprClass, Empty) { }
 
+public:
+  static CXXReflectedIdExpr *Create(
+      const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+      const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
+      bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
+                                         EmptyShell Empty);
+
   /// Returns the evaluated expression.
   DeclarationNameInfo getNameInfo() const { return NameInfo; }
 
   CXXScopeSpec getScopeSpecifier() const { return SS; }
 
-  SourceLocation getTemplateKWLoc() const { return TemplateKWLoc; }
-
   bool HasTrailingLParen() const { return TrailingLParen; }
 
   bool IsAddressOfOperand() const { return AddressOfOperand; }
 
-  const TemplateArgumentListInfo *getTemplateArgs() const {
-    return TemplateArgs;
+  ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() {
+    if (!HasTemplateKWAndArgsInfo)
+      return nullptr;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>();
+  }
+
+  TemplateArgumentLoc *getTrailingTemplateArgumentLoc() {
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the location of the left angle bracket starting the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getLAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+  }
+
+  /// Retrieve the location of the right angle bracket ending the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getRAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+  }
+
+  /// Determines whether this member expression actually had a C++
+  /// template argument list explicitly specified, e.g., x.f<int>.
+  bool hasExplicitTemplateArgs() const { return getLAngleLoc().isValid(); }
+
+  /// Retrieve the template arguments provided as part of this
+  /// template-id.
+  const TemplateArgumentLoc *getTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return nullptr;
+
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the number of template arguments provided as part of this
+  /// template-id.
+  unsigned getNumTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return 0;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
   }
 
   SourceRange getSourceRange() const {

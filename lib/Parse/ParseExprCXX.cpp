@@ -2517,7 +2517,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
   if (Tok.is(tok::kw_template)) {
-    if (TemplateKWLoc && (ObjectType || SS.isSet())) {
+    if (TemplateKWLoc && (ObjectType || SS.isSet() || NextToken().is(tok::kw_unqualid))) {
       TemplateSpecified = true;
       *TemplateKWLoc = ConsumeToken();
     } else {
@@ -2660,7 +2660,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // unqualified-id:
   //   'unqualid' '(' reflection ')'
   if (Tok.is(tok::kw_unqualid))
-    return ParseCXXReflectedId(Result);
+    return ParseCXXReflectedId(Result, TemplateSpecified);
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

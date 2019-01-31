@@ -1765,6 +1765,17 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
     SourceLocation TNameLoc = Id.TemplateId->TemplateNameLoc;
     NameInfo = Context.getNameForTemplate(TName, TNameLoc);
     TemplateArgs = &Buffer;
+  } else if (Id.getKind() == UnqualifiedIdKind::IK_ReflectedId) {
+    ReflectedIdentifierInfo *RII = Id.ReflectedIdentifier;
+
+    Buffer.setLAngleLoc(RII->getLAngleLoc());
+    Buffer.setRAngleLoc(RII->getRAngleLoc());
+
+    ASTTemplateArgsPtr TemplateArgsPtr = RII->getTemplateArgs();
+    translateTemplateArguments(TemplateArgsPtr, Buffer);
+
+    NameInfo = GetNameFromUnqualifiedId(Id);
+    TemplateArgs = &Buffer;
   } else {
     NameInfo = GetNameFromUnqualifiedId(Id);
     TemplateArgs = nullptr;

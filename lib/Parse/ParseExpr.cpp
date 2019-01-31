@@ -1370,6 +1370,15 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     LLVM_FALLTHROUGH;
   }
 
+  // [Meta] id-expression: template unqualid ( reflection )
+  case tok::kw_template: {
+    if (Tok.is(tok::kw_template) && !NextToken().is(tok::kw_unqualid)) {
+      NotCastExpr = true;
+      return ExprError();
+    }
+
+    LLVM_FALLTHROUGH;
+  }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
   case tok::kw_unqualid: // [Meta] id-expression: unqualid ( reflection )
     Res = ParseCXXIdExpression(isAddressOfOperand);

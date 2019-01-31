@@ -17,6 +17,7 @@
 #define LLVM_CLANG_BASIC_IDENTIFIERTABLE_H
 
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TokenKinds.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/SmallString.h"
@@ -36,10 +37,11 @@ namespace clang {
 
 class DeclarationName;
 class DeclarationNameTable;
+class Expr;
 class IdentifierInfo;
 class LangOptions;
 class MultiKeywordSelector;
-class SourceLocation;
+class ParsedTemplateArgument;
 
 /// A simple pair of identifier info and location.
 using IdentifierLocPair = std::pair<IdentifierInfo *, SourceLocation>;
@@ -432,6 +434,49 @@ private:
                             isExtensionToken() || isFutureCompatKeyword() ||
                             isOutOfDate() || isModulesImport() ||
                             isConsteval();
+  }
+};
+
+class ReflectedIdentifierInfo {
+  using ASTTemplateArgsPtr = MutableArrayRef<ParsedTemplateArgument>;
+
+  ASTTemplateArgsPtr TemplateArgs = { };
+
+  SourceLocation LAngleLoc, RAngleLoc;
+
+  /// Memory for this array is allocated by the context.
+  llvm::ArrayRef<Expr *> NameComponents = { };
+public:
+  void setTemplateArgs(ASTTemplateArgsPtr TemplateArgs) {
+    this->TemplateArgs = TemplateArgs;
+  }
+
+  ASTTemplateArgsPtr getTemplateArgs() const {
+    return TemplateArgs;
+  }
+
+  void setLAngleLoc(SourceLocation LAngleLoc) {
+    this->LAngleLoc = LAngleLoc;
+  }
+
+  SourceLocation getLAngleLoc() const {
+    return LAngleLoc;
+  }
+
+  void setRAngleLoc(SourceLocation RAngleLoc) {
+    this->RAngleLoc = RAngleLoc;
+  }
+
+  SourceLocation getRAngleLoc() const {
+    return RAngleLoc;
+  }
+
+  void setNameComponents(llvm::ArrayRef<Expr *> NameComponents) {
+    this->NameComponents = NameComponents;
+  }
+
+  llvm::ArrayRef<Expr *> getNameComponents() const {
+    return NameComponents;
   }
 };
 

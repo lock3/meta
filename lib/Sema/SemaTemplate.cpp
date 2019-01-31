@@ -607,7 +607,7 @@ Sema::ActOnDependentIdExpression(const CXXScopeSpec &SS,
   // operands is dependent, and we cannot form an identifier. Simply preserve
   // the name as it is.
   if (NameInfo.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
-    return new (Context) CXXReflectedIdExpr(NameInfo, Context.DependentTy,
+    return CXXReflectedIdExpr::Create(Context, NameInfo, Context.DependentTy,
         SS, TemplateKWLoc, HasTrailingLParen, isAddressOfOperand, TemplateArgs);
 
   DeclContext *DC = getFunctionLevelDeclContext();

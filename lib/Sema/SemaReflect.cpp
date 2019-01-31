@@ -1231,19 +1231,26 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
 
 /// Constructs a new identifier from the expressions in Parts. Returns false
 /// if no errors were encountered.
-bool Sema::BuildDeclnameId(SmallVectorImpl<Expr *> &Parts,
-                           UnqualifiedId &Result,
-                           SourceLocation KWLoc,
-                           SourceLocation RParenLoc) {
-  DeclarationNameInfo NameInfo = BuildReflectedIdName(KWLoc, Parts, RParenLoc);
-  DeclarationName Name = NameInfo.getName();
-  if (!Name)
-    return true;
-  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName)
-    Result.setReflectedId(KWLoc, Name.getCXXReflectedIdArguments(),
-                          RParenLoc);
-  else
-    Result.setIdentifier(Name.getAsIdentifierInfo(), KWLoc);
+bool Sema::BuildDeclnameId(SourceLocation BeginLoc,
+                           const DeclarationName &Name,
+                           SourceLocation LAngleLoc,
+                           ASTTemplateArgsPtr TemplateArgsPtr,
+                           SourceLocation RAngleLoc, UnqualifiedId &Result,
+                           SourceLocation EndLoc) {
+  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName) {
+    auto *ReflectedId = new (Context) ReflectedIdentifierInfo();
+    ReflectedId->setNameComponents(Name.getCXXReflectedIdArguments());
+
+    if (LAngleLoc.isValid()) {
+      ReflectedId->setTemplateArgs(TemplateArgsPtr);
+      ReflectedId->setLAngleLoc(LAngleLoc);
+      ReflectedId->setRAngleLoc(RAngleLoc);
+    }
+
+    Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
+  } else
+    Result.setIdentifier(Name.getAsIdentifierInfo(), BeginLoc);
+
   return false;
 }
 

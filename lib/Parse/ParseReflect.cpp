@@ -322,7 +322,8 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
+bool Parser::ParseCXXReflectedId(UnqualifiedId& Result,
+                                 bool TemplateSpecified) {
   assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
   SourceLocation KWLoc = ConsumeToken();
 
@@ -344,8 +345,35 @@ bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
   if (T.consumeClose())
     return true;
 
-  return Actions.BuildDeclnameId(Parts, Result, KWLoc,
-                                 T.getCloseLocation());
+  DeclarationNameInfo NameInfo = Actions.BuildReflectedIdName(
+                                            KWLoc, Parts, T.getCloseLocation());
+
+  // FIXME: This should also workn if the built decl name is non dependent.
+  //
+  // Prioritize template parsing, represents whether we should treat the next
+  // '<' token as introducing a template argument list, or a less than operator.
+  bool PrioritizeTemplateParsing = TemplateSpecified;
+  if (Tok.is(tok::less) && PrioritizeTemplateParsing) {
+    SourceLocation LAngleLoc;
+    TemplateArgList TemplateArgs;
+    SourceLocation RAngleLoc;
+
+    if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
+                                         LAngleLoc, TemplateArgs, RAngleLoc)) {
+      return true;
+    }
+
+    ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
+    return Actions.BuildDeclnameId(KWLoc, NameInfo.getName(), LAngleLoc,
+                                   TemplateArgsPtr, RAngleLoc, Result,
+                                   RAngleLoc);
+  }
+
+  return Actions.BuildDeclnameId(KWLoc, NameInfo.getName(),
+                                 /*LAngleLoc=*/SourceLocation(),
+                                 /*TemplateArgsPtr=*/ASTTemplateArgsPtr(),
+                                 /*RAngleLoc=*/SourceLocation(),
+                                 Result, T.getCloseLocation());
 }
 
 /// Parse a reflected-value-expression.
