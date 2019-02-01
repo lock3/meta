@@ -82,6 +82,17 @@ constexpr int template_bad_local_var_function() {
   return x1;
 }
 
+template<int y>
+constexpr int template_bad_local_var_in_caller_function() {
+  return unqualid("local_var_", y); // expected-error {{use of undeclared identifier 'local_var_1'}}
+}
+
+template<int y>
+constexpr int template_bad_local_var_in_caller_calling_function() {
+  int local_var_1 = 0;
+  return template_bad_local_var_in_caller_function<y>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_in_caller_function<1>' requested here}}
+}
+
 void test_bad() {
   auto not_a_reflexpr = 1;
 
@@ -89,6 +100,7 @@ void test_bad() {
   int int_x = foo_bar_fin.unqualid("get_nothing")(); // expected-error {{no member named 'get_nothing' in 'S'}}
   int int_y = foo_bar_fin.unqualid("get_", unqualid("not_a_reflexpr"))(); // expected-error {{expression is not an integral constant expression}} expected-error {{no member named '' in 'S'}}
   template_bad_local_var_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_function<1>' requested here}}
+  template_bad_local_var_in_caller_calling_function<1>(); // expected-note {{in instantiation of function template specialization 'template_bad_local_var_in_caller_calling_function<1>' requested here}}
 }
 
 constexpr void function_foo_1() { }
@@ -154,6 +166,12 @@ constexpr int template_other_namespace_var_function() {
   return namespace_a::unqualid("namespace_var_", y);
 }
 
+template<int y>
+struct template_struct {
+  int field_1 = 73;
+  int field_2 = unqualid("field_", y);
+};
+
 void test_template_param() {
   static_assert(template_function_address_check<1>());
 
@@ -170,6 +188,8 @@ void test_template_param() {
   static_assert(struct_s.get_template_base_field_int<1>() == 90);
   static_assert(struct_s.get_template_method_int<1>() == 0);
   static_assert(struct_s.get_template_base_method_int<1>() == 80);
+
+  static_assert(template_struct<1>().field_2 == 73);
 }
 
 int main() {

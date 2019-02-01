@@ -3980,6 +3980,10 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
         }
       }
 
+      // Push a fake parse scope stack in case we need to perform unqualified
+      // lookup during tree transform.
+      Sema::FakeParseScopeStack FakeParseScopeStack(*this);
+
       // Instantiate the function body.
       Body = SubstStmt(Pattern, TemplateArgs);
 

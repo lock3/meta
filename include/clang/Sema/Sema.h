@@ -8826,7 +8826,7 @@ public:
 private:
   /// A vector of parse scopes used by tree transform to perform
   /// delayed lookup.
-  SmallVector<Scope *, 4> TTParseScopes;
+  SmallVector<Scope *, 4> *CurrentTTParseScopeStack = nullptr;
 
 public:
   /// A class for managing fake parse scopes during tree transform
@@ -8837,13 +8837,19 @@ public:
     DiagnosticsEngine &getDiagnostics();
 
     void PushNewScope(unsigned ScopeFlags) {
+      if (SemaRef.CurrentTTParseScopeStack == nullptr)
+        return;
+
       Scope *LastScope = SemaRef.getMostRecentTTParseScope();
       Scope *NewScope = new Scope(LastScope, ScopeFlags, getDiagnostics());
-      SemaRef.TTParseScopes.push_back(NewScope);
+      SemaRef.CurrentTTParseScopeStack->push_back(NewScope);
     }
 
     void PopOldScope() {
-      delete SemaRef.TTParseScopes.pop_back_val();
+      if (SemaRef.CurrentTTParseScopeStack == nullptr)
+        return;
+
+      delete SemaRef.CurrentTTParseScopeStack->pop_back_val();
     }
 
   public:
@@ -8860,14 +8866,39 @@ public:
   /// Returns a read only view of the current fake parse scopes
   /// for use by tree transform.
   const SmallVector<Scope *, 4> getTTParseScopes() const {
-    return TTParseScopes;
+    if (CurrentTTParseScopeStack == nullptr)
+      return { };
+
+    return *CurrentTTParseScopeStack;
   }
 
   /// Returns the most recent fake parse scope or nullptr if there
   /// isn't one for use by tree transform.
   Scope *getMostRecentTTParseScope() const {
-    return TTParseScopes.empty() ? nullptr : TTParseScopes.back();
+    if (CurrentTTParseScopeStack == nullptr)
+      return nullptr;
+
+    if (CurrentTTParseScopeStack->empty())
+      return nullptr;
+
+    return CurrentTTParseScopeStack->back();
   }
+
+  class FakeParseScopeStack {
+    Sema &SemaRef;
+    SmallVector<Scope *, 4> *PreviousParseScopeStack;
+
+  public:
+    FakeParseScopeStack(Sema &SemaRef) : SemaRef(SemaRef) {
+      PreviousParseScopeStack = SemaRef.CurrentTTParseScopeStack;
+      SemaRef.CurrentTTParseScopeStack = new SmallVector<Scope *, 4>();
+    }
+
+    ~FakeParseScopeStack() {
+      delete SemaRef.CurrentTTParseScopeStack;
+      SemaRef.CurrentTTParseScopeStack = PreviousParseScopeStack;
+    }
+  };
 
   //===--------------------------------------------------------------------===//
   // OpenCL extensions.

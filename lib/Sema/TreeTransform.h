@@ -7670,7 +7670,6 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
 
   CXXScopeSpec SS = E->getScopeSpecifier();
 
-  TemplateArgumentLoc TemplateArgLocInfo;
   TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
 
   SourceLocation TemplateKWLoc = SourceLocation();
