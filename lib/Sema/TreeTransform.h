@@ -3460,6 +3460,8 @@ ExprResult TreeTransform<Derived>::TransformExpr(Expr *E) {
 template<typename Derived>
 ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
                                                         bool NotCopyInit) {
+  llvm::outs() << "TransformInitializer\n";
+  Init->dump();
   // Initializers are instantiated like expressions, except that various outer
   // layers are stripped.
   if (!Init)
@@ -4169,25 +4171,6 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
     TemplateArgumentLoc Out;
     TemplateArgumentLoc In = *First;
 
-    if (In.getArgument().getKind() == TemplateArgument::Expression) {
-      if (In.getArgument().getAsExpr()->getStmtClass() ==
-          Stmt::CXXDependentVariadicReifierExprClass) {
-        if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
-                                          Outputs))
-          return true;
-        continue;
-      }
-        
-    } else if (In.getArgument().getKind() == TemplateArgument::Type) {
-      if (CXXDependentVariadicReifierType::classof(
-            In.getArgument().getAsType().getTypePtr())) {
-        if (MaybeTransformVariadicReifier(
-              In.getArgument().getAsType().getTypePtr(), Outputs))
-          return true;
-        continue;
-      }
-    }
-
     if (In.getArgument().getKind() == TemplateArgument::Pack) {
       // Unpack argument packs, which we translate them into separate
       // arguments.
@@ -4286,6 +4269,25 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
       }
 
       continue;
+    }
+
+    // Test for both type and non-type kinds of variadic reifiers.
+    if (In.getArgument().getKind() == TemplateArgument::Expression) {
+      if (In.getArgument().getAsExpr()->getStmtClass() ==
+          Stmt::CXXDependentVariadicReifierExprClass) {
+        if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
+                                          Outputs))
+          return true;
+        continue;
+      }
+    } else if (In.getArgument().getKind() == TemplateArgument::Type) {
+      if (CXXDependentVariadicReifierType::classof(
+            In.getArgument().getAsType().getTypePtr())) {
+        if (MaybeTransformVariadicReifier(
+              In.getArgument().getAsType().getTypePtr(), Outputs))
+          return true;
+        continue;
+      }
     }
 
     // The simple case:
