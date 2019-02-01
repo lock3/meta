@@ -677,6 +677,8 @@ public:
   MaybeTransformVariadicReifier(Expr *E, TemplateArgumentListInfo &Outputs);
   bool
   MaybeTransformVariadicReifier(Type const *T, SmallVectorImpl<QualType> &Outputs);
+  bool
+  MaybeTransformVariadicReifier(Type const *T, TemplateArgumentListInfo &Outputs);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -4167,6 +4169,25 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
     TemplateArgumentLoc Out;
     TemplateArgumentLoc In = *First;
 
+    if (In.getArgument().getKind() == TemplateArgument::Expression) {
+      if (In.getArgument().getAsExpr()->getStmtClass() ==
+          Stmt::CXXDependentVariadicReifierExprClass) {
+        if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
+                                          Outputs))
+          return true;
+        continue;
+      }
+        
+    } else if (In.getArgument().getKind() == TemplateArgument::Type) {
+      if (CXXDependentVariadicReifierType::classof(
+            In.getArgument().getAsType().getTypePtr())) {
+        if (MaybeTransformVariadicReifier(
+              In.getArgument().getAsType().getTypePtr(), Outputs))
+          return true;
+        continue;
+      }
+    }
+
     if (In.getArgument().getKind() == TemplateArgument::Pack) {
       // Unpack argument packs, which we translate them into separate
       // arguments.
@@ -4266,9 +4287,6 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
       continue;
     }
-
-    if(In.getArgument().getKind())
-      ;
 
     // The simple case:
     if (getDerived().TransformTemplateArgument(In, Out, Uneval))
@@ -7640,6 +7658,25 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 
 template <typename Derived>
 bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier(Expr *E,
+                                                      TemplateArgumentListInfo
+                                                      &Outputs)
+{
+  llvm::SmallVector<Expr *, 4> ReifiedExprs; 
+  if (MaybeTransformVariadicReifier(E, ReifiedExprs))
+    return true;
+
+  for (auto ReifiedExpr : ReifiedExprs) {
+    TemplateArgument Arg(ReifiedExpr, TemplateArgument::Expression);
+    TemplateArgumentLoc ArgLoc(Arg, ReifiedExpr);
+    Outputs.addArgument(ArgLoc);
+  }
+
+  return false;
+}
+
+template <typename Derived>
+bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
   if(!CXXDependentVariadicReifierType::classof(T))
@@ -7650,24 +7687,40 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 
   // If this is a dependent variadic reification, go ahead and transform it.
   // if (DependentReifier->getEllipsisLoc().isValid())
-    Expr *OldRange = DependentReifier->getRange();
-    ExprResult NewRange = TransformExpr(OldRange);
+  Expr *OldRange = DependentReifier->getRange();
+  ExprResult NewRange = TransformExpr(OldRange);
 
-    if(NewRange.isInvalid())
-      return true;
+  if(NewRange.isInvalid())
+    return true;
 
-    llvm::SmallVector<QualType, 8> ExpandedReifiers;
+  llvm::SmallVector<QualType, 8> ExpandedReifiers;
 
-    ExpandedReifiers =
-      getSema().ActOnVariadicTypename(SourceLocation(), NewRange.get(),
-                                      SourceLocation(), SourceLocation(),
-                                      SourceLocation());
+  ExpandedReifiers =
+    getSema().ActOnVariadicTypename(SourceLocation(), NewRange.get(),
+                                    SourceLocation(), SourceLocation(),
+                                    SourceLocation());
 
-    Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
-    return false;
-  // }
+  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+  return false;
+}
 
-  // return true;
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Type const *T, TemplateArgumentListInfo &Outputs) {
+  llvm::SmallVector<QualType, 4> ReifiedTypes; 
+  if (MaybeTransformVariadicReifier(T, ReifiedTypes))
+    return true;
+
+  for (auto ReifiedType : ReifiedTypes) {
+    TemplateArgument Arg(ReifiedType);
+    TypeSourceInfo *TSI =
+      getSema().Context.CreateTypeSourceInfo(ReifiedType);
+    TemplateArgumentLoc ArgLoc(Arg, TSI);
+    Outputs.addArgument(ArgLoc);
+  }
+
+  return false;
 }
 
 // Objective-C Statements.
