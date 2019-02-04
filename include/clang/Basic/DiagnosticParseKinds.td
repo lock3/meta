@@ -1222,4 +1222,10 @@ def err_for_co_await_not_range_for : Error<
   "'co_await' modifier can only be applied to range-based for loop">;
 }
 
+let CategoryName = "Reflection Issue" in {
+def err_invalid_reifier_context_parse : Error<
+  "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
+   "reifier in this context: %select{expression|typename}1 expected.">;
+}
+
 } // end of Parser diagnostics
