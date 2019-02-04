@@ -476,11 +476,15 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   } else if (R.isExpression()) {
     // Just evaluate the expression.
     Eval = const_cast<Expr *>(R.getAsExpression());
+  } else {
+    // This is not a value.
+    S.Diag(SL, diag::err_expression_not_value_reflection);
+    return Eval;
   }
 
   // If the expression we're going to evaluate is a reference to a field.
   // Adjust this to be a pointer to that field.
-  if (DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Eval)) {
+  if (DeclRefExpr *Ref = dyn_cast_or_null<DeclRefExpr>(Eval)) {
     if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
       QualType Ty = F->getType();
       const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
@@ -913,6 +917,8 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
 
     if (!C.isInvalid() && C.isUsable())
       Expressions.push_back(C.get());
+    else
+      return true;
 
     ++Traverser;
   }
@@ -962,10 +968,6 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      SourceLocation RParenLoc,
                                      SourceLocation EllipsisLoc)
 {
-  // llvm::outs() << "REFL:\n";
-  // if (!Refl) llvm::outs() << "NULL\n";
-  // Refl->dump();
-  
   if (Refl->isTypeDependent() || Refl->isValueDependent()) 
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
                                         LParenLoc, LParenLoc, EllipsisLoc);
@@ -978,6 +980,9 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
     return ExprError();
 
   Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
+
+  if (!Eval)
+    return ExprError();
 
   // Evaluate the resulting expression.
   SmallVector<PartialDiagnosticAt, 4> Diags;
