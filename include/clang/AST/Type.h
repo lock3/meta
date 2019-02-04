@@ -703,8 +703,6 @@ public:
   bool isCanonical() const;
   bool isCanonicalAsParam() const;
 
-  bool isVariadicReifier = false;
-
   /// Return true if this QualType doesn't point to a type yet.
   bool isNull() const {
     return Value.getPointer().isNull();

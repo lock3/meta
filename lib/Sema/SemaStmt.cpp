@@ -2809,7 +2809,6 @@ struct ExpansionStatementBuilder
                             bool IsConstexpr);
 
   /// Construct a range without a body, using minimal information.
-  /// Used in variadic reification expressions.
   /// No source locations exist and are thus default-constructed.
   ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
                             Expr *RangeExpr);
@@ -2819,34 +2818,30 @@ struct ExpansionStatementBuilder
   /// can be repeatedly instantiated.
   StmtResult Build();
 
-  /// Build a statement without an instantiated body. Used in variadic
-  /// reifications, where the body is unneeded.
-  StmtResult BuildUninstantiated();
-
   /// Build the range variable.
   bool BuildRangeVar();
 
   /// Perform some final analysis on the range variable.
-  void FinishRangeVar(bool Instantiate = true);
+  void FinishRangeVar();
 
   /// Build the induction variable.
   bool BuildInductionVar();
 
   /// Builds an expansion when the range is dependent.
-  StmtResult BuildDependentExpansion(bool Instantiate = true);
+  StmtResult BuildDependentExpansion();
 
   /// Build the expansion over an unexpanded parameter pack.
   StmtResult BuildExpansionOverPack();
 
   /// Build the expansion over an array of known bound.
-  StmtResult BuildExpansionOverArray(bool Instantiate = true);
+  StmtResult BuildExpansionOverArray();
 
   /// Build the expansion over a tuple.
   StmtResult BuildExpansionOverTuple();
 
   /// Build the expansion over a constexpr range.
   /// \param Determine if the body will be instantiated or not.
-  StmtResult BuildExpansionOverRange(bool Instantiate = true);
+  StmtResult BuildExpansionOverRange();
 
   /// Build the expansion over a destructurable class.
   StmtResult BuildExpansionOverClass();
@@ -3057,36 +3052,6 @@ ExpansionStatementBuilder::Build()
   return StmtError();
 }
 
-StmtResult
-ExpansionStatementBuilder::BuildUninstantiated()
-{
-  // Build the induction var. Although we are not instantiating anything,
-  // we still need a way to access each element in the range, which this
-  // provides.
-  BuildInductionVar();
-
-  // If the range variable is non-null at this point, the wrong
-  // constructor has been called. RangeVar must be implicitly
-  // built with auto&& type and then deduced here.
-  if (!BuildRangeVar())
-    return StmtError();
-  FinishRangeVar(/*Instantiate=*/false);
-
-  if (RangeType->isDependentType() || RangeVar->getInit()->isValueDependent())
-    return BuildDependentExpansion(/*Instantiate=*/false);
-
-  if (RangeType->isConstantArrayType())
-    return BuildExpansionOverArray(/*Instantiate=*/false);
-
-   StmtResult ForStmt = BuildExpansionOverRange(/*Instantiate=*/false);
-
-  if(!ForStmt.isInvalid())
-    return ForStmt;
-
-  // FIXME: Diagnose this error.
-  return StmtError();
-}
-
 // For non-constexpr expansions, build the range variable as:
 //
 //    auto&& __range = range-expr.
@@ -3136,7 +3101,7 @@ ExpansionStatementBuilder::BuildRangeVar()
 }
 
 void
-ExpansionStatementBuilder::FinishRangeVar(bool Instantiate)
+ExpansionStatementBuilder::FinishRangeVar()
 {
   bool IsTypeDependent = RangeType->isDependentType();
   bool IsValueDependent = RangeVar->getInit()->isValueDependent();
@@ -3145,10 +3110,6 @@ ExpansionStatementBuilder::FinishRangeVar(bool Instantiate)
   if (IsTypeDependent || IsValueDependent) {
     // The range is implicitly used as a placeholder when it is dependent.
     RangeVar->markUsed(SemaRef.Context);
-
-    // If we're not instantiating, we're done.
-    if(!Instantiate)
-      return;
 
     // Substitute any 'auto's in the loop variable as 'DependentTy'. We'll
     // fill them in properly when we instantiate the loop.
@@ -3209,10 +3170,10 @@ ExpansionStatementBuilder::BuildInductionVar()
 /// the loop, but don't pre-compute e.g., tuple sizes or induction value
 /// sequences.
 StmtResult
-ExpansionStatementBuilder::BuildDependentExpansion(bool Instantiate)
+ExpansionStatementBuilder::BuildDependentExpansion()
 {
   return new (SemaRef.Context)
-    CXXExpansionStmt(Instantiate ? LoopDeclStmt : nullptr, RangeDeclStmt,
+    CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
                      TemplateParms, /*Size=*/-1, ForLoc, AnnotationLoc,
                      ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
 }
@@ -3274,39 +3235,26 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
 /// Note that there is no range-variable in pack expansion. We can't bind
 /// to anything.
 StmtResult
-ExpansionStatementBuilder::BuildExpansionOverArray(bool Instantiate)
+ExpansionStatementBuilder::BuildExpansionOverArray()
 {
   // Build the expression __range[__N].
   ExprResult RangeAccessor;
-  if(Instantiate) {
     RangeAccessor = 
       SemaRef.ActOnArraySubscriptExpr(CurScope, RangeRef, ColonLoc, 
                                       InductionRef, ColonLoc);
-  } else {
-    IntegerLiteral *ZeroIndex =
-      IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(0),
-                             SemaRef.Context.getSizeType(), SourceLocation());
-    RangeAccessor =
-      SemaRef.ActOnArraySubscriptExpr(CurScope, RangeRef, SourceLocation(),
-                                      ZeroIndex, SourceLocation());
-    BeginCallRef = RangeAccessor.get();
-  }
   if (RangeAccessor.isInvalid())
     return false;
 
   // Make the range accessor the initializer of the loop variable.
-  if(Instantiate) {
     SemaRef.AddInitializerToDecl(LoopVar, RangeAccessor.get(), false);
     if (LoopVar->isInvalidDecl())
       return StmtError();
-  }
 
   // Pre-compute the array size.
   ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(RangeType);
   llvm::APSInt Size(ArrayTy->getSize(), true);
 
-  return new (SemaRef.Context) CXXExpansionStmt(Instantiate ?
-                                                LoopDeclStmt : nullptr,
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
                                                 RangeDeclStmt,
                                                 TemplateParms, 
                                                 Size.getExtValue(), ForLoc, 
@@ -3423,7 +3371,7 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
 /// non-random-access iterators. Either pre-compute an array (which is weird)
 /// or build each expansion within a dedicated loop elsewhere.
 StmtResult
-ExpansionStatementBuilder::BuildExpansionOverRange(bool Instantiate)
+ExpansionStatementBuilder::BuildExpansionOverRange()
 {
   QualType AutoType = SemaRef.Context.getAutoDeductType();
 
@@ -3545,11 +3493,9 @@ ExpansionStatementBuilder::BuildExpansionOverRange(bool Instantiate)
 
 
   // Provide an initializer for the loop var, if there is one.
-  if(Instantiate) {
-    SemaRef.AddInitializerToDecl(LoopVar, NextDeref.get(), false);
-    if (LoopVar->isInvalidDecl())
-      return StmtError();
-  }
+  SemaRef.AddInitializerToDecl(LoopVar, NextDeref.get(), false);
+  if (LoopVar->isInvalidDecl())
+    return StmtError();
 
   // FIXME: There's not really a good reason to do this now, but we do it
   // anyway.
@@ -3620,8 +3566,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange(bool Instantiate)
   if (!CountCall->EvaluateAsInt(Count, SemaRef.Context))
     return StmtError();
 
-  return new (SemaRef.Context) CXXExpansionStmt(Instantiate ? LoopDeclStmt
-                                                : nullptr,
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
                                                 RangeDeclStmt,
                                                 TemplateParms, 
                                                 Count.getExtValue(), ForLoc, 
