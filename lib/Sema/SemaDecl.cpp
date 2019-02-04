@@ -13500,6 +13500,11 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
            "Leftover temporaries in function");
     assert(!Cleanup.exprNeedsCleanups() && "Unaccounted cleanups in function");
 
+    if (MaybeODRUseExprs.size())
+      llvm::outs() << "ODR use exprs not empty: " << MaybeODRUseExprs.size() << '\n';
+    for(auto ODRExpression : MaybeODRUseExprs) {
+      ODRExpression->dump();
+    }
     assert(MaybeODRUseExprs.empty() &&
            "Leftover expressions for odr-use checking");
   }

@@ -3460,8 +3460,6 @@ ExprResult TreeTransform<Derived>::TransformExpr(Expr *E) {
 template<typename Derived>
 ExprResult TreeTransform<Derived>::TransformInitializer(Expr *Init,
                                                         bool NotCopyInit) {
-  llvm::outs() << "TransformInitializer\n";
-  Init->dump();
   // Initializers are instantiated like expressions, except that various outer
   // layers are stripped.
   if (!Init)
@@ -7684,8 +7682,8 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   if(!CXXDependentVariadicReifierType::classof(T))
     return false;
 
-  CXXDependentVariadicReifierType *DependentReifier =
-    cast<CXXDependentVariadicReifierType>(const_cast<Type*>(T));
+  CXXDependentVariadicReifierType const *DependentReifier =
+    cast<CXXDependentVariadicReifierType>(T);
 
   // If this is a dependent variadic reification, go ahead and transform it.
   // if (DependentReifier->getEllipsisLoc().isValid())

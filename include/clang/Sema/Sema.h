@@ -5814,10 +5814,24 @@ public:
                                     Expr *InitList,
                                     SourceLocation EllipsisLoc);
 
+  MemInitResult ActOnMemInitializer(Decl *ConstructorD,
+                                    Scope *S,
+                                    CXXScopeSpec &SS,
+                                    IdentifierInfo *MemberOrBase,
+                                    QualType BaseTy,
+                                    ParsedType TemplateTypeTy,
+                                    const DeclSpec &DS,
+                                    SourceLocation IdLoc,
+                                    SourceLocation LParenLoc,
+                                    ArrayRef<Expr *> Args,
+                                    SourceLocation RParenLoc,
+                                    SourceLocation EllipsisLoc);
+
   MemInitResult BuildMemInitializer(Decl *ConstructorD,
                                     Scope *S,
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
+                                    QualType ReifierType,
                                     ParsedType TemplateTypeTy,
                                     const DeclSpec &DS,
                                     SourceLocation IdLoc,

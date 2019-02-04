@@ -4517,11 +4517,18 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   GlobalInstantiations.perform();
 }
 
+// class ReifierTransformer : public TreeTransform<ReifierTransformer>
+// {
+// public:
+//   ReifierTransformer(Sema &SemaRef)
+//     : TreeTransform<ReifierTransformer>(SemaRef)
+//     {}
+// };
+
 void
 Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                  const CXXConstructorDecl *Tmpl,
                            const MultiLevelTemplateArgumentList &TemplateArgs) {
-
   SmallVector<CXXCtorInitializer*, 4> NewInits;
   bool AnyErrors = Tmpl->isInvalidDecl();
 
@@ -4582,6 +4589,58 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         // Build the initializer.
         MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(),
                                                      BaseTInfo, TempInit.get(),
+                                                     New->getParent(),
+                                                     SourceLocation());
+        if (NewInit.isInvalid()) {
+          AnyErrors = true;
+          break;
+        }
+        
+        NewInits.push_back(NewInit.get());
+      }
+
+      continue;
+    }
+
+    if (Init->isBaseInitializer() &&
+        CXXDependentVariadicReifierType::classof(Init->getBaseClass())) {
+      llvm::SmallVector<QualType, 8> ReifiedTypes;
+
+      // The expanded range is necessarily constexpr.
+      EnterExpressionEvaluationContext EvalContext(
+        *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+      CXXDependentVariadicReifierType const *Reifier =
+        cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
+      ExprResult TempRange =
+        SubstExpr(Reifier->getRange(), TemplateArgs);
+
+      if (TempRange.isInvalid()) {
+        AnyErrors = true;
+        break;
+      }
+
+      ReifiedTypes = 
+        ActOnVariadicTypename(SourceLocation(), TempRange.get(),
+                              SourceLocation(), SourceLocation(),
+                              SourceLocation());
+
+      for (auto ReifiedType : ReifiedTypes) {
+        ExprResult TempInit = SubstInitializer(Init->getInit(), TemplateArgs,
+                                               /*CXXDirectInit=*/true);
+        if (TempInit.isInvalid()) {
+          AnyErrors = true;
+          break;
+        }
+
+        TypeSourceInfo *BaseTInfo = Context.CreateTypeSourceInfo(ReifiedType);
+
+        if (!BaseTInfo) {
+          AnyErrors = true;
+          break;
+        }
+
+        MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(),
+                                                     BaseTInfo, Init->getInit(),
                                                      New->getParent(),
                                                      SourceLocation());
         if (NewInit.isInvalid()) {

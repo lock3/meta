@@ -3630,8 +3630,8 @@ Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
 
     MemInitResult MemInit =
       Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
-                                  TemplateTypeTy, DS, IdLoc, LParenLoc,
-                                  ArgExprs, RParenLoc, EllipsisLoc);
+                                  Typename, TemplateTypeTy, DS, IdLoc,
+                                  LParenLoc, ArgExprs, RParenLoc, EllipsisLoc);
 
     if(!MemInit.isInvalid())
       MemInits.push_back(MemInit.get());

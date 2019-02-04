@@ -3735,8 +3735,8 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, InitList,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
+                             TemplateTypeTy, DS, IdLoc, InitList,
                              EllipsisLoc);
 }
 
@@ -3755,7 +3755,28 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation EllipsisLoc) {
   Expr *List = new (Context) ParenListExpr(Context, LParenLoc,
                                            Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
+                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
+}
+
+/// Handle a C++ member initializer using a (dependent) variadic reifier.
+MemInitResult
+Sema::ActOnMemInitializer(Decl *ConstructorD,
+                          Scope *S,
+                          CXXScopeSpec &SS,
+                          IdentifierInfo *MemberOrBase,
+                          QualType ReifierType,
+                          ParsedType TemplateTypeTy,
+                          const DeclSpec &DS,
+                          SourceLocation IdLoc,
+                          SourceLocation LParenLoc,
+                          ArrayRef<Expr *> Args,
+                          SourceLocation RParenLoc,
+                          SourceLocation EllipsisLoc) {
+  Expr *List = new (Context) ParenListExpr(Context, LParenLoc,
+                                           Args, RParenLoc);
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase,
+                             ReifierType, TemplateTypeTy,
                              DS, IdLoc, List, EllipsisLoc);
 }
 
@@ -3805,6 +3826,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
+                          QualType ReifierType,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -3864,12 +3886,23 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
   } else if (DS.getTypeSpecType() == TST_decltype_auto) {
     Diag(DS.getTypeSpecTypeLoc(), diag::err_decltype_auto_invalid);
     return true;
+  } else if (!ReifierType.isNull() &&
+             CXXDependentVariadicReifierType::
+             classof(ReifierType.getTypePtr())) {
+    TInfo = Context.getTrivialTypeSourceInfo(ReifierType, IdLoc);
+    CXXDependentVariadicReifierType const *Reifier =
+      cast<CXXDependentVariadicReifierType>(ReifierType.getTypePtr());
+    DeclRefExpr *RangeRef = cast<DeclRefExpr>(Reifier->getRange());
+    MarkAnyDeclReferenced(RangeRef->getLocation(), RangeRef->getFoundDecl(), /*OdrUse=*/false);
+    return BuildBaseInitializer(ReifierType, TInfo, Init,
+                                ClassDecl, EllipsisLoc);
   } else {
     LookupResult R(*this, MemberOrBase, IdLoc, LookupOrdinaryName);
     LookupParsedName(R, S, &SS);
 
     TypeDecl *TyD = R.getAsSingle<TypeDecl>();
     if (!TyD) {
+      
       if (R.isAmbiguous()) return true;
 
       // We don't want access-control diagnostics here.
@@ -4106,7 +4139,7 @@ Sema::BuildDelegatingInitializer(TypeSourceInfo *TInfo, Expr *Init,
 MemInitResult
 Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                            Expr *Init, CXXRecordDecl *ClassDecl,
-                           SourceLocation EllipsisLoc) {
+                           SourceLocation EllipsisLoc) {  
   SourceLocation BaseLoc
     = BaseTInfo->getTypeLoc().getLocalSourceRange().getBegin();
 
