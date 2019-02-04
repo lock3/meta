@@ -7635,10 +7635,14 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
         Keyword = &(getSema().Context.Idents.get("unqualid"));
         break;
       case tok::kw_typename:
-        llvm_unreachable("Typename as expression unimplemented.\n");
-        break;
+        getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
+          << 3 << 0;
+        return true;
+      case tok::kw_namespace:
+        getSema().Diag(E->getBeginLoc(),
+                       diag::err_namespace_as_variadic_reifier);
+          return true;
       default:
-        // TODO: Diag << err_invalid_reifier
         return true;
       }
 

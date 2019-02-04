@@ -513,10 +513,9 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs)
     return true;
 
   SourceLocation LPLoc = Parens.getOpenLocation();
-  SourceLocation RPLoc = Parens.getCloseLocation();
-  Actions.ActOnVariadicReifier(Exprs, KWLoc, KW, ReflRange.get(),
-                               LPLoc, EllipsisLoc, RPLoc);
-  return false;
+  SourceLocation RPLoc = Parens.getCloseLocation();;
+  return Actions.ActOnVariadicReifier(Exprs, KWLoc, KW, ReflRange.get(),
+                                      LPLoc, EllipsisLoc, RPLoc);
 }
 
 bool
@@ -543,7 +542,6 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types)
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  Actions.ActOnVariadicReifier(Types, KWLoc, ReflRange.get(),
-                               LPLoc, EllipsisLoc, RPLoc);
-  return false;
+  return Actions.ActOnVariadicReifier(Types, KWLoc, ReflRange.get(),
+                                      LPLoc, EllipsisLoc, RPLoc);
 }

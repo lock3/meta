@@ -1480,7 +1480,9 @@ public:
   QualType getPackExpansionType(QualType Pattern,
                                 Optional<unsigned> NumExpansions);
 
-  QualType getCXXDependentVariadicReifierType(Expr *Range);
+  QualType getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
+                                              SourceLocation EllipsisLoc,
+                                              SourceLocation RParenLoc);
 
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;

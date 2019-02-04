@@ -8730,7 +8730,7 @@ public:
                                 SourceLocation RParenLoc,
                                 SourceLocation EllipsisLoc = SourceLocation());
 
-  void
+  bool
   ActOnVariadicReifier(SmallVectorImpl<Expr *> &Expressions,
                        SourceLocation KWLoc,
                        IdentifierInfo *KW,
@@ -8738,7 +8738,7 @@ public:
                        SourceLocation LParenLoc,
                        SourceLocation EllipsisLoc,
                        SourceLocation RParenLoc);
-  void
+  bool
   ActOnVariadicReifier(SmallVectorImpl<QualType> &Types,
                        SourceLocation KWLoc,
                        Expr *Range,

@@ -859,7 +859,7 @@ getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
   return SemaRef.BuildReflectedType(SourceLocation(), Expression);
 }
 
-void
+bool
 Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
                            SourceLocation KWLoc, IdentifierInfo *KW,
                            Expr *Range, SourceLocation LParenLoc,
@@ -880,7 +880,7 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
     C = ActOnCXXDependentVariadicReifierExpr(Range, KWLoc, KW, LParenLoc,
                                              EllipsisLoc, RParenLoc);
     Expressions.push_back(C.get());
-    return;
+    return false;
   }
   // Traverse the range now and add the exprs to the vector
   RangeTraverser Traverser(*this,
@@ -903,10 +903,10 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
       break;
     case tok::kw_typename:
       Diag(KWLoc, diag::err_invalid_reifier_context) << 3 << 0;
-      return;
+      return true;
     case tok::kw_namespace:
       Diag(KWLoc, diag::err_namespace_as_variadic_reifier);
-      return;
+      return true;
     default: // silence warning
       break;
     }
@@ -916,9 +916,11 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
 
     ++Traverser;
   }
+
+  return false;
 }
 
-void
+bool
 Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
                            SourceLocation KWLoc, Expr *Range,
                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
@@ -928,12 +930,14 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
   CtxBldr.BuildCalls();
 
   if (CtxBldr.getKind() == RK_Unknown) {
-    QualType T = Context.getCXXDependentVariadicReifierType(Range);
+    QualType T =
+      Context.getCXXDependentVariadicReifierType(Range, KWLoc,
+                                                 RParenLoc, EllipsisLoc);
     // TODO: remove this flag from qualtype
     // T.isVariadicReifier = true;
     // CXXDependentVariadicReifierType T(Context, Range);
     Types.push_back(T);
-    return;
+    return false;
   }
 
   // Traverse the range now and add the exprs to the vector
@@ -948,6 +952,8 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
 
     ++Traverser;
   }
+
+  return false;
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,

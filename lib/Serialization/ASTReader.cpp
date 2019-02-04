@@ -6204,7 +6204,10 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
 
   case TYPE_CXX_DEPENDENT_VARIADIC_REIFIER: {
     // TODO: IMPLEMENT ME
-    return Context.getCXXDependentVariadicReifierType(nullptr);
+    return Context.getCXXDependentVariadicReifierType(nullptr,
+                                                      SourceLocation(),
+                                                      SourceLocation(),
+                                                      SourceLocation());
   }
 
   case TYPE_ELABORATED: {

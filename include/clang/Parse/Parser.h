@@ -2747,7 +2747,7 @@ private:
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
-  void
+  bool
   ParseReifMemInitializer(Decl *ConstructorDecl,
                           llvm::SmallVectorImpl<QualType> &Typenames,
                           llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);

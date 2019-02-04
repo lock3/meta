@@ -2923,10 +2923,11 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       // We need to insert several fake commas to get around error checking.
       // We only need size() - 1, since there is already a comma in front of
       // the reifier parameter.
-      for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
-        CommaLocs.emplace_back();
+      if (!ExpandedExprs.empty())
+        for (std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+          CommaLocs.emplace_back();
 
-      if(SawError)
+      if (SawError)
         SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
 
       // Add our expanded expressions into the parameter list.
@@ -2939,7 +2940,7 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     if (ArgExpr.isInvalid() && !VariadicReifier) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else if(!VariadicReifier) {
+    } else if (!VariadicReifier) {
       Exprs.push_back(ArgExpr.get());
     }
 

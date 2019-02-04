@@ -5446,15 +5446,26 @@ class CXXDependentVariadicReifierType : public Type {
   Expr *Range;
   llvm::SmallVector<QualType, 4> ExpandedTypes;
 
+  SourceLocation KeywordLoc;
+  SourceLocation EllipsisLoc;
+  SourceLocation RParenLoc;
 public:
-  CXXDependentVariadicReifierType(Expr *Range)
+  CXXDependentVariadicReifierType(Expr *Range, 
+                                  SourceLocation KeywordLoc,
+                                  SourceLocation EllipsisLoc,
+                                  SourceLocation RParenLoc)
     : Type(CXXDependentVariadicReifier, QualType(), /*Dependent=*/true,
            /*InstantiationDependent=*/true, /*VariablyModified=*/false,
-           /*Unexpanded parameter pack=*/false), Range(Range)
+           /*Unexpanded parameter pack=*/false), Range(Range),
+      KeywordLoc(KeywordLoc), EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc)
     {}
 
   Expr *getRange() const { return Range; }
   llvm::SmallVector<QualType, 4> &getExpandedTypes();
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  SourceLocation getEndLoc() const { return RParenLoc; }
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }

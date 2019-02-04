@@ -4395,9 +4395,13 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   return QualType(T, 0);
 }
 
-QualType ASTContext::getCXXDependentVariadicReifierType(Expr *Range) {
+QualType
+ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
+                                               SourceLocation EllipsisLoc,
+                                               SourceLocation RParenLoc) {
   CXXDependentVariadicReifierType *T =
-    new (*this, TypeAlignment) CXXDependentVariadicReifierType(Range);
+    new (*this, TypeAlignment)
+    CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
   Types.push_back(T);
   return QualType(T, 0);
 }

@@ -1459,7 +1459,9 @@ ASTNodeImporter::VisitPackExpansionType(const PackExpansionType *T) {
 ExpectedType
 ASTNodeImporter::VisitCXXDependentVariadicReifierType
 (const CXXDependentVariadicReifierType *T) {
-  return Importer.getToContext().getCXXDependentVariadicReifierType(T->getRange());
+  return Importer.getToContext().
+    getCXXDependentVariadicReifierType(T->getRange(), T->getBeginLoc(),
+                                       T->getEllipsisLoc(), T->getEndLoc());
 }
 
 ExpectedType ASTNodeImporter::VisitDependentTemplateSpecializationType(

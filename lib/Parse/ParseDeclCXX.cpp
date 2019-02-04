@@ -3468,11 +3468,12 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       llvm::SmallVector<QualType, 4> ExpandedTypes;
       if (ParseVariadicReifier(ExpandedTypes)) {
         // invalid expansion of reifier
+        AnyErrors = true;
         SkipUntil(tok::l_brace, StopAtSemi | StopBeforeMatch);
       }
 
-      ParseReifMemInitializer(ConstructorDecl, ExpandedTypes,
-                              MemInitializers);
+      AnyErrors = ParseReifMemInitializer(ConstructorDecl, ExpandedTypes,
+                                          MemInitializers);
     } else {
       MemInitResult MemInit = ParseMemInitializer(ConstructorDecl);
 
@@ -3597,7 +3598,7 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     return Diag(Tok, diag::err_expected) << tok::l_paren;
 }
 
-void
+bool
 Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
                                 llvm::SmallVectorImpl<QualType> &Typenames,
                                 llvm::SmallVectorImpl<CXXCtorInitializer *>
@@ -3607,7 +3608,7 @@ Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
   // the expression list once.
   if (!Tok.is(tok::l_paren)) {
     Diag(Tok, diag::err_expected) << tok::l_paren;
-    return;
+    return true;
   }
 
   SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
@@ -3618,9 +3619,9 @@ Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
   DeclSpec DS(AttrFactory);
   ParsedType TemplateTypeTy;
 
-  if(ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
-                          LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
-    ; // TODO: diagnostic here
+  if (ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
+                           LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
+    return true;
 
   for (auto Typename : Typenames) {
     IdentifierInfo *II =
@@ -3634,6 +3635,8 @@ Parser::ParseReifMemInitializer(Decl *ConstructorDecl,
     if(!MemInit.isInvalid())
       MemInits.push_back(MemInit.get());
   }
+
+  return false;
 }
 
 bool
