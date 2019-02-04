@@ -1371,8 +1371,6 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SourceLocation KWLoc = Tok.getLocation();
 
-      // Note that failure to parse a variadic reifier is not necessarily
-      // a failure. It could have been a regular reifier.
       switch(Tok.getIdentifierInfo()->getTokenID()) {
       case tok::kw_typename:
           return ParseTypeReifier(TemplateArgs, KWLoc);

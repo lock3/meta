@@ -2124,8 +2124,29 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
   CheckMisplacedCXX11Attribute(Attributes, StartLoc);
 
   // Parse a variadic reifier
-  if(isVariadicReifier()) {
-    // TODO: make sure only typename is allowed here
+  if (isVariadicReifier()) {
+
+    // Only typename can be used here.
+    if (Tok.getKind() != tok::kw_typename) {
+      int diag_id;
+      switch (Tok.getKind()) {
+      case tok::kw_valueof:
+        diag_id = 0;
+        break;
+      case tok::kw_idexpr:
+        diag_id = 1;
+        break;
+      case tok::kw_unqualid:
+        diag_id = 2;
+        break;
+      default:
+        llvm_unreachable("Invalid reifier.");
+      }
+
+      Diag(Tok.getLocation(), diag::err_invalid_reifier_context_parse)
+        << diag_id << 1;
+    }
+
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
     if(ParseVariadicReifier(SpecList))

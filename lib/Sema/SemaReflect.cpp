@@ -953,6 +953,10 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
 
   while(!Traverser) {
     QualType T = getAsCXXReflectedType(*this, *Traverser);
+
+    if (T.isNull())
+      return true;
+
     Types.push_back(T);
 
     ++Traverser;
