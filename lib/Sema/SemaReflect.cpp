@@ -859,13 +859,11 @@ getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
   return SemaRef.BuildReflectedType(SourceLocation(), Expression);
 }
 
-llvm::SmallVector<Expr *, 4>
-Sema::ActOnVariadicReification(SourceLocation KWLoc,
-                               IdentifierInfo *KW,
-                               Expr *Range,
-                               SourceLocation LParenLoc,
-                               SourceLocation EllipsisLoc,
-                               SourceLocation RParenLoc)
+void
+Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
+                           SourceLocation KWLoc, IdentifierInfo *KW,
+                           Expr *Range, SourceLocation LParenLoc,
+                           SourceLocation EllipsisLoc, SourceLocation RParenLoc)
 {
   // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
@@ -874,7 +872,6 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
   // StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
   // CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
-  llvm::SmallVector<Expr *, 4> Expressions;
   ExprResult C;
 
   // If the expansion is dependent, we cannot expand on it yet.
@@ -883,7 +880,7 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
     C = ActOnCXXDependentVariadicReifierExpr(Range, KWLoc, KW, LParenLoc,
                                              EllipsisLoc, RParenLoc);
     Expressions.push_back(C.get());
-    return Expressions;
+    return;
   }
   // Traverse the range now and add the exprs to the vector
   RangeTraverser Traverser(*this,
@@ -905,7 +902,11 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
       C = getAsCXXReflectedDeclname(*this, *Traverser);
       break;
     case tok::kw_typename:
+      Diag(KWLoc, diag::err_invalid_reifier_context) << 3 << 0;
+      return;
     case tok::kw_namespace:
+      Diag(KWLoc, diag::err_namespace_as_variadic_reifier);
+      return;
     default: // silence warning
       break;
     }
@@ -915,19 +916,16 @@ Sema::ActOnVariadicReification(SourceLocation KWLoc,
 
     ++Traverser;
   }
-
-  return Expressions;
 }
 
-llvm::SmallVector<QualType, 4>
-Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
-                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
-                            SourceLocation RParenLoc)
+void
+Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
+                           SourceLocation KWLoc, Expr *Range,
+                           SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+                           SourceLocation RParenLoc)
 {
   ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
   CtxBldr.BuildCalls();
-
-  llvm::SmallVector<QualType, 4> Types;
 
   if (CtxBldr.getKind() == RK_Unknown) {
     QualType T = Context.getCXXDependentVariadicReifierType(Range);
@@ -935,7 +933,7 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
     // T.isVariadicReifier = true;
     // CXXDependentVariadicReifierType T(Context, Range);
     Types.push_back(T);
-    return Types;
+    return;
   }
 
   // Traverse the range now and add the exprs to the vector
@@ -950,9 +948,6 @@ Sema::ActOnVariadicTypename(SourceLocation KWLoc, Expr *Range,
 
     ++Traverser;
   }
-
-  return Types;
-  
 }
 
 ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
@@ -1001,7 +996,7 @@ ExprResult Sema::ActOnCXXDependentVariadicReifierExpr(Expr *Range,
 {
   // If the dependent reifier isn't dependent, something has gone wrong.
   assert((Range->isTypeDependent() || Range->isValueDependent()) &&
-         "Marked a non-dependent variadic reification as dependent.");
+         "Marked a non-dependent variadic reifier as dependent.");
 
   return new (Context) CXXDependentVariadicReifierExpr(Context.DependentTy,
                                                        Range, KWLoc, KW,
