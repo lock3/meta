@@ -2541,7 +2541,7 @@ def err_namespace_as_variadic_reifier : Error<
   "'namespace' cannot be used as a variadic reifier.">;
 def err_invalid_reifier_context : Error<
   "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
-   "reifier: %select{expression|type}1 expected.">;
+   "reifier in this context: %select{expression|typename}1 expected.">;
 
 // declaration names
 def err_reflected_id_with_integer_prefix : Error<
