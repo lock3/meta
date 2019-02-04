@@ -1229,27 +1229,63 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
   return DeclarationNameInfo(Name, BeginLoc);
 }
 
-/// Constructs a new identifier from the expressions in Parts. Returns false
-/// if no errors were encountered.
-bool Sema::BuildDeclnameId(SourceLocation BeginLoc,
-                           const DeclarationName &Name,
-                           SourceLocation LAngleLoc,
-                           ASTTemplateArgsPtr TemplateArgsPtr,
-                           SourceLocation RAngleLoc, UnqualifiedId &Result,
-                           SourceLocation EndLoc) {
+/// Handle construction of non-dependent identifiers, and test to
+/// see if the identifier is a template.
+bool Sema::BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                                  const DeclarationName &Name,
+                                  SourceLocation TemplateKWLoc,
+                                  TemplateNameKind &TNK,
+                                  TemplateTy &Template,
+                                  UnqualifiedId &Result) {
+  if (Name.getNameKind() == DeclarationName::CXXReflectedIdName)
+    return false;
+
+  Result.setIdentifier(Name.getAsIdentifierInfo(), BeginLoc);
+
+  bool MemberOfUnknownSpecialization;
+
+  TNK = isTemplateName(getCurScope(), SS, TemplateKWLoc.isValid(),
+                       Result,
+                       /*ObjectType=*/nullptr, // FIXME: This is most likely wrong
+                       /*EnteringContext=*/false, Template,
+                       MemberOfUnknownSpecialization);
+
+  return false;
+}
+
+/// Handle construction of dependent identifiers, and additionally complete
+/// template identifiers.
+bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                              const DeclarationName &Name,
+                              SourceLocation TemplateKWLoc,
+                              TemplateNameKind TNK, TemplateTy Template,
+                              SourceLocation LAngleLoc,
+                              ASTTemplateArgsPtr TemplateArgsPtr,
+                              SourceLocation RAngleLoc,
+                           SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
+                              UnqualifiedId &Result, SourceLocation EndLoc) {
   if (Name.getNameKind() == DeclarationName::CXXReflectedIdName) {
     auto *ReflectedId = new (Context) ReflectedIdentifierInfo();
     ReflectedId->setNameComponents(Name.getCXXReflectedIdArguments());
 
     if (LAngleLoc.isValid()) {
-      ReflectedId->setTemplateArgs(TemplateArgsPtr);
+      ReflectedId->setTemplateKWLoc(TemplateKWLoc);
       ReflectedId->setLAngleLoc(LAngleLoc);
+      ReflectedId->setTemplateArgs(TemplateArgsPtr);
       ReflectedId->setRAngleLoc(RAngleLoc);
     }
 
     Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
-  } else
-    Result.setIdentifier(Name.getAsIdentifierInfo(), BeginLoc);
+  } else if (TNK) {
+    TemplateIdAnnotation *TemplateIdAnnotation = TemplateIdAnnotation::Create(
+          SS, TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
+          Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
+          /*OpaqueTemplateName=*/Template, /*TemplateKind=*/TNK,
+          /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc, TemplateArgsPtr,
+          CleanupList);
+
+    Result.setTemplateId(TemplateIdAnnotation);
+  }
 
   return false;
 }

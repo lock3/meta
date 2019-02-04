@@ -2660,7 +2660,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // unqualified-id:
   //   'unqualid' '(' reflection ')'
   if (Tok.is(tok::kw_unqualid))
-    return ParseCXXReflectedId(Result, TemplateSpecified);
+    return ParseCXXReflectedId(SS,
+                     TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Result);
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

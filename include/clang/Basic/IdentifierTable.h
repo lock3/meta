@@ -442,7 +442,7 @@ class ReflectedIdentifierInfo {
 
   ASTTemplateArgsPtr TemplateArgs = { };
 
-  SourceLocation LAngleLoc, RAngleLoc;
+  SourceLocation TemplateKWLoc, LAngleLoc, RAngleLoc;
 
   /// Memory for this array is allocated by the context.
   llvm::ArrayRef<Expr *> NameComponents = { };
@@ -453,6 +453,14 @@ public:
 
   ASTTemplateArgsPtr getTemplateArgs() const {
     return TemplateArgs;
+  }
+
+  void setTemplateKWLoc(SourceLocation TemplateKWLoc) {
+    this->TemplateKWLoc = TemplateKWLoc;
+  }
+
+  SourceLocation getTemplateKWLoc() const {
+    return TemplateKWLoc;
   }
 
   void setLAngleLoc(SourceLocation LAngleLoc) {

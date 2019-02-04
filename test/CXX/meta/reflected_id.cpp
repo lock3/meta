@@ -134,6 +134,16 @@ constexpr int template_proxy_function_1() {
 }
 
 template<int y>
+constexpr int template_template_non_dependent_unqualid_call_function() {
+  return template unqualid("template_proxy_function_", 1)<y>();
+}
+
+template<int y>
+constexpr int template_template_non_dependent_implicit_unqualid_call_function() {
+  return unqualid("template_proxy_function_", 1)<y>();
+}
+
+template<int y>
 constexpr int template_template_unqualid_call_function() {
   return template unqualid("template_proxy_function_", y)<y>();
 }
@@ -178,6 +188,8 @@ void test_template_param() {
   static_assert(template_parm_function<1>(3) == 3);
   static_assert(template_local_var_function<1>() == 2);
   static_assert(template_global_var_function<1>() == 1);
+  static_assert(template_template_non_dependent_unqualid_call_function<1>() == 1);
+  static_assert(template_template_non_dependent_implicit_unqualid_call_function<1>() == 1);
   static_assert(template_template_unqualid_call_function<1>() == 1);
   static_assert(namespace_a::template_namespace_var_function<1>() == 12);
   static_assert(template_adl_function<1>() == 22);

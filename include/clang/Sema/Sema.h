@@ -8772,11 +8772,22 @@ public:
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,
                                            SourceLocation EndLoc);
-  bool BuildDeclnameId(SourceLocation BeginLoc, const DeclarationName &Name,
-                       SourceLocation LAngleLoc,
-                       ASTTemplateArgsPtr TemplateArgs,
-                       SourceLocation RAngleLoc, UnqualifiedId &Result,
-                       SourceLocation EndLoc);
+
+  bool BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                              const DeclarationName &Name,
+                              SourceLocation TemplateKWLoc,
+                              TemplateNameKind &TNK,
+                              TemplateTy &Template,
+                              UnqualifiedId &Result);
+
+  bool CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                          const DeclarationName &Name,
+                          SourceLocation TemplateKWLoc, TemplateNameKind TNK,
+                          TemplateTy Template, SourceLocation LAngleLoc,
+                          ASTTemplateArgsPtr TemplateArgs,
+                          SourceLocation RAngleLoc,
+                          SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
+                          UnqualifiedId &Result, SourceLocation EndLoc);
 
   ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
   ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);

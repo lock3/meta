@@ -2796,7 +2796,8 @@ private:
   ExprResult ParseCXXReflectDumpReflectionExpression();
   ExprResult ParseCXXCompilerErrorExpression();
 
-  bool ParseCXXReflectedId(UnqualifiedId &Result, bool TemplateSpecified);
+  bool ParseCXXReflectedId(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+                           UnqualifiedId &Result);
   ExprResult ParseCXXUnreflexprExpression();
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXValueOfExpression();
