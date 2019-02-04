@@ -478,7 +478,6 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
     Eval = const_cast<Expr *>(R.getAsExpression());
   } else {
     // This is not a value.
-    S.Diag(SL, diag::err_expression_not_value_reflection);
     return Eval;
   }
 
@@ -981,8 +980,10 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
 
   Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
 
-  if (!Eval)
+  if (!Eval) { 
+    Diag(Refl->getExprLoc(), diag::err_expression_not_value_reflection);
     return ExprError();
+  }
 
   // Evaluate the resulting expression.
   SmallVector<PartialDiagnosticAt, 4> Diags;
