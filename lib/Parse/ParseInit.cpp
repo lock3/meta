@@ -424,7 +424,7 @@ ExprResult Parser::ParseBraceInitializer() {
 
     // Parse: designation[opt] initializer
 
-    bool isVariadicReifier = isVariadicReification();
+    bool VariadicReifier = isVariadicReifier();
     llvm::SmallVector<Expr *, 4> ExpandedExprs;
 
     // If we know that this cannot be a designation, just parse the nested
@@ -432,8 +432,8 @@ ExprResult Parser::ParseBraceInitializer() {
     ExprResult SubElt;
     if (MayBeDesignationStart())
       SubElt = ParseInitializerWithPotentialDesignator();
-    else if(isVariadicReifier)
-      InitExprsOk = !ParseVariadicReification(ExpandedExprs);
+    else if(VariadicReifier)
+      InitExprsOk = !ParseVariadicReifier(ExpandedExprs);
     else
       SubElt = ParseInitializer();
 
@@ -445,7 +445,7 @@ ExprResult Parser::ParseBraceInitializer() {
     // If we couldn't parse the subelement, bail out.
     if (SubElt.isUsable()) {
       InitExprs.push_back(SubElt.get());
-    } else if(isVariadicReifier) {
+    } else if(VariadicReifier) {
       InitExprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
 
       if(!InitExprsOk)

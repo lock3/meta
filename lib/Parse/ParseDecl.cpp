@@ -2761,9 +2761,9 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
   ExprResult ArgExpr;
   ArgsVector ArgExprs;
   
-  if(isVariadicReification()) {
+  if(isVariadicReifier()) {
     llvm::SmallVector<Expr*, 4> ExpandedAlignments;
-    if(ParseVariadicReification(ExpandedAlignments)) {
+    if(ParseVariadicReifier(ExpandedAlignments)) {
       T.skipToEnd();
       return;
     }

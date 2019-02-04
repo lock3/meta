@@ -321,7 +321,7 @@ public:
   // Return true if this token is a C++ Reflection keyword
   bool isReflectionKeyword(const LangOptions &LangOpts) const;
 
-  bool isReificationKeyword(const LangOptions &LangOpts) const;
+  bool isReifierKeyword(const LangOptions &LangOpts) const;
 
   /// Get and set FETokenInfo. The language front-end is allowed to associate
   /// arbitrary metadata with this token.

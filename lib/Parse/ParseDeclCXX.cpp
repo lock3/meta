@@ -2040,7 +2040,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 
     SmallVector<BaseResult, 4> ReifiedTypes;
 
-    // Parse the base specifier. If it was a variadic reification,
+    // Parse the base specifier. If it was a variadic reifier,
     // the types will be put in ReifiedTypes. If it wasn't,
     // ReifiedTypes will be empty.
     BaseResult Result = ParseBaseSpecifier(ClassDecl, ReifiedTypes);
@@ -2057,7 +2057,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
       }
     }
 
-    // If this base spec wasn't a variadic reification, then add it.
+    // If this base spec wasn't a variadic reifier, then add it.
     if (ReifiedTypes.empty()) {
       if (Result.isInvalid())
         SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
@@ -2124,11 +2124,11 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
   CheckMisplacedCXX11Attribute(Attributes, StartLoc);
 
   // Parse a variadic reifier
-  if(isVariadicReification()) {
+  if(isVariadicReifier()) {
     // TODO: make sure only typename is allowed here
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
-    if(ParseVariadicReification(SpecList))
+    if(ParseVariadicReifier(SpecList))
       return true;
 
     for(auto BaseTy : SpecList) {
@@ -3464,10 +3464,10 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       return cutOffParsing();
     }
 
-    if(isVariadicReification()) {
+    if(isVariadicReifier()) {
       llvm::SmallVector<QualType, 4> ExpandedTypes;
-      if (ParseVariadicReification(ExpandedTypes)) {
-        // invalid expansion of reification
+      if (ParseVariadicReifier(ExpandedTypes)) {
+        // invalid expansion of reifier
         SkipUntil(tok::l_brace, StopAtSemi | StopBeforeMatch);
       }
 
@@ -3535,7 +3535,7 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
   // : typename(...base_range)
   llvm::SmallVector<QualType, 4> BaseIds;
 
-  if (Tok.is(tok::identifier) && !isVariadicReification()) {
+  if (Tok.is(tok::identifier) && !isVariadicReifier()) {
     // Get the identifier. This may be a member name or a class name,
     // but we'll let the semantic analysis determine which it is.
     II = Tok.getIdentifierInfo();
@@ -3546,8 +3546,6 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     // ParseOptionalCXXScopeSpecifier at this point.
     // FIXME: Can we get here with a scope specifier?
     ParseDecltypeSpecifier(DS);
-  } else if (isVariadicReification()) {
-    llvm_unreachable("Parsing variadic reification in wrong function.");
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
       ? takeTemplateIdAnnotation(Tok)
@@ -4177,9 +4175,9 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
     SourceLocation ScopeLoc, AttrLoc;
     IdentifierInfo *ScopeName = nullptr, *AttrName = nullptr;
 
-    if(isVariadicReification()) {
+    if(isVariadicReifier()) {
       llvm::SmallVector<Expr *, 4> ExpandedAttrs;
-      if(ParseVariadicReification(ExpandedAttrs))
+      if(ParseVariadicReifier(ExpandedAttrs))
         SkipUntil(tok::r_square, tok::comma, StopAtSemi | StopBeforeMatch);
       for(Expr *E : ExpandedAttrs) {
         DeclRefExpr *ExpandedDeclRef = dyn_cast_or_null<DeclRefExpr>(E);

@@ -4619,10 +4619,9 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         break;
       }
 
-      ReifiedTypes = 
-        ActOnVariadicTypename(SourceLocation(), TempRange.get(),
-                              SourceLocation(), SourceLocation(),
-                              SourceLocation());
+      ActOnVariadicReifier(ReifiedTypes, SourceLocation(), TempRange.get(),
+                           SourceLocation(), SourceLocation(),
+                           SourceLocation());
 
       for (auto ReifiedType : ReifiedTypes) {
         ExprResult TempInit = SubstInitializer(Init->getInit(), TemplateArgs,

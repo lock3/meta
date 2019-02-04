@@ -2807,13 +2807,18 @@ private:
 
   /// Returns true if reflection is enabled and the
   /// current expression appears to be a variadic reifier.
-  bool isVariadicReification() const;
+  bool isVariadicReifier() const;
   
-  // Parse a variadic reification. Returns true on error.
-  bool ParseVariadicReification(llvm::SmallVector<Expr *, 4> &Exprs);
-  bool ParseVariadicReification(llvm::SmallVector<QualType, 4> &Types);
-  bool ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
-  bool ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc);
+  /// Parse a variadic reifier. Returns true on error.
+  bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
+  bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);
+
+  /// Parse the two types of variadic reifiers that may appear in a template
+  /// argument list.
+  bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
+  bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
+
+  /// Parse a variadic reifier as a member/base initializer.
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   //===--------------------------------------------------------------------===//

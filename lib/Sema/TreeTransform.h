@@ -7612,7 +7612,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
     CXXDependentVariadicReifierExpr *DependentReifier =
       cast<CXXDependentVariadicReifierExpr>(E);
 
-    // If this is a dependent variadic reification, go ahead and transform it.
+    // If this is a dependent variadic reifier, go ahead and transform it.
     if (DependentReifier->getEllipsisLoc().isValid()) {
       Expr *OldRange = DependentReifier->getRange();
       ExprResult NewRange = TransformExpr(OldRange);
@@ -7638,15 +7638,13 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
         llvm_unreachable("Typename as expression unimplemented.\n");
         break;
       default:
-        // TODO: Diag << err_invalid_reification
+        // TODO: Diag << err_invalid_reifier
         return true;
       }
 
-      ExpandedReifiers =
-        getSema().ActOnVariadicReification(SourceLocation(), Keyword,
-                                           NewRange.get(), SourceLocation(),
-                                           SourceLocation(),
-                                           SourceLocation());
+      getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
+                                     Keyword, NewRange.get(), SourceLocation(),
+                                     SourceLocation(), SourceLocation());
 
       Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
       return false;
@@ -7685,7 +7683,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   CXXDependentVariadicReifierType const *DependentReifier =
     cast<CXXDependentVariadicReifierType>(T);
 
-  // If this is a dependent variadic reification, go ahead and transform it.
+  // If this is a dependent variadic reifier, go ahead and transform it.
   // if (DependentReifier->getEllipsisLoc().isValid())
   Expr *OldRange = DependentReifier->getRange();
   ExprResult NewRange = TransformExpr(OldRange);
@@ -7695,10 +7693,9 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 
   llvm::SmallVector<QualType, 8> ExpandedReifiers;
 
-  ExpandedReifiers =
-    getSema().ActOnVariadicTypename(SourceLocation(), NewRange.get(),
-                                    SourceLocation(), SourceLocation(),
-                                    SourceLocation());
+  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(), NewRange.get(),
+                                 SourceLocation(), SourceLocation(),
+                                 SourceLocation());
 
   Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
   return false;

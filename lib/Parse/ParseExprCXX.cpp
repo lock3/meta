@@ -834,9 +834,9 @@ Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
         }
       }
 
-      if (isVariadicReification()) {
+      if (isVariadicReifier()) {
         llvm::SmallVector<Expr*, 4> ExpandedExprs;
-        if(ParseVariadicReification(ExpandedExprs))
+        if(ParseVariadicReifier(ExpandedExprs))
           return DiagResult(diag::err_expected_capture);
 
         for(auto E : ExpandedExprs) {

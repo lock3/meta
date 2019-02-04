@@ -2172,7 +2172,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                          bool Virtual, AccessSpecifier Access,
                          TypeSourceInfo *TInfo,
                          SourceLocation EllipsisLoc,
-                         bool VariadicReification) {
+                         bool VariadicReifier) {
   QualType BaseType = TInfo->getType();
 
   // C++ [class.union]p1:
@@ -2183,7 +2183,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }  
 
-  if (!VariadicReification && EllipsisLoc.isValid() &&
+  if (!VariadicReifier && EllipsisLoc.isValid() &&
       !TInfo->getType()->containsUnexpandedParameterPack()) {
     Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
       << TInfo->getTypeLoc().getSourceRange();
@@ -2314,7 +2314,7 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
                          ParsedType basetype, SourceLocation BaseLoc,
                          SourceLocation EllipsisLoc,
-                         bool VariadicReification) {
+                         bool VariadicReifier) {
   if (!classdecl)
     return true;
 
@@ -2339,10 +2339,10 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
 
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(basetype, &TInfo);
-  if(VariadicReification)
+  if (VariadicReifier)
     TInfo = Context.CreateTypeSourceInfo(basetype.get());
 
-  if (!VariadicReification && EllipsisLoc.isInvalid() &&
+  if (!VariadicReifier && EllipsisLoc.isInvalid() &&
       DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo,
                                       UPPC_BaseType))
     return true;

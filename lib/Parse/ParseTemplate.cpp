@@ -1301,14 +1301,14 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
   return Tok.isOneOf(tok::greater, tok::comma);
 }
 
-/// Parse a non-type variadic reification (valueof, unqualid, idexpr)
+/// Parse a non-type variadic reifier (valueof, unqualid, idexpr)
 /// Returns true on error.
 bool
-Parser::ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc)
+Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc)
 {
   llvm::SmallVector<Expr *, 4> Exprs;
 
-  if (ParseVariadicReification(Exprs))
+  if (ParseVariadicReifier(Exprs))
     return true;
 
   // Check each argument and add it to the argument list.n
@@ -1327,14 +1327,14 @@ Parser::ParseNonTypeReification(TemplateArgList &Args, SourceLocation KWLoc)
   return false;
 }
 
-/// Parse a type variadic reification (typename)
+/// Parse a type variadic reifier (typename)
 /// Returns true on error.
 bool
-Parser::ParseTypeReification(TemplateArgList &Args, SourceLocation KWLoc)
+Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc)
 {
   llvm::SmallVector<QualType, 4> Types;
 
-  if (ParseVariadicReification(Types))
+  if (ParseVariadicReifier(Types))
     return true;
 
   for (auto ReflectedType : Types) {
@@ -1366,24 +1366,21 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 
   do {
 
-    if (isVariadicReification()) {
+    if (isVariadicReifier()) {
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
       SourceLocation KWLoc = Tok.getLocation();
 
-      // Note that failure to parse a variadic reification is not necessarily
-      // a failure. It could have been a regular reification.
+      // Note that failure to parse a variadic reifier is not necessarily
+      // a failure. It could have been a regular reifier.
       switch(Tok.getIdentifierInfo()->getTokenID()) {
       case tok::kw_typename:
-          return ParseTypeReification(TemplateArgs, KWLoc);
+          return ParseTypeReifier(TemplateArgs, KWLoc);
         break;
       case tok::kw_valueof:
-        return ParseNonTypeReification(TemplateArgs, KWLoc);
-      // TODO: implement
       case tok::kw_unqualid:
       case tok::kw_idexpr:
-        return false;
-      // namespace has no meaning here.
+        return ParseNonTypeReifier(TemplateArgs, KWLoc);
       default:
         return false;
       }

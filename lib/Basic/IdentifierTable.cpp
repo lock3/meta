@@ -310,7 +310,7 @@ bool IdentifierInfo::isReflectionKeyword(const LangOptions &LangOpts) const {
 }
 
 bool
-IdentifierInfo::isReificationKeyword(const LangOptions &LangOpts) const
+IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const
 {
   if (!isReflectionKeyword(LangOpts))
     return false;

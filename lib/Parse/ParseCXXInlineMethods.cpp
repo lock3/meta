@@ -855,7 +855,7 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         // function body!
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_brace;
       }
-    } else if(isVariadicReification()) {
+    } else if(isVariadicReifier()) {
       if(!ConsumeAndStoreUntil(tok::l_paren, Toks, /*StopAtSemi=*/true,
                                /*ConsumeFinalToken=*/true))
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_paren;

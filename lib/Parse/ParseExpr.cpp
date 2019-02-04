@@ -2908,25 +2908,21 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     }
     
     ExprResult ArgExpr;
-    bool isVariadicReifier = isVariadicReification();
+    bool VariadicReifier = isVariadicReifier();
 
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
       ArgExpr = ParseBraceInitializer();
-    } else if (isVariadicReifier) {
+    } else if (VariadicReifier) {
       llvm::SmallVector<Expr *, 4> ExpandedExprs;
-
-      // If Reflection is enabled and a Reification keyword has appeared,
-      // this may be a variadic reification.
-      // FIXME: Make this work if it is NOT a variadic reification.
 
       /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
       /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
-      SawError = ParseVariadicReification(ExpandedExprs);
+      SawError = ParseVariadicReifier(ExpandedExprs);
 
       // We need to insert several fake commas to get around error checking.
       // We only need size() - 1, since there is already a comma in front of
-      // the reification parameter.
+      // the reifier parameter.
       for(std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
         CommaLocs.emplace_back();
 
@@ -2940,10 +2936,10 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
 
     if (Tok.is(tok::ellipsis))
       ArgExpr = Actions.ActOnPackExpansion(ArgExpr.get(), ConsumeToken());
-    if (ArgExpr.isInvalid() && !isVariadicReifier) {
+    if (ArgExpr.isInvalid() && !VariadicReifier) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else if(!isVariadicReifier) {
+    } else if(!VariadicReifier) {
       Exprs.push_back(ArgExpr.get());
     }
 

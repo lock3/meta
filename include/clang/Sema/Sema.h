@@ -5999,7 +5999,7 @@ public:
                                        bool Virtual, AccessSpecifier Access,
                                        TypeSourceInfo *TInfo,
                                        SourceLocation EllipsisLoc,
-                                       bool VariadicReification = false);
+                                       bool VariadicReifier = false);
 
   BaseResult ActOnBaseSpecifier(Decl *classdecl,
                                 SourceRange SpecifierRange,
@@ -6008,7 +6008,7 @@ public:
                                 ParsedType basetype,
                                 SourceLocation BaseLoc,
                                 SourceLocation EllipsisLoc,
-                                bool VariadicReification = false);
+                                bool VariadicReifier = false);
 
   bool AttachBaseSpecifiers(CXXRecordDecl *Class,
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
@@ -8730,19 +8730,21 @@ public:
                                 SourceLocation RParenLoc,
                                 SourceLocation EllipsisLoc = SourceLocation());
 
-  llvm::SmallVector<Expr *, 4>
-  ActOnVariadicReification(SourceLocation KWLoc,
-                           IdentifierInfo *KW,
-                           Expr *Range,
-                           SourceLocation LParenLoc,
-                           SourceLocation EllipsisLoc,
-                           SourceLocation RParenLoc);
-  llvm::SmallVector<QualType, 4>
-  ActOnVariadicTypename(SourceLocation KWLoc,
-                        Expr *Range,
-                        SourceLocation LParenLoc,
-                        SourceLocation EllipsisLoc,
-                        SourceLocation RParenLoc);
+  void
+  ActOnVariadicReifier(SmallVectorImpl<Expr *> &Expressions,
+                       SourceLocation KWLoc,
+                       IdentifierInfo *KW,
+                       Expr *Range,
+                       SourceLocation LParenLoc,
+                       SourceLocation EllipsisLoc,
+                       SourceLocation RParenLoc);
+  void
+  ActOnVariadicReifier(SmallVectorImpl<QualType> &Types,
+                       SourceLocation KWLoc,
+                       Expr *Range,
+                       SourceLocation LParenLoc,
+                       SourceLocation EllipsisLoc,
+                       SourceLocation RParenLoc);
 
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
