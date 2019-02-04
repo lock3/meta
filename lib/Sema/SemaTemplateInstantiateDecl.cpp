@@ -4517,13 +4517,53 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   GlobalInstantiations.perform();
 }
 
-// class ReifierTransformer : public TreeTransform<ReifierTransformer>
-// {
-// public:
-//   ReifierTransformer(Sema &SemaRef)
-//     : TreeTransform<ReifierTransformer>(SemaRef)
-//     {}
-// };
+/// If a member initializer is a variadic reifier, substitute its range
+/// and instantiate it. Returns true on error.
+static bool
+InstantiateVariadicReifierMemInit(Sema &SemaRef,
+                          CXXConstructorDecl *New,
+                          const CXXCtorInitializer *Init,
+                          llvm::SmallVectorImpl<CXXCtorInitializer *> &NewInits,
+                          const MultiLevelTemplateArgumentList &TemplateArgs)
+{  
+  CXXDependentVariadicReifierType const *Reifier =
+    cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
+  ExprResult TempRange =
+    SemaRef.SubstExpr(Reifier->getRange(), TemplateArgs);
+  if (TempRange.isInvalid())
+    return true;
+
+  llvm::SmallVector<QualType, 8> ReifiedTypes;
+  SemaRef.ActOnVariadicReifier(ReifiedTypes, SourceLocation(), TempRange.get(),
+                               SourceLocation(), SourceLocation(),
+                               SourceLocation());
+
+  for (auto ReifiedType : ReifiedTypes) {
+    ExprResult TempInit =
+      SemaRef.SubstInitializer(Init->getInit(), TemplateArgs,
+                               /*CXXDirectInit=*/true);
+    if (TempInit.isInvalid())
+      return true;
+
+    TypeSourceInfo *BaseTInfo =
+      SemaRef.Context.CreateTypeSourceInfo(ReifiedType);
+    if (!BaseTInfo)
+      return true;
+
+    MemInitResult NewInit =
+      SemaRef.BuildBaseInitializer(BaseTInfo->getType(),
+                                   BaseTInfo, Init->getInit(),
+                                   New->getParent(),
+                                   SourceLocation());
+    if (NewInit.isInvalid())
+      return true;
+
+    auto NewInitExpr = NewInit.get();
+    NewInits.push_back(NewInitExpr);
+  }
+
+  return false;
+}
 
 void
 Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
@@ -4604,52 +4644,13 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
 
     if (Init->isBaseInitializer() &&
         CXXDependentVariadicReifierType::classof(Init->getBaseClass())) {
-      llvm::SmallVector<QualType, 8> ReifiedTypes;
-
       // The expanded range is necessarily constexpr.
       EnterExpressionEvaluationContext EvalContext(
         *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
-      CXXDependentVariadicReifierType const *Reifier =
-        cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
-      ExprResult TempRange =
-        SubstExpr(Reifier->getRange(), TemplateArgs);
 
-      if (TempRange.isInvalid()) {
-        AnyErrors = true;
-        break;
-      }
-
-      ActOnVariadicReifier(ReifiedTypes, SourceLocation(), TempRange.get(),
-                           SourceLocation(), SourceLocation(),
-                           SourceLocation());
-
-      for (auto ReifiedType : ReifiedTypes) {
-        ExprResult TempInit = SubstInitializer(Init->getInit(), TemplateArgs,
-                                               /*CXXDirectInit=*/true);
-        if (TempInit.isInvalid()) {
-          AnyErrors = true;
-          break;
-        }
-
-        TypeSourceInfo *BaseTInfo = Context.CreateTypeSourceInfo(ReifiedType);
-
-        if (!BaseTInfo) {
-          AnyErrors = true;
-          break;
-        }
-
-        MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(),
-                                                     BaseTInfo, Init->getInit(),
-                                                     New->getParent(),
-                                                     SourceLocation());
-        if (NewInit.isInvalid()) {
-          AnyErrors = true;
-          break;
-        }
-
-        NewInits.push_back(NewInit.get());
-      }
-
+      AnyErrors =
+        InstantiateVariadicReifierMemInit(*this, New, Init,
+                                          NewInits, TemplateArgs);
       continue;
     }
 
