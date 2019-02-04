@@ -3164,6 +3164,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
+  case Type::CXXDependentVariadicReifier:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to

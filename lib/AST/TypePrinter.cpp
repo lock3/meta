@@ -253,6 +253,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Attributed:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
+    case Type::CXXDependentVariadicReifier:
       CanPrefixQualifiers = false;
       break;
   }
