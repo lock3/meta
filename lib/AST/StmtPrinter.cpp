@@ -2348,6 +2348,7 @@ void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
   default:
     break;
   }
+}
 
 // Obj-C
 

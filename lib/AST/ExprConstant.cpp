@@ -11494,11 +11494,8 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CoawaitExprClass:
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:
-<<<<<<< HEAD
   case Expr::CXXConcatenateExprClass:
-=======
   case Expr::CXXDependentVariadicReifierExprClass:
->>>>>>> Initial implementation of dependent variadic reifiers.
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
   case Expr::CXXUnreflexprExprClass:

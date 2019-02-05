@@ -5001,9 +5001,6 @@ public:
   /// Returns the source code location of the left parenthesis.
   SourceLocation getLParenLoc() const { return LParenLoc; }
 
-  /// Returns the source code location of the (optional) ellipsis.
-  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
-
   /// Returns the source code location of the right parenthesis.
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
