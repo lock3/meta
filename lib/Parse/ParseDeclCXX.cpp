@@ -2046,7 +2046,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
     BaseResult Result = ParseBaseSpecifier(ClassDecl, ReifiedTypes);
 
     // Check and push any reified types.
-    for(auto Typename : ReifiedTypes) {
+    for (auto Typename : ReifiedTypes) {
       if (Typename.isInvalid()) {
         // Skip the rest of this base specifier, up until the comma or
         // opening brace.
@@ -2064,7 +2064,7 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
       else
         BaseInfo.push_back(Result.get());
     }
-    
+
     // If the next token is a comma, consume it and keep reading
     // base-specifiers.
     if (!TryConsumeToken(tok::comma))
@@ -2149,10 +2149,10 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
-    if(ParseVariadicReifier(SpecList))
+    if (ParseVariadicReifier(SpecList))
       return true;
 
-    for(auto BaseTy : SpecList) {
+    for (auto BaseTy : SpecList) {
       OpaquePtr<QualType> BaseTyPtr;
       BaseTyPtr.set(BaseTy);
 
@@ -2196,9 +2196,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
                                     EllipsisLoc);
 }
 
-void
-Parser::ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>)
-{
+void Parser::ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>) {
 }
 
 /// getAccessSpecifierIfPresent - Determine whether the next token is
@@ -3477,7 +3475,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 
   SmallVector<CXXCtorInitializer*, 4> MemInitializers;
   bool AnyErrors = false;
-  
+
   do {
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteConstructorInitializer(ConstructorDecl,
@@ -3485,7 +3483,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
       return cutOffParsing();
     }
 
-    if(isVariadicReifier()) {
+    if (isVariadicReifier()) {
       llvm::SmallVector<QualType, 4> ExpandedTypes;
       if (ParseVariadicReifier(ExpandedTypes)) {
         // invalid expansion of reifier
@@ -3498,7 +3496,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
     } else {
       MemInitResult MemInit = ParseMemInitializer(ConstructorDecl);
 
-      if(!MemInit.isInvalid())
+      if (!MemInit.isInvalid())
         MemInitializers.push_back(MemInit.get());
       else
         AnyErrors = true;
@@ -3541,8 +3539,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
 /// [C++] mem-initializer-id:
 ///         '::'[opt] nested-name-specifier[opt] class-name
 ///         identifier
-MemInitResult
-Parser::ParseMemInitializer(Decl *ConstructorDecl) {
+MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
   // parse '::'[opt] nested-name-specifier[opt]
   CXXScopeSpec SS;
   ParseOptionalCXXScopeSpecifier(SS, nullptr, /*EnteringContext=*/false);
@@ -3570,8 +3567,8 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ParseDecltypeSpecifier(DS);
   } else {
     TemplateIdAnnotation *TemplateId = Tok.is(tok::annot_template_id)
-      ? takeTemplateIdAnnotation(Tok)
-      : nullptr;
+                                           ? takeTemplateIdAnnotation(Tok)
+                                           : nullptr;
     if (TemplateId && (TemplateId->Kind == TNK_Type_template ||
                        TemplateId->Kind == TNK_Dependent_template_name)) {
       AnnotateTemplateIdTokenAsType(/*IsClassName*/true);
@@ -3599,11 +3596,11 @@ Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
                                        TemplateTypeTy, DS, IdLoc,
                                        InitList.get(), EllipsisLoc);
-  } else if(Tok.is(tok::l_paren)) {
+  } else if (Tok.is(tok::l_paren)) {
     SourceLocation LParenLoc, RParenLoc, EllipsisLoc;
     ExprVector ArgExprs;
 
-    if(ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
+    if (ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
                             LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
       return true;
 
@@ -4199,17 +4196,16 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
     SourceLocation ScopeLoc, AttrLoc;
     IdentifierInfo *ScopeName = nullptr, *AttrName = nullptr;
 
-    if(isVariadicReifier()) {
+    if (isVariadicReifier()) {
       llvm::SmallVector<Expr *, 4> ExpandedAttrs;
-      if(ParseVariadicReifier(ExpandedAttrs))
+      if (ParseVariadicReifier(ExpandedAttrs))
         SkipUntil(tok::r_square, tok::comma, StopAtSemi | StopBeforeMatch);
-      for(Expr *E : ExpandedAttrs) {
+      for (Expr *E : ExpandedAttrs) {
         DeclRefExpr *ExpandedDeclRef = dyn_cast_or_null<DeclRefExpr>(E);
         assert(ExpandedDeclRef && "Attribute must be a declaration.");
         IdentifierInfo *II = ExpandedDeclRef->getFoundDecl()->getIdentifier();
         SeenAttrs.insert({II, SourceLocation()});
       }
-      
     }
 
     AttrName = TryParseCXX11AttributeIdentifier(AttrLoc);

@@ -5355,7 +5355,7 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
   ExprResult Result = MaybeConvertParenListExprToParenExpr(Scope, Fn);
   if (Result.isInvalid()) return ExprError();
   Fn = Result.get();
-  
+
   if (checkArgsForPlaceholders(*this, ArgExprs))
     return ExprError();
 

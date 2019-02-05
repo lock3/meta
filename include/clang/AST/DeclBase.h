@@ -1150,7 +1150,7 @@ private:
                            ASTContext &Ctx);
 
 protected:
-  ASTMutationListener *getASTMutationListener() const;  
+  ASTMutationListener *getASTMutationListener() const;
 };
 
 /// Determine whether two declarations declare the same entity.

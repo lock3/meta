@@ -2760,8 +2760,8 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
 
   ExprResult ArgExpr;
   ArgsVector ArgExprs;
-  
-  if(isVariadicReifier()) {
+
+  if (isVariadicReifier()) {
     llvm::SmallVector<Expr*, 4> ExpandedAlignments;
     if(ParseVariadicReifier(ExpandedAlignments)) {
       T.skipToEnd();

@@ -2320,7 +2320,7 @@ class CXXCtorInitializer final {
   /// If IsWritten is true, then this number keeps track of the textual order
   /// of this initializer in the original sources, counting from 0.
   unsigned SourceOrder : 13;
-  
+
 public:
   /// Creates a new base-class initializer.
   explicit

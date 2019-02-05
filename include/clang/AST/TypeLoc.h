@@ -2206,7 +2206,7 @@ public:
   }
 };
 
-/// A dependent C++ variadic typename expression.  
+/// A dependent C++ variadic typename expression.
 struct CXXDependentVariadicReifierTypeLocInfo {
   SourceLocation EllipsisLoc;
 };

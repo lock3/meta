@@ -525,7 +525,7 @@ struct ExpansionContextBuilder {
 private:
   bool BuildArrayCalls();
   bool BuildRangeCalls();
-  
+
 private:
   Sema &SemaRef;
 
@@ -575,9 +575,9 @@ ExpansionContextBuilder::BuildCalls()
     UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
                                  NestedNameSpecifierLoc(), BeginNameInfo,
                                  /*ADL=*/true, /*Overloaded=*/true,
-                                 BeginCallLookup.begin(), 
+                                 BeginCallLookup.begin(),
                                  BeginCallLookup.end());
-  
+
   // Get the info for a call to std::end
   DeclarationNameInfo EndNameInfo(
       &SemaRef.Context.Idents.get("end"), Loc);
@@ -598,12 +598,12 @@ ExpansionContextBuilder::BuildCalls()
   ExprResult BeginCall =
     SemaRef.ActOnCallExpr(CurScope, BeginFn, Loc, Args, Loc);
   if (BeginCall.isInvalid())
-    return true; 
+    return true;
   ExprResult EndCall =
     SemaRef.ActOnCallExpr(CurScope, EndFn, Loc, Args, Loc);
   if (EndCall.isInvalid())
-    return true; 
-  
+    return true;
+
   RangeBegin = BeginCall.get();
   RangeEnd = EndCall.get();
 
@@ -617,13 +617,13 @@ ExpansionContextBuilder::BuildArrayCalls()
   IntegerLiteral *ZeroIndex =
     IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(0),
                            SemaRef.Context.getSizeType(), SourceLocation());
-  
+
   ExprResult BeginAccessor =
     SemaRef.ActOnArraySubscriptExpr(CurScope, Range, SourceLocation(),
                                     ZeroIndex, SourceLocation());
   if (BeginAccessor.isInvalid())
     return true;
-  
+
   RangeBegin = BeginAccessor.get();
 
   // For an array of size N, RangeEnd is N (not arr[N])
@@ -631,10 +631,10 @@ ExpansionContextBuilder::BuildArrayCalls()
   // have been applied earlier on.
   ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(
     Range->getType()->getCanonicalTypeInternal());
-  llvm::APSInt Last(ArrayTy->getSize(), true);  
+  llvm::APSInt Last(ArrayTy->getSize(), true);
   IntegerLiteral *LastIndex =
     IntegerLiteral::Create(SemaRef.Context, Last,
-                           SemaRef.Context.getSizeType(), SourceLocation());  
+                           SemaRef.Context.getSizeType(), SourceLocation());
   RangeEnd = LastIndex;
   return false;
 }
@@ -690,8 +690,8 @@ BuildSubscriptAccess(Sema &SemaRef, Expr *Current, std::size_t Index)
   ArraySubscriptExpr *CurrentSubscript =
     static_cast<ArraySubscriptExpr*>(Current);
   Expr *Base = CurrentSubscript->getBase();
-  
-  ExprResult RangeAccessor = 
+
+  ExprResult RangeAccessor =
     SemaRef.ActOnArraySubscriptExpr(SemaRef.getCurScope(), Base,
                                     SourceLocation(), E, SourceLocation());
   if (RangeAccessor.isInvalid())
@@ -718,10 +718,10 @@ BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
     UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
                                  NestedNameSpecifierLoc(), NextNameInfo,
                                  /*ADL=*/true, /*Overloaded=*/true,
-                                 NextCallLookup.begin(), 
+                                 NextCallLookup.begin(),
                                  NextCallLookup.end());
   Expr *Args[] = {Arg, Induction};
-  ExprResult NextCall = 
+  ExprResult NextCall =
     SemaRef.ActOnCallExpr(SemaRef.getCurScope(), NextFn, Loc, Args, Loc);
   if (NextCall.isInvalid())
     return ExprError();
@@ -733,7 +733,7 @@ BuildNextCall(Sema &SemaRef, Expr *Arg, Expr *Induction)
 static ExprResult
 BuildDeref(Sema &SemaRef, Expr *NextCall)
 {
-  ExprResult NextDeref = 
+  ExprResult NextDeref =
     SemaRef.ActOnUnaryOp(SemaRef.getCurScope(), SourceLocation(),
                          tok::star, NextCall);
   if (NextDeref.isInvalid())
@@ -891,8 +891,6 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
                            CtxBldr.getRangeBeginCall(),
                            CtxBldr.getRangeEndCall());
 
-
-  
   while (!Traverser) {
     switch (KW->getTokenID()) {
     case tok::kw_valueof:
@@ -971,10 +969,10 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
                                      SourceLocation RParenLoc,
                                      SourceLocation EllipsisLoc)
 {
-  if (Refl->isTypeDependent() || Refl->isValueDependent()) 
+  if (Refl->isTypeDependent() || Refl->isValueDependent())
     return new (Context) CXXValueOfExpr(Context.DependentTy, Refl, KWLoc,
                                         LParenLoc, LParenLoc, EllipsisLoc);
-  
+
   if (!CheckReflectionOperand(*this, Refl))
     return ExprError();
 
@@ -983,8 +981,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
     return ExprError();
 
   Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
-
-  if (!Eval) { 
+  if (!Eval) {
     Diag(Refl->getExprLoc(), diag::err_expression_not_value_reflection);
     return ExprError();
   }

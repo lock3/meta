@@ -57,7 +57,7 @@ class DeclAccessPair;
 class IdentifierInfo;
 class LambdaCapture;
 class NonTypeTemplateParmDecl;
-class TemplateParameterList;  
+class TemplateParameterList;
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.
@@ -5083,7 +5083,7 @@ class CXXValueOfExpr : public Expr {
 public:
   CXXValueOfExpr(QualType T, Expr *Reflection,
                  SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc, 
+                 SourceLocation LParenLoc,
                  SourceLocation RParenLoc,
                  SourceLocation EllipsisLoc = SourceLocation())
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,

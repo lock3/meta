@@ -142,7 +142,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   // function body.
 
   // FIXME: a memember initializer list will parse to here.
-  
+
   if (ConsumeAndStoreFunctionPrologue(Toks)) {
     // We didn't find the left-brace we expected after the
     // constructor initializer; we already printed an error, and it's likely
@@ -856,14 +856,14 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_brace;
       }
     } else if(isVariadicReifier()) {
-      if(!ConsumeAndStoreUntil(tok::l_paren, Toks, /*StopAtSemi=*/true,
+      if (!ConsumeAndStoreUntil(tok::l_paren, Toks, /*StopAtSemi=*/true,
                                /*ConsumeFinalToken=*/true))
         return Diag(Tok.getLocation(), diag::err_expected) << tok::l_paren;
-      if(!ConsumeAndStoreUntil(tok::ellipsis, Toks, /*StopAtSemi=*/true,
+      if (!ConsumeAndStoreUntil(tok::ellipsis, Toks, /*StopAtSemi=*/true,
                                /*ConsumeFinalToken=*/true)){
         return Diag(Tok.getLocation(), diag::err_expected) << tok::ellipsis;
       }
-      if(!Tok.is(tok::identifier))
+      if (!Tok.is(tok::identifier))
         return Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
       Toks.push_back(Tok);
       ConsumeToken();
@@ -872,11 +872,10 @@ bool Parser::ConsumeAndStoreFunctionPrologue(CachedTokens &Toks) {
       //   return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
       // Toks.push_back(Tok);
       // ConsumeToken();
-      if(!ConsumeAndStoreUntil(tok::r_paren, Toks, /*StopAtSemi=*/true,
-                               /*ConsumeFinalToken=*/true)) {
+      if (!ConsumeAndStoreUntil(tok::r_paren, Toks, /*StopAtSemi=*/true,
+                                /*ConsumeFinalToken=*/true)) {
         return Diag(Tok.getLocation(), diag::err_expected) << tok::r_paren;
       }
-         
     } else if (Tok.isNot(tok::l_paren) && Tok.isNot(tok::l_brace)) {
       // We found something weird in a mem-initializer-id.
       if (getLangOpts().CPlusPlus11)

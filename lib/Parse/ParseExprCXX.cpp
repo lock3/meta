@@ -835,11 +835,11 @@ Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
       }
 
       if (isVariadicReifier()) {
-        llvm::SmallVector<Expr*, 4> ExpandedExprs;
-        if(ParseVariadicReifier(ExpandedExprs))
+        llvm::SmallVector<Expr *, 4> ExpandedExprs;
+        if (ParseVariadicReifier(ExpandedExprs))
           return DiagResult(diag::err_expected_capture);
 
-        for(auto E : ExpandedExprs) {
+        for (auto E : ExpandedExprs) {
           ParsedType InitCaptureType;
           SourceLocation TempLoc = SourceLocation();
           // This performs any lvalue-to-rvalue conversions if necessary, which

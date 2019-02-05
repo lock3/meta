@@ -1179,7 +1179,7 @@ namespace serialization {
       /// A dependentSizedVectorType record.
       TYPE_DEPENDENT_SIZED_VECTOR = 48,
 
-      /// \brief A ReflectedType record.
+      /// A ReflectedType record.
       TYPE_REFLECTED  = 49,
 
       /// A CXXDependentVariadicReifier record.

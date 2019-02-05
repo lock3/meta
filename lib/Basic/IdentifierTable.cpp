@@ -309,9 +309,7 @@ bool IdentifierInfo::isReflectionKeyword(const LangOptions &LangOpts) const {
   return !isKeyword(LangOptsNoRefl) || MultipurposeKW;
 }
 
-bool
-IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const
-{
+bool IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const {
   if (!isReflectionKeyword(LangOpts))
     return false;
 

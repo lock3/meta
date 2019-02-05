@@ -454,10 +454,8 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
 
 /// Returns true if reflection is enabled and the
 /// current expression appears to be a variadic reifier.
-bool
-Parser::isVariadicReifier() const
-{
-  if(tok::isAnnotation(Tok.getKind()) || Tok.is(tok::raw_identifier))
+bool Parser::isVariadicReifier() const {
+  if (tok::isAnnotation(Tok.getKind()) || Tok.is(tok::raw_identifier))
      return false;
   IdentifierInfo *TokII = Tok.getIdentifierInfo();
   // If Reflection is enabled, the current token is a
@@ -469,9 +467,7 @@ Parser::isVariadicReifier() const
     && PP.LookAhead(1).getKind() == tok::ellipsis;
 }
 
-bool
-Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs)
-{
+bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs) {
   IdentifierInfo *KW = Tok.getIdentifierInfo();
   SourceLocation KWLoc = ConsumeToken();
   // Parse any number of arguments in parens.
@@ -484,12 +480,12 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs)
 
   // FIXME: differentiate this return from an error, as
   // returning here means we have a non-variadic reifier.
-  if(!EllipsisLoc.isValid())
+  if (!EllipsisLoc.isValid())
     return false;
 
   ExprResult ReflRange = ParseConstantExpression();
 
-  if(ReflRange.isInvalid()) {
+  if (ReflRange.isInvalid()) {
     // TODO: Diag << KWLoc, err_invalid_reflection in parse
     return true;
   }
@@ -498,18 +494,18 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs)
   DeclRefExpr *ReflRangeDeclRef =
     dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
   // TODO: output error explaining this must be a declaration
-  if(!ReflRangeDeclRef)
+  if (!ReflRangeDeclRef)
     return true;
 
   // TODO: only mark this in a non-dependent context?
   ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
-  
+
   if (ReflRange.isInvalid()) {
     Parens.skipToEnd();
     return true;
   }
 
-  if (Parens.consumeClose()) 
+  if (Parens.consumeClose())
     return true;
 
   SourceLocation LPLoc = Parens.getOpenLocation();
@@ -518,9 +514,7 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs)
                                       LPLoc, EllipsisLoc, RPLoc);
 }
 
-bool
-Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types)
-{
+bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types) {
   SourceLocation KWLoc = ConsumeToken();
   // Parse any number of arguments in parens.
   BalancedDelimiterTracker Parens(*this, tok::l_paren);
@@ -531,13 +525,13 @@ Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types)
   TryConsumeToken(tok::ellipsis, EllipsisLoc);
 
   ExprResult ReflRange = ParseConstantExpression();
-  
+
   if (ReflRange.isInvalid()) {
     Parens.skipToEnd();
     return true;
   }
 
-  if (Parens.consumeClose()) 
+  if (Parens.consumeClose())
     return true;
 
   SourceLocation LPLoc = Parens.getOpenLocation();

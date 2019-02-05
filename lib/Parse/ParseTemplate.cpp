@@ -1303,9 +1303,7 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
 
 /// Parse a non-type variadic reifier (valueof, unqualid, idexpr)
 /// Returns true on error.
-bool
-Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc)
-{
+bool Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
   llvm::SmallVector<Expr *, 4> Exprs;
 
   if (ParseVariadicReifier(Exprs))
@@ -1329,9 +1327,7 @@ Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc)
 
 /// Parse a type variadic reifier (typename)
 /// Returns true on error.
-bool
-Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc)
-{
+bool Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
   llvm::SmallVector<QualType, 4> Types;
 
   if (ParseVariadicReifier(Types))

@@ -2181,7 +2181,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     Diag(Class->getLocation(), diag::err_base_clause_on_union)
       << SpecifierRange;
     return nullptr;
-  }  
+  }
 
   if (!VariadicReifier && EllipsisLoc.isValid() &&
       !TInfo->getType()->containsUnexpandedParameterPack()) {
@@ -3902,7 +3902,6 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
 
     TypeDecl *TyD = R.getAsSingle<TypeDecl>();
     if (!TyD) {
-      
       if (R.isAmbiguous()) return true;
 
       // We don't want access-control diagnostics here.
@@ -4139,7 +4138,7 @@ Sema::BuildDelegatingInitializer(TypeSourceInfo *TInfo, Expr *Init,
 MemInitResult
 Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
                            Expr *Init, CXXRecordDecl *ClassDecl,
-                           SourceLocation EllipsisLoc) {  
+                           SourceLocation EllipsisLoc) {
   SourceLocation BaseLoc
     = BaseTInfo->getTypeLoc().getLocalSourceRange().getBegin();
 

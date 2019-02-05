@@ -13502,7 +13502,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
 
     if (MaybeODRUseExprs.size())
       llvm::outs() << "ODR use exprs not empty: " << MaybeODRUseExprs.size() << '\n';
-    for(auto ODRExpression : MaybeODRUseExprs) {
+    for (auto ODRExpression : MaybeODRUseExprs) {
       ODRExpression->dump();
     }
     assert(MaybeODRUseExprs.empty() &&

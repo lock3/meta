@@ -122,7 +122,7 @@ protected:
 
 public:
   /// Initializes a new tree transformer.
-  TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) {}
+  TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) { }
 
   /// Retrieves a reference to the derived class.
   Derived &getDerived() { return static_cast<Derived&>(*this); }
@@ -671,14 +671,16 @@ public:
 
   // Check if the current expression is a dependent C++ variadic reifier that
   // still needs expansion. If so, transform and expand it.
-  bool
-  MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
-  bool
-  MaybeTransformVariadicReifier(Expr *E, TemplateArgumentListInfo &Outputs);
-  bool
-  MaybeTransformVariadicReifier(Type const *T, SmallVectorImpl<QualType> &Outputs);
-  bool
-  MaybeTransformVariadicReifier(Type const *T, TemplateArgumentListInfo &Outputs);
+  bool MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
+
+  bool MaybeTransformVariadicReifier(Expr *E,
+                                     TemplateArgumentListInfo &Outputs);
+
+  bool MaybeTransformVariadicReifier(Type const *T,
+                                     SmallVectorImpl<QualType> &Outputs);
+
+  bool MaybeTransformVariadicReifier(Type const *T,
+                                     TemplateArgumentListInfo &Outputs);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -1139,7 +1141,6 @@ public:
     return getSema().CheckPackExpansion(Pattern, PatternRange, EllipsisLoc,
                                         NumExpansions);
   }
-
 
   /// Build a new atomic type given its value type.
   ///
@@ -3444,7 +3445,7 @@ template<typename Derived>
 ExprResult TreeTransform<Derived>::TransformExpr(Expr *E) {
   if (!E)
     return E;
-  
+
   switch (E->getStmtClass()) {
     case Stmt::NoStmtClass: break;
 #define STMT(Node, Parent) case Stmt::Node##Class: break;
@@ -3641,13 +3642,12 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       continue;
     }
 
-    if(!MaybeTransformVariadicReifier(Inputs[I], Outputs))
+    if (!MaybeTransformVariadicReifier(Inputs[I], Outputs))
       continue;
 
     ExprResult Result =
-      IsCall ? getDerived().TransformInitializer(Inputs[I],
-                                                 /*DirectInit*/false)
-      : getDerived().TransformExpr(Inputs[I]);
+      IsCall ? getDerived().TransformInitializer(Inputs[I], /*DirectInit*/false)
+             : getDerived().TransformExpr(Inputs[I]);
     if (Result.isInvalid())
       return true;
 
@@ -7550,7 +7550,7 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
 
 template <typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {  
+TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
   ExprResult Refl = getDerived().TransformExpr(E->getReflection());
   if (Refl.isInvalid())
     return ExprError();
@@ -7664,7 +7664,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier(Expr *E,
                                                       TemplateArgumentListInfo
                                                       &Outputs)
 {
-  llvm::SmallVector<Expr *, 4> ReifiedExprs; 
+  llvm::SmallVector<Expr *, 4> ReifiedExprs;
   if (MaybeTransformVariadicReifier(E, ReifiedExprs))
     return true;
 
@@ -7709,7 +7709,7 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, TemplateArgumentListInfo &Outputs) {
-  llvm::SmallVector<QualType, 4> ReifiedTypes; 
+  llvm::SmallVector<QualType, 4> ReifiedTypes;
   if (MaybeTransformVariadicReifier(T, ReifiedTypes))
     return true;
 

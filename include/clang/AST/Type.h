@@ -5450,7 +5450,7 @@ class CXXDependentVariadicReifierType : public Type {
   SourceLocation EllipsisLoc;
   SourceLocation RParenLoc;
 public:
-  CXXDependentVariadicReifierType(Expr *Range, 
+  CXXDependentVariadicReifierType(Expr *Range,
                                   SourceLocation KeywordLoc,
                                   SourceLocation EllipsisLoc,
                                   SourceLocation RParenLoc)

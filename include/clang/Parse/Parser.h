@@ -2808,7 +2808,7 @@ private:
   /// Returns true if reflection is enabled and the
   /// current expression appears to be a variadic reifier.
   bool isVariadicReifier() const;
-  
+
   /// Parse a variadic reifier. Returns true on error.
   bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
   bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);

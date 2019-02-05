@@ -4182,7 +4182,7 @@ void Sema::BuildVariableInstantiation(
 /// Instantiate the initializer of a variable.
 void Sema::InstantiateVariableInitializer(
     VarDecl *Var, VarDecl *OldVar,
-    const MultiLevelTemplateArgumentList &TemplateArgs) {  
+    const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (ASTMutationListener *L = getASTContext().getASTMutationListener())
     L->VariableDefinitionInstantiated(Var);
 
@@ -4524,8 +4524,7 @@ InstantiateVariadicReifierMemInit(Sema &SemaRef,
                           CXXConstructorDecl *New,
                           const CXXCtorInitializer *Init,
                           llvm::SmallVectorImpl<CXXCtorInitializer *> &NewInits,
-                          const MultiLevelTemplateArgumentList &TemplateArgs)
-{  
+                          const MultiLevelTemplateArgumentList &TemplateArgs) {
   CXXDependentVariadicReifierType const *Reifier =
     cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
   ExprResult TempRange =
@@ -4635,7 +4634,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
           AnyErrors = true;
           break;
         }
-        
+
         NewInits.push_back(NewInit.get());
       }
 
