@@ -2880,6 +2880,14 @@ bool Expr::hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs) {
   return false;
 }
 
+bool Expr::hasDependentVariadicReifierArguments(ArrayRef<Expr *> Exprs) {
+  for (unsigned I = 0; I < Exprs.size(); ++I)
+    if (Exprs[I]->getStmtClass() == CXXDependentVariadicReifierExprClass)
+      return true;
+
+  return false;
+}
+
 bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
                                  const Expr **Culprit) const {
   // This function is attempting whether an expression is an initializer
@@ -3154,7 +3162,9 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXUnreflexprExprClass:
   case CXXIdExprExprClass:
   case CXXValueOfExprClass:
+  case CXXReflectedIdExprClass:
   case CXXConcatenateExprClass:
+  case CXXDependentVariadicReifierExprClass:
   case PackSelectionExprClass:
   case CXXFragmentExprClass:
     // These never have a side-effect.

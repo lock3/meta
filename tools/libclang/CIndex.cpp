@@ -1749,6 +1749,11 @@ bool CursorVisitor::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   return Visit(TL.getPatternLoc());
 }
 
+bool CursorVisitor::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
+  return Visit(TL.getPatternLoc());
+}
+
 bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   if (Expr *E = TL.getUnderlyingExpr())
     return Visit(MakeCXCursor(E, StmtParent, TU));

@@ -421,6 +421,15 @@ void ASTStmtWriter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXDependentVariadicReifierExpr(
+  CXXDependentVariadicReifierExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
+void ASTStmtWriter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
   llvm_unreachable("unimplemented");
 }

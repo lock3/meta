@@ -6202,6 +6202,14 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getPackExpansionType(Pattern, NumExpansions);
   }
 
+  case TYPE_CXX_DEPENDENT_VARIADIC_REIFIER: {
+    // TODO: IMPLEMENT ME
+    return Context.getCXXDependentVariadicReifierType(nullptr,
+                                                      SourceLocation(),
+                                                      SourceLocation(),
+                                                      SourceLocation());
+  }
+
   case TYPE_ELABORATED: {
     unsigned Idx = 0;
     ElaboratedTypeKeyword Keyword = (ElaboratedTypeKeyword)Record[Idx++];
@@ -6721,6 +6729,11 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  TL.setEllipsisLoc(ReadSourceLocation());
+}
+
+void TypeLocReader::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation());
 }
 
@@ -11613,7 +11626,7 @@ void ASTReader::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
     auto It = PendingFakeLookupResults.find(II);
     if (It != PendingFakeLookupResults.end()) {
       for (auto *ND : It->second)
-        SemaObj->IdResolver.RemoveDecl(ND);
+        SemaObj->IdResolver->RemoveDecl(ND);
       // FIXME: this works around module+PCH performance issue.
       // Rather than erase the result from the map, which is O(n), just clear
       // the vector of NamedDecls.
@@ -11621,14 +11634,14 @@ void ASTReader::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
     }
   }
 
-  if (SemaObj->IdResolver.tryAddTopLevelDecl(D, Name) && SemaObj->TUScope) {
+  if (SemaObj->IdResolver->tryAddTopLevelDecl(D, Name) && SemaObj->TUScope) {
     SemaObj->TUScope->AddDecl(D);
   } else if (SemaObj->TUScope) {
     // Adding the decl to IdResolver may have failed because it was already in
     // (even though it was not added in scope). If it is already in, make sure
     // it gets in the scope as well.
-    if (std::find(SemaObj->IdResolver.begin(Name),
-                  SemaObj->IdResolver.end(), D) != SemaObj->IdResolver.end())
+    if (std::find(SemaObj->IdResolver->begin(Name),
+                  SemaObj->IdResolver->end(), D) != SemaObj->IdResolver->end())
       SemaObj->TUScope->AddDecl(D);
   }
 }
@@ -11677,7 +11690,7 @@ ASTReader::~ASTReader() {
 }
 
 IdentifierResolver &ASTReader::getIdResolver() {
-  return SemaObj ? SemaObj->IdResolver : DummyIdResolver;
+  return SemaObj ? *SemaObj->IdResolver : DummyIdResolver;
 }
 
 unsigned ASTRecordReader::readRecord(llvm::BitstreamCursor &Cursor,

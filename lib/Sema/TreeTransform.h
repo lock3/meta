@@ -454,6 +454,9 @@ public:
   /// By default, invokes TransformDecl() to transform the declaration.
   /// Subclasses may override this function to provide alternate behavior.
   Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+    if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
+      FakeParseScope->AddDecl(D);
+
     return getDerived().TransformDecl(Loc, D);
   }
 
@@ -668,6 +671,19 @@ public:
       TypeSourceInfo **RecoveryTSI);
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
+
+  // Check if the current expression is a dependent C++ variadic reifier that
+  // still needs expansion. If so, transform and expand it.
+  bool MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
+
+  bool MaybeTransformVariadicReifier(Expr *E,
+                                     TemplateArgumentListInfo &Outputs);
+
+  bool MaybeTransformVariadicReifier(Type const *T,
+                                     SmallVectorImpl<QualType> &Outputs);
+
+  bool MaybeTransformVariadicReifier(Type const *T,
+                                     TemplateArgumentListInfo &Outputs);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -3654,6 +3670,9 @@ bool TreeTransform<Derived>::TransformExprs(Expr *const *Inputs,
       continue;
     }
 
+    if (!MaybeTransformVariadicReifier(Inputs[I], Outputs))
+      continue;
+
     ExprResult Result =
       IsCall ? getDerived().TransformInitializer(Inputs[I], /*DirectInit*/false)
              : getDerived().TransformExpr(Inputs[I]);
@@ -4276,6 +4295,25 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
       }
 
       continue;
+    }
+
+    // Test for both type and non-type kinds of variadic reifiers.
+    if (In.getArgument().getKind() == TemplateArgument::Expression) {
+      if (In.getArgument().getAsExpr()->getStmtClass() ==
+          Stmt::CXXDependentVariadicReifierExprClass) {
+        if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
+                                          Outputs))
+          return true;
+        continue;
+      }
+    } else if (In.getArgument().getKind() == TemplateArgument::Type) {
+      if (CXXDependentVariadicReifierType::classof(
+            In.getArgument().getAsType().getTypePtr())) {
+        if (MaybeTransformVariadicReifier(
+              In.getArgument().getAsType().getTypePtr(), Outputs))
+          return true;
+        continue;
+      }
     }
 
     // The simple case:
@@ -6476,6 +6514,20 @@ QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
 }
 
 template<typename Derived>
+QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
+(TypeLocBuilder &TLB, CXXDependentVariadicReifierTypeLoc TL) {
+  // ExprResult NewRange = getDerived().
+  //   TransformExpr(TL.getRange());
+
+  // if(NewRange.isInvalid())
+  //   return QualType();
+  
+  // return
+  //   getDerived().RebuildCXXDependentVariadicReifierType(NewRange.get(), TL);
+  return QualType();
+}
+
+template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformObjCInterfaceType(TypeLocBuilder &TLB,
                                                    ObjCInterfaceTypeLoc TL) {
@@ -6682,6 +6734,7 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
+  Sema::FakeParseScope FakeParseScope(getSema(), 0);
   Sema::CompoundScopeRAII CompoundScope(getSema());
 
   bool SubStmtInvalid = false;
@@ -7542,6 +7595,158 @@ TreeTransform<Derived>::TransformCXXIdExprExpr(CXXIdExprExpr *E) {
                                       E->getLParenLoc(), E->getRParenLoc());
 }
 
+class ParserLookupSetup : public DeclVisitor<ParserLookupSetup> {
+  Sema &SemaRef;
+
+  IdentifierResolver *IdResolver;
+  Scope *CurScope = nullptr;
+public:
+  ParserLookupSetup(Sema &SemaRef, DeclContext *CurContext)
+    : SemaRef(SemaRef),
+      IdResolver(new (SemaRef.Context) IdentifierResolver(SemaRef.PP)) {
+    // FIXME: This a built on a bad memory model, which we're forced
+    // into by the identifier resolver
+    VisitParentsInOrder(CurContext);
+    MergeWithSemaState();
+
+    std::swap(SemaRef.IdResolver, IdResolver);
+  }
+
+  ~ParserLookupSetup() {
+    std::swap(SemaRef.IdResolver, IdResolver);
+    // delete IdResolver;
+
+    while (CurScope) {
+      Scope *ParentScope = CurScope->getParent();
+      delete CurScope;
+      CurScope = ParentScope;
+    }
+  }
+
+  Scope *getCurScope() {
+    return CurScope;
+  }
+
+  void AddScope(unsigned ScopeFlags) {
+    CurScope = new Scope(CurScope, ScopeFlags, SemaRef.PP.getDiagnostics());
+  }
+
+  void AddDecl(NamedDecl *ND) {
+    CurScope->AddDecl(ND);
+    IdResolver->AddDecl(ND);
+  }
+
+  void AddDecl(Decl *D) {
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(D))
+      AddDecl(ND);
+  }
+
+  void VisitParentsInOrder(DeclContext *DC) {
+    if (DeclContext *PCD = DC->getParent())
+      VisitParentsInOrder(PCD);
+
+    Visit(DC);
+  }
+
+  void MergeWithSemaState() {
+    for (Scope *Scope : SemaRef.getTTParseScopes()) {
+      AddScope(Scope->getFlags());
+
+      for (Decl *D : Scope->decls())
+        AddDecl(D);
+    }
+  }
+
+  void Visit(DeclContext *S) {
+    DeclVisitor<ParserLookupSetup>::Visit(Decl::castFromDeclContext(S));
+  }
+
+  void VisitTranslationUnitDecl(TranslationUnitDecl *TUD) {
+    AddScope(Scope::DeclScope);
+
+    for (Decl *D : TUD->decls())
+      AddDecl(D);
+  }
+
+  void VisitNamespaceDecl(NamespaceDecl *NSD) {
+    AddScope(Scope::DeclScope);
+
+    for (Decl *D : NSD->decls())
+      AddDecl(D);
+  }
+
+  void VisitCXXRecordDecl(CXXRecordDecl *RD) {
+    AddScope(Scope::ClassScope | Scope::DeclScope);
+
+    for (Decl *D : RD->decls())
+      AddDecl(D);
+
+
+    // Add the base class decls to the scope for this class.
+    for (CXXBaseSpecifier Base : RD->bases()) {
+      QualType &&BaseQt = Base.getTypeSourceInfo()->getType();
+      CXXRecordDecl *BRD = BaseQt->getAsCXXRecordDecl();
+
+      for (Decl *D : BRD->decls())
+        AddDecl(D);
+    }
+  }
+
+  void VisitFunctionDecl(FunctionDecl *FD) {
+    AddScope(Scope::FnScope | Scope::DeclScope | Scope::CompoundStmtScope);
+
+    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
+      ParmVarDecl *Param = FD->getParamDecl(P);
+
+      if (Param->getIdentifier())
+        AddDecl(Param);
+    }
+  }
+};
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
+  DeclarationNameInfo DNI = TransformDeclarationNameInfo(E->getNameInfo());
+  if (!DNI.getName())
+    return ExprError();
+
+  CXXScopeSpec SS = E->getScopeSpecifier();
+
+  TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
+
+  SourceLocation TemplateKWLoc = SourceLocation();
+
+  if (E->hasExplicitTemplateArgs()) {
+    TemplateArgs.setLAngleLoc(E->getLAngleLoc());
+    TemplateArgs.setRAngleLoc(E->getRAngleLoc());
+
+    if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                E->getNumTemplateArgs(),
+                                                TemplateArgs))
+      return ExprError();
+
+    TemplateArgsPtr = &TemplateArgs;
+  }
+
+  // Some components are still dependent.
+  if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
+    return CXXReflectedIdExpr::Create(
+            getSema().Context, DNI, E->getType(), SS, TemplateKWLoc,
+            E->HasTrailingLParen(), E->IsAddressOfOperand(), TemplateArgsPtr);
+
+  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+  return getSema().ActOnIdExpression(ParserLookup.getCurScope(), SS,
+                                     TemplateKWLoc, DNI, TemplateArgsPtr,
+                                     UnqualifiedIdKind::IK_ReflectedId,
+                                     /*TemplateId=*/nullptr,
+                                     E->HasTrailingLParen(),
+                                     E->IsAddressOfOperand(),
+                                     /*CCC=*/nullptr,
+                                     /*IsInlineAsmIdentifier=*/false,
+                                     /*KeywordReplacement=*/nullptr);
+}
+
 template <typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXValueOfExpr(CXXValueOfExpr *E) {
@@ -7589,6 +7794,133 @@ TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
     Parts.push_back(Part.get());
   }
   return RebuildCXXConcatenateExpr(E->getBeginLoc(), Parts);
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXDependentVariadicReifierExpr(
+  CXXDependentVariadicReifierExpr* E) {
+  return ExprError();
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
+  if (E->getStmtClass() == Stmt::CXXDependentVariadicReifierExprClass) {
+    CXXDependentVariadicReifierExpr *DependentReifier =
+      cast<CXXDependentVariadicReifierExpr>(E);
+
+    // If this is a dependent variadic reifier, go ahead and transform it.
+    if (DependentReifier->getEllipsisLoc().isValid()) {
+      Expr *OldRange = DependentReifier->getRange();
+      ExprResult NewRange = TransformExpr(OldRange);
+
+      if(NewRange.isInvalid())
+        return true;
+
+      llvm::SmallVector<Expr *, 8> ExpandedReifiers;
+      IdentifierInfo *Keyword;
+
+      switch(DependentReifier->getKeywordId())
+      {
+      case tok::kw_valueof:
+        Keyword = &(getSema().Context.Idents.get("valueof"));
+        break;
+      case tok::kw_idexpr:
+        Keyword = &(getSema().Context.Idents.get("idexpr"));
+        break;
+      case tok::kw_unqualid:
+        Keyword = &(getSema().Context.Idents.get("unqualid"));
+        break;
+      case tok::kw_typename:
+        getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
+          << 3 << 0;
+        return true;
+      case tok::kw_namespace:
+        getSema().Diag(E->getBeginLoc(),
+                       diag::err_namespace_as_variadic_reifier);
+          return true;
+      default:
+        return true;
+      }
+
+      getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
+                                     Keyword, NewRange.get(), SourceLocation(),
+                                     SourceLocation(), SourceLocation());
+
+      Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+      return false;
+    }
+  }
+
+  return true;
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier(Expr *E,
+                                                      TemplateArgumentListInfo
+                                                      &Outputs)
+{
+  llvm::SmallVector<Expr *, 4> ReifiedExprs;
+  if (MaybeTransformVariadicReifier(E, ReifiedExprs))
+    return true;
+
+  for (auto ReifiedExpr : ReifiedExprs) {
+    TemplateArgument Arg(ReifiedExpr, TemplateArgument::Expression);
+    TemplateArgumentLoc ArgLoc(Arg, ReifiedExpr);
+    Outputs.addArgument(ArgLoc);
+  }
+
+  return false;
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
+  if(!CXXDependentVariadicReifierType::classof(T))
+    return false;
+
+  CXXDependentVariadicReifierType const *DependentReifier =
+    cast<CXXDependentVariadicReifierType>(T);
+
+  // If this is a dependent variadic reifier, go ahead and transform it.
+  // if (DependentReifier->getEllipsisLoc().isValid())
+  Expr *OldRange = DependentReifier->getRange();
+  ExprResult NewRange = TransformExpr(OldRange);
+
+  if(NewRange.isInvalid())
+    return true;
+
+  llvm::SmallVector<QualType, 8> ExpandedReifiers;
+
+  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(), NewRange.get(),
+                                 SourceLocation(), SourceLocation(),
+                                 SourceLocation());
+
+  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+  return false;
+}
+
+template <typename Derived>
+bool
+TreeTransform<Derived>::MaybeTransformVariadicReifier
+(Type const *T, TemplateArgumentListInfo &Outputs) {
+  llvm::SmallVector<QualType, 4> ReifiedTypes;
+  if (MaybeTransformVariadicReifier(T, ReifiedTypes))
+    return true;
+
+  for (auto ReifiedType : ReifiedTypes) {
+    TemplateArgument Arg(ReifiedType);
+    TypeSourceInfo *TSI =
+      getSema().Context.CreateTypeSourceInfo(ReifiedType);
+    TemplateArgumentLoc ArgLoc(Arg, TSI);
+    Outputs.addArgument(ArgLoc);
+  }
+
+  return false;
 }
 
 template<typename Derived>
@@ -11300,14 +11632,11 @@ TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
                                                DependentScopeDeclRefExpr *E,
                                                bool IsAddressOfOperand,
                                                TypeSourceInfo **RecoveryTSI) {
-  // assert(E->getQualifierLoc());
-  NestedNameSpecifierLoc QualifierLoc;
-  if (E->getQualifierLoc()) {
-    QualifierLoc
-      = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
-    if (!QualifierLoc)
-      return ExprError();
-  }
+  assert(E->getQualifierLoc());
+  NestedNameSpecifierLoc QualifierLoc
+           = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
+  if (!QualifierLoc)
+    return ExprError();
   SourceLocation TemplateKWLoc = E->getTemplateKeywordLoc();
 
   // TODO: If this is a conversion-function-id, verify that the

@@ -1301,6 +1301,55 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
   return Tok.isOneOf(tok::greater, tok::comma);
 }
 
+/// Parse a non-type variadic reifier (valueof, unqualid, idexpr)
+/// Returns true on error.
+bool Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
+  llvm::SmallVector<Expr *, 4> Exprs;
+
+  if (ParseVariadicReifier(Exprs))
+    return true;
+
+  // Check each argument and add it to the argument list.n
+  for (auto ConstantValue : Exprs) {
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
+/// Parse a type variadic reifier (typename)
+/// Returns true on error.
+bool Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
+  llvm::SmallVector<QualType, 4> Types;
+
+  if (ParseVariadicReifier(Types))
+    return true;
+
+  for (auto ReflectedType : Types) {
+    const Type *T = ReflectedType.getTypePtr();
+    void *OpaqueT = reinterpret_cast<void*>(const_cast<Type *>(T));
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::Type, OpaqueT, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
 /// ParseTemplateArgumentList - Parse a C++ template-argument-list
 /// (C++ [temp.names]). Returns true if there was an error.
 ///
@@ -1309,22 +1358,41 @@ bool Parser::IsTemplateArgumentList(unsigned Skip) {
 ///         template-argument-list ',' template-argument
 bool
 Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
-
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-    ParsedTemplateArgument Arg = ParseTemplateArgument();
-    SourceLocation EllipsisLoc;
-    if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
-      Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
 
-    if (Arg.isInvalid()) {
-      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-      return true;
+    if (isVariadicReifier()) {
+      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+      SourceLocation KWLoc = Tok.getLocation();
+
+      switch(Tok.getIdentifierInfo()->getTokenID()) {
+      case tok::kw_typename:
+          return ParseTypeReifier(TemplateArgs, KWLoc);
+        break;
+      case tok::kw_valueof:
+      case tok::kw_unqualid:
+      case tok::kw_idexpr:
+        return ParseNonTypeReifier(TemplateArgs, KWLoc);
+      default:
+        return false;
+      }
     }
+    else {
+      ParsedTemplateArgument Arg = ParseTemplateArgument();
+      SourceLocation EllipsisLoc;
+      if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+        Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
 
-    // Save this template argument.
-    TemplateArgs.push_back(Arg);
+      if (Arg.isInvalid()) {
+        SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+        return true;
+      }
+
+      // Save this template argument.
+      TemplateArgs.push_back(Arg);
+    }
 
     // If the next token is a comma, consume it and keep reading
     // arguments.

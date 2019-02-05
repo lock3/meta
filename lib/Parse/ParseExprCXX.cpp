@@ -834,7 +834,23 @@ Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
         }
       }
 
-      if (Tok.is(tok::identifier)) {
+      if (isVariadicReifier()) {
+        llvm::SmallVector<Expr *, 4> ExpandedExprs;
+        if (ParseVariadicReifier(ExpandedExprs))
+          return DiagResult(diag::err_expected_capture);
+
+        for (auto E : ExpandedExprs) {
+          ParsedType InitCaptureType;
+          SourceLocation TempLoc = SourceLocation();
+          // This performs any lvalue-to-rvalue conversions if necessary, which
+          // can affect what gets captured in the containing decl-context.
+          InitCaptureType = Actions.actOnLambdaInitCaptureInitialization(
+            TempLoc, Kind == LCK_ByRef, Id, InitKind, E);
+
+          Intro.addCapture(Kind, Loc, Id, EllipsisLoc, InitKind, Init,
+                           InitCaptureType, SourceRange(TempLoc, TempLoc));
+        }
+      } else if (Tok.is(tok::identifier)) {
         Id = Tok.getIdentifierInfo();
         Loc = ConsumeToken();
       } else if (Tok.is(tok::kw_this)) {
@@ -2501,7 +2517,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
   if (Tok.is(tok::kw_template)) {
-    if (TemplateKWLoc && (ObjectType || SS.isSet())) {
+    if (TemplateKWLoc && (ObjectType || SS.isSet() || NextToken().is(tok::kw_unqualid))) {
       TemplateSpecified = true;
       *TemplateKWLoc = ConsumeToken();
     } else {
@@ -2644,7 +2660,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // unqualified-id:
   //   'unqualid' '(' reflection ')'
   if (Tok.is(tok::kw_unqualid))
-    return ParseCXXReflectedId(Result);
+    return ParseCXXReflectedId(SS,
+                     TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Result);
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {

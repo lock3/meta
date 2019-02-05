@@ -253,6 +253,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Attributed:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
+    case Type::CXXDependentVariadicReifier:
       CanPrefixQualifiers = false;
       break;
   }
@@ -1365,6 +1366,17 @@ void TypePrinter::printPackExpansionBefore(const PackExpansionType *T,
 void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
                                           raw_ostream &OS) {
   printAfter(T->getPattern(), OS);
+  OS << "...";
+}
+
+void TypePrinter::printCXXDependentVariadicReifierBefore(
+  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
+  printBefore(T->getRange()->getType(), OS);
+}
+
+void TypePrinter::printCXXDependentVariadicReifierAfter(
+  const CXXDependentVariadicReifierType *T, raw_ostream &OS) {
+  printAfter(T->getRange()->getType(), OS);
   OS << "...";
 }
 

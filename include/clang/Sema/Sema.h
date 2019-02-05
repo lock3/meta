@@ -821,7 +821,7 @@ public:
   /// It would be best to refactor this.
   SmallVector<Decl*,2> WeakTopLevelDecl;
 
-  IdentifierResolver IdResolver;
+  IdentifierResolver *IdResolver;
 
   /// Translation Unit Scope - useful to Objective-C actions that need
   /// to lookup file scope declarations in the "ordinary" C decl namespace.
@@ -4186,6 +4186,15 @@ public:
       std::unique_ptr<CorrectionCandidateCallback> CCC = nullptr,
       bool IsInlineAsmIdentifier = false, Token *KeywordReplacement = nullptr);
 
+  ExprResult ActOnIdExpression(
+      Scope *S, CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+      DeclarationNameInfo NameInfo,
+      const TemplateArgumentListInfo *TemplateArgs,
+      UnqualifiedIdKind IdKind, TemplateIdAnnotation *TemplateId,
+      bool HasTrailingLParen, bool IsAddressOfOperand,
+      std::unique_ptr<CorrectionCandidateCallback> CCC = nullptr,
+      bool IsInlineAsmIdentifier = false, Token *KeywordReplacement = nullptr);
+
   void DecomposeUnqualifiedId(const UnqualifiedId &Id,
                               TemplateArgumentListInfo &Buffer,
                               DeclarationNameInfo &NameInfo,
@@ -4204,6 +4213,7 @@ public:
   ExprResult ActOnDependentIdExpression(const CXXScopeSpec &SS,
                                         SourceLocation TemplateKWLoc,
                                         const DeclarationNameInfo &NameInfo,
+                                        bool HasTrailingLParen,
                                         bool isAddressOfOperand,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
@@ -5828,10 +5838,24 @@ public:
                                     Expr *InitList,
                                     SourceLocation EllipsisLoc);
 
+  MemInitResult ActOnMemInitializer(Decl *ConstructorD,
+                                    Scope *S,
+                                    CXXScopeSpec &SS,
+                                    IdentifierInfo *MemberOrBase,
+                                    QualType BaseTy,
+                                    ParsedType TemplateTypeTy,
+                                    const DeclSpec &DS,
+                                    SourceLocation IdLoc,
+                                    SourceLocation LParenLoc,
+                                    ArrayRef<Expr *> Args,
+                                    SourceLocation RParenLoc,
+                                    SourceLocation EllipsisLoc);
+
   MemInitResult BuildMemInitializer(Decl *ConstructorD,
                                     Scope *S,
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
+                                    QualType ReifierType,
                                     ParsedType TemplateTypeTy,
                                     const DeclSpec &DS,
                                     SourceLocation IdLoc,
@@ -5998,7 +6022,8 @@ public:
                                        SourceRange SpecifierRange,
                                        bool Virtual, AccessSpecifier Access,
                                        TypeSourceInfo *TInfo,
-                                       SourceLocation EllipsisLoc);
+                                       SourceLocation EllipsisLoc,
+                                       bool VariadicReifier = false);
 
   BaseResult ActOnBaseSpecifier(Decl *classdecl,
                                 SourceRange SpecifierRange,
@@ -6006,7 +6031,8 @@ public:
                                 bool Virtual, AccessSpecifier Access,
                                 ParsedType basetype,
                                 SourceLocation BaseLoc,
-                                SourceLocation EllipsisLoc);
+                                SourceLocation EllipsisLoc,
+                                bool VariadicReifier = false);
 
   bool AttachBaseSpecifiers(CXXRecordDecl *Class,
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
@@ -8733,18 +8759,57 @@ public:
   ExprResult ActOnCXXIdExprExpr(SourceLocation KwLoc,
                                 Expr *Refl,
                                 SourceLocation LParenLoc,
-                                SourceLocation RParenLoc);
+                                SourceLocation RParenLoc,
+                                SourceLocation EllipsisLoc = SourceLocation());
+
+  bool
+  ActOnVariadicReifier(SmallVectorImpl<Expr *> &Expressions,
+                       SourceLocation KWLoc,
+                       IdentifierInfo *KW,
+                       Expr *Range,
+                       SourceLocation LParenLoc,
+                       SourceLocation EllipsisLoc,
+                       SourceLocation RParenLoc);
+  bool
+  ActOnVariadicReifier(SmallVectorImpl<QualType> &Types,
+                       SourceLocation KWLoc,
+                       Expr *Range,
+                       SourceLocation LParenLoc,
+                       SourceLocation EllipsisLoc,
+                       SourceLocation RParenLoc);
 
   ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
                                  Expr *Refl,
                                  SourceLocation LParenLoc,
-                                 SourceLocation RParenLoc);
+                                 SourceLocation RParenLoc,
+                                 SourceLocation EllipsisLoc = SourceLocation());
+
+  ExprResult ActOnCXXDependentVariadicReifierExpr(Expr *Range,
+                                                  SourceLocation KWLoc,
+                                                  IdentifierInfo *KW,
+                                                  SourceLocation LParenLoc,
+                                                  SourceLocation EllipsisLoc,
+                                                  SourceLocation RParenLoc);
 
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,
                                            SourceLocation EndLoc);
-  bool BuildDeclnameId(SmallVectorImpl<Expr *> &Parts, UnqualifiedId &Result,
-                       SourceLocation KWLoc, SourceLocation RParenLoc);
+
+  bool BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                              const DeclarationName &Name,
+                              SourceLocation TemplateKWLoc,
+                              TemplateNameKind &TNK,
+                              TemplateTy &Template,
+                              UnqualifiedId &Result);
+
+  bool CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
+                          const DeclarationName &Name,
+                          SourceLocation TemplateKWLoc, TemplateNameKind TNK,
+                          TemplateTy Template, SourceLocation LAngleLoc,
+                          ASTTemplateArgsPtr TemplateArgs,
+                          SourceLocation RAngleLoc,
+                          SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
+                          UnqualifiedId &Result, SourceLocation EndLoc);
 
   ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
   ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
@@ -8773,6 +8838,83 @@ public:
 
   ExprResult BuildCXXConcatenateExpr(SmallVectorImpl<Expr *>& Parts,
                                      SourceLocation KWLoc);
+
+private:
+  /// A vector of parse scopes used by tree transform to perform
+  /// delayed lookup.
+  SmallVector<Scope *, 4> *CurrentTTParseScopeStack = nullptr;
+
+public:
+  /// A class for managing fake parse scopes during tree transform
+  /// evaluation in an RAII fashion.
+  class FakeParseScope {
+    Sema &SemaRef;
+
+    DiagnosticsEngine &getDiagnostics();
+
+    void PushNewScope(unsigned ScopeFlags) {
+      if (SemaRef.CurrentTTParseScopeStack == nullptr)
+        return;
+
+      Scope *LastScope = SemaRef.getMostRecentTTParseScope();
+      Scope *NewScope = new Scope(LastScope, ScopeFlags, getDiagnostics());
+      SemaRef.CurrentTTParseScopeStack->push_back(NewScope);
+    }
+
+    void PopOldScope() {
+      if (SemaRef.CurrentTTParseScopeStack == nullptr)
+        return;
+
+      delete SemaRef.CurrentTTParseScopeStack->pop_back_val();
+    }
+
+  public:
+    FakeParseScope(Sema &SemaRef, unsigned ScopeFlags)
+      : SemaRef(SemaRef) {
+      PushNewScope(ScopeFlags);
+    }
+
+    ~FakeParseScope() {
+      PopOldScope();
+    }
+  };
+
+  /// Returns a read only view of the current fake parse scopes
+  /// for use by tree transform.
+  const SmallVector<Scope *, 4> getTTParseScopes() const {
+    if (CurrentTTParseScopeStack == nullptr)
+      return { };
+
+    return *CurrentTTParseScopeStack;
+  }
+
+  /// Returns the most recent fake parse scope or nullptr if there
+  /// isn't one for use by tree transform.
+  Scope *getMostRecentTTParseScope() const {
+    if (CurrentTTParseScopeStack == nullptr)
+      return nullptr;
+
+    if (CurrentTTParseScopeStack->empty())
+      return nullptr;
+
+    return CurrentTTParseScopeStack->back();
+  }
+
+  class FakeParseScopeStack {
+    Sema &SemaRef;
+    SmallVector<Scope *, 4> *PreviousParseScopeStack;
+
+  public:
+    FakeParseScopeStack(Sema &SemaRef) : SemaRef(SemaRef) {
+      PreviousParseScopeStack = SemaRef.CurrentTTParseScopeStack;
+      SemaRef.CurrentTTParseScopeStack = new SmallVector<Scope *, 4>();
+    }
+
+    ~FakeParseScopeStack() {
+      delete SemaRef.CurrentTTParseScopeStack;
+      SemaRef.CurrentTTParseScopeStack = PreviousParseScopeStack;
+    }
+  };
 
   /// RAII object used to temporarily disable semantic diagnostics
   /// for sematics valid only in reflections.

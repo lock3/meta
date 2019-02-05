@@ -345,6 +345,7 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
+
   return Actions.ActOnCXXValueOfExpr(Loc, Expr.get(), LPLoc, RPLoc);
 }
 
@@ -355,7 +356,9 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.
-bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
+bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
+                                 SourceLocation TemplateKWLoc,
+                                 UnqualifiedId &Result) {
   assert(Tok.is(tok::kw_unqualid) && "expected 'unqualid'");
   SourceLocation KWLoc = ConsumeToken();
 
@@ -377,8 +380,42 @@ bool Parser::ParseCXXReflectedId(UnqualifiedId& Result) {
   if (T.consumeClose())
     return true;
 
-  return Actions.BuildDeclnameId(Parts, Result, KWLoc,
-                                 T.getCloseLocation());
+  DeclarationNameInfo NameInfo = Actions.BuildReflectedIdName(
+                                            KWLoc, Parts, T.getCloseLocation());
+
+  TemplateNameKind TNK;
+  TemplateTy Template;
+  if (Actions.BuildInitialDeclnameId(KWLoc, SS, NameInfo.getName(),
+                                     TemplateKWLoc, TNK, Template, Result))
+    return true;
+
+  // FIXME: This should also workn if the built decl name is non dependent.
+  //
+  // Prioritize template parsing, represents whether we should treat the next
+  // '<' token as introducing a template argument list, or a less than operator.
+  bool PrioritizeTemplateParsing = TNK || !TemplateKWLoc.isInvalid();
+  if (Tok.is(tok::less) && PrioritizeTemplateParsing) {
+    SourceLocation LAngleLoc;
+    TemplateArgList TemplateArgs;
+    SourceLocation RAngleLoc;
+
+    if (ParseTemplateIdAfterTemplateName(/*ConsumeLastToken=*/true,
+                                         LAngleLoc, TemplateArgs, RAngleLoc))
+      return true;
+
+    ASTTemplateArgsPtr TemplateArgsPtr(TemplateArgs);
+    return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(),
+                                      TemplateKWLoc, TNK, Template, LAngleLoc,
+                                      TemplateArgsPtr, RAngleLoc, TemplateIds,
+                                      Result, RAngleLoc);
+  }
+
+  return Actions.CompleteDeclnameId(KWLoc, SS, NameInfo.getName(), TemplateKWLoc,
+                                    TNK, Template,
+                                    /*LAngleLoc=*/SourceLocation(),
+                                    /*TemplateArgsPtr=*/ASTTemplateArgsPtr(),
+                                    /*RAngleLoc=*/SourceLocation(),
+                                    TemplateIds, Result, T.getCloseLocation());
 }
 
 /// Parse a reflected-value-expression.
@@ -483,4 +520,92 @@ ExprResult Parser::ParseCXXConcatenateExpression() {
   return Actions.ActOnCXXConcatenateExpr(Parts, KeyLoc,
                                          Parens.getOpenLocation(),
                                          Parens.getCloseLocation());
+}
+
+/// Returns true if reflection is enabled and the
+/// current expression appears to be a variadic reifier.
+bool Parser::isVariadicReifier() const {
+  if (tok::isAnnotation(Tok.getKind()) || Tok.is(tok::raw_identifier))
+     return false;
+  IdentifierInfo *TokII = Tok.getIdentifierInfo();
+  // If Reflection is enabled, the current token is a
+  // a reifier keyword, followed by an open parentheses,
+  // followed by an ellipsis, this is a variadic reifier.
+  return getLangOpts().Reflection && TokII &&
+    TokII->isReifierKeyword(getLangOpts())
+    && PP.LookAhead(0).getKind() == tok::l_paren
+    && PP.LookAhead(1).getKind() == tok::ellipsis;
+}
+
+bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs) {
+  IdentifierInfo *KW = Tok.getIdentifierInfo();
+  SourceLocation KWLoc = ConsumeToken();
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return false;
+
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  // FIXME: differentiate this return from an error, as
+  // returning here means we have a non-variadic reifier.
+  if (!EllipsisLoc.isValid())
+    return false;
+
+  ExprResult ReflRange = ParseConstantExpression();
+
+  if (ReflRange.isInvalid()) {
+    // TODO: Diag << KWLoc, err_invalid_reflection in parse
+    return true;
+  }
+
+  // ReflRange has to be a range, so therefore it must be a declref
+  DeclRefExpr *ReflRangeDeclRef =
+    dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
+  // TODO: output error explaining this must be a declaration
+  if (!ReflRangeDeclRef)
+    return true;
+
+  // TODO: only mark this in a non-dependent context?
+  ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
+
+  if (ReflRange.isInvalid()) {
+    Parens.skipToEnd();
+    return true;
+  }
+
+  if (Parens.consumeClose())
+    return true;
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();;
+  return Actions.ActOnVariadicReifier(Exprs, KWLoc, KW, ReflRange.get(),
+                                      LPLoc, EllipsisLoc, RPLoc);
+}
+
+bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types) {
+  SourceLocation KWLoc = ConsumeToken();
+  // Parse any number of arguments in parens.
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return false;
+
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  ExprResult ReflRange = ParseConstantExpression();
+
+  if (ReflRange.isInvalid()) {
+    Parens.skipToEnd();
+    return true;
+  }
+
+  if (Parens.consumeClose())
+    return true;
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnVariadicReifier(Types, KWLoc, ReflRange.get(),
+                                      LPLoc, EllipsisLoc, RPLoc);
 }

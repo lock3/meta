@@ -426,6 +426,11 @@ namespace  {
       if (!T->isSugared())
         dumpTypeAsChild(T->getPattern());
     }
+
+    void VisitCXXDependentVariadicReifierType
+    (const CXXDependentVariadicReifierType *T) {
+      dumpTypeAsChild(T->getRange()->getType());
+    }
     // FIXME: ElaboratedType, DependentNameType,
     // DependentTemplateSpecializationType, ObjCObjectType
 
@@ -571,11 +576,15 @@ namespace  {
     void
     VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *Node);
     void VisitCXXReflectExpr(const CXXReflectExpr *Node);
-    void VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *Node);
-    void VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *Node);
+    void VisitCXXReflectionReadQueryExpr(
+        const CXXReflectionReadQueryExpr *Node);
+    void VisitCXXReflectionWriteQueryExpr(
+        const CXXReflectionWriteQueryExpr *Node);
     void VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *Node);
     void VisitCXXIdExprExpr(const CXXIdExprExpr *Node);
     void VisitCXXValueOfExpr(const CXXValueOfExpr *Node);
+    void VisitCXXDependentVariadicReifierExpr(
+        const CXXDependentVariadicReifierExpr *Node);
     void VisitCXXFragmentExpr(const CXXFragmentExpr *Node);
 
     // ObjC
@@ -2569,8 +2578,12 @@ void ASTDumper::VisitCXXValueOfExpr(const CXXValueOfExpr *Node) {
   VisitExpr(Node);
 }
 
-void 
-ASTDumper::VisitCXXFragmentExpr(const CXXFragmentExpr *Node) {
+void ASTDumper::VisitCXXDependentVariadicReifierExpr(
+  const CXXDependentVariadicReifierExpr *Node) {
+  VisitExpr(Node);
+}
+
+void ASTDumper::VisitCXXFragmentExpr(const CXXFragmentExpr *Node) {
   VisitExpr(Node);
   dumpDecl(Node->getFragment());
 }

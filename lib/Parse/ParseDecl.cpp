@@ -2766,7 +2766,20 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
     return;
 
   SourceLocation EllipsisLoc;
-  ExprResult ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
+
+  ExprResult ArgExpr;
+  ArgsVector ArgExprs;
+
+  if (isVariadicReifier()) {
+    llvm::SmallVector<Expr*, 4> ExpandedAlignments;
+    if(ParseVariadicReifier(ExpandedAlignments)) {
+      T.skipToEnd();
+      return;
+    }
+
+    ArgExprs.append(ExpandedAlignments.begin(), ExpandedAlignments.end());
+  } else
+    ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
   if (ArgExpr.isInvalid()) {
     T.skipToEnd();
     return;
@@ -2776,7 +2789,6 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
   if (EndLoc)
     *EndLoc = T.getCloseLocation();
 
-  ArgsVector ArgExprs;
   ArgExprs.push_back(ArgExpr.get());
   Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
                ParsedAttr::AS_Keyword, EllipsisLoc);

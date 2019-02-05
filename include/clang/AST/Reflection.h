@@ -18,6 +18,7 @@
 #include "clang/AST/APValue.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TemplateName.h"
+#include "clang/AST/ASTContext.h"
 
 namespace clang {
 
@@ -337,6 +338,7 @@ enum ReflectionQuery {
   RQ_get_parent,
   RQ_get_type,
   RQ_get_this_ref_type,
+  RQ_get_definition,
 
   // Traversal
   RQ_get_begin,
@@ -617,7 +619,6 @@ struct Reflection {
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
-
 } // namespace clang
 
 #endif

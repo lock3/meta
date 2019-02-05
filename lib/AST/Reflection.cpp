@@ -1461,6 +1461,14 @@ static bool getThisRefType(const Reflection &R, APValue &Result) {
   return ErrorUnimplemented(R);
 }
 
+static bool getDefinition(const Reflection &R, APValue &Result) {
+  if (const TypeDecl *TD = getAsTypeDecl(R)) {
+    if (const RecordDecl *RD = dyn_cast<RecordDecl>(TD))
+      return makeReflection(TD, Result);
+  }
+  return Error(R);
+}
+
 /// True if D is reflectable. Some declarations are not reflected (e.g.,
 /// access specifiers).
 static bool isReflectableDecl(const Decl *D) {
@@ -1527,6 +1535,8 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getType(*this, Result);
   case RQ_get_this_ref_type:
     return getThisRefType(*this, Result);
+  case RQ_get_definition:
+    return getDefinition(*this, Result);
 
   // Traversal
   case RQ_get_begin:

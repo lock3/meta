@@ -25,7 +25,7 @@ consteval bool is_member_function(info x);
 consteval bool is_class_type(info x);
 consteval bool is_enum_type(info x);
 
-consteval info get_type(info x);
+consteval info type_of(info x);
 
 namespace detail {
 
@@ -129,6 +129,7 @@ enum reflection_query {
   query_get_parent,
   query_get_type,
   query_get_this_ref_type,
+  query_get_definition,
 
   // Traversal
   query_get_begin,
@@ -563,7 +564,7 @@ consteval bool is_function_type(info x) {
 
 // True if x reflects an entity with function type.
 consteval bool has_function_type(info x) {
-  return is_function_type(get_type(x));
+  return is_function_type(type_of(x));
 }
 
 // True if x reflects a class type.
@@ -573,7 +574,7 @@ consteval bool is_class_type(info x) {
 
 // True if x reflects an entity with class type.
 consteval bool has_class_type(info x) {
-  return is_class_type(get_type(x));
+  return is_class_type(type_of(x));
 }
 
 // True if x reflects a union type.
@@ -583,7 +584,7 @@ consteval bool is_union_type(info x) {
 
 // True if x reflects an entity with union type.
 consteval bool has_union_type(info x) {
-  return is_union_type(get_type(x));
+  return is_union_type(type_of(x));
 }
 
 // True if x reflects an enum type.
@@ -593,7 +594,7 @@ consteval bool is_enum_type(info x) {
 
 // True if x reflects an entity with enum type.
 consteval bool has_enum_type(info x) {
-  return is_enum_type(get_type(x));
+  return is_enum_type(type_of(x));
 }
 
 // True if x reflects a scoped enum type.
@@ -603,7 +604,7 @@ consteval bool is_scoped_enum_type(info x) {
 
 // True if x reflects an entity with scoped enum type.
 consteval bool has_scoped_enum_type(info x) {
-  return is_scoped_enum_type(get_type(x));
+  return is_scoped_enum_type(type_of(x));
 }
 
 // True if x reflects an entity with void type.
@@ -613,7 +614,7 @@ consteval bool is_void_type(info x) {
 
 // True if x reflects an entity with void type.
 consteval bool has_void_type(info x) {
-  return is_void_type(get_type(x));
+  return is_void_type(type_of(x));
 }
 
 // True if x reflects a null pointer type.
@@ -623,7 +624,7 @@ consteval bool is_null_pointer_type(info x) {
 
 // True if x reflects an entity with null pointer type.
 consteval bool has_null_pointer_type(info x) {
-  return is_null_pointer_type(get_type(x));
+  return is_null_pointer_type(type_of(x));
 }
 
 // True if x reflects an integral type.
@@ -633,7 +634,7 @@ consteval bool is_integral_type(info x) {
 
 // True if x reflects an entity with integral type.
 consteval bool has_integeral_type(info x) {
-  return is_integral_type(get_type(x));
+  return is_integral_type(type_of(x));
 }
 
 // True if x reflects a floating point type.
@@ -643,7 +644,7 @@ consteval bool is_floating_point_type(info x) {
 
 // True if x reflects an entity with floating point type.
 consteval bool has_floating_point_type(info x) {
-  return is_floating_point_type(get_type(x));
+  return is_floating_point_type(type_of(x));
 }
 
 // True if x reflects an array type.
@@ -653,7 +654,7 @@ consteval bool is_array_type(info x) {
 
 // True if x reflects an entity with array type.
 consteval bool has_array_type(info x) {
-  return is_array_type(get_type(x));
+  return is_array_type(type_of(x));
 }
 
 // True if x reflects a pointer type.
@@ -663,7 +664,7 @@ consteval bool is_pointer_type(info x) {
 
 // True if x reflects an entity with pointer type.
 consteval bool has_pointer_type(info x) {
-  return is_pointer_type(get_type(x));
+  return is_pointer_type(type_of(x));
 }
 
 // True if x reflects a lvalue reference type.
@@ -673,7 +674,7 @@ consteval bool is_lvalue_reference_type(info x) {
 
 // True if x reflects an entity with lvalue reference type.
 consteval bool has_lvalue_reference_type(info x) {
-  return is_lvalue_reference_type(get_type(x));
+  return is_lvalue_reference_type(type_of(x));
 }
 
 // True if x reflets a rvalue reference type.
@@ -683,7 +684,7 @@ consteval bool is_rvalue_reference_type(info x) {
 
 // True if x reflets an entity with rvalue reference type.
 consteval bool has_rvalue_reference_type(info x) {
-  return is_rvalue_reference_type(get_type(x));
+  return is_rvalue_reference_type(type_of(x));
 }
 
 // True if x reflects a member object pointer type.
@@ -693,7 +694,7 @@ consteval bool is_member_object_pointer_type(info x) {
 
 // True if x reflects an entity with member object pointer type.
 consteval bool has_member_object_pointer_type(info x) {
-  return is_member_object_pointer_type(get_type(x));
+  return is_member_object_pointer_type(type_of(x));
 }
 
 // True if x reflects a member function pointer type.
@@ -703,7 +704,7 @@ consteval bool is_member_function_pointer_type(info x) {
 
 // True if x reflects an entity with member function pointer type.
 consteval bool has_member_function_pointer_type(info x) {
-  return is_member_function_pointer_type(get_type(x));
+  return is_member_function_pointer_type(type_of(x));
 }
 
 // True if x reflects a closure type.
@@ -713,7 +714,7 @@ consteval bool is_closure_type(info x) {
 
 // True if x reflects an entity with closure type.
 consteval bool has_closure_type(info x) {
-  return is_closure_type(get_type(x));
+  return is_closure_type(type_of(x));
 }
 
 // True if x reflects a namespace.
@@ -870,18 +871,23 @@ consteval bool is_value(info x) {
 // Associated reflection queries
 
 // Returns the reflected entity.
-consteval info get_entity(info x) {
+consteval info entity_of(info x) {
   return __reflect(detail::query_get_entity, x);
 }
 
 // Returns the lexical context of the declaration.
-consteval info get_parent(info x) {
+consteval info parent_of(info x) {
   return __reflect(detail::query_get_parent, x);
 }
 
 // Returns the type of the entity.
-consteval info get_type(info x) {
+consteval info type_of(info x) {
   return __reflect(detail::query_get_type, x);
+}
+
+// Returns the definition of the reflected user defined type.
+consteval info definition_of(info x) {
+  return __reflect(detail::query_get_definition, x);
 }
 
 // -------------------------------------------------------------------------- //
@@ -959,7 +965,7 @@ public:
 
 // Returns the first sub-object of x. Objects behave
 // as forward iterators.
-consteval iterator begin(info x) {
+constexpr iterator begin(info x) {
   return __reflect(detail::query_get_begin, x);
 }
 
@@ -967,12 +973,12 @@ consteval iterator begin(info x) {
 // the end of a sequence.
 //
 // FIXME: This seems to mean that we don't actually need __reflect_end.
-consteval iterator end(info x) {
+constexpr iterator end(info x) {
   return iterator();
 }
 
-// Overload distance so that it's consteval.
-consteval std::ptrdiff_t distance(iterator first, iterator last) {
+// Overload distance so that it's constexpr.
+constexpr std::ptrdiff_t distance(iterator first, iterator last) {
   std::ptrdiff_t n = 0;
   for (; first != last; ++first)
     ++n;
@@ -998,11 +1004,11 @@ consteval bool is_class_member(info x) {
 // Placeholder for constexpr string.
 using string_type = const char*;
 
-consteval string_type get_name(info x) {
+consteval string_type name_of(info x) {
   return __reflect(detail::query_get_name, x);
 }
 
-consteval string_type get_display_name(info x) {
+consteval string_type display_name_of(info x) {
   return __reflect(detail::query_get_display_name, x);
 }
 

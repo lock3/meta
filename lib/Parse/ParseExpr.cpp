@@ -1373,6 +1373,15 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     LLVM_FALLTHROUGH;
   }
 
+  // [Meta] id-expression: template unqualid ( reflection )
+  case tok::kw_template: {
+    if (Tok.is(tok::kw_template) && !NextToken().is(tok::kw_unqualid)) {
+      NotCastExpr = true;
+      return ExprError();
+    }
+
+    LLVM_FALLTHROUGH;
+  }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
   case tok::kw_unqualid: // [Meta] id-expression: unqualid ( reflection )
     Res = ParseCXXIdExpression(isAddressOfOperand);
@@ -2911,20 +2920,41 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       return true;
     }
 
-    ExprResult Expr;
+    ExprResult ArgExpr;
+    bool VariadicReifier = isVariadicReifier();
+
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-      Expr = ParseBraceInitializer();
+      ArgExpr = ParseBraceInitializer();
+    } else if (VariadicReifier) {
+      llvm::SmallVector<Expr *, 4> ExpandedExprs;
+
+      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+      SawError = ParseVariadicReifier(ExpandedExprs);
+
+      // We need to insert several fake commas to get around error checking.
+      // We only need size() - 1, since there is already a comma in front of
+      // the reifier parameter.
+      if (!ExpandedExprs.empty())
+        for (std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+          CommaLocs.emplace_back();
+
+      if (SawError)
+        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
+
+      // Add our expanded expressions into the parameter list.
+      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else
-      Expr = ParseAssignmentExpression();
+      ArgExpr = ParseAssignmentExpression();
 
     if (Tok.is(tok::ellipsis))
-      Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());
-    if (Expr.isInvalid()) {
+      ArgExpr = Actions.ActOnPackExpansion(ArgExpr.get(), ConsumeToken());
+    if (ArgExpr.isInvalid() && !VariadicReifier) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else {
-      Exprs.push_back(Expr.get());
+    } else if (!VariadicReifier) {
+      Exprs.push_back(ArgExpr.get());
     }
 
     if (Tok.isNot(tok::comma))
@@ -2943,6 +2973,7 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       if (Expr.isUsable()) E = Expr.get();
     }
   }
+
   return SawError;
 }
 

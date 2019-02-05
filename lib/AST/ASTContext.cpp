@@ -3164,6 +3164,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
+  case Type::CXXDependentVariadicReifier:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -4391,6 +4392,17 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
       PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
+  return QualType(T, 0);
+}
+
+QualType
+ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
+                                               SourceLocation EllipsisLoc,
+                                               SourceLocation RParenLoc) {
+  CXXDependentVariadicReifierType *T =
+    new (*this, TypeAlignment)
+    CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
+  Types.push_back(T);
   return QualType(T, 0);
 }
 

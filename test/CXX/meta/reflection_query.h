@@ -101,6 +101,7 @@ enum reflection_query {
   query_get_parent,
   query_get_type,
   query_get_this_ref_type,
+  query_get_definition,
 
   // Traversal
   query_get_begin,

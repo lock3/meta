@@ -518,6 +518,12 @@ void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   Code = TYPE_PACK_EXPANSION;
 }
 
+void ASTTypeWriter::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType *T) {
+  Record.AddTypeRef(T->getRange()->getType());
+  Code = TYPE_CXX_DEPENDENT_VARIADIC_REIFIER;
+}
+
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
   Record.AddTypeRef(T->getInnerType());
   Code = TYPE_PAREN;
@@ -842,6 +848,11 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+}
+
+void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
 }
 
@@ -4885,8 +4896,8 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
     // Sort the identifiers to visit based on their name.
     llvm::sort(IIs, llvm::less_ptr<IdentifierInfo>());
     for (const IdentifierInfo *II : IIs) {
-      for (IdentifierResolver::iterator D = SemaRef.IdResolver.begin(II),
-                                     DEnd = SemaRef.IdResolver.end();
+      for (IdentifierResolver::iterator D = SemaRef.IdResolver->begin(II),
+                                     DEnd = SemaRef.IdResolver->end();
            D != DEnd; ++D) {
         GetDeclRef(*D);
       }
@@ -5020,7 +5031,7 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
   WriteSelectors(SemaRef);
   WriteReferencedSelectorsPool(SemaRef);
   WriteLateParsedTemplates(SemaRef);
-  WriteIdentifierTable(PP, SemaRef.IdResolver, isModule);
+  WriteIdentifierTable(PP, *SemaRef.IdResolver, isModule);
   WriteFPPragmaOptions(SemaRef.getFPOptions());
   WriteOpenCLExtensions(SemaRef);
   WriteOpenCLExtensionTypes(SemaRef);

@@ -5110,23 +5110,195 @@ public:
   }
 };
 
+class CXXDependentVariadicReifierExpr : public Expr {
+
+  Expr *Range;
+
+  SourceLocation KeywordLoc;
+  IdentifierInfo *Keyword;
+
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+  SourceLocation EllipsisLoc;
+public:
+  CXXDependentVariadicReifierExpr(QualType DependentTy,
+                                  Expr *Range,
+                                  SourceLocation KeywordLoc,
+                                  IdentifierInfo *Keyword,
+                                  SourceLocation LParenLoc,
+                                  SourceLocation RParenLoc,
+                                  SourceLocation EllipsisLoc)
+    : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
+           OK_Ordinary, Range->isTypeDependent(), Range->isValueDependent(),
+           Range->isInstantiationDependent(),
+           Range->containsUnexpandedParameterPack()),
+      Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {}
+
+  CXXDependentVariadicReifierExpr(EmptyShell Empty)
+    : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+
+  tok::TokenKind getKeywordId() const { return Keyword->getTokenID(); }
+
+  Expr *getRange() const { return Range; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
+  }
+};
+
+/// Represents a reflected id-expression of the form '(. args .)'.
+/// Some of the arguments in args are dependent.
+class CXXReflectedIdExpr final
+    : public Expr,
+      private llvm::TrailingObjects<
+          CXXReflectedIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
+  friend TrailingObjects;
+
+  DeclarationNameInfo NameInfo;
+
+  const CXXScopeSpec SS;
+  bool TrailingLParen;
+  bool AddressOfOperand;
+
+  /// Whether the name includes info for explicit template
+  /// keyword and arguments.
+  bool HasTemplateKWAndArgsInfo = false;
+
+  size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
+    return HasTemplateKWAndArgsInfo ? 1 : 0;
+  }
+
+  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
+                     const CXXScopeSpec &SS,
+                     SourceLocation TemplateKWLoc,
+                     bool TrailingLParen, bool AddressOfOperand,
+                     const TemplateArgumentListInfo *TemplateArgs);
+
+  CXXReflectedIdExpr(EmptyShell Empty)
+    : Expr(CXXReflectedIdExprClass, Empty) { }
+
+public:
+  static CXXReflectedIdExpr *Create(
+      const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+      const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
+      bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
+                                         EmptyShell Empty);
+
+  /// Returns the evaluated expression.
+  DeclarationNameInfo getNameInfo() const { return NameInfo; }
+
+  CXXScopeSpec getScopeSpecifier() const { return SS; }
+
+  bool HasTrailingLParen() const { return TrailingLParen; }
+
+  bool IsAddressOfOperand() const { return AddressOfOperand; }
+
+  ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() {
+    if (!HasTemplateKWAndArgsInfo)
+      return nullptr;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>();
+  }
+
+  TemplateArgumentLoc *getTrailingTemplateArgumentLoc() {
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the location of the left angle bracket starting the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getLAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+  }
+
+  /// Retrieve the location of the right angle bracket ending the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getRAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+  }
+
+  /// Determines whether this member expression actually had a C++
+  /// template argument list explicitly specified, e.g., x.f<int>.
+  bool hasExplicitTemplateArgs() const { return getLAngleLoc().isValid(); }
+
+  /// Retrieve the template arguments provided as part of this
+  /// template-id.
+  const TemplateArgumentLoc *getTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return nullptr;
+
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the number of template arguments provided as part of this
+  /// template-id.
+  unsigned getNumTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return 0;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
+  }
+
+  SourceRange getSourceRange() const {
+    return NameInfo.getCXXReflectedIdNameRange();
+  }
+
+  SourceLocation getBeginLoc() const { return getSourceRange().getBegin(); }
+  SourceLocation getEndLoc() const { return getSourceRange().getEnd(); }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectedIdExprClass;
+  }
+};
+
 class CXXValueOfExpr : public Expr {
   Expr *Reflection;
 
   SourceLocation KeywordLoc;
   SourceLocation LParenLoc;
+  SourceLocation EllipsisLoc;
   SourceLocation RParenLoc;
 public:
   CXXValueOfExpr(QualType T, Expr *Reflection,
                  SourceLocation KeywordLoc,
-                 SourceLocation LParenLoc, SourceLocation RParenLoc)
+                 SourceLocation LParenLoc,
+                 SourceLocation RParenLoc,
+                 SourceLocation EllipsisLoc = SourceLocation())
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
            Reflection->isValueDependent() || Reflection->isTypeDependent(),
            Reflection->isValueDependent(),
            Reflection->isInstantiationDependent(),
            Reflection->containsUnexpandedParameterPack()),
       Reflection(Reflection),
-      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
+      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
 
   CXXValueOfExpr(EmptyShell Empty)
     : Expr(CXXValueOfExprClass, Empty) {}

@@ -5393,7 +5393,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
   QualType DestType = Entity.getType();
 
   if (DestType->isDependentType() ||
-      Expr::hasAnyTypeDependentArguments(Args)) {
+      Expr::hasAnyTypeDependentArguments(Args) ||
+      Expr::hasDependentVariadicReifierArguments(Args)) {
     SequenceKind = DependentSequence;
     return;
   }

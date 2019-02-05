@@ -756,6 +756,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
+  case Type::CXXDependentVariadicReifier:
+    if (!IsStructurallyEquivalent
+        (Context,
+         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType(), 
+         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType()))
+      return false;
+    break;
+
   case Type::ObjCInterface: {
     const auto *Iface1 = cast<ObjCInterfaceType>(T1);
     const auto *Iface2 = cast<ObjCInterfaceType>(T2);

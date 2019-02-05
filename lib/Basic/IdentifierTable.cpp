@@ -168,7 +168,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   if (LangOpts.ConceptsTS && (Flags & KEYCONCEPTS)) return KS_Enabled;
   if (LangOpts.CoroutinesTS && (Flags & KEYCOROUTINES)) return KS_Enabled;
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
-  if (LangOpts.Reflection && (Flags & KEYREFLECT)) return KS_Enabled;
+  if (LangOpts.Reflection && (Flags & KEYREFLECT)) return KS_Extension;
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
   return KS_Disabled;
 }
@@ -287,6 +287,47 @@ bool IdentifierInfo::isCPlusPlusKeyword(const LangOptions &LangOpts) const {
   LangOptsNoCPP.CPlusPlus11 = false;
   LangOptsNoCPP.CPlusPlus2a = false;
   return !isKeyword(LangOptsNoCPP);
+}
+
+/// Returns true if the identifier represents a C++ Reflection keyword
+bool IdentifierInfo::isReflectionKeyword(const LangOptions &LangOpts) const {
+  if (!LangOpts.Reflection || !isKeyword(LangOpts))
+    return false;
+  // This is a Reflection keyword if this identifier
+  // is not a keyword when checked
+  // using LangOptions without Reflection support.
+  LangOptions LangOptsNoRefl = LangOpts;
+  LangOptsNoRefl.Reflection = false;
+
+  // typename and namespace serve non-Reflection purposes and thus
+  // will still be valid keywords if Reflection is not available.
+  bool MultipurposeKW = (getTokenID() == tok::kw_typename) ||
+    (getTokenID() == tok::kw_namespace);
+  // If this is not a keyword without Reflection enabled
+  // (except for multipurpose keywords), then this is a
+  // a Reflection keyword.
+  return !isKeyword(LangOptsNoRefl) || MultipurposeKW;
+}
+
+bool IdentifierInfo::isReifierKeyword(const LangOptions &LangOpts) const {
+  if (!isReflectionKeyword(LangOpts))
+    return false;
+
+  using namespace tok;
+  TokenKind ID = getTokenID();
+
+  // Check each reifier keyword manually.
+  switch(ID) {
+  case kw_valueof:
+  case kw_unqualid:
+  case kw_typename:
+  case kw_idexpr:
+  case kw_templarg:
+  case kw_namespace:
+    return true;
+  default:
+    return false;
+  }
 }
 
 tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {

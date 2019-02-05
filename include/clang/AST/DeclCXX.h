@@ -218,6 +218,12 @@ class CXXBaseSpecifier {
   /// to inherit the named class's constructors.
   unsigned InheritConstructors : 1;
 
+  /// Whether this is a (dependent) variadic typename reifier.
+  unsigned IsVariadicReifier : 1;
+
+  /// The constant range in a (dependent) variadic reifier.
+  Expr *ConstRange;
+
   /// The type of the base class.
   ///
   /// This will be a class or struct (or a typedef of such). The source code
@@ -227,9 +233,13 @@ class CXXBaseSpecifier {
 public:
   CXXBaseSpecifier() = default;
   CXXBaseSpecifier(SourceRange R, bool V, bool BC, AccessSpecifier A,
-                   TypeSourceInfo *TInfo, SourceLocation EllipsisLoc)
+                   TypeSourceInfo *TInfo, SourceLocation EllipsisLoc,
+                   Expr *ConstRange = nullptr)
     : Range(R), EllipsisLoc(EllipsisLoc), Virtual(V), BaseOfClass(BC),
-      Access(A), InheritConstructors(false), BaseTypeInfo(TInfo) {}
+      Access(A), InheritConstructors(false), ConstRange(ConstRange),
+      BaseTypeInfo(TInfo) {
+    IsVariadicReifier = ConstRange ? true : false;
+  }
 
   /// Retrieves the source range that contains the entire base specifier.
   SourceRange getSourceRange() const LLVM_READONLY { return Range; }
@@ -249,7 +259,15 @@ public:
   bool isBaseOfClass() const { return BaseOfClass; }
 
   /// Determine whether this base specifier is a pack expansion.
-  bool isPackExpansion() const { return EllipsisLoc.isValid(); }
+  bool isPackExpansion() const {
+    return EllipsisLoc.isValid() && !IsVariadicReifier;
+  }
+
+  /// Determine whether this base specifier is a
+  /// dependent variadic typename reifier.
+  bool isVariadicReifier() const {
+    return EllipsisLoc.isValid() && IsVariadicReifier;
+  }
 
   /// Determine whether this base class's constructors get inherited.
   bool getInheritConstructors() const { return InheritConstructors; }
@@ -262,6 +280,11 @@ public:
   /// For a pack expansion, determine the location of the ellipsis.
   SourceLocation getEllipsisLoc() const {
     return EllipsisLoc;
+  }
+
+  /// For a variadic reifier, the dependent constexpr range.
+  Expr *getConstRange() const {
+    return ConstRange;
   }
 
   /// Returns the access specifier for this base specifier.
@@ -2299,8 +2322,7 @@ class CXXCtorInitializer final {
   /// Either the base class name/delegating constructor type (stored as
   /// a TypeSourceInfo*), an normal field (FieldDecl), or an anonymous field
   /// (IndirectFieldDecl*) being initialized.
-  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *>
-    Initializee;
+  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *> Initializee;
 
   /// The source location for the field name or, for a base initializer
   /// pack expansion, the location of the ellipsis.

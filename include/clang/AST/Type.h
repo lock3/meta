@@ -1711,6 +1711,12 @@ protected:
     unsigned NumExpansions;
   };
 
+  class CXXDependentVariadicReifierTypeBitfields {
+    friend class CXXDependentVariadicReifierType;
+
+    unsigned : NumTypeBits;
+  };
+
   union {
     TypeBitfields TypeBits;
     ArrayTypeBitfields ArrayTypeBits;
@@ -5435,6 +5441,51 @@ public:
     return T->getTypeClass() == PackExpansion;
   }
 };
+
+class CXXDependentVariadicReifierType : public Type {
+  Expr *Range;
+  llvm::SmallVector<QualType, 4> ExpandedTypes;
+
+  SourceLocation KeywordLoc;
+  SourceLocation EllipsisLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXDependentVariadicReifierType(Expr *Range,
+                                  SourceLocation KeywordLoc,
+                                  SourceLocation EllipsisLoc,
+                                  SourceLocation RParenLoc)
+    : Type(CXXDependentVariadicReifier, QualType(), /*Dependent=*/true,
+           /*InstantiationDependent=*/true, /*VariablyModified=*/false,
+           /*Unexpanded parameter pack=*/false), Range(Range),
+      KeywordLoc(KeywordLoc), EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc)
+    {}
+
+  Expr *getRange() const { return Range; }
+  llvm::SmallVector<QualType, 4> &getExpandedTypes();
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    // Profile(ID, Context, Range);
+    // TODO: Implement me
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      ASTContext const& Context, Expr *Range) {
+    // Range->Profile(ID, Context, /*Canonical=*/false);
+    // TODO: Implement me
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == CXXDependentVariadicReifier;
+  }
+};
+
 
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.

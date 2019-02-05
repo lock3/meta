@@ -1037,6 +1037,9 @@ Decl *TemplateInstantiator::TransformDefinition(SourceLocation Loc, Decl *D) {
   if (!Inst)
     return nullptr;
 
+  if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
+    FakeParseScope->AddDecl(Inst);
+
   getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
   return Inst;
 }
@@ -1947,7 +1950,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                 = CheckBaseSpecifier(Instantiation,
                                      Base.getSourceRange(),
                                      Base.isVirtual(),
-                                     Base.getAccessSpecifierAsWritten(),
+                                     Base.getAccessSpecifier(),
                                      BaseTypeLoc,
                                      SourceLocation()))
             InstantiatedBases.push_back(InstantiatedBase);
@@ -1965,6 +1968,31 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                               TemplateArgs,
                               Base.getSourceRange().getBegin(),
                               DeclarationName());
+    } else if (CXXDependentVariadicReifierType::classof(Base.getType().getTypePtr())) {
+      TemplateInstantiator::TreeTransform Transformer(*this);
+      llvm::SmallVector<QualType, 8> ReifiedTypes;
+      Transformer.MaybeTransformVariadicReifier(Base.getType().getTypePtr(), ReifiedTypes);
+
+      for (auto ReifiedType : ReifiedTypes) {
+        TypeSourceInfo *BaseTypeLoc = Context.CreateTypeSourceInfo(ReifiedType);
+        if (!BaseTypeLoc) {
+          Invalid = true;
+          continue;
+        }
+
+        if (CXXBaseSpecifier *InstantiatedBase =
+            CheckBaseSpecifier(Instantiation,
+                               Base.getSourceRange(),
+                               Base.isVirtual(),
+                               Base.getAccessSpecifierAsWritten(),
+                               BaseTypeLoc,
+                               SourceLocation()))
+          InstantiatedBases.push_back(InstantiatedBase);
+        else
+          Invalid = true;
+      }
+
+      continue;
     } else {
       BaseTypeLoc = SubstType(Base.getTypeSourceInfo(),
                               TemplateArgs,

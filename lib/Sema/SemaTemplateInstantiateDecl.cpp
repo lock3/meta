@@ -4092,6 +4092,10 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
         }
       }
 
+      // Push a fake parse scope stack in case we need to perform unqualified
+      // lookup during tree transform.
+      Sema::FakeParseScopeStack FakeParseScopeStack(*this);
+
       // Instantiate the function body.
       auto ExistingMappings = CalculateExistingMappingsFor(PatternDecl,
                                                            Function);
@@ -4631,11 +4635,57 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   GlobalInstantiations.perform();
 }
 
+/// If a member initializer is a variadic reifier, substitute its range
+/// and instantiate it. Returns true on error.
+static bool
+InstantiateVariadicReifierMemInit(Sema &SemaRef,
+                          CXXConstructorDecl *New,
+                          const CXXCtorInitializer *Init,
+                          llvm::SmallVectorImpl<CXXCtorInitializer *> &NewInits,
+                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+  CXXDependentVariadicReifierType const *Reifier =
+    cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
+  ExprResult TempRange =
+    SemaRef.SubstExpr(Reifier->getRange(), TemplateArgs);
+  if (TempRange.isInvalid())
+    return true;
+
+  llvm::SmallVector<QualType, 8> ReifiedTypes;
+  SemaRef.ActOnVariadicReifier(ReifiedTypes, SourceLocation(), TempRange.get(),
+                               SourceLocation(), SourceLocation(),
+                               SourceLocation());
+
+  for (auto ReifiedType : ReifiedTypes) {
+    ExprResult TempInit =
+      SemaRef.SubstInitializer(Init->getInit(), TemplateArgs,
+                               /*CXXDirectInit=*/true);
+    if (TempInit.isInvalid())
+      return true;
+
+    TypeSourceInfo *BaseTInfo =
+      SemaRef.Context.CreateTypeSourceInfo(ReifiedType);
+    if (!BaseTInfo)
+      return true;
+
+    MemInitResult NewInit =
+      SemaRef.BuildBaseInitializer(BaseTInfo->getType(),
+                                   BaseTInfo, Init->getInit(),
+                                   New->getParent(),
+                                   SourceLocation());
+    if (NewInit.isInvalid())
+      return true;
+
+    auto NewInitExpr = NewInit.get();
+    NewInits.push_back(NewInitExpr);
+  }
+
+  return false;
+}
+
 void
 Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                  const CXXConstructorDecl *Tmpl,
                            const MultiLevelTemplateArgumentList &TemplateArgs) {
-
   SmallVector<CXXCtorInitializer*, 4> NewInits;
   bool AnyErrors = Tmpl->isInvalidDecl();
 
@@ -4706,6 +4756,18 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         NewInits.push_back(NewInit.get());
       }
 
+      continue;
+    }
+
+    if (Init->isBaseInitializer() &&
+        CXXDependentVariadicReifierType::classof(Init->getBaseClass())) {
+      // The expanded range is necessarily constexpr.
+      EnterExpressionEvaluationContext EvalContext(
+        *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+      AnyErrors =
+        InstantiateVariadicReifierMemInit(*this, New, Init,
+                                          NewInits, TemplateArgs);
       continue;
     }
 

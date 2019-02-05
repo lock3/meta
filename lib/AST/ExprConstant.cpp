@@ -11612,6 +11612,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::DependentCoawaitExprClass:
   case Expr::CoyieldExprClass:
   case Expr::CXXConcatenateExprClass:
+  case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::CXXFragmentExprClass:
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
@@ -11665,6 +11666,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
   case Expr::CXXIdExprExprClass:
+  case Expr::CXXReflectedIdExprClass:
   case Expr::CXXValueOfExprClass:
     return NoDiag();
   
