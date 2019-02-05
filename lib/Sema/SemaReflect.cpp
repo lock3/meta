@@ -837,23 +837,7 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
-  llvm::SmallVector<Expr *, 1> Parts = {Expression};
-
-  UnqualifiedId Result;
-  if (SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
-    return ExprError();
-
-  CXXScopeSpec TempSS;
-  ExprResult BuiltExpr =
-    SemaRef.ActOnIdExpression(SemaRef.getCurScope(), TempSS,
-                              SourceLocation(), Result,
-                              /*HasTrailingLParen=*/false,
-                              /*IsAddresOfOperand=*/false);
-
-  if (BuiltExpr.isInvalid())
-    return ExprError();
-  return BuiltExpr;
-
+  llvm_unreachable("unimplemented");
 }
 
 static QualType
