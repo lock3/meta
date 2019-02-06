@@ -5,6 +5,8 @@ namespace bar {
   }
 }
 
+using namespace bar::fin;
+
 template<typename T>
 void test_template() {
   constexpr auto int_reflexpr = reflexpr(int);

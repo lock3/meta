@@ -7604,11 +7604,11 @@ public:
   ParserLookupSetup(Sema &SemaRef, DeclContext *CurContext)
     : SemaRef(SemaRef),
       IdResolver(new (SemaRef.Context) IdentifierResolver(SemaRef.PP)) {
-    // FIXME: This a built on a bad memory model, which we're forced
-    // into by the identifier resolver
     VisitParentsInOrder(CurContext);
     MergeWithSemaState();
 
+    // FIXME: This a built on a bad memory model, which we're forced
+    // into by the identifier resolver
     std::swap(SemaRef.IdResolver, IdResolver);
   }
 
@@ -7631,14 +7631,27 @@ public:
     CurScope = new Scope(CurScope, ScopeFlags, SemaRef.PP.getDiagnostics());
   }
 
-  void AddDecl(NamedDecl *ND) {
-    CurScope->AddDecl(ND);
-    IdResolver->AddDecl(ND);
+  NamedDecl *castAsResolveableDecl(Decl *D) {
+    // Verify Decl is a NamedDecl
+    if (!isa<NamedDecl>(D))
+      return nullptr;
+
+    NamedDecl *ND = cast<NamedDecl>(D);
+    // Verify the NamedDecl is one that can be found via lookup.
+    if (!ND->getDeclName())
+      return nullptr;
+
+    if (isa<UsingDirectiveDecl>(ND))
+      return nullptr;
+
+    return ND;
   }
 
   void AddDecl(Decl *D) {
-    if (NamedDecl *ND = dyn_cast<NamedDecl>(D))
-      AddDecl(ND);
+    if (NamedDecl *ND = castAsResolveableDecl(D)) {
+      CurScope->AddDecl(ND);
+      IdResolver->AddDecl(ND);
+    }
   }
 
   void VisitParentsInOrder(DeclContext *DC) {
