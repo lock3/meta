@@ -739,21 +739,36 @@ BuildDeref(Sema &SemaRef, Expr *NextCall)
   return NextDeref;
 }
 
+// Checks to see if the traversal is complete.
+//
+// Returns true when traversal is complete.
 Sema::RangeTraverser::operator bool()
 {
   switch (Kind) {
   case RK_Array:
-  // If this is an array, we will simply see if we have iterated
-  // N times.
+    // If this is an array, we will simply see if we have iterated
+    // N times.
     return I == cast<IntegerLiteral>(RangeEnd)->getValue();
 
   case RK_Range: {
+    // Check to see if we've hit the end of the range.
+    SmallVector<PartialDiagnosticAt, 4> Diags;
     Expr::EvalResult EqualRes;
+    EqualRes.Diag = &Diags;
+
     ExprResult Equal =
-      SemaRef.ActOnBinOp(SemaRef.getCurScope(), SourceLocation(), tok::equalequal,
-                         Current, RangeEnd);
-    Equal.get()->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
-                                        SemaRef.Context);
+        SemaRef.ActOnBinOp(SemaRef.getCurScope(), SourceLocation(),
+                           tok::equalequal, Current, RangeEnd);
+
+    Expr *EqualExpr = Equal.get();
+
+    if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
+                                           SemaRef.Context)) {
+      SemaRef.Diag(SourceLocation(), diag::err_constexpr_range_iteration_failed);
+      for (PartialDiagnosticAt PD : Diags)
+        SemaRef.Diag(PD.first, PD.second);
+      return true;
+    }
 
     return EqualRes.Val.getInt() == 1;
   }

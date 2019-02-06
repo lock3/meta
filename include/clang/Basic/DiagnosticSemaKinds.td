@@ -2536,6 +2536,9 @@ def err_compiler_error_wrong_operand_type : Error<
 def err_concatenate_wrong_operand_type : Error<
   "expected either integer or string operand">;
 
+def err_constexpr_range_iteration_failed : Error<
+  "constexpr range iteration failed">;
+
 // variadic reifiers
 def err_namespace_as_variadic_reifier : Error<
   "'namespace' cannot be used as a variadic reifier.">;
