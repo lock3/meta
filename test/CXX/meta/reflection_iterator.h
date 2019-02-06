@@ -15,6 +15,26 @@ constexpr int distance(I first, I last) {
   return n;
 }
 
+template <class T>
+constexpr auto begin(T& c) -> decltype(c.begin()) {
+  return c.begin();
+}
+
+template <class T>
+constexpr auto begin(const T& c) -> decltype(c.begin()) {
+  return c.begin();
+}
+
+template <class T>
+constexpr auto end(T& c) -> decltype(c.end()) {
+  return c.end();
+}
+
+template <class T>
+constexpr auto end(const T& c) -> decltype(c.end()) {
+  return c.end();
+}
+
 template<typename I>
 constexpr I next(I iter, int advancement) {
   for (int i = 0; i < advancement; ++i)
