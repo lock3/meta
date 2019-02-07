@@ -91,6 +91,12 @@ void call_f6()
   assert(U::f6(valueof(...v)) == 6);
 }
 
+void bad_context()
+{
+  static constexpr info v[] = {reflexpr(int), reflexpr(int), reflexpr(int)};
+  f1(typename(...v)); // expected-error {{cannot use typename as reifier in this context: expression expected.}}  
+}
+
 int main()
 {
   call_f1();
@@ -99,4 +105,5 @@ int main()
   call_f4();
   call_f5<int>();
   call_f6();
+  bad_context();
 }
