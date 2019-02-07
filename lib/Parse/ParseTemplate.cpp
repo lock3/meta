@@ -1368,14 +1368,17 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 
       switch(Tok.getIdentifierInfo()->getTokenID()) {
       case tok::kw_typename:
-          return ParseTypeReifier(TemplateArgs, KWLoc);
+        if (ParseTypeReifier(TemplateArgs, KWLoc))
+          return true;
         break;
       case tok::kw_valueof:
       case tok::kw_unqualid:
       case tok::kw_idexpr:
-        return ParseNonTypeReifier(TemplateArgs, KWLoc);
+        if (ParseNonTypeReifier(TemplateArgs, KWLoc))
+          return true;
+        break;
       default:
-        return false;
+        return true;
       }
     }
     else {
