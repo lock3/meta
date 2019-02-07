@@ -7807,54 +7807,52 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
-  if (E->getStmtClass() == Stmt::CXXDependentVariadicReifierExprClass) {
-    CXXDependentVariadicReifierExpr *DependentReifier =
-      cast<CXXDependentVariadicReifierExpr>(E);
+  if (E->getStmtClass() != Stmt::CXXDependentVariadicReifierExprClass)
+    return true;
 
-    // If this is a dependent variadic reifier, go ahead and transform it.
-    if (DependentReifier->getEllipsisLoc().isValid()) {
-      Expr *OldRange = DependentReifier->getRange();
-      ExprResult NewRange = TransformExpr(OldRange);
+  EnterExpressionEvaluationContext EvalContext(
+    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
+  CXXDependentVariadicReifierExpr *DependentReifier =
+    cast<CXXDependentVariadicReifierExpr>(E);
 
-      if(NewRange.isInvalid())
-        return true;
+  Expr *OldRange = DependentReifier->getRange();
+  ExprResult NewRange = TransformExpr(OldRange);
 
-      llvm::SmallVector<Expr *, 8> ExpandedReifiers;
-      IdentifierInfo *Keyword;
+  if(NewRange.isInvalid())
+    return true;
 
-      switch(DependentReifier->getKeywordId())
-      {
-      case tok::kw_valueof:
-        Keyword = &(getSema().Context.Idents.get("valueof"));
-        break;
-      case tok::kw_idexpr:
-        Keyword = &(getSema().Context.Idents.get("idexpr"));
-        break;
-      case tok::kw_unqualid:
-        Keyword = &(getSema().Context.Idents.get("unqualid"));
-        break;
-      case tok::kw_typename:
-        getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
-          << 3 << 0;
-        return true;
-      case tok::kw_namespace:
-        getSema().Diag(E->getBeginLoc(),
-                       diag::err_namespace_as_variadic_reifier);
-          return true;
-      default:
-        return true;
-      }
+  llvm::SmallVector<Expr *, 8> ExpandedReifiers;
+  IdentifierInfo *Keyword;
 
-      getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
-                                     Keyword, NewRange.get(), SourceLocation(),
-                                     SourceLocation(), SourceLocation());
-
-      Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
-      return false;
-    }
+  switch(DependentReifier->getKeywordId())
+  {
+  case tok::kw_valueof:
+    Keyword = &(getSema().Context.Idents.get("valueof"));
+    break;
+  case tok::kw_idexpr:
+    Keyword = &(getSema().Context.Idents.get("idexpr"));
+    break;
+  case tok::kw_unqualid:
+    Keyword = &(getSema().Context.Idents.get("unqualid"));
+    break;
+  case tok::kw_typename:
+    getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
+      << 3 << 0;
+    return true;
+  case tok::kw_namespace:
+    getSema().Diag(E->getBeginLoc(),
+                   diag::err_namespace_as_variadic_reifier);
+    return true;
+  default:
+    return true;
   }
 
-  return true;
+  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
+                                 Keyword, NewRange.get(), SourceLocation(),
+                                 SourceLocation(), SourceLocation());
+
+  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+  return false;
 }
 
 template <typename Derived>
@@ -7882,6 +7880,9 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
   if(!CXXDependentVariadicReifierType::classof(T))
     return false;
+
+  EnterExpressionEvaluationContext EvalContext(
+    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   CXXDependentVariadicReifierType const *DependentReifier =
     cast<CXXDependentVariadicReifierType>(T);
