@@ -4711,7 +4711,7 @@ InstantiateVariadicReifierMemInit(Sema &SemaRef,
 
     TypeSourceInfo *BaseTInfo =
       SemaRef.Context.CreateTypeSourceInfo(ReifiedType);
-    BaseTInfo->getTypeLoc().initialize(Context, Reifier->getBeginLoc());
+    BaseTInfo->getTypeLoc().initialize(SemaRef.Context, Reifier->getBeginLoc());
     if (!BaseTInfo)
       return true;
 

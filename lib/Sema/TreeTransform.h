@@ -7909,7 +7909,7 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, TemplateArgumentListInfo &Outputs) {
-  CXXDependentVariadicReifierType *Reifier =
+  CXXDependentVariadicReifierType const *Reifier =
     cast<CXXDependentVariadicReifierType>(T);
   llvm::SmallVector<QualType, 4> ReifiedTypes;
   if (MaybeTransformVariadicReifier(T, ReifiedTypes))
@@ -7919,7 +7919,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
     TemplateArgument Arg(ReifiedType);
     TypeSourceInfo *TSI =
       getSema().Context.CreateTypeSourceInfo(ReifiedType);
-    TSI->getTypeLoc().initialize(Context, Reifier->getBeginLoc());
+    TSI->getTypeLoc().initialize(getSema().Context, Reifier->getBeginLoc());
     TemplateArgumentLoc ArgLoc(Arg, TSI);
     Outputs.addArgument(ArgLoc);
   }
