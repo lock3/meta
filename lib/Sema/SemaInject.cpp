@@ -70,7 +70,8 @@ class InjectionContext;
 class InjectionContext : public TreeTransform<InjectionContext> {
    using Base = TreeTransform<InjectionContext>;
 public:
-  InjectionContext(Sema &SemaRef) : Base(SemaRef), Modifiers() { }
+  InjectionContext(Sema &SemaRef, Decl *Injectee, Decl *Injection)
+    : Base(SemaRef), Injectee(Injectee), Injection(Injection), Modifiers() { }
 
   ~InjectionContext() {
     // Cleanup any allocated parameter injection arrays
@@ -160,7 +161,12 @@ public:
   }
 
   /// Returns true if D is within an injected fragment or cloned declaration.
-  bool IsInInjection(Decl *D);
+  bool isInInjection(Decl *D);
+
+  /// Returns true if this context is injecting a fragment.
+  bool isInjectingFragment() {
+    return isa<CXXFragmentDecl>(Injection->getDeclContext());
+  }
 
   /// Sets the declaration modifiers.
   void SetModifiers(const ReflectionModifiers &Modifiers) {
@@ -195,6 +201,61 @@ public:
       DNI = DeclarationNameInfo(applyRename(), DNI.getLoc());
 
     return Base::TransformDeclarationNameInfo(DNI);
+  }
+
+  Decl *TransformDecl(SourceLocation Loc, Decl *D) {
+    if (!D)
+      return nullptr;
+
+    // If we've EVER seen a replacement, then return that.
+    if (Decl *Repl = GetDeclReplacement(D))
+      return Repl;
+
+    // If D is part of the injection, then we must have seen a previous
+    // declaration. Otherwise, return nullptr and force a lookup or error.
+    //
+    // FIXME: This may not be valid for gotos and labels.
+    if (isInInjection(D))
+      return nullptr;
+
+    if (!isInjectingFragment()) {
+      // When copying existing declarations, if D is a member of the of the
+      // injection's declaration context, then we want to re-map that so that the
+      // result is a member of the injection. For example:
+      //
+      //    struct S {
+      //      int x;
+      //      int f() {
+      //        return x; // Not dependent, bound
+      //      }
+      //    };
+      //
+      //    struct T { consteval { -> reflexpr(S::f); } };
+      //
+      // At the point that we inject S::f, the reference to x is not dependent,
+      // and therefore not subject to two-phase lookup. However, we would expect
+      // the reference to be to the T::x during injection.
+      //
+      // Note that this isn't necessary for fragments. We expect names to be
+      // written dependently there and subject to the usual name resolution
+      // rules.
+      //
+      // Defer the resolution to the caller so that the result can be
+      // interpreted within the context of the expression, not here.
+      //
+      // If this condition is true, we're injecting a decl who's in the same
+      // decl context as the declaration we're currently cloning.
+      if (D->getDeclContext() == Injection->getDeclContext())
+        return nullptr;
+    }
+
+    return D;
+  }
+
+  Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+    // Rebuild the by injecting it. This will apply substitutions to the type
+    // and initializer of the declaration.
+    return InjectDecl(D);
   }
 
   ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
@@ -313,12 +374,52 @@ public:
   /// completed.
   llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
 
+
+  /// The context into which the fragment is injected
+  Decl *Injectee;
+
+  /// The declaration being Injected.
+  Decl *Injection;
+
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
 };
 
-bool InjectionContext::IsInInjection(Decl *D) {
-  return D->isInFragment();
+bool InjectionContext::isInInjection(Decl *D) {
+  // If this is actually a fragment, then we can check in the usual way.
+  if (isInjectingFragment())
+    return D->isInFragment();
+
+  // Otherwise, we're cloning a declaration, (not a fragment) but we need
+  // to ensure that any any declarations within that are injected.
+
+  // If D is injection source, then it must be injected.
+  if (D == Injection)
+    return true;
+
+  // If the injection is not a DC, then D cannot be in the injection because
+  // it could not have been declared within (e.g., if the injection is a
+  // variable).
+  DeclContext *InjectionAsDC = dyn_cast<DeclContext>(Injection);
+  if (!InjectionAsDC)
+    return false;
+
+  // Otherwise, work outwards to see if D is in the Outermost context
+  // of the injection.
+
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+  DeclContext *DC = D->getDeclContext();
+  while (DC) {
+    // We're inside of the injection, as the DC is the source injection.
+    if (DC == InjectionAsDC)
+      return true;
+    // We're outside of the injection, as the DC is the thing we're
+    // injecting into.
+    if (DC == InjecteeAsDC)
+      return false;
+    DC = DC->getParent();
+  }
+  return false;
 }
 
 // Inject the name and the type of a declarator declaration. Sets the
@@ -1007,8 +1108,8 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
 
   // If the declaration does not appear in the context, then it need
   // not be resolved.
-  // if (!IsInInjection(D))
-    // return D;
+  if (!isInInjection(D))
+    return D;
 
   Decl* R = InjectDeclImpl(D);
   if (!R)
@@ -1619,10 +1720,11 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
 }
 
 template<typename F>
-static bool BootstrapInjection(Sema &S, Decl *Injectee, F InjectionProcedure) {
+static bool BootstrapInjection(Sema &S, Decl *Injectee, Decl *Injection,
+                               F InjectionProcedure) {
   // Create an injection context and then execute the logic for that
   // context.
-  InjectionContext *Ctx = new InjectionContext(S);
+  InjectionContext *Ctx = new InjectionContext(S, Injectee, Injection);
   InjectionProcedure(Ctx);
 
   // If we're injecting into a class and have pending definitions, attach
@@ -1644,21 +1746,21 @@ static bool InjectFragment(Sema &S,
                            Decl *Injection,
                            const SmallVector<InjectionCapture, 8> &Captures,
                            Decl *Injectee) {
-  DeclContext *InjectionDC = Decl::castToDeclContext(Injection);
-  DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
+  DeclContext *InjectionAsDC = Decl::castToDeclContext(Injection);
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
 
-  if (!CheckInjectionContexts(S, POI, InjectionDC, InjecteeDC))
+  if (!CheckInjectionContexts(S, POI, InjectionAsDC, InjecteeAsDC))
     return false;
 
-  Sema::ContextRAII Switch(S, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+  Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
 
-  return BootstrapInjection(S, Injectee, [&](InjectionContext *Ctx) {
+  return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
     Ctx->AddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     // Inject each declaration in the fragment.
-    for (Decl *D : InjectionDC->decls()) {
+    for (Decl *D : InjectionAsDC->decls()) {
       // Never inject injected class names.
       if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
         if (Class->isInjectedClassName())
@@ -1680,20 +1782,20 @@ static bool CopyDeclaration(Sema &S, SourceLocation POI,
                             Decl *Injectee) {
   DeclContext *InjectionDC = Injection->getDeclContext();
   Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
-  DeclContext *InjecteeDC = Decl::castToDeclContext(Injectee);
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
 
   // Don't copy injected class names.
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Injection))
     if (Class->isInjectedClassName())
       return true;
 
-  if (!CheckInjectionContexts(S, POI, InjectionDC, InjecteeDC))
+  if (!CheckInjectionContexts(S, POI, InjectionDC, InjecteeAsDC))
     return false;
 
   // Establish injectee as the current context.
-  Sema::ContextRAII Switch(S, InjecteeDC, isa<CXXRecordDecl>(Injectee));
+  Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
 
-  return BootstrapInjection(S, Injectee, [&](InjectionContext *Ctx) {
+  return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
     Ctx->AddDeclSubstitution(InjectionOwner, Injectee);
 
@@ -1953,6 +2055,13 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
     NewField->setInClassInitializer(Init.get());
 }
 
+static InjectionContext *FindContextThatInjectedField(Sema &SemaRef, Decl *Input) {
+  for (auto&& Cxt : SemaRef.PendingClassMemberInjections) {
+    if (Decl *Res = Cxt->GetDeclReplacement(Input))
+      return Cxt;
+  }
+}
+
 void Sema::InjectPendingDefinition(InjectionContext *Cxt,
                                    CXXMethodDecl *OldMethod,
                                    CXXMethodDecl *NewMethod) {
@@ -1970,16 +2079,35 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
 
     SmallVector<CXXCtorInitializer *, 4> NewInitArgs;
     for (CXXCtorInitializer *OldInitializer : OldCtor->inits()) {
-      FieldDecl *NewField = cast<FieldDecl>(
-             Cxt->TransformDecl(SourceLocation(), OldInitializer->getMember()));
-      ExprResult NewInit = Cxt->TransformExpr(OldInitializer->getInit());
+      Decl *OldField = OldInitializer->getMember();
+      Expr *OldInit = OldInitializer->getInit();;
+
+      InjectionContext *InjectingCtx
+          = FindContextThatInjectedField(*this, OldField);
+
+      FieldDecl *NewField;
+      Expr *NewInit;
+
+      if (InjectingCtx) {
+        NewField = cast<FieldDecl>(
+            InjectingCtx->TransformDecl(SourceLocation(), OldField));
+
+        // FIXME: this is a hack. We transform using the current context first,
+        // this resolves local variables. Then we transform using the context
+        // that transformed the field, to resolve the field decl.
+        NewInit =
+            InjectingCtx->TransformExpr(Cxt->TransformExpr(OldInit).get()).get();
+      } else {
+        NewField = cast<FieldDecl>(OldField);
+        NewInit = OldInit;
+      }
 
       // TODO: this assumes a member initializer
       // there are other ctor initializer types we need to
       // handle
       CXXCtorInitializer *NewInitializer = new (Context) CXXCtorInitializer(
         Context, NewField, OldInitializer->getMemberLocation(),
-        OldInitializer->getLParenLoc(), NewInit.get(),
+        OldInitializer->getLParenLoc(), NewInit,
         OldInitializer->getRParenLoc());
 
       NewInitArgs.push_back(NewInitializer);
