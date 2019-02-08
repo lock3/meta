@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang_cc1 -fsyntax-only -freflection -std=c++17 -verify %s
 
 #include <cstdio>
 
