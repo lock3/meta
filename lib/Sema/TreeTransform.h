@@ -4169,7 +4169,7 @@ template<typename InputIterator>
 bool TreeTransform<Derived>::TransformTemplateArguments(
     InputIterator First, InputIterator Last, TemplateArgumentListInfo &Outputs,
     bool Uneval) {
-  for (; First != Last; ++First) {
+  for (; First != Last; ++First) {    
     TemplateArgumentLoc Out;
     TemplateArgumentLoc In = *First;
 
