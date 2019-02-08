@@ -23,6 +23,7 @@ Using Clang as a Compiler
    AttributeReference
    DiagnosticsReference
    CrossCompilation
+   ClangStaticAnalyzer
    ThreadSafetyAnalysis
    AddressSanitizer
    ThreadSanitizer
@@ -83,7 +84,6 @@ Design Documents
 
    InternalsManual
    DriverInternals
-   PTHInternals
    PCHInternals
    ItaniumMangleAbiTags
    HardwareAssistedAddressSanitizerDesign.rst

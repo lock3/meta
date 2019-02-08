@@ -1,9 +1,8 @@
 //===---- TargetInfo.cpp - Encapsulate target details -----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -19,9 +18,9 @@
 #include "CGValue.h"
 #include "CodeGenFunction.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/Basic/CodeGenOptions.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
 #include "clang/CodeGen/SwiftCallingConv.h"
-#include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
@@ -310,10 +309,9 @@ static Address emitVoidPtrDirectVAArg(CodeGenFunction &CGF,
 
   // Advance the pointer past the argument, then store that back.
   CharUnits FullDirectSize = DirectSize.alignTo(SlotSize);
-  llvm::Value *NextPtr =
-    CGF.Builder.CreateConstInBoundsByteGEP(Addr.getPointer(), FullDirectSize,
-                                           "argp.next");
-  CGF.Builder.CreateStore(NextPtr, VAListAddr);
+  Address NextPtr =
+      CGF.Builder.CreateConstInBoundsByteGEP(Addr, FullDirectSize, "argp.next");
+  CGF.Builder.CreateStore(NextPtr.getPointer(), VAListAddr);
 
   // If the argument is smaller than a slot, and this is a big-endian
   // target, the argument will be right-adjusted in its slot.
@@ -720,10 +718,12 @@ ABIArgInfo DefaultABIInfo::classifyReturnType(QualType RetTy) const {
 // This is a very simple ABI that relies a lot on DefaultABIInfo.
 //===----------------------------------------------------------------------===//
 
-class WebAssemblyABIInfo final : public DefaultABIInfo {
+class WebAssemblyABIInfo final : public SwiftABIInfo {
+  DefaultABIInfo defaultInfo;
+
 public:
   explicit WebAssemblyABIInfo(CodeGen::CodeGenTypes &CGT)
-      : DefaultABIInfo(CGT) {}
+      : SwiftABIInfo(CGT), defaultInfo(CGT) {}
 
 private:
   ABIArgInfo classifyReturnType(QualType RetTy) const;
@@ -741,6 +741,15 @@ private:
 
   Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
                     QualType Ty) const override;
+
+  bool shouldPassIndirectlyForSwift(ArrayRef<llvm::Type*> scalars,
+                                    bool asReturnValue) const override {
+    return occupiesMoreThan(CGT, scalars, /*total*/ 4);
+  }
+
+  bool isSwiftErrorInRegister() const override {
+    return false;
+  }
 };
 
 class WebAssemblyTargetCodeGenInfo final : public TargetCodeGenInfo {
@@ -750,6 +759,22 @@ public:
 
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override {
+    TargetCodeGenInfo::setTargetAttributes(D, GV, CGM);
+    if (const auto *FD = dyn_cast_or_null<FunctionDecl>(D)) {
+      if (const auto *Attr = FD->getAttr<WebAssemblyImportModuleAttr>()) {
+        llvm::Function *Fn = cast<llvm::Function>(GV);
+        llvm::AttrBuilder B;
+        B.addAttribute("wasm-import-module", Attr->getImportModule());
+        Fn->addAttributes(llvm::AttributeList::FunctionIndex, B);
+      }
+      if (const auto *Attr = FD->getAttr<WebAssemblyImportNameAttr>()) {
+        llvm::Function *Fn = cast<llvm::Function>(GV);
+        llvm::AttrBuilder B;
+        B.addAttribute("wasm-import-name", Attr->getImportName());
+        Fn->addAttributes(llvm::AttributeList::FunctionIndex, B);
+      }
+    }
+
     if (auto *FD = dyn_cast_or_null<FunctionDecl>(D)) {
       llvm::Function *Fn = cast<llvm::Function>(GV);
       if (!FD->doesThisDeclarationHaveABody() && !FD->hasPrototype())
@@ -778,7 +803,7 @@ ABIArgInfo WebAssemblyABIInfo::classifyArgumentType(QualType Ty) const {
   }
 
   // Otherwise just do the default thing.
-  return DefaultABIInfo::classifyArgumentType(Ty);
+  return defaultInfo.classifyArgumentType(Ty);
 }
 
 ABIArgInfo WebAssemblyABIInfo::classifyReturnType(QualType RetTy) const {
@@ -798,7 +823,7 @@ ABIArgInfo WebAssemblyABIInfo::classifyReturnType(QualType RetTy) const {
   }
 
   // Otherwise just do the default thing.
-  return DefaultABIInfo::classifyReturnType(RetTy);
+  return defaultInfo.classifyReturnType(RetTy);
 }
 
 Address WebAssemblyABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
@@ -6763,21 +6788,19 @@ void MSP430TargetCodeGenInfo::setTargetAttributes(
   if (GV->isDeclaration())
     return;
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D)) {
-    if (const MSP430InterruptAttr *attr = FD->getAttr<MSP430InterruptAttr>()) {
-      // Handle 'interrupt' attribute:
-      llvm::Function *F = cast<llvm::Function>(GV);
+    const auto *InterruptAttr = FD->getAttr<MSP430InterruptAttr>();
+    if (!InterruptAttr)
+      return;
 
-      // Step 1: Set ISR calling convention.
-      F->setCallingConv(llvm::CallingConv::MSP430_INTR);
+    // Handle 'interrupt' attribute:
+    llvm::Function *F = cast<llvm::Function>(GV);
 
-      // Step 2: Add attributes goodness.
-      F->addFnAttr(llvm::Attribute::NoInline);
+    // Step 1: Set ISR calling convention.
+    F->setCallingConv(llvm::CallingConv::MSP430_INTR);
 
-      // Step 3: Emit ISR vector alias.
-      unsigned Num = attr->getNumber() / 2;
-      llvm::GlobalAlias::create(llvm::Function::ExternalLinkage,
-                                "__isr_" + Twine(Num), F);
-    }
+    // Step 2: Add attributes goodness.
+    F->addFnAttr(llvm::Attribute::NoInline);
+    F->addFnAttr("interrupt", llvm::utostr(InterruptAttr->getNumber()));
   }
 }
 
@@ -8187,9 +8210,8 @@ Address SparcV9ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
   }
 
   // Update VAList.
-  llvm::Value *NextPtr =
-    Builder.CreateConstInBoundsByteGEP(Addr.getPointer(), Stride, "ap.next");
-  Builder.CreateStore(NextPtr, VAListAddr);
+  Address NextPtr = Builder.CreateConstInBoundsByteGEP(Addr, Stride, "ap.next");
+  Builder.CreateStore(NextPtr.getPointer(), VAListAddr);
 
   return Builder.CreateBitCast(ArgAddr, ArgPtrTy, "arg.addr");
 }
@@ -8249,6 +8271,137 @@ SparcV9TargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   return false;
 }
 
+// ARC ABI implementation.
+namespace {
+
+class ARCABIInfo : public DefaultABIInfo {
+public:
+  using DefaultABIInfo::DefaultABIInfo;
+
+private:
+  Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                    QualType Ty) const override;
+
+  void updateState(const ABIArgInfo &Info, QualType Ty, CCState &State) const {
+    if (!State.FreeRegs)
+      return;
+    if (Info.isIndirect() && Info.getInReg())
+      State.FreeRegs--;
+    else if (Info.isDirect() && Info.getInReg()) {
+      unsigned sz = (getContext().getTypeSize(Ty) + 31) / 32;
+      if (sz < State.FreeRegs)
+        State.FreeRegs -= sz;
+      else
+        State.FreeRegs = 0;
+    }
+  }
+
+  void computeInfo(CGFunctionInfo &FI) const override {
+    CCState State(FI.getCallingConvention());
+    // ARC uses 8 registers to pass arguments.
+    State.FreeRegs = 8;
+
+    if (!getCXXABI().classifyReturnType(FI))
+      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    updateState(FI.getReturnInfo(), FI.getReturnType(), State);
+    for (auto &I : FI.arguments()) {
+      I.info = classifyArgumentType(I.type, State.FreeRegs);
+      updateState(I.info, I.type, State);
+    }
+  }
+
+  ABIArgInfo getIndirectByRef(QualType Ty, bool HasFreeRegs) const;
+  ABIArgInfo getIndirectByValue(QualType Ty) const;
+  ABIArgInfo classifyArgumentType(QualType Ty, uint8_t FreeRegs) const;
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+};
+
+class ARCTargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  ARCTargetCodeGenInfo(CodeGenTypes &CGT)
+      : TargetCodeGenInfo(new ARCABIInfo(CGT)) {}
+};
+
+
+ABIArgInfo ARCABIInfo::getIndirectByRef(QualType Ty, bool HasFreeRegs) const {
+  return HasFreeRegs ? getNaturalAlignIndirectInReg(Ty) :
+                       getNaturalAlignIndirect(Ty, false);
+}
+
+ABIArgInfo ARCABIInfo::getIndirectByValue(QualType Ty) const {
+  // Compute the byval alignment.
+  const unsigned MinABIStackAlignInBytes = 4;
+  unsigned TypeAlign = getContext().getTypeAlign(Ty) / 8;
+  return ABIArgInfo::getIndirect(CharUnits::fromQuantity(4), /*ByVal=*/true,
+                                 TypeAlign > MinABIStackAlignInBytes);
+}
+
+Address ARCABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+                              QualType Ty) const {
+  return emitVoidPtrVAArg(CGF, VAListAddr, Ty, /*indirect*/ false,
+                          getContext().getTypeInfoInChars(Ty),
+                          CharUnits::fromQuantity(4), true);
+}
+
+ABIArgInfo ARCABIInfo::classifyArgumentType(QualType Ty,
+                                            uint8_t FreeRegs) const {
+  // Handle the generic C++ ABI.
+  const RecordType *RT = Ty->getAs<RecordType>();
+  if (RT) {
+    CGCXXABI::RecordArgABI RAA = getRecordArgABI(RT, getCXXABI());
+    if (RAA == CGCXXABI::RAA_Indirect)
+      return getIndirectByRef(Ty, FreeRegs > 0);
+
+    if (RAA == CGCXXABI::RAA_DirectInMemory)
+      return getIndirectByValue(Ty);
+  }
+
+  // Treat an enum type as its underlying type.
+  if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+    Ty = EnumTy->getDecl()->getIntegerType();
+
+  auto SizeInRegs = llvm::alignTo(getContext().getTypeSize(Ty), 32) / 32;
+
+  if (isAggregateTypeForABI(Ty)) {
+    // Structures with flexible arrays are always indirect.
+    if (RT && RT->getDecl()->hasFlexibleArrayMember())
+      return getIndirectByValue(Ty);
+
+    // Ignore empty structs/unions.
+    if (isEmptyRecord(getContext(), Ty, true))
+      return ABIArgInfo::getIgnore();
+
+    llvm::LLVMContext &LLVMContext = getVMContext();
+
+    llvm::IntegerType *Int32 = llvm::Type::getInt32Ty(LLVMContext);
+    SmallVector<llvm::Type *, 3> Elements(SizeInRegs, Int32);
+    llvm::Type *Result = llvm::StructType::get(LLVMContext, Elements);
+
+    return FreeRegs >= SizeInRegs ?
+        ABIArgInfo::getDirectInReg(Result) :
+        ABIArgInfo::getDirect(Result, 0, nullptr, false);
+  }
+
+  return Ty->isPromotableIntegerType() ?
+      (FreeRegs >= SizeInRegs ? ABIArgInfo::getExtendInReg(Ty) :
+                                ABIArgInfo::getExtend(Ty)) :
+      (FreeRegs >= SizeInRegs ? ABIArgInfo::getDirectInReg() :
+                                ABIArgInfo::getDirect());
+}
+
+ABIArgInfo ARCABIInfo::classifyReturnType(QualType RetTy) const {
+  if (RetTy->isAnyComplexType())
+    return ABIArgInfo::getDirectInReg();
+
+  // Arguments of size > 4 registers are indirect.
+  auto RetSize = llvm::alignTo(getContext().getTypeSize(RetTy), 32) / 32;
+  if (RetSize > 4)
+    return getIndirectByRef(RetTy, /*HasFreeRegs*/ true);
+
+  return DefaultABIInfo::classifyReturnType(RetTy);
+}
+
+} // End anonymous namespace.
 
 //===----------------------------------------------------------------------===//
 // XCore ABI Implementation
@@ -8411,9 +8564,8 @@ Address XCoreABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
 
   // Increment the VAList.
   if (!ArgSize.isZero()) {
-    llvm::Value *APN =
-      Builder.CreateConstInBoundsByteGEP(AP.getPointer(), ArgSize);
-    Builder.CreateStore(APN, VAListAddr);
+    Address APN = Builder.CreateConstInBoundsByteGEP(AP, ArgSize);
+    Builder.CreateStore(APN.getPointer(), VAListAddr);
   }
 
   return Val;
@@ -9270,6 +9422,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     return SetCGInfo(new SparcV9TargetCodeGenInfo(Types));
   case llvm::Triple::xcore:
     return SetCGInfo(new XCoreTargetCodeGenInfo(Types));
+  case llvm::Triple::arc:
+    return SetCGInfo(new ARCTargetCodeGenInfo(Types));
   case llvm::Triple::spir:
   case llvm::Triple::spir64:
     return SetCGInfo(new SPIRTargetCodeGenInfo(Types));

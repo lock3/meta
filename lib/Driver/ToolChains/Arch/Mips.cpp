@@ -1,9 +1,8 @@
 //===--- Mips.cpp - Tools Implementations -----------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -47,12 +46,12 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   }
 
   // MIPS3 is the default for mips64*-unknown-openbsd.
-  if (Triple.getOS() == llvm::Triple::OpenBSD)
+  if (Triple.isOSOpenBSD())
     DefMips64CPU = "mips3";
 
   // MIPS2 is the default for mips(el)?-unknown-freebsd.
   // MIPS3 is the default for mips64(el)?-unknown-freebsd.
-  if (Triple.getOS() == llvm::Triple::FreeBSD) {
+  if (Triple.isOSFreeBSD()) {
     DefMips32CPU = "mips2";
     DefMips64CPU = "mips3";
   }

@@ -1,9 +1,8 @@
 //===--- SemaExprMember.cpp - Semantic Analysis for Expressions -----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1713,9 +1712,31 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
   }
 
   ActOnMemberAccessExtraArgs ExtraArgs = {S, Id, ObjCImpDecl};
-  return BuildMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow, SS,
-                                  TemplateKWLoc, FirstQualifierInScope,
-                                  NameInfo, TemplateArgs, S, &ExtraArgs);
+  ExprResult Res = BuildMemberReferenceExpr(
+      Base, Base->getType(), OpLoc, IsArrow, SS, TemplateKWLoc,
+      FirstQualifierInScope, NameInfo, TemplateArgs, S, &ExtraArgs);
+
+  if (!Res.isInvalid() && isa<MemberExpr>(Res.get()))
+    CheckMemberAccessOfNoDeref(cast<MemberExpr>(Res.get()));
+
+  return Res;
+}
+
+void Sema::CheckMemberAccessOfNoDeref(const MemberExpr *E) {
+  QualType ResultTy = E->getType();
+
+  // Do not warn on member accesses to arrays since this returns an array
+  // lvalue and does not actually dereference memory.
+  if (isa<ArrayType>(ResultTy))
+    return;
+
+  if (E->isArrow()) {
+    if (const auto *Ptr = dyn_cast<PointerType>(
+            E->getBase()->getType().getDesugaredType(Context))) {
+      if (Ptr->getPointeeType()->hasAttr(attr::NoDeref))
+        ExprEvalContexts.back().PossibleDerefs.insert(E);
+    }
+  }
 }
 
 ExprResult

@@ -60,7 +60,7 @@ int bar(int n){
   //
   // CHECK: [[EXECUTE]]
   // CHECK: {{call|invoke}} void [[PFN:@.+]](i32*
-  // CHECK: call void @__kmpc_spmd_kernel_deinit()
+  // CHECK: call void @__kmpc_spmd_kernel_deinit_v2(i16 1)
   //
   //
   // define internal void [[PFN]](
@@ -72,7 +72,7 @@ int bar(int n){
   // CHECK: [[E_CAST:%.+]] = bitcast double* [[E]] to i8*
   // CHECK: store i8* [[E_CAST]], i8** [[PTR1]], align
   // CHECK: [[ARG_RL:%.+]] = bitcast [[RLT]]* [[RL]] to i8*
-  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait(i32 {{.+}}, i32 1, i{{32|64}} {{4|8}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
+  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait_v2(%struct.ident_t* @{{.+}}, i32 {{.+}}, i32 1, i{{32|64}} {{4|8}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
   // CHECK: [[CMP:%.+]] = icmp eq i32 [[RET]], 1
   // CHECK: br i1 [[CMP]], label
 
@@ -190,6 +190,7 @@ int bar(int n){
   // CHECK: [[CNT:%.+]] = load i32, i32* [[CNT_ADDR]],
   // CHECK: [[DONE_COPY:%.+]] = icmp ult i32 [[CNT]], 2
   // CHECK: br i1 [[DONE_COPY]], label
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
   // CHECK: [[IS_WARP_MASTER:%.+]] = icmp eq i32 [[LANEID]], 0
   // CHECK: br i1 [[IS_WARP_MASTER]], label {{%?}}[[DO_COPY:.+]], label {{%?}}[[COPY_ELSE:.+]]
   //
@@ -209,9 +210,8 @@ int bar(int n){
   //
   // Barrier after copy to shared memory storage medium.
   // CHECK: [[COPY_CONT]]
-  // CHECK: [[WS:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-  // CHECK: [[ACTIVE_THREADS:%.+]] = mul nsw i32 [[ACTIVE_WARPS:%.+]], [[WS]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
+  // CHECK: [[ACTIVE_WARPS:%.+]] = load i32, i32*
   //
   // Read into warp 0.
   // CHECK: [[IS_W0_ACTIVE_THREAD:%.+]] = icmp ult i32 [[TID:%.+]], [[ACTIVE_WARPS]]
@@ -231,7 +231,6 @@ int bar(int n){
   // CHECK: br label {{%?}}[[READ_CONT]]
   //
   // CHECK: [[READ_CONT]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
   // CHECK: [[NEXT:%.+]] = add nsw i32 [[CNT]], 1
   // CHECK: store i32 [[NEXT]], i32* [[CNT_ADDR]],
   // CHECK: br label
@@ -254,7 +253,7 @@ int bar(int n){
   //
   // CHECK: [[EXECUTE]]
   // CHECK: {{call|invoke}} void [[PFN1:@.+]](i32*
-  // CHECK: call void @__kmpc_spmd_kernel_deinit()
+  // CHECK: call void @__kmpc_spmd_kernel_deinit_v2(i16 1)
   //
   //
   // define internal void [[PFN1]](
@@ -273,7 +272,7 @@ int bar(int n){
   // CHECK: [[D_CAST:%.+]] = bitcast float* [[D]] to i8*
   // CHECK: store i8* [[D_CAST]], i8** [[PTR2]], align
   // CHECK: [[ARG_RL:%.+]] = bitcast [[RLT]]* [[RL]] to i8*
-  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait(i32 {{.+}}, i32 2, i{{32|64}} {{8|16}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
+  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait_v2(%struct.ident_t* @{{.+}}, i32 {{.+}}, i32 2, i{{32|64}} {{8|16}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
   // CHECK: [[CMP:%.+]] = icmp eq i32 [[RET]], 1
   // CHECK: br i1 [[CMP]], label
   // CHECK: [[C_INV8:%.+]] = load i8, i8* [[C_IN:%.+]], align
@@ -428,6 +427,7 @@ int bar(int n){
   // CHECK-DAG: [[LANEID:%.+]] = and i32 {{.+}}, 31
   // CHECK-DAG: [[WARPID:%.+]] = ashr i32 {{.+}}, 5
   // CHECK-DAG: [[RED_LIST:%.+]] = bitcast i8* {{.+}} to [[RLT]]*
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
   // CHECK: [[IS_WARP_MASTER:%.+]] = icmp eq i32 [[LANEID]], 0
   // CHECK: br i1 [[IS_WARP_MASTER]], label {{%?}}[[DO_COPY:.+]], label {{%?}}[[COPY_ELSE:.+]]
   //
@@ -446,9 +446,8 @@ int bar(int n){
   //
   // Barrier after copy to shared memory storage medium.
   // CHECK: [[COPY_CONT]]
-  // CHECK: [[WS:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-  // CHECK: [[ACTIVE_THREADS:%.+]] = mul nsw i32 [[ACTIVE_WARPS:%.+]], [[WS]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
+  // CHECK: [[ACTIVE_WARPS:%.+]] = load i32, i32*
   //
   // Read into warp 0.
   // CHECK: [[IS_W0_ACTIVE_THREAD:%.+]] = icmp ult i32 [[TID:%.+]], [[ACTIVE_WARPS]]
@@ -467,7 +466,7 @@ int bar(int n){
   // CHECK: br label {{%?}}[[READ_CONT]]
   //
   // CHECK: [[READ_CONT]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
   // CHECK: [[IS_WARP_MASTER:%.+]] = icmp eq i32 [[LANEID]], 0
   // CHECK: br i1 [[IS_WARP_MASTER]], label {{%?}}[[DO_COPY:.+]], label {{%?}}[[COPY_ELSE:.+]]
   //
@@ -486,9 +485,8 @@ int bar(int n){
   //
   // Barrier after copy to shared memory storage medium.
   // CHECK: [[COPY_CONT]]
-  // CHECK: [[WS:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-  // CHECK: [[ACTIVE_THREADS:%.+]] = mul nsw i32 [[ACTIVE_WARPS:%.+]], [[WS]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
+  // CHECK: [[ACTIVE_WARPS:%.+]] = load i32, i32*
   //
   // Read into warp 0.
   // CHECK: [[IS_W0_ACTIVE_THREAD:%.+]] = icmp ult i32 [[TID:%.+]], [[ACTIVE_WARPS]]
@@ -507,7 +505,6 @@ int bar(int n){
   // CHECK: br label {{%?}}[[READ_CONT]]
   //
   // CHECK: [[READ_CONT]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
   // CHECK: ret
 
 
@@ -527,7 +524,7 @@ int bar(int n){
   //
   // CHECK: [[EXECUTE]]
   // CHECK: {{call|invoke}} void [[PFN2:@.+]](i32*
-  // CHECK: call void @__kmpc_spmd_kernel_deinit()
+  // CHECK: call void @__kmpc_spmd_kernel_deinit_v2(i16 1)
   //
   //
   // define internal void [[PFN2]](
@@ -560,7 +557,7 @@ int bar(int n){
   // CHECK: [[B_CAST:%.+]] = bitcast i16* [[B]] to i8*
   // CHECK: store i8* [[B_CAST]], i8** [[PTR2]], align
   // CHECK: [[ARG_RL:%.+]] = bitcast [[RLT]]* [[RL]] to i8*
-  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait(i32 {{.+}}, i32 2, i{{32|64}} {{8|16}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
+  // CHECK: [[RET:%.+]] = call i32 @__kmpc_nvptx_parallel_reduce_nowait_v2(%struct.ident_t* @{{.+}}, i32 {{.+}}, i32 2, i{{32|64}} {{8|16}}, i8* [[ARG_RL]], void (i8*, i16, i16, i16)* [[SHUFFLE_REDUCE_FN:@.+]], void (i8*, i32)* [[WARP_COPY_FN:@.+]])
   // CHECK: [[CMP:%.+]] = icmp eq i32 [[RET]], 1
   // CHECK: br i1 [[CMP]], label
 
@@ -743,6 +740,7 @@ int bar(int n){
   // CHECK-DAG: [[LANEID:%.+]] = and i32 {{.+}}, 31
   // CHECK-DAG: [[WARPID:%.+]] = ashr i32 {{.+}}, 5
   // CHECK-DAG: [[RED_LIST:%.+]] = bitcast i8* {{.+}} to [[RLT]]*
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
   // CHECK: [[IS_WARP_MASTER:%.+]] = icmp eq i32 [[LANEID]], 0
   // CHECK: br i1 [[IS_WARP_MASTER]], label {{%?}}[[DO_COPY:.+]], label {{%?}}[[COPY_ELSE:.+]]
   //
@@ -761,9 +759,8 @@ int bar(int n){
   //
   // Barrier after copy to shared memory storage medium.
   // CHECK: [[COPY_CONT]]
-  // CHECK: [[WS:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-  // CHECK: [[ACTIVE_THREADS:%.+]] = mul nsw i32 [[ACTIVE_WARPS:%.+]], [[WS]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
+  // CHECK: [[ACTIVE_WARPS:%.+]] = load i32, i32*
   //
   // Read into warp 0.
   // CHECK: [[IS_W0_ACTIVE_THREAD:%.+]] = icmp ult i32 [[TID:%.+]], [[ACTIVE_WARPS]]
@@ -782,7 +779,7 @@ int bar(int n){
   // CHECK: br label {{%?}}[[READ_CONT]]
   //
   // CHECK: [[READ_CONT]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
   // CHECK: [[IS_WARP_MASTER:%.+]] = icmp eq i32 [[LANEID]], 0
   // CHECK: br i1 [[IS_WARP_MASTER]], label {{%?}}[[DO_COPY:.+]], label {{%?}}[[COPY_ELSE:.+]]
   //
@@ -802,9 +799,8 @@ int bar(int n){
   //
   // Barrier after copy to shared memory storage medium.
   // CHECK: [[COPY_CONT]]
-  // CHECK: [[WS:%.+]] = call i32 @llvm.nvvm.read.ptx.sreg.warpsize()
-  // CHECK: [[ACTIVE_THREADS:%.+]] = mul nsw i32 [[ACTIVE_WARPS:%.+]], [[WS]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
+  // CHECK: call void @__kmpc_barrier(%struct.ident_t* @
+  // CHECK: [[ACTIVE_WARPS:%.+]] = load i32, i32*
   //
   // Read into warp 0.
   // CHECK: [[IS_W0_ACTIVE_THREAD:%.+]] = icmp ult i32 [[TID:%.+]], [[ACTIVE_WARPS]]
@@ -824,7 +820,6 @@ int bar(int n){
   // CHECK: br label {{%?}}[[READ_CONT]]
   //
   // CHECK: [[READ_CONT]]
-  // CHECK: call void @llvm.nvvm.barrier(i32 1, i32 [[ACTIVE_THREADS]])
   // CHECK: ret
 
 #endif

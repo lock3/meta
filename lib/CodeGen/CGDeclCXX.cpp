@@ -1,9 +1,8 @@
 //===--- CGDeclCXX.cpp - Emit LLVM Code for C++ declarations --------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,7 +14,7 @@
 #include "CGCXXABI.h"
 #include "CGObjCRuntime.h"
 #include "CGOpenMPRuntime.h"
-#include "clang/Frontend/CodeGenOptions.h"
+#include "clang/Basic/CodeGenOptions.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/MDBuilder.h"
@@ -26,7 +25,10 @@ using namespace CodeGen;
 
 static void EmitDeclInit(CodeGenFunction &CGF, const VarDecl &D,
                          ConstantAddress DeclPtr) {
-  assert(D.hasGlobalStorage() && "VarDecl must have global storage!");
+  assert(
+      (D.hasGlobalStorage() ||
+       (D.hasLocalStorage() && CGF.getContext().getLangOpts().OpenCLCPlusPlus)) &&
+      "VarDecl must have global or local (in the case of OpenCL) storage!");
   assert(!D.getType()->isReferenceType() &&
          "Should not call EmitDeclInit on a reference!");
 
@@ -147,7 +149,7 @@ void CodeGenFunction::EmitInvariantStart(llvm::Constant *Addr, CharUnits Size) {
   llvm::Intrinsic::ID InvStartID = llvm::Intrinsic::invariant_start;
   // Overloaded address space type.
   llvm::Type *ObjectPtr[1] = {Int8PtrTy};
-  llvm::Constant *InvariantStart = CGM.getIntrinsic(InvStartID, ObjectPtr);
+  llvm::Function *InvariantStart = CGM.getIntrinsic(InvStartID, ObjectPtr);
 
   // Emit a call with the size in bytes of the object.
   uint64_t Width = Size.getQuantity();
@@ -258,10 +260,10 @@ void CodeGenFunction::registerGlobalDtorWithAtExit(llvm::Constant *dtorStub) {
   llvm::FunctionType *atexitTy =
     llvm::FunctionType::get(IntTy, dtorStub->getType(), false);
 
-  llvm::Constant *atexit =
+  llvm::FunctionCallee atexit =
       CGM.CreateRuntimeFunction(atexitTy, "atexit", llvm::AttributeList(),
                                 /*Local=*/true);
-  if (llvm::Function *atexitFn = dyn_cast<llvm::Function>(atexit))
+  if (llvm::Function *atexitFn = dyn_cast<llvm::Function>(atexit.getCallee()))
     atexitFn->setDoesNotThrow();
 
   EmitNounwindRuntimeCall(atexit, dtorStub);

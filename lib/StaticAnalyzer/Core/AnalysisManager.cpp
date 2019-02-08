@@ -1,9 +1,8 @@
 //===-- AnalysisManager.cpp -------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,16 +21,21 @@ AnalysisManager::AnalysisManager(ASTContext &ASTCtx, DiagnosticsEngine &diags,
                                  AnalyzerOptions &Options,
                                  CodeInjector *injector)
     : AnaCtxMgr(
-          ASTCtx, Options.UnoptimizedCFG, Options.includeImplicitDtorsInCFG(),
-          /*AddInitializers=*/true, Options.includeTemporaryDtorsInCFG(),
-          Options.includeLifetimeInCFG(),
+          ASTCtx, Options.UnoptimizedCFG,
+          Options.ShouldIncludeImplicitDtorsInCFG,
+          /*AddInitializers=*/true,
+          Options.ShouldIncludeTemporaryDtorsInCFG,
+          Options.ShouldIncludeLifetimeInCFG,
           // Adding LoopExit elements to the CFG is a requirement for loop
           // unrolling.
-          Options.includeLoopExitInCFG() || Options.shouldUnrollLoops(),
-          Options.includeScopesInCFG(), Options.shouldSynthesizeBodies(),
-          Options.shouldConditionalizeStaticInitializers(),
-          /*addCXXNewAllocator=*/true, Options.includeRichConstructorsInCFG(),
-          Options.shouldElideConstructors(), injector),
+          Options.ShouldIncludeLoopExitInCFG ||
+            Options.ShouldUnrollLoops,
+          Options.ShouldIncludeScopesInCFG,
+          Options.ShouldSynthesizeBodies,
+          Options.ShouldConditionalizeStaticInitializers,
+          /*addCXXNewAllocator=*/true,
+          Options.ShouldIncludeRichConstructorsInCFG,
+          Options.ShouldElideConstructors, injector),
       Ctx(ASTCtx), Diags(diags), LangOpts(ASTCtx.getLangOpts()),
       PathConsumers(PDC), CreateStoreMgr(storemgr),
       CreateConstraintMgr(constraintmgr), CheckerMgr(checkerMgr),

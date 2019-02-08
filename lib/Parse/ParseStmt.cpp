@@ -1,9 +1,8 @@
 //===--- ParseStmt.cpp - Statement and Block Parser -----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,10 +14,10 @@
 #include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/Basic/Attributes.h"
 #include "clang/Basic/PrettyStackTrace.h"
+#include "clang/Parse/LoopHint.h"
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/DeclSpec.h"
-#include "clang/Sema/LoopHint.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/TypoCorrection.h"
 using namespace clang;
@@ -444,7 +443,7 @@ StmtResult Parser::ParseExprStatement() {
 
   // Otherwise, eat the semicolon.
   ExpectAndConsumeSemi(diag::err_expected_semi_after_expr);
-  return Actions.ActOnExprStmt(Expr);
+  return Actions.ActOnExprStmt(Expr, isExprValueDiscarded());
 }
 
 /// ParseSEHTryBlockCommon
@@ -935,6 +934,44 @@ void Parser::ParseCompoundStatementLeadingPragmas() {
 
 }
 
+/// Consume any extra semi-colons resulting in null statements,
+/// returning true if any tok::semi were consumed.
+bool Parser::ConsumeNullStmt(StmtVector &Stmts) {
+  if (!Tok.is(tok::semi))
+    return false;
+
+  SourceLocation StartLoc = Tok.getLocation();
+  SourceLocation EndLoc;
+
+  while (Tok.is(tok::semi) && !Tok.hasLeadingEmptyMacro() &&
+         Tok.getLocation().isValid() && !Tok.getLocation().isMacroID()) {
+    EndLoc = Tok.getLocation();
+
+    // Don't just ConsumeToken() this tok::semi, do store it in AST.
+    StmtResult R = ParseStatementOrDeclaration(Stmts, ACK_Any);
+    if (R.isUsable())
+      Stmts.push_back(R.get());
+  }
+
+  // Did not consume any extra semi.
+  if (EndLoc.isInvalid())
+    return false;
+
+  Diag(StartLoc, diag::warn_null_statement)
+      << FixItHint::CreateRemoval(SourceRange(StartLoc, EndLoc));
+  return true;
+}
+
+bool Parser::isExprValueDiscarded() {
+  if (Actions.isCurCompoundStmtAStmtExpr()) {
+    // Look to see if the next two tokens close the statement expression;
+    // if so, this expression statement is the last statement in a
+    // statment expression.
+    return Tok.isNot(tok::r_brace) || NextToken().isNot(tok::r_paren);
+  }
+  return true;
+}
+
 /// ParseCompoundStatementBody - Parse a sequence of statements and invoke the
 /// ActOnCompoundStmt action.  This expects the '{' to be the current token, and
 /// consume the '}' at the end of the block.  It does not manipulate the scope
@@ -997,6 +1034,9 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       continue;
     }
 
+    if (ConsumeNullStmt(Stmts))
+      continue;
+
     StmtResult R;
     if (Tok.isNot(tok::kw___extension__)) {
       R = ParseStatementOrDeclaration(Stmts, ACK_Any);
@@ -1036,7 +1076,7 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
         // Eat the semicolon at the end of stmt and convert the expr into a
         // statement.
         ExpectAndConsumeSemi(diag::err_expected_semi_after_expr);
-        R = Actions.ActOnExprStmt(Res);
+        R = Actions.ActOnExprStmt(Res, isExprValueDiscarded());
       }
     }
 
@@ -1601,10 +1641,15 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   ParsedAttributesWithRange attrs(AttrFactory);
   MaybeParseCXX11Attributes(attrs);
 
+  SourceLocation EmptyInitStmtSemiLoc;
+
   // Parse the first part of the for specifier.
   if (Tok.is(tok::semi)) {  // for (;
     ProhibitAttributes(attrs);
     // no first part, eat the ';'.
+    SourceLocation SemiLoc = Tok.getLocation();
+    if (!Tok.hasLeadingEmptyMacro() && !SemiLoc.isMacroID())
+      EmptyInitStmtSemiLoc = SemiLoc;
     ConsumeToken();
   } else if (getLangOpts().CPlusPlus && Tok.is(tok::identifier) &&
              isForRangeIdentifier()) {
@@ -1675,8 +1720,16 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     if (!Value.isInvalid()) {
       if (ForEach)
         FirstPart = Actions.ActOnForEachLValueExpr(Value.get());
-      else
-        FirstPart = Actions.ActOnExprStmt(Value);
+      else {
+        // We already know this is not an init-statement within a for loop, so
+        // if we are parsing a C++11 range-based for loop, we should treat this
+        // expression statement as being a discarded value expression because
+        // we will err below. This way we do not warn on an unused expression
+        // that was an error in the first place, like with: for (expr : expr);
+        bool IsRangeBasedFor =
+            getLangOpts().CPlusPlus11 && !ForEach && Tok.is(tok::colon);
+        FirstPart = Actions.ActOnExprStmt(Value, !IsRangeBasedFor);
+      }
     }
 
     if (Tok.is(tok::semi)) {
@@ -1736,6 +1789,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
                    : diag::ext_for_range_init_stmt)
               << (FirstPart.get() ? FirstPart.get()->getSourceRange()
                                   : SourceRange());
+          if (EmptyInitStmtSemiLoc.isValid()) {
+            Diag(EmptyInitStmtSemiLoc, diag::warn_empty_init_statement)
+                << /*for-loop*/ 2
+                << FixItHint::CreateRemoval(EmptyInitStmtSemiLoc);
+          }
         }
       } else {
         ExprResult SecondExpr = ParseExpression();
@@ -1943,9 +2001,12 @@ StmtResult Parser::ParseReturnStatement() {
 
   ExprResult R;
   if (Tok.isNot(tok::semi)) {
+    if (!IsCoreturn)
+      PreferredType.enterReturn(Actions, Tok.getLocation());
     // FIXME: Code completion for co_return.
     if (Tok.is(tok::code_completion) && !IsCoreturn) {
-      Actions.CodeCompleteReturn(getCurScope());
+      Actions.CodeCompleteExpression(getCurScope(),
+                                     PreferredType.get(Tok.getLocation()));
       cutOffParsing();
       return StmtError();
     }

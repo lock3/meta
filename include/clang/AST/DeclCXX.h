@@ -1,9 +1,8 @@
 //===- DeclCXX.h - Classes for representing C++ declarations --*- C++ -*-=====//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1581,7 +1580,7 @@ public:
   ///
   /// C++11 [class]p6:
   ///    "A trivial class is a class that has a trivial default constructor and
-  ///    is trivially copiable."
+  ///    is trivially copyable."
   bool isTrivial() const {
     return isTriviallyCopyable() && hasTrivialDefaultConstructor();
   }
@@ -1867,6 +1866,14 @@ public:
   /// of the given name within a C++ class hierarchy.
   static bool FindOMPReductionMember(const CXXBaseSpecifier *Specifier,
                                      CXXBasePath &Path, DeclarationName Name);
+
+  /// Base-class lookup callback that determines whether there exists
+  /// an OpenMP declare mapper member with the given name.
+  ///
+  /// This callback can be used with \c lookupInBases() to find members
+  /// of the given name within a C++ class hierarchy.
+  static bool FindOMPMapperMember(const CXXBaseSpecifier *Specifier,
+                                  CXXBasePath &Path, DeclarationName Name);
 
   /// Base-class lookup callback that determines whether there exists
   /// a member with the given name that can be used in a nested-name-specifier.
@@ -2248,10 +2255,13 @@ public:
   /// that for the call operator of a lambda closure type, this returns the
   /// desugared 'this' type (a pointer to the closure type), not the captured
   /// 'this' type.
-  QualType getThisType(ASTContext &C) const;
+  QualType getThisType() const;
 
-  unsigned getTypeQualifiers() const {
-    return getType()->getAs<FunctionProtoType>()->getTypeQuals();
+  static QualType getThisType(const FunctionProtoType *FPT,
+                              const CXXRecordDecl *Decl);
+
+  Qualifiers getMethodQualifiers() const {
+    return getType()->getAs<FunctionProtoType>()->getMethodQuals();
   }
 
   /// Retrieve the ref-qualifier associated with this method.
@@ -2381,6 +2391,9 @@ public:
   explicit
   CXXCtorInitializer(ASTContext &Context, TypeSourceInfo *TInfo,
                      SourceLocation L, Expr *Init, SourceLocation R);
+
+  /// \return Unique reproducible object identifier.
+  int64_t getID(const ASTContext &Context) const;
 
   /// Determine whether this initializer is initializing a base class.
   bool isBaseInitializer() const {
@@ -3979,6 +3992,7 @@ class MSPropertyDecl : public DeclaratorDecl {
       : DeclaratorDecl(MSProperty, DC, L, N, T, TInfo, StartL),
         GetterId(Getter), SetterId(Setter) {}
 
+  void anchor() override;
 public:
   friend class ASTDeclReader;
 

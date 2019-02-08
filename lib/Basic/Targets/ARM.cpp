@@ -1,9 +1,8 @@
 //===--- ARM.cpp - Implement ARM target feature support -------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -28,8 +27,8 @@ void ARMTargetInfo::setABIAAPCS() {
   DoubleAlign = LongLongAlign = LongDoubleAlign = SuitableAlign = 64;
   const llvm::Triple &T = getTriple();
 
-  bool IsNetBSD = T.getOS() == llvm::Triple::NetBSD;
-  bool IsOpenBSD = T.getOS() == llvm::Triple::OpenBSD;
+  bool IsNetBSD = T.isOSNetBSD();
+  bool IsOpenBSD = T.isOSOpenBSD();
   if (!T.isOSWindows() && !IsNetBSD && !IsOpenBSD)
     WCharType = UnsignedInt;
 
@@ -217,8 +216,8 @@ ARMTargetInfo::ARMTargetInfo(const llvm::Triple &Triple,
                              const TargetOptions &Opts)
     : TargetInfo(Triple), FPMath(FP_Default), IsAAPCS(true), LDREX(0),
       HW_FP(0) {
-  bool IsOpenBSD = Triple.getOS() == llvm::Triple::OpenBSD;
-  bool IsNetBSD = Triple.getOS() == llvm::Triple::NetBSD;
+  bool IsOpenBSD = Triple.isOSOpenBSD();
+  bool IsNetBSD = Triple.isOSNetBSD();
 
   // FIXME: the isOSBinFormatMachO is a workaround for identifying a Darwin-like
   // environment where size_t is `unsigned long` rather than `unsigned int`
@@ -282,9 +281,9 @@ ARMTargetInfo::ARMTargetInfo(const llvm::Triple &Triple,
       setABI("apcs-gnu");
       break;
     default:
-      if (Triple.getOS() == llvm::Triple::NetBSD)
+      if (IsNetBSD)
         setABI("apcs-gnu");
-      else if (Triple.getOS() == llvm::Triple::OpenBSD)
+      else if (IsOpenBSD)
         setABI("aapcs-linux");
       else
         setABI("aapcs");
@@ -397,6 +396,7 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
   SoftFloat = SoftFloatABI = false;
   HWDiv = 0;
   DotProd = 0;
+  HasFloat16 = true;
 
   // This does not diagnose illegal cases like having both
   // "+vfpv2" and "+vfpv3" or having "+neon" and "+fp-only-sp".
@@ -996,6 +996,7 @@ WindowsARMTargetInfo::checkCallingConvention(CallingConv CC) const {
   case CC_OpenCLKernel:
   case CC_PreserveMost:
   case CC_PreserveAll:
+  case CC_Swift:
     return CCCR_OK;
   default:
     return CCCR_Warning;

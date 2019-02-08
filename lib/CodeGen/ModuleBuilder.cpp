@@ -1,9 +1,8 @@
 //===--- ModuleBuilder.cpp - Emit LLVM Code from ASTs ---------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -17,9 +16,9 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
+#include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/LLVMContext.h"
@@ -132,6 +131,9 @@ namespace {
 
       M->setTargetTriple(Ctx->getTargetInfo().getTriple().getTriple());
       M->setDataLayout(Ctx->getTargetInfo().getDataLayout());
+      const auto &SDKVersion = Ctx->getTargetInfo().getSDKVersion();
+      if (!SDKVersion.empty())
+        M->setSDKVersion(SDKVersion);
       Builder.reset(new CodeGen::CodeGenModule(Context, HeaderSearchOpts,
                                                PreprocessorOpts, CodeGenOpts,
                                                *M, Diags, CoverageInfo));

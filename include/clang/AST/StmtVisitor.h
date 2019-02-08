@@ -1,9 +1,8 @@
 //===- StmtVisitor.h - Visitor for Stmt subclasses --------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -22,15 +21,12 @@
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/Basic/LLVM.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <utility>
 
 namespace clang {
-
-template <typename T> struct make_ptr { using type = T *; };
-template <typename T> struct make_const_ptr { using type = const T *; };
-
 /// StmtVisitorBase - This class implements a simple visitor for Stmt
 /// subclasses. Since Expr derives from Stmt, this also includes support for
 /// visiting Exprs.
@@ -182,18 +178,19 @@ public:
 ///
 /// This class does not preserve constness of Stmt pointers (see also
 /// ConstStmtVisitor).
-template<typename ImplClass, typename RetTy=void, typename... ParamTys>
+template <typename ImplClass, typename RetTy = void, typename... ParamTys>
 class StmtVisitor
- : public StmtVisitorBase<make_ptr, ImplClass, RetTy, ParamTys...> {};
+    : public StmtVisitorBase<std::add_pointer, ImplClass, RetTy, ParamTys...> {
+};
 
 /// ConstStmtVisitor - This class implements a simple visitor for Stmt
 /// subclasses. Since Expr derives from Stmt, this also includes support for
 /// visiting Exprs.
 ///
 /// This class preserves constness of Stmt pointers (see also StmtVisitor).
-template<typename ImplClass, typename RetTy=void, typename... ParamTys>
-class ConstStmtVisitor
- : public StmtVisitorBase<make_const_ptr, ImplClass, RetTy, ParamTys...> {};
+template <typename ImplClass, typename RetTy = void, typename... ParamTys>
+class ConstStmtVisitor : public StmtVisitorBase<llvm::make_const_ptr, ImplClass,
+                                                RetTy, ParamTys...> {};
 
 } // namespace clang
 

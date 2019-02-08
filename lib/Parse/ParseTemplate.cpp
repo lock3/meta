@@ -1,9 +1,8 @@
 //===--- ParseTemplate.cpp - Template Parsing -----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1454,26 +1453,37 @@ void Parser::ParseLateTemplatedFuncDef(LateParsedTemplate &LPT) {
 
   SmallVector<ParseScope*, 4> TemplateParamScopeStack;
 
-  // Get the list of DeclContexts to reenter.
-  SmallVector<DeclContext*, 4> DeclContextsToReenter;
+  // Get the list of DeclContexts to reenter. For inline methods, we only want
+  // to push the DeclContext of the outermost class. This matches the way the
+  // parser normally parses bodies of inline methods when the outermost class is
+  // complete.
+  struct ContainingDC {
+    ContainingDC(DeclContext *DC, bool ShouldPush) : Pair(DC, ShouldPush) {}
+    llvm::PointerIntPair<DeclContext *, 1, bool> Pair;
+    DeclContext *getDC() { return Pair.getPointer(); }
+    bool shouldPushDC() { return Pair.getInt(); }
+  };
+  SmallVector<ContainingDC, 4> DeclContextsToReenter;
   DeclContext *DD = FunD;
+  DeclContext *NextContaining = Actions.getContainingDC(DD);
   while (DD && !DD->isTranslationUnit()) {
-    DeclContextsToReenter.push_back(DD);
+    bool ShouldPush = DD == NextContaining;
+    DeclContextsToReenter.push_back({DD, ShouldPush});
+    if (ShouldPush)
+      NextContaining = Actions.getContainingDC(DD);
     DD = DD->getLexicalParent();
   }
 
   // Reenter template scopes from outermost to innermost.
-  SmallVectorImpl<DeclContext *>::reverse_iterator II =
-      DeclContextsToReenter.rbegin();
-  for (; II != DeclContextsToReenter.rend(); ++II) {
-    TemplateParamScopeStack.push_back(new ParseScope(this,
-          Scope::TemplateParamScope));
-    unsigned NumParamLists =
-      Actions.ActOnReenterTemplateScope(getCurScope(), cast<Decl>(*II));
+  for (ContainingDC CDC : reverse(DeclContextsToReenter)) {
+    TemplateParamScopeStack.push_back(
+        new ParseScope(this, Scope::TemplateParamScope));
+    unsigned NumParamLists = Actions.ActOnReenterTemplateScope(
+        getCurScope(), cast<Decl>(CDC.getDC()));
     CurTemplateDepthTracker.addDepth(NumParamLists);
-    if (*II != FunD) {
+    if (CDC.shouldPushDC()) {
       TemplateParamScopeStack.push_back(new ParseScope(this, Scope::DeclScope));
-      Actions.PushDeclContext(Actions.getCurScope(), *II);
+      Actions.PushDeclContext(Actions.getCurScope(), CDC.getDC());
     }
   }
 

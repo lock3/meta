@@ -1,9 +1,8 @@
 //===- PreprocessorOptions.h ------------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -110,13 +109,6 @@ public:
   /// clients don't use them.
   bool WriteCommentListToPCH = true;
 
-  /// The implicit PTH input included at the start of the translation unit, or
-  /// empty.
-  std::string ImplicitPTHInclude;
-
-  /// If given, a PTH cache file to use for speeding up header parsing.
-  std::string TokenCache;
-
   /// When enabled, preprocessor is in a mode for parsing a single file only.
   ///
   /// Disables #includes of other files and if there are unresolved identifiers
@@ -204,8 +196,6 @@ public:
     ChainedIncludes.clear();
     DumpDeserializedPCHDecls = false;
     ImplicitPCHInclude.clear();
-    ImplicitPTHInclude.clear();
-    TokenCache.clear();
     SingleFileParseMode = false;
     LexEditorPlaceholders = true;
     RetainRemappedFileBuffers = true;

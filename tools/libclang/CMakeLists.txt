@@ -36,10 +36,12 @@ set(SOURCES
 set(LIBS
   clangAST
   clangBasic
+  clangDriver
   clangFrontend
   clangIndex
   clangLex
   clangSema
+  clangSerialization
   clangTooling
 )
 
@@ -73,7 +75,7 @@ if(MSVC)
   set(LLVM_EXPORTED_SYMBOL_FILE)
 endif()
 
-if( LLVM_ENABLE_PIC )
+if(LLVM_ENABLE_PIC OR WIN32)
   set(ENABLE_SHARED SHARED)
 endif()
 

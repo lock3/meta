@@ -1,9 +1,8 @@
 //===--- Cuda.cpp - Cuda Tool and ToolChain Implementations -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -61,6 +60,8 @@ static CudaVersion ParseCudaVersionFile(llvm::StringRef V) {
     return CudaVersion::CUDA_92;
   if (Major == 10 && Minor == 0)
     return CudaVersion::CUDA_100;
+  if (Major == 10 && Minor == 1)
+    return CudaVersion::CUDA_101;
   return CudaVersion::UNKNOWN;
 }
 
@@ -114,7 +115,7 @@ CudaInstallationDetector::CudaInstallationDetector(
     for (const char *Ver : Versions)
       Candidates.emplace_back(D.SysRoot + "/usr/local/cuda-" + Ver);
 
-    if (Distro(D.getVFS()).IsDebian())
+    if (Distro(D.getVFS()).IsDebian() || Distro(D.getVFS()).IsUbuntu())
       // Special case for Debian to have nvidia-cuda-toolkit work
       // out of the box. More info on http://bugs.debian.org/882505
       Candidates.emplace_back(D.SysRoot + "/usr/lib/cuda");
@@ -278,32 +279,44 @@ void CudaInstallationDetector::print(raw_ostream &OS) const {
 }
 
 namespace {
-  /// Debug info kind.
-enum DebugInfoKind {
-  NoDebug,       /// No debug info.
-  LineTableOnly, /// Line tables only.
-  FullDebug      /// Full debug info.
+/// Debug info level for the NVPTX devices. We may need to emit different debug
+/// info level for the host and for the device itselfi. This type controls
+/// emission of the debug info for the devices. It either prohibits disable info
+/// emission completely, or emits debug directives only, or emits same debug
+/// info as for the host.
+enum DeviceDebugInfoLevel {
+  DisableDebugInfo,        /// Do not emit debug info for the devices.
+  DebugDirectivesOnly,     /// Emit only debug directives.
+  EmitSameDebugInfoAsHost, /// Use the same debug info level just like for the
+                           /// host.
 };
 } // anonymous namespace
 
-static DebugInfoKind mustEmitDebugInfo(const ArgList &Args) {
-  Arg *A = Args.getLastArg(options::OPT_O_Group);
-  if (Args.hasFlag(options::OPT_cuda_noopt_device_debug,
-                   options::OPT_no_cuda_noopt_device_debug,
-                   !A || A->getOption().matches(options::OPT_O0))) {
-    if (const Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-      const Option &Opt = A->getOption();
-      if (Opt.matches(options::OPT_gN_Group)) {
-        if (Opt.matches(options::OPT_g0) || Opt.matches(options::OPT_ggdb0))
-          return NoDebug;
-        if (Opt.matches(options::OPT_gline_tables_only) ||
-            Opt.matches(options::OPT_ggdb1))
-          return LineTableOnly;
-      }
-      return FullDebug;
+/// Define debug info level for the NVPTX devices. If the debug info for both
+/// the host and device are disabled (-g0/-ggdb0 or no debug options at all). If
+/// only debug directives are requested for the both host and device
+/// (-gline-directvies-only), or the debug info only for the device is disabled
+/// (optimization is on and --cuda-noopt-device-debug was not specified), the
+/// debug directves only must be emitted for the device. Otherwise, use the same
+/// debug info level just like for the host (with the limitations of only
+/// supported DWARF2 standard).
+static DeviceDebugInfoLevel mustEmitDebugInfo(const ArgList &Args) {
+  const Arg *A = Args.getLastArg(options::OPT_O_Group);
+  bool IsDebugEnabled = !A || A->getOption().matches(options::OPT_O0) ||
+                        Args.hasFlag(options::OPT_cuda_noopt_device_debug,
+                                     options::OPT_no_cuda_noopt_device_debug,
+                                     /*Default=*/false);
+  if (const Arg *A = Args.getLastArg(options::OPT_g_Group)) {
+    const Option &Opt = A->getOption();
+    if (Opt.matches(options::OPT_gN_Group)) {
+      if (Opt.matches(options::OPT_g0) || Opt.matches(options::OPT_ggdb0))
+        return DisableDebugInfo;
+      if (Opt.matches(options::OPT_gline_directives_only))
+        return DebugDirectivesOnly;
     }
+    return IsDebugEnabled ? EmitSameDebugInfoAsHost : DebugDirectivesOnly;
   }
-  return NoDebug;
+  return DisableDebugInfo;
 }
 
 void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
@@ -337,8 +350,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
 
   ArgStringList CmdArgs;
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-m64" : "-m32");
-  DebugInfoKind DIKind = mustEmitDebugInfo(Args);
-  if (DIKind == FullDebug) {
+  DeviceDebugInfoLevel DIKind = mustEmitDebugInfo(Args);
+  if (DIKind == EmitSameDebugInfoAsHost) {
     // ptxas does not accept -g option if optimization is enabled, so
     // we ignore the compiler's -O* options if we want debug info.
     CmdArgs.push_back("-g");
@@ -374,7 +387,7 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     // to no optimizations, but ptxas's default is -O3.
     CmdArgs.push_back("-O0");
   }
-  if (DIKind == LineTableOnly)
+  if (DIKind == DebugDirectivesOnly)
     CmdArgs.push_back("-lineinfo");
 
   // Pass -v to ptxas if it was passed to the driver.
@@ -445,7 +458,7 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-64" : "-32");
   CmdArgs.push_back(Args.MakeArgString("--create"));
   CmdArgs.push_back(Args.MakeArgString(Output.getFilename()));
-  if (mustEmitDebugInfo(Args) == FullDebug)
+  if (mustEmitDebugInfo(Args) == EmitSameDebugInfoAsHost)
     CmdArgs.push_back("-g");
 
   for (const auto& II : Inputs) {
@@ -498,7 +511,7 @@ void NVPTX::OpenMPLinker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Output.getFilename());
   } else
     assert(Output.isNothing() && "Invalid output.");
-  if (mustEmitDebugInfo(Args) == FullDebug)
+  if (mustEmitDebugInfo(Args) == EmitSameDebugInfoAsHost)
     CmdArgs.push_back("-g");
 
   if (Args.hasArg(options::OPT_v))
@@ -650,9 +663,13 @@ void CudaToolChain::addClangTargetOptions(
                          options::OPT_fno_cuda_short_ptr, false))
     CC1Args.append({"-mllvm", "--nvptx-short-ptr"});
 
+  if (CudaInstallation.version() >= CudaVersion::UNKNOWN)
+    CC1Args.push_back(DriverArgs.MakeArgString(
+        Twine("-target-sdk-version=") +
+        CudaVersionToString(CudaInstallation.version())));
+
   if (DeviceOffloadingKind == Action::OFK_OpenMP) {
     SmallVector<StringRef, 8> LibraryPaths;
-
     if (const Arg *A = DriverArgs.getLastArg(options::OPT_libomptarget_nvptx_path_EQ))
       LibraryPaths.push_back(A->getValue());
 
@@ -702,6 +719,21 @@ bool CudaToolChain::supportsDebugInfoOption(const llvm::opt::Arg *A) const {
          O.matches(options::OPT_gdwarf_3) || O.matches(options::OPT_gdwarf_4) ||
          O.matches(options::OPT_gdwarf_5) ||
          O.matches(options::OPT_gcolumn_info);
+}
+
+void CudaToolChain::adjustDebugInfoKind(
+    codegenoptions::DebugInfoKind &DebugInfoKind, const ArgList &Args) const {
+  switch (mustEmitDebugInfo(Args)) {
+  case DisableDebugInfo:
+    DebugInfoKind = codegenoptions::NoDebugInfo;
+    break;
+  case DebugDirectivesOnly:
+    DebugInfoKind = codegenoptions::DebugDirectivesOnly;
+    break;
+  case EmitSameDebugInfoAsHost:
+    // Use same debug info level as the host.
+    break;
+  }
 }
 
 void CudaToolChain::AddCudaIncludeArgs(const ArgList &DriverArgs,

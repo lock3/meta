@@ -1,9 +1,8 @@
 //===-- ODRHash.cpp - Hashing to diagnose ODR failures ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -49,7 +48,7 @@ void ODRHash::AddDeclarationNameImpl(DeclarationName Name) {
   auto Result = DeclNameMap.insert(std::make_pair(Name, DeclNameMap.size()));
   ID.AddInteger(Result.first->second);
   if (!Result.second) {
-    // If found in map, the the DeclarationName has previously been processed.
+    // If found in map, the DeclarationName has previously been processed.
     return;
   }
 

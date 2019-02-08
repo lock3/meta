@@ -1,9 +1,8 @@
 //===--- CloneChecker.cpp - Clone detection checker -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -13,7 +12,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/Analysis/CloneDetection.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
@@ -42,7 +41,7 @@ public:
   void reportClones(BugReporter &BR, AnalysisManager &Mgr,
                     std::vector<CloneDetector::CloneGroup> &CloneGroups) const;
 
-  /// Reports only suspicious clones to the user along with informaton
+  /// Reports only suspicious clones to the user along with information
   /// that explain why they are suspicious.
   void reportSuspiciousClones(
       BugReporter &BR, AnalysisManager &Mgr,
@@ -201,4 +200,8 @@ void CloneChecker::reportSuspiciousClones(
 
 void ento::registerCloneChecker(CheckerManager &Mgr) {
   Mgr.registerChecker<CloneChecker>();
+}
+
+bool ento::shouldRegisterCloneChecker(const LangOptions &LO) {
+  return true;
 }

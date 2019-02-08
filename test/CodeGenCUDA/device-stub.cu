@@ -1,14 +1,36 @@
 // RUN: echo "GPU binary would be here" > %t
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
-// RUN:     -fcuda-include-gpubinary %t -o - \
-// RUN:   | FileCheck -allow-deprecated-dag-overlap %s --check-prefixes=ALL,NORDC,CUDA,CUDANORDC
+// RUN:     -target-sdk-version=8.0 -fcuda-include-gpubinary %t -o - \
+// RUN:   | FileCheck -allow-deprecated-dag-overlap %s \
+// RUN:       --check-prefixes=ALL,NORDC,CUDA,CUDANORDC,CUDA-OLD
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
-// RUN:     -fcuda-include-gpubinary %t -o -  -DNOGLOBALS \
-// RUN:   | FileCheck -allow-deprecated-dag-overlap %s -check-prefixes=NOGLOBALS,CUDANOGLOBALS
+// RUN:     -target-sdk-version=8.0  -fcuda-include-gpubinary %t \
+// RUN:     -o - -DNOGLOBALS \
+// RUN:   | FileCheck -allow-deprecated-dag-overlap %s \
+// RUN:     -check-prefixes=NOGLOBALS,CUDANOGLOBALS
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
-// RUN:     -fgpu-rdc -fcuda-include-gpubinary %t -o - \
-// RUN:   | FileCheck -allow-deprecated-dag-overlap %s --check-prefixes=ALL,RDC,CUDA,CUDARDC
-// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s -o - \
+// RUN:     -target-sdk-version=8.0 -fgpu-rdc -fcuda-include-gpubinary %t \
+// RUN:     -o - \
+// RUN:   | FileCheck -allow-deprecated-dag-overlap %s \
+// RUN:       --check-prefixes=ALL,RDC,CUDA,CUDARDC,CUDA-OLD
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
+// RUN:     -target-sdk-version=8.0 -o - \
+// RUN:   | FileCheck -allow-deprecated-dag-overlap %s -check-prefix=NOGPUBIN
+
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s       \
+// RUN:     -target-sdk-version=9.2 -fcuda-include-gpubinary %t -o - \
+// RUN:   | FileCheck %s -allow-deprecated-dag-overlap \
+// RUN:       --check-prefixes=ALL,NORDC,CUDA,CUDANORDC,CUDA-NEW
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
+// RUN:     -target-sdk-version=9.2 -fcuda-include-gpubinary %t -o -  -DNOGLOBALS \
+// RUN:   | FileCheck -allow-deprecated-dag-overlap %s \
+// RUN:       --check-prefixes=NOGLOBALS,CUDANOGLOBALS
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
+// RUN:     -target-sdk-version=9.2 -fgpu-rdc -fcuda-include-gpubinary %t -o - \
+// RUN:   | FileCheck %s -allow-deprecated-dag-overlap \
+// RUN:       --check-prefixes=ALL,RDC,CUDA,CUDARDC,CUDA_NEW
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
+// RUN:     -target-sdk-version=9.2 -o - \
 // RUN:   | FileCheck -allow-deprecated-dag-overlap %s -check-prefix=NOGPUBIN
 
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -emit-llvm %s \
@@ -42,12 +64,19 @@ int host_var;
 // ALL-DAG: @ext_host_var = external global i32
 extern int ext_host_var;
 
-// Shadows for external device-side variables are *definitions* of
-// those variables.
-// ALL-DAG: @ext_device_var = internal global i32
+// external device-side variables -> extern references to their shadows.
+// ALL-DAG: @ext_device_var = external global i32
 extern __device__ int ext_device_var;
-// ALL-DAG: @ext_device_var = internal global i32
+// ALL-DAG: @ext_device_var = external global i32
 extern __constant__ int ext_constant_var;
+
+// external device-side variables with definitions should generate
+// definitions for the shadows.
+// ALL-DAG: @ext_device_var_def = internal global i32 undef,
+extern __device__ int ext_device_var_def;
+__device__ int ext_device_var_def = 1;
+// ALL-DAG: @ext_device_var_def = internal global i32 undef,
+__constant__ int ext_constant_var_def = 2;
 
 void use_pointers() {
   int *p;
@@ -96,15 +125,34 @@ void use_pointers() {
 // by a call to cudaLaunch.
 
 // ALL: define{{.*}}kernelfunc
-// ALL: call{{.*}}[[PREFIX]]SetupArgument
-// ALL: call{{.*}}[[PREFIX]]SetupArgument
-// ALL: call{{.*}}[[PREFIX]]SetupArgument
-// ALL: call{{.*}}[[PREFIX]]Launch
+
+// New launch sequence stores arguments into local buffer and passes array of
+// pointers to them directly to cudaLaunchKernel
+// CUDA-NEW: alloca
+// CUDA-NEW: store
+// CUDA-NEW: store
+// CUDA-NEW: store
+// CUDA-NEW: call{{.*}}__cudaPopCallConfiguration
+// CUDA-NEW: call{{.*}}cudaLaunchKernel
+
+// Legacy style launch sequence sets up arguments by passing them to
+// [cuda|hip]SetupArgument.
+// CUDA-OLD: call{{.*}}[[PREFIX]]SetupArgument
+// CUDA-OLD: call{{.*}}[[PREFIX]]SetupArgument
+// CUDA-OLD: call{{.*}}[[PREFIX]]SetupArgument
+// CUDA-OLD: call{{.*}}[[PREFIX]]Launch
+
+// HIP: call{{.*}}[[PREFIX]]SetupArgument
+// HIP: call{{.*}}[[PREFIX]]SetupArgument
+// HIP: call{{.*}}[[PREFIX]]SetupArgument
+// HIP: call{{.*}}[[PREFIX]]Launch
 __global__ void kernelfunc(int i, int j, int k) {}
 
 // Test that we've built correct kernel launch sequence.
 // ALL: define{{.*}}hostfunc
-// ALL: call{{.*}}[[PREFIX]]ConfigureCall
+// CUDA-OLD: call{{.*}}[[PREFIX]]ConfigureCall
+// CUDA-NEW: call{{.*}}__cudaPushCallConfiguration
+// HIP: call{{.*}}[[PREFIX]]ConfigureCall
 // ALL: call{{.*}}kernelfunc
 void hostfunc(void) { kernelfunc<<<1, 1>>>(1, 1, 1); }
 #endif
@@ -114,8 +162,8 @@ void hostfunc(void) { kernelfunc<<<1, 1>>>(1, 1, 1); }
 // ALL: call{{.*}}[[PREFIX]]RegisterFunction(i8** %0, {{.*}}kernelfunc
 // ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}device_var{{.*}}i32 0, i32 4, i32 0, i32 0
 // ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}constant_var{{.*}}i32 0, i32 4, i32 1, i32 0
-// ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}ext_device_var{{.*}}i32 1, i32 4, i32 0, i32 0
-// ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}ext_constant_var{{.*}}i32 1, i32 4, i32 1, i32 0
+// ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}ext_device_var_def{{.*}}i32 0, i32 4, i32 0, i32 0
+// ALL-DAG: call{{.*}}[[PREFIX]]RegisterVar(i8** %0, {{.*}}ext_constant_var_def{{.*}}i32 0, i32 4, i32 1, i32 0
 // ALL: ret void
 
 // Test that we've built a constructor.

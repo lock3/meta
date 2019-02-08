@@ -1,9 +1,8 @@
 //==--- RetainCountChecker.h - Checks for leaks and other issues -*- C++ -*--//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,13 +14,14 @@
 #ifndef LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_RETAINCOUNTCHECKER_H
 #define LLVM_CLANG_LIB_STATICANALYZER_CHECKERS_RETAINCOUNTCHECKER_H
 
-#include "../ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "RetainCountDiagnostics.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/Analysis/DomainSpecific/CocoaConventions.h"
+#include "clang/Analysis/RetainSummaryManager.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Analysis/SelectorExtras.h"
@@ -33,7 +33,6 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
-#include "clang/StaticAnalyzer/Core/RetainSummaryManager.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/ImmutableList.h"
@@ -92,9 +91,9 @@ private:
   /// See the RefVal::Kind enum for possible values.
   unsigned RawKind : 5;
 
-  /// The kind of object being tracked (CF or ObjC), if known.
+  /// The kind of object being tracked (CF or ObjC or OSObject), if known.
   ///
-  /// See the RetEffect::ObjKind enum for possible values.
+  /// See the ObjKind enum for possible values.
   unsigned RawObjectKind : 3;
 
   /// True if the current state and/or retain count may turn out to not be the
@@ -108,7 +107,7 @@ private:
   /// them.
   unsigned RawIvarAccessHistory : 2;
 
-  RefVal(Kind k, RetEffect::ObjKind o, unsigned cnt, unsigned acnt, QualType t,
+  RefVal(Kind k, ObjKind o, unsigned cnt, unsigned acnt, QualType t,
          IvarAccessHistory IvarAccess)
     : Cnt(cnt), ACnt(acnt), T(t), RawKind(static_cast<unsigned>(k)),
       RawObjectKind(static_cast<unsigned>(o)),
@@ -121,8 +120,8 @@ private:
 public:
   Kind getKind() const { return static_cast<Kind>(RawKind); }
 
-  RetEffect::ObjKind getObjKind() const {
-    return static_cast<RetEffect::ObjKind>(RawObjectKind);
+  ObjKind getObjKind() const {
+    return static_cast<ObjKind>(RawObjectKind);
   }
 
   unsigned getCount() const { return Cnt; }
@@ -170,7 +169,7 @@ public:
   /// current function, at least partially.
   ///
   /// Most commonly, this is an owned object with a retain count of +1.
-  static RefVal makeOwned(RetEffect::ObjKind o, QualType t) {
+  static RefVal makeOwned(ObjKind o, QualType t) {
     return RefVal(Owned, o, /*Count=*/1, 0, t, IvarAccessHistory::None);
   }
 
@@ -178,7 +177,7 @@ public:
   /// the current function.
   ///
   /// Most commonly, this is an unowned object with a retain count of +0.
-  static RefVal makeNotOwned(RetEffect::ObjKind o, QualType t) {
+  static RefVal makeNotOwned(ObjKind o, QualType t) {
     return RefVal(NotOwned, o, /*Count=*/0, 0, t, IvarAccessHistory::None);
   }
 
@@ -239,7 +238,6 @@ public:
 class RetainCountChecker
   : public Checker< check::Bind,
                     check::DeadSymbols,
-                    check::EndAnalysis,
                     check::BeginFunction,
                     check::EndFunction,
                     check::PostStmt<BlockExpr>,
@@ -252,89 +250,37 @@ class RetainCountChecker
                     check::RegionChanges,
                     eval::Assume,
                     eval::Call > {
-  mutable std::unique_ptr<CFRefBug> useAfterRelease, releaseNotOwned;
-  mutable std::unique_ptr<CFRefBug> deallocNotOwned;
-  mutable std::unique_ptr<CFRefBug> overAutorelease, returnNotOwnedForOwned;
-  mutable std::unique_ptr<CFRefBug> leakWithinFunction, leakAtReturn;
 
-  typedef llvm::DenseMap<SymbolRef, const CheckerProgramPointTag *> SymbolTagMap;
+  RefCountBug useAfterRelease{this, RefCountBug::UseAfterRelease};
+  RefCountBug releaseNotOwned{this, RefCountBug::ReleaseNotOwned};
+  RefCountBug deallocNotOwned{this, RefCountBug::DeallocNotOwned};
+  RefCountBug freeNotOwned{this, RefCountBug::FreeNotOwned};
+  RefCountBug overAutorelease{this, RefCountBug::OverAutorelease};
+  RefCountBug returnNotOwnedForOwned{this, RefCountBug::ReturnNotOwnedForOwned};
+  RefCountBug leakWithinFunction{this, RefCountBug::LeakWithinFunction};
+  RefCountBug leakAtReturn{this, RefCountBug::LeakAtReturn};
 
-  // This map is only used to ensure proper deletion of any allocated tags.
-  mutable SymbolTagMap DeadSymbolTags;
+  CheckerProgramPointTag DeallocSentTag{this, "DeallocSent"};
+  CheckerProgramPointTag CastFailTag{this, "DynamicCastFail"};
 
   mutable std::unique_ptr<RetainSummaryManager> Summaries;
-  mutable SummaryLogTy SummaryLog;
-
-  mutable bool ShouldResetSummaryLog;
-
 public:
-  /// Optional setting to indicate if leak reports should include
-  /// the allocation line.
-  bool IncludeAllocationLine;
-  bool ShouldCheckOSObjectRetainCount;
 
-  RetainCountChecker() : ShouldResetSummaryLog(false) {}
+  /// Track Objective-C and CoreFoundation objects.
+  bool TrackObjCAndCFObjects = false;
 
-  ~RetainCountChecker() override { DeleteContainerSeconds(DeadSymbolTags); }
+  /// Track sublcasses of OSObject.
+  bool TrackOSObjects = false;
 
-  void checkEndAnalysis(ExplodedGraph &G, BugReporter &BR,
-                        ExprEngine &Eng) const {
-    // FIXME: This is a hack to make sure the summary log gets cleared between
-    // analyses of different code bodies.
-    //
-    // Why is this necessary? Because a checker's lifetime is tied to a
-    // translation unit, but an ExplodedGraph's lifetime is just a code body.
-    // Once in a blue moon, a new ExplodedNode will have the same address as an
-    // old one with an associated summary, and the bug report visitor gets very
-    // confused. (To make things worse, the summary lifetime is currently also
-    // tied to a code body, so we get a crash instead of incorrect results.)
-    //
-    // Why is this a bad solution? Because if the lifetime of the ExplodedGraph
-    // changes, things will start going wrong again. Really the lifetime of this
-    // log needs to be tied to either the specific nodes in it or the entire
-    // ExplodedGraph, not to a specific part of the code being analyzed.
-    //
-    // (Also, having stateful local data means that the same checker can't be
-    // used from multiple threads, but a lot of checkers have incorrect
-    // assumptions about that anyway. So that wasn't a priority at the time of
-    // this fix.)
-    //
-    // This happens at the end of analysis, but bug reports are emitted /after/
-    // this point. So we can't just clear the summary log now. Instead, we mark
-    // that the next time we access the summary log, it should be cleared.
+  /// Track initial parameters (for the entry point) for NS/CF objects.
+  bool TrackNSCFStartParam = false;
 
-    // If we never reset the summary log during /this/ code body analysis,
-    // there were no new summaries. There might still have been summaries from
-    // the /last/ analysis, so clear them out to make sure the bug report
-    // visitors don't get confused.
-    if (ShouldResetSummaryLog)
-      SummaryLog.clear();
-
-    ShouldResetSummaryLog = !SummaryLog.empty();
-  }
-
-  CFRefBug *getLeakWithinFunctionBug(const LangOptions &LOpts) const {
-    if (!leakWithinFunction)
-      leakWithinFunction.reset(new Leak(this, "Leak"));
-    return leakWithinFunction.get();
-  }
-
-  CFRefBug *getLeakAtReturnBug(const LangOptions &LOpts) const {
-      if (!leakAtReturn)
-        leakAtReturn.reset(new Leak(this, "Leak of returned object"));
-      return leakAtReturn.get();
-  }
+  RetainCountChecker() {};
 
   RetainSummaryManager &getSummaryManager(ASTContext &Ctx) const {
-    // FIXME: We don't support ARC being turned on and off during one analysis.
-    // (nor, for that matter, do we support changing ASTContexts)
-    bool ARCEnabled = (bool)Ctx.getLangOpts().ObjCAutoRefCount;
-    if (!Summaries) {
-      Summaries.reset(new RetainSummaryManager(
-          Ctx, ARCEnabled, ShouldCheckOSObjectRetainCount));
-    } else {
-      assert(Summaries->isARCEnabled() == ARCEnabled);
-    }
+    if (!Summaries)
+      Summaries.reset(
+          new RetainSummaryManager(Ctx, TrackObjCAndCFObjects, TrackOSObjects));
     return *Summaries;
   }
 
@@ -389,13 +335,14 @@ public:
                                RefVal V, ArgEffect E, RefVal::Kind &hasErr,
                                CheckerContext &C) const;
 
+  const RefCountBug &errorKindToBugKind(RefVal::Kind ErrorKind,
+                                        SymbolRef Sym) const;
+
   void processNonLeakError(ProgramStateRef St, SourceRange ErrorRange,
                            RefVal::Kind ErrorKind, SymbolRef Sym,
                            CheckerContext &C) const;
 
   void processObjCLiterals(CheckerContext &C, const Expr *Ex) const;
-
-  const ProgramPointTag *getDeadSymbolTag(SymbolRef sym) const;
 
   ProgramStateRef handleSymbolDeath(ProgramStateRef state,
                                     SymbolRef sid, RefVal V,
@@ -413,6 +360,14 @@ public:
                              CheckerContext &Ctx,
                              ExplodedNode *Pred = nullptr) const;
 
+  const CheckerProgramPointTag &getDeallocSentTag() const {
+    return DeallocSentTag;
+  }
+
+  const CheckerProgramPointTag &getCastFailTag() const {
+    return CastFailTag;
+  }
+
 private:
   /// Perform the necessary checks and state adjustments at the end of the
   /// function.
@@ -425,11 +380,6 @@ private:
 //===----------------------------------------------------------------------===//
 
 const RefVal *getRefBinding(ProgramStateRef State, SymbolRef Sym);
-
-ProgramStateRef setRefBinding(ProgramStateRef State, SymbolRef Sym,
-                                     RefVal Val);
-
-ProgramStateRef removeRefBinding(ProgramStateRef State, SymbolRef Sym);
 
 /// Returns true if this stack frame is for an Objective-C method that is a
 /// property getter or setter whose body has been synthesized by the analyzer.

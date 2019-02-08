@@ -1,9 +1,8 @@
 //===- Stmt.cpp - Statement AST Node Implementation -----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -76,6 +75,14 @@ const char *Stmt::getStmtClassName() const {
   return getStmtInfoTableEntry((StmtClass) StmtBits.sClass).Name;
 }
 
+// Check that no statement / expression class is polymorphic. LLVM style RTTI
+// should be used instead. If absolutely needed an exception can still be added
+// here by defining the appropriate macro (but please don't do this).
+#define STMT(CLASS, PARENT) \
+  static_assert(!std::is_polymorphic<CLASS>::value, \
+                #CLASS " should not be polymorphic!");
+#include "clang/AST/StmtNodes.inc"
+
 void Stmt::PrintStats() {
   // Ensure the table is primed.
   getStmtInfoTableEntry(Stmt::NullStmtClass);
@@ -108,30 +115,6 @@ void Stmt::addStmtClass(StmtClass s) {
 bool Stmt::StatisticsEnabled = false;
 void Stmt::EnableStatistics() {
   StatisticsEnabled = true;
-}
-
-Stmt *Stmt::IgnoreImplicit() {
-  Stmt *s = this;
-
-  Stmt *lasts = nullptr;
-
-  while (s != lasts) {
-    lasts = s;
-
-    if (auto *fe = dyn_cast<FullExpr>(s))
-      s = fe->getSubExpr();
-
-    if (auto *mte = dyn_cast<MaterializeTemporaryExpr>(s))
-      s = mte->GetTemporaryExpr();
-
-    if (auto *bte = dyn_cast<CXXBindTemporaryExpr>(s))
-      s = bte->getSubExpr();
-
-    if (auto *ice = dyn_cast<ImplicitCastExpr>(s))
-      s = ice->getSubExpr();
-  }
-
-  return s;
 }
 
 /// Skip no-op (attributed, compound) container stmts and skip captured
@@ -303,10 +286,7 @@ SourceLocation Stmt::getEndLoc() const {
 }
 
 int64_t Stmt::getID(const ASTContext &Context) const {
-  Optional<int64_t> Out = Context.getAllocator().identifyObject(this);
-  assert(Out && "Wrong allocator used");
-  assert(*Out % alignof(Stmt) == 0 && "Wrong alignment information");
-  return *Out / alignof(Stmt);
+  return Context.getAllocator().identifyKnownAlignedObject<Stmt>(this);
 }
 
 CompoundStmt::CompoundStmt(ArrayRef<Stmt *> Stmts, SourceLocation LB,

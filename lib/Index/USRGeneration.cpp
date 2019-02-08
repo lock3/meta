@@ -1,9 +1,8 @@
 //===- USRGeneration.cpp - Routines for USR generation --------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -270,7 +269,8 @@ void USRGenerator::VisitFunctionDecl(const FunctionDecl *D) {
   if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D)) {
     if (MD->isStatic())
       Out << 'S';
-    if (unsigned quals = MD->getTypeQualifiers())
+    // FIXME: OpenCL: Need to consider address spaces
+    if (unsigned quals = MD->getMethodQualifiers().getCVRUQualifiers())
       Out << (char)('0' + quals);
     switch (MD->getRefQualifier()) {
     case RQ_None: break;
@@ -1106,6 +1106,17 @@ bool clang::index::generateUSRForMacro(StringRef MacroName, SourceLocation Loc,
   Out << "@macro@";
   Out << MacroName;
   return false;
+}
+
+bool clang::index::generateUSRForType(QualType T, ASTContext &Ctx,
+                                      SmallVectorImpl<char> &Buf) {
+  if (T.isNull())
+    return true;
+  T = T.getCanonicalType();
+
+  USRGenerator UG(&Ctx, Buf);
+  UG.VisitType(T);
+  return UG.ignoreResults();
 }
 
 bool clang::index::generateFullUSRForModule(const Module *Mod,

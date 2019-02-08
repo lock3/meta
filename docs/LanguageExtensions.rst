@@ -20,7 +20,7 @@ Introduction
 This document describes the language extensions provided by Clang.  In addition
 to the language extensions listed here, Clang aims to support a broad range of
 GCC extensions.  Please see the `GCC manual
-<http://gcc.gnu.org/onlinedocs/gcc/C-Extensions.html>`_ for more information on
+<https://gcc.gnu.org/onlinedocs/gcc/C-Extensions.html>`_ for more information on
 these extensions.
 
 .. _langext-feature_check:
@@ -112,18 +112,22 @@ of ``cxx_rvalue_references``.
 ``__has_cpp_attribute``
 -----------------------
 
-This function-like macro takes a single argument that is the name of a
-C++11-style attribute. The argument can either be a single identifier, or a
-scoped identifier. If the attribute is supported, a nonzero value is returned.
-If the attribute is a standards-based attribute, this macro returns a nonzero
-value based on the year and month in which the attribute was voted into the
-working draft. If the attribute is not supported by the current compliation
-target, this macro evaluates to 0.  It can be used like this:
+This function-like macro is available in C++2a by default, and is provided as an
+extension in earlier language standards. It takes a single argument that is the
+name of a double-square-bracket-style attribute. The argument can either be a
+single identifier or a scoped identifier. If the attribute is supported, a
+nonzero value is returned. If the attribute is a standards-based attribute, this
+macro returns a nonzero value based on the year and month in which the attribute
+was voted into the working draft. See `WG21 SD-6
+<https://isocpp.org/std/standing-documents/sd-6-sg10-feature-test-recommendations>`_
+for the list of values returned for standards-based attributes. If the attribute
+is not supported by the current compliation target, this macro evaluates to 0.
+It can be used like this:
 
 .. code-block:: c++
 
-  #ifndef __has_cpp_attribute         // Optional of course.
-    #define __has_cpp_attribute(x) 0  // Compatibility with non-clang compilers.
+  #ifndef __has_cpp_attribute         // For backwards compatibility
+    #define __has_cpp_attribute(x) 0
   #endif
 
   ...
@@ -134,10 +138,11 @@ target, this macro evaluates to 0.  It can be used like this:
   #endif
   ...
 
-The attribute identifier (but not scope) can also be specified with a preceding
-and following ``__`` (double underscore) to avoid interference from a macro with
-the same name.  For instance, ``gnu::__const__`` can be used instead of
-``gnu::const``.
+The attribute scope tokens ``clang`` and ``_Clang`` are interchangeable, as are
+the attribute scope tokens ``gnu`` and ``__gnu__``. Attribute tokens in either
+of these namespaces can be specified with a preceding and following ``__``
+(double underscore) to avoid interference from a macro with the same name. For
+instance, ``gnu::__const__`` can be used instead of ``gnu::const``.
 
 ``__has_c_attribute``
 ---------------------
@@ -162,11 +167,11 @@ current compilation target, this macro evaluates to 0. It can be used like this:
   #endif
   ...
 
-The attribute identifier (but not scope) can also be specified with a preceding
-and following ``__`` (double underscore) to avoid interference from a macro with
-the same name.  For instance, ``gnu::__const__`` can be used instead of
-``gnu::const``.
-
+The attribute scope tokens ``clang`` and ``_Clang`` are interchangeable, as are
+the attribute scope tokens ``gnu`` and ``__gnu__``. Attribute tokens in either
+of these namespaces can be specified with a preceding and following ``__``
+(double underscore) to avoid interference from a macro with the same name. For
+instance, ``gnu::__const__`` can be used instead of ``gnu::const``.
 
 ``__has_attribute``
 -------------------
@@ -469,44 +474,58 @@ Half-Precision Floating Point
 =============================
 
 Clang supports two half-precision (16-bit) floating point types: ``__fp16`` and
-``_Float16``. ``__fp16`` is defined in the ARM C Language Extensions (`ACLE
-<http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053d/IHI0053D_acle_2_1.pdf>`_)
-and ``_Float16`` in ISO/IEC TS 18661-3:2015.
+``_Float16``.  These types are supported in all language modes.
 
-``__fp16`` is a storage and interchange format only. This means that values of
-``__fp16`` promote to (at least) float when used in arithmetic operations.
-There are two ``__fp16`` formats. Clang supports the IEEE 754-2008 format and
-not the ARM alternative format.
+``__fp16`` is supported on every target, as it is purely a storage format; see below.
+``_Float16`` is currently only supported on the following targets, with further
+targets pending ABI standardization:
+- 32-bit ARM
+- 64-bit ARM (AArch64)
+- SPIR
+``_Float16`` will be supported on more targets as they define ABIs for it.
 
-ISO/IEC TS 18661-3:2015 defines C support for additional floating point types.
-``_FloatN`` is defined as a binary floating type, where the N suffix denotes
-the number of bits and is 16, 32, 64, or greater and equal to 128 and a
-multiple of 32. Clang supports ``_Float16``. The difference from ``__fp16`` is
-that arithmetic on ``_Float16`` is performed in half-precision, thus it is not
-a storage-only format. ``_Float16`` is available as a source language type in
-both C and C++ mode.
+``__fp16`` is a storage and interchange format only.  This means that values of
+``__fp16`` are immediately promoted to (at least) ``float`` when used in arithmetic
+operations, so that e.g. the result of adding two ``__fp16`` values has type ``float``.
+The behavior of ``__fp16`` is specified by the ARM C Language Extensions (`ACLE <http://infocenter.arm.com/help/topic/com.arm.doc.ihi0053d/IHI0053D_acle_2_1.pdf>`_).
+Clang uses the ``binary16`` format from IEEE 754-2008 for ``__fp16``, not the ARM
+alternative format.
 
-It is recommended that portable code use the ``_Float16`` type because
-``__fp16`` is an ARM C-Language Extension (ACLE), whereas ``_Float16`` is
-defined by the C standards committee, so using ``_Float16`` will not prevent
-code from being ported to architectures other than Arm.  Also, ``_Float16``
-arithmetic and operations will directly map on half-precision instructions when
-they are available (e.g. Armv8.2-A), avoiding conversions to/from
-single-precision, and thus will result in more performant code. If
-half-precision instructions are unavailable, values will be promoted to
-single-precision, similar to the semantics of ``__fp16`` except that the
-results will be stored in single-precision.
+``_Float16`` is an extended floating-point type.  This means that, just like arithmetic on
+``float`` or ``double``, arithmetic on ``_Float16`` operands is formally performed in the
+``_Float16`` type, so that e.g. the result of adding two ``_Float16`` values has type
+``_Float16``.  The behavior of ``_Float16`` is specified by ISO/IEC TS 18661-3:2015
+("Floating-point extensions for C").  As with ``__fp16``, Clang uses the ``binary16``
+format from IEEE 754-2008 for ``_Float16``.
 
-In an arithmetic operation where one operand is of ``__fp16`` type and the
-other is of ``_Float16`` type, the ``_Float16`` type is first converted to
-``__fp16`` type and then the operation is completed as if both operands were of
-``__fp16`` type.
+``_Float16`` arithmetic will be performed using native half-precision support
+when available on the target (e.g. on ARMv8.2a); otherwise it will be performed
+at a higher precision (currently always ``float``) and then truncated down to
+``_Float16``.  Note that C and C++ allow intermediate floating-point operands
+of an expression to be computed with greater precision than is expressible in
+their type, so Clang may avoid intermediate truncations in certain cases; this may
+lead to results that are inconsistent with native arithmetic.
 
-To define a ``_Float16`` literal, suffix ``f16`` can be appended to the compile-time
-constant declaration. There is no default argument promotion for ``_Float16``; this
-applies to the standard floating types only. As a consequence, for example, an
-explicit cast is required for printing a ``_Float16`` value (there is no string
-format specifier for ``_Float16``).
+It is recommended that portable code use ``_Float16`` instead of ``__fp16``,
+as it has been defined by the C standards committee and has behavior that is
+more familiar to most programmers.
+
+Because ``__fp16`` operands are always immediately promoted to ``float``, the
+common real type of ``__fp16`` and ``_Float16`` for the purposes of the usual
+arithmetic conversions is ``float``.
+
+A literal can be given ``_Float16`` type using the suffix ``f16``; for example:
+```
+3.14f16
+```
+
+Because default argument promotion only applies to the standard floating-point
+types, ``_Float16`` values are not promoted to ``double`` when passed as variadic
+or untyped arguments.  As a consequence, some caution must be taken when using
+certain library facilities with ``_Float16``; for example, there is no ``printf`` format
+specifier for ``_Float16``, and (unlike ``float``) it will not be implicitly promoted to
+``double`` when passed to ``printf``, so the programmer must explicitly cast it to
+``double`` before using it with an ``%f`` or similar specifier.
 
 Messages on ``deprecated`` and ``unavailable`` Attributes
 =========================================================
@@ -1031,9 +1050,9 @@ the supported set of system headers, currently:
 * The Microsoft standard C++ library
 
 Clang supports the `GNU C++ type traits
-<http://gcc.gnu.org/onlinedocs/gcc/Type-Traits.html>`_ and a subset of the
+<https://gcc.gnu.org/onlinedocs/gcc/Type-Traits.html>`_ and a subset of the
 `Microsoft Visual C++ Type traits
-<http://msdn.microsoft.com/en-us/library/ms177194(v=VS.100).aspx>`_.
+<https://msdn.microsoft.com/en-us/library/ms177194(v=VS.100).aspx>`_.
 
 Feature detection is supported only for some of the primitives at present. User
 code should not use these checks because they bear no direct relation to the
@@ -1349,7 +1368,7 @@ Objective-C retaining behavior attributes
 
 In Objective-C, functions and methods are generally assumed to follow the
 `Cocoa Memory Management 
-<http://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/MemoryMgmt/Articles/mmRules.html>`_
+<https://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/MemoryMgmt/Articles/mmRules.html>`_
 conventions for ownership of object arguments and
 return values. However, there are exceptions, and so Clang provides attributes
 to allow these exceptions to be documented. This are used by ARC and the
@@ -2213,7 +2232,7 @@ C++ Coroutines support builtins
   guaranteed.
 
 Clang provides experimental builtins to support C++ Coroutines as defined by
-http://wg21.link/P0057. The following four are intended to be used by the
+https://wg21.link/P0057. The following four are intended to be used by the
 standard library to implement `std::experimental::coroutine_handle` type.
 
 **Syntax**:
@@ -2291,10 +2310,10 @@ Clang supports GCC's ``gnu`` attribute namespace. All GCC attributes which
 are accepted with the ``__attribute__((foo))`` syntax are also accepted as
 ``[[gnu::foo]]``. This only extends to attributes which are specified by GCC
 (see the list of `GCC function attributes
-<http://gcc.gnu.org/onlinedocs/gcc/Function-Attributes.html>`_, `GCC variable
-attributes <http://gcc.gnu.org/onlinedocs/gcc/Variable-Attributes.html>`_, and
+<https://gcc.gnu.org/onlinedocs/gcc/Function-Attributes.html>`_, `GCC variable
+attributes <https://gcc.gnu.org/onlinedocs/gcc/Variable-Attributes.html>`_, and
 `GCC type attributes
-<http://gcc.gnu.org/onlinedocs/gcc/Type-Attributes.html>`_). As with the GCC
+<https://gcc.gnu.org/onlinedocs/gcc/Type-Attributes.html>`_). As with the GCC
 implementation, these attributes must appertain to the *declarator-id* in a
 declaration, which means they must go either at the start of the declaration or
 immediately after the name being declared.
@@ -2692,6 +2711,38 @@ The ``__declspec`` style syntax is also supported:
 A single push directive accepts only one attribute regardless of the syntax
 used.
 
+Because multiple push directives can be nested, if you're writing a macro that
+expands to ``_Pragma("clang attribute")`` it's good hygiene (though not
+required) to add a namespace to your push/pop directives. A pop directive with a
+namespace will pop the innermost push that has that same namespace. This will
+ensure that another macro's ``pop`` won't inadvertently pop your attribute. Note
+that an ``pop`` without a namespace will pop the innermost ``push`` without a
+namespace. ``push``es with a namespace can only be popped by ``pop`` with the
+same namespace. For instance:
+
+.. code-block:: c++
+
+   #define ASSUME_NORETURN_BEGIN _Pragma("clang attribute AssumeNoreturn.push ([[noreturn]], apply_to = function)")
+   #define ASSUME_NORETURN_END   _Pragma("clang attribute AssumeNoreturn.pop")
+
+   #define ASSUME_UNAVAILABLE_BEGIN _Pragma("clang attribute Unavailable.push (__attribute__((unavailable)), apply_to=function)")
+   #define ASSUME_UNAVAILABLE_END   _Pragma("clang attribute Unavailable.pop")
+
+
+   ASSUME_NORETURN_BEGIN
+   ASSUME_UNAVAILABLE_BEGIN
+   void function(); // function has [[noreturn]] and __attribute__((unavailable))
+   ASSUME_NORETURN_END
+   void other_function(); // function has __attribute__((unavailable))
+   ASSUME_UNAVAILABLE_END
+
+Without the namespaces on the macros, ``other_function`` will be annotated with
+``[[noreturn]]`` instead of ``__attribute__((unavailable))``. This may seem like
+a contrived example, but its very possible for this kind of situation to appear
+in real code if the pragmas are spread out across a large file. You can test if
+your version of clang supports namespaces on ``#pragma clang attribute`` with
+``__has_extension(pragma_clang_attribute_namespaces)``.
+
 Subject Match Rules
 -------------------
 
@@ -2871,3 +2922,29 @@ Specifying Linker Options on ELF Targets
 The ``#pragma comment(lib, ...)`` directive is supported on all ELF targets.
 The second parameter is the library name (without the traditional Unix prefix of
 ``lib``).  This allows you to provide an implicit link of dependent libraries.
+
+Evaluating Object Size Dynamically
+==================================
+
+Clang supports the builtin ``__builtin_dynamic_object_size``, the semantics are
+the same as GCC's ``__builtin_object_size`` (which Clang also supports), but
+``__builtin_dynamic_object_size`` can evaluate the object's size at runtime.
+``__builtin_dynamic_object_size`` is meant to be used as a drop-in replacement
+for ``__builtin_object_size`` in libraries that support it.
+
+For instance, here is a program that ``__builtin_dynamic_object_size`` will make
+safer:
+
+.. code-block:: c
+
+  void copy_into_buffer(size_t size) {
+    char* buffer = malloc(size);
+    strlcpy(buffer, "some string", strlen("some string"));
+    // Previous line preprocesses to:
+    // __builtin___strlcpy_chk(buffer, "some string", strlen("some string"), __builtin_object_size(buffer, 0))
+  }
+
+Since the size of ``buffer`` can't be known at compile time, Clang will fold
+``__builtin_object_size(buffer, 0)`` into ``-1``. However, if this was written
+as ``__builtin_dynamic_object_size(buffer, 0)``, Clang will fold it into
+``size``, providing some extra runtime safety.

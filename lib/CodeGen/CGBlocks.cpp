@@ -1,9 +1,8 @@
 //===--- CGBlocks.cpp - Emit LLVM Code for declarations ---------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -23,7 +22,6 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/CodeGen/ConstantInitBuilder.h"
 #include "llvm/ADT/SmallSet.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ScopedPrinter.h"
@@ -161,6 +159,9 @@ static std::string getBlockDescriptorName(const CGBlockInfo &BlockInfo,
 
   std::string TypeAtEncoding =
       CGM.getContext().getObjCEncodingForBlock(BlockInfo.getBlockExpr());
+  /// Replace occurrences of '@' with '\1'. '@' is reserved on ELF platforms as
+  /// a separator between symbol name and symbol version.
+  std::replace(TypeAtEncoding.begin(), TypeAtEncoding.end(), '@', '\1');
   Name += "e" + llvm::to_string(TypeAtEncoding.size()) + "_" + TypeAtEncoding;
   Name += "l" + CGM.getObjCRuntime().getRCBlockLayoutStr(CGM, BlockInfo);
   return Name;
@@ -175,7 +176,7 @@ static std::string getBlockDescriptorName(const CGBlockInfo &BlockInfo,
 ///   unsigned long reserved;
 ///   unsigned long size;  // size of Block_literal metadata in bytes.
 ///   void *copy_func_helper_decl;  // optional copy helper.
-///   void *destroy_func_decl; // optioanl destructor helper.
+///   void *destroy_func_decl; // optional destructor helper.
 ///   void *block_method_encoding_address; // @encode for block literal signature.
 ///   void *block_layout_info; // encoding of captured block variables.
 /// };
@@ -548,7 +549,7 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
   if (block->capturesCXXThis()) {
     assert(CGF && CGF->CurFuncDecl && isa<CXXMethodDecl>(CGF->CurFuncDecl) &&
            "Can't capture 'this' outside a method");
-    QualType thisType = cast<CXXMethodDecl>(CGF->CurFuncDecl)->getThisType(C);
+    QualType thisType = cast<CXXMethodDecl>(CGF->CurFuncDecl)->getThisType();
 
     // Theoretically, this could be in a different address space, so
     // don't assume standard pointer size/align.
@@ -1075,7 +1076,7 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
         src = I->second;
       }
     } else {
-      DeclRefExpr declRef(const_cast<VarDecl *>(variable),
+      DeclRefExpr declRef(getContext(), const_cast<VarDecl *>(variable),
                           /*RefersToEnclosingVariableOrCapture*/ CI.isNested(),
                           type.getNonReferenceType(), VK_LValue,
                           SourceLocation());
@@ -1149,7 +1150,7 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
 
       // We use one of these or the other depending on whether the
       // reference is nested.
-      DeclRefExpr declRef(const_cast<VarDecl *>(variable),
+      DeclRefExpr declRef(getContext(), const_cast<VarDecl *>(variable),
                           /*RefersToEnclosingVariableOrCapture*/ CI.isNested(),
                           type, VK_LValue, SourceLocation());
 
@@ -2283,7 +2284,7 @@ public:
     unsigned flags = (Flags | BLOCK_BYREF_CALLER).getBitMask();
 
     llvm::Value *flagsVal = llvm::ConstantInt::get(CGF.Int32Ty, flags);
-    llvm::Value *fn = CGF.CGM.getBlockObjectAssign();
+    llvm::FunctionCallee fn = CGF.CGM.getBlockObjectAssign();
 
     llvm::Value *args[] = { destField.getPointer(), srcValue, flagsVal };
     CGF.EmitNounwindRuntimeCall(fn, args);
@@ -2930,7 +2931,7 @@ void CodeGenFunction::emitByrefStructureInit(const AutoVarEmission &emission) {
 
 void CodeGenFunction::BuildBlockRelease(llvm::Value *V, BlockFieldFlags flags,
                                         bool CanThrow) {
-  llvm::Value *F = CGM.getBlockObjectDispose();
+  llvm::FunctionCallee F = CGM.getBlockObjectDispose();
   llvm::Value *args[] = {
     Builder.CreateBitCast(V, Int8PtrTy),
     llvm::ConstantInt::get(Int32Ty, flags.getBitMask())
@@ -2986,7 +2987,7 @@ static void configureBlocksRuntimeObject(CodeGenModule &CGM,
   CGM.setDSOLocal(GV);
 }
 
-llvm::Constant *CodeGenModule::getBlockObjectDispose() {
+llvm::FunctionCallee CodeGenModule::getBlockObjectDispose() {
   if (BlockObjectDispose)
     return BlockObjectDispose;
 
@@ -2994,11 +2995,12 @@ llvm::Constant *CodeGenModule::getBlockObjectDispose() {
   llvm::FunctionType *fty
     = llvm::FunctionType::get(VoidTy, args, false);
   BlockObjectDispose = CreateRuntimeFunction(fty, "_Block_object_dispose");
-  configureBlocksRuntimeObject(*this, BlockObjectDispose);
+  configureBlocksRuntimeObject(
+      *this, cast<llvm::Constant>(BlockObjectDispose.getCallee()));
   return BlockObjectDispose;
 }
 
-llvm::Constant *CodeGenModule::getBlockObjectAssign() {
+llvm::FunctionCallee CodeGenModule::getBlockObjectAssign() {
   if (BlockObjectAssign)
     return BlockObjectAssign;
 
@@ -3006,7 +3008,8 @@ llvm::Constant *CodeGenModule::getBlockObjectAssign() {
   llvm::FunctionType *fty
     = llvm::FunctionType::get(VoidTy, args, false);
   BlockObjectAssign = CreateRuntimeFunction(fty, "_Block_object_assign");
-  configureBlocksRuntimeObject(*this, BlockObjectAssign);
+  configureBlocksRuntimeObject(
+      *this, cast<llvm::Constant>(BlockObjectAssign.getCallee()));
   return BlockObjectAssign;
 }
 

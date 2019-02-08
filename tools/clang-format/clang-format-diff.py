@@ -2,10 +2,9 @@
 #
 #===- clang-format-diff.py - ClangFormat Diff Reformatter ----*- python -*--===#
 #
-#                     The LLVM Compiler Infrastructure
-#
-# This file is distributed under the University of Illinois Open Source
-# License. See LICENSE.TXT for details.
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 #===------------------------------------------------------------------------===#
 
@@ -21,16 +20,18 @@ Example usage for git/svn users:
   svn diff --diff-cmd=diff -x-U0 | clang-format-diff.py -i
 
 """
+from __future__ import absolute_import, division, print_function
 
 import argparse
 import difflib
 import re
 import subprocess
 import sys
-try:
-  from StringIO import StringIO
-except ImportError:
-   from io import StringIO
+
+if sys.version_info.major >= 3:
+    from io import StringIO
+else:
+    from io import BytesIO as StringIO
 
 
 def main():

@@ -1,9 +1,8 @@
 #===- cindex.py - Python Indexing Library Bindings -----------*- python -*--===#
 #
-#                     The LLVM Compiler Infrastructure
-#
-# This file is distributed under the University of Illinois Open Source
-# License. See LICENSE.TXT for details.
+# Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #
 #===------------------------------------------------------------------------===#
 
@@ -44,6 +43,7 @@ The major indexing objects are:
 Most object information is exposed using properties, when the underlying API
 call is efficient.
 """
+from __future__ import absolute_import, division, print_function
 
 # TODO
 # ====
@@ -63,7 +63,6 @@ call is efficient.
 # o implement additional SourceLocation, SourceRange, and File methods.
 
 from ctypes import *
-import collections
 
 import clang.enumerations
 
@@ -109,8 +108,6 @@ if sys.version_info[0] == 3:
             return x
         return x.encode('utf8')
 
-    xrange = range
-
 elif sys.version_info[0] == 2:
     # Python 2 strings are utf8 byte strings, no translation is needed for
     # C-interop.
@@ -123,6 +120,14 @@ elif sys.version_info[0] == 2:
 
     def b(x):
         return x
+
+# Importing ABC-s directly from collections is deprecated since Python 3.7,
+# will stop working in Python 3.8.
+# See: https://docs.python.org/dev/whatsnew/3.7.html#id3
+if sys.version_info[:2] >= (3, 7):
+    from collections import abc as collections_abc
+else:
+    import collections as collections_abc
 
 # We only support PathLike objects on Python version with os.fspath present
 # to be consistent with the Python standard library. On older Python versions
@@ -400,7 +405,7 @@ class Diagnostic(object):
 
     @property
     def ranges(self):
-        class RangeIterator:
+        class RangeIterator(object):
             def __init__(self, diag):
                 self.diag = diag
 
@@ -416,7 +421,7 @@ class Diagnostic(object):
 
     @property
     def fixits(self):
-        class FixItIterator:
+        class FixItIterator(object):
             def __init__(self, diag):
                 self.diag = diag
 
@@ -436,7 +441,7 @@ class Diagnostic(object):
 
     @property
     def children(self):
-        class ChildDiagnosticsIterator:
+        class ChildDiagnosticsIterator(object):
             def __init__(self, diag):
                 self.diag_set = conf.lib.clang_getChildDiagnostics(diag)
 
@@ -556,7 +561,7 @@ class TokenGroup(object):
 
         token_group = TokenGroup(tu, tokens_memory, tokens_count)
 
-        for i in xrange(0, count):
+        for i in range(0, count):
             token = Token()
             token.int_data = tokens_array[i].int_data
             token.ptr_data = tokens_array[i].ptr_data
@@ -2182,7 +2187,7 @@ class Type(Structure):
         The returned object is iterable and indexable. Each item in the
         container is a Type instance.
         """
-        class ArgumentsIterator(collections.Sequence):
+        class ArgumentsIterator(collections_abc.Sequence):
             def __init__(self, parent):
                 self.parent = parent
                 self.length = None
@@ -2475,8 +2480,8 @@ SpellingCache = {
             # 20: CompletionChunk.Kind("VerticalSpace")
 }
 
-class CompletionChunk:
-    class Kind:
+class CompletionChunk(object):
+    class Kind(object):
         def __init__(self, name):
             self.name = name
 
@@ -2563,7 +2568,7 @@ completionChunkKindMap = {
             20: CompletionChunk.Kind("VerticalSpace")}
 
 class CompletionString(ClangObject):
-    class Availability:
+    class Availability(object):
         def __init__(self, name):
             self.name = name
 
@@ -2656,7 +2661,7 @@ class CodeCompletionResults(ClangObject):
 
     @property
     def diagnostics(self):
-        class DiagnosticsItr:
+        class DiagnosticsItr(object):
             def __init__(self, ccr):
                 self.ccr= ccr
 
@@ -2809,9 +2814,9 @@ class TranslationUnit(ClangObject):
             for i, (name, contents) in enumerate(unsaved_files):
                 if hasattr(contents, "read"):
                     contents = contents.read()
-
+                contents = b(contents)
                 unsaved_array[i].name = b(fspath(name))
-                unsaved_array[i].contents = b(contents)
+                unsaved_array[i].contents = contents
                 unsaved_array[i].length = len(contents)
 
         ptr = conf.lib.clang_parseTranslationUnit(index,
@@ -2958,7 +2963,7 @@ class TranslationUnit(ClangObject):
         """
         Return an iterable (and indexable) object containing the diagnostics.
         """
-        class DiagIterator:
+        class DiagIterator(object):
             def __init__(self, tu):
                 self.tu = tu
 
@@ -2988,17 +2993,13 @@ class TranslationUnit(ClangObject):
         unsaved_files_array = 0
         if len(unsaved_files):
             unsaved_files_array = (_CXUnsavedFile * len(unsaved_files))()
-            for i,(name,value) in enumerate(unsaved_files):
-                if not isinstance(value, str):
-                    # FIXME: It would be great to support an efficient version
-                    # of this, one day.
-                    value = value.read()
-                    print(value)
-                if not isinstance(value, str):
-                    raise TypeError('Unexpected unsaved file contents.')
-                unsaved_files_array[i].name = fspath(name)
-                unsaved_files_array[i].contents = value
-                unsaved_files_array[i].length = len(value)
+            for i,(name,contents) in enumerate(unsaved_files):
+                if hasattr(contents, "read"):
+                    contents = contents.read()
+                contents = b(contents)
+                unsaved_files_array[i].name = b(fspath(name))
+                unsaved_files_array[i].contents = contents
+                unsaved_files_array[i].length = len(contents)
         ptr = conf.lib.clang_reparseTranslationUnit(self, len(unsaved_files),
                 unsaved_files_array, options)
 
@@ -3052,17 +3053,13 @@ class TranslationUnit(ClangObject):
         unsaved_files_array = 0
         if len(unsaved_files):
             unsaved_files_array = (_CXUnsavedFile * len(unsaved_files))()
-            for i,(name,value) in enumerate(unsaved_files):
-                if not isinstance(value, str):
-                    # FIXME: It would be great to support an efficient version
-                    # of this, one day.
-                    value = value.read()
-                    print(value)
-                if not isinstance(value, str):
-                    raise TypeError('Unexpected unsaved file contents.')
+            for i,(name,contents) in enumerate(unsaved_files):
+                if hasattr(contents, "read"):
+                    contents = contents.read()
+                contents = b(contents)
                 unsaved_files_array[i].name = b(fspath(name))
-                unsaved_files_array[i].contents = b(value)
-                unsaved_files_array[i].length = len(value)
+                unsaved_files_array[i].contents = contents
+                unsaved_files_array[i].length = len(contents)
         ptr = conf.lib.clang_codeCompleteAt(self, fspath(path), line, column,
                 unsaved_files_array, len(unsaved_files), options)
         if ptr:
@@ -3190,7 +3187,7 @@ class CompileCommand(object):
         Invariant : the first argument is the compiler executable
         """
         length = conf.lib.clang_CompileCommand_getNumArgs(self.cmd)
-        for i in xrange(length):
+        for i in range(length):
             yield conf.lib.clang_CompileCommand_getArg(self.cmd, i)
 
 class CompileCommands(object):
@@ -4090,7 +4087,7 @@ def register_functions(lib, ignore_errors):
     for f in functionList:
         register(f)
 
-class Config:
+class Config(object):
     library_path = None
     library_file = None
     compatibility_check = True

@@ -1,9 +1,8 @@
 //===- ASTReader.cpp - AST File Reader ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -61,7 +60,6 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Basic/Version.h"
-#include "clang/Frontend/PCHContainerOperations.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/HeaderSearchOptions.h"
 #include "clang/Lex/MacroInfo.h"
@@ -81,6 +79,7 @@
 #include "clang/Serialization/Module.h"
 #include "clang/Serialization/ModuleFileExtension.h"
 #include "clang/Serialization/ModuleManager.h"
+#include "clang/Serialization/PCHContainerOperations.h"
 #include "clang/Serialization/SerializationDiagnostic.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -5390,7 +5389,6 @@ bool ASTReader::ParsePreprocessorOptions(const RecordData &Record,
   PPOpts.UsePredefines = Record[Idx++];
   PPOpts.DetailedRecord = Record[Idx++];
   PPOpts.ImplicitPCHInclude = ReadString(Record, Idx);
-  PPOpts.ImplicitPTHInclude = ReadString(Record, Idx);
   PPOpts.ObjCXXARCStandardLibrary =
     static_cast<ObjCXXARCStandardLibraryKind>(Record[Idx++]);
   SuggestedPredefines.clear();
@@ -6053,7 +6051,7 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
 
     EPI.Variadic = Record[Idx++];
     EPI.HasTrailingReturn = Record[Idx++];
-    EPI.TypeQuals = Record[Idx++];
+    EPI.TypeQuals = Qualifiers::fromOpaqueValue(Record[Idx++]);
     EPI.RefQualifier = static_cast<RefQualifierKind>(Record[Idx++]);
     SmallVector<QualType, 8> ExceptionStorage;
     readExceptionSpec(*Loc.F, ExceptionStorage, EPI.ExceptionSpec, Record, Idx);
@@ -12329,8 +12327,11 @@ void OMPClauseReader::VisitOMPDeviceClause(OMPDeviceClause *C) {
 
 void OMPClauseReader::VisitOMPMapClause(OMPMapClause *C) {
   C->setLParenLoc(Record.readSourceLocation());
-  C->setMapTypeModifier(
-     static_cast<OpenMPMapClauseKind>(Record.readInt()));
+  for (unsigned I = 0; I < OMPMapClause::NumberOfModifiers; ++I) {
+    C->setMapTypeModifier(
+        I, static_cast<OpenMPMapModifierKind>(Record.readInt()));
+    C->setMapTypeModifierLoc(I, Record.readSourceLocation());
+  }
   C->setMapType(
      static_cast<OpenMPMapClauseKind>(Record.readInt()));
   C->setMapLoc(Record.readSourceLocation());
@@ -12343,7 +12344,7 @@ void OMPClauseReader::VisitOMPMapClause(OMPMapClause *C) {
   SmallVector<Expr *, 16> Vars;
   Vars.reserve(NumVars);
   for (unsigned i = 0; i != NumVars; ++i)
-    Vars.push_back(Record.readSubExpr());
+    Vars.push_back(Record.readExpr());
   C->setVarRefs(Vars);
 
   SmallVector<ValueDecl *, 16> Decls;
@@ -12367,7 +12368,7 @@ void OMPClauseReader::VisitOMPMapClause(OMPMapClause *C) {
   SmallVector<OMPClauseMappableExprCommon::MappableComponent, 32> Components;
   Components.reserve(TotalComponents);
   for (unsigned i = 0; i < TotalComponents; ++i) {
-    Expr *AssociatedExpr = Record.readSubExpr();
+    Expr *AssociatedExpr = Record.readExpr();
     auto *AssociatedDecl = Record.readDeclAs<ValueDecl>();
     Components.push_back(OMPClauseMappableExprCommon::MappableComponent(
         AssociatedExpr, AssociatedDecl));

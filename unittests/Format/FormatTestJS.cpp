@@ -1,9 +1,8 @@
 //===- unittest/Format/FormatTestJS.cpp - Formatting unit tests for JS ----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -600,6 +599,8 @@ TEST_F(FormatTestJS, GoogModules) {
                getGoogleJSStyleWithColumns(40));
   verifyFormat("var long = goog.require('this.is.really.absurdly.long');",
                getGoogleJSStyleWithColumns(40));
+  verifyFormat("const X = goog.requireType('this.is.really.absurdly.long');",
+               getGoogleJSStyleWithColumns(40));
   verifyFormat("goog.forwardDeclare('this.is.really.absurdly.long');",
                getGoogleJSStyleWithColumns(40));
 
@@ -1184,6 +1185,16 @@ TEST_F(FormatTestJS, WrapRespectsAutomaticSemicolonInsertion) {
                "      }&ABC => 1)\n"
                "}",
                getGoogleJSStyleWithColumns(25));
+}
+
+TEST_F(FormatTestJS, AddsIsTheDictKeyOnNewline) {
+  // Do not confuse is, the dict key with is, the type matcher. Put is, the dict
+  // key, on a newline.
+  verifyFormat("Polymer({\n"
+               "  is: '',  //\n"
+               "  rest: 1\n"
+               "});",
+               getGoogleJSStyleWithColumns(20));
 }
 
 TEST_F(FormatTestJS, AutomaticSemicolonInsertionHeuristic) {

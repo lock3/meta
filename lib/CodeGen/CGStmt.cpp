@@ -1,9 +1,8 @@
 //===--- CGStmt.cpp - Emit LLVM Code from Statements ----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -19,10 +18,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/Sema/LoopHint.h"
-#include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Intrinsics.h"
@@ -535,6 +531,16 @@ void CodeGenFunction::EmitLabel(const LabelDecl *D) {
   }
 
   EmitBlock(Dest.getBlock());
+
+  // Emit debug info for labels.
+  if (CGDebugInfo *DI = getDebugInfo()) {
+    if (CGM.getCodeGenOpts().getDebugInfo() >=
+        codegenoptions::LimitedDebugInfo) {
+      DI->setLocation(D->getLocation());
+      DI->EmitLabel(D, Builder);
+    }
+  }
+
   incrementProfileCounter(D->getStmt());
 }
 
@@ -1856,11 +1862,14 @@ llvm::Value* CodeGenFunction::EmitAsmInput(
   // If this can't be a register or memory, i.e., has to be a constant
   // (immediate or symbolic), try to emit it as such.
   if (!Info.allowsRegister() && !Info.allowsMemory()) {
-    llvm::APSInt Result;
+    if (Info.requiresImmediateConstant()) {
+      llvm::APSInt AsmConst = InputExpr->EvaluateKnownConstInt(getContext());
+      return llvm::ConstantInt::get(getLLVMContext(), AsmConst);
+    }
+
+    Expr::EvalResult Result;
     if (InputExpr->EvaluateAsInt(Result, getContext()))
-      return llvm::ConstantInt::get(getLLVMContext(), Result);
-    assert(!Info.requiresImmediateConstant() &&
-           "Required-immediate inlineasm arg isn't constant?");
+      return llvm::ConstantInt::get(getLLVMContext(), Result.Val.getInt());
   }
 
   if (Info.allowsRegister() || !Info.allowsMemory())

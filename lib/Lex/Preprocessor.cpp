@@ -1,9 +1,8 @@
 //===- Preprocess.cpp - C Language Family Preprocessor Implementation -----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -44,8 +43,6 @@
 #include "clang/Lex/MacroArgs.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/ModuleLoader.h"
-#include "clang/Lex/PTHLexer.h"
-#include "clang/Lex/PTHManager.h"
 #include "clang/Lex/Pragma.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/PreprocessorLexer.h"
@@ -224,11 +221,6 @@ void Preprocessor::FinalizeForModelFile() {
   PragmaHandlers = std::move(PragmaHandlersBackup);
 }
 
-void Preprocessor::setPTHManager(PTHManager* pm) {
-  PTH.reset(pm);
-  FileMgr.addStatCache(PTH->createStatCache());
-}
-
 void Preprocessor::DumpToken(const Token &Tok, bool DumpFlags) const {
   llvm::errs() << tok::getTokenName(Tok.getKind()) << " '"
                << getSpelling(Tok) << "'";
@@ -379,8 +371,6 @@ StringRef Preprocessor::getLastMacroWithSpelling(
 void Preprocessor::recomputeCurLexerKind() {
   if (CurLexer)
     CurLexerKind = CLK_Lexer;
-  else if (CurPTHLexer)
-    CurLexerKind = CLK_PTHLexer;
   else if (CurTokenLexer)
     CurLexerKind = CLK_TokenLexer;
   else
@@ -576,7 +566,8 @@ void Preprocessor::EnterMainSourceFile() {
         SourceLocation(), PPOpts->PCHThroughHeader,
         /*isAngled=*/false, /*FromDir=*/nullptr, /*FromFile=*/nullptr, CurDir,
         /*SearchPath=*/nullptr, /*RelativePath=*/nullptr,
-        /*SuggestedModule=*/nullptr, /*IsMapped=*/nullptr);
+        /*SuggestedModule=*/nullptr, /*IsMapped=*/nullptr,
+        /*IsFrameworkFound=*/nullptr);
     if (!File) {
       Diag(SourceLocation(), diag::err_pp_through_header_not_found)
           << PPOpts->PCHThroughHeader;
@@ -878,9 +869,6 @@ void Preprocessor::Lex(Token &Result) {
     case CLK_Lexer:
       ReturnedToken = CurLexer->Lex(Result);
       break;
-    case CLK_PTHLexer:
-      ReturnedToken = CurPTHLexer->Lex(Result);
-      break;
     case CLK_TokenLexer:
       ReturnedToken = CurTokenLexer->Lex(Result);
       break;
@@ -944,7 +932,7 @@ void Preprocessor::LexAfterModuleImport(Token &Result) {
   // If we have a non-empty module path, load the named module.
   if (!ModuleImportPath.empty()) {
     // Under the Modules TS, the dot is just part of the module name, and not
-    // a real hierarachy separator. Flatten such module names now.
+    // a real hierarchy separator. Flatten such module names now.
     //
     // FIXME: Is this the right level to be performing this transformation?
     std::string FlatModuleName;

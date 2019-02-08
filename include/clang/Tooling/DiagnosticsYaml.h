@@ -1,9 +1,8 @@
 //===-- DiagnosticsYaml.h -- Serialiazation for Diagnosticss ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -22,9 +21,18 @@
 #include <string>
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(clang::tooling::Diagnostic)
+LLVM_YAML_IS_SEQUENCE_VECTOR(clang::tooling::DiagnosticMessage)
 
 namespace llvm {
 namespace yaml {
+
+template <> struct MappingTraits<clang::tooling::DiagnosticMessage> {
+  static void mapping(IO &Io, clang::tooling::DiagnosticMessage &M) {
+    Io.mapRequired("Message", M.Message);
+    Io.mapOptional("FilePath", M.FilePath);
+    Io.mapOptional("FileOffset", M.FileOffset);
+  }
+};
 
 template <> struct MappingTraits<clang::tooling::Diagnostic> {
   /// Helper to (de)serialize a Diagnostic since we don't have direct
@@ -59,6 +67,7 @@ template <> struct MappingTraits<clang::tooling::Diagnostic> {
     Io.mapRequired("Message", Keys->Message.Message);
     Io.mapRequired("FileOffset", Keys->Message.FileOffset);
     Io.mapRequired("FilePath", Keys->Message.FilePath);
+    Io.mapOptional("Notes", Keys->Notes);
 
     // FIXME: Export properly all the different fields.
 

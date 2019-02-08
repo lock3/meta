@@ -1,9 +1,8 @@
 //== RegionStore.cpp - Field-sensitive store model --------------*- C++ -*--==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -131,10 +130,6 @@ namespace llvm {
     return os;
   }
 
-  template <typename T> struct isPodLike;
-  template <> struct isPodLike<BindingKey> {
-    static const bool value = true;
-  };
 } // end llvm namespace
 
 #ifndef NDEBUG
@@ -347,11 +342,9 @@ public:
     : StoreManager(mgr), Features(f),
       RBFactory(mgr.getAllocator()), CBFactory(mgr.getAllocator()),
       SmallStructLimit(0) {
-    if (SubEngine *Eng = StateMgr.getOwningEngine()) {
-      AnalyzerOptions &Options = Eng->getAnalysisManager().options;
-      SmallStructLimit =
-        Options.getRegionStoreSmallStructLimit();
-    }
+    SubEngine &Eng = StateMgr.getOwningEngine();
+    AnalyzerOptions &Options = Eng.getAnalysisManager().options;
+    SmallStructLimit = Options.RegionStoreSmallStructLimit;
   }
 
 
@@ -2571,24 +2564,9 @@ StoreRef RegionStoreManager::removeDeadBindings(Store store,
     const MemRegion *Base = I.getKey();
 
     // If the cluster has been visited, we know the region has been marked.
-    if (W.isVisited(Base))
-      continue;
-
-    // Remove the dead entry.
-    B = B.remove(Base);
-
-    if (const SymbolicRegion *SymR = dyn_cast<SymbolicRegion>(Base))
-      SymReaper.maybeDead(SymR->getSymbol());
-
-    // Mark all non-live symbols that this binding references as dead.
-    const ClusterBindings &Cluster = I.getData();
-    for (ClusterBindings::iterator CI = Cluster.begin(), CE = Cluster.end();
-         CI != CE; ++CI) {
-      SVal X = CI.getData();
-      SymExpr::symbol_iterator SI = X.symbol_begin(), SE = X.symbol_end();
-      for (; SI != SE; ++SI)
-        SymReaper.maybeDead(*SI);
-    }
+    // Otherwise, remove the dead entry.
+    if (!W.isVisited(Base))
+      B = B.remove(Base);
   }
 
   return StoreRef(B.asStore(), *this);

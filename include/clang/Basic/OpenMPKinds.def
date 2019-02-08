@@ -1,9 +1,8 @@
 //===--- OpenMPKinds.def - OpenMP directives and clauses list ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 /// \file
@@ -120,6 +119,9 @@
 #ifndef OPENMP_MAP_KIND
 #define OPENMP_MAP_KIND(Name)
 #endif
+#ifndef OPENMP_MAP_MODIFIER_KIND
+#define OPENMP_MAP_MODIFIER_KIND(Name)
+#endif
 #ifndef OPENMP_DIST_SCHEDULE_KIND
 #define OPENMP_DIST_SCHEDULE_KIND(Name)
 #endif
@@ -177,6 +179,9 @@
 #ifndef OPENMP_TASKGROUP_CLAUSE
 #define OPENMP_TASKGROUP_CLAUSE(Name)
 #endif
+#ifndef OPENMP_DECLARE_MAPPER_CLAUSE
+#define OPENMP_DECLARE_MAPPER_CLAUSE(Name)
+#endif
 
 // OpenMP directives.
 OPENMP_DIRECTIVE(threadprivate)
@@ -212,6 +217,7 @@ OPENMP_DIRECTIVE_EXT(parallel_sections, "parallel sections")
 OPENMP_DIRECTIVE_EXT(for_simd, "for simd")
 OPENMP_DIRECTIVE_EXT(cancellation_point, "cancellation point")
 OPENMP_DIRECTIVE_EXT(declare_reduction, "declare reduction")
+OPENMP_DIRECTIVE_EXT(declare_mapper, "declare mapper")
 OPENMP_DIRECTIVE_EXT(declare_simd, "declare simd")
 OPENMP_DIRECTIVE(taskloop)
 OPENMP_DIRECTIVE_EXT(taskloop_simd, "taskloop simd")
@@ -256,7 +262,6 @@ OPENMP_CLAUSE(ordered, OMPOrderedClause)
 OPENMP_CLAUSE(nowait, OMPNowaitClause)
 OPENMP_CLAUSE(untied, OMPUntiedClause)
 OPENMP_CLAUSE(mergeable, OMPMergeableClause)
-OPENMP_CLAUSE(flush, OMPFlushClause)
 OPENMP_CLAUSE(read, OMPReadClause)
 OPENMP_CLAUSE(write, OMPWriteClause)
 OPENMP_CLAUSE(update, OMPUpdateClause)
@@ -381,6 +386,7 @@ OPENMP_DEFAULTMAP_MODIFIER(tofrom)
 OPENMP_DEPEND_KIND(in)
 OPENMP_DEPEND_KIND(out)
 OPENMP_DEPEND_KIND(inout)
+OPENMP_DEPEND_KIND(mutexinoutset)
 OPENMP_DEPEND_KIND(source)
 OPENMP_DEPEND_KIND(sink)
 
@@ -559,14 +565,17 @@ OPENMP_ORDERED_CLAUSE(threads)
 OPENMP_ORDERED_CLAUSE(simd)
 OPENMP_ORDERED_CLAUSE(depend)
 
-// Map types and map type modifier for 'map' clause.
+// Map types for 'map' clause.
 OPENMP_MAP_KIND(alloc)
 OPENMP_MAP_KIND(to)
 OPENMP_MAP_KIND(from)
 OPENMP_MAP_KIND(tofrom)
 OPENMP_MAP_KIND(delete)
 OPENMP_MAP_KIND(release)
-OPENMP_MAP_KIND(always)
+
+// Map-type-modifiers for 'map' clause.
+OPENMP_MAP_MODIFIER_KIND(always)
+OPENMP_MAP_MODIFIER_KIND(close)
 
 // Clauses allowed for OpenMP directive 'taskloop'.
 OPENMP_TASKLOOP_CLAUSE(if)
@@ -883,6 +892,10 @@ OPENMP_TARGET_TEAMS_DISTRIBUTE_SIMD_CLAUSE(simdlen)
 // Clauses allowed for OpenMP directive 'taskgroup'.
 OPENMP_TASKGROUP_CLAUSE(task_reduction)
 
+// Clauses allowed for OpenMP directive 'declare mapper'.
+OPENMP_DECLARE_MAPPER_CLAUSE(map)
+
+#undef OPENMP_DECLARE_MAPPER_CLAUSE
 #undef OPENMP_TASKGROUP_CLAUSE
 #undef OPENMP_TASKLOOP_SIMD_CLAUSE
 #undef OPENMP_TASKLOOP_CLAUSE
@@ -919,6 +932,7 @@ OPENMP_TASKGROUP_CLAUSE(task_reduction)
 #undef OPENMP_FOR_CLAUSE
 #undef OPENMP_FOR_SIMD_CLAUSE
 #undef OPENMP_MAP_KIND
+#undef OPENMP_MAP_MODIFIER_KIND
 #undef OPENMP_DISTRIBUTE_CLAUSE
 #undef OPENMP_DIST_SCHEDULE_KIND
 #undef OPENMP_DEFAULTMAP_KIND

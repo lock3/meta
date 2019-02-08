@@ -1,9 +1,8 @@
 //===- ExprEngine.cpp - Path-Sensitive Expression-Level Dataflow ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -138,9 +137,17 @@ public:
   const ConstructionContextItem &getItem() const { return Impl.first; }
   const LocationContext *getLocationContext() const { return Impl.second; }
 
+  ASTContext &getASTContext() const {
+    return getLocationContext()->getDecl()->getASTContext();
+  }
+
   void print(llvm::raw_ostream &OS, PrinterHelper *Helper, PrintingPolicy &PP) {
-    OS << '(' << getLocationContext() << ',' << getAnyASTNodePtr() << ','
-       << getItem().getKindAsString();
+    OS << "(LC" << getLocationContext()->getID() << ',';
+    if (const Stmt *S = getItem().getStmtOrNull())
+      OS << 'S' << S->getID(getASTContext());
+    else
+      OS << 'I' << getItem().getCXXCtorInitializer()->getID(getASTContext());
+    OS << ',' << getItem().getKindAsString();
     if (getItem().getKind() == ConstructionContextItem::ArgumentKind)
       OS << " #" << getItem().getIndex();
     OS << ") ";
@@ -190,12 +197,14 @@ ExprEngine::ExprEngine(cross_tu::CrossTranslationUnitContext &CTU,
                mgr.getConstraintManagerCreator(), G.getAllocator(),
                this),
       SymMgr(StateMgr.getSymbolManager()),
-      svalBuilder(StateMgr.getSValBuilder()), ObjCNoRet(mgr.getASTContext()),
+      MRMgr(StateMgr.getRegionManager()),
+      svalBuilder(StateMgr.getSValBuilder()),
+      ObjCNoRet(mgr.getASTContext()),
       BR(mgr, *this),
       VisitedCallees(VisitedCalleesIn), HowToInline(HowToInlineIn) {
-  unsigned TrimInterval = mgr.options.getGraphTrimInterval();
+  unsigned TrimInterval = mgr.options.GraphTrimInterval;
   if (TrimInterval != 0) {
-    // Enable eager node reclaimation when constructing the ExplodedGraph.
+    // Enable eager node reclamation when constructing the ExplodedGraph.
     G.enableNodeReclamation(TrimInterval);
   }
 }
@@ -675,44 +684,35 @@ void ExprEngine::removeDead(ExplodedNode *Pred, ExplodedNodeSet &Out,
   // Process any special transfer function for dead symbols.
   // A tag to track convenience transitions, which can be removed at cleanup.
   static SimpleProgramPointTag cleanupTag(TagProviderName, "Clean Node");
-  if (!SymReaper.hasDeadSymbols()) {
-    // Generate a CleanedNode that has the environment and store cleaned
-    // up. Since no symbols are dead, we can optimize and not clean out
-    // the constraint manager.
-    StmtNodeBuilder Bldr(Pred, Out, *currBldrCtx);
-    Bldr.generateNode(DiagnosticStmt, Pred, CleanedState, &cleanupTag, K);
+  // Call checkers with the non-cleaned state so that they could query the
+  // values of the soon to be dead symbols.
+  ExplodedNodeSet CheckedSet;
+  getCheckerManager().runCheckersForDeadSymbols(CheckedSet, Pred, SymReaper,
+                                                DiagnosticStmt, *this, K);
 
-  } else {
-    // Call checkers with the non-cleaned state so that they could query the
-    // values of the soon to be dead symbols.
-    ExplodedNodeSet CheckedSet;
-    getCheckerManager().runCheckersForDeadSymbols(CheckedSet, Pred, SymReaper,
-                                                  DiagnosticStmt, *this, K);
+  // For each node in CheckedSet, generate CleanedNodes that have the
+  // environment, the store, and the constraints cleaned up but have the
+  // user-supplied states as the predecessors.
+  StmtNodeBuilder Bldr(CheckedSet, Out, *currBldrCtx);
+  for (const auto I : CheckedSet) {
+    ProgramStateRef CheckerState = I->getState();
 
-    // For each node in CheckedSet, generate CleanedNodes that have the
-    // environment, the store, and the constraints cleaned up but have the
-    // user-supplied states as the predecessors.
-    StmtNodeBuilder Bldr(CheckedSet, Out, *currBldrCtx);
-    for (const auto I : CheckedSet) {
-      ProgramStateRef CheckerState = I->getState();
+    // The constraint manager has not been cleaned up yet, so clean up now.
+    CheckerState =
+        getConstraintManager().removeDeadBindings(CheckerState, SymReaper);
 
-      // The constraint manager has not been cleaned up yet, so clean up now.
-      CheckerState = getConstraintManager().removeDeadBindings(CheckerState,
-                                                               SymReaper);
+    assert(StateMgr.haveEqualEnvironments(CheckerState, Pred->getState()) &&
+           "Checkers are not allowed to modify the Environment as a part of "
+           "checkDeadSymbols processing.");
+    assert(StateMgr.haveEqualStores(CheckerState, Pred->getState()) &&
+           "Checkers are not allowed to modify the Store as a part of "
+           "checkDeadSymbols processing.");
 
-      assert(StateMgr.haveEqualEnvironments(CheckerState, Pred->getState()) &&
-        "Checkers are not allowed to modify the Environment as a part of "
-        "checkDeadSymbols processing.");
-      assert(StateMgr.haveEqualStores(CheckerState, Pred->getState()) &&
-        "Checkers are not allowed to modify the Store as a part of "
-        "checkDeadSymbols processing.");
-
-      // Create a state based on CleanedState with CheckerState GDM and
-      // generate a transition to that state.
-      ProgramStateRef CleanedCheckerSt =
+    // Create a state based on CleanedState with CheckerState GDM and
+    // generate a transition to that state.
+    ProgramStateRef CleanedCheckerSt =
         StateMgr.getPersistentStateWithGDM(CleanedState, CheckerState);
-      Bldr.generateNode(DiagnosticStmt, I, CleanedCheckerSt, &cleanupTag, K);
-    }
+    Bldr.generateNode(DiagnosticStmt, I, CleanedCheckerSt, &cleanupTag, K);
   }
 }
 
@@ -755,7 +755,7 @@ void ExprEngine::ProcessLoopExit(const Stmt* S, ExplodedNode *Pred) {
   NodeBuilder Bldr(Pred, Dst, *currBldrCtx);
   ProgramStateRef NewState = Pred->getState();
 
-  if(AMgr.options.shouldUnrollLoops())
+  if(AMgr.options.ShouldUnrollLoops)
     NewState = processLoopEnd(S, NewState);
 
   LoopExit PP(S, Pred->getLocationContext());
@@ -887,7 +887,7 @@ void ExprEngine::ProcessNewAllocator(const CXXNewExpr *NE,
   // TODO: We're not evaluating allocators for all cases just yet as
   // we're not handling the return value correctly, which causes false
   // positives when the alpha.cplusplus.NewDeleteLeaks check is on.
-  if (Opts.mayInlineCXXAllocator())
+  if (Opts.MayInlineCXXAllocator)
     VisitCXXNewAllocatorCall(NE, Pred, Dst);
   else {
     NodeBuilder Bldr(Pred, Dst, *currBldrCtx);
@@ -1034,7 +1034,7 @@ void ExprEngine::ProcessTemporaryDtor(const CFGTemporaryDtor D,
     MR = V->getAsRegion();
   }
 
-  // If copy elision has occured, and the constructor corresponding to the
+  // If copy elision has occurred, and the constructor corresponding to the
   // destructor was elided, we need to skip the destructor as well.
   if (isDestructorElided(State, BTE, LC)) {
     State = cleanupElidedDestructor(State, BTE, LC);
@@ -1102,7 +1102,7 @@ void ExprEngine::VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *BTE,
   // This is a fallback solution in case we didn't have a construction
   // context when we were constructing the temporary. Otherwise the map should
   // have been populated there.
-  if (!getAnalysisManager().options.includeTemporaryDtorsInCFG()) {
+  if (!getAnalysisManager().options.ShouldIncludeTemporaryDtorsInCFG) {
     // In case we don't have temporary destructors in the CFG, do not mark
     // the initialization - we would otherwise never clean it up.
     Dst = PreVisit;
@@ -1302,9 +1302,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       break;
 
     case Expr::ConstantExprClass:
-      // Handled due to it being a wrapper class.
-      break;
-
     case Stmt::ExprWithCleanupsClass:
       // Handled due to fully linearised CFG.
       break;
@@ -1485,7 +1482,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       break;
 
     case Stmt::LambdaExprClass:
-      if (AMgr.options.shouldInlineLambdas()) {
+      if (AMgr.options.ShouldInlineLambdas) {
         Bldr.takeNodes(Pred);
         VisitLambdaExpr(cast<LambdaExpr>(S), Pred, Dst);
         Bldr.addNodes(Dst);
@@ -1514,7 +1511,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
 
       Bldr.takeNodes(Pred);
 
-      if (AMgr.options.shouldEagerlyAssume() &&
+      if (AMgr.options.ShouldEagerlyAssume &&
           (B->isRelationalOp() || B->isEqualityOp())) {
         ExplodedNodeSet Tmp;
         VisitBinaryOperator(cast<BinaryOperator>(S), Pred, Tmp);
@@ -1778,7 +1775,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::UnaryOperatorClass: {
       Bldr.takeNodes(Pred);
       const auto *U = cast<UnaryOperator>(S);
-      if (AMgr.options.shouldEagerlyAssume() && (U->getOpcode() == UO_LNot)) {
+      if (AMgr.options.ShouldEagerlyAssume && (U->getOpcode() == UO_LNot)) {
         ExplodedNodeSet Tmp;
         VisitUnaryOperator(U, Pred, Tmp);
         evalEagerlyAssumeBinOpBifurcation(Dst, Tmp, U);
@@ -1879,7 +1876,7 @@ void ExprEngine::processCFGBlockEntrance(const BlockEdge &L,
   PrettyStackTraceLocationContext CrashInfo(Pred->getLocationContext());
   // If we reach a loop which has a known bound (and meets
   // other constraints) then consider completely unrolling it.
-  if(AMgr.options.shouldUnrollLoops()) {
+  if(AMgr.options.ShouldUnrollLoops) {
     unsigned maxBlockVisitOnPath = AMgr.options.maxBlockVisitOnPath;
     const Stmt *Term = nodeBuilder.getContext().getBlock()->getTerminator();
     if (Term) {
@@ -1901,7 +1898,7 @@ void ExprEngine::processCFGBlockEntrance(const BlockEdge &L,
   // maximum number of times, widen the loop.
   unsigned int BlockCount = nodeBuilder.getContext().blockCount();
   if (BlockCount == AMgr.options.maxBlockVisitOnPath - 1 &&
-      AMgr.options.shouldWidenLoops()) {
+      AMgr.options.ShouldWidenLoops) {
     const Stmt *Term = nodeBuilder.getContext().getBlock()->getTerminator();
     if (!(Term &&
           (isa<ForStmt>(Term) || isa<WhileStmt>(Term) || isa<DoStmt>(Term))))
@@ -2402,7 +2399,7 @@ void ExprEngine::VisitCommonDeclRefExpr(const Expr *Ex, const NamedDecl *D,
     const auto *DeclRefEx = dyn_cast<DeclRefExpr>(Ex);
     Optional<std::pair<SVal, QualType>> VInfo;
 
-    if (AMgr.options.shouldInlineLambdas() && DeclRefEx &&
+    if (AMgr.options.ShouldInlineLambdas && DeclRefEx &&
         DeclRefEx->refersToEnclosingVariableOrCapture() && MD &&
         MD->getParent()->isLambda()) {
       // Lookup the field of the lambda.
@@ -2974,8 +2971,8 @@ struct DOTGraphTraits<ExplodedGraph*> : public DefaultDOTGraphTraits {
   DOTGraphTraits (bool isSimple = false) : DefaultDOTGraphTraits(isSimple) {}
 
   static bool nodeHasBugReport(const ExplodedNode *N) {
-    BugReporter &BR = static_cast<ExprEngine *>(
-      N->getState()->getStateManager().getOwningEngine())->getBugReporter();
+    BugReporter &BR = static_cast<ExprEngine &>(
+      N->getState()->getStateManager().getOwningEngine()).getBugReporter();
 
     const auto EQClasses =
         llvm::make_range(BR.EQClasses_begin(), BR.EQClasses_end());

@@ -1,9 +1,8 @@
 //===--- Fuchsia.cpp - Fuchsia ToolChain Implementations --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -109,8 +108,8 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                   D.getLTOMode() == LTOK_Thin);
   }
 
-  addSanitizerRuntimes(ToolChain, Args, CmdArgs);
-
+  bool NeedsSanitizerDeps = addSanitizerRuntimes(ToolChain, Args, CmdArgs);
+  bool NeedsXRayDeps = addXRayRuntime(ToolChain, Args, CmdArgs);
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs, JA);
   ToolChain.addProfileRTLibs(Args, CmdArgs);
 
@@ -133,6 +132,12 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         CmdArgs.push_back("--pop-state");
       }
     }
+
+    if (NeedsSanitizerDeps)
+      linkSanitizerRuntimeDeps(ToolChain, CmdArgs);
+
+    if (NeedsXRayDeps)
+      linkXRayRuntimeDeps(ToolChain, CmdArgs);
 
     AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 

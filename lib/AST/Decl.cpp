@@ -1,9 +1,8 @@
 //===- Decl.cpp - Declaration AST Node Implementation ---------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,6 +13,7 @@
 #include "clang/AST/Decl.h"
 #include "Linkage.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ASTLambda.h"
 #include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/CanonicalType.h"
@@ -49,7 +49,6 @@
 #include "clang/Basic/TargetCXXABI.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/Visibility.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/None.h"
@@ -2667,30 +2666,34 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
       DeclContext(DK), redeclarable_base(C), ODRHash(0),
       EndRangeLoc(NameInfo.getEndLoc()), DNLoc(NameInfo.getInfo()) {
   assert(T.isNull() || T->isFunctionType());
-  setStorageClass(S);
-  setInlineSpecified(isInlineSpecified);
-  setExplicitSpecified(false);
-  setVirtualAsWritten(false);
-  setPure(false);
-  setHasInheritedPrototype(false);
-  setHasWrittenPrototype(true);
-  setDeletedAsWritten(false);
-  setTrivial(false);
-  setTrivialForCall(false);
-  setDefaulted(false);
-  setExplicitlyDefaulted(false);
-  setHasImplicitReturnZero(false);
-  setLateTemplateParsed(false);
-  setConstexpr(isConstexprSpecified);
-  setInstantiationIsPending(false);
+
+  FunctionDeclBits.SClass = S;
+  FunctionDeclBits.IsInline = isInlineSpecified;
+  FunctionDeclBits.IsInlineSpecified = isInlineSpecified;
+  FunctionDeclBits.IsExplicitSpecified = false;
+  FunctionDeclBits.IsVirtualAsWritten = false;
+  FunctionDeclBits.IsPure = false;
+  FunctionDeclBits.HasInheritedPrototype = false;
+  FunctionDeclBits.HasWrittenPrototype = true;
+  FunctionDeclBits.IsDeleted = false;
+  FunctionDeclBits.IsTrivial = false;
+  FunctionDeclBits.IsTrivialForCall = false;
+  FunctionDeclBits.IsDefaulted = false;
+  FunctionDeclBits.IsExplicitlyDefaulted = false;
+  FunctionDeclBits.HasImplicitReturnZero = false;
+  FunctionDeclBits.IsLateTemplateParsed = false;
+  FunctionDeclBits.IsConstexpr = isConstexprSpecified;
+  FunctionDeclBits.InstantiationIsPending = false;
+  FunctionDeclBits.UsesSEHTry = false;
+  FunctionDeclBits.HasSkippedBody = false;
+  FunctionDeclBits.WillHaveBody = false;
+  FunctionDeclBits.IsMultiVersion = false;
+  FunctionDeclBits.IsCopyDeductionCandidate = false;
+  FunctionDeclBits.HasODRHash = false;
+
   setConstexprSpecified(false);
   setImmediate(false);
   setMetaprogram(false);
-  setUsesSEHTry(false);
-  setHasSkippedBody(false);
-  setWillHaveBody(false);
-  setIsMultiVersion(false);
-  setHasODRHash(false);
 }
 
 void FunctionDecl::getNameForDiagnostic(
@@ -2955,6 +2958,17 @@ bool FunctionDecl::isNoReturn() const {
     return FnTy->getNoReturnAttr();
 
   return false;
+}
+
+
+MultiVersionKind FunctionDecl::getMultiVersionKind() const {
+  if (hasAttr<TargetAttr>())
+    return MultiVersionKind::Target;
+  if (hasAttr<CPUDispatchAttr>())
+    return MultiVersionKind::CPUDispatch;
+  if (hasAttr<CPUSpecificAttr>())
+    return MultiVersionKind::CPUSpecific;
+  return MultiVersionKind::None;
 }
 
 bool FunctionDecl::isCPUDispatchMultiVersion() const {
@@ -3233,20 +3247,6 @@ SourceRange FunctionDecl::getExceptionSpecSourceRange() const {
     return SourceRange();
 
   return FTL.getExceptionSpecRange();
-}
-
-const Attr *FunctionDecl::getUnusedResultAttr() const {
-  QualType RetType = getReturnType();
-  if (const auto *Ret = RetType->getAsRecordDecl()) {
-    if (const auto *R = Ret->getAttr<WarnUnusedResultAttr>())
-      return R;
-  } else if (const auto *ET = RetType->getAs<EnumType>()) {
-    if (const EnumDecl *ED = ET->getDecl()) {
-      if (const auto *R = ED->getAttr<WarnUnusedResultAttr>())
-        return R;
-    }
-  }
-  return getAttr<WarnUnusedResultAttr>();
 }
 
 /// For an inline function definition in C, or for a gnu_inline function

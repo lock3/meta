@@ -1,9 +1,8 @@
 //===- SemaTemplateDeduction.cpp - Template Argument Deduction ------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -178,6 +177,8 @@ getDeducedParameterFromExpr(TemplateDeductionInfo &Info, Expr *E) {
   while (true) {
     if (ImplicitCastExpr *IC = dyn_cast<ImplicitCastExpr>(E))
       E = IC->getSubExpr();
+    else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
+      E = CE->getSubExpr();
     else if (SubstNonTypeTemplateParmExpr *Subst =
                dyn_cast<SubstNonTypeTemplateParmExpr>(E))
       E = Subst->getReplacement();
@@ -1675,8 +1676,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       const FunctionProtoType *FunctionProtoParam =
         cast<FunctionProtoType>(Param);
 
-      if (FunctionProtoParam->getTypeQuals()
-            != FunctionProtoArg->getTypeQuals() ||
+      if (FunctionProtoParam->getMethodQuals()
+            != FunctionProtoArg->getMethodQuals() ||
           FunctionProtoParam->getRefQualifier()
             != FunctionProtoArg->getRefQualifier() ||
           FunctionProtoParam->isVariadic() != FunctionProtoArg->isVariadic())
@@ -3092,11 +3093,11 @@ Sema::SubstituteExplicitTemplateArguments(
     //   "pointer to cv-qualifier-seq X" between the optional cv-qualifer-seq
     //   and the end of the function-definition, member-declarator, or
     //   declarator.
-    unsigned ThisTypeQuals = 0;
+    Qualifiers ThisTypeQuals;
     CXXRecordDecl *ThisContext = nullptr;
     if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Function)) {
       ThisContext = Method->getParent();
-      ThisTypeQuals = Method->getTypeQualifiers();
+      ThisTypeQuals = Method->getMethodQualifiers();
     }
 
     CXXThisScopeRAII ThisScope(*this, ThisContext, ThisTypeQuals,
@@ -4443,6 +4444,10 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
         return DAR_FailedAlreadyDiagnosed;
       }
 
+      ExprResult ER = CheckPlaceholderExpr(Init);
+      if (ER.isInvalid())
+        return DAR_FailedAlreadyDiagnosed;
+      Init = ER.get();
       QualType Deduced = BuildDecltypeType(Init, Init->getBeginLoc(), false);
       if (Deduced.isNull())
         return DAR_FailedAlreadyDiagnosed;
@@ -4671,8 +4676,7 @@ AddImplicitObjectParameterType(ASTContext &Context,
   // The standard doesn't say explicitly, but we pick the appropriate kind of
   // reference type based on [over.match.funcs]p4.
   QualType ArgTy = Context.getTypeDeclType(Method->getParent());
-  ArgTy = Context.getQualifiedType(ArgTy,
-                        Qualifiers::fromCVRMask(Method->getTypeQualifiers()));
+  ArgTy = Context.getQualifiedType(ArgTy, Method->getMethodQualifiers());
   if (Method->getRefQualifier() == RQ_RValue)
     ArgTy = Context.getRValueReferenceType(ArgTy);
   else
@@ -5241,6 +5245,8 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   while (true) {
     if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E))
       E = ICE->getSubExpr();
+    else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
+      E = CE->getSubExpr();
     else if (const SubstNonTypeTemplateParmExpr *Subst =
                dyn_cast<SubstNonTypeTemplateParmExpr>(E))
       E = Subst->getReplacement();

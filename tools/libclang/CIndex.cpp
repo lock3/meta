@@ -1,9 +1,8 @@
 //===- CIndex.cpp - Clang-C Source Indexing Library -----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -31,14 +30,12 @@
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Index/CodegenNameGenerator.h"
 #include "clang/Index/CommentToXML.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
-#include "clang/Serialization/SerializationDiagnostic.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -2149,6 +2146,7 @@ public:
   OMPClauseEnqueue(EnqueueVisitor *Visitor) : Visitor(Visitor) { }
 #define OPENMP_CLAUSE(Name, Class)                                             \
   void Visit##Class(const Class *C);
+  OPENMP_CLAUSE(flush, OMPFlushClause)
 #include "clang/Basic/OpenMPKinds.def"
   void VisitOMPClauseWithPreInit(const OMPClauseWithPreInit *C);
   void VisitOMPClauseWithPostUpdate(const OMPClauseWithPostUpdate *C);
@@ -3153,25 +3151,19 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
             return true;
         }
 
+        TypeLoc TL = E->getCallOperator()->getTypeSourceInfo()->getTypeLoc();
         // Visit parameters and return type, if present.
-        if (E->hasExplicitParameters() || E->hasExplicitResultType()) {
-          TypeLoc TL = E->getCallOperator()->getTypeSourceInfo()->getTypeLoc();
-          if (E->hasExplicitParameters() && E->hasExplicitResultType()) {
-            // Visit the whole type.
-            if (Visit(TL))
-              return true;
-          } else if (FunctionProtoTypeLoc Proto =
-                         TL.getAs<FunctionProtoTypeLoc>()) {
-            if (E->hasExplicitParameters()) {
-              // Visit parameters.
-              for (unsigned I = 0, N = Proto.getNumParams(); I != N; ++I)
-                if (Visit(MakeCXCursor(Proto.getParam(I), TU)))
-                  return true;
-            } else {
-              // Visit result type.
-              if (Visit(Proto.getReturnLoc()))
+        if (FunctionTypeLoc Proto = TL.getAs<FunctionProtoTypeLoc>()) {
+          if (E->hasExplicitParameters()) {
+            // Visit parameters.
+            for (unsigned I = 0, N = Proto.getNumParams(); I != N; ++I)
+              if (Visit(MakeCXCursor(Proto.getParam(I), TU)))
                 return true;
-            }
+          }
+          if (E->hasExplicitResultType()) {
+            // Visit result type.
+            if (Visit(Proto.getReturnLoc()))
+              return true;
           }
         }
         break;
@@ -3718,7 +3710,7 @@ struct ExprEvalResult {
   ~ExprEvalResult() {
     if (EvalType != CXEval_UnExposed && EvalType != CXEval_Float &&
         EvalType != CXEval_Int) {
-      delete EvalData.stringVal;
+      delete[] EvalData.stringVal;
     }
   }
 };
@@ -3926,33 +3918,32 @@ static const ExprEvalResult* evaluateExpr(Expr *expr, CXCursor C) {
   return nullptr;
 }
 
-CXEvalResult clang_Cursor_Evaluate(CXCursor C) {
-  const Decl *D = getCursorDecl(C);
-  if (D) {
-    const Expr *expr = nullptr;
-    if (auto *Var = dyn_cast<VarDecl>(D)) {
-      expr = Var->getInit();
-    } else if (auto *Field = dyn_cast<FieldDecl>(D)) {
-      expr = Field->getInClassInitializer();
-    }
-    if (expr)
-      return const_cast<CXEvalResult>(reinterpret_cast<const void *>(
-          evaluateExpr(const_cast<Expr *>(expr), C)));
+static const Expr *evaluateDeclExpr(const Decl *D) {
+  if (!D)
     return nullptr;
-  }
+  if (auto *Var = dyn_cast<VarDecl>(D))
+    return Var->getInit();
+  else if (auto *Field = dyn_cast<FieldDecl>(D))
+    return Field->getInClassInitializer();
+  return nullptr;
+}
 
-  const CompoundStmt *compoundStmt = dyn_cast_or_null<CompoundStmt>(getCursorStmt(C));
-  if (compoundStmt) {
-    Expr *expr = nullptr;
-    for (auto *bodyIterator : compoundStmt->body()) {
-      if ((expr = dyn_cast<Expr>(bodyIterator))) {
-        break;
-      }
-    }
-    if (expr)
-      return const_cast<CXEvalResult>(
-          reinterpret_cast<const void *>(evaluateExpr(expr, C)));
+static const Expr *evaluateCompoundStmtExpr(const CompoundStmt *CS) {
+  assert(CS && "invalid compound statement");
+  for (auto *bodyIterator : CS->body()) {
+    if (const auto *E = dyn_cast<Expr>(bodyIterator))
+      return E;
   }
+  return nullptr;
+}
+
+CXEvalResult clang_Cursor_Evaluate(CXCursor C) {
+  if (const Expr *E =
+          clang_getCursorKind(C) == CXCursor_CompoundStmt
+              ? evaluateCompoundStmtExpr(cast<CompoundStmt>(getCursorStmt(C)))
+              : evaluateDeclExpr(getCursorDecl(C)))
+    return const_cast<CXEvalResult>(
+        reinterpret_cast<const void *>(evaluateExpr(const_cast<Expr *>(E), C)));
   return nullptr;
 }
 
@@ -6254,6 +6245,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::Import:
   case Decl::OMPThreadPrivate:
   case Decl::OMPDeclareReduction:
+  case Decl::OMPDeclareMapper:
   case Decl::OMPRequires:
   case Decl::ObjCTypeParam:
   case Decl::BuiltinTemplate:
@@ -6959,7 +6951,7 @@ AnnotateTokensWorker::DetermineChildActions(CXCursor Cursor) const {
     if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Callee)) {
       const Expr *SubExpr = ICE->getSubExpr();
       if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(SubExpr)) {
-        const Decl *parentDecl = getCursorParentDecl(Cursor);
+        const Decl *parentDecl = getCursorDecl(Cursor);
         CXTranslationUnit TU = clang_Cursor_getTranslationUnit(Cursor);
 
         // Visit the DeclRefExpr as last.
@@ -7182,7 +7174,7 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
   //  MyCXXClass foo; // Make sure we don't annotate 'foo' as a CallExpr cursor.
   if (clang_isExpression(cursorK) && MoreTokens()) {
     const Expr *E = getCursorExpr(cursor);
-    if (const Decl *D = getCursorParentDecl(cursor)) {
+    if (const Decl *D = getCursorDecl(cursor)) {
       const unsigned I = NextToken();
       if (E->getBeginLoc().isValid() && D->getLocation().isValid() &&
           E->getBeginLoc() == D->getLocation() &&
@@ -8389,7 +8381,7 @@ unsigned clang_CXXMethod_isConst(CXCursor C) {
   const Decl *D = cxcursor::getCursorDecl(C);
   const CXXMethodDecl *Method =
       D ? dyn_cast_or_null<CXXMethodDecl>(D->getAsFunction()) : nullptr;
-  return (Method && (Method->getTypeQualifiers() & Qualifiers::Const)) ? 1 : 0;
+  return (Method && Method->getMethodQualifiers().hasConst()) ? 1 : 0;
 }
 
 unsigned clang_CXXMethod_isDefaulted(CXCursor C) {

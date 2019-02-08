@@ -569,7 +569,8 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
 
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
-      D->getStorageClass(), D->hasWrittenPrototype(), D->isConstexpr());
+      D->getStorageClass(), D->isInlineSpecified(), D->hasWrittenPrototype(),
+      D->isConstexpr());
   AddDeclSubstitution(D, Fn);
   UpdateFunctionParms(D, Fn);
 
@@ -1181,8 +1182,8 @@ static void ReferenceCaptures(Sema &SemaRef,
                               SmallVectorImpl<Expr *> &Refs) {
   Refs.resize(Vars.size());
   std::transform(Vars.begin(), Vars.end(), Refs.begin(), [&](VarDecl *D) {
-    Expr *Ref = new (SemaRef.Context) DeclRefExpr(D, false, D->getType(),
-                                                  VK_LValue, D->getLocation());
+    Expr *Ref = new (SemaRef.Context) DeclRefExpr(
+        SemaRef.Context, D, false, D->getType(), VK_LValue, D->getLocation());
     return ImplicitCastExpr::Create(SemaRef.Context, D->getType(),
                                     CK_LValueToRValue, Ref, nullptr, VK_RValue);
   });
@@ -1423,8 +1424,8 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
     ParmVarDecl *Parm = Parms[I];
     FieldDecl *Field = Fields[I];
     DeclRefExpr *Ref = new (Context) DeclRefExpr(
-        Parm, false, Parm->getType(), VK_LValue, Loc);
-    Expr *Arg = new (Context) ParenListExpr(Context, Loc, Ref, Loc);
+        Context, Parm, false, Parm->getType(), VK_LValue, Loc);
+    Expr *Arg = ParenListExpr::Create(Context, Loc, Ref, Loc);
     Inits[I] = S.BuildMemberInitializer(Field, Arg, Loc).get();
   }
   Ctor->setNumCtorInitializers(NumInits);
@@ -1456,7 +1457,7 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
         Context, ClassTy, VK_RValue, ClassTSI, CK_NoOp, Cast,
         /*Path=*/nullptr, Loc, Loc);
   } else {
-    Init = new (Context) CXXTemporaryObjectExpr(
+    Init = CXXTemporaryObjectExpr::Create(
         Context, Ctor, ClassTy, ClassTSI, CtorArgs, SourceRange(Loc, Loc),
         /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
         /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false);
@@ -2014,7 +2015,6 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstevalLoc,
   MetaType *MD;
   if (NeedsFunctionRepresentation(CurContext)) {
     ScopeFlags = Scope::FnScope | Scope::DeclScope;
-    Sema.PushFunctionScope();
 
     // Build the function
     //
@@ -2047,6 +2047,8 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstevalLoc,
 
     // Build the meta declaration around the function.
     MD = MetaType::Create(Context, CurContext, ConstevalLoc, Function);
+
+    Sema.ActOnStartOfFunctionDef(nullptr, Function);
   } else if (CurContext->isFunctionOrMethod()) {
     ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
 
@@ -2068,7 +2070,7 @@ ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstevalLoc,
         Context.getDefaultCallingConvention(/*IsVariadic=*/false,
                                             /*IsCXXMethod=*/true));
     EPI.HasTrailingReturn = true;
-    EPI.TypeQuals |= DeclSpec::TQ_const;
+    EPI.TypeQuals.addConst();
     QualType MethodTy = Context.getFunctionType(Context.VoidTy, None, EPI);
     TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
 
@@ -2232,15 +2234,16 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
 
   QualType FunctionTy = D->getType();
   DeclRefExpr *Ref =
-      new (Context) DeclRefExpr(D, /*RefersToEnclosingVariableOrCapture=*/false,
+      new (Context) DeclRefExpr(Context, D,
+                                /*RefersToEnclosingVariableOrCapture=*/false,
                                 FunctionTy, VK_LValue, SourceLocation());
   QualType PtrTy = Context.getPointerType(FunctionTy);
   ImplicitCastExpr *Cast =
       ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
                                /*BasePath=*/nullptr, VK_RValue);
   CallExpr *Call =
-      new (Context) CallExpr(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
-                             VK_RValue, SourceLocation());
+      CallExpr::Create(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
+                       VK_RValue, SourceLocation());
   return EvaluateMetaDeclCall(Sema, MD, Call);
 }
 
@@ -2258,18 +2261,16 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, Expr *E) {
   CXXMethodDecl *Method = Lambda->getCallOperator();
   QualType MethodTy = Method->getType();
   DeclRefExpr *Ref = new (Context)
-      DeclRefExpr(Method, /*RefersToEnclosingVariableOrCapture=*/false,
+      DeclRefExpr(Context, Method, /*RefersToEnclosingVariableOrCapture=*/false,
                   MethodTy, VK_LValue, SourceLocation());
   QualType PtrTy = Context.getPointerType(MethodTy);
   ImplicitCastExpr *Cast =
       ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
                                /*BasePath=*/nullptr, VK_RValue);
-  CallExpr *Call = new (Context) CXXOperatorCallExpr(Context, OO_Call,
-                                                     Cast, {Lambda},
-                                                     Context.VoidTy,
-                                                     VK_RValue,
-                                                     SourceLocation(),
-                                                     FPOptions());
+  CallExpr *Call = CXXOperatorCallExpr::Create(
+      Context, OO_Call, Cast, {Lambda}, Context.VoidTy,
+      VK_RValue, SourceLocation(), FPOptions());
+
   return EvaluateMetaDeclCall(Sema, MD, Call);
 }
 
@@ -2328,9 +2329,11 @@ static void
 ActOnCXXMetaError(Sema &Sema, Scope *S, Decl *D) {
   MetaType *MD = cast<MetaType>(D);
   MD->setInvalidDecl();
-  if (MD->hasFunctionRepresentation())
-    Sema.ActOnFinishFunctionBody(MD->getFunctionDecl(), nullptr);
-  else
+  if (MD->hasFunctionRepresentation()) {
+    FunctionDecl *Fn = MD->getFunctionDecl();
+    Sema.ActOnStartOfFunctionDef(nullptr, Fn);
+    Sema.ActOnFinishFunctionBody(Fn, nullptr);
+  } else
     Sema.ActOnLambdaError(MD->getLocation(), S);
 
   DoneWithMetaprogram(MD);

@@ -1,9 +1,8 @@
 // SimpleSValBuilder.cpp - A basic SValBuilder -----------------------*- C++ -*-
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -454,12 +453,12 @@ static Optional<NonLoc> tryRearrange(ProgramStateRef State,
   QualType SingleTy;
 
   auto &Opts =
-    StateMgr.getOwningEngine()->getAnalysisManager().getAnalyzerOptions();
+    StateMgr.getOwningEngine().getAnalysisManager().getAnalyzerOptions();
 
   // FIXME: After putting complexity threshold to the symbols we can always
   //        rearrange additive operations but rearrange comparisons only if
   //        option is set.
-  if(!Opts.shouldAggressivelySimplifyBinaryOperation())
+  if(!Opts.ShouldAggressivelySimplifyBinaryOperation)
     return None;
 
   SymbolRef LSym = Lhs.getAsSymbol();
@@ -475,15 +474,16 @@ static Optional<NonLoc> tryRearrange(ProgramStateRef State,
     SingleTy = ResultTy;
     if (LSym->getType() != SingleTy)
       return None;
-    // Substracting unsigned integers is a nightmare.
-    if (!SingleTy->isSignedIntegerOrEnumerationType())
-      return None;
   } else {
     // Don't rearrange other operations.
     return None;
   }
 
   assert(!SingleTy.isNull() && "We should have figured out the type by now!");
+
+  // Rearrange signed symbolic expressions only
+  if (!SingleTy->isSignedIntegerOrEnumerationType())
+    return None;
 
   SymbolRef RSym = Rhs.getAsSymbol();
   if (!RSym || RSym->getType() != SingleTy)

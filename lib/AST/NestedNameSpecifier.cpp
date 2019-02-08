@@ -1,9 +1,8 @@
 //===- NestedNameSpecifier.cpp - C++ nested name specifiers ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -16,6 +15,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
@@ -270,9 +270,8 @@ bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
 
 /// Print this nested name specifier to the given output
 /// stream.
-void
-NestedNameSpecifier::print(raw_ostream &OS,
-                           const PrintingPolicy &Policy) const {
+void NestedNameSpecifier::print(raw_ostream &OS, const PrintingPolicy &Policy,
+                                bool ResolveTemplateArguments) const {
   if (getPrefix())
     getPrefix()->print(OS, Policy);
 
@@ -305,6 +304,15 @@ NestedNameSpecifier::print(raw_ostream &OS,
     LLVM_FALLTHROUGH;
 
   case TypeSpec: {
+    const auto *Record =
+            dyn_cast_or_null<ClassTemplateSpecializationDecl>(getAsRecordDecl());
+    if (ResolveTemplateArguments && Record) {
+        // Print the type trait with resolved template parameters.
+        Record->printName(OS);
+        printTemplateArgumentList(OS, Record->getTemplateArgs().asArray(),
+                                  Policy);
+        break;
+    }
     const Type *T = getAsType();
 
     PrintingPolicy InnerPolicy(Policy);
@@ -453,9 +461,9 @@ SourceRange NestedNameSpecifierLoc::getLocalSourceRange() const {
 }
 
 TypeLoc NestedNameSpecifierLoc::getTypeLoc() const {
-  assert((Qualifier->getKind() == NestedNameSpecifier::TypeSpec ||
-          Qualifier->getKind() == NestedNameSpecifier::TypeSpecWithTemplate) &&
-         "Nested-name-specifier location is not a type");
+  if (Qualifier->getKind() != NestedNameSpecifier::TypeSpec &&
+      Qualifier->getKind() != NestedNameSpecifier::TypeSpecWithTemplate)
+    return TypeLoc();
 
   // The "void*" that points at the TypeLoc data.
   unsigned Offset = getDataLength(Qualifier->getPrefix());

@@ -1081,12 +1081,12 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
 }
 
 static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
-  llvm::APSInt N;
-  if (!E->EvaluateAsInt(N, S.Context)) {
+  Expr::EvalResult Result;
+  if (!E->EvaluateAsInt(Result, S.Context)) {
     S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
     return false;
   }
-  OS << N;
+  OS << Result.Val.getInt();
   return true;
 }
 
