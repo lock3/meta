@@ -1,9 +1,8 @@
 //===- ASTMatchers.h - Structural query framework ---------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1158,6 +1157,17 @@ extern const internal::VariadicDynCastAllOfMatcher<Decl, VarDecl> varDecl;
 ///   matches 'm'.
 extern const internal::VariadicDynCastAllOfMatcher<Decl, FieldDecl> fieldDecl;
 
+/// Matches indirect field declarations.
+///
+/// Given
+/// \code
+///   struct X { struct { int a; }; };
+/// \endcode
+/// indirectFieldDecl()
+///   matches 'a'.
+extern const internal::VariadicDynCastAllOfMatcher<Decl, IndirectFieldDecl>
+    indirectFieldDecl;
+
 /// Matches function declarations.
 ///
 /// Example matches f
@@ -1256,6 +1266,28 @@ extern const internal::VariadicDynCastAllOfMatcher<Stmt,
 ///   y();
 /// \endcode
 extern const internal::VariadicDynCastAllOfMatcher<Stmt, CallExpr> callExpr;
+
+/// Matches call expressions which were resolved using ADL.
+///
+/// Example matches y(x) but not y(42) or NS::y(x).
+/// \code
+///   namespace NS {
+///     struct X {};
+///     void y(X);
+///   }
+///
+///   void y(...);
+///
+///   void test() {
+///     NS::X x;
+///     y(x); // Matches
+///     NS::y(x); // Doesn't match
+///     y(42); // Doesn't match
+///     using NS::y;
+///     y(x); // Found by both unqualified lookup and ADL, doesn't match
+//    }
+/// \endcode
+AST_MATCHER(CallExpr, usesADL) { return Node.usesADL(); }
 
 /// Matches lambda expressions.
 ///
@@ -1775,6 +1807,14 @@ extern const internal::VariadicDynCastAllOfMatcher<Stmt, DeclRefExpr>
 /// \endcode
 extern const internal::VariadicDynCastAllOfMatcher<Stmt, ObjCIvarRefExpr>
     objcIvarRefExpr;
+
+/// Matches a reference to a block.
+///
+/// Example: matches "^{}":
+/// \code
+///   void f() { ^{}(); }
+/// \endcode
+extern const internal::VariadicDynCastAllOfMatcher<Stmt, BlockExpr> blockExpr;
 
 /// Matches if statements.
 ///
@@ -3473,6 +3513,19 @@ AST_POLYMORPHIC_MATCHER_P2(hasArgument,
               *Node.getArg(N)->IgnoreParenImpCasts(), Finder, Builder));
 }
 
+/// Matches the n'th item of an initializer list expression.
+///
+/// Example matches y.
+///     (matcher = initListExpr(hasInit(0, expr())))
+/// \code
+///   int x{y}.
+/// \endcode
+AST_MATCHER_P2(InitListExpr, hasInit, unsigned, N,
+               ast_matchers::internal::Matcher<Expr>, InnerMatcher) {
+  return N < Node.getNumInits() &&
+          InnerMatcher.matches(*Node.getInit(N), Finder, Builder);
+}
+
 /// Matches declaration statements that contain a specific number of
 /// declarations.
 ///
@@ -3528,7 +3581,7 @@ AST_MATCHER_P2(DeclStmt, containsDeclaration, unsigned, N,
 ///   } catch (...) {
 ///     // ...
 ///   }
-/// /endcode
+/// \endcode
 /// cxxCatchStmt(isCatchAll()) matches catch(...) but not catch(int).
 AST_MATCHER(CXXCatchStmt, isCatchAll) {
   return Node.getExceptionDecl() == nullptr;

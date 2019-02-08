@@ -1,9 +1,8 @@
 //===- DeclCXX.cpp - C++ Declaration AST Node Implementation --------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -992,6 +991,17 @@ void CXXRecordDecl::addedMember(Decl *D) {
           setArgPassingRestrictions(RecordDecl::APK_CanNeverPassInRegs);
 
         Data.HasIrrelevantDestructor = false;
+
+        if (isUnion()) {
+          data().DefaultedCopyConstructorIsDeleted = true;
+          data().DefaultedMoveConstructorIsDeleted = true;
+          data().DefaultedMoveAssignmentIsDeleted = true;
+          data().DefaultedDestructorIsDeleted = true;
+          data().NeedOverloadResolutionForCopyConstructor = true;
+          data().NeedOverloadResolutionForMoveConstructor = true;
+          data().NeedOverloadResolutionForMoveAssignment = true;
+          data().NeedOverloadResolutionForDestructor = true;
+        }
       } else if (!Context.getLangOpts().ObjCAutoRefCount) {
         setHasObjectMember(true);
       }
@@ -2081,8 +2091,13 @@ bool CXXMethodDecl::isUsualDeallocationFunction(
     return false;
 
   // In C++17 onwards, all potential usual deallocation functions are actual
-  // usual deallocation functions.
-  if (Context.getLangOpts().AlignedAllocation)
+  // usual deallocation functions. Honor this behavior when post-C++14
+  // deallocation functions are offered as extensions too.
+  // FIXME(EricWF): Destrying Delete should be a language option. How do we
+  // handle when destroying delete is used prior to C++17?
+  if (Context.getLangOpts().CPlusPlus17 ||
+      Context.getLangOpts().AlignedAllocation ||
+      isDestroyingOperatorDelete())
     return true;
 
   // This function is a usual deallocation function if there are no
@@ -2173,19 +2188,24 @@ CXXMethodDecl::overridden_methods() const {
   return getASTContext().overridden_methods(this);
 }
 
-QualType CXXMethodDecl::getThisType(ASTContext &C) const {
+QualType CXXMethodDecl::getThisType(const FunctionProtoType *FPT,
+                                    const CXXRecordDecl *Decl) {
+  ASTContext &C = Decl->getASTContext();
+  QualType ClassTy = C.getTypeDeclType(Decl);
+  ClassTy = C.getQualifiedType(ClassTy, FPT->getMethodQuals());
+  return C.getPointerType(ClassTy);
+}
+
+QualType CXXMethodDecl::getThisType() const {
   // C++ 9.3.2p1: The type of this in a member function of a class X is X*.
   // If the member function is declared const, the type of this is const X*,
   // if the member function is declared volatile, the type of this is
   // volatile X*, and if the member function is declared const volatile,
   // the type of this is const volatile X*.
-
   assert(isInstance() && "No 'this' for static methods!");
 
-  QualType ClassTy = C.getTypeDeclType(getParent());
-  ClassTy = C.getQualifiedType(ClassTy,
-                               Qualifiers::fromCVRUMask(getTypeQualifiers()));
-  return C.getPointerType(ClassTy);
+  return CXXMethodDecl::getThisType(getType()->getAs<FunctionProtoType>(),
+                                    getParent());
 }
 
 bool CXXMethodDecl::hasInlineBody() const {
@@ -2245,6 +2265,11 @@ CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
                                        SourceLocation R)
     : Initializee(TInfo), Init(Init), LParenLoc(L), RParenLoc(R),
       IsDelegating(true), IsVirtual(false), IsWritten(false), SourceOrder(0) {}
+
+int64_t CXXCtorInitializer::getID(const ASTContext &Context) const {
+  return Context.getAllocator()
+                .identifyKnownAlignedObject<CXXCtorInitializer>(this);
+}
 
 TypeLoc CXXCtorInitializer::getBaseClassLoc() const {
   if (isBaseInitializer())
@@ -2899,6 +2924,8 @@ void DecompositionDecl::printName(llvm::raw_ostream &os) const {
   }
   os << ']';
 }
+
+void MSPropertyDecl::anchor() {}
 
 MSPropertyDecl *MSPropertyDecl::Create(ASTContext &C, DeclContext *DC,
                                        SourceLocation L, DeclarationName N,

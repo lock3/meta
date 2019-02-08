@@ -1,9 +1,8 @@
 //===----- UninitializedPointee.cpp ------------------------------*- C++ -*-==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,7 +14,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../ClangSACheckers.h"
 #include "UninitializedObject.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
@@ -144,7 +142,7 @@ bool FindUninitializedFields::isDereferencableUninit(
 
   assert((isDereferencableType(FR->getDecl()->getType()) ||
           V.getAs<nonloc::LocAsInteger>()) &&
-         "This method only checks dereferencable objects!");
+         "This method only checks dereferenceable objects!");
 
   if (V.isUnknown() || V.getAs<loc::ConcreteInt>()) {
     IsAnyFieldInitialized = true;
@@ -153,7 +151,7 @@ bool FindUninitializedFields::isDereferencableUninit(
 
   if (V.isUndef()) {
     return addFieldToUninits(
-        LocalChain.add(LocField(FR, /*IsDereferenced*/ false)));
+        LocalChain.add(LocField(FR, /*IsDereferenced*/ false)), FR);
   }
 
   if (!Opts.CheckPointeeInitialization) {
@@ -170,7 +168,7 @@ bool FindUninitializedFields::isDereferencableUninit(
   }
 
   if (DerefInfo->IsCyclic)
-    return addFieldToUninits(LocalChain.add(CyclicLocField(FR)));
+    return addFieldToUninits(LocalChain.add(CyclicLocField(FR)), FR);
 
   const TypedValueRegion *R = DerefInfo->R;
   const bool NeedsCastBack = DerefInfo->NeedsCastBack;
@@ -187,8 +185,9 @@ bool FindUninitializedFields::isDereferencableUninit(
   if (PointeeT->isUnionType()) {
     if (isUnionUninit(R)) {
       if (NeedsCastBack)
-        return addFieldToUninits(LocalChain.add(NeedsCastLocField(FR, DynT)));
-      return addFieldToUninits(LocalChain.add(LocField(FR)));
+        return addFieldToUninits(LocalChain.add(NeedsCastLocField(FR, DynT)),
+                                 R);
+      return addFieldToUninits(LocalChain.add(LocField(FR)), R);
     } else {
       IsAnyFieldInitialized = true;
       return false;
@@ -208,8 +207,8 @@ bool FindUninitializedFields::isDereferencableUninit(
 
   if (isPrimitiveUninit(PointeeV)) {
     if (NeedsCastBack)
-      return addFieldToUninits(LocalChain.add(NeedsCastLocField(FR, DynT)));
-    return addFieldToUninits(LocalChain.add(LocField(FR)));
+      return addFieldToUninits(LocalChain.add(NeedsCastLocField(FR, DynT)), R);
+    return addFieldToUninits(LocalChain.add(LocField(FR)), R);
   }
 
   IsAnyFieldInitialized = true;

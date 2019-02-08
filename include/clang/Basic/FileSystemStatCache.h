@@ -1,9 +1,8 @@
 //===- FileSystemStatCache.h - Caching for 'stat' calls ---------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -60,9 +59,6 @@ struct FileData {
 class FileSystemStatCache {
   virtual void anchor();
 
-protected:
-  std::unique_ptr<FileSystemStatCache> NextStatCache;
-
 public:
   virtual ~FileSystemStatCache() = default;
 
@@ -88,22 +84,6 @@ public:
                   std::unique_ptr<llvm::vfs::File> *F,
                   FileSystemStatCache *Cache, llvm::vfs::FileSystem &FS);
 
-  /// Sets the next stat call cache in the chain of stat caches.
-  /// Takes ownership of the given stat cache.
-  void setNextStatCache(std::unique_ptr<FileSystemStatCache> Cache) {
-    NextStatCache = std::move(Cache);
-  }
-
-  /// Retrieve the next stat call cache in the chain.
-  FileSystemStatCache *getNextStatCache() { return NextStatCache.get(); }
-
-  /// Retrieve the next stat call cache in the chain, transferring
-  /// ownership of this cache (and, transitively, all of the remaining caches)
-  /// to the caller.
-  std::unique_ptr<FileSystemStatCache> takeNextStatCache() {
-    return std::move(NextStatCache);
-  }
-
 protected:
   // FIXME: The pointer here is a non-owning/optional reference to the
   // unique_ptr. Optional<unique_ptr<vfs::File>&> might be nicer, but
@@ -111,17 +91,6 @@ protected:
   virtual LookupResult getStat(StringRef Path, FileData &Data, bool isFile,
                                std::unique_ptr<llvm::vfs::File> *F,
                                llvm::vfs::FileSystem &FS) = 0;
-
-  LookupResult statChained(StringRef Path, FileData &Data, bool isFile,
-                           std::unique_ptr<llvm::vfs::File> *F,
-                           llvm::vfs::FileSystem &FS) {
-    if (FileSystemStatCache *Next = getNextStatCache())
-      return Next->getStat(Path, Data, isFile, F, FS);
-
-    // If we hit the end of the list of stat caches to try, just compute and
-    // return it without a cache.
-    return get(Path, Data, isFile, F, nullptr, FS) ? CacheMissing : CacheExists;
-  }
 };
 
 /// A stat "cache" that can be used by FileManager to keep

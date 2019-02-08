@@ -1,9 +1,8 @@
 //===- Diagnostic.h - C Language Family Diagnostic Handling -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -176,6 +175,9 @@ public:
 
     /// IdentifierInfo
     ak_identifierinfo,
+
+    /// Qualifiers
+    ak_qual,
 
     /// QualType
     ak_qualtype,
@@ -486,10 +488,8 @@ public:
   DiagnosticsEngine &operator=(const DiagnosticsEngine &) = delete;
   ~DiagnosticsEngine();
 
-  LLVM_DUMP_METHOD void dump() const { DiagStatesByLoc.dump(*SourceMgr); }
-  LLVM_DUMP_METHOD void dump(StringRef DiagName) const {
-    DiagStatesByLoc.dump(*SourceMgr, DiagName);
-  }
+  LLVM_DUMP_METHOD void dump() const;
+  LLVM_DUMP_METHOD void dump(StringRef DiagName) const;
 
   const IntrusiveRefCntPtr<DiagnosticIDs> &getDiagnosticIDs() const {
     return Diags;

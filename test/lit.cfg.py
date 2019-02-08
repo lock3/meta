@@ -43,6 +43,10 @@ llvm_config.use_default_substitutions()
 
 llvm_config.use_clang()
 
+config.substitutions.append(
+    ('%src_include_dir', config.clang_src_dir + '/include'))
+
+
 # Propagate path to symbolizer for ASan/MSan.
 llvm_config.with_system_environment(
     ['ASAN_SYMBOLIZER_PATH', 'MSAN_SYMBOLIZER_PATH'])
@@ -59,8 +63,8 @@ tool_dirs = [config.clang_tools_dir, config.llvm_tools_dir]
 tools = [
     'c-index-test', 'clang-check', 'clang-diff', 'clang-format', 'clang-tblgen',
     'opt',
-    ToolSubst('%clang_func_map', command=FindTool(
-        'clang-func-mapping'), unresolved='ignore'),
+    ToolSubst('%clang_extdef_map', command=FindTool(
+        'clang-extdef-mapping'), unresolved='ignore'),
 ]
 
 if config.clang_examples:
@@ -186,3 +190,6 @@ lit.util.usePlatformSdkOnDarwin(config, lit_config)
 macOSSDKVersion = lit.util.findPlatformSdkVersionOnMacOS(config, lit_config)
 if macOSSDKVersion is not None:
     config.available_features.add('macos-sdk-' + macOSSDKVersion)
+
+if os.path.exists('/etc/gentoo-release'):
+    config.available_features.add('gentoo')

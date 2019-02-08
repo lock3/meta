@@ -1,9 +1,8 @@
 //==--- DiagnosticParseKinds.td - libparse diagnostics --------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -53,6 +52,10 @@ def ext_extra_semi_cxx11 : Extension<
 def warn_extra_semi_after_mem_fn_def : Warning<
   "extra ';' after member function definition">,
   InGroup<ExtraSemi>, DefaultIgnore;
+def warn_null_statement : Warning<
+  "empty expression statement has no effect; "
+  "remove unnecessary ';' to silence this warning">,
+  InGroup<ExtraSemiStmt>, DefaultIgnore;
 
 def ext_thread_before : Extension<"'__thread' before '%0'">;
 def ext_keyword_as_ident : ExtWarn<
@@ -339,6 +342,10 @@ def err_expected_parentheses_around_typename : Error<
 def err_expected_case_before_expression: Error<
   "expected 'case' keyword before expression">;
 
+def ext_warn_gnu_final : ExtWarn<
+  "__final is a GNU extension, consider using C++11 final">,
+  InGroup<GccCompat>;
+
 // Declarations.
 def err_typename_requires_specqual : Error<
   "type name requires a specifier or qualifier">;
@@ -366,6 +373,12 @@ def ext_c11_static_assert : Extension<
 def warn_cxx98_compat_static_assert : Warning<
   "static_assert declarations are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def ext_static_assert_no_message : ExtWarn<
+  "static_assert with no message is a C++17 extension">, InGroup<CXX17>;
+def warn_cxx14_compat_static_assert_no_message : Warning<
+  "static_assert with no message is incompatible with C++ standards before "
+  "C++17">,
+  DefaultIgnore, InGroup<CXXPre17Compat>;
 def err_function_definition_not_allowed : Error<
   "function definition is not allowed here">;
 def err_expected_end_of_enumerator : Error<
@@ -496,6 +509,13 @@ def err_dynamic_and_noexcept_specification : Error<
   "cannot have both throw() and noexcept() clause on the same function">;
 def err_except_spec_unparsed : Error<
   "unexpected end of exception specification">;
+def ext_dynamic_exception_spec : ExtWarn<
+  "ISO C++17 does not allow dynamic exception specifications">,
+  InGroup<DynamicExceptionSpec>, DefaultError;
+def warn_exception_spec_deprecated : Warning<
+  "dynamic exception specifications are deprecated">,
+  InGroup<DeprecatedDynamicExceptionSpec>, DefaultIgnore;
+def note_exception_spec_deprecated : Note<"use '%0' instead">;
 def warn_cxx98_compat_noexcept_decl : Warning<
   "noexcept specifications are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
@@ -557,6 +577,9 @@ def ext_for_range_init_stmt : ExtWarn<
 def warn_cxx17_compat_for_range_init_stmt : Warning<
   "range-based for loop initialization statements are incompatible with "
   "C++ standards before C++2a">, DefaultIgnore, InGroup<CXXPre2aCompat>;
+def warn_empty_init_statement : Warning<
+  "empty initialization statement of '%select{if|switch|range-based for}0' "
+  "has no effect">, InGroup<EmptyInitStatement>, DefaultIgnore;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
@@ -1079,6 +1102,13 @@ def err_pragma_attribute_unknown_subject_sub_rule : Error<
   "sub-rules: %3}2">;
 def err_pragma_attribute_duplicate_subject : Error<
   "duplicate attribute subject matcher '%0'">;
+def err_pragma_attribute_expected_period : Error<
+  "expected '.' after pragma attribute namespace %0">;
+def err_pragma_attribute_namespace_on_attribute : Error<
+  "namespace can only apply to 'push' or 'pop' directives">;
+def note_pragma_attribute_namespace_on_attribute : Note<
+  "omit the namespace to add attributes to the most-recently"
+  " pushed attribute group">;
 
 def err_opencl_unroll_hint_on_non_loop : Error<
   "OpenCL only supports 'opencl_unroll_hint' attribute on for, while, and do statements">;
@@ -1136,9 +1166,11 @@ def err_omp_decl_in_declare_simd : Error<
 def err_omp_unknown_map_type : Error<
   "incorrect map type, expected one of 'to', 'from', 'tofrom', 'alloc', 'release', or 'delete'">;
 def err_omp_unknown_map_type_modifier : Error<
-  "incorrect map type modifier, expected 'always'">;
+  "incorrect map type modifier, expected 'always' or 'close'">;
 def err_omp_map_type_missing : Error<
   "missing map type">;
+def err_omp_map_type_modifier_missing : Error<
+  "missing map type modifier">;
 def err_omp_declare_simd_inbranch_notinbranch : Error<
   "unexpected '%0' clause, '%1' is specified already">;
 def err_expected_end_declare_target : Error<
@@ -1147,6 +1179,10 @@ def err_omp_declare_target_unexpected_clause: Error<
   "unexpected '%0' clause, only 'to' or 'link' clauses expected">;
 def err_omp_expected_clause: Error<
   "expected at least one clause on '#pragma omp %0' directive">;
+def err_omp_mapper_illegal_identifier : Error<
+  "illegal identifier on 'omp declare mapper' directive">;
+def err_omp_mapper_expected_declarator : Error<
+  "expected declarator on 'omp declare mapper' directive">;
 
 // Pragma loop support.
 def err_pragma_loop_missing_argument : Error<
@@ -1154,7 +1190,8 @@ def err_pragma_loop_missing_argument : Error<
   "'enable'%select{|, 'full'}1%select{|, 'assume_safety'}2 or 'disable'}0">;
 def err_pragma_loop_invalid_option : Error<
   "%select{invalid|missing}0 option%select{ %1|}0; expected vectorize, "
-  "vectorize_width, interleave, interleave_count, unroll, unroll_count, or distribute">;
+  "vectorize_width, interleave, interleave_count, unroll, unroll_count, "
+  "pipeline, pipeline_initiation_interval, or distribute">;
 
 def err_pragma_fp_invalid_option : Error<
   "%select{invalid|missing}0 option%select{ %1|}0; expected contract">;
@@ -1167,6 +1204,8 @@ def err_pragma_fp_scope : Error<
 
 def err_pragma_invalid_keyword : Error<
   "invalid argument; expected 'enable'%select{|, 'full'}0%select{|, 'assume_safety'}1 or 'disable'">;
+def err_pragma_pipeline_invalid_keyword : Error<
+    "invalid argument; expected 'disable'">;
 
 // Pragma unroll support.
 def warn_pragma_unroll_cuda_value_in_parens : Warning<

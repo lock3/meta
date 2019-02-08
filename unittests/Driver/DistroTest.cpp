@@ -1,9 +1,8 @@
 //===- unittests/Driver/DistroTest.cpp --- ToolChains tests ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -51,6 +50,7 @@ TEST(DistroTest, DetectUbuntu) {
   ASSERT_FALSE(UbuntuTrusty.IsRedhat());
   ASSERT_FALSE(UbuntuTrusty.IsOpenSUSE());
   ASSERT_FALSE(UbuntuTrusty.IsDebian());
+  ASSERT_FALSE(UbuntuTrusty.IsGentoo());
 
   llvm::vfs::InMemoryFileSystem UbuntuYakketyFileSystem;
   UbuntuYakketyFileSystem.addFile("/etc/debian_version", 0,
@@ -80,6 +80,7 @@ TEST(DistroTest, DetectUbuntu) {
   ASSERT_FALSE(UbuntuYakkety.IsRedhat());
   ASSERT_FALSE(UbuntuYakkety.IsOpenSUSE());
   ASSERT_FALSE(UbuntuYakkety.IsDebian());
+  ASSERT_FALSE(UbuntuYakkety.IsGentoo());
 }
 
 TEST(DistroTest, DetectRedhat) {
@@ -114,6 +115,7 @@ TEST(DistroTest, DetectRedhat) {
   ASSERT_TRUE(Fedora25.IsRedhat());
   ASSERT_FALSE(Fedora25.IsOpenSUSE());
   ASSERT_FALSE(Fedora25.IsDebian());
+  ASSERT_FALSE(Fedora25.IsGentoo());
 
   llvm::vfs::InMemoryFileSystem CentOS7FileSystem;
   CentOS7FileSystem.addFile("/etc/system-release-cpe", 0,
@@ -150,6 +152,7 @@ TEST(DistroTest, DetectRedhat) {
   ASSERT_TRUE(CentOS7.IsRedhat());
   ASSERT_FALSE(CentOS7.IsOpenSUSE());
   ASSERT_FALSE(CentOS7.IsDebian());
+  ASSERT_FALSE(CentOS7.IsGentoo());
 }
 
 TEST(DistroTest, DetectOpenSUSE) {
@@ -177,6 +180,7 @@ TEST(DistroTest, DetectOpenSUSE) {
   ASSERT_FALSE(OpenSUSELeap421.IsRedhat());
   ASSERT_TRUE(OpenSUSELeap421.IsOpenSUSE());
   ASSERT_FALSE(OpenSUSELeap421.IsDebian());
+  ASSERT_FALSE(OpenSUSELeap421.IsGentoo());
 
   llvm::vfs::InMemoryFileSystem OpenSUSE132FileSystem;
   OpenSUSE132FileSystem.addFile("/etc/SuSE-release", 0,
@@ -202,6 +206,7 @@ TEST(DistroTest, DetectOpenSUSE) {
   ASSERT_FALSE(OpenSUSE132.IsRedhat());
   ASSERT_TRUE(OpenSUSE132.IsOpenSUSE());
   ASSERT_FALSE(OpenSUSE132.IsDebian());
+  ASSERT_FALSE(OpenSUSE132.IsGentoo());
 
   llvm::vfs::InMemoryFileSystem SLES10FileSystem;
   SLES10FileSystem.addFile("/etc/SuSE-release", 0,
@@ -218,6 +223,7 @@ TEST(DistroTest, DetectOpenSUSE) {
   ASSERT_FALSE(SLES10.IsRedhat());
   ASSERT_FALSE(SLES10.IsOpenSUSE());
   ASSERT_FALSE(SLES10.IsDebian());
+  ASSERT_FALSE(SLES10.IsGentoo());
 }
 
 TEST(DistroTest, DetectDebian) {
@@ -240,6 +246,7 @@ TEST(DistroTest, DetectDebian) {
   ASSERT_FALSE(DebianJessie.IsRedhat());
   ASSERT_FALSE(DebianJessie.IsOpenSUSE());
   ASSERT_TRUE(DebianJessie.IsDebian());
+  ASSERT_FALSE(DebianJessie.IsGentoo());
 
   llvm::vfs::InMemoryFileSystem DebianStretchSidFileSystem;
   DebianStretchSidFileSystem.addFile("/etc/debian_version", 0,
@@ -258,6 +265,7 @@ TEST(DistroTest, DetectDebian) {
   ASSERT_FALSE(DebianStretchSid.IsRedhat());
   ASSERT_FALSE(DebianStretchSid.IsOpenSUSE());
   ASSERT_TRUE(DebianStretchSid.IsDebian());
+  ASSERT_FALSE(DebianStretchSid.IsGentoo());
 }
 
 TEST(DistroTest, DetectExherbo) {
@@ -279,6 +287,7 @@ TEST(DistroTest, DetectExherbo) {
   ASSERT_FALSE(Exherbo.IsRedhat());
   ASSERT_FALSE(Exherbo.IsOpenSUSE());
   ASSERT_FALSE(Exherbo.IsDebian());
+  ASSERT_FALSE(Exherbo.IsGentoo());
 }
 
 TEST(DistroTest, DetectArchLinux) {
@@ -300,6 +309,32 @@ TEST(DistroTest, DetectArchLinux) {
   ASSERT_FALSE(ArchLinux.IsRedhat());
   ASSERT_FALSE(ArchLinux.IsOpenSUSE());
   ASSERT_FALSE(ArchLinux.IsDebian());
+  ASSERT_FALSE(ArchLinux.IsGentoo());
+}
+
+TEST(DistroTest, DetectGentoo) {
+  llvm::vfs::InMemoryFileSystem GentooFileSystem;
+  GentooFileSystem.addFile(
+      "/etc/gentoo-release", 0,
+      llvm::MemoryBuffer::getMemBuffer("Gentoo Base System release 2.6"));
+  GentooFileSystem.addFile(
+      "/etc/os-release", 0,
+      llvm::MemoryBuffer::getMemBuffer(
+          "NAME=Gentoo\n"
+          "ID=gentoo\n"
+          "PRETTY_NAME=\"Gentoo/Linux\"\n"
+          "ANSI_COLOR=\"1;32\"\n"
+          "HOME_URL=\"https://www.gentoo.org/\"\n"
+          "SUPPORT_URL=\"https://www.gentoo.org/support/\"\n"
+          "BUG_REPORT_URL=\"https://bugs.gentoo.org/\"\n"));
+
+  Distro Gentoo{GentooFileSystem};
+  ASSERT_EQ(Distro(Distro::Gentoo), Gentoo);
+  ASSERT_FALSE(Gentoo.IsUbuntu());
+  ASSERT_FALSE(Gentoo.IsRedhat());
+  ASSERT_FALSE(Gentoo.IsOpenSUSE());
+  ASSERT_FALSE(Gentoo.IsDebian());
+  ASSERT_TRUE(Gentoo.IsGentoo());
 }
 
 } // end anonymous namespace

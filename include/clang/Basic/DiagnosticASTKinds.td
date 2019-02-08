@@ -1,9 +1,8 @@
 //==--- DiagnosticASTKinds.td - libast diagnostics ------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -121,6 +120,8 @@ def note_constexpr_ltor_non_const_int : Note<
   "read of non-const variable %0 is not allowed in a constant expression">;
 def note_constexpr_ltor_non_constexpr : Note<
   "read of non-constexpr variable %0 is not allowed in a constant expression">;
+def note_constexpr_ltor_incomplete_type : Note<
+  "read of incomplete type %0 is not allowed in a constant expression">;
 def note_constexpr_access_null : Note<
   "%select{read of|assignment to|increment of|decrement of}0 "
   "dereferenced null pointer is not allowed in a constant expression">;
@@ -321,6 +322,36 @@ def err_odr_non_type_parameter_type_inconsistent : Error<
   "translation units (%0 vs. %1)">;
 def err_unsupported_ast_node: Error<"cannot import unsupported AST node %0">;
 
+def remark_sanitize_address_insert_extra_padding_accepted : Remark<
+    "-fsanitize-address-field-padding applied to %0">, ShowInSystemHeader,
+    InGroup<SanitizeAddressRemarks>;
+def remark_sanitize_address_insert_extra_padding_rejected : Remark<
+    "-fsanitize-address-field-padding ignored for %0 because it "
+    "%select{is not C++|is packed|is a union|is trivially copyable|"
+    "has trivial destructor|is standard layout|is in a blacklisted file|"
+    "is blacklisted}1">, ShowInSystemHeader,
+    InGroup<SanitizeAddressRemarks>;
+
+def warn_npot_ms_struct : Warning<
+  "ms_struct may not produce Microsoft-compatible layouts with fundamental "
+  "data types with sizes that aren't a power of two">,
+  DefaultError, InGroup<IncompatibleMSStruct>;
+
+// -Wpadded, -Wpacked
+def warn_padded_struct_field : Warning<
+  "padding %select{struct|interface|class}0 %1 with %2 "
+  "%select{byte|bit}3%s2 to align %4">,
+  InGroup<Padded>, DefaultIgnore;
+def warn_padded_struct_anon_field : Warning<
+  "padding %select{struct|interface|class}0 %1 with %2 "
+  "%select{byte|bit}3%s2 to align anonymous bit-field">,
+  InGroup<Padded>, DefaultIgnore;
+def warn_padded_struct_size : Warning<
+  "padding size of %0 with %1 %select{byte|bit}2%s1 to alignment boundary">,
+  InGroup<Padded>, DefaultIgnore;
+def warn_unnecessary_packed : Warning<
+  "packed attribute is unnecessary for %0">, InGroup<Packed>, DefaultIgnore;
+
 // Reflection related issues
 let CategoryName = "Reflection Issue" in {
 def note_reflection_not_metadata : Note<
@@ -345,4 +376,5 @@ def note_assignment_to_object_of_different_type : Note<
   "cannot assign to an object of different type">;
 def err_user_defined_error : Error<"%0">;
 }
+
 }

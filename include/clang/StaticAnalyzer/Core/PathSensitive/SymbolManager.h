@@ -1,9 +1,8 @@
 //===- SymbolManager.h - Management of Symbolic Values ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -558,7 +557,6 @@ class SymbolReaper {
 
   SymbolMapTy TheLiving;
   SymbolSetTy MetadataInUse;
-  SymbolSetTy TheDead;
 
   RegionSetTy RegionRoots;
 
@@ -603,21 +601,6 @@ public:
   /// symbol marking has occurred, i.e. in the MarkLiveSymbols callback.
   void markInUse(SymbolRef sym);
 
-  /// If a symbol is known to be live, marks the symbol as live.
-  ///
-  ///  Otherwise, if the symbol cannot be proven live, it is marked as dead.
-  ///  Returns true if the symbol is dead, false if live.
-  bool maybeDead(SymbolRef sym);
-
-  using dead_iterator = SymbolSetTy::const_iterator;
-
-  dead_iterator dead_begin() const { return TheDead.begin(); }
-  dead_iterator dead_end() const { return TheDead.end(); }
-
-  bool hasDeadSymbols() const {
-    return !TheDead.empty();
-  }
-
   using region_iterator = RegionSetTy::const_iterator;
 
   region_iterator region_begin() const { return RegionRoots.begin(); }
@@ -626,9 +609,9 @@ public:
   /// Returns whether or not a symbol has been confirmed dead.
   ///
   /// This should only be called once all marking of dead symbols has completed.
-  /// (For checkers, this means only in the evalDeadSymbols callback.)
-  bool isDead(SymbolRef sym) const {
-    return TheDead.count(sym);
+  /// (For checkers, this means only in the checkDeadSymbols callback.)
+  bool isDead(SymbolRef sym) {
+    return !isLive(sym);
   }
 
   void markLive(const MemRegion *region);

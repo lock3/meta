@@ -1,9 +1,8 @@
 //===- OpenMPClause.cpp - Classes for OpenMP clauses ----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -31,6 +30,7 @@ OMPClause::child_range OMPClause::children() {
 #define OPENMP_CLAUSE(Name, Class)                                             \
   case OMPC_##Name:                                                            \
     return static_cast<Class *>(this)->children();
+  OPENMP_CLAUSE(flush, OMPFlushClause)
 #include "clang/Basic/OpenMPKinds.def"
   }
   llvm_unreachable("unknown OMPClause");
@@ -796,8 +796,10 @@ OMPMapClause::Create(const ASTContext &C, SourceLocation StartLoc,
                      SourceLocation LParenLoc, SourceLocation EndLoc,
                      ArrayRef<Expr *> Vars, ArrayRef<ValueDecl *> Declarations,
                      MappableExprComponentListsRef ComponentLists,
-                     OpenMPMapClauseKind TypeModifier, OpenMPMapClauseKind Type,
-                     bool TypeIsImplicit, SourceLocation TypeLoc) {
+                     ArrayRef<OpenMPMapModifierKind> MapModifiers,
+                     ArrayRef<SourceLocation> MapModifiersLoc,
+                     OpenMPMapClauseKind Type, bool TypeIsImplicit,
+                     SourceLocation TypeLoc) {
   unsigned NumVars = Vars.size();
   unsigned NumUniqueDeclarations =
       getUniqueDeclarationsTotalNumber(Declarations);
@@ -820,12 +822,12 @@ OMPMapClause::Create(const ASTContext &C, SourceLocation StartLoc,
           NumVars, NumUniqueDeclarations,
           NumUniqueDeclarations + NumComponentLists, NumComponents));
   OMPMapClause *Clause = new (Mem) OMPMapClause(
-      TypeModifier, Type, TypeIsImplicit, TypeLoc, StartLoc, LParenLoc, EndLoc,
-      NumVars, NumUniqueDeclarations, NumComponentLists, NumComponents);
+      MapModifiers, MapModifiersLoc, Type, TypeIsImplicit, TypeLoc, StartLoc,
+      LParenLoc, EndLoc, NumVars, NumUniqueDeclarations, NumComponentLists,
+      NumComponents);
 
   Clause->setVarRefs(Vars);
   Clause->setClauseInfo(Declarations, ComponentLists);
-  Clause->setMapTypeModifier(TypeModifier);
   Clause->setMapType(Type);
   Clause->setMapLoc(TypeLoc);
   return Clause;
@@ -1426,10 +1428,12 @@ void OMPClausePrinter::VisitOMPMapClause(OMPMapClause *Node) {
   if (!Node->varlist_empty()) {
     OS << "map(";
     if (Node->getMapType() != OMPC_MAP_unknown) {
-      if (Node->getMapTypeModifier() != OMPC_MAP_unknown) {
-        OS << getOpenMPSimpleClauseTypeName(OMPC_map,
-                                            Node->getMapTypeModifier());
-        OS << ',';
+      for (unsigned I = 0; I < OMPMapClause::NumberOfModifiers; ++I) {
+        if (Node->getMapTypeModifier(I) != OMPC_MAP_MODIFIER_unknown) {
+          OS << getOpenMPSimpleClauseTypeName(OMPC_map,
+                                              Node->getMapTypeModifier(I));
+          OS << ',';
+        }
       }
       OS << getOpenMPSimpleClauseTypeName(OMPC_map, Node->getMapType());
       OS << ':';

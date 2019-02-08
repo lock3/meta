@@ -1,9 +1,8 @@
 //===--- ExecuteCompilerInvocation.cpp ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -65,7 +64,6 @@ CreateFrontendBaseAction(CompilerInstance &CI) {
   case GenerateHeaderModule:
     return llvm::make_unique<GenerateHeaderModuleAction>();
   case GeneratePCH:            return llvm::make_unique<GeneratePCHAction>();
-  case GeneratePTH:            return llvm::make_unique<GeneratePTHAction>();
   case InitOnly:               return llvm::make_unique<InitOnlyAction>();
   case ParseSyntaxOnly:        return llvm::make_unique<SyntaxOnlyAction>();
   case ModuleFileInfo:         return llvm::make_unique<DumpModuleInfoAction>();
@@ -239,7 +237,11 @@ bool ExecuteCompilerInvocation(CompilerInstance *Clang) {
   // Honor -analyzer-checker-help.
   // This should happen AFTER plugins have been loaded!
   if (Clang->getAnalyzerOpts()->ShowCheckerHelp) {
-    ento::printCheckerHelp(llvm::outs(), Clang->getFrontendOpts().Plugins);
+    ento::printCheckerHelp(llvm::outs(),
+                           Clang->getFrontendOpts().Plugins,
+                           *Clang->getAnalyzerOpts(),
+                           Clang->getDiagnostics(),
+                           Clang->getLangOpts());
     return true;
   }
 
@@ -247,7 +249,9 @@ bool ExecuteCompilerInvocation(CompilerInstance *Clang) {
   if (Clang->getAnalyzerOpts()->ShowEnabledCheckerList) {
     ento::printEnabledCheckerList(llvm::outs(),
                                   Clang->getFrontendOpts().Plugins,
-                                  *Clang->getAnalyzerOpts());
+                                  *Clang->getAnalyzerOpts(),
+                                  Clang->getDiagnostics(),
+                                  Clang->getLangOpts());
   }
 
   // Honor -analyzer-config-help.

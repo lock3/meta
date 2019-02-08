@@ -1,9 +1,8 @@
 //==- MemRegion.h - Abstract memory regions for static analysis -*- C++ -*--==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -24,6 +23,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/Type.h"
+#include "clang/Analysis/AnalysisDeclContext.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SVals.h"
@@ -117,6 +117,10 @@ public:
   const MemSpaceRegion *getMemorySpace() const;
 
   const MemRegion *getBaseRegion() const;
+
+  /// Recursively retrieve the region of the most derived class instance of
+  /// regions of C++ base class instances.
+  const MemRegion *getMostDerivedObjectRegion() const;
 
   /// Check if the region is a subregion of the given region.
   /// Each region is a subregion of itself.
@@ -1077,7 +1081,7 @@ public:
   void dump() const;
 };
 
-/// ElementRegin is used to represent both array elements and casts.
+/// ElementRegion is used to represent both array elements and casts.
 class ElementRegion : public TypedValueRegion {
   friend class MemRegionManager;
 

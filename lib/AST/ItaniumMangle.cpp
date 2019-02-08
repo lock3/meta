@@ -1,9 +1,8 @@
 //===--- ItaniumMangle.cpp - Itanium C++ Name Mangling ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -61,7 +60,8 @@ static const DeclContext *getEffectiveDeclContext(const Decl *D) {
   }
 
   const DeclContext *DC = D->getDeclContext();
-  if (isa<CapturedDecl>(DC) || isa<OMPDeclareReductionDecl>(DC)) {
+  if (isa<CapturedDecl>(DC) || isa<OMPDeclareReductionDecl>(DC) ||
+      isa<OMPDeclareMapperDecl>(DC)) {
     return getEffectiveDeclContext(cast<Decl>(DC));
   }
 
@@ -1508,8 +1508,7 @@ void CXXNameMangler::mangleNestedName(const NamedDecl *ND,
 
   Out << 'N';
   if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(ND)) {
-    Qualifiers MethodQuals =
-        Qualifiers::fromCVRUMask(Method->getTypeQualifiers());
+    Qualifiers MethodQuals = Method->getMethodQualifiers();
     // We do not consider restrict a distinguishing attribute for overloading
     // purposes so we must not mangle it.
     MethodQuals.removeRestrict();
@@ -2661,16 +2660,12 @@ StringRef CXXNameMangler::getCallingConvQualifierName(CallingConv CC) {
   case CC_C:
     return "";
 
-  case CC_X86StdCall:
-  case CC_X86FastCall:
-  case CC_X86ThisCall:
   case CC_X86VectorCall:
   case CC_X86Pascal:
-  case CC_Win64:
-  case CC_X86_64SysV:
   case CC_X86RegCall:
   case CC_AAPCS:
   case CC_AAPCS_VFP:
+  case CC_AArch64VectorCall:
   case CC_IntelOclBicc:
   case CC_SpirFunction:
   case CC_OpenCLKernel:
@@ -2679,6 +2674,22 @@ StringRef CXXNameMangler::getCallingConvQualifierName(CallingConv CC) {
     // FIXME: we should be mangling all of the above.
     return "";
 
+  case CC_X86ThisCall:
+    // FIXME: To match mingw GCC, thiscall should only be mangled in when it is
+    // used explicitly. At this point, we don't have that much information in
+    // the AST, since clang tends to bake the convention into the canonical
+    // function type. thiscall only rarely used explicitly, so don't mangle it
+    // for now.
+    return "";
+
+  case CC_X86StdCall:
+    return "stdcall";
+  case CC_X86FastCall:
+    return "fastcall";
+  case CC_X86_64SysV:
+    return "sysv_abi";
+  case CC_Win64:
+    return "ms_abi";
   case CC_Swift:
     return "swiftcall";
   }
@@ -2736,7 +2747,7 @@ void CXXNameMangler::mangleType(const FunctionProtoType *T) {
 
   // Mangle CV-qualifiers, if present.  These are 'this' qualifiers,
   // e.g. "const" in "int (A::*)() const".
-  mangleQualifiers(Qualifiers::fromCVRUMask(T->getTypeQuals()));
+  mangleQualifiers(T->getMethodQuals());
 
   // Mangle instantiation-dependent exception-specification, if present,
   // per cxx-abi-dev proposal on 2016-10-11.

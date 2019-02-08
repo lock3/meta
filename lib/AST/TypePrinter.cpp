@@ -1,9 +1,8 @@
 //===- TypePrinter.cpp - Pretty-Print Clang Types -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -117,9 +116,7 @@ namespace {
     void spaceBeforePlaceHolder(raw_ostream &OS);
     void printTypeSpec(NamedDecl *D, raw_ostream &OS);
 
-    void printBefore(const Type *ty, Qualifiers qs, raw_ostream &OS);
     void printBefore(QualType T, raw_ostream &OS);
-    void printAfter(const Type *ty, Qualifiers qs, raw_ostream &OS);
     void printAfter(QualType T, raw_ostream &OS);
     void AppendScope(DeclContext *DC, raw_ostream &OS);
     void printTag(TagDecl *T, raw_ostream &OS);
@@ -129,6 +126,10 @@ namespace {
     void print##CLASS##Before(const CLASS##Type *T, raw_ostream &OS); \
     void print##CLASS##After(const CLASS##Type *T, raw_ostream &OS);
 #include "clang/AST/TypeNodes.def"
+
+  private:
+    void printBefore(const Type *ty, Qualifiers qs, raw_ostream &OS);
+    void printAfter(const Type *ty, Qualifiers qs, raw_ostream &OS);
   };
 
 } // namespace
@@ -160,8 +161,15 @@ void TypePrinter::spaceBeforePlaceHolder(raw_ostream &OS) {
     OS << ' ';
 }
 
+static SplitQualType splitAccordingToPolicy(QualType QT,
+                                            const PrintingPolicy &Policy) {
+  if (Policy.PrintCanonicalTypes)
+    QT = QT.getCanonicalType();
+  return QT.split();
+}
+
 void TypePrinter::print(QualType t, raw_ostream &OS, StringRef PlaceHolder) {
-  SplitQualType split = t.split();
+  SplitQualType split = splitAccordingToPolicy(t, Policy);
   print(split.Ty, split.Quals, OS, PlaceHolder);
 }
 
@@ -250,19 +258,25 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::FunctionProto:
     case Type::FunctionNoProto:
     case Type::Paren:
-    case Type::Attributed:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
     case Type::CXXDependentVariadicReifier:
       CanPrefixQualifiers = false;
       break;
+
+    case Type::Attributed: {
+      // We still want to print the address_space before the type if it is an
+      // address_space attribute.
+      const auto *AttrTy = cast<AttributedType>(T);
+      CanPrefixQualifiers = AttrTy->getAttrKind() == attr::AddressSpace;
+    }
   }
 
   return CanPrefixQualifiers;
 }
 
 void TypePrinter::printBefore(QualType T, raw_ostream &OS) {
-  SplitQualType Split = T.split();
+  SplitQualType Split = splitAccordingToPolicy(T, Policy);
 
   // If we have cv1 T, where T is substituted for cv2 U, only print cv1 - cv2
   // at this level.
@@ -322,7 +336,7 @@ void TypePrinter::printBefore(const Type *T,Qualifiers Quals, raw_ostream &OS) {
 }
 
 void TypePrinter::printAfter(QualType t, raw_ostream &OS) {
-  SplitQualType split = t.split();
+  SplitQualType split = splitAccordingToPolicy(t, Policy);
   printAfter(split.Ty, split.Quals, OS);
 }
 
@@ -803,10 +817,8 @@ void TypePrinter::printFunctionProtoAfter(const FunctionProtoType *T,
 
   printFunctionAfter(Info, OS);
 
-  if (unsigned quals = T->getTypeQuals()) {
-    OS << ' ';
-    AppendTypeQualList(OS, quals, Policy.Restrict);
-  }
+  if (!T->getMethodQuals().empty())
+    OS << " " << T->getMethodQuals().getAsString();
 
   switch (T->getRefQualifier()) {
   case RQ_None:
@@ -862,6 +874,9 @@ void TypePrinter::printFunctionAfter(const FunctionType::ExtInfo &Info,
       break;
     case CC_AAPCS_VFP:
       OS << " __attribute__((pcs(\"aapcs-vfp\")))";
+      break;
+    case CC_AArch64VectorCall:
+      OS << "__attribute__((aarch64_vector_pcs))";
       break;
     case CC_IntelOclBicc:
       OS << " __attribute__((intel_ocl_bicc))";
@@ -1171,9 +1186,13 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
       PresumedLoc PLoc = D->getASTContext().getSourceManager().getPresumedLoc(
           D->getLocation());
       if (PLoc.isValid()) {
-        OS << " at " << PLoc.getFilename()
-           << ':' << PLoc.getLine()
-           << ':' << PLoc.getColumn();
+        OS << " at ";
+        StringRef File = PLoc.getFilename();
+        if (Policy.RemapFilePaths)
+          OS << Policy.remapPath(File);
+        else
+          OS << File;
+        OS << ':' << PLoc.getLine() << ':' << PLoc.getColumn();
       }
     }
 
@@ -1392,7 +1411,10 @@ void TypePrinter::printAttributedBefore(const AttributedType *T,
   if (T->getAttrKind() == attr::ObjCKindOf)
     OS << "__kindof ";
 
-  printBefore(T->getModifiedType(), OS);
+  if (T->getAttrKind() == attr::AddressSpace)
+    printBefore(T->getEquivalentType(), OS);
+  else
+    printBefore(T->getModifiedType(), OS);
 
   if (T->isMSTypeSpec()) {
     switch (T->getAttrKind()) {
@@ -1520,7 +1542,7 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
    OS << ')';
    break;
   }
-
+  case attr::AArch64VectorPcs: OS << "aarch64_vector_pcs"; break;
   case attr::IntelOclBicc: OS << "inteloclbicc"; break;
   case attr::PreserveMost:
     OS << "preserve_most";
@@ -1528,6 +1550,9 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
 
   case attr::PreserveAll:
     OS << "preserve_all";
+    break;
+  case attr::NoDeref:
+    OS << "noderef";
     break;
   }
   OS << "))";
@@ -1835,6 +1860,12 @@ std::string QualType::getAsString(const Type *ty, Qualifiers qs,
   return buffer;
 }
 
+void QualType::print(raw_ostream &OS, const PrintingPolicy &Policy,
+                     const Twine &PlaceHolder, unsigned Indentation) const {
+  print(splitAccordingToPolicy(*this, Policy), OS, Policy, PlaceHolder,
+        Indentation);
+}
+
 void QualType::print(const Type *ty, Qualifiers qs,
                      raw_ostream &OS, const PrintingPolicy &policy,
                      const Twine &PlaceHolder, unsigned Indentation) {
@@ -1842,6 +1873,12 @@ void QualType::print(const Type *ty, Qualifiers qs,
   StringRef PH = PlaceHolder.toStringRef(PHBuf);
 
   TypePrinter(policy, Indentation).print(ty, qs, OS, PH);
+}
+
+void QualType::getAsStringInternal(std::string &Str,
+                                   const PrintingPolicy &Policy) const {
+  return getAsStringInternal(splitAccordingToPolicy(*this, Policy), Str,
+                             Policy);
 }
 
 void QualType::getAsStringInternal(const Type *ty, Qualifiers qs,

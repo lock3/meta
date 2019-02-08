@@ -1,9 +1,8 @@
 //===--- Parser.cpp - C Language Family Parser ----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1522,7 +1521,7 @@ Parser::TryAnnotateName(bool IsAddressOfOperand,
 
   // Look up and classify the identifier. We don't perform any typo-correction
   // after a scope specifier, because in general we can't recover from typos
-  // there (eg, after correcting 'A::tempalte B<X>::C' [sic], we would need to
+  // there (eg, after correcting 'A::template B<X>::C' [sic], we would need to
   // jump back into scope specifier parsing).
   Sema::NameClassification Classification = Actions.ClassifyName(
       getCurScope(), SS, Name, NameLoc, Next, IsAddressOfOperand,

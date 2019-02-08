@@ -74,12 +74,16 @@
 // CHECK-MIPS64EL: as{{.*}}" "-mabi" "64" "-EL"
 // CHECK-MIPS64EL-PIC: as{{.*}}" "-mabi" "64" "-EL" "-KPIC"
 
-// Check that the integrated assembler is enabled for MIPS64
+// Check that the integrated assembler is enabled for MIPS64/SPARC
 // RUN: %clang -target mips64-unknown-openbsd -### -c %s 2>&1 \
-// RUN:   | FileCheck -check-prefix=CHECK-MIPS64-AS %s
+// RUN:   | FileCheck -check-prefix=CHECK-IAS %s
 // RUN: %clang -target mips64el-unknown-openbsd -### -c %s 2>&1 \
-// RUN:   | FileCheck -check-prefix=CHECK-MIPS64-AS %s
-// CHECK-MIPS64-AS-NOT: "-no-integrated-as"
+// RUN:   | FileCheck -check-prefix=CHECK-IAS %s
+// RUN: %clang -target sparc-unknown-openbsd -### -c %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHECK-IAS %s
+// RUN: %clang -target sparc64-unknown-openbsd -### -c %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHECK-IAS %s
+// CHECK-IAS-NOT: "-no-integrated-as"
 
 // Check linking against correct startup code when (not) using PIE
 // RUN: %clang -no-canonical-prefixes -target i686-pc-openbsd %s -### 2>&1 \
@@ -112,3 +116,8 @@
 // RUN:   | FileCheck -check-prefix=CHECK-ARM-FLOAT-ABI %s
 // CHECK-ARM-FLOAT-ABI-NOT: "-target-feature" "+soft-float"
 // CHECK-ARM-FLOAT-ABI: "-target-feature" "+soft-float-abi"
+
+// Check PowerPC for Secure PLT
+// RUN: %clang -target powerpc-unknown-openbsd -### -c %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHECK-POWERPC-SECUREPLT %s
+// CHECK-POWERPC-SECUREPLT: "-target-feature" "+secure-plt"

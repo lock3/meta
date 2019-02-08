@@ -1,9 +1,8 @@
 //===- FileSystemStatCache.cpp - Caching for 'stat' calls -----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -114,18 +113,17 @@ MemorizeStatCalls::LookupResult
 MemorizeStatCalls::getStat(StringRef Path, FileData &Data, bool isFile,
                            std::unique_ptr<llvm::vfs::File> *F,
                            llvm::vfs::FileSystem &FS) {
-  LookupResult Result = statChained(Path, Data, isFile, F, FS);
-
-  // Do not cache failed stats, it is easy to construct common inconsistent
-  // situations if we do, and they are not important for PCH performance (which
-  // currently only needs the stats to construct the initial FileManager
-  // entries).
-  if (Result == CacheMissing)
-    return Result;
+  if (get(Path, Data, isFile, F, nullptr, FS)) {
+    // Do not cache failed stats, it is easy to construct common inconsistent
+    // situations if we do, and they are not important for PCH performance
+    // (which currently only needs the stats to construct the initial
+    // FileManager entries).
+    return CacheMissing;
+  }
 
   // Cache file 'stat' results and directories with absolutely paths.
   if (!Data.IsDirectory || llvm::sys::path::is_absolute(Path))
     StatCalls[Path] = Data;
 
-  return Result;
+  return CacheExists;
 }

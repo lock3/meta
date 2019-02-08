@@ -1,9 +1,8 @@
 //===--- CompilerInstance.cpp ---------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -30,7 +29,6 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Frontend/VerifyDiagnosticConsumer.h"
 #include "clang/Lex/HeaderSearch.h"
-#include "clang/Lex/PTHManager.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
@@ -376,29 +374,17 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   // The module manager holds a reference to the old preprocessor (if any).
   ModuleManager.reset();
 
-  // Create a PTH manager if we are using some form of a token cache.
-  PTHManager *PTHMgr = nullptr;
-  if (!PPOpts.TokenCache.empty())
-    PTHMgr = PTHManager::Create(PPOpts.TokenCache, getDiagnostics());
-
   // Create the Preprocessor.
   HeaderSearch *HeaderInfo =
       new HeaderSearch(getHeaderSearchOptsPtr(), getSourceManager(),
                        getDiagnostics(), getLangOpts(), &getTarget());
   PP = std::make_shared<Preprocessor>(
       Invocation->getPreprocessorOptsPtr(), getDiagnostics(), getLangOpts(),
-      getSourceManager(), getPCMCache(), *HeaderInfo, *this, PTHMgr,
+      getSourceManager(), getPCMCache(), *HeaderInfo, *this,
+      /*IdentifierInfoLookup=*/nullptr,
       /*OwnsHeaderSearch=*/true, TUKind);
   getTarget().adjust(getLangOpts());
   PP->Initialize(getTarget(), getAuxTarget());
-
-  // Note that this is different then passing PTHMgr to Preprocessor's ctor.
-  // That argument is used as the IdentifierInfoLookup argument to
-  // IdentifierTable's ctor.
-  if (PTHMgr) {
-    PTHMgr->setPreprocessor(&*PP);
-    PP->setPTHManager(PTHMgr);
-  }
 
   if (PPOpts.DetailedRecord)
     PP->createPreprocessingRecord();
@@ -941,6 +927,9 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
 
   // Adjust target options based on codegen options.
   getTarget().adjustTargetOptions(getCodeGenOpts(), getTargetOpts());
+
+  if (auto *Aux = getAuxTarget())
+    getTarget().setAuxTarget(Aux);
 
   // rewriter project will change target built-in bool type from its default.
   if (getFrontendOpts().ProgramAction == frontend::RewriteObjC)

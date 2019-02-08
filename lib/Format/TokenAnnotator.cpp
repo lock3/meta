@@ -1,9 +1,8 @@
 //===--- TokenAnnotator.cpp - Format C++ code -----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -399,14 +398,15 @@ private:
     bool IsCpp11AttributeSpecifier = isCpp11AttributeSpecifier(*Left) ||
                                      Contexts.back().InCpp11AttributeSpecifier;
 
+    bool InsideInlineASM = Line.startsWith(tok::kw_asm);
     bool StartsObjCMethodExpr =
-        !CppArrayTemplates && Style.isCpp() && !IsCpp11AttributeSpecifier &&
-        Contexts.back().CanBeExpression && Left->isNot(TT_LambdaLSquare) &&
+        !InsideInlineASM && !CppArrayTemplates && Style.isCpp() &&
+        !IsCpp11AttributeSpecifier && Contexts.back().CanBeExpression &&
+        Left->isNot(TT_LambdaLSquare) &&
         !CurrentToken->isOneOf(tok::l_brace, tok::r_square) &&
         (!Parent ||
-         (Parent->is(tok::colon) && Parent->isNot(TT_InlineASMColon)) ||
-         Parent->isOneOf(tok::l_square, tok::l_paren, tok::kw_return,
-                         tok::kw_throw) ||
+         Parent->isOneOf(tok::colon, tok::l_square, tok::l_paren,
+                         tok::kw_return, tok::kw_throw) ||
          Parent->isUnaryOperator() ||
          // FIXME(bug 36976): ObjC return types shouldn't use TT_CastRParen.
          Parent->isOneOf(TT_ObjCForIn, TT_CastRParen) ||
@@ -494,9 +494,14 @@ private:
       if (CurrentToken->is(tok::r_square)) {
         if (IsCpp11AttributeSpecifier)
           CurrentToken->Type = TT_AttributeSquare;
-        else if (CurrentToken->Next && CurrentToken->Next->is(tok::l_paren) &&
+        else if (((CurrentToken->Next &&
+                   CurrentToken->Next->is(tok::l_paren)) ||
+                  (CurrentToken->Previous &&
+                   CurrentToken->Previous->Previous == Left)) &&
                  Left->is(TT_ObjCMethodExpr)) {
-          // An ObjC method call is rarely followed by an open parenthesis.
+          // An ObjC method call is rarely followed by an open parenthesis. It
+          // also can't be composed of just one token, unless it's a macro that
+          // will be expanded to more tokens.
           // FIXME: Do we incorrectly label ":" with this?
           StartsObjCMethodExpr = false;
           Left->Type = TT_Unknown;
@@ -1122,6 +1127,7 @@ private:
            (Tok.Next->Next->TokenText == "module" ||
             Tok.Next->Next->TokenText == "provide" ||
             Tok.Next->Next->TokenText == "require" ||
+            Tok.Next->Next->TokenText == "requireType" ||
             Tok.Next->Next->TokenText == "forwardDeclare") &&
            Tok.Next->Next->Next && Tok.Next->Next->Next->is(tok::l_paren);
   }
@@ -2243,6 +2249,9 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
       return 500;
   }
 
+  if (Left.is(tok::coloncolon) ||
+      (Right.is(tok::period) && Style.Language == FormatStyle::LK_Proto))
+    return 500;
   if (Right.isOneOf(TT_StartOfName, TT_FunctionDeclarationName) ||
       Right.is(tok::kw_operator)) {
     if (Line.startsWith(tok::kw_for) && Right.PartOfMultiVariableDeclStmt)
@@ -2261,9 +2270,6 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
     return 160;
   if (Left.is(TT_CastRParen))
     return 100;
-  if (Left.is(tok::coloncolon) ||
-      (Right.is(tok::period) && Style.Language == FormatStyle::LK_Proto))
-    return 500;
   if (Left.isOneOf(tok::kw_class, tok::kw_struct))
     return 5000;
   if (Left.is(tok::comment))
@@ -3113,8 +3119,21 @@ bool TokenAnnotator::canBreakBefore(const AnnotatedLine &Line,
     // Don't wrap between ":" and "!" of a strict prop init ("field!: type;").
     if (Left.is(tok::exclaim) && Right.is(tok::colon))
       return false;
-    if (Right.is(Keywords.kw_is))
-      return false;
+    // Look for is type annotations like:
+    // function f(): a is B { ... }
+    // Do not break before is in these cases.
+    if (Right.is(Keywords.kw_is)) {
+      const FormatToken* Next = Right.getNextNonComment();
+      // If `is` is followed by a colon, it's likely that it's a dict key, so
+      // ignore it for this check.
+      // For example this is common in Polymer:
+      // Polymer({
+      //   is: 'name',
+      //   ...
+      // });
+      if (!Next || !Next->is(tok::colon))
+        return false;
+    }
     if (Left.is(Keywords.kw_in))
       return Style.BreakBeforeBinaryOperators == FormatStyle::BOS_None;
     if (Right.is(Keywords.kw_in))

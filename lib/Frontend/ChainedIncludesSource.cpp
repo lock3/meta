@@ -1,9 +1,8 @@
 //===- ChainedIncludesSource.cpp - Chained PCHs in Memory -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -129,7 +128,6 @@ IntrusiveRefCntPtr<ExternalSemaSource> clang::createChainedIncludesSource(
 
     CInvok->getPreprocessorOpts().ChainedIncludes.clear();
     CInvok->getPreprocessorOpts().ImplicitPCHInclude.clear();
-    CInvok->getPreprocessorOpts().ImplicitPTHInclude.clear();
     CInvok->getPreprocessorOpts().DisablePCHValidation = true;
     CInvok->getPreprocessorOpts().Includes.clear();
     CInvok->getPreprocessorOpts().MacroIncludes.clear();

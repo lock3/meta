@@ -1,9 +1,8 @@
 //==--- DiagnosticLexKinds.td - liblex diagnostics ------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -258,13 +257,6 @@ def warn_bad_character_encoding : ExtWarn<
 def err_lexing_string : Error<"failure when lexing a string">;
 def err_placeholder_in_source : Error<"editor placeholder in source file">;
 
-
-//===----------------------------------------------------------------------===//
-// PTH Diagnostics
-//===----------------------------------------------------------------------===//
-def err_invalid_pth_file : Error<
-    "invalid or corrupt PTH file '%0'">;
-
 //===----------------------------------------------------------------------===//
 // Preprocessor Diagnostics
 //===----------------------------------------------------------------------===//
@@ -426,6 +418,8 @@ def err_pp_file_not_found_angled_include_not_fatal : Error<
   "'%0' file not found with <angled> include; use \"quotes\" instead">;
 def err_pp_file_not_found_typo_not_fatal
     : Error<"'%0' file not found, did you mean '%1'?">;
+def note_pp_framework_without_header : Note<
+  "did not find header '%0' in framework '%1' (loaded from '%2')">;
 def err_pp_error_opening_file : Error<
   "error opening file '%0': %1">, DefaultFatal;
 def err_pp_empty_filename : Error<"empty filename">;
@@ -570,8 +564,6 @@ def err_pp_module_end_without_module_begin : Error<
   "'#pragma clang module end'">;
 def note_pp_module_begin_here : Note<
   "entering module '%0' due to this pragma">;
-def err_pp_module_build_pth : Error<
-  "'#pragma clang module build' not supported in pretokenized header">;
 def err_pp_module_build_missing_end : Error<
   "no matching '#pragma clang module endbuild' for this '#pragma clang module build'">;
 

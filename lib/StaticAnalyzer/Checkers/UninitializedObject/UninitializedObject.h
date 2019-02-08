@@ -1,9 +1,8 @@
 //===----- UninitializedObject.h ---------------------------------*- C++ -*-==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -21,7 +20,7 @@
 //     `-analyzer-config alpha.cplusplus.UninitializedObject:Pedantic=true`.
 //
 //   - "NotesAsWarnings" (boolean). If set to true, the checker will emit a
-//     warning for each uninitalized field, as opposed to emitting one warning
+//     warning for each uninitialized field, as opposed to emitting one warning
 //     per constructor call, and listing the uninitialized fields that belongs
 //     to it in notes. Defaults to false.
 //
@@ -35,6 +34,12 @@
 //     `-analyzer-config \
 //         alpha.cplusplus.UninitializedObject:CheckPointeeInitialization=true`.
 //
+//     TODO: With some clever heuristics, some pointers should be dereferenced
+//     by default. For example, if the pointee is constructed within the
+//     constructor call, it's reasonable to say that no external object
+//     references it, and we wouldn't generate multiple report on the same
+//     pointee.
+//
 //   - "IgnoreRecordsWithField" (string). If supplied, the checker will not
 //     analyze structures that have a field with a name or type name that
 //     matches the given pattern. Defaults to "".
@@ -42,11 +47,12 @@
 //     `-analyzer-config \
 // alpha.cplusplus.UninitializedObject:IgnoreRecordsWithField="[Tt]ag|[Kk]ind"`.
 //
-//     TODO: With some clever heuristics, some pointers should be dereferenced
-//     by default. For example, if the pointee is constructed within the
-//     constructor call, it's reasonable to say that no external object
-//     references it, and we wouldn't generate multiple report on the same
-//     pointee.
+//   - "IgnoreGuardedFields" (boolean). If set to true, the checker will analyze
+//     _syntactically_ whether the found uninitialized object is used without a
+//     preceding assert call. Defaults to false.
+//
+//     `-analyzer-config \
+//         alpha.cplusplus.UninitializedObject:IgnoreGuardedFields=true`.
 //
 // Most of the following methods as well as the checker itself is defined in
 // UninitializedObjectChecker.cpp.
@@ -69,6 +75,7 @@ struct UninitObjCheckerOptions {
   bool ShouldConvertNotesToWarnings = false;
   bool CheckPointeeInitialization = false;
   std::string IgnoredRecordsWithFieldPattern;
+  bool IgnoreGuardedFields = false;
 };
 
 /// A lightweight polymorphic wrapper around FieldRegion *. We'll use this
@@ -215,7 +222,11 @@ public:
                           const TypedValueRegion *const R,
                           const UninitObjCheckerOptions &Opts);
 
-  const UninitFieldMap &getUninitFields() { return UninitFields; }
+  /// Returns with the modified state and a map of (uninitialized region,
+  /// note message) pairs.
+  std::pair<ProgramStateRef, const UninitFieldMap &> getResults() {
+    return {State, UninitFields};
+  }
 
   /// Returns whether the analyzed region contains at least one initialized
   /// field. Note that this includes subfields as well, not just direct ones,
@@ -230,7 +241,7 @@ private:
   //   * every node is an object that is
   //     - a union
   //     - a non-union record
-  //     - dereferencable (see isDereferencableType())
+  //     - dereferenceable (see isDereferencableType())
   //     - an array
   //     - of a primitive type (see isPrimitiveType())
   //   * the parent of each node is the object that contains it
@@ -271,7 +282,7 @@ private:
   //   this->iptr (pointee uninit)
   //   this->bptr (pointer uninit)
   //
-  // We'll traverse each node of the above graph with the appropiate one of
+  // We'll traverse each node of the above graph with the appropriate one of
   // these methods:
 
   /// Checks the region of a union object, and returns true if no field is
@@ -296,14 +307,16 @@ private:
   // TODO: Add a support for nonloc::LocAsInteger.
 
   /// Processes LocalChain and attempts to insert it into UninitFields. Returns
-  /// true on success.
+  /// true on success. Also adds the head of the list and \p PointeeR (if
+  /// supplied) to the GDM as already analyzed objects.
   ///
   /// Since this class analyzes regions with recursion, we'll only store
   /// references to temporary FieldNode objects created on the stack. This means
   /// that after analyzing a leaf of the directed tree described above, the
   /// elements LocalChain references will be destructed, so we can't store it
   /// directly.
-  bool addFieldToUninits(FieldChainInfo LocalChain);
+  bool addFieldToUninits(FieldChainInfo LocalChain,
+                         const MemRegion *PointeeR = nullptr);
 };
 
 /// Returns true if T is a primitive type. An object of a primitive type only

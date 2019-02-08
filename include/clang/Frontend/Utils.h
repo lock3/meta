@@ -1,9 +1,8 @@
 //===- Utils.h - Misc utilities for the front-end ---------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -182,9 +181,6 @@ void AttachHeaderIncludeGen(Preprocessor &PP,
                             bool ShowAllHeaders = false,
                             StringRef OutputPath = {},
                             bool ShowDepth = true, bool MSStyle = false);
-
-/// Cache tokens for use with PCH. Note that this requires a seekable stream.
-void CacheTokens(Preprocessor &PP, raw_pwrite_stream *OS);
 
 /// The ChainedIncludesSource class converts headers to chained PCHs in
 /// memory, mainly for testing.

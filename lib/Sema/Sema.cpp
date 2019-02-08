@@ -1,9 +1,8 @@
 //===--- Sema.cpp - AST Builder and Semantic Analysis Implementation ------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -168,7 +167,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
 
   PreallocatedFunctionScope.reset(new FunctionScopeInfo(Diags));
 
-  // Initilization of data sharing attributes stack for OpenMP
+  // Initialization of data sharing attributes stack for OpenMP
   InitDataSharingAttributesStack();
 
   std::unique_ptr<sema::SemaPPCallbacks> Callbacks =
@@ -1416,7 +1415,8 @@ static void checkEscapingByref(VarDecl *VD, Sema &S) {
   EnterExpressionEvaluationContext scope(
       S, Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
   SourceLocation Loc = VD->getLocation();
-  Expr *VarRef = new (S.Context) DeclRefExpr(VD, false, T, VK_LValue, Loc);
+  Expr *VarRef =
+      new (S.Context) DeclRefExpr(S.Context, VD, false, T, VK_LValue, Loc);
   ExprResult Result = S.PerformMoveOrCopyInitialization(
       InitializedEntity::InitializeBlock(Loc, T, false), VD, VD->getType(),
       VarRef, /*AllowNRVO=*/true);

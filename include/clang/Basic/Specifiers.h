@@ -1,9 +1,8 @@
 //===--- Specifiers.h - Declaration and Type Specifiers ---------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -251,6 +250,7 @@ namespace clang {
     CC_Swift,        // __attribute__((swiftcall))
     CC_PreserveMost, // __attribute__((preserve_most))
     CC_PreserveAll,  // __attribute__((preserve_all))
+    CC_AArch64VectorCall, // __attribute__((aarch64_vector_pcs))
   };
 
   /// Checks whether the given calling convention supports variadic

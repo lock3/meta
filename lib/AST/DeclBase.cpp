@@ -1,9 +1,8 @@
 //===- DeclBase.cpp - Declaration AST Node Implementation -----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -781,6 +780,9 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPDeclareReduction:
       return IDNS_OMPReduction;
 
+    case OMPDeclareMapper:
+      return IDNS_OMPMapper;
+
     // Never have names.
     case Friend:
     case FriendTemplate:
@@ -955,10 +957,7 @@ static Decl::Kind getKind(const Decl *D) { return D->getKind(); }
 static Decl::Kind getKind(const DeclContext *DC) { return DC->getDeclKind(); }
 
 int64_t Decl::getID() const {
-  Optional<int64_t> Out = getASTContext().getAllocator().identifyObject(this);
-  assert(Out && "Wrong allocator used");
-  assert(*Out % alignof(Decl) == 0 && "Wrong alignment information");
-  return *Out / alignof(Decl);
+  return getASTContext().getAllocator().identifyKnownAlignedObject<Decl>(this);
 }
 
 const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
@@ -1167,6 +1166,7 @@ DeclContext *DeclContext::getPrimaryContext() {
   case Decl::Block:
   case Decl::Captured:
   case Decl::OMPDeclareReduction:
+  case Decl::OMPDeclareMapper:
     // There is only one DeclContext for these entities.
     return this;
 
@@ -1408,6 +1408,12 @@ static bool shouldBeHidden(NamedDecl *D) {
       D->isTemplateParameter())
     return true;
 
+  // Skip friends and local extern declarations unless they're the first
+  // declaration of the entity.
+  if ((D->isLocalExternDecl() || D->getFriendObjectKind()) &&
+      D != D->getCanonicalDecl())
+    return true;
+
   // Skip template specializations.
   // FIXME: This feels like a hack. Should DeclarationName support
   // template-ids, or is there a better way to keep specializations
@@ -1466,7 +1472,9 @@ void DeclContext::removeDecl(Decl *D) {
       if (Map) {
         StoredDeclsMap::iterator Pos = Map->find(ND->getDeclName());
         assert(Pos != Map->end() && "no lookup entry for decl");
-        if (Pos->second.getAsVector() || Pos->second.getAsDecl() == ND)
+        // Remove the decl only if it is contained.
+        StoredDeclsList::DeclsTy *Vec = Pos->second.getAsVector();
+        if ((Vec && is_contained(*Vec, ND)) || Pos->second.getAsDecl() == ND)
           Pos->second.remove(ND);
       }
     } while (DC->isTransparentContext() && (DC = DC->getParent()));

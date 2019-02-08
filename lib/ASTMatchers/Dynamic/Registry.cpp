@@ -1,9 +1,8 @@
 //===- Registry.cpp - Matcher registry ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -139,6 +138,7 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(binaryConditionalOperator);
   REGISTER_MATCHER(binaryOperator);
   REGISTER_MATCHER(blockDecl);
+  REGISTER_MATCHER(blockExpr);
   REGISTER_MATCHER(blockPointerType);
   REGISTER_MATCHER(booleanType);
   REGISTER_MATCHER(breakStmt);
@@ -211,6 +211,7 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(expr);
   REGISTER_MATCHER(exprWithCleanups);
   REGISTER_MATCHER(fieldDecl);
+  REGISTER_MATCHER(indirectFieldDecl);
   REGISTER_MATCHER(floatLiteral);
   REGISTER_MATCHER(forEach);
   REGISTER_MATCHER(forEachArgumentWithParam);
@@ -271,6 +272,7 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(hasInClassInitializer);
   REGISTER_MATCHER(hasIncrement);
   REGISTER_MATCHER(hasIndex);
+  REGISTER_MATCHER(hasInit);
   REGISTER_MATCHER(hasInitializer);
   REGISTER_MATCHER(hasKeywordSelector);
   REGISTER_MATCHER(hasLHS);
@@ -493,6 +495,7 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(unresolvedUsingTypenameDecl);
   REGISTER_MATCHER(unresolvedUsingValueDecl);
   REGISTER_MATCHER(userDefinedLiteral);
+  REGISTER_MATCHER(usesADL);
   REGISTER_MATCHER(usingDecl);
   REGISTER_MATCHER(usingDirectiveDecl);
   REGISTER_MATCHER(valueDecl);

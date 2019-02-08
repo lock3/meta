@@ -1,9 +1,8 @@
 //===--- SemaStmt.cpp - Semantic Analysis for Statements ------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -45,12 +44,11 @@
 using namespace clang;
 using namespace sema;
 
-StmtResult Sema::ActOnExprStmt(ExprResult FE) {
+StmtResult Sema::ActOnExprStmt(ExprResult FE, bool DiscardedValue) {
   if (FE.isInvalid())
     return StmtError();
 
-  FE = ActOnFinishFullExpr(FE.get(), FE.get()->getExprLoc(),
-                           /*DiscardedValue*/ true);
+  FE = ActOnFinishFullExpr(FE.get(), FE.get()->getExprLoc(), DiscardedValue);
   if (FE.isInvalid())
     return StmtError();
 
@@ -262,17 +260,16 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
     if (E->getType()->isVoidType())
       return;
 
+    if (const Attr *A = CE->getUnusedResultAttr(Context)) {
+      Diag(Loc, diag::warn_unused_result) << A << R1 << R2;
+      return;
+    }
+
     // If the callee has attribute pure, const, or warn_unused_result, warn with
     // a more specific message to make it clear what is happening. If the call
     // is written in a macro body, only warn if it has the warn_unused_result
     // attribute.
     if (const Decl *FD = CE->getCalleeDecl()) {
-      if (const Attr *A = isa<FunctionDecl>(FD)
-                              ? cast<FunctionDecl>(FD)->getUnusedResultAttr()
-                              : FD->getAttr<WarnUnusedResultAttr>()) {
-        Diag(Loc, diag::warn_unused_result) << A << R1 << R2;
-        return;
-      }
       if (ShouldSuppress)
         return;
       if (FD->hasAttr<PureAttr>()) {
@@ -352,6 +349,10 @@ sema::CompoundScopeInfo &Sema::getCurCompoundScope() const {
   return getCurFunction()->CompoundScopes.back();
 }
 
+bool Sema::isCurCompoundStmtAStmtExpr() const {
+  return getCurCompoundScope().IsStmtExpr;
+}
+
 StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
                                    ArrayRef<Stmt *> Elts, bool isStmtExpr) {
   const unsigned NumElts = Elts.size();
@@ -373,14 +374,6 @@ StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
       Decl *D = *cast<DeclStmt>(Elts[i])->decl_begin();
       Diag(D->getLocation(), diag::ext_mixed_decls_code);
     }
-  }
-  // Warn about unused expressions in statements.
-  for (unsigned i = 0; i != NumElts; ++i) {
-    // Ignore statements that are last in a statement expression.
-    if (isStmtExpr && i == NumElts - 1)
-      continue;
-
-    DiagnoseUnusedExprResult(Elts[i]);
   }
 
   // Check for suspicious empty body (null statement) in `for' and `while'
@@ -472,18 +465,13 @@ Sema::ActOnCaseStmt(SourceLocation CaseLoc, ExprResult LHSVal,
 }
 
 /// ActOnCaseStmtBody - This installs a statement as the body of a case.
-void Sema::ActOnCaseStmtBody(Stmt *caseStmt, Stmt *SubStmt) {
-  DiagnoseUnusedExprResult(SubStmt);
-
-  auto *CS = static_cast<CaseStmt *>(caseStmt);
-  CS->setSubStmt(SubStmt);
+void Sema::ActOnCaseStmtBody(Stmt *S, Stmt *SubStmt) {
+  cast<CaseStmt>(S)->setSubStmt(SubStmt);
 }
 
 StmtResult
 Sema::ActOnDefaultStmt(SourceLocation DefaultLoc, SourceLocation ColonLoc,
                        Stmt *SubStmt, Scope *CurScope) {
-  DiagnoseUnusedExprResult(SubStmt);
-
   if (getCurFunction()->SwitchStack.empty()) {
     Diag(DefaultLoc, diag::err_default_not_in_switch);
     return SubStmt;
@@ -576,9 +564,6 @@ StmtResult Sema::BuildIfStmt(SourceLocation IfLoc, bool IsConstexpr,
 
   if (IsConstexpr || isa<ObjCAvailabilityCheckExpr>(Cond.get().second))
     setFunctionHasBranchProtectedScope();
-
-  DiagnoseUnusedExprResult(thenStmt);
-  DiagnoseUnusedExprResult(elseStmt);
 
   return IfStmt::Create(Context, IfLoc, IsConstexpr, InitStmt, Cond.get().first,
                         Cond.get().second, thenStmt, ElseLoc, elseStmt);
@@ -948,8 +933,11 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     llvm::APSInt ConstantCondValue;
     bool HasConstantCond = false;
     if (!HasDependentValue && !TheDefaultStmt) {
-      HasConstantCond = CondExpr->EvaluateAsInt(ConstantCondValue, Context,
+      Expr::EvalResult Result;
+      HasConstantCond = CondExpr->EvaluateAsInt(Result, Context,
                                                 Expr::SE_AllowSideEffects);
+      if (Result.Val.isInt())
+        ConstantCondValue = Result.Val.getInt();
       assert(!HasConstantCond ||
              (ConstantCondValue.getBitWidth() == CondWidth &&
               ConstantCondValue.isSigned() == CondIsSigned));
@@ -1304,8 +1292,6 @@ StmtResult Sema::ActOnWhileStmt(SourceLocation WhileLoc, ConditionResult Cond,
       !Diags.isIgnored(diag::warn_comma_operator, CondVal.second->getExprLoc()))
     CommaVisitor(*this).Visit(CondVal.second);
 
-  DiagnoseUnusedExprResult(Body);
-
   if (isa<NullStmt>(Body))
     getCurCompoundScope().setHasEmptyLoopBodies();
 
@@ -1325,7 +1311,7 @@ Sema::ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
     return StmtError();
   Cond = CondResult.get();
 
-  CondResult = ActOnFinishFullExpr(Cond, DoLoc);
+  CondResult = ActOnFinishFullExpr(Cond, DoLoc, /*DiscardedValue*/ false);
   if (CondResult.isInvalid())
     return StmtError();
   Cond = CondResult.get();
@@ -1334,8 +1320,6 @@ Sema::ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
   if (Cond && !getLangOpts().C99 && !getLangOpts().CPlusPlus &&
       !Diags.isIgnored(diag::warn_comma_operator, Cond->getExprLoc()))
     CommaVisitor(*this).Visit(Cond);
-
-  DiagnoseUnusedExprResult(Body);
 
   return new (Context) DoStmt(Body, Cond, DoLoc, WhileLoc, CondRParen);
 }
@@ -1781,11 +1765,6 @@ StmtResult Sema::ActOnForStmt(SourceLocation ForLoc, SourceLocation LParenLoc,
     CommaVisitor(*this).Visit(Second.get().second);
 
   Expr *Third  = third.release().getAs<Expr>();
-
-  DiagnoseUnusedExprResult(First);
-  DiagnoseUnusedExprResult(Third);
-  DiagnoseUnusedExprResult(Body);
-
   if (isa<NullStmt>(Body))
     getCurCompoundScope().setHasEmptyLoopBodies();
 
@@ -1805,7 +1784,7 @@ StmtResult Sema::ActOnForEachLValueExpr(Expr *E) {
   if (result.isInvalid()) return StmtError();
   E = result.get();
 
-  ExprResult FullExpr = ActOnFinishFullExpr(E);
+  ExprResult FullExpr = ActOnFinishFullExpr(E, /*DiscardedValue*/ false);
   if (FullExpr.isInvalid())
     return StmtError();
   return StmtResult(static_cast<Stmt*>(FullExpr.get()));
@@ -1959,7 +1938,8 @@ Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
   if (CollectionExprResult.isInvalid())
     return StmtError();
 
-  CollectionExprResult = ActOnFinishFullExpr(CollectionExprResult.get());
+  CollectionExprResult =
+      ActOnFinishFullExpr(CollectionExprResult.get(), /*DiscardedValue*/ false);
   if (CollectionExprResult.isInvalid())
     return StmtError();
 
@@ -2388,12 +2368,14 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   // Build an expression that accesses the member and evaluate it.
   ExprResult Ref =
       SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
-  
-  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
+
+  Expr::EvalResult Result;
+  if (!Ref.get()->EvaluateAsInt(Result, SemaRef.Context)) {
     // FIXME: This is probably not the right error.
     SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
   }
+  Size = Result.Val.getInt();
   return true;
 }
 
@@ -2671,7 +2653,8 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
     if (!NotEqExpr.isInvalid())
       NotEqExpr = CheckBooleanCondition(ColonLoc, NotEqExpr.get());
     if (!NotEqExpr.isInvalid())
-      NotEqExpr = ActOnFinishFullExpr(NotEqExpr.get());
+      NotEqExpr =
+          ActOnFinishFullExpr(NotEqExpr.get(), /*DiscardedValue*/ false);
     if (NotEqExpr.isInvalid()) {
       Diag(RangeLoc, diag::note_for_range_invalid_iterator)
         << RangeLoc << 0 << BeginRangeRef.get()->getType();
@@ -2694,7 +2677,7 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
       // co_await during the initial parse.
       IncrExpr = ActOnCoawaitExpr(S, CoawaitLoc, IncrExpr.get());
     if (!IncrExpr.isInvalid())
-      IncrExpr = ActOnFinishFullExpr(IncrExpr.get());
+      IncrExpr = ActOnFinishFullExpr(IncrExpr.get(), /*DiscardedValue*/ false);
     if (IncrExpr.isInvalid()) {
       Diag(RangeLoc, diag::note_for_range_invalid_iterator)
         << RangeLoc << 2 << BeginRangeRef.get()->getType() ;
@@ -3559,10 +3542,11 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   EnterExpressionEvaluationContext EvalContext(SemaRef, 
     Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
-  llvm::APSInt Count;
-  if (!CountCall->EvaluateAsInt(Count, SemaRef.Context))
+  Expr::EvalResult Result;
+  if (!CountCall->EvaluateAsInt(Result, SemaRef.Context))
     return StmtError();
 
+  llvm::APSInt Count = Result.Val.getInt();
   return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
                                                 RangeDeclStmt,
                                                 TemplateParms, 
@@ -3950,7 +3934,7 @@ Sema::ActOnIndirectGotoStmt(SourceLocation GotoLoc, SourceLocation StarLoc,
       return StmtError();
   }
 
-  ExprResult ExprRes = ActOnFinishFullExpr(E);
+  ExprResult ExprRes = ActOnFinishFullExpr(E, /*DiscardedValue*/ false);
   if (ExprRes.isInvalid())
     return StmtError();
   E = ExprRes.get();
@@ -4300,7 +4284,8 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
           ExpressionEvaluationContext::DiscardedStatement &&
       (HasDeducedReturnType || CurCap->HasImplicitReturnType)) {
     if (RetValExp) {
-      ExprResult ER = ActOnFinishFullExpr(RetValExp, ReturnLoc);
+      ExprResult ER =
+          ActOnFinishFullExpr(RetValExp, ReturnLoc, /*DiscardedValue*/ false);
       if (ER.isInvalid())
         return StmtError();
       RetValExp = ER.get();
@@ -4427,7 +4412,8 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   }
 
   if (RetValExp) {
-    ExprResult ER = ActOnFinishFullExpr(RetValExp, ReturnLoc);
+    ExprResult ER =
+        ActOnFinishFullExpr(RetValExp, ReturnLoc, /*DiscardedValue*/ false);
     if (ER.isInvalid())
       return StmtError();
     RetValExp = ER.get();
@@ -4657,7 +4643,8 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
           ExpressionEvaluationContext::DiscardedStatement &&
       FnRetType->getContainedAutoType()) {
     if (RetValExp) {
-      ExprResult ER = ActOnFinishFullExpr(RetValExp, ReturnLoc);
+      ExprResult ER =
+          ActOnFinishFullExpr(RetValExp, ReturnLoc, /*DiscardedValue*/ false);
       if (ER.isInvalid())
         return StmtError();
       RetValExp = ER.get();
@@ -4751,7 +4738,8 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       }
 
       if (RetValExp) {
-        ExprResult ER = ActOnFinishFullExpr(RetValExp, ReturnLoc);
+        ExprResult ER =
+            ActOnFinishFullExpr(RetValExp, ReturnLoc, /*DiscardedValue*/ false);
         if (ER.isInvalid())
           return StmtError();
         RetValExp = ER.get();
@@ -4830,7 +4818,8 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
     }
 
     if (RetValExp) {
-      ExprResult ER = ActOnFinishFullExpr(RetValExp, ReturnLoc);
+      ExprResult ER =
+          ActOnFinishFullExpr(RetValExp, ReturnLoc, /*DiscardedValue*/ false);
       if (ER.isInvalid())
         return StmtError();
       RetValExp = ER.get();
@@ -4883,7 +4872,7 @@ StmtResult Sema::BuildObjCAtThrowStmt(SourceLocation AtLoc, Expr *Throw) {
     if (Result.isInvalid())
       return StmtError();
 
-    Result = ActOnFinishFullExpr(Result.get());
+    Result = ActOnFinishFullExpr(Result.get(), /*DiscardedValue*/ false);
     if (Result.isInvalid())
       return StmtError();
     Throw = Result.get();
@@ -4955,7 +4944,7 @@ Sema::ActOnObjCAtSynchronizedOperand(SourceLocation atLoc, Expr *operand) {
   }
 
   // The operand to @synchronized is a full-expression.
-  return ActOnFinishFullExpr(operand);
+  return ActOnFinishFullExpr(operand, /*DiscardedValue*/ false);
 }
 
 StmtResult

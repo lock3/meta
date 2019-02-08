@@ -1,9 +1,8 @@
 //===- IdentifierTable.h - Hash table for identifier lookup -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -120,10 +119,19 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
 
   llvm::StringMapEntry<IdentifierInfo *> *Entry = nullptr;
 
+  IdentifierInfo()
+      : TokenID(tok::identifier), ObjCOrBuiltinID(0), HasMacro(false),
+        HadMacro(false), IsExtension(false), IsFutureCompatKeyword(false),
+        IsPoisoned(false), IsCPPOperatorKeyword(false),
+        NeedsHandleIdentifier(false), IsFromAST(false), ChangedAfterLoad(false),
+        FEChangedAfterLoad(false), RevertedTokenID(false), OutOfDate(false),
+        IsModulesImport(false), IsConsteval(false) {}
+
 public:
-  IdentifierInfo();
   IdentifierInfo(const IdentifierInfo &) = delete;
   IdentifierInfo &operator=(const IdentifierInfo &) = delete;
+  IdentifierInfo(IdentifierInfo &&) = delete;
+  IdentifierInfo &operator=(IdentifierInfo &&) = delete;
 
   /// Return true if this is the identifier for the specified string.
   ///
@@ -142,31 +150,10 @@ public:
 
   /// Return the beginning of the actual null-terminated string for this
   /// identifier.
-  const char *getNameStart() const {
-    if (Entry) return Entry->getKeyData();
-    // FIXME: This is gross. It would be best not to embed specific details
-    // of the PTH file format here.
-    // The 'this' pointer really points to a
-    // std::pair<IdentifierInfo, const char*>, where internal pointer
-    // points to the external string data.
-    using actualtype = std::pair<IdentifierInfo, const char *>;
-
-    return ((const actualtype*) this)->second;
-  }
+  const char *getNameStart() const { return Entry->getKeyData(); }
 
   /// Efficiently return the length of this identifier info.
-  unsigned getLength() const {
-    if (Entry) return Entry->getKeyLength();
-    // FIXME: This is gross. It would be best not to embed specific details
-    // of the PTH file format here.
-    // The 'this' pointer really points to a
-    // std::pair<IdentifierInfo, const char*>, where internal pointer
-    // points to the external string data.
-    using actualtype = std::pair<IdentifierInfo, const char *>;
-
-    const char* p = ((const actualtype*) this)->second - 2;
-    return (((unsigned) p[0]) | (((unsigned) p[1]) << 8)) - 1;
-  }
+  unsigned getLength() const { return Entry->getKeyLength(); }
 
   /// Return the actual identifier string.
   StringRef getName() const {
@@ -1023,9 +1010,6 @@ struct DenseMapInfo<clang::Selector> {
     return LHS == RHS;
   }
 };
-
-template <>
-struct isPodLike<clang::Selector> { static const bool value = true; };
 
 template<>
 struct PointerLikeTypeTraits<clang::Selector> {

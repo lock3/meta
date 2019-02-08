@@ -1,9 +1,8 @@
 //===--- CGExprConstant.cpp - Emit LLVM Code from Constant Expressions ----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1590,6 +1589,7 @@ llvm::Constant *ConstantEmitter::tryEmitPrivateForVarInit(const VarDecl &D) {
         if (CD->isTrivial() && CD->isDefaultConstructor())
           return CGM.EmitNullConstant(D.getType());
       }
+    InConstantContext = true;
   }
 
   QualType destType = D.getType();
@@ -1687,7 +1687,7 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
   if (destType->isReferenceType())
     Success = E->EvaluateAsLValue(Result, CGM.getContext());
   else
-    Success = E->EvaluateAsRValue(Result, CGM.getContext());
+    Success = E->EvaluateAsRValue(Result, CGM.getContext(), InConstantContext);
 
   llvm::Constant *C;
   if (Success && !Result.HasSideEffects)
@@ -2182,17 +2182,7 @@ ConstantLValueEmitter::VisitObjCStringLiteral(const ObjCStringLiteral *E) {
 
 ConstantLValue
 ConstantLValueEmitter::VisitPredefinedExpr(const PredefinedExpr *E) {
-  if (auto CGF = Emitter.CGF) {
-    LValue Res = CGF->EmitPredefinedLValue(E);
-    return cast<ConstantAddress>(Res.getAddress());
-  }
-
-  auto kind = E->getIdentKind();
-  if (kind == PredefinedExpr::PrettyFunction) {
-    return CGM.GetAddrOfConstantCString("top level", ".tmp");
-  }
-
-  return CGM.GetAddrOfConstantCString("", ".tmp");
+  return CGM.GetAddrOfConstantStringFromLiteral(E->getFunctionName());
 }
 
 ConstantLValue
@@ -2266,6 +2256,9 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
     return ConstantLValueEmitter(*this, Value, DestType).tryEmit();
   case APValue::Int:
     return llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
+  case APValue::FixedPoint:
+    return llvm::ConstantInt::get(CGM.getLLVMContext(),
+                                  Value.getFixedPoint().getValue());
   case APValue::Reflection:
     return llvm::ConstantInt::get(CGM.getLLVMContext(), llvm::APSInt(128));
   case APValue::ComplexInt: {

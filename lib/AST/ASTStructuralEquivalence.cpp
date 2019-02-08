@@ -1,9 +1,8 @@
 //===- ASTStructuralEquivalence.cpp ---------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -298,6 +297,32 @@ static bool IsArrayStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return true;
 }
 
+/// Determine structural equivalence based on the ExtInfo of functions. This
+/// is inspired by ASTContext::mergeFunctionTypes(), we compare calling
+/// conventions bits but must not compare some other bits.
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     FunctionType::ExtInfo EI1,
+                                     FunctionType::ExtInfo EI2) {
+  // Compatible functions must have compatible calling conventions.
+  if (EI1.getCC() != EI2.getCC())
+    return false;
+
+  // Regparm is part of the calling convention.
+  if (EI1.getHasRegParm() != EI2.getHasRegParm())
+    return false;
+  if (EI1.getRegParm() != EI2.getRegParm())
+    return false;
+
+  if (EI1.getProducesResult() != EI2.getProducesResult())
+    return false;
+  if (EI1.getNoCallerSavedRegs() != EI2.getNoCallerSavedRegs())
+    return false;
+  if (EI1.getNoCfCheck() != EI2.getNoCfCheck())
+    return false;
+
+  return true;
+}
+
 /// Determine structural equivalence of two types.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      QualType T1, QualType T2) {
@@ -504,7 +529,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (Proto1->isVariadic() != Proto2->isVariadic())
       return false;
 
-    if (Proto1->getTypeQuals() != Proto2->getTypeQuals())
+    if (Proto1->getMethodQuals() != Proto2->getMethodQuals())
       return false;
 
     // Check exceptions, this information is lost in canonical type.
@@ -541,7 +566,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (!IsStructurallyEquivalent(Context, Function1->getReturnType(),
                                   Function2->getReturnType()))
       return false;
-    if (Function1->getExtInfo() != Function2->getExtInfo())
+    if (!IsStructurallyEquivalent(Context, Function1->getExtInfo(),
+                                  Function2->getExtInfo()))
       return false;
     break;
   }
@@ -927,7 +953,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return true;
 }
 
-/// Determine structural equivalence of two methodss.
+/// Determine structural equivalence of two methods.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      CXXMethodDecl *Method1,
                                      CXXMethodDecl *Method2) {
@@ -1032,7 +1058,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return false;
 
   // Compare the definitions of these two records. If either or both are
-  // incomplete, we assume that they are equivalent.
+  // incomplete (i.e. it is a forward decl), we assume that they are
+  // equivalent.
   D1 = D1->getDefinition();
   D2 = D2->getDefinition();
   if (!D1 || !D2)
@@ -1046,6 +1073,11 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   if (Context.EqKind == StructuralEquivalenceKind::Minimal)
     if (D1->hasExternalLexicalStorage() || D2->hasExternalLexicalStorage())
       return true;
+
+  // If one definition is currently being defined, we do not compare for
+  // equality and we assume that the decls are equal.
+  if (D1->isBeingDefined() || D2->isBeingDefined())
+    return true;
 
   if (auto *D1CXX = dyn_cast<CXXRecordDecl>(D1)) {
     if (auto *D2CXX = dyn_cast<CXXRecordDecl>(D2)) {

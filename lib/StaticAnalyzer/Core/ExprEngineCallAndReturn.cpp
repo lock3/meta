@@ -1,9 +1,8 @@
 //=-- ExprEngineCallAndReturn.cpp - Support for call/return -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -349,7 +348,7 @@ void ExprEngine::processCallExit(ExplodedNode *CEBNode) {
                                                         /*WasInlined=*/true);
     } else if (CE &&
                !(isa<CXXNewExpr>(CE) && // Called when visiting CXXNewExpr.
-                 AMgr.getAnalyzerOptions().mayInlineCXXAllocator())) {
+                 AMgr.getAnalyzerOptions().MayInlineCXXAllocator)) {
       getCheckerManager().runCheckersForPostStmt(Dst, DstPostCall, CE,
                                                  *this, /*WasInlined=*/true);
     } else {
@@ -386,7 +385,7 @@ void ExprEngine::examineStackFrames(const Decl *D, const LocationContext *LCtx,
       // Do not count the small functions when determining the stack depth.
       AnalysisDeclContext *CalleeADC = AMgr.getAnalysisDeclContext(DI);
       const CFG *CalleeCFG = CalleeADC->getCFG();
-      if (CalleeCFG->getNumBlockIDs() > AMgr.options.getAlwaysInlineSize())
+      if (CalleeCFG->getNumBlockIDs() > AMgr.options.AlwaysInlineSize)
         ++StackDepth;
     }
     LCtx = LCtx->getParent();
@@ -683,7 +682,7 @@ ExprEngine::mayInlineCallKind(const CallEvent &Call, const ExplodedNode *Pred,
                                         : nullptr;
 
     if (CC && isa<NewAllocatedObjectConstructionContext>(CC) &&
-        !Opts.mayInlineCXXAllocator())
+        !Opts.MayInlineCXXAllocator)
       return CIP_DisallowedOnce;
 
     // FIXME: We don't handle constructors or destructors for arrays properly.
@@ -712,7 +711,7 @@ ExprEngine::mayInlineCallKind(const CallEvent &Call, const ExplodedNode *Pred,
       // If we don't handle temporary destructors, we shouldn't inline
       // their constructors.
       if (CallOpts.IsTemporaryCtorOrDtor &&
-          !Opts.includeTemporaryDtorsInCFG())
+          !Opts.ShouldIncludeTemporaryDtorsInCFG)
         return CIP_DisallowedOnce;
 
       // If we did not find the correct this-region, it would be pointless
@@ -743,7 +742,8 @@ ExprEngine::mayInlineCallKind(const CallEvent &Call, const ExplodedNode *Pred,
       return CIP_DisallowedOnce;
 
     // Allow disabling temporary destructor inlining with a separate option.
-    if (CallOpts.IsTemporaryCtorOrDtor && !Opts.mayInlineCXXTemporaryDtors())
+    if (CallOpts.IsTemporaryCtorOrDtor &&
+        !Opts.MayInlineCXXTemporaryDtors)
       return CIP_DisallowedOnce;
 
     // If we did not find the correct this-region, it would be pointless
@@ -754,13 +754,13 @@ ExprEngine::mayInlineCallKind(const CallEvent &Call, const ExplodedNode *Pred,
     break;
   }
   case CE_CXXAllocator:
-    if (Opts.mayInlineCXXAllocator())
+    if (Opts.MayInlineCXXAllocator)
       break;
     // Do not inline allocators until we model deallocators.
     // This is unfortunate, but basically necessary for smart pointers and such.
     return CIP_DisallowedAlways;
   case CE_ObjCMessage:
-    if (!Opts.mayInlineObjCMethod())
+    if (!Opts.MayInlineObjCMethod)
       return CIP_DisallowedAlways;
     if (!(Opts.getIPAMode() == IPAK_DynamicDispatch ||
           Opts.getIPAMode() == IPAK_DynamicDispatchBifurcate))
@@ -844,19 +844,19 @@ static bool mayInlineDecl(AnalysisManager &AMgr,
   if (Ctx.getLangOpts().CPlusPlus) {
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(CalleeADC->getDecl())) {
       // Conditionally control the inlining of template functions.
-      if (!Opts.mayInlineTemplateFunctions())
+      if (!Opts.MayInlineTemplateFunctions)
         if (FD->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
           return false;
 
       // Conditionally control the inlining of C++ standard library functions.
-      if (!Opts.mayInlineCXXStandardLibrary())
+      if (!Opts.MayInlineCXXStandardLibrary)
         if (Ctx.getSourceManager().isInSystemHeader(FD->getLocation()))
           if (AnalysisDeclContext::isInStdNamespace(FD))
             return false;
 
       // Conditionally control the inlining of methods on objects that look
       // like C++ containers.
-      if (!Opts.mayInlineCXXContainerMethods())
+      if (!Opts.MayInlineCXXContainerMethods)
         if (!AMgr.isInCodeFile(FD->getLocation()))
           if (isContainerMethod(Ctx, FD))
             return false;
@@ -865,7 +865,7 @@ static bool mayInlineDecl(AnalysisManager &AMgr,
       // We don't currently do a good job modeling shared_ptr because we can't
       // see the reference count, so treating as opaque is probably the best
       // idea.
-      if (!Opts.mayInlineCXXSharedPtrDtor())
+      if (!Opts.MayInlineCXXSharedPtrDtor)
         if (isCXXSharedPtrDtor(FD))
           return false;
     }
@@ -878,7 +878,7 @@ static bool mayInlineDecl(AnalysisManager &AMgr,
     return false;
 
   // Do not inline large functions.
-  if (CalleeCFG->getNumBlockIDs() > Opts.getMaxInlinableSize())
+  if (CalleeCFG->getNumBlockIDs() > Opts.MaxInlinableSize)
     return false;
 
   // It is possible that the live variables analysis cannot be
@@ -946,21 +946,21 @@ bool ExprEngine::shouldInlineCall(const CallEvent &Call, const Decl *D,
   unsigned StackDepth = 0;
   examineStackFrames(D, Pred->getLocationContext(), IsRecursive, StackDepth);
   if ((StackDepth >= Opts.InlineMaxStackDepth) &&
-      ((CalleeCFG->getNumBlockIDs() > Opts.getAlwaysInlineSize())
+      ((CalleeCFG->getNumBlockIDs() > Opts.AlwaysInlineSize)
        || IsRecursive))
     return false;
 
   // Do not inline large functions too many times.
   if ((Engine.FunctionSummaries->getNumTimesInlined(D) >
-       Opts.getMaxTimesInlineLarge()) &&
+       Opts.MaxTimesInlineLarge) &&
        CalleeCFG->getNumBlockIDs() >=
-       Opts.getMinCFGSizeTreatFunctionsAsLarge()) {
+       Opts.MinCFGSizeTreatFunctionsAsLarge) {
     NumReachedInlineCountMax++;
     return false;
   }
 
   if (HowToInline == Inline_Minimal &&
-      (CalleeCFG->getNumBlockIDs() > Opts.getAlwaysInlineSize()
+      (CalleeCFG->getNumBlockIDs() > Opts.AlwaysInlineSize
       || IsRecursive))
     return false;
 

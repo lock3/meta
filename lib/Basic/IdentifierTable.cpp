@@ -1,9 +1,8 @@
 //===- IdentifierTable.cpp - Hash table for identifier lookup -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -32,29 +31,6 @@
 #include <string>
 
 using namespace clang;
-
-//===----------------------------------------------------------------------===//
-// IdentifierInfo Implementation
-//===----------------------------------------------------------------------===//
-
-IdentifierInfo::IdentifierInfo() {
-  TokenID = tok::identifier;
-  ObjCOrBuiltinID = 0;
-  HasMacro = false;
-  HadMacro = false;
-  IsExtension = false;
-  IsFutureCompatKeyword = false;
-  IsPoisoned = false;
-  IsCPPOperatorKeyword = false;
-  NeedsHandleIdentifier = false;
-  IsFromAST = false;
-  ChangedAfterLoad = false;
-  FEChangedAfterLoad = false;
-  RevertedTokenID = false;
-  OutOfDate = false;
-  IsModulesImport = false;
-  IsConsteval = false;
-}
 
 //===----------------------------------------------------------------------===//
 // IdentifierTable Implementation

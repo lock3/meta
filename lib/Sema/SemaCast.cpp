@@ -1,9 +1,8 @@
 //===--- SemaCast.cpp - Semantic Analysis for Casts -----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -2554,8 +2553,9 @@ void CastOperation::CheckCStyleCast() {
 
     // OpenCL v2.0 s6.13.10 - Allow casts from '0' to event_t type.
     if (Self.getLangOpts().OpenCL && DestType->isEventT()) {
-      llvm::APSInt CastInt;
-      if (SrcExpr.get()->EvaluateAsInt(CastInt, Self.Context)) {
+      Expr::EvalResult Result;
+      if (SrcExpr.get()->EvaluateAsInt(Result, Self.Context)) {
+        llvm::APSInt CastInt = Result.Val.getInt();
         if (0 == CastInt) {
           Kind = CK_ZeroToOCLOpaqueType;
           return;

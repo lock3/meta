@@ -1,9 +1,8 @@
 //==--- Attr.td - attribute definitions -----------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -89,6 +88,10 @@ def NonLocalVar : SubsetSubject<Var,
 def NonBitField : SubsetSubject<Field,
                                 [{!S->isBitField()}],
                                 "non-bit-field non-static data members">;
+
+def NonStaticCXXMethod : SubsetSubject<CXXMethod,
+                                       [{!S->isStatic()}],
+                                       "non-static member functions">;
 
 def NonStaticNonConstCXXMethod
     : SubsetSubject<CXXMethod,
@@ -185,6 +188,9 @@ class VariadicIdentifierArgument<string name> : Argument<name, 1>;
 
 // Like VariadicUnsignedArgument except values are ParamIdx.
 class VariadicParamIdxArgument<string name> : Argument<name, 1>;
+
+// A list of identifiers matching parameters or ParamIdx indices.
+class VariadicParamOrParamIdxArgument<string name> : Argument<name, 1>;
 
 // Like VariadicParamIdxArgument but for a single function parameter index.
 class ParamIdxArgument<string name, bit opt = 0> : Argument<name, opt>;
@@ -296,6 +302,7 @@ def OpenCL : LangOpt<"OpenCL">;
 def RenderScript : LangOpt<"RenderScript">;
 def ObjC : LangOpt<"ObjC">;
 def BlocksSupported : LangOpt<"Blocks">;
+def ObjCAutoRefCount : LangOpt<"ObjCAutoRefCount">;
 
 // Defines targets for target-specific attributes. Empty lists are unchecked.
 class TargetSpec {
@@ -324,6 +331,7 @@ def TargetMSP430 : TargetArch<["msp430"]>;
 def TargetRISCV : TargetArch<["riscv32", "riscv64"]>;
 def TargetX86 : TargetArch<["x86"]>;
 def TargetAnyX86 : TargetArch<["x86", "x86_64"]>;
+def TargetWebAssembly : TargetArch<["wasm32", "wasm64"]>;
 def TargetWindows : TargetArch<["x86", "x86_64", "arm", "thumb", "aarch64"]> {
   let OSes = ["Win32"];
 }
@@ -710,7 +718,8 @@ def Availability : InheritableAttr {
   let Args = [IdentifierArgument<"platform">, VersionArgument<"introduced">,
               VersionArgument<"deprecated">, VersionArgument<"obsoleted">,
               BoolArgument<"unavailable">, StringArgument<"message">,
-              BoolArgument<"strict">, StringArgument<"replacement">];
+              BoolArgument<"strict">, StringArgument<"replacement">,
+              IntArgument<"priority">];
   let AdditionalMembers =
 [{static llvm::StringRef getPrettyPlatformName(llvm::StringRef Platform) {
     return llvm::StringSwitch<llvm::StringRef>(Platform)
@@ -812,19 +821,56 @@ def CFUnknownTransfer : InheritableAttr {
 def CFReturnsRetained : InheritableAttr {
   let Spellings = [Clang<"cf_returns_retained">];
 //  let Subjects = SubjectList<[ObjCMethod, ObjCProperty, Function]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def CFReturnsNotRetained : InheritableAttr {
   let Spellings = [Clang<"cf_returns_not_retained">];
 //  let Subjects = SubjectList<[ObjCMethod, ObjCProperty, Function]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def CFConsumed : InheritableParamAttr {
   let Spellings = [Clang<"cf_consumed">];
   let Subjects = SubjectList<[ParmVar]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
+}
+
+// OSObject-based attributes.
+def OSConsumed : InheritableParamAttr {
+  let Spellings = [Clang<"os_consumed">];
+  let Subjects = SubjectList<[ParmVar]>;
+  let Documentation = [RetainBehaviorDocs];
+}
+
+def OSReturnsRetained : InheritableAttr {
+  let Spellings = [Clang<"os_returns_retained">];
+  let Subjects = SubjectList<[Function, ObjCMethod, ObjCProperty, ParmVar]>;
+  let Documentation = [RetainBehaviorDocs];
+}
+
+def OSReturnsNotRetained : InheritableAttr {
+  let Spellings = [Clang<"os_returns_not_retained">];
+  let Subjects = SubjectList<[Function, ObjCMethod, ObjCProperty, ParmVar]>;
+  let Documentation = [RetainBehaviorDocs];
+}
+
+def OSReturnsRetainedOnZero : InheritableAttr {
+  let Spellings = [Clang<"os_returns_retained_on_zero">];
+  let Subjects = SubjectList<[ParmVar]>;
+  let Documentation = [RetainBehaviorDocs];
+}
+
+def OSReturnsRetainedOnNonZero : InheritableAttr {
+  let Spellings = [Clang<"os_returns_retained_on_non_zero">];
+  let Subjects = SubjectList<[ParmVar]>;
+  let Documentation = [RetainBehaviorDocs];
+}
+
+def OSConsumesThis : InheritableAttr {
+  let Spellings = [Clang<"os_consumes_this">];
+  let Subjects = SubjectList<[NonStaticCXXMethod]>;
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def Cleanup : InheritableAttr {
@@ -1168,6 +1214,13 @@ def FormatArg : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def Callback : InheritableAttr {
+  let Spellings = [Clang<"callback">];
+  let Args = [VariadicParamOrParamIdxArgument<"Encoding">];
+  let Subjects = SubjectList<[Function]>;
+  let Documentation = [CallbackDocs];
+}
+
 def GNUInline : InheritableAttr {
   let Spellings = [GCC<"gnu_inline">];
   let Subjects = SubjectList<[Function]>;
@@ -1458,6 +1511,22 @@ def AMDGPUNumVGPR : InheritableAttr {
   let Subjects = SubjectList<[Function], ErrorDiag, "kernel functions">;
 }
 
+def WebAssemblyImportModule : InheritableAttr,
+                              TargetSpecificAttr<TargetWebAssembly> {
+  let Spellings = [Clang<"import_module">];
+  let Args = [StringArgument<"ImportModule">];
+  let Documentation = [WebAssemblyImportModuleDocs];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+}
+
+def WebAssemblyImportName : InheritableAttr,
+                            TargetSpecificAttr<TargetWebAssembly> {
+  let Spellings = [Clang<"import_name">];
+  let Args = [StringArgument<"ImportName">];
+  let Documentation = [WebAssemblyImportNameDocs];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+}
+
 def NoSplitStack : InheritableAttr {
   let Spellings = [GCC<"no_split_stack">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
@@ -1612,31 +1681,31 @@ def ObjCBridgeRelated : InheritableAttr {
 def NSReturnsRetained : DeclOrTypeAttr {
   let Spellings = [Clang<"ns_returns_retained">];
 //  let Subjects = SubjectList<[ObjCMethod, ObjCProperty, Function]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def NSReturnsNotRetained : InheritableAttr {
   let Spellings = [Clang<"ns_returns_not_retained">];
 //  let Subjects = SubjectList<[ObjCMethod, ObjCProperty, Function]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def NSReturnsAutoreleased : InheritableAttr {
   let Spellings = [Clang<"ns_returns_autoreleased">];
 //  let Subjects = SubjectList<[ObjCMethod, ObjCProperty, Function]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def NSConsumesSelf : InheritableAttr {
   let Spellings = [Clang<"ns_consumes_self">];
   let Subjects = SubjectList<[ObjCMethod]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def NSConsumed : InheritableParamAttr {
   let Spellings = [Clang<"ns_consumed">];
   let Subjects = SubjectList<[ParmVar]>;
-  let Documentation = [Undocumented];
+  let Documentation = [RetainBehaviorDocs];
 }
 
 def ObjCException : InheritableAttr {
@@ -1687,6 +1756,13 @@ def ObjCRootClass : InheritableAttr {
   let Spellings = [Clang<"objc_root_class">];
   let Subjects = SubjectList<[ObjCInterface], ErrorDiag>;
   let Documentation = [Undocumented];
+}
+
+def ObjCNonLazyClass : Attr {
+  let Spellings = [Clang<"objc_nonlazy_class">];
+  let Subjects = SubjectList<[ObjCInterface], ErrorDiag>;
+  let LangOpts = [ObjC];
+  let Documentation = [ObjCNonLazyClassDocs];
 }
 
 def ObjCSubclassingRestricted : InheritableAttr {
@@ -1785,6 +1861,11 @@ def Pcs : DeclOrTypeAttr {
   let Documentation = [PcsDocs];
 }
 
+def AArch64VectorPcs: DeclOrTypeAttr {
+  let Spellings = [Clang<"aarch64_vector_pcs">];
+  let Documentation = [AArch64VectorPcsDocs];
+}
+
 def Pure : InheritableAttr {
   let Spellings = [GCC<"pure">];
   let Documentation = [Undocumented];
@@ -1796,6 +1877,11 @@ def Regparm : TypeAttr {
   let Documentation = [RegparmDocs];
   // Represented as part of the enclosing function type.
   let ASTNode = 0;
+}
+
+def NoDeref : TypeAttr {
+  let Spellings = [Clang<"noderef">];
+  let Documentation = [NoDerefDocs];
 }
 
 def ReqdWorkGroupSize : InheritableAttr {
@@ -2828,7 +2914,9 @@ def LoopHint : Attr {
   /// unroll_count: unrolls loop 'Value' times.
   /// unroll_and_jam: attempt to unroll and jam loop if State == Enable.
   /// unroll_and_jam_count: unroll and jams loop 'Value' times.
-  /// distribute: attempt to distribute loop if State == Enable
+  /// distribute: attempt to distribute loop if State == Enable.
+  /// pipeline: disable pipelining loop if State == Disable.
+  /// pipeline_initiation_interval: create loop schedule with initiation interval equal to 'Value'.
 
   /// #pragma unroll <argument> directive
   /// <no arg>: fully unrolls loop.
@@ -2843,10 +2931,10 @@ def LoopHint : Attr {
   let Args = [EnumArgument<"Option", "OptionType",
                           ["vectorize", "vectorize_width", "interleave", "interleave_count",
                            "unroll", "unroll_count", "unroll_and_jam", "unroll_and_jam_count",
-                           "distribute"],
+                           "pipeline", "pipeline_initiation_interval", "distribute"],
                           ["Vectorize", "VectorizeWidth", "Interleave", "InterleaveCount",
                            "Unroll", "UnrollCount", "UnrollAndJam", "UnrollAndJamCount",
-                           "Distribute"]>,
+                           "PipelineDisabled", "PipelineInitiationInterval", "Distribute"]>,
               EnumArgument<"State", "LoopHintState",
                            ["enable", "disable", "numeric", "assume_safety", "full"],
                            ["Enable", "Disable", "Numeric", "AssumeSafety", "Full"]>,
@@ -2863,6 +2951,8 @@ def LoopHint : Attr {
     case UnrollCount: return "unroll_count";
     case UnrollAndJam: return "unroll_and_jam";
     case UnrollAndJamCount: return "unroll_and_jam_count";
+    case PipelineDisabled: return "pipeline";
+    case PipelineInitiationInterval: return "pipeline_initiation_interval";
     case Distribute: return "distribute";
     }
     llvm_unreachable("Unhandled LoopHint option.");
@@ -3085,4 +3175,29 @@ def AlwaysDestroy : InheritableAttr {
   let Spellings = [Clang<"always_destroy", 0>];
   let Subjects = SubjectList<[Var]>;
   let Documentation = [AlwaysDestroyDocs];
+}
+
+def SpeculativeLoadHardening : InheritableAttr {
+  let Spellings = [Clang<"speculative_load_hardening">];
+  let Subjects = SubjectList<[Function, ObjCMethod], ErrorDiag>;
+  let Documentation = [SpeculativeLoadHardeningDocs];
+}
+
+def NoSpeculativeLoadHardening : InheritableAttr {
+  let Spellings = [Clang<"no_speculative_load_hardening">];
+  let Subjects = SubjectList<[Function, ObjCMethod], ErrorDiag>;
+  let Documentation = [NoSpeculativeLoadHardeningDocs];
+}
+
+def Uninitialized : InheritableAttr {
+  let Spellings = [Clang<"uninitialized", 0>];
+  let Subjects = SubjectList<[LocalVar]>;
+  let Documentation = [UninitializedDocs];
+}
+
+def ObjCExternallyRetained : InheritableAttr {
+  let LangOpts = [ObjCAutoRefCount];
+  let Spellings = [Clang<"objc_externally_retained">];
+  let Subjects = SubjectList<[NonParmVar, Function, Block, ObjCMethod]>;
+  let Documentation = [ObjCExternallyRetainedDocs];
 }

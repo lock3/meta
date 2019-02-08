@@ -1,14 +1,14 @@
 //===- IndexBody.cpp - Indexing statements --------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
 #include "IndexingContext.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ASTLambda.h"
 
 using namespace clang;
 using namespace clang::index;
@@ -451,6 +451,16 @@ public:
         IndexCtx.handleReference(Component.getField(), Component.getEndLoc(),
                                  Parent, ParentDC, SymbolRoleSet(), {});
       // FIXME: Try to resolve dependent field references.
+    }
+    return true;
+  }
+
+  bool VisitParmVarDecl(ParmVarDecl* D) {
+    // Index the parameters of lambda expression.
+    if (IndexCtx.shouldIndexFunctionLocalSymbols()) {
+      const auto *DC = D->getDeclContext();
+      if (DC && isLambdaCallOperator(DC))
+        IndexCtx.handleDecl(D);
     }
     return true;
   }

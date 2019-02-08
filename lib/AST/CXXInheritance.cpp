@@ -1,9 +1,8 @@
 //===- CXXInheritance.cpp - C++ Inheritance -------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -103,7 +102,6 @@ bool CXXRecordDecl::isDerivedFrom(const CXXRecordDecl *Base,
   Paths.setOrigin(const_cast<CXXRecordDecl*>(this));
 
   const CXXRecordDecl *BaseDecl = Base->getCanonicalDecl();
-  // FIXME: Capturing 'this' is a workaround for name lookup bugs in GCC 4.7.
   return lookupInBases(
       [BaseDecl](const CXXBaseSpecifier *Specifier, CXXBasePath &Path) {
         return FindBaseClass(Specifier, Path, BaseDecl);
@@ -124,7 +122,6 @@ bool CXXRecordDecl::isVirtuallyDerivedFrom(const CXXRecordDecl *Base) const {
   Paths.setOrigin(const_cast<CXXRecordDecl*>(this));
 
   const CXXRecordDecl *BaseDecl = Base->getCanonicalDecl();
-  // FIXME: Capturing 'this' is a workaround for name lookup bugs in GCC 4.7.
   return lookupInBases(
       [BaseDecl](const CXXBaseSpecifier *Specifier, CXXBasePath &Path) {
         return FindVirtualBaseClass(Specifier, Path, BaseDecl);
@@ -483,6 +480,21 @@ bool CXXRecordDecl::FindOMPReductionMember(const CXXBaseSpecifier *Specifier,
   for (Path.Decls = BaseRecord->lookup(Name); !Path.Decls.empty();
        Path.Decls = Path.Decls.slice(1)) {
     if (Path.Decls.front()->isInIdentifierNamespace(IDNS_OMPReduction))
+      return true;
+  }
+
+  return false;
+}
+
+bool CXXRecordDecl::FindOMPMapperMember(const CXXBaseSpecifier *Specifier,
+                                        CXXBasePath &Path,
+                                        DeclarationName Name) {
+  RecordDecl *BaseRecord =
+      Specifier->getType()->castAs<RecordType>()->getDecl();
+
+  for (Path.Decls = BaseRecord->lookup(Name); !Path.Decls.empty();
+       Path.Decls = Path.Decls.slice(1)) {
+    if (Path.Decls.front()->isInIdentifierNamespace(IDNS_OMPMapper))
       return true;
   }
 

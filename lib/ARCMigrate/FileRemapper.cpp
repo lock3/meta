@@ -1,9 +1,8 @@
 //===--- FileRemapper.cpp - File Remapping Helper -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -226,7 +225,7 @@ void FileRemapper::remap(const FileEntry *file, const FileEntry *newfile) {
 
 const FileEntry *FileRemapper::getOriginalFile(StringRef filePath) {
   const FileEntry *file = FileMgr->getFile(filePath);
-  // If we are updating a file that overriden an original file,
+  // If we are updating a file that overridden an original file,
   // actually update the original file.
   llvm::DenseMap<const FileEntry *, const FileEntry *>::iterator
     I = ToFromMappings.find(file);

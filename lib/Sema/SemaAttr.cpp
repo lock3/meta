@@ -1,9 +1,8 @@
 //===--- SemaAttr.cpp - Semantic Analysis for Attributes ------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -523,6 +522,7 @@ attrMatcherRuleListToString(ArrayRef<attr::SubjectMatchRule> Rules) {
 void Sema::ActOnPragmaAttributeAttribute(
     ParsedAttr &Attribute, SourceLocation PragmaLoc,
     attr::ParsedSubjectMatchRuleSet Rules) {
+  Attribute.setIsPragmaClangAttribute();
   SmallVector<attr::SubjectMatchRule, 4> SubjectMatchRules;
   // Gather the subject match rules that are supported by the attribute.
   SmallVector<std::pair<attr::SubjectMatchRule, bool>, 4>
@@ -631,28 +631,46 @@ void Sema::ActOnPragmaAttributeAttribute(
       {PragmaLoc, &Attribute, std::move(SubjectMatchRules), /*IsUsed=*/false});
 }
 
-void Sema::ActOnPragmaAttributeEmptyPush(SourceLocation PragmaLoc) {
+void Sema::ActOnPragmaAttributeEmptyPush(SourceLocation PragmaLoc,
+                                         const IdentifierInfo *Namespace) {
   PragmaAttributeStack.emplace_back();
   PragmaAttributeStack.back().Loc = PragmaLoc;
+  PragmaAttributeStack.back().Namespace = Namespace;
 }
 
-void Sema::ActOnPragmaAttributePop(SourceLocation PragmaLoc) {
+void Sema::ActOnPragmaAttributePop(SourceLocation PragmaLoc,
+                                   const IdentifierInfo *Namespace) {
   if (PragmaAttributeStack.empty()) {
-    Diag(PragmaLoc, diag::err_pragma_attribute_stack_mismatch);
+    Diag(PragmaLoc, diag::err_pragma_attribute_stack_mismatch) << 1;
     return;
   }
 
-  for (const PragmaAttributeEntry &Entry :
-       PragmaAttributeStack.back().Entries) {
-    if (!Entry.IsUsed) {
-      assert(Entry.Attribute && "Expected an attribute");
-      Diag(Entry.Attribute->getLoc(), diag::warn_pragma_attribute_unused)
-          << Entry.Attribute->getName();
-      Diag(PragmaLoc, diag::note_pragma_attribute_region_ends_here);
+  // Dig back through the stack trying to find the most recently pushed group
+  // that in Namespace. Note that this works fine if no namespace is present,
+  // think of push/pops without namespaces as having an implicit "nullptr"
+  // namespace.
+  for (size_t Index = PragmaAttributeStack.size(); Index;) {
+    --Index;
+    if (PragmaAttributeStack[Index].Namespace == Namespace) {
+      for (const PragmaAttributeEntry &Entry :
+           PragmaAttributeStack[Index].Entries) {
+        if (!Entry.IsUsed) {
+          assert(Entry.Attribute && "Expected an attribute");
+          Diag(Entry.Attribute->getLoc(), diag::warn_pragma_attribute_unused)
+              << *Entry.Attribute;
+          Diag(PragmaLoc, diag::note_pragma_attribute_region_ends_here);
+        }
+      }
+      PragmaAttributeStack.erase(PragmaAttributeStack.begin() + Index);
+      return;
     }
   }
 
-  PragmaAttributeStack.pop_back();
+  if (Namespace)
+    Diag(PragmaLoc, diag::err_pragma_attribute_stack_mismatch)
+        << 0 << Namespace->getName();
+  else
+    Diag(PragmaLoc, diag::err_pragma_attribute_stack_mismatch) << 1;
 }
 
 void Sema::AddPragmaAttributes(Scope *S, Decl *D) {
@@ -662,6 +680,8 @@ void Sema::AddPragmaAttributes(Scope *S, Decl *D) {
     for (auto &Entry : Group.Entries) {
       ParsedAttr *Attribute = Entry.Attribute;
       assert(Attribute && "Expected an attribute");
+      assert(Attribute->isPragmaClangAttribute() &&
+             "expected #pragma clang attribute");
 
       // Ensure that the attribute can be applied to the given declaration.
       bool Applies = false;

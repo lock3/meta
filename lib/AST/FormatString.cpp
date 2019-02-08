@@ -1,9 +1,8 @@
 // FormatString.cpp - Common stuff for handling printf/scanf formats -*- C++ -*-
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -179,6 +178,36 @@ clang::analyze_format_string::ParseArgPosition(FormatStringHandler &H,
 }
 
 bool
+clang::analyze_format_string::ParseVectorModifier(FormatStringHandler &H,
+                                                  FormatSpecifier &FS,
+                                                  const char *&I,
+                                                  const char *E,
+                                                  const LangOptions &LO) {
+  if (!LO.OpenCL)
+    return false;
+
+  const char *Start = I;
+  if (*I == 'v') {
+    ++I;
+
+    if (I == E) {
+      H.HandleIncompleteSpecifier(Start, E - Start);
+      return true;
+    }
+
+    OptionalAmount NumElts = ParseAmount(I, E);
+    if (NumElts.getHowSpecified() != OptionalAmount::Constant) {
+      H.HandleIncompleteSpecifier(Start, E - Start);
+      return true;
+    }
+
+    FS.setVectorNumElts(NumElts);
+  }
+
+  return false;
+}
+
+bool
 clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
                                                   const char *&I,
                                                   const char *E,
@@ -194,6 +223,9 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
       if (I != E && *I == 'h') {
         ++I;
         lmKind = LengthModifier::AsChar;
+      } else if (I != E && *I == 'l' && LO.OpenCL) {
+        ++I;
+        lmKind = LengthModifier::AsShortLong;
       } else {
         lmKind = LengthModifier::AsShort;
       }
@@ -457,6 +489,15 @@ ArgType::matchesType(ASTContext &C, QualType argTy) const {
   llvm_unreachable("Invalid ArgType Kind!");
 }
 
+ArgType ArgType::makeVectorType(ASTContext &C, unsigned NumElts) const {
+  // Check for valid vector element types.
+  if (T.isNull())
+    return ArgType::Invalid();
+
+  QualType Vec = C.getExtVectorType(T, NumElts);
+  return ArgType(Vec, Name);
+}
+
 QualType ArgType::getRepresentativeType(ASTContext &C) const {
   QualType Res;
   switch (K) {
@@ -535,6 +576,8 @@ analyze_format_string::LengthModifier::toString() const {
     return "hh";
   case AsShort:
     return "h";
+  case AsShortLong:
+    return "hl";
   case AsLong: // or AsWideChar
     return "l";
   case AsLongLong:
@@ -618,9 +661,6 @@ const char *ConversionSpecifier::toString() const {
 
   // MS specific specifiers.
   case ZArg: return "Z";
-
- // OpenCL specific specifiers.
-  case VArg: return "v";
   }
   return nullptr;
 }
@@ -673,13 +713,18 @@ void OptionalAmount::toString(raw_ostream &os) const {
   }
 }
 
-bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target) const {
+bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target,
+                                             const LangOptions &LO) const {
   switch (LM.getKind()) {
     case LengthModifier::None:
       return true;
 
     // Handle most integer flags
     case LengthModifier::AsShort:
+      // Length modifier only applies to FP vectors.
+      if (LO.OpenCL && CS.isDoubleArg())
+        return !VectorNumElts.isInvalid();
+
       if (Target.getTriple().isOSMSVCRT()) {
         switch (CS.getKind()) {
           case ConversionSpecifier::cArg:
@@ -718,8 +763,18 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target) const {
           return false;
       }
 
+    case LengthModifier::AsShortLong:
+      return LO.OpenCL && !VectorNumElts.isInvalid();
+
     // Handle 'l' flag
     case LengthModifier::AsLong: // or AsWideChar
+      if (CS.isDoubleArg()) {
+        // Invalid for OpenCL FP scalars.
+        if (LO.OpenCL && VectorNumElts.isInvalid())
+          return false;
+        return true;
+      }
+
       switch (CS.getKind()) {
         case ConversionSpecifier::dArg:
         case ConversionSpecifier::DArg:
@@ -730,14 +785,6 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target) const {
         case ConversionSpecifier::UArg:
         case ConversionSpecifier::xArg:
         case ConversionSpecifier::XArg:
-        case ConversionSpecifier::aArg:
-        case ConversionSpecifier::AArg:
-        case ConversionSpecifier::fArg:
-        case ConversionSpecifier::FArg:
-        case ConversionSpecifier::eArg:
-        case ConversionSpecifier::EArg:
-        case ConversionSpecifier::gArg:
-        case ConversionSpecifier::GArg:
         case ConversionSpecifier::nArg:
         case ConversionSpecifier::cArg:
         case ConversionSpecifier::sArg:
@@ -844,6 +891,7 @@ bool FormatSpecifier::hasStandardLengthModifier() const {
     case LengthModifier::AsInt3264:
     case LengthModifier::AsInt64:
     case LengthModifier::AsWide:
+    case LengthModifier::AsShortLong: // ???
       return false;
   }
   llvm_unreachable("Invalid LengthModifier Kind!");
@@ -878,8 +926,6 @@ bool FormatSpecifier::hasStandardConversionSpecifier(
     case ConversionSpecifier::CArg:
     case ConversionSpecifier::SArg:
       return LangOpt.ObjC;
-    case ConversionSpecifier::VArg:
-      return LangOpt.OpenCL;
     case ConversionSpecifier::InvalidSpecifier:
     case ConversionSpecifier::FreeBSDbArg:
     case ConversionSpecifier::FreeBSDDArg:

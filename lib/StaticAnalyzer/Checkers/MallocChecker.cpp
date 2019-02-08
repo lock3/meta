@@ -1,9 +1,8 @@
 //=== MallocChecker.cpp - A malloc/free checker -------------------*- C++ -*--//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "InterCheckerAPI.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/ParentMap.h"
@@ -1083,7 +1082,7 @@ void MallocChecker::processNewAllocation(const CXXNewExpr *NE,
   ProgramStateRef State = C.getState();
   // The return value from operator new is bound to a specified initialization
   // value (if any) and we don't want to loose this value. So we call
-  // MallocUpdateRefState() instead of MallocMemAux() which breakes the
+  // MallocUpdateRefState() instead of MallocMemAux() which breaks the
   // existing binding.
   State = MallocUpdateRefState(C, NE, State, NE->isArray() ? AF_CXXNewArray
                                                            : AF_CXXNew, Target);
@@ -1094,7 +1093,7 @@ void MallocChecker::processNewAllocation(const CXXNewExpr *NE,
 
 void MallocChecker::checkPostStmt(const CXXNewExpr *NE,
                                   CheckerContext &C) const {
-  if (!C.getAnalysisManager().getAnalyzerOptions().mayInlineCXXAllocator())
+  if (!C.getAnalysisManager().getAnalyzerOptions().MayInlineCXXAllocator)
     processNewAllocation(NE, C, C.getSVal(NE));
 }
 
@@ -2301,14 +2300,14 @@ void MallocChecker::reportLeak(SymbolRef Sym, ExplodedNode *N,
 
   assert(N);
   if (!BT_Leak[*CheckKind]) {
-    BT_Leak[*CheckKind].reset(new BugType(CheckNames[*CheckKind], "Memory leak",
-                                          categories::MemoryError));
     // Leaks should not be reported if they are post-dominated by a sink:
     // (1) Sinks are higher importance bugs.
     // (2) NoReturnFunctionChecker uses sink nodes to represent paths ending
     //     with __noreturn functions such as assert() or exit(). We choose not
     //     to report leaks on such paths.
-    BT_Leak[*CheckKind]->setSuppressOnSink(true);
+    BT_Leak[*CheckKind].reset(new BugType(CheckNames[*CheckKind], "Memory leak",
+                                          categories::MemoryError,
+                                          /*SuppressOnSink=*/true));
   }
 
   // Most bug reports are cached at the location where they occurred.
@@ -2345,13 +2344,11 @@ void MallocChecker::reportLeak(SymbolRef Sym, ExplodedNode *N,
 void MallocChecker::checkDeadSymbols(SymbolReaper &SymReaper,
                                      CheckerContext &C) const
 {
-  if (!SymReaper.hasDeadSymbols())
-    return;
-
   ProgramStateRef state = C.getState();
-  RegionStateTy RS = state->get<RegionState>();
+  RegionStateTy OldRS = state->get<RegionState>();
   RegionStateTy::Factory &F = state->get_context<RegionState>();
 
+  RegionStateTy RS = OldRS;
   SmallVector<SymbolRef, 2> Errors;
   for (RegionStateTy::iterator I = RS.begin(), E = RS.end(); I != E; ++I) {
     if (SymReaper.isDead(I->first)) {
@@ -2359,8 +2356,16 @@ void MallocChecker::checkDeadSymbols(SymbolReaper &SymReaper,
         Errors.push_back(I->first);
       // Remove the dead symbol from the map.
       RS = F.remove(RS, I->first);
-
     }
+  }
+
+  if (RS == OldRS) {
+    // We shouldn't have touched other maps yet.
+    assert(state->get<ReallocPairs>() ==
+           C.getState()->get<ReallocPairs>());
+    assert(state->get<FreeReturnValue>() ==
+           C.getState()->get<FreeReturnValue>());
+    return;
   }
 
   // Cleanup the Realloc Pairs Map.
@@ -3081,47 +3086,37 @@ markReleased(ProgramStateRef State, SymbolRef Sym, const Expr *Origin) {
 } // end namespace ento
 } // end namespace clang
 
-void ento::registerNewDeleteLeaksChecker(CheckerManager &mgr) {
-  registerCStringCheckerBasic(mgr);
-  MallocChecker *checker = mgr.registerChecker<MallocChecker>();
-  checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(
-      "Optimistic", false, checker);
-  checker->ChecksEnabled[MallocChecker::CK_NewDeleteLeaksChecker] = true;
-  checker->CheckNames[MallocChecker::CK_NewDeleteLeaksChecker] =
-      mgr.getCurrentCheckName();
-  // We currently treat NewDeleteLeaks checker as a subchecker of NewDelete
-  // checker.
-  if (!checker->ChecksEnabled[MallocChecker::CK_NewDeleteChecker]) {
-    checker->ChecksEnabled[MallocChecker::CK_NewDeleteChecker] = true;
-    // FIXME: This does not set the correct name, but without this workaround
-    //        no name will be set at all.
-    checker->CheckNames[MallocChecker::CK_NewDeleteChecker] =
-        mgr.getCurrentCheckName();
-  }
-}
-
 // Intended to be used in InnerPointerChecker to register the part of
 // MallocChecker connected to it.
 void ento::registerInnerPointerCheckerAux(CheckerManager &mgr) {
-    registerCStringCheckerBasic(mgr);
-    MallocChecker *checker = mgr.registerChecker<MallocChecker>();
-    checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(
-        "Optimistic", false, checker);
-    checker->ChecksEnabled[MallocChecker::CK_InnerPointerChecker] = true;
-    checker->CheckNames[MallocChecker::CK_InnerPointerChecker] =
-        mgr.getCurrentCheckName();
+  MallocChecker *checker = mgr.getChecker<MallocChecker>();
+  checker->ChecksEnabled[MallocChecker::CK_InnerPointerChecker] = true;
+  checker->CheckNames[MallocChecker::CK_InnerPointerChecker] =
+      mgr.getCurrentCheckName();
+}
+
+void ento::registerDynamicMemoryModeling(CheckerManager &mgr) {
+  auto *checker = mgr.registerChecker<MallocChecker>();
+  checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(
+                                                  "Optimistic", false, checker);
+}
+
+bool ento::shouldRegisterDynamicMemoryModeling(const LangOptions &LO) {
+  return true;
 }
 
 #define REGISTER_CHECKER(name)                                                 \
   void ento::register##name(CheckerManager &mgr) {                             \
-    registerCStringCheckerBasic(mgr);                                          \
-    MallocChecker *checker = mgr.registerChecker<MallocChecker>();             \
-    checker->IsOptimistic = mgr.getAnalyzerOptions().getCheckerBooleanOption(  \
-        "Optimistic", false, checker);                                         \
+    MallocChecker *checker = mgr.getChecker<MallocChecker>();                  \
     checker->ChecksEnabled[MallocChecker::CK_##name] = true;                   \
     checker->CheckNames[MallocChecker::CK_##name] = mgr.getCurrentCheckName(); \
+  }                                                                            \
+                                                                               \
+  bool ento::shouldRegister##name(const LangOptions &LO) {                     \
+    return true;                                                               \
   }
 
 REGISTER_CHECKER(MallocChecker)
 REGISTER_CHECKER(NewDeleteChecker)
+REGISTER_CHECKER(NewDeleteLeaksChecker)
 REGISTER_CHECKER(MismatchedDeallocatorChecker)

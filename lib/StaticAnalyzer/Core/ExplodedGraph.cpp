@@ -1,9 +1,8 @@
 //===- ExplodedGraph.cpp - Local, Path-Sens. "Exploded Graph" -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -284,10 +283,7 @@ ExplodedNode * const *ExplodedNode::NodeGroup::end() const {
 }
 
 int64_t ExplodedNode::getID(ExplodedGraph *G) const {
-  Optional<int64_t> Out = G->getAllocator().identifyObject(this);
-  assert(Out && "Wrong allocator used");
-  assert(*Out % alignof(ExplodedNode) == 0 && "Wrong alignment information");
-  return *Out / alignof(ExplodedNode);
+  return G->getAllocator().identifyKnownAlignedObject<ExplodedNode>(this);
 }
 
 bool ExplodedNode::isTrivial() const {

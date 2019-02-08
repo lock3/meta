@@ -1,9 +1,8 @@
 //===--- AnalysisConsumer.cpp - ASTConsumer for running Analyses ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -204,7 +203,7 @@ public:
         PP(CI.getPreprocessor()), OutDir(outdir), Opts(std::move(opts)),
         Plugins(plugins), Injector(injector), CTU(CI) {
     DigestAnalyzerOptions();
-    if (Opts->PrintStats || Opts->shouldSerializeStats()) {
+    if (Opts->PrintStats || Opts->ShouldSerializeStats) {
       AnalyzerTimers = llvm::make_unique<llvm::TimerGroup>(
           "analyzer", "Analyzer timers");
       TUTotalTimer = llvm::make_unique<llvm::Timer>(
@@ -739,7 +738,7 @@ void AnalysisConsumer::RunPathSensitiveChecks(Decl *D,
 
   // Execute the worklist algorithm.
   Eng.ExecuteWorkList(Mgr->getAnalysisDeclContextManager().getStackFrame(D),
-                      Mgr->options.getMaxNodesPerTopLevelFunction());
+                      Mgr->options.MaxNodesPerTopLevelFunction);
 
   if (!Mgr->options.DumpExplodedGraphTo.empty())
     Eng.DumpGraph(Mgr->options.TrimGraph, Mgr->options.DumpExplodedGraphTo);

@@ -1,9 +1,8 @@
 //== BasicObjCFoundationChecks.cpp - Simple Apple-Foundation checks -*- C++ -*--
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -13,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
@@ -800,7 +799,7 @@ void VariadicMethodTypeChecker::checkPreObjCMessage(const ObjCMethodCall &msg,
 //===----------------------------------------------------------------------===//
 
 // The map from container symbol to the container count symbol.
-// We currently will remember the last countainer count symbol encountered.
+// We currently will remember the last container count symbol encountered.
 REGISTER_MAP_WITH_PROGRAMSTATE(ContainerCountMap, SymbolRef, SymbolRef)
 REGISTER_MAP_WITH_PROGRAMSTATE(ContainerNonEmptyMap, SymbolRef, bool)
 
@@ -1243,27 +1242,54 @@ void ento::registerNilArgChecker(CheckerManager &mgr) {
   mgr.registerChecker<NilArgChecker>();
 }
 
+bool ento::shouldRegisterNilArgChecker(const LangOptions &LO) {
+  return true;
+}
+
 void ento::registerCFNumberChecker(CheckerManager &mgr) {
   mgr.registerChecker<CFNumberChecker>();
+}
+
+bool ento::shouldRegisterCFNumberChecker(const LangOptions &LO) {
+  return true;
 }
 
 void ento::registerCFRetainReleaseChecker(CheckerManager &mgr) {
   mgr.registerChecker<CFRetainReleaseChecker>();
 }
 
+bool ento::shouldRegisterCFRetainReleaseChecker(const LangOptions &LO) {
+  return true;
+}
+
 void ento::registerClassReleaseChecker(CheckerManager &mgr) {
   mgr.registerChecker<ClassReleaseChecker>();
+}
+
+bool ento::shouldRegisterClassReleaseChecker(const LangOptions &LO) {
+  return true;
 }
 
 void ento::registerVariadicMethodTypeChecker(CheckerManager &mgr) {
   mgr.registerChecker<VariadicMethodTypeChecker>();
 }
 
+bool ento::shouldRegisterVariadicMethodTypeChecker(const LangOptions &LO) {
+  return true;
+}
+
 void ento::registerObjCLoopChecker(CheckerManager &mgr) {
   mgr.registerChecker<ObjCLoopChecker>();
 }
 
-void
-ento::registerObjCNonNilReturnValueChecker(CheckerManager &mgr) {
+bool ento::shouldRegisterObjCLoopChecker(const LangOptions &LO) {
+  return true;
+}
+
+void ento::registerObjCNonNilReturnValueChecker(CheckerManager &mgr) {
   mgr.registerChecker<ObjCNonNilReturnValueChecker>();
+}
+
+bool ento::shouldRegisterObjCNonNilReturnValueChecker(const LangOptions &LO) {
+  return true;
 }
