@@ -1975,13 +1975,10 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       Transformer.MaybeTransformVariadicReifier(Reifier, ReifiedTypes);
 
       for (auto ReifiedType : ReifiedTypes) {
-        // CXXDependentVariadicReifierTypeLoc ReifierLoc;
-        // ReifierLoc.initialize(Context, Reifier->getBeginLoc());
-        
-        TypeSourceInfo *BaseTypeLoc =
+        TypeSourceInfo *BaseTInfo =
           Context.CreateTypeSourceInfo(ReifiedType,
-                                  TypeLoc::getFullDataSizeForType(ReifiedType));
-        BaseTypeLoc->getTypeLoc().initialize(Context, Reifier->getBeginLoc());
+                              TypeLoc::getFullDataSizeForType(ReifiedType));
+        BaseTInfo->getTypeLoc().initialize(Context, Reifier->getBeginLoc());
         if (!BaseTypeLoc) {
           Invalid = true;
           continue;

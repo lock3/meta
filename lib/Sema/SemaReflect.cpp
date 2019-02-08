@@ -935,9 +935,6 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
     QualType T =
       Context.getCXXDependentVariadicReifierType(Range, KWLoc,
                                                  RParenLoc, EllipsisLoc);
-    // TODO: remove this flag from qualtype
-    // T.isVariadicReifier = true;
-    // CXXDependentVariadicReifierType T(Context, Range);
     Types.push_back(T);
     return false;
   }
