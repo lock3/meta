@@ -852,7 +852,48 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
-  llvm_unreachable("unimplemented");
+  // if(dyn_cast_or_null<CXXReflectExpr>(Expression))
+  //   llvm::outs() << "SUCCESS\n";
+  // Expression->dump();
+  // assert(isa<CXXReflectExpr>(Expression) &&
+  //   "Called unqualid on a non-reflection");
+  // llvm_unreachable("No.");
+
+  llvm::SmallVector<Expr *, 1> Parts = {Expression};
+
+  DeclarationNameInfo DNI = 
+    SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
+
+  UnqualifiedId Result;
+  // if(SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
+  //   return ExprError();
+
+  TemplateNameKind TNK;
+  OpaquePtr<TemplateName> Template;
+  CXXScopeSpec TempSS;
+  if (SemaRef.BuildInitialDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+                                     SourceLocation(), TNK, Template, Result))
+    return ExprError();
+
+  SmallVector<TemplateIdAnnotation *, 1> TemplateIds;
+  if (SemaRef.CompleteDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+                                 SourceLocation(), TNK, Template,
+                                 SourceLocation(), ASTTemplateArgsPtr(),
+                                 SourceLocation(), TemplateIds, Result,
+                                 SourceLocation()))
+    return ExprError();
+
+  ExprResult BuiltExpr =
+    SemaRef.ActOnIdExpression(SemaRef.getCurScope(), TempSS,
+                              SourceLocation(), Result,
+                              /*HasTrailingLParen=*/false,
+                              /*IsAddresOfOperand=*/false);
+
+  if(BuiltExpr.isInvalid())
+    return ExprError();
+
+  BuiltExpr.get()->dump();
+  return BuiltExpr;
 }
 
 static QualType
