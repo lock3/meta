@@ -4275,15 +4275,14 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
     // Test for both type and non-type kinds of variadic reifiers.
     if (In.getArgument().getKind() == TemplateArgument::Expression) {
-      if (In.getArgument().getAsExpr()->getStmtClass() ==
-          Stmt::CXXDependentVariadicReifierExprClass) {
+      if (isa<CXXDependentVariadicReifierExpr>(In.getArgument().getAsExpr())) {
         if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
                                           Outputs))
           return true;
         continue;
       }
     } else if (In.getArgument().getKind() == TemplateArgument::Type) {
-      if (CXXDependentVariadicReifierType::classof(
+      if (isa<CXXDependentVariadicReifierType>(
             In.getArgument().getAsType().getTypePtr())) {
         if (MaybeTransformVariadicReifier(
               In.getArgument().getAsType().getTypePtr(), Outputs))
@@ -7807,7 +7806,7 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
-  if (E->getStmtClass() != Stmt::CXXDependentVariadicReifierExprClass)
+  if (!isa<CXXDependentVariadicReifierExpr>(E))
     return true;
 
   EnterExpressionEvaluationContext EvalContext(
@@ -7878,7 +7877,7 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
-  if(!CXXDependentVariadicReifierType::classof(T))
+  if(!isa<CXXDependentVariadicReifierType>(T))
     return false;
 
   EnterExpressionEvaluationContext EvalContext(

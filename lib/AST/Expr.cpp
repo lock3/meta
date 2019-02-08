@@ -2918,7 +2918,7 @@ bool Expr::hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs) {
 
 bool Expr::hasDependentVariadicReifierArguments(ArrayRef<Expr *> Exprs) {
   for (unsigned I = 0; I < Exprs.size(); ++I)
-    if (Exprs[I]->getStmtClass() == CXXDependentVariadicReifierExprClass)
+    if (isa<CXXDependentVariadicReifierExpr>(Exprs[I]))
       return true;
 
   return false;

@@ -8853,18 +8853,20 @@ public:
                        SourceLocation EllipsisLoc,
                        SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXValueOfExpr(SourceLocation KwLoc,
-                                 Expr *Refl,
-                                 SourceLocation LParenLoc,
-                                 SourceLocation RParenLoc,
-                                 SourceLocation EllipsisLoc = SourceLocation());
+  ExprResult
+  ActOnCXXValueOfExpr(SourceLocation KwLoc,
+                      Expr *Refl,
+                      SourceLocation LParenLoc,
+                      SourceLocation RParenLoc,
+                      SourceLocation EllipsisLoc = SourceLocation());
 
-  ExprResult ActOnCXXDependentVariadicReifierExpr(Expr *Range,
-                                                  SourceLocation KWLoc,
-                                                  IdentifierInfo *KW,
-                                                  SourceLocation LParenLoc,
-                                                  SourceLocation EllipsisLoc,
-                                                  SourceLocation RParenLoc);
+  ExprResult
+  ActOnCXXDependentVariadicReifierExpr(Expr *Range,
+                                       SourceLocation KWLoc,
+                                       IdentifierInfo *KW,
+                                       SourceLocation LParenLoc,
+                                       SourceLocation EllipsisLoc,
+                                       SourceLocation RParenLoc);
 
   DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
                                            SmallVectorImpl<Expr *> &Parts,

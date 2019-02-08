@@ -4808,7 +4808,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
     }
 
     if (Init->isBaseInitializer() &&
-        CXXDependentVariadicReifierType::classof(Init->getBaseClass())) {
+        isa<CXXDependentVariadicReifierType>(Init->getBaseClass())) {
       // The expanded range is necessarily constexpr.
       EnterExpressionEvaluationContext EvalContext(
         *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
