@@ -179,10 +179,10 @@ enum class_kind {
 
 // Kinds of access.
 enum access_kind {
-  public_access,
-  protected_access,
-  private_access,
   no_access,
+  public_access,
+  private_access,
+  protected_access
 };
 
 // Kinds of member functions.
@@ -190,7 +190,7 @@ enum member_kind {
   normal,
   constructor,
   destructor,
-  conversion,
+  conversion
 };
 
 // The linkage of a bitfield is always stored in the first 2 bits.
