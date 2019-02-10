@@ -195,10 +195,10 @@ enum class_kind {
 
 // Kinds of access.
 enum access_kind {
-  ak_public,
-  ak_protected,
-  ak_private,
   ak_none,
+  ak_public,
+  ak_private,
+  ak_protected
 };
 
 // Kinds of access modifiers.
@@ -215,7 +215,7 @@ enum member_kind {
   mk_normal,
   mk_constructor,
   mk_destructor,
-  mk_conversion,
+  mk_conversion
 };
 
 // The linkage of a bitfield is always stored in the first 2 bits.
