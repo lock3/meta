@@ -852,22 +852,12 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
-  // if(dyn_cast_or_null<CXXReflectExpr>(Expression))
-  //   llvm::outs() << "SUCCESS\n";
-  // Expression->dump();
-  // assert(isa<CXXReflectExpr>(Expression) &&
-  //   "Called unqualid on a non-reflection");
-  // llvm_unreachable("No.");
-
   llvm::SmallVector<Expr *, 1> Parts = {Expression};
 
   DeclarationNameInfo DNI = 
     SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
 
   UnqualifiedId Result;
-  // if(SemaRef.BuildDeclnameId(Parts, Result, SourceLocation(), SourceLocation()))
-  //   return ExprError();
-
   TemplateNameKind TNK;
   OpaquePtr<TemplateName> Template;
   CXXScopeSpec TempSS;
@@ -891,8 +881,6 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 
   if(BuiltExpr.isInvalid())
     return ExprError();
-
-  BuiltExpr.get()->dump();
   return BuiltExpr;
 }
 
@@ -908,12 +896,9 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
                            Expr *Range, SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc, SourceLocation RParenLoc)
 {
-  // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
   if (CtxBldr.BuildCalls())
     ; // TODO: Diag << failed to build calls
-  // StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
-  // CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
   ExprResult C;
 
