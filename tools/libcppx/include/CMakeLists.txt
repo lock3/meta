@@ -12,6 +12,7 @@ set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
 
 set(LIBCPPX_HEADER_PATTERN
   PATTERN "meta"
+  PATTERN "compiler"
   PATTERN "*.hpp")
 
 # Copy the headers to the build tree if we're building Clang.
@@ -33,7 +34,7 @@ endif()
 
 if(LIBCPPX_INSTALL_HEADERS)
   # Add install rules for the library's header files.
-  install(DIRECTORY cppx
+  install(DIRECTORY experimental
     DESTINATION ${LIBCPPX_INSTALL_INCLUDE_DIR}
     COMPONENT cppx-headers
     FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
