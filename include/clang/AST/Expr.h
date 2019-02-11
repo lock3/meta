@@ -54,7 +54,7 @@ namespace clang {
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
-  class InjectionEffect;
+  struct InjectionEffect;
 
 /// A simple array of base specifiers.
 typedef SmallVector<CXXBaseSpecifier*, 4> CXXCastPath;
