@@ -259,7 +259,12 @@ enum ReflectionQuery {
   RQ_is_nonstatic_data_member,
   RQ_is_static_member_function,
   RQ_is_nonstatic_member_function,
+  RQ_is_copy_assignment_operator,
+  RQ_is_move_assignment_operator,
   RQ_is_constructor,
+  RQ_is_default_constructor,
+  RQ_is_copy_constructor,
+  RQ_is_move_constructor,
   RQ_is_destructor,
 
   // Types
