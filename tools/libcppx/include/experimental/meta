@@ -49,7 +49,12 @@ enum reflection_query {
   query_is_nonstatic_data_member,
   query_is_static_member_function,
   query_is_nonstatic_member_function,
+  query_is_copy_assignment_operator,
+  query_is_move_assignment_operator,
   query_is_constructor,
+  query_is_default_constructor,
+  query_is_copy_constructor,
+  query_is_move_constructor,
   query_is_destructor,
 
   // Types
@@ -517,9 +522,34 @@ consteval bool is_member_function(info x) {
   return __reflect(detail::query_is_nonstatic_member_function, x);
 }
 
+// True if x reflects a copy assignment operator.
+consteval bool is_copy_assignment_operator(info x) {
+  return __reflect(detail::query_is_copy_assignment_operator, x);
+}
+
+// True if x reflects a move assignment operator.
+consteval bool is_move_assignment_operator(info x) {
+  return __reflect(detail::query_is_move_assignment_operator, x);
+}
+
 // True if x reflects a constructor.
 consteval bool is_constructor(info x) {
   return __reflect(detail::query_is_constructor, x);
+}
+
+// True if x reflects a default constructor.
+consteval bool is_default_constructor(info x) {
+  return __reflect(detail::query_is_default_constructor, x);
+}
+
+// True if x reflects a copy constructor.
+consteval bool is_copy_constructor(info x) {
+  return __reflect(detail::query_is_copy_constructor, x);
+}
+
+// True if x reflects a move constructor.
+consteval bool is_move_constructor(info x) {
+  return __reflect(detail::query_is_move_constructor, x);
 }
 
 // True if x reflects a destructor.
@@ -1018,8 +1048,6 @@ consteval bool has_access(info x) {
   return detail::access_traits(x).kind != detail::no_access;
 }
 
-// True if x's access specifier is determined by the default access of
-// the enclosing class.
 consteval bool has_default_access(info x) {
   return __reflect(detail::query_has_default_access, x);
 }

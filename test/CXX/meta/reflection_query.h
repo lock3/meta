@@ -21,7 +21,12 @@ enum reflection_query {
   query_is_nonstatic_data_member,
   query_is_static_member_function,
   query_is_nonstatic_member_function,
+  query_is_copy_assignment_operator,
+  query_is_move_assignment_operator,
   query_is_constructor,
+  query_is_default_constructor,
+  query_is_copy_constructor,
+  query_is_move_constructor,
   query_is_destructor,
 
   // Types

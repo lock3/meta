@@ -300,10 +300,51 @@ static bool isNonstaticMemberFunction(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates an constructor.
-static bool isConstructor(const Reflection &R,APValue &Result) {
+/// Returns true if R designates a copy assignment operator
+static bool isCopyAssignmentOperator(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isCopyAssignmentOperator());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a move assignment operator
+static bool isMoveAssignmentOperator(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isMoveAssignmentOperator());
+  return SuccessFalse(R, Result);
+}
+
+static const CXXConstructorDecl *getReachableConstructor(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<CXXConstructorDecl>(D));
+    return dyn_cast<CXXConstructorDecl>(D);
+  return nullptr;
+}
+
+/// Returns true if R designates a constructor.
+static bool isConstructor(const Reflection &R,APValue &Result) {
+  if (getReachableConstructor(R))
+    return SuccessTrue(R, Result);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a default constructor.
+static bool isDefaultConstructor(const Reflection &R,APValue &Result) {
+  if (const CXXConstructorDecl *CD = getReachableConstructor(R))
+    return SuccessBool(R, Result, CD->isDefaultConstructor());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a copy constructor.
+static bool isCopyConstructor(const Reflection &R,APValue &Result) {
+  if (const CXXConstructorDecl *CD = getReachableConstructor(R))
+    return SuccessBool(R, Result, CD->isCopyConstructor());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a copy constructor.
+static bool isMoveConstructor(const Reflection &R,APValue &Result) {
+  if (const CXXConstructorDecl *CD = getReachableConstructor(R))
+    return SuccessBool(R, Result, CD->isMoveConstructor());
   return SuccessFalse(R, Result);
 }
 
@@ -784,8 +825,18 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isStaticMemberFunction(*this, Result);
   case RQ_is_nonstatic_member_function:
     return isNonstaticMemberFunction(*this, Result);
+  case RQ_is_copy_assignment_operator:
+    return isCopyAssignmentOperator(*this, Result);
+  case RQ_is_move_assignment_operator:
+    return isMoveAssignmentOperator(*this, Result);
   case RQ_is_constructor:
     return isConstructor(*this, Result);
+  case RQ_is_default_constructor:
+    return isDefaultConstructor(*this, Result);
+  case RQ_is_copy_constructor:
+    return isCopyConstructor(*this, Result);
+  case RQ_is_move_constructor:
+    return isMoveConstructor(*this, Result);
   case RQ_is_destructor:
     return isDestructor(*this, Result);
 
