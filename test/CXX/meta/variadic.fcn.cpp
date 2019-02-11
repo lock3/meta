@@ -1,7 +1,5 @@
 // RUN: %clang_cc1 -fsyntax-only -freflection -std=c++17 -verify %s
 
-#include <cstdio>
-
 #define assert(E) if (!(E)) __builtin_abort();
 using info = decltype(reflexpr(void));
 
