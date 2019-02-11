@@ -2060,6 +2060,7 @@ static InjectionContext *FindContextThatInjectedField(Sema &SemaRef, Decl *Input
     if (Decl *Res = Cxt->GetDeclReplacement(Input))
       return Cxt;
   }
+  return nullptr;
 }
 
 void Sema::InjectPendingDefinition(InjectionContext *Cxt,

@@ -2099,6 +2099,30 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
   Actions.ActOnBaseSpecifiers(ClassDecl, BaseInfo);
 }
 
+static void
+MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
+                               SourceLocation SL)
+{
+  int diag_id;
+  switch (TK) {
+  case tok::kw_typename:
+    return;
+  case tok::kw_valueof:
+    diag_id = 0;
+    break;
+  case tok::kw_idexpr:
+    diag_id = 1;
+    break;
+  case tok::kw_unqualid:
+    diag_id = 2;
+    break;
+  default:
+    llvm_unreachable("Invalid reifier.");
+  }
+
+  ParserRef.Diag(SL, diag::err_invalid_reifier_context_parse) << diag_id << 1;
+}
+
 /// ParseBaseSpecifier - Parse a C++ base-specifier. A base-specifier is
 /// one entry in the base class list of a class specifier, for example:
 ///    class foo : public bar, virtual private baz {
@@ -2151,25 +2175,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
   if (isVariadicReifier()) {
 
     // Only typename can be used here.
-    if (Tok.getKind() != tok::kw_typename) {
-      int diag_id;
-      switch (Tok.getKind()) {
-      case tok::kw_valueof:
-        diag_id = 0;
-        break;
-      case tok::kw_idexpr:
-        diag_id = 1;
-        break;
-      case tok::kw_unqualid:
-        diag_id = 2;
-        break;
-      default:
-        llvm_unreachable("Invalid reifier.");
-      }
-
-      Diag(Tok.getLocation(), diag::err_invalid_reifier_context_parse)
-        << diag_id << 1;
-    }
+    MaybeEmitBadReifierContextDiag(*this, Tok.getKind(), Tok.getLocation());
 
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
@@ -3505,6 +3511,8 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
     }
 
     if (isVariadicReifier()) {
+      // Only typename can be used here.
+      MaybeEmitBadReifierContextDiag(*this, Tok.getKind(), Tok.getLocation());
       llvm::SmallVector<QualType, 4> ExpandedTypes;
       if (ParseVariadicReifier(ExpandedTypes)) {
         // invalid expansion of reifier

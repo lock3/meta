@@ -850,7 +850,36 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
-  llvm_unreachable("unimplemented");
+  llvm::SmallVector<Expr *, 1> Parts = {Expression};
+
+  DeclarationNameInfo DNI = 
+    SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
+
+  UnqualifiedId Result;
+  TemplateNameKind TNK;
+  OpaquePtr<TemplateName> Template;
+  CXXScopeSpec TempSS;
+  if (SemaRef.BuildInitialDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+                                     SourceLocation(), TNK, Template, Result))
+    return ExprError();
+
+  SmallVector<TemplateIdAnnotation *, 1> TemplateIds;
+  if (SemaRef.CompleteDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+                                 SourceLocation(), TNK, Template,
+                                 SourceLocation(), ASTTemplateArgsPtr(),
+                                 SourceLocation(), TemplateIds, Result,
+                                 SourceLocation()))
+    return ExprError();
+
+  ExprResult BuiltExpr =
+    SemaRef.ActOnIdExpression(SemaRef.getCurScope(), TempSS,
+                              SourceLocation(), Result,
+                              /*HasTrailingLParen=*/false,
+                              /*IsAddresOfOperand=*/false);
+
+  if(BuiltExpr.isInvalid())
+    return ExprError();
+  return BuiltExpr;
 }
 
 static QualType
@@ -865,12 +894,9 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
                            Expr *Range, SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc, SourceLocation RParenLoc)
 {
-  // ExpansionStatementBuilder Bldr(*this, getCurScope(), BFRK_Build, Range);
   Sema::ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
   if (CtxBldr.BuildCalls())
     ; // TODO: Diag << failed to build calls
-  // StmtResult ExpansionResult = (Bldr.BuildUninstantiated());
-  // CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(ExpansionResult.get());
 
   ExprResult C;
 
@@ -933,9 +959,6 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
     QualType T =
       Context.getCXXDependentVariadicReifierType(Range, KWLoc,
                                                  RParenLoc, EllipsisLoc);
-    // TODO: remove this flag from qualtype
-    // T.isVariadicReifier = true;
-    // CXXDependentVariadicReifierType T(Context, Range);
     Types.push_back(T);
     return false;
   }

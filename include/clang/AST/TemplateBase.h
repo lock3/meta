@@ -264,6 +264,9 @@ public:
   /// Determine whether this template argument is a pack expansion.
   bool isPackExpansion() const;
 
+  /// Determine whether this template argument is a dependent variadic reifier.
+  bool isVariadicReifier() const;
+
   /// Retrieve the type for a type template argument.
   QualType getAsType() const {
     assert(getKind() == Type && "Unexpected kind");

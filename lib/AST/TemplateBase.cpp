@@ -217,6 +217,28 @@ bool TemplateArgument::isPackExpansion() const {
   llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
+bool TemplateArgument::isVariadicReifier() const {
+  switch (getKind()) {
+  case Null:
+  case Declaration:
+  case Integral:
+  case Pack:
+  case Template:
+  case NullPtr:
+  case TemplateExpansion:
+    return false;
+
+  case Type:
+    return isa<CXXDependentVariadicReifierType>(getAsType());
+
+  case Reflected:
+  case Expression:
+    return isa<CXXDependentVariadicReifierExpr>(getAsExpr());
+  }
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
+}
+
 bool TemplateArgument::containsUnexpandedParameterPack() const {
   switch (getKind()) {
   case Null:

@@ -5066,6 +5066,9 @@ bool Sema::CheckTemplateArgumentList(
   // template.
   TemplateArgumentListInfo NewArgs = TemplateArgs;
 
+  // If there is a dependent reifier, there is nothing we can do
+  // until it is transformed.
+
   // Make sure we get the template parameter list from the most
   // recentdeclaration, since that is the only one that has is guaranteed to
   // have all the default template argument information.
@@ -5131,6 +5134,15 @@ bool Sema::CheckTemplateArgumentList(
           << NewArgs[ArgIdx].getSourceRange();
         Diag((*Param)->getLocation(), diag::note_template_param_here);
         return true;
+      }
+
+      if (NewArgs[ArgIdx].getArgument().isVariadicReifier()) {
+        while (ArgIdx < NumArgs) {
+          Converted.push_back(NewArgs[ArgIdx].getArgument());
+          ++ArgIdx;
+        }
+
+        return false;
       }
 
       // We're now done with this argument.

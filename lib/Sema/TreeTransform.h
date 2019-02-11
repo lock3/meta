@@ -4200,7 +4200,7 @@ template<typename InputIterator>
 bool TreeTransform<Derived>::TransformTemplateArguments(
     InputIterator First, InputIterator Last, TemplateArgumentListInfo &Outputs,
     bool Uneval) {
-  for (; First != Last; ++First) {
+  for (; First != Last; ++First) {    
     TemplateArgumentLoc Out;
     TemplateArgumentLoc In = *First;
 
@@ -4306,15 +4306,14 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
 
     // Test for both type and non-type kinds of variadic reifiers.
     if (In.getArgument().getKind() == TemplateArgument::Expression) {
-      if (In.getArgument().getAsExpr()->getStmtClass() ==
-          Stmt::CXXDependentVariadicReifierExprClass) {
+      if (isa<CXXDependentVariadicReifierExpr>(In.getArgument().getAsExpr())) {
         if (MaybeTransformVariadicReifier(In.getArgument().getAsExpr(),
                                           Outputs))
           return true;
         continue;
       }
     } else if (In.getArgument().getKind() == TemplateArgument::Type) {
-      if (CXXDependentVariadicReifierType::classof(
+      if (isa<CXXDependentVariadicReifierType>(
             In.getArgument().getAsType().getTypePtr())) {
         if (MaybeTransformVariadicReifier(
               In.getArgument().getAsType().getTypePtr(), Outputs))
@@ -7897,54 +7896,52 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Expr *E, llvm::SmallVectorImpl<Expr *> &Outputs) {
-  if (E->getStmtClass() == Stmt::CXXDependentVariadicReifierExprClass) {
-    CXXDependentVariadicReifierExpr *DependentReifier =
-      cast<CXXDependentVariadicReifierExpr>(E);
+  if (!isa<CXXDependentVariadicReifierExpr>(E))
+    return true;
 
-    // If this is a dependent variadic reifier, go ahead and transform it.
-    if (DependentReifier->getEllipsisLoc().isValid()) {
-      Expr *OldRange = DependentReifier->getRange();
-      ExprResult NewRange = TransformExpr(OldRange);
+  EnterExpressionEvaluationContext EvalContext(
+    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
+  CXXDependentVariadicReifierExpr *DependentReifier =
+    cast<CXXDependentVariadicReifierExpr>(E);
 
-      if(NewRange.isInvalid())
-        return true;
+  Expr *OldRange = DependentReifier->getRange();
+  ExprResult NewRange = TransformExpr(OldRange);
 
-      llvm::SmallVector<Expr *, 8> ExpandedReifiers;
-      IdentifierInfo *Keyword;
+  if(NewRange.isInvalid())
+    return true;
 
-      switch(DependentReifier->getKeywordId())
-      {
-      case tok::kw_valueof:
-        Keyword = &(getSema().Context.Idents.get("valueof"));
-        break;
-      case tok::kw_idexpr:
-        Keyword = &(getSema().Context.Idents.get("idexpr"));
-        break;
-      case tok::kw_unqualid:
-        Keyword = &(getSema().Context.Idents.get("unqualid"));
-        break;
-      case tok::kw_typename:
-        getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
-          << 3 << 0;
-        return true;
-      case tok::kw_namespace:
-        getSema().Diag(E->getBeginLoc(),
-                       diag::err_namespace_as_variadic_reifier);
-          return true;
-      default:
-        return true;
-      }
+  llvm::SmallVector<Expr *, 8> ExpandedReifiers;
+  IdentifierInfo *Keyword;
 
-      getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
-                                     Keyword, NewRange.get(), SourceLocation(),
-                                     SourceLocation(), SourceLocation());
-
-      Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
-      return false;
-    }
+  switch(DependentReifier->getKeywordId())
+  {
+  case tok::kw_valueof:
+    Keyword = &(getSema().Context.Idents.get("valueof"));
+    break;
+  case tok::kw_idexpr:
+    Keyword = &(getSema().Context.Idents.get("idexpr"));
+    break;
+  case tok::kw_unqualid:
+    Keyword = &(getSema().Context.Idents.get("unqualid"));
+    break;
+  case tok::kw_typename:
+    getSema().Diag(E->getBeginLoc(), diag::err_invalid_reifier_context)
+      << 3 << 0;
+    return true;
+  case tok::kw_namespace:
+    getSema().Diag(E->getBeginLoc(),
+                   diag::err_namespace_as_variadic_reifier);
+    return true;
+  default:
+    return true;
   }
 
-  return true;
+  getSema().ActOnVariadicReifier(ExpandedReifiers, SourceLocation(),
+                                 Keyword, NewRange.get(), SourceLocation(),
+                                 SourceLocation(), SourceLocation());
+
+  Outputs.append(ExpandedReifiers.begin(), ExpandedReifiers.end());
+  return false;
 }
 
 template <typename Derived>
@@ -7970,8 +7967,11 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, llvm::SmallVectorImpl<QualType> &Outputs) {
-  if(!CXXDependentVariadicReifierType::classof(T))
+  if(!isa<CXXDependentVariadicReifierType>(T))
     return false;
+
+  EnterExpressionEvaluationContext EvalContext(
+    getSema(), Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   CXXDependentVariadicReifierType const *DependentReifier =
     cast<CXXDependentVariadicReifierType>(T);
@@ -7998,6 +7998,8 @@ template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
 (Type const *T, TemplateArgumentListInfo &Outputs) {
+  CXXDependentVariadicReifierType const *Reifier =
+    cast<CXXDependentVariadicReifierType>(T);
   llvm::SmallVector<QualType, 4> ReifiedTypes;
   if (MaybeTransformVariadicReifier(T, ReifiedTypes))
     return true;
@@ -8006,6 +8008,7 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
     TemplateArgument Arg(ReifiedType);
     TypeSourceInfo *TSI =
       getSema().Context.CreateTypeSourceInfo(ReifiedType);
+    TSI->getTypeLoc().initialize(getSema().Context, Reifier->getBeginLoc());
     TemplateArgumentLoc ArgLoc(Arg, TSI);
     Outputs.addArgument(ArgLoc);
   }
