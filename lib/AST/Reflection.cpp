@@ -1005,9 +1005,8 @@ enum AccessTrait : unsigned {
   AccessProtected
 };
 
-/// Returns the access specifiers for \p D.
-static AccessTrait getAccess(const Decl *D) {
-  switch (D->getAccess()) {
+static AccessTrait convertAccessSpecifier(AccessSpecifier AS) {
+  switch (AS) {
   case AS_public:
     return AccessPublic;
   case AS_private:
@@ -1018,6 +1017,26 @@ static AccessTrait getAccess(const Decl *D) {
     return AccessNone;
   }
   llvm_unreachable("Invalid access specifier");
+}
+
+/// Returns the access specifiers for \p D.
+static AccessTrait getAccess(const Decl *D,
+                             const ReflectionModifiers &Modifiers) {
+  switch (Modifiers.getAccessModifier()) {
+  case AccessModifier::NotModified:
+    return convertAccessSpecifier(D->getAccess());
+  case AccessModifier::Default: {
+    const TagDecl *TD = cast<TagDecl>(D->getDeclContext());
+    return convertAccessSpecifier(TD->getDefaultAccessSpecifier());
+  }
+  case AccessModifier::Public:
+    return AccessPublic;
+  case AccessModifier::Protected:
+    return AccessProtected;
+  case AccessModifier::Private:
+    return AccessPrivate;
+  }
+  llvm_unreachable("Invalid access modifier");
 }
 
 /// This gives the storage duration of declared objects, not the storage
@@ -1058,10 +1077,11 @@ struct VariableTraits {
   unsigned Rest : 23;
 };
 
-static VariableTraits getVariableTraits(const VarDecl *D) {
+static VariableTraits getVariableTraits(const VarDecl *D,
+                                        const ReflectionModifiers &Modifiers) {
   VariableTraits T = VariableTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Storage = getStorage(D);
   T.Constexpr = D->isConstexpr();
   T.Defined = D->getDefinition() != nullptr;
@@ -1078,10 +1098,11 @@ struct FieldTraits {
 };
 
 /// Get the traits for a non-static member of a class or union.
-static FieldTraits getFieldTraits(const FieldDecl *D) {
+static FieldTraits getFieldTraits(const FieldDecl *D,
+                                  const ReflectionModifiers &Modifiers) {
   FieldTraits T = FieldTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Mutable = D->isMutable();
   return T;
 }
@@ -1106,10 +1127,11 @@ static bool getNothrow(const FunctionDecl *D) {
   return false;
 }
 
-static FunctionTraits getFunctionTraits(const FunctionDecl *D) {
+static FunctionTraits getFunctionTraits(const FunctionDecl *D,
+                                        const ReflectionModifiers &Modifiers) {
   FunctionTraits T = FunctionTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Constexpr = D->isConstexpr();
   T.Nothrow = getNothrow(D);
   T.Defined = D->getDefinition() != nullptr;
@@ -1150,10 +1172,11 @@ struct MethodTraits {
   unsigned Rest : 9;
 };
 
-static MethodTraits getMethodTraits(const CXXConstructorDecl *D) {
+static MethodTraits getMethodTraits(const CXXConstructorDecl *D,
+                                    const ReflectionModifiers &Modifiers) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Kind = Constructor;
   T.Constexpr = D->isConstexpr();
   T.Nothrow = getNothrow(D);
@@ -1168,10 +1191,11 @@ static MethodTraits getMethodTraits(const CXXConstructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(const CXXDestructorDecl *D) {
+static MethodTraits getMethodTraits(const CXXDestructorDecl *D,
+                                    const ReflectionModifiers &Modifiers) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Kind = Destructor;
   T.Virtual = D->isVirtual();
   T.Pure = D->isPure();
@@ -1186,10 +1210,11 @@ static MethodTraits getMethodTraits(const CXXDestructorDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(const CXXConversionDecl *D) {
+static MethodTraits getMethodTraits(const CXXConversionDecl *D,
+                                    const ReflectionModifiers &Modifiers) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Kind = Conversion;
   T.Constexpr = D->isConstexpr();
   T.Explicit = D->isExplicit();
@@ -1204,10 +1229,11 @@ static MethodTraits getMethodTraits(const CXXConversionDecl *D) {
   return T;
 }
 
-static MethodTraits getMethodTraits(const CXXMethodDecl *D) {
+static MethodTraits getMethodTraits(const CXXMethodDecl *D,
+                                    const ReflectionModifiers &Modifiers) {
   MethodTraits T = MethodTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Kind = Method;
   T.Constexpr = D->isConstexpr();
   T.Virtual = D->isVirtual();
@@ -1229,10 +1255,11 @@ struct ValueTraits {
   unsigned Rest : 28;
 };
 
-static ValueTraits getValueTraits(const EnumConstantDecl *D) {
+static ValueTraits getValueTraits(const EnumConstantDecl *D,
+                                  const ReflectionModifiers &Modifiers) {
   ValueTraits T = ValueTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   return T;
 }
 
@@ -1243,34 +1270,45 @@ struct NamespaceTraits {
   unsigned Rest : 27;
 };
 
-static NamespaceTraits getNamespaceTraits(const NamespaceDecl *D) {
+static NamespaceTraits getNamespaceTraits(const NamespaceDecl *D,
+                                         const ReflectionModifiers &Modifiers) {
   NamespaceTraits T = NamespaceTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Inline = D->isInline();
   return T;
 }
 
 static bool makeDeclTraits(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R)) {
-    if (const VarDecl *Var = dyn_cast<VarDecl>(D))
-      return SuccessTraits(R, getVariableTraits(Var), Result);
-    else if (const FieldDecl *Field = dyn_cast<FieldDecl>(D))
-      return SuccessTraits(R, getFieldTraits(Field), Result);
-    else if (const CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D))
-      return SuccessTraits(R, getMethodTraits(Ctor), Result);
-    else if (const CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D))
-      return SuccessTraits(R, getMethodTraits(Dtor), Result);
-    else if (const CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D))
-      return SuccessTraits(R, getMethodTraits(Conv), Result);
-    else if (const CXXMethodDecl *Meth = dyn_cast<CXXMethodDecl>(D))
-      return SuccessTraits(R, getMethodTraits(Meth), Result);
-    else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(D))
-      return SuccessTraits(R, getFunctionTraits(Fn), Result);
-    else if (const EnumConstantDecl *Enum = dyn_cast<EnumConstantDecl>(D))
-      return SuccessTraits(R, getValueTraits(Enum), Result);
-    else if (const NamespaceDecl *Ns = dyn_cast<NamespaceDecl>(D))
-      return SuccessTraits(R, getNamespaceTraits(Ns), Result);
+    if (auto *Var = dyn_cast<VarDecl>(D)) {
+      auto &&Traits = getVariableTraits(Var, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Field = dyn_cast<FieldDecl>(D)) {
+      auto &&Traits = getFieldTraits(Field, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
+      auto &&Traits = getMethodTraits(Ctor, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Dtor = dyn_cast<CXXDestructorDecl>(D)) {
+      auto &&Traits = getMethodTraits(Dtor, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Conv = dyn_cast<CXXConversionDecl>(D)) {
+      auto &&Traits = getMethodTraits(Conv, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Meth = dyn_cast<CXXMethodDecl>(D)) {
+      auto &&Traits = getMethodTraits(Meth, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Fn = dyn_cast<FunctionDecl>(D)) {
+      auto &&Traits = getFunctionTraits(Fn, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Enum = dyn_cast<EnumConstantDecl>(D)) {
+      auto &&Traits = getValueTraits(Enum, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    } else if (auto *Ns = dyn_cast<NamespaceDecl>(D)) {
+      auto &&Traits = getNamespaceTraits(Ns, R.getModifiers());
+      return SuccessTraits(R, Traits, Result);
+    }
   }
 
   return Error(R);
@@ -1301,16 +1339,18 @@ struct AccessTraits {
   unsigned Rest : 28;
 };
 
-static AccessTraits getAccessTraits(const Decl *D) {
+static AccessTraits getAccessTraits(const Decl *D,
+                                    const ReflectionModifiers &Modifiers) {
   AccessTraits T = AccessTraits();
-  T.Kind = getAccess(D);
+  T.Kind = getAccess(D, Modifiers);
   return T;
 }
 
 static bool makeAccessTraits(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessTraits(R, getAccessTraits(D), Result);
-
+  if (const Decl *D = getReachableDecl(R)) {
+    auto &&Traits = getAccessTraits(D, R.getModifiers());
+    return SuccessTraits(R, Traits, Result);
+  }
   return Error(R);
 }
 
@@ -1342,10 +1382,11 @@ static ClassKindTrait getClassKind(const CXXRecordDecl *D) {
   }
 }
 
-static ClassTraits getClassTraits(const CXXRecordDecl *D) {
+static ClassTraits getClassTraits(const CXXRecordDecl *D,
+                                  const ReflectionModifiers &Modifiers) {
   ClassTraits T = ClassTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Kind = getClassKind(D);
   T.Complete = D->getDefinition() != nullptr;
   if (T.Complete) {
@@ -1365,10 +1406,11 @@ struct EnumTraits {
   unsigned Rest : 26;
 };
 
-static EnumTraits getEnumTraits(const EnumDecl *D) {
+static EnumTraits getEnumTraits(const EnumDecl *D,
+                                const ReflectionModifiers &Modifiers) {
   EnumTraits T = EnumTraits();
   T.Linkage = getLinkage(D);
-  T.Access = getAccess(D);
+  T.Access = getAccess(D, Modifiers);
   T.Scoped = D->isScoped();
   T.Complete = D->isComplete();
   return T;
@@ -1377,11 +1419,13 @@ static EnumTraits getEnumTraits(const EnumDecl *D) {
 static bool makeTypeTraits(const Reflection &R, APValue &Result) {
   if (const MaybeType T = getCanonicalType(R)) {
     if (const TagDecl *TD = T->getAsTagDecl()) {
-      if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD))
-        return SuccessTraits(R, getClassTraits(Class), Result);
-      else if (const EnumDecl *Enum = dyn_cast<EnumDecl>(TD))
-        return SuccessTraits(R, getEnumTraits(Enum), Result);
-      else
+      if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(TD)) {
+        auto &&Traits = getClassTraits(Class, R.getModifiers());
+        return SuccessTraits(R, Traits, Result);
+      } else if (const EnumDecl *Enum = dyn_cast<EnumDecl>(TD)) {
+        auto &&Traits = getEnumTraits(Enum, R.getModifiers());
+        return SuccessTraits(R, Traits, Result);
+      } else
         llvm_unreachable("unsupported type");
     }
   }

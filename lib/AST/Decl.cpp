@@ -3883,6 +3883,20 @@ SourceRange TagDecl::getSourceRange() const {
 
 TagDecl *TagDecl::getCanonicalDecl() { return getFirstDecl(); }
 
+AccessSpecifier TagDecl::getDefaultAccessSpecifier() const {
+  switch (getTagKind()) {
+  case TTK_Struct:
+  case TTK_Union:
+  case TTK_Enum:
+    return AS_public;
+  case TTK_Class:
+    return AS_private;
+  case TTK_Interface:
+    break;
+  }
+  llvm_unreachable("Invalid tag kind");
+}
+
 void TagDecl::setTypedefNameForAnonDecl(TypedefNameDecl *TDD) {
   TypedefNameDeclOrQualifier = TDD;
   if (const Type *T = getTypeForDecl()) {

@@ -3303,6 +3303,12 @@ public:
   bool isUnion()  const { return getTagKind() == TTK_Union; }
   bool isEnum()   const { return getTagKind() == TTK_Enum; }
 
+  // Returns the default access specifier for the given decl context.
+  // This should be used with the destination decl context, not the
+  // original decl context, as we want to make sure we don't pick up
+  // the default access specifier of the source.
+  AccessSpecifier getDefaultAccessSpecifier() const;
+
   /// Is this tag type named, either directly or via being defined in
   /// a typedef of this type?
   ///

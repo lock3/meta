@@ -521,25 +521,6 @@ Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   return Ns;
 }
 
-// Returns the default access specifier for the given decl context.
-// This should be used with the destination decl context, not the
-// original decl context, as we want to make sure we don't pick up
-// the default access specifier of the source.
-static AccessSpecifier GetDefaultAccessSpecifier(DeclContext *DC) {
-  TagDecl *TD = cast<TagDecl>(DC);
-  switch (TD->getTagKind()) {
-  case TTK_Struct:
-  case TTK_Union:
-  case TTK_Enum:
-    return AS_public;
-  case TTK_Class:
-    return AS_private;
-  case TTK_Interface:
-    break;
-  }
-  llvm_unreachable("Invalid tag kind");
-}
-
 static AccessSpecifier Transform(AccessModifier Modifier) {
   switch(Modifier) {
   case AccessModifier::Public:
@@ -560,7 +541,8 @@ static void ApplyAccess(ReflectionModifiers Modifiers,
     AccessModifier Modifier = Modifiers.getAccessModifier();
 
     if (Modifier == AccessModifier::Default) {
-      Decl->setAccess(GetDefaultAccessSpecifier(Decl->getDeclContext()));
+      TagDecl *TD = cast<TagDecl>(Decl->getDeclContext());
+      Decl->setAccess(TD->getDefaultAccessSpecifier());
       return;
     }
 
