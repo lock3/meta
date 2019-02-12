@@ -2864,7 +2864,8 @@ struct ExpansionStatementBuilder
 
   // Source locations
   SourceLocation ForLoc;
-  SourceLocation AnnotationLoc; // constexpr or ...
+  SourceLocation AnnotationLoc; // ...
+  SourceLocation ConstexprLoc;
   SourceLocation ColonLoc;
   SourceLocation RParenLoc;
 
@@ -3594,6 +3595,7 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
 /// instantiated later.
 StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                        SourceLocation AnnotationLoc,
+                                       SourceLocation ConstexprLoc,
                                        Stmt *LoopVar, SourceLocation ColonLoc,
                                        Expr *Range,
                                        SourceLocation RParenLoc,
@@ -3603,13 +3605,10 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                     IsConstexpr);
   Builder.ForLoc = ForLoc;
   Builder.AnnotationLoc = AnnotationLoc;
+  Builder.ConstexprLoc = ConstexprLoc;
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
-  if (!Ret.isInvalid()) {
-    // llvm::outs() << "BUILT LOOP\n";
-    // Ret.get()->dump();
-  }
   return Ret;
 }
 
@@ -3628,13 +3627,6 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
-  if (Ret.isInvalid()) {
-    llvm::outs() << "RET INVALID\n";
-    // llvm::outs() << "INSTANITATED LOOP\n";
-    // Ret.get()->dump();
-  } else {
-    llvm::outs() << "RET VALID\n";
-  }
   return Ret;
 }
 

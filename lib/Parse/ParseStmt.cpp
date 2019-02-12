@@ -1577,8 +1577,6 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   SourceLocation CoawaitLoc;
   if (getLangOpts().Reflection && Tok.is(tok::ellipsis))
     EllipsisLoc = ConsumeToken();
-  else if(getLangOpts().Reflection && Tok.is(tok::kw_constexpr))
-    ConstexprLoc = ConsumeToken();
   else if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
 
@@ -1649,6 +1647,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   } else if (getLangOpts().CPlusPlus && Tok.is(tok::identifier) &&
              isForRangeIdentifier()) {
     ProhibitAttributes(attrs);
+
     IdentifierInfo *Name = Tok.getIdentifierInfo();
     SourceLocation Loc = ConsumeToken();
     MaybeParseCXX11Attributes(attrs);
@@ -1678,6 +1677,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     // In C++0x, "for (T NS:a" might not be a typo for ::
     bool MightBeForRangeStmt = getLangOpts().CPlusPlus;
     ColonProtectionRAIIObject ColonProtection(*this, MightBeForRangeStmt);
+
+    // If reflection is enabled, this might be an expansion
+    // over a constexpr range.
+    if (getLangOpts().Reflection && EllipsisLoc.isValid())
+      TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy DG = ParseSimpleDeclaration(
@@ -1849,13 +1853,10 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
         ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
         T.getCloseLocation(), Sema::BFRK_Build);
     } else {
-      SourceLocation ModifierLoc =
-          EllipsisLoc.isValid() ? EllipsisLoc : ConstexprLoc;
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
-          getCurScope(), ForLoc, ModifierLoc, ForRangeInfo.LoopVar.get(),
-          ForRangeInfo.ColonLoc, CorrectedRange.get(),
-          T.getCloseLocation(), Sema::BFRK_Build,
-          ConstexprLoc.isValid());
+        getCurScope(), ForLoc, EllipsisLoc, ConstexprLoc,
+        ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
+        T.getCloseLocation(), Sema::BFRK_Build, ConstexprLoc.isValid());
     }
 
   // Similarly, we need to do the semantic analysis for a for-range

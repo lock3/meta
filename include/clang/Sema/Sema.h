@@ -3907,7 +3907,8 @@ public:
   StmtResult FinishCXXForRangeStmt(Stmt *ForRange, Stmt *Body);
 
   StmtResult ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
-                                   SourceLocation AnnotationLoc, Stmt *LoopVar,
+                                   SourceLocation AnnotationLoc,
+                                   SourceLocation ConstexprLoc, Stmt *LoopVar,
                                    SourceLocation ColonLoc, Expr *RangeVar,
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind, bool IsConstexpr);

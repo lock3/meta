@@ -268,8 +268,9 @@ public:
                    TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
                    SourceLocation CL, SourceLocation RPL, RangeKind RK)
-      : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), ColonLoc(CL),
-        RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr), StmtRangeKind(RK) {
+    : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), EllipsisLoc(EL),
+      ColonLoc(CL), RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr),
+      StmtRangeKind(RK) {
     SubExprs[LOOP] = LoopVar;
     SubExprs[RANGE] = RangeVar;
     SubExprs[BODY] = nullptr;
