@@ -2039,7 +2039,7 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
 
 static InjectionContext *FindContextThatInjectedField(Sema &SemaRef, Decl *Input) {
   for (auto&& Cxt : SemaRef.PendingClassMemberInjections) {
-    if (Decl *Res = Cxt->GetDeclReplacement(Input))
+    if (Cxt->GetDeclReplacement(Input))
       return Cxt;
   }
   return nullptr;
