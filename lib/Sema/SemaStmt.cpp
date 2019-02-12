@@ -3556,7 +3556,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 
 /// When range-expr denotes an array, expand over the elements of the array.
 ///
-///     for constexpr (auto x : pod) stmt;
+///     for... (constexpr auto x : pod) stmt;
 ///
 /// will expand as:
 ///
@@ -3637,7 +3637,13 @@ CheckLoopExpansionStack(Sema &SemaRef, Stmt *S) {
 
 /// Pop the current loop instantiation.
 StmtResult Sema::ActOnCXXExpansionStmtError(Stmt *S) {
+  if (!S) {
+    Diag(SourceLocation(), diag::err_failed_instantiate_expansion_body);
+    return StmtError();
+  }
+
   assert(CheckLoopExpansionStack(*this, S));
+  
   PopLoopExpansion();
   return StmtError();
 }
