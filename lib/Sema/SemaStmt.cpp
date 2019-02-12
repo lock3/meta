@@ -2332,10 +2332,8 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
   SemaRef.LookupQualifiedName(SizeLookup, Std);
   ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
-  if (!TupleSize) {
-    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
+  if (!TupleSize)
     return false;
-  }
 
   // Build a template specialization, instantiate it, and then complete it.
   TemplateName TempName(TupleSize);
@@ -3013,12 +3011,9 @@ ExpansionStatementBuilder::Build()
   StmtResult ForStmt;
 
   // Try building a tuple expansion.
-  // FIXME: Disabled for variadic reifiers.
-  #if 0
   ForStmt = BuildExpansionOverTuple();
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
-  #endif
 
   // If that doesn't succeed, try with a constexpr range.
   ForStmt = BuildExpansionOverRange();
@@ -3276,6 +3271,13 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   TemplateArgumentListInfo TempArgs(ColonLoc, ColonLoc);
   TempArgs.addArgument(ArgLoc);
 
+  // Get the tuple size for the number of expansions.
+  // If this fails (i.e., tuple_size is not defined),
+  // this product type is not tuple-like.
+  llvm::APSInt Size;
+  if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
+    return false;
+
   // FIXME: If the NNS::get fails, should we fall back to std::get?
 
   // Build the dependent expression 'NNS::get<__N>(__tuple)' where 'NNS' is
@@ -3313,11 +3315,6 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, RangeAccessor.get(), false);
   if (LoopVar->isInvalidDecl())
-    return StmtError();
-
-  // Get the tuple size for the number of expansions.
-  llvm::APSInt Size;
-  if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
     return StmtError();
 
   return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
