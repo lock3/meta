@@ -347,3 +347,63 @@ bool Parser::ParseCXXInjectedParameter(
   Actions.ActOnCXXInjectedParameter(Loc, Reflection.get(), ParamInfo);
   return true;
 }
+
+/// Parse a generated type declaration.
+///
+///   type-transformer:
+///     'using' class-key identifier 'as' type-generator
+///
+///   type-generator:
+///     generator-name '(' reflection ')'
+///
+///   generator-name:
+///     id-expression
+///
+/// FIXME: Support union as a class key? What about enum?
+Parser::DeclGroupPtrTy
+Parser::ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc) {
+  assert(Tok.is(tok::kw_class) || Tok.is(tok::kw_struct));
+
+  // Match the class key.
+  bool IsClass = Tok.is(tok::kw_class);
+  ConsumeToken();
+
+  // Match the identifier.
+  IdentifierInfo *Id = nullptr;
+  SourceLocation IdLoc;
+  if (Tok.is(tok::identifier)) {
+    Id = Tok.getIdentifierInfo();
+    IdLoc = ConsumeToken();
+  } else {
+    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    return DeclGroupPtrTy();
+  }
+
+  // Match the context keyword "as".
+  if (Tok.isNot(tok::identifier)) {
+    Diag(Tok.getLocation(), diag::err_expected) << "as";
+    return DeclGroupPtrTy();
+  }
+  IdentifierInfo *As = Tok.getIdentifierInfo();
+  if (As->getName() != "as") {
+    Diag(Tok.getLocation(), diag::err_expected) << "as";
+    return DeclGroupPtrTy();
+  }
+  ConsumeToken();
+
+  ExprResult Generator = ParseCXXIdExpression();
+  if (Generator.isInvalid())
+    return DeclGroupPtrTy();
+
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "generator-name"))
+    return DeclGroupPtrTy();
+  ExprResult Reflection = ParseConstantExpression();
+  if (Reflection.isInvalid())
+    return DeclGroupPtrTy();
+  if (T.consumeClose())
+    return DeclGroupPtrTy();
+
+  return Actions.ActOnCXXTypeTransformerDecl(UsingLoc, IsClass, IdLoc, Id,
+                                             Generator.get(), Reflection.get());
+}

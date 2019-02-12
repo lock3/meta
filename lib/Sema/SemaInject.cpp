@@ -2606,3 +2606,53 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
 
   return Class;
 }
+
+Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
+                                                       bool IsClass,
+                                                       SourceLocation IdLoc,
+                                                       IdentifierInfo *Id,
+                                                       Expr *Generator,
+                                                       Expr *Reflection) {
+  // Create the generated type.
+  TagTypeKind TTK = IsClass ? TTK_Class : TTK_Struct;
+  CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK, CurContext,
+                                               IdLoc, IdLoc, Id);
+  Class->setImplicit(true);
+
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(CurContext))
+    Class->setAccess(RD->getDefaultAccessSpecifier());
+
+  CurContext->addDecl(Class);
+  StartDefinition(Class);
+
+  ContextRAII ClassContext(*this, Class);
+
+  // FIXME: If the reflection (ref) is a fragment DO NOT insert the
+  // prototype. A fragment is NOT a type.`
+
+  // Insert 'consteval { <gen>(<ref>); }'.
+  unsigned ScopeFlags;
+  Decl *CD = ActOnCXXMetaprogramDecl(nullptr, UsingLoc, ScopeFlags);
+  CD->setImplicit(true);
+  CD->setAccess(AS_public);
+
+  ActOnStartCXXMetaprogramDecl(nullptr, CD);
+
+  // Build the call to <gen>(<ref>)
+  Expr *Args[] { Reflection };
+  ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
+  if (Call.isInvalid()) {
+    ActOnCXXMetaprogramDeclError(nullptr, CD);
+    Class->setInvalidDecl(true);
+    CompleteDefinition(Class);
+    PopDeclContext();
+  }
+
+  Stmt *Body = CompoundStmt::Create(Context, Call.get(), IdLoc, IdLoc);
+  ActOnFinishCXXMetaprogramDecl(nullptr, CD, Body);
+
+  CompleteDefinition(Class);
+  PopDeclContext();
+
+  return DeclGroupPtrTy::make(DeclGroupRef(Class));
+}

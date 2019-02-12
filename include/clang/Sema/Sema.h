@@ -10507,6 +10507,11 @@ public:
   CXXRecordDecl *ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
                                       SourceRange BraceRange);
 
+  DeclGroupPtrTy ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc, bool IsClass,
+                                             SourceLocation IdLoc,
+                                             IdentifierInfo *Id,
+                                             Expr *Generator, Expr *Reflection);
+
   DeclResult ActOnCXXConditionDeclaration(Scope *S, Declarator &D);
 
   ExprResult CheckConditionVariable(VarDecl *ConditionVar,

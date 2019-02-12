@@ -2859,6 +2859,8 @@ private:
   bool ParseCXXInjectedParameter(
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
 
+  DeclGroupPtrTy ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc);
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.
