@@ -5227,7 +5227,7 @@ public:
                                   SourceLocation RParenLoc,
                                   SourceLocation EllipsisLoc)
     : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
-           OK_Ordinary, Range->isTypeDependent(), Range->isValueDependent(),
+           OK_Ordinary, /*TypeDependent*/true, /*ValueDependent*/true,
            Range->isInstantiationDependent(),
            Range->containsUnexpandedParameterPack()),
       Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
