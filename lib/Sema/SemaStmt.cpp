@@ -3276,7 +3276,7 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // this product type is not tuple-like.
   llvm::APSInt Size;
   if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
-    return false;
+    return true;
 
   // FIXME: If the NNS::get fails, should we fall back to std::get?
 
@@ -3837,9 +3837,6 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
-  if (!S || !B)
-    return StmtError();
-
   CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(S);
   SourceLocation Loc = Expansion->getColonLoc();
 
