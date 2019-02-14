@@ -1969,6 +1969,7 @@ public:
   bool isRecordType() const;
   bool isClassType() const;
   bool isStructureType() const;
+  bool isFragmentType() const;
   bool isObjCBoxableRecordType() const;
   bool isInterfaceType() const;
   bool isStructureOrClassType() const;

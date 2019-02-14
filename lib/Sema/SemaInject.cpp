@@ -1614,16 +1614,9 @@ isTypeOrValueDependent(Expr *FragmentOrReflection) {
 }
 
 static bool
-isFragmentType(QualType Type) {
-  if (CXXRecordDecl *RD = Type->getAsCXXRecordDecl())
-    return RD->isFragment();
-  return false;
-}
-
-static bool
 CheckInjectionOperand(Sema &S, Expr *Operand) {
   QualType Type = Operand->getType();
-  if (isFragmentType(Type))
+  if (Type->isFragmentType())
     return true;
 
   if (Type->isReflectionType())
@@ -1918,7 +1911,7 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
   // FIXME: We need to validate the Injection is compatible
   // with the Injectee.
 
-  if (isFragmentType(IE.ExprType)) {
+  if (IE.ExprType->isFragmentType()) {
     return ApplyFragmentInjection(*this, POI, IE, Injectee);
   }
 
@@ -2496,8 +2489,7 @@ CXXRecordDecl *Sema::ActOnStartMetaclass(CXXRecordDecl *Class,
     CurContext->addDecl(Class);
     StartDefinition(Class);
 
-    // Create a new, nested class to hold the parsed member. This must
-    // be a fragment in order to suppress default generation of members.
+    // Create a new, nested class to hold the parsed member.
     DeclarationNameInfo DNI(Class->getDeclName(), Class->getLocation());
     CXXRecordDecl *Proto = CXXRecordDecl::Create(
         Context, Class->getTagKind(), Class, Class->getBeginLoc(),
@@ -2510,6 +2502,8 @@ CXXRecordDecl *Sema::ActOnStartMetaclass(CXXRecordDecl *Class,
 }
 
 void Sema::ActOnStartMetaclassDefinition(CXXRecordDecl *Proto) {
+  // The prototype must be a fragment in order to suppress
+  // default generation of members.
   Proto->setImplicit(true);
   Proto->setFragment(true);
 }
