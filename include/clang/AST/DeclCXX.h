@@ -1202,7 +1202,7 @@ public:
 
   /// Determine whether this class describes a fragment object.
   bool isFragment() const {
-    auto *DD = DefinitionData;
+    const auto *DD = dataPtr();
     return DD && DD->IsFragment;
   }
 
