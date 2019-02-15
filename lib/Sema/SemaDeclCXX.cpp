@@ -6060,6 +6060,12 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
   if (!Record)
     return;
 
+  // If this is a fragment, we should defer these checks, as they
+  // should be checked on the final generated code, not the fragment
+  // used to generate said code.
+  if (Record->isFragment())
+    return;
+
   if (Record->isAbstract() && !Record->isInvalidDecl()) {
     AbstractUsageInfo Info(*this, Record);
     CheckAbstractClassUsage(Info, Record);
