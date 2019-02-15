@@ -2592,6 +2592,7 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
     ActOnFields(S, Class->getLocation(), Class, Fields,
                 BraceRange.getBegin(), BraceRange.getEnd(),
                 ParsedAttributesView());
+    CheckCompletedCXXClass(Class);
 
     ActOnFinishCXXNonNestedClass(Class);
 
