@@ -82,6 +82,8 @@ public:
 
   ASTContext &getContext() { return getSema().Context; }
 
+  bool hasPendingClassMemberData() const;
+
   /// Detach the context from the semantics object. Returns this object for
   /// convenience.
   InjectionContext *Detach() {
@@ -374,6 +376,10 @@ public:
   /// completed.
   llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
 
+  /// True if we've injected a field. If we have, this injection context
+  /// must be preserved until we've finished rebuilding all injected
+  /// constructors.
+  bool InjectedFieldData = false;
 
   /// The context into which the fragment is injected
   Decl *Injectee;
@@ -384,6 +390,16 @@ public:
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
 };
+
+bool InjectionContext::hasPendingClassMemberData() const {
+  if (!InjectedDefinitions.empty())
+    return true;
+
+  if (InjectedFieldData)
+    return true;
+
+  return false;
+}
 
 bool InjectionContext::isInInjection(Decl *D) {
   // If this is actually a fragment, then we can check in the usual way.
@@ -934,6 +950,9 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // can process it later.
   if (D->hasInClassInitializer())
     InjectedDefinitions.push_back(InjectedDef(InjectedDef_Field, D, Field));
+
+  // Mark that we've injected a field.
+  InjectedFieldData = true;
 
   return Field;
 }
@@ -1705,7 +1724,7 @@ static bool BootstrapInjection(Sema &S, Decl *Injectee, Decl *Injection,
   // If we're injecting into a class and have pending definitions, attach
   // those to the class for subsequent analysis.
   if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee)) {
-    if (!Injectee->isInvalidDecl() && !Ctx->InjectedDefinitions.empty()) {
+    if (!Injectee->isInvalidDecl() && Ctx->hasPendingClassMemberData()) {
       S.PendingClassMemberInjections.push_back(Ctx->Detach());
       return true;
     }
@@ -1955,8 +1974,8 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   if (IsEmpty)
     return false;
   InjectionContext *Cxt = PendingClassMemberInjections.back();
-  assert(!Cxt->InjectedDefinitions.empty() && "bad injection queue");
-  InjectedDef& Def = Cxt->InjectedDefinitions.front();
+  assert(Cxt->hasPendingClassMemberData() && "bad injection queue");
+  InjectedDef &Def = Cxt->InjectedDefinitions.front();
   DeclContext *DC = Def.Injected->getDeclContext();
   while (!DC->isFileContext()) {
     if (DC == D)
