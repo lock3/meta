@@ -41,20 +41,42 @@ static bool SuccessFalse(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, false);
 }
 
-// Returns false, possibly saving the diagnostic.
-static bool Error(const Reflection &R,
-                  diag::kind Diag = diag::note_reflection_not_defined) {
+template<typename F>
+static bool CustomError(const Reflection &R, F BuildDiagnostic) {
   if (R.Diag) {
     // FIXME: We could probably do a better job with the location.
     SourceLocation Loc = R.Query->getExprLoc();
-    PartialDiagnostic PD(Diag, R.Ctx->getDiagAllocator());
-    R.Diag->push_back(std::make_pair(Loc, PD));
+    R.Diag->push_back(std::make_pair(Loc, BuildDiagnostic()));
   }
   return false;
 }
 
+// Returns false, possibly saving the diagnostic.
+static bool Error(const Reflection &R) {
+  return CustomError(R, [&]() {
+    PartialDiagnostic PD(diag::note_reflection_not_defined,
+                         R.Ctx->getDiagAllocator());
+
+    switch (R.getKind()) {
+    case RK_type:
+      PD << 1;
+      PD << R.getAsType();
+      break;
+
+    default:
+      PD << 0;
+      break;
+    }
+
+    return PD;
+  });
+}
+
 static bool ErrorUnimplemented(const Reflection &R) {
-  return Error(R, diag::note_reflection_query_unimplemented);
+  return CustomError(R, [&]() {
+    return PartialDiagnostic(diag::note_reflection_query_unimplemented,
+                             R.Ctx->getDiagAllocator());
+  });
 }
 
 /// Returns the TypeDecl for a reflected Type, if any.
@@ -1619,16 +1641,12 @@ static const DeclContext *getReachableDeclContext(const Reflection &R) {
 static bool getBegin(const Reflection &R, APValue &Result) {
   if (const DeclContext *DC = getReachableDeclContext(R))
     return makeReflection(getFirstMember(DC), Result);
-
-  // FIXME: Emit an appropriate error diagnostic.
   return Error(R);
 }
 
 static bool getNext(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return makeReflection(getNextMember(D), Result);
-
-  // FIXME: Emit an appropriate error diagnostic.
   return Error(R);
 }
 
