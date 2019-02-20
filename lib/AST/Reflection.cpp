@@ -48,6 +48,20 @@ static bool CustomError(const Reflection &R, F BuildDiagnostic) {
   return false;
 }
 
+/// Returns the type reflected by R. R must be a type reflection.
+///
+/// Note that this does not get the canonical type.
+static QualType getQualType(const Reflection &R) {
+  assert(R.isType());
+  QualType T = R.getAsType();
+
+  // See through "location types".
+  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+    T = LIT->getType();
+
+  return T;
+}
+
 // Returns false, possibly saving the diagnostic.
 static bool Error(const Reflection &R) {
   return CustomError(R, [&]() {
@@ -57,7 +71,7 @@ static bool Error(const Reflection &R) {
     switch (R.getKind()) {
     case RK_type:
       PD << 1;
-      PD << R.getAsType();
+      PD << getQualType(R);
       break;
 
     default:
@@ -79,11 +93,7 @@ static bool ErrorUnimplemented(const Reflection &R) {
 /// Returns the TypeDecl for a reflected Type, if any.
 static const TypeDecl *getAsTypeDecl(const Reflection &R) {
   if (R.isType()) {
-    QualType T = R.getAsType();
-
-    // See through location types.
-    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
-      T = LIT->getType();
+    QualType T = getQualType(R);
 
     if (const TagDecl *TD = T->getAsTagDecl())
       return TD;
@@ -136,20 +146,6 @@ struct MaybeType {
 
 } // end anonymous namespace
 
-
-/// Returns the type reflected by R. R must be a type reflection.
-///
-/// Note that this does not get the canonical type.
-static QualType getQualType(const Reflection &R) {
-  assert(R.isType());
-  QualType T = R.getAsType();
-
-  // See through "location types".
-  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
-    T = LIT->getType();
-
-  return T;
-}
 
 /// Returns the canonical type reflected by R, if R is a type reflection.
 ///
