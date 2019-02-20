@@ -38,6 +38,7 @@
 #include "clang/AST/ASTLambda.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/OSLog.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/Reflection.h"
@@ -5323,6 +5324,10 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 
     case RK_type: {
       QualType QT = EV.getReflectedType();
+
+      while (const LocInfoType *LIT = dyn_cast<LocInfoType>(QT))
+        QT = LIT->getType();
+
       QT.print(llvm::errs(), Info.Ctx.getPrintingPolicy());
       return true;
     }

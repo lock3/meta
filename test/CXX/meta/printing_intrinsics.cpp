@@ -73,21 +73,25 @@ void test_types() {
   {
     constexpr auto type = reflexpr(C);
     constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
     constexpr auto type = reflexpr(E);
     constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
     constexpr auto type = reflexpr(EC);
     constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
   {
     constexpr auto type = reflexpr(U);
     constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
     { constexpr auto __dummy = __reflect_pretty_print(definition); }
   }
 }
