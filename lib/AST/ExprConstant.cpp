@@ -5266,6 +5266,23 @@ public:
   }
 };
 
+static bool PrintTypeDefinition(EvalInfo &Info, const TypeDecl *TD) {
+  // Create a modified version of the current printing policy,
+  // which includes the definition.
+  PrintingPolicy PP = Info.Ctx.getPrintingPolicy();
+  PP.IncludeTagDefinition = true;
+
+  QualType QT(TD->getTypeForDecl(), 0);
+  QT.print(llvm::errs(), PP);
+
+  // FIXME: This may be a bit of a hack, a more proper solution might be using
+  // the type printer with an elaborated type. However, recovery of said
+  // type information is difficult at this point. Simply appending a simi-colon
+  // seems to be a viable workaround to get us what we need.
+  llvm::errs() << ';';
+  return true;
+}
+
 static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   QualType T = Info.Ctx.getCanonicalType(PE->getType());
   if (T->isIntegralOrEnumerationType()) {
@@ -5296,6 +5313,10 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 
     case RK_declaration: {
       const Decl *D = EV.getReflectedDeclaration();
+
+      if (const TypeDecl *TD = dyn_cast<TypeDecl>(D))
+        return PrintTypeDefinition(Info, TD);
+
       D->print(llvm::errs(), Info.Ctx.getPrintingPolicy());
       return true;
     }
