@@ -1519,6 +1519,14 @@ static bool getType(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static bool getReturnType(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+      return makeReflection(FD->getReturnType(), Result);
+  }
+  return Error(R);
+}
+
 static bool getThisRefType(const Reflection &R, APValue &Result) {
   return ErrorUnimplemented(R);
 }
@@ -1591,6 +1599,8 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getParent(*this, Result);
   case RQ_get_type:
     return getType(*this, Result);
+  case RQ_get_return_type:
+    return getReturnType(*this, Result);
   case RQ_get_this_ref_type:
     return getThisRefType(*this, Result);
   case RQ_get_definition:
