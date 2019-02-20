@@ -51,8 +51,21 @@ static bool CustomError(const Reflection &R, F BuildDiagnostic) {
 // Returns false, possibly saving the diagnostic.
 static bool Error(const Reflection &R) {
   return CustomError(R, [&]() {
-    return PartialDiagnostic(diag::note_reflection_not_defined,
-                             R.Ctx->getDiagAllocator());
+    PartialDiagnostic PD(diag::note_reflection_not_defined,
+                         R.Ctx->getDiagAllocator());
+
+    switch (R.getKind()) {
+    case RK_type:
+      PD << 1;
+      PD << R.getAsType();
+      break;
+
+    default:
+      PD << 0;
+      break;
+    }
+
+    return PD;
   });
 }
 
@@ -1559,16 +1572,12 @@ static const DeclContext *getReachableDeclContext(const Reflection &R) {
 static bool getBegin(const Reflection &R, APValue &Result) {
   if (const DeclContext *DC = getReachableDeclContext(R))
     return makeReflection(getFirstMember(DC), Result);
-
-  // FIXME: Emit an appropriate error diagnostic.
   return Error(R);
 }
 
 static bool getNext(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return makeReflection(getNextMember(D), Result);
-
-  // FIXME: Emit an appropriate error diagnostic.
   return Error(R);
 }
 

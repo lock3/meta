@@ -188,7 +188,7 @@ def note_constexpr_memcpy_unsupported : Note<
 
 // Reflection errors
 def note_reflection_not_defined : Note<
-  "query is not defined for reflected construct"
+  "query is not defined for reflected %select{construct|type %1}0"
   >;
 def note_reflection_query_unimplemented : Note<
   "query is not yet implemented"
