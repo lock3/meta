@@ -343,6 +343,7 @@ enum ReflectionQuery {
   RQ_get_entity,
   RQ_get_parent,
   RQ_get_type,
+  RQ_get_return_type,
   RQ_get_this_ref_type,
   RQ_get_definition,
 

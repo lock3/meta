@@ -51,6 +51,20 @@ static bool CustomError(const Reflection &R, F BuildDiagnostic) {
   return false;
 }
 
+/// Returns the type reflected by R. R must be a type reflection.
+///
+/// Note that this does not get the canonical type.
+static QualType getQualType(const Reflection &R) {
+  assert(R.isType());
+  QualType T = R.getAsType();
+
+  // See through "location types".
+  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+    T = LIT->getType();
+
+  return T;
+}
+
 // Returns false, possibly saving the diagnostic.
 static bool Error(const Reflection &R) {
   return CustomError(R, [&]() {
@@ -60,7 +74,7 @@ static bool Error(const Reflection &R) {
     switch (R.getKind()) {
     case RK_type:
       PD << 1;
-      PD << R.getAsType();
+      PD << getQualType(R);
       break;
 
     default:
@@ -82,11 +96,7 @@ static bool ErrorUnimplemented(const Reflection &R) {
 /// Returns the TypeDecl for a reflected Type, if any.
 static const TypeDecl *getAsTypeDecl(const Reflection &R) {
   if (R.isType()) {
-    QualType T = R.getAsType();
-
-    // See through location types.
-    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
-      T = LIT->getType();
+    QualType T = getQualType(R);
 
     if (const TagDecl *TD = T->getAsTagDecl())
       return TD;
@@ -139,20 +149,6 @@ struct MaybeType {
 
 } // end anonymous namespace
 
-
-/// Returns the type reflected by R. R must be a type reflection.
-///
-/// Note that this does not get the canonical type.
-static QualType getQualType(const Reflection &R) {
-  assert(R.isType());
-  QualType T = R.getAsType();
-
-  // See through "location types".
-  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
-    T = LIT->getType();
-
-  return T;
-}
 
 /// Returns the canonical type reflected by R, if R is a type reflection.
 ///
@@ -1577,6 +1573,14 @@ static bool getType(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static bool getReturnType(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+      return makeReflection(FD->getReturnType(), Result);
+  }
+  return Error(R);
+}
+
 static bool getThisRefType(const Reflection &R, APValue &Result) {
   return ErrorUnimplemented(R);
 }
@@ -1660,6 +1664,8 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getParent(*this, Result);
   case RQ_get_type:
     return getType(*this, Result);
+  case RQ_get_return_type:
+    return getReturnType(*this, Result);
   case RQ_get_this_ref_type:
     return getThisRefType(*this, Result);
   case RQ_get_definition:
