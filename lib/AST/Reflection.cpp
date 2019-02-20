@@ -1583,7 +1583,7 @@ static bool getThisRefType(const Reflection &R, APValue &Result) {
 
 static bool getDefinition(const Reflection &R, APValue &Result) {
   if (const TypeDecl *TD = getAsTypeDecl(R)) {
-    if (const RecordDecl *RD = dyn_cast<RecordDecl>(TD))
+    if (isa<TagDecl>(TD))
       return makeReflection(TD, Result);
   }
   return Error(R);

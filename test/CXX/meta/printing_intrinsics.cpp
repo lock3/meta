@@ -1,5 +1,7 @@
 // RUN: %clang_cc1 -std=c++1z -freflection %s
 
+#include "reflection_query.h"
+
 template<typename T>
 struct S1 {
   constexpr S1() = default;
@@ -48,6 +50,50 @@ void test() {
   constexpr auto l1_print = __reflect_print("hello ", " world ", 1);
   constexpr auto l2_print = __reflect_print("hello ", " world ", world_num);
   // constexpr auto l3_print = __reflect_print(user_name, " is not a valid user.");
+}
+
+class C {
+  int y = 0;
+};
+
+enum E {
+  E_A, E_B
+};
+
+enum class EC {
+  A, B
+};
+
+union U {
+  int a;
+  float b;
+};
+
+void test_types() {
+  {
+    constexpr auto type = reflexpr(C);
+    constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
+    { constexpr auto __dummy = __reflect_pretty_print(definition); }
+  }
+  {
+    constexpr auto type = reflexpr(E);
+    constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
+    { constexpr auto __dummy = __reflect_pretty_print(definition); }
+  }
+  {
+    constexpr auto type = reflexpr(EC);
+    constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
+    { constexpr auto __dummy = __reflect_pretty_print(definition); }
+  }
+  {
+    constexpr auto type = reflexpr(U);
+    constexpr auto definition = __reflect(query_get_definition, type);
+    { constexpr auto __dummy = __reflect_pretty_print(type); }
+    { constexpr auto __dummy = __reflect_pretty_print(definition); }
+  }
 }
 
 template<typename T, int WN>
@@ -101,6 +147,7 @@ void test_templates() {
 
 int main() {
   test();
+  test_types();
   test_templates();
   return 0;
 }
