@@ -38,20 +38,29 @@ static bool SuccessFalse(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, false);
 }
 
-// Returns false, possibly saving the diagnostic.
-static bool Error(const Reflection &R,
-                  diag::kind Diag = diag::note_reflection_not_defined) {
+template<typename F>
+static bool CustomError(const Reflection &R, F BuildDiagnostic) {
   if (R.Diag) {
     // FIXME: We could probably do a better job with the location.
     SourceLocation Loc = R.Query->getExprLoc();
-    PartialDiagnostic PD(Diag, R.Ctx->getDiagAllocator());
-    R.Diag->push_back(std::make_pair(Loc, PD));
+    R.Diag->push_back(std::make_pair(Loc, BuildDiagnostic()));
   }
   return false;
 }
 
+// Returns false, possibly saving the diagnostic.
+static bool Error(const Reflection &R) {
+  return CustomError(R, [&]() {
+    return PartialDiagnostic(diag::note_reflection_not_defined,
+                             R.Ctx->getDiagAllocator());
+  });
+}
+
 static bool ErrorUnimplemented(const Reflection &R) {
-  return Error(R, diag::note_reflection_query_unimplemented);
+  return CustomError(R, [&]() {
+    return PartialDiagnostic(diag::note_reflection_query_unimplemented,
+                             R.Ctx->getDiagAllocator());
+  });
 }
 
 /// Returns the TypeDecl for a reflected Type, if any.
