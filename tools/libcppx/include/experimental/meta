@@ -645,7 +645,7 @@ consteval bool has_integeral_type(info x) {
 
 // True if x reflects a floating point type.
 consteval bool is_floating_point_type(info x) {
-  return __reflect(detail::query_is_integral_type, x);
+  return __reflect(detail::query_is_floating_point_type, x);
 }
 
 // True if x reflects an entity with floating point type.
