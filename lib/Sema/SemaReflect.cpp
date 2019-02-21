@@ -22,6 +22,7 @@
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/ParsedReflection.h"
+#include "clang/Sema/ParserLookupSetup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaInternal.h"
 #include "TypeLocBuilder.h"
@@ -873,8 +874,9 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
                                  SourceLocation()))
     return ExprError();
 
+  ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   ExprResult BuiltExpr =
-    SemaRef.ActOnIdExpression(SemaRef.getCurScope(), TempSS,
+    SemaRef.ActOnIdExpression(ParserLookup.getCurScope(), TempSS,
                               SourceLocation(), Result,
                               /*HasTrailingLParen=*/false,
                               /*IsAddresOfOperand=*/false);
