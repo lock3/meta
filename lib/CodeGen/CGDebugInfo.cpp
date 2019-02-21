@@ -2757,6 +2757,9 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::Decltype:
       T = cast<DecltypeType>(T)->getUnderlyingType();     
       break;
+    case Type::Reflected:
+      T = cast<ReflectedType>(T)->getUnderlyingType();
+      break;
     case Type::UnaryTransform:
       T = cast<UnaryTransformType>(T)->getUnderlyingType();
       break;
