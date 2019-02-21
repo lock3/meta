@@ -7,13 +7,18 @@ struct bar {
   }
 };
 
+constexpr int add(int a, int b) {
+  return a + b;
+}
+
 class foo {
   consteval {
     meta::info bar_do_thing_refl = reflexpr(bar::do_thing);
+    member_range params(bar_do_thing_refl);
 
     -> __fragment struct {
-      constexpr int new_do_thing(-> member_range(bar_do_thing_refl)) const {
-        return unqualid(*(member_range(bar_do_thing_refl).begin()));
+      constexpr int new_do_thing(-> params) const {
+        return add(unqualid(... params));
       }
     };
   }
@@ -21,6 +26,6 @@ class foo {
 
 int main() {
   constexpr foo f;
-  static_assert(f.new_do_thing(10, 2) == 10);
+  static_assert(f.new_do_thing(10, 2) == 12);
   return 0;
 };
