@@ -9720,6 +9720,12 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   Decl *Referenced = nullptr;
   switch (Result.getResultKind()) {
   case LookupResult::NotFound: {
+    if (isa<CXXFragmentDecl>(Ctx->getParent()))
+      // If the nested-name-specifier refers to an unspecified member of
+      // a fragment, then the type name will be resolved during injection
+      return Context.getDependentNameType(
+          Keyword, QualifierLoc.getNestedNameSpecifier(), &II);
+
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
     SourceRange CondRange;
