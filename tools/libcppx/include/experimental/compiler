@@ -17,7 +17,7 @@ inline namespace v1 {
 
   consteval void compiler_print_lines(int num_lines) {
     for (int i = 0; i < num_lines; ++i)
-      __reflect_print("");
+      (void) __reflect_print("");
   }
 
   consteval void compiler_error(const char* message) {
