@@ -632,6 +632,8 @@ public:
   bool TransformInjectedParameter(
               ParmVarDecl *OldParm, ParmVarDecl *&NewParm, int IndexAdjustment);
 
+  bool ContractInjectedParameters(ArrayRef<ParmVarDecl *> SourceParams);
+
   /// Transforms the parameters of a function type into the
   /// given vectors.
   ///
@@ -5253,6 +5255,12 @@ bool TreeTransform<Derived>::TransformInjectedParameter(
 }
 
 template <typename Derived>
+bool TreeTransform<Derived>::ContractInjectedParameters(
+                                         ArrayRef<ParmVarDecl *> SourceParams) {
+  return false;
+}
+
+template <typename Derived>
 bool TreeTransform<Derived>::TransformFunctionTypeParams(
     SourceLocation Loc, ArrayRef<ParmVarDecl *> SourceParams,
     const QualType *ParamTypes,
@@ -5483,6 +5491,9 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         assert(parm->getFunctionScopeIndex() == i);
   }
 #endif
+
+  if (getDerived().ContractInjectedParameters(SourceParams))
+    return true;
 
   return false;
 }

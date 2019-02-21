@@ -299,6 +299,18 @@ public:
 
   bool ExpandInjectedParameters(
      ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams) {
+#ifndef NDEBUG
+    // Verify positions are what they will be restored to
+    // by ContractInjectedParameters.
+    {
+      unsigned int counter = 0;
+
+      for (ParmVarDecl *PVD : SourceParams) {
+        assert(PVD->getFunctionScopeIndex() == counter++);
+      }
+    }
+#endif
+
     // Create a new vector to hold the expanded params.
     auto *Params = new SmallVector<ParmVarDecl *, 8>();
 
@@ -321,7 +333,23 @@ public:
       }
     }
 
+    // Correct positional information of the injected parameters.
+    // This will be reverted by ContractInjectedParameters to ensure
+    // we have not left a lasting effect on the source parameters.
+    unsigned int counter = 0;
+    for (ParmVarDecl *PVD : *Params) {
+      PVD->setScopeInfo(PVD->getFunctionScopeDepth(), counter++);
+    }
+
     OutParams = *Params;
+    return false;
+  }
+
+  bool ContractInjectedParameters(ArrayRef<ParmVarDecl *> SourceParams) {
+    unsigned int counter = 0;
+    for (ParmVarDecl *PVD : SourceParams) {
+      PVD->setScopeInfo(PVD->getFunctionScopeDepth(), counter++);
+    }
     return false;
   }
 
