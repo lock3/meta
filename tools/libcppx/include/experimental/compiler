@@ -3,11 +3,21 @@
 #ifndef CPPX_COMPILER
 #define CPPX_COMPILER
 
+#include "meta"
+
 namespace std::experimental
 {
 
 namespace meta {
 inline namespace v1 {
+
+  consteval void compiler_print_type_definition(info type_reflection) {
+    (void) __reflect_pretty_print(definition_of(type_reflection));
+  }
+
+  consteval void compiler_print_lines(int num_lines) {
+    for (int i = 0; i < num_lines; ++i)
+      __reflect_print("");
 
   consteval void compiler_error(const char* message) {
     __compiler_error(message);

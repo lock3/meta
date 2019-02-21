@@ -2457,6 +2457,13 @@ bool QualType::isCXX11PODType(const ASTContext &Context) const {
   return false;
 }
 
+static const QualType seeThroughAlias(QualType Ty) {
+  if (const TypedefType *TDT = dyn_cast<TypedefType>(Ty.getTypePtr()))
+    return TDT->desugar();
+  else
+    return Ty;
+}
+
 static bool isConstCharPtr(QualType Ty) {
   if (const PointerType *Ptr = dyn_cast<PointerType>(Ty))
     Ty = Ptr->getPointeeType();
@@ -2470,9 +2477,10 @@ static bool isCharArray(QualType Ty) {
 }
 
 bool QualType::isCXXStringLiteralType() const {
-  if (isConstCharPtr(*this))
+  const QualType Ty = seeThroughAlias(*this);
+  if (isConstCharPtr(Ty))
     return true;
-  if (isCharArray(*this))
+  if (isCharArray(Ty))
     return true;
   return false;
 }
