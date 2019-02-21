@@ -1973,15 +1973,17 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   bool IsEmpty = PendingClassMemberInjections.empty();
   if (IsEmpty)
     return false;
+
   InjectionContext *Cxt = PendingClassMemberInjections.back();
+
   assert(Cxt->hasPendingClassMemberData() && "bad injection queue");
-  InjectedDef &Def = Cxt->InjectedDefinitions.front();
-  DeclContext *DC = Def.Injected->getDeclContext();
+  DeclContext *DC =  Decl::castToDeclContext(Cxt->Injectee);
   while (!DC->isFileContext()) {
     if (DC == D)
       return true;
     DC = DC->getParent();
   }
+
   return false;
 }
 

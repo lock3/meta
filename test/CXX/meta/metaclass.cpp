@@ -20,6 +20,10 @@ constexpr void interface(T source) {
       set_foo(default_val);
     }
   };
+
+  -> __fragment struct {
+    int dedicated_field;
+  };
 };
 
 template<typename T>
