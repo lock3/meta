@@ -526,16 +526,6 @@ bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs) {
     return true;
   }
 
-  // ReflRange has to be a range, so therefore it must be a declref
-  DeclRefExpr *ReflRangeDeclRef =
-    dyn_cast_or_null<DeclRefExpr>(ReflRange.get());
-  // TODO: output error explaining this must be a declaration
-  if (!ReflRangeDeclRef)
-    return true;
-
-  // TODO: only mark this in a non-dependent context?
-  ReflRangeDeclRef->getFoundDecl()->markUsed(Actions.getASTContext());
-
   if (ReflRange.isInvalid()) {
     Parens.skipToEnd();
     return true;
