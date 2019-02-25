@@ -523,6 +523,10 @@ void ASTTypeWriter::VisitCXXDependentVariadicReifierType
   Code = TYPE_CXX_DEPENDENT_VARIADIC_REIFIER;
 }
 
+void ASTTypeWriter::VisitCXXProjectionType(const CXXProjectionType *T) {
+  Code = TYPE_CXX_PROJECTION;
+}
+
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
   Record.AddTypeRef(T->getInnerType());
   Code = TYPE_PAREN;
@@ -853,6 +857,10 @@ void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
 void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
 (CXXDependentVariadicReifierTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
+}
+
+void TypeLocWriter::VisitCXXProjectionTypeLoc(CXXProjectionTypeLoc TL) {
+  Record.AddSourceLocation(SourceLocation());
 }
 
 void TypeLocWriter::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {

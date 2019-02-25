@@ -3402,6 +3402,11 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     RangeType, BeginVar, EndVar, ColonLoc, /*CoroutineLoc=*/SourceLocation(), 
     &CandidateSet, &BeginExpr, &EndExpr, &BEFFailure);
 
+  // If __range.begin() or __range.end() are not defined,
+  // this is, by definition, not a range.
+  if (BeginExpr.isInvalid() || EndExpr.isInvalid())
+    return StmtError();
+
   // Don't bother diagnosing errors. We have more cases to diagnose.
   if (Kind == Sema::BFRK_Build && RangeStatus != Sema::FRS_Success)
     return StmtError();
@@ -3554,7 +3559,8 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
                                                 CXXExpansionStmt::RK_Range);
 }
 
-/// When range-expr denotes an array, expand over the elements of the array.
+/// When range-expr denotes a struct,
+/// expand over the public fields of the struct.
 ///
 ///     for... (constexpr auto x : pod) stmt;
 ///
@@ -3578,7 +3584,26 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
-  return StmtError();
+  ExprResult Projection =
+    SemaRef.ActOnCXXProjectExpr(RangeType->getAsCXXRecordDecl(),
+                                RangeVar, InductionRef);
+  
+  CXXProjectExpr *RangeAccessor = cast<CXXProjectExpr>(Projection.get());
+  std::size_t Size = RangeAccessor->getNumFields();
+  
+  // Make the range accessor the initializer of the loop variable.
+  SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);
+  
+  if (LoopVar->isInvalidDecl())
+    return StmtError();
+  
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
+                                                RangeDeclStmt,
+                                                TemplateParms,
+                                                Size, ForLoc,
+                                                AnnotationLoc, ColonLoc,
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Struct);
 }
 
 /// Build a C++ expansion statement.

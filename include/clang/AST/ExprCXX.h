@@ -5171,6 +5171,75 @@ public:
   }
 };
 
+/// Projects the Nth public, nonstatic field of a record.
+class CXXProjectExpr : public Expr {
+  Expr *Base;
+  
+  /// All fields in the projected record.
+  Expr **Fields;
+
+  /// The Index expression, as in Base[Index]
+  Expr *Index;
+
+  /// The number of fields in the projected record
+  std::size_t NumFields;
+
+  CXXRecordDecl *Record;
+
+  /// The (optional) location of the record.
+  SourceLocation RecordLoc;
+
+public:  
+  CXXProjectExpr(Expr *Base,
+                 QualType T,
+                 Expr **Fields,
+                 Expr *Index,
+                 std::size_t NumFields,
+                 CXXRecordDecl *RD,
+                 SourceLocation RecordLoc)
+    : Expr(CXXProjectExprClass, T, VK_LValue,
+           OK_Ordinary,
+           Base->isTypeDependent() || Index->isTypeDependent(),
+           Base->isValueDependent() || Index->isValueDependent(),
+           Base->isInstantiationDependent() || Index->isInstantiationDependent(),
+           /*containsUnexpandedParameterPack=*/false),
+      Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
+      Record(RD), RecordLoc(RecordLoc) {}
+
+  CXXProjectExpr(EmptyShell Empty)
+    : Expr(CXXProjectExprClass, Empty) {}
+public:
+  static CXXProjectExpr *Create(ASTContext &Ctx, Expr *Base, CXXRecordDecl *RD,
+                                Expr **Fields, Expr *Index, std::size_t NumFields,
+                                SourceLocation RecordLoc);
+  static CXXProjectExpr *CreateEmpty(const ASTContext &Ctx, EmptyShell Empty);
+
+
+  /// Returns the source code location of the (optional) ellipsis.
+  Expr *getBase() const { return Base; }
+  SourceLocation getRecordLoc() const { return RecordLoc; }
+  CXXRecordDecl *getRecord() const { return Record; }
+  Expr **getFields() const { return Fields; }
+  Expr *getIndex() const { return Index; }
+  std::size_t getNumFields() const { return NumFields; }
+
+  SourceLocation getBeginLoc() const { return getRecordLoc(); }
+
+  SourceLocation getEndLoc() const { return getRecordLoc(); }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXProjectExprClass;
+  }
+};
+
 /// Represents a reflected id-expression of the form '(. args .)'.
 /// Some of the arguments in args are dependent.
 class CXXReflectedIdExpr final

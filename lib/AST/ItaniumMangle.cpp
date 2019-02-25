@@ -1941,6 +1941,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXProjection:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -3191,6 +3192,9 @@ void CXXNameMangler::mangleType(const CXXDependentVariadicReifierType *T) {
   mangleType(T->getRange()->getType());
 }
 
+void CXXNameMangler::mangleType(const CXXProjectionType *T) {
+}
+
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {
   mangleSourceName(T->getDecl()->getIdentifier());
 }
@@ -3554,6 +3558,7 @@ recurse:
   case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::PackSelectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
+  case Expr::CXXProjectExprClass:
     llvm_unreachable("unexpected statement kind");
 
   case Expr::ConstantExprClass:

@@ -1484,6 +1484,9 @@ public:
                                               SourceLocation EllipsisLoc,
                                               SourceLocation RParenLoc);
 
+  QualType getCXXProjectionType(bool TypeOrValueDependent,
+                                bool InstantiationDependent);
+
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
 

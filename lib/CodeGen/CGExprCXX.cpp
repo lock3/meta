@@ -2236,3 +2236,17 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 
   return Value;
 }
+
+LValue
+CodeGenFunction::EmitCXXProjectExpr(const CXXProjectExpr *E) {
+  Expr::EvalResult Res;
+  bool success = E->getIndex()->EvaluateAsInt(Res, getContext());
+
+  if (!success)
+    llvm_unreachable("Bad index in Projection.");
+  std::size_t I = 0;
+  for (; I < Res.Val.getInt(); ++I)
+    ;
+
+  return EmitLValue(E->getFields()[I]);
+}

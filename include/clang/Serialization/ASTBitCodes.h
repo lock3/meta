@@ -1183,6 +1183,9 @@ namespace serialization {
 
       /// A CXXDependentVariadicReifier record.
       TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 50,
+
+      /// A CXXProjection record
+      TYPE_CXX_PROJECTION = 51,
     };
 
     /// The type IDs for special types constructed by semantic

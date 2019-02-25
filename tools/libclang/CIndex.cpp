@@ -1750,6 +1750,10 @@ bool CursorVisitor::VisitCXXDependentVariadicReifierTypeLoc
   return Visit(TL.getPatternLoc());
 }
 
+bool CursorVisitor::VisitCXXProjectionTypeLoc(CXXProjectionTypeLoc TL) {
+  return false;
+}
+
 bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   if (Expr *E = TL.getUnderlyingExpr())
     return Visit(MakeCXCursor(E, StmtParent, TU));

@@ -1893,3 +1893,21 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
 {
   std::copy(Parts.begin(), Parts.end(), Operands);
 }
+
+CXXProjectExpr *
+CXXProjectExpr::Create(ASTContext &Ctx, Expr *Base, CXXRecordDecl *RD,
+                       Expr **Fields, Expr *Index, std::size_t NumFields,
+                       SourceLocation RecordLoc)
+{
+  QualType Ty =
+    Ctx.getCXXProjectionType(Base->isTypeDependent() || Base->isValueDependent(),
+                             Base->isInstantiationDependent());
+  return new (Ctx) CXXProjectExpr(Base, Ty, Fields, Index,
+                                  NumFields, RD,  RecordLoc);
+}
+
+CXXProjectExpr *
+CXXProjectExpr::CreateEmpty(const ASTContext &Ctx, EmptyShell Empty)
+{
+  return new (Ctx) CXXProjectExpr(Empty);
+}

@@ -6119,6 +6119,14 @@ public:
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
   void ActOnBaseSpecifiers(Decl *ClassDecl,
                            MutableArrayRef<CXXBaseSpecifier *> Bases);
+  /// Find the base class to decompose in a built-in decomposition of a class type.
+  /// This base class search is, unfortunately, not quite like any other that we
+  /// perform anywhere else in C++.
+  DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
+                                           const CXXRecordDecl *RD,
+                                           CXXCastPath &BasePath);
+  ExprResult ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
+                                 Expr *Index);
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,

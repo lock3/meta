@@ -2150,7 +2150,7 @@ public:
                                           RParenLoc, Sema::BFRK_Rebuild);
   }
 
-  /// Build a new C++ tuple-based for expansion statement.
+  /// Build a new C++ expansion statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
@@ -2164,6 +2164,15 @@ public:
     return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar, 
                                            ColonLoc, RangeVar, RParenLoc,
                                            Sema::BFRK_Rebuild, false);
+  }
+
+  /// Build a new C++ projection expression
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXProjectExpr(CXXRecordDecl *RD, VarDecl *Object,
+                                   Expr *Index) {
+    return getSema().ActOnCXXProjectExpr(RD, Object, Index);
   }
 
   /// Build a new C++0x range-based for statement.
@@ -6534,6 +6543,13 @@ QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
 }
 
 template<typename Derived>
+QualType TreeTransform<Derived>::TransformCXXProjectionType
+(TypeLocBuilder &TLB, CXXProjectionTypeLoc TL) {
+  return QualType();
+}
+
+
+template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformObjCInterfaceType(TypeLocBuilder &TLB,
                                                    ObjCInterfaceTypeLoc TL) {
@@ -10012,6 +10028,36 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
       Length.get(), E->getRBracketLoc());
 }
 
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
+  // Expr *OldBase = E->getBase();
+  // DeclRefExpr *BaseDRE = cast<DeclRefExpr>(OldBase);
+  // Decl *FoundRD = BaseDRE->getFoundDecl();
+  // Decl *RD = getDerived().TransformDecl(E->getRecordLoc(), FoundRD);
+  // if (RD->isInvalidDecl())
+  //   return ExprError();
+  Decl *RD = TransformDecl(E->getRecordLoc(), E->getRecord());
+
+  ExprResult NewBase =
+    getDerived().TransformExpr(E->getBase());
+  if (NewBase.isInvalid())
+    return ExprError();
+  Decl *NewBaseDecl =
+    cast<DeclRefExpr>(NewBase.get())->getFoundDecl();
+  NewBaseDecl =
+    getDerived().TransformDecl(E->getBase()->getExprLoc(), NewBaseDecl);
+
+  ExprResult NewIndex =
+    getDerived().TransformExpr(E->getIndex());
+  if (NewIndex.isInvalid())
+    return ExprError();
+
+  return RebuildCXXProjectExpr(cast<CXXRecordDecl>(RD),
+                               cast<VarDecl>(NewBaseDecl),
+                               NewIndex.get());
+}
+  
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {

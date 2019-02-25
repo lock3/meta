@@ -3164,6 +3164,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXProjection:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -4402,6 +4403,14 @@ ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc
   CXXDependentVariadicReifierType *T =
     new (*this, TypeAlignment)
     CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
+  Types.push_back(T);
+  return QualType(T, 0);
+}
+
+QualType
+ASTContext::getCXXProjectionType(bool TVD, bool ID) {
+  CXXProjectionType *T =
+    new (*this, TypeAlignment) CXXProjectionType(TVD, ID);
   Types.push_back(T);
   return QualType(T, 0);
 }
@@ -7037,7 +7046,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
   // This matches gcc's encoding, even though technically it is insufficient.
   //FIXME. We should do a better job than gcc.
   case Type::Vector:
-  case Type::ExtVector:
+  case Type::ExtVector:    
   // Until we have a coherent encoding of these three types, issue warning.
     if (NotEncodedT)
       *NotEncodedT = T;

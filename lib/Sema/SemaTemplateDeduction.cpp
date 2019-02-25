@@ -2113,6 +2113,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::DependentTemplateSpecialization:
     case Type::PackExpansion:
     case Type::CXXDependentVariadicReifier:
+    case Type::CXXProjection:
     case Type::Pipe:
       // No template argument deduction for these types
       return Sema::TDK_Success;
@@ -3682,7 +3683,7 @@ static bool
 hasDeducibleTemplateParameters(Sema &S, FunctionTemplateDecl *FunctionTemplate,
                                QualType T);
 
-static Sema::TemplateDeductionResult DeduceTemplateArgumentsFromCallArgument(
+static Sema:: TemplateDeductionResult DeduceTemplateArgumentsFromCallArgument(
     Sema &S, TemplateParameterList *TemplateParams, unsigned FirstInnerIndex,
     QualType ParamType, Expr *Arg, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced,
@@ -5591,6 +5592,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::UnresolvedUsing:
   case Type::Pipe:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXProjection:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)

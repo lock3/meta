@@ -5593,6 +5593,7 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
+  bool VisitCXXProjectExpr(const CXXProjectExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -5842,6 +5843,31 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 
   return Success &&
          HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
+}
+
+bool LValueExprEvaluator::VisitCXXProjectExpr(const CXXProjectExpr *E) {
+  APSInt Index;
+  if (!EvaluateInteger(E->getIndex(), Index, Info))
+    return false;
+
+  std::size_t NumFields = E->getNumFields();
+  APValue Fields(APValue::UninitArray(), NumFields, NumFields);
+  for (std::size_t I = 0; I < NumFields; ++I) {
+    if (I == Index) {
+      llvm::outs() << I << " == Index, visiting member\n";
+      E->getFields()[I]->dump();
+      if (dyn_cast_or_null<MemberExpr>(E->getFields()[I]))
+        llvm::outs() << "Successful cast.\n";
+      return VisitMemberExpr(dyn_cast<MemberExpr>(E->getFields()[I]));
+    }
+    // APValue Value;
+    // Expr::EvalStatus Status;
+    // if (!Evaluate(Value, Info, E->getFields()[I]))
+    //   return false;
+    // Fields.getArrayInitializedElt(I) = APValue(Value);
+  }
+  
+  return false;
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -8052,6 +8078,7 @@ EvaluateBuiltinClassifyType(QualType T, const LangOptions &LangOpts) {
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
   case Type::Pipe:
+  case Type::CXXProjection:
     // GCC classifies vectors as None. We follow its lead and classify all
     // other types that don't fit into the regular classification the same way.
     return GCCTypeClass::None;
@@ -11727,6 +11754,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::StringLiteralClass:
   case Expr::ArraySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::CXXProjectExprClass:
   case Expr::MemberExprClass:
   case Expr::CompoundAssignOperatorClass:
   case Expr::CompoundLiteralExprClass:

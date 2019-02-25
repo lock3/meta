@@ -559,6 +559,7 @@ public:
   Value *VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
     return EmitLoadOfLValue(E);
   }
+  Value *VisitCXXProjectExpr(CXXProjectExpr *E);
 
   Value *VisitInitListExpr(InitListExpr *E);
 
@@ -1791,6 +1792,11 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
 
   return Builder.CreateExtractElement(Base, Idx, "vecext");
 }
+
+Value *ScalarExprEmitter::VisitCXXProjectExpr(CXXProjectExpr *E) {
+  return EmitLoadOfLValue(E);
+}
+
 
 static llvm::Constant *getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,
                                   unsigned Off, llvm::Type *I32Ty) {

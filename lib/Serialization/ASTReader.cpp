@@ -6208,6 +6208,10 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
                                                       SourceLocation());
   }
 
+  case TYPE_CXX_PROJECTION: {
+    return Context.getCXXProjectionType(false, false);
+  }
+
   case TYPE_ELABORATED: {
     unsigned Idx = 0;
     ElaboratedTypeKeyword Keyword = (ElaboratedTypeKeyword)Record[Idx++];
@@ -6733,6 +6737,9 @@ void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
 void TypeLocReader::VisitCXXDependentVariadicReifierTypeLoc
 (CXXDependentVariadicReifierTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation());
+}
+
+void TypeLocReader::VisitCXXProjectionTypeLoc(CXXProjectionTypeLoc TL) {
 }
 
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {

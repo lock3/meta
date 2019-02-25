@@ -8038,3 +8038,105 @@ Sema::FinishCallExpr(Expr *E)
   return MaybeBindToTemporary(E);
 }
 
+ExprResult
+Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
+                          Expr *Index)
+{
+   // Get the base type of the struct we are trying to expand.
+  QualType ObjectType = Object->getType().getNonReferenceType();
+  CXXCastPath BasePath;
+  DeclAccessPair BasePair =
+    FindDecomposableBaseClass
+    (Object->getLocation(), OrigRD, BasePath);
+  CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
+  if (!RD)
+    return true;
+  QualType BaseType =
+    Context.getQualifiedType(Context.getRecordType(RD),
+                             ObjectType.getQualifiers());
+  llvm::SmallVector<Expr *, 8> Fields;
+  SourceLocation Loc = RD->getLocation();
+
+   // Create and store a reference expression to each field.
+  unsigned I = 0;
+  for (auto *FD : RD->fields()) {
+    if (FD->isUnnamedBitfield())
+      continue;
+
+    if (FD->isAnonymousStructOrUnion()) {
+      Diag
+        (Object->getLocation(), diag::err_decomp_decl_anon_union_member)
+        << ObjectType << FD->getType()->isUnionType();
+      Diag(FD->getLocation(), diag::note_declared_at);
+      return true;
+    }
+
+    // The field must be accessible in the context of the expansion.
+    // We already checked that the base class is accessible.
+    CheckStructuredBindingMemberAccess(
+      Loc, const_cast<CXXRecordDecl *>(OrigRD),
+      DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
+                             BasePair.getAccess(), FD->getAccess())));
+
+    // Initialize the binding to Object.FD
+    ExprResult E =
+      BuildDeclRefExpr(Object, ObjectType, VK_LValue, Loc);
+    if (E.isInvalid())
+      return true;
+    E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
+                          VK_LValue, &BasePath);
+    if (E.isInvalid())
+      return true;
+    E = BuildFieldReferenceExpr
+      (E.get(), /*IsArrow*/ false, Loc,
+       CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
+       DeclarationNameInfo(FD->getDeclName(), Loc));
+    if (E.isInvalid())
+      return true;
+
+    Fields.push_back(E.get());
+    
+    ++I;
+  }
+
+  // TODO: create "BadNumberOfBindings()" equivalent for
+  // expansions.
+  assert(I == Fields.size() && "Bad Number of Bindings");
+
+  // There is no need to keep this as a vector, we will
+  // obviously not be adding anything to it.
+  Expr **FieldArray = new (Context) Expr *[Fields.size()];
+  std::copy(Fields.begin(), Fields.end(), FieldArray);
+
+  ExprResult ObjectDRE =
+    BuildDeclRefExpr(Object, ObjectType, VK_LValue, Loc);
+  Expr *ObjectRef = ObjectDRE.get();
+
+  // If we can't evaluate the index, we can't deduce a type
+  if (ObjectRef->isTypeDependent() || Index->isTypeDependent()
+      || Index->isValueDependent()) {
+    return new (Context) CXXProjectExpr(ObjectRef, Context.DependentTy,
+                                        FieldArray, Index, Fields.size(),
+                                        RD, Loc);
+  }
+
+  Expr::EvalResult Res;
+  bool success = Index->EvaluateAsInt(Res, Context);
+  if (!success)
+    llvm_unreachable("Invalid index in Projection.");
+
+  IntegerLiteral *IntLit =
+    IntegerLiteral::Create(Context, Res.Val.getInt(),
+                           Context.getSizeType(), SourceLocation());
+  I = 0;
+  // Unfortunately, we are going to have to convert the index expression
+  // into a builtin integer-like type. This is our only option.
+  for (; I < Res.Val.getInt(); ++I)
+    ;
+
+  // return CXXProjectExpr::Create(Context, ObjectRef, RD, FieldArray,
+  //                               Index, Fields.size(), Loc);
+  return new (Context) CXXProjectExpr(ObjectRef, FieldArray[I]->getType(),
+                                      FieldArray, IntLit, Fields.size(),
+                                      RD, Loc);
+}

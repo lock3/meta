@@ -5427,8 +5427,13 @@ void InitializationSequence::InitializeFrom(Sema &S,
           S.ConversionToObjCStringLiteralCheck(DestType, Initializer))
         Args[0] = Initializer;
     }
-    if (!isa<InitListExpr>(Initializer))
+    if (!isa<InitListExpr>(Initializer)) {
       SourceType = Initializer->getType();
+      if (isa<CXXProjectExpr>(Initializer) && SourceType == Context.DependentTy) {
+        SequenceKind = DependentSequence;
+        return;
+      }
+    }
   }
 
   //     - If the initializer is a (non-parenthesized) braced-init-list, the

@@ -775,6 +775,10 @@ void ASTStmtReader::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   E->setRBracketLoc(ReadSourceLocation());
 }
 
+void ASTStmtReader::VisitCXXProjectExpr(CXXProjectExpr *E) {
+  VisitExpr(E);
+}
+
 void ASTStmtReader::VisitOMPArraySectionExpr(OMPArraySectionExpr *E) {
   VisitExpr(E);
   E->setBase(Record.readSubExpr());
