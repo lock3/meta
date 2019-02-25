@@ -2113,7 +2113,6 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::DependentTemplateSpecialization:
     case Type::PackExpansion:
     case Type::CXXDependentVariadicReifier:
-    case Type::CXXProjection:
     case Type::Pipe:
       // No template argument deduction for these types
       return Sema::TDK_Success;
@@ -5592,7 +5591,6 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::UnresolvedUsing:
   case Type::Pipe:
   case Type::CXXDependentVariadicReifier:
-  case Type::CXXProjection:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)

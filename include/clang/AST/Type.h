@@ -1966,7 +1966,6 @@ public:
   bool isIncompleteArrayType() const;
   bool isVariableArrayType() const;
   bool isDependentSizedArrayType() const;
-  bool isCXXProjectionType() const;
   bool isRecordType() const;
   bool isClassType() const;
   bool isStructureType() const;
@@ -5500,34 +5499,6 @@ public:
   }
 };
 
-class CXXProjectionType : public Type {
-public:
-  CXXProjectionType(bool TypeOrValueDependent = false,
-                    bool InstantiationDependent = false)
-    : Type(CXXProjection, QualType(), TypeOrValueDependent,
-           InstantiationDependent, /*VariablyModified=*/false,
-           /*Unexpanded parameter pack=*/false)
-    {}
-
-  bool isSugared() const { return false; }
-  QualType desugar() const { return QualType(this, 0); }
-
-  void Profile(llvm::FoldingSetNodeID &ID) {
-    // Profile(ID, Context, Range);
-    // TODO: Implement me
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID,
-                      ASTContext const& Context) {
-    // Range->Profile(ID, Context, /*Canonical=*/false);
-    // TODO: Implement me
-  }
-
-  static bool classof(const Type *T) {
-    return T->getTypeClass() == CXXProjection;
-  }
-};
-
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.
 template <class T>
@@ -6485,10 +6456,6 @@ inline bool Type::isVariableArrayType() const {
 
 inline bool Type::isDependentSizedArrayType() const {
   return isa<DependentSizedArrayType>(CanonicalType);
-}
-
-inline bool Type::isCXXProjectionType() const {
-  return isa<CXXProjectionType>(CanonicalType);
 }
 
 inline bool Type::isBuiltinType() const {

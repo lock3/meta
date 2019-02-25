@@ -6543,13 +6543,6 @@ QualType TreeTransform<Derived>::TransformCXXDependentVariadicReifierType
 }
 
 template<typename Derived>
-QualType TreeTransform<Derived>::TransformCXXProjectionType
-(TypeLocBuilder &TLB, CXXProjectionTypeLoc TL) {
-  return QualType();
-}
-
-
-template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformObjCInterfaceType(TypeLocBuilder &TLB,
                                                    ObjCInterfaceTypeLoc TL) {

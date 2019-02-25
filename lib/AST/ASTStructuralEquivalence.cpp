@@ -789,9 +789,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
          cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType()))
       return false;
     break;
-    
-  case Type::CXXProjection:
-    return true;
 
   case Type::ObjCInterface: {
     const auto *Iface1 = cast<ObjCInterfaceType>(T1);

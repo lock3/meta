@@ -2838,15 +2838,6 @@ void MicrosoftCXXNameMangler::mangleType(const
     << Range;
 }
 
-void MicrosoftCXXNameMangler::mangleType(const CXXProjectionType *T, Qualifiers,
-                                         SourceRange Range) {
-  DiagnosticsEngine &Diags = Context.getDiags();
-  unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-    "cannot mangle projections yet");
-  Diags.Report(Range.getBegin(), DiagID)
-    << Range;
-}
-
 void MicrosoftCXXNameMangler::mangleType(const TypeOfType *T, Qualifiers,
                                          SourceRange Range) {
   DiagnosticsEngine &Diags = Context.getDiags();

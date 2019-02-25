@@ -2240,16 +2240,6 @@ public:
   }
 };
 
-struct CXXProjectionTypeLocInfo {};
-
-class CXXProjectionTypeLoc : public ConcreteTypeLoc<UnqualTypeLoc,
-                                                    CXXProjectionTypeLoc,
-                                                    CXXProjectionType,
-                                                    CXXProjectionTypeLocInfo> {
-public:
-  void initializeLocal(ASTContext &Context, SourceLocation) {}
-};
-
 struct AtomicTypeLocInfo {
   SourceLocation KWLoc, LParenLoc, RParenLoc;
 };

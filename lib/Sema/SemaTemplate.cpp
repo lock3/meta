@@ -5529,11 +5529,6 @@ bool UnnamedLocalNoLinkageFinder::VisitCXXDependentVariadicReifierType
   return Visit(T->getRange()->getType());
 }
 
-bool UnnamedLocalNoLinkageFinder::VisitCXXProjectionType(
-  const CXXProjectionType *T) {
-  return false;
-}
-
 bool UnnamedLocalNoLinkageFinder::VisitObjCObjectType(const ObjCObjectType *) {
   return false;
 }

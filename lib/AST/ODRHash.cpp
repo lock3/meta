@@ -891,10 +891,6 @@ public:
     VisitType(T);
   }
 
-  void VisitCXXProjectionType(const CXXProjectionType *T) {
-    VisitType(T);
-  }
-
   void VisitParenType(const ParenType *T) {
     AddQualType(T->getInnerType());
     VisitType(T);

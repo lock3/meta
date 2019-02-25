@@ -5186,7 +5186,7 @@ class CXXProjectExpr : public Expr {
 
   CXXRecordDecl *Record;
 
-  /// The (optional) location of the record.
+  /// The location of the record.
   SourceLocation RecordLoc;
 
 public:  
@@ -5208,12 +5208,6 @@ public:
 
   CXXProjectExpr(EmptyShell Empty)
     : Expr(CXXProjectExprClass, Empty) {}
-public:
-  static CXXProjectExpr *Create(ASTContext &Ctx, Expr *Base, CXXRecordDecl *RD,
-                                Expr **Fields, Expr *Index, std::size_t NumFields,
-                                SourceLocation RecordLoc);
-  static CXXProjectExpr *CreateEmpty(const ASTContext &Ctx, EmptyShell Empty);
-
 
   /// Returns the source code location of the (optional) ellipsis.
   Expr *getBase() const { return Base; }
