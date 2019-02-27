@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 -freflection -std=c++1z %s
+// expected-no-diagnostics
 
 #include "reflection_query.h"
 
@@ -106,7 +107,7 @@ extern "C" int puts(char const* str);
 template<typename T> // requires Enum<T>
 char const* to_string(T val) {
   static constexpr auto range = member_range(reflexpr(T));
-  for constexpr (meta::info member : range) {
+  for... (constexpr meta::info member : range) {
     if (valueof(member) == val)
       return name_of(member);
   }
