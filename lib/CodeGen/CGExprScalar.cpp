@@ -559,7 +559,7 @@ public:
   Value *VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
     return EmitLoadOfLValue(E);
   }
-  Value *VisitCXXProjectExpr(CXXProjectExpr *E);
+  Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
 
   Value *VisitInitListExpr(InitListExpr *E);
 
@@ -1793,7 +1793,7 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   return Builder.CreateExtractElement(Base, Idx, "vecext");
 }
 
-Value *ScalarExprEmitter::VisitCXXProjectExpr(CXXProjectExpr *E) {
+Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   return EmitLoadOfLValue(E);
 }
 

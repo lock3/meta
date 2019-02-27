@@ -688,7 +688,7 @@ void ASTStmtWriter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   Code = serialization::EXPR_ARRAY_SUBSCRIPT;
 }
 
-void ASTStmtWriter::VisitCXXProjectExpr(CXXProjectExpr *E) {
+void ASTStmtWriter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   VisitExpr(E);
 }
 

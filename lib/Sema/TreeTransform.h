@@ -2170,10 +2170,10 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXProjectExpr(CXXRecordDecl *RD, VarDecl *Base,
+  ExprResult RebuildCXXSelectMemberExpr(CXXRecordDecl *RD, VarDecl *Base,
                                    Expr *Index, SourceLocation KW,
                                    SourceLocation B, SourceLocation I) {
-    return getSema().ActOnCXXProjectExpr(RD, Base, Index, KW, B, I);
+    return getSema().ActOnCXXSelectMemberExpr(RD, Base, Index, KW, B, I);
   }
 
   /// Build a new C++0x range-based for statement.
@@ -10024,7 +10024,7 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
 
 template<typename Derived>
 ExprResult
-TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
+TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   ExprResult NewBase =
     getDerived().TransformExpr(E->getBase());
   if (NewBase.isInvalid())
@@ -10045,10 +10045,10 @@ TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
   if (NewIndex.isInvalid())
     return ExprError();
 
-  return RebuildCXXProjectExpr(cast<CXXRecordDecl>(RD),
-                               cast<VarDecl>(NewBaseDecl),
-                               NewIndex.get(), E->getKeywordLoc(),
-                               E->getBaseLoc(), E->getIdxLoc());
+  return RebuildCXXSelectMemberExpr(cast<CXXRecordDecl>(RD),
+                                    cast<VarDecl>(NewBaseDecl),
+                                    NewIndex.get(), E->getKeywordLoc(),
+                                    E->getBaseLoc(), E->getIdxLoc());
 }
   
 template<typename Derived>

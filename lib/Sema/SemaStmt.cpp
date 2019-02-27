@@ -3585,10 +3585,11 @@ StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
   ExprResult Projection =
-    SemaRef.ActOnCXXProjectExpr(RangeType->getAsCXXRecordDecl(),
-                                RangeVar, InductionRef);
+    SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
+                                     RangeVar, InductionRef);
   
-  CXXProjectExpr *RangeAccessor = cast<CXXProjectExpr>(Projection.get());
+  CXXSelectMemberExpr *RangeAccessor =
+    cast<CXXSelectMemberExpr>(Projection.get());
   std::size_t Size = RangeAccessor->getNumFields();
   
   // Make the range accessor the initializer of the loop variable.

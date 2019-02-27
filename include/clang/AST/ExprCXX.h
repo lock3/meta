@@ -5172,7 +5172,7 @@ public:
 };
 
 /// Projects the Nth public, nonstatic field of a record.
-class CXXProjectExpr : public Expr {
+class CXXSelectMemberExpr : public Expr {
   Expr *Base;
   
   /// All fields in the projected record.
@@ -5199,7 +5199,7 @@ class CXXProjectExpr : public Expr {
   SourceLocation IdxLoc;
 
 public:  
-  CXXProjectExpr(Expr *Base,
+  CXXSelectMemberExpr(Expr *Base,
                  QualType T,
                  Expr **Fields,
                  Expr *Index,
@@ -5209,7 +5209,7 @@ public:
                  SourceLocation KWLoc = SourceLocation(),
                  SourceLocation BaseLoc = SourceLocation(),
                  SourceLocation IdxLoc = SourceLocation())
-    : Expr(CXXProjectExprClass, T, VK_LValue,
+    : Expr(CXXSelectMemberExprClass, T, VK_LValue,
            OK_Ordinary,
            Base->isTypeDependent() || Index->isTypeDependent(),
            Base->isValueDependent() || Index->isValueDependent(),
@@ -5219,8 +5219,8 @@ public:
       Record(RD), RecordLoc(RecordLoc), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
       IdxLoc(IdxLoc) {}
 
-  CXXProjectExpr(EmptyShell Empty)
-    : Expr(CXXProjectExprClass, Empty) {}
+  CXXSelectMemberExpr(EmptyShell Empty)
+    : Expr(CXXSelectMemberExprClass, Empty) {}
 
   /// Returns the source code location of the (optional) ellipsis.
   Expr *getBase() const { return Base; }
@@ -5250,7 +5250,7 @@ public:
   }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXProjectExprClass;
+    return T->getStmtClass() == CXXSelectMemberExprClass;
   }
 };
 

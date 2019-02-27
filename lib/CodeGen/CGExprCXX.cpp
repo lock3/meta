@@ -2238,7 +2238,7 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 }
 
 LValue
-CodeGenFunction::EmitCXXProjectExpr(const CXXProjectExpr *E) {
+CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
   Expr::EvalResult Res;
   bool success = E->getIndex()->EvaluateAsInt(Res, getContext());
 

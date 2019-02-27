@@ -69,7 +69,7 @@ def OffsetOfExpr : DStmt<Expr>;
 def UnaryExprOrTypeTraitExpr : DStmt<Expr>;
 def ArraySubscriptExpr : DStmt<Expr>;
 def OMPArraySectionExpr : DStmt<Expr>;
-def CXXProjectExpr : DStmt<Expr>;
+def CXXSelectMemberExpr : DStmt<Expr>;
 def CallExpr : DStmt<Expr>;
 def MemberExpr : DStmt<Expr>;
 def CastExpr : DStmt<Expr, 1>;

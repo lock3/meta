@@ -5429,7 +5429,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
     }
     if (!isa<InitListExpr>(Initializer)) {
       SourceType = Initializer->getType();
-      if (isa<CXXProjectExpr>(Initializer) && SourceType == Context.DependentTy) {
+      if (isa<CXXSelectMemberExpr>(Initializer)
+          && SourceType == Context.DependentTy) {
         SequenceKind = DependentSequence;
         return;
       }

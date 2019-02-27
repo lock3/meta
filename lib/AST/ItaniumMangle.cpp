@@ -3554,7 +3554,6 @@ recurse:
   case Expr::CXXDependentVariadicReifierExprClass:
   case Expr::PackSelectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
-  case Expr::CXXProjectExprClass:
     llvm_unreachable("unexpected statement kind");
 
   case Expr::ConstantExprClass:
@@ -4010,6 +4009,16 @@ recurse:
     Out << "ix";
     mangleExpression(AE->getLHS());
     mangleExpression(AE->getRHS());
+    break;
+  }
+
+  case Expr::CXXSelectMemberExprClass: {
+    const CXXSelectMemberExpr *SME = cast<CXXSelectMemberExpr>(E);
+
+    // Treated as a binary operator, see: ArraySubscriptExpr
+    Out << "ix";
+    mangleExpression(SME->getBase());
+    mangleExpression(SME->getIndex());
     break;
   }
 

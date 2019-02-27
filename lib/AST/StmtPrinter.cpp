@@ -1295,8 +1295,8 @@ void StmtPrinter::VisitArraySubscriptExpr(ArraySubscriptExpr *Node) {
   OS << "]";
 }
 
-void StmtPrinter::VisitCXXProjectExpr(CXXProjectExpr *Node) {
-  OS << "__select(";
+void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *Node) {
+  OS << "__select_member(";
   PrintExpr(Node->getBase());
   OS << ", ";
   PrintExpr(Node->getIndex());

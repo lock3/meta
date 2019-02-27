@@ -1629,8 +1629,8 @@ ExprResult Parser::ParseThrowExpression() {
 }
 
 ExprResult
-Parser::ParseCXXProjectExpr() {
-  assert(Tok.is(tok::kw___select) && "Not __select!");
+Parser::ParseCXXSelectMemberExpr() {
+  assert(Tok.is(tok::kw___select_member) && "Not __select_member!");
   SourceLocation KWLoc = ConsumeToken();
 
 
@@ -1664,10 +1664,10 @@ Parser::ParseCXXProjectExpr() {
     return ExprError();
 
   Expr *Index = Exprs.back();
-  return Actions.ActOnCXXProjectExpr(Record, cast<VarDecl>(FoundDecl), Index,
-                                     KWLoc,
-                                     BaseDRE->getLocation(),
-                                     Index->getExprLoc());
+  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
+                                          KWLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
 }
 
 /// Parse the C++ Coroutines co_yield expression.

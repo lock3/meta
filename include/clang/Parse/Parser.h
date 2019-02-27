@@ -2836,7 +2836,7 @@ private:
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
   /// Parse a __select expression
-  ExprResult ParseCXXProjectExpr();
+  ExprResult ParseCXXSelectMemberExpr();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

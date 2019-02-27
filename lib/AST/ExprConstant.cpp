@@ -5593,7 +5593,7 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
-  bool VisitCXXProjectExpr(const CXXProjectExpr *E);
+  bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -5845,7 +5845,7 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
          HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
 }
 
-bool LValueExprEvaluator::VisitCXXProjectExpr(const CXXProjectExpr *E) {
+bool LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
   APSInt Index;
   if (!EvaluateInteger(E->getIndex(), Index, Info))
     return false;
@@ -11739,7 +11739,6 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::StringLiteralClass:
   case Expr::ArraySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
-  case Expr::CXXProjectExprClass:
   case Expr::MemberExprClass:
   case Expr::CompoundAssignOperatorClass:
   case Expr::CompoundLiteralExprClass:
@@ -11816,9 +11815,13 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
   case Expr::CXXUnreflexprExprClass:
-    // A reflected value is an ICE if it's reference is.
+    // A reflected value is an ICE if its reference is.
     return CheckICE(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr(), Ctx);
 
+  case Expr::CXXSelectMemberExprClass:
+    // This is an ICE if its Base is an ICE
+    return CheckICE(cast<CXXSelectMemberExpr>(E)->getBase(), Ctx);
+    
   case Expr::InitListExprClass: {
     // C++03 [dcl.init]p13: If T is a scalar type, then a declaration of the
     // form "T x = { a };" is equivalent to "T x = a;".

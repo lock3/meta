@@ -3495,7 +3495,7 @@ public:
   LValue EmitOMPArraySectionExpr(const OMPArraySectionExpr *E,
                                  bool IsLowerBound = true);
   LValue EmitExtVectorElementExpr(const ExtVectorElementExpr *E);
-  LValue EmitCXXProjectExpr(const CXXProjectExpr *E);
+  LValue EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);
   LValue EmitCompoundLiteralLValue(const CompoundLiteralExpr *E);

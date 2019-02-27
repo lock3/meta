@@ -8039,9 +8039,9 @@ Sema::FinishCallExpr(Expr *E)
 }
 
 ExprResult
-Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
-                          Expr *Index, SourceLocation KWLoc,
-                          SourceLocation BaseLoc, SourceLocation IdxLoc)
+Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
+                               Expr *Index, SourceLocation KWLoc,
+                               SourceLocation BaseLoc, SourceLocation IdxLoc)
 {
    // Get the type of the struct we are trying to expand.
   QualType BaseType = Base->getType().getNonReferenceType();
@@ -8049,10 +8049,10 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   if (BaseType->isDependentType()) {
     ExprResult BaseDRE =
       BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
-    return new (Context) CXXProjectExpr(BaseDRE.get(), Context.DependentTy,
-                                        nullptr, Index, 0,
-                                        nullptr, SourceLocation(), KWLoc,
-                                        BaseLoc, IdxLoc);
+    return new (Context) CXXSelectMemberExpr(BaseDRE.get(), Context.DependentTy,
+                                             nullptr, Index, 0,
+                                             nullptr, SourceLocation(), KWLoc,
+                                             BaseLoc, IdxLoc);
   }
   
   CXXCastPath BasePath;
@@ -8126,9 +8126,9 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   // just return the temporary expr.
   if (BaseRef->isTypeDependent() || Index->isTypeDependent()
       || Index->isValueDependent()) {
-    return new (Context) CXXProjectExpr(BaseRef, Context.DependentTy,
-                                        FieldArray, Index, Fields.size(),
-                                        RD, Loc, KWLoc, BaseLoc, IdxLoc);
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             FieldArray, Index, Fields.size(),
+                                             RD, Loc, KWLoc, BaseLoc, IdxLoc);
   }
 
   // Index must be an integral or enumerator type.
@@ -8145,7 +8145,8 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
     return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
 
   I = Res.Val.getInt().getZExtValue();
-  return new (Context) CXXProjectExpr(BaseRef, FieldArray[I]->getType(),
-                                      FieldArray, ComputedIndex, Fields.size(),
-                                      RD, Loc, KWLoc, BaseLoc, IdxLoc);
+  return new (Context) CXXSelectMemberExpr(BaseRef, FieldArray[I]->getType(),
+                                           FieldArray, ComputedIndex,
+                                           Fields.size(), RD, Loc, KWLoc,
+                                           BaseLoc, IdxLoc);
 }

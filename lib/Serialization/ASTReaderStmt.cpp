@@ -775,7 +775,7 @@ void ASTStmtReader::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
   E->setRBracketLoc(ReadSourceLocation());
 }
 
-void ASTStmtReader::VisitCXXProjectExpr(CXXProjectExpr *E) {
+void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   VisitExpr(E);
 }
 
