@@ -2474,6 +2474,8 @@ def err_immediate_redecl_mismatch : Error<
 def err_invalid_immediate : Error<
   "%select{function parameter|function pointer}0 "
   "cannot be consteval">;
+def err_select_index_not_constant : Error<
+  "Index of a __select expression must be a constant expression.">;
 
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<

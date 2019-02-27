@@ -8039,21 +8039,32 @@ Sema::FinishCallExpr(Expr *E)
 }
 
 ExprResult
-Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
-                          Expr *Index)
+Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
+                          Expr *Index, SourceLocation KWLoc,
+                          SourceLocation BaseLoc, SourceLocation IdxLoc)
 {
-   // Get the base type of the struct we are trying to expand.
-  QualType ObjectType = Object->getType().getNonReferenceType();
+   // Get the type of the struct we are trying to expand.
+  QualType BaseType = Base->getType().getNonReferenceType();
+  // If the base is dependent, we won't be able to do any destructuring yet.
+  if (BaseType->isDependentType()) {
+    ExprResult BaseDRE =
+      BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+    return new (Context) CXXProjectExpr(BaseDRE.get(), Context.DependentTy,
+                                        nullptr, Index, 0,
+                                        nullptr, SourceLocation(), KWLoc,
+                                        BaseLoc, IdxLoc);
+  }
+  
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
     FindDecomposableBaseClass
-    (Object->getLocation(), OrigRD, BasePath);
+    (Base->getLocation(), OrigRD, BasePath);
   CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
     return true;
-  QualType BaseType =
+  QualType BaseClassType =
     Context.getQualifiedType(Context.getRecordType(RD),
-                             ObjectType.getQualifiers());
+                             BaseType.getQualifiers());
   llvm::SmallVector<Expr *, 8> Fields;
   SourceLocation Loc = RD->getLocation();
 
@@ -8065,8 +8076,8 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
 
     if (FD->isAnonymousStructOrUnion()) {
       Diag
-        (Object->getLocation(), diag::err_decomp_decl_anon_union_member)
-        << ObjectType << FD->getType()->isUnionType();
+        (Base->getLocation(), diag::err_decomp_decl_anon_union_member)
+        << BaseClassType << FD->getType()->isUnionType();
       Diag(FD->getLocation(), diag::note_declared_at);
       return true;
     }
@@ -8078,9 +8089,9 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
       DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
                              BasePair.getAccess(), FD->getAccess())));
 
-    // Initialize the binding to Object.FD
+    // Initialize the binding to Base.FD
     ExprResult E =
-      BuildDeclRefExpr(Object, ObjectType, VK_LValue, Loc);
+      BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
     if (E.isInvalid())
       return true;
     E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
@@ -8095,7 +8106,6 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
       return true;
 
     Fields.push_back(E.get());
-    
     ++I;
   }
 
@@ -8104,39 +8114,38 @@ Sema::ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
   assert(I == Fields.size() && "Bad Number of Bindings");
 
   // There is no need to keep this as a vector, we will
-  // obviously not be adding anything to it.
+  // not be adding anything to it.
   Expr **FieldArray = new (Context) Expr *[Fields.size()];
   std::copy(Fields.begin(), Fields.end(), FieldArray);
 
-  ExprResult ObjectDRE =
-    BuildDeclRefExpr(Object, ObjectType, VK_LValue, Loc);
-  Expr *ObjectRef = ObjectDRE.get();
+  ExprResult BaseDRE =
+    BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+  Expr *BaseRef = BaseDRE.get();
 
-  // If we can't evaluate the index, we can't deduce a type
-  if (ObjectRef->isTypeDependent() || Index->isTypeDependent()
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  if (BaseRef->isTypeDependent() || Index->isTypeDependent()
       || Index->isValueDependent()) {
-    return new (Context) CXXProjectExpr(ObjectRef, Context.DependentTy,
+    return new (Context) CXXProjectExpr(BaseRef, Context.DependentTy,
                                         FieldArray, Index, Fields.size(),
-                                        RD, Loc);
+                                        RD, Loc, KWLoc, BaseLoc, IdxLoc);
   }
 
+  // Index must be an integral or enumerator type.
+  ExprResult IndexRV = DefaultLvalueConversion(Index);
+  if (IndexRV.isInvalid())
+    return ExprError();
+  Expr *ComputedIndex = IndexRV.get();
+  if (!ComputedIndex->getType()->isIntegralOrEnumerationType())
+    return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
+
+  // Index must be a constant expression.
   Expr::EvalResult Res;
-  bool success = Index->EvaluateAsInt(Res, Context);
-  if (!success)
-    llvm_unreachable("Invalid index in Projection.");
+  if (!ComputedIndex->EvaluateAsInt(Res, Context))
+    return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
 
-  IntegerLiteral *IntLit =
-    IntegerLiteral::Create(Context, Res.Val.getInt(),
-                           Context.getSizeType(), SourceLocation());
-  I = 0;
-  // Unfortunately, we are going to have to convert the index expression
-  // into a builtin integer-like type. This is our only option.
-  for (; I < Res.Val.getInt(); ++I)
-    ;
-
-  // return CXXProjectExpr::Create(Context, ObjectRef, RD, FieldArray,
-  //                               Index, Fields.size(), Loc);
-  return new (Context) CXXProjectExpr(ObjectRef, FieldArray[I]->getType(),
-                                      FieldArray, IntLit, Fields.size(),
-                                      RD, Loc);
+  I = Res.Val.getInt().getZExtValue();
+  return new (Context) CXXProjectExpr(BaseRef, FieldArray[I]->getType(),
+                                      FieldArray, ComputedIndex, Fields.size(),
+                                      RD, Loc, KWLoc, BaseLoc, IdxLoc);
 }

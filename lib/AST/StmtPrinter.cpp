@@ -1296,7 +1296,11 @@ void StmtPrinter::VisitArraySubscriptExpr(ArraySubscriptExpr *Node) {
 }
 
 void StmtPrinter::VisitCXXProjectExpr(CXXProjectExpr *Node) {
-  llvm_unreachable("unimplemented.");
+  OS << "__select(";
+  PrintExpr(Node->getBase());
+  OS << ", ";
+  PrintExpr(Node->getIndex());
+  OS << ")";
 }
 
 void StmtPrinter::VisitOMPArraySectionExpr(OMPArraySectionExpr *Node) {

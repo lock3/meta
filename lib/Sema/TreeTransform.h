@@ -2170,9 +2170,10 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  ExprResult RebuildCXXProjectExpr(CXXRecordDecl *RD, VarDecl *Object,
-                                   Expr *Index) {
-    return getSema().ActOnCXXProjectExpr(RD, Object, Index);
+  ExprResult RebuildCXXProjectExpr(CXXRecordDecl *RD, VarDecl *Base,
+                                   Expr *Index, SourceLocation KW,
+                                   SourceLocation B, SourceLocation I) {
+    return getSema().ActOnCXXProjectExpr(RD, Base, Index, KW, B, I);
   }
 
   /// Build a new C++0x range-based for statement.
@@ -10024,14 +10025,6 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
-  // Expr *OldBase = E->getBase();
-  // DeclRefExpr *BaseDRE = cast<DeclRefExpr>(OldBase);
-  // Decl *FoundRD = BaseDRE->getFoundDecl();
-  // Decl *RD = getDerived().TransformDecl(E->getRecordLoc(), FoundRD);
-  // if (RD->isInvalidDecl())
-  //   return ExprError();
-  Decl *RD = TransformDecl(E->getRecordLoc(), E->getRecord());
-
   ExprResult NewBase =
     getDerived().TransformExpr(E->getBase());
   if (NewBase.isInvalid())
@@ -10041,6 +10034,12 @@ TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
   NewBaseDecl =
     getDerived().TransformDecl(E->getBase()->getExprLoc(), NewBaseDecl);
 
+  Decl *RD;
+  if (E->getRecord())
+    RD = TransformDecl(E->getRecordLoc(), E->getRecord());
+  else
+    RD = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
+
   ExprResult NewIndex =
     getDerived().TransformExpr(E->getIndex());
   if (NewIndex.isInvalid())
@@ -10048,7 +10047,8 @@ TreeTransform<Derived>::TransformCXXProjectExpr(CXXProjectExpr *E) {
 
   return RebuildCXXProjectExpr(cast<CXXRecordDecl>(RD),
                                cast<VarDecl>(NewBaseDecl),
-                               NewIndex.get());
+                               NewIndex.get(), E->getKeywordLoc(),
+                               E->getBaseLoc(), E->getIdxLoc());
 }
   
 template<typename Derived>

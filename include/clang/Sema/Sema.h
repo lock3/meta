@@ -6125,8 +6125,11 @@ public:
   DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
                                            const CXXRecordDecl *RD,
                                            CXXCastPath &BasePath);
-  ExprResult ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Object,
-                                 Expr *Index);
+  ExprResult ActOnCXXProjectExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
+                                 Expr *Index,
+                                 SourceLocation KWLoc = SourceLocation(),
+                                 SourceLocation BaseLoc = SourceLocation(),
+                                 SourceLocation IdxLoc = SourceLocation());
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,

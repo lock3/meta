@@ -5850,23 +5850,9 @@ bool LValueExprEvaluator::VisitCXXProjectExpr(const CXXProjectExpr *E) {
   if (!EvaluateInteger(E->getIndex(), Index, Info))
     return false;
 
-  std::size_t NumFields = E->getNumFields();
-  APValue Fields(APValue::UninitArray(), NumFields, NumFields);
-  for (std::size_t I = 0; I < NumFields; ++I) {
-    if (I == Index) {
-      llvm::outs() << I << " == Index, visiting member\n";
-      E->getFields()[I]->dump();
-      if (dyn_cast_or_null<MemberExpr>(E->getFields()[I]))
-        llvm::outs() << "Successful cast.\n";
-      return VisitMemberExpr(dyn_cast<MemberExpr>(E->getFields()[I]));
-    }
-    // APValue Value;
-    // Expr::EvalStatus Status;
-    // if (!Evaluate(Value, Info, E->getFields()[I]))
-    //   return false;
-    // Fields.getArrayInitializedElt(I) = APValue(Value);
-  }
-  
+  std::size_t I = Index.getZExtValue();
+  if (dyn_cast_or_null<MemberExpr>(E->getFields()[I]))
+    return VisitMemberExpr(dyn_cast<MemberExpr>(E->getFields()[I]));
   return false;
 }
 

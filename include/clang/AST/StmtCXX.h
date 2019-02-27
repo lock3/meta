@@ -311,6 +311,7 @@ public:
 
   /// \brief Returns the number of instantiated statements.
   std::size_t getSize() const { return Size; }
+  void setSize(std::size_t N) { Size = N; }
 
   /// \brief Set the sequence of instantiated statements.
   void setInstantiatedStatements(Stmt **S) {

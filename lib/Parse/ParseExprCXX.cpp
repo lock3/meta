@@ -1628,6 +1628,48 @@ ExprResult Parser::ParseThrowExpression() {
   }
 }
 
+ExprResult
+Parser::ParseCXXProjectExpr() {
+  assert(Tok.is(tok::kw___select) && "Not __select!");
+  SourceLocation KWLoc = ConsumeToken();
+
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+  llvm::SmallVector<Expr *, 2> Exprs;
+  llvm::SmallVector<SourceLocation, 1> CommaLocs;
+  ParseExpressionList(Exprs, CommaLocs, llvm::function_ref<void()>(nullptr));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  if (Exprs.size() != 2)
+    return ExprError();
+
+  // If we cannot find a record decl for the record object,
+  // just quit now.
+  Expr *Base = Exprs.front();
+  // // TODO: will this conflict with unqualid or idexpr?
+  if (!isa<DeclRefExpr>(Base))
+    return ExprError();
+  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
+  Decl *FoundDecl = BaseDRE->getFoundDecl();
+  if (!isa<VarDecl>(FoundDecl))
+    return ExprError();
+  VarDecl *BaseVar =
+    cast<VarDecl>(FoundDecl);
+  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
+  if (!Record && !BaseVar->getType()->isDependentType())
+    return ExprError();
+
+  Expr *Index = Exprs.back();
+  return Actions.ActOnCXXProjectExpr(Record, cast<VarDecl>(FoundDecl), Index,
+                                     KWLoc,
+                                     BaseDRE->getLocation(),
+                                     Index->getExprLoc());
+}
+
 /// Parse the C++ Coroutines co_yield expression.
 ///
 ///       co_yield-expression:

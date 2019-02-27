@@ -5189,6 +5189,15 @@ class CXXProjectExpr : public Expr {
   /// The location of the record.
   SourceLocation RecordLoc;
 
+  /// The location of the __select keyword
+  SourceLocation KeywordLoc;
+
+  /// The location of the object being projected on
+  SourceLocation BaseLoc;
+
+  /// The location of the projection index.
+  SourceLocation IdxLoc;
+
 public:  
   CXXProjectExpr(Expr *Base,
                  QualType T,
@@ -5196,7 +5205,10 @@ public:
                  Expr *Index,
                  std::size_t NumFields,
                  CXXRecordDecl *RD,
-                 SourceLocation RecordLoc)
+                 SourceLocation RecordLoc,
+                 SourceLocation KWLoc = SourceLocation(),
+                 SourceLocation BaseLoc = SourceLocation(),
+                 SourceLocation IdxLoc = SourceLocation())
     : Expr(CXXProjectExprClass, T, VK_LValue,
            OK_Ordinary,
            Base->isTypeDependent() || Index->isTypeDependent(),
@@ -5204,7 +5216,8 @@ public:
            Base->isInstantiationDependent() || Index->isInstantiationDependent(),
            /*containsUnexpandedParameterPack=*/false),
       Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
-      Record(RD), RecordLoc(RecordLoc) {}
+      Record(RD), RecordLoc(RecordLoc), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
+      IdxLoc(IdxLoc) {}
 
   CXXProjectExpr(EmptyShell Empty)
     : Expr(CXXProjectExprClass, Empty) {}
@@ -5212,14 +5225,21 @@ public:
   /// Returns the source code location of the (optional) ellipsis.
   Expr *getBase() const { return Base; }
   SourceLocation getRecordLoc() const { return RecordLoc; }
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+  SourceLocation getBaseLoc() const { return BaseLoc; }
+  SourceLocation getIdxLoc() const  { return IdxLoc; }
   CXXRecordDecl *getRecord() const { return Record; }
   Expr **getFields() const { return Fields; }
   Expr *getIndex() const { return Index; }
   std::size_t getNumFields() const { return NumFields; }
 
-  SourceLocation getBeginLoc() const { return getRecordLoc(); }
+  SourceLocation getBeginLoc() const {
+    return KeywordLoc.isValid() ? getKeywordLoc() : getRecordLoc();
+  }
 
-  SourceLocation getEndLoc() const { return getRecordLoc(); }
+  SourceLocation getEndLoc() const {
+    return IdxLoc.isValid() ? getIdxLoc() : getRecordLoc();
+  }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
