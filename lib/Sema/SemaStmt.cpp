@@ -3587,17 +3587,19 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
   ExprResult Projection =
     SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
                                      RangeVar, InductionRef);
-  
+  if (Projection.isInvalid())
+    return StmtError();
+
   CXXSelectMemberExpr *RangeAccessor =
     cast<CXXSelectMemberExpr>(Projection.get());
   std::size_t Size = RangeAccessor->getNumFields();
-  
+
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);
-  
+
   if (LoopVar->isInvalidDecl())
     return StmtError();
-  
+
   return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
                                                 RangeDeclStmt,
                                                 TemplateParms,
