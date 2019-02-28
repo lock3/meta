@@ -2480,8 +2480,6 @@ def err_select_index_not_constant : Error<
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
-def err_failed_instantiate_expansion_body : Error<
-  "Failed to instantiate body of expansion statement.">;
 
 // Reflection
 def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;

@@ -3663,10 +3663,8 @@ CheckLoopExpansionStack(Sema &SemaRef, Stmt *S) {
 
 /// Pop the current loop instantiation.
 StmtResult Sema::ActOnCXXExpansionStmtError(Stmt *S) {
-  if (!S) {
-    Diag(SourceLocation(), diag::err_failed_instantiate_expansion_body);
+  if (!S)
     return StmtError();
-  }
 
   assert(CheckLoopExpansionStack(*this, S));
   
@@ -3863,6 +3861,9 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
+  if (!S || !B)
+    return StmtError();
+
   CXXExpansionStmt *Expansion = cast<CXXExpansionStmt>(S);
   SourceLocation Loc = Expansion->getColonLoc();
 

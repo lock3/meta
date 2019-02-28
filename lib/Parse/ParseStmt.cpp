@@ -1906,7 +1906,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
 
   if (Body.isInvalid()) {
     if (!EllipsisLoc.isInvalid())
-      return Actions.ActOnCXXExpansionStmtError(ForEachStmt.get());
+      return Actions.ActOnCXXExpansionStmtError(ForRangeStmt.get());
     return StmtError();
   }
 
