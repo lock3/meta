@@ -2161,8 +2161,18 @@ public:
                                      SourceLocation RParenLoc) {
     // FIXME: Whether this builds a constexpr loop or not depends entirely
     // on whether the loop variable is declared constexpr.
-    return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar, 
-                                           ColonLoc, RangeVar, RParenLoc,
+      return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar,
+                                             ColonLoc, RangeVar, RParenLoc,
+                                             Sema::BFRK_Rebuild, false);
+  }
+
+  StmtResult RebuildCXXExpansionStmt(SourceLocation ForLoc,
+                                     SourceLocation EllipsisLoc, 
+                                     SourceLocation ColonLoc, 
+                                     Expr *RangeExpr, Stmt *LoopVar, 
+                                     SourceLocation RParenLoc) {
+    return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar,
+                                           ColonLoc, RangeExpr, RParenLoc,
                                            Sema::BFRK_Rebuild, false);
   }
 
@@ -7151,6 +7161,11 @@ TreeTransform<Derived>::TransformDeclStmt(DeclStmt *S) {
   if (!getDerived().AlwaysRebuild() && !DeclChanged)
     return S;
 
+  llvm::outs() << "Transforming decls in S...\n";
+  S->dump();
+  for (auto D : Decls)
+    D->dump();
+
   return getDerived().RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
 }
 
@@ -8159,26 +8174,56 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
-  StmtResult RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
-  if (RangeVar.isInvalid())
-    return StmtError();
+  llvm::outs() << "TransformCXXExpansionStmt\n";
+  StmtResult RangeVar;
+  ExprResult RangeExpr;
+  if (S->getRangeKind() == CXXExpansionStmt::RK_Pack) {
+    RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
+    // bool ShouldExpand, RetainExand;
+    // Optional<unsigned> NumExpansions;
+    // llvm::SmallVector<UnexpandedParameterPack, 1> Packs;
+    // SemaRef.collectUnexpandedParameterPacks(
+    //   cast<DeclRefExpr>(RangeExpr.get())->getNameInfo(), Packs);
+    // TryExpandParameterPacks(S->getEllipsisLoc(), S->getSourceRange(),
+    //                         Packs, ShouldExpand, RetainExand, NumExpansions);
+    if (RangeExpr.isInvalid()) {
+      llvm::outs() << "Transform rangexpr failed.\n";
+      return StmtError();
+    }
+    llvm::outs() << "Transformed RangeExpr\n";
+    RangeExpr.get()->dump();
+  }
+  else {
+    llvm::outs() << "Everything has gone completely wrong.\n";
+    RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
+    if (RangeVar.isInvalid())
+      return StmtError();
+  }
 
   // FIXME: Is this actually an evaluated expression.
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
   if (LoopVar.isInvalid())
     return StmtError();
 
+  llvm::outs() << "Transformed subexprs\n";
+
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() || 
       RangeVar.get() != S->getRangeVarStmt() ||
       LoopVar.get() != S->getLoopVarStmt()) {
-    NewStmt = getDerived().RebuildCXXExpansionStmt(
+    if (S->getRangeKind() == CXXExpansionStmt::RK_Pack)
+      NewStmt = getDerived().RebuildCXXExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
+        RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+    else 
+      NewStmt = getDerived().RebuildCXXExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
         LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
 
+  llvm::outs() << "Transforming body...\n";
   StmtResult Body = getDerived().TransformStmt(S->getBody());
   
   if (Body.isInvalid())
@@ -8187,7 +8232,12 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
-    NewStmt = getDerived().RebuildCXXExpansionStmt(
+    if (S->getRangeKind() == CXXExpansionStmt::RK_Pack)
+      NewStmt = getDerived().RebuildCXXExpansionStmt(
+        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
+        RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+    else 
+      NewStmt = getDerived().RebuildCXXExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
         LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
@@ -8197,6 +8247,7 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
   if (NewStmt.get() == S)
     return S;
 
+  llvm::outs() << "Transformed body\n";
   CXXExpansionStmt *TES = cast<CXXExpansionStmt>(NewStmt.get());
   return getSema().FinishCXXExpansionStmt(TES, Body.get());
 }

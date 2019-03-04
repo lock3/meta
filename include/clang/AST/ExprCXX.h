@@ -5214,7 +5214,7 @@ public:
            Base->isTypeDependent() || Index->isTypeDependent(),
            Base->isValueDependent() || Index->isValueDependent(),
            Base->isInstantiationDependent() || Index->isInstantiationDependent(),
-           /*containsUnexpandedParameterPack=*/false),
+           Base->containsUnexpandedParameterPack()),
       Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
       Record(RD), RecordLoc(RecordLoc), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
       IdxLoc(IdxLoc) {}

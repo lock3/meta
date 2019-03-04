@@ -1,4 +1,4 @@
-//===--- SemaStmt.cpp - Semantic Analysis for Statements ------------------===//
+ //===--- SemaStmt.cpp - Semantic Analysis for Statements ------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -2789,6 +2789,12 @@ struct ExpansionStatementBuilder
                             Stmt *LoopVarDS, Stmt *RangeVarDS,
                             bool IsConstexpr);
 
+  /// Used during instantiation of an expansion on a pack.
+  /// FIXME: Detect constexpr-ness from the loop var.
+  ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
+                            Stmt *LoopVarDS, Expr *RangeExpr,
+                            bool IsConstexpr);
+
   /// Construct a range without a body, using minimal information.
   /// No source locations exist and are thus default-constructed.
   ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
@@ -2809,7 +2815,7 @@ struct ExpansionStatementBuilder
   bool BuildInductionVar();
 
   /// Builds an expansion when the range is dependent.
-  StmtResult BuildDependentExpansion();
+  StmtResult BuildDependentExpansion(bool ParameterPack = false);
 
   /// Build the expansion over an unexpanded parameter pack.
   StmtResult BuildExpansionOverPack();
@@ -2950,6 +2956,19 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
   ExprResult RangeDRE =
     SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, ColonLoc);
   RangeRef = cast<DeclRefExpr>(RangeDRE.get());
+}
+
+ExpansionStatementBuilder::
+ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
+                          Stmt *LoopVarDS, Expr *RangeExpr,
+                          bool IsConstexpr)
+  : SemaRef(S), Kind(K), LoopDeclStmt(cast<DeclStmt>(LoopVarDS)),
+    RangeExpr(RangeExpr), IsConstexpr(IsConstexpr), ForLoc(), AnnotationLoc(),
+    ColonLoc(), RParenLoc() {
+  LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
+  RangeDeclStmt = nullptr;
+  RangeVar = nullptr;
+  RangeRef = nullptr;
 }
 
 ExpansionStatementBuilder::
@@ -3147,12 +3166,20 @@ ExpansionStatementBuilder::BuildInductionVar()
 /// the loop, but don't pre-compute e.g., tuple sizes or induction value
 /// sequences.
 StmtResult
-ExpansionStatementBuilder::BuildDependentExpansion()
+ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
 {
-  return new (SemaRef.Context)
-    CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
-                     TemplateParms, /*Size=*/-1, ForLoc, AnnotationLoc,
-                     ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
+  // Parameter pack expansions can be determined while the range is still
+  // dependent. We can use this information to avoid problems during semantic
+  // analysis of the body.
+  if (!PackExpansion)
+    return new (SemaRef.Context)
+      CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
+                       TemplateParms, /*Size=*/-1, ForLoc, AnnotationLoc,
+                       ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
+  else
+    return new (SemaRef.Context)
+      CXXExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, /*Size=*/-1,
+                       ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3183,11 +3210,39 @@ ExpansionStatementBuilder::BuildDependentExpansion()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverPack()
 {
-  if (RangeExpr->isTypeDependent())
-    return BuildDependentExpansion();
+  llvm::outs() << "Build over pack\n";
+  // RangeExpr->dump();
+  // The pack may still be type dependent even after we transform and
+  // instantiate it. It will no longer be a DeclRefExpr once it has been
+  // transformed, however. Issue this check to prevent an infinite cycle
+  // of building dependent expansions.
+  if (isa<DeclRefExpr>(RangeExpr) && RangeExpr->isTypeDependent())
+    return BuildDependentExpansion(/*PackExpansion=*/true);  
+
+  llvm::outs() << "Pack expansion\n";
+  // RangeExpr->dump();
+  std::size_t Size;
+  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
+    Size = FPPE->getNumExpansions();
+  else
+    llvm_unreachable("Unimplemented pack expansion!\n");
+
+  // llvm::SmallVector<UnexpandedParameterPack, 1> Packs;
+  // SemaRef.collectUnexpandedParameterPacks(
+  //   cast<DeclRefExpr>(RangeExpr)->getNameInfo(), Packs);
+  // llvm::outs() << cast<DeclRefExpr>(RangeExpr)->getNameInfo().getAsString() << '\n';
+  // for (auto pack : Packs) {
+  //   if (auto ttpt = pack.first.dyn_cast<const TemplateTypeParmType*>())
+  //     ;
+    //   pack.first.get<const TemplateTypeParmType*>()->dump();
+    // else
+    //   pack.first.get<NamedDecl*>()->dump();
+  // }
 
   // FIXME: Build a CXXPackExpansionStmt.
-  return StmtError();
+  return new (SemaRef.Context)
+    CXXExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, Size,
+                     ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3655,6 +3710,23 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   return Ret;
 }
 
+StmtResult
+Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
+                            SourceLocation EllipsisLoc, Stmt *LoopVarDS,
+                            SourceLocation ColonLoc, Expr *RangeExpr,
+                            SourceLocation RParenLoc, BuildForRangeKind Kind,
+                            bool IsConstexpr) {
+  ExpansionStatementBuilder Builder(*this, Kind, LoopVarDS, RangeExpr,
+                                    IsConstexpr);
+
+  Builder.ForLoc = ForLoc;
+  Builder.AnnotationLoc = EllipsisLoc;
+  Builder.ColonLoc = ColonLoc;
+  Builder.RParenLoc = RParenLoc;
+  StmtResult Ret = Builder.Build();
+  return Ret;
+}
+
 static bool
 CheckLoopExpansionStack(Sema &SemaRef, Stmt *S) {
   if (SemaRef.LoopExpansionStack.empty())
@@ -3863,6 +3935,7 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
+  llvm::outs() << "FinishCXXExpansionStmt\n";
   if (!S || !B)
     return StmtError();
 
@@ -3877,9 +3950,16 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
 
   // If the range initializer is dependent, then we can't deduce its
   // type or instantiate the body. Just return the statement as-is.
-  Expr *RangeInit = Expansion->getRangeInit();
-  if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
-    return Expansion;
+  // If the expansion is a pack expansion, there is no range init.
+  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Pack) {
+    Expr *RangeExpr = Expansion->getRangeExpr();
+    if (isa<DeclRefExpr>(RangeExpr))
+      return Expansion;
+  } else {
+    Expr *RangeInit = Expansion->getRangeInit();
+    if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
+      return Expansion;
+  }
 
   // When there are no members, return an empty compound statement.
   if (Expansion->getSize() == 0) {

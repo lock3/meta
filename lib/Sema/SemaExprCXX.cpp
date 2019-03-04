@@ -8045,6 +8045,7 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
 {
    // Get the type of the struct we are trying to expand.
   QualType BaseType = Base->getType().getNonReferenceType();
+  
   // If the base is dependent, we won't be able to do any destructuring yet.
   if (BaseType->isDependentType()) {
     ExprResult BaseDRE =
