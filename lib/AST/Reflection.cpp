@@ -51,15 +51,20 @@ static bool CustomError(const Reflection &R, F BuildDiagnostic) {
 /// Returns the type reflected by R. R must be a type reflection.
 ///
 /// Note that this does not get the canonical type.
-static QualType getQualType(const Reflection &R) {
-  assert(R.isType());
-  QualType T = R.getAsType();
-
+static QualType getQualType(QualType QT) {
   // See through "location types".
-  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
-    T = LIT->getType();
+  if (const LocInfoType *LIT = dyn_cast<LocInfoType>(QT))
+    return LIT->getType();
 
-  return T;
+  return QT;
+}
+
+static QualType getQualType(const Reflection &R) {
+  return getQualType(R.getAsType());
+}
+
+static QualType getQualType(const APValue &R) {
+  return getQualType(R.getReflectedType());
 }
 
 // Returns false, possibly saving the diagnostic.
@@ -1721,8 +1726,8 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
     return true;
   case RK_type:
     return EqualTypes(Ctx,
-                      A.getReflectedType(),
-                      B.getReflectedType());
+                      getQualType(A),
+                      getQualType(B));
   case RK_declaration:
     return EqualDecls(A.getReflectedDeclaration(),
                       B.getReflectedDeclaration());
