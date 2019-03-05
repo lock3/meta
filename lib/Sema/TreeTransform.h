@@ -2186,6 +2186,12 @@ public:
     return getSema().ActOnCXXSelectMemberExpr(RD, Base, Index, KW, B, I);
   }
 
+  ExprResult RebuildCXXSelectMemberExpr(Expr *Base, Expr *Index,
+                                        SourceLocation KWLoc,
+                                        SourceLocation B, SourceLocation I) {
+    return getSema().ActOnCXXSelectMemberExpr(Base, Index, KWLoc, B, I);
+  }
+
   /// Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -10076,10 +10082,25 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  llvm::outs() << "TransformCXXSelectmember\n";
+  ExprResult NewIndex =
+    getDerived().TransformExpr(E->getIndex());
+  if (NewIndex.isInvalid())
+    return ExprError();
+
   ExprResult NewBase =
     getDerived().TransformExpr(E->getBase());
   if (NewBase.isInvalid())
     return ExprError();
+
+  // If we are a selecting on a pack, we are done.
+  if (NewBase.get()->containsUnexpandedParameterPack())
+    return getDerived().RebuildCXXSelectMemberExpr(NewBase.get(),
+                                                   NewIndex.get(),
+                                                   E->getKeywordLoc(),
+                                                   E->getBaseLoc(),
+                                                   E->getIdxLoc());
+  
   Decl *NewBaseDecl =
     cast<DeclRefExpr>(NewBase.get())->getFoundDecl();
   NewBaseDecl =
@@ -10091,15 +10112,12 @@ TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   else
     RD = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
 
-  ExprResult NewIndex =
-    getDerived().TransformExpr(E->getIndex());
-  if (NewIndex.isInvalid())
-    return ExprError();
-
-  return RebuildCXXSelectMemberExpr(cast<CXXRecordDecl>(RD),
-                                    cast<VarDecl>(NewBaseDecl),
-                                    NewIndex.get(), E->getKeywordLoc(),
-                                    E->getBaseLoc(), E->getIdxLoc());
+  return getDerived().RebuildCXXSelectMemberExpr(cast<CXXRecordDecl>(RD),
+                                                 cast<VarDecl>(NewBaseDecl),
+                                                 NewIndex.get(),
+                                                 E->getKeywordLoc(),
+                                                 E->getBaseLoc(),
+                                                 E->getIdxLoc());
 }
   
 template<typename Derived>
@@ -10113,9 +10131,18 @@ TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {
   // Transform arguments.
   bool ArgChanged = false;
   SmallVector<Expr*, 8> Args;
+  llvm::outs() << "Pretransformed Arguments:\n";
+  for (int i = 0; i < E->getNumArgs(); ++i) {
+    E->getArgs()[i]->dump();
+  }
+
   if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
                                   &ArgChanged))
     return ExprError();
+  llvm::outs() << "Transformed Arguments:\n";
+  for (auto arg : Args) {
+    arg->dump();
+  }
 
   if (!getDerived().AlwaysRebuild() &&
       Callee.get() == E->getCallee() &&

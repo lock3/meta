@@ -6137,6 +6137,10 @@ public:
                                       SourceLocation KWLoc = SourceLocation(),
                                       SourceLocation BaseLoc = SourceLocation(),
                                       SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
+                                      SourceLocation KWLoc = SourceLocation(),
+                                      SourceLocation BaseLoc = SourceLocation(),
+                                      SourceLocation IdxLoc = SourceLocation());
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,

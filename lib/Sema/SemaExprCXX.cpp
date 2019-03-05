@@ -8045,6 +8045,8 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
 {
    // Get the type of the struct we are trying to expand.
   QualType BaseType = Base->getType().getNonReferenceType();
+
+  llvm::outs() << "ActOnCXXSelectMemberExpr\n";
   
   // If the base is dependent, we won't be able to do any destructuring yet.
   if (BaseType->isDependentType()) {
@@ -8055,6 +8057,8 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
                                              nullptr, SourceLocation(), KWLoc,
                                              BaseLoc, IdxLoc);
   }
+
+  llvm::outs() << "Not dependent type\n";
   
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
@@ -8150,4 +8154,66 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
                                            FieldArray, ComputedIndex,
                                            Fields.size(), RD, Loc, KWLoc,
                                            BaseLoc, IdxLoc);
+}
+
+ExprResult
+Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
+                               SourceLocation KWLoc,
+                               SourceLocation BaseLoc,
+                               SourceLocation IdxLoc)
+{
+  llvm::outs() << "ActOnCXXSelectMemberExpr for Packs\n";
+  if (isa<DeclRefExpr>(Base) && Base->isTypeDependent()) {
+    return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
+                                             nullptr, Index, -1,
+                                             nullptr, SourceLocation(), KWLoc,
+                                             BaseLoc, IdxLoc);
+  }
+  llvm::outs() << "Transformed Select Expression\n";
+
+  llvm::SmallVector<Expr *, 4> Parms;
+  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
+    for (std::size_t I = 0; I < FPPE->getNumExpansions(); ++I) {
+      VarDecl *Parm = FPPE->getExpansion(I);
+      ExprResult ParmRef =
+        BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
+                         VK_LValue, Parm->getLocation());
+      ParmRef.get()->dump();
+      if (ParmRef.isInvalid())
+        return ExprError();
+      Parms.push_back(ParmRef.get());
+    }
+  }
+
+  Expr **FieldArray = new (Context) Expr *[Parms.size()];
+  std::copy(Parms.begin(), Parms.end(), FieldArray);
+
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  if (Index->isTypeDependent() || Index->isValueDependent()) {
+    return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
+                                             FieldArray, Index, Parms.size(),
+                                             nullptr, SourceLocation(),
+                                             KWLoc, BaseLoc, IdxLoc);
+  }
+
+  // Index must be an integral or enumerator type.
+  ExprResult IndexRV = DefaultLvalueConversion(Index);
+  if (IndexRV.isInvalid())
+    return ExprError();
+  Expr *ComputedIndex = IndexRV.get();
+  if (!ComputedIndex->getType()->isIntegralOrEnumerationType())
+    return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
+
+  // Index must be a constant expression.
+  Expr::EvalResult Res;
+  if (!ComputedIndex->EvaluateAsInt(Res, Context))
+    return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
+  std::size_t I = Res.Val.getInt().getZExtValue();
+
+  bool dependent = isa<DeclRefExpr>(Base);
+  return new (Context) CXXSelectMemberExpr(Base, FieldArray[I]->getType(),
+                                           FieldArray, ComputedIndex,
+                                           Parms.size(), dependent,
+                                           KWLoc, BaseLoc, IdxLoc);
 }

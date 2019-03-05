@@ -5214,9 +5214,28 @@ public:
            Base->isTypeDependent() || Index->isTypeDependent(),
            Base->isValueDependent() || Index->isValueDependent(),
            Base->isInstantiationDependent() || Index->isInstantiationDependent(),
-           Base->containsUnexpandedParameterPack()),
+           /*containsUnexpandedParameterPack=*/false),
       Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
       Record(RD), RecordLoc(RecordLoc), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
+      IdxLoc(IdxLoc) {}
+
+  CXXSelectMemberExpr(Expr *Base,
+                 QualType T,
+                 Expr **Fields,
+                 Expr *Index,
+                 std::size_t NumFields,
+                 bool dependent,
+                 SourceLocation KWLoc = SourceLocation(),
+                 SourceLocation BaseLoc = SourceLocation(),
+                 SourceLocation IdxLoc = SourceLocation())
+    : Expr(CXXSelectMemberExprClass, T, VK_LValue,
+           OK_Ordinary,
+           dependent || Index->isTypeDependent(),
+           dependent || Index->isValueDependent(),
+           dependent || Index->isInstantiationDependent(),
+           /*containsUnexpandedParameterPack=*/false),
+      Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
+      Record(nullptr), RecordLoc(), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
       IdxLoc(IdxLoc) {}
 
   CXXSelectMemberExpr(EmptyShell Empty)

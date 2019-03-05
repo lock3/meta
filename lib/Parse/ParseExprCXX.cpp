@@ -1650,10 +1650,21 @@ Parser::ParseCXXSelectMemberExpr() {
   // If we cannot find a record decl for the record object,
   // just quit now.
   Expr *Base = Exprs.front();
+  Expr *Index = Exprs.back();
   // // TODO: will this conflict with unqualid or idexpr?
   if (!isa<DeclRefExpr>(Base))
     return ExprError();
   DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
+
+  // If this is a parameter pack, we don't need any knowledge
+  // of the record and there won't be a VarDecl. Just return here.
+  if (BaseDRE->containsUnexpandedParameterPack())
+    return Actions.ActOnCXXSelectMemberExpr(BaseDRE, Index,
+                                            KWLoc,
+                                            BaseDRE->getLocation(),
+                                            Index->getExprLoc());
+
+  // Otherwise, we are trying to destructure a class.
   Decl *FoundDecl = BaseDRE->getFoundDecl();
   if (!isa<VarDecl>(FoundDecl))
     return ExprError();
@@ -1662,8 +1673,11 @@ Parser::ParseCXXSelectMemberExpr() {
   CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
   if (!Record && !BaseVar->getType()->isDependentType())
     return ExprError();
-
-  Expr *Index = Exprs.back();
+  
+  llvm::outs() << "Parsed base\n";
+  Base->dump();
+  llvm::outs() << "Parsed baseDRE\n";
+  BaseDRE->dump();
   return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
                                           KWLoc,
                                           BaseDRE->getLocation(),
