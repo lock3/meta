@@ -1,4 +1,4 @@
-set(LIBCPPX_HEADERS cppx/compiler cppx/meta cppx/traits.hpp cppx/tuple.hpp)
+set(LIBCPPX_HEADERS experimental/compiler experimental/meta)
 
 # Group all headers together in generated IDE projects (otherwise, header files
 # without extensions may not be placed in the "Header Files" group).
@@ -10,11 +10,6 @@ set_source_files_properties(cppx/compiler cppx/meta PROPERTIES
 set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
   TRUE)
 
-set(LIBCPPX_HEADER_PATTERN
-  PATTERN "meta"
-  PATTERN "compiler"
-  PATTERN "*.hpp")
-
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)
   # Install these headers in the build version of the resource dir
@@ -23,21 +18,20 @@ if(LIBCPPX_BUILDING_CLANG)
   set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)
 
   message(STATUS "Copying CPPX headers")
-  file(COPY experimental DESTINATION ${output_dir}
-    FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
+  file(COPY ${LIBCPPX_HEADERS} DESTINATION ${output_dir})
 
   # Force reconfiguration when headers are modified so that the updated headers
   # are copied to the build tree.
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${LIBCPPX_HEADERS})
+  foreach(LIBCPPX_HEADER ${LIBCPPX_HEADERS})
+    configure_file(${LIBCPPX_HEADER} ${output_dir}/${LIBCPPX_HEADER} COPYONLY)
+  endforeach()
 endif()
 
 if(LIBCPPX_INSTALL_HEADERS)
   # Add install rules for the library's header files.
-  install(DIRECTORY experimental
+  install(FILES ${LIBCPPX_HEADERS}
     DESTINATION ${LIBCPPX_INSTALL_INCLUDE_DIR}
-    COMPONENT cppx-headers
-    FILES_MATCHING ${LIBCPPX_HEADER_PATTERN})
+    COMPONENT cppx-headers)
 
   if(NOT IDE_GENERATOR)
     add_custom_target(install-cppx-headers
