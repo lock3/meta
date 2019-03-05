@@ -1706,6 +1706,15 @@ MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
 }
 
 bool getName(const Reflection R, APValue &Result) {
+  if (const Expr *NewNameExpr = R.getModifiers().getNewName()) {
+    Expr::EvalResult Eval;
+    if (!NewNameExpr->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen,
+                                             *R.Ctx))
+      return false;
+    Result = Eval.Val;
+    return true;
+  }
+
   if (R.isType()) {
     QualType T = R.getAsType();
 
