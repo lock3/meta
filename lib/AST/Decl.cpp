@@ -2532,12 +2532,25 @@ VarDecl::setInstantiationOfStaticDataMember(VarDecl *VD,
 // ParmVarDecl Implementation
 //===----------------------------------------------------------------------===//
 
+ParmVarDecl::ParmVarDecl(ASTContext &C, DeclContext *DC,
+                         SourceLocation StartLoc, SourceLocation NameLoc,
+                         const DeclarationName &Name, QualType T,
+                         TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
+    : VarDecl(ParmVar, C, DC, StartLoc, NameLoc, Name, T, TInfo, S) {
+  assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
+  assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
+  assert(ParmVarDeclBits.IsKNRPromoted == false);
+  assert(ParmVarDeclBits.IsObjCMethodParam == false);
+  setDefaultArg(DefArg);
+}
+
 ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc,
-                                 SourceLocation IdLoc, IdentifierInfo *Id,
+                                 SourceLocation NameLoc,
+                                 const DeclarationName &Name,
                                  QualType T, TypeSourceInfo *TInfo,
                                  StorageClass S, Expr *DefArg) {
-  return new (C, DC) ParmVarDecl(ParmVar, C, DC, StartLoc, IdLoc, Id, T, TInfo,
+  return new (C, DC) ParmVarDecl(C, DC, StartLoc, NameLoc, Name, T, TInfo,
                                  S, DefArg);
 }
 
@@ -2551,8 +2564,9 @@ QualType ParmVarDecl::getOriginalType() const {
 
 ParmVarDecl *ParmVarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
-      ParmVarDecl(ParmVar, C, nullptr, SourceLocation(), SourceLocation(),
-                  nullptr, QualType(), nullptr, SC_None, nullptr);
+      ParmVarDecl(C, nullptr, SourceLocation(), SourceLocation(),
+                  static_cast<IdentifierInfo *>(nullptr), QualType(), nullptr,
+                  SC_None, nullptr);
 }
 
 SourceRange ParmVarDecl::getSourceRange() const {

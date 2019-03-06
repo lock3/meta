@@ -1800,8 +1800,9 @@ struct ConvertConstructorToDeductionGuideTransform {
     SmallVector<ParmVarDecl*, 4> Params;
     for (auto T : ParamTypes) {
       ParmVarDecl *NewParam = ParmVarDecl::Create(
-          SemaRef.Context, DC, Loc, Loc, nullptr, T,
-          SemaRef.Context.getTrivialTypeSourceInfo(T, Loc), SC_None, nullptr);
+          SemaRef.Context, DC, Loc, Loc, static_cast<IdentifierInfo *>(nullptr),
+          T, SemaRef.Context.getTrivialTypeSourceInfo(T, Loc),
+          SC_None, nullptr);
       NewParam->setScopeInfo(0, Params.size());
       FPTL.setParam(Params.size(), NewParam);
       Params.push_back(NewParam);

@@ -4596,9 +4596,10 @@ Decl *Sema::ActOnMethodDeclaration(
       ? DI->getTypeLoc().getBeginLoc()
       : ArgInfo[i].NameLoc;
 
-    ParmVarDecl* Param = CheckParameter(ObjCMethod, StartLoc,
-                                        ArgInfo[i].NameLoc, ArgInfo[i].Name,
-                                        ArgType, DI, SC_None);
+    ParmVarDecl* Param = CheckParameter(
+        ObjCMethod, StartLoc,
+        DeclarationNameInfo(DeclarationName(ArgInfo[i].Name), ArgInfo[i].NameLoc),
+        ArgType, DI, SC_None);
 
     Param->setObjCMethodScopeInfo(i);
 

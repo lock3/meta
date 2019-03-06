@@ -18,6 +18,7 @@ add_clang_library(clangSema
   JumpDiagnostics.cpp
   MultiplexExternalSemaSource.cpp
   ParsedAttr.cpp
+  ParserLookupSetup.cpp
   Scope.cpp
   ScopeInfo.cpp
   Sema.cpp

@@ -299,6 +299,10 @@ public:
   /// Set the name of this declaration.
   void setDeclName(DeclarationName N) { Name = N; }
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
   /// Returns a human-readable qualified name for this declaration, like
   /// A::B::i, for i being member of namespace A::B.
   ///
@@ -1552,21 +1556,14 @@ public:
   enum { MaxFunctionScopeIndex = 255 };
 
 protected:
-  ParmVarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-              SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
-              TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
-      : VarDecl(DK, C, DC, StartLoc, IdLoc, Id, T, TInfo, S) {
-    assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
-    assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
-    assert(ParmVarDeclBits.IsKNRPromoted == false);
-    assert(ParmVarDeclBits.IsObjCMethodParam == false);
-    setDefaultArg(DefArg);
-  }
+  ParmVarDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
+              SourceLocation NameLoc, const DeclarationName &Name, QualType T,
+              TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg);
 
 public:
   static ParmVarDecl *Create(ASTContext &C, DeclContext *DC,
-                             SourceLocation StartLoc,
-                             SourceLocation IdLoc, IdentifierInfo *Id,
+                             SourceLocation StartLoc, SourceLocation NameLoc,
+                             const DeclarationName &Name,
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, Expr *DefArg);
 
