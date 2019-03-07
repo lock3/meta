@@ -8162,14 +8162,12 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
                                SourceLocation BaseLoc,
                                SourceLocation IdxLoc)
 {
-  llvm::outs() << "ActOnCXXSelectMemberExpr for Packs\n";
   if (isa<DeclRefExpr>(Base) && Base->isTypeDependent()) {
     return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
                                              nullptr, Index, -1,
                                              nullptr, SourceLocation(), KWLoc,
                                              BaseLoc, IdxLoc);
   }
-  llvm::outs() << "Transformed Select Expression\n";
 
   llvm::SmallVector<Expr *, 4> Parms;
   if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
@@ -8178,7 +8176,6 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
       ExprResult ParmRef =
         BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
                          VK_LValue, Parm->getLocation());
-      ParmRef.get()->dump();
       if (ParmRef.isInvalid())
         return ExprError();
       Parms.push_back(ParmRef.get());

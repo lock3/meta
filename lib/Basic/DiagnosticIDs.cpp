@@ -718,7 +718,6 @@ void DiagnosticIDs::EmitDiag(DiagnosticsEngine &Diag, Level DiagLevel) const {
     if (DiagLevel == DiagnosticIDs::Warning)
       ++Diag.NumWarnings;
   }
-
   Diag.CurDiagID = ~0U;
 }
 

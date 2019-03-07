@@ -7166,12 +7166,7 @@ TreeTransform<Derived>::TransformDeclStmt(DeclStmt *S) {
 
   if (!getDerived().AlwaysRebuild() && !DeclChanged)
     return S;
-
-  llvm::outs() << "Transforming decls in S...\n";
-  S->dump();
-  for (auto D : Decls)
-    D->dump();
-
+  
   return getDerived().RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
 }
 
@@ -8180,27 +8175,14 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
 template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
-  llvm::outs() << "TransformCXXExpansionStmt\n";
   StmtResult RangeVar;
   ExprResult RangeExpr;
   if (S->getRangeKind() == CXXExpansionStmt::RK_Pack) {
     RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
-    // bool ShouldExpand, RetainExand;
-    // Optional<unsigned> NumExpansions;
-    // llvm::SmallVector<UnexpandedParameterPack, 1> Packs;
-    // SemaRef.collectUnexpandedParameterPacks(
-    //   cast<DeclRefExpr>(RangeExpr.get())->getNameInfo(), Packs);
-    // TryExpandParameterPacks(S->getEllipsisLoc(), S->getSourceRange(),
-    //                         Packs, ShouldExpand, RetainExand, NumExpansions);
-    if (RangeExpr.isInvalid()) {
-      llvm::outs() << "Transform rangexpr failed.\n";
+    if (RangeExpr.isInvalid())
       return StmtError();
-    }
-    llvm::outs() << "Transformed RangeExpr\n";
-    RangeExpr.get()->dump();
   }
   else {
-    llvm::outs() << "Everything has gone completely wrong.\n";
     RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
     if (RangeVar.isInvalid())
       return StmtError();
@@ -8210,8 +8192,6 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
   if (LoopVar.isInvalid())
     return StmtError();
-
-  llvm::outs() << "Transformed subexprs\n";
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() || 
@@ -8229,7 +8209,6 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
       return StmtError();
   }
 
-  llvm::outs() << "Transforming body...\n";
   StmtResult Body = getDerived().TransformStmt(S->getBody());
   
   if (Body.isInvalid())
@@ -8253,7 +8232,6 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
   if (NewStmt.get() == S)
     return S;
 
-  llvm::outs() << "Transformed body\n";
   CXXExpansionStmt *TES = cast<CXXExpansionStmt>(NewStmt.get());
   return getSema().FinishCXXExpansionStmt(TES, Body.get());
 }
@@ -10082,7 +10060,6 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
-  llvm::outs() << "TransformCXXSelectmember\n";
   ExprResult NewIndex =
     getDerived().TransformExpr(E->getIndex());
   if (NewIndex.isInvalid())
@@ -10131,18 +10108,10 @@ TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {
   // Transform arguments.
   bool ArgChanged = false;
   SmallVector<Expr*, 8> Args;
-  llvm::outs() << "Pretransformed Arguments:\n";
-  for (int i = 0; i < E->getNumArgs(); ++i) {
-    E->getArgs()[i]->dump();
-  }
 
   if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
                                   &ArgChanged))
     return ExprError();
-  llvm::outs() << "Transformed Arguments:\n";
-  for (auto arg : Args) {
-    arg->dump();
-  }
 
   if (!getDerived().AlwaysRebuild() &&
       Callee.get() == E->getCallee() &&

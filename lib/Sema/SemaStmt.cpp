@@ -2990,7 +2990,7 @@ ExpansionStatementBuilder::Build()
     LoopVar->setInvalidDecl();
     return StmtError();
   }
-
+  
   // Build the induction variable. This is used in all expansions.
   BuildInductionVar();
 
@@ -3022,13 +3022,11 @@ ExpansionStatementBuilder::Build()
   // our attempt to build the valid expansion. Length will be non-computable.
   if (RangeType->isDependentType() || RangeVar->getInit()->isValueDependent())
     return Finish(BuildDependentExpansion());
-
   // Explicitly build this for array types.
   if (RangeType->isConstantArrayType())
     return Finish(BuildExpansionOverArray());
 
   StmtResult ForStmt;
-
   // Try building a tuple expansion.
   ForStmt = BuildExpansionOverTuple();
   if (!ForStmt.isInvalid())
@@ -3210,8 +3208,21 @@ ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverPack()
 {
-  llvm::outs() << "Build over pack\n";
-  // RangeExpr->dump();
+  // Substitute any 'auto's in the loop variable as 'DependentTy'. We'll
+  // fill them in properly when we instantiate the loop.
+  // Normally this is done in FinishRangeVar(), but we don't have a RangeVar
+  // to finish.
+  if (!LoopVar->isInvalidDecl() && Kind != Sema::BFRK_Check) {
+    if (RangeExpr->isValueDependent() &&
+        isa<DeclRefExpr>(RangeExpr)) {
+      LoopVar->setType(SemaRef.Context.DependentTy);
+    } else {
+      QualType SubstType = SemaRef.SubstAutoType(LoopVar->getType(),
+                                                 SemaRef.Context.DependentTy);
+      LoopVar->setType(SubstType);
+    }
+  }
+  
   // The pack may still be type dependent even after we transform and
   // instantiate it. It will no longer be a DeclRefExpr once it has been
   // transformed, however. Issue this check to prevent an infinite cycle
@@ -3219,27 +3230,21 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
   if (isa<DeclRefExpr>(RangeExpr) && RangeExpr->isTypeDependent())
     return BuildDependentExpansion(/*PackExpansion=*/true);  
 
-  llvm::outs() << "Pack expansion\n";
-  // RangeExpr->dump();
   std::size_t Size;
   if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
     Size = FPPE->getNumExpansions();
   else
     llvm_unreachable("Unimplemented pack expansion!\n");
 
-  // llvm::SmallVector<UnexpandedParameterPack, 1> Packs;
-  // SemaRef.collectUnexpandedParameterPacks(
-  //   cast<DeclRefExpr>(RangeExpr)->getNameInfo(), Packs);
-  // llvm::outs() << cast<DeclRefExpr>(RangeExpr)->getNameInfo().getAsString() << '\n';
-  // for (auto pack : Packs) {
-  //   if (auto ttpt = pack.first.dyn_cast<const TemplateTypeParmType*>())
-  //     ;
-    //   pack.first.get<const TemplateTypeParmType*>()->dump();
-    // else
-    //   pack.first.get<NamedDecl*>()->dump();
-  // }
+  ExprResult PackAccessor =
+    SemaRef.ActOnCXXSelectMemberExpr(RangeExpr, InductionRef);
+  if (PackAccessor.isInvalid())
+    return StmtError();
 
-  // FIXME: Build a CXXPackExpansionStmt.
+  SemaRef.AddInitializerToDecl(LoopVar, PackAccessor.get(), false);
+  if (LoopVar->isInvalidDecl())
+    return StmtError();
+
   return new (SemaRef.Context)
     CXXExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, Size,
                      ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
@@ -3935,7 +3940,6 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
 
 /// Attach the body to the expansion statement, and expand as needed.
 StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
-  llvm::outs() << "FinishCXXExpansionStmt\n";
   if (!S || !B)
     return StmtError();
 
@@ -4003,9 +4007,6 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   Stmt **Results = new (Context) Stmt *[Stmts.size()];
   std::copy(Stmts.begin(), Stmts.end(), Results);
   Expansion->setInstantiatedStatements(Results);
-
-  // llvm::outs() << "EXPANDED STATEMENT\n";
-  // Expansion->dump();
 
   return Expansion;
 }
