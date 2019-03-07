@@ -30,7 +30,7 @@ endif()
 if(LIBCPPX_INSTALL_HEADERS)
   # Add install rules for the library's header files.
   install(FILES ${LIBCPPX_HEADERS}
-    DESTINATION ${LIBCPPX_INSTALL_INCLUDE_DIR}
+    DESTINATION ${LIBCPPX_INSTALL_INCLUDE_DIR}/experimental
     COMPONENT cppx-headers)
 
   if(NOT IDE_GENERATOR)
