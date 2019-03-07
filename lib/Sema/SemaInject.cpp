@@ -2130,10 +2130,8 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
       // TODO: this assumes a member initializer
       // there are other ctor initializer types we need to
       // handle
-      CXXCtorInitializer *NewInitializer = new (Context) CXXCtorInitializer(
-        Context, NewField, OldInitializer->getMemberLocation(),
-        OldInitializer->getLParenLoc(), NewInit,
-        OldInitializer->getRParenLoc());
+      CXXCtorInitializer *NewInitializer = BuildMemberInitializer(
+          NewField, NewInit, OldInitializer->getMemberLocation()).get();
 
       NewInitArgs.push_back(NewInitializer);
     }
