@@ -375,6 +375,7 @@ public:
   Decl *InjectCXXInjectionDecl(CXXInjectionDecl *D);
 
   TemplateParameterList *InjectTemplateParms(TemplateParameterList *Old);
+  Decl *InjectClassTemplateDecl(ClassTemplateDecl *D);
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
 
@@ -900,7 +901,11 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   Class->setAccess(D->getAccess());
   Class->setImplicit(D->isImplicit());
   Class->setInvalidDecl(Invalid);
-  Owner->addDecl(Class);
+
+  // Don't register the declaration if we're injecting the declaration of
+  // a template-declaration. We'll add the template later.
+  if (!D->getDescribedClassTemplate())
+    Owner->addDecl(Class);
 
   if (D->hasDefinition())
     InjectClassDefinition(*this, D, Class);
@@ -1119,6 +1124,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
   case Decl::CXXInjection:
     return InjectCXXInjectionDecl(cast<CXXInjectionDecl>(D));
+  case Decl::ClassTemplate:
+    return InjectClassTemplateDecl(cast<ClassTemplateDecl>(D));
   case Decl::FunctionTemplate:
     return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
   case Decl::TemplateTypeParm:
@@ -1212,7 +1219,37 @@ InjectionContext::InjectTemplateParms(TemplateParameterList *OldParms) {
       NewParms, OldParms->getRAngleLoc(), Reqs.get());
 }
 
-Decl* InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
+Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  TemplateParameterList *Parms = InjectTemplateParms(D->getTemplateParameters());
+  if (!Parms)
+    return nullptr;
+
+  // Build the underlying pattern.
+  Decl *Pattern = InjectDecl(D->getTemplatedDecl());
+  if (!Pattern)
+    return nullptr;
+
+  CXXRecordDecl *Class = cast<CXXRecordDecl>(Pattern);
+
+  // Build the enclosing tempalte.
+  ClassTemplateDecl *Template = ClassTemplateDecl::Create(
+       getSema().Context, getSema().CurContext, Class->getLocation(),
+       Class->getDeclName(), Parms, Class);
+  AddDeclSubstitution(D, Template);
+
+  // FIXME: Other attributes to process?
+  Class->setDescribedClassTemplate(Template);
+  ApplyAccess(Modifiers, Template, D);
+
+  // Add the declaration.
+  Owner->addDecl(Template);
+
+  return Template;
+}
+
+Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
   TemplateParameterList *Parms = InjectTemplateParms(D->getTemplateParameters());
