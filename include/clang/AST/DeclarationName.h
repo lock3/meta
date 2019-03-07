@@ -831,13 +831,22 @@ public:
     LocInfo.CXXLiteralOperatorName.OpNameLoc = Loc.getRawEncoding();
   }
 
-  /// The source range of the idexpr operator.
+  /// The source range of the unqualid operator.
   /// Reuses the structure of operator names.
   SourceRange getCXXReflectedIdNameRange() const {
     assert(Name.getNameKind() == DeclarationName::CXXReflectedIdName);
-    return SourceRange(
-      SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.BeginOpNameLoc),
-      SourceLocation::getFromRawEncoding(LocInfo.CXXOperatorName.EndOpNameLoc));
+
+    // FIXME: Name information can be lost currently as not everywhere that
+    // supports unqualid will store the DeclarationNameLoc object which
+    // contains the range information.
+    auto &&OpNameInfo = LocInfo.CXXOperatorName;
+    SourceRange Range(
+        SourceLocation::getFromRawEncoding(OpNameInfo.BeginOpNameLoc),
+        SourceLocation::getFromRawEncoding(OpNameInfo.EndOpNameLoc));
+    if (Range.isValid())
+      return Range;
+
+    return SourceRange(getLoc(), getLoc());
   }
 
   /// Sets the range of the operator name.

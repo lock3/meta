@@ -2053,7 +2053,7 @@ public:
                                           SourceLocation Loc,
                                           QualType T);
   ParmVarDecl *CheckParameter(DeclContext *DC, SourceLocation StartLoc,
-                              SourceLocation NameLoc, IdentifierInfo *Name,
+                              const DeclarationNameInfo &Name,
                               QualType T, TypeSourceInfo *TSInfo,
                               StorageClass SC);
   void ActOnParamDefaultArgument(Decl *param,

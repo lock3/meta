@@ -2832,7 +2832,8 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
     llvm::SmallVector<ParmVarDecl *, 3> ParamDecls;
     for (QualType T : Params) {
       ParamDecls.push_back(ParmVarDecl::Create(
-          Context, Alloc, SourceLocation(), SourceLocation(), nullptr, T,
+          Context, Alloc, SourceLocation(), SourceLocation(),
+          static_cast<IdentifierInfo *>(nullptr), T,
           /*TInfo=*/nullptr, SC_None, nullptr));
       ParamDecls.back()->setImplicit();
     }

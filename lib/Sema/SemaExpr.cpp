@@ -5436,10 +5436,10 @@ static FunctionDecl *rewriteBuiltinFunctionDecl(Sema *Sema, ASTContext &Context,
   FT = cast<FunctionProtoType>(OverloadTy);
   for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
     QualType ParamType = FT->getParamType(i);
-    ParmVarDecl *Parm =
-        ParmVarDecl::Create(Context, OverloadDecl, SourceLocation(),
-                                SourceLocation(), nullptr, ParamType,
-                                /*TInfo=*/nullptr, SC_None, nullptr);
+    ParmVarDecl *Parm = ParmVarDecl::Create(
+        Context, OverloadDecl, SourceLocation(), SourceLocation(),
+        static_cast<IdentifierInfo *>(nullptr), ParamType,
+        /*TInfo=*/nullptr, SC_None, nullptr);
     Parm->setScopeInfo(0, i);
     Params.push_back(Parm);
   }

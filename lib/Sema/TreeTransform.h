@@ -454,10 +454,12 @@ public:
   /// By default, invokes TransformDecl() to transform the declaration.
   /// Subclasses may override this function to provide alternate behavior.
   Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
-    if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
-      FakeParseScope->AddDecl(D);
+    Decl *Res = getDerived().TransformDecl(Loc, D);
 
-    return getDerived().TransformDecl(Loc, D);
+    if (Scope *FakeParseScope = getSema().getMostRecentTTParseScope())
+      FakeParseScope->AddDecl(Res);
+
+    return Res;
   }
 
   /// Transform the given declaration, which was the first part of a
@@ -3840,7 +3842,7 @@ TreeTransform<Derived>
 ::TransformDeclarationNameInfo(const DeclarationNameInfo &NameInfo) {
   DeclarationName Name = NameInfo.getName();
   if (!Name)
-    return DeclarationNameInfo();
+    return DeclarationNameInfo(DeclarationName(), NameInfo.getLoc());
 
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
@@ -3902,6 +3904,7 @@ TreeTransform<Derived>
         return DeclarationNameInfo();
       NewArgs[I] = E.get();
     }
+
     SourceRange Range = NameInfo.getCXXReflectedIdNameRange();
     return getSema().BuildReflectedIdName(Range.getBegin(), NewArgs, Range.getEnd());
   }
@@ -5216,11 +5219,14 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
   if (NewDI == OldDI && indexAdjustment == 0)
     return OldParm;
 
+  DeclarationNameInfo DNI = TransformDeclarationNameInfo(
+                                OldParm->getNameInfo());
+
   ParmVarDecl *newParm = ParmVarDecl::Create(SemaRef.Context,
                                              OldParm->getDeclContext(),
                                              OldParm->getInnerLocStart(),
-                                             OldParm->getLocation(),
-                                             OldParm->getIdentifier(),
+                                             DNI.getLoc(),
+                                             DNI.getName(),
                                              NewDI->getType(),
                                              NewDI,
                                              OldParm->getStorageClass(),

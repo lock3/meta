@@ -3805,8 +3805,17 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
     if (!PatternParam->isParameterPack()) {
       // Simple case: not a parameter pack.
       assert(FParamIdx < Function->getNumParams());
+
+      // FIXME: We have already substitued the declaration name for
+      // the specialization, why are we reassigning the name here,
+      // and subsequently forcing ourselves to correct name information
+      // again?
+      DeclarationNameInfo DNI = S.SubstDeclarationNameInfo(
+                                    PatternParam->getNameInfo(), TemplateArgs);
+
       ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
-      FunctionParam->setDeclName(PatternParam->getDeclName());
+      FunctionParam->setDeclName(DNI.getName());
+
       // If the parameter's type is not dependent, update it to match the type
       // in the pattern. They can differ in top-level cv-qualifiers, and we want
       // the pattern's type here. If the type is dependent, they can't differ,
@@ -3815,8 +3824,8 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
       // FIXME: Updating the type to work around this is at best fragile.
       if (!PatternDecl->getType()->isDependentType()) {
         QualType T = S.SubstType(PatternParam->getType(), TemplateArgs,
-                                 FunctionParam->getLocation(),
-                                 FunctionParam->getDeclName());
+                                 DNI.getLoc(),
+                                 DNI.getName());
         if (T.isNull())
           return true;
         FunctionParam->setType(T);
@@ -3836,13 +3845,20 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
     QualType PatternType =
         PatternParam->getType()->castAs<PackExpansionType>()->getPattern();
     for (unsigned Arg = 0; Arg < *NumArgumentsInExpansion; ++Arg) {
+      // FIXME: We have already substitued the declaration name for
+      // the specialization, why are we reassigning the name here,
+      // and subsequently forcing ourselves to correct name information
+      // again?
+      DeclarationNameInfo DNI = S.SubstDeclarationNameInfo(
+                                    PatternParam->getNameInfo(), TemplateArgs);
+
       ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
-      FunctionParam->setDeclName(PatternParam->getDeclName());
+      FunctionParam->setDeclName(DNI.getName());
       if (!PatternDecl->getType()->isDependentType()) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(S, Arg);
         QualType T = S.SubstType(PatternType, TemplateArgs,
-                                 FunctionParam->getLocation(),
-                                 FunctionParam->getDeclName());
+                                 DNI.getLoc(),
+                                 DNI.getName());
         if (T.isNull())
           return true;
         FunctionParam->setType(T);

@@ -28,6 +28,15 @@ void test_template_class_attribute() {
   T res = s.unqualid("get_", reflexpr(T))();
 }
 
+template<int y>
+constexpr int get_ret_value(int unqualid("parm_", y)) {
+  return unqualid("parm_", y);
+}
+
+void test_parameter() {
+  static_assert(get_ret_value<1>(3) == 3);
+}
+
 struct SBase {
   static constexpr int base_field_1 = 90;
 
@@ -210,6 +219,7 @@ int main() {
   test_template<S>();
   test_template_class_attribute<int>();
   test_template_class_attribute<S>();
+  test_parameter();
   test_non_template();
   test_bad();
   test_template_param();

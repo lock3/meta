@@ -14,9 +14,12 @@
 #define LLVM_CLANG_SEMA_PARSERLOOKUPSETUP_H
 
 #include "clang/AST/DeclVisitor.h"
-#include "clang/Sema/SemaInternal.h"
 
 namespace clang {
+
+class IdentifierResolver;
+class Scope;
+class Sema;
 
 namespace sema {
 
@@ -26,35 +29,14 @@ class ParserLookupSetup : public DeclVisitor<ParserLookupSetup> {
   IdentifierResolver *IdResolver;
   Scope *CurScope = nullptr;
 public:
-  ParserLookupSetup(Sema &SemaRef, DeclContext *CurContext)
-    : SemaRef(SemaRef),
-      IdResolver(new (SemaRef.Context) IdentifierResolver(SemaRef.PP)) {
-    VisitParentsInOrder(CurContext);
-    MergeWithSemaState();
-
-    // FIXME: This a built on a bad memory model, which we're forced
-    // into by the identifier resolver
-    std::swap(SemaRef.IdResolver, IdResolver);
-  }
-
-  ~ParserLookupSetup() {
-    std::swap(SemaRef.IdResolver, IdResolver);
-    // delete IdResolver;
-
-    while (CurScope) {
-      Scope *ParentScope = CurScope->getParent();
-      delete CurScope;
-      CurScope = ParentScope;
-    }
-  }
+  ParserLookupSetup(Sema &SemaRef, DeclContext *CurContext);
+  ~ParserLookupSetup();
 
   Scope *getCurScope() {
     return CurScope;
   }
 
-  void AddScope(unsigned ScopeFlags) {
-    CurScope = new Scope(CurScope, ScopeFlags, SemaRef.PP.getDiagnostics());
-  }
+  void AddScope(unsigned ScopeFlags);
 
   NamedDecl *castAsResolveableDecl(Decl *D) {
     // Verify Decl is a NamedDecl
@@ -72,12 +54,7 @@ public:
     return ND;
   }
 
-  void AddDecl(Decl *D) {
-    if (NamedDecl *ND = castAsResolveableDecl(D)) {
-      CurScope->AddDecl(ND);
-      IdResolver->AddDecl(ND);
-    }
-  }
+  void AddDecl(Decl *D);
 
   void VisitParentsInOrder(DeclContext *DC) {
     if (DeclContext *PCD = DC->getParent())
@@ -86,60 +63,16 @@ public:
     Visit(DC);
   }
 
-  void MergeWithSemaState() {
-    for (Scope *Scope : SemaRef.getTTParseScopes()) {
-      AddScope(Scope->getFlags());
-
-      for (Decl *D : Scope->decls())
-        AddDecl(D);
-    }
-  }
+  void MergeWithSemaState();
 
   void Visit(DeclContext *S) {
     DeclVisitor<ParserLookupSetup>::Visit(Decl::castFromDeclContext(S));
   }
 
-  void VisitTranslationUnitDecl(TranslationUnitDecl *TUD) {
-    AddScope(Scope::DeclScope);
-
-    for (Decl *D : TUD->decls())
-      AddDecl(D);
-  }
-
-  void VisitNamespaceDecl(NamespaceDecl *NSD) {
-    AddScope(Scope::DeclScope);
-
-    for (Decl *D : NSD->decls())
-      AddDecl(D);
-  }
-
-  void VisitCXXRecordDecl(CXXRecordDecl *RD) {
-    AddScope(Scope::ClassScope | Scope::DeclScope);
-
-    for (Decl *D : RD->decls())
-      AddDecl(D);
-
-
-    // Add the base class decls to the scope for this class.
-    for (CXXBaseSpecifier Base : RD->bases()) {
-      QualType &&BaseQt = Base.getTypeSourceInfo()->getType();
-      CXXRecordDecl *BRD = BaseQt->getAsCXXRecordDecl();
-
-      for (Decl *D : BRD->decls())
-        AddDecl(D);
-    }
-  }
-
-  void VisitFunctionDecl(FunctionDecl *FD) {
-    AddScope(Scope::FnScope | Scope::DeclScope | Scope::CompoundStmtScope);
-
-    for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
-      ParmVarDecl *Param = FD->getParamDecl(P);
-
-      if (Param->getIdentifier())
-        AddDecl(Param);
-    }
-  }
+  void VisitTranslationUnitDecl(TranslationUnitDecl *TUD);
+  void VisitNamespaceDecl(NamespaceDecl *NSD);
+  void VisitCXXRecordDecl(CXXRecordDecl *RD);
+  void VisitFunctionDecl(FunctionDecl *FD);
 };
 
 }} // end namespace clang::sema

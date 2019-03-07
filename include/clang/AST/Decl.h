@@ -299,6 +299,10 @@ public:
   /// Set the name of this declaration.
   void setDeclName(DeclarationName N) { Name = N; }
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
   /// Returns a human-readable qualified name for this declaration, like
   /// A::B::i, for i being member of namespace A::B.
   ///
@@ -1563,23 +1567,15 @@ public:
   const CXXInjectedParmsInfo *InjectedParmsInfo;
 protected:
   ParmVarDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-              SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
-              TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
-      : VarDecl(ParmVar, C, DC, StartLoc, IdLoc, Id, T, TInfo, S),
-        InjectedParmsInfo(nullptr) {
-    assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
-    assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
-    assert(ParmVarDeclBits.IsKNRPromoted == false);
-    assert(ParmVarDeclBits.IsObjCMethodParam == false);
-    setDefaultArg(DefArg);
-  }
+              SourceLocation NameLoc, const DeclarationName &Name, QualType T,
+              TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg);
 
   ParmVarDecl(ASTContext &C, DeclContext *DC, const CXXInjectedParmsInfo &IPI);
 
 public:
   static ParmVarDecl *Create(ASTContext &C, DeclContext *DC,
-                             SourceLocation StartLoc,
-                             SourceLocation IdLoc, IdentifierInfo *Id,
+                             SourceLocation StartLoc, SourceLocation NameLoc,
+                             const DeclarationName &Name,
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, Expr *DefArg);
 

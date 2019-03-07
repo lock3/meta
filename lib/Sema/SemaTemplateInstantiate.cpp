@@ -1767,6 +1767,9 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
                                     int indexAdjustment,
                                     Optional<unsigned> NumExpansions,
                                     bool ExpectParameterPack) {
+  DeclarationNameInfo DNI = SubstDeclarationNameInfo(
+                                OldParm->getNameInfo(), TemplateArgs);
+
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = nullptr;
 
@@ -1776,7 +1779,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
     // We have a function parameter pack. Substitute into the pattern of the
     // expansion.
     NewDI = SubstType(ExpansionTL.getPatternLoc(), TemplateArgs,
-                      OldParm->getLocation(), OldParm->getDeclName());
+                      DNI.getLoc(), DNI.getName());
     if (!NewDI)
       return nullptr;
 
@@ -1791,30 +1794,28 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
       // itself is not a pack expansion type), so complain. This can occur when
       // the substitution goes through an alias template that "loses" the
       // pack expansion.
-      Diag(OldParm->getLocation(),
+      Diag(DNI.getLoc(),
            diag::err_function_parameter_pack_without_parameter_packs)
         << NewDI->getType();
       return nullptr;
     }
   } else {
-    NewDI = SubstType(OldDI, TemplateArgs, OldParm->getLocation(),
-                      OldParm->getDeclName());
+    NewDI = SubstType(OldDI, TemplateArgs, DNI.getLoc(),
+                      DNI.getName());
   }
 
   if (!NewDI)
     return nullptr;
 
   if (NewDI->getType()->isVoidType()) {
-    Diag(OldParm->getLocation(), diag::err_param_with_void_type);
+    Diag(DNI.getLoc(), diag::err_param_with_void_type);
     return nullptr;
   }
 
-  ParmVarDecl *NewParm = CheckParameter(Context.getTranslationUnitDecl(),
-                                        OldParm->getInnerLocStart(),
-                                        OldParm->getLocation(),
-                                        OldParm->getIdentifier(),
-                                        NewDI->getType(), NewDI,
-                                        OldParm->getStorageClass());
+  ParmVarDecl *NewParm = CheckParameter(
+      Context.getTranslationUnitDecl(), OldParm->getInnerLocStart(),
+      DNI, NewDI->getType(), NewDI,
+      OldParm->getStorageClass());
   if (!NewParm)
     return nullptr;
 
