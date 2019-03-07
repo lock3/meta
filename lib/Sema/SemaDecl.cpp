@@ -15150,10 +15150,12 @@ CreateNewDecl:
   if (TUK == TUK_Definition && (!SkipBody || !SkipBody->ShouldSkip))
     New->startDefinition();
 
-  if (CXXRecordDecl *Proto = dyn_cast<CXXRecordDecl>(New)) {
-    if (Proto->isPrototypeClass()) {
-      ActOnStartMetaclassDefinition(Proto);
-    }
+  if (Metafunction) {
+    CXXRecordDecl *Proto = cast<CXXRecordDecl>(New);
+    ActOnStartMetaclassDefinition(Proto);
+    // At this point the metaclass prototype should now have the proper
+    // flags set to be identified as a prototype class.
+    assert(Proto->isPrototypeClass());
   }
 
   ProcessDeclAttributeList(S, New, Attrs);
