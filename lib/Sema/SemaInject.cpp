@@ -135,13 +135,15 @@ public:
     }
   }
 
-  bool ShouldAddInjectionToParent() const {
+  bool ShouldInjectInto(DeclContext *DC) const {
     // If we're not merely transforming, always inject.
     if (!InMockInjectionContext)
       return true;
 
-    // If we're transforming a decl, inject all of its children.
-    return InjectionDepth > 0;
+    // We should only be creating children of the declaration
+    // being injected, if the target DC is the injectee,
+    // it should be blocked.
+    return Decl::castFromDeclContext(DC) != Injectee;
   }
 
   /// Returns a replacement for D if a substitution has been registered or
@@ -423,9 +425,6 @@ public:
 
   /// True if we're attempting to transform the highest level declaration.
   bool InMockInjectionContext = false;
-
-  /// The Depth of Injection we're currently in.
-  int InjectionDepth = -1;
 
   /// The context into which the fragment is injected
   Decl *Injectee;
@@ -731,7 +730,10 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   Fn->setInlineSpecified(D->isInlineSpecified());
   Fn->setInvalidDecl(Invalid);
 
-  Owner->addDecl(Fn);
+  // Don't register the declaration if we're merely attempting to transform
+  // this class.
+  if (ShouldInjectInto(Owner))
+    Owner->addDecl(Fn);
 
   // If the function has a body, inject that also. Note that namespace-scope
   // function definitions are never deferred. Also, function decls never
@@ -921,7 +923,7 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this class.
-  if (ShouldAddInjectionToParent())
+  if (ShouldInjectInto(Owner))
     Owner->addDecl(Class);
 
   if (D->hasDefinition())
@@ -1101,7 +1103,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this method.
-  if (ShouldAddInjectionToParent())
+  if (ShouldInjectInto(Owner))
     Owner->addDecl(Method);
 
   // If the method is has a body, add it to the context so that we can
@@ -1162,8 +1164,6 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   if (Decl *Replacement = GetDeclReplacement(D))
     return Replacement;
 
-  ++InjectionDepth;
-
   // If the declaration does not appear in the context, then it need
   // not be resolved.
   if (!isInInjection(D))
@@ -1177,8 +1177,6 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   // so that it can be processed for code generation.
   if (isa<TranslationUnitDecl>(R->getDeclContext()))
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
-
-  --InjectionDepth;
 
   return R;
 }
@@ -1279,7 +1277,7 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this template.
-  if (ShouldAddInjectionToParent())
+  if (ShouldInjectInto(Owner))
     Owner->addDecl(Template);
 
   return Template;
