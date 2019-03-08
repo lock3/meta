@@ -427,7 +427,8 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       continue;
     }
 
-    if (isa<CXXRecordDecl>(DC) && D->getAccess() != CurrentAccess) {
+    if (isa<CXXRecordDecl>(DC) && D->getAccess() != AS_none
+        && D->getAccess() != CurrentAccess) {
       Indentation -= Policy.Indentation;
       this->Indent();
       Print(D->getAccess());

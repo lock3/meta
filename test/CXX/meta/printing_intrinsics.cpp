@@ -54,6 +54,12 @@ void test() {
 
 class C {
   int y = 0;
+
+  template<typename T>
+  struct Template {};
+
+  template<>
+  struct Template<int> {};
 };
 
 enum E {
