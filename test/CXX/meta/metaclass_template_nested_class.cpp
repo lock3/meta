@@ -7,7 +7,12 @@ namespace meta {
 consteval void test_metaclass(meta::info source) {
   -> __fragment struct {
     template<typename T> struct MemberClassTemplate {
-      T val;
+      T t_val;
+    };
+
+    template<>
+    struct MemberClassTemplate<float> {
+      float float_val;
     };
   };
 
@@ -20,7 +25,11 @@ class(test_metaclass) test_class {
 };
 
 int main() {
-  test_class::MemberClassTemplate<int> metaclass_nested_class;
-  metaclass_nested_class.val = 1;
+  test_class::MemberClassTemplate<int> metaclass_nested_class_int;
+  metaclass_nested_class_int.t_val = 1;
+
+  test_class::MemberClassTemplate<float> metaclass_nested_class_float;
+  metaclass_nested_class_float.float_val = 1;
+
   return 0;
 }

@@ -135,6 +135,15 @@ public:
     }
   }
 
+  bool ShouldAddInjectionToParent() const {
+    // If we're not merely transforming, always inject.
+    if (!InMockInjectionContext)
+      return true;
+
+    // If we're transforming a decl, inject all of its children.
+    return InjectionDepth > 0;
+  }
+
   /// Returns a replacement for D if a substitution has been registered or
   /// nullptr if no such replacement exists.
   Decl *GetDeclReplacement(Decl *D) {
@@ -370,12 +379,14 @@ public:
   Decl *InjectCXXMethodDecl(CXXMethodDecl *D);
   Decl *InjectDeclImpl(Decl *D);
   Decl *InjectDecl(Decl *D);
+  Decl *MockInjectDecl(Decl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
   Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
   Decl *InjectCXXInjectionDecl(CXXInjectionDecl *D);
 
   TemplateParameterList *InjectTemplateParms(TemplateParameterList *Old);
   Decl *InjectClassTemplateDecl(ClassTemplateDecl *D);
+  Decl *InjectClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D);
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
 
@@ -409,6 +420,12 @@ public:
   /// must be preserved until we've finished rebuilding all injected
   /// constructors.
   bool InjectedFieldData = false;
+
+  /// True if we're attempting to transform the highest level declaration.
+  bool InMockInjectionContext = false;
+
+  /// The Depth of Injection we're currently in.
+  int InjectionDepth = -1;
 
   /// The context into which the fragment is injected
   Decl *Injectee;
@@ -902,9 +919,9 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   Class->setImplicit(D->isImplicit());
   Class->setInvalidDecl(Invalid);
 
-  // Don't register the declaration if we're injecting the declaration of
-  // a template-declaration. We'll add the template later.
-  if (!D->getDescribedClassTemplate())
+  // Don't register the declaration if we're merely attempting to transform
+  // this class.
+  if (ShouldAddInjectionToParent())
     Owner->addDecl(Class);
 
   if (D->hasDefinition())
@@ -1082,9 +1099,9 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   if (!Method->isInvalidDecl())
     Method->setInvalidDecl(Invalid);
 
-  // Don't register the declaration if we're injecting the declaration of
-  // a template-declaration. We'll add the template later.
-  if (!D->getDescribedFunctionTemplate())
+  // Don't register the declaration if we're merely attempting to transform
+  // this method.
+  if (ShouldAddInjectionToParent())
     Owner->addDecl(Method);
 
   // If the method is has a body, add it to the context so that we can
@@ -1126,6 +1143,9 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXInjectionDecl(cast<CXXInjectionDecl>(D));
   case Decl::ClassTemplate:
     return InjectClassTemplateDecl(cast<ClassTemplateDecl>(D));
+  case Decl::ClassTemplateSpecialization:
+    return InjectClassTemplateSpecializationDecl(
+               cast<ClassTemplateSpecializationDecl>(D));
   case Decl::FunctionTemplate:
     return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
   case Decl::TemplateTypeParm:
@@ -1137,10 +1157,12 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   llvm_unreachable("unhandled declaration");
 }
 
-/// Injects a new version of the declaration. Do not use this to
-/// resolve references to declarations; use ResolveDecl instead.
+/// Injects a new version of the declaration.
 Decl *InjectionContext::InjectDecl(Decl *D) {
-  assert(!GetDeclReplacement(D) && "Declaration already injected");
+  if (Decl *Replacement = GetDeclReplacement(D))
+    return Replacement;
+
+  ++InjectionDepth;
 
   // If the declaration does not appear in the context, then it need
   // not be resolved.
@@ -1156,7 +1178,19 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   if (isa<TranslationUnitDecl>(R->getDeclContext()))
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
 
+  --InjectionDepth;
+
   return R;
+}
+
+Decl *InjectionContext::MockInjectDecl(Decl *D) {
+  InMockInjectionContext = true;
+
+  // Run normal injection logic.
+  Decl *NewDecl = InjectDecl(D);
+
+  InMockInjectionContext = false;
+  return NewDecl;
 }
 
 Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
@@ -1227,13 +1261,13 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
     return nullptr;
 
   // Build the underlying pattern.
-  Decl *Pattern = InjectDecl(D->getTemplatedDecl());
+  Decl *Pattern = MockInjectDecl(D->getTemplatedDecl());
   if (!Pattern)
     return nullptr;
 
   CXXRecordDecl *Class = cast<CXXRecordDecl>(Pattern);
 
-  // Build the enclosing tempalte.
+  // Build the enclosing template.
   ClassTemplateDecl *Template = ClassTemplateDecl::Create(
        getSema().Context, getSema().CurContext, Class->getLocation(),
        Class->getDeclName(), Parms, Class);
@@ -1243,8 +1277,46 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
   Class->setDescribedClassTemplate(Template);
   ApplyAccess(Modifiers, Template, D);
 
+  // Don't register the declaration if we're merely attempting to transform
+  // this template.
+  if (ShouldAddInjectionToParent())
+    Owner->addDecl(Template);
+
+  return Template;
+}
+
+Decl *InjectionContext::InjectClassTemplateSpecializationDecl(
+                                           ClassTemplateSpecializationDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  Decl *Template = MockInjectDecl(D->getSpecializedTemplate());
+  if (!Template)
+    return nullptr;
+  ClassTemplateDecl *ClassTemplate = cast<ClassTemplateDecl>(Template);
+
+  ArrayRef<TemplateArgument> Args = D->getTemplateInstantiationArgs().asArray();
+
+  // Build the enclosing template.
+  ClassTemplateSpecializationDecl *TemplateSpecialization
+    = ClassTemplateSpecializationDecl::Create(
+       getSema().Context, D->getTagKind(), getSema().CurContext,
+       ClassTemplate->getBeginLoc(), ClassTemplate->getLocation(),
+       ClassTemplate, Args, nullptr);
+  AddDeclSubstitution(D, TemplateSpecialization);
+
+  // FIXME: Other attributes to process?
+  TemplateSpecialization->setInstantiationOf(ClassTemplate);
+
+  void *InsertPos = nullptr;
+  ClassTemplate->findSpecialization(Args, InsertPos);
+  if (InsertPos != nullptr)
+    ClassTemplate->AddSpecialization(TemplateSpecialization, InsertPos);
+
   // Add the declaration.
-  Owner->addDecl(Template);
+  Owner->addDecl(TemplateSpecialization);
+
+  if (D->hasDefinition())
+    InjectClassDefinition(*this, D, TemplateSpecialization);
 
   return Template;
 }
@@ -1257,7 +1329,7 @@ Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
     return nullptr;
 
   // Build the underlying pattern.
-  Decl *Pattern = InjectDecl(D->getTemplatedDecl());
+  Decl *Pattern = MockInjectDecl(D->getTemplatedDecl());
   if (!Pattern)
     return nullptr;
   FunctionDecl *Fn = cast<FunctionDecl>(Pattern);

@@ -1864,8 +1864,14 @@ bool CXXRecordDecl::mayBeAbstract() const {
 
 /// A prototype class is nested within a generated class.
 bool CXXRecordDecl::isPrototypeClass() const {
-  if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext()))
+  if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext())) {
+    if (const ClassTemplateSpecializationDecl *SpecializedParent
+        = dyn_cast<ClassTemplateSpecializationDecl>(Parent)) {
+      return SpecializedParent->getMetafunction();
+    }
+
     return Parent->getMetafunction() && isImplicit() && isFragment();
+  }
   return false;
 }
 
