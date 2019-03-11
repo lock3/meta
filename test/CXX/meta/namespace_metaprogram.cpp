@@ -18,6 +18,14 @@ constexpr auto fragment = __fragment namespace {
   namespace bar {
     int v_eleven = 11;
   }
+
+  struct class_a {
+    int x = 1;
+  };
+
+  struct class_b {
+    int x = 1;
+  };
 };
 
 namespace foo {
@@ -33,6 +41,16 @@ int main() {
   assert(foo::add_v_two(1) == 3);
 
   assert(foo::bar::v_eleven == 11);
+
+  {
+    foo::class_a clazz;
+    assert(clazz.x == 1);
+  }
+
+  {
+    foo::class_b clazz;
+    assert(clazz.x == 1);
+  }
 
   return 0;
 };

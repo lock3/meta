@@ -368,6 +368,7 @@ Sema::~Sema() {
   SemaPPCallbackHandler->reset();
 
   assert(DelayedTypos.empty() && "Uncorrected typos!");
+  assert(PendingClassMemberInjections.empty() && "Incomplete injections!");
 }
 
 /// makeUnavailableInSystemHeader - There is an error in the current

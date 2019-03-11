@@ -94,10 +94,6 @@ public:
     return this;
   }
 
-  /// Re-attach the context to the context stack.
-  void Attach() {
-  }
-
   /// Adds a substitution from one declaration to another.
   void AddDeclSubstitution(const Decl *Old, Decl *New) {
     assert(TransformedLocalDecls.count(Old) == 0 && "Overwriting substitution");
@@ -891,6 +887,27 @@ static bool InjectClassDefinition(InjectionContext &Cxt,
   return NewClass->isInvalidDecl();
 }
 
+static bool ShouldImmediatelyInjectPendingDefinitions(
+                                      Decl *Injectee, DeclContext *ClassOwner) {
+  // If we're injecting into a class, always defer.
+  if (isa<CXXRecordDecl>(Injectee))
+    return false;
+
+  // Defer until we're at the injectee, so that we don't handle pending members
+  // while still inside of an inner class.
+  return Decl::castFromDeclContext(ClassOwner) == Injectee;
+}
+
+static void InjectPendingDefinitionsWithCleanup(InjectionContext *Cxt) {
+  Sema &SemaRef = Cxt->getSema();
+
+  SemaRef.InjectPendingFieldDefinitions(Cxt);
+  SemaRef.InjectPendingMethodDefinitions(Cxt);
+
+  Cxt->InjectedDefinitions.clear();
+  Cxt->InjectedFieldData = false;
+}
+
 Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   bool Invalid = false;
   DeclContext *Owner = getSema().CurContext;
@@ -928,6 +945,9 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
 
   if (D->hasDefinition())
     InjectClassDefinition(*this, D, Class);
+
+  if (ShouldImmediatelyInjectPendingDefinitions(Injectee, Owner))
+    InjectPendingDefinitionsWithCleanup(this);
 
   return Class;
 }
@@ -1858,11 +1878,10 @@ static bool BootstrapInjection(Sema &S, Decl *Injectee, Decl *Injection,
 
   // If we're injecting into a class and have pending definitions, attach
   // those to the class for subsequent analysis.
-  if (CXXRecordDecl *ClassInjectee = dyn_cast<CXXRecordDecl>(Injectee)) {
-    if (!Injectee->isInvalidDecl() && Ctx->hasPendingClassMemberData()) {
-      S.PendingClassMemberInjections.push_back(Ctx->Detach());
-      return true;
-    }
+  if (!Injectee->isInvalidDecl() && Ctx->hasPendingClassMemberData()) {
+    assert(isa<CXXRecordDecl>(Injectee) && "All pending members should have been injected");
+    S.PendingClassMemberInjections.push_back(Ctx->Detach());
+    return true;
   }
 
   delete Ctx;
@@ -2143,28 +2162,25 @@ void Sema::InjectPendingMethodDefinitions() {
   CleanupUsedContexts(PendingClassMemberInjections);
 }
 
-void Sema::InjectPendingFieldDefinitions(InjectionContext *Cxt) {
-  Cxt->Attach();
-  for (InjectedDef& Def : Cxt->InjectedDefinitions) {
-    if (Def.Type != InjectedDef_Field)
+template<typename DeclType, InjectedDefType DefType>
+static void InjectPendingDefinitions(InjectionContext *Cxt) {
+  for (InjectedDef &Def : Cxt->InjectedDefinitions) {
+    if (Def.Type != DefType)
       continue;
 
-    InjectPendingDefinition(Cxt,
-                            static_cast<FieldDecl *>(Def.Fragment),
-                            static_cast<FieldDecl *>(Def.Injected));
+    Sema &SemaRef = Cxt->getSema();
+    SemaRef.InjectPendingDefinition(Cxt,
+                                    static_cast<DeclType *>(Def.Fragment),
+                                    static_cast<DeclType *>(Def.Injected));
   }
 }
 
-void Sema::InjectPendingMethodDefinitions(InjectionContext *Cxt) {
-  Cxt->Attach();
-  for (InjectedDef& Def : Cxt->InjectedDefinitions) {
-    if (Def.Type != InjectedDef_Method)
-      continue;
+void Sema::InjectPendingFieldDefinitions(InjectionContext *Cxt) {
+  InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(Cxt);
+}
 
-    InjectPendingDefinition(Cxt,
-                            static_cast<CXXMethodDecl *>(Def.Fragment),
-                            static_cast<CXXMethodDecl *>(Def.Injected));
-  }
+void Sema::InjectPendingMethodDefinitions(InjectionContext *Cxt) {
+  InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Cxt);
 }
 
 void Sema::InjectPendingDefinition(InjectionContext *Cxt,
