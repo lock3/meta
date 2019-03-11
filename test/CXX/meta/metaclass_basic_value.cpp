@@ -34,6 +34,26 @@ consteval bool is_virtual(info x) {
   return method_traits(__reflect(query_get_decl_traits, x)).is_virtual;
 }
 
+consteval bool is_copy_assignment_operator(info x) {
+  return __reflect(query_is_copy_assignment_operator, x);
+}
+
+consteval bool is_move_assignment_operator(info x) {
+  return __reflect(query_is_move_assignment_operator, x);
+}
+
+consteval bool is_default_constructor(info x) {
+  return __reflect(query_is_default_constructor, x);
+}
+
+consteval bool is_copy_constructor(info x) {
+  return __reflect(query_is_copy_constructor, x);
+}
+
+consteval bool is_move_constructor(info x) {
+  return __reflect(query_is_move_constructor, x);
+}
+
 consteval bool is_destructor(info x) {
   return __reflect(query_is_destructor, x);
 }
@@ -60,15 +80,51 @@ consteval void compiler_print_type_definition(info type_reflection) {
 // Library code: implementing the metaclass (once)
 
 consteval void BasicValue(info source) {
-  -> __fragment struct BasicValueDefaults {
-    BasicValueDefaults() = default;
-    BasicValueDefaults(const BasicValueDefaults& that) = default;
-    BasicValueDefaults(BasicValueDefaults&& that) = default;
-    BasicValueDefaults& operator=(const BasicValueDefaults& that) = default;
-    BasicValueDefaults& operator=(BasicValueDefaults&& that) = default;
-  };
+  bool needs_default_ctor = true;
+  bool needs_copy_ctor = true;
+  bool needs_move_ctor = true;
+  bool needs_copy_assign_op = true;
+  bool needs_move_assign_op = true;
 
-  for (auto f : member_range(source)) {
+  for (auto f : member_range(definition_of(source))) {
+    if (is_default_constructor(f))
+      needs_default_ctor = false;
+    if (is_copy_constructor(f))
+      needs_copy_ctor = false;
+    if (is_move_constructor(f))
+      needs_move_ctor = false;
+    if (is_copy_assignment_operator(f))
+      needs_copy_assign_op = false;
+    if (is_move_assignment_operator(f))
+      needs_move_assign_op = false;
+  }
+
+  if (needs_default_ctor)
+    -> __fragment struct BasicValueDefaults {
+      BasicValueDefaults() = default;
+    };
+
+  if (needs_copy_ctor)
+    -> __fragment struct BasicValueDefaults {
+      BasicValueDefaults(const BasicValueDefaults& that) = default;
+    };
+
+  if (needs_move_ctor)
+    -> __fragment struct BasicValueDefaults {
+      BasicValueDefaults(BasicValueDefaults&& that) = default;
+    };
+
+  if (needs_copy_assign_op)
+    -> __fragment struct BasicValueDefaults {
+      BasicValueDefaults& operator=(const BasicValueDefaults& that) = default;
+    };
+
+  if (needs_move_assign_op)
+    -> __fragment struct BasicValueDefaults {
+      BasicValueDefaults& operator=(BasicValueDefaults&& that) = default;
+    };
+
+  for (auto f : member_range(definition_of(source))) {
     if (is_data_member(f)) {
       make_private(f);
     } else if (is_member_function(f)) {

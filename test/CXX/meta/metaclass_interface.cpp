@@ -81,22 +81,20 @@ consteval void compiler_print_lines(int count) {
 // Library code: implementing the metaclass (once)
 
 consteval void interface(info source) {
-  compiler_require(count_data_members(source) == 0,
-                   "interfaces may not contain data");
-
-  for (info f : member_range(source)) {
-    compiler_require(!is_copy(f) && !is_move(f),
+  for (info mem : member_range(source)) {
+    compiler_require(!is_data_member(mem), "interfaces may not contain data");
+    compiler_require(!is_copy(mem) && !is_move(mem),
        "interfaces may not copy or move; consider"
        " a virtual clone() instead");
 
-    if (!has_default_access(f))
-      make_public(f);
+    if (has_default_access(mem))
+      make_public(mem);
 
-    compiler_require(is_public(f), "interface functions must be public");
+    compiler_require(is_public(mem), "interface functions must be public");
 
-    make_pure_virtual(f);
+    make_pure_virtual(mem);
 
-    -> f;
+    -> mem;
   }
 
   -> __fragment struct X { virtual ~X() noexcept {} };
@@ -106,7 +104,7 @@ consteval void interface(info source) {
 //====================================================================
 // User code: using the metaclass to write a type (many times)
 
-struct(interface) Shape {
+class(interface) Shape {
     int area() const;
     void scale_by(double factor);
 };
