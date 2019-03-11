@@ -1827,7 +1827,7 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
 
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
-static int DescribeInjectionTarget(DeclContext *DC) {
+static int DescribeDeclContext(DeclContext *DC) {
   if (DC->isFunctionOrMethod())
     return 0;
   else if (DC->isRecord())
@@ -1846,25 +1846,52 @@ struct TypedValue
   APValue Value;
 };
 
-// Generate an error injecting a declaration of kind SK into the given
-// declaration context. Returns false. Note that SK correlates to the first
-// %select in err_invalid_injection.
-static bool InvalidInjection(Sema& S, SourceLocation POI, int SK,
-                             DeclContext *DC) {
-  S.Diag(POI, diag::err_invalid_injection) << SK << DescribeInjectionTarget(DC);
-  return false;
-}
+
+class InjectionCompatibilityChecker {
+  Sema &SemaRef;
+  SourceLocation POI;
+  DeclContext *Injection;
+  DeclContext *Injectee;
+
+public:
+  InjectionCompatibilityChecker(Sema &SemaRef, SourceLocation POI,
+                                DeclContext *Injection, DeclContext *Injectee)
+    : SemaRef(SemaRef), POI(POI), Injection(Injection), Injectee(Injectee) { }
+
+  /// Returns true if injection and injectee are two incompatibile
+  /// contexts.
+  template<typename F>
+  bool operator ()(F Test) const {
+    bool Failure = Test(Injection) != Test(Injectee);
+    if (Failure) ReportFailure();
+    return Failure;
+  }
+
+private:
+  // Report an error describing what could not be injected into what.
+  void ReportFailure() const {
+    SemaRef.Diag(POI, diag::err_invalid_injection)
+      << DescribeDeclContext(Injection) << DescribeDeclContext(Injectee);
+  }
+};
 
 static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
                                    DeclContext *Injection,
                                    DeclContext *Injectee) {
-  if (Injection->isRecord() && !Injectee->isRecord()) {
-    InvalidInjection(SemaRef, POI, 1, Injectee);
+  InjectionCompatibilityChecker Check(SemaRef, POI, Injection, Injectee);
+
+  auto ClassTest = [] (DeclContext *DC) -> bool {
+    return DC->isFileContext();
+  };
+  if (Check(ClassTest))
     return false;
-  } else if (Injection->isFileContext() && !Injectee->isFileContext()) {
-    InvalidInjection(SemaRef, POI, 0, Injectee);
+
+  auto NamespaceTest = [] (DeclContext *DC) -> bool {
+    return DC->isFileContext();
+  };
+  if (Check(NamespaceTest))
     return false;
-  }
+
   return true;
 }
 

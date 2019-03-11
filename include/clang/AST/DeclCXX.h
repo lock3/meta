@@ -4162,8 +4162,6 @@ public:
   /// Sets the expression that evaluates the injection-declaration.
   void setCallExpr(CallExpr *E) { Call = E; }
 
-  SourceRange getSourceRange() const override;
-
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXInjection; }
 

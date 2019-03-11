@@ -3037,13 +3037,6 @@ Stmt *CXXInjectionDecl::getBody() const {
   return FD->getBody();
 }
 
-SourceRange CXXInjectionDecl::getSourceRange() const {
-  SourceLocation RangeEnd = getLocation();
-  if (Stmt *Body = getBody())
-    RangeEnd = Body->getEndLoc();
-  return SourceRange(getLocation(), RangeEnd);
-}
-
 void CXXFragmentDecl::anchor() {}
 
 CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
