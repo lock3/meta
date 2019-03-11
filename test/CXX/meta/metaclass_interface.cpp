@@ -5,6 +5,8 @@
 #include "reflection_mod.h"
 #include "reflection_iterator.h"
 
+using namespace meta;
+
 //====================================================================
 // Library code: assisting the metaclass implementation, and providing
 //               methods otherwise undefined in the test suite.
@@ -19,42 +21,42 @@ consteval bool is_data_member(meta::info refl) {
       || __reflect(query_is_static_data_member, refl);
 }
 
-consteval bool is_member_function(meta::info refl) {
+consteval bool is_member_function(info refl) {
   return __reflect(query_is_nonstatic_member_function, refl)
       || __reflect(query_is_static_member_function, refl);
 }
 
-consteval bool is_copy(meta::info refl) {
+consteval bool is_copy(info refl) {
   method_traits method(__reflect(query_get_decl_traits, refl));
   return method.is_copy_ctor || method.is_copy_assign;
 }
 
-consteval bool is_move(meta::info refl) {
+consteval bool is_move(info refl) {
   method_traits method(__reflect(query_get_decl_traits, refl));
   return method.is_move_ctor || method.is_move_assign;
 }
 
-consteval bool has_default_access(meta::info refl) {
+consteval bool has_default_access(info refl) {
   return __reflect(query_has_default_access, refl);
 }
 
-consteval bool is_public(meta::info refl) {
+consteval bool is_public(info refl) {
   access_traits access(__reflect(query_get_access_traits, refl));
   return access_traits(access).kind == public_access;
 }
 
-consteval void make_public(meta::info &refl) {
+consteval void make_public(info &refl) {
   __reflect_mod(query_set_access, refl, AccessModifier::Public);
 }
 
-consteval void make_pure_virtual(meta::info &refl) {
+consteval void make_pure_virtual(info &refl) {
   __reflect_mod(query_set_add_pure_virtual, refl, true);
 }
 
-consteval int count_data_members(meta::info refl) {
+consteval int count_data_members(info refl) {
   int total = 0;
 
-  for (meta::info member : member_range(refl)) {
+  for (info member : member_range(refl)) {
     if (is_data_member(member))
       ++total;
   }
@@ -62,12 +64,15 @@ consteval int count_data_members(meta::info refl) {
   return total;
 }
 
-consteval void print_declaration(meta::info class_reflection) {
-  auto class_decl_reflection = __reflect(query_get_parent, __reflect(query_get_begin, class_reflection));
-  (void) __reflect_pretty_print(class_decl_reflection);
+consteval info definition_of(info type_reflection) {
+  return __reflect(query_get_definition, type_reflection);
 }
 
-consteval void print_lines(int count) {
+consteval void compiler_print_type_definition(info type_reflection) {
+  (void) __reflect_pretty_print(definition_of(type_reflection));
+}
+
+consteval void compiler_print_lines(int count) {
   for (int i = 0; i < count; ++i)
     (void) __reflect_print("");
 }
@@ -75,11 +80,11 @@ consteval void print_lines(int count) {
 //====================================================================
 // Library code: implementing the metaclass (once)
 
-consteval void interface(meta::info source) {
+consteval void interface(info source) {
   compiler_require(count_data_members(source) == 0,
                    "interfaces may not contain data");
 
-  for (meta::info f : member_range(source)) {
+  for (info f : member_range(source)) {
     compiler_require(!is_copy(f) && !is_move(f),
        "interfaces may not copy or move; consider"
        " a virtual clone() instead");
@@ -117,7 +122,7 @@ int main() {
 }
 
 consteval {
-  print_declaration(reflexpr(Shape));
-  print_lines(1);
-  print_declaration(reflexpr(X));
+  compiler_print_type_definition(reflexpr(Shape));
+  compiler_print_lines(1);
+  compiler_print_type_definition(reflexpr(X));
 }

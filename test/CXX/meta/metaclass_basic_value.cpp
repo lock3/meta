@@ -4,16 +4,7 @@
 #include "reflection_traits.h"
 #include "reflection_mod.h"
 
-namespace meta {
-
-// WIP: This is not right.
-consteval info definition_of(meta::info class_reflection) {
-  return __reflect(query_get_parent, __reflect(query_get_begin, class_reflection));
-}
-
-consteval void print_definition(meta::info class_reflection) {
-  (void) __reflect_pretty_print(definition_of(class_reflection));
-}
+using namespace meta;
 
 consteval bool is_data_member(info x) {
   return __reflect(query_is_nonstatic_data_member, x);
@@ -56,12 +47,19 @@ consteval void compiler_require(bool condition, const char* message) {
     compiler_error(message);
 }
 
+consteval info definition_of(info type_reflection) {
+  return __reflect(query_get_definition, type_reflection);
 }
+
+consteval void compiler_print_type_definition(info type_reflection) {
+  (void) __reflect_pretty_print(definition_of(type_reflection));
+}
+
 
 //====================================================================
 // Library code: implementing the metaclass (once)
 
-consteval void BasicValue(meta::info source) {
+consteval void BasicValue(info source) {
   -> __fragment struct BasicValueDefaults {
     BasicValueDefaults() = default;
     BasicValueDefaults(const BasicValueDefaults& that) = default;
@@ -70,14 +68,14 @@ consteval void BasicValue(meta::info source) {
     BasicValueDefaults& operator=(BasicValueDefaults&& that) = default;
   };
 
-  for (auto f : member_range(meta::definition_of(source))) {
-    if (meta::is_data_member(f)) {
-      meta::make_private(f);
-    } else if (meta::is_member_function(f)) {
-      meta::make_public(f);
-      meta::compiler_require(!meta::is_protected(f), "a value type may not have a protected function");
-      meta::compiler_require(!meta::is_virtual(f), "a value type may not have a virtual function");
-      meta::compiler_require(!meta::is_destructor(f) || meta::is_public(f), "a value destructor must be public");
+  for (auto f : member_range(source)) {
+    if (is_data_member(f)) {
+      make_private(f);
+    } else if (is_member_function(f)) {
+      make_public(f);
+      compiler_require(!is_protected(f), "a value type may not have a protected function");
+      compiler_require(!is_virtual(f), "a value type may not have a virtual function");
+      compiler_require(!is_destructor(f) || is_public(f), "a value destructor must be public");
     }
     -> f;
   }
@@ -101,5 +99,5 @@ int main() {
 }
 
 consteval {
-  meta::print_definition(reflexpr(Point));
+  compiler_print_type_definition(reflexpr(Point));
 }
