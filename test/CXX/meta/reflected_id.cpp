@@ -1,18 +1,5 @@
 // RUN: %clang_cc1 -std=c++1z -freflection -verify %s
 
-#include "reflection_query.h"
-
-namespace meta {
-  using info = decltype(reflexpr(void));
-
-  // Placeholder for constexpr string.
-  using string_type = const char*;
-
-  consteval string_type name_of(info x) {
-    return __reflect(query_get_name, x);
-  }
-}
-
 namespace bar {
   namespace fin {
   }
@@ -23,22 +10,22 @@ using namespace bar::fin;
 template<typename T>
 void test_template() {
   constexpr auto int_reflexpr = reflexpr(int);
-  T unqualid("foo_", meta::name_of(reflexpr(bar)), "_", meta::name_of(reflexpr(bar::fin))) = T();
+  T unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = T();
 
-  int int_x = foo_bar_fin.unqualid("get_", meta::name_of(unqualid("int_reflexpr")))();
+  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
   int int_y = unqualid("foo_bar_fin").get_int();
   int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
 }
 
 template<typename T>
 struct TemplateS {
-  T unqualid("get_", meta::name_of(reflexpr(T)))() { return T(); }
+  T unqualid("get_", reflexpr(T))() { return T(); }
 };
 
 template<typename T>
 void test_template_class_attribute() {
   TemplateS<T> s;
-  T res = s.unqualid("get_", meta::name_of(reflexpr(T)))();
+  T res = s.unqualid("get_", reflexpr(T))();
 }
 
 template<int y>
@@ -92,9 +79,9 @@ struct S : public SBase {
 
 void test_non_template() {
   constexpr auto int_reflexpr = reflexpr(int);
-  S unqualid("foo_", meta::name_of(reflexpr(bar)), "_", meta::name_of(reflexpr(bar::fin))) = S();
+  S unqualid("foo_", reflexpr(bar), "_", reflexpr(bar::fin)) = S();
 
-  int int_x = foo_bar_fin.unqualid("get_", meta::name_of(unqualid("int_reflexpr")))();
+  int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
   int int_y = unqualid("foo_bar_fin").get_int();
   int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
 }
