@@ -1117,79 +1117,6 @@ static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
   return true;
 }
 
-static inline bool
-AppendReflectedDecl(Sema &S, llvm::raw_ostream &OS, const Expr *ReflExpr,
-                    const Decl *D) {
-  // If this is a named declaration, append its identifier.
-  if (!isa<NamedDecl>(D)) {
-    // FIXME: Improve diagnostics.
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflection_not_named);
-    return false;
-  }
-  const NamedDecl *ND = cast<NamedDecl>(D);
-
-  // FIXME: What if D has a special name? For example operator==?
-  // What would we append in that case?
-  DeclarationName Name = ND->getDeclName();
-  if (!Name.isIdentifier()) {
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer) << Name;
-    return false;
-  }
-
-  OS << ND->getName();
-  return true;
-}
-
-static inline bool
-AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
-                    const QualType &QT) {
-  const Type *T = QT.getTypePtr();
-
-  // If this is a class type, append its identifier.
-  if (auto *RC = T->getAsCXXRecordDecl())
-    OS << RC->getName();
-  else if (const BuiltinType *BT = T->getAs<BuiltinType>())
-    OS << BT->getName();
-  else {
-    S.Diag(ReflExpr->getBeginLoc(), diag::err_reflected_id_not_an_identifer)
-      << QualType(T, 0);
-    return false;
-  }
-  return true;
-}
-
-static bool
-AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  Reflection Refl = EvaluateReflection(S, E);
-
-  switch (Refl.getKind()) {
-  case RK_invalid:
-    llvm_unreachable("Should already be validated");
-
-  case RK_type: {
-    const QualType QT = Refl.getAsType();
-    return AppendReflectedType(S, OS, E, QT);
-  }
-
-  case RK_declaration: {
-    const Decl *D = Refl.getAsDeclaration();
-    return AppendReflectedDecl(S, OS, E, D);
-  }
-
-  case RK_expression: {
-    const Expr *RE = Refl.getAsExpression();
-    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(RE))
-      return AppendReflectedDecl(S, OS, E, DRE->getDecl());
-    break;
-  }
-
-  case RK_base_specifier:
-    break;
-  }
-
-  llvm_unreachable("Unsupported reflection type");
-}
-
 /// Constructs a new identifier from the expressions in Parts. Returns nullptr
 /// on error.
 DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
@@ -1235,10 +1162,6 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
         return DeclarationNameInfo();
       }
       if (!AppendInteger(*this, OS, E, T))
-        return DeclarationNameInfo();
-    }
-    else if (CheckReflectionOperand(*this, E)) {
-      if (!AppendReflection(*this, OS, E))
         return DeclarationNameInfo();
     }
     else {
