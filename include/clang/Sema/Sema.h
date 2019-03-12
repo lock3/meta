@@ -10484,9 +10484,9 @@ public:
                                        CXXInjectionContextSpecifier &Specifier);
 
   StmtResult ActOnCXXInjectionStmt(SourceLocation Loc,
-          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Fragment);
+          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Operand);
   StmtResult BuildCXXInjectionStmt(SourceLocation Loc,
-          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Fragment);
+          const CXXInjectionContextSpecifier &ContextSpecifier, Expr *Operand);
 
   bool ApplyInjection(SourceLocation POI, InjectionEffect &IE);
   bool ApplyEffects(SourceLocation POI,

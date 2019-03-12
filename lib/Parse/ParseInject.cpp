@@ -29,15 +29,6 @@ Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
   if (Tok.is(tok::identifier)) {
     Id = Tok.getIdentifierInfo();
     IdLoc = ConsumeToken();
-  } else {
-    // FIXME: This shouldn't be necessary. The ActOnStartNamespaceDef
-    // function uses the Id param to determine if the namespace
-    // it's generating should be an annoynomous namespace.
-    //
-    // As a workaround, we provide this manufactured id for
-    // the namespace.
-    ASTContext &CurContext = Actions.getASTContext();
-    Id = &CurContext.Idents.get("__fragment_namespace");
   }
 
   BalancedDelimiterTracker T(*this, tok::l_brace);
@@ -253,12 +244,16 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   if (ParseOptionalCXXInjectionContextSpecifier(ICS))
     return StmtError();
 
-  /// Get a fragment as the operand of the decl.
-  ExprResult FragmentOrReflection = ParseExpression();
-  if (FragmentOrReflection.isInvalid())
+  /// Get a fragment or reflection as the operand of the injection statement.
+  ExprResult Operand = ParseExpression();
+  if (Operand.isInvalid())
     return StmtResult();
 
-  return Actions.ActOnCXXInjectionStmt(Loc, ICS, FragmentOrReflection.get());
+  Operand = Actions.CorrectDelayedTyposInExpr(Operand);
+  if (Operand.isInvalid())
+    return StmtError();
+
+  return Actions.ActOnCXXInjectionStmt(Loc, ICS, Operand.get());
 }
 
 

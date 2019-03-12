@@ -9009,15 +9009,27 @@ Decl *Sema::ActOnStartNamespaceDef(
     // Anonymous namespaces.
 
     // Determine whether the parent already has an anonymous namespace.
-    DeclContext *Parent = CurContext->getRedeclContext();
-    if (TranslationUnitDecl *TU = dyn_cast<TranslationUnitDecl>(Parent)) {
-      PrevNS = TU->getAnonymousNamespace();
-    } else {
-      NamespaceDecl *ND = cast<NamespaceDecl>(Parent);
-      PrevNS = ND->getAnonymousNamespace();
+    // See through any enclosing fragments
+    DeclContext *ContextIt = CurContext->getRedeclContext();
+    bool ExitingFragment = false;
+
+    while (true) {
+      if (TranslationUnitDecl *TU = dyn_cast<TranslationUnitDecl>(ContextIt)) {
+        PrevNS = TU->getAnonymousNamespace();
+        break;
+      } else if (NamespaceDecl *ND = dyn_cast<NamespaceDecl>(ContextIt)) {
+        PrevNS = ND->getAnonymousNamespace();
+        break;
+      }
+
+      // If we reach this point, we should be in a fragment, or have previously
+      // seen a fragment.
+      assert(ExitingFragment || isa<CXXFragmentDecl>(ContextIt));
+      ContextIt = ContextIt->getParent()->getRedeclContext();
+      ExitingFragment = true;
     }
 
-    if (PrevNS && IsInline != PrevNS->isInline())
+    if (PrevNS && IsInline != PrevNS->isInline() && !ExitingFragment)
       DiagnoseNamespaceInlineMismatch(*this, NamespaceLoc, NamespaceLoc, II,
                                       &IsInline, PrevNS);
   }
@@ -9046,8 +9058,10 @@ Decl *Sema::ActOnStartNamespaceDef(
     DeclContext *Parent = CurContext->getRedeclContext();
     if (TranslationUnitDecl *TU = dyn_cast<TranslationUnitDecl>(Parent)) {
       TU->setAnonymousNamespace(Namespc);
+    } else if (NamespaceDecl *ND = dyn_cast<NamespaceDecl>(Parent)) {
+      ND->setAnonymousNamespace(Namespc);
     } else {
-      cast<NamespaceDecl>(Parent)->setAnonymousNamespace(Namespc);
+      assert(isa<CXXFragmentDecl>(Parent));
     }
 
     CurContext->addDecl(Namespc);

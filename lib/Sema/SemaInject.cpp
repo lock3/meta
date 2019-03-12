@@ -1777,8 +1777,8 @@ Sema::ActOnCXXParentNamespaceInjectionContext(SourceLocation KWLoc,
 /// Returns an injection statement.
 StmtResult Sema::ActOnCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
-                                       Expr *FragmentOrReflection) {
-  return BuildCXXInjectionStmt(Loc, ContextSpecifier, FragmentOrReflection);
+                                       Expr *Operand) {
+  return BuildCXXInjectionStmt(Loc, ContextSpecifier, Operand);
 }
 
 static bool
