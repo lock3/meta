@@ -393,6 +393,25 @@ public:
     Visit(D->getInit());
   }
 
+  void VisitCXXMetaprogramDecl(const CXXMetaprogramDecl *D) {
+    if (D->hasBody())
+      Visit(D->getBody());
+    // if (D->hasInjectedStmt())
+    //   Visit(D->getInjectedStmt());
+  }
+
+  void VisitCXXInjectionDecl(const CXXInjectionDecl *D) {
+    if (D->hasBody())
+      Visit(D->getBody());
+    // if (D->hasInjectedStmt())
+    //   Visit(D->getInjectedStmt());
+  }
+
+  void VisitCXXStmtFragmentDecl(const CXXStmtFragmentDecl *D) {
+    if (D->hasBody())
+      Visit(D->getBody());
+  }
+
   template <typename SpecializationDecl>
   void dumpTemplateDeclSpecialization(const SpecializationDecl *D) {
     for (const auto *RedeclWithBadType : D->redecls()) {

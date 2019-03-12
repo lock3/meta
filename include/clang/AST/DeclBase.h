@@ -1838,6 +1838,10 @@ public:
 
   bool isFragment() const { return getDeclKind() == Decl::CXXFragment; }
 
+  /// Determines whether this context is itself a fragment, or a
+  /// subcontext inside of a fragment.
+  bool isFragmentContext() const;
+
   bool isStdNamespace() const;
 
   bool isInlineNamespace() const;

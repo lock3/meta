@@ -6232,6 +6232,9 @@ static bool isIncompleteDeclExternC(Sema &S, const T *D) {
 }
 
 static bool shouldConsiderLinkage(const VarDecl *VD) {
+  if (VD->isInFragment())
+    return false;
+
   const DeclContext *DC = VD->getDeclContext()->getRedeclContext();
   if (DC->isFunctionOrMethod() || isa<OMPDeclareReductionDecl>(DC) ||
       isa<OMPDeclareMapperDecl>(DC))

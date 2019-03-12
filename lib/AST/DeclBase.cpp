@@ -358,13 +358,7 @@ bool Decl::isInStdNamespace() const {
 }
 
 bool Decl::isInFragment() const {
-  const DeclContext *DC = getDeclContext();
-  while (DC) {
-    if (isa<CXXFragmentDecl>(DC))
-      return true;
-    DC = DC->getParent();
-  }
-  return false;
+  return getDeclContext()->isFragmentContext();
 }
 
 TranslationUnitDecl *Decl::getTranslationUnitDecl() {
@@ -828,6 +822,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case CXXFragment:
     case CXXMetaprogram:
     case CXXInjection:
+    case CXXStmtFragment:
       // Never looked up by name.
       return 0;
   }
@@ -1069,9 +1064,14 @@ DeclContext *DeclContext::getLookupParent() {
   return getParent();
 }
 
-bool DeclContext::isInlineNamespace() const {
-  return isNamespace() &&
-         cast<NamespaceDecl>(this)->isInline();
+bool DeclContext::isFragmentContext() const {
+  const DeclContext *DC = this;
+  do {
+    if (DC->isFragment())
+      return true;
+    DC = DC->getParent();
+  } while (DC);
+  return false;
 }
 
 bool DeclContext::isStdNamespace() const {
@@ -1088,6 +1088,11 @@ bool DeclContext::isStdNamespace() const {
 
   const IdentifierInfo *II = ND->getIdentifier();
   return II && II->isStr("std");
+}
+
+bool DeclContext::isInlineNamespace() const {
+  return isNamespace() &&
+         cast<NamespaceDecl>(this)->isInline();
 }
 
 bool DeclContext::isDependentContext() const {

@@ -968,6 +968,10 @@ namespace {
                         /* DeclContext *Owner */ Owner, TemplateArgs);
       return DeclInstantiator.SubstTemplateParams(OrigTPL);
     }
+
+    bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                     Decl *OriginalContent,
+                                     Decl *&NewContent);
   private:
     ExprResult transformNonTypeTemplateParmRef(NonTypeTemplateParmDecl *parm,
                                                SourceLocation loc,
@@ -3119,4 +3123,11 @@ NamedDecl *LocalInstantiationScope::getPartiallySubstitutedPack(
   }
 
   return nullptr;
+}
+
+bool TemplateInstantiator::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                                    Decl *OriginalContent,
+                                                    Decl *&NewContent) {
+  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, TemplateArgs);
+  return !NewContent;
 }

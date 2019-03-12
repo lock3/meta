@@ -402,6 +402,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::CXXFragment:
   case Decl::CXXMetaprogram:
   case Decl::CXXInjection:
+  case Decl::CXXStmtFragment:
     return false;
 
   // These indirectly derive from Redeclarable<T> but are not actually

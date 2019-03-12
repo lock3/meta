@@ -14748,7 +14748,12 @@ static bool isEvaluatableContext(Sema &SemaRef) {
 static bool isOdrUseContext(Sema &SemaRef, bool SkipDependentUses = true) {
   // An expression in a template is not really an expression until it's been
   // instantiated, so it doesn't trigger odr-use.
-  if (SkipDependentUses && SemaRef.CurContext->isDependentContext())
+  //
+  // Similarly, an expression in a fragment is not really an expression
+  // until it's been injected, so it doesn't trigger odr-use.
+  DeclContext *CurContext = SemaRef.CurContext;
+  if (SkipDependentUses && (CurContext->isDependentContext()
+                            || CurContext->isFragmentContext()))
     return false;
 
   // Similarly to above... If we're anywhere inside an expansion loop body for

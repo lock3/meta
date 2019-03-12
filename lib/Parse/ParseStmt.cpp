@@ -977,6 +977,15 @@ bool Parser::isExprValueDiscarded() {
   return true;
 }
 
+template<typename T>
+void StmtPush(T *MetaDecl,
+              SmallVectorImpl<Stmt *> &Stmts) {
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
+    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
+    Stmts.push_back(InjectedStmt);
+  }
+}
+
 /// ParseCompoundStatementBody - Parse a sequence of statements and invoke the
 /// ActOnCompoundStmt action.  This expects the '{' to be the current token, and
 /// consume the '}' at the end of the block.  It does not manipulate the scope
@@ -1085,8 +1094,23 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       }
     }
 
-    if (R.isUsable())
-      Stmts.push_back(R.get());
+    if (R.isUsable()) {
+      Stmt *Result = R.get();
+      Stmts.push_back(Result);
+
+      if (auto *VD = dyn_cast<DeclStmt>(Result)) {
+        if (VD->isSingleDecl()) {
+          Decl *D = VD->getSingleDecl();
+          // [Meta] metaprogram-declaration
+          if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
+            StmtPush(MetaDecl, Stmts);
+          // [Meta] injection-declaration
+          } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
+            StmtPush(MetaDecl, Stmts);
+          }
+        }
+      }
+    }
   }
 
   SourceLocation CloseLoc = Tok.getLocation();

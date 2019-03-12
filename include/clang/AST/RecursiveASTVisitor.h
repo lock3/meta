@@ -1970,6 +1970,10 @@ DEF_TRAVERSE_DECL(CXXFragmentDecl, {
   TRY_TO(TraverseDecl(D->getContent()));
 })
 
+DEF_TRAVERSE_DECL(CXXStmtFragmentDecl, {
+    TRY_TO(TraverseStmt(D->getBody()));
+})
+
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
   if (D->isBitField())

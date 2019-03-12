@@ -121,6 +121,27 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, ClassDecl);
 }
 
+Decl *
+Parser::ParseCXXBlockFragment(Decl *Fragment) {
+  assert(Tok.is(tok::l_brace) && "Expected '{'");
+  using CompoundStmt = ::CompoundStmt;
+  SourceLocation IntroLoc = Tok.getLocation();
+
+  // Parse the actual block. This consumes the braces.
+  StmtResult Block = ParseCompoundStatementBody();
+  if (Block.isInvalid()) {
+    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
+    return nullptr;
+  }
+  
+  DeclContext *CurContext = Actions.CurContext;
+  CXXStmtFragmentDecl *Body =
+    CXXStmtFragmentDecl::Create(Actions.getASTContext(), CurContext, IntroLoc);
+  Body->setBody(cast<CompoundStmt>(Block.get()));
+
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Body);
+}
+
 /// ParseCXXFragment
 ///
 ///      fragment-expression:
@@ -156,7 +177,7 @@ Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
       llvm_unreachable("enum fragments not implemented");
 
     case tok::l_brace:
-      llvm_unreachable("block fragments not implemented");
+      return ParseCXXBlockFragment(Fragment);
 
     default:
       break;

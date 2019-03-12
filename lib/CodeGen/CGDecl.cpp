@@ -96,6 +96,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::CXXFragment: // <<decl>>;
   case Decl::CXXMetaprogram: // constexpr { ... }
   case Decl::CXXInjection: // constexpr -> reflection-or-fragment
+  case Decl::CXXStmtFragment:
     llvm_unreachable("Declaration should not be in declstmts!");
   case Decl::Function:  // void X();
   case Decl::Record:    // struct/union/class X;

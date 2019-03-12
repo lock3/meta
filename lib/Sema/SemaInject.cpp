@@ -125,6 +125,7 @@ struct InjectionInfo {
 class InjectionContext : public TreeTransform<InjectionContext> {
   using Base = TreeTransform<InjectionContext>;
 
+  using InjectionType = llvm::PointerUnion3<Decl *, CXXBaseSpecifier *, Stmt *>;
 public:
   InjectionContext(Sema &SemaRef, Decl *Injectee)
     : Base(SemaRef), Injectee(Injectee) { }
@@ -527,6 +528,10 @@ public:
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
 
+  Stmt *InjectStmtImpl(Stmt *S);
+  Stmt *InjectStmt(Stmt *S);
+  Stmt *InjectDeclStmt(DeclStmt *S);
+
   // Members
 
   /// A mapping of fragment placeholders to their typed compile-time
@@ -563,6 +568,14 @@ public:
 
   /// The pending class member injections.
   llvm::SmallVector<InjectionInfo *, 8> PendingInjections;
+
+  /// If this is a local block fragment, we will inject it into
+  /// a statement rather than a context.
+  Stmt *InjecteeStmt;
+
+  /// A container that holds the injected stmts we will eventually
+  /// build a new CompoundStmt out of.
+  llvm::SmallVector<Stmt *, 8> InjectedStmts;
 };
 
 bool InjectionContext::isInInjection(Decl *D) {
@@ -642,6 +655,7 @@ bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
                                               TypeSourceInfo *&TSI,
                                               CXXRecordDecl *&Owner) {
   bool Invalid = InjectDeclarator(D, DNI, TSI);
+
   Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return Invalid;
 }
@@ -1407,6 +1421,62 @@ Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
       getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
 }
 
+Stmt *InjectionContext::InjectStmt(Stmt *S) {
+  Stmt *NewS = InjectStmtImpl(S);
+
+  return NewS;
+}
+
+Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
+  switch (S->getStmtClass()) {
+  case Stmt::DeclStmtClass:
+    return InjectDeclStmt(cast<DeclStmt>(S));
+  default:
+    // Some statements will not require any special logic.
+    InjectedStmts.push_back(TransformStmt(S).get());
+    return S;
+  }
+}
+
+Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
+  auto AddDeclToInjecteeScope = [this](Decl *OldDecl) -> Decl* {
+    Decl *D = InjectDecl(OldDecl);
+    if (!D || D->isInvalidDecl())
+      return nullptr;
+
+    Scope *FunctionScope =
+      getSema().getScopeForContext(Decl::castToDeclContext(Injectee));
+    getSema().IdResolver->AddDecl(cast<NamedDecl>(D));
+    FunctionScope->AddDecl(D);
+
+    return D;
+  };
+
+  if (S->isSingleDecl()) {
+    if (Decl *NewDecl = AddDeclToInjecteeScope(S->getSingleDecl())) {
+      DeclGroupRef NewDG(NewDecl);
+      DeclStmt *NewS =
+        new (getSema().getASTContext()) DeclStmt(NewDG, S->getBeginLoc(),
+                                                 S->getEndLoc());
+      TransformDeclStmt(NewS);
+      InjectedStmts.push_back(NewS);
+      return NewS;
+    }
+    return nullptr;
+  }
+
+  DeclGroup &DG = S->getDeclGroup().getDeclGroup();
+  bool Invalid = false;
+  for (std::size_t I = 0; I < DG.size(); ++I)
+    if (!AddDeclToInjecteeScope(DG[I]))
+      Invalid = true;
+
+  if (Invalid)
+    return nullptr;
+  InjectedStmts.push_back(S);
+  return S;
+}
+
 template <typename MetaType>
 static Decl *
 InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
@@ -1813,7 +1883,6 @@ Decl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content) {
 
   return FD;
 }
-
 
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
@@ -2263,6 +2332,32 @@ static bool InjectFragment(Sema &S,
 
   Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
 
+  // The logic for block fragments is different, since everything in the fragment
+  // is stored in a CompoundStmt.
+  if (isa<CXXStmtFragmentDecl>(Injection)) {
+    return BootstrapInjection(S, Injectee, Injection,
+                              [&](InjectionContext *Ctx) {
+      Ctx->AddDeclSubstitution(Injection, Injectee);
+      Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
+
+      CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
+      CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());
+      for (Stmt *S : FragmentBlock->body()) {
+        Stmt *Inj = Ctx->InjectStmt(S);
+
+        if (!Inj) {
+          Injectee->setInvalidDecl(true);
+          continue;
+        }
+      }
+
+      unsigned NumInjectedStmts = Ctx->InjectedStmts.size();
+      Stmt **Stmts = new (S.Context) Stmt *[NumInjectedStmts];
+      std::copy(Ctx->InjectedStmts.begin(), Ctx->InjectedStmts.end(), Stmts);
+      MD->setInjectedStmts(Stmts, NumInjectedStmts);
+    });
+  }
+
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
     Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
@@ -2271,9 +2366,10 @@ static bool InjectFragment(Sema &S,
     // Inject each declaration in the fragment.
     for (Decl *D : InjectionAsDC->decls()) {
       // Never inject injected class names.
-      if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
+      if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D)) {
         if (Class->isInjectedClassName())
           continue;
+      }
 
       Decl *R = Ctx->InjectDecl(D);
       if (!R || R->isInvalidDecl()) {
@@ -2848,7 +2944,6 @@ template <typename MetaType>
 static void
 ActOnFinishMetaDecl(Sema &Sema, Decl *D, Stmt *Body, DeclContext *OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
-
   FunctionDecl *Fn = MD->getFunctionDecl();
 
   Sema.DiscardCleanupsInEvaluationContext();

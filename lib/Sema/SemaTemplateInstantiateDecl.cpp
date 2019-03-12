@@ -962,6 +962,24 @@ Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
   llvm_unreachable("should never get here");
 }
 
+Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
+{
+  if (!D->hasBody())
+    return D;
+
+  SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+  StmtResult NewBody =
+    SemaRef.SubstStmt(D->getBody(), TemplateArgs, ExistingMappings);
+  if (NewBody.isInvalid())
+    return nullptr;
+
+  CXXStmtFragmentDecl *Inst =
+      CXXStmtFragmentDecl::Create(SemaRef.Context, Owner, D->getBeginLoc());
+  Inst->setBody(NewBody.get());
+  Owner->addDecl(Inst);
+  return Inst;
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
@@ -969,7 +987,7 @@ Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   int i = 0;
   for (auto *PI : D->chain()) {
     NamedDecl *Next = SemaRef.FindInstantiatedDecl(D->getLocation(), PI,
-                                              TemplateArgs);
+                                                   TemplateArgs);
     if (!Next)
       return nullptr;
 

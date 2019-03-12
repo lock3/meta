@@ -103,3 +103,4 @@ def Empty : Decl;
 def CXXMetaprogram : Decl;
 def CXXInjection : Decl;
 def CXXFragment : Decl, DeclContext;
+def CXXStmtFragment : Decl, DeclContext;

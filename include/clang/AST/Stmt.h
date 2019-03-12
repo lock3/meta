@@ -1246,7 +1246,6 @@ class CompoundStmt final : public Stmt,
   explicit CompoundStmt(EmptyShell Empty) : Stmt(CompoundStmtClass, Empty) {}
 
   void setStmts(ArrayRef<Stmt *> Stmts);
-
 public:
   static CompoundStmt *Create(const ASTContext &C, ArrayRef<Stmt *> Stmts,
                               SourceLocation LB, SourceLocation RB);

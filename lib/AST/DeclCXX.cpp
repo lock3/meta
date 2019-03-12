@@ -3025,6 +3025,12 @@ CXXFragmentDecl *CXXFragmentDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) CXXFragmentDecl(nullptr, SourceLocation());
 }
 
+CXXStmtFragmentDecl
+*CXXStmtFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                             SourceLocation IntroLoc) {
+  return new (Cxt, DC) CXXStmtFragmentDecl(DC, IntroLoc);
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

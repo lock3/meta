@@ -4632,6 +4632,11 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       RelatedRetType = Context.getObjCInterfaceType(MD->getClassInterface());
       RelatedRetType = Context.getObjCObjectPointerType(RelatedRetType);
     }
+  } else if (CurContext->isFragmentContext()) {
+    // If we're inside of a fragment context, we don't know the function
+    // corresponding to this return statement, we must defer.
+    return ReturnStmt::Create(Context, ReturnLoc, RetValExp,
+                              /*NRVOCandidate=*/nullptr);
   } else // If we don't have a function/method context, bail.
     return StmtError();
 

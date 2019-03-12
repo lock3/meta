@@ -87,6 +87,14 @@ int main() {
   constexpr auto test_ns_empty_frag = __fragment namespace {
   };
 
+  constexpr auto test_block_frag = __fragment {
+    int i = 0;
+    int i_capture = capture;
+  };
+
+  constexpr auto test_empty_block_frag = __fragment {
+  };
+
   constexpr auto test_ns_frag_without_body = __fragment namespace; // expected-error {{expected namespace-fragment}}
 
   constexpr auto unfinished_fragment = __fragment; // expected-error {{expected fragment}}

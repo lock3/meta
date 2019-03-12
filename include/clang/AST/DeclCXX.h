@@ -4013,6 +4013,11 @@ class CXXMetaprogramDecl : public Decl {
   /// The de-sugared call expression.
   CallExpr *Call;
 
+  /// A placeholder for injected statements.
+  Stmt **InjectedStmts;
+
+  unsigned NumInjectedStmts;
+
   CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
       : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(),
         Call(nullptr) {}
@@ -4051,6 +4056,15 @@ public:
   /// Sets the expression that evaluates the metaprogram-declaration.
   void setCallExpr(CallExpr *E) { Call = E; }
 
+  Stmt **getInjectedStmts() const { return InjectedStmts; }
+
+  unsigned getNumInjectedStmts() const { return NumInjectedStmts; }
+
+  void setInjectedStmts(Stmt **InjectedStmts, unsigned NumInjectedStmts) {
+    this->InjectedStmts = InjectedStmts;
+    this->NumInjectedStmts = NumInjectedStmts;
+  }
+
   SourceRange getSourceRange() const override;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -4075,6 +4089,11 @@ class CXXInjectionDecl : public Decl {
 
   /// The de-sugared call expression.
   CallExpr *Call;
+
+  /// A placeholder for injected statements.
+  Stmt **InjectedStmts;
+
+  unsigned NumInjectedStmts;
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
       : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(),
@@ -4114,6 +4133,15 @@ public:
   /// Sets the expression that evaluates the injection-declaration.
   void setCallExpr(CallExpr *E) { Call = E; }
 
+  Stmt **getInjectedStmts() const { return InjectedStmts; }
+
+  unsigned getNumInjectedStmts() const { return NumInjectedStmts; }
+
+  void setInjectedStmts(Stmt **InjectedStmts, unsigned NumInjectedStmts) {
+    this->InjectedStmts = InjectedStmts;
+    this->NumInjectedStmts = NumInjectedStmts;
+  }
+
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXInjection; }
 
@@ -4146,7 +4174,7 @@ class CXXFragmentDecl : public Decl, public DeclContext {
   virtual void anchor();
 
   /// The source code fragment.
-  Decl* Content;
+  Decl *Content;
 
   /// A ParsingClass object from the parser. If this is a class fragment,
   /// then this will contain the late-parsed declarations associated with
@@ -4159,15 +4187,14 @@ class CXXFragmentDecl : public Decl, public DeclContext {
 public:
   static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
                                  SourceLocation IntroLoc);
-
   static CXXFragmentDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// \brief The contained fragment.
-  Decl* getContent() const { return Content; }
+  Decl *getContent() const { return Content; }
 
   /// \brief Sets the contained fragment.
   void setContent(Decl *D) {
-    assert(!Content && "Content already set");
+    assert(!Content && "Content already set.");
     Content = D;
   }
 
@@ -4199,6 +4226,29 @@ public:
   }
 };
 
+class CXXStmtFragmentDecl : public Decl, public DeclContext {
+  Stmt *Body;
+
+  CXXStmtFragmentDecl(DeclContext *DC, SourceLocation BeginLoc)
+    : Decl(CXXStmtFragment, DC, BeginLoc), DeclContext(CXXStmtFragment)
+    {}
+public:
+  static CXXStmtFragmentDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                     SourceLocation BeginLoc);
+
+  void setBody(Stmt *S) { Body = S; }
+  bool hasBody() const { return Body; }
+  Stmt *getBody() const { return Body; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXStmtFragment; }
+  static DeclContext *castToDeclContext(const CXXStmtFragmentDecl *D) {
+    return static_cast<DeclContext *>(const_cast<CXXStmtFragmentDecl*>(D));
+  }
+  static CXXStmtFragmentDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<CXXStmtFragmentDecl *>(const_cast<DeclContext*>(DC));
+  }
+};
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

@@ -1663,7 +1663,7 @@ bool Sema::CheckConstexprFunctionDecl(const FunctionDecl *NewFD) {
 /// \return true if the body is OK (maybe only as an extension), false if we
 ///         have diagnosed a problem.
 static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
-                                   DeclStmt *DS, SourceLocation &Cxx1yLoc) {
+                                        DeclStmt *DS, SourceLocation &Cxx1yLoc) {
   // C++11 [dcl.constexpr]p3 and p4:
   //  The definition of a constexpr function(p3) or constructor(p4) [...] shall
   //  contain only
@@ -1765,6 +1765,8 @@ static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
       continue;
 
     case Decl::CXXMetaprogram:
+    case Decl::CXXInjection:
+      // Used for metaprogramming.
       continue;
 
     default:
