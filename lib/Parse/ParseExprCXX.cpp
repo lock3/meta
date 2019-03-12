@@ -1674,10 +1674,6 @@ Parser::ParseCXXSelectMemberExpr() {
   if (!Record && !BaseVar->getType()->isDependentType())
     return ExprError();
   
-  llvm::outs() << "Parsed base\n";
-  Base->dump();
-  llvm::outs() << "Parsed baseDRE\n";
-  BaseDRE->dump();
   return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
                                           KWLoc,
                                           BaseDRE->getLocation(),

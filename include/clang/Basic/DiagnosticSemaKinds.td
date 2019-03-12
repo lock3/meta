@@ -2476,6 +2476,8 @@ def err_invalid_immediate : Error<
   "cannot be consteval">;
 def err_select_index_not_constant : Error<
   "Index of a __select expression must be a constant expression.">;
+def err_select_index_exceeds_bounds : Error<
+  "A member may not be selected at an out-of-bounds index.">;
 
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<

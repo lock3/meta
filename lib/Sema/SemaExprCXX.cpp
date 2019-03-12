@@ -8046,8 +8046,6 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
    // Get the type of the struct we are trying to expand.
   QualType BaseType = Base->getType().getNonReferenceType();
 
-  llvm::outs() << "ActOnCXXSelectMemberExpr\n";
-  
   // If the base is dependent, we won't be able to do any destructuring yet.
   if (BaseType->isDependentType()) {
     ExprResult BaseDRE =
@@ -8058,8 +8056,6 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
                                              BaseLoc, IdxLoc);
   }
 
-  llvm::outs() << "Not dependent type\n";
-  
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
     FindDecomposableBaseClass
@@ -8067,61 +8063,71 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
     return true;
-  QualType BaseClassType =
-    Context.getQualifiedType(Context.getRecordType(RD),
-                             BaseType.getQualifiers());
-  llvm::SmallVector<Expr *, 8> Fields;
   SourceLocation Loc = RD->getLocation();
+  
+  auto *Fields = new (Context) llvm::SmallVector<Expr *, 8>;
+  
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  auto It = CurDestructures.find(Base->getInit());
+  if (It != CurDestructures.end()) {
+    Fields = It->second;
+  } else {
+    QualType BaseClassType =
+      Context.getQualifiedType(Context.getRecordType(RD),
+                               BaseType.getQualifiers());
 
-   // Create and store a reference expression to each field.
-  unsigned I = 0;
-  for (auto *FD : RD->fields()) {
-    if (FD->isUnnamedBitfield())
-      continue;
+    // Create and store a reference expression to each field.
+    unsigned I = 0;
+    for (auto *FD : RD->fields()) {
+      if (FD->isUnnamedBitfield())
+        continue;
 
-    if (FD->isAnonymousStructOrUnion()) {
-      Diag
-        (Base->getLocation(), diag::err_decomp_decl_anon_union_member)
-        << BaseClassType << FD->getType()->isUnionType();
-      Diag(FD->getLocation(), diag::note_declared_at);
-      return true;
+      if (FD->isAnonymousStructOrUnion()) {
+        Diag
+          (Base->getLocation(), diag::err_decomp_decl_anon_union_member)
+          << BaseClassType << FD->getType()->isUnionType();
+        Diag(FD->getLocation(), diag::note_declared_at);
+        return true;
+      }
+
+      // The field must be accessible in the context of the expansion.
+      // We already checked that the base class is accessible.
+      CheckStructuredBindingMemberAccess(
+        Loc, const_cast<CXXRecordDecl *>(OrigRD),
+        DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
+                               BasePair.getAccess(), FD->getAccess())));
+
+      // Initialize the binding to Base.FD
+      ExprResult E =
+        BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+      if (E.isInvalid())
+        return true;
+      E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
+                            VK_LValue, &BasePath);
+      if (E.isInvalid())
+        return true;
+      E = BuildFieldReferenceExpr
+        (E.get(), /*IsArrow*/ false, Loc,
+         CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
+         DeclarationNameInfo(FD->getDeclName(), Loc));
+      if (E.isInvalid())
+        return true;
+
+      Fields->push_back(E.get());
+      ++I;
     }
 
-    // The field must be accessible in the context of the expansion.
-    // We already checked that the base class is accessible.
-    CheckStructuredBindingMemberAccess(
-      Loc, const_cast<CXXRecordDecl *>(OrigRD),
-      DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
-                             BasePair.getAccess(), FD->getAccess())));
-
-    // Initialize the binding to Base.FD
-    ExprResult E =
-      BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
-    if (E.isInvalid())
-      return true;
-    E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
-                          VK_LValue, &BasePath);
-    if (E.isInvalid())
-      return true;
-    E = BuildFieldReferenceExpr
-      (E.get(), /*IsArrow*/ false, Loc,
-       CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
-       DeclarationNameInfo(FD->getDeclName(), Loc));
-    if (E.isInvalid())
-      return true;
-
-    Fields.push_back(E.get());
-    ++I;
+    // TODO: create "BadNumberOfBindings()" equivalent for
+    // expansions.
+    assert(I == Fields->size() && "Bad Number of Bindings");
+    CurDestructures.insert({Base->getInit(), Fields});
   }
-
-  // TODO: create "BadNumberOfBindings()" equivalent for
-  // expansions.
-  assert(I == Fields.size() && "Bad Number of Bindings");
 
   // There is no need to keep this as a vector, we will
   // not be adding anything to it.
-  Expr **FieldArray = new (Context) Expr *[Fields.size()];
-  std::copy(Fields.begin(), Fields.end(), FieldArray);
+  Expr **FieldArray = new (Context) Expr *[Fields->size()];
+  std::copy(Fields->begin(), Fields->end(), FieldArray);
 
   ExprResult BaseDRE =
     BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
@@ -8132,7 +8138,7 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   if (BaseRef->isTypeDependent() || Index->isTypeDependent()
       || Index->isValueDependent()) {
     return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             FieldArray, Index, Fields.size(),
+                                             FieldArray, Index, Fields->size(),
                                              RD, Loc, KWLoc, BaseLoc, IdxLoc);
   }
 
@@ -8149,11 +8155,17 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   if (!ComputedIndex->EvaluateAsInt(Res, Context))
     return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
 
-  I = Res.Val.getInt().getZExtValue();
-  return new (Context) CXXSelectMemberExpr(BaseRef, FieldArray[I]->getType(),
+  unsigned I = Res.Val.getInt().getZExtValue();
+  if (I >= Fields->size()) {
+    Diag(BaseLoc, diag::err_select_index_exceeds_bounds);
+    return ExprError();
+  }
+
+  return new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
                                            FieldArray, ComputedIndex,
-                                           Fields.size(), RD, Loc, KWLoc,
+                                           Fields->size(), RD, Loc, KWLoc,
                                            BaseLoc, IdxLoc);
+
 }
 
 ExprResult
@@ -8169,7 +8181,8 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
                                              BaseLoc, IdxLoc);
   }
 
-  llvm::SmallVector<Expr *, 4> Parms;
+  // If we haven't already destructured this base, go ahead and destructure.
+  llvm::SmallVector<Expr *, 8> Parms;
   if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
     for (std::size_t I = 0; I < FPPE->getNumExpansions(); ++I) {
       VarDecl *Parm = FPPE->getExpansion(I);
@@ -8208,8 +8221,13 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
     return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
   std::size_t I = Res.Val.getInt().getZExtValue();
 
+  if (I >= Parms.size()) {
+    Diag(BaseLoc, diag::err_select_index_exceeds_bounds);
+    return ExprError();
+  }
+
   bool dependent = isa<DeclRefExpr>(Base);
-  return new (Context) CXXSelectMemberExpr(Base, FieldArray[I]->getType(),
+  return new (Context) CXXSelectMemberExpr(Base, Parms[I]->getType(),
                                            FieldArray, ComputedIndex,
                                            Parms.size(), dependent,
                                            KWLoc, BaseLoc, IdxLoc);

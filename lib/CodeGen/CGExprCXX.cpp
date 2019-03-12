@@ -2244,9 +2244,7 @@ CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
 
   if (!success)
     llvm_unreachable("Bad index in Projection.");
-  std::size_t I = 0;
-  for (; I < Res.Val.getInt(); ++I)
-    ;
+  std::size_t I = Res.Val.getInt().getZExtValue();
 
   return EmitLValue(E->getFields()[I]);
 }
