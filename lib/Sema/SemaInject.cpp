@@ -1862,7 +1862,7 @@ public:
   /// contexts.
   template<typename F>
   bool operator ()(F Test) const {
-    bool Failure = Test(Injection) != Test(Injectee);
+    bool Failure = Test(Injection) && !Test(Injectee);
     if (Failure) ReportFailure();
     return Failure;
   }
@@ -1881,7 +1881,7 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
   InjectionCompatibilityChecker Check(SemaRef, POI, Injection, Injectee);
 
   auto ClassTest = [] (DeclContext *DC) -> bool {
-    return DC->isFileContext();
+    return DC->isRecord();
   };
   if (Check(ClassTest))
     return false;
