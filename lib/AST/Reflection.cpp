@@ -1087,6 +1087,7 @@ static StorageTrait getStorage(const VarDecl *D) {
   llvm_unreachable("Invalid storage duration");
 }
 
+#pragma pack(push, 1)
 /// Traits for named objects.
 ///
 /// Note that a variable can be declared \c extern and not be defined.
@@ -1289,7 +1290,7 @@ static ValueTraits getValueTraits(const EnumConstantDecl *D,
 struct NamespaceTraits {
   LinkageTrait Linkage : 2;
   AccessTrait Access : 2;
-  bool Inline : 1;
+  unsigned Inline : 1;
   unsigned Rest : 27;
 };
 
@@ -1474,6 +1475,8 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   }
   llvm_unreachable("invalid traits selector");
 }
+
+#pragma pack(pop)
 
 /// Set Result to an invalid reflection.
 static bool makeReflection(APValue &Result) {

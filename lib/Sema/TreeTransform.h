@@ -12315,7 +12315,7 @@ TreeTransform<Derived>::TransformPackExpansionExpr(PackExpansionExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformPackSelectionExpr(PackSelectionExpr *E) {
-  assert(false);
+  llvm_unreachable("unimplemented");
 }
 
 template<typename Derived>
