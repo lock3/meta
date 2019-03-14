@@ -7595,7 +7595,16 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
   if (!DNI.getName())
     return ExprError();
 
-  CXXScopeSpec SS = E->getScopeSpecifier();
+  NestedNameSpecifierLoc QualifierLoc;
+  if (E->getQualifierLoc()) {
+    QualifierLoc
+      = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
+    if (!QualifierLoc)
+      return ExprError();
+  }
+
+  CXXScopeSpec NewSS;
+  NewSS.Adopt(QualifierLoc);
 
   TemplateArgumentListInfo TemplateArgs, *TemplateArgsPtr = nullptr;
 
@@ -7616,11 +7625,12 @@ TreeTransform<Derived>::TransformCXXReflectedIdExpr(CXXReflectedIdExpr *E) {
   // Some components are still dependent.
   if (DNI.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
     return CXXReflectedIdExpr::Create(
-            getSema().Context, DNI, E->getType(), SS, TemplateKWLoc,
-            E->HasTrailingLParen(), E->IsAddressOfOperand(), TemplateArgsPtr);
+       getSema().Context, DNI, E->getType(), NewSS,
+       NewSS.getWithLocInContext(SemaRef.Context), TemplateKWLoc,
+       E->HasTrailingLParen(), E->IsAddressOfOperand(), TemplateArgsPtr);
 
   ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
-  return getSema().ActOnIdExpression(ParserLookup.getCurScope(), SS,
+  return getSema().ActOnIdExpression(ParserLookup.getCurScope(), NewSS,
                                      TemplateKWLoc, DNI, TemplateArgsPtr,
                                      UnqualifiedIdKind::IK_ReflectedId,
                                      /*TemplateId=*/nullptr,

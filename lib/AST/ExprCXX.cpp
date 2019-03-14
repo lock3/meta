@@ -1843,13 +1843,14 @@ CXXCompilerErrorExpr *CXXCompilerErrorExpr::CreateEmpty(const ASTContext &C,
 
 // Assume that the name is an ordinary lvalue for now.
 CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
-      const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
-            bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs)
+      const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
+      SourceLocation TemplateKWLoc, bool TrailingLParen, bool AddressOfOperand,
+                                   const TemplateArgumentListInfo *TemplateArgs)
   : Expr(CXXReflectedIdExprClass, T, VK_LValue, OK_Ordinary,
          /*TD=*/true, /*VD=*/true, /*ID=*/true,
          /*ContainsUnexpandedParameterPack=*/false),
-    NameInfo(DNI), SS(SS), TrailingLParen(TrailingLParen),
-    AddressOfOperand(AddressOfOperand),
+    NameInfo(DNI), SS(SS), QualifierLoc(QualifierLoc),
+    TrailingLParen(TrailingLParen), AddressOfOperand(AddressOfOperand),
     HasTemplateKWAndArgsInfo(TemplateArgs != nullptr
                              || TemplateKWLoc.isValid()) {
   // If we have explicit template arguments, check for dependent
@@ -1865,16 +1866,18 @@ CXXReflectedIdExpr::CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
 
 CXXReflectedIdExpr *CXXReflectedIdExpr::Create(
     const ASTContext &C, DeclarationNameInfo DNI, QualType T,
-    const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
-    bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs) {
+    const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
+    SourceLocation TemplateKWLoc, bool TrailingLParen, bool AddressOfOperand,
+    const TemplateArgumentListInfo *TemplateArgs) {
   bool HasTemplateKWAndArgsInfo = TemplateArgs || TemplateKWLoc.isValid();
   std::size_t Size =
     totalSizeToAlloc<ASTTemplateKWAndArgsInfo, TemplateArgumentLoc>(
         HasTemplateKWAndArgsInfo, TemplateArgs ? TemplateArgs->size() : 0);
 
   void *Mem = C.Allocate(Size, alignof(CXXReflectedIdExpr));
-  return new (Mem) CXXReflectedIdExpr(DNI, T, SS, TemplateKWLoc, TrailingLParen,
-                                      AddressOfOperand, TemplateArgs);
+  return new (Mem) CXXReflectedIdExpr(DNI, T, SS, QualifierLoc, TemplateKWLoc,
+                                      TrailingLParen, AddressOfOperand,
+                                      TemplateArgs);
 }
 
 CXXReflectedIdExpr *CXXReflectedIdExpr::CreateEmpty(const ASTContext &C,

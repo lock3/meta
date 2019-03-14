@@ -15,6 +15,9 @@ void test_template() {
   int int_x = foo_bar_fin.unqualid("get_", unqualid("int_reflexpr"))();
   int int_y = unqualid("foo_bar_fin").get_int();
   int int_z = unqualid("foo_bar_fin").unqualid("get_int")();
+
+  static constexpr auto r = reflexpr(T::field_1);
+  static_assert(T::unqualid(r) == 0);
 }
 
 template<typename T>
