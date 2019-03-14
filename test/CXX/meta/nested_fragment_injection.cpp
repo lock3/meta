@@ -14,6 +14,16 @@ class z {
       constexpr int foo_1() { return y + member_y; }
     };
   };
+
+  consteval -> __fragment class k {
+    static constexpr auto frag = __fragment struct {
+      constexpr int foo_2() { return 2; }
+    };
+
+    consteval -> __fragment class k2 {
+      consteval -> frag;
+    }
+  };
 };
 
 consteval {
@@ -27,5 +37,6 @@ int main() {
   static_assert(i_z.foo_0() == x * 2);
   static_assert(i_z.member_y == y);
   static_assert(i_z.foo_1() == y * 2);
+  static_assert(i_z.foo_2() == 2);
   return 0;
 }

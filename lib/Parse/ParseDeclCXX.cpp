@@ -3281,6 +3281,11 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
         // If we're in a function or function template then this is a local
         // class rather than a nested class.
         break;
+
+      if ((S->getFlags() & Scope::FragmentScope))
+        // If we're in a fragment scope, this is a class fragment
+        // rather than a nested class.
+        break;
     }
   }
 
