@@ -1534,6 +1534,11 @@ public:
     return getSema().BuildCXXUnreflexprExpression(Loc, E);
   }
 
+  /// Transform the contents of the fragment.
+  bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                   Decl *OriginalContent,
+                                   Decl *&NewContent);
+
   /// Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                     SmallVectorImpl<Expr *> &Captures) {
@@ -7913,6 +7918,20 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 }
 
 template<typename Derived>
+bool
+TreeTransform<Derived>::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                                    Decl *OriginalContent,
+                                                    Decl *&NewContent) {
+  // Arguments used to instantiate the fragment are those used to
+  // instantiate the current context.
+  NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
+  MultiLevelTemplateArgumentList Args =
+      getSema().getTemplateInstantiationArgs(Owner);
+  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, Args);
+  return !NewContent;
+}
+
+template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   // Transform captures first.
@@ -7950,14 +7969,10 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
 
   // Clone the underlying declaration.
   {
-    // Arguments used to instantiate the fragment are those used to
-    // instantiate the current context.
-    NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
-    MultiLevelTemplateArgumentList Args =
-        getSema().getTemplateInstantiationArgs(Owner);
-    Decl *NewContent =
-        getSema().SubstDecl(OldFragment->getContent(), NewFragment, Args);
-    if (!NewContent)
+    Decl *NewContent;
+    if (getDerived().TransformCXXFragmentContent(NewFragment,
+                                                 OldFragment->getContent(),
+                                                 NewContent))
       return ExprError();
     F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
     if (!F)

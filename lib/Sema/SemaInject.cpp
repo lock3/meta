@@ -132,14 +132,10 @@ public:
   }
 
   bool ShouldInjectInto(DeclContext *DC) const {
-    // If we're not merely transforming, always inject.
-    if (!InMockInjectionContext)
-      return true;
-
     // We should only be creating children of the declaration
-    // being injected, if the target DC is the injectee,
-    // it should be blocked.
-    return Decl::castFromDeclContext(DC) != Injectee;
+    // being injected, if the target DC is the context we're
+    // mock injecting into, it should be blocked.
+    return DC != MockInjectionContext;
   }
 
   /// Returns a replacement for D if a substitution has been registered or
@@ -265,6 +261,19 @@ public:
     // Rebuild the by injecting it. This will apply substitutions to the type
     // and initializer of the declaration.
     return InjectDecl(D);
+  }
+
+  bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                   Decl *OriginalContent,
+                                   Decl *&NewContent) {
+    // Change the target of injection, by temporarily changing
+    // the current context. This is required for the MockInjectDecl
+    // call to properly determine what should and shouldn't be injected.
+    Sema::ContextRAII Context(SemaRef, Decl::castToDeclContext(NewFrag));
+
+    NewContent = MockInjectDecl(OriginalContent);
+
+    return !NewContent;
   }
 
   ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
@@ -419,8 +428,8 @@ public:
   /// constructors.
   bool InjectedFieldData = false;
 
-  /// True if we're attempting to transform the highest level declaration.
-  bool InMockInjectionContext = false;
+  /// The DeclContext we're mock injecting for.
+  DeclContext *MockInjectionContext = nullptr;
 
   /// The context into which the fragment is injected
   Decl *Injectee;
@@ -888,14 +897,20 @@ static bool InjectClassDefinition(InjectionContext &Cxt,
 }
 
 static bool ShouldImmediatelyInjectPendingDefinitions(
-                                      Decl *Injectee, DeclContext *ClassOwner) {
+              Decl *Injectee, DeclContext *ClassOwner, bool InjectedIntoOwner) {
   // If we're injecting into a class, always defer.
-  if (isa<CXXRecordDecl>(Injectee))
+  if (isa<CXXRecordDecl>(Injectee) && InjectedIntoOwner)
     return false;
 
-  // Defer until we're at the injectee, so that we don't handle pending members
-  // while still inside of an inner class.
-  return Decl::castFromDeclContext(ClassOwner) == Injectee;
+  // Handle pending members, we've reached the injectee.
+  if (Decl::castFromDeclContext(ClassOwner) == Injectee)
+    return true;
+
+  // Handle pending members, we've reached the root of the mock injection.
+  if (!InjectedIntoOwner)
+    return true;
+
+  return false;
 }
 
 static void InjectPendingDefinitionsWithCleanup(InjectionContext *Cxt) {
@@ -940,13 +955,15 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this class.
-  if (ShouldInjectInto(Owner))
+  bool InjectIntoOwner = ShouldInjectInto(Owner);
+  if (InjectIntoOwner)
     Owner->addDecl(Class);
 
   if (D->hasDefinition())
     InjectClassDefinition(*this, D, Class);
 
-  if (ShouldImmediatelyInjectPendingDefinitions(Injectee, Owner))
+  if (ShouldImmediatelyInjectPendingDefinitions(
+          Injectee, Owner, InjectIntoOwner))
     InjectPendingDefinitionsWithCleanup(this);
 
   return Class;
@@ -1202,12 +1219,13 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
 }
 
 Decl *InjectionContext::MockInjectDecl(Decl *D) {
-  InMockInjectionContext = true;
+  DeclContext *OriginalMockInjectionContext = MockInjectionContext;
+  MockInjectionContext = getSema().CurContext;
 
   // Run normal injection logic.
   Decl *NewDecl = InjectDecl(D);
 
-  InMockInjectionContext = false;
+  MockInjectionContext = OriginalMockInjectionContext;
   return NewDecl;
 }
 
