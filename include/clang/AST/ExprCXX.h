@@ -5271,6 +5271,9 @@ class CXXReflectedIdExpr final
   DeclarationNameInfo NameInfo;
 
   const CXXScopeSpec SS;
+  /// The nested-name-specifier that qualifies this reflected id.
+  NestedNameSpecifierLoc QualifierLoc;
+
   bool TrailingLParen;
   bool AddressOfOperand;
 
@@ -5284,6 +5287,7 @@ class CXXReflectedIdExpr final
 
   CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
                      const CXXScopeSpec &SS,
+                     NestedNameSpecifierLoc QualifierLoc,
                      SourceLocation TemplateKWLoc,
                      bool TrailingLParen, bool AddressOfOperand,
                      const TemplateArgumentListInfo *TemplateArgs);
@@ -5294,7 +5298,8 @@ class CXXReflectedIdExpr final
 public:
   static CXXReflectedIdExpr *Create(
       const ASTContext &C, DeclarationNameInfo DNI, QualType T,
-      const CXXScopeSpec &SS, SourceLocation TemplateKWLoc, bool TrailingLParen,
+      const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
+      SourceLocation TemplateKWLoc, bool TrailingLParen,
       bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
 
   static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
@@ -5304,6 +5309,10 @@ public:
   DeclarationNameInfo getNameInfo() const { return NameInfo; }
 
   CXXScopeSpec getScopeSpecifier() const { return SS; }
+
+  /// Retrieve the nested-name-specifier that qualifies the
+  /// name, with source location information.
+  NestedNameSpecifierLoc getQualifierLoc() const { return QualifierLoc; }
 
   bool HasTrailingLParen() const { return TrailingLParen; }
 

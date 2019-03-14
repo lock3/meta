@@ -607,7 +607,8 @@ Sema::ActOnDependentIdExpression(const CXXScopeSpec &SS,
   // the name as it is.
   if (NameInfo.getName().getNameKind() == DeclarationName::CXXReflectedIdName)
     return CXXReflectedIdExpr::Create(Context, NameInfo, Context.DependentTy,
-        SS, TemplateKWLoc, HasTrailingLParen, isAddressOfOperand, TemplateArgs);
+        SS, SS.getWithLocInContext(Context), TemplateKWLoc, HasTrailingLParen,
+        isAddressOfOperand, TemplateArgs);
 
   DeclContext *DC = getFunctionLevelDeclContext();
 
