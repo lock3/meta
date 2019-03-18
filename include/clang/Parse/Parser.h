@@ -2789,9 +2789,7 @@ private:
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
-  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
-                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
-  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
+  SmallVector<BaseResult, 4> ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,

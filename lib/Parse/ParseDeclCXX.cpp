@@ -2065,32 +2065,26 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
 
   while (true) {
     // Parse a base-specifier.
-
-    SmallVector<BaseResult, 4> ReifiedTypes;
-
-    // Parse the base specifier. If it was a variadic reifier,
-    // the types will be put in ReifiedTypes. If it wasn't,
-    // ReifiedTypes will be empty.
-    BaseResult Result = ParseBaseSpecifier(ClassDecl, ReifiedTypes);
+    SmallVector<BaseResult, 4> Result = ParseBaseSpecifier(ClassDecl);
 
     // Check and push any reified types.
-    for (auto Typename : ReifiedTypes) {
-      if (Typename.isInvalid()) {
-        // Skip the rest of this base specifier, up until the comma or
-        // opening brace.
-        SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-      } else {
-        // Add this to our array of base specifiers.
-        BaseInfo.push_back(Typename.get());
+    bool AnyInvalid = false;
+    for (auto BaseSpecifier : Result) {
+      if (BaseSpecifier.isInvalid()) {
+        AnyInvalid = true;
+        break;
       }
     }
 
-    // If this base spec wasn't a variadic reifier, then add it.
-    if (ReifiedTypes.empty()) {
-      if (Result.isInvalid())
-        SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-      else
-        BaseInfo.push_back(Result.get());
+    if (AnyInvalid) {
+      // Skip the rest of this base specifier, up until the comma or
+      // opening brace.
+      SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
+    } else {
+      for (auto BaseSpecifier : Result) {
+        // Add this to our array of base specifiers.
+        BaseInfo.push_back(BaseSpecifier.get());
+      }
     }
 
     // If the next token is a comma, consume it and keep reading
@@ -2138,9 +2132,8 @@ MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
 ///                 base-type-specifier
 ///         attribute-specifier-seq[opt] access-specifier 'virtual'[opt]
 ///                 base-type-specifier
-BaseResult
-Parser::ParseBaseSpecifier(Decl *ClassDecl,
-                           llvm::SmallVectorImpl<BaseResult> &ReifiedTypes) {
+SmallVector<BaseResult, 4>
+Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
@@ -2183,8 +2176,9 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
+    llvm::SmallVector<BaseResult, 4> ReifiedTypes;
     if (ParseVariadicReifier(SpecList))
-      return true;
+      return { true };
 
     for (auto BaseTy : SpecList) {
       OpaquePtr<QualType> BaseTyPtr;
@@ -2196,7 +2190,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
                                    SourceLocation(), /*VariadicReif=*/true));
     }
 
-    return false;
+    return ReifiedTypes;
   }
   // Parse the class-name.
 
@@ -2212,7 +2206,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
   SourceLocation BaseLoc;
   TypeResult BaseType = ParseBaseTypeSpecifier(BaseLoc, EndLocation);
   if (BaseType.isInvalid())
-    return true;
+    return { true };
 
   // Parse the optional ellipsis (for a pack expansion). The ellipsis is
   // actually part of the base-specifier-list grammar productions, but we
@@ -2225,12 +2219,10 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
   // Notify semantic analysis that we have parsed a complete
   // base-specifier.
-  return Actions.ActOnBaseSpecifier(ClassDecl, Range, Attributes, IsVirtual,
-                                    Access, BaseType.get(), BaseLoc,
-                                    EllipsisLoc);
-}
-
-void Parser::ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>) {
+  BaseResult Result = Actions.ActOnBaseSpecifier(
+      ClassDecl, Range, Attributes, IsVirtual, Access,
+      BaseType.get(), BaseLoc, EllipsisLoc);
+  return { Result };
 }
 
 /// getAccessSpecifierIfPresent - Determine whether the next token is
