@@ -2207,6 +2207,24 @@ static bool findCircularInheritance(const CXXRecordDecl *Class,
   return false;
 }
 
+
+/// Make sure that we don't have circular inheritance among our dependent
+/// bases. For non-dependent bases, the check for completeness below handles
+/// this.
+static bool CheckForCircularBaseInheritance(CXXRecordDecl *Class,
+                                            CXXRecordDecl *BaseDecl) {
+  if (!Class)
+    return false;
+
+  if (BaseDecl->getCanonicalDecl() == Class->getCanonicalDecl())
+    return true;
+
+  if ((BaseDecl = BaseDecl->getDefinition()))
+    return findCircularInheritance(Class, BaseDecl);
+
+  return false;
+}
+
 /// Check the validity of a C++ base class specifier.
 ///
 /// \returns a new CXXBaseSpecifier if well-formed, emits diagnostics
@@ -2222,7 +2240,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
 
   // C++ [class.union]p1:
   //   A union shall not have base classes.
-  if (Class->isUnion()) {
+  if (Class && Class->isUnion()) {
     Diag(Class->getLocation(), diag::err_base_clause_on_union)
       << SpecifierRange;
     return nullptr;
@@ -2237,14 +2255,14 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
 
   SourceLocation BaseLoc = TInfo->getTypeLoc().getBeginLoc();
 
+  // This base specifier is the base specifier of a class, if
+  // the class is specified, and has a class tag kind, or
+  // if the class is unspecified, class type is assumed.
+  bool BaseOfClass = !Class || Class->getTagKind() == TTK_Class;
+
   if (BaseType->isDependentType()) {
-    // Make sure that we don't have circular inheritance among our dependent
-    // bases. For non-dependent bases, the check for completeness below handles
-    // this.
     if (CXXRecordDecl *BaseDecl = BaseType->getAsCXXRecordDecl()) {
-      if (BaseDecl->getCanonicalDecl() == Class->getCanonicalDecl() ||
-          ((BaseDecl = BaseDecl->getDefinition()) &&
-           findCircularInheritance(Class, BaseDecl))) {
+      if (CheckForCircularBaseInheritance(Class, BaseDecl)) {
         Diag(BaseLoc, diag::err_circular_inheritance)
           << BaseType << Context.getTypeDeclType(Class);
 
@@ -2257,8 +2275,8 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     }
 
     return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
-                                          Class->getTagKind() == TTK_Class,
-                                          Access, TInfo, EllipsisLoc);
+                                          BaseOfClass, Access,
+                                          TInfo, EllipsisLoc);
   }
 
   // Base specifiers must be record types.
@@ -2275,7 +2293,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
   }
 
   // For the MS ABI, propagate DLL attributes to base class templates.
-  if (Context.getTargetInfo().getCXXABI().isMicrosoft()) {
+  if (Class && Context.getTargetInfo().getCXXABI().isMicrosoft()) {
     if (Attr *ClassAttr = getDLLAttr(Class)) {
       if (auto *BaseTemplate = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
               BaseType->getAsCXXRecordDecl())) {
@@ -2288,8 +2306,8 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
   // C++ [class.derived]p2:
   //   The class-name in a base-specifier shall not be an incompletely
   //   defined class.
-  if (RequireCompleteType(BaseLoc, BaseType,
-                          diag::err_incomplete_base_class, SpecifierRange)) {
+  if (Class && RequireCompleteType(
+          BaseLoc, BaseType, diag::err_incomplete_base_class, SpecifierRange)) {
     Class->setInvalidDecl();
     return nullptr;
   }
@@ -2302,17 +2320,19 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
   CXXRecordDecl *CXXBaseDecl = cast<CXXRecordDecl>(BaseDecl);
   assert(CXXBaseDecl && "Base type is not a C++ type");
 
-  // Microsoft docs say:
-  // "If a base-class has a code_seg attribute, derived classes must have the
-  // same attribute."
-  const auto *BaseCSA = CXXBaseDecl->getAttr<CodeSegAttr>();
-  const auto *DerivedCSA = Class->getAttr<CodeSegAttr>();
-  if ((DerivedCSA || BaseCSA) &&
-      (!BaseCSA || !DerivedCSA || BaseCSA->getName() != DerivedCSA->getName())) {
-    Diag(Class->getLocation(), diag::err_mismatched_code_seg_base);
-    Diag(CXXBaseDecl->getLocation(), diag::note_base_class_specified_here)
-      << CXXBaseDecl;
-    return nullptr;
+  if (Class) {
+    // Microsoft docs say:
+    // "If a base-class has a code_seg attribute, derived classes must have the
+    // same attribute."
+    const auto *BaseCSA = CXXBaseDecl->getAttr<CodeSegAttr>();
+    const auto *DerivedCSA = Class->getAttr<CodeSegAttr>();
+    if ((DerivedCSA || BaseCSA) &&
+        (!BaseCSA || !DerivedCSA || BaseCSA->getName() != DerivedCSA->getName())) {
+      Diag(Class->getLocation(), diag::err_mismatched_code_seg_base);
+      Diag(CXXBaseDecl->getLocation(), diag::note_base_class_specified_here)
+        << CXXBaseDecl;
+      return nullptr;
+    }
   }
 
   // A class which contains a flexible array member is not suitable for use as a
@@ -2339,13 +2359,13 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }
 
-  if (BaseDecl->isInvalidDecl())
+  if (BaseDecl->isInvalidDecl() && Class)
     Class->setInvalidDecl();
 
   // Create the base specifier.
   return new (Context) CXXBaseSpecifier(SpecifierRange, Virtual,
-                                        Class->getTagKind() == TTK_Class,
-                                        Access, TInfo, EllipsisLoc);
+                                        BaseOfClass, Access,
+                                        TInfo, EllipsisLoc);
 }
 
 /// ActOnBaseSpecifier - Parsed a base specifier. A base specifier is
@@ -2354,22 +2374,23 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
 ///    class foo : public bar, virtual private baz {
 /// 'public bar' and 'virtual private baz' are each base-specifiers.
 BaseResult
-Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
+Sema::ActOnBaseSpecifier(Decl *ClassDecl, SourceRange SpecifierRange,
                          ParsedAttributes &Attributes,
                          bool Virtual, AccessSpecifier Access,
                          ParsedType basetype, SourceLocation BaseLoc,
                          SourceLocation EllipsisLoc,
                          bool VariadicReifier) {
-  if (!classdecl)
-    return true;
+  CXXRecordDecl *Class;
+  if (ClassDecl) {
+    AdjustDeclIfTemplate(ClassDecl);
+    Class = dyn_cast<CXXRecordDecl>(ClassDecl);
+    if (!Class)
+      return true;
 
-  AdjustDeclIfTemplate(classdecl);
-  CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(classdecl);
-  if (!Class)
-    return true;
-
-  // We haven't yet attached the base specifiers.
-  Class->setIsParsingBaseSpecifiers();
+    // We haven't yet attached the base specifiers.
+    Class->setIsParsingBaseSpecifiers();
+  } else
+    Class = nullptr;
 
   // We do not support any C++11 attributes on base-specifiers yet.
   // Diagnose any attributes we see.
