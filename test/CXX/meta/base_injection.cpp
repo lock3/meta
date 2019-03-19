@@ -36,10 +36,12 @@ template<typename T>
 class TemplateChild : public ParentB {
   consteval {
     __inject_base(public T);
-  }
 
-  int do_thing() const {
-    return 1;
+    -> __fragment struct {
+      int do_thing() const {
+        return 1;
+      }
+    };
   }
 
   int do_other_thing() const override {

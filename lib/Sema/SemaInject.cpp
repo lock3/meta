@@ -1172,8 +1172,17 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this method.
-  if (ShouldInjectInto(Owner))
+  if (ShouldInjectInto(Owner)) {
+    // FIXME: Is this right?
+    LookupResult Previous(
+      SemaRef, Method->getDeclName(), SourceLocation(),
+      Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+    SemaRef.LookupQualifiedName(Previous, Owner);
+
+    getSema().CheckFunctionDeclaration(/*Scope=*/nullptr, Method, Previous,
+                                       /*IsMemberSpecialization=*/false);
     Owner->addDecl(Method);
+  }
 
   // If the method is has a body, add it to the context so that we can
   // process it later. Note that deleted/defaulted definitions are just
