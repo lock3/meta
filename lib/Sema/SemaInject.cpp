@@ -297,17 +297,6 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
-  CXXBaseSpecifier *TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
-                                              const CXXBaseSpecifier *Base) {
-    TypeSourceInfo *TSI = TransformType(Base->getTypeSourceInfo());
-    if (!TSI)
-      return nullptr;
-
-    return getSema().CheckBaseSpecifier(
-        NewClass, Base->getSourceRange(), Base->isVirtual(),
-        Base->getAccessSpecifierAsWritten(), TSI, Base->getEllipsisLoc());
-  }
-
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
                                SmallVectorImpl<ParmVarDecl *> &Parms) {
     ExprResult TransformedOperand = getDerived().TransformExpr(

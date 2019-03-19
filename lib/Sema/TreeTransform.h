@@ -682,6 +682,9 @@ public:
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
+  CXXBaseSpecifier *TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
+                                              const CXXBaseSpecifier *Base);
+
   // Check if the current expression is a dependent C++ variadic reifier that
   // still needs expansion. If so, transform and expand it.
   bool MaybeTransformVariadicReifier(Expr *E, SmallVectorImpl<Expr *> &Outputs);
@@ -7812,6 +7815,19 @@ TreeTransform<Derived>::TransformCXXDependentVariadicReifierExpr(
   return ExprError();
 }
 
+template<typename Derived>
+CXXBaseSpecifier *
+TreeTransform<Derived>::TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
+                                                  const CXXBaseSpecifier *Base) {
+  TypeSourceInfo *TSI = getDerived().TransformType(Base->getTypeSourceInfo());
+  if (!TSI)
+    return nullptr;
+
+  return getSema().CheckBaseSpecifier(
+      NewClass, Base->getSourceRange(), Base->isVirtual(),
+      Base->getAccessSpecifierAsWritten(), TSI, Base->getEllipsisLoc());
+}
+
 template <typename Derived>
 bool
 TreeTransform<Derived>::MaybeTransformVariadicReifier
@@ -8393,9 +8409,15 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
 template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
-  ArrayRef<CXXBaseSpecifier *> OldBaseSpecifiers = S->getBaseSpecifiers();
-  SmallVector<CXXBaseSpecifier *, 4> BaseSpecifiers(OldBaseSpecifiers.begin(),
-                                                    OldBaseSpecifiers.end());
+  SmallVector<CXXBaseSpecifier *, 4> BaseSpecifiers;
+  for (CXXBaseSpecifier *OldBase : S->getBaseSpecifiers()) {
+    CXXBaseSpecifier *NewBase = TransformCXXBaseSpecifier(nullptr, OldBase);
+
+    if (!NewBase)
+      return StmtError();
+
+    BaseSpecifiers.push_back(NewBase);
+  }
 
   return RebuildCXXBaseInjectionStmt(S->getIntroLoc(), S->getLParenLoc(),
                                      BaseSpecifiers, S->getRParenLoc());

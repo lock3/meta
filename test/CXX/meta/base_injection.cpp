@@ -32,6 +32,21 @@ class Child : public ParentB {
   }
 };
 
+template<typename T>
+class TemplateChild : public ParentB {
+  consteval {
+    __inject_base(public T);
+  }
+
+  int do_thing() const {
+    return 1;
+  }
+
+  int do_other_thing() const override {
+    return 1;
+  }
+};
+
 int do_thing(const ParentA &a) {
   return a.do_thing();
 }
@@ -51,6 +66,11 @@ int main() {
   }
   {
     Child c;
+    assert(do_thing(c) == 1);
+    assert(do_other_thing(c) == 1);
+  }
+  {
+    TemplateChild<ParentA> c;
     assert(do_thing(c) == 1);
     assert(do_other_thing(c) == 1);
   }
