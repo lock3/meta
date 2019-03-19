@@ -1910,6 +1910,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     return true;
 
   case Stmt::CXXInjectionStmtClass:
+  case Stmt::CXXBaseInjectionStmtClass:
     // Injection is a compile-time statements.
     return true;
 

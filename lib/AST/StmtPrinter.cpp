@@ -379,6 +379,12 @@ void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
   if (Policy.IncludeNewlines) OS << "\n";
 }
 
+void StmtPrinter::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *Node) {
+  // FIXME: Actually print something meaningful.
+  Indent() << "__inject_base( ... )";
+  if (Policy.IncludeNewlines) OS << "\n";
+}
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())

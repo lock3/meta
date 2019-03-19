@@ -68,9 +68,10 @@ class InjectionContext;
 /// An injection context. This is declared to establish a set of
 /// substitutions during an injection.
 class InjectionContext : public TreeTransform<InjectionContext> {
-   using Base = TreeTransform<InjectionContext>;
+  using Base = TreeTransform<InjectionContext>;
+  using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
 public:
-  InjectionContext(Sema &SemaRef, Decl *Injectee, Decl *Injection)
+  InjectionContext(Sema &SemaRef, Decl *Injectee, InjectionType Injection)
     : Base(SemaRef), Injectee(Injectee), Injection(Injection), Modifiers() { }
 
   ~InjectionContext() {
@@ -168,9 +169,21 @@ public:
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool isInInjection(Decl *D);
 
+  Decl *getDeclBeingInjected() const {
+    return Injection.dyn_cast<Decl *>();
+  }
+
+  DeclContext *getInjectionDeclContext() const {
+    if (Decl *ID = getDeclBeingInjected())
+      return ID->getDeclContext();
+    return nullptr;
+  }
+
   /// Returns true if this context is injecting a fragment.
   bool isInjectingFragment() {
-    return isa<CXXFragmentDecl>(Injection->getDeclContext());
+    if (DeclContext *DC = getInjectionDeclContext())
+      return isa<CXXFragmentDecl>(DC);
+    return false;
   }
 
   /// Sets the declaration modifiers.
@@ -250,7 +263,7 @@ public:
       //
       // If this condition is true, we're injecting a decl who's in the same
       // decl context as the declaration we're currently cloning.
-      if (D->getDeclContext() == Injection->getDeclContext())
+      if (D->getDeclContext() == getInjectionDeclContext())
         return nullptr;
     }
 
@@ -282,6 +295,17 @@ public:
     }
 
     return Base::TransformDeclRefExpr(E);
+  }
+
+  CXXBaseSpecifier *TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
+                                              const CXXBaseSpecifier *Base) {
+    TypeSourceInfo *TSI = TransformType(Base->getTypeSourceInfo());
+    if (!TSI)
+      return nullptr;
+
+    return getSema().CheckBaseSpecifier(
+        NewClass, Base->getSourceRange(), Base->isVirtual(),
+        Base->getAccessSpecifierAsWritten(), TSI, Base->getEllipsisLoc());
   }
 
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
@@ -373,6 +397,7 @@ public:
                         TypeSourceInfo *&TSI);
   bool InjectMemberDeclarator(DeclaratorDecl *D, DeclarationNameInfo &DNI,
                               TypeSourceInfo *&TSI, CXXRecordDecl *&Owner);
+  bool InjectBaseSpecifier(CXXBaseSpecifier *BS);
 
   void UpdateFunctionParms(FunctionDecl* Old, FunctionDecl* New);
 
@@ -434,8 +459,8 @@ public:
   /// The context into which the fragment is injected
   Decl *Injectee;
 
-  /// The declaration being Injected.
-  Decl *Injection;
+  /// The entity being Injected.
+  InjectionType Injection;
 
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
@@ -459,14 +484,18 @@ bool InjectionContext::isInInjection(Decl *D) {
   // Otherwise, we're cloning a declaration, (not a fragment) but we need
   // to ensure that any any declarations within that are injected.
 
+  Decl *InjectionAsDecl = getDeclBeingInjected();
+  if (!InjectionAsDecl)
+    return false;
+
   // If D is injection source, then it must be injected.
-  if (D == Injection)
+  if (D == InjectionAsDecl)
     return true;
 
   // If the injection is not a DC, then D cannot be in the injection because
   // it could not have been declared within (e.g., if the injection is a
   // variable).
-  DeclContext *InjectionAsDC = dyn_cast<DeclContext>(Injection);
+  DeclContext *InjectionAsDC = dyn_cast<DeclContext>(InjectionAsDecl);
   if (!InjectionAsDC)
     return false;
 
@@ -526,6 +555,27 @@ bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
   bool Invalid = InjectDeclarator(D, DNI, TSI);
   Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return Invalid;
+}
+
+bool InjectionContext::InjectBaseSpecifier(CXXBaseSpecifier *BS) {
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+
+  SmallVector<CXXBaseSpecifier *, 4> Bases;
+  for (CXXBaseSpecifier &Base : Owner->bases())
+    Bases.push_back(&Base);
+  for (CXXBaseSpecifier &Base : Owner->vbases())
+    Bases.push_back(&Base);
+
+  CXXBaseSpecifier *NewBase = TransformCXXBaseSpecifier(Owner, BS);
+  if (!NewBase)
+    return true;
+
+  Bases.push_back(NewBase);
+
+  if (getSema().AttachBaseSpecifiers(Owner, Bases))
+    return true;
+
+  return false;
 }
 
 void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
@@ -832,21 +882,14 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 }
 
 /// Injects the base specifier Base into Class.
-static bool InjectBaseSpecifiers(InjectionContext &Cxt, 
+static bool InjectBaseSpecifiers(InjectionContext &Cxt,
                                  CXXRecordDecl *OldClass,
                                  CXXRecordDecl *NewClass) {
   bool Invalid = false;
   SmallVector<CXXBaseSpecifier*, 4> Bases;
   for (const CXXBaseSpecifier &OldBase : OldClass->bases()) {
-    TypeSourceInfo *TSI = Cxt.TransformType(OldBase.getTypeSourceInfo());
-    if (!TSI) {
-      Invalid = true;
-      continue;
-    }
-
-    CXXBaseSpecifier *NewBase = Cxt.getSema().CheckBaseSpecifier(
-        NewClass, OldBase.getSourceRange(), OldBase.isVirtual(), 
-        OldBase.getAccessSpecifierAsWritten(), TSI, OldBase.getEllipsisLoc());
+    CXXBaseSpecifier *NewBase = Cxt.TransformCXXBaseSpecifier(NewClass,
+                                                              &OldBase);
     if (!NewBase) {
       Invalid = true;
       continue;
@@ -1843,6 +1886,21 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
   return new (Context) CXXInjectionStmt(Loc, ContextSpecifier, Operand);
 }
 
+StmtResult Sema::ActOnCXXBaseInjectionStmt(
+    SourceLocation KWLoc, SourceLocation LParenLoc,
+    SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
+    SourceLocation RParenLoc) {
+  return BuildCXXBaseInjectionStmt(KWLoc, LParenLoc, BaseSpecifiers, RParenLoc);
+}
+
+StmtResult Sema::BuildCXXBaseInjectionStmt(
+    SourceLocation KWLoc, SourceLocation LParenLoc,
+    SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
+    SourceLocation RParenLoc) {
+  return CXXBaseInjectionStmt::Create(Context, KWLoc, LParenLoc,
+                                      BaseSpecifiers, RParenLoc);
+}
+
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
 static int DescribeDeclContext(DeclContext *DC) {
@@ -1913,8 +1971,8 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
   return true;
 }
 
-template<typename F>
-static bool BootstrapInjection(Sema &S, Decl *Injectee, Decl *Injection,
+template<typename IT, typename F>
+static bool BootstrapInjection(Sema &S, Decl *Injectee, IT *Injection,
                                F InjectionProcedure) {
   // Create an injection context and then execute the logic for that
   // context.
@@ -1965,6 +2023,27 @@ static bool InjectFragment(Sema &S,
         continue;
       }
     }
+  });
+}
+
+// Inject a reflected base specifier into the current context.
+static bool AddBase(Sema &S, SourceLocation POI,
+                    CXXBaseSpecifier *Injection, Decl *Injectee) {
+  // DeclContext *InjectionDC = Injection->getDeclContext();
+  // Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+
+  // FIXME: Ensure we're injecting into a class.
+  // if (!CheckInjectionContexts(S, POI, InjectionDC, InjecteeAsDC))
+  //   return false;
+
+  // Establish injectee as the current context.
+  Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
+
+  return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
+    // Inject the base specifier.
+    if (Ctx->InjectBaseSpecifier(Injection))
+      Injectee->setInvalidDecl(true);
   });
 }
 
@@ -2097,6 +2176,21 @@ GetReflectionFromInjection(Sema &S, InjectionEffect &IE) {
   return Reflection(S.Context, IE.ExprValue);
 }
 
+static CXXBaseSpecifier *
+GetInjectionBase(const Reflection &Refl) {
+  const CXXBaseSpecifier *ReachableBase = Refl.getAsBase();
+
+  return const_cast<CXXBaseSpecifier *>(ReachableBase);
+}
+
+static bool
+ApplyReflectionBaseInjection(Sema &S, SourceLocation POI,
+                             const Reflection &Refl, Decl *Injectee) {
+  CXXBaseSpecifier *Injection = GetInjectionBase(Refl);
+
+  return AddBase(S, POI, Injection, Injectee);
+}
+
 static Decl *
 GetInjectionDecl(const Reflection &Refl) {
   const Decl *ReachableDecl = Refl.getAsReachableDeclaration();
@@ -2111,14 +2205,23 @@ GetModifiers(const Reflection &Refl) {
   return Refl.getModifiers();
 }
 
-static bool ApplyReflectionInjection(Sema &S, SourceLocation POI,
-                                     InjectionEffect &IE, Decl *Injectee) {
-  Reflection &&Refl = GetReflectionFromInjection(S, IE);
-
+static bool
+ApplyReflectionDeclInjection(Sema &S, SourceLocation POI,
+                             const Reflection &Refl, Decl *Injectee) {
   Decl *Injection = GetInjectionDecl(Refl);
   ReflectionModifiers Modifiers = GetModifiers(Refl);
 
   return CopyDeclaration(S, POI, Injection, Modifiers, Injectee);
+}
+
+static bool ApplyReflectionInjection(Sema &S, SourceLocation POI,
+                                     InjectionEffect &IE, Decl *Injectee) {
+  Reflection &&Refl = GetReflectionFromInjection(S, IE);
+
+  if (Refl.isBase())
+    return ApplyReflectionBaseInjection(S, POI, Refl, Injectee);
+
+  return ApplyReflectionDeclInjection(S, POI, Refl, Injectee);
 }
 
 bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {

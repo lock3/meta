@@ -147,3 +147,31 @@ CoroutineBodyStmt::CoroutineBodyStmt(CoroutineBodyStmt::CtorArgs const &Args)
   std::copy(Args.ParamMoves.begin(), Args.ParamMoves.end(),
             const_cast<Stmt **>(getParamMoves().data()));
 }
+
+CXXBaseInjectionStmt::CXXBaseInjectionStmt(
+    SourceLocation IntroLoc, SourceLocation LParenLoc,
+    CXXBaseSpecifier **BaseSpecifiers, unsigned NumBaseSpecifiers,
+    SourceLocation RParenLoc)
+    : Stmt(CXXBaseInjectionStmtClass), IntroLoc(IntroLoc),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc),
+      Bases(BaseSpecifiers), NumBaseSpecifiers(NumBaseSpecifiers) {
+}
+
+CXXBaseInjectionStmt::CXXBaseInjectionStmt(EmptyShell Empty)
+    : Stmt(CXXBaseInjectionStmtClass), IntroLoc(),
+      LParenLoc(), RParenLoc(), Bases(nullptr), NumBaseSpecifiers(0) {
+}
+
+CXXBaseInjectionStmt *CXXBaseInjectionStmt::Create(
+    ASTContext &C, SourceLocation IntroLoc, SourceLocation LParenLoc,
+    ArrayRef<CXXBaseSpecifier *> BaseSpecifiers, SourceLocation RParenLoc) {
+  CXXBaseSpecifier **Bases = new (C) CXXBaseSpecifier *[BaseSpecifiers.size()];
+  std::copy(BaseSpecifiers.begin(), BaseSpecifiers.end(), Bases);
+  return new (C) CXXBaseInjectionStmt(IntroLoc, LParenLoc, Bases,
+                                      BaseSpecifiers.size(), RParenLoc);
+}
+
+CXXBaseInjectionStmt *
+CXXBaseInjectionStmt::CreateEmpty(ASTContext &C) {
+  return new (C) CXXBaseInjectionStmt(EmptyShell());
+}

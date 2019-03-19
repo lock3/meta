@@ -2204,6 +2204,15 @@ public:
     return getSema().BuildCXXInjectionStmt(Loc, ContextSpecifier, Ref);
   }
 
+  StmtResult RebuildCXXBaseInjectionStmt(
+      SourceLocation KWLoc, SourceLocation LParenLoc,
+      SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
+      SourceLocation RParenLoc) {
+
+    return getSema().BuildCXXBaseInjectionStmt(KWLoc, LParenLoc,
+                                               BaseSpecifiers, RParenLoc);
+  }
+
   /// Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -8379,6 +8388,17 @@ TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
   if (E.isInvalid())
     return StmtError();
   return RebuildCXXInjectionStmt(S->getBeginLoc(), S->getContextSpecifier(), E.get());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
+  ArrayRef<CXXBaseSpecifier *> OldBaseSpecifiers = S->getBaseSpecifiers();
+  SmallVector<CXXBaseSpecifier *, 4> BaseSpecifiers(OldBaseSpecifiers.begin(),
+                                                    OldBaseSpecifiers.end());
+
+  return RebuildCXXBaseInjectionStmt(S->getIntroLoc(), S->getLParenLoc(),
+                                     BaseSpecifiers, S->getRParenLoc());
 }
 
 template<typename Derived>

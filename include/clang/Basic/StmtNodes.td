@@ -49,6 +49,7 @@ def CXXTryStmt : Stmt;
 def CXXForRangeStmt : Stmt;
 def CXXExpansionStmt : Stmt;
 def CXXInjectionStmt : Stmt;
+def CXXBaseInjectionStmt : Stmt;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : Stmt;

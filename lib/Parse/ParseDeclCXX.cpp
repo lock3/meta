@@ -2049,17 +2049,13 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   }
 }
 
-/// ParseBaseClause - Parse the base-clause of a C++ class [C++ class.derived].
-///
-///       base-clause : [C++ class.derived]
-///         ':' base-specifier-list
+/// ParseBaseSpeciiferList - Parse the base-specifier-list of a C++ class
+///                          [C++ class.derived].
 ///       base-specifier-list:
 ///         base-specifier '...'[opt]
 ///         base-specifier-list ',' base-specifier '...'[opt]
-void Parser::ParseBaseClause(Decl *ClassDecl) {
-  assert(Tok.is(tok::colon) && "Not a base clause");
-  ConsumeToken();
-
+SmallVector<CXXBaseSpecifier *, 8>
+Parser::ParseCXXBaseSpecifierList(Decl *ClassDecl) {
   // Build up an array of parsed base specifiers.
   SmallVector<CXXBaseSpecifier *, 8> BaseInfo;
 
@@ -2092,6 +2088,19 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
     if (!TryConsumeToken(tok::comma))
       break;
   }
+
+  return BaseInfo;
+}
+
+/// ParseBaseClause - Parse the base-clause of a C++ class [C++ class.derived].
+///
+///       base-clause : [C++ class.derived]
+///         ':' base-specifier-list
+void Parser::ParseBaseClause(Decl *ClassDecl) {
+  assert(Tok.is(tok::colon) && "Not a base clause");
+  ConsumeToken();
+
+  auto BaseInfo = ParseCXXBaseSpecifierList(ClassDecl);
 
   // Attach the base specifiers
   Actions.ActOnBaseSpecifiers(ClassDecl, BaseInfo);

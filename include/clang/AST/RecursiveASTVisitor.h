@@ -2238,6 +2238,7 @@ DEF_TRAVERSE_STMT(CXXExpansionStmt, {
 })
 
 DEF_TRAVERSE_STMT(CXXInjectionStmt, {})
+DEF_TRAVERSE_STMT(CXXBaseInjectionStmt, {})
 
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));

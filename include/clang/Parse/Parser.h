@@ -1816,6 +1816,7 @@ private:
   bool ParseOptionalCXXInjectionContextSpecifier(
                                        CXXInjectionContextSpecifier &Specifier);
   StmtResult ParseCXXInjectionStatement();
+  StmtResult ParseCXXBaseInjectionStatement();
 
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while condition expression.
@@ -2788,6 +2789,7 @@ private:
   // C++ 10: Derived classes [class.derived]
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
+  SmallVector<CXXBaseSpecifier *, 8> ParseCXXBaseSpecifierList(Decl *ClassDecl);
   void ParseBaseClause(Decl *ClassDecl);
   SmallVector<BaseResult, 4> ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;

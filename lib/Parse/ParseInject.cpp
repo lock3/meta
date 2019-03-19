@@ -207,19 +207,21 @@ Parser::ParseOptionalCXXInjectionContextSpecifier(
   if (Tok.is(tok::kw_namespace)) {
     SourceLocation KWLocation = ConsumeToken();
     if (Tok.is(tok::l_paren)) {
-      BalancedDelimiterTracker T(*this, tok::l_paren);
-      T.expectAndConsume();
+      BalancedDelimiterTracker Parens(*this, tok::l_paren);
+      if (Parens.expectAndConsume())
+        return true;
 
       Decl *NamespaceDecl = ParseNamespaceDeclForInjectionContext();
       if (!NamespaceDecl) {
-        T.skipToEnd();
+        Parens.skipToEnd();
         return true;
       }
 
-      T.consumeClose();
+      if (Parens.consumeClose())
+        return true;
 
       return Actions.ActOnCXXSpecifiedNamespaceInjectionContext(
-                    KWLocation, NamespaceDecl, Specifier, T.getCloseLocation());
+               KWLocation, NamespaceDecl, Specifier, Parens.getCloseLocation());
     } else {
       return Actions.ActOnCXXParentNamespaceInjectionContext(
                                                          KWLocation, Specifier);
@@ -256,6 +258,32 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   return Actions.ActOnCXXInjectionStmt(Loc, ICS, Operand.get());
 }
 
+/// Parse a C++ injection declaration.
+///
+///   injection-declaration:
+///     '__inject_base' '(' base-specifier-list ')' ';'
+///
+/// Returns the group of declarations parsed.
+
+StmtResult Parser::ParseCXXBaseInjectionStatement() {
+  assert(Tok.is(tok::kw___inject_base) && "expected '__inject_base' token");
+  SourceLocation KWLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return StmtError();
+
+  auto BaseSpecifiers = ParseCXXBaseSpecifierList(/*ClassDecl=*/nullptr);
+  if (BaseSpecifiers.empty())
+    return StmtError();
+
+  if (Parens.consumeClose())
+    return StmtError();
+
+  SourceLocation LPLoc = Parens.getOpenLocation();
+  SourceLocation RPLoc = Parens.getCloseLocation();
+  return Actions.ActOnCXXBaseInjectionStmt(KWLoc, LPLoc, BaseSpecifiers, RPLoc);
+}
 
 /// Parse a metaprogram-declaration.
 ///

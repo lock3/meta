@@ -275,6 +275,11 @@ Retry:
     SemiError = "->";
     break;
 
+  case tok::kw___inject_base:
+    Res = ParseCXXBaseInjectionStatement();
+    SemiError = "__inject_base";
+    break;
+
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);
     bool msAsm = false;
