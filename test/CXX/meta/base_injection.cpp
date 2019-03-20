@@ -38,7 +38,7 @@ class TemplateChild : public ParentB {
     __inject_base(public T);
 
     -> __fragment struct {
-      int do_thing() const {
+      int do_thing() const override {
         return 1;
       }
     };

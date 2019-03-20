@@ -2808,6 +2808,10 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
        MD->getType()->isDependentType()))
     return;
 
+  // We should delay checking of methods declared inside of a fragment.
+  if (MD && MD->isInFragment())
+    return;
+
   if (MD && !MD->isVirtual()) {
     // If we have a non-virtual method, check if if hides a virtual method.
     // (In that case, it's most likely the method has the wrong type.)

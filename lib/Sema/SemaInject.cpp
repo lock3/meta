@@ -1164,6 +1164,11 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
     }
   }
 
+  if (OverrideAttr *OA = D->getAttr<OverrideAttr>())
+    Method->addAttr(OA);
+  if (FinalAttr *FA = D->getAttr<FinalAttr>())
+    Method->addAttr(FA);
+
   Method->setDeletedAsWritten(D->isDeletedAsWritten());
   Method->setDefaulted(D->isDefaulted());
 
