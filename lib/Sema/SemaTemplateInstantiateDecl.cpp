@@ -913,9 +913,9 @@ static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
     // Instantiate the nested function.
     //
     // FIXME: The point of instantiation is probably wrong.
-    FunctionDecl *NewFn = cast<FunctionDecl>(SemaRef.SubstDecl(Fn, Owner,
-                                                               TemplateArgs));
-    if (NewFn->isInvalidDecl())
+    FunctionDecl *NewFn = cast_or_null<FunctionDecl>(
+                                    SemaRef.SubstDecl(Fn, Owner, TemplateArgs));
+    if (!NewFn || NewFn->isInvalidDecl())
       return nullptr;
 
     // FIXME: We probably need to manage the function's definition a little
