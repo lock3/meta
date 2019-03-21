@@ -1171,6 +1171,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   Method->setDeletedAsWritten(D->isDeletedAsWritten());
   Method->setDefaulted(D->isDefaulted());
+  Method->setExplicitlyDefaulted(D->isExplicitlyDefaulted());
 
   if (!Method->isInvalidDecl())
     Method->setInvalidDecl(Invalid);

@@ -449,12 +449,12 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
     else if (isa<ObjCMethodDecl>(*D) && cast<ObjCMethodDecl>(*D)->hasBody())
       Terminator = nullptr;
     else if (auto FD = dyn_cast<FunctionDecl>(*D)) {
-      if (FD->isThisDeclarationADefinition())
+      if (FD->doesThisDeclarationHaveANonTrivialBody())
         Terminator = nullptr;
       else
         Terminator = ";";
     } else if (auto TD = dyn_cast<FunctionTemplateDecl>(*D)) {
-      if (TD->getTemplatedDecl()->isThisDeclarationADefinition())
+      if (TD->getTemplatedDecl()->doesThisDeclarationHaveANonTrivialBody())
         Terminator = nullptr;
       else
         Terminator = ";";
@@ -477,9 +477,9 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       Out << Terminator;
     if (!Policy.TerseOutput &&
         ((isa<FunctionDecl>(*D) &&
-          cast<FunctionDecl>(*D)->doesThisDeclarationHaveABody()) ||
+          cast<FunctionDecl>(*D)->doesThisDeclarationHaveANonTrivialBody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody())))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveANonTrivialBody())))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
@@ -735,7 +735,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     Out << " = delete";
   else if (D->isExplicitlyDefaulted())
     Out << " = default";
-  else if (D->doesThisDeclarationHaveABody()) {
+  else if (D->doesThisDeclarationHaveANonTrivialBody()) {
     if (!Policy.TerseOutput) {
       if (!D->hasPrototype() && D->getNumParams()) {
         // This is a K&R function definition, so we need to print the

@@ -2020,6 +2020,12 @@ public:
     return Body || isLateTemplateParsed();
   }
 
+  /// Returns whether this specific declaration of the function has
+  /// an non-trivial body.
+  bool doesThisDeclarationHaveANonTrivialBody() const {
+    return (Body || isLateTemplateParsed()) && !isTrivial();
+  }
+
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }
 
