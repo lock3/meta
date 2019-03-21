@@ -5267,7 +5267,7 @@ bool TreeTransform<Derived>::TransformInjectedParameter(
   assert(Injected && "Expected injection ParmVarDecl");
 
   ExprResult NewOperand = getDerived().TransformExpr(Injected->Operand);
-  if (!NewOperand.isInvalid())
+  if (NewOperand.isInvalid())
     return true;
 
   CXXInjectedParmsInfo ParmInjectionInfo(Injected->ArrowLoc, NewOperand.get());
@@ -5311,7 +5311,12 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         if (TransformInjectedParameter(OldParm, NewParm, indexAdjustment))
           return true;
 
-        PVars->push_back(NewParm);
+        if (ParamInfos)
+          PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+        OutParamTypes.push_back(NewParm->getType());
+        if (PVars)
+          PVars->push_back(NewParm);
+
         continue;
       }
 

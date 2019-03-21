@@ -1625,20 +1625,41 @@ static bool isIterableReflectableDecl(const Decl *D) {
 }
 
 /// Filter non-reflectable members.
-static const Decl *findNextMember(const Decl *D) {
+static const Decl *findIterableMember(const Decl *D) {
   while (D && !isIterableReflectableDecl(D))
     D = D->getNextDeclInContext();
   return D;
 }
 
+static const ParmVarDecl *getFirstFunctionParameter(const FunctionDecl *FD) {
+  for (const ParmVarDecl *PVD : FD->parameters())
+    return PVD;
+  return nullptr;
+}
+
 /// Returns the first reflectable member.
 static const Decl *getFirstMember(const DeclContext *DC) {
-  return findNextMember(*DC->decls_begin());
+  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(DC))
+    return getFirstFunctionParameter(FD);
+  return findIterableMember(*DC->decls_begin());
+}
+
+static const ParmVarDecl *getNextFunctionParameter(const ParmVarDecl *D) {
+  assert(isa<FunctionDecl>(D->getDeclContext()));
+  const FunctionDecl *FD = cast<FunctionDecl>(D->getDeclContext());
+
+  unsigned NextParamIndex = D->getFunctionScopeIndex() + 1;
+  if (NextParamIndex < FD->getNumParams())
+    return FD->getParamDecl(NextParamIndex);
+
+  return nullptr;
 }
 
 /// Returns the next reflectable member
 static const Decl *getNextMember(const Decl *D) {
-  return findNextMember(D->getNextDeclInContext());
+  if (const ParmVarDecl *PVD = dyn_cast<ParmVarDecl>(D))
+    return getNextFunctionParameter(PVD);
+  return findIterableMember(D->getNextDeclInContext());
 }
 
 /// Returns the reachable declaration context for R, if any.
