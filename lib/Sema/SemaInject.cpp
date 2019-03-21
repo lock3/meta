@@ -2110,7 +2110,12 @@ GetInjecteeDecl(Sema &S, DeclContext *CurContext,
       return nullptr;
     }
 
-    return Decl::castFromDeclContext(CurContextDecl->getDeclContext());
+    DeclContext *Parent = Decl::castToDeclContext(CurContextDecl);
+    do {
+      Parent = Parent->getParent();
+    } while (!Parent->isFileContext());
+
+    return Decl::castFromDeclContext(Parent);
   }
 
   case CXXInjectionContextSpecifier::SpecifiedNamespace:
