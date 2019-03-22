@@ -1027,31 +1027,31 @@ consteval string_type display_name_of(info x) {
 // General purpose queries
 
 consteval bool has_linkage(info x) {
-  return detail::linkage_traits(x).kind != detail::no_linkage;
+  return detail::linkage_traits(x).kind != detail::lk_none;
 }
 
 consteval bool has_external_linkage(info x) {
-  return detail::linkage_traits(x).kind == detail::external_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_external;
 }
 
 consteval bool has_internal_linkage(info x) {
-  return detail::linkage_traits(x).kind == detail::internal_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_internal;
 }
 
 consteval bool has_automatic_storage(info x) {
-  return detail::variable_traits(x).storage == detail::automatic_storage;
+  return detail::variable_traits(x).storage == detail::sk_automatic;
 }
 
 consteval bool has_static_storage(info x) {
-  return detail::variable_traits(x).storage == detail::static_storage;
+  return detail::variable_traits(x).storage == detail::sk_static;
 }
 
 consteval bool has_thread_storage(info x) {
-  return detail::variable_traits(x).storage == detail::thread_storage;
+  return detail::variable_traits(x).storage == detail::sk_thread;
 }
 
 consteval bool has_access(info x) {
-  return detail::access_traits(x).kind != detail::no_access;
+  return detail::access_traits(x).kind != detail::ak_none;
 }
 
 consteval bool has_default_access(info x) {
@@ -1060,22 +1060,22 @@ consteval bool has_default_access(info x) {
 
 consteval bool is_public(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::public_access;
+  return detail::access_traits(x).kind != detail::ak_public;
 }
 
 consteval bool is_private(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::private_access;
+  return detail::access_traits(x).kind != detail::ak_private;
 }
 
 consteval bool is_protected(info x) {
   assert(has_access(x));
-  return detail::access_traits(x).kind != detail::protected_access;
+  return detail::access_traits(x).kind != detail::ak_protected;
 }
 
 consteval bool is_extern(info x) {
   assert(has_linkage(x));
-  return detail::linkage_traits(x).kind == detail::external_linkage;
+  return detail::linkage_traits(x).kind == detail::lk_external;
 }
 
 consteval bool is_inline(info x) {
@@ -1107,11 +1107,11 @@ consteval bool is_constexpr(info x) {
 }
 
 consteval bool is_normal(info x) {
-  return detail::method_traits(x).kind == detail::normal;
+  return detail::method_traits(x).kind == detail::mk_normal;
 }
 
 consteval bool is_conversion(info x) {
-  return detail::method_traits(x).kind == detail::conversion;
+  return detail::method_traits(x).kind == detail::mk_conversion;
 }
 
 consteval bool is_explicit(info x) {
@@ -1172,11 +1172,11 @@ consteval bool is_deleted(info x) {
 }
 
 consteval bool is_declared_struct(info x) {
-  return detail::class_traits(x).kind == detail::struct_class_kind;
+  return detail::class_traits(x).kind == detail::ck_struct;
 }
 
 consteval bool is_declared_class(info x) {
-  return detail::class_traits(x).kind == detail::class_class_kind;
+  return detail::class_traits(x).kind == detail::ck_class;
 }
 
 consteval bool is_complete(info x) {
