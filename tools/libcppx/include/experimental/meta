@@ -29,7 +29,7 @@ consteval info type_of(info x);
 
 namespace detail {
 
-enum reflection_query {
+enum reflection_query : unsigned {
   query_unknown,
 
   query_is_invalid,
@@ -163,40 +163,57 @@ static constexpr unsigned get_type_traits(info x) {
 }
 
 // Kinds of linkage.
-enum linkage_kind {
-  external_linkage,
-  internal_linkage,
-  no_linkage,
+enum linkage_kind : unsigned {
+  lk_external,
+  lk_internal,
+  lk_none
 };
 
 // Kinds of (detectable) storage duration.
-enum storage_kind {
-  automatic_storage,
-  thread_storage,
-  static_storage,
+enum storage_kind : unsigned {
+  sk_automatic,
+  sk_thread,
+  sk_static
+};
+
+// Kinds of storage modifiers.
+enum storage_modifier : unsigned {
+  sm_not_modified,
+  sm_static,
+  sm_automatic,
+  sm_thread_local
 };
 
 // Kinds of class types.
-enum class_kind {
-  struct_class_kind,
-  class_class_kind,
-  union_class_kind
+enum class_kind : unsigned {
+  ck_struct,
+  ck_class,
+  ck_union
 };
 
 // Kinds of access.
-enum access_kind {
-  no_access,
-  public_access,
-  private_access,
-  protected_access
+enum access_kind : unsigned {
+  ak_none,
+  ak_public,
+  ak_private,
+  ak_protected
+};
+
+// Kinds of access modifiers.
+enum access_modifier : unsigned {
+  am_not_modified,
+  am_default,
+  am_public,
+  am_protected,
+  am_private
 };
 
 // Kinds of member functions.
-enum member_kind {
-  normal,
-  constructor,
-  destructor,
-  conversion
+enum member_kind : unsigned {
+  mk_normal,
+  mk_constructor,
+  mk_destructor,
+  mk_conversion
 };
 
 // The linkage of a bitfield is always stored in the first 2 bits.
