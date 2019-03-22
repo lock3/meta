@@ -410,6 +410,7 @@ public:
   Decl *InjectClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D);
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
+  Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
 
   // Members
 
@@ -1251,6 +1252,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
   case Decl::TemplateTypeParm:
     return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
+  case Decl::StaticAssert:
+    return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   default:
     break;
   }
@@ -1466,6 +1469,24 @@ Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   }
 
   return Parm;
+}
+
+Decl *InjectionContext::InjectStaticAssertDecl(StaticAssertDecl *D) {
+  Expr *AssertExpr = D->getAssertExpr();
+
+  // The expression in a static assertion is a constant expression.
+  EnterExpressionEvaluationContext Unevaluated(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+  ExprResult InstantiatedAssertExpr = TransformExpr(AssertExpr);
+  if (InstantiatedAssertExpr.isInvalid())
+    return nullptr;
+
+  return SemaRef.BuildStaticAssertDeclaration(D->getLocation(),
+                                              InstantiatedAssertExpr.get(),
+                                              D->getMessage(),
+                                              D->getRParenLoc(),
+                                              D->isFailed());
 }
 
 } // namespace clang

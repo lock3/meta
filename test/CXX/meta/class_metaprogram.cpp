@@ -83,8 +83,11 @@ class Foo {
 
   consteval {
     int captured_int_val = 7;
-    -> __fragment struct {
+    -> __fragment struct K {
       int captured_int = captured_int_val;
+
+      static constexpr int static_captured_int = captured_int_val;
+      static_assert(static_captured_int == captured_int_val);
     };
   }
 
