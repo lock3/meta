@@ -1078,6 +1078,19 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   return Field;
 }
 
+static bool
+ImplicitlyInstantiatedByFragment(TemplateSpecializationKind TemplateSK,
+                                 FunctionDecl *TemplateFD) {
+  if (TemplateSK != TSK_ImplicitInstantiation)
+    return false;
+  if (!TemplateFD->isInFragment())
+    return false;
+
+  DeclContext *DC = TemplateFD->getDeclContext();
+  CXXRecordDecl *D = dyn_cast_or_null<CXXRecordDecl>(DC);
+  return D && !D->isLocalClass();
+}
+
 Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
   DeclarationNameInfo DNI;
@@ -1122,11 +1135,13 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // Propagate Template Attributes
   MemberSpecializationInfo *MemberSpecInfo = D->getMemberSpecializationInfo();
   if (MemberSpecInfo) {
-    FunctionDecl *TemplateFD =
-        static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
     TemplateSpecializationKind TemplateSK =
         MemberSpecInfo->getTemplateSpecializationKind();
-    Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+    FunctionDecl *TemplateFD =
+        static_cast<FunctionDecl *>(MemberSpecInfo->getInstantiatedFrom());
+    if (!ImplicitlyInstantiatedByFragment(TemplateSK, TemplateFD)) {
+      Method->setInstantiationOfMemberFunction(TemplateFD, TemplateSK);
+    }
   }
 
   // Propagate semantic properties.
