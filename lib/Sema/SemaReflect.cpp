@@ -461,41 +461,71 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
   return ExprError();
 }
 
-static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
-                                   SourceLocation SL) {
-  Expr *Eval = nullptr;
+static Expr *DeclReflectionToValueExpr(Sema &S, const Reflection &R,
+                                       SourceLocation SL) {
+  assert(R.isDeclaration());
 
-  if (R.isDeclaration()) {
-    // If this is a value declaration, the build a DeclRefExpr to evaluate.
-    // Otherwise, it's not evaluable.
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
-      QualType T = VD->getType();
-      ExprValueKind VK = Expr::getValueKindForType(T);
-      ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
-      Eval = S.BuildDeclRefExpr(NCVD, T, VK, SL).get();
-    }
-  } else if (R.isExpression()) {
-    // Just evaluate the expression.
-    Eval = const_cast<Expr *>(R.getAsExpression());
-  } else {
-    // This is not a value.
-    return Eval;
+  // If this is a value declaration, then build a DeclRefExpr to evaluate.
+  if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+    QualType T = VD->getType();
+    ExprValueKind VK = Expr::getValueKindForType(T);
+    ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
+    return S.BuildDeclRefExpr(NCVD, T, VK, SL).get();
   }
 
+  return nullptr;
+}
+
+static Expr *ExprReflectionToValueExpr(Sema &S, const Reflection &R,
+                                       SourceLocation SL) {
+  assert(R.isExpression());
+
+  return const_cast<Expr *>(R.getAsExpression());
+}
+
+static Expr *BuildInitialReflectionToValueExpr(Sema &S, const Reflection &R,
+                                               SourceLocation SL) {
+  switch (R.getKind()) {
+  case RK_declaration:
+    return DeclReflectionToValueExpr(S, R, SL);
+  case RK_expression:
+    return ExprReflectionToValueExpr(S, R, SL);
+  default:
+    return nullptr;
+  }
+}
+
+static Expr *DeclRefExprToValueExpr(Sema &S, DeclRefExpr *Ref) {
   // If the expression we're going to evaluate is a reference to a field.
   // Adjust this to be a pointer to that field.
-  if (DeclRefExpr *Ref = dyn_cast_or_null<DeclRefExpr>(Eval)) {
-    if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
-      QualType Ty = F->getType();
-      const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
-      Ty = S.Context.getMemberPointerType(Ty, Cls);
-      Eval = new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue,
-                                           OK_Ordinary, Ref->getExprLoc(),
-                                           false);
-    }
+  if (const FieldDecl *F = dyn_cast<FieldDecl>(Ref->getDecl())) {
+    QualType Ty = F->getType();
+    const Type *Cls = S.Context.getTagDeclType(F->getParent()).getTypePtr();
+    Ty = S.Context.getMemberPointerType(Ty, Cls);
+    return new (S.Context) UnaryOperator(Ref, UO_AddrOf, Ty, VK_RValue,
+                                         OK_Ordinary, Ref->getExprLoc(),
+                                         false);
   }
 
-  return Eval;
+  return Ref;
+}
+
+static Expr *CompleteReflectionToValueExpr(Sema &S, Expr *EvalExpr) {
+  if (DeclRefExpr *Ref = dyn_cast_or_null<DeclRefExpr>(EvalExpr))
+    return DeclRefExprToValueExpr(S, Ref);
+
+  return EvalExpr;
+}
+
+static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
+                                   SourceLocation SL) {
+  // Handle the initial transformation from reflection
+  // to expression.
+  Expr *EvalExpr = BuildInitialReflectionToValueExpr(S, R, SL);
+
+  // Modify the initial expression to be properly
+  // evaluable during constexpr eval.
+  return CompleteReflectionToValueExpr(S, EvalExpr);
 }
 
 enum RangeKind {
