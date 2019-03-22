@@ -176,14 +176,6 @@ enum storage_kind : unsigned {
   sk_static
 };
 
-// Kinds of storage modifiers.
-enum storage_modifier : unsigned {
-  sm_not_modified,
-  sm_static,
-  sm_automatic,
-  sm_thread_local
-};
-
 // Kinds of class types.
 enum class_kind : unsigned {
   ck_struct,
@@ -197,15 +189,6 @@ enum access_kind : unsigned {
   ak_public,
   ak_private,
   ak_protected
-};
-
-// Kinds of access modifiers.
-enum access_modifier : unsigned {
-  am_not_modified,
-  am_default,
-  am_public,
-  am_protected,
-  am_private
 };
 
 // Kinds of member functions.
