@@ -2307,10 +2307,10 @@ struct SuppressDiagnostics
     SemaRef.Diags.setSuppressAllDiagnostics(true);
   }
   ~SuppressDiagnostics() {
-    SemaRef.Diags.setSuppressAllDiagnostics(Saved); 
+    SemaRef.Diags.setSuppressAllDiagnostics(Saved);
   }
   Sema &SemaRef;
-  bool Saved; 
+  bool Saved;
 };
 
 /// Build an expression that evaluates c std::tuple_size<RangeType>::value
@@ -2362,7 +2362,7 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
   }
 
   // Note the constant evaluation of the expression.
-  EnterExpressionEvaluationContext EvalContext(SemaRef, 
+  EnterExpressionEvaluationContext EvalContext(SemaRef,
     Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   // Build an expression that accesses the member and evaluate it.
@@ -2778,7 +2778,7 @@ struct ExpansionStatementBuilder
   /// declarations necessary to parse the loop body.
   ///
   /// FIXME: Detect constexpr-ness from the loop var.
-  ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K, 
+  ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
                             Stmt *LoopVarDS, Expr *RangeExpr,
                             bool IsConstexpr);
 
@@ -2797,7 +2797,7 @@ struct ExpansionStatementBuilder
                             Expr *RangeExpr);
 
   /// Build a statement that contains the "pattern" of the expansion
-  /// denoted by the loop. This needs to be declared in a way that it 
+  /// denoted by the loop. This needs to be declared in a way that it
   /// can be repeatedly instantiated.
   StmtResult Build();
 
@@ -2888,7 +2888,7 @@ struct ExpansionStatementBuilder
   /// The template parameter list for the induction variable.
   TemplateParameterList *TemplateParms = nullptr;
 
-  /// The induction variable is an integer template parameter used to compute 
+  /// The induction variable is an integer template parameter used to compute
   /// the nth value of an expanded statement.
   NonTypeTemplateParmDecl *InductionVar = nullptr;
 
@@ -3044,7 +3044,7 @@ bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
   RangeType = SemaRef.Context.getAutoRRefDeductType();
-  
+
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
 
@@ -3068,7 +3068,7 @@ ExpansionStatementBuilder::BuildRangeVar()
   RangeRef = cast<DeclRefExpr>(RangeDRE.get());
 
   // Claim the type doesn't contain 'auto': we've already done the checking.
-  Sema::DeclGroupPtrTy RangeGroup = 
+  Sema::DeclGroupPtrTy RangeGroup =
   SemaRef.BuildDeclaratorGroup(
         MutableArrayRef<Decl *>((Decl **)&RangeVar, 1));
   StmtResult RangeDecl = SemaRef.ActOnDeclStmt(RangeGroup, RangeLoc, RangeLoc);
@@ -3124,21 +3124,21 @@ ExpansionStatementBuilder::BuildInductionVar()
   int Depth = NewTemplateParameterDepth(SemaRef.CurContext);
   IdentifierInfo *ParmName = &SemaRef.Context.Idents.get("__N");
   const QualType ParmTy = SemaRef.Context.getSizeType();
-  TypeSourceInfo *ParmTI = 
+  TypeSourceInfo *ParmTI =
       SemaRef.Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
-  NonTypeTemplateParmDecl *Parm = 
-      NonTypeTemplateParmDecl::Create(SemaRef.Context, 
+  NonTypeTemplateParmDecl *Parm =
+      NonTypeTemplateParmDecl::Create(SemaRef.Context,
                                       SemaRef.Context.getTranslationUnitDecl(),
-                                      ColonLoc, ColonLoc, Depth, 
-                                      /*Position=*/0, ParmName, ParmTy, false, 
+                                      ColonLoc, ColonLoc, Depth,
+                                      /*Position=*/0, ParmName, ParmTy, false,
                                       ParmTI);
   NamedDecl *Parms[] = {Parm};
-  TemplateParms = 
+  TemplateParms =
       TemplateParameterList::Create(SemaRef.Context, ColonLoc, ColonLoc, Parms,
                                     ColonLoc, nullptr);
 
   // Build the expression __N.
-  ExprResult ParmRef = 
+  ExprResult ParmRef =
       SemaRef.BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
   if (ParmRef.isInvalid())
     return false;
@@ -3290,7 +3290,7 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // context of the range type.
   LookupResult R(SemaRef, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
   if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext())) {
-    SemaRef.Diag(ColonLoc, diag::err_no_member) 
+    SemaRef.Diag(ColonLoc, diag::err_no_member)
         << Name << RangeClass->getParent();
     return StmtError();
   }
@@ -3354,35 +3354,35 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   QualType AutoType = SemaRef.Context.getAutoDeductType();
 
   ///  Build 'constexpr auto __begin = ...'
-  VarDecl *BeginVar = 
+  VarDecl *BeginVar =
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__begin");
   BeginVar->setConstexpr(true);
   BeginVar->setType(BeginVar->getType().withConst());
 
   ///  Build 'constexpr auto __end = ...'
-  VarDecl *EndVar = 
+  VarDecl *EndVar =
       BuildForRangeVarDecl(SemaRef, ColonLoc, AutoType, "__end");
   EndVar->setConstexpr(true);
   EndVar->setType(EndVar->getType().withConst());
 
-  // Build decl refs for the __range in each of the begin and end expressions.  
-  ExprResult BeginRangeRef = 
+  // Build decl refs for the __range in each of the begin and end expressions.
+  ExprResult BeginRangeRef =
       SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, ColonLoc);
   if (BeginRangeRef.isInvalid())
     return StmtError();
-  ExprResult EndRangeRef = 
+  ExprResult EndRangeRef =
       SemaRef.BuildDeclRefExpr(RangeVar, RangeType, VK_LValue, ColonLoc);
   if (EndRangeRef.isInvalid())
     return StmtError();
 
-  Sema::DeclGroupPtrTy BeginGroup = 
+  Sema::DeclGroupPtrTy BeginGroup =
   SemaRef.BuildDeclaratorGroup(
         MutableArrayRef<Decl *>((Decl **)&BeginVar, 1));
   StmtResult BeginDecl = SemaRef.ActOnDeclStmt(BeginGroup, ColonLoc, ColonLoc);
   if (BeginDecl.isInvalid())
     return StmtError();
 
-  Sema::DeclGroupPtrTy EndGroup = 
+  Sema::DeclGroupPtrTy EndGroup =
   SemaRef.BuildDeclaratorGroup(
         MutableArrayRef<Decl *>((Decl **)&EndVar, 1));
   StmtResult EndDecl = SemaRef.ActOnDeclStmt(EndGroup, ColonLoc, ColonLoc);
@@ -3397,9 +3397,9 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   ExprResult EndExpr;
   BeginEndFunction BEFFailure;
   OverloadCandidateSet CandidateSet(ColonLoc, OverloadCandidateSet::CSK_Normal);
-  Sema::ForRangeStatus RangeStatus = 
-    BuildNonArrayForRange(SemaRef, BeginRangeRef.get(), EndRangeRef.get(), 
-    RangeType, BeginVar, EndVar, ColonLoc, /*CoroutineLoc=*/SourceLocation(), 
+  Sema::ForRangeStatus RangeStatus =
+    BuildNonArrayForRange(SemaRef, BeginRangeRef.get(), EndRangeRef.get(),
+    RangeType, BeginVar, EndVar, ColonLoc, /*CoroutineLoc=*/SourceLocation(),
     &CandidateSet, &BeginExpr, &EndExpr, &BEFFailure);
 
   // Don't bother diagnosing errors. We have more cases to diagnose.
@@ -3408,13 +3408,13 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 
   // Build references to the new variables.
   QualType BeginType = BeginVar->getType().getNonReferenceType();
-  ExprResult BeginRef = 
+  ExprResult BeginRef =
       SemaRef.BuildDeclRefExpr(BeginVar, BeginType, VK_LValue, ColonLoc);
   if (BeginRef.isInvalid())
     return StmtError();
 
   QualType EndType = EndVar->getType().getNonReferenceType();
-  ExprResult EndRef = 
+  ExprResult EndRef =
       SemaRef.BuildDeclRefExpr(EndVar, EndType, VK_LValue, ColonLoc);
   if (EndRef.isInvalid())
     return StmtError();
@@ -3450,21 +3450,21 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
   if (NextCallLookup.getResultKind() != LookupResult::FoundOverloaded)
     return StmtError();
-    
+
   UnresolvedLookupExpr *NextFn =
     UnresolvedLookupExpr::Create(SemaRef.Context, /*NamingClass=*/nullptr,
                                  NestedNameSpecifierLoc(), NextNameInfo,
                                  /*ADL=*/true, /*Overloaded=*/true,
-                                 NextCallLookup.begin(), 
+                                 NextCallLookup.begin(),
                                  NextCallLookup.end());
   Expr *Args[] = {BeginRef.get(), InductionRef};
-  ExprResult NextCall = 
+  ExprResult NextCall =
       SemaRef.ActOnCallExpr(CurScope, NextFn, ColonLoc, Args, ColonLoc);
   if (NextCall.isInvalid())
     return StmtError();
 
   // Build *next-call.
-  ExprResult NextDeref = 
+  ExprResult NextDeref =
       SemaRef.ActOnUnaryOp(CurScope, ColonLoc, tok::star, NextCall.get());
   if (NextDeref.isInvalid())
     return StmtError();
@@ -3524,7 +3524,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
                                        /*ADL=*/true, /*Overloaded=*/true,
                                        DistLookup.begin(), DistLookup.end());
         Expr *Args[] = {BeginRef.get(), EndRef.get()};
-        ExprResult SizeCall = 
+        ExprResult SizeCall =
             SemaRef.ActOnCallExpr(CurScope, SizeFn, ColonLoc, Args, ColonLoc);
         if (!SizeCall.isInvalid())
           CountCall = cast<CallExpr>(SizeCall.get());
