@@ -1547,10 +1547,67 @@ static void ReferenceCaptures(Sema &SemaRef,
   });
 }
 
-/// Returns the variable from a captured declaration.
-static VarDecl *GetVariableFromCapture(Expr *E) {
-  Expr *Ref = cast<ImplicitCastExpr>(E)->getSubExpr();
-  return cast<VarDecl>(cast<DeclRefExpr>(Ref)->getDecl());
+static Decl *GetRootDeclaration(Expr *E) {
+  if (auto *ICE = dyn_cast<ImplicitCastExpr>(E))
+    return GetRootDeclaration(ICE->getSubExpr());
+
+  if (auto *ASE = dyn_cast<ArraySubscriptExpr>(E))
+    return GetRootDeclaration(ASE->getBase());
+
+  if (auto *DRE = dyn_cast<DeclRefExpr>(E))
+    return DRE->getDecl();
+
+  if (auto *ME = dyn_cast<MemberExpr>(E))
+    return ME->getMemberDecl();
+
+  llvm_unreachable("failed to find declaration");
+}
+
+template<typename F>
+static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB);
+
+template<typename F>
+static void ExtractDecomposedDeclInits(Sema &S, DecompositionDecl *D,
+                                       F CapturedExprCB) {
+  for (BindingDecl *BD : D->bindings()) {
+    ExprResult LValueConverted = S.DefaultFunctionArrayLvalueConversion(BD->getBinding());
+    CapturedExprCB(LValueConverted.get());
+  }
+}
+
+/// Calls the passed lambda on any init exprs conatined in Expr E.
+template<typename F>
+static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB) {
+  Decl *D = GetRootDeclaration(E);
+
+  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+    ExtractDecomposedDeclInits(S, DD, CapturedExprCB);
+    return;
+  }
+
+  CapturedExprCB(E);
+}
+
+template<typename F>
+static void ExtractDecomposedDecls(Sema &S, DecompositionDecl *D,
+                                   F CapturedDeclCB) {
+  for (BindingDecl *BD : D->bindings()) {
+    CapturedDeclCB(BD);
+  }
+}
+
+/// Calls the passed lambda on any variable declarations
+/// conatined in Expr E.
+template<typename F>
+static void ExtractCapturedVariables(Sema &S, Expr *E, F CapturedDeclCB) {
+  Decl *D = GetRootDeclaration(E);
+
+  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+    ExtractDecomposedDecls(S, DD, CapturedDeclCB);
+    return;
+  }
+
+  CapturedDeclCB(cast<ValueDecl>(D));
 }
 
 // Create a placeholder for each captured expression in the scope of the
@@ -1560,21 +1617,22 @@ static VarDecl *GetVariableFromCapture(Expr *E) {
 //
 // These are replaced by their values during injection.
 static void CreatePlaceholder(Sema &SemaRef, CXXFragmentDecl *Frag, Expr *E) {
-  ValueDecl *Var = GetVariableFromCapture(E);
-  SourceLocation NameLoc = Var->getLocation();
-  DeclarationName Name = Var->getDeclName();
-  QualType T = SemaRef.Context.DependentTy;
-  TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
-  VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, NameLoc, NameLoc,
-                                         Name, T, TSI, SC_Static);
-  Placeholder->setConstexpr(true);
-  Placeholder->setImplicit(true);
-  Placeholder->setInitStyle(VarDecl::CInit);
-  Placeholder->setInit(
-      new (SemaRef.Context) OpaqueValueExpr(NameLoc, T, VK_RValue));
-  Placeholder->setReferenced(true);
-  Placeholder->markUsed(SemaRef.Context);
-  Frag->addDecl(Placeholder);
+  ExtractCapturedVariables(SemaRef, E, [&] (ValueDecl *Var) {
+    SourceLocation NameLoc = Var->getLocation();
+    DeclarationName Name = Var->getDeclName();
+    QualType T = SemaRef.Context.DependentTy;
+    TypeSourceInfo *TSI = SemaRef.Context.getTrivialTypeSourceInfo(T);
+    VarDecl *Placeholder = VarDecl::Create(SemaRef.Context, Frag, NameLoc, NameLoc,
+                                           Name, T, TSI, SC_Static);
+    Placeholder->setConstexpr(true);
+    Placeholder->setImplicit(true);
+    Placeholder->setInitStyle(VarDecl::CInit);
+    Placeholder->setInit(
+        new (SemaRef.Context) OpaqueValueExpr(NameLoc, T, VK_RValue));
+    Placeholder->setReferenced(true);
+    Placeholder->markUsed(SemaRef.Context);
+    Frag->addDecl(Placeholder);
+  });
 }
 
 static void CreatePlaceholders(Sema &SemaRef, CXXFragmentDecl *Frag,
@@ -1701,19 +1759,24 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
 
   // Build the capture fields.
   for (Expr *E : Captures) {
-    VarDecl *Var = GetVariableFromCapture(E);
-    std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
-    IdentifierInfo *Id = &Context.Idents.get(Name);
-    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Var->getType());
-    FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc, Id,
-                                         Var->getType(), TypeInfo,
-                                         nullptr, false,
-                                         ICIS_NoInit);
-    Field->setAccess(AS_public);
-    Field->setImplicit(true);
+    ExtractCapturedVariables(S, E, [&] (ValueDecl *Var)  {
+      std::string Name = "__captured_" + Var->getIdentifier()->getName().str();
+      IdentifierInfo *Id = &Context.Idents.get(Name);
 
-    Fields.push_back(Field);
-    Class->addDecl(Field);
+      // We need to get the non-reference type, we're capturing by value.
+      QualType Type = Var->getType().getNonReferenceType();
+
+      TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(Type);
+      FieldDecl *Field = FieldDecl::Create(Context, Class, Loc, Loc, Id,
+                                           Type, TypeInfo,
+                                           nullptr, false,
+                                           ICIS_NoInit);
+      Field->setAccess(AS_public);
+      Field->setImplicit(true);
+
+      Fields.push_back(Field);
+      Class->addDecl(Field);
+    });
   }
 
   // Build a new constructor for our fragment type.
@@ -1736,8 +1799,11 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
 
   SmallVector<QualType, 4> ArgTypes;
   ArgTypes.push_back(ReflectionType);
-  for (Expr *E : Captures)
-    ArgTypes.push_back(E->getType());
+  for (Expr *E : Captures) {
+    ExtractCapturedVariableInits(S, E, [&] (Expr *EE) {
+      ArgTypes.push_back(EE->getType());
+    });
+  }
 
   QualType CtorTy = Context.getFunctionType(Context.VoidTy, ArgTypes, EPI);
   Ctor->setType(CtorTy);
@@ -1756,19 +1822,23 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   Parms.push_back(Parm);
 
   // Build the constructor capture params.
-  for (std::size_t I = 0; I < Captures.size(); ++I) {
-    Expr *E = Captures[I];
-    VarDecl *Var = GetVariableFromCapture(E);
-    std::string Name = "__param_" + Var->getIdentifier()->getName().str();
-    IdentifierInfo *Id = &Context.Idents.get(Name);
-    QualType ParmTy = E->getType();
-    TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
-    ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
-                                            Id, ParmTy, TypeInfo,
-                                            SC_None, nullptr);
-    Parm->setScopeInfo(0, I + 1);
-    Parm->setImplicit(true);
-    Parms.push_back(Parm);
+  int DestExpansion = 0;
+  for (Expr *E : Captures) {
+    ExtractCapturedVariables(S, E, [&] (ValueDecl *Var) {
+      std::string Name = "__param_" + Var->getIdentifier()->getName().str();
+      IdentifierInfo *Id = &Context.Idents.get(Name);
+
+      // We need to get the non-reference type, we're capturing by value.
+      QualType ParmTy = Var->getType().getNonReferenceType();
+
+      TypeSourceInfo *TypeInfo = Context.getTrivialTypeSourceInfo(ParmTy);
+      ParmVarDecl *Parm = ParmVarDecl::Create(Context, Ctor, Loc, Loc,
+                                              Id, ParmTy, TypeInfo,
+                                              SC_None, nullptr);
+      Parm->setScopeInfo(0, ++DestExpansion);
+      Parm->setImplicit(true);
+      Parms.push_back(Parm);
+    });
   }
 
   Ctor->setParams(Parms);
@@ -1781,8 +1851,9 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   for (std::size_t I = 0; I < Parms.size(); ++I) {
     ParmVarDecl *Parm = Parms[I];
     FieldDecl *Field = Fields[I];
+    QualType Type = Parm->getType();
     DeclRefExpr *Ref = new (Context) DeclRefExpr(
-        Context, Parm, false, Parm->getType(), VK_LValue, Loc);
+        Context, Parm, false, Type, VK_LValue, Loc);
     Expr *Arg = ParenListExpr::Create(Context, Loc, Ref, Loc);
     Inits[I] = S.BuildMemberInitializer(Field, Arg, Loc).get();
   }
@@ -1800,7 +1871,9 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   SmallVector<Expr *, 8> CtorArgs;
   CtorArgs.push_back(dyn_cast<Expr>(Reflection));
   for (Expr *E : Captures) {
-    CtorArgs.push_back(E);
+    ExtractCapturedVariableInits(S, E, [&] (Expr *EE) {
+      CtorArgs.push_back(EE);
+    });
   }
 
   // Build an expression that that initializes the fragment object.
