@@ -1103,22 +1103,14 @@ void ASTDeclWriter::VisitEmptyDecl(EmptyDecl *D) {
 
 void ASTDeclWriter::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
   VisitDecl(D);
-  Record.push_back(D->hasFunctionRepresentation());
-  const Decl *Representation = D->hasFunctionRepresentation()
-    ? static_cast<Decl *>(D->getFunctionDecl())
-    : static_cast<Decl *>(D->getClosureDecl());
-  Record.AddDeclRef(Representation);
+  Record.AddDeclRef(D->getFunctionDecl());
   Record.AddStmt(D->getCallExpr());
   Code = serialization::DECL_CXX_METAPROGRAM;
 }
 
 void ASTDeclWriter::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
   VisitDecl(D);
-  Record.push_back(D->hasFunctionRepresentation());
-  const Decl *Representation = D->hasFunctionRepresentation()
-    ? static_cast<Decl *>(D->getFunctionDecl())
-    : static_cast<Decl *>(D->getClosureDecl());
-  Record.AddDeclRef(Representation);
+  Record.AddDeclRef(D->getFunctionDecl());
   Record.AddStmt(D->getCallExpr());
   Code = serialization::DECL_CXX_INJECTION;
 }

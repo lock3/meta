@@ -9102,16 +9102,16 @@ public:
     }
   };
 
-  Decl *ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstexprLoc,
-                                unsigned &ScopeFlags);
-  Decl *ActOnCXXInjectionDecl(Scope *S, SourceLocation ConstexprLoc,
-                              unsigned &ScopeFlags);
-  void ActOnStartCXXMetaprogramDecl(Scope *S, Decl *D);
-  void ActOnStartCXXInjectionDecl(Scope *S, Decl *D);
-  void ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body);
-  void ActOnFinishCXXInjectionDecl(Scope *S, Decl *D, Stmt *InjectionStmt);
-  void ActOnCXXMetaprogramDeclError(Scope *S, Decl *D);
-  void ActOnCXXInjectionDeclError(Scope *S, Decl *D);
+  Decl *ActOnCXXMetaprogramDecl(SourceLocation ConstexprLoc);
+  Decl *ActOnCXXInjectionDecl(SourceLocation ConstexprLoc);
+  void ActOnStartCXXMetaprogramDecl(Decl *D, DeclContext *&OriginalDC);
+  void ActOnStartCXXInjectionDecl(Decl *D, DeclContext *&OriginalDC);
+  void ActOnFinishCXXMetaprogramDecl(Decl *D, Stmt *Body,
+                                     DeclContext *OriginalDC);
+  void ActOnFinishCXXInjectionDecl(Decl *D, Stmt *InjectionStmt,
+                                   DeclContext *OriginalDC);
+  void ActOnCXXMetaprogramDeclError(Decl *D, DeclContext *OriginalDC);
+  void ActOnCXXInjectionDeclError(Decl *D, DeclContext *OriginalDC);
 
   bool ActOnCXXInjectedParameter(SourceLocation ArrowLoc, Expr *Reflection,
                             SmallVectorImpl<DeclaratorChunk::ParamInfo> &Parms);

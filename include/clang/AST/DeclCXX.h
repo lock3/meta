@@ -4008,7 +4008,7 @@ class CXXMetaprogramDecl : public Decl {
   virtual void anchor();
 
   /// The de-sugared form of the declaration.
-  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
+  FunctionDecl *Representation;
 
   /// The de-sugared call expression.
   CallExpr *Call;
@@ -4022,45 +4022,21 @@ class CXXMetaprogramDecl : public Decl {
       : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Fn),
         Call(nullptr) {}
 
-  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
-                     CXXRecordDecl *Class)
-      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Class),
-        Call(nullptr) {}
-
 public:
   static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
                                     SourceLocation CXXMetaprogramLoc,
                                     FunctionDecl *Fn);
-  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
-                                    SourceLocation CXXMetaprogramLoc,
-                                    CXXRecordDecl *Closure);
   static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// Returns \c true if this is represented as a function.
-  bool hasFunctionRepresentation() const {
-    return Representation.is<FunctionDecl *>();
-  }
-
-  /// Returns \c true if this is represented as a lambda expression.
-  bool hasLambdaRepresentation() const {
-    return Representation.is<CXXRecordDecl *>();
+  /// Returns true if there is a de-sugared representation of
+  /// the declaration.
+  bool hasRepresentation() const {
+    return Representation;
   }
 
   /// Returns the function representation of the declaration.
   FunctionDecl *getFunctionDecl() const {
-    return Representation.get<FunctionDecl *>();
-  }
-
-  /// Returns the closure declaration for the lambda expression.
-  CXXRecordDecl *getClosureDecl() const {
-    return Representation.get<CXXRecordDecl *>();
-  }
-
-  /// Returns the call operator of the closure.
-  CXXMethodDecl *getClosureCallOperator() const {
-    assert(hasLambdaRepresentation() &&
-           "constexpr declaration is not represented by a lambda expression");
-    return getClosureDecl()->getLambdaCallOperator();
+    return Representation;
   }
 
   /// Returns \c true if the metaprogram-declaration has a body.
@@ -4095,7 +4071,7 @@ class CXXInjectionDecl : public Decl {
   virtual void anchor();
 
   /// The de-sugared form of the declaration.
-  llvm::PointerUnion<FunctionDecl *, CXXRecordDecl *> Representation;
+  FunctionDecl *Representation;
 
   /// The de-sugared call expression.
   CallExpr *Call;
@@ -4105,49 +4081,25 @@ class CXXInjectionDecl : public Decl {
         Call(nullptr) {}
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
-                     FunctionDecl *Fn)
+                   FunctionDecl *Fn)
       : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(Fn),
-        Call(nullptr) {}
-
-  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
-                     CXXRecordDecl *Class)
-      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(Class),
         Call(nullptr) {}
 
 public:
   static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
                                     SourceLocation CXXInjectionLoc,
                                     FunctionDecl *Fn);
-  static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
-                                    SourceLocation CXXInjectionLoc,
-                                    CXXRecordDecl *Closure);
   static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
-  /// Returns \c true if this is represented as a function.
-  bool hasFunctionRepresentation() const {
-    return Representation.is<FunctionDecl *>();
-  }
-
-  /// Returns \c true if this is represented as a lambda expression.
-  bool hasLambdaRepresentation() const {
-    return Representation.is<CXXRecordDecl *>();
+  /// Returns true if there is a de-sugared representation of
+  /// the declaration.
+  bool hasRepresentation() const {
+    return Representation;
   }
 
   /// Returns the function representation of the declaration.
   FunctionDecl *getFunctionDecl() const {
-    return Representation.get<FunctionDecl *>();
-  }
-
-  /// Returns the closure declaration for the lambda expression.
-  CXXRecordDecl *getClosureDecl() const {
-    return Representation.get<CXXRecordDecl *>();
-  }
-
-  /// Returns the call operator of the closure.
-  CXXMethodDecl *getClosureCallOperator() const {
-    assert(hasLambdaRepresentation() &&
-           "constexpr declaration is not represented by a lambda expression");
-    return getClosureDecl()->getLambdaCallOperator();
+    return Representation;
   }
 
   /// Returns \c true if the injection-declaration has a body.

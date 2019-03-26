@@ -2966,32 +2966,20 @@ CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
   return new (Cxt, DC) CXXMetaprogramDecl(DC, CXXMetaprogramLoc, Fn);
 }
 
-CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation CXXMetaprogramLoc,
-                                     CXXRecordDecl *Class) {
-  return new (Cxt, DC) CXXMetaprogramDecl(DC, CXXMetaprogramLoc, Class);
-}
-
 CXXMetaprogramDecl *CXXMetaprogramDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXMetaprogramDecl(nullptr, SourceLocation());
 }
 
 bool CXXMetaprogramDecl::hasBody() const {
-  if (Representation.isNull())
+  if (!hasRepresentation())
     return false;
-  const FunctionDecl *FD = hasFunctionRepresentation()
-                               ? getFunctionDecl()
-                               : getClosureCallOperator();
-  return FD->hasBody();
+  return getFunctionDecl()->hasBody();
 }
 
 Stmt *CXXMetaprogramDecl::getBody() const {
-  if (Representation.isNull())
+  if (!hasRepresentation())
     return nullptr;
-  const FunctionDecl *FD = hasFunctionRepresentation()
-                               ? getFunctionDecl()
-                               : getClosureCallOperator();
-  return FD->getBody();
+  return getFunctionDecl()->getBody();
 }
 
 SourceRange CXXMetaprogramDecl::getSourceRange() const {
@@ -3009,32 +2997,20 @@ CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
   return new (Cxt, DC) CXXInjectionDecl(DC, CXXInjectionLoc, Fn);
 }
 
-CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
-                                     SourceLocation CXXInjectionLoc,
-                                     CXXRecordDecl *Class) {
-  return new (Cxt, DC) CXXInjectionDecl(DC, CXXInjectionLoc, Class);
-}
-
 CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
 }
 
 bool CXXInjectionDecl::hasBody() const {
-  if (Representation.isNull())
+  if (!hasRepresentation())
     return false;
-  const FunctionDecl *FD = hasFunctionRepresentation()
-                               ? getFunctionDecl()
-                               : getClosureCallOperator();
-  return FD->hasBody();
+  return getFunctionDecl()->hasBody();
 }
 
 Stmt *CXXInjectionDecl::getBody() const {
-  if (Representation.isNull())
+  if (!hasRepresentation())
     return nullptr;
-  const FunctionDecl *FD = hasFunctionRepresentation()
-                               ? getFunctionDecl()
-                               : getClosureCallOperator();
-  return FD->getBody();
+  return getFunctionDecl()->getBody();
 }
 
 void CXXFragmentDecl::anchor() {}

@@ -285,6 +285,22 @@ StmtResult Parser::ParseCXXBaseInjectionStatement() {
   return Actions.ActOnCXXBaseInjectionStmt(KWLoc, LPLoc, BaseSpecifiers, RPLoc);
 }
 
+namespace {
+  template<typename T>
+  class MetaParseScope {
+    Parser::ParseScope PS;
+
+  public:
+    MetaParseScope(Parser *Parser, Decl *MetaDecl)
+      : PS(Parser, Scope::FnScope | Scope::DeclScope) {
+      // Set our body scope's current entity to be the function
+      // representation of our metaprogram if not set,
+      // fragment capture does not work correctly.
+      Parser->getCurScope()->setEntity(cast<T>(MetaDecl)->getFunctionDecl());
+    }
+  };
+}
+
 /// Parse a metaprogram-declaration.
 ///
 /// \verbatim
@@ -296,14 +312,13 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
   SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::l_brace));
 
-  unsigned ScopeFlags;
-  Decl *D = Actions.ActOnCXXMetaprogramDecl(getCurScope(), ConstevalLoc,
-                                            ScopeFlags);
+  Decl *D = Actions.ActOnCXXMetaprogramDecl(ConstevalLoc);
 
   // Enter a scope for the metaprogram declaration body.
-  ParseScope BodyScope(this, ScopeFlags);
+  MetaParseScope<CXXMetaprogramDecl> MetaScope(this, D);
 
-  Actions.ActOnStartCXXMetaprogramDecl(getCurScope(), D);
+  DeclContext *OriginalDC;
+  Actions.ActOnStartCXXMetaprogramDecl(D, OriginalDC);
 
   PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstevalLoc,
                                       "parsing metaprogram declaration body");
@@ -311,9 +326,9 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
   // Parse the body of the metaprogram declaration.
   StmtResult Body(ParseCompoundStatementBody());
   if (!Body.isInvalid())
-    Actions.ActOnFinishCXXMetaprogramDecl(getCurScope(), D, Body.get());
+    Actions.ActOnFinishCXXMetaprogramDecl(D, Body.get(), OriginalDC);
   else
-    Actions.ActOnCXXMetaprogramDeclError(getCurScope(), D);
+    Actions.ActOnCXXMetaprogramDeclError(D, OriginalDC);
 
   return Actions.ConvertDeclToDeclGroup(D);
 }
@@ -331,14 +346,13 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::arrow) && "expected '->' token");
 
-  unsigned ScopeFlags;
-  Decl *D = Actions.ActOnCXXInjectionDecl(getCurScope(), ConstevalLoc,
-                                          ScopeFlags);
+  Decl *D = Actions.ActOnCXXInjectionDecl(ConstevalLoc);
 
   // Enter a scope for the constexpr declaration body.
-  ParseScope BodyScope(this, ScopeFlags);
+  MetaParseScope<CXXInjectionDecl> MetaScope(this, D);
 
-  Actions.ActOnStartCXXInjectionDecl(getCurScope(), D);
+  DeclContext *OriginalDC;
+  Actions.ActOnStartCXXInjectionDecl(D, OriginalDC);
 
   PrettyDeclStackTraceEntry CrashInfo(Actions.getASTContext(), D, ConstevalLoc,
                                       "parsing injection declaration body");
@@ -346,9 +360,9 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   // Parse the injection statement of the metaprogram declaration.
   StmtResult InjectionStmt = ParseCXXInjectionStatement();
   if (!InjectionStmt.isInvalid())
-    Actions.ActOnFinishCXXInjectionDecl(getCurScope(), D, InjectionStmt.get());
+    Actions.ActOnFinishCXXInjectionDecl(D, InjectionStmt.get(), OriginalDC);
   else
-    Actions.ActOnCXXInjectionDeclError(getCurScope(), D);
+    Actions.ActOnCXXInjectionDeclError(D, OriginalDC);
 
   return Actions.ConvertDeclToDeclGroup(D);
 }

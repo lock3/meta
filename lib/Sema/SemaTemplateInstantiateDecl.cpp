@@ -909,48 +909,43 @@ template <typename MetaType>
 static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
                            const MultiLevelTemplateArgumentList &TemplateArgs,
                            MetaType *D) {
-  if (FunctionDecl *Fn = D->getFunctionDecl()) {
-    // Instantiate the nested function.
-    //
-    // FIXME: The point of instantiation is probably wrong.
-    FunctionDecl *NewFn = cast_or_null<FunctionDecl>(
-                                    SemaRef.SubstDecl(Fn, Owner, TemplateArgs));
-    if (!NewFn || NewFn->isInvalidDecl())
-      return nullptr;
+  FunctionDecl *Fn = D->getFunctionDecl();
+  // Instantiate the nested function.
+  //
+  // FIXME: The point of instantiation is probably wrong.
+  FunctionDecl *NewFn = cast_or_null<FunctionDecl>(
+                                  SemaRef.SubstDecl(Fn, Owner, TemplateArgs));
+  if (!NewFn || NewFn->isInvalidDecl())
+    return nullptr;
 
-    // FIXME: We probably need to manage the function's definition a little
-    // better. Note that we can't use InstantiateFunctionDefinition; that
-    // assumes that the NewFn will have a template pattern.
-    StmtResult NewBody;
-    {
-      Sema::ContextRAII Switch(SemaRef, NewFn);
-      SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
-      NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs,
-                                  ExistingMappings);
-    }
-    if (NewBody.isInvalid())
-      return nullptr;
-    NewFn->setBody(NewBody.get());
-
-    // Build the constexpr declaration.
-    MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
-                                    Fn->getLocation(), NewFn);
-    Owner->addDecl(MD); // FIXME: OWner or CurContext?
-
-    // And evaluate it if needed.
-    if (!NewFn->isDependentContext()) {
-      // FIXME: What the hell are we going to do with late parsed
-      // declarations during template instantiation?
-      SmallVector<void *, 8> LateParsedDecls;
-      SemaRef.EvaluateCXXMetaDecl(MD, NewFn);
-    }
-
-    return MD;
-  } else if (CXXRecordDecl *Class = D->getClosureDecl()) {
-    llvm_unreachable("local metaprogram-decl instantiation not implemented");
-  } else {
-    llvm_unreachable("invalid metaprogram");
+  // FIXME: We probably need to manage the function's definition a little
+  // better. Note that we can't use InstantiateFunctionDefinition; that
+  // assumes that the NewFn will have a template pattern.
+  StmtResult NewBody;
+  {
+    Sema::ContextRAII Switch(SemaRef, NewFn);
+    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+    NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs,
+                                ExistingMappings);
   }
+  if (NewBody.isInvalid())
+    return nullptr;
+  NewFn->setBody(NewBody.get());
+
+  // Build the constexpr declaration.
+  MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
+                                  Fn->getLocation(), NewFn);
+  Owner->addDecl(MD); // FIXME: OWner or CurContext?
+
+  // And evaluate it if needed.
+  if (!NewFn->isDependentContext()) {
+    // FIXME: What the hell are we going to do with late parsed
+    // declarations during template instantiation?
+    SmallVector<void *, 8> LateParsedDecls;
+    SemaRef.EvaluateCXXMetaDecl(MD, NewFn);
+  }
+
+  return MD;
 }
 
 Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {

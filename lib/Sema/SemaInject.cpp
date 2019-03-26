@@ -1307,16 +1307,16 @@ InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
 
   // We can use the ActOn* members since the initial parsing for these
   // declarations is trivial (i.e., don't have to translate declarators).
-  unsigned ScopeFlags; // Unused
-  Decl *New = Sema.ActOnCXXMetaprogramDecl(/*Scope=*/nullptr, D->getLocation(),
-                                           ScopeFlags);
+  Decl *New = Sema.ActOnCXXMetaprogramDecl(D->getLocation());
 
-  Sema.ActOnStartCXXMetaprogramDecl(/*Scope=*/nullptr, New);
+  DeclContext *OriginalDC;
+  Sema.ActOnStartCXXMetaprogramDecl(New, OriginalDC);
+
   StmtResult S = Ctx.TransformStmt(D->getBody());
   if (!S.isInvalid())
-    Sema.ActOnFinishCXXMetaprogramDecl(/*Scope=*/nullptr, New, S.get());
+    Sema.ActOnFinishCXXMetaprogramDecl(New, S.get(), OriginalDC);
   else
-    Sema.ActOnCXXMetaprogramDeclError(/*Scope=*/nullptr, New);
+    Sema.ActOnCXXMetaprogramDeclError(New, OriginalDC);
 
   return New;
 }
@@ -2462,181 +2462,83 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
   }
 }
 
-
-/// Returns true if a constexpr-declaration in declaration context DC
-/// would be represented using a function (vs. a lambda).
-static inline bool NeedsFunctionRepresentation(const DeclContext *DC) {
-  return DC->isFileContext() || DC->isRecord();
-}
-
-
 template <typename MetaType>
 static MetaType *
-ActOnMetaDecl(Sema &Sema, Scope *S, SourceLocation ConstevalLoc,
-              unsigned &ScopeFlags) {
-
+ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
   Preprocessor &PP = Sema.PP;
   ASTContext &Context = Sema.Context;
-  DeclContext *&CurContext = Sema.CurContext;
 
   MetaType *MD;
-  if (NeedsFunctionRepresentation(CurContext)) {
-    ScopeFlags = Scope::FnScope | Scope::DeclScope;
 
-    // Build the function
-    //
-    //  constexpr void __constexpr_decl() compound-statement
-    //
-    // where compound-statement is the as-of-yet parsed body of the
-    // constexpr-declaration.
-    IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
-    DeclarationName Name(II);
-    DeclarationNameInfo NameInfo(Name, ConstevalLoc);
+  // Build the function
+  //
+  //  constexpr void __constexpr_decl() compound-statement
+  //
+  // where compound-statement is the as-of-yet parsed body of the
+  // constexpr-declaration.
+  IdentifierInfo *II = &PP.getIdentifierTable().get("__constexpr_decl");
+  DeclarationName Name(II);
+  DeclarationNameInfo NameInfo(Name, ConstevalLoc);
 
-    FunctionProtoType::ExtProtoInfo EPI(
-        Context.getDefaultCallingConvention(/*IsVariadic=*/false,
-                                            /*IsCXXMethod=*/false));
-    QualType FunctionTy = Context.getFunctionType(Context.VoidTy, None, EPI);
-    TypeSourceInfo *FunctionTyInfo =
-        Context.getTrivialTypeSourceInfo(FunctionTy);
+  FunctionProtoType::ExtProtoInfo EPI(
+      Context.getDefaultCallingConvention(/*IsVariadic=*/false,
+                                          /*IsCXXMethod=*/false));
+  QualType FunctionTy = Context.getFunctionType(Context.VoidTy, None, EPI);
+  TypeSourceInfo *FunctionTyInfo =
+      Context.getTrivialTypeSourceInfo(FunctionTy);
 
-    // FIXME: Why is the owner the current context? We should probably adjust
-    // this to the constexpr-decl later on. Maybe the owner should be the
-    // nearest file context, since this is essentially a non-member function.
-    FunctionDecl *Function =
-        FunctionDecl::Create(Context, CurContext, ConstevalLoc, NameInfo,
-                             FunctionTy, FunctionTyInfo, SC_None,
-                             /*isInlineSpecified=*/false,
-                             /*hasWrittenPrototype=*/true,
-                             /*isConstexprSpecified=*/true);
-    Function->setImplicit();
-    Function->setMetaprogram();
+  DeclContext *&CurContext = Sema.CurContext;
+  FunctionDecl *Function =
+      FunctionDecl::Create(Context, CurContext, ConstevalLoc, NameInfo,
+                           FunctionTy, FunctionTyInfo, SC_None,
+                           /*isInlineSpecified=*/false,
+                           /*hasWrittenPrototype=*/true,
+                           /*isConstexprSpecified=*/true);
+  Function->setImplicit();
+  Function->setMetaprogram();
 
-    // Build the meta declaration around the function.
-    MD = MetaType::Create(Context, CurContext, ConstevalLoc, Function);
+  // Build the meta declaration around the function.
+  MD = MetaType::Create(Context, CurContext, ConstevalLoc, Function);
 
-    Sema.ActOnStartOfFunctionDef(nullptr, Function);
-  } else if (CurContext->isFunctionOrMethod()) {
-    ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
+  Sema.ActOnStartOfFunctionDef(nullptr, Function);
 
-    LambdaScopeInfo *LSI = Sema.PushLambdaScope();
-
-    // Build the expression
-    //
-    //    []() -> void compound-statement
-    //
-    // where compound-statement is the as-of-yet parsed body of the
-    // constexpr-declaration. Note that the return type is not deduced (it
-    // doesn't need to be).
-    //
-    // TODO: It would be great if we could only capture constexpr declarations,
-    // but C++ doesn't have a constexpr default.
-    const bool KnownDependent = S->getTemplateParamParent();
-
-    FunctionProtoType::ExtProtoInfo EPI(
-        Context.getDefaultCallingConvention(/*IsVariadic=*/false,
-                                            /*IsCXXMethod=*/true));
-    EPI.HasTrailingReturn = true;
-    EPI.TypeQuals.addConst();
-    QualType MethodTy = Context.getFunctionType(Context.VoidTy, None, EPI);
-    TypeSourceInfo *MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
-
-    LambdaIntroducer Intro;
-    Intro.Range = SourceRange(ConstevalLoc);
-    Intro.Default = LCD_None;
-
-    CXXRecordDecl *Closure = Sema.createLambdaClosureType(
-        Intro.Range, MethodTyInfo, KnownDependent, Intro.Default);
-    CXXMethodDecl *Method =
-        Sema.startLambdaDefinition(Closure, Intro.Range, MethodTyInfo,
-                                   ConstevalLoc, None,
-                                   /*IsConstexprSpecified=*/true);
-    Sema.buildLambdaScope(LSI, Method, Intro.Range, Intro.Default,
-                          Intro.DefaultLoc,
-                          /*ExplicitParams=*/false,
-                          /*ExplicitResultType=*/true,
-                          /*Mutable=*/false);
-    Method->setMetaprogram();
-
-    // NOTE: The call operator is not yet attached to the closure type. That
-    // happens in ActOnFinishCXXMetaprogramDecl(). The operator is, however,
-    // available in the LSI.
-    MD = MetaType::Create(Context, CurContext, ConstevalLoc, Closure);
-  } else
-    llvm_unreachable("constexpr declaration in unsupported context");
-
-  // Add the declaration to the current context. This will be removed from the
-  // AST after evaluation.
   CurContext->addDecl(MD);
 
   return MD;
 }
 /// Create a metaprogram-declaration that will hold the body of the
 /// metaprogram-declaration.
-///
-/// \p ScopeFlags is set to the value that should be used to create the scope
-/// containing the metaprogram-declaration body.
-Decl *Sema::ActOnCXXMetaprogramDecl(Scope *S, SourceLocation ConstevalLoc,
-                                    unsigned &ScopeFlags) {
-  return ActOnMetaDecl<CXXMetaprogramDecl>(*this, S, ConstevalLoc, ScopeFlags);
+Decl *Sema::ActOnCXXMetaprogramDecl(SourceLocation ConstevalLoc) {
+  return ActOnMetaDecl<CXXMetaprogramDecl>(*this, ConstevalLoc);
 }
 
 /// Create a injection-declaration that will hold the body of the
 /// injection-declaration.
-///
-/// \p ScopeFlags is set to the value that should be used to create the scope
-/// containing the injection-declaration body.
-Decl *Sema::ActOnCXXInjectionDecl(Scope *S, SourceLocation ConstevalLoc,
-                                  unsigned &ScopeFlags) {
-  return ActOnMetaDecl<CXXInjectionDecl>(*this, S, ConstevalLoc, ScopeFlags);
+Decl *Sema::ActOnCXXInjectionDecl(SourceLocation ConstevalLoc) {
+  return ActOnMetaDecl<CXXInjectionDecl>(*this, ConstevalLoc);
 }
 
 template <typename MetaType>
 static void
-ActOnStartMetaDecl(Sema &Sema, Scope *S, Decl *D) {
+ActOnStartMetaDecl(Sema &Sema, Decl *D, DeclContext *&OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
 
-  if (MD->hasFunctionRepresentation()) {
-    if (S)
-      Sema.PushDeclContext(S, MD->getFunctionDecl());
-    else
-      Sema.CurContext = MD->getFunctionDecl();
-  } else {
-    LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(Sema.FunctionScopes.back());
-
-    if (S)
-      Sema.PushDeclContext(S, LSI->CallOperator);
-    else
-      Sema.CurContext = LSI->CallOperator;
-
-    Sema.PushExpressionEvaluationContext(
-        Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
-  }
+  OriginalDC = Sema.CurContext;
+  Sema.CurContext = MD->getFunctionDecl();
 }
 
 /// Called just prior to parsing the body of a metaprogram-declaration.
 ///
-/// This ensures that the declaration context is pushed with the appropriate
-/// scope.
-void Sema::ActOnStartCXXMetaprogramDecl(Scope *S, Decl *D) {
-  ActOnStartMetaDecl<CXXMetaprogramDecl>(*this, S, D);
+/// This ensures that the declaration context is changed correctly.
+void Sema::ActOnStartCXXMetaprogramDecl(Decl *D, DeclContext *&OriginalDC) {
+  ActOnStartMetaDecl<CXXMetaprogramDecl>(*this, D, OriginalDC);
 }
 
 /// Called just prior to parsing the body of a injection-declaration.
 ///
-/// This ensures that the declaration context is pushed with the appropriate
-/// scope.
-void Sema::ActOnStartCXXInjectionDecl(Scope *S, Decl *D) {
-  ActOnStartMetaDecl<CXXInjectionDecl>(*this, S, D);
-}
-
-template <typename MetaType>
-static void
-DoneWithMetaprogram(MetaType *MD) {
-  // Remove the declaration; we don't want to see it in the source tree.
-  //
-  // FIXME: Do we really want to do this?
-  MD->getDeclContext()->removeDecl(MD);
+/// This ensures that the declaration context is changed correctly.
+void Sema::ActOnStartCXXInjectionDecl(Decl *D, DeclContext *&OriginalDC) {
+  ActOnStartMetaDecl<CXXInjectionDecl>(*this, D, OriginalDC);
 }
 
 /// Evaluates a call expression for a metaprogram declaration.
@@ -2684,8 +2586,6 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   SourceLocation POI = MD->getSourceRange().getEnd();
   Sema.ApplyEffects(POI, Effects);
 
-  DoneWithMetaprogram(MD);
-
   return Notes.empty();
 }
 
@@ -2714,38 +2614,10 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
   return EvaluateMetaDeclCall(Sema, MD, Call);
 }
 
-/// Process a metaprogram-declaration.
-///
-/// This handles the construction and evaluation
-/// -- via its call to EvaluateMetaDeclCall -- of the call expression used
-/// for metaprogram declarations represented as a lambda.
-template <typename MetaType>
-static bool
-EvaluateMetaDecl(Sema &Sema, MetaType *MD, Expr *E) {
-  ASTContext &Context = Sema.Context;
-
-  LambdaExpr *Lambda = cast<LambdaExpr>(E);
-  CXXMethodDecl *Method = Lambda->getCallOperator();
-  QualType MethodTy = Method->getType();
-  DeclRefExpr *Ref = new (Context)
-      DeclRefExpr(Context, Method, /*RefersToEnclosingVariableOrCapture=*/false,
-                  MethodTy, VK_LValue, SourceLocation());
-  QualType PtrTy = Context.getPointerType(MethodTy);
-  ImplicitCastExpr *Cast =
-      ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
-                               /*BasePath=*/nullptr, VK_RValue);
-  CallExpr *Call = CXXOperatorCallExpr::Create(
-      Context, OO_Call, Cast, {Lambda}, Context.VoidTy,
-      VK_RValue, SourceLocation(), FPOptions());
-
-  return EvaluateMetaDeclCall(Sema, MD, Call);
-}
-
 /// Hook to be called by template instantiation.
 void Sema::EvaluateCXXMetaDecl(CXXMetaprogramDecl *D, FunctionDecl *FD) {
   EvaluateMetaDecl(*this, D, FD);
 }
-
 
 /// Hook to be called by template instantiation.
 void Sema::EvaluateCXXMetaDecl(CXXInjectionDecl *D, FunctionDecl *FD) {
@@ -2754,66 +2626,69 @@ void Sema::EvaluateCXXMetaDecl(CXXInjectionDecl *D, FunctionDecl *FD) {
 
 template <typename MetaType>
 static void
-ActOnFinishMetaDecl(Sema &Sema, Scope *S, Decl *D, Stmt *Body) {
+ActOnFinishMetaDecl(Sema &Sema, Decl *D, Stmt *Body, DeclContext *OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
-  if (MD->hasFunctionRepresentation()) {
-    FunctionDecl *Fn = MD->getFunctionDecl();
-    Sema.DiscardCleanupsInEvaluationContext();
-    Sema.ActOnFinishFunctionBody(Fn, Body);
-    if (!Sema.CurContext->isDependentContext())
-      EvaluateMetaDecl(Sema, MD, Fn);
-  } else {
-    ExprResult Lambda = Sema.ActOnLambdaExpr(MD->getLocation(), Body, S);
-    if (!Sema.CurContext->isDependentContext())
-      EvaluateMetaDecl(Sema, MD, Lambda.get());
-  }
 
-  // If we didn't have a scope when building this, we need to restore the
-  // current context.
-  if (!S)
-    Sema.CurContext = MD->getDeclContext();
+  FunctionDecl *Fn = MD->getFunctionDecl();
+
+  Sema.DiscardCleanupsInEvaluationContext();
+  Sema.ActOnFinishFunctionBody(Fn, Body);
+
+  Sema.CurContext = OriginalDC;
+
+  if (!Sema.CurContext->isDependentContext())
+    EvaluateMetaDecl(Sema, MD, Fn);
 }
 
 /// Called immediately after parsing the body of a metaprorgam-declaration.
 ///
 /// The statements within the body are evaluated here.
-void Sema::ActOnFinishCXXMetaprogramDecl(Scope *S, Decl *D, Stmt *Body) {
-  ActOnFinishMetaDecl<CXXMetaprogramDecl>(*this, S, D, Body);
+///
+/// This function additionally ensures that the
+/// declaration context is restored correctly.
+void Sema::ActOnFinishCXXMetaprogramDecl(Decl *D, Stmt *Body,
+                                         DeclContext *OriginalDC) {
+  ActOnFinishMetaDecl<CXXMetaprogramDecl>(*this, D, Body, OriginalDC);
 }
 
 /// Called immediately after parsing the body of a injection-declaration.
 ///
 /// The statements within the body are evaluated here.
-void Sema::ActOnFinishCXXInjectionDecl(Scope *S, Decl *D, Stmt *InjectionStmt) {
+///
+/// This function additionally ensures that the
+/// declaration context is restored correctly.
+void Sema::ActOnFinishCXXInjectionDecl(Decl *D, Stmt *InjectionStmt,
+                                       DeclContext *OriginalDC) {
   CompoundStmt *Body = CompoundStmt::Create(Context,
                                             ArrayRef<Stmt *>(InjectionStmt),
                                             SourceLocation(), SourceLocation());
-  ActOnFinishMetaDecl<CXXInjectionDecl>(*this, S, D, Body);
+  ActOnFinishMetaDecl<CXXInjectionDecl>(*this, D, Body, OriginalDC);
 }
 
 template <typename MetaType>
 static void
-ActOnCXXMetaError(Sema &Sema, Scope *S, Decl *D) {
+ActOnCXXMetaError(Sema &Sema, Decl *D, DeclContext *OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
   MD->setInvalidDecl();
-  if (MD->hasFunctionRepresentation()) {
-    FunctionDecl *Fn = MD->getFunctionDecl();
-    Sema.ActOnStartOfFunctionDef(nullptr, Fn);
-    Sema.ActOnFinishFunctionBody(Fn, nullptr);
-  } else
-    Sema.ActOnLambdaError(MD->getLocation(), S);
+  FunctionDecl *Fn = MD->getFunctionDecl();
+  Sema.ActOnStartOfFunctionDef(nullptr, Fn);
+  Sema.ActOnFinishFunctionBody(Fn, nullptr);
 
-  DoneWithMetaprogram(MD);
+  Sema.CurContext = OriginalDC;
 }
 
 /// Called when an error occurs while parsing the metaprogram-declaration body.
-void Sema::ActOnCXXMetaprogramDeclError(Scope *S, Decl *D) {
-  ActOnCXXMetaError<CXXMetaprogramDecl>(*this, S, D);
+///
+/// This ensures that the declaration context is restored correctly.
+void Sema::ActOnCXXMetaprogramDeclError(Decl *D, DeclContext *OriginalDC) {
+  ActOnCXXMetaError<CXXMetaprogramDecl>(*this, D, OriginalDC);
 }
 
 /// Called when an error occurs while parsing the injection-declaration body.
-void Sema::ActOnCXXInjectionDeclError(Scope *S, Decl *D) {
-  ActOnCXXMetaError<CXXInjectionDecl>(*this, S, D);
+///
+/// This ensures that the declaration context is restored correctly.
+void Sema::ActOnCXXInjectionDeclError(Decl *D, DeclContext *OriginalDC) {
+  ActOnCXXMetaError<CXXInjectionDecl>(*this, D, OriginalDC);
 }
 
 bool Sema::ActOnCXXInjectedParameter(SourceLocation ArrowLoc, Expr *Reflection,
@@ -2921,12 +2796,12 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   SourceLocation Loc = Proto->getLocation();
 
   // Add 'constexpr { M(reflexpr(prototype)); }' to the class.
-  unsigned ScopeFlags;
-  Decl *CD = ActOnCXXMetaprogramDecl(CurScope, Loc, ScopeFlags);
+  Decl *CD = ActOnCXXMetaprogramDecl(Loc);
   CD->setImplicit(true);
   CD->setAccess(AS_public);
 
-  ActOnStartCXXMetaprogramDecl(CurScope, CD);
+  DeclContext *OriginalDC;
+  ActOnStartCXXMetaprogramDecl(CD, OriginalDC);
 
   // Build the expression reflexpr(prototype).
   // This technically is performing the equivalent
@@ -2942,11 +2817,11 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   MultiExprArg Args(InputExpr);
   ExprResult Call = ActOnCallExpr(CurScope, Metafunction, Loc, Args, Loc);
   if (Call.isInvalid()) {
-    ActOnCXXMetaprogramDeclError(nullptr, CD);
+    ActOnCXXMetaprogramDeclError(CD, OriginalDC);
     Class->setInvalidDecl(true);
   } else {
     Stmt* Body = CompoundStmt::Create(Context, Call.get(), Loc, Loc);
-    ActOnFinishCXXMetaprogramDecl(CurScope, CD, Body);
+    ActOnFinishCXXMetaprogramDecl(CD, Body, OriginalDC);
 
     // Finally, re-analyze the fields of the fields the class to
     // instantiate remaining defaults. This will also complete the
@@ -2984,30 +2859,29 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
   StartDefinition(Class);
 
   ContextRAII ClassContext(*this, Class);
-
   // FIXME: If the reflection (ref) is a fragment DO NOT insert the
   // prototype. A fragment is NOT a type.`
 
   // Insert 'consteval { <gen>(<ref>); }'.
-  unsigned ScopeFlags;
-  Decl *CD = ActOnCXXMetaprogramDecl(nullptr, UsingLoc, ScopeFlags);
+  Decl *CD = ActOnCXXMetaprogramDecl(UsingLoc);
   CD->setImplicit(true);
   CD->setAccess(AS_public);
 
-  ActOnStartCXXMetaprogramDecl(nullptr, CD);
+  DeclContext *OriginalDC;
+  ActOnStartCXXMetaprogramDecl(CD, OriginalDC);
 
   // Build the call to <gen>(<ref>)
   Expr *Args[] { Reflection };
   ExprResult Call = ActOnCallExpr(nullptr, Generator, IdLoc, Args, IdLoc);
   if (Call.isInvalid()) {
-    ActOnCXXMetaprogramDeclError(nullptr, CD);
+    ActOnCXXMetaprogramDeclError(CD, OriginalDC);
     Class->setInvalidDecl(true);
     CompleteDefinition(Class);
     PopDeclContext();
   }
 
   Stmt *Body = CompoundStmt::Create(Context, Call.get(), IdLoc, IdLoc);
-  ActOnFinishCXXMetaprogramDecl(nullptr, CD, Body);
+  ActOnFinishCXXMetaprogramDecl(CD, Body, OriginalDC);
 
   CompleteDefinition(Class);
   PopDeclContext();
