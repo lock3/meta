@@ -701,7 +701,7 @@ public:
   /// not injected immediately. They are deferred, just as they are during
   /// parsing. These injections are processed when the outermost class is
   /// completed.
-  std::deque<InjectionContext *> PendingClassMemberInjections;
+  llvm::SmallVector<InjectionContext *, 4> PendingClassMemberInjections;
 
   class DelayedDiagnostics;
 

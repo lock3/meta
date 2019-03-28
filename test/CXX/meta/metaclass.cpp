@@ -1,9 +1,11 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// Run via frontend, to verify linker finds get_inline_value.
+// RUN: %clang -freflection -std=c++1z %s
+
+#include "reflection_iterator.h"
 
 #define assert(E) if (!(E)) __builtin_abort();
 
-template<typename T>
-constexpr void interface(T source) {
+constexpr void interface(meta::info source) {
   int default_val = 1;
   -> __fragment struct {
     int val = default_val;
@@ -24,14 +26,21 @@ constexpr void interface(T source) {
   -> __fragment struct {
     int dedicated_field;
   };
+
+  for (meta::info mem : member_range(source)) {
+    -> mem;
+  }
 };
 
-template<typename T>
 class(interface) Thing {
+public:
+  int inline_value = 3;
+
+  int get_inline_value() { return inline_value; }
 };
 
 int main() {
-  Thing<int> thing;
+  Thing thing;
 
   assert(thing.foo() == 1);
 
@@ -40,6 +49,8 @@ int main() {
 
   thing.reset_foo();
   assert(thing.foo() == 1);
+
+  assert(thing.get_inline_value() == 3);
 
   return 0;
 }

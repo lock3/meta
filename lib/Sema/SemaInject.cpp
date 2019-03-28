@@ -26,6 +26,16 @@
 using namespace clang;
 
 namespace clang {
+  enum InjectedDefType : unsigned;
+  class InjectionExtra;
+  class InjectionContext;
+}
+
+template<typename DeclType, InjectedDefType DefType>
+static void InjectPendingDefinitions(InjectionContext *Ctx,
+                                     InjectionExtra *Injection);
+
+namespace clang {
 
 /// A compile-time value along with its type.
 struct TypedValue {
@@ -35,7 +45,7 @@ struct TypedValue {
   APValue Value;
 };
 
-enum InjectedDefType {
+enum InjectedDefType : unsigned {
   InjectedDef_Field,
   InjectedDef_Method
 };
@@ -63,36 +73,118 @@ struct InjectionCapture {
     : Decl(Decl), Value(Value) { }
 };
 
-class InjectionContext;
+using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
 
-/// An injection context. This is declared to establish a set of
-/// substitutions during an injection.
-class InjectionContext : public TreeTransform<InjectionContext> {
-  using Base = TreeTransform<InjectionContext>;
-  using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
-public:
-  InjectionContext(Sema &SemaRef, Decl *Injectee, InjectionType Injection)
-    : Base(SemaRef), Injectee(Injectee), Injection(Injection), Modifiers() { }
+struct InjectionExtra {
+  InjectionExtra(InjectionType Injection)
+    : Injection(Injection), Modifiers() { }
 
-  ~InjectionContext() {
-    // Cleanup any allocated parameter injection arrays
-    for (auto *ParmVectorPtr : ParamInjectionCleanups) {
-      delete ParmVectorPtr;
-    }
-  }
 
-  ASTContext &getContext() { return getSema().Context; }
-
-  bool hasPendingClassMemberData() const;
-
-  /// Detach the context from the semantics object. Returns this object for
-  /// convenience.
-  InjectionContext *Detach() {
+  InjectionExtra *PrepareForPending() {
     // Reset the declaration modifiers. They're already been applied and
     // must not apply to nested declarations in a definition.
     Modifiers = ReflectionModifiers();
 
     return this;
+  }
+
+  bool hasPendingClassMemberData() const {
+    if (!InjectedDefinitions.empty())
+      return true;
+
+    if (InjectedFieldData)
+      return true;
+
+    return false;
+  }
+
+  void ResetClassMemberData() {
+    InjectedDefinitions.clear();
+    InjectedFieldData = false;
+  }
+
+  /// The entity being Injected.
+  InjectionType Injection;
+
+  /// The modifiers to apply to injection.
+  ReflectionModifiers Modifiers;
+
+  /// True if we've injected a field. If we have, this injection context
+  /// must be preserved until we've finished rebuilding all injected
+  /// constructors.
+  bool InjectedFieldData = false;
+
+  /// A list of declarations whose definitions have not yet been
+  /// injected. These are processed when a class receiving injections is
+  /// completed.
+  llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
+};
+
+/// An injection context. This is declared to establish a set of
+/// substitutions during an injection.
+class InjectionContext : public TreeTransform<InjectionContext> {
+  using Base = TreeTransform<InjectionContext>;
+
+public:
+  InjectionContext(Sema &SemaRef, Decl *Injectee)
+    : Base(SemaRef), Injectee(Injectee) { }
+
+  ~InjectionContext() {
+    // Cleanup any allocated parameter injection arrays.
+    for (auto *ParmVectorPtr : ParamInjectionCleanups) {
+      delete ParmVectorPtr;
+    }
+
+    // Cleanup any allocated injection extras.
+    for (auto *Injection : PendingInjections) {
+      delete Injection;
+    }
+  }
+
+  ASTContext &getContext() { return getSema().Context; }
+
+  template<typename IT, typename F>
+  void InitInjection(IT Injection, F Op) {
+    InjectionExtra *PreviousInjection = CurInjection;
+    CurInjection = new InjectionExtra(Injection);
+
+    Op();
+
+    // If we're injecting into a class and have pending definitions, attach
+    // those to the class for subsequent analysis.
+    if (!Injectee->isInvalidDecl()
+        && CurInjection->hasPendingClassMemberData()) {
+      assert(isa<CXXRecordDecl>(Injectee)
+             && "All pending members should have been injected");
+      PendingInjections.push_back(CurInjection->PrepareForPending());
+    } else {
+      delete CurInjection;
+    }
+
+    CurInjection = PreviousInjection;
+  }
+
+  bool hasPendingInjections() const { return !PendingInjections.empty(); }
+
+  void AddPendingDefinition(const InjectedDef &Def) {
+    CurInjection->InjectedDefinitions.push_back(Def);
+  }
+
+  void InjectedFieldData() {
+    CurInjection->InjectedFieldData = true;
+  }
+
+  template<typename F>
+  void ForEachPendingInjection(F Op) {
+    InjectionExtra *PreviousInjection = CurInjection;
+
+    for (InjectionExtra *Injection : PendingInjections) {
+      CurInjection = Injection;
+
+      Op();
+    }
+
+    CurInjection = PreviousInjection;
   }
 
   /// Adds a substitution from one declaration to another.
@@ -101,11 +193,28 @@ public:
     transformedLocalDecl(const_cast<Decl*>(Old), New);
   }
 
+  /// Adds a substitution if it does not already exists.
+  void MaybeAddDeclSubstitution(Decl *Old, Decl *New) {
+    if (Decl *Replacement = GetDeclReplacement(Old)) {
+      assert(Replacement == New && "Overwriting substitution");
+      return;
+    }
+    AddDeclSubstitution(Old, New);
+  }
+
   /// Adds a substitution from a fragment placeholder to its
   /// (type) constant value.
-  void AddPlaceholderSubstitution(Decl *Orig, QualType T, const APValue &V) {
+  void MaybeAddPlaceholderSubstitution(Decl *Orig, QualType T,
+                                       const APValue &V) {
     assert(isa<VarDecl>(Orig) && "Expected a variable declaration");
-    assert(PlaceholderSubsts.count(Orig) == 0 && "Overwriting substitution");
+    auto RIter = PlaceholderSubsts.find(Orig);
+    if (RIter != PlaceholderSubsts.end()) {
+      // FIXME: This doesn't fully check for equivalence of the APValue.
+      assert((RIter->second.Type == T
+              && RIter->second.Value.getKind() == V.getKind())
+             && "Overwriting substitution");
+      return;
+    }
     PlaceholderSubsts.try_emplace(Orig, T, V);
   }
 
@@ -128,7 +237,7 @@ public:
       QualType Ty = IC.Decl->getType();
       APValue Val = IC.Value;
 
-      AddPlaceholderSubstitution(Var, Ty, Val);
+      MaybeAddPlaceholderSubstitution(Var, Ty, Val);
     }
   }
 
@@ -170,7 +279,7 @@ public:
   bool isInInjection(Decl *D);
 
   Decl *getDeclBeingInjected() const {
-    return Injection.dyn_cast<Decl *>();
+    return CurInjection->Injection.dyn_cast<Decl *>();
   }
 
   DeclContext *getInjectionDeclContext() const {
@@ -188,13 +297,19 @@ public:
 
   /// Sets the declaration modifiers.
   void SetModifiers(const ReflectionModifiers &Modifiers) {
-    this->Modifiers = Modifiers;
+    this->CurInjection->Modifiers = Modifiers;
+  }
+
+  ReflectionModifiers &GetModifiers() const {
+    return this->CurInjection->Modifiers;
   }
 
   /// True if a rename is requested.
-  bool hasRename() const { return Modifiers.hasRename(); }
+  bool hasRename() const { return GetModifiers().hasRename(); }
 
   DeclarationName applyRename() {
+    ReflectionModifiers &Modifiers = GetModifiers();
+
     std::string NewName = Modifiers.getNewNameAsString();
     IdentifierInfo *II = &SemaRef.Context.Idents.get(NewName);
 
@@ -433,15 +548,9 @@ public:
     return &Iter->second;
   }
 
-  /// A list of declarations whose definitions have not yet been
-  /// injected. These are processed when a class receiving injections is
-  /// completed.
-  llvm::SmallVector<InjectedDef, 8> InjectedDefinitions;
-
-  /// True if we've injected a field. If we have, this injection context
-  /// must be preserved until we've finished rebuilding all injected
-  /// constructors.
-  bool InjectedFieldData = false;
+  /// True if we've injected a field, or a declaration with
+  /// an incomplete injection.
+  bool ContainsClassData = false;
 
   /// The DeclContext we're mock injecting for.
   DeclContext *MockInjectionContext = nullptr;
@@ -449,22 +558,12 @@ public:
   /// The context into which the fragment is injected
   Decl *Injectee;
 
-  /// The entity being Injected.
-  InjectionType Injection;
+  /// The current injection being injected.
+  InjectionExtra *CurInjection = nullptr;
 
-  /// The modifiers to apply to injection.
-  ReflectionModifiers Modifiers;
+  /// The pending class member injections.
+  llvm::SmallVector<InjectionExtra *, 8> PendingInjections;
 };
-
-bool InjectionContext::hasPendingClassMemberData() const {
-  if (!InjectedDefinitions.empty())
-    return true;
-
-  if (InjectedFieldData)
-    return true;
-
-  return false;
-}
 
 bool InjectionContext::isInInjection(Decl *D) {
   // If this is actually a fragment, then we can check in the usual way.
@@ -617,7 +716,7 @@ Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   Owner->addDecl(Ns);
 
   // Inject the namespace members.
-  Sema::ContextRAII NsCxt(getSema(), Ns);
+  Sema::ContextRAII NsCtx(getSema(), Ns);
   for (Decl *OldMember : D->decls()) {
     Decl *NewMember = InjectDecl(OldMember);
     if (!NewMember || NewMember->isInvalidDecl())
@@ -684,48 +783,48 @@ Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
         D->getIdentifier(), TSI);
   AddDeclSubstitution(D, Typedef);
 
-  ApplyAccess(Modifiers, Typedef, D);
+  ApplyAccess(GetModifiers(), Typedef, D);
   Typedef->setInvalidDecl(Invalid);
   Owner->addDecl(Typedef);
 
   return Typedef;
 }
 
-static bool InjectVariableInitializer(InjectionContext &Cxt,
+static bool InjectVariableInitializer(InjectionContext &Ctx,
                                       VarDecl *Old,
                                       VarDecl *New) {
   if (Old->getInit()) {
     if (New->isStaticDataMember() && !Old->isOutOfLine())
-      Cxt.getSema().PushExpressionEvaluationContext(
+      Ctx.getSema().PushExpressionEvaluationContext(
           Sema::ExpressionEvaluationContext::ConstantEvaluated, Old);
     else
-      Cxt.getSema().PushExpressionEvaluationContext(
+      Ctx.getSema().PushExpressionEvaluationContext(
           Sema::ExpressionEvaluationContext::PotentiallyEvaluated, Old);
 
     // Instantiate the initializer.
     ExprResult Init;
     {
-      Sema::ContextRAII SwitchContext(Cxt.getSema(), New->getDeclContext());
+      Sema::ContextRAII SwitchContext(Ctx.getSema(), New->getDeclContext());
       bool DirectInit = (Old->getInitStyle() == VarDecl::CallInit);
-      Init = Cxt.TransformInitializer(Old->getInit(), DirectInit);
+      Init = Ctx.TransformInitializer(Old->getInit(), DirectInit);
     }
 
     if (!Init.isInvalid()) {
       Expr *InitExpr = Init.get();
       if (New->hasAttr<DLLImportAttr>() &&
           (!InitExpr ||
-           !InitExpr->isConstantInitializer(Cxt.getContext(), false))) {
+           !InitExpr->isConstantInitializer(Ctx.getContext(), false))) {
         // Do not dynamically initialize dllimport variables.
       } else if (InitExpr) {
-        Cxt.getSema().AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
+        Ctx.getSema().AddInitializerToDecl(New, InitExpr, Old->isDirectInit());
       } else {
-        Cxt.getSema().ActOnUninitializedDecl(New);
+        Ctx.getSema().ActOnUninitializedDecl(New);
       }
     } else {
       New->setInvalidDecl();
     }
 
-    Cxt.getSema().PopExpressionEvaluationContext();
+    Ctx.getSema().PopExpressionEvaluationContext();
   } else {
     if (New->isStaticDataMember()) {
       if (!New->isOutOfLine())
@@ -741,7 +840,7 @@ static bool InjectVariableInitializer(InjectionContext &Cxt,
     if (New->isCXXForRangeDecl())
       return New;
 
-    Cxt.getSema().ActOnUninitializedDecl(New);
+    Ctx.getSema().ActOnUninitializedDecl(New);
   }
 
   return New;
@@ -764,7 +863,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   UpdateFunctionParms(D, Fn);
 
   // Update the constexpr specifier.
-  if (Modifiers.addConstexpr()) {
+  if (GetModifiers().addConstexpr()) {
     Fn->setConstexpr(true);
     Fn->setType(Fn->getType().withConst());
   } else {
@@ -786,7 +885,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // early.
   if (Stmt *OldBody = D->getBody()) {
     Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-    Sema::ContextRAII FnCxt (getSema(), Fn);
+    Sema::ContextRAII FnCtx (getSema(), Fn);
     StmtResult NewBody = TransformStmt(OldBody);
     if (NewBody.isInvalid())
       Fn->setInvalidDecl();
@@ -836,7 +935,7 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   Var->setInitStyle(D->getInitStyle());
   Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
 
-  if (Modifiers.addConstexpr()) {
+  if (GetModifiers().addConstexpr()) {
     Var->setConstexpr(true);
     Var->setType(Var->getType().withConst());
   } else {
@@ -872,13 +971,13 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 }
 
 /// Injects the base specifier Base into Class.
-static bool InjectBaseSpecifiers(InjectionContext &Cxt,
+static bool InjectBaseSpecifiers(InjectionContext &Ctx,
                                  CXXRecordDecl *OldClass,
                                  CXXRecordDecl *NewClass) {
   bool Invalid = false;
   SmallVector<CXXBaseSpecifier*, 4> Bases;
   for (const CXXBaseSpecifier &OldBase : OldClass->bases()) {
-    CXXBaseSpecifier *NewBase = Cxt.TransformCXXBaseSpecifier(NewClass,
+    CXXBaseSpecifier *NewBase = Ctx.TransformCXXBaseSpecifier(NewClass,
                                                               &OldBase);
     if (!NewBase) {
       Invalid = true;
@@ -888,7 +987,7 @@ static bool InjectBaseSpecifiers(InjectionContext &Cxt,
     Bases.push_back(NewBase);
   }
 
-  if (!Invalid && Cxt.getSema().AttachBaseSpecifiers(NewClass, Bases))
+  if (!Invalid && Ctx.getSema().AttachBaseSpecifiers(NewClass, Bases))
     Invalid = true;
 
   // Invalidate the class if necessary.
@@ -897,7 +996,7 @@ static bool InjectBaseSpecifiers(InjectionContext &Cxt,
   return Invalid;
 }
 
-static bool InjectClassMembers(InjectionContext &Cxt,
+static bool InjectClassMembers(InjectionContext &Ctx,
                                CXXRecordDecl *OldClass,
                                CXXRecordDecl *NewClass) {
   for (Decl *OldMember : OldClass->decls()) {
@@ -911,21 +1010,21 @@ static bool InjectClassMembers(InjectionContext &Cxt,
     if (OldMember->getDeclContext() != OldClass)
       continue;
 
-    Decl *NewMember = Cxt.InjectDecl(OldMember);
+    Decl *NewMember = Ctx.InjectDecl(OldMember);
     if (!NewMember)
       NewClass->setInvalidDecl();
   }
   return NewClass->isInvalidDecl();
 }
 
-static bool InjectClassDefinition(InjectionContext &Cxt,
+static bool InjectClassDefinition(InjectionContext &Ctx,
                                   CXXRecordDecl *OldClass,
                                   CXXRecordDecl *NewClass) {
-  Sema::ContextRAII SwitchContext(Cxt.getSema(), NewClass);
-  Cxt.getSema().StartDefinition(NewClass);
-  InjectBaseSpecifiers(Cxt, OldClass, NewClass);
-  InjectClassMembers(Cxt, OldClass, NewClass);
-  Cxt.getSema().CompleteDefinition(NewClass);
+  Sema::ContextRAII SwitchContext(Ctx.getSema(), NewClass);
+  Ctx.getSema().StartDefinition(NewClass);
+  InjectBaseSpecifiers(Ctx, OldClass, NewClass);
+  InjectClassMembers(Ctx, OldClass, NewClass);
+  Ctx.getSema().CompleteDefinition(NewClass);
   return NewClass->isInvalidDecl();
 }
 
@@ -946,14 +1045,13 @@ static bool ShouldImmediatelyInjectPendingDefinitions(
   return false;
 }
 
-static void InjectPendingDefinitionsWithCleanup(InjectionContext *Cxt) {
-  Sema &SemaRef = Cxt->getSema();
+static void InjectPendingDefinitionsWithCleanup(InjectionContext *Ctx) {
+  InjectionExtra *Injection = Ctx->CurInjection;
 
-  SemaRef.InjectPendingFieldDefinitions(Cxt);
-  SemaRef.InjectPendingMethodDefinitions(Cxt);
+  InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(Ctx, Injection);
+  InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx, Injection);
 
-  Cxt->InjectedDefinitions.clear();
-  Cxt->InjectedFieldData = false;
+  Injection->ResetClassMemberData();
 }
 
 Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
@@ -1014,7 +1112,7 @@ Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
       TSI->getType(), TSI, SC_Static);
   AddDeclSubstitution(D, Var);
 
-  ApplyAccess(Modifiers, Var, D);
+  ApplyAccess(GetModifiers(), Var, D);
   Var->setInvalidDecl(Invalid);
   Owner->addDecl(Var);
 
@@ -1029,7 +1127,7 @@ Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
 }
 
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
-  if (Modifiers.getStorageModifier() == StorageModifier::Static) {
+  if (GetModifiers().getStorageModifier() == StorageModifier::Static) {
     return InjectStaticDataMemberDecl(D);
   }
 
@@ -1054,14 +1152,14 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // There are some interesting cases we probably need to handle.
 
   // Can't make
-  if (Modifiers.addConstexpr()) {
+  if (GetModifiers().addConstexpr()) {
     SemaRef.Diag(D->getLocation(), diag::err_modify_constexpr_field);
     Field->setInvalidDecl(true);
   }
 
   // Propagate semantic properties.
   Field->setImplicit(D->isImplicit());
-  ApplyAccess(Modifiers, Field, D);
+  ApplyAccess(GetModifiers(), Field, D);
 
   if (!Field->isInvalidDecl())
     Field->setInvalidDecl(Invalid);
@@ -1071,10 +1169,10 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // If the field has an initializer, add it to the Fragment so that we
   // can process it later.
   if (D->hasInClassInitializer())
-    InjectedDefinitions.push_back(InjectedDef(InjectedDef_Field, D, Field));
+    AddPendingDefinition(InjectedDef(InjectedDef_Field, D, Field));
 
   // Mark that we've injected a field.
-  InjectedFieldData = true;
+  InjectedFieldData();
 
   return Field;
 }
@@ -1147,10 +1245,10 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Propagate semantic properties.
   Method->setImplicit(D->isImplicit());
-  ApplyAccess(Modifiers, Method, D);
+  ApplyAccess(GetModifiers(), Method, D);
 
   // Update the constexpr specifier.
-  if (Modifiers.addConstexpr()) {
+  if (GetModifiers().addConstexpr()) {
     if (isa<CXXDestructorDecl>(Method)) {
       SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor);
       Method->setInvalidDecl(true);
@@ -1168,14 +1266,14 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   // Request to make function virtual. Note that the original may have
   // a definition. When the original is defined, we'll ignore the definition.
-  if (Modifiers.addVirtual() || Modifiers.addPureVirtual()) {
+  if (GetModifiers().addVirtual() || GetModifiers().addPureVirtual()) {
     // FIXME: Actually generate a diagnostic here.
     if (isa<CXXConstructorDecl>(Method)) {
       SemaRef.Diag(D->getLocation(), diag::err_modify_virtual_constructor);
       Method->setInvalidDecl(true);
     } else {
       Method->setVirtualAsWritten(true);
-      if (Modifiers.addPureVirtual())
+      if (GetModifiers().addPureVirtual())
         SemaRef.CheckPureMethod(Method, Method->getSourceRange());
     }
   }
@@ -1211,7 +1309,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // flags processed above. Ignore the definition if we've marked this
   // as pure virtual.
   if (D->hasBody() && !Method->isPure())
-    InjectedDefinitions.push_back(InjectedDef(InjectedDef_Method, D, Method));
+    AddPendingDefinition(InjectedDef(InjectedDef_Method, D, Method));
 
   return Method;
 }
@@ -1376,7 +1474,7 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
 
   // FIXME: Other attributes to process?
   Class->setDescribedClassTemplate(Template);
-  ApplyAccess(Modifiers, Template, D);
+  ApplyAccess(GetModifiers(), Template, D);
 
   // Don't register the declaration if we're merely attempting to transform
   // this template.
@@ -1443,7 +1541,7 @@ Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
 
   // FIXME: Other attributes to process?
   Fn->setDescribedFunctionTemplate(Template);
-  ApplyAccess(Modifiers, Template, D);
+  ApplyAccess(GetModifiers(), Template, D);
 
   // Add the declaration.
   Owner->addDecl(Template);
@@ -2084,23 +2182,43 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
   return true;
 }
 
+static InjectionContext *GetLastInjectionContext(Sema &S) {
+  if (S.PendingClassMemberInjections.empty())
+    return nullptr;
+
+  return S.PendingClassMemberInjections.back();
+}
+
+static InjectionContext *FindInjectionContext(Sema &S, Decl *Injectee) {
+  if (InjectionContext *LastCtx = GetLastInjectionContext(S)) {
+    if (LastCtx->Injectee == Injectee) {
+      return LastCtx;
+    }
+  }
+
+  return new InjectionContext(S, Injectee);
+}
+
 template<typename IT, typename F>
 static bool BootstrapInjection(Sema &S, Decl *Injectee, IT *Injection,
                                F InjectionProcedure) {
   // Create an injection context and then execute the logic for that
   // context.
-  InjectionContext *Ctx = new InjectionContext(S, Injectee, Injection);
-  InjectionProcedure(Ctx);
+  InjectionContext *Ctx = FindInjectionContext(S, Injectee);
+  Ctx->InitInjection(Injection, [&InjectionProcedure, &Ctx] {
+    InjectionProcedure(Ctx);
+  });
 
-  // If we're injecting into a class and have pending definitions, attach
-  // those to the class for subsequent analysis.
-  if (!Injectee->isInvalidDecl() && Ctx->hasPendingClassMemberData()) {
-    assert(isa<CXXRecordDecl>(Injectee) && "All pending members should have been injected");
-    S.PendingClassMemberInjections.push_back(Ctx->Detach());
-    return true;
+  bool NewContext = GetLastInjectionContext(S) != Ctx;
+  if (NewContext) {
+    if (Ctx->hasPendingInjections()) {
+      S.PendingClassMemberInjections.push_back(Ctx);
+      return true;
+    }
+
+    delete Ctx;
   }
 
-  delete Ctx;
   return !Injectee->isInvalidDecl();
 }
 
@@ -2120,7 +2238,7 @@ static bool InjectFragment(Sema &S,
 
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
-    Ctx->AddDeclSubstitution(Injection, Injectee);
+    Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     // Inject each declaration in the fragment.
@@ -2182,7 +2300,7 @@ static bool CopyDeclaration(Sema &S, SourceLocation POI,
 
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
-    Ctx->AddDeclSubstitution(InjectionOwner, Injectee);
+    Ctx->MaybeAddDeclSubstitution(InjectionOwner, Injectee);
 
     Ctx->SetModifiers(Modifiers);
 
@@ -2394,10 +2512,10 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   if (IsEmpty)
     return false;
 
-  InjectionContext *Cxt = PendingClassMemberInjections.back();
+  InjectionContext *Ctx = PendingClassMemberInjections.back();
 
-  assert(Cxt->hasPendingClassMemberData() && "bad injection queue");
-  DeclContext *DC =  Decl::castToDeclContext(Cxt->Injectee);
+  assert(Ctx->hasPendingInjections() && "bad injection queue");
+  DeclContext *DC =  Decl::castToDeclContext(Ctx->Injectee);
   while (!DC->isFileContext()) {
     if (DC == D)
       return true;
@@ -2408,81 +2526,55 @@ bool Sema::HasPendingInjections(DeclContext *D) {
 }
 
 static void CleanupUsedContexts(
-  std::deque<InjectionContext *>& PendingClassMemberInjections) {
+      llvm::SmallVectorImpl<InjectionContext *>& PendingClassMemberInjections) {
   while (!PendingClassMemberInjections.empty()) {
-    delete PendingClassMemberInjections.back();
-    PendingClassMemberInjections.pop_back();
+    delete PendingClassMemberInjections.pop_back_val();
   }
 }
 
 void Sema::InjectPendingFieldDefinitions() {
-  for (auto&& Cxt : PendingClassMemberInjections) {
-    InjectPendingFieldDefinitions(Cxt);
+  for (auto &&Ctx : PendingClassMemberInjections) {
+    InjectPendingFieldDefinitions(Ctx);
   }
 }
 
 void Sema::InjectPendingMethodDefinitions() {
-  for (auto&& Cxt : PendingClassMemberInjections) {
-    InjectPendingMethodDefinitions(Cxt);
+  for (auto &&Ctx : PendingClassMemberInjections) {
+    InjectPendingMethodDefinitions(Ctx);
   }
   CleanupUsedContexts(PendingClassMemberInjections);
 }
 
-template<typename DeclType, InjectedDefType DefType>
-static void InjectPendingDefinitions(InjectionContext *Cxt) {
-  for (InjectedDef &Def : Cxt->InjectedDefinitions) {
-    if (Def.Type != DefType)
-      continue;
+static void InjectPendingDefinition(InjectionContext *Ctx,
+                                    FieldDecl *OldField,
+                                    FieldDecl *NewField) {
+  Sema &S = Ctx->getSema();
 
-    Sema &SemaRef = Cxt->getSema();
-    SemaRef.InjectPendingDefinition(Cxt,
-                                    static_cast<DeclType *>(Def.Fragment),
-                                    static_cast<DeclType *>(Def.Injected));
-  }
-}
-
-void Sema::InjectPendingFieldDefinitions(InjectionContext *Cxt) {
-  InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(Cxt);
-}
-
-void Sema::InjectPendingMethodDefinitions(InjectionContext *Cxt) {
-  InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Cxt);
-}
-
-void Sema::InjectPendingDefinition(InjectionContext *Cxt,
-                                   FieldDecl *OldField,
-                                   FieldDecl *NewField) {
   // Switch to the class enclosing the newly injected declaration.
-  ContextRAII ClassCxt (*this, NewField->getDeclContext());
+  Sema::ContextRAII ClassCtx(S, NewField->getDeclContext());
 
   // This is necessary to provide the correct lookup behavior
   // for any injected field with a default initializer using
   // a decl owned by the injectee
-  this->CXXThisTypeOverride = Context.getPointerType(
-    Context.getRecordType(NewField->getParent()));
+  QualType RecordType = S.Context.getRecordType(NewField->getParent());
+  S.CXXThisTypeOverride = S.Context.getPointerType(RecordType);
 
-  ExprResult Init = Cxt->TransformExpr(OldField->getInClassInitializer());
+  ExprResult Init = Ctx->TransformExpr(OldField->getInClassInitializer());
   if (Init.isInvalid())
     NewField->setInvalidDecl();
   else
     NewField->setInClassInitializer(Init.get());
 }
 
-static InjectionContext *FindContextThatInjectedField(Sema &SemaRef, Decl *Input) {
-  for (auto&& Cxt : SemaRef.PendingClassMemberInjections) {
-    if (Cxt->GetDeclReplacement(Input))
-      return Cxt;
-  }
-  return nullptr;
-}
+static void InjectPendingDefinition(InjectionContext *Ctx,
+                                    CXXMethodDecl *OldMethod,
+                                    CXXMethodDecl *NewMethod) {
+  Sema &S = Ctx->getSema();
 
-void Sema::InjectPendingDefinition(InjectionContext *Cxt,
-                                   CXXMethodDecl *OldMethod,
-                                   CXXMethodDecl *NewMethod) {
-  SynthesizedFunctionScope Scope(*this, NewMethod);
+  Sema::SynthesizedFunctionScope Scope(S, NewMethod);
 
-  ContextRAII MethodCxt (*this, NewMethod);
-  StmtResult Body = Cxt->TransformStmt(OldMethod->getBody());
+  Sema::ContextRAII MethodCtx(S, NewMethod);
+  StmtResult Body = Ctx->TransformStmt(OldMethod->getBody());
   if (Body.isInvalid())
     NewMethod->setInvalidDecl();
   else
@@ -2496,43 +2588,56 @@ void Sema::InjectPendingDefinition(InjectionContext *Cxt,
       Decl *OldField = OldInitializer->getMember();
       Expr *OldInit = OldInitializer->getInit();;
 
-      InjectionContext *InjectingCtx
-          = FindContextThatInjectedField(*this, OldField);
-
-      FieldDecl *NewField;
-      Expr *NewInit;
-
-      if (InjectingCtx) {
-        NewField = cast<FieldDecl>(
-            InjectingCtx->TransformDecl(SourceLocation(), OldField));
-
-        // FIXME: this is a hack. We transform using the current context first,
-        // this resolves local variables. Then we transform using the context
-        // that transformed the field, to resolve the field decl.
-        NewInit =
-            InjectingCtx->TransformExpr(Cxt->TransformExpr(OldInit).get()).get();
-      } else {
-        NewField = cast<FieldDecl>(OldField);
-        NewInit = OldInit;
-      }
+      FieldDecl *NewField
+          = cast<FieldDecl>(Ctx->TransformDecl(SourceLocation(), OldField));
+      Expr *NewInit
+          = Ctx->TransformExpr(Ctx->TransformExpr(OldInit).get()).get();
 
       // TODO: this assumes a member initializer
       // there are other ctor initializer types we need to
       // handle
-      CXXCtorInitializer *NewInitializer = BuildMemberInitializer(
+      CXXCtorInitializer *NewInitializer = S.BuildMemberInitializer(
           NewField, NewInit, OldInitializer->getMemberLocation()).get();
 
       NewInitArgs.push_back(NewInitializer);
     }
 
-    SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
+    S.SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
     // FIXME: We should run diagnostics here
     // DiagnoseUninitializedFields(*this, Constructor);
   } else if (isa<CXXDestructorDecl>(OldMethod)) {
     CXXDestructorDecl *NewDtor = cast<CXXDestructorDecl>(NewMethod);
 
-    CheckDestructor(NewDtor);
+    S.CheckDestructor(NewDtor);
   }
+}
+
+template<typename DeclType, InjectedDefType DefType>
+static void InjectPendingDefinitions(InjectionContext *Ctx,
+                                     InjectionExtra *Injection) {
+  for (InjectedDef Def : Injection->InjectedDefinitions) {
+    if (Def.Type != DefType)
+      continue;
+
+    InjectPendingDefinition(Ctx,
+                            static_cast<DeclType *>(Def.Fragment),
+                            static_cast<DeclType *>(Def.Injected));
+  }
+}
+
+template<typename DeclType, InjectedDefType DefType>
+static void InjectAllPendingDefinitions(InjectionContext *Ctx) {
+  Ctx->ForEachPendingInjection([&Ctx] {
+    InjectPendingDefinitions<DeclType, DefType>(Ctx, Ctx->CurInjection);
+  });
+}
+
+void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
+  InjectAllPendingDefinitions<FieldDecl, InjectedDef_Field>(Ctx);
+}
+
+void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
+  InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
 }
 
 template <typename MetaType>
