@@ -1589,9 +1589,85 @@ Decl *InjectionContext::InjectStaticAssertDecl(StaticAssertDecl *D) {
 
 } // namespace clang
 
+static Decl *GetRootDeclaration(Expr *E) {
+  if (auto *ICE = dyn_cast<ImplicitCastExpr>(E))
+    return GetRootDeclaration(ICE->getSubExpr());
+
+  if (auto *ASE = dyn_cast<ArraySubscriptExpr>(E))
+    return GetRootDeclaration(ASE->getBase());
+
+  if (auto *DRE = dyn_cast<DeclRefExpr>(E))
+    return DRE->getDecl();
+
+  if (auto *ME = dyn_cast<MemberExpr>(E))
+    return ME->getMemberDecl();
+
+  llvm_unreachable("failed to find declaration");
+}
+
+template<typename T, typename F>
+static void FilteredCaptureCB(T *Entity, F CaptureCB) {
+  QualType EntityTy = Entity->getType();
+
+  if (EntityTy->isPointerType())
+    return;
+
+  if (EntityTy->canDecayToPointerType())
+    return;
+
+  if (EntityTy->isReferenceType())
+    return;
+
+  CaptureCB(Entity);
+}
+
+template<typename F>
+static void ExtractDecomposedDeclInits(Sema &S, DecompositionDecl *D,
+                                       F CapturedExprCB) {
+  for (BindingDecl *BD : D->bindings()) {
+    ExprResult LValueConverted = S.DefaultFunctionArrayLvalueConversion(BD->getBinding());
+    FilteredCaptureCB(LValueConverted.get(), CapturedExprCB);
+  }
+}
+
+/// Calls the passed lambda on any init exprs conatined in Expr E.
+template<typename F>
+static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB) {
+  Decl *D = GetRootDeclaration(E);
+
+  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+    ExtractDecomposedDeclInits(S, DD, CapturedExprCB);
+    return;
+  }
+
+  FilteredCaptureCB(E, CapturedExprCB);
+}
+
+template<typename F>
+static void ExtractDecomposedDecls(Sema &S, DecompositionDecl *D,
+                                   F CapturedDeclCB) {
+  for (BindingDecl *BD : D->bindings()) {
+    FilteredCaptureCB(BD, CapturedDeclCB);
+  }
+}
+
+/// Calls the passed lambda on any variable declarations
+/// conatined in Expr E.
+template<typename F>
+static void ExtractCapturedVariables(Sema &S, Expr *E, F CapturedDeclCB) {
+  Decl *D = GetRootDeclaration(E);
+
+  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+    ExtractDecomposedDecls(S, DD, CapturedDeclCB);
+    return;
+  }
+
+  FilteredCaptureCB(cast<ValueDecl>(D), CapturedDeclCB);
+}
+
 // Find variables to capture in the given scope.
 static void FindCapturesInScope(Sema &SemaRef, Scope *S,
-                                SmallVectorImpl<VarDecl *> &Vars) {
+                                SmallVectorImpl<ValueDecl *> &Vars) {
   for (Decl *D : S->decls()) {
     if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
       // Only capture locals with initializers.
@@ -1613,7 +1689,12 @@ static void FindCapturesInScope(Sema &SemaRef, Scope *S,
           Var->getType()->isUndeducedType())
         continue;
 
-      Vars.push_back(Var);
+      if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
+        ExtractDecomposedDecls(SemaRef, DD, [&] (ValueDecl *DV) { Vars.push_back(DV); });
+        return;
+      }
+
+      FilteredCaptureCB(cast<ValueDecl>(D), [&] (ValueDecl *DV) { Vars.push_back(DV); });
     }
   }
 }
@@ -1621,7 +1702,7 @@ static void FindCapturesInScope(Sema &SemaRef, Scope *S,
 // Search the scope list for captured variables. When S is null, we're
 // applying applying a transformation.
 static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
-                         SmallVectorImpl<VarDecl *> &Vars) {
+                         SmallVectorImpl<ValueDecl *> &Vars) {
   assert(S && "Expected non-null scope");
   while (S && S->getEntity() != Fn) {
     FindCapturesInScope(SemaRef, S, Vars);
@@ -1634,78 +1715,15 @@ static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
 /// Construct a reference to each captured value and force an r-value
 /// conversion so that we get rvalues during evaluation.
 static void ReferenceCaptures(Sema &SemaRef,
-                              SmallVectorImpl<VarDecl *> &Vars,
+                              SmallVectorImpl<ValueDecl *> &Vars,
                               SmallVectorImpl<Expr *> &Refs) {
   Refs.resize(Vars.size());
-  std::transform(Vars.begin(), Vars.end(), Refs.begin(), [&](VarDecl *D) {
+  std::transform(Vars.begin(), Vars.end(), Refs.begin(), [&](ValueDecl *D) {
     Expr *Ref = new (SemaRef.Context) DeclRefExpr(
         SemaRef.Context, D, false, D->getType(), VK_LValue, D->getLocation());
     return ImplicitCastExpr::Create(SemaRef.Context, D->getType(),
                                     CK_LValueToRValue, Ref, nullptr, VK_RValue);
   });
-}
-
-static Decl *GetRootDeclaration(Expr *E) {
-  if (auto *ICE = dyn_cast<ImplicitCastExpr>(E))
-    return GetRootDeclaration(ICE->getSubExpr());
-
-  if (auto *ASE = dyn_cast<ArraySubscriptExpr>(E))
-    return GetRootDeclaration(ASE->getBase());
-
-  if (auto *DRE = dyn_cast<DeclRefExpr>(E))
-    return DRE->getDecl();
-
-  if (auto *ME = dyn_cast<MemberExpr>(E))
-    return ME->getMemberDecl();
-
-  llvm_unreachable("failed to find declaration");
-}
-
-template<typename F>
-static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB);
-
-template<typename F>
-static void ExtractDecomposedDeclInits(Sema &S, DecompositionDecl *D,
-                                       F CapturedExprCB) {
-  for (BindingDecl *BD : D->bindings()) {
-    ExprResult LValueConverted = S.DefaultFunctionArrayLvalueConversion(BD->getBinding());
-    CapturedExprCB(LValueConverted.get());
-  }
-}
-
-/// Calls the passed lambda on any init exprs conatined in Expr E.
-template<typename F>
-static void ExtractCapturedVariableInits(Sema &S, Expr *E, F CapturedExprCB) {
-  Decl *D = GetRootDeclaration(E);
-
-  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
-    ExtractDecomposedDeclInits(S, DD, CapturedExprCB);
-    return;
-  }
-
-  CapturedExprCB(E);
-}
-
-template<typename F>
-static void ExtractDecomposedDecls(Sema &S, DecompositionDecl *D,
-                                   F CapturedDeclCB) {
-  for (BindingDecl *BD : D->bindings()) {
-    CapturedDeclCB(BD);
-  }
-}
-
-/// Calls the passed lambda on any variable declarations
-/// conatined in Expr E.
-template<typename F>
-static void ExtractCapturedVariables(Sema &S, Expr *E, F CapturedDeclCB) {
-  Decl *D = GetRootDeclaration(E);
-
-  if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
-    ExtractDecomposedDecls(S, DD, CapturedDeclCB);
-    return;
-  }
-
-  CapturedDeclCB(cast<ValueDecl>(D));
 }
 
 // Create a placeholder for each captured expression in the scope of the
@@ -1751,7 +1769,7 @@ void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
   // FIXME: It might be better to use the scope, but the flags don't appear
   // to be set right within constexpr declarations, etc.
   if (isa<FunctionDecl>(CurContext)) {
-    SmallVector<VarDecl *, 8> Vars;
+    SmallVector<ValueDecl *, 8> Vars;
     FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
     ReferenceCaptures(*this, Vars, Captures);
   }

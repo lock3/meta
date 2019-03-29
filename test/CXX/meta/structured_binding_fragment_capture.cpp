@@ -46,10 +46,9 @@ class ClassDestructure {
   }
 };
 
-constexpr bool array_destructure [2] = { true, false };
-
 class ArrayDestructure {
   consteval {
+    constexpr bool array_destructure [2] = { true, false };
     auto [a, b] = array_destructure;
     -> __fragment struct {
       constexpr auto val_a() {
