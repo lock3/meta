@@ -27,13 +27,13 @@ using namespace clang;
 
 namespace clang {
   enum InjectedDefType : unsigned;
-  class InjectionExtra;
+  struct InjectionInfo;
   class InjectionContext;
 }
 
 template<typename DeclType, InjectedDefType DefType>
 static void InjectPendingDefinitions(InjectionContext *Ctx,
-                                     InjectionExtra *Injection);
+                                     InjectionInfo *Injection);
 
 namespace clang {
 
@@ -75,12 +75,12 @@ struct InjectionCapture {
 
 using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *>;
 
-struct InjectionExtra {
-  InjectionExtra(InjectionType Injection)
+struct InjectionInfo {
+  InjectionInfo(InjectionType Injection)
     : Injection(Injection), Modifiers() { }
 
 
-  InjectionExtra *PrepareForPending() {
+  InjectionInfo *PrepareForPending() {
     // Reset the declaration modifiers. They're already been applied and
     // must not apply to nested declarations in a definition.
     Modifiers = ReflectionModifiers();
@@ -145,8 +145,8 @@ public:
 
   template<typename IT, typename F>
   void InitInjection(IT Injection, F Op) {
-    InjectionExtra *PreviousInjection = CurInjection;
-    CurInjection = new InjectionExtra(Injection);
+    InjectionInfo *PreviousInjection = CurInjection;
+    CurInjection = new InjectionInfo(Injection);
 
     Op();
 
@@ -176,9 +176,9 @@ public:
 
   template<typename F>
   void ForEachPendingInjection(F Op) {
-    InjectionExtra *PreviousInjection = CurInjection;
+    InjectionInfo *PreviousInjection = CurInjection;
 
-    for (InjectionExtra *Injection : PendingInjections) {
+    for (InjectionInfo *Injection : PendingInjections) {
       CurInjection = Injection;
 
       Op();
@@ -559,10 +559,10 @@ public:
   Decl *Injectee;
 
   /// The current injection being injected.
-  InjectionExtra *CurInjection = nullptr;
+  InjectionInfo *CurInjection = nullptr;
 
   /// The pending class member injections.
-  llvm::SmallVector<InjectionExtra *, 8> PendingInjections;
+  llvm::SmallVector<InjectionInfo *, 8> PendingInjections;
 };
 
 bool InjectionContext::isInInjection(Decl *D) {
@@ -1055,7 +1055,7 @@ static bool ShouldImmediatelyInjectPendingDefinitions(
 }
 
 static void InjectPendingDefinitionsWithCleanup(InjectionContext *Ctx) {
-  InjectionExtra *Injection = Ctx->CurInjection;
+  InjectionInfo *Injection = Ctx->CurInjection;
 
   InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(Ctx, Injection);
   InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx, Injection);
@@ -2641,7 +2641,7 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
 
 template<typename DeclType, InjectedDefType DefType>
 static void InjectPendingDefinitions(InjectionContext *Ctx,
-                                     InjectionExtra *Injection) {
+                                     InjectionInfo *Injection) {
   for (InjectedDef Def : Injection->InjectedDefinitions) {
     if (Def.Type != DefType)
       continue;
