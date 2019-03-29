@@ -667,6 +667,14 @@ bool InjectionContext::InjectBaseSpecifier(CXXBaseSpecifier *BS) {
   return false;
 }
 
+static void UpdateFunctionParm(InjectionContext &Ctx, FunctionDecl *Function,
+                               ParmVarDecl *OldParm, ParmVarDecl *NewParm) {
+  NewParm->setOwningFunction(Function);
+
+  ExprResult InitExpr = Ctx.TransformExpr(OldParm->getInit());
+  NewParm->setInit(InitExpr.get());
+}
+
 void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
                                            FunctionDecl* New) {
   // Make sure the parameters are actually bound to the function.
@@ -687,11 +695,12 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
       if (auto *Injected = FindInjectedParms(OldParm)) {
         for (unsigned I = 0; I < Injected->size(); ++I) {
           ParmVarDecl *NewParm = NewParms[NewIndex++];
-          NewParm->setOwningFunction(New);
+          UpdateFunctionParm(*this, New, OldParm, NewParm);
         }
       } else {
         ParmVarDecl *NewParm = NewParms[NewIndex++];
-        NewParm->setOwningFunction(New);
+        UpdateFunctionParm(*this, New, OldParm, NewParm);
+
         AddDeclSubstitution(OldParm, NewParm);
       }
     } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());

@@ -33,8 +33,10 @@ constexpr void interface(meta::info source) {
 };
 
 class(interface) Thing {
+  int inline_value;
+
 public:
-  int inline_value = 3;
+  Thing(int inline_value = 3) : inline_value{inline_value} { }
 
   int get_inline_value() { return inline_value; }
 };
