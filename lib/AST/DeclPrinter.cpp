@@ -298,7 +298,10 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
     if (BMInitializer->isAnyMemberInitializer()) {
       FieldDecl *FD = BMInitializer->getAnyMember();
       Out << *FD;
+    } else if (BMInitializer->isDelegatingInitializer()) {
+      Out << CDecl->getTargetConstructor()->getDeclName();
     } else {
+      assert(BMInitializer->isBaseInitializer());
       Out << QualType(BMInitializer->getBaseClass(), 0).getAsString(Policy);
     }
 
