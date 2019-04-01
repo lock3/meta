@@ -305,11 +305,16 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
       Out << QualType(BMInitializer->getBaseClass(), 0).getAsString(Policy);
     }
 
-    Out << "(";
-    if (!BMInitializer->getInit()) {
+    Expr *Init = BMInitializer->getInit();
+
+    bool UsesParens = !Init || !isa<InitListExpr>(Init);
+    char OpeningToken = UsesParens ? '(' : '{';
+    char ClosingToken = UsesParens ? ')' : '}';
+
+    Out << OpeningToken;
+    if (!Init) {
       // Nothing to print
     } else {
-      Expr *Init = BMInitializer->getInit();
       if (ExprWithCleanups *Tmp = dyn_cast<ExprWithCleanups>(Init))
         Init = Tmp->getSubExpr();
 
@@ -321,6 +326,9 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
       if (ParenListExpr *ParenList = dyn_cast<ParenListExpr>(Init)) {
         Args = ParenList->getExprs();
         NumArgs = ParenList->getNumExprs();
+      } else if (InitListExpr *InitList = dyn_cast<InitListExpr>(Init)) {
+        Args = InitList->getInits();
+        NumArgs = InitList->getNumInits();
       } else if (CXXConstructExpr *Construct =
                      dyn_cast<CXXConstructExpr>(Init)) {
         Args = Construct->getArgs();
@@ -342,7 +350,7 @@ void DeclPrinter::PrintConstructorInitializers(CXXConstructorDecl *CDecl,
         }
       }
     }
-    Out << ")";
+    Out << ClosingToken;
     if (BMInitializer->isPackExpansion())
       Out << "...";
   }
