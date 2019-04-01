@@ -2612,26 +2612,41 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
 
     SmallVector<CXXCtorInitializer *, 4> NewInitArgs;
     for (CXXCtorInitializer *OldInitializer : OldCtor->inits()) {
-      Decl *OldField = OldInitializer->getMember();
-      Expr *OldInit = OldInitializer->getInit();;
+      Expr *OldInit = OldInitializer->getInit();
+      Expr *NewInit = Ctx->TransformInitializer(OldInit, true).get();
 
-      FieldDecl *NewField
-          = cast<FieldDecl>(Ctx->TransformDecl(SourceLocation(), OldField));
-      Expr *NewInit
-          = Ctx->TransformExpr(Ctx->TransformExpr(OldInit).get()).get();
+      CXXCtorInitializer *NewInitializer;
 
-      // TODO: this assumes a member initializer
-      // there are other ctor initializer types we need to
-      // handle
-      CXXCtorInitializer *NewInitializer = S.BuildMemberInitializer(
-          NewField, NewInit, OldInitializer->getMemberLocation()).get();
+      if (OldInitializer->isAnyMemberInitializer()) {
+        Decl *OldField = OldInitializer->getMember();
+        FieldDecl *NewField
+            = cast<FieldDecl>(Ctx->TransformDecl(SourceLocation(), OldField));
+
+        NewInitializer = S.BuildMemberInitializer(
+            NewField, NewInit, OldInitializer->getMemberLocation()).get();
+      } else if (OldInitializer->isDelegatingInitializer()
+                 || OldInitializer->isBaseInitializer()) {
+        TypeSourceInfo *OldTSI = OldInitializer->getTypeSourceInfo();
+        TypeSourceInfo *NewTSI = Ctx->TransformType(OldTSI);
+
+        CXXRecordDecl *NewClass
+            = cast<CXXRecordDecl>(NewMethod->getDeclContext());
+
+        if (OldInitializer->isBaseInitializer())
+          NewInitializer = S.BuildBaseInitializer(NewTSI->getType(), NewTSI,
+              NewInit, NewClass, /*EllipsisLoc=*/SourceLocation()).get();
+        else
+          NewInitializer
+            = S.BuildDelegatingInitializer(NewTSI, NewInit, NewClass).get();
+      } else {
+        llvm_unreachable("Unsupported constructor type");
+      }
 
       NewInitArgs.push_back(NewInitializer);
     }
 
-    S.SetCtorInitializers(NewCtor, /*AnyErrors=*/false, NewInitArgs);
-    // FIXME: We should run diagnostics here
-    // DiagnoseUninitializedFields(*this, Constructor);
+    S.ActOnMemInitializers(NewCtor, /*ColonLoc*/SourceLocation(),
+                           NewInitArgs, /*AnyErrors=*/false);
   } else if (isa<CXXDestructorDecl>(OldMethod)) {
     CXXDestructorDecl *NewDtor = cast<CXXDestructorDecl>(NewMethod);
 
