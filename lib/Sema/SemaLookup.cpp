@@ -721,6 +721,10 @@ static bool CanDeclareSpecialMemberFunction(const CXXRecordDecl *Class) {
   if (!Class->getDefinition() || Class->isDependentContext())
     return false;
 
+  // We must not be working with a prototype.
+  if (Class->isPrototypeClass())
+    return false;
+
   // We can't be in the middle of defining the class.
   return !Class->isBeingDefined();
 }
@@ -3150,6 +3154,9 @@ CXXMethodDecl *Sema::LookupMovingAssignment(CXXRecordDecl *Class,
 ///
 /// \returns The destructor for this class.
 CXXDestructorDecl *Sema::LookupDestructor(CXXRecordDecl *Class) {
+  if (Class->isPrototypeClass())
+    return nullptr;
+
   return cast<CXXDestructorDecl>(LookupSpecialMember(Class, CXXDestructor,
                                                      false, false, false,
                                                      false, false).getMethod());
