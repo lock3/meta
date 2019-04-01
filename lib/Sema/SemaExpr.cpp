@@ -14785,6 +14785,21 @@ static bool isImplicitlyDefinableConstexprFunction(FunctionDecl *Func) {
          (Func->isImplicitlyInstantiable() || (MD && !MD->isUserProvided()));
 }
 
+void Sema::CompleteClassDeclaration(SourceLocation Loc, FunctionDecl *Func) {
+  // C++14 [except.spec]p17:
+  //   An exception-specification is considered to be needed when:
+  //   - the function is odr-used or, if it appears in an unevaluated operand,
+  //     would be odr-used if the expression were potentially-evaluated;
+  //
+  // Note, we do this even if MightBeOdrUse is false. That indicates that the
+  // function is a pure virtual function we're calling, and in that case the
+  // function was selected by overload resolution and we need to resolve its
+  // exception specification for a different reason.
+  const FunctionProtoType *FPT = Func->getType()->getAs<FunctionProtoType>();
+  if (FPT && isUnresolvedExceptionSpec(FPT->getExceptionSpecType()))
+    ResolveExceptionSpec(Loc, FPT);
+}
+
 /// Mark a function referenced, and check whether it is odr-used
 /// (C++ [basic.def.odr]p2, C99 6.9p3)
 void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
@@ -14825,18 +14840,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
        Func->getMemberSpecializationInfo()))
     checkSpecializationVisibility(Loc, Func);
 
-  // C++14 [except.spec]p17:
-  //   An exception-specification is considered to be needed when:
-  //   - the function is odr-used or, if it appears in an unevaluated operand,
-  //     would be odr-used if the expression were potentially-evaluated;
-  //
-  // Note, we do this even if MightBeOdrUse is false. That indicates that the
-  // function is a pure virtual function we're calling, and in that case the
-  // function was selected by overload resolution and we need to resolve its
-  // exception specification for a different reason.
-  const FunctionProtoType *FPT = Func->getType()->getAs<FunctionProtoType>();
-  if (FPT && isUnresolvedExceptionSpec(FPT->getExceptionSpecType()))
-    ResolveExceptionSpec(Loc, FPT);
+  CompleteClassDeclaration(Loc, Func);
 
   // If we don't need to mark the function as used, and we don't need to
   // try to provide a definition, there's nothing more to do.

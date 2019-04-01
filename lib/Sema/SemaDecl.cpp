@@ -15232,13 +15232,23 @@ static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
   SemaRef.InjectPendingFieldDefinitions();
 }
 
+static void CompleteClassDeclarations(Sema &SemaRef, RecordDecl *D) {
+  for (Decl *DD : D->decls()) {
+    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(DD)) {
+      SemaRef.CompleteClassDeclaration(SourceLocation(), FD);
+    }
+  }
+}
+
 void Sema::CompleteDefinition(RecordDecl *D) {
   D->completeDefinition();
+  CompleteClassDeclarations(*this, D);
   ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
   D->completeDefinition(Map);
+  CompleteClassDeclarations(*this, D);
   ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 

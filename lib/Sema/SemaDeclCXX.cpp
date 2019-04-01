@@ -11166,6 +11166,9 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
     PushOnScopeChains(DefaultCon, S, false);
   ClassDecl->addDecl(DefaultCon);
 
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, DefaultCon);
+
   return DefaultCon;
 }
 
@@ -11444,6 +11447,9 @@ CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
   if (S)
     PushOnScopeChains(Destructor, S, false);
   ClassDecl->addDecl(Destructor);
+
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, Destructor);
 
   return Destructor;
 }
@@ -12065,6 +12071,9 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
     PushOnScopeChains(CopyAssignment, S, false);
   ClassDecl->addDecl(CopyAssignment);
 
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, CopyAssignment);
+
   return CopyAssignment;
 }
 
@@ -12388,6 +12397,9 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
   if (S)
     PushOnScopeChains(MoveAssignment, S, false);
   ClassDecl->addDecl(MoveAssignment);
+
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, MoveAssignment);
 
   return MoveAssignment;
 }
@@ -12771,6 +12783,9 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
     PushOnScopeChains(CopyConstructor, S, false);
   ClassDecl->addDecl(CopyConstructor);
 
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, CopyConstructor);
+
   return CopyConstructor;
 }
 
@@ -12899,6 +12914,9 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
   if (S)
     PushOnScopeChains(MoveConstructor, S, false);
   ClassDecl->addDecl(MoveConstructor);
+
+  if (!ClassDecl->isBeingDefined())
+    CompleteClassDeclaration(ClassLoc, MoveConstructor);
 
   return MoveConstructor;
 }

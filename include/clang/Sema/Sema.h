@@ -4172,6 +4172,7 @@ public:
   // because the name denotes a virtual function and was written without an
   // explicit nested-name-specifier).
   void MarkAnyDeclReferenced(SourceLocation Loc, Decl *D, bool MightBeOdrUse);
+  void CompleteClassDeclaration(SourceLocation Loc, FunctionDecl *Func);
   void MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
                               bool MightBeOdrUse = true);
   void MarkVariableReferenced(SourceLocation Loc, VarDecl *Var);
