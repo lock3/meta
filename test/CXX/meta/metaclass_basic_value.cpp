@@ -144,6 +144,7 @@ consteval void BasicValue(info source) {
 class(BasicValue) Point {
   int x = 0, y = 0; // expected-note {{implicitly declared private here}}
   Point(int xx, int yy) : x{xx}, y{yy} { }
+  Point() : Point(1, 1) { }
 };
 
 Point get_some_point() { return {1,1}; }
