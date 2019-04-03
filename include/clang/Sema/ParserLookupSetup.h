@@ -1,4 +1,4 @@
-//=- AnalysisBasedWarnings.h - Sema warnings based on libAnalysis -*- C++ -*-=//
+//=- ParserLookupSetup.h - Sema based lookup using parse scopes -*- C++ -*-=//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines AnalysisBasedWarnings, a worker object used by Sema
-// that issues warnings based on dataflow-analysis.
+// This file defines ParserLookupSetup, a utility for performing unqualified
+// lookup after parsing has completed.
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_SEMA_PARSERLOOKUPSETUP_H
