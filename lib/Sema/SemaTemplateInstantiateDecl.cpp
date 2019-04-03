@@ -1089,6 +1089,8 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
       EnumDecl::Create(SemaRef.Context, Owner, D->getBeginLoc(),
                        D->getLocation(), D->getIdentifier(), PrevDecl,
                        D->isScoped(), D->isScopedUsingClassTag(), D->isFixed());
+
+  Sema::ContextRAII SavedContext(SemaRef, Enum);
   if (D->isFixed()) {
     if (TypeSourceInfo *TI = D->getIntegerTypeSourceInfo()) {
       // If we have type source information for the underlying type, it means it
@@ -1155,6 +1157,16 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
   return Enum;
 }
 
+template<typename T>
+void EnumPush(T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
+    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
 void TemplateDeclInstantiator::InstantiateEnumDefinition(
     EnumDecl *Enum, EnumDecl *Pattern) {
   Enum->startDefinition();
@@ -1162,10 +1174,24 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
   // Update the location to refer to the definition.
   Enum->setLocation(Pattern->getLocation());
 
-  SmallVector<Decl*, 4> Enumerators;
+  SmallVector<Decl *, 4> Enumerators;
 
-  EnumConstantDecl *LastEnumConst = nullptr;
-  for (auto *EC : Pattern->enumerators()) {
+  SemaRef.LastEnumConstDecl = nullptr;
+
+  for (auto *D : Pattern->decls()) {
+    if (auto *OldMD = dyn_cast<CXXMetaprogramDecl>(D)) {
+      CXXMetaprogramDecl *NewMD = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
+      EnumPush(NewMD, Enumerators);
+      continue;
+    }
+    if (auto *OldMD = dyn_cast<CXXInjectionDecl>(D)) {
+      CXXInjectionDecl *NewMD = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
+      EnumPush(NewMD, Enumerators);
+      continue;
+    }
+
+    EnumConstantDecl *EC = cast<EnumConstantDecl>(D);
+
     // The specified value for the enumerator.
     ExprResult Value((Expr *)nullptr);
     if (Expr *UninstValue = EC->getInitExpr()) {
@@ -1184,7 +1210,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
     }
 
     EnumConstantDecl *EnumConst
-      = SemaRef.CheckEnumConstant(Enum, LastEnumConst,
+      = SemaRef.CheckEnumConstant(Enum, SemaRef.LastEnumConstDecl,
                                   EC->getLocation(), EC->getIdentifier(),
                                   Value.get());
 
@@ -1200,7 +1226,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       EnumConst->setAccess(Enum->getAccess());
       Enum->addDecl(EnumConst);
       Enumerators.push_back(EnumConst);
-      LastEnumConst = EnumConst;
+      SemaRef.LastEnumConstDecl = EnumConst;
 
       if (Pattern->getDeclContext()->isFunctionOrMethod() &&
           !Enum->isScoped()) {

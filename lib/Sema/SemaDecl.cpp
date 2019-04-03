@@ -16977,10 +16977,12 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
 
   if (Enum->isDependentType()) {
     for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
-      EnumConstantDecl *ECD =
-        cast_or_null<EnumConstantDecl>(Elements[i]);
-      if (!ECD) continue;
+      Decl *D = Elements[i];
 
+      if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+        continue;
+
+      EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
       ECD->setType(EnumType);
     }
 
@@ -17004,8 +17006,11 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
   bool AllElementsInt = true;
 
   for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
-    EnumConstantDecl *ECD =
-      cast_or_null<EnumConstantDecl>(Elements[i]);
+    Decl *D = Elements[i];
+    if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+      continue;
+
+    EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
     if (!ECD) continue;  // Already issued a diagnostic.
 
     const llvm::APSInt &InitVal = ECD->getInitVal();
@@ -17121,7 +17126,10 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
   // Loop over all of the enumerator constants, changing their types to match
   // the type of the enum if needed.
   for (auto *D : Elements) {
-    auto *ECD = cast_or_null<EnumConstantDecl>(D);
+    if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+      continue;
+
+    EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
     if (!ECD) continue;  // Already issued a diagnostic.
 
     // Standard C says the enumerators have int type, but we allow, as an

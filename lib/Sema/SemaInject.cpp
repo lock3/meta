@@ -527,6 +527,7 @@ public:
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
+  Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
 
   Stmt *InjectStmtImpl(Stmt *S);
   Stmt *InjectStmt(Stmt *S);
@@ -576,6 +577,9 @@ public:
   /// A container that holds the injected stmts we will eventually
   /// build a new CompoundStmt out of.
   llvm::SmallVector<Stmt *, 8> InjectedStmts;
+
+  /// The declarations which have been injected.
+  llvm::SmallVector<Decl *, 32> InjectedDecls;
 };
 
 bool InjectionContext::isInInjection(Decl *D) {
@@ -1375,6 +1379,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
   case Decl::StaticAssert:
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
+  case Decl::EnumConstant:
+    return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   default:
     break;
   }
@@ -1664,6 +1670,37 @@ Decl *InjectionContext::InjectStaticAssertDecl(StaticAssertDecl *D) {
                                               D->getMessage(),
                                               D->getRParenLoc(),
                                               D->isFailed());
+}
+
+Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  EnumDecl *ED = cast<EnumDecl>(Owner);
+
+  // The specified value for the enumerator.
+  ExprResult Value((Expr *)nullptr);
+  if (Expr *UninstValue = D->getInitExpr()) {
+    // The enumerator's value expression is a constant expression.
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+    Value = TransformExpr(UninstValue);
+  }
+
+  Decl *EnumConstDecl = getSema().CheckEnumConstant(
+      ED, getSema().LastEnumConstDecl, D->getLocation(),
+      D->getIdentifier(), Value.get());
+
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(ED->getDeclContext()))
+    EnumConstDecl->setAccess(RD->getDefaultAccessSpecifier());
+
+  bool InjectIntoOwner = ShouldInjectInto(Owner);
+  if (InjectIntoOwner) {
+    Owner->addDecl(EnumConstDecl);
+    InjectedDecls.push_back(EnumConstDecl);
+    getSema().LastEnumConstDecl = cast<EnumConstantDecl>(EnumConstDecl);
+  }
+
+  return EnumConstDecl;
 }
 
 } // namespace clang
@@ -2319,11 +2356,14 @@ static bool BootstrapInjection(Sema &S, Decl *Injectee, IT *Injection,
 }
 
 /// Inject a fragment into the current context.
+template<typename MetaType>
 static bool InjectFragment(Sema &S,
-                           SourceLocation POI,
+                           MetaType *MD,
                            Decl *Injection,
                            const SmallVector<InjectionCapture, 8> &Captures,
                            Decl *Injectee) {
+  SourceLocation POI = MD->getSourceRange().getEnd();
+
   DeclContext *InjectionAsDC = Decl::castToDeclContext(Injection);
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
 
@@ -2377,12 +2417,19 @@ static bool InjectFragment(Sema &S,
         continue;
       }
     }
+
+    unsigned NumInjectedDecls = Ctx->InjectedDecls.size();
+    Decl **Decls = new (S.Context) Decl *[NumInjectedDecls];
+    std::copy(Ctx->InjectedDecls.begin(), Ctx->InjectedDecls.end(), Decls);
+    MD->setInjectedDecls(Decls, NumInjectedDecls);
   });
 }
 
 // Inject a reflected base specifier into the current context.
-static bool AddBase(Sema &S, SourceLocation POI,
+template<typename MetaType>
+static bool AddBase(Sema &S, MetaType *MD,
                     CXXBaseSpecifier *Injection, Decl *Injectee) {
+  // SourceLocation POI = MD->getSourceRange().getEnd();
   // DeclContext *InjectionDC = Injection->getDeclContext();
   // Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
@@ -2402,10 +2449,13 @@ static bool AddBase(Sema &S, SourceLocation POI,
 }
 
 // Inject a reflected declaration into the current context.
-static bool CopyDeclaration(Sema &S, SourceLocation POI,
+template<typename MetaType>
+static bool CopyDeclaration(Sema &S, MetaType *MD,
                             Decl *Injection,
                             const ReflectionModifiers &Modifiers,
                             Decl *Injectee) {
+  SourceLocation POI = MD->getSourceRange().getEnd();
+
   DeclContext *InjectionDC = Injection->getDeclContext();
   Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
@@ -2523,11 +2573,12 @@ GetFragCaptures(InjectionEffect &IE) {
   return Captures;
 }
 
-static bool ApplyFragmentInjection(Sema &S, SourceLocation POI,
+template<typename MetaType>
+static bool ApplyFragmentInjection(Sema &S, MetaType *MD,
                                    InjectionEffect &IE, Decl *Injectee) {
   Decl *Injection = const_cast<Decl *>(GetFragInjectionDecl(S, IE));
   SmallVector<InjectionCapture, 8> &&Captures = GetFragCaptures(IE);
-  return InjectFragment(S, POI, Injection, Captures, Injectee);
+  return InjectFragment(S, MD, Injection, Captures, Injectee);
 }
 
 static Reflection
@@ -2542,12 +2593,13 @@ GetInjectionBase(const Reflection &Refl) {
   return const_cast<CXXBaseSpecifier *>(ReachableBase);
 }
 
+template<typename MetaType>
 static bool
-ApplyReflectionBaseInjection(Sema &S, SourceLocation POI,
+ApplyReflectionBaseInjection(Sema &S, MetaType *MD,
                              const Reflection &Refl, Decl *Injectee) {
   CXXBaseSpecifier *Injection = GetInjectionBase(Refl);
 
-  return AddBase(S, POI, Injection, Injectee);
+  return AddBase(S, MD, Injection, Injectee);
 }
 
 static Decl *
@@ -2564,27 +2616,31 @@ GetModifiers(const Reflection &Refl) {
   return Refl.getModifiers();
 }
 
+template<typename MetaType>
 static bool
-ApplyReflectionDeclInjection(Sema &S, SourceLocation POI,
+ApplyReflectionDeclInjection(Sema &S, MetaType *MD,
                              const Reflection &Refl, Decl *Injectee) {
   Decl *Injection = GetInjectionDecl(Refl);
   ReflectionModifiers Modifiers = GetModifiers(Refl);
 
-  return CopyDeclaration(S, POI, Injection, Modifiers, Injectee);
+  return CopyDeclaration(S, MD, Injection, Modifiers, Injectee);
 }
 
-static bool ApplyReflectionInjection(Sema &S, SourceLocation POI,
+template<typename MetaType>
+static bool ApplyReflectionInjection(Sema &S, MetaType *MD,
                                      InjectionEffect &IE, Decl *Injectee) {
   Reflection &&Refl = GetReflectionFromInjection(S, IE);
 
   if (Refl.isBase())
-    return ApplyReflectionBaseInjection(S, POI, Refl, Injectee);
+    return ApplyReflectionBaseInjection(S, MD, Refl, Injectee);
 
-  return ApplyReflectionDeclInjection(S, POI, Refl, Injectee);
+  return ApplyReflectionDeclInjection(S, MD, Refl, Injectee);
 }
 
-bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
-  Decl *Injectee = GetInjecteeDecl(*this, CurContext, IE.ContextSpecifier);
+template<typename MetaType>
+bool ApplyInjectionImpl(Sema &SemaRef, MetaType *MD, InjectionEffect &IE) {
+  Decl *Injectee = GetInjecteeDecl(SemaRef, SemaRef.CurContext,
+                                   IE.ContextSpecifier);
   if (!Injectee)
     return false;
 
@@ -2592,7 +2648,7 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
   // with the Injectee.
 
   if (IE.ExprType->isFragmentType()) {
-    return ApplyFragmentInjection(*this, POI, IE, Injectee);
+    return ApplyFragmentInjection(SemaRef, MD, IE, Injectee);
   }
 
   // Type checking should gauarantee that the type of
@@ -2601,7 +2657,15 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
   // a reflection.
   assert(IE.ExprType->isReflectionType());
 
-  return ApplyReflectionInjection(*this, POI, IE, Injectee);
+  return ApplyReflectionInjection(SemaRef, MD, IE, Injectee);
+}
+
+bool Sema::ApplyInjection(CXXInjectionDecl *MD, InjectionEffect &IE) {
+  return ApplyInjectionImpl(*this, MD, IE);
+}
+
+bool Sema::ApplyInjection(CXXMetaprogramDecl *MD, InjectionEffect &IE) {
+  return ApplyInjectionImpl(*this, MD, IE);
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -2609,15 +2673,27 @@ bool Sema::ApplyInjection(SourceLocation POI, InjectionEffect &IE) {
 /// which the injection is applied.
 ///
 /// returns true if no errors are encountered, false otherwise.
-bool Sema::ApplyEffects(SourceLocation POI,
-                        SmallVectorImpl<InjectionEffect> &Effects) {
+template<typename MetaType>
+static bool ApplyEffectsImpl(Sema &SemaRef, MetaType *MD,
+                             SmallVectorImpl<InjectionEffect> &Effects) {
+
   bool Ok = true;
   for (InjectionEffect &Effect : Effects) {
-    Ok &= ApplyInjection(POI, Effect);
+    Ok &= SemaRef.ApplyInjection(MD, Effect);
   }
+
   return Ok;
 }
 
+bool Sema::ApplyEffects(CXXInjectionDecl *MD,
+                        SmallVectorImpl<InjectionEffect> &Effects) {
+  return ApplyEffectsImpl(*this, MD, Effects);
+}
+
+bool Sema::ApplyEffects(CXXMetaprogramDecl *MD,
+                        SmallVectorImpl<InjectionEffect> &Effects) {
+  return ApplyEffectsImpl(*this, MD, Effects);
+}
 
 /// Check if there are any pending definitions of member functions for
 /// this class or any of its nested class definitions. We can simply look
@@ -2897,10 +2973,8 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
     }
   }
 
-  // Apply any modifications, and if successful, remove the declaration from
-  // the class; it shouldn't be visible in the output code.
-  SourceLocation POI = MD->getSourceRange().getEnd();
-  Sema.ApplyEffects(POI, Effects);
+  // Apply any modifications
+  Sema.ApplyEffects(MD, Effects);
 
   return Notes.empty();
 }

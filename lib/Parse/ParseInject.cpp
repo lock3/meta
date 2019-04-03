@@ -121,8 +121,56 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, ClassDecl);
 }
 
-Decl *
-Parser::ParseCXXBlockFragment(Decl *Fragment) {
+/// ParseCXXEnumFragment
+Decl *Parser::ParseCXXEnumFragment(Decl *Fragment) {
+  assert(Tok.is(tok::kw_enum) && "expected 'enum'");
+
+  SourceLocation EnumKWLoc = ConsumeToken();
+
+  // FIXME: We could accept an idexpr here, except that those names aren't
+  // exported. They're really only meant to be used for self-references
+  // within the fragment.
+  if (Tok.isNot(tok::identifier) && Tok.isNot(tok::l_brace)) {
+    Diag(Tok, diag::err_expected) << "enum-fragment";
+    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
+    return nullptr;
+  }
+
+  IdentifierInfo *Id = nullptr;
+  SourceLocation IdLoc;
+  if (Tok.is(tok::identifier)) {
+    Id = Tok.getIdentifierInfo();
+    IdLoc = ConsumeToken();
+  }
+
+  // Build a tag type for the injected class.
+  CXXScopeSpec SS;
+  MultiTemplateParamsArg MTP;
+  bool IsOwned;
+  bool IsDependent;
+  TypeResult UnderlyingType;
+  Decl *EnumDecl = Actions.ActOnTag(getCurScope(), DeclSpec::TST_enum,
+                                    /*Metafunction=*/nullptr,
+                                    Sema::TUK_Definition, EnumKWLoc, SS,
+                                    Id, IdLoc, ParsedAttributesView(),
+                                    /*AccessSpecifier=*/AS_none,
+                                    /*ModulePrivateLoc=*/SourceLocation(),
+                                    MTP, IsOwned, IsDependent,
+                                    /*ScopedEnumKWLoc=*/SourceLocation(),
+                                    /*ScopeEnumUsesClassTag=*/false,
+                                    UnderlyingType,
+                                    /*IsTypeSpecifier=*/false,
+                                    /*IsTemplateParamOrArg=*/false,
+                                    /*SkipBody=*/nullptr);
+
+  // Parse the enum definition.
+  ParseEnumBody(EnumKWLoc, EnumDecl);
+
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, EnumDecl);
+}
+
+/// ParseCXXBlockFragment
+Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
   assert(Tok.is(tok::l_brace) && "Expected '{'");
   using CompoundStmt = ::CompoundStmt;
   SourceLocation IntroLoc = Tok.getLocation();
@@ -133,7 +181,7 @@ Parser::ParseCXXBlockFragment(Decl *Fragment) {
     Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
     return nullptr;
   }
-  
+
   DeclContext *CurContext = Actions.CurContext;
   CXXStmtFragmentDecl *Body =
     CXXStmtFragmentDecl::Create(Actions.getASTContext(), CurContext, IntroLoc);
@@ -174,7 +222,7 @@ Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
       return ParseCXXClassFragment(Fragment);
 
     case tok::kw_enum:
-      llvm_unreachable("enum fragments not implemented");
+      return ParseCXXEnumFragment(Fragment);
 
     case tok::l_brace:
       return ParseCXXBlockFragment(Fragment);

@@ -8782,6 +8782,8 @@ private:
   bool ReflectionScope = false;
 
 public:
+  EnumConstantDecl *LastEnumConstDecl = nullptr;
+
   bool isReflecting() const {
     return ReflectionScope;
   }
@@ -10497,9 +10499,12 @@ public:
       SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
       SourceLocation RParenLoc);
 
-  bool ApplyInjection(SourceLocation POI, InjectionEffect &IE);
-  bool ApplyEffects(SourceLocation POI,
-                    SmallVectorImpl<InjectionEffect> &Injections);
+  bool ApplyInjection(CXXInjectionDecl *MD, InjectionEffect &IE);
+  bool ApplyInjection(CXXMetaprogramDecl *MD, InjectionEffect &IE);
+  bool ApplyEffects(CXXInjectionDecl *MD,
+                    SmallVectorImpl<InjectionEffect> &Effects);
+  bool ApplyEffects(CXXMetaprogramDecl *MD,
+                    SmallVectorImpl<InjectionEffect> &Effects);
   bool HasPendingInjections(DeclContext *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();

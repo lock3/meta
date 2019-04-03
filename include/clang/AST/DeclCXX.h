@@ -4018,6 +4018,11 @@ class CXXMetaprogramDecl : public Decl {
 
   unsigned NumInjectedStmts;
 
+  /// A placeholder for injected declarations.
+  Decl **InjectedDecls;
+
+  unsigned NumInjectedDecls;
+
   CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
       : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(),
         Call(nullptr) {}
@@ -4065,6 +4070,15 @@ public:
     this->NumInjectedStmts = NumInjectedStmts;
   }
 
+  Decl **getInjectedDecls() const { return InjectedDecls; }
+
+  unsigned getNumInjectedDecls() const { return NumInjectedDecls; }
+
+  void setInjectedDecls(Decl **InjectedDecls, unsigned NumInjectedDecls) {
+    this->InjectedDecls = InjectedDecls;
+    this->NumInjectedDecls = NumInjectedDecls;
+  }
+
   SourceRange getSourceRange() const override;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -4094,6 +4108,11 @@ class CXXInjectionDecl : public Decl {
   Stmt **InjectedStmts;
 
   unsigned NumInjectedStmts;
+
+  /// A placeholder for injected declarations.
+  Decl **InjectedDecls;
+
+  unsigned NumInjectedDecls;
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
       : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(),
@@ -4140,6 +4159,15 @@ public:
   void setInjectedStmts(Stmt **InjectedStmts, unsigned NumInjectedStmts) {
     this->InjectedStmts = InjectedStmts;
     this->NumInjectedStmts = NumInjectedStmts;
+  }
+
+  Decl **getInjectedDecls() const { return InjectedDecls; }
+
+  unsigned getNumInjectedDecls() const { return NumInjectedDecls; }
+
+  void setInjectedDecls(Decl **InjectedDecls, unsigned NumInjectedDecls) {
+    this->InjectedDecls = InjectedDecls;
+    this->NumInjectedDecls = NumInjectedDecls;
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

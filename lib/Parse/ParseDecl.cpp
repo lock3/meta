@@ -4519,6 +4519,24 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     Diag(StartLoc, DiagID) << PrevSpec;
 }
 
+template<typename T>
+void EnumPush(Parser &P, T *MetaDecl,
+              SmallVectorImpl<Decl *> &EnumConstantDecls,
+              SmallVectorImpl<SuppressAccessChecks> &EnumAvailabilityDiags) {
+  EnumAvailabilityDiags.emplace_back(P);
+  EnumAvailabilityDiags.back().done();
+
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
+    EnumAvailabilityDiags.emplace_back(P);
+    EnumAvailabilityDiags.back().done();
+
+    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
 /// ParseEnumBody - Parse a {} enclosed enumerator-list.
 ///       enumerator-list:
 ///         enumerator
@@ -4544,10 +4562,27 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   SmallVector<Decl *, 32> EnumConstantDecls;
   SmallVector<SuppressAccessChecks, 32> EnumAvailabilityDiags;
 
-  Decl *LastEnumConstDecl = nullptr;
+  Actions.LastEnumConstDecl = nullptr;
 
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
+    if (getLangOpts().CPlusPlus && Tok.is(tok::kw_consteval)) {
+      // [Meta] metaprogram-declaration
+      if (NextToken().is(tok::l_brace)) {
+        CXXMetaprogramDecl *MetaDecl = cast<CXXMetaprogramDecl>(
+            ParseCXXMetaprogramDeclaration().get().getSingleDecl());
+        EnumPush(*this, MetaDecl, EnumConstantDecls, EnumAvailabilityDiags);
+      // [Meta] injection-declaration
+      } else if (NextToken().is(tok::arrow)) {
+        CXXInjectionDecl *MetaDecl = cast<CXXInjectionDecl>(
+            ParseCXXInjectionDeclaration().get().getSingleDecl());
+        EnumPush(*this, MetaDecl, EnumConstantDecls, EnumAvailabilityDiags);
+      }
+
+      TryConsumeToken(tok::comma);
+      continue;
+    }
+
     // Parse enumerator. If failed, try skipping till the start of the next
     // enumerator definition.
     if (Tok.isNot(tok::identifier)) {
@@ -4585,12 +4620,12 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
     // Install the enumerator constant into EnumDecl.
     Decl *EnumConstDecl = Actions.ActOnEnumConstant(
-        getCurScope(), EnumDecl, LastEnumConstDecl, IdentLoc, Ident, attrs,
-        EqualLoc, AssignedVal.get());
+        getCurScope(), EnumDecl, Actions.LastEnumConstDecl,
+        IdentLoc, Ident, attrs, EqualLoc, AssignedVal.get());
     EnumAvailabilityDiags.back().done();
 
     EnumConstantDecls.push_back(EnumConstDecl);
-    LastEnumConstDecl = EnumConstDecl;
+    Actions.LastEnumConstDecl = cast_or_null<EnumConstantDecl>(EnumConstDecl);
 
     if (Tok.is(tok::identifier)) {
       // We're missing a comma between enumerators.

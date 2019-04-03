@@ -2850,6 +2850,7 @@ private:
   // C++ Code Fragments
   Decl *ParseCXXNamespaceFragment(Decl *Fragment);
   Decl *ParseCXXClassFragment(Decl *Fragment);
+  Decl *ParseCXXEnumFragment(Decl *Fragment);
   Decl *ParseCXXBlockFragment(Decl *Fragment);
   Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
