@@ -2367,55 +2367,47 @@ static bool BootstrapInjection(Sema &S, Decl *Injectee, IT *Injection,
   return !Injectee->isInvalidDecl();
 }
 
-/// Inject a fragment into the current context.
 template<typename MetaType>
-static bool InjectFragment(Sema &S,
-                           MetaType *MD,
-                           Decl *Injection,
-                           const SmallVector<InjectionCapture, 8> &Captures,
-                           Decl *Injectee) {
-  SourceLocation POI = MD->getSourceRange().getEnd();
+static bool InjectStmtFragment(Sema &S,
+                               MetaType *MD,
+                               Decl *Injection,
+                               const SmallVector<InjectionCapture, 8> &Captures,
+                               Decl *Injectee) {
+  return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
+    Ctx->AddDeclSubstitution(Injection, Injectee);
+    Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
-  DeclContext *InjectionAsDC = Decl::castToDeclContext(Injection);
-  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+    CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
+    CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());
+    for (Stmt *S : FragmentBlock->body()) {
+      Stmt *Inj = Ctx->InjectStmt(S);
 
-  if (!CheckInjectionContexts(S, POI, InjectionAsDC, InjecteeAsDC))
-    return false;
-
-  Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
-
-  // The logic for block fragments is different, since everything in the fragment
-  // is stored in a CompoundStmt.
-  if (isa<CXXStmtFragmentDecl>(Injection)) {
-    return BootstrapInjection(S, Injectee, Injection,
-                              [&](InjectionContext *Ctx) {
-      Ctx->AddDeclSubstitution(Injection, Injectee);
-      Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
-
-      CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
-      CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());
-      for (Stmt *S : FragmentBlock->body()) {
-        Stmt *Inj = Ctx->InjectStmt(S);
-
-        if (!Inj) {
-          Injectee->setInvalidDecl(true);
-          continue;
-        }
+      if (!Inj) {
+        Injectee->setInvalidDecl(true);
+        continue;
       }
+    }
 
-      unsigned NumInjectedStmts = Ctx->InjectedStmts.size();
-      Stmt **Stmts = new (S.Context) Stmt *[NumInjectedStmts];
-      std::copy(Ctx->InjectedStmts.begin(), Ctx->InjectedStmts.end(), Stmts);
-      MD->setInjectedStmts(Stmts, NumInjectedStmts);
-    });
-  }
+    unsigned NumInjectedStmts = Ctx->InjectedStmts.size();
+    Stmt **Stmts = new (S.Context) Stmt *[NumInjectedStmts];
+    std::copy(Ctx->InjectedStmts.begin(), Ctx->InjectedStmts.end(), Stmts);
+    MD->setInjectedStmts(Stmts, NumInjectedStmts);
+  });
+}
 
+template<typename MetaType>
+static bool InjectDeclFragment(Sema &S,
+                               MetaType *MD,
+                               Decl *Injection,
+                               const SmallVector<InjectionCapture, 8> &Captures,
+                               Decl *Injectee) {
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     // Setup substitutions
     Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     // Inject each declaration in the fragment.
+    DeclContext *InjectionAsDC = Decl::castToDeclContext(Injection);
     for (Decl *D : InjectionAsDC->decls()) {
       // Never inject injected class names.
       if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D)) {
@@ -2435,6 +2427,31 @@ static bool InjectFragment(Sema &S,
     std::copy(Ctx->InjectedDecls.begin(), Ctx->InjectedDecls.end(), Decls);
     MD->setInjectedDecls(Decls, NumInjectedDecls);
   });
+}
+
+/// Inject a fragment into the current context.
+template<typename MetaType>
+static bool InjectFragment(Sema &S,
+                           MetaType *MD,
+                           Decl *Injection,
+                           const SmallVector<InjectionCapture, 8> &Captures,
+                           Decl *Injectee) {
+  SourceLocation POI = MD->getSourceRange().getEnd();
+
+  DeclContext *InjectionAsDC = Decl::castToDeclContext(Injection);
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+
+  if (!CheckInjectionContexts(S, POI, InjectionAsDC, InjecteeAsDC))
+    return false;
+
+  Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
+
+  // The logic for block fragments is different, since everything in the fragment
+  // is stored in a CompoundStmt.
+  if (isa<CXXStmtFragmentDecl>(Injection))
+    return InjectStmtFragment(S, MD, Injection, Captures, Injectee);
+  else
+    return InjectDeclFragment(S, MD, Injection, Captures, Injectee);
 }
 
 // Inject a reflected base specifier into the current context.
