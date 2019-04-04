@@ -2248,13 +2248,13 @@ StmtResult Sema::BuildCXXBaseInjectionStmt(
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
 static int DescribeDeclContext(DeclContext *DC) {
-  if (DC->isFunctionOrMethod())
+  if (DC->isFunctionOrMethod() || DC->isStatementFragment())
     return 0;
   else if (DC->isRecord())
     return 1;
-  else if (DC->isNamespace())
+  else if (DC->isEnum())
     return 2;
-  else if (DC->isTranslationUnit())
+  else if (DC->isFileContext())
     return 3;
   else
     llvm_unreachable("Invalid injection context");
@@ -2300,10 +2300,22 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
                                    DeclContext *Injectee) {
   InjectionCompatibilityChecker Check(SemaRef, POI, Injection, Injectee);
 
+  auto BlockTest = [] (DeclContext *DC) -> bool {
+    return DC->isFunctionOrMethod() || DC->isStatementFragment();
+  };
+  if (Check(BlockTest))
+    return false;
+
   auto ClassTest = [] (DeclContext *DC) -> bool {
     return DC->isRecord();
   };
   if (Check(ClassTest))
+    return false;
+
+  auto EnumTest = [] (DeclContext *DC) -> bool {
+    return DC->isEnum();
+  };
+  if (Check(EnumTest))
     return false;
 
   auto NamespaceTest = [] (DeclContext *DC) -> bool {

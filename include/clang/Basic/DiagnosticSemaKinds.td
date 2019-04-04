@@ -9379,8 +9379,8 @@ let CategoryName = "Injection Issue" in {
 def err_invalid_injection_operand : Error<
   "invalid operand of type %0; expected a reflection or fragment">;
 def err_invalid_injection : Error<
-  "injecting %select{statements|class members|namespace members}0 into "
-  "%select{a function|a class|a namespace|global scope}1">;
+  "injecting %select{statements|class members|enum members|namespace members}0 into "
+  "%select{a function|a class|an enum|a namespace}1">;
 def err_injecting_local_into_invalid_scope : Error<
   "cannot inject a local variable into %select{namespace|class}0 scope">;
 def err_injecting_into_parent_of_global_namespace : Error<
