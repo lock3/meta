@@ -4016,12 +4016,12 @@ class CXXMetaprogramDecl : public Decl {
   /// A placeholder for injected statements.
   Stmt **InjectedStmts;
 
-  unsigned NumInjectedStmts;
+  unsigned NumInjectedStmts = 0;
 
   /// A placeholder for injected declarations.
   Decl **InjectedDecls;
 
-  unsigned NumInjectedDecls;
+  unsigned NumInjectedDecls = 0;
 
   CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
       : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(),
@@ -4107,12 +4107,12 @@ class CXXInjectionDecl : public Decl {
   /// A placeholder for injected statements.
   Stmt **InjectedStmts;
 
-  unsigned NumInjectedStmts;
+  unsigned NumInjectedStmts = 0;
 
   /// A placeholder for injected declarations.
   Decl **InjectedDecls;
 
-  unsigned NumInjectedDecls;
+  unsigned NumInjectedDecls = 0;
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
       : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(),
