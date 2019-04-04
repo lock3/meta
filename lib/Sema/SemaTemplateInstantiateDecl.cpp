@@ -967,6 +967,8 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   if (!D->hasBody())
     return D;
 
+  Sema::ContextRAII SavedContext(SemaRef, D);
+
   SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
   StmtResult NewBody =
     SemaRef.SubstStmt(D->getBody(), TemplateArgs, ExistingMappings);
@@ -1768,6 +1770,10 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     SS.Adopt(QualifierLoc);
     DC = SemaRef.computeDeclContext(SS);
     if (!DC) return nullptr;
+  } else if (D->isMetaprogram()) {
+    // Metaprograms are always instantiated
+    // into their owning context.
+    DC = Owner;
   } else {
     DC = SemaRef.FindInstantiatedContext(D->getLocation(), D->getDeclContext(),
                                          TemplateArgs);

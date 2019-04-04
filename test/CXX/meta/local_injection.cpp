@@ -30,7 +30,17 @@ int f3() {
   };
 }
 
+template<int Y>
+constexpr int f4() {
+  consteval {
+    -> __fragment {
+      return Y;
+    };
+  }
+}
+
 int main() {
   static_assert(f1() == 42);
   assert(f3() == 10);
+  static_assert(f4<12>() == 12);
 }

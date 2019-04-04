@@ -1663,7 +1663,8 @@ bool Sema::CheckConstexprFunctionDecl(const FunctionDecl *NewFD) {
 /// \return true if the body is OK (maybe only as an extension), false if we
 ///         have diagnosed a problem.
 static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
-                                        DeclStmt *DS, SourceLocation &Cxx1yLoc) {
+                                        DeclStmt *DS, SourceLocation &Cxx1yLoc,
+                                        bool &DelayedReturnCheck) {
   // C++11 [dcl.constexpr]p3 and p4:
   //  The definition of a constexpr function(p3) or constructor(p4) [...] shall
   //  contain only
@@ -1767,6 +1768,10 @@ static bool CheckCXXMetaprogramDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
     case Decl::CXXMetaprogram:
     case Decl::CXXInjection:
       // Used for metaprogramming.
+      //
+      // We may be injecting a return statement in the future,
+      // don't run return statement checks.
+      DelayedReturnCheck = Dcl->isDependentContext();
       continue;
 
     default:
@@ -1828,7 +1833,8 @@ static void CheckConstexprCtorInitializer(Sema &SemaRef,
 static bool
 CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
                            SmallVectorImpl<SourceLocation> &ReturnStmts,
-                           SourceLocation &Cxx1yLoc, SourceLocation &Cxx2aLoc) {
+                           SourceLocation &Cxx1yLoc, SourceLocation &Cxx2aLoc,
+                           bool &DelayedReturnCheck) {
   // - its function-body shall be [...] a compound-statement that contains only
   switch (S->getStmtClass()) {
   case Stmt::NullStmtClass:
@@ -1841,7 +1847,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     //   - using-directives,
     //   - typedef declarations and alias-declarations that do not define
     //     classes or enumerations,
-    if (!CheckCXXMetaprogramDeclStmt(SemaRef, Dcl, cast<DeclStmt>(S), Cxx1yLoc))
+    if (!CheckCXXMetaprogramDeclStmt(SemaRef, Dcl, cast<DeclStmt>(S),
+                                     Cxx1yLoc, DelayedReturnCheck))
       return false;
     return true;
 
@@ -1865,7 +1872,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     CompoundStmt *CompStmt = cast<CompoundStmt>(S);
     for (auto *BodyIt : CompStmt->body()) {
       if (!CheckConstexprFunctionStmt(SemaRef, Dcl, BodyIt, ReturnStmts,
-                                      Cxx1yLoc, Cxx2aLoc))
+                                      Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
         return false;
     }
     return true;
@@ -1883,11 +1890,11 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
 
     IfStmt *If = cast<IfStmt>(S);
     if (!CheckConstexprFunctionStmt(SemaRef, Dcl, If->getThen(), ReturnStmts,
-                                    Cxx1yLoc, Cxx2aLoc))
+                                    Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
       return false;
     if (If->getElse() &&
         !CheckConstexprFunctionStmt(SemaRef, Dcl, If->getElse(), ReturnStmts,
-                                    Cxx1yLoc, Cxx2aLoc))
+                                    Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
       return false;
     return true;
   }
@@ -1907,7 +1914,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     for (Stmt *SubStmt : S->children())
       if (SubStmt &&
           !CheckConstexprFunctionStmt(SemaRef, Dcl, SubStmt, ReturnStmts,
-                                      Cxx1yLoc, Cxx2aLoc))
+                                      Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
         return false;
     return true;
 
@@ -1927,7 +1934,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     for (Stmt *SubStmt : S->children())
       if (SubStmt &&
           !CheckConstexprFunctionStmt(SemaRef, Dcl, SubStmt, ReturnStmts,
-                                      Cxx1yLoc, Cxx2aLoc))
+                                      Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
         return false;
     return true;
 
@@ -1937,7 +1944,7 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     for (Stmt *SubStmt : S->children()) {
       if (SubStmt &&
           !CheckConstexprFunctionStmt(SemaRef, Dcl, SubStmt, ReturnStmts,
-                                      Cxx1yLoc, Cxx2aLoc))
+                                      Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
         return false;
     }
     return true;
@@ -1947,7 +1954,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
     // try block check).
     if (!CheckConstexprFunctionStmt(SemaRef, Dcl,
                                     cast<CXXCatchStmt>(S)->getHandlerBlock(),
-                                    ReturnStmts, Cxx1yLoc, Cxx2aLoc))
+                                    ReturnStmts, Cxx1yLoc, Cxx2aLoc,
+                                    DelayedReturnCheck))
       return false;
     return true;
 
@@ -1972,6 +1980,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
 /// \return true if the body is OK, false if we have diagnosed a problem.
 bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body) {
   SmallVector<SourceLocation, 4> ReturnStmts;
+  // Metaprograms can inject return statements later.
+  bool DelayedReturnCheck = false;
 
   if (isa<CXXTryStmt>(Body)) {
     // C++11 [dcl.constexpr]p3:
@@ -2002,7 +2012,7 @@ bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body) {
   for (Stmt *SubStmt : Body->children()) {
     if (SubStmt &&
         !CheckConstexprFunctionStmt(*this, Dcl, SubStmt, ReturnStmts,
-                                    Cxx1yLoc, Cxx2aLoc))
+                                    Cxx1yLoc, Cxx2aLoc, DelayedReturnCheck))
       return false;
   }
 
@@ -2074,7 +2084,7 @@ bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body) {
       }
     }
   } else {
-    if (ReturnStmts.empty()) {
+    if (ReturnStmts.empty() && !DelayedReturnCheck) {
       // C++1y doesn't require constexpr functions to contain a 'return'
       // statement. We still do, unless the return type might be void, because
       // otherwise if there's no return statement, the function cannot

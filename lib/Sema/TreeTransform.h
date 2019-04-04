@@ -662,6 +662,9 @@ public:
 
   QualType TransformReferenceType(TypeLocBuilder &TLB, ReferenceTypeLoc TL);
 
+  template<typename T>
+  void StmtPush(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts,
+                bool &SubStmtChanged);
   StmtResult TransformCompoundStmt(CompoundStmt *S, bool IsStmtExpr);
   ExprResult TransformCXXNamedCastExpr(CXXNamedCastExpr *E);
 
@@ -6842,6 +6845,19 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S) {
 }
 
 template<typename Derived>
+template<typename T>
+void
+TreeTransform<Derived>::StmtPush(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts,
+                                 bool &SubStmtChanged) {
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
+    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
+    Stmts.push_back(InjectedStmt);
+
+    SubStmtChanged = true;
+  }
+}
+
+template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
@@ -6868,6 +6884,19 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
 
     SubStmtChanged = SubStmtChanged || Result.get() != B;
     Statements.push_back(Result.getAs<Stmt>());
+
+    if (auto *VD = dyn_cast<DeclStmt>(Result.get())) {
+      if (VD->isSingleDecl()) {
+        Decl *D = VD->getSingleDecl();
+        // [Meta] metaprogram-declaration
+        if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
+          StmtPush(MetaDecl, Statements, SubStmtChanged);
+        // [Meta] injection-declaration
+        } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
+          StmtPush(MetaDecl, Statements, SubStmtChanged);
+        }
+      }
+    }
   }
 
   if (SubStmtInvalid)
