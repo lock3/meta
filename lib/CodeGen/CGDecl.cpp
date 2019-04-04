@@ -94,10 +94,10 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::ObjCTypeParam:
   case Decl::Binding:
   case Decl::CXXFragment: // <<decl>>;
-  case Decl::CXXMetaprogram: // constexpr { ... }
-  case Decl::CXXInjection: // constexpr -> reflection-or-fragment
   case Decl::CXXStmtFragment:
     llvm_unreachable("Declaration should not be in declstmts!");
+  case Decl::CXXMetaprogram: // constexpr { ... }
+  case Decl::CXXInjection: // constexpr -> reflection-or-fragment
   case Decl::Function:  // void X();
   case Decl::Record:    // struct/union/class X;
   case Decl::Enum:      // enum X;
