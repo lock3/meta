@@ -978,8 +978,7 @@ bool Parser::isExprValueDiscarded() {
 }
 
 template<typename T>
-void StmtPush(T *MetaDecl,
-              SmallVectorImpl<Stmt *> &Stmts) {
+void PushInjectedStmt(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts) {
   for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
     Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
     Stmts.push_back(InjectedStmt);
@@ -1103,10 +1102,10 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
           Decl *D = VD->getSingleDecl();
           // [Meta] metaprogram-declaration
           if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
-            StmtPush(MetaDecl, Stmts);
+            PushInjectedStmt(MetaDecl, Stmts);
           // [Meta] injection-declaration
           } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
-            StmtPush(MetaDecl, Stmts);
+            PushInjectedStmt(MetaDecl, Stmts);
           }
         }
       }

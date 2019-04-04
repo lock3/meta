@@ -1160,7 +1160,7 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
 }
 
 template<typename T>
-void EnumPush(T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
+void PushInjectedECD(T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
   EnumConstantDecls.push_back(MetaDecl);
 
   for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
@@ -1182,13 +1182,15 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
 
   for (auto *D : Pattern->decls()) {
     if (auto *OldMD = dyn_cast<CXXMetaprogramDecl>(D)) {
-      CXXMetaprogramDecl *NewMD = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
-      EnumPush(NewMD, Enumerators);
+      CXXMetaprogramDecl *NewMD
+          = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
+      PushInjectedECD(NewMD, Enumerators);
       continue;
     }
     if (auto *OldMD = dyn_cast<CXXInjectionDecl>(D)) {
-      CXXInjectionDecl *NewMD = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
-      EnumPush(NewMD, Enumerators);
+      CXXInjectionDecl *NewMD
+          = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
+      PushInjectedECD(NewMD, Enumerators);
       continue;
     }
 

@@ -662,9 +662,6 @@ public:
 
   QualType TransformReferenceType(TypeLocBuilder &TLB, ReferenceTypeLoc TL);
 
-  template<typename T>
-  void StmtPush(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts,
-                bool &SubStmtChanged);
   StmtResult TransformCompoundStmt(CompoundStmt *S, bool IsStmtExpr);
   ExprResult TransformCXXNamedCastExpr(CXXNamedCastExpr *E);
 
@@ -3431,6 +3428,9 @@ public:
   }
 
 private:
+  template<typename T>
+  void PushInjectedStmt(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts);
+
   TypeLoc TransformTypeInObjectScope(TypeLoc TL,
                                      QualType ObjectType,
                                      NamedDecl *FirstQualifierInScope,
@@ -4563,6 +4563,17 @@ QualType TreeTransform<Derived>::RebuildQualifiedType(QualType T,
   }
 
   return SemaRef.BuildQualifiedType(T, Loc, Quals);
+}
+
+template<typename Derived>
+template<typename T>
+void
+TreeTransform<Derived>::PushInjectedStmt(T *MetaDecl,
+                                         SmallVectorImpl<Stmt *> &Stmts) {
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
+    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
+    Stmts.push_back(InjectedStmt);
+  }
 }
 
 template<typename Derived>
@@ -6845,19 +6856,6 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S) {
 }
 
 template<typename Derived>
-template<typename T>
-void
-TreeTransform<Derived>::StmtPush(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts,
-                                 bool &SubStmtChanged) {
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
-    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
-    Stmts.push_back(InjectedStmt);
-
-    SubStmtChanged = true;
-  }
-}
-
-template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
@@ -6890,14 +6888,16 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
         Decl *D = VD->getSingleDecl();
         // [Meta] metaprogram-declaration
         if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
-          StmtPush(MetaDecl, Statements, SubStmtChanged);
+          PushInjectedStmt(MetaDecl, Statements);
         // [Meta] injection-declaration
         } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
-          StmtPush(MetaDecl, Statements, SubStmtChanged);
+          PushInjectedStmt(MetaDecl, Statements);
         }
       }
     }
   }
+
+  SubStmtChanged = SubStmtChanged || S->size() != Statements.size();
 
   if (SubStmtInvalid)
     return StmtError();
