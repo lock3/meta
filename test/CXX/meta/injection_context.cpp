@@ -3,8 +3,7 @@
 constexpr auto namespace_frag = __fragment namespace { };
 constexpr auto class_frag = __fragment class { };
 constexpr auto enum_frag = __fragment enum { };
-// FIXME: The lambda shouldn't be necessary here
-constexpr auto block_frag = [] () -> auto { return __fragment { }; }();
+constexpr auto block_frag = __fragment { };
 
 namespace ns {
   consteval -> namespace_frag;
