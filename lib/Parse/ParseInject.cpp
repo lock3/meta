@@ -376,7 +376,7 @@ namespace {
 ///   metaprogram-declaration:
 ///     'consteval' compound-statement
 /// \endverbatim
-Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
+Decl *Parser::ParseCXXMetaprogramDeclaration() {
   assert(Tok.is(tok::kw_consteval));
   SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::l_brace));
@@ -399,7 +399,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
   else
     Actions.ActOnCXXMetaprogramDeclError(D, OriginalDC);
 
-  return Actions.ConvertDeclToDeclGroup(D);
+  return D;
 }
 
 
@@ -410,7 +410,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXMetaprogramDeclaration() {
 ///     'consteval' '->' reflection ';'
 ///
 /// Returns the group of declarations parsed.
-Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
+Decl *Parser::ParseCXXInjectionDeclaration() {
   assert(Tok.is(tok::kw_consteval));
   SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::arrow) && "expected '->' token");
@@ -433,7 +433,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXInjectionDeclaration() {
   else
     Actions.ActOnCXXInjectionDeclError(D, OriginalDC);
 
-  return Actions.ConvertDeclToDeclGroup(D);
+  return D;
 }
 
 /// Parse a C++ injected parameter.

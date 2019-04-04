@@ -2855,8 +2855,8 @@ private:
   Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
 
-  DeclGroupPtrTy ParseCXXMetaprogramDeclaration();
-  DeclGroupPtrTy ParseCXXInjectionDeclaration();
+  Decl *ParseCXXMetaprogramDeclaration();
+  Decl *ParseCXXInjectionDeclaration();
 
   bool ParseCXXInjectedParameter(
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);

@@ -837,11 +837,15 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
 
   case tok::kw_consteval:
     // [Meta] metaprogram-declaration
-    if (NextToken().is(tok::l_brace))
-      return ParseCXXMetaprogramDeclaration();
+    if (NextToken().is(tok::l_brace)) {
+      SingleDecl = ParseCXXMetaprogramDeclaration();
+      break;
+    }
     // [Meta] injection-declaration
-    if (NextToken().is(tok::arrow))
-      return ParseCXXInjectionDeclaration();
+    if (NextToken().is(tok::arrow)) {
+      SingleDecl = ParseCXXInjectionDeclaration();
+      break;
+    }
     goto dont_know;
 
   case tok::kw___if_exists:

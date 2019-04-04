@@ -1722,11 +1722,15 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     break;
   case tok::kw_consteval:
     // [Meta] metaprogram-declaration
-    if (NextToken().is(tok::l_brace))
-      return ParseCXXMetaprogramDeclaration();
+    if (NextToken().is(tok::l_brace)) {
+      SingleDecl = ParseCXXMetaprogramDeclaration();
+      break;
+    }
     // [Meta] injection-declaration
-    if (NextToken().is(tok::arrow))
-      return ParseCXXInjectionDeclaration();
+    if (NextToken().is(tok::arrow)) {
+      SingleDecl = ParseCXXInjectionDeclaration();
+      break;
+    }
     LLVM_FALLTHROUGH;
 
   default:
