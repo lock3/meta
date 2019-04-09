@@ -985,6 +985,7 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   return Inst;
 }
 
+<<<<<<< HEAD
 Decl
 *TemplateDeclInstantiator::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   IdentifierInfo *Id = D->getNameInfo().getName().getAsIdentifierInfo();
@@ -996,6 +997,13 @@ Decl
 }
 
 
+=======
+Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
+  CXXRequiredDeclaratorDecl *D) {
+  llvm_unreachable("Not implemented yet.");
+}
+
+>>>>>>> Stub of CXXRequiredDeclaratorDecl
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];

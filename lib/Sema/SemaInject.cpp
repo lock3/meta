@@ -1454,6 +1454,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
+  case Decl::CXXRequiredDeclarator:
+    return nullptr;
   default:
     break;
   }

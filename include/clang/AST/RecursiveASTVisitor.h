@@ -1977,6 +1977,7 @@ DEF_TRAVERSE_DECL(CXXStmtFragmentDecl, {
 })
 
 DEF_TRAVERSE_DECL(CXXRequiredTypeDecl, {})
+DEF_TRAVERSE_DECL(CXXRequiredDeclaratorDecl, {})
 
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));

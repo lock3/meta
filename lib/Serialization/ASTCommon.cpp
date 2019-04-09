@@ -404,6 +404,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::CXXInjection:
   case Decl::CXXStmtFragment:
   case Decl::CXXRequiredType:
+  case Decl::CXXRequiredDeclarator:
     return false;
 
   // These indirectly derive from Redeclarable<T> but are not actually

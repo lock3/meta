@@ -4283,6 +4283,28 @@ public:
   static bool classofKind(Kind K) { return K == CXXRequiredType; }
 };
 
+class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
+  /// The location of the 'requires' keyword
+  SourceLocation RequiresLoc;
+
+  CXXRequiredDeclaratorDecl(DeclContext *DC, DeclarationName N,
+                            QualType T, TypeSourceInfo *TInfo,
+                            SourceLocation RL)
+    : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, N, T, TInfo, RL),
+      RequiresLoc(RL)
+    { }
+public:
+  static CXXRequiredDeclaratorDecl *Create();
+  static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
+                                                       unsigned ID)
+    { return nullptr; }
+
+  SourceLocation getRequiresLoc() const { return RequiresLoc; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }
+};
+  
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
