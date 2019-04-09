@@ -526,6 +526,7 @@ public:
   Decl *InjectClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D);
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
+  Decl *InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
 
@@ -1055,6 +1056,39 @@ static bool InjectClassDefinition(InjectionContext &Ctx,
   return NewClass->isInvalidDecl();
 }
 
+static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
+                                      CXXRecordDecl *D) {
+  bool Invalid = false;
+
+  // FIXME: Do a lookup for previous declarations.
+
+  CXXRecordDecl *Class;
+  if (D->isInjectedClassName()) {
+    DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
+    Class = CXXRecordDecl::Create(
+        Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
+        D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
+  } else {
+    DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
+    if (!DNI.getName())
+      Invalid = true;
+    Class = CXXRecordDecl::Create(
+        Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
+        D->getLocation(), DNI.getName().getAsIdentifierInfo(),
+        /*PrevDecl=*/nullptr);
+  }
+  Ctx.AddDeclSubstitution(D, Class);
+
+  // FIXME: Inject attributes.
+
+  // FIXME: Propagate other properties?
+  Class->setAccess(D->getAccess());
+  Class->setImplicit(D->isImplicit());
+  Class->setInvalidDecl(Invalid);
+
+  return Class;
+}
+
 static bool ShouldImmediatelyInjectPendingDefinitions(
               Decl *Injectee, DeclContext *ClassOwner, bool InjectedIntoOwner) {
   // If we're injecting into a class, always defer.
@@ -1072,44 +1106,29 @@ static bool ShouldImmediatelyInjectPendingDefinitions(
   return false;
 }
 
-static void InjectPendingDefinitionsWithCleanup(InjectionContext *Ctx) {
-  InjectionInfo *Injection = Ctx->CurInjection;
+static void InjectPendingDefinitionsWithCleanup(InjectionContext &Ctx) {
+  InjectionInfo *Injection = Ctx.CurInjection;
 
-  InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(Ctx, Injection);
-  InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx, Injection);
+  InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(&Ctx, Injection);
+  InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(&Ctx, Injection);
 
   Injection->ResetClassMemberData();
 }
 
+static void InjectClassDefinition(InjectionContext &Ctx, DeclContext *Owner,
+                                  CXXRecordDecl *D, CXXRecordDecl *Class,
+                                  bool InjectIntoOwner) {
+  if (D->hasDefinition())
+    InjectClassDefinition(Ctx, D, Class);
+
+  if (ShouldImmediatelyInjectPendingDefinitions(
+          Ctx.Injectee, Owner, InjectIntoOwner))
+    InjectPendingDefinitionsWithCleanup(Ctx);
+}
+
 Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
-  bool Invalid = false;
   DeclContext *Owner = getSema().CurContext;
-
-  // FIXME: Do a lookup for previous declarations.
-
-  CXXRecordDecl *Class;
-  if (D->isInjectedClassName()) {
-    DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
-    Class = CXXRecordDecl::Create(
-        getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
-        D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
-  } else {
-    DeclarationNameInfo DNI = TransformDeclarationName(D);
-    if (!DNI.getName())
-      Invalid = true;
-    Class = CXXRecordDecl::Create(
-        getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
-        D->getLocation(), DNI.getName().getAsIdentifierInfo(),
-        /*PrevDecl=*/nullptr);
-  }
-  AddDeclSubstitution(D, Class);
-
-  // FIXME: Inject attributes.
-
-  // FIXME: Propagate other properties?
-  Class->setAccess(D->getAccess());
-  Class->setImplicit(D->isImplicit());
-  Class->setInvalidDecl(Invalid);
+  CXXRecordDecl *Class = InjectClassDecl(*this, Owner, D);
 
   // Don't register the declaration if we're merely attempting to transform
   // this class.
@@ -1117,12 +1136,7 @@ Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
   if (InjectIntoOwner)
     Owner->addDecl(Class);
 
-  if (D->hasDefinition())
-    InjectClassDefinition(*this, D, Class);
-
-  if (ShouldImmediatelyInjectPendingDefinitions(
-          Injectee, Owner, InjectIntoOwner))
-    InjectPendingDefinitionsWithCleanup(this);
+  InjectClassDefinition(*this, Owner, D, Class, InjectIntoOwner);
 
   return Class;
 }
@@ -1377,6 +1391,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectFunctionTemplateDecl(cast<FunctionTemplateDecl>(D));
   case Decl::TemplateTypeParm:
     return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
+  case Decl::NonTypeTemplateParm:
+    return InjectNonTypeTemplateParmDecl(cast<NonTypeTemplateParmDecl>(D));
   case Decl::StaticAssert:
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   case Decl::EnumConstant:
@@ -1545,11 +1561,10 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
     return nullptr;
 
   // Build the underlying pattern.
-  Decl *Pattern = MockInjectDecl(D->getTemplatedDecl());
-  if (!Pattern)
+  CXXRecordDecl *OriginalClass = D->getTemplatedDecl();
+  CXXRecordDecl *Class = InjectClassDecl(*this, Owner, OriginalClass);
+  if (!Class)
     return nullptr;
-
-  CXXRecordDecl *Class = cast<CXXRecordDecl>(Pattern);
 
   // Build the enclosing template.
   ClassTemplateDecl *Template = ClassTemplateDecl::Create(
@@ -1563,8 +1578,11 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this template.
-  if (ShouldInjectInto(Owner))
+  bool InjectIntoOwner = ShouldInjectInto(Owner);
+  if (InjectIntoOwner)
     Owner->addDecl(Template);
+
+  InjectClassDefinition(*this, Owner, OriginalClass, Class, InjectIntoOwner);
 
   return Template;
 }
@@ -1634,21 +1652,55 @@ Decl *InjectionContext::InjectFunctionTemplateDecl(FunctionTemplateDecl *D) {
   return Template;
 }
 
-Decl* InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
+Decl *InjectionContext::InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   TemplateTypeParmDecl *Parm = TemplateTypeParmDecl::Create(
       getSema().Context, getSema().CurContext, D->getBeginLoc(), D->getLocation(),
       D->getDepth(), D->getIndex(), D->getIdentifier(),
       D->wasDeclaredWithTypename(), D->isParameterPack());
   AddDeclSubstitution(D, Parm);
 
-  Parm->setAccess(AS_public);
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
+    Parm->setAccess(RD->getDefaultAccessSpecifier());
 
   // Process the default argument.
   if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
     TypeSourceInfo *Default = TransformType(D->getDefaultArgumentInfo());
-    if (Default)
-      Parm->setDefaultArgument(Default);
-    // FIXME: What if this fails.
+    if (!Default)
+      return nullptr;
+
+    Parm->setDefaultArgument(Default);
+  }
+
+  return Parm;
+}
+
+Decl *InjectionContext::InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D) {
+  TypeSourceInfo *DI = TransformType(D->getTypeSourceInfo());
+  if (!DI)
+    return nullptr;
+
+  QualType T = getSema().CheckNonTypeTemplateParameterType(DI, D->getLocation());
+  if (T.isNull())
+    return nullptr;
+
+  NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
+      getSema().Context, getSema().CurContext, D->getInnerLocStart(),
+      D->getLocation(), D->getDepth(), D->getPosition(), D->getIdentifier(),
+      T, D->isParameterPack(), DI);
+  AddDeclSubstitution(D, Parm);
+
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
+    Parm->setAccess(RD->getDefaultAccessSpecifier());
+
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+    EnterExpressionEvaluationContext ConstantEvaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+    ExprResult DefaultArg = TransformExpr(D->getDefaultArgument());
+    if (DefaultArg.isInvalid())
+      return nullptr;
+
+    Parm->setDefaultArgument(DefaultArg.get());
   }
 
   return Parm;

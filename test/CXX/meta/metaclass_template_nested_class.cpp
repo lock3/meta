@@ -14,6 +14,10 @@ consteval void test_metaclass(meta::info source) {
     struct MemberClassTemplate<float> {
       float float_val;
     };
+
+    template<int Y> struct MemberClassValTemplate {
+      constexpr int get_t_val() { return Y; }
+    };
   };
 
   -> __fragment struct {
@@ -30,6 +34,9 @@ int main() {
 
   test_class::MemberClassTemplate<float> metaclass_nested_class_float;
   metaclass_nested_class_float.float_val = 1;
+
+  test_class::MemberClassValTemplate<1> metaclass_nested_class_val;
+  static_assert(metaclass_nested_class_val.get_t_val() == 1);
 
   return 0;
 }
