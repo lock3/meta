@@ -2805,8 +2805,13 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   StmtResult Body = Ctx->TransformStmt(OldMethod->getBody());
   if (Body.isInvalid())
     NewMethod->setInvalidDecl();
-  else
+  else {
+    // Declarations without bodies should already be handled by
+    // InjectCXXMethodDecl. If we've reached this point and we have a valid,
+    // but null, body, something has gone wrong.
+    assert(Body.get() && "A defined method was injected without its body.");
     NewMethod->setBody(Body.get());
+  }
 
   if (CXXConstructorDecl *OldCtor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
     CXXConstructorDecl *NewCtor = cast<CXXConstructorDecl>(NewMethod);

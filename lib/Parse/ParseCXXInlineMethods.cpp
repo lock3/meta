@@ -107,6 +107,9 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
   // In delayed template parsing mode, if we are within a class template
   // or if we are about to parse function member template then consume
   // the tokens and store them for parsing at the end of the translation unit.
+  //
+  // An exception is made for fragment contexts, as injection will
+  // require a complete delcaration before the end of the translation unit.
   if (getLangOpts().DelayedTemplateParsing &&
       D.getFunctionDefinitionKind() == FDK_Definition &&
       !D.getDeclSpec().isConstexprSpecified() &&
@@ -115,7 +118,8 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(
       ((Actions.CurContext->isDependentContext() ||
         (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate &&
          TemplateInfo.Kind != ParsedTemplateInfo::ExplicitSpecialization)) &&
-       !Actions.IsInsideALocalClassWithinATemplateFunction())) {
+       !Actions.IsInsideALocalClassWithinATemplateFunction()) &&
+      !Actions.CurContext->isFragmentContext()) {
 
     CachedTokens Toks;
     LexTemplateFunctionForLateParsing(Toks);
