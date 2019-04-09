@@ -4524,9 +4524,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
 }
 
 template<typename T>
-void PushInjectedECD(Parser &P, T *MetaDecl,
-                     SmallVectorImpl<Decl *> &EnumConstantDecls,
-                     SmallVectorImpl<SuppressAccessChecks> &EnumAvailabilityDiags) {
+static void PushInjectedECD(
+    Parser &P, T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls,
+    SmallVectorImpl<SuppressAccessChecks> &EnumAvailabilityDiags) {
   EnumAvailabilityDiags.emplace_back(P);
   EnumAvailabilityDiags.back().done();
 
