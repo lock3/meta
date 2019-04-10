@@ -1795,10 +1795,18 @@ struct PragmaClangAttributeSupport {
 
 static bool doesDeclDeriveFrom(const Record *D, const Record *Base) {
   const Record *CurrentBase = D->getValueAsDef("Base");
-  if (!CurrentBase)
-    return false;
-  if (CurrentBase == Base)
-    return true;
+
+  // If we've reached a root node (i.e. `Decl` instead of `DDecl`)
+  // then we should check to see if our current base is equal
+  // to the target base. If it isn't, we're in another inheritance
+  // heirarchy, and we should return false.
+  //
+  // FIXME: Const cast shouldnt' be required here. This requires
+  // changes outside of the clang codebase, in llvm.
+  if (const_cast<Record *>(CurrentBase)->getType() ==
+      const_cast<Record *>(Base)->getType())
+    return CurrentBase == Base;
+
   return doesDeclDeriveFrom(CurrentBase, Base);
 }
 
