@@ -2,7 +2,7 @@
 
 constexpr auto frag_d_e = __fragment enum { D, E };
 constexpr auto frag_f = __fragment enum { F = 42 };
-constexpr auto frag_g = __fragment enum { G };
+constexpr auto frag_h = __fragment enum { H };
 
 struct NonTemplated {
   enum Foo {
@@ -11,7 +11,8 @@ struct NonTemplated {
       -> frag_d_e;
       -> frag_f;
     },
-    consteval -> frag_g
+    consteval -> __fragment enum { G },
+    consteval -> frag_h
   };
 };
 
@@ -23,7 +24,8 @@ struct Templated {
       -> frag_d_e;
       -> frag_f;
     },
-    consteval -> frag_g
+    consteval -> __fragment enum { G },
+    consteval -> frag_h
   };
 };
 
@@ -36,6 +38,7 @@ int main() {
     static_assert(NonTemplated::Foo::E == 6);
     static_assert(NonTemplated::Foo::F == 42);
     static_assert(NonTemplated::Foo::G == 43);
+    static_assert(NonTemplated::Foo::H == 44);
   }
   {
     static_assert(Templated<1>::Foo::A == 0);
@@ -45,6 +48,7 @@ int main() {
     static_assert(Templated<1>::Foo::E == 6);
     static_assert(Templated<1>::Foo::F == 42);
     static_assert(Templated<1>::Foo::G == 43);
+    static_assert(Templated<1>::Foo::H == 44);
   }
   return 0;
 }

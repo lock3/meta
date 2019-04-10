@@ -4541,6 +4541,22 @@ static void PushInjectedECD(
   }
 }
 
+static bool isEnumFragment(Scope *S) {
+  bool InFragment = S->getFlags() & Scope::FragmentScope;
+  if (!InFragment) {
+    return false;
+  }
+
+  bool InEnum = false;
+
+  do {
+    InEnum = S->getFlags() & Scope::EnumScope;
+    S = S->getParent();
+  } while(!InEnum && S);
+
+  return InEnum;
+}
+
 /// ParseEnumBody - Parse a {} enclosed enumerator-list.
 ///       enumerator-list:
 ///         enumerator
@@ -4566,6 +4582,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   SmallVector<Decl *, 32> EnumConstantDecls;
   SmallVector<SuppressAccessChecks, 32> EnumAvailabilityDiags;
 
+  EnumConstantDecl *OriginalLastEnumConst = Actions.LastEnumConstDecl;
   Actions.LastEnumConstDecl = nullptr;
 
   // Parse the enumerator-list.
@@ -4675,6 +4692,8 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Eat the }.
   T.consumeClose();
 
+  Actions.LastEnumConstDecl = OriginalLastEnumConst;
+
   // If attributes exist after the identifier list, parse them.
   ParsedAttributes attrs(AttrFactory);
   MaybeParseGNUAttributes(attrs);
@@ -4696,7 +4715,8 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // The next token must be valid after an enum definition. If not, a ';'
   // was probably forgotten.
   bool CanBeBitfield = getCurScope()->getFlags() & Scope::ClassScope;
-  if (!isValidAfterTypeSpecifier(CanBeBitfield)) {
+  if (!isValidAfterTypeSpecifier(CanBeBitfield) &&
+      !isEnumFragment(getCurScope())) {
     ExpectAndConsume(tok::semi, diag::err_expected_after, "enum");
     // Push this token back into the preprocessor and change our current token
     // to ';' so that the rest of the code recovers as though there were an

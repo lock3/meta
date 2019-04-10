@@ -1179,6 +1179,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
 
   SmallVector<Decl *, 4> Enumerators;
 
+  EnumConstantDecl *OriginalLastEnumConst = SemaRef.LastEnumConstDecl;
   SemaRef.LastEnumConstDecl = nullptr;
 
   for (auto *D : Pattern->decls()) {
@@ -1241,6 +1242,8 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       }
     }
   }
+
+  SemaRef.LastEnumConstDecl = OriginalLastEnumConst;
 
   SemaRef.ActOnEnumBody(Enum->getLocation(), Enum->getBraceRange(), Enum,
                         Enumerators, nullptr, ParsedAttributesView());
