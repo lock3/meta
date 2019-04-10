@@ -4294,10 +4294,12 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
       RequiresLoc(RL)
     { }
 public:
-  static CXXRequiredDeclaratorDecl *Create();
+ static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                           DeclarationName N, QualType T,
+                                           TypeSourceInfo *TInfo,
+                                           SourceLocation RequiresLoc);
   static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
-                                                       unsigned ID)
-    { return nullptr; }
+                                                       unsigned ID);
 
   SourceLocation getRequiresLoc() const { return RequiresLoc; }
 

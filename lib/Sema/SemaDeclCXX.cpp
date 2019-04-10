@@ -10922,6 +10922,22 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
   return RTD;
 }
 
+Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
+                                           SourceLocation RequiresLoc,
+                                           Declarator &D) {
+  DeclaratorDecl *DDecl
+    = cast<DeclaratorDecl>(ActOnDeclarator(getCurScope(), D));
+  if (!DDecl)
+    return nullptr;
+
+  DeclarationName Name(D.getIdentifier());
+  TypeSourceInfo *TSI = DDecl->getTypeSourceInfo();
+  QualType T = TSI->getType();
+
+  return CXXRequiredDeclaratorDecl::Create(Context, CurContext, Name,
+                                           T, TSI, RequiresLoc);
+}
+
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

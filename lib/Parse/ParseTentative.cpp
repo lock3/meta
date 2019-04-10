@@ -58,6 +58,8 @@ bool Parser::isCXXDeclarationStatement() {
     // static_assert-declaration
   case tok::kw_static_assert:
   case tok::kw__Static_assert:
+    // required-declarator--decl:
+  case tok::kw_required:
     return true;
   case tok::kw_requires:
     if (NextToken().is(tok::kw_typename) || NextToken().is(tok::kw_class))

@@ -3040,6 +3040,21 @@ CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
                                            SourceLocation(), II, true);
 }
 
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclarationName N, QualType T,
+                                  TypeSourceInfo *TInfo,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(DC, N, T,
+                                                 TInfo, RequiresLoc);
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
+                                              unsigned ID) {
+  return nullptr;
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:
