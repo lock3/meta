@@ -5,7 +5,7 @@ at cppx.godbolt.org.
 TL;DR:
   git clone https://git.llvm.org/git/llvm 
   cd llvm
-  git checkout -b lifetime d8e175bca5
+  git checkout -b lifetime 75521639
   cd tools
   git clone https://github.com/mgehre/clang.git
   cd ..
@@ -15,7 +15,7 @@ TL;DR:
   ninja clang
   ./bin/clang -Wlifetime ....
 
-Compile with LLVM commit d8e175bca5919de13fe003cab6b10f23af3d055d (svn 337102).
+Compile with LLVM commit 75521639735cfda147aadecacb91968d8f92e3dd.
 
 Also checkout master (known to work: c50d5b32) of
 https://github.com/ericniebler/range-v3.git into a range-v3 subfolder of your

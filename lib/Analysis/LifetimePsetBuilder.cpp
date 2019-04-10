@@ -199,7 +199,7 @@ public:
 
     // Unless we have seen the actual array, we assume it is pointer arithmetic.
     if (Ref.isUnknown())
-      Reporter.warnPointerArithmetic(E->getLocStart());
+      Reporter.warnPointerArithmetic(E->getBeginLoc());
 
     setPSet(E, Ref);
   }
@@ -384,7 +384,7 @@ public:
     }
     default:
       // Workaround: detecting compiler generated AST node.
-      if (hasPSet(UO) && UO->getLocStart() != UO->getLocEnd()) {
+      if (hasPSet(UO) && UO->getBeginLoc() != UO->getEndLoc()) {
         Reporter.warnPointerArithmetic(UO->getOperatorLoc());
         setPSet(getPSet(UO->getSubExpr()), {}, UO->getSourceRange());
       }
@@ -480,7 +480,7 @@ public:
       return;
     PSet ThrownPSet = getPSet(TE->getSubExpr());
     if (!ThrownPSet.isStatic())
-      Reporter.warnNonStaticThrow(TE->getLocEnd(), ThrownPSet.str());
+      Reporter.warnNonStaticThrow(TE->getEndLoc(), ThrownPSet.str());
   }
 
   struct CallArgument {
@@ -1203,9 +1203,9 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       // Kill all temporaries that vanish at the end of the full expression
       if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S)) {
         invalidateVar(Variable::temporary(), 0,
-                      InvalidationReason::TemporaryLeftScope(S->getLocEnd()));
+                      InvalidationReason::TemporaryLeftScope(S->getEndLoc()));
         // Remove all materialized temporaries that are not extended.
-        eraseVariable(nullptr, S->getLocEnd());
+        eraseVariable(nullptr, S->getEndLoc());
       }
 
       break;
@@ -1214,7 +1214,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       auto Leaver = E.castAs<CFGLifetimeEnds>();
 
       // Stop tracking Variables that leave scope.
-      eraseVariable(Leaver.getVarDecl(), Leaver.getTriggerStmt()->getLocEnd());
+      eraseVariable(Leaver.getVarDecl(), Leaver.getTriggerStmt()->getEndLoc());
       break;
     }
     case CFGElement::NewAllocator:
@@ -1234,7 +1234,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
   }
   if (auto *Terminator = getRealTerminator(B)) {
     UpdatePSetsFromCondition(Terminator, /*Positive=*/true, FalseBranchExitPMap,
-                             Terminator->getLocEnd());
+                             Terminator->getEndLoc());
   }
 } // namespace lifetime
 

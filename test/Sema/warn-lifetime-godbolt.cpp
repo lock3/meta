@@ -1,6 +1,6 @@
 // RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include -Wno-return-stack-address -stdlib=libstdc++ %s
-// RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include -Wno-return-stack-address -stdlib=libc++ -I/usr/lib/llvm-7/include/c++/v1 %s
-// Note: paths are for Ubuntu's libc++-7-dev package from http://apt.llvm.org/
+// RUN: %clang -std=c++1z -fsyntax-only -Xclang -verify -Wlifetime -isystem %S/../../range-v3/include -Wno-return-stack-address -stdlib=libc++ -I/usr/lib/llvm-9/include/c++/v1 %s
+// Note: paths are for Ubuntu's libc++-9-dev package from http://apt.llvm.org/
 
 // This is intedend to contain all examples that are linked from the paper.
 
