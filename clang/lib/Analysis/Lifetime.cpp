@@ -73,17 +73,17 @@ class LifetimeContext {
   /// diagnostics.
   SourceLocation getStartLocOfBlock(const CFGBlock &B) const {
     if (&B == &ControlFlowGraph->getEntry())
-      return FuncDecl->getLocStart();
+      return FuncDecl->getBeginLoc();
 
     if (&B == &ControlFlowGraph->getExit())
-      return FuncDecl->getLocEnd();
+      return FuncDecl->getEndLoc();
 
     for (const CFGElement &E : B) {
       switch (E.getKind()) {
       case CFGElement::Statement:
-        return E.castAs<CFGStmt>().getStmt()->getLocStart();
+        return E.castAs<CFGStmt>().getStmt()->getBeginLoc();
       case CFGElement::LifetimeEnds:
-        return E.castAs<CFGLifetimeEnds>().getTriggerStmt()->getLocEnd();
+        return E.castAs<CFGLifetimeEnds>().getTriggerStmt()->getEndLoc();
       default:;
       }
     }
@@ -224,7 +224,7 @@ void runAnalysis(
     if (M->isInstance()) {
       // Do not check the bodies of methods on Owners
       auto Class =
-          classifyTypeCategory(M->getThisType(Context)->getPointeeType());
+          classifyTypeCategory(M->getThisType()->getPointeeType());
       if (Class.TC == TypeCategory::Owner)
         return;
     }

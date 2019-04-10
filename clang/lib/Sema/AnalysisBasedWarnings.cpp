@@ -2320,7 +2320,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
     auto isConvertible = [this, D](QualType From, QualType To) {
       DiagnosticsSuppressor _(S);
-      OpaqueValueExpr Expr(D->getLocStart(), From, VK_RValue);
+      OpaqueValueExpr Expr(D->getBeginLoc(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
         &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
         /*InOverloadResolution=*/false, /*CStyle=*/false,
