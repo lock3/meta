@@ -1,9 +1,8 @@
 //===- PlistSupport.h - Plist Output Utilities ------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -25,22 +24,33 @@ namespace markup {
 
 using FIDMap = llvm::DenseMap<FileID, unsigned>;
 
-inline void AddFID(FIDMap &FIDs, SmallVectorImpl<FileID> &V,
-                   const SourceManager &SM, SourceLocation L) {
-  FileID FID = SM.getFileID(SM.getExpansionLoc(L));
+inline unsigned AddFID(FIDMap &FIDs, SmallVectorImpl<FileID> &V,
+                   FileID FID) {
   FIDMap::iterator I = FIDs.find(FID);
   if (I != FIDs.end())
-    return;
-  FIDs[FID] = V.size();
+    return I->second;
+  unsigned NewValue = V.size();
+  FIDs[FID] = NewValue;
   V.push_back(FID);
+  return NewValue;
+}
+
+inline unsigned AddFID(FIDMap &FIDs, SmallVectorImpl<FileID> &V,
+                   const SourceManager &SM, SourceLocation L) {
+  FileID FID = SM.getFileID(SM.getExpansionLoc(L));
+  return AddFID(FIDs, V, FID);
+}
+
+inline unsigned GetFID(const FIDMap &FIDs, FileID FID) {
+  FIDMap::const_iterator I = FIDs.find(FID);
+  assert(I != FIDs.end());
+  return I->second;
 }
 
 inline unsigned GetFID(const FIDMap &FIDs, const SourceManager &SM,
                        SourceLocation L) {
   FileID FID = SM.getFileID(SM.getExpansionLoc(L));
-  FIDMap::const_iterator I = FIDs.find(FID);
-  assert(I != FIDs.end());
-  return I->second;
+  return GetFID(FIDs, FID);
 }
 
 inline raw_ostream &Indent(raw_ostream &o, const unsigned indent) {

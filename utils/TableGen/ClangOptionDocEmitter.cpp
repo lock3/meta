@@ -1,9 +1,8 @@
 //===- ClangOptionDocEmitter.cpp - Documentation for command line flags ---===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 // FIXME: Once this has stabilized, consider moving it to LLVM.
 //
@@ -111,7 +110,7 @@ Documentation extractDocumentation(RecordKeeper &Records) {
 
   auto DocumentationForOption = [&](Record *R) -> DocumentedOption {
     auto &A = Aliases[R];
-    llvm::sort(A.begin(), A.end(), CompareByName);
+    llvm::sort(A, CompareByName);
     return {R, std::move(A)};
   };
 
@@ -120,7 +119,7 @@ Documentation extractDocumentation(RecordKeeper &Records) {
     Documentation D;
 
     auto &Groups = GroupsInGroup[R];
-    llvm::sort(Groups.begin(), Groups.end(), CompareByLocation);
+    llvm::sort(Groups, CompareByLocation);
     for (Record *G : Groups) {
       D.Groups.emplace_back();
       D.Groups.back().Group = G;
@@ -129,7 +128,7 @@ Documentation extractDocumentation(RecordKeeper &Records) {
     }
 
     auto &Options = OptionsInGroup[R];
-    llvm::sort(Options.begin(), Options.end(), CompareByName);
+    llvm::sort(Options, CompareByName);
     for (Record *O : Options)
       D.Options.push_back(DocumentationForOption(O));
 

@@ -45,7 +45,7 @@ Experimental support for :ref:`cross-DSO control flow integrity
 <cfi-cross-dso>` exists that does not require classes to have hidden LTO
 visibility. This cross-DSO support has unstable ABI at this time.
 
-.. _gold plugin: http://llvm.org/docs/GoldPlugin.html
+.. _gold plugin: https://llvm.org/docs/GoldPlugin.html
 
 .. _cfi-schemes:
 
@@ -335,7 +335,7 @@ Please refer to the :doc:`design document<ControlFlowIntegrityDesign>`.
 Publications
 ============
 
-`Control-Flow Integrity: Principles, Implementations, and Applications <http://research.microsoft.com/pubs/64250/ccs05.pdf>`_.
+`Control-Flow Integrity: Principles, Implementations, and Applications <https://research.microsoft.com/pubs/64250/ccs05.pdf>`_.
 Martin Abadi, Mihai Budiu, Úlfar Erlingsson, Jay Ligatti.
 
 `Enforcing Forward-Edge Control-Flow Integrity in GCC & LLVM <http://www.pcc.me.uk/~peter/acad/usenix14.pdf>`_.

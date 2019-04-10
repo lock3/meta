@@ -2,6 +2,8 @@
 // RUN:         | FileCheck %s --check-prefix=CHECK --check-prefix=X64
 // RUN: %clang_cc1 %s -triple i686-pc-win32 -fms-extensions -emit-llvm -o - \
 // RUN:         | FileCheck %s --check-prefix=CHECK --check-prefix=X86
+// RUN: %clang_cc1 %s -triple aarch64-windows -fms-extensions -emit-llvm -o - \
+// RUN:         | FileCheck %s --check-prefixes=CHECK,ARM64
 // RUN: %clang_cc1 %s -triple i686-pc-windows-gnu -fms-extensions -emit-llvm -o - \
 // RUN:         | FileCheck %s --check-prefix=X86-GNU
 // RUN: %clang_cc1 %s -triple x86_64-pc-windows-gnu -fms-extensions -emit-llvm -o - \
@@ -29,12 +31,14 @@ int safe_div(int numerator, int denominator, int *res) {
 
 // CHECK-LABEL: define dso_local i32 @safe_div(i32 %numerator, i32 %denominator, i32* %res)
 // X64-SAME:      personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
+// ARM64-SAME:    personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
 // X86-SAME:      personality i8* bitcast (i32 (...)* @_except_handler3 to i8*)
 // CHECK: invoke void @try_body(i32 %{{.*}}, i32 %{{.*}}, i32* %{{.*}}) #[[NOINLINE:[0-9]+]]
 // CHECK:       to label %{{.*}} unwind label %[[catchpad:[^ ]*]]
 //
 // CHECK: [[catchpad]]
 // X64: %[[padtoken:[^ ]*]] = catchpad within %{{[^ ]*}} [i8* null]
+// ARM64: %[[padtoken:[^ ]*]] = catchpad within %{{[^ ]*}} [i8* null]
 // X86: %[[padtoken:[^ ]*]] = catchpad within %{{[^ ]*}} [i8* bitcast (i32 ()* @"?filt$0@0@safe_div@@" to i8*)]
 // CHECK-NEXT: catchret from %[[padtoken]] to label %[[except:[^ ]*]]
 //
@@ -48,7 +52,7 @@ int safe_div(int numerator, int denominator, int *res) {
 //
 // X86-LABEL: define internal i32 @"?filt$0@0@safe_div@@"()
 // X86: %[[ebp:[^ ]*]] = call i8* @llvm.frameaddress(i32 1)
-// X86: %[[fp:[^ ]*]] = call i8* @llvm.x86.seh.recoverfp(i8* bitcast (i32 (i32, i32, i32*)* @safe_div to i8*), i8* %[[ebp]])
+// X86: %[[fp:[^ ]*]] = call i8* @llvm.eh.recoverfp(i8* bitcast (i32 (i32, i32, i32*)* @safe_div to i8*), i8* %[[ebp]])
 // X86: call i8* @llvm.localrecover(i8* bitcast (i32 (i32, i32, i32*)* @safe_div to i8*), i8* %[[fp]], i32 0)
 // X86: load i8*, i8**
 // X86: load i32*, i32**
@@ -76,8 +80,10 @@ int filter_expr_capture(void) {
 
 // CHECK-LABEL: define dso_local i32 @filter_expr_capture()
 // X64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
+// ARM64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
 // X86-SAME: personality i8* bitcast (i32 (...)* @_except_handler3 to i8*)
 // X64: call void (...) @llvm.localescape(i32* %[[r:[^ ,]*]])
+// ARM64: call void (...) @llvm.localescape(i32* %[[r:[^ ,]*]])
 // X86: call void (...) @llvm.localescape(i32* %[[r:[^ ,]*]], i32* %[[code:[^ ,]*]])
 // CHECK: store i32 42, i32* %[[r]]
 // CHECK: invoke void @j() #[[NOINLINE]]
@@ -89,12 +95,16 @@ int filter_expr_capture(void) {
 // CHECK: ret i32 %[[rv]]
 
 // X64-LABEL: define internal i32 @"?filt$0@0@filter_expr_capture@@"(i8* %exception_pointers, i8* %frame_pointer)
-// X64: %[[fp:[^ ]*]] = call i8* @llvm.x86.seh.recoverfp(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %frame_pointer)
+// X64: %[[fp:[^ ]*]] = call i8* @llvm.eh.recoverfp(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %frame_pointer)
 // X64: call i8* @llvm.localrecover(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %[[fp]], i32 0)
+//
+// ARM64-LABEL: define internal i32 @"?filt$0@0@filter_expr_capture@@"(i8* %exception_pointers, i8* %frame_pointer)
+// ARM64: %[[fp:[^ ]*]] = call i8* @llvm.eh.recoverfp(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %frame_pointer)
+// ARM64: call i8* @llvm.localrecover(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %[[fp]], i32 0)
 //
 // X86-LABEL: define internal i32 @"?filt$0@0@filter_expr_capture@@"()
 // X86: %[[ebp:[^ ]*]] = call i8* @llvm.frameaddress(i32 1)
-// X86: %[[fp:[^ ]*]] = call i8* @llvm.x86.seh.recoverfp(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %[[ebp]])
+// X86: %[[fp:[^ ]*]] = call i8* @llvm.eh.recoverfp(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %[[ebp]])
 // X86: call i8* @llvm.localrecover(i8* bitcast (i32 ()* @filter_expr_capture to i8*), i8* %[[fp]], i32 0)
 //
 // CHECK: store i32 -1, i32* %{{.*}}
@@ -116,6 +126,7 @@ int nested_try(void) {
 }
 // CHECK-LABEL: define dso_local i32 @nested_try()
 // X64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
+// ARM64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
 // X86-SAME: personality i8* bitcast (i32 (...)* @_except_handler3 to i8*)
 // CHECK: store i32 42, i32* %[[r:[^ ,]*]]
 // CHECK: invoke void @j() #[[NOINLINE]]
@@ -155,13 +166,13 @@ int nested_try(void) {
 // CHECK: br label %[[inner_try_cont]]
 //
 // CHECK-LABEL: define internal i32 @"?filt$0@0@nested_try@@"({{.*}})
-// X86: call i8* @llvm.x86.seh.recoverfp({{.*}})
+// X86: call i8* @llvm.eh.recoverfp({{.*}})
 // CHECK: load i32*, i32**
 // CHECK: load i32, i32*
 // CHECK: icmp eq i32 %{{.*}}, 456
 //
 // CHECK-LABEL: define internal i32 @"?filt$1@0@nested_try@@"({{.*}})
-// X86: call i8* @llvm.x86.seh.recoverfp({{.*}})
+// X86: call i8* @llvm.eh.recoverfp({{.*}})
 // CHECK: load i32*, i32**
 // CHECK: load i32, i32*
 // CHECK: icmp eq i32 %{{.*}}, 123
@@ -176,6 +187,7 @@ int basic_finally(int g) {
 }
 // CHECK-LABEL: define dso_local i32 @basic_finally(i32 %g)
 // X64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
+// ARM64-SAME: personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
 // X86-SAME: personality i8* bitcast (i32 (...)* @_except_handler3 to i8*)
 // CHECK: %[[g_addr:[^ ]*]] = alloca i32, align 4
 // CHECK: call void (...) @llvm.localescape(i32* %[[g_addr]])
@@ -275,6 +287,8 @@ int exception_code_in_except(void) {
 // CHECK: catchret from %[[pad]]
 // X64: %[[code:[^ ]*]] = call i32 @llvm.eh.exceptioncode(token %[[pad]])
 // X64: store i32 %[[code]], i32* %[[code_slot]]
+// ARM64: %[[code:[^ ]*]] = call i32 @llvm.eh.exceptioncode(token %[[pad]])
+// ARM64: store i32 %[[code]], i32* %[[code_slot]]
 // CHECK: %[[ret1:[^ ]*]] = load i32, i32* %[[code_slot]]
 // CHECK: store i32 %[[ret1]], i32* %[[ret_slot]]
 // CHECK: %[[ret2:[^ ]*]] = load i32, i32* %[[ret_slot]]

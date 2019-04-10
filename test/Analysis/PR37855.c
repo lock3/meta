@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -analyze -analyzer-eagerly-assume -analyzer-checker=core -w -DNO_CROSSCHECK -verify %s
-// RUN: %clang_cc1 -analyze -analyzer-eagerly-assume -analyzer-checker=core -w -analyzer-config crosscheck-with-z3=true -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core -w -DNO_CROSSCHECK -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core -w -analyzer-config crosscheck-with-z3=true -verify %s
 // REQUIRES: z3
 
 typedef struct o p;
@@ -20,5 +20,5 @@ void k(l, node) {
     nodep = n;
   }
   if (nodep) // expected-warning {{Branch condition evaluates to a garbage value}}
-    n[1].node->s; // expected-warning {{Dereference of undefined pointer value}}
+    n[1].node->s;
 }

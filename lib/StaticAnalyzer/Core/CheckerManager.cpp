@@ -1,9 +1,8 @@
 //===- CheckerManager.cpp - Static Analyzer Checker Manager ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -439,17 +438,17 @@ void CheckerManager::runCheckersForBeginFunction(ExplodedNodeSet &Dst,
 void CheckerManager::runCheckersForEndFunction(NodeBuilderContext &BC,
                                                ExplodedNodeSet &Dst,
                                                ExplodedNode *Pred,
-                                               ExprEngine &Eng) {
-  // We define the builder outside of the loop bacause if at least one checkers
-  // creates a sucsessor for Pred, we do not need to generate an
+                                               ExprEngine &Eng,
+                                               const ReturnStmt *RS) {
+  // We define the builder outside of the loop because if at least one checker
+  // creates a successor for Pred, we do not need to generate an
   // autotransition for it.
   NodeBuilder Bldr(Pred, Dst, BC);
   for (const auto checkFn : EndFunctionCheckers) {
-    const ProgramPoint &L = BlockEntrance(BC.Block,
-                                          Pred->getLocationContext(),
-                                          checkFn.Checker);
+    const ProgramPoint &L =
+        FunctionExitPoint(RS, Pred->getLocationContext(), checkFn.Checker);
     CheckerContext C(Bldr, Eng, Pred, L);
-    checkFn(C);
+    checkFn(RS, C);
   }
 }
 

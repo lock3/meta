@@ -470,3 +470,36 @@ void* IOBSDNameMatching();
 void rdar33832412() {
   void* x = IOBSDNameMatching(); // no-warning
 }
+
+namespace member_CFRetains {
+class Foo {
+public:
+  void CFRetain(const Foo &) {}
+  void CFRetain(int) {}
+};
+
+void bar() {
+  Foo foo;
+  foo.CFRetain(foo); // no-warning
+  foo.CFRetain(0); // no-warning
+}
+}
+
+namespace cxx_method_escaping {
+
+struct S {
+  static CFArrayRef testGetNoTracking();
+  CFArrayRef testGetNoTrackingMember();
+};
+
+void test_cxx_static_method_escaping() {
+  CFArrayRef arr = S::testGetNoTracking();
+  CFRelease(arr);
+}
+
+void test_cxx_method_escaping(S *s) {
+  CFArrayRef arr = s->testGetNoTrackingMember();
+  CFRelease(arr);
+}
+
+}

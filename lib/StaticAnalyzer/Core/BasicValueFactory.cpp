@@ -1,9 +1,8 @@
 //===- BasicValueFactory.cpp - Basic values for Path Sens analysis --------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -207,7 +206,7 @@ BasicValueFactory::evalAPSInt(BinaryOperator::Opcode Op,
                              const llvm::APSInt& V1, const llvm::APSInt& V2) {
   switch (Op) {
     default:
-      assert(false && "Invalid Opcode.");
+      llvm_unreachable("Invalid Opcode.");
 
     case BO_Mul:
       return &getValue( V1 * V2 );

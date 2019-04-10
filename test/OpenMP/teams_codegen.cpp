@@ -205,7 +205,7 @@ struct SS{
   int foo(void) {
     int comp = 1;
 
-    // CK3-DAG: call i32 @__tgt_target_teams(i64 -1, i8* @{{[^,]+}}, i32 2, i8** %{{[^,]+}}, i8** %{{[^,]+}}, i{{64|32}}* {{.+}}@{{[^,]+}}, i32 0, i32 0), i64* {{.+}}@{{[^,]+}}, i32 0, i32 0), i32 [[NT:%[^,]+]], i32 123)
+    // CK3-DAG: call i32 @__tgt_target_teams(i64 -1, i8* @{{[^,]+}}, i32 3, i8** %{{[^,]+}}, i8** %{{[^,]+}}, i{{64|32}}* %{{[^,]+}}, i64* {{.+}}@{{[^,]+}}, i32 0, i32 0), i32 [[NT:%[^,]+]], i32 123)
 
     // CK3-DAG: [[NT]] = load i32, i32* [[NTA:%[^,]+]],
     // CK3-DAG: [[NTA]] = getelementptr inbounds [[SSI]], [[SSI]]* [[NTB:%[^,]+]], i32 0, i32 0
@@ -218,7 +218,7 @@ struct SS{
       ++comp;
     }
 
-    // CK3-DAG: call i32 @__tgt_target_teams(i64 -1, i8* @{{[^,]+}}, i32 2, i8** %{{[^,]+}}, i8** %{{[^,]+}}, i{{64|32}}* {{.+}}@{{[^,]+}}, i32 0, i32 0), i64* {{.+}}@{{[^,]+}}, i32 0, i32 0), i32 456, i32 [[TL:%[^,]+]])
+    // CK3-DAG: call i32 @__tgt_target_teams(i64 -1, i8* @{{[^,]+}}, i32 3, i8** %{{[^,]+}}, i8** %{{[^,]+}}, i{{64|32}}* %{{[^,]+}}, i64* {{.+}}@{{[^,]+}}, i32 0, i32 0), i32 456, i32 [[TL:%[^,]+]])
 
     // CK3-DAG: [[TL]] = add nsw i32 [[TLA:%[^,]+]], 123
     // CK3-DAG: [[TLA]] = fptosi float [[TLB:%[^,]+]] to i32
@@ -266,7 +266,7 @@ int teams_template_struct(void) {
 
 // CK4-DAG: %struct.ident_t = type { i32, i32, i32, i32, i8* }
 // CK4-DAG: [[STR:@.+]] = private unnamed_addr constant [23 x i8] c";unknown;unknown;0;0;;\00"
-// CK4-DAG: [[DEF_LOC_0:@.+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, i8* getelementptr inbounds ([23 x i8], [23 x i8]* [[STR]], i32 0, i32 0) }
+// CK4-DAG: [[DEF_LOC_0:@.+]] = private unnamed_addr global %struct.ident_t { i32 0, i32 2, i32 0, i32 0, i8* getelementptr inbounds ([23 x i8], [23 x i8]* [[STR]], i32 0, i32 0) }
 // CK4-DEBUG-DAG: [[LOC1:@.+]] = private unnamed_addr constant [{{.+}} x i8] c";{{.*}}teams_codegen.cpp;main;[[@LINE+14]];9;;\00"
 // CK4-DEBUG-DAG: [[LOC2:@.+]] = private unnamed_addr constant [{{.+}} x i8] c";{{.*}}teams_codegen.cpp;tmain;[[@LINE+7]];9;;\00"
 
@@ -327,7 +327,7 @@ int main (int argc, char **argv) {
 
 // CK5-DAG: %struct.ident_t = type { i32, i32, i32, i32, i8* }
 // CK5-DAG: [[STR:@.+]] = private unnamed_addr constant [23 x i8] c";unknown;unknown;0;0;;\00"
-// CK5-DAG: [[DEF_LOC_0:@.+]] = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 0, i8* getelementptr inbounds ([23 x i8], [23 x i8]* [[STR]], i32 0, i32 0) }
+// CK5-DAG: [[DEF_LOC_0:@.+]] = private unnamed_addr global %struct.ident_t { i32 0, i32 2, i32 0, i32 0, i8* getelementptr inbounds ([23 x i8], [23 x i8]* [[STR]], i32 0, i32 0) }
 // CK5-DEBUG-DAG: [[LOC1:@.+]] = private unnamed_addr constant [{{.+}} x i8] c";{{.*}}teams_codegen.cpp;main;[[@LINE+14]];9;;\00"
 // CK5-DEBUG-DAG: [[LOC2:@.+]] = private unnamed_addr constant [{{.+}} x i8] c";{{.*}}teams_codegen.cpp;tmain;[[@LINE+7]];9;;\00"
 

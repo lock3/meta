@@ -1,9 +1,8 @@
 //===- PreprocessorLexer.h - C Language Family Lexer ------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -135,7 +134,7 @@ public:
   ///
   /// If the sequence parsed is not lexically legal, emit a diagnostic and
   /// return a result EOD token.
-  void LexIncludeFilename(Token &Result);
+  void LexIncludeFilename(Token &FilenameTok);
 
   /// Inform the lexer whether or not we are currently lexing a
   /// preprocessor directive.
@@ -169,12 +168,12 @@ public:
   using conditional_iterator =
       SmallVectorImpl<PPConditionalInfo>::const_iterator;
 
-  conditional_iterator conditional_begin() const { 
-    return ConditionalStack.begin(); 
+  conditional_iterator conditional_begin() const {
+    return ConditionalStack.begin();
   }
 
-  conditional_iterator conditional_end() const { 
-    return ConditionalStack.end(); 
+  conditional_iterator conditional_end() const {
+    return ConditionalStack.end();
   }
 
   void setConditionalLevels(ArrayRef<PPConditionalInfo> CL) {

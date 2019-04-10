@@ -1,9 +1,8 @@
 //===--- VTableBuilder.h - C++ vtable layout builder --------------*- C++ -*-=//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -394,7 +393,7 @@ public:
 
   /// Return the offset in chars (relative to the vtable address point) where
   /// the offset of the virtual base that contains the given base is stored,
-  /// otherwise, if no virtual base contains the given class, return 0. 
+  /// otherwise, if no virtual base contains the given class, return 0.
   ///
   /// Base must be a virtual base class or an unambiguous base.
   CharUnits getVirtualBaseOffsetOffset(const CXXRecordDecl *RD,

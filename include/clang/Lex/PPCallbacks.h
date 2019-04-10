@@ -1,9 +1,8 @@
 //===--- PPCallbacks.h - Callbacks for Preprocessor actions -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -66,10 +65,10 @@ public:
   /// Callback invoked whenever an inclusion directive results in a
   /// file-not-found error.
   ///
-  /// \param FileName The name of the file being included, as written in the 
+  /// \param FileName The name of the file being included, as written in the
   /// source code.
   ///
-  /// \param RecoveryPath If this client indicates that it can recover from 
+  /// \param RecoveryPath If this client indicates that it can recover from
   /// this missing file, the client should set this as an additional header
   /// search patch.
   ///
@@ -84,13 +83,13 @@ public:
   /// any kind (\c \#include, \c \#import, etc.) has been processed, regardless
   /// of whether the inclusion will actually result in an inclusion.
   ///
-  /// \param HashLoc The location of the '#' that starts the inclusion 
+  /// \param HashLoc The location of the '#' that starts the inclusion
   /// directive.
   ///
-  /// \param IncludeTok The token that indicates the kind of inclusion 
+  /// \param IncludeTok The token that indicates the kind of inclusion
   /// directive, e.g., 'include' or 'import'.
   ///
-  /// \param FileName The name of the file being included, as written in the 
+  /// \param FileName The name of the file being included, as written in the
   /// source code.
   ///
   /// \param IsAngled Whether the file name was enclosed in angle brackets;
@@ -99,7 +98,7 @@ public:
   /// \param FilenameRange The character range of the quotes or angle brackets
   /// for the written file name.
   ///
-  /// \param File The actual file that may be included by this inclusion 
+  /// \param File The actual file that may be included by this inclusion
   /// directive.
   ///
   /// \param SearchPath Contains the search path which was used to find the file
@@ -222,7 +221,7 @@ public:
 
   /// Called when an OpenCL extension is either disabled or
   /// enabled with a pragma.
-  virtual void PragmaOpenCLExtension(SourceLocation NameLoc, 
+  virtual void PragmaOpenCLExtension(SourceLocation NameLoc,
                                      const IdentifierInfo *Name,
                                      SourceLocation StateLoc, unsigned State) {
   }
@@ -269,13 +268,19 @@ public:
                               const MacroDefinition &MD,
                               const MacroDirective *Undef) {
   }
-  
+
   /// Hook called whenever the 'defined' operator is seen.
   /// \param MD The MacroDirective if the name was a macro, null otherwise.
   virtual void Defined(const Token &MacroNameTok, const MacroDefinition &MD,
                        SourceRange Range) {
   }
-  
+
+  /// Hook called when a '__has_include' or '__has_include_next' directive is
+  /// read.
+  virtual void HasInclude(SourceLocation Loc, StringRef FileName, bool IsAngled,
+                          const FileEntry *File,
+                          SrcMgr::CharacteristicKind FileType) {}
+
   /// Hook called when a source range is skipped.
   /// \param Range The SourceRange that was skipped. The range begins at the
   /// \#if/\#else directive and ends after the \#endif/\#else directive.
@@ -441,6 +446,13 @@ public:
                         diag::Severity mapping, StringRef Str) override {
     First->PragmaDiagnostic(Loc, Namespace, mapping, Str);
     Second->PragmaDiagnostic(Loc, Namespace, mapping, Str);
+  }
+
+  void HasInclude(SourceLocation Loc, StringRef FileName, bool IsAngled,
+                  const FileEntry *File,
+                  SrcMgr::CharacteristicKind FileType) override {
+    First->HasInclude(Loc, FileName, IsAngled, File, FileType);
+    Second->HasInclude(Loc, FileName, IsAngled, File, FileType);
   }
 
   void PragmaOpenCLExtension(SourceLocation NameLoc, const IdentifierInfo *Name,

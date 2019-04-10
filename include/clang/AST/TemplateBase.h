@@ -1,9 +1,8 @@
 //===- TemplateBase.h - Core classes for C++ templates ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -252,7 +251,7 @@ public:
 
   /// Determine whether this template argument is a pack expansion.
   bool isPackExpansion() const;
-  
+
   /// Retrieve the type for a type template argument.
   QualType getAsType() const {
     assert(getKind() == Type && "Unexpected kind");
@@ -288,14 +287,14 @@ public:
   TemplateName getAsTemplateOrTemplatePattern() const {
     assert((getKind() == Template || getKind() == TemplateExpansion) &&
            "Unexpected kind");
-    
+
     return TemplateName::getFromVoidPointer(TemplateArg.Name);
   }
 
   /// Retrieve the number of expansions that a template template argument
   /// expansion will produce, if known.
   Optional<unsigned> getNumTemplateExpansions() const;
-  
+
   /// Retrieve the template argument as an integral value.
   // FIXME: Provide a way to read the integral data without copying the value.
   llvm::APSInt getAsIntegral() const {
@@ -378,13 +377,13 @@ public:
 
   /// Print this template argument to the given output stream.
   void print(const PrintingPolicy &Policy, raw_ostream &Out) const;
-             
+
   /// Debugging aid that dumps the template argument.
   void dump(raw_ostream &Out) const;
 
   /// Debugging aid that dumps the template argument to standard error.
   void dump() const;
-             
+
   /// Used to insert TemplateArguments into FoldingSets.
   void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context) const;
 };
@@ -411,9 +410,9 @@ public:
   constexpr TemplateArgumentLocInfo() : Template({nullptr, nullptr, 0, 0}) {}
 
   TemplateArgumentLocInfo(TypeSourceInfo *TInfo) : Declarator(TInfo) {}
-  
+
   TemplateArgumentLocInfo(Expr *E) : Expression(E) {}
-  
+
   TemplateArgumentLocInfo(NestedNameSpecifierLoc QualifierLoc,
                           SourceLocation TemplateNameLoc,
                           SourceLocation EllipsisLoc) {
@@ -432,14 +431,14 @@ public:
   }
 
   NestedNameSpecifierLoc getTemplateQualifierLoc() const {
-    return NestedNameSpecifierLoc(Template.Qualifier, 
+    return NestedNameSpecifierLoc(Template.Qualifier,
                                   Template.QualifierLocData);
   }
-  
+
   SourceLocation getTemplateNameLoc() const {
     return SourceLocation::getFromRawEncoding(Template.TemplateNameLoc);
   }
-  
+
   SourceLocation getTemplateEllipsisLoc() const {
     return SourceLocation::getFromRawEncoding(Template.EllipsisLoc);
   }
@@ -465,10 +464,16 @@ public:
 
   TemplateArgumentLoc(const TemplateArgument &Argument, Expr *E)
       : Argument(Argument), LocInfo(E) {
-    assert(Argument.getKind() == TemplateArgument::Expression);
+
+    // Permit any kind of template argument that can be represented with an
+    // expression.
+    assert(Argument.getKind() == TemplateArgument::NullPtr ||
+           Argument.getKind() == TemplateArgument::Integral ||
+           Argument.getKind() == TemplateArgument::Declaration ||
+           Argument.getKind() == TemplateArgument::Expression);
   }
 
-  TemplateArgumentLoc(const TemplateArgument &Argument, 
+  TemplateArgumentLoc(const TemplateArgument &Argument,
                       NestedNameSpecifierLoc QualifierLoc,
                       SourceLocation TemplateNameLoc,
                       SourceLocation EllipsisLoc = SourceLocation())
@@ -477,13 +482,13 @@ public:
     assert(Argument.getKind() == TemplateArgument::Template ||
            Argument.getKind() == TemplateArgument::TemplateExpansion);
   }
-  
+
   /// - Fetches the primary location of the argument.
   SourceLocation getLocation() const {
     if (Argument.getKind() == TemplateArgument::Template ||
         Argument.getKind() == TemplateArgument::TemplateExpansion)
       return getTemplateNameLoc();
-    
+
     return getSourceRange().getBegin();
   }
 
@@ -524,19 +529,22 @@ public:
   }
 
   NestedNameSpecifierLoc getTemplateQualifierLoc() const {
-    assert(Argument.getKind() == TemplateArgument::Template ||
-           Argument.getKind() == TemplateArgument::TemplateExpansion);
+    if (Argument.getKind() != TemplateArgument::Template &&
+        Argument.getKind() != TemplateArgument::TemplateExpansion)
+      return NestedNameSpecifierLoc();
     return LocInfo.getTemplateQualifierLoc();
   }
-  
+
   SourceLocation getTemplateNameLoc() const {
-    assert(Argument.getKind() == TemplateArgument::Template ||
-           Argument.getKind() == TemplateArgument::TemplateExpansion);
+    if (Argument.getKind() != TemplateArgument::Template &&
+        Argument.getKind() != TemplateArgument::TemplateExpansion)
+      return SourceLocation();
     return LocInfo.getTemplateNameLoc();
-  }  
-  
+  }
+
   SourceLocation getTemplateEllipsisLoc() const {
-    assert(Argument.getKind() == TemplateArgument::TemplateExpansion);
+    if (Argument.getKind() != TemplateArgument::TemplateExpansion)
+      return SourceLocation();
     return LocInfo.getTemplateEllipsisLoc();
   }
 };
@@ -611,13 +619,17 @@ public:
   /// The number of template arguments in TemplateArgs.
   unsigned NumTemplateArgs;
 
+  SourceLocation getLAngleLoc() const { return LAngleLoc; }
+  SourceLocation getRAngleLoc() const { return RAngleLoc; }
+
   /// Retrieve the template arguments
   const TemplateArgumentLoc *getTemplateArgs() const {
     return getTrailingObjects<TemplateArgumentLoc>();
   }
+  unsigned getNumTemplateArgs() const { return NumTemplateArgs; }
 
   llvm::ArrayRef<TemplateArgumentLoc> arguments() const {
-    return llvm::makeArrayRef(getTemplateArgs(), NumTemplateArgs);
+    return llvm::makeArrayRef(getTemplateArgs(), getNumTemplateArgs());
   }
 
   const TemplateArgumentLoc &operator[](unsigned I) const {
@@ -689,7 +701,7 @@ inline const TemplateArgument &
   assert(Idx < getNumArgs() && "Template argument out of range");
   return getArgs()[Idx];
 }
-  
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_TEMPLATEBASE_H

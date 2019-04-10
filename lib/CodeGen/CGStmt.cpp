@@ -1,9 +1,8 @@
 //===--- CGStmt.cpp - Emit LLVM Code from Statements ----------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -19,10 +18,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/Sema/LoopHint.h"
-#include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/IR/CallSite.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Intrinsics.h"
@@ -38,7 +34,7 @@ using namespace CodeGen;
 void CodeGenFunction::EmitStopPoint(const Stmt *S) {
   if (CGDebugInfo *DI = getDebugInfo()) {
     SourceLocation Loc;
-    Loc = S->getLocStart();
+    Loc = S->getBeginLoc();
     DI->EmitLocation(Builder, Loc);
 
     LastStopPoint = Loc;
@@ -531,6 +527,16 @@ void CodeGenFunction::EmitLabel(const LabelDecl *D) {
   }
 
   EmitBlock(Dest.getBlock());
+
+  // Emit debug info for labels.
+  if (CGDebugInfo *DI = getDebugInfo()) {
+    if (CGM.getCodeGenOpts().getDebugInfo() >=
+        codegenoptions::LimitedDebugInfo) {
+      DI->setLocation(D->getLocation());
+      DI->EmitLabel(D, Builder);
+    }
+  }
+
   incrementProfileCounter(D->getStmt());
 }
 
@@ -932,6 +938,8 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
   LexicalScope ForScope(*this, S.getSourceRange());
 
   // Evaluate the first pieces before the loop.
+  if (S.getInit())
+    EmitStmt(S.getInit());
   EmitStmt(S.getRangeStmt());
   EmitStmt(S.getBeginStmt());
   EmitStmt(S.getEndStmt());
@@ -1020,7 +1028,7 @@ void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {
 /// non-void.  Fun stuff :).
 void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   if (requiresReturnValueCheck()) {
-    llvm::Constant *SLoc = EmitCheckSourceLocation(S.getLocStart());
+    llvm::Constant *SLoc = EmitCheckSourceLocation(S.getBeginLoc());
     auto *SLocPtr =
         new llvm::GlobalVariable(CGM.getModule(), SLoc->getType(), false,
                                  llvm::GlobalVariable::PrivateLinkage, SLoc);
@@ -1045,10 +1053,9 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   // exception to our over-conservative rules about not jumping to
   // statements following block literals with non-trivial cleanups.
   RunCleanupsScope cleanupScope(*this);
-  if (const ExprWithCleanups *cleanups =
-        dyn_cast_or_null<ExprWithCleanups>(RV)) {
-    enterFullExpression(cleanups);
-    RV = cleanups->getSubExpr();
+  if (const FullExpr *fe = dyn_cast_or_null<FullExpr>(RV)) {
+    enterFullExpression(fe);
+    RV = fe->getSubExpr();
   }
 
   // FIXME: Clean this up by using an LValue for ReturnTemp,
@@ -1821,11 +1828,14 @@ llvm::Value* CodeGenFunction::EmitAsmInput(
   // If this can't be a register or memory, i.e., has to be a constant
   // (immediate or symbolic), try to emit it as such.
   if (!Info.allowsRegister() && !Info.allowsMemory()) {
-    llvm::APSInt Result;
+    if (Info.requiresImmediateConstant()) {
+      llvm::APSInt AsmConst = InputExpr->EvaluateKnownConstInt(getContext());
+      return llvm::ConstantInt::get(getLLVMContext(), AsmConst);
+    }
+
+    Expr::EvalResult Result;
     if (InputExpr->EvaluateAsInt(Result, getContext()))
-      return llvm::ConstantInt::get(getLLVMContext(), Result);
-    assert(!Info.requiresImmediateConstant() &&
-           "Required-immediate inlineasm arg isn't constant?");
+      return llvm::ConstantInt::get(getLLVMContext(), Result.Val.getInt());
   }
 
   if (Info.allowsRegister() || !Info.allowsMemory())
@@ -1848,7 +1858,7 @@ static llvm::MDNode *getAsmSrcLocInfo(const StringLiteral *Str,
   SmallVector<llvm::Metadata *, 8> Locs;
   // Add the location of the first line to the MDNode.
   Locs.push_back(llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
-      CGF.Int32Ty, Str->getLocStart().getRawEncoding())));
+      CGF.Int32Ty, Str->getBeginLoc().getRawEncoding())));
   StringRef StrVal = Str->getString();
   if (!StrVal.empty()) {
     const SourceManager &SM = CGF.CGM.getContext().getSourceManager();
@@ -1979,6 +1989,11 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
                               diag::err_asm_invalid_type_in_input)
             << OutExpr->getType() << OutputConstraint;
       }
+
+      // Update largest vector width for any vector types.
+      if (auto *VT = dyn_cast<llvm::VectorType>(ResultRegTypes.back()))
+        LargestVectorWidth = std::max(LargestVectorWidth,
+                                      VT->getPrimitiveSizeInBits());
     } else {
       ArgTypes.push_back(Dest.getAddress().getType());
       Args.push_back(Dest.getPointer());
@@ -2000,6 +2015,10 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
                                                Arg->getType()))
         Arg = Builder.CreateBitCast(Arg, AdjTy);
 
+      // Update largest vector width for any vector types.
+      if (auto *VT = dyn_cast<llvm::VectorType>(Arg->getType()))
+        LargestVectorWidth = std::max(LargestVectorWidth,
+                                      VT->getPrimitiveSizeInBits());
       if (Info.allowsRegister())
         InOutConstraints += llvm::utostr(i);
       else
@@ -2079,6 +2098,11 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     else
       CGM.getDiags().Report(S.getAsmLoc(), diag::err_asm_invalid_type_in_input)
           << InputExpr->getType() << InputConstraint;
+
+    // Update largest vector width for any vector types.
+    if (auto *VT = dyn_cast<llvm::VectorType>(Arg->getType()))
+      LargestVectorWidth = std::max(LargestVectorWidth,
+                                    VT->getPrimitiveSizeInBits());
 
     ArgTypes.push_back(Arg->getType());
     Args.push_back(Arg);
@@ -2272,7 +2296,7 @@ CodeGenFunction::GenerateCapturedStmtFunction(const CapturedStmt &S) {
     "CapturedStmtInfo should be set when generating the captured function");
   const CapturedDecl *CD = S.getCapturedDecl();
   const RecordDecl *RD = S.getCapturedRecordDecl();
-  SourceLocation Loc = S.getLocStart();
+  SourceLocation Loc = S.getBeginLoc();
   assert(CD->hasBody() && "missing CapturedDecl body");
 
   // Build the argument list.
@@ -2293,9 +2317,8 @@ CodeGenFunction::GenerateCapturedStmtFunction(const CapturedStmt &S) {
     F->addFnAttr(llvm::Attribute::NoUnwind);
 
   // Generate the function.
-  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, Args,
-                CD->getLocation(),
-                CD->getBody()->getLocStart());
+  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, Args, CD->getLocation(),
+                CD->getBody()->getBeginLoc());
   // Set the context parameter in CapturedStmtInfo.
   Address DeclPtr = GetAddrOfLocalVar(CD->getContextParam());
   CapturedStmtInfo->setContextValue(Builder.CreateLoad(DeclPtr));
@@ -2305,8 +2328,9 @@ CodeGenFunction::GenerateCapturedStmtFunction(const CapturedStmt &S) {
                                            Ctx.getTagDeclType(RD));
   for (auto *FD : RD->fields()) {
     if (FD->hasCapturedVLAType()) {
-      auto *ExprArg = EmitLoadOfLValue(EmitLValueForField(Base, FD),
-                                       S.getLocStart()).getScalarVal();
+      auto *ExprArg =
+          EmitLoadOfLValue(EmitLValueForField(Base, FD), S.getBeginLoc())
+              .getScalarVal();
       auto VAT = FD->getCapturedVLAType();
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
     }

@@ -1,9 +1,8 @@
 //===--- NVPTX.cpp - Implement NVPTX target feature support ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -188,6 +187,9 @@ void NVPTXTargetInfo::getTargetDefines(const LangOptions &Opts,
       case CudaArch::GFX810:
       case CudaArch::GFX900:
       case CudaArch::GFX902:
+      case CudaArch::GFX904:
+      case CudaArch::GFX906:
+      case CudaArch::GFX909:
       case CudaArch::LAST:
         break;
       case CudaArch::UNKNOWN:
@@ -221,6 +223,8 @@ void NVPTXTargetInfo::getTargetDefines(const LangOptions &Opts,
         return "700";
       case CudaArch::SM_72:
         return "720";
+      case CudaArch::SM_75:
+        return "750";
       }
       llvm_unreachable("unhandled CudaArch");
     }();

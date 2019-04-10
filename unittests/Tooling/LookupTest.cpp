@@ -1,9 +1,8 @@
 //===- unittest/Tooling/LookupTest.cpp ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -68,7 +67,7 @@ TEST(LookupTest, replaceNestedFunctionName) {
                   "namespace b { void f() { a::foo(); } }\n");
 
   Visitor.OnCall = [&](CallExpr *Expr) {
-    EXPECT_EQ("a::bar", replaceCallExpr(Expr, "::a::bar"));
+    EXPECT_EQ("::a::bar", replaceCallExpr(Expr, "::a::bar"));
   };
   Visitor.runOver("namespace a { void foo(); }\n"
                   "namespace b { namespace a { void foo(); }\n"
@@ -127,6 +126,38 @@ TEST(LookupTest, replaceNestedFunctionName) {
                   "namespace a { namespace b { namespace c {"
                   "void f() { foo(); }"
                   "} } }\n");
+
+  // If the shortest name is ambiguous, we need to add more qualifiers.
+  Visitor.OnCall = [&](CallExpr *Expr) {
+    EXPECT_EQ("::a::y::bar", replaceCallExpr(Expr, "::a::y::bar"));
+  };
+  Visitor.runOver(R"(
+    namespace a {
+    namespace b {
+    namespace x { void foo() {} }
+    namespace y { void foo() {} }
+    }
+    }
+
+    namespace a {
+    namespace b {
+    void f() { x::foo(); }
+    }
+    })");
+
+  Visitor.OnCall = [&](CallExpr *Expr) {
+    EXPECT_EQ("y::bar", replaceCallExpr(Expr, "::y::bar"));
+  };
+  Visitor.runOver(R"(
+    namespace a {
+    namespace b {
+    namespace x { void foo() {} }
+    namespace y { void foo() {} }
+    }
+    }
+
+    void f() { a::b::x::foo(); }
+    )");
 }
 
 TEST(LookupTest, replaceNestedClassName) {

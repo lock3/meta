@@ -1,9 +1,8 @@
 //===--- SerializedDiagnosticPrinter.cpp - Serializer for diagnostics -----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -28,31 +27,31 @@ using namespace clang;
 using namespace clang::serialized_diags;
 
 namespace {
-  
+
 class AbbreviationMap {
   llvm::DenseMap<unsigned, unsigned> Abbrevs;
 public:
   AbbreviationMap() {}
-  
+
   void set(unsigned recordID, unsigned abbrevID) {
-    assert(Abbrevs.find(recordID) == Abbrevs.end() 
+    assert(Abbrevs.find(recordID) == Abbrevs.end()
            && "Abbreviation already set.");
     Abbrevs[recordID] = abbrevID;
   }
-  
+
   unsigned get(unsigned recordID) {
     assert(Abbrevs.find(recordID) != Abbrevs.end() &&
            "Abbreviation not set.");
     return Abbrevs[recordID];
   }
 };
- 
+
 typedef SmallVector<uint64_t, 64> RecordData;
 typedef SmallVectorImpl<uint64_t> RecordDataImpl;
 typedef ArrayRef<uint64_t> RecordDataRef;
 
 class SDiagsWriter;
-  
+
 class SDiagsRenderer : public DiagnosticNoteRenderer {
   SDiagsWriter &Writer;
 public:
@@ -172,7 +171,7 @@ private:
 
   /// Emit the preamble for the serialized diagnostics.
   void EmitPreamble();
-  
+
   /// Emit the BLOCKINFO block.
   void EmitBlockInfoBlock();
 
@@ -197,10 +196,10 @@ private:
 
   /// Emit a record for a CharSourceRange.
   void EmitCharSourceRange(CharSourceRange R, const SourceManager &SM);
-  
+
   /// Emit the string information for the category.
   unsigned getEmitCategory(unsigned category = 0);
-  
+
   /// Emit the string information for diagnostic flags.
   unsigned getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
                                  unsigned DiagID = 0);
@@ -312,7 +311,7 @@ static void EmitBlockID(unsigned ID, const char *Name,
   Record.clear();
   Record.push_back(ID);
   Stream.EmitRecord(llvm::bitc::BLOCKINFO_CODE_SETBID, Record);
-  
+
   // Emit the block name if present.
   if (!Name || Name[0] == 0)
     return;
@@ -370,11 +369,11 @@ void SDiagsWriter::AddCharSourceRangeToRecord(CharSourceRange Range,
 unsigned SDiagsWriter::getEmitFile(const char *FileName){
   if (!FileName)
     return 0;
-  
+
   unsigned &entry = State->Files[FileName];
   if (entry)
     return entry;
-  
+
   // Lazily generate the record for the file.
   entry = State->Files.size();
   StringRef Name(FileName);
@@ -417,7 +416,7 @@ static void AddSourceLocationAbbrev(llvm::BitCodeAbbrev &Abbrev) {
 
 static void AddRangeLocationAbbrev(llvm::BitCodeAbbrev &Abbrev) {
   AddSourceLocationAbbrev(Abbrev);
-  AddSourceLocationAbbrev(Abbrev);  
+  AddSourceLocationAbbrev(Abbrev);
 }
 
 void SDiagsWriter::EmitBlockInfoBlock() {
@@ -456,12 +455,12 @@ void SDiagsWriter::EmitBlockInfoBlock() {
   Abbrev->Add(BitCodeAbbrevOp(RECORD_DIAG));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3));  // Diag level.
   AddSourceLocationAbbrev(*Abbrev);
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 10)); // Category.  
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 10)); // Category.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 10)); // Mapped Diag ID.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 16)); // Text size.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Diagnostc text.
   Abbrevs.set(RECORD_DIAG, Stream.EmitBlockInfoAbbrev(BLOCK_DIAG, Abbrev));
-  
+
   // Emit abbreviation for RECORD_CATEGORY.
   Abbrev = std::make_shared<BitCodeAbbrev>();
   Abbrev->Add(BitCodeAbbrevOp(RECORD_CATEGORY));
@@ -476,7 +475,7 @@ void SDiagsWriter::EmitBlockInfoBlock() {
   AddRangeLocationAbbrev(*Abbrev);
   Abbrevs.set(RECORD_SOURCE_RANGE,
               Stream.EmitBlockInfoAbbrev(BLOCK_DIAG, Abbrev));
-  
+
   // Emit the abbreviation for RECORD_DIAG_FLAG.
   Abbrev = std::make_shared<BitCodeAbbrev>();
   Abbrev->Add(BitCodeAbbrevOp(RECORD_DIAG_FLAG));
@@ -485,18 +484,18 @@ void SDiagsWriter::EmitBlockInfoBlock() {
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Flag name text.
   Abbrevs.set(RECORD_DIAG_FLAG, Stream.EmitBlockInfoAbbrev(BLOCK_DIAG,
                                                            Abbrev));
-  
+
   // Emit the abbreviation for RECORD_FILENAME.
   Abbrev = std::make_shared<BitCodeAbbrev>();
   Abbrev->Add(BitCodeAbbrevOp(RECORD_FILENAME));
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 10)); // Mapped file ID.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // Size.
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // Modification time.  
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // Modification time.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 16)); // Text size.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // File name text.
   Abbrevs.set(RECORD_FILENAME, Stream.EmitBlockInfoAbbrev(BLOCK_DIAG,
                                                           Abbrev));
-  
+
   // Emit the abbreviation for RECORD_FIXIT.
   Abbrev = std::make_shared<BitCodeAbbrev>();
   Abbrev->Add(BitCodeAbbrevOp(RECORD_FIXIT));
@@ -529,7 +528,7 @@ unsigned SDiagsWriter::getEmitCategory(unsigned int category) {
   RecordData::value_type Record[] = {RECORD_CATEGORY, category, catName.size()};
   State->Stream.EmitRecordWithBlob(State->Abbrevs.get(RECORD_CATEGORY), Record,
                                    catName);
-  
+
   return category;
 }
 
@@ -537,7 +536,7 @@ unsigned SDiagsWriter::getEmitDiagnosticFlag(DiagnosticsEngine::Level DiagLevel,
                                              unsigned DiagID) {
   if (DiagLevel == DiagnosticsEngine::Note)
     return 0; // No flag for notes.
-  
+
   StringRef FlagName = DiagnosticIDs::getWarningOptionForDiag(DiagID);
   return getEmitDiagnosticFlag(FlagName);
 }
@@ -553,7 +552,7 @@ unsigned SDiagsWriter::getEmitDiagnosticFlag(StringRef FlagName) {
   if (entry.first == 0) {
     entry.first = State->DiagFlags.size();
     entry.second = FlagName;
-    
+
     // Lazily emit the string in a separate record.
     RecordData::value_type Record[] = {RECORD_DIAG_FLAG, entry.first,
                                        FlagName.size()};
@@ -630,7 +629,7 @@ void SDiagsWriter::EmitDiagnosticMessage(FullSourceLoc Loc, PresumedLoc PLoc,
   llvm::BitstreamWriter &Stream = State->Stream;
   RecordData &Record = State->Record;
   AbbreviationMap &Abbrevs = State->Abbrevs;
-  
+
   // Emit the RECORD_DIAG record.
   Record.clear();
   Record.push_back(RECORD_DIAG);

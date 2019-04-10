@@ -1,9 +1,8 @@
 //===--- CloneDetection.h - Finds code clones in an AST ---------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -122,7 +121,7 @@ public:
   /// Returns the start sourcelocation of the first statement in this sequence.
   ///
   /// This method should only be called on a non-empty StmtSequence object.
-  SourceLocation getStartLoc() const;
+  SourceLocation getBeginLoc() const;
 
   /// Returns the end sourcelocation of the last statement in this sequence.
   ///
@@ -332,7 +331,7 @@ struct FilenamePatternConstraint {
   StringRef IgnoredFilesPattern;
   std::shared_ptr<llvm::Regex> IgnoredFilesRegex;
 
-  FilenamePatternConstraint(StringRef IgnoredFilesPattern) 
+  FilenamePatternConstraint(StringRef IgnoredFilesPattern)
       : IgnoredFilesPattern(IgnoredFilesPattern) {
     IgnoredFilesRegex = std::make_shared<llvm::Regex>("^(" +
         IgnoredFilesPattern.str() + "$)");

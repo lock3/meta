@@ -1,9 +1,8 @@
 //===- MemRegion.cpp - Abstract memory regions for static analysis --------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -225,6 +224,10 @@ QualType CXXBaseObjectRegion::getValueType() const {
   return QualType(getDecl()->getTypeForDecl(), 0);
 }
 
+QualType CXXDerivedObjectRegion::getValueType() const {
+  return QualType(getDecl()->getTypeForDecl(), 0);
+}
+
 //===----------------------------------------------------------------------===//
 // FoldingSet profiling.
 //===----------------------------------------------------------------------===//
@@ -404,6 +407,17 @@ void CXXBaseObjectRegion::Profile(llvm::FoldingSetNodeID &ID) const {
   ProfileRegion(ID, getDecl(), isVirtual(), superRegion);
 }
 
+void CXXDerivedObjectRegion::ProfileRegion(llvm::FoldingSetNodeID &ID,
+                                           const CXXRecordDecl *RD,
+                                           const MemRegion *SReg) {
+  ID.AddPointer(RD);
+  ID.AddPointer(SReg);
+}
+
+void CXXDerivedObjectRegion::Profile(llvm::FoldingSetNodeID &ID) const {
+  ProfileRegion(ID, getDecl(), superRegion);
+}
+
 //===----------------------------------------------------------------------===//
 // Region anchors.
 //===----------------------------------------------------------------------===//
@@ -442,7 +456,7 @@ void MemRegion::dumpToStream(raw_ostream &os) const {
 }
 
 void AllocaRegion::dumpToStream(raw_ostream &os) const {
-  os << "alloca{" << static_cast<const void *>(Ex) << ',' << Cnt << '}';
+  os << "alloca{S" << Ex->getID(getContext()) << ',' << Cnt << '}';
 }
 
 void FunctionCodeRegion::dumpToStream(raw_ostream &os) const {
@@ -466,16 +480,20 @@ void BlockDataRegion::dumpToStream(raw_ostream &os) const {
 
 void CompoundLiteralRegion::dumpToStream(raw_ostream &os) const {
   // FIXME: More elaborate pretty-printing.
-  os << "{ " << static_cast<const void *>(CL) <<  " }";
+  os << "{ S" << CL->getID(getContext()) <<  " }";
 }
 
 void CXXTempObjectRegion::dumpToStream(raw_ostream &os) const {
-  os << "temp_object{" << getValueType().getAsString() << ','
-     << static_cast<const void *>(Ex) << '}';
+  os << "temp_object{" << getValueType().getAsString() << ", "
+     << "S" << Ex->getID(getContext()) << '}';
 }
 
 void CXXBaseObjectRegion::dumpToStream(raw_ostream &os) const {
-  os << "base{" << superRegion << ',' << getDecl()->getName() << '}';
+  os << "Base{" << superRegion << ',' << getDecl()->getName() << '}';
+}
+
+void CXXDerivedObjectRegion::dumpToStream(raw_ostream &os) const {
+  os << "Derived{" << superRegion << ',' << getDecl()->getName() << '}';
 }
 
 void CXXThisRegion::dumpToStream(raw_ostream &os) const {
@@ -483,7 +501,7 @@ void CXXThisRegion::dumpToStream(raw_ostream &os) const {
 }
 
 void ElementRegion::dumpToStream(raw_ostream &os) const {
-  os << "element{" << superRegion << ','
+  os << "Element{" << superRegion << ','
      << Index << ',' << getElementType().getAsString() << '}';
 }
 
@@ -492,7 +510,7 @@ void FieldRegion::dumpToStream(raw_ostream &os) const {
 }
 
 void ObjCIvarRegion::dumpToStream(raw_ostream &os) const {
-  os << "ivar{" << superRegion << ',' << *getDecl() << '}';
+  os << "Ivar{" << superRegion << ',' << *getDecl() << '}';
 }
 
 void StringRegion::dumpToStream(raw_ostream &os) const {
@@ -516,7 +534,7 @@ void VarRegion::dumpToStream(raw_ostream &os) const {
   if (const IdentifierInfo *ID = VD->getIdentifier())
     os << ID->getName();
   else
-    os << "VarRegion{" << static_cast<const void *>(this) << '}';
+    os << "VarRegion{D" << VD->getID() << '}';
 }
 
 LLVM_DUMP_METHOD void RegionRawOffset::dump() const {
@@ -578,7 +596,7 @@ void MemRegion::printPretty(raw_ostream &os) const {
   os << "'";
 }
 
-void MemRegion::printPrettyAsExpr(raw_ostream &os) const {
+void MemRegion::printPrettyAsExpr(raw_ostream &) const {
   llvm_unreachable("This region cannot be printed pretty.");
 }
 
@@ -627,6 +645,14 @@ bool CXXBaseObjectRegion::canPrintPrettyAsExpr() const {
 }
 
 void CXXBaseObjectRegion::printPrettyAsExpr(raw_ostream &os) const {
+  superRegion->printPrettyAsExpr(os);
+}
+
+bool CXXDerivedObjectRegion::canPrintPrettyAsExpr() const {
+  return superRegion->canPrintPrettyAsExpr();
+}
+
+void CXXDerivedObjectRegion::printPrettyAsExpr(raw_ostream &os) const {
   superRegion->printPrettyAsExpr(os);
 }
 
@@ -1061,6 +1087,12 @@ MemRegionManager::getCXXBaseObjectRegion(const CXXRecordDecl *RD,
   return getSubRegion<CXXBaseObjectRegion>(RD, IsVirtual, Super);
 }
 
+const CXXDerivedObjectRegion *
+MemRegionManager::getCXXDerivedObjectRegion(const CXXRecordDecl *RD,
+                                            const SubRegion *Super) {
+  return getSubRegion<CXXDerivedObjectRegion>(RD, Super);
+}
+
 const CXXThisRegion*
 MemRegionManager::getCXXThisRegion(QualType thisPointerTy,
                                    const LocationContext *LC) {
@@ -1072,9 +1104,8 @@ MemRegionManager::getCXXThisRegion(QualType thisPointerTy,
   // FIXME: when operator() of lambda is analyzed as a top level function and
   // 'this' refers to a this to the enclosing scope, there is no right region to
   // return.
-  while (!LC->inTopFrame() &&
-         (!D || D->isStatic() ||
-          PT != D->getThisType(getContext())->getAs<PointerType>())) {
+  while (!LC->inTopFrame() && (!D || D->isStatic() ||
+                               PT != D->getThisType()->getAs<PointerType>())) {
     LC = LC->getParent();
     D = dyn_cast<CXXMethodDecl>(LC->getDecl());
   }
@@ -1131,6 +1162,7 @@ const MemRegion *MemRegion::getBaseRegion() const {
       case MemRegion::FieldRegionKind:
       case MemRegion::ObjCIvarRegionKind:
       case MemRegion::CXXBaseObjectRegionKind:
+      case MemRegion::CXXDerivedObjectRegionKind:
         R = cast<SubRegion>(R)->getSuperRegion();
         continue;
       default:
@@ -1141,7 +1173,16 @@ const MemRegion *MemRegion::getBaseRegion() const {
   return R;
 }
 
-bool MemRegion::isSubRegionOf(const MemRegion *R) const {
+// getgetMostDerivedObjectRegion gets the region of the root class of a C++
+// class hierarchy.
+const MemRegion *MemRegion::getMostDerivedObjectRegion() const {
+  const MemRegion *R = this;
+  while (const auto *BR = dyn_cast<CXXBaseObjectRegion>(R))
+    R = BR->getSuperRegion();
+  return R;
+}
+
+bool MemRegion::isSubRegionOf(const MemRegion *) const {
   return false;
 }
 
@@ -1149,7 +1190,7 @@ bool MemRegion::isSubRegionOf(const MemRegion *R) const {
 // View handling.
 //===----------------------------------------------------------------------===//
 
-const MemRegion *MemRegion::StripCasts(bool StripBaseCasts) const {
+const MemRegion *MemRegion::StripCasts(bool StripBaseAndDerivedCasts) const {
   const MemRegion *R = this;
   while (true) {
     switch (R->getKind()) {
@@ -1161,9 +1202,10 @@ const MemRegion *MemRegion::StripCasts(bool StripBaseCasts) const {
       break;
     }
     case CXXBaseObjectRegionKind:
-      if (!StripBaseCasts)
+    case CXXDerivedObjectRegionKind:
+      if (!StripBaseAndDerivedCasts)
         return R;
-      R = cast<CXXBaseObjectRegion>(R)->getSuperRegion();
+      R = cast<TypedValueRegion>(R)->getSuperRegion();
       break;
     default:
       return R;
@@ -1344,6 +1386,12 @@ static RegionOffset calculateOffset(const MemRegion *R) {
       Offset += BaseOffset.getQuantity() * R->getContext().getCharWidth();
       break;
     }
+
+    case MemRegion::CXXDerivedObjectRegionKind: {
+      // TODO: Store the base type in the CXXDerivedObjectRegion and use it.
+      goto Finish;
+    }
+
     case MemRegion::ElementRegionKind: {
       const auto *ER = cast<ElementRegion>(R);
       R = ER->getSuperRegion();

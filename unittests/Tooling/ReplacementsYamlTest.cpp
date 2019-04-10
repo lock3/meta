@@ -1,9 +1,8 @@
 //===- unittests/Tooling/ReplacementsYamlTest.cpp - Serialization tests ---===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -33,13 +32,13 @@ TEST(ReplacementsYamlTest, serializesReplacements) {
 
   // NOTE: If this test starts to fail for no obvious reason, check whitespace.
   ASSERT_STREQ("---\n"
-               "MainSourceFile:  /path/to/source.cpp\n"
+               "MainSourceFile:  '/path/to/source.cpp'\n"
                "Replacements:    \n" // Extra whitespace here!
-               "  - FilePath:        /path/to/file1.h\n"
+               "  - FilePath:        '/path/to/file1.h'\n"
                "    Offset:          232\n"
                "    Length:          56\n"
                "    ReplacementText: 'replacement #1'\n"
-               "  - FilePath:        /path/to/file2.h\n"
+               "  - FilePath:        '/path/to/file2.h'\n"
                "    Offset:          301\n"
                "    Length:          2\n"
                "    ReplacementText: 'replacement #2'\n"

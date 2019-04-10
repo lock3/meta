@@ -1,9 +1,8 @@
-//===--- IndexDataConsumer.h - Abstract index data consumer ---------------===//
+//===--- IndexDataConsumer.h - Abstract index data consumer -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -50,7 +49,12 @@ public:
                                     SourceLocation Loc);
 
   /// \returns true to continue indexing, or false to abort.
+  ///
+  /// This will be called for each module reference in an import decl.
+  /// For "@import MyMod.SubMod", there will be a call for 'MyMod' with the
+  /// 'reference' role, and a call for 'SubMod' with the 'declaration' role.
   virtual bool handleModuleOccurence(const ImportDecl *ImportD,
+                                     const Module *Mod,
                                      SymbolRoleSet Roles, SourceLocation Loc);
 
   virtual void finish() {}

@@ -1,9 +1,8 @@
 //===- ASTContext.h - Context to hold long-lived AST nodes ------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,6 +14,7 @@
 #ifndef LLVM_CLANG_AST_ASTCONTEXT_H
 #define LLVM_CLANG_AST_ASTCONTEXT_H
 
+#include "clang/AST/ASTContextAllocate.h"
 #include "clang/AST/ASTTypeTraits.h"
 #include "clang/AST/CanonicalType.h"
 #include "clang/AST/CommentCommandTraits.h"
@@ -22,6 +22,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclarationName.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/PrettyPrinter.h"
@@ -30,6 +31,7 @@
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/AddressSpaces.h"
+#include "clang/Basic/AttrKinds.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
@@ -79,6 +81,7 @@ struct fltSemantics;
 
 namespace clang {
 
+class APFixedPoint;
 class APValue;
 class ASTMutationListener;
 class ASTRecordLayout;
@@ -92,6 +95,7 @@ class CXXMethodDecl;
 class CXXRecordDecl;
 class DiagnosticsEngine;
 class Expr;
+class FixedPointSemantics;
 class MangleContext;
 class MangleNumberingContext;
 class MaterializeTemporaryExpr;
@@ -148,6 +152,22 @@ struct TypeInfo {
 /// Holds long-lived AST nodes (such as types and decls) that can be
 /// referred to throughout the semantic analysis of a file.
 class ASTContext : public RefCountedBase<ASTContext> {
+public:
+  /// Copy initialization expr of a __block variable and a boolean flag that
+  /// indicates whether the expression can throw.
+  struct BlockVarCopyInit {
+    BlockVarCopyInit() = default;
+    BlockVarCopyInit(Expr *CopyExpr, bool CanThrow)
+        : ExprAndFlag(CopyExpr, CanThrow) {}
+    void setExprAndFlag(Expr *CopyExpr, bool CanThrow) {
+      ExprAndFlag.setPointerAndInt(CopyExpr, CanThrow);
+    }
+    Expr *getCopyExpr() const { return ExprAndFlag.getPointer(); }
+    bool canThrow() const { return ExprAndFlag.getInt(); }
+    llvm::PointerIntPair<Expr *, 1, bool> ExprAndFlag;
+  };
+
+private:
   friend class NestedNameSpecifier;
 
   mutable SmallVector<Type *, 0> Types;
@@ -226,6 +246,12 @@ class ASTContext : public RefCountedBase<ASTContext> {
   using TypeInfoMap = llvm::DenseMap<const Type *, struct TypeInfo>;
   mutable TypeInfoMap MemoizedTypeInfo;
 
+  /// A cache from types to unadjusted alignment information. Only ARM and
+  /// AArch64 targets need this information, keeping it separate prevents
+  /// imposing overhead on TypeInfo size.
+  using UnadjustedAlignMap = llvm::DenseMap<const Type *, unsigned>;
+  mutable UnadjustedAlignMap MemoizedUnadjustedAlign;
+
   /// A cache mapping from CXXRecordDecls to key functions.
   llvm::DenseMap<const CXXRecordDecl*, LazyDeclPtr> KeyFunctions;
 
@@ -236,8 +262,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
   /// interface.
   llvm::DenseMap<const ObjCMethodDecl*,const ObjCMethodDecl*> ObjCMethodRedecls;
 
-  /// Mapping from __block VarDecls to their copy initialization expr.
-  llvm::DenseMap<const VarDecl*, Expr*> BlockVarCopyInits;
+  /// Mapping from __block VarDecls to BlockVarCopyInit.
+  llvm::DenseMap<const VarDecl *, BlockVarCopyInit> BlockVarCopyInits;
 
   /// Mapping from class scope functions specialization to their
   /// template patterns.
@@ -310,7 +336,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable IdentifierInfo *BoolName = nullptr;
 
   /// The identifier 'NSObject'.
-  IdentifierInfo *NSObjectName = nullptr;
+  mutable IdentifierInfo *NSObjectName = nullptr;
 
   /// The identifier 'NSCopying'.
   IdentifierInfo *NSCopyingName = nullptr;
@@ -543,26 +569,6 @@ public:
   IntrusiveRefCntPtr<ExternalASTSource> ExternalSource;
   ASTMutationListener *Listener = nullptr;
 
-  /// Contains parents of a node.
-  using ParentVector = llvm::SmallVector<ast_type_traits::DynTypedNode, 2>;
-
-  /// Maps from a node to its parents. This is used for nodes that have
-  /// pointer identity only, which are more common and we can save space by
-  /// only storing a unique pointer to them.
-  using ParentMapPointers =
-      llvm::DenseMap<const void *,
-                     llvm::PointerUnion4<const Decl *, const Stmt *,
-                                         ast_type_traits::DynTypedNode *,
-                                         ParentVector *>>;
-
-  /// Parent map for nodes without pointer identity. We store a full
-  /// DynTypedNode for all keys.
-  using ParentMapOtherNodes =
-      llvm::DenseMap<ast_type_traits::DynTypedNode,
-                     llvm::PointerUnion4<const Decl *, const Stmt *,
-                                         ast_type_traits::DynTypedNode *,
-                                         ParentVector *>>;
-
   /// Container for either a single DynTypedNode or for an ArrayRef to
   /// DynTypedNode. For use with ParentMap.
   class DynTypedNodeList {
@@ -604,7 +610,17 @@ public:
     }
   };
 
-  /// Returns the parents of the given node.
+  // A traversal scope limits the parts of the AST visible to certain analyses.
+  // RecursiveASTVisitor::TraverseAST will only visit reachable nodes, and
+  // getParents() will only observe reachable parent edges.
+  //
+  // The scope is defined by a set of "top-level" declarations.
+  // Initially, it is the entire TU: {getTranslationUnitDecl()}.
+  // Changing the scope clears the parent cache, which is expensive to rebuild.
+  std::vector<Decl *> getTraversalScope() const { return TraversalScope; }
+  void setTraversalScope(const std::vector<Decl *> &);
+
+  /// Returns the parents of the given node (within the traversal scope).
   ///
   /// Note that this will lazily compute the parents of all nodes
   /// and store them for later retrieval. Thus, the first call is O(n)
@@ -971,7 +987,8 @@ public:
   /// Get the additional modules in which the definition \p Def has
   /// been merged.
   ArrayRef<Module*> getModulesWithMergedDefinition(const NamedDecl *Def) {
-    auto MergedIt = MergedDefModules.find(Def);
+    auto MergedIt =
+        MergedDefModules.find(cast<NamedDecl>(Def->getCanonicalDecl()));
     if (MergedIt == MergedDefModules.end())
       return None;
     return MergedIt->second;
@@ -1035,6 +1052,9 @@ public:
   CanQualType OCLSamplerTy, OCLEventTy, OCLClkEventTy;
   CanQualType OCLQueueTy, OCLReserveIDTy;
   CanQualType OMPArraySectionTy;
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+  CanQualType Id##Ty;
+#include "clang/Basic/OpenCLExtensionTypes.def"
 
   // Types for deductions in C++0x [stmt.ranged]'s desugaring. Built on demand.
   mutable QualType AutoDeductTy;     // Deduction against 'auto'.
@@ -1397,7 +1417,7 @@ public:
 
   QualType getInjectedClassNameType(CXXRecordDecl *Decl, QualType TST) const;
 
-  QualType getAttributedType(AttributedType::Kind attrKind,
+  QualType getAttributedType(attr::Kind attrKind,
                              QualType modifiedType,
                              QualType equivalentType);
 
@@ -1522,7 +1542,7 @@ public:
   /// The sizeof operator requires this (C99 6.5.3.4p4).
   CanQualType getSizeType() const;
 
-  /// Return the unique signed counterpart of 
+  /// Return the unique signed counterpart of
   /// the integer type corresponding to size_t.
   CanQualType getSignedSizeType() const;
 
@@ -1650,7 +1670,7 @@ public:
   }
 
   /// Retrieve the identifier 'NSObject'.
-  IdentifierInfo *getNSObjectName() {
+  IdentifierInfo *getNSObjectName() const {
     if (!NSObjectName) {
       NSObjectName = &Idents.get("NSObject");
     }
@@ -1955,6 +1975,9 @@ public:
 
   unsigned char getFixedPointScale(QualType Ty) const;
   unsigned char getFixedPointIBits(QualType Ty) const;
+  FixedPointSemantics getFixedPointSemantics(QualType Ty) const;
+  APFixedPoint getFixedPointMax(QualType Ty) const;
+  APFixedPoint getFixedPointMin(QualType Ty) const;
 
   DeclarationNameInfo getNameForTemplate(TemplateName Name,
                                          SourceLocation NameLoc) const;
@@ -1978,6 +2001,9 @@ public:
   enum GetBuiltinTypeError {
     /// No error
     GE_None,
+
+    /// Missing a type
+    GE_Missing_type,
 
     /// Missing a type from <stdio.h>
     GE_Missing_stdio,
@@ -2062,10 +2088,30 @@ public:
   CharUnits getTypeSizeInChars(QualType T) const;
   CharUnits getTypeSizeInChars(const Type *T) const;
 
+  Optional<CharUnits> getTypeSizeInCharsIfKnown(QualType Ty) const {
+    if (Ty->isIncompleteType() || Ty->isDependentType())
+      return None;
+    return getTypeSizeInChars(Ty);
+  }
+
+  Optional<CharUnits> getTypeSizeInCharsIfKnown(const Type *Ty) const {
+    return getTypeSizeInCharsIfKnown(QualType(Ty, 0));
+  }
+
   /// Return the ABI-specified alignment of a (complete) type \p T, in
   /// bits.
   unsigned getTypeAlign(QualType T) const { return getTypeInfo(T).Align; }
   unsigned getTypeAlign(const Type *T) const { return getTypeInfo(T).Align; }
+
+  /// Return the ABI-specified natural alignment of a (complete) type \p T,
+  /// before alignment adjustments, in bits.
+  ///
+  /// This alignment is curently used only by ARM and AArch64 when passing
+  /// arguments of a composite type.
+  unsigned getTypeUnadjustedAlign(QualType T) const {
+    return getTypeUnadjustedAlign(T.getTypePtr());
+  }
+  unsigned getTypeUnadjustedAlign(const Type *T) const;
 
   /// Return the ABI-specified alignment of a type, in bits, or 0 if
   /// the type is incomplete and we cannot determine the alignment (for
@@ -2076,6 +2122,12 @@ public:
   /// characters.
   CharUnits getTypeAlignInChars(QualType T) const;
   CharUnits getTypeAlignInChars(const Type *T) const;
+
+  /// getTypeUnadjustedAlignInChars - Return the ABI-specified alignment of a type,
+  /// in characters, before alignment adjustments. This method does not work on
+  /// incomplete types.
+  CharUnits getTypeUnadjustedAlignInChars(QualType T) const;
+  CharUnits getTypeUnadjustedAlignInChars(const Type *T) const;
 
   // getTypeInfoDataSizeInChars - Return the size of a type, in chars. If the
   // type is a record, its data size is returned.
@@ -2289,6 +2341,7 @@ public:
                            const ObjCMethodDecl *MethodImp);
 
   bool UnwrapSimilarTypes(QualType &T1, QualType &T2);
+  bool UnwrapSimilarArrayTypes(QualType &T1, QualType &T2);
 
   /// Determine if two types are similar, according to the C++ rules. That is,
   /// determine if they are the same other than qualifiers on the initial
@@ -2465,6 +2518,8 @@ public:
 
   unsigned getTargetAddressSpace(LangAS AS) const;
 
+  LangAS getLangASForBuiltinAddressSpace(unsigned AS) const;
+
   /// Get target-dependent integer value for null pointer which is used for
   /// constant folding.
   uint64_t getTargetNullPointerValue(QualType QT) const;
@@ -2581,6 +2636,12 @@ public:
   // corresponding saturated type for a given fixed point type.
   QualType getCorrespondingSaturatedType(QualType Ty) const;
 
+  // This method accepts fixed point types and returns the corresponding signed
+  // type. Unlike getCorrespondingUnsignedType(), this only accepts unsigned
+  // fixed point types because there are unsigned integer types like bool and
+  // char8_t that don't have signed equivalents.
+  QualType getCorrespondingSignedFixedPointType(QualType Ty) const;
+
   //===--------------------------------------------------------------------===//
   //                    Integer Values
   //===--------------------------------------------------------------------===//
@@ -2634,12 +2695,13 @@ public:
   /// otherwise returns null.
   const ObjCInterfaceDecl *getObjContainingInterface(const NamedDecl *ND) const;
 
-  /// Set the copy inialization expression of a block var decl.
-  void setBlockVarCopyInits(VarDecl*VD, Expr* Init);
+  /// Set the copy inialization expression of a block var decl. \p CanThrow
+  /// indicates whether the copy expression can throw or not.
+  void setBlockVarCopyInit(const VarDecl* VD, Expr *CopyExpr, bool CanThrow);
 
   /// Get the copy initialization expression of the VarDecl \p VD, or
   /// nullptr if none exists.
-  Expr *getBlockVarCopyInits(const VarDecl* VD);
+  BlockVarCopyInit getBlockVarCopyInit(const VarDecl* VD) const;
 
   /// Allocate an uninitialized TypeSourceInfo.
   ///
@@ -2695,7 +2757,7 @@ public:
   /// predicate.
   void forEachMultiversionedFunctionVersion(
       const FunctionDecl *FD,
-      llvm::function_ref<void(const FunctionDecl *)> Pred) const;
+      llvm::function_ref<void(FunctionDecl *)> Pred) const;
 
   const CXXConstructorDecl *
   getCopyConstructorForExceptionObject(CXXRecordDecl *RD);
@@ -2871,13 +2933,13 @@ private:
   // but we include it here so that ASTContext can quickly deallocate them.
   llvm::PointerIntPair<StoredDeclsMap *, 1> LastSDM;
 
-  std::unique_ptr<ParentMapPointers> PointerParents;
-  std::unique_ptr<ParentMapOtherNodes> OtherParents;
+  std::vector<Decl *> TraversalScope;
+  class ParentMap;
+  std::unique_ptr<ParentMap> Parents;
 
   std::unique_ptr<VTableContextBase> VTContext;
 
   void ReleaseDeclContextMaps();
-  void ReleaseParentMapEntries();
 
 public:
   enum PragmaSectionFlag : unsigned {
@@ -2926,8 +2988,8 @@ inline Selector GetUnarySelector(StringRef name, ASTContext &Ctx) {
 /// This placement form of operator new uses the ASTContext's allocator for
 /// obtaining memory.
 ///
-/// IMPORTANT: These are also declared in clang/AST/AttrIterator.h! Any changes
-/// here need to also be made there.
+/// IMPORTANT: These are also declared in clang/AST/ASTContextAllocate.h!
+/// Any changes here need to also be made there.
 ///
 /// We intentionally avoid using a nothrow specification here so that the calls
 /// to this operator will not perform a null check on the result -- the
@@ -2950,7 +3012,7 @@ inline Selector GetUnarySelector(StringRef name, ASTContext &Ctx) {
 ///                  allocator supports it).
 /// @return The allocated memory. Could be nullptr.
 inline void *operator new(size_t Bytes, const clang::ASTContext &C,
-                          size_t Alignment) {
+                          size_t Alignment /* = 8 */) {
   return C.Allocate(Bytes, Alignment);
 }
 
@@ -2988,7 +3050,7 @@ inline void operator delete(void *Ptr, const clang::ASTContext &C, size_t) {
 ///                  allocator supports it).
 /// @return The allocated memory. Could be nullptr.
 inline void *operator new[](size_t Bytes, const clang::ASTContext& C,
-                            size_t Alignment = 8) {
+                            size_t Alignment /* = 8 */) {
   return C.Allocate(Bytes, Alignment);
 }
 

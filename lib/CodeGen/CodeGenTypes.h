@@ -1,9 +1,8 @@
 //===--- CodeGenTypes.h - Type translation for LLVM CodeGen -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -17,7 +16,6 @@
 #include "CGCall.h"
 #include "clang/Basic/ABI.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
-#include "clang/Sema/Sema.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/Module.h"
 
@@ -140,7 +138,7 @@ class CodeGenTypes {
 
   /// Contains the LLVM IR type for any converted RecordDecl.
   llvm::DenseMap<const Type*, llvm::StructType *> RecordDeclTypes;
-  
+
   /// Hold memoized CGFunctionInfo results.
   llvm::FoldingSet<CGFunctionInfo> FunctionInfos;
 
@@ -149,20 +147,23 @@ class CodeGenTypes {
   /// struct A { struct B { int x; } } when processing 'x', the 'A' and 'B'
   /// types will be in this set.
   llvm::SmallPtrSet<const Type*, 4> RecordsBeingLaidOut;
-  
+
   llvm::SmallPtrSet<const CGFunctionInfo*, 4> FunctionsBeingProcessed;
-  
+
   /// True if we didn't layout a function due to a being inside
   /// a recursive struct conversion, set this to true.
   bool SkippedLayout;
 
   SmallVector<const RecordDecl *, 8> DeferredRecords;
-  
+
   /// This map keeps cache of llvm::Types and maps clang::Type to
   /// corresponding llvm::Type.
   llvm::DenseMap<const Type *, llvm::Type *> TypeCache;
 
   llvm::SmallSet<const Type *, 8> RecordsWithOpaqueMemberPointers;
+
+  /// Helper for ConvertType.
+  llvm::Type *ConvertFunctionTypeInternal(QualType FT);
 
 public:
   CodeGenTypes(CodeGenModule &cgm);
@@ -181,16 +182,12 @@ public:
   /// Convert clang calling convention to LLVM callilng convention.
   unsigned ClangCallConvToLLVMCallConv(CallingConv CC);
 
+  /// Derives the 'this' type for codegen purposes, i.e. ignoring method CVR
+  /// qualification.
+  CanQualType DeriveThisType(const CXXRecordDecl *RD, const CXXMethodDecl *MD);
+
   /// ConvertType - Convert type T into a llvm::Type.
   llvm::Type *ConvertType(QualType T);
-
-  /// Converts the GlobalDecl into an llvm::Type. This should be used
-  /// when we know the target of the function we want to convert.  This is
-  /// because some functions (explicitly, those with pass_object_size
-  /// parameters) may not have the same signature as their type portrays, and
-  /// can only be called directly.
-  llvm::Type *ConvertFunctionType(QualType FT,
-                                  const FunctionDecl *FD = nullptr);
 
   /// ConvertTypeForMem - Convert type T into a llvm::Type.  This differs from
   /// ConvertType in that it is used to convert to the memory representation for
@@ -264,8 +261,7 @@ public:
   const CGFunctionInfo &arrangeFreeFunctionCall(const CallArgList &Args,
                                                 const FunctionType *Ty,
                                                 bool ChainCall);
-  const CGFunctionInfo &arrangeFreeFunctionType(CanQual<FunctionProtoType> Ty,
-                                                const FunctionDecl *FD);
+  const CGFunctionInfo &arrangeFreeFunctionType(CanQual<FunctionProtoType> Ty);
   const CGFunctionInfo &arrangeFreeFunctionType(CanQual<FunctionNoProtoType> Ty);
 
   /// A nullary function is a freestanding function of type 'void ()'.
@@ -343,7 +339,7 @@ public:
   /// optional suffix and name the given LLVM type using it.
   void addRecordTypeName(const RecordDecl *RD, llvm::StructType *Ty,
                          StringRef suffix);
-  
+
 
 public:  // These are internal details of CGT that shouldn't be used externally.
   /// ConvertRecordDeclType - Lay out a tagged decl type like struct or union.
@@ -365,7 +361,7 @@ public:  // These are internal details of CGT that shouldn't be used externally.
   /// IsZeroInitializable - Return whether a record type can be
   /// zero-initialized (in the C++ sense) with an LLVM zeroinitializer.
   bool isZeroInitializable(const RecordDecl *RD);
-  
+
   bool isRecordLayoutComplete(const Type *Ty) const;
   bool noRecordsBeingLaidOut() const {
     return RecordsBeingLaidOut.empty();
@@ -373,7 +369,7 @@ public:  // These are internal details of CGT that shouldn't be used externally.
   bool isRecordBeingLaidOut(const Type *Ty) const {
     return RecordsBeingLaidOut.count(Ty);
   }
-                            
+
 };
 
 }  // end namespace CodeGen

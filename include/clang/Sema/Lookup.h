@@ -1,9 +1,8 @@
 //===- Lookup.h - Classes for name lookup -----------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -50,11 +49,11 @@ public:
     /// No entity found met the criteria.
     NotFound = 0,
 
-    /// No entity found met the criteria within the current 
-    /// instantiation,, but there were dependent base classes of the 
+    /// No entity found met the criteria within the current
+    /// instantiation,, but there were dependent base classes of the
     /// current instantiation that could not be searched.
     NotFoundInCurrentInstantiation,
-    
+
     /// Name lookup found a single declaration that met the
     /// criteria.  getFoundDecl() will return this declaration.
     Found,
@@ -435,7 +434,7 @@ public:
   bool wasNotFoundInCurrentInstantiation() const {
     return ResultKind == NotFoundInCurrentInstantiation;
   }
-  
+
   /// Note that while no result was found in the current instantiation,
   /// there were dependent base classes that could not be searched.
   void setNotFoundInCurrentInstantiation() {
@@ -540,7 +539,7 @@ public:
   }
 
   /// Clears out any current state.
-  void clear() {
+  LLVM_ATTRIBUTE_REINITIALIZES void clear() {
     ResultKind = NotFound;
     Decls.clear();
     if (Paths) deletePaths(Paths);
@@ -610,7 +609,7 @@ public:
     LookupResult::iterator I;
     bool Changed = false;
     bool CalledDone = false;
-    
+
     Filter(LookupResult &Results) : Results(Results), I(Results.begin()) {}
 
   public:
@@ -709,7 +708,9 @@ private:
 
   // Results.
   LookupResultKind ResultKind = NotFound;
-  AmbiguityKind Ambiguity; // ill-defined unless ambiguous
+  // ill-defined unless ambiguous. Still need to be initialized it will be
+  // copied/moved.
+  AmbiguityKind Ambiguity = {};
   UnresolvedSet<8> Decls;
   CXXBasePaths *Paths = nullptr;
   CXXRecordDecl *NamingClass = nullptr;

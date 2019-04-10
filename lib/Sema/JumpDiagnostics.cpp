@@ -1,9 +1,8 @@
 //===--- JumpDiagnostics.cpp - Protected scope jump analysis ------*- C++ -*-=//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -299,7 +298,7 @@ void JumpScopeChecker::BuildScopeInformation(Stmt *S,
     auto *CS = cast<ObjCForCollectionStmt>(S);
     unsigned Diag = diag::note_protected_by_objc_fast_enumeration;
     unsigned NewParentScope = Scopes.size();
-    Scopes.push_back(GotoScope(ParentScope, Diag, 0, S->getLocStart()));
+    Scopes.push_back(GotoScope(ParentScope, Diag, 0, S->getBeginLoc()));
     BuildScopeInformation(CS->getBody(), NewParentScope);
     return;
   }
@@ -353,16 +352,16 @@ void JumpScopeChecker::BuildScopeInformation(Stmt *S,
 
     // Cannot jump into the middle of the condition.
     unsigned NewParentScope = Scopes.size();
-    Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getLocStart()));
+    Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getBeginLoc()));
     BuildScopeInformation(IS->getCond(), NewParentScope);
 
     // Jumps into either arm of an 'if constexpr' are not allowed.
     NewParentScope = Scopes.size();
-    Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getLocStart()));
+    Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getBeginLoc()));
     BuildScopeInformation(IS->getThen(), NewParentScope);
     if (Stmt *Else = IS->getElse()) {
       NewParentScope = Scopes.size();
-      Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getLocStart()));
+      Scopes.push_back(GotoScope(ParentScope, Diag, 0, IS->getBeginLoc()));
       BuildScopeInformation(Else, NewParentScope);
     }
     return;
@@ -619,11 +618,11 @@ void JumpScopeChecker::VerifyJumps() {
         continue;
       SourceLocation Loc;
       if (CaseStmt *CS = dyn_cast<CaseStmt>(SC))
-        Loc = CS->getLocStart();
+        Loc = CS->getBeginLoc();
       else if (DefaultStmt *DS = dyn_cast<DefaultStmt>(SC))
-        Loc = DS->getLocStart();
+        Loc = DS->getBeginLoc();
       else
-        Loc = SC->getLocStart();
+        Loc = SC->getBeginLoc();
       CheckJump(SS, SC, Loc, diag::err_switch_into_protected_scope, 0,
                 diag::warn_cxx98_compat_switch_into_protected_scope);
     }
@@ -863,7 +862,7 @@ void JumpScopeChecker::CheckJump(Stmt *From, Stmt *To, SourceLocation DiagLoc,
     // less nested scope.  Check if it crosses a __finally along the way.
     for (unsigned I = FromScope; I > ToScope; I = Scopes[I].ParentScope) {
       if (Scopes[I].InDiag == diag::note_protected_by_seh_finally) {
-        S.Diag(From->getLocStart(), diag::warn_jump_out_of_seh_finally);
+        S.Diag(From->getBeginLoc(), diag::warn_jump_out_of_seh_finally);
         break;
       }
     }

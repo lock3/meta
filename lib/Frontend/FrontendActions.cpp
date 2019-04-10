@@ -1,9 +1,8 @@
 //===--- FrontendActions.cpp ----------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -89,12 +88,6 @@ ASTDeclListAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
 std::unique_ptr<ASTConsumer>
 ASTViewAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   return CreateASTViewer();
-}
-
-std::unique_ptr<ASTConsumer>
-DeclContextPrintAction::CreateASTConsumer(CompilerInstance &CI,
-                                          StringRef InFile) {
-  return CreateDeclContextPrinter();
 }
 
 std::unique_ptr<ASTConsumer>
@@ -242,6 +235,76 @@ GenerateModuleInterfaceAction::CreateOutputFile(CompilerInstance &CI,
   return CI.createDefaultOutputFile(/*Binary=*/true, InFile, "pcm");
 }
 
+bool GenerateHeaderModuleAction::PrepareToExecuteAction(
+    CompilerInstance &CI) {
+  if (!CI.getLangOpts().Modules && !CI.getLangOpts().ModulesTS) {
+    CI.getDiagnostics().Report(diag::err_header_module_requires_modules);
+    return false;
+  }
+
+  auto &Inputs = CI.getFrontendOpts().Inputs;
+  if (Inputs.empty())
+    return GenerateModuleAction::BeginInvocation(CI);
+
+  auto Kind = Inputs[0].getKind();
+
+  // Convert the header file inputs into a single module input buffer.
+  SmallString<256> HeaderContents;
+  ModuleHeaders.reserve(Inputs.size());
+  for (const FrontendInputFile &FIF : Inputs) {
+    // FIXME: We should support re-compiling from an AST file.
+    if (FIF.getKind().getFormat() != InputKind::Source || !FIF.isFile()) {
+      CI.getDiagnostics().Report(diag::err_module_header_file_not_found)
+          << (FIF.isFile() ? FIF.getFile()
+                           : FIF.getBuffer()->getBufferIdentifier());
+      return true;
+    }
+
+    HeaderContents += "#include \"";
+    HeaderContents += FIF.getFile();
+    HeaderContents += "\"\n";
+    ModuleHeaders.push_back(FIF.getFile());
+  }
+  Buffer = llvm::MemoryBuffer::getMemBufferCopy(
+      HeaderContents, Module::getModuleInputBufferName());
+
+  // Set that buffer up as our "real" input.
+  Inputs.clear();
+  Inputs.push_back(FrontendInputFile(Buffer.get(), Kind, /*IsSystem*/false));
+
+  return GenerateModuleAction::PrepareToExecuteAction(CI);
+}
+
+bool GenerateHeaderModuleAction::BeginSourceFileAction(
+    CompilerInstance &CI) {
+  CI.getLangOpts().setCompilingModule(LangOptions::CMK_HeaderModule);
+
+  // Synthesize a Module object for the given headers.
+  auto &HS = CI.getPreprocessor().getHeaderSearchInfo();
+  SmallVector<Module::Header, 16> Headers;
+  for (StringRef Name : ModuleHeaders) {
+    const DirectoryLookup *CurDir = nullptr;
+    const FileEntry *FE = HS.LookupFile(
+        Name, SourceLocation(), /*Angled*/ false, nullptr, CurDir,
+        None, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    if (!FE) {
+      CI.getDiagnostics().Report(diag::err_module_header_file_not_found)
+        << Name;
+      continue;
+    }
+    Headers.push_back({Name, FE});
+  }
+  HS.getModuleMap().createHeaderModule(CI.getLangOpts().CurrentModule, Headers);
+
+  return GenerateModuleAction::BeginSourceFileAction(CI);
+}
+
+std::unique_ptr<raw_pwrite_stream>
+GenerateHeaderModuleAction::CreateOutputFile(CompilerInstance &CI,
+                                             StringRef InFile) {
+  return CI.createDefaultOutputFile(/*Binary=*/true, InFile, "pcm");
+}
+
 SyntaxOnlyAction::~SyntaxOnlyAction() {
 }
 
@@ -341,6 +404,8 @@ private:
       return "PriorTemplateArgumentSubstitution";
     case CodeSynthesisContext::DefaultTemplateArgumentChecking:
       return "DefaultTemplateArgumentChecking";
+    case CodeSynthesisContext::ExceptionSpecEvaluation:
+      return "ExceptionSpecEvaluation";
     case CodeSynthesisContext::ExceptionSpecInstantiation:
       return "ExceptionSpecInstantiation";
     case CodeSynthesisContext::DeclaringSpecialMember:
@@ -377,7 +442,7 @@ private:
     if (auto *NamedTemplate = dyn_cast_or_null<NamedDecl>(Inst.Entity)) {
       llvm::raw_string_ostream OS(Entry.Name);
       NamedTemplate->getNameForDiagnostic(OS, TheSema.getLangOpts(), true);
-      const PresumedLoc DefLoc = 
+      const PresumedLoc DefLoc =
         TheSema.getSourceManager().getPresumedLoc(Inst.Entity->getLocation());
       if(!DefLoc.isInvalid())
         Entry.DefinitionLocation = std::string(DefLoc.getFilename()) + ":" +
@@ -560,6 +625,56 @@ namespace {
 
       Out << "\n";
     }
+
+    /// Tells the \c ASTReaderListener that we want to receive the
+    /// input files of the AST file via \c visitInputFile.
+    bool needsInputFileVisitation() override { return true; }
+
+    /// Tells the \c ASTReaderListener that we want to receive the
+    /// input files of the AST file via \c visitInputFile.
+    bool needsSystemInputFileVisitation() override { return true; }
+
+    /// Indicates that the AST file contains particular input file.
+    ///
+    /// \returns true to continue receiving the next input file, false to stop.
+    bool visitInputFile(StringRef Filename, bool isSystem,
+                        bool isOverridden, bool isExplicitModule) override {
+
+      Out.indent(2) << "Input file: " << Filename;
+
+      if (isSystem || isOverridden || isExplicitModule) {
+        Out << " [";
+        if (isSystem) {
+          Out << "System";
+          if (isOverridden || isExplicitModule)
+            Out << ", ";
+        }
+        if (isOverridden) {
+          Out << "Overridden";
+          if (isExplicitModule)
+            Out << ", ";
+        }
+        if (isExplicitModule)
+          Out << "ExplicitModule";
+
+        Out << "]";
+      }
+
+      Out << "\n";
+
+      return true;
+    }
+
+    /// Returns true if this \c ASTReaderListener wants to receive the
+    /// imports of the AST file via \c visitImport, false otherwise.
+    bool needsImportVisitation() const override { return true; }
+
+    /// If needsImportVisitation returns \c true, this is called for each
+    /// AST file imported by this AST file.
+    void visitImport(StringRef ModuleName, StringRef Filename) override {
+      Out.indent(2) << "Imports module '" << ModuleName
+                    << "': " << Filename.str() << "\n";
+    }
 #undef DUMP_BOOLEAN
   };
 }
@@ -634,16 +749,6 @@ void DumpTokensAction::ExecuteAction() {
   } while (Tok.isNot(tok::eof));
 }
 
-void GeneratePTHAction::ExecuteAction() {
-  CompilerInstance &CI = getCompilerInstance();
-  std::unique_ptr<raw_pwrite_stream> OS =
-      CI.createDefaultOutputFile(true, getCurrentFile());
-  if (!OS)
-    return;
-
-  CacheTokens(CI.getPreprocessor(), OS.get());
-}
-
 void PreprocessOnlyAction::ExecuteAction() {
   Preprocessor &PP = getCompilerInstance().getPreprocessor();
 
@@ -670,13 +775,13 @@ void PrintPreprocessedAction::ExecuteAction() {
   // the input format has inconsistent line endings.
   //
   // This should be a relatively fast operation since most files won't have
-  // all of their source code on a single line. However, that is still a 
+  // all of their source code on a single line. However, that is still a
   // concern, so if we scan for too long, we'll just assume the file should
   // be opened in binary mode.
   bool BinaryMode = true;
   bool InvalidFile = false;
   const SourceManager& SM = CI.getSourceManager();
-  const llvm::MemoryBuffer *Buffer = SM.getBuffer(SM.getMainFileID(), 
+  const llvm::MemoryBuffer *Buffer = SM.getBuffer(SM.getMainFileID(),
                                                      &InvalidFile);
   if (!InvalidFile) {
     const char *cur = Buffer->getBufferStart();
@@ -684,7 +789,7 @@ void PrintPreprocessedAction::ExecuteAction() {
     const char *next = (cur != end) ? cur + 1 : end;
 
     // Limit ourselves to only scanning 256 characters into the source
-    // file.  This is mostly a sanity check in case the file has no 
+    // file.  This is mostly a sanity check in case the file has no
     // newlines whatsoever.
     if (end - cur > 256) end = cur + 256;
 
@@ -703,7 +808,7 @@ void PrintPreprocessedAction::ExecuteAction() {
   }
 
   std::unique_ptr<raw_ostream> OS =
-      CI.createDefaultOutputFile(BinaryMode, getCurrentFile());
+      CI.createDefaultOutputFile(BinaryMode, getCurrentFileOrBufferName());
   if (!OS) return;
 
   // If we're preprocessing a module map, start by dumping the contents of the
@@ -715,8 +820,6 @@ void PrintPreprocessedAction::ExecuteAction() {
       OS->write_escaped(Input.getFile());
       (*OS) << "\"\n";
     }
-    // FIXME: Include additional information here so that we don't need the
-    // original source files to exist on disk.
     getCurrentModule()->print(*OS);
     (*OS) << "#pragma clang module contents\n";
   }
@@ -735,7 +838,7 @@ void PrintPreambleAction::ExecuteAction() {
   case InputKind::CUDA:
   case InputKind::HIP:
     break;
-      
+
   case InputKind::Unknown:
   case InputKind::Asm:
   case InputKind::LLVM_IR:

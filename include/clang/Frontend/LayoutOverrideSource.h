@@ -1,9 +1,8 @@
-//===--- LayoutOverrideSource.h --Override Record Layouts -----------------===//
+//===--- LayoutOverrideSource.h --Override Record Layouts -------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,24 +26,24 @@ namespace clang {
     struct Layout {
       /// The size of the record.
       uint64_t Size;
-      
+
       /// The alignment of the record.
       uint64_t Align;
-      
+
       /// The offsets of the fields, in source order.
       SmallVector<uint64_t, 8> FieldOffsets;
     };
-    
+
     /// The set of layouts that will be overridden.
     llvm::StringMap<Layout> Layouts;
-    
+
   public:
     /// Create a new AST source that overrides the layout of some
     /// set of record types.
     ///
     /// The file is the result of passing -fdump-record-layouts to a file.
     explicit LayoutOverrideSource(StringRef Filename);
-    
+
     /// If this particular record type has an overridden layout,
     /// return that layout.
     bool
@@ -54,7 +53,7 @@ namespace clang {
        llvm::DenseMap<const CXXRecordDecl *, CharUnits> &BaseOffsets,
        llvm::DenseMap<const CXXRecordDecl *,
                       CharUnits> &VirtualBaseOffsets) override;
-    
+
     /// Dump the overridden layouts.
     void dump();
   };

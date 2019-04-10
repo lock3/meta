@@ -1,9 +1,8 @@
 //===--- Attr.h - Classes for representing attributes ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -14,6 +13,7 @@
 #ifndef LLVM_CLANG_AST_ATTR_H
 #define LLVM_CLANG_AST_ATTR_H
 
+#include "clang/AST/ASTContextAllocate.h"  // For Attrs.inc
 #include "clang/AST/AttrIterator.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
@@ -86,7 +86,7 @@ public:
   attr::Kind getKind() const {
     return static_cast<attr::Kind>(AttrKind);
   }
-  
+
   unsigned getSpellingListIndex() const { return SpellingListIndex; }
   const char *getSpelling() const;
 
@@ -111,6 +111,19 @@ public:
 
   // Pretty print this attribute.
   void printPretty(raw_ostream &OS, const PrintingPolicy &Policy) const;
+};
+
+class TypeAttr : public Attr {
+protected:
+  TypeAttr(attr::Kind AK, SourceRange R, unsigned SpellingListIndex,
+           bool IsLateParsed)
+      : Attr(AK, R, SpellingListIndex, IsLateParsed) {}
+
+public:
+  static bool classof(const Attr *A) {
+    return A->getKind() >= attr::FirstTypeAttr &&
+           A->getKind() <= attr::LastTypeAttr;
+  }
 };
 
 class StmtAttr : public Attr {

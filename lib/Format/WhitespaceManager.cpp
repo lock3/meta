@@ -1,9 +1,8 @@
 //===--- WhitespaceManager.cpp - Format C++ code --------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -90,7 +89,7 @@ const tooling::Replacements &WhitespaceManager::generateReplacements() {
   if (Changes.empty())
     return Replaces;
 
-  llvm::sort(Changes.begin(), Changes.end(), Change::IsBeforeInFile(SourceMgr));
+  llvm::sort(Changes, Change::IsBeforeInFile(SourceMgr));
   calculateLineBreakInformation();
   alignConsecutiveDeclarations();
   alignConsecutiveAssignments();
@@ -255,8 +254,14 @@ AlignTokenSequence(unsigned Start, unsigned End, unsigned Column, F &&Matches,
             Changes[ScopeStack.back()].indentAndNestingLevel())
       ScopeStack.pop_back();
 
+    // Compare current token to previous non-comment token to ensure whether
+    // it is in a deeper scope or not.
+    unsigned PreviousNonComment = i - 1;
+    while (PreviousNonComment > Start &&
+           Changes[PreviousNonComment].Tok->is(tok::comment))
+      PreviousNonComment--;
     if (i != Start && Changes[i].indentAndNestingLevel() >
-                          Changes[i - 1].indentAndNestingLevel())
+                          Changes[PreviousNonComment].indentAndNestingLevel())
       ScopeStack.push_back(i);
 
     bool InsideNestedScope = ScopeStack.size() != 0;

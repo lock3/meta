@@ -1,9 +1,8 @@
 //== RangeConstraintManager.cpp - Manage range constraints.------*- C++ -*--==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -343,9 +342,11 @@ bool RangeConstraintManager::canReasonAbout(SVal X) const {
       if (BinaryOperator::isEqualityOp(SSE->getOpcode()) ||
           BinaryOperator::isRelationalOp(SSE->getOpcode())) {
         // We handle Loc <> Loc comparisons, but not (yet) NonLoc <> NonLoc.
+        // We've recently started producing Loc <> NonLoc comparisons (that
+        // result from casts of one of the operands between eg. intptr_t and
+        // void *), but we can't reason about them yet.
         if (Loc::isLocType(SSE->getLHS()->getType())) {
-          assert(Loc::isLocType(SSE->getRHS()->getType()));
-          return true;
+          return Loc::isLocType(SSE->getRHS()->getType());
         }
       }
     }
@@ -397,7 +398,7 @@ RangeConstraintManager::removeDeadBindings(ProgramStateRef State,
 
   for (ConstraintRangeTy::iterator I = CR.begin(), E = CR.end(); I != E; ++I) {
     SymbolRef Sym = I.getKey();
-    if (SymReaper.maybeDead(Sym)) {
+    if (SymReaper.isDead(Sym)) {
       Changed = true;
       CR = CRFactory.remove(CR, Sym);
     }

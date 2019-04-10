@@ -1,9 +1,8 @@
 //===--- CrossWindowsToolChain.cpp - Cross Windows Tool Chain -------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,6 +19,7 @@ using namespace clang::driver;
 using namespace clang::driver::toolchains;
 
 using llvm::opt::ArgList;
+using llvm::opt::ArgStringList;
 
 void tools::CrossWindows::Assembler::ConstructJob(
     Compilation &C, const JobAction &JA, const InputInfo &Output,

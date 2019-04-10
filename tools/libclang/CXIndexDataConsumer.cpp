@@ -1,9 +1,8 @@
 //===- CXIndexDataConsumer.cpp - Index data consumer for libclang----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -222,9 +221,11 @@ bool CXIndexDataConsumer::handleDeclOccurence(
 }
 
 bool CXIndexDataConsumer::handleModuleOccurence(const ImportDecl *ImportD,
+                                                const Module *Mod,
                                                 SymbolRoleSet Roles,
                                                 SourceLocation Loc) {
-  IndexingDeclVisitor(*this, SourceLocation(), nullptr).Visit(ImportD);
+  if (Roles & (SymbolRoleSet)SymbolRole::Declaration)
+    IndexingDeclVisitor(*this, SourceLocation(), nullptr).Visit(ImportD);
   return !shouldAbort();
 }
 
@@ -307,7 +308,7 @@ AttrListInfo::AttrListInfo(const Decl *D, CXIndexDataConsumer &IdxCtx)
     const IBOutletCollectionAttr *
       IBAttr = cast<IBOutletCollectionAttr>(IBInfo.A);
     SourceLocation InterfaceLocStart =
-        IBAttr->getInterfaceLoc()->getTypeLoc().getLocStart();
+        IBAttr->getInterfaceLoc()->getTypeLoc().getBeginLoc();
     IBInfo.IBCollInfo.attrInfo = &IBInfo;
     IBInfo.IBCollInfo.classLoc = IdxCtx.getIndexLoc(InterfaceLocStart);
     IBInfo.IBCollInfo.objcClass = nullptr;

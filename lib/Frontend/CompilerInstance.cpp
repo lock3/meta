@@ -1,9 +1,8 @@
 //===--- CompilerInstance.cpp ---------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -30,7 +29,6 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Frontend/VerifyDiagnosticConsumer.h"
 #include "clang/Lex/HeaderSearch.h"
-#include "clang/Lex/PTHManager.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Sema/CodeCompleteConsumer.h"
@@ -38,6 +36,7 @@
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/GlobalModuleIndex.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
@@ -177,18 +176,18 @@ static void collectIncludePCH(CompilerInstance &CI,
   std::error_code EC;
   SmallString<128> DirNative;
   llvm::sys::path::native(PCHDir->getName(), DirNative);
-  vfs::FileSystem &FS = *FileMgr.getVirtualFileSystem();
+  llvm::vfs::FileSystem &FS = *FileMgr.getVirtualFileSystem();
   SimpleASTReaderListener Validator(CI.getPreprocessor());
-  for (vfs::directory_iterator Dir = FS.dir_begin(DirNative, EC), DirEnd;
+  for (llvm::vfs::directory_iterator Dir = FS.dir_begin(DirNative, EC), DirEnd;
        Dir != DirEnd && !EC; Dir.increment(EC)) {
     // Check whether this is an AST file. ASTReader::isAcceptableASTFile is not
     // used here since we're not interested in validating the PCH at this time,
     // but only to check whether this is a file containing an AST.
     if (!ASTReader::readASTFileControlBlock(
-            Dir->getName(), FileMgr, CI.getPCHContainerReader(),
+            Dir->path(), FileMgr, CI.getPCHContainerReader(),
             /*FindModuleFileExtensions=*/false, Validator,
             /*ValidateDiagnosticOptions=*/false))
-      MDC->addFile(Dir->getName());
+      MDC->addFile(Dir->path());
   }
 }
 
@@ -198,14 +197,14 @@ static void collectVFSEntries(CompilerInstance &CI,
     return;
 
   // Collect all VFS found.
-  SmallVector<vfs::YAMLVFSEntry, 16> VFSEntries;
+  SmallVector<llvm::vfs::YAMLVFSEntry, 16> VFSEntries;
   for (const std::string &VFSFile : CI.getHeaderSearchOpts().VFSOverlayFiles) {
     llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
         llvm::MemoryBuffer::getFile(VFSFile);
     if (!Buffer)
       return;
-    vfs::collectVFSFromYAML(std::move(Buffer.get()), /*DiagHandler*/ nullptr,
-                            VFSFile, VFSEntries);
+    llvm::vfs::collectVFSFromYAML(std::move(Buffer.get()),
+                                  /*DiagHandler*/ nullptr, VFSFile, VFSEntries);
   }
 
   for (auto &E : VFSEntries)
@@ -292,7 +291,7 @@ CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
   if (!Opts->DiagnosticSerializationFile.empty())
     SetupSerializedDiagnostics(Opts, *Diags,
                                Opts->DiagnosticSerializationFile);
-  
+
   // Configure our handling of diagnostics.
   ProcessWarningOptions(*Diags, *Opts);
 
@@ -303,7 +302,7 @@ CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
 
 FileManager *CompilerInstance::createFileManager() {
   if (!hasVirtualFileSystem()) {
-    IntrusiveRefCntPtr<vfs::FileSystem> VFS =
+    IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
         createVFSFromCompilerInvocation(getInvocation(), getDiagnostics());
     setVirtualFileSystem(VFS);
   }
@@ -372,10 +371,8 @@ static void InitializeFileRemapping(DiagnosticsEngine &Diags,
 void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
   const PreprocessorOptions &PPOpts = getPreprocessorOpts();
 
-  // Create a PTH manager if we are using some form of a token cache.
-  PTHManager *PTHMgr = nullptr;
-  if (!PPOpts.TokenCache.empty())
-    PTHMgr = PTHManager::Create(PPOpts.TokenCache, getDiagnostics());
+  // The module manager holds a reference to the old preprocessor (if any).
+  ModuleManager.reset();
 
   // Create the Preprocessor.
   HeaderSearch *HeaderInfo =
@@ -383,18 +380,11 @@ void CompilerInstance::createPreprocessor(TranslationUnitKind TUKind) {
                        getDiagnostics(), getLangOpts(), &getTarget());
   PP = std::make_shared<Preprocessor>(
       Invocation->getPreprocessorOptsPtr(), getDiagnostics(), getLangOpts(),
-      getSourceManager(), getPCMCache(), *HeaderInfo, *this, PTHMgr,
+      getSourceManager(), getPCMCache(), *HeaderInfo, *this,
+      /*IdentifierInfoLookup=*/nullptr,
       /*OwnsHeaderSearch=*/true, TUKind);
   getTarget().adjust(getLangOpts());
   PP->Initialize(getTarget(), getAuxTarget());
-
-  // Note that this is different then passing PTHMgr to Preprocessor's ctor.
-  // That argument is used as the IdentifierInfoLookup argument to
-  // IdentifierTable's ctor.
-  if (PTHMgr) {
-    PTHMgr->setPreprocessor(&*PP);
-    PP->setPTHManager(PTHMgr);
-  }
 
   if (PPOpts.DetailedRecord)
     PP->createPreprocessingRecord();
@@ -911,6 +901,9 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   // taking it as an input instead of hard-coding llvm::errs.
   raw_ostream &OS = llvm::errs();
 
+  if (!Act.PrepareToExecute(*this))
+    return false;
+
   // Create the target instance.
   setTarget(TargetInfo::CreateTargetInfo(getDiagnostics(),
                                          getInvocation().TargetOpts));
@@ -921,7 +914,7 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   if ((getLangOpts().CUDA || getLangOpts().OpenMPIsDevice) &&
       !getFrontendOpts().AuxTriple.empty()) {
     auto TO = std::make_shared<TargetOptions>();
-    TO->Triple = getFrontendOpts().AuxTriple;
+    TO->Triple = llvm::Triple::normalize(getFrontendOpts().AuxTriple);
     TO->HostTriple = getTarget().getTriple().str();
     setAuxTarget(TargetInfo::CreateTargetInfo(getDiagnostics(), TO));
   }
@@ -935,7 +928,10 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   // Adjust target options based on codegen options.
   getTarget().adjustTargetOptions(getCodeGenOpts(), getTargetOpts());
 
-  // rewriter project will change target built-in bool type from its default. 
+  if (auto *Aux = getAuxTarget())
+    getTarget().setAuxTarget(Aux);
+
+  // rewriter project will change target built-in bool type from its default.
   if (getFrontendOpts().ProgramAction == frontend::RewriteObjC)
     getTarget().noSignedCharForObjCBool();
 
@@ -1021,12 +1017,12 @@ static InputKind::Language getLanguageFromOptions(const LangOptions &LangOpts) {
     return InputKind::OpenCL;
   if (LangOpts.CUDA)
     return InputKind::CUDA;
-  if (LangOpts.ObjC1)
+  if (LangOpts.ObjC)
     return LangOpts.CPlusPlus ? InputKind::ObjCXX : InputKind::ObjC;
   return LangOpts.CPlusPlus ? InputKind::CXX : InputKind::C;
 }
 
-/// Compile a module file for the given module, using the options 
+/// Compile a module file for the given module, using the options
 /// provided by the importing compiler instance. Returns true if the module
 /// was built without errors.
 static bool
@@ -1042,7 +1038,7 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
       std::make_shared<CompilerInvocation>(ImportingInstance.getInvocation());
 
   PreprocessorOptions &PPOpts = Invocation->getPreprocessorOpts();
-  
+
   // For any options that aren't intended to affect how a module is built,
   // reset them to their default values.
   Invocation->getLangOpts()->resetNonModularOptions();
@@ -1092,11 +1088,11 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
 
   // Don't free the remapped file buffers; they are owned by our caller.
   PPOpts.RetainRemappedFileBuffers = true;
-    
+
   Invocation->getDiagnosticOpts().VerifyDiagnostics = 0;
   assert(ImportingInstance.getInvocation().getModuleHash() ==
          Invocation->getModuleHash() && "Module hash mismatch!");
-  
+
   // Construct a compiler instance that will be used to actually create the
   // module.  Since we're sharing a PCMCache,
   // CompilerInstance::CompilerInstance is responsible for finalizing the
@@ -1172,7 +1168,7 @@ static const FileEntry *getPublicModuleMap(const FileEntry *File,
   return FileMgr.getFile(PublicFilename);
 }
 
-/// Compile a module file for the given module, using the options 
+/// Compile a module file for the given module, using the options
 /// provided by the importing compiler instance. Returns true if the module
 /// was built without errors.
 static bool compileModuleImpl(CompilerInstance &ImportingInstance,
@@ -1183,7 +1179,7 @@ static bool compileModuleImpl(CompilerInstance &ImportingInstance,
                InputKind::ModuleMap);
 
   // Get or create the module map that we'll use to build this module.
-  ModuleMap &ModMap 
+  ModuleMap &ModMap
     = ImportingInstance.getPreprocessor().getHeaderSearchInfo().getModuleMap();
   bool Result;
   if (const FileEntry *ModuleMapFile =
@@ -1266,7 +1262,7 @@ static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
           << Module->Name << Locked.getErrorMessage();
       // Clear out any potential leftover.
       Locked.unsafeRemoveLockFile();
-      // FALLTHROUGH
+      LLVM_FALLTHROUGH;
     case llvm::LockFileManager::LFS_Owned:
       // We're responsible for building the module ourselves.
       if (!compileModuleImpl(ImportingInstance, ModuleNameLoc, Module,
@@ -1327,7 +1323,7 @@ static void checkConfigMacro(Preprocessor &PP, StringRef ConfigMacro,
                              Module *Mod, SourceLocation ImportLoc) {
   IdentifierInfo *Id = PP.getIdentifierInfo(ConfigMacro);
   SourceManager &SourceMgr = PP.getSourceManager();
-  
+
   // If this identifier has never had a macro definition, then it could
   // not have changed.
   if (!Id->hadMacroDefinition())
@@ -1615,22 +1611,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
                              Module::NameVisibilityKind Visibility,
                              bool IsInclusionDirective) {
   // Determine what file we're searching from.
-  // FIXME: Should we be deciding whether this is a submodule (here and
-  // below) based on -fmodules-ts or should we pass a flag and make the
-  // caller decide?
-  std::string ModuleName;
-  if (getLangOpts().ModulesTS) {
-    // FIXME: Same code as Sema::ActOnModuleDecl() so there is probably a
-    // better place/way to do this.
-    for (auto &Piece : Path) {
-      if (!ModuleName.empty())
-        ModuleName += ".";
-      ModuleName += Piece.first->getName();
-    }
-  }
-  else
-    ModuleName = Path[0].first->getName();
-
+  StringRef ModuleName = Path[0].first->getName();
   SourceLocation ModuleNameLoc = Path[0].second;
 
   // If we've already handled this import, just return the cached result.
@@ -1651,10 +1632,12 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     = KnownModules.find(Path[0].first);
   if (Known != KnownModules.end()) {
     // Retrieve the cached top-level module.
-    Module = Known->second;    
+    Module = Known->second;
   } else if (ModuleName == getLangOpts().CurrentModule) {
-    // This is the module we're building. 
-    Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
+    // This is the module we're building.
+    Module = PP->getHeaderSearchInfo().lookupModule(
+        ModuleName, /*AllowSearch*/ true,
+        /*AllowExtraModuleMapSearch*/ !IsInclusionDirective);
     /// FIXME: perhaps we should (a) look for a module using the module name
     //  to file map (PrebuiltModuleFiles) and (b) diagnose if still not found?
     //if (Module == nullptr) {
@@ -1666,7 +1649,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
   } else {
     // Search for a module with the given name.
-    Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
+    Module = PP->getHeaderSearchInfo().lookupModule(ModuleName, true,
+                                                    !IsInclusionDirective);
     HeaderSearchOptions &HSOpts =
         PP->getHeaderSearchInfo().getHeaderSearchOpts();
 
@@ -1733,7 +1717,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     // module cache, we don't know how to rebuild modules.
     unsigned ARRFlags = Source == ModuleCache ?
                         ASTReader::ARR_OutOfDate | ASTReader::ARR_Missing :
-                        ASTReader::ARR_ConfigurationMismatch;
+                        Source == PrebuiltModulePath ?
+                            0 :
+                            ASTReader::ARR_ConfigurationMismatch;
     switch (ModuleManager->ReadAST(ModuleFileName,
                                    Source == PrebuiltModulePath
                                        ? serialization::MK_PrebuiltModule
@@ -1743,7 +1729,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
                                    ImportLoc, ARRFlags)) {
     case ASTReader::Success: {
       if (Source != ModuleCache && !Module) {
-        Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
+        Module = PP->getHeaderSearchInfo().lookupModule(ModuleName, true,
+                                                        !IsInclusionDirective);
         if (!Module || !Module->getASTFile() ||
             FileMgr->getFile(ModuleFileName) != Module->getASTFile()) {
           // Error out if Module does not refer to the file in the prebuilt
@@ -1847,7 +1834,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     // Cache the result of this top-level module lookup for later.
     Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
   }
-  
+
   // If we never found the module, fail.
   if (!Module)
     return ModuleLoadResult();
@@ -1855,7 +1842,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   // Verify that the rest of the module path actually corresponds to
   // a submodule.
   bool MapPrivateSubModToTopLevel = false;
-  if (!getLangOpts().ModulesTS && Path.size() > 1) {
+  if (Path.size() > 1) {
     for (unsigned I = 1, N = Path.size(); I != N; ++I) {
       StringRef Name = Path[I].first->getName();
       clang::Module *Sub = Module->findSubmodule(Name);
@@ -1874,7 +1861,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
             PrivateModule, PP->getIdentifierInfo(Module->Name)->getTokenID());
         PrivPath.push_back(std::make_pair(&II, Path[0].second));
 
-        if (PP->getHeaderSearchInfo().lookupModule(PrivateModule))
+        if (PP->getHeaderSearchInfo().lookupModule(PrivateModule, true,
+                                                   !IsInclusionDirective))
           Sub =
               loadModule(ImportLoc, PrivPath, Visibility, IsInclusionDirective);
         if (Sub) {
@@ -1892,13 +1880,13 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
           }
         }
       }
-      
+
       if (!Sub) {
         // Attempt to perform typo correction to find a module name that works.
         SmallVector<StringRef, 2> Best;
         unsigned BestEditDistance = (std::numeric_limits<unsigned>::max)();
-        
-        for (clang::Module::submodule_iterator J = Module->submodule_begin(), 
+
+        for (clang::Module::submodule_iterator J = Module->submodule_begin(),
                                             JEnd = Module->submodule_end();
              J != JEnd; ++J) {
           unsigned ED = Name.edit_distance((*J)->Name,
@@ -1909,20 +1897,20 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
               Best.clear();
               BestEditDistance = ED;
             }
-            
+
             Best.push_back((*J)->Name);
           }
         }
-        
+
         // If there was a clear winner, user it.
         if (Best.size() == 1) {
-          getDiagnostics().Report(Path[I].second, 
+          getDiagnostics().Report(Path[I].second,
                                   diag::err_no_submodule_suggest)
             << Path[I].first << Module->getFullModuleName() << Best[0]
             << SourceRange(Path[0].second, Path[I-1].second)
             << FixItHint::CreateReplacement(SourceRange(Path[I].second),
                                             Best[0]);
-          
+
           Sub = Module->findSubmodule(Best[0]);
         }
       }
@@ -1935,7 +1923,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
           << SourceRange(Path[0].second, Path[I-1].second);
         break;
       }
-      
+
       Module = Sub;
     }
   }
@@ -2134,7 +2122,7 @@ CompilerInstance::lookupMissingImports(StringRef Name,
 
   return false;
 }
-void CompilerInstance::resetAndLeakSema() { BuryPointer(takeSema()); }
+void CompilerInstance::resetAndLeakSema() { llvm::BuryPointer(takeSema()); }
 
 void CompilerInstance::setExternalSemaSource(
     IntrusiveRefCntPtr<ExternalSemaSource> ESS) {

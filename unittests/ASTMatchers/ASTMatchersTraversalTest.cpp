@@ -1,9 +1,8 @@
 //= unittests/ASTMatchers/ASTMatchersTraversalTest.cpp - matchers unit tests =//
 //
-//                     The LLVM Compiler Infrastructure
-//`
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -406,9 +405,22 @@ TEST(Matcher, AnyArgument) {
   auto HasArgumentY = hasAnyArgument(
       ignoringParenImpCasts(declRefExpr(to(varDecl(hasName("y"))))));
   StatementMatcher CallArgumentY = callExpr(HasArgumentY);
+  StatementMatcher CtorArgumentY = cxxConstructExpr(HasArgumentY);
+  StatementMatcher UnresolvedCtorArgumentY =
+      cxxUnresolvedConstructExpr(HasArgumentY);
   StatementMatcher ObjCCallArgumentY = objcMessageExpr(HasArgumentY);
   EXPECT_TRUE(matches("void x(int, int) { int y; x(1, y); }", CallArgumentY));
   EXPECT_TRUE(matches("void x(int, int) { int y; x(y, 42); }", CallArgumentY));
+  EXPECT_TRUE(matches("struct Y { Y(int, int); };"
+                      "void x() { int y; (void)Y(1, y); }",
+                      CtorArgumentY));
+  EXPECT_TRUE(matches("struct Y { Y(int, int); };"
+                      "void x() { int y; (void)Y(y, 42); }",
+                      CtorArgumentY));
+  EXPECT_TRUE(matches("template <class Y> void x() { int y; (void)Y(1, y); }",
+                      UnresolvedCtorArgumentY));
+  EXPECT_TRUE(matches("template <class Y> void x() { int y; (void)Y(y, 42); }",
+                      UnresolvedCtorArgumentY));
   EXPECT_TRUE(matchesObjC("@interface I -(void)f:(int) y; @end "
                           "void x(I* i) { int y; [i f:y]; }",
                           ObjCCallArgumentY));
@@ -416,10 +428,45 @@ TEST(Matcher, AnyArgument) {
                            "void x(I* i) { int z; [i f:z]; }",
                            ObjCCallArgumentY));
   EXPECT_TRUE(notMatches("void x(int, int) { x(1, 2); }", CallArgumentY));
+  EXPECT_TRUE(notMatches("struct Y { Y(int, int); };"
+                         "void x() { int y; (void)Y(1, 2); }",
+                         CtorArgumentY));
+  EXPECT_TRUE(notMatches("template <class Y>"
+                         "void x() { int y; (void)Y(1, 2); }",
+                         UnresolvedCtorArgumentY));
 
   StatementMatcher ImplicitCastedArgument = callExpr(
     hasAnyArgument(implicitCastExpr()));
   EXPECT_TRUE(matches("void x(long) { int y; x(y); }", ImplicitCastedArgument));
+}
+
+TEST(Matcher, HasReceiver) {
+  EXPECT_TRUE(matchesObjC(
+      "@interface NSString @end "
+      "void f(NSString *x) {"
+      "[x containsString];"
+      "}",
+      objcMessageExpr(hasReceiver(declRefExpr(to(varDecl(hasName("x"))))))));
+
+  EXPECT_FALSE(matchesObjC(
+      "@interface NSString +(NSString *) stringWithFormat; @end "
+      "void f() { [NSString stringWithFormat]; }",
+      objcMessageExpr(hasReceiver(declRefExpr(to(varDecl(hasName("x"))))))));
+}
+
+TEST(Matcher, isInstanceMessage) {
+  EXPECT_TRUE(matchesObjC(
+      "@interface NSString @end "
+      "void f(NSString *x) {"
+      "[x containsString];"
+      "}",
+      objcMessageExpr(isInstanceMessage())));
+
+  EXPECT_FALSE(matchesObjC(
+      "@interface NSString +(NSString *) stringWithFormat; @end "
+      "void f() { [NSString stringWithFormat]; }",
+      objcMessageExpr(isInstanceMessage())));
+
 }
 
 TEST(ForEachArgumentWithParam, ReportsNoFalsePositives) {
@@ -1273,6 +1320,45 @@ TEST(IgnoringImplicit, MatchesImplicit) {
                       varDecl(has(ignoringImplicit(cxxConstructExpr())))));
 }
 
+TEST(IgnoringImplicit, MatchesNestedImplicit) {
+  StringRef Code = R"(
+
+struct OtherType;
+
+struct SomeType
+{
+    SomeType() {}
+    SomeType(const OtherType&) {}
+    SomeType& operator=(OtherType const&) { return *this; }
+};
+
+struct OtherType
+{
+    OtherType() {}
+    ~OtherType() {}
+};
+
+OtherType something()
+{
+    return {};
+}
+
+int main()
+{
+    SomeType i = something();
+}
+)";
+  EXPECT_TRUE(matches(Code, varDecl(
+      hasName("i"),
+      hasInitializer(exprWithCleanups(has(
+        cxxConstructExpr(has(expr(ignoringImplicit(cxxConstructExpr(
+          has(expr(ignoringImplicit(callExpr())))
+          )))))
+        )))
+      )
+  ));
+}
+
 TEST(IgnoringImplicit, DoesNotMatchIncorrectly) {
   EXPECT_TRUE(
       notMatches("class C {}; C a = C();", varDecl(has(cxxConstructExpr()))));
@@ -1487,13 +1573,16 @@ TEST(SwitchCase, MatchesEachCase) {
     ifStmt(has(switchStmt(forEachSwitchCase(defaultStmt()))))));
   EXPECT_TRUE(matches("void x() { switch(42) { case 1+1: case 4:; } }",
                       switchStmt(forEachSwitchCase(
-                        caseStmt(hasCaseConstant(integerLiteral()))))));
+                        caseStmt(hasCaseConstant(
+                            constantExpr(has(integerLiteral()))))))));
   EXPECT_TRUE(notMatches("void x() { switch(42) { case 1+1: case 2+2:; } }",
                          switchStmt(forEachSwitchCase(
-                           caseStmt(hasCaseConstant(integerLiteral()))))));
+                           caseStmt(hasCaseConstant(
+                               constantExpr(has(integerLiteral()))))))));
   EXPECT_TRUE(notMatches("void x() { switch(42) { case 1 ... 2:; } }",
                          switchStmt(forEachSwitchCase(
-                           caseStmt(hasCaseConstant(integerLiteral()))))));
+                           caseStmt(hasCaseConstant(
+                               constantExpr(has(integerLiteral()))))))));
   EXPECT_TRUE(matchAndVerifyResultTrue(
     "void x() { switch (42) { case 1: case 2: case 3: default:; } }",
     switchStmt(forEachSwitchCase(caseStmt().bind("x"))),

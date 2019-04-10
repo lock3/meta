@@ -1,9 +1,8 @@
 //===--- FormatToken.h - Format C++ code ------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -86,6 +85,7 @@ namespace format {
   TYPE(RegexLiteral)                                                           \
   TYPE(SelectorName)                                                           \
   TYPE(StartOfName)                                                            \
+  TYPE(StatementMacro)                                                         \
   TYPE(StructuredBindingLSquare)                                               \
   TYPE(TemplateCloser)                                                         \
   TYPE(TemplateOpener)                                                         \
@@ -188,10 +188,6 @@ struct FormatToken {
   bool ClosesTemplateDeclaration = false;
 
   /// Number of parameters, if this is "(", "[" or "<".
-  ///
-  /// This is initialized to 1 as we don't need to distinguish functions with
-  /// 0 parameters from functions with 1 parameter. Thus, we can simply count
-  /// the number of commas.
   unsigned ParameterCount = 0;
 
   /// Number of parameters that are nested blocks,
@@ -268,7 +264,7 @@ struct FormatToken {
   /// \c true if this token ends a binary expression.
   bool EndsBinaryExpression = false;
 
-  /// Is this is an operator (or "."/"->") in a sequence of operators
+  /// If this is an operator (or "."/"->") in a sequence of operators
   /// with the same precedence, contains the 0-based operator index.
   unsigned OperatorIndex = 0;
 
@@ -324,6 +320,14 @@ struct FormatToken {
     return is(K1) || isOneOf(K2, Ks...);
   }
   template <typename T> bool isNot(T Kind) const { return !is(Kind); }
+
+  bool closesScopeAfterBlock() const {
+    if (BlockKind == BK_Block)
+      return true;
+    if (closesScope())
+      return Previous->closesScopeAfterBlock();
+    return false;
+  }
 
   /// \c true if this token starts a sequence with the given tokens in order,
   /// following the ``Next`` pointers, ignoring comments.
@@ -520,8 +524,8 @@ struct FormatToken {
     const FormatToken *NamespaceTok = this;
     if (is(tok::comment))
       NamespaceTok = NamespaceTok->getNextNonComment();
-    // Detect "(inline)? namespace" in the beginning of a line.
-    if (NamespaceTok && NamespaceTok->is(tok::kw_inline))
+    // Detect "(inline|export)? namespace" in the beginning of a line.
+    if (NamespaceTok && NamespaceTok->isOneOf(tok::kw_inline, tok::kw_export))
       NamespaceTok = NamespaceTok->getNextNonComment();
     return NamespaceTok && NamespaceTok->is(tok::kw_namespace) ? NamespaceTok
                                                                : nullptr;
@@ -594,6 +598,8 @@ public:
   /// Notifies the \c Role that a comma was found.
   virtual void CommaFound(const FormatToken *Token) {}
 
+  virtual const FormatToken *lastComma() { return nullptr; }
+
 protected:
   const FormatStyle &Style;
 };
@@ -614,6 +620,12 @@ public:
   /// Adds \p Token as the next comma to the \c CommaSeparated list.
   void CommaFound(const FormatToken *Token) override {
     Commas.push_back(Token);
+  }
+
+  const FormatToken *lastComma() override {
+    if (Commas.empty())
+      return nullptr;
+    return Commas.back();
   }
 
 private:
@@ -672,6 +684,7 @@ struct AdditionalKeywords {
     kw_function = &IdentTable.get("function");
     kw_get = &IdentTable.get("get");
     kw_import = &IdentTable.get("import");
+    kw_infer = &IdentTable.get("infer");
     kw_is = &IdentTable.get("is");
     kw_let = &IdentTable.get("let");
     kw_module = &IdentTable.get("module");
@@ -743,6 +756,7 @@ struct AdditionalKeywords {
   IdentifierInfo *kw_function;
   IdentifierInfo *kw_get;
   IdentifierInfo *kw_import;
+  IdentifierInfo *kw_infer;
   IdentifierInfo *kw_is;
   IdentifierInfo *kw_let;
   IdentifierInfo *kw_module;

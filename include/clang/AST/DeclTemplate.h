@@ -1,9 +1,8 @@
 //===- DeclTemplate.h - Classes for representing C++ templates --*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -734,8 +733,8 @@ public:
 };
 
 /// Declaration of a redeclarable template.
-class RedeclarableTemplateDecl : public TemplateDecl, 
-                                 public Redeclarable<RedeclarableTemplateDecl> 
+class RedeclarableTemplateDecl : public TemplateDecl,
+                                 public Redeclarable<RedeclarableTemplateDecl>
 {
   using redeclarable_base = Redeclarable<RedeclarableTemplateDecl>;
 
@@ -751,6 +750,7 @@ class RedeclarableTemplateDecl : public TemplateDecl,
     return getMostRecentDecl();
   }
 
+  void anchor() override;
 protected:
   template <typename EntryType> struct SpecEntryTraits {
     using DeclType = EntryType;
@@ -823,7 +823,7 @@ protected:
   /// Pointer to the common data shared by all declarations of this
   /// template.
   mutable CommonBase *Common = nullptr;
-  
+
   /// Retrieves the "common" pointer shared by all (re-)declarations of
   /// the same template. Calling this routine may implicitly allocate memory
   /// for the common pointer.
@@ -888,10 +888,10 @@ public:
   }
 
   /// Retrieve the member template from which this template was
-  /// instantiated, or nullptr if this template was not instantiated from a 
+  /// instantiated, or nullptr if this template was not instantiated from a
   /// member template.
   ///
-  /// A template is instantiated from a member template when the member 
+  /// A template is instantiated from a member template when the member
   /// template itself is part of a class template (or member thereof). For
   /// example, given
   ///
@@ -1093,6 +1093,9 @@ public:
   /// template.
   ArrayRef<TemplateArgument> getInjectedTemplateArgs();
 
+  /// Merge \p Prev with our RedeclarableTemplateDecl::Common.
+  void mergePrevDecl(FunctionTemplateDecl *Prev);
+
   /// Create a function template node.
   static FunctionTemplateDecl *Create(ASTContext &C, DeclContext *DC,
                                       SourceLocation L,
@@ -1178,7 +1181,7 @@ public:
                                       unsigned D, unsigned P,
                                       IdentifierInfo *Id, bool Typename,
                                       bool ParameterPack);
-  static TemplateTypeParmDecl *CreateDeserialized(const ASTContext &C, 
+  static TemplateTypeParmDecl *CreateDeserialized(const ASTContext &C,
                                                   unsigned ID);
 
   /// Whether this template type parameter was declared with
@@ -1312,12 +1315,12 @@ public:
          QualType T, TypeSourceInfo *TInfo, ArrayRef<QualType> ExpandedTypes,
          ArrayRef<TypeSourceInfo *> ExpandedTInfos);
 
-  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C, 
+  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C,
                                                      unsigned ID);
-  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C, 
+  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C,
                                                      unsigned ID,
                                                      unsigned NumExpandedTypes);
-    
+
   using TemplateParmPosition::getDepth;
   using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
@@ -1495,7 +1498,7 @@ public:
   static TemplateTemplateParmDecl *CreateDeserialized(ASTContext &C,
                                                       unsigned ID,
                                                       unsigned NumExpansions);
-  
+
   using TemplateParmPosition::getDepth;
   using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
@@ -2442,7 +2445,7 @@ public:
 
   static ClassScopeFunctionSpecializationDecl *
   CreateDeserialized(ASTContext &Context, unsigned ID);
-  
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
 

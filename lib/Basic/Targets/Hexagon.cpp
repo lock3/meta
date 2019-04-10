@@ -1,9 +1,8 @@
 //===--- Hexagon.cpp - Implement Hexagon target feature support -----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -25,14 +24,7 @@ void HexagonTargetInfo::getTargetDefines(const LangOptions &Opts,
   Builder.defineMacro("__qdsp6__", "1");
   Builder.defineMacro("__hexagon__", "1");
 
-  if (CPU == "hexagonv4") {
-    Builder.defineMacro("__HEXAGON_V4__");
-    Builder.defineMacro("__HEXAGON_ARCH__", "4");
-    if (Opts.HexagonQdsp6Compat) {
-      Builder.defineMacro("__QDSP6_V4__");
-      Builder.defineMacro("__QDSP6_ARCH__", "4");
-    }
-  } else if (CPU == "hexagonv5") {
+  if (CPU == "hexagonv5") {
     Builder.defineMacro("__HEXAGON_V5__");
     Builder.defineMacro("__HEXAGON_ARCH__", "5");
     if (Opts.HexagonQdsp6Compat) {
@@ -55,6 +47,9 @@ void HexagonTargetInfo::getTargetDefines(const LangOptions &Opts,
   } else if (CPU == "hexagonv65") {
     Builder.defineMacro("__HEXAGON_V65__");
     Builder.defineMacro("__HEXAGON_ARCH__", "65");
+  } else if (CPU == "hexagonv66") {
+    Builder.defineMacro("__HEXAGON_V66__");
+    Builder.defineMacro("__HEXAGON_ARCH__", "66");
   }
 
   if (hasFeature("hvx-length64b")) {
@@ -150,9 +145,9 @@ struct CPUSuffix {
 };
 
 static constexpr CPUSuffix Suffixes[] = {
-    {{"hexagonv4"}, {"4"}},   {{"hexagonv5"}, {"5"}},
-    {{"hexagonv55"}, {"55"}}, {{"hexagonv60"}, {"60"}},
-    {{"hexagonv62"}, {"62"}}, {{"hexagonv65"}, {"65"}},
+    {{"hexagonv5"},  {"5"}},  {{"hexagonv55"}, {"55"}},
+    {{"hexagonv60"}, {"60"}}, {{"hexagonv62"}, {"62"}},
+    {{"hexagonv65"}, {"65"}}, {{"hexagonv66"}, {"66"}},
 };
 
 const char *HexagonTargetInfo::getHexagonCPUSuffix(StringRef Name) {

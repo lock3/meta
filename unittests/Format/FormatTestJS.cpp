@@ -1,9 +1,8 @@
 //===- unittest/Format/FormatTestJS.cpp - Formatting unit tests for JS ----===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -195,6 +194,12 @@ TEST_F(FormatTestJS, JSDocComments) {
             " */",
             format("/** @returns {string} jsdoc line 12 */",
                    getGoogleJSStyleWithColumns(20)));
+  EXPECT_EQ("/**\n"
+            " * @returns {string}\n"
+            " *     jsdoc line 12\n"
+            " */",
+            format("/** @returns {string} jsdoc line 12 */",
+                   getGoogleJSStyleWithColumns(25)));
 
   EXPECT_EQ("/**\n"
             " * @returns {string} jsdoc line 12\n"
@@ -202,17 +207,22 @@ TEST_F(FormatTestJS, JSDocComments) {
             format("/** @returns {string} jsdoc line 12  */",
                    getGoogleJSStyleWithColumns(20)));
 
+  // FIXME: this overcounts the */ as a continuation of the 12 when breaking.
+  // Related to the FIXME in BreakableBlockComment::getRangeLength.
   EXPECT_EQ("/**\n"
-            " * @returns {string} jsdoc line 12\n"
+            " * @returns {string}\n"
+            " *     jsdoc line line\n"
+            " *     12\n"
             " */",
-            format("/** @returns {string} jsdoc line 12*/",
-                   getGoogleJSStyleWithColumns(20)));
+            format("/** @returns {string} jsdoc line line 12*/",
+                   getGoogleJSStyleWithColumns(25)));
 
   // Fix a multiline jsdoc comment ending in a comment pragma.
   EXPECT_EQ("/**\n"
             " * line 1\n"
             " * line 2\n"
-            " * @returns {string} jsdoc line 12\n"
+            " * @returns {string}\n"
+            " *     jsdoc line 12\n"
             " */",
             format("/** line 1\n"
                    " * line 2\n"
@@ -588,6 +598,8 @@ TEST_F(FormatTestJS, GoogModules) {
   verifyFormat("goog.provide('this.is.really.absurdly.long');",
                getGoogleJSStyleWithColumns(40));
   verifyFormat("var long = goog.require('this.is.really.absurdly.long');",
+               getGoogleJSStyleWithColumns(40));
+  verifyFormat("const X = goog.requireType('this.is.really.absurdly.long');",
                getGoogleJSStyleWithColumns(40));
   verifyFormat("goog.forwardDeclare('this.is.really.absurdly.long');",
                getGoogleJSStyleWithColumns(40));
@@ -1173,6 +1185,16 @@ TEST_F(FormatTestJS, WrapRespectsAutomaticSemicolonInsertion) {
                "      }&ABC => 1)\n"
                "}",
                getGoogleJSStyleWithColumns(25));
+}
+
+TEST_F(FormatTestJS, AddsIsTheDictKeyOnNewline) {
+  // Do not confuse is, the dict key with is, the type matcher. Put is, the dict
+  // key, on a newline.
+  verifyFormat("Polymer({\n"
+               "  is: '',  //\n"
+               "  rest: 1\n"
+               "});",
+               getGoogleJSStyleWithColumns(20));
 }
 
 TEST_F(FormatTestJS, AutomaticSemicolonInsertionHeuristic) {
@@ -2028,10 +2050,10 @@ TEST_F(FormatTestJS, WrapAfterParen) {
 
 TEST_F(FormatTestJS, JSDocAnnotations) {
   verifyFormat("/**\n"
-               " * @export {this.is.a.long.path.to.a.Type}\n"
+               " * @exports {this.is.a.long.path.to.a.Type}\n"
                " */",
                "/**\n"
-               " * @export {this.is.a.long.path.to.a.Type}\n"
+               " * @exports {this.is.a.long.path.to.a.Type}\n"
                " */",
                getGoogleJSStyleWithColumns(20));
   verifyFormat("/**\n"
@@ -2042,11 +2064,27 @@ TEST_F(FormatTestJS, JSDocAnnotations) {
                " */",
                getGoogleJSStyleWithColumns(20));
   verifyFormat("/**\n"
-               " * @param {this.is.a.long.path.to.a.Type}\n"
+               " * @mods {this.is.a.long.path.to.a.Type}\n"
                " */",
                "/**\n"
-               " * @param {this.is.a.long.path.to.a.Type}\n"
+               " * @mods {this.is.a.long.path.to.a.Type}\n"
                " */",
+               getGoogleJSStyleWithColumns(20));
+  verifyFormat("/**\n"
+               " * @param {canWrap\n"
+               " *     onSpace}\n"
+               " */",
+               "/**\n"
+               " * @param {canWrap onSpace}\n"
+               " */",
+               getGoogleJSStyleWithColumns(20));
+  // make sure clang-format doesn't break before *any* '{'
+  verifyFormat("/**\n"
+               " * @lala {lala {lalala\n"
+               " */\n",
+               "/**\n"
+               " * @lala {lala {lalala\n"
+               " */\n",
                getGoogleJSStyleWithColumns(20));
   verifyFormat("/**\n"
                " * @see http://very/very/long/url/is/long\n"
@@ -2058,34 +2096,35 @@ TEST_F(FormatTestJS, JSDocAnnotations) {
   verifyFormat(
       "/**\n"
       " * @param This is a\n"
-      " * long comment but\n"
-      " * no type\n"
+      " *     long comment\n"
+      " *     but no type\n"
       " */",
       "/**\n"
       " * @param This is a long comment but no type\n"
       " */",
       getGoogleJSStyleWithColumns(20));
-  // Don't break @param line, but reindent it and reflow unrelated lines.
-  verifyFormat("{\n"
-               "  /**\n"
-               "   * long long long\n"
-               "   * long\n"
-               "   * @param {this.is.a.long.path.to.a.Type} a\n"
-               "   * long long long\n"
-               "   * long long\n"
-               "   */\n"
-               "  function f(a) {}\n"
-               "}",
-               "{\n"
-               "/**\n"
-               " * long long long long\n"
-               " * @param {this.is.a.long.path.to.a.Type} a\n"
-               " * long long long long\n"
-               " * long\n"
-               " */\n"
-               "  function f(a) {}\n"
-               "}",
-               getGoogleJSStyleWithColumns(20));
+  // Break and reindent @param line and reflow unrelated lines.
+  EXPECT_EQ("{\n"
+            "  /**\n"
+            "   * long long long\n"
+            "   * long\n"
+            "   * @param {this.is.a.long.path.to.a.Type}\n"
+            "   *     a\n"
+            "   * long long long\n"
+            "   * long long\n"
+            "   */\n"
+            "  function f(a) {}\n"
+            "}",
+            format("{\n"
+                   "/**\n"
+                   " * long long long long\n"
+                   " * @param {this.is.a.long.path.to.a.Type} a\n"
+                   " * long long long long\n"
+                   " * long\n"
+                   " */\n"
+                   "  function f(a) {}\n"
+                   "}",
+                   getGoogleJSStyleWithColumns(20)));
 }
 
 TEST_F(FormatTestJS, RequoteStringsSingle) {
@@ -2254,6 +2293,39 @@ TEST_F(FormatTestJS, BackslashesInComments) {
                "// comment"
                "// continue \\\n"
                "formatMe( );\n");
+}
+
+TEST_F(FormatTestJS, AddsLastLinePenaltyIfEndingIsBroken) {
+  EXPECT_EQ(
+      "a = function() {\n"
+      "  b = function() {\n"
+      "    this.aaaaaaaaaaaaaaaaaaa[aaaaaaaaaaa] = aaaa.aaaaaa ?\n"
+      "        aaaa.aaaaaa : /** @type "
+      "{aaaa.aaaa.aaaaaaaaa.aaaaaaaaaaaaaaaaaaa} */\n"
+      "        (aaaa.aaaa.aaaaaaaaa.aaaaaaaaaaaaa.aaaaaaaaaaaaaaaaa);\n"
+      "  };\n"
+      "};",
+      format("a = function() {\n"
+             "  b = function() {\n"
+             "    this.aaaaaaaaaaaaaaaaaaa[aaaaaaaaaaa] = aaaa.aaaaaa ? "
+             "aaaa.aaaaaa : /** @type "
+             "{aaaa.aaaa.aaaaaaaaa.aaaaaaaaaaaaaaaaaaa} */\n"
+             "        (aaaa.aaaa.aaaaaaaaa.aaaaaaaaaaaaa.aaaaaaaaaaaaaaaaa);\n"
+             "  };\n"
+             "};"));
+}
+
+TEST_F(FormatTestJS, ParameterNamingComment) {
+  verifyFormat("callFoo(/*spaceAfterParameterNamingComment=*/ 1);");
+}
+
+TEST_F(FormatTestJS, ConditionalTypes) {
+  // Formatting below is not necessarily intentional, this just ensures that
+  // clang-format does not break the code.
+  verifyFormat( // wrap
+      "type UnionToIntersection<U> =\n"
+      "    (U extends any ? (k: U) => void :\n"
+      "                     never) extends((k: infer I) => void) ? I : never;");
 }
 
 } // end namespace tooling

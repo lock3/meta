@@ -1,9 +1,8 @@
 //===- ASTDiff.cpp - AST differencing implementation-----------*- C++ -*- -===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -238,8 +237,8 @@ struct PreorderVisitor : public RecursiveASTVisitor<PreorderVisitor> {
     return true;
   }
   bool TraverseStmt(Stmt *S) {
-    if (S)
-      S = S->IgnoreImplicit();
+    if (auto *E = dyn_cast_or_null<Expr>(S))
+      S = E->IgnoreImplicit();
     if (isNodeExcluded(Tree.AST.getSourceManager(), S))
       return true;
     auto SavedState = PreTraverse(S);
@@ -741,7 +740,7 @@ public:
       List.pop();
     }
     // TODO this is here to get a stable output, not a good heuristic
-    llvm::sort(Result.begin(), Result.end());
+    llvm::sort(Result);
     return Result;
   }
   int peekMax() const {
@@ -845,9 +844,8 @@ void ASTDiff::Impl::matchBottomUp(Mapping &M) const {
     }
     bool Matched = M.hasSrc(Id1);
     const Node &N1 = T1.getNode(Id1);
-    bool MatchedChildren =
-        std::any_of(N1.Children.begin(), N1.Children.end(),
-                    [&](NodeId Child) { return M.hasSrc(Child); });
+    bool MatchedChildren = llvm::any_of(
+        N1.Children, [&](NodeId Child) { return M.hasSrc(Child); });
     if (Matched || !MatchedChildren)
       continue;
     NodeId Id2 = findCandidate(M, Id1);

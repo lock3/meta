@@ -1,9 +1,8 @@
 //===--- NSAPI.cpp - NSFoundation APIs ------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -432,7 +431,7 @@ NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
     return NSAPI::NSNumberWithDouble;
   case BuiltinType::Bool:
     return NSAPI::NSNumberWithBool;
-    
+
   case BuiltinType::Void:
   case BuiltinType::WChar_U:
   case BuiltinType::WChar_S:
@@ -475,6 +474,9 @@ NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   case BuiltinType::Id:
 #include "clang/Basic/OpenCLImageTypes.def"
+#define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
+  case BuiltinType::Id:
+#include "clang/Basic/OpenCLExtensionTypes.def"
   case BuiltinType::OCLSampler:
   case BuiltinType::OCLEvent:
   case BuiltinType::OCLClkEvent:
@@ -491,7 +493,7 @@ NSAPI::getNSNumberFactoryMethodKind(QualType T) const {
   case BuiltinType::OMPArraySection:
     break;
   }
-  
+
   return None;
 }
 
@@ -509,9 +511,9 @@ bool NSAPI::isObjCNSUIntegerType(QualType T) const {
 }
 
 StringRef NSAPI::GetNSIntegralKind(QualType T) const {
-  if (!Ctx.getLangOpts().ObjC1 || T.isNull())
+  if (!Ctx.getLangOpts().ObjC || T.isNull())
     return StringRef();
-  
+
   while (const TypedefType *TDT = T->getAs<TypedefType>()) {
     StringRef NSIntegralResust =
       llvm::StringSwitch<StringRef>(
@@ -561,7 +563,7 @@ bool NSAPI::isSubclassOfNSClass(ObjCInterfaceDecl *InterfaceDecl,
 
 bool NSAPI::isObjCTypedef(QualType T,
                           StringRef name, IdentifierInfo *&II) const {
-  if (!Ctx.getLangOpts().ObjC1)
+  if (!Ctx.getLangOpts().ObjC)
     return false;
   if (T.isNull())
     return false;
@@ -580,7 +582,7 @@ bool NSAPI::isObjCTypedef(QualType T,
 
 bool NSAPI::isObjCEnumerator(const Expr *E,
                              StringRef name, IdentifierInfo *&II) const {
-  if (!Ctx.getLangOpts().ObjC1)
+  if (!Ctx.getLangOpts().ObjC)
     return false;
   if (!E)
     return false;
@@ -604,6 +606,14 @@ Selector NSAPI::getOrInitSelector(ArrayRef<StringRef> Ids,
            I = Ids.begin(), E = Ids.end(); I != E; ++I)
       Idents.push_back(&Ctx.Idents.get(*I));
     Sel = Ctx.Selectors.getSelector(Idents.size(), Idents.data());
+  }
+  return Sel;
+}
+
+Selector NSAPI::getOrInitNullarySelector(StringRef Id, Selector &Sel) const {
+  if (Sel.isNull()) {
+    IdentifierInfo *Ident = &Ctx.Idents.get(Id);
+    Sel = Ctx.Selectors.getSelector(0, &Ident);
   }
   return Sel;
 }

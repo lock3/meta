@@ -1,9 +1,8 @@
 //===--- DeclSpec.cpp - Declaration Specifier Semantic Analysis -----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -44,7 +43,7 @@ void UnqualifiedId::setConstructorTemplateId(TemplateIdAnnotation *TemplateId) {
   EndLocation = TemplateId->RAngleLoc;
 }
 
-void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc, 
+void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
                           TypeLoc TL, SourceLocation ColonColonLoc) {
   Builder.Extend(Context, TemplateKWLoc, TL, ColonColonLoc);
   if (Range.getBegin().isInvalid())
@@ -56,23 +55,23 @@ void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
-                          SourceLocation IdentifierLoc, 
+                          SourceLocation IdentifierLoc,
                           SourceLocation ColonColonLoc) {
   Builder.Extend(Context, Identifier, IdentifierLoc, ColonColonLoc);
-  
+
   if (Range.getBegin().isInvalid())
     Range.setBegin(IdentifierLoc);
   Range.setEnd(ColonColonLoc);
-  
+
   assert(Range == Builder.getSourceRange() &&
          "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
-                          SourceLocation NamespaceLoc, 
+                          SourceLocation NamespaceLoc,
                           SourceLocation ColonColonLoc) {
   Builder.Extend(Context, Namespace, NamespaceLoc, ColonColonLoc);
-  
+
   if (Range.getBegin().isInvalid())
     Range.setBegin(NamespaceLoc);
   Range.setEnd(ColonColonLoc);
@@ -82,10 +81,10 @@ void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
-                          SourceLocation AliasLoc, 
+                          SourceLocation AliasLoc,
                           SourceLocation ColonColonLoc) {
   Builder.Extend(Context, Alias, AliasLoc, ColonColonLoc);
-  
+
   if (Range.getBegin().isInvalid())
     Range.setBegin(AliasLoc);
   Range.setEnd(ColonColonLoc);
@@ -94,12 +93,12 @@ void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
          "NestedNameSpecifierLoc range computation incorrect");
 }
 
-void CXXScopeSpec::MakeGlobal(ASTContext &Context, 
+void CXXScopeSpec::MakeGlobal(ASTContext &Context,
                               SourceLocation ColonColonLoc) {
   Builder.MakeGlobal(Context, ColonColonLoc);
-  
+
   Range = SourceRange(ColonColonLoc);
-  
+
   assert(Range == Builder.getSourceRange() &&
          "NestedNameSpecifierLoc range computation incorrect");
 }
@@ -116,7 +115,7 @@ void CXXScopeSpec::MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
   "NestedNameSpecifierLoc range computation incorrect");
 }
 
-void CXXScopeSpec::MakeTrivial(ASTContext &Context, 
+void CXXScopeSpec::MakeTrivial(ASTContext &Context,
                                NestedNameSpecifier *Qualifier, SourceRange R) {
   Builder.MakeTrivial(Context, Qualifier, R);
   Range = R;
@@ -139,11 +138,11 @@ SourceLocation CXXScopeSpec::getLastQualifierNameLoc() const {
   return Builder.getTemporary().getLocalBeginLoc();
 }
 
-NestedNameSpecifierLoc 
+NestedNameSpecifierLoc
 CXXScopeSpec::getWithLocInContext(ASTContext &Context) const {
   if (!Builder.getRepresentation())
     return NestedNameSpecifierLoc();
-  
+
   return Builder.getWithLocInContext(Context);
 }
 
@@ -156,14 +155,8 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
                                              unsigned NumParams,
                                              SourceLocation EllipsisLoc,
                                              SourceLocation RParenLoc,
-                                             unsigned TypeQuals,
                                              bool RefQualifierIsLvalueRef,
                                              SourceLocation RefQualifierLoc,
-                                             SourceLocation ConstQualifierLoc,
-                                             SourceLocation
-                                                 VolatileQualifierLoc,
-                                             SourceLocation
-                                                 RestrictQualifierLoc,
                                              SourceLocation MutableLoc,
                                              ExceptionSpecificationType
                                                  ESpecType,
@@ -178,8 +171,9 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
                                              SourceLocation LocalRangeBegin,
                                              SourceLocation LocalRangeEnd,
                                              Declarator &TheDeclarator,
-                                             TypeResult TrailingReturnType) {
-  assert(!(TypeQuals & DeclSpec::TQ_atomic) &&
+                                             TypeResult TrailingReturnType,
+                                             DeclSpec *MethodQualifiers) {
+  assert(!(MethodQualifiers && MethodQualifiers->getTypeQualifiers() & DeclSpec::TQ_atomic) &&
          "function cannot have _Atomic qualifier");
 
   DeclaratorChunk I;
@@ -193,14 +187,10 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
   I.Fun.EllipsisLoc             = EllipsisLoc.getRawEncoding();
   I.Fun.RParenLoc               = RParenLoc.getRawEncoding();
   I.Fun.DeleteParams            = false;
-  I.Fun.TypeQuals               = TypeQuals;
   I.Fun.NumParams               = NumParams;
   I.Fun.Params                  = nullptr;
   I.Fun.RefQualifierIsLValueRef = RefQualifierIsLvalueRef;
   I.Fun.RefQualifierLoc         = RefQualifierLoc.getRawEncoding();
-  I.Fun.ConstQualifierLoc       = ConstQualifierLoc.getRawEncoding();
-  I.Fun.VolatileQualifierLoc    = VolatileQualifierLoc.getRawEncoding();
-  I.Fun.RestrictQualifierLoc    = RestrictQualifierLoc.getRawEncoding();
   I.Fun.MutableLoc              = MutableLoc.getRawEncoding();
   I.Fun.ExceptionSpecType       = ESpecType;
   I.Fun.ExceptionSpecLocBeg     = ESpecRange.getBegin().getRawEncoding();
@@ -211,8 +201,21 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
   I.Fun.HasTrailingReturnType   = TrailingReturnType.isUsable() ||
                                   TrailingReturnType.isInvalid();
   I.Fun.TrailingReturnType      = TrailingReturnType.get();
+  I.Fun.MethodQualifiers        = nullptr;
+  I.Fun.QualAttrFactory         = nullptr;
 
-  assert(I.Fun.TypeQuals == TypeQuals && "bitfield overflow");
+  if (MethodQualifiers && (MethodQualifiers->getTypeQualifiers() ||
+                           MethodQualifiers->getAttributes().size())) {
+    auto &attrs = MethodQualifiers->getAttributes();
+    I.Fun.MethodQualifiers = new DeclSpec(attrs.getPool().getFactory());
+    MethodQualifiers->forEachCVRUQualifier(
+        [&](DeclSpec::TQ TypeQual, StringRef PrintName, SourceLocation SL) {
+          I.Fun.MethodQualifiers->SetTypeQual(TypeQual, SL);
+        });
+    I.Fun.MethodQualifiers->getAttributes().takeAllFrom(attrs);
+    I.Fun.MethodQualifiers->getAttributePool().takeAllFrom(attrs.getPool());
+  }
+
   assert(I.Fun.ExceptionSpecType == ESpecType && "bitfield overflow");
 
   // new[] a parameter array if needed.
@@ -232,7 +235,7 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
       I.Fun.DeleteParams = true;
     }
     for (unsigned i = 0; i < NumParams; i++)
-      I.Fun.Params[i] = std::move(Params[i]);    
+      I.Fun.Params[i] = std::move(Params[i]);
   }
 
   // Check what exception specification information we should actually store.
@@ -323,7 +326,7 @@ bool Declarator::isDeclarationOfFunction() const {
     }
     llvm_unreachable("Invalid type chunk");
   }
-  
+
   switch (DS.getTypeSpecType()) {
     case TST_atomic:
     case TST_auto:
@@ -369,20 +372,20 @@ bool Declarator::isDeclarationOfFunction() const {
       if (Expr *E = DS.getRepAsExpr())
         return E->getType()->isFunctionType();
       return false;
-     
+
     case TST_underlyingType:
     case TST_typename:
     case TST_typeofType: {
       QualType QT = DS.getRepAsType().get();
       if (QT.isNull())
         return false;
-      
+
       if (const LocInfoType *LIT = dyn_cast<LocInfoType>(QT))
         QT = LIT->getType();
 
       if (QT.isNull())
         return false;
-        
+
       return QT->isFunctionType();
     }
   }
@@ -401,6 +404,24 @@ bool Declarator::isStaticMember() {
 bool Declarator::isCtorOrDtor() {
   return (getName().getKind() == UnqualifiedIdKind::IK_ConstructorName) ||
          (getName().getKind() == UnqualifiedIdKind::IK_DestructorName);
+}
+
+void DeclSpec::forEachCVRUQualifier(
+    llvm::function_ref<void(TQ, StringRef, SourceLocation)> Handle) {
+  if (TypeQualifiers & TQ_const)
+    Handle(TQ_const, "const", TQ_constLoc);
+  if (TypeQualifiers & TQ_volatile)
+    Handle(TQ_volatile, "volatile", TQ_volatileLoc);
+  if (TypeQualifiers & TQ_restrict)
+    Handle(TQ_restrict, "restrict", TQ_restrictLoc);
+  if (TypeQualifiers & TQ_unaligned)
+    Handle(TQ_unaligned, "unaligned", TQ_unalignedLoc);
+}
+
+void DeclSpec::forEachQualifier(
+    llvm::function_ref<void(TQ, StringRef, SourceLocation)> Handle) {
+  forEachCVRUQualifier(Handle);
+  // FIXME: Add code below to iterate through the attributes and call Handle.
 }
 
 bool DeclSpec::hasTagDefinition() const {
@@ -438,8 +459,8 @@ template <class T> static bool BadSpecifier(T TNew, T TPrev,
   if (TNew != TPrev)
     DiagID = diag::err_invalid_decl_spec_combination;
   else
-    DiagID = IsExtension ? diag::ext_duplicate_declspec : 
-                           diag::warn_duplicate_declspec;    
+    DiagID = IsExtension ? diag::ext_warn_duplicate_declspec :
+                           diag::warn_duplicate_declspec;
   return true;
 }
 
@@ -566,14 +587,16 @@ bool DeclSpec::SetStorageClassSpec(Sema &S, SCS SC, SourceLocation Loc,
   // these storage-class specifiers.
   // OpenCL v1.2 s6.8 changes this to "The auto and register storage-class
   // specifiers are not supported."
+  // OpenCL C++ v1.0 s2.9 restricts register.
   if (S.getLangOpts().OpenCL &&
       !S.getOpenCLOptions().isEnabled("cl_clang_storage_class_specifiers")) {
     switch (SC) {
     case SCS_extern:
     case SCS_private_extern:
     case SCS_static:
-      if (S.getLangOpts().OpenCLVersion < 120) {
-        DiagID   = diag::err_opencl_unknown_type_specifier;
+      if (S.getLangOpts().OpenCLVersion < 120 &&
+          !S.getLangOpts().OpenCLCPlusPlus) {
+        DiagID = diag::err_opencl_unknown_type_specifier;
         PrevSpec = getSpecifierName(SC);
         return true;
       }
@@ -860,6 +883,11 @@ bool DeclSpec::SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
       IsExtension = false;
     return BadSpecifier(T, T, PrevSpec, DiagID, IsExtension);
   }
+
+  return SetTypeQual(T, Loc);
+}
+
+bool DeclSpec::SetTypeQual(TQ T, SourceLocation Loc) {
   TypeQualifiers |= T;
 
   switch (T) {
@@ -967,10 +995,10 @@ bool DeclSpec::setModulePrivateSpec(SourceLocation Loc, const char *&PrevSpec,
                                     unsigned &DiagID) {
   if (isModulePrivateSpecified()) {
     PrevSpec = "__module_private__";
-    DiagID = diag::ext_duplicate_declspec;
+    DiagID = diag::ext_warn_duplicate_declspec;
     return true;
   }
-  
+
   ModulePrivateLoc = Loc;
   return false;
 }
@@ -1300,7 +1328,7 @@ bool DeclSpec::isMissingDeclaratorOk() {
     StorageClassSpec != DeclSpec::SCS_typedef;
 }
 
-void UnqualifiedId::setOperatorFunctionId(SourceLocation OperatorLoc, 
+void UnqualifiedId::setOperatorFunctionId(SourceLocation OperatorLoc,
                                           OverloadedOperatorKind Op,
                                           SourceLocation SymbolLocations[3]) {
   Kind = UnqualifiedIdKind::IK_OperatorFunctionId;
@@ -1309,7 +1337,7 @@ void UnqualifiedId::setOperatorFunctionId(SourceLocation OperatorLoc,
   OperatorFunctionId.Operator = Op;
   for (unsigned I = 0; I != 3; ++I) {
     OperatorFunctionId.SymbolLocations[I] = SymbolLocations[I].getRawEncoding();
-    
+
     if (SymbolLocations[I].isValid())
       EndLocation = SymbolLocations[I];
   }
@@ -1321,7 +1349,7 @@ bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
     FirstLocation = Loc;
   LastLocation = Loc;
   LastSpecifier = VS;
-  
+
   if (Specifiers & VS) {
     PrevSpec = getSpecifierName(VS);
     return true;

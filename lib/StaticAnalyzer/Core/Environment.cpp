@@ -1,9 +1,8 @@
 //===- Environment.cpp - Map from Stmt* to Locations/Values ---------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -43,6 +42,9 @@ static const Expr *ignoreTransparentExprs(const Expr *E) {
     break;
   case Stmt::ExprWithCleanupsClass:
     E = cast<ExprWithCleanups>(E)->getSubExpr();
+    break;
+  case Stmt::ConstantExprClass:
+    E = cast<ConstantExpr>(E)->getSubExpr();
     break;
   case Stmt::CXXBindTemporaryExprClass:
     E = cast<CXXBindTemporaryExpr>(E)->getSubExpr();
@@ -89,6 +91,7 @@ SVal Environment::getSVal(const EnvironmentEntry &Entry,
   case Stmt::ExprWithCleanupsClass:
   case Stmt::GenericSelectionExprClass:
   case Stmt::OpaqueValueExprClass:
+  case Stmt::ConstantExprClass:
   case Stmt::ParenExprClass:
   case Stmt::SubstNonTypeTemplateParmExprClass:
     llvm_unreachable("Should have been handled by ignoreTransparentExprs");
@@ -189,11 +192,6 @@ EnvironmentManager::removeDeadBindings(Environment Env,
 
       // Mark all symbols in the block expr's value live.
       RSScaner.scan(X);
-      continue;
-    } else {
-      SymExpr::symbol_iterator SI = X.symbol_begin(), SE = X.symbol_end();
-      for (; SI != SE; ++SI)
-        SymReaper.maybeDead(*SI);
     }
   }
 
@@ -202,7 +200,9 @@ EnvironmentManager::removeDeadBindings(Environment Env,
 }
 
 void Environment::print(raw_ostream &Out, const char *NL,
-                        const char *Sep, const LocationContext *WithLC) const {
+                        const char *Sep,
+                        const ASTContext &Context,
+                        const LocationContext *WithLC) const {
   if (ExprBindings.isEmpty())
     return;
 
@@ -222,10 +222,9 @@ void Environment::print(raw_ostream &Out, const char *NL,
 
   assert(WithLC);
 
-  LangOptions LO; // FIXME.
-  PrintingPolicy PP(LO);
+  PrintingPolicy PP = Context.getPrintingPolicy();
 
-  Out << NL << NL << "Expressions by stack frame:" << NL;
+  Out << NL << "Expressions by stack frame:" << NL;
   WithLC->dumpStack(Out, "", NL, Sep, [&](const LocationContext *LC) {
     for (auto I : ExprBindings) {
       if (I.first.getLocationContext() != LC)
@@ -234,8 +233,8 @@ void Environment::print(raw_ostream &Out, const char *NL,
       const Stmt *S = I.first.getStmt();
       assert(S != nullptr && "Expected non-null Stmt");
 
-      Out << "(" << (const void *)LC << ',' << (const void *)S << ") ";
-      S->printPretty(Out, nullptr, PP);
+      Out << "(LC" << LC->getID() << ", S" << S->getID(Context) << ") ";
+      S->printPretty(Out, /*Helper=*/nullptr, PP);
       Out << " : " << I.second << NL;
     }
   });

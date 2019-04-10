@@ -1,9 +1,8 @@
 //===--- TokenAnnotator.h - Format C++ code ---------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -103,6 +102,13 @@ public:
     // FIXME: Line.Last points to other characters than tok::semi
     // and tok::lbrace.
     return !Last->isOneOf(tok::semi, tok::comment);
+  }
+
+  /// \c true if this line starts a namespace definition.
+  bool startsWithNamespace() const {
+    return startsWith(tok::kw_namespace) ||
+           startsWith(tok::kw_inline, tok::kw_namespace) ||
+           startsWith(tok::kw_export, tok::kw_namespace);
   }
 
   FormatToken *First;

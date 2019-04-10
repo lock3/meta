@@ -1,9 +1,8 @@
 //===- SourceManager.h - Track and cache source files -----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -92,7 +91,7 @@ namespace SrcMgr {
   /// One instance of this struct is kept for every file loaded or used.
   ///
   /// This object owns the MemoryBuffer object.
-  class LLVM_ALIGNAS(8) ContentCache {
+  class alignas(8) ContentCache {
     enum CCFlags {
       /// Whether the buffer is invalid.
       InvalidFlag = 0x01,
@@ -155,7 +154,7 @@ namespace SrcMgr {
     ContentCache(const FileEntry *Ent, const FileEntry *contentEnt)
       : Buffer(nullptr, false), OrigEntry(Ent), ContentsEntry(contentEnt),
         BufferOverridden(false), IsSystemFile(false), IsTransient(false) {}
-    
+
     /// The copy ctor does not allow copies where source object has either
     /// a non-NULL Buffer or SourceLineCache.  Ownership of allocated memory
     /// is not transferred, so this is a logical error.
@@ -449,7 +448,7 @@ namespace SrcMgr {
     }
 
     static SLocEntry get(unsigned Offset, const FileInfo &FI) {
-      assert(!(Offset & (1 << 31)) && "Offset is too large");
+      assert(!(Offset & (1u << 31)) && "Offset is too large");
       SLocEntry E;
       E.Offset = Offset;
       E.IsExpansion = false;
@@ -458,7 +457,7 @@ namespace SrcMgr {
     }
 
     static SLocEntry get(unsigned Offset, const ExpansionInfo &Expansion) {
-      assert(!(Offset & (1 << 31)) && "Offset is too large");
+      assert(!(Offset & (1u << 31)) && "Offset is too large");
       SLocEntry E;
       E.Offset = Offset;
       E.IsExpansion = true;
@@ -1024,13 +1023,14 @@ public:
 
   /// Set the number of FileIDs (files and macros) that were created
   /// during preprocessing of \p FID, including it.
-  void setNumCreatedFIDsForFileID(FileID FID, unsigned NumFIDs) const {
+  void setNumCreatedFIDsForFileID(FileID FID, unsigned NumFIDs,
+                                  bool Force = false) const {
     bool Invalid = false;
     const SrcMgr::SLocEntry &Entry = getSLocEntry(FID, &Invalid);
     if (Invalid || !Entry.isFile())
       return;
 
-    assert(Entry.getFile().NumCreatedFIDs == 0 && "Already set!");
+    assert((Force || Entry.getFile().NumCreatedFIDs == 0) && "Already set!");
     const_cast<SrcMgr::FileInfo &>(Entry.getFile()).NumCreatedFIDs = NumFIDs;
   }
 
@@ -1072,7 +1072,7 @@ public:
     unsigned FileOffset = Entry.getOffset();
     return SourceLocation::getFileLoc(FileOffset);
   }
-  
+
   /// Return the source location corresponding to the last byte of the
   /// specified file.
   SourceLocation getLocForEndOfFile(FileID FID) const {
@@ -1080,7 +1080,7 @@ public:
     const SrcMgr::SLocEntry &Entry = getSLocEntry(FID, &Invalid);
     if (Invalid || !Entry.isFile())
       return SourceLocation();
-    
+
     unsigned FileOffset = Entry.getOffset();
     return SourceLocation::getFileLoc(FileOffset + getFileIDSize(FID));
   }
@@ -1403,7 +1403,7 @@ public:
   PresumedLoc getPresumedLoc(SourceLocation Loc,
                              bool UseLineDirectives = true) const;
 
-  /// Returns whether the PresumedLoc for a given SourceLocation is 
+  /// Returns whether the PresumedLoc for a given SourceLocation is
   /// in the main file.
   ///
   /// This computes the "presumed" location for a SourceLocation, then checks
@@ -1428,6 +1428,24 @@ public:
     return getFileID(Loc) == getMainFileID();
   }
 
+  /// Returns whether \p Loc is located in a <built-in> file.
+  bool isWrittenInBuiltinFile(SourceLocation Loc) const {
+    StringRef Filename(getPresumedLoc(Loc).getFilename());
+    return Filename.equals("<built-in>");
+  }
+
+  /// Returns whether \p Loc is located in a <command line> file.
+  bool isWrittenInCommandLineFile(SourceLocation Loc) const {
+    StringRef Filename(getPresumedLoc(Loc).getFilename());
+    return Filename.equals("<command line>");
+  }
+
+  /// Returns whether \p Loc is located in a <scratch space> file.
+  bool isWrittenInScratchSpace(SourceLocation Loc) const {
+    StringRef Filename(getPresumedLoc(Loc).getFilename());
+    return Filename.equals("<scratch space>");
+  }
+
   /// Returns if a SourceLocation is in a system header.
   bool isInSystemHeader(SourceLocation Loc) const {
     return isSystem(getFileCharacteristic(Loc));
@@ -1440,7 +1458,17 @@ public:
 
   /// Returns whether \p Loc is expanded from a macro in a system header.
   bool isInSystemMacro(SourceLocation loc) const {
-    return loc.isMacroID() && isInSystemHeader(getSpellingLoc(loc));
+    if(!loc.isMacroID())
+      return false;
+
+    // This happens when the macro is the result of a paste, in that case
+    // its spelling is the scratch memory, so we take the parent context.
+    if (isWrittenInScratchSpace(getSpellingLoc(loc))) {
+      return isInSystemHeader(getSpellingLoc(getImmediateMacroCallerLoc(loc)));
+    }
+    else {
+      return isInSystemHeader(getSpellingLoc(loc));
+    }
   }
 
   /// The size of the SLocEntry that \p FID represents.

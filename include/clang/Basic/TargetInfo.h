@@ -1,9 +1,8 @@
 //===--- TargetInfo.h - Expose information about the target -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -49,21 +48,10 @@ class SourceManager;
 
 namespace Builtin { struct Info; }
 
-/// Exposes information about the current target.
-///
-class TargetInfo : public RefCountedBase<TargetInfo> {
-  std::shared_ptr<TargetOptions> TargetOpts;
-  llvm::Triple Triple;
-protected:
-  // Target values set by the ctor of the actual target implementation.  Default
-  // values are specified by the TargetInfo constructor.
-  bool BigEndian;
-  bool TLSSupported;
-  bool VLASupported;
-  bool NoAsmVariants;  // True if {|} are normal characters.
-  bool HasLegalHalfType; // True if the backend supports operations on the half
-                         // LLVM IR type.
-  bool HasFloat128;
+/// Fields controlling how types are laid out in memory; these may need to
+/// be copied for targets like AMDGPU that base their ABIs on an auxiliary
+/// CPU target.
+struct TransferrableTargetInfo {
   unsigned char PointerWidth, PointerAlign;
   unsigned char BoolWidth, BoolAlign;
   unsigned char IntWidth, IntAlign;
@@ -104,15 +92,92 @@ protected:
   unsigned char SuitableAlign;
   unsigned char DefaultAlignForAttributeAligned;
   unsigned char MinGlobalAlign;
-  unsigned char MaxAtomicPromoteWidth, MaxAtomicInlineWidth;
+
+  unsigned short NewAlign;
   unsigned short MaxVectorAlign;
   unsigned short MaxTLSAlign;
-  unsigned short SimdDefaultAlign;
-  unsigned short NewAlign;
-  std::unique_ptr<llvm::DataLayout> DataLayout;
-  const char *MCountName;
+
   const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
     *LongDoubleFormat, *Float128Format;
+
+  ///===---- Target Data Type Query Methods -------------------------------===//
+  enum IntType {
+    NoInt = 0,
+    SignedChar,
+    UnsignedChar,
+    SignedShort,
+    UnsignedShort,
+    SignedInt,
+    UnsignedInt,
+    SignedLong,
+    UnsignedLong,
+    SignedLongLong,
+    UnsignedLongLong
+  };
+
+  enum RealType {
+    NoFloat = 255,
+    Float = 0,
+    Double,
+    LongDouble,
+    Float128
+  };
+protected:
+  IntType SizeType, IntMaxType, PtrDiffType, IntPtrType, WCharType,
+          WIntType, Char16Type, Char32Type, Int64Type, SigAtomicType,
+          ProcessIDType;
+
+  /// Whether Objective-C's built-in boolean type should be signed char.
+  ///
+  /// Otherwise, when this flag is not set, the normal built-in boolean type is
+  /// used.
+  unsigned UseSignedCharForObjCBool : 1;
+
+  /// Control whether the alignment of bit-field types is respected when laying
+  /// out structures. If true, then the alignment of the bit-field type will be
+  /// used to (a) impact the alignment of the containing structure, and (b)
+  /// ensure that the individual bit-field will not straddle an alignment
+  /// boundary.
+  unsigned UseBitFieldTypeAlignment : 1;
+
+  /// Whether zero length bitfields (e.g., int : 0;) force alignment of
+  /// the next bitfield.
+  ///
+  /// If the alignment of the zero length bitfield is greater than the member
+  /// that follows it, `bar', `bar' will be aligned as the type of the
+  /// zero-length bitfield.
+  unsigned UseZeroLengthBitfieldAlignment : 1;
+
+  ///  Whether explicit bit field alignment attributes are honored.
+  unsigned UseExplicitBitFieldAlignment : 1;
+
+  /// If non-zero, specifies a fixed alignment value for bitfields that follow
+  /// zero length bitfield, regardless of the zero length bitfield type.
+  unsigned ZeroLengthBitfieldBoundary;
+};
+
+/// Exposes information about the current target.
+///
+class TargetInfo : public virtual TransferrableTargetInfo,
+                   public RefCountedBase<TargetInfo> {
+  std::shared_ptr<TargetOptions> TargetOpts;
+  llvm::Triple Triple;
+protected:
+  // Target values set by the ctor of the actual target implementation.  Default
+  // values are specified by the TargetInfo constructor.
+  bool BigEndian;
+  bool TLSSupported;
+  bool VLASupported;
+  bool NoAsmVariants;  // True if {|} are normal characters.
+  bool HasLegalHalfType; // True if the backend supports operations on the half
+                         // LLVM IR type.
+  bool HasFloat128;
+  bool HasFloat16;
+
+  unsigned char MaxAtomicPromoteWidth, MaxAtomicInlineWidth;
+  unsigned short SimdDefaultAlign;
+  std::unique_ptr<llvm::DataLayout> DataLayout;
+  const char *MCountName;
   unsigned char RegParmMax, SSERegParmMax;
   TargetCXXABI TheCXXABI;
   const LangASMap *AddrSpaceMap;
@@ -152,29 +217,6 @@ public:
     assert(TargetOpts && "Missing target options");
     return *TargetOpts;
   }
-
-  ///===---- Target Data Type Query Methods -------------------------------===//
-  enum IntType {
-    NoInt = 0,
-    SignedChar,
-    UnsignedChar,
-    SignedShort,
-    UnsignedShort,
-    SignedInt,
-    UnsignedInt,
-    SignedLong,
-    UnsignedLong,
-    SignedLongLong,
-    UnsignedLongLong
-  };
-
-  enum RealType {
-    NoFloat = 255,
-    Float = 0,
-    Double,
-    LongDouble,
-    Float128
-  };
 
   /// The different kinds of __builtin_va_list types defined by
   /// the target implementation.
@@ -218,38 +260,6 @@ public:
   };
 
 protected:
-  IntType SizeType, IntMaxType, PtrDiffType, IntPtrType, WCharType,
-          WIntType, Char16Type, Char32Type, Int64Type, SigAtomicType,
-          ProcessIDType;
-
-  /// Whether Objective-C's built-in boolean type should be signed char.
-  ///
-  /// Otherwise, when this flag is not set, the normal built-in boolean type is
-  /// used.
-  unsigned UseSignedCharForObjCBool : 1;
-
-  /// Control whether the alignment of bit-field types is respected when laying
-  /// out structures. If true, then the alignment of the bit-field type will be
-  /// used to (a) impact the alignment of the containing structure, and (b)
-  /// ensure that the individual bit-field will not straddle an alignment
-  /// boundary.
-  unsigned UseBitFieldTypeAlignment : 1;
-
-  /// Whether zero length bitfields (e.g., int : 0;) force alignment of
-  /// the next bitfield.
-  ///
-  /// If the alignment of the zero length bitfield is greater than the member
-  /// that follows it, `bar', `bar' will be aligned as the type of the
-  /// zero-length bitfield.
-  unsigned UseZeroLengthBitfieldAlignment : 1;
-
-  ///  Whether explicit bit field alignment attributes are honored.
-  unsigned UseExplicitBitFieldAlignment : 1;
-
-  /// If non-zero, specifies a fixed alignment value for bitfields that follow
-  /// zero length bitfield, regardless of the zero length bitfield type.
-  unsigned ZeroLengthBitfieldBoundary;
-
   /// Specify if mangling based on address space map should be used or
   /// not for language specific address spaces
   bool UseAddrSpaceMapMangling;
@@ -310,6 +320,14 @@ public:
     default:
       llvm_unreachable("Unexpected signed integer type");
     }
+  }
+
+  /// In the event this target uses the same number of fractional bits for its
+  /// unsigned types as it does with its signed counterparts, there will be
+  /// exactly one bit of padding.
+  /// Return true if unsigned fixed point types have padding for this target.
+  bool doUnsignedFixedPointTypesHavePadding() const {
+    return PaddingOnUnsignedFixedPoint;
   }
 
   /// Return the width (in bits) of the specified integer type enum.
@@ -508,6 +526,9 @@ public:
 
   /// Determine whether the __float128 type is supported on this target.
   virtual bool hasFloat128Type() const { return HasFloat128; }
+
+  /// Determine whether the _Float16 type is supported on this target.
+  virtual bool hasFloat16Type() const { return HasFloat16; }
 
   /// Return the alignment that is suitable for storing any
   /// object with a fundamental alignment requirement.
@@ -1074,9 +1095,15 @@ public:
     return false;
   }
 
-  /// Identify whether this taret supports multiversioning of functions,
+  /// Identify whether this target supports multiversioning of functions,
   /// which requires support for cpu_supports and cpu_is functionality.
-  virtual bool supportsMultiVersioning() const { return false; }
+  bool supportsMultiVersioning() const {
+    return getTriple().getArch() == llvm::Triple::x86 ||
+           getTriple().getArch() == llvm::Triple::x86_64;
+  }
+
+  /// Identify whether this target supports IFuncs.
+  bool supportsIFunc() const { return getTriple().isOSBinFormatELF(); }
 
   // Validate the contents of the __builtin_cpu_supports(const char*)
   // argument.
@@ -1091,6 +1118,27 @@ public:
   // Validate the contents of the __builtin_cpu_is(const char*)
   // argument.
   virtual bool validateCpuIs(StringRef Name) const { return false; }
+
+  // Validate a cpu_dispatch/cpu_specific CPU option, which is a different list
+  // from cpu_is, since it checks via features rather than CPUs directly.
+  virtual bool validateCPUSpecificCPUDispatch(StringRef Name) const {
+    return false;
+  }
+
+  // Get the character to be added for mangling purposes for cpu_specific.
+  virtual char CPUSpecificManglingCharacter(StringRef Name) const {
+    llvm_unreachable(
+        "cpu_specific Multiversioning not implemented on this target");
+  }
+
+  // Get a list of the features that make up the CPU option for
+  // cpu_specific/cpu_dispatch so that it can be passed to llvm as optimization
+  // options.
+  virtual void getCPUSpecificCPUDispatchFeatures(
+      StringRef Name, llvm::SmallVectorImpl<StringRef> &Features) const {
+    llvm_unreachable(
+        "cpu_specific Multiversioning not implemented on this target");
+  }
 
   // Returns maximal number of args passed in registers.
   unsigned getRegParmMax() const {
@@ -1118,7 +1166,8 @@ public:
   bool isSEHTrySupported() const {
     return getTriple().isOSWindows() &&
            (getTriple().getArch() == llvm::Triple::x86 ||
-            getTriple().getArch() == llvm::Triple::x86_64);
+            getTriple().getArch() == llvm::Triple::x86_64 ||
+            getTriple().getArch() == llvm::Triple::aarch64);
   }
 
   /// Return true if {|} are normal characters in the asm string.
@@ -1145,6 +1194,18 @@ public:
   }
 
   const LangASMap &getAddressSpaceMap() const { return *AddrSpaceMap; }
+
+  /// Map from the address space field in builtin description strings to the
+  /// language address space.
+  virtual LangAS getOpenCLBuiltinAddressSpace(unsigned AS) const {
+    return getLangASFromTargetAS(AS);
+  }
+
+  /// Map from the address space field in builtin description strings to the
+  /// language address space.
+  virtual LangAS getCUDABuiltinAddressSpace(unsigned AS) const {
+    return getLangASFromTargetAS(AS);
+  }
 
   /// Return an AST address space which can be used opportunistically
   /// for constant global memory. It must be possible to convert pointers into
@@ -1202,7 +1263,7 @@ public:
   enum CallingConvKind {
     CCK_Default,
     CCK_ClangABI4OrPS4,
-    CCK_MicrosoftX86_64
+    CCK_MicrosoftWin64
   };
 
   virtual CallingConvKind getCallingConvKind(bool ClangABICompat4) const;
@@ -1273,12 +1334,22 @@ public:
     return None;
   }
 
+  /// \returns The version of the SDK which was used during the compilation if
+  /// one was specified, or an empty version otherwise.
+  const llvm::VersionTuple &getSDKVersion() const {
+    return getTargetOpts().SDKVersion;
+  }
+
   /// Check the target is valid after it is fully initialized.
   virtual bool validateTarget(DiagnosticsEngine &Diags) const {
     return true;
   }
 
+  virtual void setAuxTarget(const TargetInfo *Aux) {}
+
 protected:
+  /// Copy type and layout related info.
+  void copyAuxTarget(const TargetInfo *Aux);
   virtual uint64_t getPointerWidthV(unsigned AddrSpace) const {
     return PointerWidth;
   }

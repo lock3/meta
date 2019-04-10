@@ -1,9 +1,8 @@
 //===- ExternalASTMerger.cpp - Merging External AST Interface ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -144,14 +143,14 @@ public:
     }
     if (auto *ToTag = dyn_cast<TagDecl>(To)) {
       ToTag->setHasExternalLexicalStorage();
-      ToTag->setMustBuildLookupTable();
+      ToTag->getPrimaryContext()->setMustBuildLookupTable();
       assert(Parent.CanComplete(ToTag));
     } else if (auto *ToNamespace = dyn_cast<NamespaceDecl>(To)) {
       ToNamespace->setHasExternalVisibleStorage();
       assert(Parent.CanComplete(ToNamespace));
     } else if (auto *ToContainer = dyn_cast<ObjCContainerDecl>(To)) {
       ToContainer->setHasExternalLexicalStorage();
-      ToContainer->setMustBuildLookupTable();
+      ToContainer->getPrimaryContext()->setMustBuildLookupTable();
       assert(Parent.CanComplete(ToContainer));
     }
     return To;
@@ -230,7 +229,8 @@ void ExternalASTMerger::CompleteType(TagDecl *Tag) {
     if (!SourceTag->getDefinition())
       return false;
     Forward.MapImported(SourceTag, Tag);
-    Forward.ImportDefinition(SourceTag);
+    if (llvm::Error Err = Forward.ImportDefinition_New(SourceTag))
+      llvm::consumeError(std::move(Err));
     Tag->setCompleteDefinition(SourceTag->isCompleteDefinition());
     return true;
   });
@@ -249,7 +249,8 @@ void ExternalASTMerger::CompleteType(ObjCInterfaceDecl *Interface) {
         if (!SourceInterface->getDefinition())
           return false;
         Forward.MapImported(SourceInterface, Interface);
-        Forward.ImportDefinition(SourceInterface);
+        if (llvm::Error Err = Forward.ImportDefinition_New(SourceInterface))
+          llvm::consumeError(std::move(Err));
         return true;
       });
 }

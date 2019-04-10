@@ -1,9 +1,8 @@
 //== ProgramState.h - Path-sensitive "State" for tracking values -*- C++ -*--=//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -36,6 +35,7 @@ class ASTContext;
 
 namespace ento {
 
+class AnalysisManager;
 class CallEvent;
 class CallEventManager;
 
@@ -106,10 +106,14 @@ public:
 
   ~ProgramState();
 
+  int64_t getID() const;
+
   /// Return the ProgramStateManager associated with this state.
   ProgramStateManager &getStateManager() const {
     return *stateMgr;
   }
+
+  AnalysisManager &getAnalysisManager() const;
 
   /// Return the ConstraintManager.
   ConstraintManager &getConstraintManager() const;
@@ -343,6 +347,8 @@ public:
   /// a value of such type.
   SVal getSValAsScalarOrLoc(const MemRegion *R) const;
 
+  using region_iterator = const MemRegion **;
+
   /// Visits the symbols reachable from the given SVal using the provided
   /// SymbolVisitor.
   ///
@@ -352,24 +358,14 @@ public:
   /// \sa ScanReachableSymbols
   bool scanReachableSymbols(SVal val, SymbolVisitor& visitor) const;
 
-  /// Visits the symbols reachable from the SVals in the given range
-  /// using the provided SymbolVisitor.
-  bool scanReachableSymbols(const SVal *I, const SVal *E,
-                            SymbolVisitor &visitor) const;
-
   /// Visits the symbols reachable from the regions in the given
   /// MemRegions range using the provided SymbolVisitor.
-  bool scanReachableSymbols(const MemRegion * const *I,
-                            const MemRegion * const *E,
+  bool scanReachableSymbols(llvm::iterator_range<region_iterator> Reachable,
                             SymbolVisitor &visitor) const;
 
   template <typename CB> CB scanReachableSymbols(SVal val) const;
-  template <typename CB> CB scanReachableSymbols(const SVal *beg,
-                                                 const SVal *end) const;
-
   template <typename CB> CB
-  scanReachableSymbols(const MemRegion * const *beg,
-                       const MemRegion * const *end) const;
+  scanReachableSymbols(llvm::iterator_range<region_iterator> Reachable) const;
 
   /// Create a new state in which the statement is marked as tainted.
   LLVM_NODISCARD ProgramStateRef
@@ -466,8 +462,7 @@ public:
              const LocationContext *CurrentLC = nullptr) const;
   void printDOT(raw_ostream &Out,
                 const LocationContext *CurrentLC = nullptr) const;
-  void printTaint(raw_ostream &Out, const char *nl = "\n",
-                  const char *sep = "") const;
+  void printTaint(raw_ostream &Out, const char *nl = "\n") const;
 
   void dump() const;
   void dumpTaint() const;
@@ -559,15 +554,15 @@ public:
   MemRegionManager& getRegionManager() {
     return svalBuilder->getRegionManager();
   }
-  const MemRegionManager& getRegionManager() const {
+  const MemRegionManager &getRegionManager() const {
     return svalBuilder->getRegionManager();
   }
 
   CallEventManager &getCallEventManager() { return *CallEventMgr; }
 
-  StoreManager& getStoreManager() { return *StoreMgr; }
-  ConstraintManager& getConstraintManager() { return *ConstraintMgr; }
-  SubEngine* getOwningEngine() { return Eng; }
+  StoreManager &getStoreManager() { return *StoreMgr; }
+  ConstraintManager &getConstraintManager() { return *ConstraintMgr; }
+  SubEngine &getOwningEngine() { return *Eng; }
 
   ProgramStateRef removeDeadBindings(ProgramStateRef St,
                                     const StackFrameContext *LCtx,
@@ -879,17 +874,10 @@ CB ProgramState::scanReachableSymbols(SVal val) const {
 }
 
 template <typename CB>
-CB ProgramState::scanReachableSymbols(const SVal *beg, const SVal *end) const {
+CB ProgramState::scanReachableSymbols(
+    llvm::iterator_range<region_iterator> Reachable) const {
   CB cb(this);
-  scanReachableSymbols(beg, end, cb);
-  return cb;
-}
-
-template <typename CB>
-CB ProgramState::scanReachableSymbols(const MemRegion * const *beg,
-                                 const MemRegion * const *end) const {
-  CB cb(this);
-  scanReachableSymbols(beg, end, cb);
+  scanReachableSymbols(Reachable, cb);
   return cb;
 }
 

@@ -1,9 +1,8 @@
 //===-- driver.cpp - Clang GCC-Compatible Driver --------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -260,9 +259,9 @@ static void FixupDiagPrefixExeName(TextDiagnosticPrinter *DiagClient,
                                    const std::string &Path) {
   // If the clang binary happens to be named cl.exe for compatibility reasons,
   // use clang-cl.exe as the prefix to avoid confusion between clang and MSVC.
-  StringRef ExeBasename(llvm::sys::path::filename(Path));
-  if (ExeBasename.equals_lower("cl.exe"))
-    ExeBasename = "clang-cl.exe";
+  StringRef ExeBasename(llvm::sys::path::stem(Path));
+  if (ExeBasename.equals_lower("cl"))
+    ExeBasename = "clang-cl";
   DiagClient->setPrefix(ExeBasename);
 }
 

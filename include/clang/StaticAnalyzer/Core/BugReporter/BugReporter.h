@@ -1,9 +1,8 @@
 //===- BugReporter.h - Generate PathDiagnostics -----------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -74,7 +73,7 @@ using DiagnosticForConsumerMapTy =
 /// This class provides an interface through which checkers can create
 /// individual bug reports.
 class BugReport : public llvm::ilist_node<BugReport> {
-public:  
+public:
   class NodeResolver {
     virtual void anchor();
 
@@ -95,14 +94,14 @@ protected:
   friend class BugReportEquivClass;
   friend class BugReporter;
 
-  BugType& BT;
+  const BugType& BT;
   const Decl *DeclWithIssue = nullptr;
   std::string ShortDescription;
   std::string Description;
   PathDiagnosticLocation Location;
   PathDiagnosticLocation UniqueingLocation;
   const Decl *UniqueingDecl;
-  
+
   const ExplodedNode *ErrorNode = nullptr;
   SmallVector<SourceRange, 4> Ranges;
   ExtraTextList ExtraText;
@@ -164,15 +163,15 @@ private:
   void popInterestingSymbolsAndRegions();
 
 public:
-  BugReport(BugType& bt, StringRef desc, const ExplodedNode *errornode)
+  BugReport(const BugType& bt, StringRef desc, const ExplodedNode *errornode)
       : BT(bt), Description(desc), ErrorNode(errornode) {}
 
-  BugReport(BugType& bt, StringRef shortDesc, StringRef desc,
+  BugReport(const BugType& bt, StringRef shortDesc, StringRef desc,
             const ExplodedNode *errornode)
       : BT(bt), ShortDescription(shortDesc), Description(desc),
         ErrorNode(errornode) {}
 
-  BugReport(BugType &bt, StringRef desc, PathDiagnosticLocation l)
+  BugReport(const BugType &bt, StringRef desc, PathDiagnosticLocation l)
       : BT(bt), Description(desc), Location(l) {}
 
   /// Create a BugReport with a custom uniqueing location.
@@ -190,7 +189,7 @@ public:
   virtual ~BugReport();
 
   const BugType& getBugType() const { return BT; }
-  BugType& getBugType() { return BT; }
+  //BugType& getBugType() { return BT; }
 
   /// True when the report has an execution path associated with it.
   ///
@@ -220,12 +219,12 @@ public:
 
   /// Disable all path pruning when generating a PathDiagnostic.
   void disablePathPruning() { DoNotPrunePath = true; }
-  
+
   void markInteresting(SymbolRef sym);
   void markInteresting(const MemRegion *R);
   void markInteresting(SVal V);
   void markInteresting(const LocationContext *LC);
-  
+
   bool isInteresting(SymbolRef sym);
   bool isInteresting(const MemRegion *R);
   bool isInteresting(SVal V);
@@ -251,11 +250,11 @@ public:
   void markInvalid(const void *Tag, const void *Data) {
     Invalidations.insert(std::make_pair(Tag, Data));
   }
-  
+
   /// Return the canonical declaration, be it a method or class, where
   /// this issue semantically occurred.
   const Decl *getDeclWithIssue() const;
-  
+
   /// Specifically set the Decl where an issue occurred.  This isn't necessary
   /// for BugReports that cover a path as it will be automatically inferred.
   void setDeclWithIssue(const Decl *declWithIssue) {
@@ -290,7 +289,7 @@ public:
 
   /// This allows for addition of meta data to the diagnostic.
   ///
-  /// Currently, only the HTMLDiagnosticClient knows how to display it. 
+  /// Currently, only the HTMLDiagnosticClient knows how to display it.
   void addExtraText(StringRef S) {
     ExtraText.push_back(S);
   }
@@ -310,7 +309,7 @@ public:
   PathDiagnosticLocation getUniqueingLocation() const {
     return UniqueingLocation;
   }
-  
+
   /// Get the declaration containing the uniqueing location.
   const Decl *getUniqueingDecl() const {
     return UniqueingDecl;
@@ -481,7 +480,7 @@ public:
     return {};
   }
 
-  void Register(BugType *BT);
+  void Register(const BugType *BT);
 
   /// Add the given report to the set of reports tracked by BugReporter.
   ///

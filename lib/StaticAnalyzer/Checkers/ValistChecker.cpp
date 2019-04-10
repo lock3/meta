@@ -1,9 +1,8 @@
 //== ValistChecker.cpp - stdarg.h macro usage checker -----------*- C++ -*--==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -12,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -90,7 +89,6 @@ private:
       return std::make_shared<PathDiagnosticEventPiece>(L, BR.getDescription(), false);
     }
     std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
                                                    BugReporterContext &BRC,
                                                    BugReport &BR) override;
 
@@ -277,8 +275,8 @@ void ValistChecker::reportLeakedVALists(const RegionVector &LeakedVALists,
           new BugType(CheckNames[CK_Unterminated].getName().empty()
                           ? CheckNames[CK_Uninitialized]
                           : CheckNames[CK_Unterminated],
-                      "Leaked va_list", categories::MemoryError));
-      BT_leakedvalist->setSuppressOnSink(true);
+                      "Leaked va_list", categories::MemoryError,
+                      /*SuppressOnSink=*/true));
     }
 
     const ExplodedNode *StartNode = getStartCallSite(N, Reg);
@@ -376,10 +374,10 @@ void ValistChecker::checkVAListEndCall(const CallEvent &Call,
 }
 
 std::shared_ptr<PathDiagnosticPiece> ValistChecker::ValistBugVisitor::VisitNode(
-    const ExplodedNode *N, const ExplodedNode *PrevN, BugReporterContext &BRC,
+    const ExplodedNode *N, BugReporterContext &BRC,
     BugReport &) {
   ProgramStateRef State = N->getState();
-  ProgramStateRef StatePrev = PrevN->getState();
+  ProgramStateRef StatePrev = N->getFirstPred()->getState();
 
   const Stmt *S = PathDiagnosticLocation::getStmt(N);
   if (!S)
@@ -401,11 +399,23 @@ std::shared_ptr<PathDiagnosticPiece> ValistChecker::ValistBugVisitor::VisitNode(
   return std::make_shared<PathDiagnosticEventPiece>(Pos, Msg, true);
 }
 
+void ento::registerValistBase(CheckerManager &mgr) {
+  mgr.registerChecker<ValistChecker>();
+}
+
+bool ento::shouldRegisterValistBase(const LangOptions &LO) {
+  return true;
+}
+
 #define REGISTER_CHECKER(name)                                                 \
   void ento::register##name##Checker(CheckerManager &mgr) {                    \
-    ValistChecker *checker = mgr.registerChecker<ValistChecker>();             \
+    ValistChecker *checker = mgr.getChecker<ValistChecker>();                  \
     checker->ChecksEnabled[ValistChecker::CK_##name] = true;                   \
     checker->CheckNames[ValistChecker::CK_##name] = mgr.getCurrentCheckName(); \
+  }                                                                            \
+                                                                               \
+  bool ento::shouldRegister##name##Checker(const LangOptions &LO) {            \
+    return true;                                                               \
   }
 
 REGISTER_CHECKER(Uninitialized)

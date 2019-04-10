@@ -1,9 +1,8 @@
 //===--- NamespaceEndCommentsFixer.cpp --------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -125,12 +124,7 @@ getNamespaceToken(const AnnotatedLine *Line,
     if (StartLineIndex > 0)
       NamespaceTok = AnnotatedLines[StartLineIndex - 1]->First;
   }
-  // Detect "(inline)? namespace" in the beginning of a line.
-  if (NamespaceTok->is(tok::kw_inline))
-    NamespaceTok = NamespaceTok->getNextNonComment();
-  if (!NamespaceTok || NamespaceTok->isNot(tok::kw_namespace))
-    return nullptr;
-  return NamespaceTok;
+  return NamespaceTok->getNamespaceToken();
 }
 
 NamespaceEndCommentsFixer::NamespaceEndCommentsFixer(const Environment &Env,

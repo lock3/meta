@@ -1,9 +1,8 @@
 //===- SourceLocation.h - Compact identifier for Source Files ---*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -26,7 +25,6 @@
 namespace llvm {
 
 template <typename T> struct DenseMapInfo;
-template <typename T> struct isPodLike;
 
 } // namespace llvm
 
@@ -38,7 +36,7 @@ class SourceManager;
 /// source file (MemoryBuffer) along with its \#include path and \#line data.
 ///
 class FileID {
-  /// A mostly-opaque identifier, where 0 is "invalid", >0 is 
+  /// A mostly-opaque identifier, where 0 is "invalid", >0 is
   /// this module, and <-1 is something loaded from another module.
   int ID = 0;
 
@@ -60,7 +58,7 @@ private:
   friend class ASTWriter;
   friend class ASTReader;
   friend class SourceManager;
-  
+
   static FileID get(int V) {
     FileID F;
     F.ID = V;
@@ -220,8 +218,12 @@ public:
   bool operator!=(const SourceRange &X) const {
     return B != X.B || E != X.E;
   }
+
+  void print(raw_ostream &OS, const SourceManager &SM) const;
+  std::string printToString(const SourceManager &SM) const;
+  void dump(const SourceManager &SM) const;
 };
-  
+
 /// Represents a character-granular source range.
 ///
 /// The underlying SourceRange can either specify the starting/ending character
@@ -229,7 +231,7 @@ public:
 /// last token of the range (a "token range").  In the token range case, the
 /// size of the last token must be measured to determine the actual end of the
 /// range.
-class CharSourceRange { 
+class CharSourceRange {
   SourceRange Range;
   bool IsTokenRange = false;
 
@@ -244,7 +246,7 @@ public:
   static CharSourceRange getCharRange(SourceRange R) {
     return CharSourceRange(R, false);
   }
-    
+
   static CharSourceRange getTokenRange(SourceLocation B, SourceLocation E) {
     return getTokenRange(SourceRange(B, E));
   }
@@ -252,21 +254,21 @@ public:
   static CharSourceRange getCharRange(SourceLocation B, SourceLocation E) {
     return getCharRange(SourceRange(B, E));
   }
-  
+
   /// Return true if the end of this range specifies the start of
   /// the last token.  Return false if the end of this range specifies the last
   /// character in the range.
   bool isTokenRange() const { return IsTokenRange; }
   bool isCharRange() const { return !IsTokenRange; }
-  
+
   SourceLocation getBegin() const { return Range.getBegin(); }
   SourceLocation getEnd() const { return Range.getEnd(); }
   SourceRange getAsRange() const { return Range; }
- 
+
   void setBegin(SourceLocation b) { Range.setBegin(b); }
   void setEnd(SourceLocation e) { Range.setEnd(e); }
   void setTokenRange(bool TR) { IsTokenRange = TR; }
-  
+
   bool isValid() const { return Range.isValid(); }
   bool isInvalid() const { return !isValid(); }
 };
@@ -453,11 +455,6 @@ namespace llvm {
       return LHS == RHS;
     }
   };
-  
-  template <>
-  struct isPodLike<clang::SourceLocation> { static const bool value = true; };
-  template <>
-  struct isPodLike<clang::FileID> { static const bool value = true; };
 
   // Teach SmallPtrSet how to handle SourceLocation.
   template<>

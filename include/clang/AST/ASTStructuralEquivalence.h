@@ -1,9 +1,8 @@
 //===- ASTStructuralEquivalence.h -------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -15,6 +14,7 @@
 #ifndef LLVM_CLANG_AST_ASTSTRUCTURALEQUIVALENCE_H
 #define LLVM_CLANG_AST_ASTSTRUCTURALEQUIVALENCE_H
 
+#include "clang/AST/DeclBase.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Optional.h"
@@ -85,10 +85,18 @@ struct StructuralEquivalenceContext {
 
   /// Determine whether the two declarations are structurally
   /// equivalent.
-  bool IsStructurallyEquivalent(Decl *D1, Decl *D2);
+  /// Implementation functions (all static functions in
+  /// ASTStructuralEquivalence.cpp) must never call this function because that
+  /// will wreak havoc the internal state (\c DeclsToCheck and
+  /// \c TentativeEquivalences members) and can cause faulty equivalent results.
+  bool IsEquivalent(Decl *D1, Decl *D2);
 
   /// Determine whether the two types are structurally equivalent.
-  bool IsStructurallyEquivalent(QualType T1, QualType T2);
+  /// Implementation functions (all static functions in
+  /// ASTStructuralEquivalence.cpp) must never call this function because that
+  /// will wreak havoc the internal state (\c DeclsToCheck and
+  /// \c TentativeEquivalences members) and can cause faulty equivalent results.
+  bool IsEquivalent(QualType T1, QualType T2);
 
   /// Find the index of the given anonymous struct/union within its
   /// context.
@@ -106,8 +114,19 @@ struct StructuralEquivalenceContext {
 private:
   /// Finish checking all of the structural equivalences.
   ///
-  /// \returns true if an error occurred, false otherwise.
+  /// \returns true if the equivalence check failed (non-equivalence detected),
+  /// false if equivalence was detected.
   bool Finish();
+
+  /// Check for common properties at Finish.
+  /// \returns true if D1 and D2 may be equivalent,
+  /// false if they are for sure not.
+  bool CheckCommonEquivalence(Decl *D1, Decl *D2);
+
+  /// Check for class dependent properties at Finish.
+  /// \returns true if D1 and D2 may be equivalent,
+  /// false if they are for sure not.
+  bool CheckKindSpecificEquivalence(Decl *D1, Decl *D2);
 };
 
 } // namespace clang

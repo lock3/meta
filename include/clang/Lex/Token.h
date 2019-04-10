@@ -1,9 +1,8 @@
 //===--- Token.h - Token interface ------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -73,7 +72,7 @@ public:
   enum TokenFlags {
     StartOfLine   = 0x01,  // At start of line or only after whitespace
                            // (considering the line after macro expansion).
-    LeadingSpace  = 0x02,  // Whitespace exists before this token (considering 
+    LeadingSpace  = 0x02,  // Whitespace exists before this token (considering
                            // whitespace after macro expansion).
     DisableExpand = 0x04,  // This identifier may never be macro expanded.
     NeedsCleaning = 0x08,  // Contained an escaped newline or trigraph.
@@ -328,10 +327,5 @@ struct PPConditionalInfo {
 };
 
 } // end namespace clang
-
-namespace llvm {
-  template <>
-  struct isPodLike<clang::Token> { static const bool value = true; };
-} // end namespace llvm
 
 #endif // LLVM_CLANG_LEX_TOKEN_H

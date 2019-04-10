@@ -1,9 +1,8 @@
 //===- SemaTemplateDeduction.cpp - Template Argument Deduction ------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -178,6 +177,8 @@ getDeducedParameterFromExpr(TemplateDeductionInfo &Info, Expr *E) {
   while (true) {
     if (ImplicitCastExpr *IC = dyn_cast<ImplicitCastExpr>(E))
       E = IC->getSubExpr();
+    else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
+      E = CE->getSubExpr();
     else if (SubstNonTypeTemplateParmExpr *Subst =
                dyn_cast<SubstNonTypeTemplateParmExpr>(E))
       E = Subst->getReplacement();
@@ -628,29 +629,6 @@ static bool IsPossiblyOpaquelyQualifiedType(QualType T) {
   }
 }
 
-/// Retrieve the depth and index of a template parameter.
-static std::pair<unsigned, unsigned>
-getDepthAndIndex(NamedDecl *ND) {
-  if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(ND))
-    return std::make_pair(TTP->getDepth(), TTP->getIndex());
-
-  if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(ND))
-    return std::make_pair(NTTP->getDepth(), NTTP->getIndex());
-
-  TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(ND);
-  return std::make_pair(TTP->getDepth(), TTP->getIndex());
-}
-
-/// Retrieve the depth and index of an unexpanded parameter pack.
-static std::pair<unsigned, unsigned>
-getDepthAndIndex(UnexpandedParameterPack UPP) {
-  if (const TemplateTypeParmType *TTP
-                          = UPP.first.dyn_cast<const TemplateTypeParmType *>())
-    return std::make_pair(TTP->getDepth(), TTP->getIndex());
-
-  return getDepthAndIndex(UPP.first.get<NamedDecl *>());
-}
-
 /// Helper function to build a TemplateParameter when we don't
 /// know its type statically.
 static TemplateParameter makeTemplateParameter(Decl *D) {
@@ -660,6 +638,19 @@ static TemplateParameter makeTemplateParameter(Decl *D) {
     return TemplateParameter(NTTP);
 
   return TemplateParameter(cast<TemplateTemplateParmDecl>(D));
+}
+
+/// If \p Param is an expanded parameter pack, get the number of expansions.
+static Optional<unsigned> getExpandedPackSize(NamedDecl *Param) {
+  if (auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(Param))
+    if (NTTP->isExpandedParameterPack())
+      return NTTP->getNumExpansionTypes();
+
+  if (auto *TTP = dyn_cast<TemplateTemplateParmDecl>(Param))
+    if (TTP->isExpandedParameterPack())
+      return TTP->getNumExpansionTemplateParameters();
+
+  return None;
 }
 
 /// A pack that we're currently deducing.
@@ -688,10 +679,83 @@ namespace {
 /// A scope in which we're performing pack deduction.
 class PackDeductionScope {
 public:
+  /// Prepare to deduce the packs named within Pattern.
   PackDeductionScope(Sema &S, TemplateParameterList *TemplateParams,
                      SmallVectorImpl<DeducedTemplateArgument> &Deduced,
                      TemplateDeductionInfo &Info, TemplateArgument Pattern)
       : S(S), TemplateParams(TemplateParams), Deduced(Deduced), Info(Info) {
+    unsigned NumNamedPacks = addPacks(Pattern);
+    finishConstruction(NumNamedPacks);
+  }
+
+  /// Prepare to directly deduce arguments of the parameter with index \p Index.
+  PackDeductionScope(Sema &S, TemplateParameterList *TemplateParams,
+                     SmallVectorImpl<DeducedTemplateArgument> &Deduced,
+                     TemplateDeductionInfo &Info, unsigned Index)
+      : S(S), TemplateParams(TemplateParams), Deduced(Deduced), Info(Info) {
+    addPack(Index);
+    finishConstruction(1);
+  }
+
+private:
+  void addPack(unsigned Index) {
+    // Save the deduced template argument for the parameter pack expanded
+    // by this pack expansion, then clear out the deduction.
+    DeducedPack Pack(Index);
+    Pack.Saved = Deduced[Index];
+    Deduced[Index] = TemplateArgument();
+
+    // FIXME: What if we encounter multiple packs with different numbers of
+    // pre-expanded expansions? (This should already have been diagnosed
+    // during substitution.)
+    if (Optional<unsigned> ExpandedPackExpansions =
+            getExpandedPackSize(TemplateParams->getParam(Index)))
+      FixedNumExpansions = ExpandedPackExpansions;
+
+    Packs.push_back(Pack);
+  }
+
+  unsigned addPacks(TemplateArgument Pattern) {
+    // Compute the set of template parameter indices that correspond to
+    // parameter packs expanded by the pack expansion.
+    llvm::SmallBitVector SawIndices(TemplateParams->size());
+
+    auto AddPack = [&](unsigned Index) {
+      if (SawIndices[Index])
+        return;
+      SawIndices[Index] = true;
+      addPack(Index);
+    };
+
+    // First look for unexpanded packs in the pattern.
+    SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+    S.collectUnexpandedParameterPacks(Pattern, Unexpanded);
+    for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
+      unsigned Depth, Index;
+      std::tie(Depth, Index) = getDepthAndIndex(Unexpanded[I]);
+      if (Depth == Info.getDeducedDepth())
+        AddPack(Index);
+    }
+    assert(!Packs.empty() && "Pack expansion without unexpanded packs?");
+
+    unsigned NumNamedPacks = Packs.size();
+
+    // We can also have deduced template parameters that do not actually
+    // appear in the pattern, but can be deduced by it (the type of a non-type
+    // template parameter pack, in particular). These won't have prevented us
+    // from partially expanding the pack.
+    llvm::SmallBitVector Used(TemplateParams->size());
+    MarkUsedTemplateParameters(S.Context, Pattern, /*OnlyDeduced*/true,
+                               Info.getDeducedDepth(), Used);
+    for (int Index = Used.find_first(); Index != -1;
+         Index = Used.find_next(Index))
+      if (TemplateParams->getParam(Index)->isParameterPack())
+        AddPack(Index);
+
+    return NumNamedPacks;
+  }
+
+  void finishConstruction(unsigned NumNamedPacks) {
     // Dig out the partially-substituted pack, if there is one.
     const TemplateArgument *PartialPackArgs = nullptr;
     unsigned NumPartialPackArgs = 0;
@@ -701,59 +765,28 @@ public:
               &PartialPackArgs, &NumPartialPackArgs))
         PartialPackDepthIndex = getDepthAndIndex(Partial);
 
-    // Compute the set of template parameter indices that correspond to
-    // parameter packs expanded by the pack expansion.
-    {
-      llvm::SmallBitVector SawIndices(TemplateParams->size());
-
-      auto AddPack = [&](unsigned Index) {
-        if (SawIndices[Index])
-          return;
-        SawIndices[Index] = true;
-
-        // Save the deduced template argument for the parameter pack expanded
-        // by this pack expansion, then clear out the deduction.
-        DeducedPack Pack(Index);
-        Pack.Saved = Deduced[Index];
-        Deduced[Index] = TemplateArgument();
-
-        Packs.push_back(Pack);
-      };
-
-      // First look for unexpanded packs in the pattern.
-      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-      S.collectUnexpandedParameterPacks(Pattern, Unexpanded);
-      for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
-        unsigned Depth, Index;
-        std::tie(Depth, Index) = getDepthAndIndex(Unexpanded[I]);
-        if (Depth == Info.getDeducedDepth())
-          AddPack(Index);
+    // This pack expansion will have been partially or fully expanded if
+    // it only names explicitly-specified parameter packs (including the
+    // partially-substituted one, if any).
+    bool IsExpanded = true;
+    for (unsigned I = 0; I != NumNamedPacks; ++I) {
+      if (Packs[I].Index >= Info.getNumExplicitArgs()) {
+        IsExpanded = false;
+        IsPartiallyExpanded = false;
+        break;
       }
-      assert(!Packs.empty() && "Pack expansion without unexpanded packs?");
-
-      // This pack expansion will have been partially expanded iff the only
-      // unexpanded parameter pack within it is the partially-substituted pack.
-      IsPartiallyExpanded =
-          Packs.size() == 1 &&
-          PartialPackDepthIndex ==
-              std::make_pair(Info.getDeducedDepth(), Packs.front().Index);
-
-      // Skip over the pack elements that were expanded into separate arguments.
-      if (IsPartiallyExpanded)
-        PackElements += NumPartialPackArgs;
-
-      // We can also have deduced template parameters that do not actually
-      // appear in the pattern, but can be deduced by it (the type of a non-type
-      // template parameter pack, in particular). These won't have prevented us
-      // from partially expanding the pack.
-      llvm::SmallBitVector Used(TemplateParams->size());
-      MarkUsedTemplateParameters(S.Context, Pattern, /*OnlyDeduced*/true,
-                                 Info.getDeducedDepth(), Used);
-      for (int Index = Used.find_first(); Index != -1;
-           Index = Used.find_next(Index))
-        if (TemplateParams->getParam(Index)->isParameterPack())
-          AddPack(Index);
+      if (PartialPackDepthIndex ==
+            std::make_pair(Info.getDeducedDepth(), Packs[I].Index)) {
+        IsPartiallyExpanded = true;
+      }
     }
+
+    // Skip over the pack elements that were expanded into separate arguments.
+    // If we partially expanded, this is the number of partial arguments.
+    if (IsPartiallyExpanded)
+      PackElements += NumPartialPackArgs;
+    else if (IsExpanded)
+      PackElements += *FixedNumExpansions;
 
     for (auto &Pack : Packs) {
       if (Info.PendingDeducedPacks.size() > Pack.Index)
@@ -773,12 +806,13 @@ public:
         // FIXME: If we could represent a "depth i, index j, pack elem k"
         // parameter, we could substitute the partially-substituted pack
         // everywhere and avoid this.
-        if (Pack.New.size() > PackElements)
+        if (!IsPartiallyExpanded)
           Deduced[Pack.Index] = Pack.New[PackElements];
       }
     }
   }
 
+public:
   ~PackDeductionScope() {
     for (auto &Pack : Packs)
       Info.PendingDeducedPacks[Pack.Index] = Pack.Outer;
@@ -787,6 +821,18 @@ public:
   /// Determine whether this pack has already been partially expanded into a
   /// sequence of (prior) function parameters / template arguments.
   bool isPartiallyExpanded() { return IsPartiallyExpanded; }
+
+  /// Determine whether this pack expansion scope has a known, fixed arity.
+  /// This happens if it involves a pack from an outer template that has
+  /// (notionally) already been expanded.
+  bool hasFixedArity() { return FixedNumExpansions.hasValue(); }
+
+  /// Determine whether the next element of the argument is still part of this
+  /// pack. This is the case unless the pack is already expanded to a fixed
+  /// length.
+  bool hasNextElement() {
+    return !FixedNumExpansions || *FixedNumExpansions > PackElements;
+  }
 
   /// Move to deducing the next element in each pack that is being deduced.
   void nextPackElement() {
@@ -813,12 +859,20 @@ public:
   /// Finish template argument deduction for a set of argument packs,
   /// producing the argument packs and checking for consistency with prior
   /// deductions.
-  Sema::TemplateDeductionResult finish() {
+  Sema::TemplateDeductionResult
+  finish(bool TreatNoDeductionsAsNonDeduced = true) {
     // Build argument packs for each of the parameter packs expanded by this
     // pack expansion.
     for (auto &Pack : Packs) {
       // Put back the old value for this pack.
       Deduced[Pack.Index] = Pack.Saved;
+
+      // If we are deducing the size of this pack even if we didn't deduce any
+      // values for it, then make sure we build a pack of the right size.
+      // FIXME: Should we always deduce the size, even if the pack appears in
+      // a non-deduced context?
+      if (!TreatNoDeductionsAsNonDeduced)
+        Pack.New.resize(PackElements);
 
       // Build or find a new value for this pack.
       DeducedTemplateArgument NewPack;
@@ -875,12 +929,22 @@ public:
         Result = checkDeducedTemplateArguments(S.Context, OldPack, NewPack);
       }
 
+      NamedDecl *Param = TemplateParams->getParam(Pack.Index);
       if (Result.isNull()) {
-        Info.Param =
-            makeTemplateParameter(TemplateParams->getParam(Pack.Index));
+        Info.Param = makeTemplateParameter(Param);
         Info.FirstArg = OldPack;
         Info.SecondArg = NewPack;
         return Sema::TDK_Inconsistent;
+      }
+
+      // If we have a pre-expanded pack and we didn't deduce enough elements
+      // for it, fail deduction.
+      if (Optional<unsigned> Expansions = getExpandedPackSize(Param)) {
+        if (*Expansions != PackElements) {
+          Info.Param = makeTemplateParameter(Param);
+          Info.FirstArg = Result;
+          return Sema::TDK_IncompletePack;
+        }
       }
 
       *Loc = Result;
@@ -896,6 +960,8 @@ private:
   TemplateDeductionInfo &Info;
   unsigned PackElements = 0;
   bool IsPartiallyExpanded = false;
+  /// The number of expansions, if we have a fully-expanded pack in this scope.
+  Optional<unsigned> FixedNumExpansions;
 
   SmallVector<DeducedPack, 2> Packs;
 };
@@ -987,8 +1053,10 @@ DeduceTemplateArguments(Sema &S,
     QualType Pattern = Expansion->getPattern();
     PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, Pattern);
 
-    if (ParamIdx + 1 == NumParams) {
-      for (; ArgIdx < NumArgs; ++ArgIdx) {
+    // A pack scope with fixed arity is not really a pack any more, so is not
+    // a non-deduced context.
+    if (ParamIdx + 1 == NumParams || PackScope.hasFixedArity()) {
+      for (; ArgIdx < NumArgs && PackScope.hasNextElement(); ++ArgIdx) {
         // Deduce template arguments from the pattern.
         if (Sema::TemplateDeductionResult Result
               = DeduceTemplateArgumentsByTypeMatch(S, TemplateParams, Pattern,
@@ -1602,8 +1670,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       const FunctionProtoType *FunctionProtoParam =
         cast<FunctionProtoType>(Param);
 
-      if (FunctionProtoParam->getTypeQuals()
-            != FunctionProtoArg->getTypeQuals() ||
+      if (FunctionProtoParam->getMethodQuals()
+            != FunctionProtoArg->getMethodQuals() ||
           FunctionProtoParam->getRefQualifier()
             != FunctionProtoArg->getRefQualifier() ||
           FunctionProtoParam->isVariadic() != FunctionProtoArg->isVariadic())
@@ -2193,6 +2261,8 @@ static bool hasPackExpansionBeforeEnd(ArrayRef<TemplateArgument> Args) {
     if (A.getKind() == TemplateArgument::Pack)
       return hasPackExpansionBeforeEnd(A.pack_elements());
 
+    // FIXME: If this is a fixed-arity pack expansion from an outer level of
+    // templates, it should not be treated as a pack expansion.
     if (A.isPackExpansion())
       FoundPackExpansion = true;
   }
@@ -2262,7 +2332,9 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     // Keep track of the deduced template arguments for each parameter pack
     // expanded by this pack expansion (the outer index) and for each
     // template argument (the inner SmallVectors).
-    for (; hasTemplateArgumentForDeduction(Args, ArgIdx); ++ArgIdx) {
+    for (; hasTemplateArgumentForDeduction(Args, ArgIdx) &&
+           PackScope.hasNextElement();
+         ++ArgIdx) {
       // Deduce template arguments from the pattern.
       if (Sema::TemplateDeductionResult Result
             = DeduceTemplateArguments(S, TemplateParams, Pattern, Args[ArgIdx],
@@ -2534,6 +2606,16 @@ static Sema::TemplateDeductionResult ConvertDeducedTemplateArguments(
   for (unsigned I = 0, N = TemplateParams->size(); I != N; ++I) {
     NamedDecl *Param = TemplateParams->getParam(I);
 
+    // C++0x [temp.arg.explicit]p3:
+    //    A trailing template parameter pack (14.5.3) not otherwise deduced will
+    //    be deduced to an empty sequence of template arguments.
+    // FIXME: Where did the word "trailing" come from?
+    if (Deduced[I].isNull() && Param->isTemplateParameterPack()) {
+      if (auto Result = PackDeductionScope(S, TemplateParams, Deduced, Info, I)
+                            .finish(/*TreatNoDeductionsAsNonDeduced*/false))
+        return Result;
+    }
+
     if (!Deduced[I].isNull()) {
       if (I < NumAlreadyConverted) {
         // We may have had explicitly-specified template arguments for a
@@ -2565,40 +2647,6 @@ static Sema::TemplateDeductionResult ConvertDeducedTemplateArguments(
         return Sema::TDK_SubstitutionFailure;
       }
 
-      continue;
-    }
-
-    // C++0x [temp.arg.explicit]p3:
-    //    A trailing template parameter pack (14.5.3) not otherwise deduced will
-    //    be deduced to an empty sequence of template arguments.
-    // FIXME: Where did the word "trailing" come from?
-    if (Param->isTemplateParameterPack()) {
-      // We may have had explicitly-specified template arguments for this
-      // template parameter pack. If so, our empty deduction extends the
-      // explicitly-specified set (C++0x [temp.arg.explicit]p9).
-      const TemplateArgument *ExplicitArgs;
-      unsigned NumExplicitArgs;
-      if (CurrentInstantiationScope &&
-          CurrentInstantiationScope->getPartiallySubstitutedPack(
-              &ExplicitArgs, &NumExplicitArgs) == Param) {
-        Builder.push_back(TemplateArgument(
-            llvm::makeArrayRef(ExplicitArgs, NumExplicitArgs)));
-
-        // Forget the partially-substituted pack; its substitution is now
-        // complete.
-        CurrentInstantiationScope->ResetPartiallySubstitutedPack();
-      } else {
-        // Go through the motions of checking the empty argument pack against
-        // the parameter pack.
-        DeducedTemplateArgument DeducedPack(TemplateArgument::getEmptyPack());
-        if (ConvertDeducedTemplateArgument(S, Param, DeducedPack, Template,
-                                           Info, IsDeduced, Builder)) {
-          Info.Param = makeTemplateParameter(Param);
-          // FIXME: These template arguments are temporary. Free them!
-          Info.reset(TemplateArgumentList::CreateCopy(S.Context, Builder));
-          return Sema::TDK_SubstitutionFailure;
-        }
-      }
       continue;
     }
 
@@ -2962,7 +3010,7 @@ Sema::SubstituteExplicitTemplateArguments(
       Trap.hasErrorOccurred()) {
     unsigned Index = Builder.size();
     if (Index >= TemplateParams->size())
-      Index = TemplateParams->size() - 1;
+      return TDK_SubstitutionFailure;
     Info.Param = makeTemplateParameter(TemplateParams->getParam(Index));
     return TDK_InvalidExplicitArguments;
   }
@@ -2971,7 +3019,7 @@ Sema::SubstituteExplicitTemplateArguments(
   // template arguments.
   TemplateArgumentList *ExplicitArgumentList
     = TemplateArgumentList::CreateCopy(Context, Builder);
-  Info.reset(ExplicitArgumentList);
+  Info.setExplicitArgs(ExplicitArgumentList);
 
   // Template argument deduction and the final substitution should be
   // done in the context of the templated declaration.  Explicit
@@ -2983,14 +3031,19 @@ Sema::SubstituteExplicitTemplateArguments(
   // note that the template argument pack is partially substituted and record
   // the explicit template arguments. They'll be used as part of deduction
   // for this template parameter pack.
-  for (unsigned I = 0, N = Builder.size(); I != N; ++I) {
-    const TemplateArgument &Arg = Builder[I];
+  unsigned PartiallySubstitutedPackIndex = -1u;
+  if (!Builder.empty()) {
+    const TemplateArgument &Arg = Builder.back();
     if (Arg.getKind() == TemplateArgument::Pack) {
-      CurrentInstantiationScope->SetPartiallySubstitutedPack(
-                                                 TemplateParams->getParam(I),
-                                                             Arg.pack_begin(),
-                                                             Arg.pack_size());
-      break;
+      auto *Param = TemplateParams->getParam(Builder.size() - 1);
+      // If this is a fully-saturated fixed-size pack, it should be
+      // fully-substituted, not partially-substituted.
+      Optional<unsigned> Expansions = getExpandedPackSize(Param);
+      if (!Expansions || Arg.pack_size() < *Expansions) {
+        PartiallySubstitutedPackIndex = Builder.size() - 1;
+        CurrentInstantiationScope->SetPartiallySubstitutedPack(
+            Param, Arg.pack_begin(), Arg.pack_size());
+      }
     }
   }
 
@@ -3024,11 +3077,11 @@ Sema::SubstituteExplicitTemplateArguments(
     //   "pointer to cv-qualifier-seq X" between the optional cv-qualifer-seq
     //   and the end of the function-definition, member-declarator, or
     //   declarator.
-    unsigned ThisTypeQuals = 0;
+    Qualifiers ThisTypeQuals;
     CXXRecordDecl *ThisContext = nullptr;
     if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Function)) {
       ThisContext = Method->getParent();
-      ThisTypeQuals = Method->getTypeQualifiers();
+      ThisTypeQuals = Method->getMethodQualifiers();
     }
 
     CXXThisScopeRAII ThisScope(*this, ThisContext, ThisTypeQuals,
@@ -3080,13 +3133,13 @@ Sema::SubstituteExplicitTemplateArguments(
   //   case, the empty template argument list <> itself may also be omitted.
   //
   // Take all of the explicitly-specified arguments and put them into
-  // the set of deduced template arguments. Explicitly-specified
-  // parameter packs, however, will be set to NULL since the deduction
-  // mechanisms handle explicitly-specified argument packs directly.
+  // the set of deduced template arguments. The partially-substituted
+  // parameter pack, however, will be set to NULL since the deduction
+  // mechanism handles the partially-substituted argument pack directly.
   Deduced.reserve(TemplateParams->size());
   for (unsigned I = 0, N = ExplicitArgumentList->size(); I != N; ++I) {
     const TemplateArgument &Arg = ExplicitArgumentList->get(I);
-    if (Arg.getKind() == TemplateArgument::Pack)
+    if (I == PartiallySubstitutedPackIndex)
       Deduced.push_back(DeducedTemplateArgument());
     else
       Deduced.push_back(Arg);
@@ -3852,8 +3905,9 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     // the length of the explicitly-specified pack if it's expanded by the
     // parameter pack and 0 otherwise, and we treat each deduction as a
     // non-deduced context.
-    if (ParamIdx + 1 == NumParamTypes) {
-      for (; ArgIdx < Args.size(); PackScope.nextPackElement(), ++ArgIdx) {
+    if (ParamIdx + 1 == NumParamTypes || PackScope.hasFixedArity()) {
+      for (; ArgIdx < Args.size() && PackScope.hasNextElement();
+           PackScope.nextPackElement(), ++ArgIdx) {
         ParamTypesForArgChecking.push_back(ParamPattern);
         if (auto Result = DeduceCallArgument(ParamPattern, ArgIdx))
           return Result;
@@ -4370,11 +4424,15 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
   if (const AutoType *AT = Type.getType()->getAs<AutoType>()) {
     if (AT->isDecltypeAuto()) {
       if (isa<InitListExpr>(Init)) {
-        Diag(Init->getLocStart(), diag::err_decltype_auto_initializer_list);
+        Diag(Init->getBeginLoc(), diag::err_decltype_auto_initializer_list);
         return DAR_FailedAlreadyDiagnosed;
       }
 
-      QualType Deduced = BuildDecltypeType(Init, Init->getLocStart(), false);
+      ExprResult ER = CheckPlaceholderExpr(Init);
+      if (ER.isInvalid())
+        return DAR_FailedAlreadyDiagnosed;
+      Init = ER.get();
+      QualType Deduced = BuildDecltypeType(Init, Init->getBeginLoc(), false);
       if (Deduced.isNull())
         return DAR_FailedAlreadyDiagnosed;
       // FIXME: Support a non-canonical deduced type for 'auto'.
@@ -4385,7 +4443,7 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
       return DAR_Succeeded;
     } else if (!getLangOpts().CPlusPlus) {
       if (isa<InitListExpr>(Init)) {
-        Diag(Init->getLocStart(), diag::err_auto_init_list_from_c);
+        Diag(Init->getBeginLoc(), diag::err_auto_init_list_from_c);
         return DAR_FailedAlreadyDiagnosed;
       }
     }
@@ -4546,7 +4604,7 @@ bool Sema::DeduceReturnType(FunctionDecl *FD, SourceLocation Loc,
     CXXRecordDecl *Lambda = cast<CXXMethodDecl>(FD)->getParent();
     FunctionDecl *CallOp = Lambda->getLambdaCallOperator();
 
-    // For a generic lambda, instantiate the call operator if needed. 
+    // For a generic lambda, instantiate the call operator if needed.
     if (auto *Args = FD->getTemplateSpecializationArgs()) {
       CallOp = InstantiateFunctionDeclaration(
           CallOp->getDescribedFunctionTemplate(), Args, Loc);
@@ -4602,8 +4660,7 @@ AddImplicitObjectParameterType(ASTContext &Context,
   // The standard doesn't say explicitly, but we pick the appropriate kind of
   // reference type based on [over.match.funcs]p4.
   QualType ArgTy = Context.getTypeDeclType(Method->getParent());
-  ArgTy = Context.getQualifiedType(ArgTy,
-                        Qualifiers::fromCVRMask(Method->getTypeQualifiers()));
+  ArgTy = Context.getQualifiedType(ArgTy, Method->getMethodQualifiers());
   if (Method->getRefQualifier() == RQ_RValue)
     ArgTy = Context.getRValueReferenceType(ArgTy);
   else
@@ -5172,6 +5229,8 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   while (true) {
     if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E))
       E = ICE->getSubExpr();
+    else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(E))
+      E = CE->getSubExpr();
     else if (const SubstNonTypeTemplateParmExpr *Subst =
                dyn_cast<SubstNonTypeTemplateParmExpr>(E))
       E = Subst->getReplacement();

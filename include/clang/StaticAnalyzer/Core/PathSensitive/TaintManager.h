@@ -1,9 +1,8 @@
 //===- TaintManager.h - Managing taint --------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -34,10 +33,7 @@ using TaintMapImpl = llvm::ImmutableMap<SymbolRef, TaintTagType>;
 
 template<> struct ProgramStateTrait<TaintMap>
     :  public ProgramStatePartialTrait<TaintMapImpl> {
-  static void *GDMIndex() {
-    static int index = 0;
-    return &index;
-  }
+  static void *GDMIndex();
 };
 
 /// The GDM component mapping derived symbols' parent symbols to their
@@ -49,10 +45,7 @@ using DerivedSymTaintImpl = llvm::ImmutableMap<SymbolRef, TaintedSubRegions>;
 
 template<> struct ProgramStateTrait<DerivedSymTaint>
     :  public ProgramStatePartialTrait<DerivedSymTaintImpl> {
-  static void *GDMIndex() {
-    static int index;
-    return &index;
-  }
+  static void *GDMIndex();
 };
 
 class TaintManager {

@@ -1,9 +1,8 @@
 //== HTMLRewrite.cpp - Translate source code into prettified HTML --*- C++ -*-//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -49,7 +48,7 @@ void html::HighlightRange(Rewriter &R, SourceLocation B, SourceLocation E,
   const char *BufferStart = SM.getBufferData(FID, &Invalid).data();
   if (Invalid)
     return;
-  
+
   HighlightRange(R.getEditBuffer(FID), BOffset, EOffset,
                  BufferStart, StartTag, EndTag);
 }
@@ -477,7 +476,7 @@ void html::SyntaxHighlight(Rewriter &R, FileID FID, const Preprocessor &PP) {
       // Chop off the L, u, U or 8 prefix
       ++TokOffs;
       --TokLen;
-      // FALL THROUGH.
+      LLVM_FALLTHROUGH;
     case tok::string_literal:
       // FIXME: Exclude the optional ud-suffix from the highlighted range.
       HighlightRange(RB, TokOffs, TokOffs+TokLen, BufferStart,

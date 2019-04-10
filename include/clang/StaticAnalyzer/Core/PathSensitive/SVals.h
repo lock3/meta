@@ -1,9 +1,8 @@
 //===- SVals.h - Abstract Values for Static Analysis ------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -202,7 +201,7 @@ public:
       return SymExpr::symbol_iterator();
   }
 
-  SymExpr::symbol_iterator symbol_end() const { 
+  SymExpr::symbol_iterator symbol_end() const {
     return SymExpr::symbol_end();
   }
 };
@@ -230,13 +229,13 @@ public:
   // tautologically false.
   bool isUndef() const = delete;
   bool isValid() const = delete;
-  
+
 protected:
   DefinedOrUnknownSVal() = default;
   explicit DefinedOrUnknownSVal(const void *d, bool isLoc, unsigned ValKind)
       : SVal(d, isLoc, ValKind) {}
   explicit DefinedOrUnknownSVal(BaseKind k, void *D = nullptr) : SVal(k, D) {}
-  
+
 private:
   friend class SVal;
 
@@ -244,11 +243,11 @@ private:
     return !V.isUndef();
   }
 };
-  
+
 class UnknownVal : public DefinedOrUnknownSVal {
 public:
   explicit UnknownVal() : DefinedOrUnknownSVal(UnknownValKind) {}
-  
+
 private:
   friend class SVal;
 
@@ -325,7 +324,7 @@ public:
   void dumpToStream(raw_ostream &Out) const;
 
   static bool isLocType(QualType T) {
-    return T->isAnyPointerType() || T->isBlockPointerType() || 
+    return T->isAnyPointerType() || T->isBlockPointerType() ||
            T->isReferenceType() || T->isNullPtrType();
   }
 
@@ -343,11 +342,14 @@ private:
 
 namespace nonloc {
 
-/// Represents symbolic expression.
+/// Represents symbolic expression that isn't a location.
 class SymbolVal : public NonLoc {
 public:
   SymbolVal() = delete;
-  SymbolVal(SymbolRef sym) : NonLoc(SymbolValKind, sym) { assert(sym); }
+  SymbolVal(SymbolRef sym) : NonLoc(SymbolValKind, sym) {
+    assert(sym);
+    assert(!Loc::isLocType(sym->getType()));
+  }
 
   SymbolRef getSymbol() const {
     return (const SymExpr *) Data;
@@ -527,9 +529,7 @@ public:
     return PTMDataType::getFromOpaqueValue(const_cast<void *>(Data));
   }
 
-  bool isNullMemberPointer() const {
-    return getPTMData().isNull();
-  }
+  bool isNullMemberPointer() const;
 
   const DeclaratorDecl *getDecl() const;
 
@@ -661,19 +661,10 @@ private:
   }
 };
 
-} // namespace loc 
+} // namespace loc
 
 } // namespace ento
 
 } // namespace clang
-
-namespace llvm {
-
-template <typename T> struct isPodLike;
-template <> struct isPodLike<clang::ento::SVal> {
-  static const bool value = true;
-};
-
-} // namespace llvm
 
 #endif // LLVM_CLANG_STATICANALYZER_CORE_PATHSENSITIVE_SVALS_H

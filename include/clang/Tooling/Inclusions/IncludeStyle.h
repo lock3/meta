@@ -1,9 +1,8 @@
 //===--- IncludeStyle.h - Style of C++ #include directives -------*- C++-*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -67,6 +66,10 @@ struct IncludeStyle {
   /// Regular expressions denoting the different ``#include`` categories
   /// used for ordering ``#includes``.
   ///
+  /// `POSIX extended
+  /// <http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap09.html>`_
+  /// regular expressions are supported.
+  ///
   /// These regular expressions are matched against the filename of an include
   /// (including the <> or "") in order. The value belonging to the first
   /// matching regular expression is assigned and ``#includes`` are sorted first
@@ -87,6 +90,8 @@ struct IncludeStyle {
   ///       Priority:        2
   ///     - Regex:           '^(<|"(gtest|gmock|isl|json)/)'
   ///       Priority:        3
+  ///     - Regex:           '<[[:alnum:].]+>'
+  ///       Priority:        4
   ///     - Regex:           '.*'
   ///       Priority:        1
   /// \endcode

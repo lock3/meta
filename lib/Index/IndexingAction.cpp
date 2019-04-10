@@ -1,9 +1,8 @@
 //===- IndexingAction.cpp - Frontend index action -------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -37,6 +36,7 @@ bool IndexDataConsumer::handleMacroOccurence(const IdentifierInfo *Name,
 }
 
 bool IndexDataConsumer::handleModuleOccurence(const ImportDecl *ImportD,
+                                              const Module *Mod,
                                               SymbolRoleSet Roles,
                                               SourceLocation Loc) {
   return true;
@@ -215,23 +215,41 @@ static void indexTranslationUnit(ASTUnit &Unit, IndexingContext &IndexCtx) {
   Unit.visitLocalTopLevelDecls(&IndexCtx, topLevelDeclVisitor);
 }
 
+static void indexPreprocessorMacros(const Preprocessor &PP,
+                                    IndexDataConsumer &DataConsumer) {
+  for (const auto &M : PP.macros())
+    if (MacroDirective *MD = M.second.getLatest())
+      DataConsumer.handleMacroOccurence(
+          M.first, MD->getMacroInfo(),
+          static_cast<unsigned>(index::SymbolRole::Definition),
+          MD->getLocation());
+}
+
 void index::indexASTUnit(ASTUnit &Unit, IndexDataConsumer &DataConsumer,
                          IndexingOptions Opts) {
   IndexingContext IndexCtx(Opts, DataConsumer);
   IndexCtx.setASTContext(Unit.getASTContext());
   DataConsumer.initialize(Unit.getASTContext());
   DataConsumer.setPreprocessor(Unit.getPreprocessorPtr());
+
+  if (Opts.IndexMacrosInPreprocessor)
+    indexPreprocessorMacros(Unit.getPreprocessor(), DataConsumer);
   indexTranslationUnit(Unit, IndexCtx);
   DataConsumer.finish();
 }
 
-void index::indexTopLevelDecls(ASTContext &Ctx, ArrayRef<const Decl *> Decls,
+void index::indexTopLevelDecls(ASTContext &Ctx, Preprocessor &PP,
+                               ArrayRef<const Decl *> Decls,
                                IndexDataConsumer &DataConsumer,
                                IndexingOptions Opts) {
   IndexingContext IndexCtx(Opts, DataConsumer);
   IndexCtx.setASTContext(Ctx);
 
   DataConsumer.initialize(Ctx);
+
+  if (Opts.IndexMacrosInPreprocessor)
+    indexPreprocessorMacros(PP, DataConsumer);
+
   for (const Decl *D : Decls)
     IndexCtx.indexTopLevelDecl(D);
   DataConsumer.finish();
@@ -250,6 +268,9 @@ void index::indexModuleFile(serialization::ModuleFile &Mod, ASTReader &Reader,
   IndexingContext IndexCtx(Opts, DataConsumer);
   IndexCtx.setASTContext(Ctx);
   DataConsumer.initialize(Ctx);
+
+  if (Opts.IndexMacrosInPreprocessor)
+    indexPreprocessorMacros(Reader.getPreprocessor(), DataConsumer);
 
   for (const Decl *D : Reader.getModuleFileLevelDecls(Mod)) {
     IndexCtx.indexTopLevelDecl(D);

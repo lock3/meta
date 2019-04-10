@@ -1,9 +1,8 @@
 //===- MacroInfo.h - Information about #defined identifiers -----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -174,7 +173,7 @@ public:
     std::copy(List.begin(), List.end(), ParameterList);
   }
 
-  /// Parameters - The list of parameters for a function-like macro.  This can 
+  /// Parameters - The list of parameters for a function-like macro.  This can
   /// be empty, for, e.g. "#define X()".
   using param_iterator = IdentifierInfo *const *;
   bool param_empty() const { return NumParameters == 0; }
@@ -395,7 +394,8 @@ public:
 
   /// Find macro definition active in the specified source location. If
   /// this macro was not defined there, return NULL.
-  const DefInfo findDirectiveAtLoc(SourceLocation L, SourceManager &SM) const;
+  const DefInfo findDirectiveAtLoc(SourceLocation L,
+                                   const SourceManager &SM) const;
 
   void dump() const;
 

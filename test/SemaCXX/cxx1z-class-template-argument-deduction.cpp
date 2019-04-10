@@ -307,6 +307,13 @@ namespace dependent {
   template int Var(int);
   template int Cast(int);
   template int New(int);
+
+  template<template<typename> typename Y> void test() {
+    Y(0);
+    new Y(0);
+    Y y(0);
+  }
+  template void test<X>();
 }
 
 namespace injected_class_name {
@@ -347,6 +354,140 @@ namespace member_guides {
     template<typename T> Private(T) -> Private<T>; // expected-error {{different access}}
   };
 }
+
+namespace rdar41903969 {
+template <class T> struct A {};
+template <class T> struct B;
+template <class T> struct C {
+  C(A<T>&);
+  C(B<T>&);
+};
+
+void foo(A<int> &a, B<int> &b) {
+  (void)C{b};
+  (void)C{a};
+}
+
+template<typename T> struct X {
+  X(std::initializer_list<T>) = delete;
+  X(const X&);
+};
+
+template <class T> struct D : X<T> {};
+
+void bar(D<int>& d) {
+  (void)X{d};
+}
+}
+
+namespace rdar41330135 {
+template <int> struct A {};
+template <class T>
+struct S {
+  template <class U>
+  S(T a, U t, A<sizeof(t)>);
+};
+template <class T> struct D {
+  D(T t, A<sizeof(t)>);
+};
+int f() {
+  S s(0, 0, A<sizeof(int)>());
+  D d(0, A<sizeof(int)>());
+}
+
+namespace test_dupls {
+template<unsigned long> struct X {};
+template<typename T> struct A {
+  A(T t, X<sizeof(t)>);
+};
+A a(0, {});
+template<typename U> struct B {
+  B(U u, X<sizeof(u)>);
+};
+B b(0, {});
+}
+
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic warning "-Wctad-maybe-unsupported"
+namespace test_implicit_ctad_warning {
+
+template <class T>
+struct Tag {};
+
+template <class T>
+struct NoExplicit { // expected-note {{add a deduction guide to suppress this warning}}
+  NoExplicit(T) {}
+  NoExplicit(T, int) {}
+};
+
+// expected-warning@+1 {{'NoExplicit' may not intend to support class template argument deduction}}
+NoExplicit ne(42);
+
+template <class U>
+struct HasExplicit {
+  HasExplicit(U) {}
+  HasExplicit(U, int) {}
+};
+template <class U> HasExplicit(U, int) -> HasExplicit<Tag<U>>;
+
+HasExplicit he(42);
+
+// Motivating examples from (taken from Stephan Lavavej's 2018 Cppcon talk)
+template <class T, class U>
+struct AmateurPair { // expected-note {{add a deduction guide to suppress this warning}}
+  T first;
+  U second;
+  explicit AmateurPair(const T &t, const U &u) {}
+};
+// expected-warning@+1 {{'AmateurPair' may not intend to support class template argument deduction}}
+AmateurPair p1(42, "hello world"); // deduces to Pair<int, char[12]>
+
+template <class T, class U>
+struct AmateurPair2 { // expected-note {{add a deduction guide to suppress this warning}}
+  T first;
+  U second;
+  explicit AmateurPair2(T t, U u) {}
+};
+// expected-warning@+1 {{'AmateurPair2' may not intend to support class template argument deduction}}
+AmateurPair2 p2(42, "hello world"); // deduces to Pair2<int, const char*>
+
+template <class T, class U>
+struct ProPair {
+  T first; U second;
+    explicit ProPair(T const& t, U  const& u)  {}
+};
+template<class T1, class T2>
+ProPair(T1, T2) -> ProPair<T1, T2>;
+ProPair p3(42, "hello world"); // deduces to ProPair<int, const char*>
+static_assert(__is_same(decltype(p3), ProPair<int, const char*>));
+
+// Test that user-defined explicit guides suppress the warning even if they
+// aren't used as candidates.
+template <class T>
+struct TestExplicitCtor {
+  TestExplicitCtor(T) {}
+};
+template <class T>
+explicit TestExplicitCtor(TestExplicitCtor<T> const&) -> TestExplicitCtor<void>;
+TestExplicitCtor<int> ce1{42};
+TestExplicitCtor ce2 = ce1;
+static_assert(__is_same(decltype(ce2), TestExplicitCtor<int>), "");
+
+struct allow_ctad_t {
+  allow_ctad_t() = delete;
+};
+
+template <class T>
+struct TestSuppression {
+  TestSuppression(T) {}
+};
+TestSuppression(allow_ctad_t)->TestSuppression<void>;
+TestSuppression ta("abc");
+static_assert(__is_same(decltype(ta), TestSuppression<const char *>), "");
+}
+#pragma clang diagnostic pop
 
 #else
 

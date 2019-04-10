@@ -1,9 +1,8 @@
 //===- Initialization.h - Semantic Analysis for Initializers ----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -46,7 +45,7 @@ class ObjCMethodDecl;
 class Sema;
 
 /// Describes an entity that is being initialized.
-class InitializedEntity {
+class alignas(8) InitializedEntity {
 public:
   /// Specifies the kind of entity being initialized.
   enum EntityKind {
@@ -59,11 +58,14 @@ public:
     /// The entity being initialized is the result of a function call.
     EK_Result,
 
+    /// The entity being initialized is the result of a statement expression.
+    EK_StmtExprResult,
+
     /// The entity being initialized is an exception object that
     /// is being thrown.
     EK_Exception,
 
-    /// The entity being initialized is a non-static data member 
+    /// The entity being initialized is a non-static data member
     /// subobject.
     EK_Member,
 
@@ -99,7 +101,7 @@ public:
     /// complex number.
     EK_ComplexElement,
 
-    /// The entity being initialized is the field that captures a 
+    /// The entity being initialized is the field that captures a
     /// variable in a lambda.
     EK_LambdaCapture,
 
@@ -123,7 +125,7 @@ public:
     // enum as an index for its first %select.  When modifying this list,
     // that diagnostic text needs to be updated as well.
   };
-  
+
 private:
   /// The kind of entity being initialized.
   EntityKind Kind;
@@ -158,6 +160,10 @@ private:
     /// initialization in a copy or move constructor. These can perform array
     /// copies.
     bool IsImplicitFieldInit;
+
+    /// When Kind == EK_Member, whether this is the initial initialization
+    /// check for a default member initializer.
+    bool IsDefaultMemberInit;
   };
 
   struct C {
@@ -171,7 +177,7 @@ private:
   union {
     /// When Kind == EK_Variable, EK_Member or EK_Binding, the variable.
     VD Variable;
-    
+
     /// When Kind == EK_RelatedResult, the ObjectiveC method where
     /// result type was implicitly changed to accommodate ARC semantics.
     ObjCMethodDecl *MethodDecl;
@@ -179,21 +185,21 @@ private:
     /// When Kind == EK_Parameter, the ParmVarDecl, with the
     /// low bit indicating whether the parameter is "consumed".
     uintptr_t Parameter;
-    
+
     /// When Kind == EK_Temporary or EK_CompoundLiteralInit, the type
     /// source information for the temporary.
     TypeSourceInfo *TypeInfo;
 
     struct LN LocAndNRVO;
-    
-    /// When Kind == EK_Base, the base specifier that provides the 
+
+    /// When Kind == EK_Base, the base specifier that provides the
     /// base class. The lower bit specifies whether the base is an inherited
     /// virtual base.
     uintptr_t Base;
 
     /// When Kind == EK_ArrayElement, EK_VectorElement, or
     /// EK_ComplexElement, the index of the array or vector element being
-    /// initialized. 
+    /// initialized.
     unsigned Index;
 
     struct C Capture;
@@ -203,8 +209,8 @@ private:
 
   /// Create the initialization entity for a variable.
   InitializedEntity(VarDecl *Var, EntityKind EK = EK_Variable)
-      : Kind(EK), Type(Var->getType()), Variable{Var, false} {}
-  
+      : Kind(EK), Type(Var->getType()), Variable{Var, false, false} {}
+
   /// Create the initialization entity for the result of a
   /// function, throwing an object, performing an explicit cast, or
   /// initializing a parameter for which there is no declaration.
@@ -214,15 +220,15 @@ private:
     LocAndNRVO.Location = Loc.getRawEncoding();
     LocAndNRVO.NRVO = NRVO;
   }
-  
+
   /// Create the initialization entity for a member subobject.
   InitializedEntity(FieldDecl *Member, const InitializedEntity *Parent,
-                    bool Implicit) 
+                    bool Implicit, bool DefaultMemberInit)
       : Kind(EK_Member), Parent(Parent), Type(Member->getType()),
-        Variable{Member, Implicit} {}
-  
+        Variable{Member, Implicit, DefaultMemberInit} {}
+
   /// Create the initialization entity for an array element.
-  InitializedEntity(ASTContext &Context, unsigned Index, 
+  InitializedEntity(ASTContext &Context, unsigned Index,
                     const InitializedEntity &Parent);
 
   /// Create the initialization entity for a lambda capture.
@@ -231,7 +237,7 @@ private:
     Capture.VarID = VarID;
     Capture.Location = Loc.getRawEncoding();
   }
-  
+
 public:
   /// Create the initialization entity for a variable.
   static InitializedEntity InitializeVariable(VarDecl *Var) {
@@ -281,6 +287,11 @@ public:
     return InitializedEntity(EK_Result, ReturnLoc, Type, NRVO);
   }
 
+  static InitializedEntity InitializeStmtExprResult(SourceLocation ReturnLoc,
+                                            QualType Type) {
+    return InitializedEntity(EK_StmtExprResult, ReturnLoc, Type);
+  }
+
   static InitializedEntity InitializeBlock(SourceLocation BlockVarLoc,
                                            QualType Type, bool NRVO) {
     return InitializedEntity(EK_BlockElement, BlockVarLoc, Type, NRVO);
@@ -302,7 +313,7 @@ public:
   static InitializedEntity InitializeNew(SourceLocation NewLoc, QualType Type) {
     return InitializedEntity(EK_New, NewLoc, Type);
   }
-  
+
   /// Create the initialization entity for a temporary.
   static InitializedEntity InitializeTemporary(QualType Type) {
     return InitializeTemporary(nullptr, Type);
@@ -312,7 +323,7 @@ public:
   static InitializedEntity InitializeTemporary(TypeSourceInfo *TypeInfo) {
     return InitializeTemporary(TypeInfo, TypeInfo->getType());
   }
-  
+
   /// Create the initialization entity for a temporary.
   static InitializedEntity InitializeTemporary(TypeSourceInfo *TypeInfo,
                                                QualType Type) {
@@ -320,7 +331,7 @@ public:
     Result.TypeInfo = TypeInfo;
     return Result;
   }
-  
+
   /// Create the initialization entity for a related result.
   static InitializedEntity InitializeRelatedResult(ObjCMethodDecl *MD,
                                                    QualType Type) {
@@ -339,26 +350,32 @@ public:
   static InitializedEntity InitializeDelegation(QualType Type) {
     return InitializedEntity(EK_Delegating, SourceLocation(), Type);
   }
-  
+
   /// Create the initialization entity for a member subobject.
   static InitializedEntity
   InitializeMember(FieldDecl *Member,
                    const InitializedEntity *Parent = nullptr,
                    bool Implicit = false) {
-    return InitializedEntity(Member, Parent, Implicit);
+    return InitializedEntity(Member, Parent, Implicit, false);
   }
-  
+
   /// Create the initialization entity for a member subobject.
   static InitializedEntity
   InitializeMember(IndirectFieldDecl *Member,
                    const InitializedEntity *Parent = nullptr,
                    bool Implicit = false) {
-    return InitializedEntity(Member->getAnonField(), Parent, Implicit);
+    return InitializedEntity(Member->getAnonField(), Parent, Implicit, false);
+  }
+
+  /// Create the initialization entity for a default member initializer.
+  static InitializedEntity
+  InitializeMemberFromDefaultMemberInitializer(FieldDecl *Member) {
+    return InitializedEntity(Member, nullptr, false, true);
   }
 
   /// Create the initialization entity for an array element.
-  static InitializedEntity InitializeElement(ASTContext &Context, 
-                                             unsigned Index, 
+  static InitializedEntity InitializeElement(ASTContext &Context,
+                                             unsigned Index,
                                              const InitializedEntity &Parent) {
     return InitializedEntity(Context, Index, Parent);
   }
@@ -385,7 +402,7 @@ public:
 
   /// Determine the kind of initialization.
   EntityKind getKind() const { return Kind; }
-  
+
   /// Retrieve the parent of the entity being initialized, when
   /// the initialization itself is occurring within the context of a
   /// larger initialization.
@@ -393,27 +410,27 @@ public:
 
   /// Retrieve type being initialized.
   QualType getType() const { return Type; }
-  
-  /// Retrieve complete type-source information for the object being 
+
+  /// Retrieve complete type-source information for the object being
   /// constructed, if known.
   TypeSourceInfo *getTypeSourceInfo() const {
     if (Kind == EK_Temporary || Kind == EK_CompoundLiteralInit)
       return TypeInfo;
-    
+
     return nullptr;
   }
-  
+
   /// Retrieve the name of the entity being initialized.
   DeclarationName getName() const;
 
   /// Retrieve the variable, parameter, or field being
   /// initialized.
   ValueDecl *getDecl() const;
-  
+
   /// Retrieve the ObjectiveC method being initialized.
   ObjCMethodDecl *getMethodDecl() const { return MethodDecl; }
 
-  /// Determine whether this initialization allows the named return 
+  /// Determine whether this initialization allows the named return
   /// value optimization, which also applies to thrown objects.
   bool allowsNRVO() const;
 
@@ -428,7 +445,7 @@ public:
     assert(isParameterKind() && "Not a parameter");
     return (Parameter & 1);
   }
-                                  
+
   /// Retrieve the base specifier.
   const CXXBaseSpecifier *getBaseSpecifier() const {
     assert(getKind() == EK_Base && "Not a base specifier");
@@ -451,6 +468,12 @@ public:
   /// a defaulted constructor?
   bool isImplicitMemberInitializer() const {
     return getKind() == EK_Member && Variable.IsImplicitFieldInit;
+  }
+
+  /// Is this the default member initializer of a member (specified inside
+  /// the class definition)?
+  bool isDefaultMemberInitializer() const {
+    return getKind() == EK_Member && Variable.IsDefaultMemberInit;
   }
 
   /// Determine the location of the 'return' keyword when initializing
@@ -495,7 +518,7 @@ public:
     assert(getKind() == EK_LambdaCapture && "Not a lambda capture!");
     return SourceLocation::getFromRawEncoding(Capture.Location);
   }
-  
+
   void setParameterCFAudited() {
     Kind = EK_Parameter_CF_Audited;
   }
@@ -509,8 +532,8 @@ public:
 private:
   unsigned dumpImpl(raw_ostream &OS) const;
 };
-  
-/// Describes the kind of initialization being performed, along with 
+
+/// Describes the kind of initialization being performed, along with
 /// location information for tokens related to the initialization (equal sign,
 /// parentheses).
 class InitializationKind {
@@ -532,7 +555,7 @@ public:
     /// Value initialization
     IK_Value
   };
-  
+
 private:
   /// The context of the initialization.
   enum InitContext {
@@ -554,24 +577,24 @@ private:
     /// Functional cast context
     IC_FunctionalCast
   };
-  
+
   /// The kind of initialization being performed.
   InitKind Kind : 8;
 
   /// The context of the initialization.
   InitContext Context : 8;
-  
+
   /// The source locations involved in the initialization.
   SourceLocation Locations[3];
-  
-  InitializationKind(InitKind Kind, InitContext Context, SourceLocation Loc1, 
+
+  InitializationKind(InitKind Kind, InitContext Context, SourceLocation Loc1,
                      SourceLocation Loc2, SourceLocation Loc3)
       : Kind(Kind), Context(Context) {
     Locations[0] = Loc1;
     Locations[1] = Loc2;
     Locations[2] = Loc3;
   }
-  
+
 public:
   /// Create a direct initialization.
   static InitializationKind CreateDirect(SourceLocation InitLoc,
@@ -593,13 +616,13 @@ public:
                               RBraceLoc);
   }
 
-  /// Create a direct initialization due to a cast that isn't a C-style 
+  /// Create a direct initialization due to a cast that isn't a C-style
   /// or functional cast.
   static InitializationKind CreateCast(SourceRange TypeRange) {
     return InitializationKind(IK_Direct, IC_StaticCast, TypeRange.getBegin(),
                               TypeRange.getBegin(), TypeRange.getEnd());
   }
-  
+
   /// Create a direct initialization for a C-style cast.
   static InitializationKind CreateCStyleCast(SourceLocation StartLoc,
                                              SourceRange TypeRange,
@@ -623,16 +646,16 @@ public:
   static InitializationKind CreateCopy(SourceLocation InitLoc,
                                        SourceLocation EqualLoc,
                                        bool AllowExplicitConvs = false) {
-    return InitializationKind(IK_Copy, 
+    return InitializationKind(IK_Copy,
                               AllowExplicitConvs? IC_ExplicitConvs : IC_Normal,
                               InitLoc, EqualLoc, EqualLoc);
   }
-  
+
   /// Create a default initialization.
   static InitializationKind CreateDefault(SourceLocation InitLoc) {
     return InitializationKind(IK_Default, IC_Normal, InitLoc, InitLoc, InitLoc);
   }
-  
+
   /// Create a value initialization.
   static InitializationKind CreateValue(SourceLocation InitLoc,
                                         SourceLocation LParenLoc,
@@ -647,25 +670,26 @@ public:
   static InitializationKind CreateForInit(SourceLocation Loc, bool DirectInit,
                                           Expr *Init) {
     if (!Init) return CreateDefault(Loc);
-    if (!DirectInit) return CreateCopy(Loc, Init->getLocStart());
+    if (!DirectInit)
+      return CreateCopy(Loc, Init->getBeginLoc());
     if (isa<InitListExpr>(Init))
-      return CreateDirectList(Loc, Init->getLocStart(), Init->getLocEnd());
-    return CreateDirect(Loc, Init->getLocStart(), Init->getLocEnd());
+      return CreateDirectList(Loc, Init->getBeginLoc(), Init->getEndLoc());
+    return CreateDirect(Loc, Init->getBeginLoc(), Init->getEndLoc());
   }
-  
+
   /// Determine the initialization kind.
   InitKind getKind() const {
     return Kind;
   }
-  
+
   /// Determine whether this initialization is an explicit cast.
   bool isExplicitCast() const {
     return Context >= IC_StaticCast;
   }
-  
+
   /// Determine whether this initialization is a C-style cast.
-  bool isCStyleOrFunctionalCast() const { 
-    return Context >= IC_CStyleCast; 
+  bool isCStyleOrFunctionalCast() const {
+    return Context >= IC_CStyleCast;
   }
 
   /// Determine whether this is a C-style cast.
@@ -685,12 +709,12 @@ public:
 
   /// Retrieve the location at which initialization is occurring.
   SourceLocation getLocation() const { return Locations[0]; }
-  
+
   /// Retrieve the source range that covers the initialization.
-  SourceRange getRange() const { 
+  SourceRange getRange() const {
     return SourceRange(Locations[0], Locations[2]);
   }
-  
+
   /// Retrieve the location of the equal sign for copy initialization
   /// (if present).
   SourceLocation getEqualLoc() const {
@@ -717,7 +741,7 @@ public:
   bool hasParenOrBraceRange() const {
     return Kind == IK_Direct || Kind == IK_Value || Kind == IK_DirectList;
   }
-  
+
   /// Retrieve the source range containing the locations of the open
   /// and closing parentheses or braces for value, direct, and direct list
   /// initializations.
@@ -747,7 +771,7 @@ public:
     /// A normal sequence.
     NormalSequence
   };
-  
+
   /// Describes the kind of a particular step in an initialization
   /// sequence.
   enum StepKind {
@@ -868,19 +892,16 @@ public:
     /// Initialize an OpenCL sampler from an integer.
     SK_OCLSamplerInit,
 
-    /// Initialize queue_t from 0.
-    SK_OCLZeroQueue,
-
-    /// Passing zero to a function where OpenCL event_t is expected.
-    SK_OCLZeroEvent
+    /// Initialize an opaque OpenCL type (event_t, queue_t, etc.) with zero
+    SK_OCLZeroOpaqueType
   };
-  
+
   /// A single step in the initialization sequence.
   class Step {
   public:
     /// The kind of conversion or initialization step we are taking.
     StepKind Kind;
-    
+
     // The type that results from this initialization.
     QualType Type;
 
@@ -892,7 +913,7 @@ public:
 
     union {
       /// When Kind == SK_ResolvedOverloadedFunction or Kind ==
-      /// SK_UserConversion, the function that the expression should be 
+      /// SK_UserConversion, the function that the expression should be
       /// resolved to or the conversion function to call, respectively.
       /// When Kind == SK_ConstructorInitialization or SK_ListConstruction,
       /// the constructor to be called.
@@ -914,14 +935,14 @@ public:
 
     void Destroy();
   };
-  
+
 private:
   /// The kind of initialization sequence computed.
   enum SequenceKind SequenceKind;
-  
+
   /// Steps taken by this initialization.
   SmallVector<Step, 4> Steps;
-  
+
 public:
   /// Describes why initialization failed.
   enum FailureKind {
@@ -934,7 +955,7 @@ public:
     /// Array must be initialized with an initializer list.
     FK_ArrayNeedsInitList,
 
-    /// Array must be initialized with an initializer list or a 
+    /// Array must be initialized with an initializer list or a
     /// string literal.
     FK_ArrayNeedsInitListOrStringLiteral,
 
@@ -1043,14 +1064,14 @@ public:
     /// List-copy-initialization chose an explicit constructor.
     FK_ExplicitConstructor,
   };
-  
+
 private:
   /// The reason why initialization failed.
   FailureKind Failure;
 
   /// The failed result of overload resolution.
   OverloadingResult FailedOverloadResult;
-  
+
   /// The candidate set created when initialization failed.
   OverloadCandidateSet FailedCandidateSet;
 
@@ -1076,11 +1097,11 @@ private:
   void PrintInitLocationNote(Sema &S, const InitializedEntity &Entity);
 
 public:
-  /// Try to perform initialization of the given entity, creating a 
+  /// Try to perform initialization of the given entity, creating a
   /// record of the steps required to perform the initialization.
   ///
   /// The generated initialization sequence will either contain enough
-  /// information to diagnose 
+  /// information to diagnose
   ///
   /// \param S the semantic analysis object.
   ///
@@ -1095,7 +1116,7 @@ public:
   ///        narrowing conversions in C++11 onwards.
   /// \param TreatUnavailableAsInvalid true if we want to treat unavailable
   ///        as invalid.
-  InitializationSequence(Sema &S, 
+  InitializationSequence(Sema &S,
                          const InitializedEntity &Entity,
                          const InitializationKind &Kind,
                          MultiExprArg Args,
@@ -1106,7 +1127,7 @@ public:
                       bool TopLevelOfInitList, bool TreatUnavailableAsInvalid);
 
   ~InitializationSequence();
-  
+
   /// Perform the actual initialization of the given entity based on
   /// the computed initialization sequence.
   ///
@@ -1133,22 +1154,22 @@ public:
                      const InitializationKind &Kind,
                      MultiExprArg Args,
                      QualType *ResultType = nullptr);
-  
+
   /// Diagnose an potentially-invalid initialization sequence.
   ///
-  /// \returns true if the initialization sequence was ill-formed, 
+  /// \returns true if the initialization sequence was ill-formed,
   /// false otherwise.
-  bool Diagnose(Sema &S, 
+  bool Diagnose(Sema &S,
                 const InitializedEntity &Entity,
                 const InitializationKind &Kind,
                 ArrayRef<Expr *> Args);
-  
+
   /// Determine the kind of initialization sequence computed.
   enum SequenceKind getKind() const { return SequenceKind; }
-  
+
   /// Set the kind of sequence computed.
   void setSequenceKind(enum SequenceKind SK) { SequenceKind = SK; }
-  
+
   /// Determine whether the initialization sequence is valid.
   explicit operator bool() const { return !Failed(); }
 
@@ -1164,14 +1185,14 @@ public:
 
   step_range steps() const { return {step_begin(), step_end()}; }
 
-  /// Determine whether this initialization is a direct reference 
+  /// Determine whether this initialization is a direct reference
   /// binding (C++ [dcl.init.ref]).
   bool isDirectReferenceBinding() const;
-  
+
   /// Determine whether this initialization failed due to an ambiguity.
   bool isAmbiguous() const;
-  
-  /// Determine whether this initialization is direct call to a 
+
+  /// Determine whether this initialization is direct call to a
   /// constructor.
   bool isConstructorInitialization() const;
 
@@ -1204,7 +1225,7 @@ public:
   /// rvalue, an xvalue, or an lvalue.
   void AddDerivedToBaseCastStep(QualType BaseType,
                                 ExprValueKind Category);
-     
+
   /// Add a new step binding a reference to an object.
   ///
   /// \param BindingTemporary True if we are binding a reference to a temporary
@@ -1309,12 +1330,13 @@ public:
   /// constant.
   void AddOCLSamplerInitStep(QualType T);
 
-  /// Add a step to initialize an OpenCL event_t from a NULL
-  /// constant.
-  void AddOCLZeroEventStep(QualType T);
+  /// Add a step to initialzie an OpenCL opaque type (event_t, queue_t, etc.)
+  /// from a zero constant.
+  void AddOCLZeroOpaqueTypeStep(QualType T);
 
-  /// Add a step to initialize an OpenCL queue_t from 0.
-  void AddOCLZeroQueueStep(QualType T);
+  /// Add a step to initialize by zero types defined in the
+  /// cl_intel_device_side_avc_motion_estimation OpenCL extension
+  void AddOCLIntelSubgroupAVCZeroInitStep(QualType T);
 
   /// Add steps to unwrap a initializer list for a reference around a
   /// single element and rewrap it at the end.
@@ -1327,11 +1349,11 @@ public:
     assert((Failure != FK_Incomplete || !FailedIncompleteType.isNull()) &&
            "Incomplete type failure requires a type!");
   }
-  
+
   /// Note that this initialization sequence failed due to failed
   /// overload resolution.
   void SetOverloadFailure(FailureKind Failure, OverloadingResult Result);
-  
+
   /// Retrieve a reference to the candidate set when overload
   /// resolution fails.
   OverloadCandidateSet &getFailedCandidateSet() {
@@ -1357,15 +1379,15 @@ public:
     return Failure;
   }
 
-  /// Dump a representation of this initialization sequence to 
+  /// Dump a representation of this initialization sequence to
   /// the given stream, for debugging purposes.
   void dump(raw_ostream &OS) const;
-  
-  /// Dump a representation of this initialization sequence to 
+
+  /// Dump a representation of this initialization sequence to
   /// standard error, for debugging purposes.
   void dump() const;
 };
-  
+
 } // namespace clang
 
 #endif // LLVM_CLANG_SEMA_INITIALIZATION_H

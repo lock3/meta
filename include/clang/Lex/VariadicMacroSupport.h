@@ -1,9 +1,8 @@
 //===- VariadicMacroSupport.h - state machines and scope guards -*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -71,10 +70,10 @@ namespace clang {
   class VAOptDefinitionContext {
     /// Contains all the locations of so far unmatched lparens.
     SmallVector<SourceLocation, 8> UnmatchedOpeningParens;
-    
+
     const IdentifierInfo *const Ident__VA_OPT__;
-    
-    
+
+
   public:
     VAOptDefinitionContext(Preprocessor &PP)
         : Ident__VA_OPT__(PP.Ident__VA_OPT__) {}
@@ -86,12 +85,12 @@ namespace clang {
     /// Returns true if we have seen the __VA_OPT__ and '(' but before having
     /// seen the matching ')'.
     bool isInVAOpt() const { return UnmatchedOpeningParens.size(); }
-    
+
     /// Call this function as soon as you see __VA_OPT__ and '('.
     void sawVAOptFollowedByOpeningParens(const SourceLocation LParenLoc) {
       assert(!isInVAOpt() && "Must NOT be within VAOPT context to call this");
       UnmatchedOpeningParens.push_back(LParenLoc);
-      
+
     }
 
     SourceLocation getUnmatchedOpeningParenLoc() const {
@@ -107,13 +106,13 @@ namespace clang {
       UnmatchedOpeningParens.pop_back();
       return !UnmatchedOpeningParens.size();
     }
-    
+
     /// Call this function each time an lparen is seen.
     void sawOpeningParen(SourceLocation LParenLoc) {
       assert(isInVAOpt() && "Must be within VAOPT context to call this");
       UnmatchedOpeningParens.push_back(LParenLoc);
     }
-    
+
   };
 
   /// A class for tracking whether we're inside a VA_OPT during a
@@ -133,11 +132,11 @@ namespace clang {
     int NumOfTokensPriorToVAOpt = -1;
 
     unsigned LeadingSpaceForStringifiedToken : 1;
-    
+
     unsigned StringifyBefore : 1;
     unsigned CharifyBefore : 1;
-    
-    
+
+
     bool hasStringifyBefore() const {
       assert(!isReset() &&
              "Must only be called if the state has not been reset");
@@ -169,14 +168,14 @@ namespace clang {
 
     void sawHashOrHashAtBefore(const bool HasLeadingSpace,
                                const bool IsHashAt) {
-      
+
       StringifyBefore = !IsHashAt;
       CharifyBefore = IsHashAt;
       LeadingSpaceForStringifiedToken = HasLeadingSpace;
     }
 
-    
-    
+
+
     bool hasCharifyBefore() const {
       assert(!isReset() &&
              "Must only be called if the state has not been reset");
@@ -185,13 +184,13 @@ namespace clang {
     bool hasStringifyOrCharifyBefore() const {
       return hasStringifyBefore() || hasCharifyBefore();
     }
-    
+
     unsigned int getNumberOfTokensPriorToVAOpt() const {
       assert(!isReset() &&
              "Must only be called if the state has not been reset");
       return NumOfTokensPriorToVAOpt;
     }
-    
+
     bool getLeadingSpaceForStringifiedToken() const {
       assert(hasStringifyBefore() &&
              "Must only be called if this has been marked for stringification");
@@ -219,7 +218,7 @@ namespace clang {
     using VAOptDefinitionContext::isInVAOpt;
     using VAOptDefinitionContext::sawClosingParen;
     using VAOptDefinitionContext::sawOpeningParen;
-    
+
   };
 }  // end namespace clang
 

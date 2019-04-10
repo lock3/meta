@@ -1,9 +1,8 @@
 //===--- RawCommentList.cpp - Processing raw comments -----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -68,8 +67,8 @@ bool mergedCommentIsTrailingComment(StringRef Comment) {
 /// column.
 bool commentsStartOnSameColumn(const SourceManager &SM, const RawComment &R1,
                                const RawComment &R2) {
-  SourceLocation L1 = R1.getLocStart();
-  SourceLocation L2 = R2.getLocStart();
+  SourceLocation L1 = R1.getBeginLoc();
+  SourceLocation L2 = R2.getBeginLoc();
   bool Invalid = false;
   unsigned C1 = SM.getPresumedColumnNumber(L1, &Invalid);
   if (!Invalid) {
@@ -278,8 +277,8 @@ void RawCommentList::addComment(const RawComment &RC,
 
   // Check if the comments are not in source order.
   while (!Comments.empty() &&
-         !SourceMgr.isBeforeInTranslationUnit(Comments.back()->getLocStart(),
-                                              RC.getLocStart())) {
+         !SourceMgr.isBeforeInTranslationUnit(Comments.back()->getBeginLoc(),
+                                              RC.getBeginLoc())) {
     // If they are, just pop a few last comments that don't fit.
     // This happens if an \#include directive contains comments.
     Comments.pop_back();
@@ -316,9 +315,9 @@ void RawCommentList::addComment(const RawComment &RC,
        (C1.isTrailingComment() && !C2.isTrailingComment() &&
         isOrdinaryKind(C2.getKind()) &&
         commentsStartOnSameColumn(SourceMgr, C1, C2))) &&
-      onlyWhitespaceBetween(SourceMgr, C1.getLocEnd(), C2.getLocStart(),
+      onlyWhitespaceBetween(SourceMgr, C1.getEndLoc(), C2.getBeginLoc(),
                             /*MaxNewlinesAllowed=*/1)) {
-    SourceRange MergedRange(C1.getLocStart(), C2.getLocEnd());
+    SourceRange MergedRange(C1.getBeginLoc(), C2.getEndLoc());
     *Comments.back() = RawComment(SourceMgr, MergedRange, CommentOpts, true);
   } else {
     Comments.push_back(new (Allocator) RawComment(RC));
@@ -415,7 +414,7 @@ std::string RawComment::getFormattedText(const SourceManager &SourceMgr,
       Str.pop_back();
   };
 
-  // Proces first line separately to remember indent for the following lines.
+  // Process first line separately to remember indent for the following lines.
   if (!LexLine(/*IsFirstLine=*/true)) {
     DropTrailingNewLines(Result);
     return Result;

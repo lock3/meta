@@ -1,9 +1,8 @@
 //===- TableGen.cpp - Top-Level TableGen implementation for Clang ---------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -23,6 +22,8 @@ using namespace llvm;
 using namespace clang;
 
 enum ActionType {
+  PrintRecords,
+  DumpJSON,
   GenClangAttrClasses,
   GenClangAttrParserStringSwitches,
   GenClangAttrSubjectMatchRulesParserStringSwitches,
@@ -38,7 +39,8 @@ enum ActionType {
   GenClangAttrParsedAttrList,
   GenClangAttrParsedAttrImpl,
   GenClangAttrParsedAttrKinds,
-  GenClangAttrDump,
+  GenClangAttrTextNodeDump,
+  GenClangAttrNodeTraverse,
   GenClangDiagsDefs,
   GenClangDiagGroups,
   GenClangDiagsIndexName,
@@ -66,6 +68,10 @@ namespace {
 cl::opt<ActionType> Action(
     cl::desc("Action to perform:"),
     cl::values(
+        clEnumValN(PrintRecords, "print-records",
+                   "Print all records to stdout (default)"),
+        clEnumValN(DumpJSON, "dump-json",
+                   "Dump all records as machine-readable JSON"),
         clEnumValN(GenClangAttrClasses, "gen-clang-attr-classes",
                    "Generate clang attribute clases"),
         clEnumValN(GenClangAttrParserStringSwitches,
@@ -106,8 +112,10 @@ cl::opt<ActionType> Action(
         clEnumValN(GenClangAttrParsedAttrKinds,
                    "gen-clang-attr-parsed-attr-kinds",
                    "Generate a clang parsed attribute kinds"),
-        clEnumValN(GenClangAttrDump, "gen-clang-attr-dump",
-                   "Generate clang attribute dumper"),
+        clEnumValN(GenClangAttrTextNodeDump, "gen-clang-attr-text-node-dump",
+                   "Generate clang attribute text node dumper"),
+        clEnumValN(GenClangAttrNodeTraverse, "gen-clang-attr-node-traverse",
+                   "Generate clang attribute traverser"),
         clEnumValN(GenClangDiagsDefs, "gen-clang-diags-defs",
                    "Generate Clang diagnostics definitions"),
         clEnumValN(GenClangDiagGroups, "gen-clang-diag-groups",
@@ -164,6 +172,12 @@ ClangComponent("clang-component",
 
 bool ClangTableGenMain(raw_ostream &OS, RecordKeeper &Records) {
   switch (Action) {
+  case PrintRecords:
+    OS << Records;           // No argument, dump all contents
+    break;
+  case DumpJSON:
+    EmitJSON(Records, OS);
+    break;
   case GenClangAttrClasses:
     EmitClangAttrClass(Records, OS);
     break;
@@ -209,8 +223,11 @@ bool ClangTableGenMain(raw_ostream &OS, RecordKeeper &Records) {
   case GenClangAttrParsedAttrKinds:
     EmitClangAttrParsedAttrKinds(Records, OS);
     break;
-  case GenClangAttrDump:
-    EmitClangAttrDump(Records, OS);
+  case GenClangAttrTextNodeDump:
+    EmitClangAttrTextNodeDump(Records, OS);
+    break;
+  case GenClangAttrNodeTraverse:
+    EmitClangAttrNodeTraverse(Records, OS);
     break;
   case GenClangDiagsDefs:
     EmitClangDiagsDefs(Records, OS, ClangComponent);

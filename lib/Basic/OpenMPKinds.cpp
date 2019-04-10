@@ -1,9 +1,8 @@
 //===--- OpenMPKinds.cpp - Token Kinds Support ----------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 /// \file
@@ -68,6 +67,8 @@ const char *clang::getOpenMPClauseName(OpenMPClauseKind Kind) {
   case OMPC_##Name:                                                            \
     return #Name;
 #include "clang/Basic/OpenMPKinds.def"
+  case OMPC_flush:
+    return "flush";
   case OMPC_uniform:
     return "uniform";
   case OMPC_threadprivate:
@@ -108,8 +109,11 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
 #include "clang/Basic/OpenMPKinds.def"
         .Default(OMPC_LINEAR_unknown);
   case OMPC_map:
-    return llvm::StringSwitch<OpenMPMapClauseKind>(Str)
-#define OPENMP_MAP_KIND(Name) .Case(#Name, OMPC_MAP_##Name)
+    return llvm::StringSwitch<unsigned>(Str)
+#define OPENMP_MAP_KIND(Name)                                                  \
+  .Case(#Name, static_cast<unsigned>(OMPC_MAP_##Name))
+#define OPENMP_MAP_MODIFIER_KIND(Name)                                         \
+  .Case(#Name, static_cast<unsigned>(OMPC_MAP_MODIFIER_##Name))
 #include "clang/Basic/OpenMPKinds.def"
         .Default(OMPC_MAP_unknown);
   case OMPC_dist_schedule:
@@ -125,6 +129,12 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   .Case(#Name, static_cast<unsigned>(OMPC_DEFAULTMAP_MODIFIER_##Name))
 #include "clang/Basic/OpenMPKinds.def"
         .Default(OMPC_DEFAULTMAP_unknown);
+  case OMPC_atomic_default_mem_order:
+     return llvm::StringSwitch<OpenMPAtomicDefaultMemOrderClauseKind>(Str)
+#define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)       \
+  .Case(#Name, OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name)
+#include "clang/Basic/OpenMPKinds.def"
+        .Default(OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown);
   case OMPC_unknown:
   case OMPC_threadprivate:
   case OMPC_if:
@@ -168,6 +178,10 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_unified_address:
+  case OMPC_unified_shared_memory:
+  case OMPC_reverse_offload:
+  case OMPC_dynamic_allocators:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -233,9 +247,13 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_map:
     switch (Type) {
     case OMPC_MAP_unknown:
+    case OMPC_MAP_MODIFIER_last:
       return "unknown";
 #define OPENMP_MAP_KIND(Name)                                                \
   case OMPC_MAP_##Name:                                                      \
+    return #Name;
+#define OPENMP_MAP_MODIFIER_KIND(Name)                                       \
+  case OMPC_MAP_MODIFIER_##Name:                                             \
     return #Name;
 #include "clang/Basic/OpenMPKinds.def"
     default:
@@ -266,6 +284,16 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
 #include "clang/Basic/OpenMPKinds.def"
     }
     llvm_unreachable("Invalid OpenMP 'schedule' clause type");
+  case OMPC_atomic_default_mem_order:
+    switch (Type) {
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_unknown:
+      return "unknown";
+#define OPENMP_ATOMIC_DEFAULT_MEM_ORDER_KIND(Name)                           \
+    case OMPC_ATOMIC_DEFAULT_MEM_ORDER_##Name:                               \
+      return #Name;
+#include "clang/Basic/OpenMPKinds.def"
+}
+    llvm_unreachable("Invalid OpenMP 'atomic_default_mem_order' clause type");
   case OMPC_unknown:
   case OMPC_threadprivate:
   case OMPC_if:
@@ -309,6 +337,10 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_unified_address:
+  case OMPC_unified_shared_memory:
+  case OMPC_reverse_offload:
+  case OMPC_dynamic_allocators:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -435,6 +467,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
   case OMPD_target:
     switch (CKind) {
 #define OPENMP_TARGET_CLAUSE(Name)                                             \
+  case OMPC_##Name:                                                            \
+    return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
+  case OMPD_requires:
+    switch (CKind) {
+#define OPENMP_REQUIRES_CLAUSE(Name)                                             \
   case OMPC_##Name:                                                            \
     return true;
 #include "clang/Basic/OpenMPKinds.def"
@@ -724,6 +766,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
       break;
     }
     break;
+  case OMPD_declare_mapper:
+    switch (CKind) {
+#define OPENMP_DECLARE_MAPPER_CLAUSE(Name)                                     \
+  case OMPC_##Name:                                                            \
+    return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
   case OMPD_declare_target:
   case OMPD_end_declare_target:
   case OMPD_unknown:
@@ -958,9 +1010,11 @@ void clang::getOpenMPCaptureRegions(
   case OMPD_cancel:
   case OMPD_flush:
   case OMPD_declare_reduction:
+  case OMPD_declare_mapper:
   case OMPD_declare_simd:
   case OMPD_declare_target:
   case OMPD_end_declare_target:
+  case OMPD_requires:
     llvm_unreachable("OpenMP Directive is not allowed");
   case OMPD_unknown:
     llvm_unreachable("Unknown OpenMP directive");

@@ -1,9 +1,8 @@
 //===-- CGBuilder.h - Choose IRBuilder implementation  ----------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -116,7 +115,7 @@ public:
                                       CharUnits Align, bool IsVolatile = false) {
     return CreateAlignedStore(Val, Addr, Align.getQuantity(), IsVolatile);
   }
-  
+
   // FIXME: these "default-aligned" APIs should be removed,
   // but I don't feel like fixing all the builtin code right now.
   llvm::StoreInst *CreateDefaultAlignedStore(llvm::Value *Val,
@@ -257,17 +256,6 @@ public:
       llvm_unreachable("offset of GEP with constants is always computable");
     return Address(GEP, Addr.getAlignment().alignmentAtOffset(
                             CharUnits::fromQuantity(Offset.getSExtValue())));
-  }
-
-  llvm::Value *CreateConstInBoundsByteGEP(llvm::Value *Ptr, CharUnits Offset,
-                                          const llvm::Twine &Name = "") {
-    assert(Ptr->getType()->getPointerElementType() == TypeCache.Int8Ty);
-    return CreateInBoundsGEP(Ptr, getSize(Offset), Name);
-  }
-  llvm::Value *CreateConstByteGEP(llvm::Value *Ptr, CharUnits Offset,
-                                  const llvm::Twine &Name = "") {
-    assert(Ptr->getType()->getPointerElementType() == TypeCache.Int8Ty);
-    return CreateGEP(Ptr, getSize(Offset), Name);
   }
 
   using CGBuilderBaseTy::CreateMemCpy;

@@ -1,9 +1,8 @@
 //===--- PPC.h - Declare PPC target feature support -------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -176,6 +175,8 @@ public:
 
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override;
 
+  ArrayRef<TargetInfo::AddlRegName> getGCCAddlRegNames() const override;
+
   bool validateAsmConstraint(const char *&Name,
                              TargetInfo::ConstraintInfo &Info) const override {
     switch (*Name) {
@@ -201,6 +202,7 @@ public:
       case 's': // VSX vector register to hold scalar float data
       case 'a': // Any VSX register
       case 'c': // An individual CR bit
+      case 'i': // FP or VSX register to hold 64-bit integers data
         break;
       default:
         return false;
@@ -328,7 +330,7 @@ public:
       break;
     }
 
-    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+    if (getTriple().isOSFreeBSD()) {
       LongDoubleWidth = LongDoubleAlign = 64;
       LongDoubleFormat = &llvm::APFloat::IEEEdouble();
     }
@@ -365,10 +367,6 @@ public:
     case llvm::Triple::FreeBSD:
       LongDoubleWidth = LongDoubleAlign = 64;
       LongDoubleFormat = &llvm::APFloat::IEEEdouble();
-      break;
-    case llvm::Triple::NetBSD:
-      IntMaxType = SignedLongLong;
-      Int64Type = SignedLongLong;
       break;
     default:
       break;

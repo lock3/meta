@@ -1,9 +1,8 @@
 //===--- LiteralSupport.cpp - Code to parse and process literals ----------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -30,7 +29,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <cstdint> 
+#include <cstdint>
 #include <cstring>
 #include <string>
 
@@ -274,7 +273,7 @@ void clang::expandUCNs(SmallVectorImpl<char> &Buf, StringRef Input) {
 static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
                              const char *ThisTokEnd,
                              uint32_t &UcnVal, unsigned short &UcnLen,
-                             FullSourceLoc Loc, DiagnosticsEngine *Diags, 
+                             FullSourceLoc Loc, DiagnosticsEngine *Diags,
                              const LangOptions &Features,
                              bool in_char_string_literal = false) {
   const char *UcnBegin = ThisTokBuf;
@@ -572,10 +571,12 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
   checkSeparator(TokLoc, s, CSK_AfterDigits);
 
   // Initial scan to lookahead for fixed point suffix.
-  for (const char *c = s; c != ThisTokEnd; ++c) {
-    if (*c == 'r' || *c == 'k' || *c == 'R' || *c == 'K') {
-      saw_fixed_point_suffix = true;
-      break;
+  if (PP.getLangOpts().FixedPoint) {
+    for (const char *c = s; c != ThisTokEnd; ++c) {
+      if (*c == 'r' || *c == 'k' || *c == 'R' || *c == 'K') {
+        saw_fixed_point_suffix = true;
+        break;
+      }
     }
   }
 
@@ -589,12 +590,16 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
     switch (*s) {
     case 'R':
     case 'r':
+      if (!PP.getLangOpts().FixedPoint) break;
       if (isFract || isAccum) break;
+      if (!(saw_period || saw_exponent)) break;
       isFract = true;
       continue;
     case 'K':
     case 'k':
+      if (!PP.getLangOpts().FixedPoint) break;
       if (isFract || isAccum) break;
+      if (!(saw_period || saw_exponent)) break;
       isAccum = true;
       continue;
     case 'h':      // FP Suffix for "half".
@@ -611,10 +616,14 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
       if (isHalf || isFloat || isLong || isFloat128)
         break; // HF, FF, LF, QF invalid.
 
-      if (s + 2 < ThisTokEnd && s[1] == '1' && s[2] == '6') {
-          s += 2; // success, eat up 2 characters.
-          isFloat16 = true;
-          continue;
+      // CUDA host and device may have different _Float16 support, therefore
+      // allows f16 literals to avoid false alarm.
+      // ToDo: more precise check for CUDA.
+      if ((PP.getTargetInfo().hasFloat16Type() || PP.getLangOpts().CUDA) &&
+          s + 2 < ThisTokEnd && s[1] == '1' && s[2] == '6') {
+        s += 2; // success, eat up 2 characters.
+        isFloat16 = true;
+        continue;
       }
 
       isFloat = true;
@@ -687,7 +696,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
           break;
         }
       }
-      // fall through.
+      LLVM_FALLTHROUGH;
     case 'j':
     case 'J':
       if (isImaginary) break;   // Cannot be repeated.
@@ -734,7 +743,6 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
 
   if (!hadError && saw_fixed_point_suffix) {
     assert(isFract || isAccum);
-    //assert(radix == 16 || radix == 10);
   }
 }
 
@@ -746,7 +754,8 @@ void NumericLiteralParser::ParseDecimalOrOctalCommon(SourceLocation TokLoc){
 
   // If we have a hex digit other than 'e' (which denotes a FP exponent) then
   // the code is using an incorrect base.
-  if (isHexDigit(*s) && *s != 'e' && *s != 'E') {
+  if (isHexDigit(*s) && *s != 'e' && *s != 'E' &&
+      !isValidUDSuffix(PP.getLangOpts(), StringRef(s, ThisTokEnd - s))) {
     PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s-ThisTokBegin),
             diag::err_invalid_digit) << StringRef(s, 1) << (radix == 8 ? 1 : 0);
     hadError = true;
@@ -799,12 +808,14 @@ bool NumericLiteralParser::isValidUDSuffix(const LangOptions &LangOpts,
   if (!LangOpts.CPlusPlus14)
     return false;
 
-  // In C++1y, "s", "h", "min", "ms", "us", and "ns" are used in the library.
+  // In C++14, "s", "h", "min", "ms", "us", and "ns" are used in the library.
   // Per tweaked N3660, "il", "i", and "if" are also used in the library.
+  // In C++2a "d" and "y" are used in the library.
   return llvm::StringSwitch<bool>(Suffix)
       .Cases("h", "min", "s", true)
       .Cases("ms", "us", "ns", true)
       .Cases("il", "i", "if", true)
+      .Cases("d", "y", LangOpts.CPlusPlus2a)
       .Default(false);
 }
 
@@ -917,7 +928,9 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
     s = SkipBinaryDigits(s);
     if (s == ThisTokEnd) {
       // Done.
-    } else if (isHexDigit(*s)) {
+    } else if (isHexDigit(*s) &&
+               !isValidUDSuffix(PP.getLangOpts(),
+                                StringRef(s, ThisTokEnd - s))) {
       PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s-ThisTokBegin),
               diag::err_invalid_digit) << StringRef(s, 1) << 2;
       hadError = true;
@@ -1529,7 +1542,7 @@ void StringLiteralParser::init(ArrayRef<Token> StringToks){
     // that ThisTokBuf points to a buffer that is big enough for the whole token
     // and 'spelled' tokens can only shrink.
     bool StringInvalid = false;
-    unsigned ThisTokLen = 
+    unsigned ThisTokLen =
       Lexer::getSpelling(StringToks[i], ThisTokBuf, SM, Features,
                          &StringInvalid);
     if (StringInvalid)

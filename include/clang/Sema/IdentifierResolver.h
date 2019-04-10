@@ -1,9 +1,8 @@
 //===- IdentifierResolver.h - Lexical Scope Name lookup ---------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -32,7 +31,7 @@ class LangOptions;
 class NamedDecl;
 class Preprocessor;
 class Scope;
-  
+
 /// IdentifierResolver - Keeps track of shadowed decls on enclosing
 /// scopes.  It manages the shadowing chains of declaration names and
 /// implements efficient decl lookup based on a declaration name.
@@ -58,7 +57,7 @@ class IdentifierResolver {
     void InsertDecl(DeclsTy::iterator Pos, NamedDecl *D) {
       Decls.insert(Pos, D);
     }
-                    
+
   private:
     DeclsTy Decls;
   };
@@ -176,17 +175,17 @@ public:
   ///
   /// \returns true if the declaration was added, false otherwise.
   bool tryAddTopLevelDecl(NamedDecl *D, DeclarationName Name);
-  
+
 private:
   const LangOptions &LangOpt;
   Preprocessor &PP;
-  
+
   class IdDeclInfoMap;
   IdDeclInfoMap *IdDeclInfos;
 
   void updatingIdentifier(IdentifierInfo &II);
   void readingIdentifier(IdentifierInfo &II);
-  
+
   /// FETokenInfo contains a Decl pointer if lower bit == 0.
   static inline bool isDeclPtr(void *Ptr) {
     return (reinterpret_cast<uintptr_t>(Ptr) & 0x1) == 0;

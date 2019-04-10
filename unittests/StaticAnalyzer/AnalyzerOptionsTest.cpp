@@ -1,9 +1,8 @@
 //===- unittest/StaticAnalyzer/AnalyzerOptionsTest.cpp - SA Options test --===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -52,23 +51,25 @@ TEST(StaticAnalyzerOptions, SearchInParentPackageTests) {
   // Checker one has Option specified as true. It should read true regardless of
   // search mode.
   CheckerOneMock CheckerOne;
-  EXPECT_TRUE(Opts.getBooleanOption("Option", false, &CheckerOne));
+  EXPECT_TRUE(Opts.getCheckerBooleanOption("Option", false, &CheckerOne));
   // The package option is overridden with a checker option.
-  EXPECT_TRUE(Opts.getBooleanOption("Option", false, &CheckerOne, true));
+  EXPECT_TRUE(Opts.getCheckerBooleanOption("Option", false, &CheckerOne,
+                                           true));
   // The Outer package option is overridden by the Inner package option. No
   // package option is specified.
-  EXPECT_TRUE(Opts.getBooleanOption("Option2", false, &CheckerOne, true));
+  EXPECT_TRUE(Opts.getCheckerBooleanOption("Option2", false, &CheckerOne,
+                                           true));
   // No package option is specified and search in packages is turned off. The
   // default value should be returned.
-  EXPECT_FALSE(Opts.getBooleanOption("Option2", false, &CheckerOne));
-  EXPECT_TRUE(Opts.getBooleanOption("Option2", true, &CheckerOne));
+  EXPECT_FALSE(Opts.getCheckerBooleanOption("Option2", false, &CheckerOne));
+  EXPECT_TRUE(Opts.getCheckerBooleanOption("Option2", true, &CheckerOne));
 
   // Checker true has no option specified. It should get the default value when
   // search in parents turned off and false when search in parents turned on.
   CheckerTwoMock CheckerTwo;
-  EXPECT_FALSE(Opts.getBooleanOption("Option", false, &CheckerTwo));
-  EXPECT_TRUE(Opts.getBooleanOption("Option", true, &CheckerTwo));
-  EXPECT_FALSE(Opts.getBooleanOption("Option", true, &CheckerTwo, true));
+  EXPECT_FALSE(Opts.getCheckerBooleanOption("Option", false, &CheckerTwo));
+  EXPECT_TRUE(Opts.getCheckerBooleanOption("Option", true, &CheckerTwo));
+  EXPECT_FALSE(Opts.getCheckerBooleanOption("Option", true, &CheckerTwo, true));
 }
 
 TEST(StaticAnalyzerOptions, StringOptions) {
@@ -83,9 +84,9 @@ TEST(StaticAnalyzerOptions, StringOptions) {
 
   CheckerOneMock CheckerOne;
   EXPECT_TRUE("StringValue" ==
-              Opts.getOptionAsString("Option", "DefaultValue", &CheckerOne));
+            Opts.getCheckerStringOption("Option", "DefaultValue", &CheckerOne));
   EXPECT_TRUE("DefaultValue" ==
-              Opts.getOptionAsString("Option2", "DefaultValue", &CheckerOne));
+           Opts.getCheckerStringOption("Option2", "DefaultValue", &CheckerOne));
 }
 } // end namespace ento
 } // end namespace clang

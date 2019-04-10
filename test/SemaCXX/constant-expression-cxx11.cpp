@@ -253,7 +253,7 @@ namespace FunctionPointers {
 
   static_assert(1 + Apply(Select(4), 5) + Apply(Select(3), 7) == 42, "");
 
-  constexpr int Invalid = Apply(Select(0), 0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'Apply(0, 0)'}}
+  constexpr int Invalid = Apply(Select(0), 0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'Apply(nullptr, 0)'}}
 
 }
 
@@ -1555,13 +1555,13 @@ namespace CompoundLiteral {
 
   // Other kinds are not.
   struct X { int a[2]; };
-  constexpr int *n = (X){1, 2}.a; // expected-warning {{C99}} expected-warning {{temporary array}}
+  constexpr int *n = (X){1, 2}.a; // expected-warning {{C99}} expected-warning {{temporary}}
   // expected-error@-1 {{constant expression}}
   // expected-note@-2 {{pointer to subobject of temporary}}
   // expected-note@-3 {{temporary created here}}
 
   void f() {
-    static constexpr int *p = (int*)(int[1]){3}; // expected-warning {{C99}}
+    static constexpr int *p = (int*)(int[1]){3}; // expected-warning {{C99}} expected-warning {{temporary}}
     // expected-error@-1 {{constant expression}}
     // expected-note@-2 {{pointer to subobject of temporary}}
     // expected-note@-3 {{temporary created here}}
@@ -1892,14 +1892,15 @@ namespace Lifetime {
   }
 
   constexpr int &get(int &&n) { return n; }
+  constexpr int &&get_rv(int &&n) { return static_cast<int&&>(n); }
   struct S {
-    int &&r; // expected-note 2{{declared here}}
+    int &&r;
     int &s;
     int t;
-    constexpr S() : r(0), s(get(0)), t(r) {} // expected-warning {{temporary}}
-    constexpr S(int) : r(0), s(get(0)), t(s) {} // expected-warning {{temporary}} expected-note {{read of object outside its lifetime}}
+    constexpr S() : r(get_rv(0)), s(get(0)), t(r) {} // expected-note {{read of object outside its lifetime}}
+    constexpr S(int) : r(get_rv(0)), s(get(0)), t(s) {} // expected-note {{read of object outside its lifetime}}
   };
-  constexpr int k1 = S().t; // ok, int is lifetime-extended to end of constructor
+  constexpr int k1 = S().t; // expected-error {{constant expression}} expected-note {{in call}}
   constexpr int k2 = S(0).t; // expected-error {{constant expression}} expected-note {{in call}}
 }
 
@@ -1971,9 +1972,9 @@ namespace ZeroSizeTypes {
 namespace BadDefaultInit {
   template<int N> struct X { static const int n = N; };
 
-  struct A {
+  struct A { // expected-error {{default member initializer for 'k' needed within definition of enclosing class}}
     int k = // expected-note {{default member initializer declared here}}
-        X<A().k>::n; // expected-error {{default member initializer for 'k' needed within definition of enclosing class}}
+        X<A().k>::n; // expected-note {{in evaluation of exception specification for 'BadDefaultInit::A::A' needed here}}
   };
 
   // FIXME: The "constexpr constructor must initialize all members" diagnostic

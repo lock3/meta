@@ -1,9 +1,8 @@
 //===- lib/Tooling/Execution.cpp - Implements tool execution framework. ---===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,21 +15,12 @@ LLVM_INSTANTIATE_REGISTRY(clang::tooling::ToolExecutorPluginRegistry)
 namespace clang {
 namespace tooling {
 
-static llvm::cl::opt<std::string>
+llvm::cl::opt<std::string>
     ExecutorName("executor", llvm::cl::desc("The name of the executor to use."),
                  llvm::cl::init("standalone"));
 
 void InMemoryToolResults::addResult(StringRef Key, StringRef Value) {
-  auto Intern = [&](StringRef &V) {
-    auto R = Strings.insert(V);
-    if (R.second) { // A new entry, create a new string copy.
-      *R.first = StringsPool.save(V);
-    }
-    V = *R.first;
-  };
-  Intern(Key);
-  Intern(Value);
-  KVResults.push_back({Key, Value});
+  KVResults.push_back({Strings.save(Key), Strings.save(Value)});
 }
 
 std::vector<std::pair<llvm::StringRef, llvm::StringRef>>

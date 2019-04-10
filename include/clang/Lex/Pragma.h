@@ -1,9 +1,8 @@
 //===- Pragma.h - Pragma registration and handling --------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -34,19 +33,19 @@ class Token;
      * The pragma was introduced via \#pragma.
      */
     PIK_HashPragma,
-    
+
     /**
      * The pragma was introduced via the C99 _Pragma(string-literal).
      */
     PIK__Pragma,
-    
+
     /**
-     * The pragma was introduced via the Microsoft 
+     * The pragma was introduced via the Microsoft
      * __pragma(token-string).
      */
     PIK___pragma
   };
-  
+
 /// PragmaHandler - Instances of this interface defined to handle the various
 /// pragmas that the language front-end uses.  Each handler optionally has a
 /// name (e.g. "pack") and the HandlePragma method is invoked when a pragma with
@@ -113,7 +112,7 @@ public:
   bool IsEmpty() const { return Handlers.empty(); }
 
   void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
-                    Token &FirstToken) override;
+                    Token &Tok) override;
 
   PragmaNamespace *getIfNamespace() override { return this; }
 };

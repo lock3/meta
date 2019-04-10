@@ -1,9 +1,8 @@
 //===- IndexDecl.cpp - Indexing declarations ------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -263,7 +262,7 @@ public:
     } else if (const CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D)) {
       if (auto TypeNameInfo = Dtor->getNameInfo().getNamedTypeInfo()) {
         IndexCtx.handleReference(Dtor->getParent(),
-                                 TypeNameInfo->getTypeLoc().getLocStart(),
+                                 TypeNameInfo->getTypeLoc().getBeginLoc(),
                                  Dtor->getParent(), Dtor->getDeclContext());
       }
     } else if (const auto *Guide = dyn_cast<CXXDeductionGuideDecl>(D)) {

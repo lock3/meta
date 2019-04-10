@@ -1,9 +1,8 @@
 //===- CIndexHigh.cpp - Higher level API functions ------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -94,9 +93,6 @@ typedef llvm::DenseSet<PPRegion> PPRegionSetTy;
 } // end anonymous namespace
 
 namespace llvm {
-  template <> struct isPodLike<PPRegion> {
-    static const bool value = true;
-  };
 
   template <>
   struct DenseMapInfo<PPRegion> {
@@ -402,6 +398,8 @@ static IndexingOptions getIndexingOptionsFromCXOptions(unsigned index_options) {
   IndexingOptions IdxOpts;
   if (index_options & CXIndexOpt_IndexFunctionLocalSymbols)
     IdxOpts.IndexFunctionLocals = true;
+  if (index_options & CXIndexOpt_IndexImplicitTemplateInstantiations)
+    IdxOpts.IndexImplicitInstantiation = true;
   return IdxOpts;
 }
 

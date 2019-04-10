@@ -1,9 +1,8 @@
 //===- unittests/Lex/HeaderSearchTest.cpp ------ HeaderSearch tests -------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,7 +26,7 @@ namespace {
 class HeaderSearchTest : public ::testing::Test {
 protected:
   HeaderSearchTest()
-      : VFS(new vfs::InMemoryFileSystem), FileMgr(FileMgrOpts, VFS),
+      : VFS(new llvm::vfs::InMemoryFileSystem), FileMgr(FileMgrOpts, VFS),
         DiagID(new DiagnosticIDs()),
         Diags(DiagID, new DiagnosticOptions, new IgnoringDiagConsumer()),
         SourceMgr(Diags, FileMgr), TargetOpts(new TargetOptions),
@@ -46,7 +45,7 @@ protected:
     Search.AddSearchPath(DL, /*isAngled=*/false);
   }
 
-  IntrusiveRefCntPtr<vfs::InMemoryFileSystem> VFS;
+  IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> VFS;
   FileSystemOptions FileMgrOpts;
   FileManager FileMgr;
   IntrusiveRefCntPtr<DiagnosticIDs> DiagID;

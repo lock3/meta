@@ -1,9 +1,8 @@
 //===- IndexTypeSourceInfo.cpp - Indexing types ---------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -37,7 +36,7 @@ public:
       Relations.emplace_back((unsigned)SymbolRole::RelationIBTypeOf, Parent);
     }
   }
-  
+
   bool shouldWalkTypesOfTypeLocs() const { return false; }
 
 #define TRY_TO(CALL_EXPR)                                                      \
@@ -100,7 +99,8 @@ public:
 
   bool VisitTagTypeLoc(TagTypeLoc TL) {
     TagDecl *D = TL.getDecl();
-    if (D->getParentFunctionOrMethod())
+    if (!IndexCtx.shouldIndexFunctionLocalSymbols() &&
+        D->getParentFunctionOrMethod())
       return true;
 
     if (TL.isDefinition()) {
@@ -130,14 +130,15 @@ public:
   bool HandleTemplateSpecializationTypeLoc(TypeLocType TL) {
     if (const auto *T = TL.getTypePtr()) {
       if (IndexCtx.shouldIndexImplicitInstantiation()) {
-        if (CXXRecordDecl *RD = T->getAsCXXRecordDecl())
+        if (CXXRecordDecl *RD = T->getAsCXXRecordDecl()) {
           IndexCtx.handleReference(RD, TL.getTemplateNameLoc(),
                                    Parent, ParentDC, SymbolRoleSet(), Relations);
-      } else {
-        if (const TemplateDecl *D = T->getTemplateName().getAsTemplateDecl())
-          IndexCtx.handleReference(D, TL.getTemplateNameLoc(),
-                                   Parent, ParentDC, SymbolRoleSet(), Relations);
+          return true;
+        }
       }
+      if (const TemplateDecl *D = T->getTemplateName().getAsTemplateDecl())
+        IndexCtx.handleReference(D, TL.getTemplateNameLoc(), Parent, ParentDC,
+                                 SymbolRoleSet(), Relations);
     }
     return true;
   }
@@ -193,7 +194,7 @@ void IndexingContext::indexTypeSourceInfo(TypeSourceInfo *TInfo,
                                           bool isIBType) {
   if (!TInfo || TInfo->getTypeLoc().isNull())
     return;
-  
+
   indexTypeLoc(TInfo->getTypeLoc(), Parent, DC, isBase, isIBType);
 }
 

@@ -1,9 +1,8 @@
 //===- lib/Tooling/AllTUsExecution.cpp - Execute actions on all TUs. ------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -53,6 +52,12 @@ private:
 
 } // namespace
 
+llvm::cl::opt<std::string>
+    Filter("filter",
+           llvm::cl::desc("Only process files that match this filter. "
+                          "This flag only applies to all-TUs."),
+           llvm::cl::init(".*"));
+
 AllTUsToolExecutor::AllTUsToolExecutor(
     const CompilationDatabase &Compilations, unsigned ThreadCount,
     std::shared_ptr<PCHContainerOperations> PCHContainerOps)
@@ -90,7 +95,12 @@ llvm::Error AllTUsToolExecutor::execute(
     llvm::errs() << Msg.str() << "\n";
   };
 
-  auto Files = Compilations.getAllFiles();
+  std::vector<std::string> Files;
+  llvm::Regex RegexFilter(Filter);
+  for (const auto& File : Compilations.getAllFiles()) {
+    if (RegexFilter.match(File))
+      Files.push_back(File);
+  }
   // Add a counter to track the progress.
   const std::string TotalNumStr = std::to_string(Files.size());
   unsigned Counter = 0;
@@ -104,7 +114,12 @@ llvm::Error AllTUsToolExecutor::execute(
   {
     llvm::ThreadPool Pool(ThreadCount == 0 ? llvm::hardware_concurrency()
                                            : ThreadCount);
-
+    llvm::SmallString<128> InitialWorkingDir;
+    if (auto EC = llvm::sys::fs::current_path(InitialWorkingDir)) {
+      InitialWorkingDir = "";
+      llvm::errs() << "Error while getting current working directory: "
+                   << EC.message() << "\n";
+    }
     for (std::string File : Files) {
       Pool.async(
           [&](std::string Path) {
@@ -116,11 +131,20 @@ llvm::Error AllTUsToolExecutor::execute(
             for (const auto &FileAndContent : OverlayFiles)
               Tool.mapVirtualFile(FileAndContent.first(),
                                   FileAndContent.second);
+            // Do not restore working dir from multiple threads to avoid races.
+            Tool.setRestoreWorkingDir(false);
             if (Tool.run(Action.first.get()))
               AppendError(llvm::Twine("Failed to run action on ") + Path +
                           "\n");
           },
           File);
+    }
+    // Make sure all tasks have finished before resetting the working directory.
+    Pool.wait();
+    if (!InitialWorkingDir.empty()) {
+      if (auto EC = llvm::sys::fs::set_current_path(InitialWorkingDir))
+        llvm::errs() << "Error while restoring working directory: "
+                     << EC.message() << "\n";
     }
   }
 
@@ -133,7 +157,8 @@ llvm::Error AllTUsToolExecutor::execute(
 static llvm::cl::opt<unsigned> ExecutorConcurrency(
     "execute-concurrency",
     llvm::cl::desc("The number of threads used to process all files in "
-                   "parallel. Set to 0 for hardware concurrency."),
+                   "parallel. Set to 0 for hardware concurrency. "
+                   "This flag only applies to all-TUs."),
     llvm::cl::init(0));
 
 class AllTUsToolExecutorPlugin : public ToolExecutorPlugin {

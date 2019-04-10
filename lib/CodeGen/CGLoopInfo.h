@@ -1,9 +1,8 @@
 //===---- CGLoopInfo.h - LLVM CodeGen for loop metadata -*- C++ -*---------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -49,6 +48,9 @@ struct LoopAttributes {
   /// Value for llvm.loop.unroll.* metadata (enable, disable, or full).
   LVEnableState UnrollEnable;
 
+  /// Value for llvm.loop.unroll_and_jam.* metadata (enable, disable, or full).
+  LVEnableState UnrollAndJamEnable;
+
   /// Value for llvm.loop.vectorize.width metadata.
   unsigned VectorizeWidth;
 
@@ -58,8 +60,17 @@ struct LoopAttributes {
   /// llvm.unroll.
   unsigned UnrollCount;
 
+  /// llvm.unroll.
+  unsigned UnrollAndJamCount;
+
   /// Value for llvm.loop.distribute.enable metadata.
   LVEnableState DistributeEnable;
+
+  /// Value for llvm.loop.pipeline.disable metadata.
+  bool PipelineDisabled;
+
+  /// Value for llvm.loop.pipeline.iicount metadata.
+  unsigned PipelineInitiationInterval;
 };
 
 /// Information used when generating a structured loop.
@@ -78,6 +89,9 @@ public:
   /// Get the set of attributes active for this loop.
   const LoopAttributes &getAttributes() const { return Attrs; }
 
+  /// Return this loop's access group or nullptr if it does not have one.
+  llvm::MDNode *getAccessGroup() const { return AccGroup; }
+
 private:
   /// Loop ID metadata.
   llvm::MDNode *LoopID;
@@ -85,6 +99,8 @@ private:
   llvm::BasicBlock *Header;
   /// The attributes for this loop.
   LoopAttributes Attrs;
+  /// The access group for memory accesses parallel to this loop.
+  llvm::MDNode *AccGroup = nullptr;
 };
 
 /// A stack of loop information corresponding to loop nesting levels.
@@ -143,6 +159,11 @@ public:
     StagedAttrs.UnrollEnable = State;
   }
 
+  /// Set the next pushed loop unroll_and_jam state.
+  void setUnrollAndJamState(const LoopAttributes::LVEnableState &State) {
+    StagedAttrs.UnrollAndJamEnable = State;
+  }
+
   /// Set the vectorize width for the next loop pushed.
   void setVectorizeWidth(unsigned W) { StagedAttrs.VectorizeWidth = W; }
 
@@ -151,6 +172,17 @@ public:
 
   /// Set the unroll count for the next loop pushed.
   void setUnrollCount(unsigned C) { StagedAttrs.UnrollCount = C; }
+
+  /// \brief Set the unroll count for the next loop pushed.
+  void setUnrollAndJamCount(unsigned C) { StagedAttrs.UnrollAndJamCount = C; }
+
+  /// Set the pipeline disabled state.
+  void setPipelineDisabled(bool S) { StagedAttrs.PipelineDisabled = S; }
+
+  /// Set the pipeline initiation interval.
+  void setPipelineInitiationInterval(unsigned C) {
+    StagedAttrs.PipelineInitiationInterval = C;
+  }
 
 private:
   /// Returns true if there is LoopInfo on the stack.

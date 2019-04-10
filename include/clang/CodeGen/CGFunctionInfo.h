@@ -1,9 +1,8 @@
 //==-- CGFunctionInfo.h - Representation of function argument/return types -==//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -96,6 +95,7 @@ private:
   bool InReg : 1;           // isDirect() || isExtend() || isIndirect()
   bool CanBeFlattened: 1;   // isDirect()
   bool SignExt : 1;         // isExtend()
+  bool SuppressSRet : 1;    // isIndirect()
 
   bool canHavePaddingType() const {
     return isDirect() || isExtend() || isIndirect() || isExpand();
@@ -111,13 +111,14 @@ private:
   }
 
   ABIArgInfo(Kind K)
-      : TheKind(K), PaddingInReg(false), InReg(false) {
+      : TheKind(K), PaddingInReg(false), InReg(false), SuppressSRet(false) {
   }
 
 public:
   ABIArgInfo()
       : TypeData(nullptr), PaddingType(nullptr), DirectOffset(0),
-        TheKind(Direct), PaddingInReg(false), InReg(false) {}
+        TheKind(Direct), PaddingInReg(false), InReg(false),
+        SuppressSRet(false) {}
 
   static ABIArgInfo getDirect(llvm::Type *T = nullptr, unsigned Offset = 0,
                               llvm::Type *Padding = nullptr,
@@ -406,6 +407,16 @@ public:
     CanBeFlattened = Flatten;
   }
 
+  bool getSuppressSRet() const {
+    assert(isIndirect() && "Invalid kind!");
+    return SuppressSRet;
+  }
+
+  void setSuppressSRet(bool Suppress) {
+    assert(isIndirect() && "Invalid kind!");
+    SuppressSRet = Suppress;
+  }
+
   void dump() const;
 };
 
@@ -429,31 +440,30 @@ public:
   ///
   /// If FD is not null, this will consider pass_object_size params in FD.
   static RequiredArgs forPrototypePlus(const FunctionProtoType *prototype,
-                                       unsigned additional,
-                                       const FunctionDecl *FD) {
+                                       unsigned additional) {
     if (!prototype->isVariadic()) return All;
-    if (FD)
-      additional +=
-          llvm::count_if(FD->parameters(), [](const ParmVarDecl *PVD) {
-            return PVD->hasAttr<PassObjectSizeAttr>();
+
+    if (prototype->hasExtParameterInfos())
+      additional += llvm::count_if(
+          prototype->getExtParameterInfos(),
+          [](const FunctionProtoType::ExtParameterInfo &ExtInfo) {
+            return ExtInfo.hasPassObjectSize();
           });
+
     return RequiredArgs(prototype->getNumParams() + additional);
   }
 
-  static RequiredArgs forPrototype(const FunctionProtoType *prototype,
-                                   const FunctionDecl *FD) {
-    return forPrototypePlus(prototype, 0, FD);
-  }
-
-  static RequiredArgs forPrototype(CanQual<FunctionProtoType> prototype,
-                                   const FunctionDecl *FD) {
-    return forPrototype(prototype.getTypePtr(), FD);
-  }
-
   static RequiredArgs forPrototypePlus(CanQual<FunctionProtoType> prototype,
-                                       unsigned additional,
-                                       const FunctionDecl *FD) {
-    return forPrototypePlus(prototype.getTypePtr(), additional, FD);
+                                       unsigned additional) {
+    return forPrototypePlus(prototype.getTypePtr(), additional);
+  }
+
+  static RequiredArgs forPrototype(const FunctionProtoType *prototype) {
+    return forPrototypePlus(prototype, 0);
+  }
+
+  static RequiredArgs forPrototype(CanQual<FunctionProtoType> prototype) {
+    return forPrototypePlus(prototype.getTypePtr(), 0);
   }
 
   bool allowsOptionalArgs() const { return NumRequired != ~0U; }
@@ -569,11 +579,11 @@ public:
   typedef ArgInfo *arg_iterator;
 
   typedef llvm::iterator_range<arg_iterator> arg_range;
-  typedef llvm::iterator_range<const_arg_iterator> arg_const_range;
+  typedef llvm::iterator_range<const_arg_iterator> const_arg_range;
 
   arg_range arguments() { return arg_range(arg_begin(), arg_end()); }
-  arg_const_range arguments() const {
-    return arg_const_range(arg_begin(), arg_end());
+  const_arg_range arguments() const {
+    return const_arg_range(arg_begin(), arg_end());
   }
 
   const_arg_iterator arg_begin() const { return getArgsBuffer() + 1; }

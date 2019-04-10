@@ -41,6 +41,7 @@ def Named : Decl<"named declarations", 1>;
     def IndirectField : DDecl<Value>;
     def Binding : DDecl<Value>;
     def OMPDeclareReduction : DDecl<Value>, DeclContext;
+    def OMPDeclareMapper : DDecl<Value>, DeclContext;
     def Declarator : DDecl<Value, "declarators", 1>;
       def Field : DDecl<Declarator, "non-static data members">;
         def ObjCIvar : DDecl<Field>;
@@ -97,5 +98,6 @@ def Captured : Decl, DeclContext;
 def ClassScopeFunctionSpecialization : Decl;
 def Import : Decl;
 def OMPThreadPrivate : Decl;
+def OMPRequires : Decl;
 def Empty : Decl;
 

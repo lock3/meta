@@ -1,9 +1,8 @@
 //===--- IndexSymbol.cpp - Types and functions for indexing symbols -------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -95,6 +94,9 @@ SymbolInfo index::getSymbolInfo(const Decl *D) {
 
   if (isFunctionLocalSymbol(D)) {
     Info.Properties |= (SymbolPropertySet)SymbolProperty::Local;
+  }
+  if (isa<ObjCProtocolDecl>(D->getDeclContext())) {
+    Info.Properties |= (SymbolPropertySet)SymbolProperty::ProtocolInterface;
   }
 
   if (const TagDecl *TD = dyn_cast<TagDecl>(D)) {
@@ -519,6 +521,7 @@ void index::applyForEachSymbolProperty(SymbolPropertySet Props,
   APPLY_FOR_PROPERTY(IBOutletCollection);
   APPLY_FOR_PROPERTY(GKInspectable);
   APPLY_FOR_PROPERTY(Local);
+  APPLY_FOR_PROPERTY(ProtocolInterface);
 
 #undef APPLY_FOR_PROPERTY
 }
@@ -539,6 +542,7 @@ void index::printSymbolProperties(SymbolPropertySet Props, raw_ostream &OS) {
     case SymbolProperty::IBOutletCollection: OS << "IBColl"; break;
     case SymbolProperty::GKInspectable: OS << "GKI"; break;
     case SymbolProperty::Local: OS << "local"; break;
+    case SymbolProperty::ProtocolInterface: OS << "protocol"; break;
     }
   });
 }

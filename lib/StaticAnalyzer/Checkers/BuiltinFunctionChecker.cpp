@@ -1,9 +1,8 @@
 //=== BuiltinFunctionChecker.cpp --------------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -11,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -96,14 +95,16 @@ bool BuiltinFunctionChecker::evalCall(const CallExpr *CE,
     return true;
   }
 
+  case Builtin::BI__builtin_dynamic_object_size:
   case Builtin::BI__builtin_object_size:
   case Builtin::BI__builtin_constant_p: {
     // This must be resolvable at compile time, so we defer to the constant
     // evaluator for a value.
     SVal V = UnknownVal();
-    llvm::APSInt Result;
-    if (CE->EvaluateAsInt(Result, C.getASTContext(), Expr::SE_NoSideEffects)) {
+    Expr::EvalResult EVResult;
+    if (CE->EvaluateAsInt(EVResult, C.getASTContext(), Expr::SE_NoSideEffects)) {
       // Make sure the result has the correct type.
+      llvm::APSInt Result = EVResult.Val.getInt();
       SValBuilder &SVB = C.getSValBuilder();
       BasicValueFactory &BVF = SVB.getBasicValueFactory();
       BVF.getAPSIntType(CE->getType()).apply(Result);
@@ -118,4 +119,8 @@ bool BuiltinFunctionChecker::evalCall(const CallExpr *CE,
 
 void ento::registerBuiltinFunctionChecker(CheckerManager &mgr) {
   mgr.registerChecker<BuiltinFunctionChecker>();
+}
+
+bool ento::shouldRegisterBuiltinFunctionChecker(const LangOptions &LO) {
+  return true;
 }

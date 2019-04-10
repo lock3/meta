@@ -1,9 +1,8 @@
 //===--- CGCleanup.cpp - Bookkeeping and code emission for cleanups -------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -281,7 +280,7 @@ void EHScopeStack::popNullFixups() {
     BranchFixups.pop_back();
 }
 
-void CodeGenFunction::initFullExprCleanup() {
+Address CodeGenFunction::createCleanupActiveFlag() {
   // Create a variable to decide whether the cleanup needs to be run.
   Address active = CreateTempAllocaWithoutCast(
       Builder.getInt1Ty(), CharUnits::One(), "cleanup.cond");
@@ -293,10 +292,14 @@ void CodeGenFunction::initFullExprCleanup() {
   // Initialize it to true at the current location.
   Builder.CreateStore(Builder.getTrue(), active);
 
+  return active;
+}
+
+void CodeGenFunction::initFullExprCleanupWithFlag(Address ActiveFlag) {
   // Set that as the active flag in the cleanup.
   EHCleanupScope &cleanup = cast<EHCleanupScope>(*EHStack.begin());
   assert(!cleanup.hasActiveFlag() && "cleanup already has active flag?");
-  cleanup.setActiveFlag(active);
+  cleanup.setActiveFlag(ActiveFlag);
 
   if (cleanup.isNormalCleanup()) cleanup.setTestFlagInNormalCleanup();
   if (cleanup.isEHCleanup()) cleanup.setTestFlagInEHCleanup();
@@ -315,7 +318,7 @@ static llvm::LoadInst *createLoadInstBefore(Address addr, const Twine &name,
   auto load = new llvm::LoadInst(addr.getPointer(), name, beforeInst);
   load->setAlignment(addr.getAlignment().getQuantity());
   return load;
-}                                 
+}
 
 /// All the branch fixups on the EH stack have propagated out past the
 /// outermost normal cleanup; resolve them all by adding cases to the
@@ -362,7 +365,7 @@ static llvm::SwitchInst *TransitionToCleanupSwitch(CodeGenFunction &CGF,
                                                    llvm::BasicBlock *Block) {
   // If it's a branch, turn it into a switch whose default
   // destination is its original target.
-  llvm::TerminatorInst *Term = Block->getTerminator();
+  llvm::Instruction *Term = Block->getTerminator();
   assert(Term && "can't transition block without terminator");
 
   if (llvm::BranchInst *Br = dyn_cast<llvm::BranchInst>(Term)) {
@@ -494,6 +497,13 @@ void CodeGenFunction::PopCleanupBlocks(
                               &LifetimeExtendedCleanupStack[I],
                               Header.getSize());
     I += Header.getSize();
+
+    if (Header.isConditional()) {
+      Address ActiveFlag =
+          reinterpret_cast<Address &>(LifetimeExtendedCleanupStack[I]);
+      initFullExprCleanupWithFlag(ActiveFlag);
+      I += sizeof(ActiveFlag);
+    }
   }
   LifetimeExtendedCleanupStack.resize(OldLifetimeExtendedSize);
 }
@@ -578,7 +588,7 @@ static void ForwardPrebranchedFallthrough(llvm::BasicBlock *Exit,
                                           llvm::BasicBlock *To) {
   // Exit is the exit block of a cleanup, so it always terminates in
   // an unconditional branch or a switch.
-  llvm::TerminatorInst *Term = Exit->getTerminator();
+  llvm::Instruction *Term = Exit->getTerminator();
 
   if (llvm::BranchInst *Br = dyn_cast<llvm::BranchInst>(Term)) {
     assert(Br->isUnconditional() && Br->getSuccessor(0) == From);
@@ -610,7 +620,7 @@ static void destroyOptimisticNormalEntry(CodeGenFunction &CGF,
     ++i;
 
     use.set(unreachableBB);
-    
+
     // The only uses should be fixup switches.
     llvm::SwitchInst *si = cast<llvm::SwitchInst>(use.getUser());
     if (si->getNumCases() == 1 && si->getDefaultDest() == unreachableBB) {
@@ -629,7 +639,7 @@ static void destroyOptimisticNormalEntry(CodeGenFunction &CGF,
       condition->eraseFromParent();
     }
   }
-  
+
   assert(entry->use_empty());
   delete entry;
 }
@@ -648,7 +658,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
   Address NormalActiveFlag =
     Scope.shouldTestFlagInNormalCleanup() ? Scope.getActiveFlag()
                                           : Address::invalid();
-  Address EHActiveFlag = 
+  Address EHActiveFlag =
     Scope.shouldTestFlagInEHCleanup() ? Scope.getActiveFlag()
                                       : Address::invalid();
 
@@ -697,7 +707,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
   // cleanup, rewrite it so that it leads to the appropriate place.
   if (Scope.isNormalCleanup() && HasPrebranchedFallthrough && !IsActive) {
     llvm::BasicBlock *prebranchDest;
-    
+
     // If the prebranch is semantically branching through the next
     // cleanup, just forward it to the next block, leaving the
     // insertion point in the prebranched block.
@@ -911,7 +921,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       }
 
       // V.  Set up the fallthrough edge out.
-      
+
       // Case 1: a fallthrough source exists but doesn't branch to the
       // cleanup because the cleanup is inactive.
       if (!HasFallthrough && FallthroughSource) {
@@ -1014,11 +1024,11 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
 bool CodeGenFunction::isObviouslyBranchWithoutCleanups(JumpDest Dest) const {
   assert(Dest.getScopeDepth().encloses(EHStack.stable_begin())
          && "stale jump destination");
-  
+
   // Calculate the innermost active normal cleanup.
   EHScopeStack::stable_iterator TopCleanup =
     EHStack.getInnermostActiveNormalCleanup();
-  
+
   // If we're not in an active normal cleanup scope, or if the
   // destination scope is within the innermost active normal cleanup
   // scope, we don't need to worry about fixups.
@@ -1108,7 +1118,7 @@ void CodeGenFunction::EmitBranchThroughCleanup(JumpDest Dest) {
         break;
     }
   }
-  
+
   Builder.ClearInsertionPoint();
 }
 

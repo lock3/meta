@@ -1,13 +1,12 @@
 //===- ModuleLoader.h - Module Loader Interface -----------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file defines the ModuleLoader interface, which is responsible for 
+//  This file defines the ModuleLoader interface, which is responsible for
 //  loading named modules.
 //
 //===----------------------------------------------------------------------===//
@@ -80,7 +79,7 @@ public:
       : BuildingModule(BuildingModule) {}
 
   virtual ~ModuleLoader();
-  
+
   /// Returns true if this instance is building a module.
   bool buildingModule() const {
     return BuildingModule;
@@ -90,17 +89,17 @@ public:
   void setBuildingModule(bool BuildingModuleFlag) {
     BuildingModule = BuildingModuleFlag;
   }
- 
+
   /// Attempt to load the given module.
   ///
-  /// This routine attempts to load the module described by the given 
+  /// This routine attempts to load the module described by the given
   /// parameters.
   ///
   /// \param ImportLoc The location of the 'import' keyword.
   ///
   /// \param Path The identifiers (and their locations) of the module
   /// "path", e.g., "std.vector" would be split into "std" and "vector".
-  /// 
+  ///
   /// \param Visibility The visibility provided for the names in the loaded
   /// module.
   ///
@@ -108,7 +107,7 @@ public:
   /// implicitly, due to the presence of an inclusion directive. Otherwise,
   /// it is being loaded due to an import declaration.
   ///
-  /// \returns If successful, returns the loaded module. Otherwise, returns 
+  /// \returns If successful, returns the loaded module. Otherwise, returns
   /// NULL to indicate that the module could not be loaded.
   virtual ModuleLoadResult loadModule(SourceLocation ImportLoc,
                                       ModuleIdPath Path,
@@ -177,7 +176,7 @@ public:
     return false;
   }
 };
-  
+
 } // namespace clang
 
 #endif // LLVM_CLANG_LEX_MODULELOADER_H

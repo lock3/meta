@@ -1,9 +1,8 @@
 //===---------- IssueHash.cpp - Generate identification hashes --*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 #include "clang/StaticAnalyzer/Core/IssueHash.h"
@@ -26,7 +25,7 @@
 
 using namespace clang;
 
-// Get a string representation of the parts of the signature that can be 
+// Get a string representation of the parts of the signature that can be
 // overloaded on.
 static std::string GetSignature(const FunctionDecl *Target) {
   if (!Target)

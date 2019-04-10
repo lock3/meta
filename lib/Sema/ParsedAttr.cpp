@@ -1,9 +1,8 @@
 //======- ParsedAttr.cpp --------------------------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -41,8 +40,12 @@ size_t ParsedAttr::allocated_size() const {
   else if (IsProperty)
     return AttributeFactory::PropertyAllocSize;
   else if (HasParsedType)
-    return sizeof(ParsedAttr) + sizeof(void *);
-  return (sizeof(ParsedAttr) + NumArgs * sizeof(ArgsUnion));
+    return totalSizeToAlloc<ArgsUnion, detail::AvailabilityData,
+                            detail::TypeTagForDatatypeData, ParsedType,
+                            detail::PropertyData>(0, 0, 0, 1, 0);
+  return totalSizeToAlloc<ArgsUnion, detail::AvailabilityData,
+                          detail::TypeTagForDatatypeData, ParsedType,
+                          detail::PropertyData>(NumArgs, 0, 0, 0, 0);
 }
 
 AttributeFactory::AttributeFactory() {
@@ -78,7 +81,7 @@ void AttributeFactory::deallocate(ParsedAttr *Attr) {
   if (freeListIndex >= FreeLists.size())
     FreeLists.resize(freeListIndex + 1);
 
-#if !NDEBUG
+#ifndef NDEBUG
   // In debug mode, zero out the attribute to help find memory overwriting.
   memset(Attr, 0, size);
 #endif
@@ -99,15 +102,31 @@ void AttributePool::takePool(AttributePool &pool) {
 
 #include "clang/Sema/AttrParsedAttrKinds.inc"
 
-static StringRef normalizeAttrName(StringRef AttrName, StringRef ScopeName,
+static StringRef normalizeAttrScopeName(StringRef ScopeName,
+                                        ParsedAttr::Syntax SyntaxUsed) {
+  // Normalize the "__gnu__" scope name to be "gnu" and the "_Clang" scope name
+  // to be "clang".
+  if (SyntaxUsed == ParsedAttr::AS_CXX11 ||
+    SyntaxUsed == ParsedAttr::AS_C2x) {
+    if (ScopeName == "__gnu__")
+      ScopeName = "gnu";
+    else if (ScopeName == "_Clang")
+      ScopeName = "clang";
+  }
+  return ScopeName;
+}
+
+static StringRef normalizeAttrName(StringRef AttrName,
+                                   StringRef NormalizedScopeName,
                                    ParsedAttr::Syntax SyntaxUsed) {
   // Normalize the attribute name, __foo__ becomes foo. This is only allowable
-  // for GNU attributes.
-  bool IsGNU = SyntaxUsed == ParsedAttr::AS_GNU ||
-               ((SyntaxUsed == ParsedAttr::AS_CXX11 ||
-                 SyntaxUsed == ParsedAttr::AS_C2x) &&
-                ScopeName == "gnu");
-  if (IsGNU && AttrName.size() >= 4 && AttrName.startswith("__") &&
+  // for GNU attributes, and attributes using the double square bracket syntax.
+  bool ShouldNormalize =
+      SyntaxUsed == ParsedAttr::AS_GNU ||
+      ((SyntaxUsed == ParsedAttr::AS_CXX11 ||
+        SyntaxUsed == ParsedAttr::AS_C2x) &&
+       (NormalizedScopeName == "gnu" || NormalizedScopeName == "clang"));
+  if (ShouldNormalize && AttrName.size() >= 4 && AttrName.startswith("__") &&
       AttrName.endswith("__"))
     AttrName = AttrName.slice(2, AttrName.size() - 2);
 
@@ -121,7 +140,7 @@ ParsedAttr::Kind ParsedAttr::getKind(const IdentifierInfo *Name,
 
   SmallString<64> FullName;
   if (ScopeName)
-    FullName += ScopeName->getName();
+    FullName += normalizeAttrScopeName(ScopeName->getName(), SyntaxUsed);
 
   AttrName = normalizeAttrName(AttrName, FullName, SyntaxUsed);
 
@@ -137,9 +156,10 @@ ParsedAttr::Kind ParsedAttr::getKind(const IdentifierInfo *Name,
 unsigned ParsedAttr::getAttributeSpellingListIndex() const {
   // Both variables will be used in tablegen generated
   // attribute spell list index matching code.
-  StringRef Scope = ScopeName ? ScopeName->getName() : "";
-  StringRef Name = normalizeAttrName(AttrName->getName(), Scope,
-                                     (ParsedAttr::Syntax)SyntaxUsed);
+  auto Syntax = static_cast<ParsedAttr::Syntax>(SyntaxUsed);
+  StringRef Scope =
+      ScopeName ? normalizeAttrScopeName(ScopeName->getName(), Syntax) : "";
+  StringRef Name = normalizeAttrName(AttrName->getName(), Scope, Syntax);
 
 #include "clang/Sema/AttrSpellingListIndex.inc"
 

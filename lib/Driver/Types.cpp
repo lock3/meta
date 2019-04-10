@@ -1,9 +1,8 @@
 //===--- Types.cpp - Driver input & temporary type information ------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -312,9 +311,11 @@ ID types::lookupHeaderTypeForSourceType(ID Id) {
   default:
     return Id;
 
+  // FIXME: Handle preprocessed input types.
   case types::TY_C:
     return types::TY_CHeader;
   case types::TY_CXX:
+  case types::TY_CXXModule:
     return types::TY_CXXHeader;
   case types::TY_ObjC:
     return types::TY_ObjCHeader;

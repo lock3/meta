@@ -1,9 +1,8 @@
 //===--- CommentCommandTraits.h - Comment command properties ----*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -107,17 +106,17 @@ struct CommandInfo {
   ///   \fn void f(int a);
   /// \endcode
   unsigned IsDeclarationCommand : 1;
-  
+
   /// True if verbatim-like line command is a function declaration.
   unsigned IsFunctionDeclarationCommand : 1;
 
   /// True if block command is further describing a container API; such
   /// as \@coclass, \@classdesign, etc.
   unsigned IsRecordLikeDetailCommand : 1;
-  
+
   /// True if block command is a container API; such as \@interface.
   unsigned IsRecordLikeDeclarationCommand : 1;
-  
+
   /// True if this command is unknown.  This \c CommandInfo object was
   /// created during parsing.
   unsigned IsUnknownCommand : 1;
@@ -150,7 +149,7 @@ public:
   }
 
   const CommandInfo *getTypoCorrectCommandInfo(StringRef Typo) const;
-  
+
   const CommandInfo *getCommandInfo(unsigned CommandID) const;
 
   const CommandInfo *registerUnknownCommand(StringRef CommandName);

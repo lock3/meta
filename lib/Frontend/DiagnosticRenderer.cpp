@@ -1,9 +1,8 @@
 //===- DiagnosticRenderer.cpp - Diagnostic Pretty-Printing ----------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -172,9 +171,9 @@ void DiagnosticRenderer::emitIncludeStack(FullSourceLoc Loc, PresumedLoc PLoc,
   // Skip redundant include stacks altogether.
   if (LastIncludeLoc == IncludeLoc)
     return;
-  
+
   LastIncludeLoc = IncludeLoc;
-  
+
   if (!DiagOpts->ShowNoteIncludeStack && Level == DiagnosticsEngine::Note)
     return;
 
@@ -199,7 +198,7 @@ void DiagnosticRenderer::emitIncludeStackRecursively(FullSourceLoc Loc) {
     return;
 
   // If this source location was imported from a module, print the module
-  // import stack rather than the 
+  // import stack rather than the
   // FIXME: We want submodule granularity here.
   std::pair<FullSourceLoc, StringRef> Imported = Loc.getModuleImportLoc();
   if (!Imported.second.empty()) {
@@ -337,8 +336,8 @@ static void computeCommonMacroArgExpansionFileIDs(
   SmallVector<FileID, 4> EndArgExpansions;
   getMacroArgExpansionFileIDs(Begin, BeginArgExpansions, /*IsBegin=*/true, SM);
   getMacroArgExpansionFileIDs(End, EndArgExpansions, /*IsBegin=*/false, SM);
-  llvm::sort(BeginArgExpansions.begin(), BeginArgExpansions.end());
-  llvm::sort(EndArgExpansions.begin(), EndArgExpansions.end());
+  llvm::sort(BeginArgExpansions);
+  llvm::sort(EndArgExpansions);
   std::set_intersection(BeginArgExpansions.begin(), BeginArgExpansions.end(),
                         EndArgExpansions.begin(), EndArgExpansions.end(),
                         std::back_inserter(CommonArgExpansions));

@@ -1,9 +1,8 @@
 //===--- LambdaCapture.h - Types for C++ Lambda Captures --------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 ///
@@ -41,7 +40,7 @@ class LambdaCapture {
   };
 
   // Decl could represent:
-  // - a VarDecl* that represents the variable that was captured or the 
+  // - a VarDecl* that represents the variable that was captured or the
   //   init-capture.
   // - or, is a nullptr and Capture_This is set in Bits if this represents a
   //   capture of '*this' by value or reference.

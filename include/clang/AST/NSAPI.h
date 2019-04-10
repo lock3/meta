@@ -1,9 +1,8 @@
 //===--- NSAPI.h - NSFoundation APIs ----------------------------*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -113,7 +112,7 @@ public:
     NSMutableDict_setValueForKey
   };
   static const unsigned NumNSDictionaryMethods = 13;
-  
+
   /// The Objective-C NSDictionary selectors.
   Selector getNSDictionarySelector(NSDictionaryMethodKind MK) const;
 
@@ -164,6 +163,14 @@ public:
   /// Returns selector for "isEqual:".
   Selector getIsEqualSelector() const {
     return getOrInitSelector(StringRef("isEqual"), isEqualSel);
+  }
+
+  Selector getNewSelector() const {
+    return getOrInitNullarySelector("new", NewSel);
+  }
+
+  Selector getInitSelector() const {
+    return getOrInitNullarySelector("init", InitSel);
   }
 
   /// Enumerates the NSNumber methods used to generate literals.
@@ -229,6 +236,7 @@ private:
   bool isObjCEnumerator(const Expr *E,
                         StringRef name, IdentifierInfo *&II) const;
   Selector getOrInitSelector(ArrayRef<StringRef> Ids, Selector &Sel) const;
+  Selector getOrInitNullarySelector(StringRef Id, Selector &Sel) const;
 
   ASTContext &Ctx;
 
@@ -251,7 +259,7 @@ private:
 
   mutable Selector objectForKeyedSubscriptSel, objectAtIndexedSubscriptSel,
                    setObjectForKeyedSubscriptSel,setObjectAtIndexedSubscriptSel,
-                   isEqualSel;
+                   isEqualSel, InitSel, NewSel;
 
   mutable IdentifierInfo *BOOLId, *NSIntegerId, *NSUIntegerId;
   mutable IdentifierInfo *NSASCIIStringEncodingId, *NSUTF8StringEncodingId;

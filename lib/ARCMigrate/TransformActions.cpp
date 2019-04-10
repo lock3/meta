@@ -1,9 +1,8 @@
 //===--- ARCMT.cpp - Migration to ARC mode --------------------------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
@@ -76,7 +75,7 @@ class TransformActionsImpl {
         End = FullSourceLoc(srcMgr.getExpansionLoc(endLoc), srcMgr);
       }
       assert(Begin.isValid() && End.isValid());
-    } 
+    }
 
     RangeComparison compareWith(const CharRange &RHS) const {
       if (End.isBeforeInTranslationUnitThan(RHS.Begin))
@@ -94,7 +93,7 @@ class TransformActionsImpl {
       else
         return Range_ExtendsEnd;
     }
-    
+
     static RangeComparison compare(SourceRange LHS, SourceRange RHS,
                                    SourceManager &SrcMgr, Preprocessor &PP) {
       return CharRange(CharSourceRange::getTokenRange(LHS), SrcMgr, PP)
@@ -314,7 +313,9 @@ void TransformActionsImpl::removeStmt(Stmt *S) {
   assert(IsInTransaction && "Actions only allowed during a transaction");
   ActionData data;
   data.Kind = Act_RemoveStmt;
-  data.S = S->IgnoreImplicit(); // important for uniquing
+  if (auto *E = dyn_cast<Expr>(S))
+    S = E->IgnoreImplicit(); // important for uniquing
+  data.S = S;
   CachedActions.push_back(data);
 }
 
@@ -350,7 +351,7 @@ void TransformActionsImpl::replaceText(SourceLocation loc, StringRef text,
 void TransformActionsImpl::replaceStmt(Stmt *S, StringRef text) {
   assert(IsInTransaction && "Actions only allowed during a transaction");
   text = getUniqueText(text);
-  insert(S->getLocStart(), text);
+  insert(S->getBeginLoc(), text);
   removeStmt(S);
 }
 
@@ -485,7 +486,7 @@ void TransformActionsImpl::commitReplaceText(SourceLocation loc,
   SourceLocation afterText = loc.getLocWithOffset(text.size());
 
   addRemoval(CharSourceRange::getCharRange(loc, afterText));
-  commitInsert(loc, replacementText);  
+  commitInsert(loc, replacementText);
 }
 
 void TransformActionsImpl::commitIncreaseIndentation(SourceRange range,

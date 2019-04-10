@@ -1,9 +1,8 @@
 //===--- OSTargets.cpp - Implement OS target feature support --------------===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -33,7 +32,7 @@ void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     Builder.defineMacro("_FORTIFY_SOURCE", "0");
 
   // Darwin defines __weak, __strong, and __unsafe_unretained even in C mode.
-  if (!Opts.ObjC1) {
+  if (!Opts.ObjC) {
     // __weak is always defined, for use in blocks and with objc pointers.
     Builder.defineMacro("__weak", "__attribute__((objc_gc(weak)))");
     Builder.defineMacro("__strong", "");

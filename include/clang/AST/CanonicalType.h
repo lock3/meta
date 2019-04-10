@@ -1,9 +1,8 @@
 //===- CanonicalType.h - C Language Family Type Representation --*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
-//
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
@@ -85,8 +84,8 @@ public:
 
   /// Retrieve the underlying type pointer, which refers to a
   /// canonical type, or nullptr.
-  const T *getTypePtrOrNull() const { 
-    return cast_or_null<T>(Stored.getTypePtrOrNull()); 
+  const T *getTypePtrOrNull() const {
+    return cast_or_null<T>(Stored.getTypePtrOrNull());
   }
 
   /// Implicit conversion to a qualified type.
@@ -94,7 +93,7 @@ public:
 
   /// Implicit conversion to bool.
   explicit operator bool() const { return !isNull(); }
-  
+
   bool isNull() const {
     return Stored.isNull();
   }
@@ -510,7 +509,7 @@ struct CanProxyAdaptor<FunctionProtoType>
   }
 
   LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(bool, isVariadic)
-  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(unsigned, getTypeQuals)
+  LLVM_CLANG_CANPROXY_SIMPLE_ACCESSOR(Qualifiers, getMethodQuals)
 
   using param_type_iterator =
       CanTypeIterator<FunctionProtoType::param_type_iterator>;
