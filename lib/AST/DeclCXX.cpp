@@ -2958,6 +2958,18 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
                                     SourceLocation(), nullptr, nullptr);
 }
 
+bool CXXInjectorDecl::hasBody() const {
+  if (!hasRepresentation())
+    return false;
+  return getFunctionDecl()->hasBody();
+}
+
+Stmt *CXXInjectorDecl::getBody() const {
+  if (!hasRepresentation())
+    return nullptr;
+  return getFunctionDecl()->getBody();
+}
+
 void CXXMetaprogramDecl::anchor() {}
 
 CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
@@ -2968,18 +2980,6 @@ CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
 
 CXXMetaprogramDecl *CXXMetaprogramDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXMetaprogramDecl(nullptr, SourceLocation());
-}
-
-bool CXXMetaprogramDecl::hasBody() const {
-  if (!hasRepresentation())
-    return false;
-  return getFunctionDecl()->hasBody();
-}
-
-Stmt *CXXMetaprogramDecl::getBody() const {
-  if (!hasRepresentation())
-    return nullptr;
-  return getFunctionDecl()->getBody();
 }
 
 SourceRange CXXMetaprogramDecl::getSourceRange() const {
@@ -2999,18 +2999,6 @@ CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
 
 CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
-}
-
-bool CXXInjectionDecl::hasBody() const {
-  if (!hasRepresentation())
-    return false;
-  return getFunctionDecl()->hasBody();
-}
-
-Stmt *CXXInjectionDecl::getBody() const {
-  if (!hasRepresentation())
-    return nullptr;
-  return getFunctionDecl()->getBody();
 }
 
 void CXXFragmentDecl::anchor() {}

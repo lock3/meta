@@ -3989,29 +3989,13 @@ public:
   IdentifierInfo* getSetterId() const { return SetterId; }
 };
 
-
-/// \brief Represents a C++ metaprogram-declaration.
-///
-/// A metaprogram-declaration contains a sequence of statements that are
-/// evaluated at compile-time. For example:
-///
-/// \code
-/// constexpr {
-///   // statements
-/// }
-/// \endcode
-///
-/// When the metaprogram-declaration appears in namespace or class scope, this
-/// class contains a \c constexpr \c void function that contains the parsed body
-/// of the declaration.
-class CXXMetaprogramDecl : public Decl {
-  virtual void anchor();
-
+/// Base class for C++ injector-declarations.
+class CXXInjectorDecl : public Decl {
   /// The de-sugared form of the declaration.
   FunctionDecl *Representation;
 
   /// The de-sugared call expression.
-  CallExpr *Call;
+  CallExpr *Call = nullptr;
 
   /// A placeholder for injected statements.
   Stmt **InjectedStmts;
@@ -4023,21 +4007,15 @@ class CXXMetaprogramDecl : public Decl {
 
   unsigned NumInjectedDecls = 0;
 
-  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
-      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(),
-        Call(nullptr) {}
+protected:
+  CXXInjectorDecl(Kind DK, DeclContext *DC, SourceLocation L)
+      : Decl(DK, DC, L), Representation(nullptr) { }
 
-  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
-                     FunctionDecl *Fn)
-      : Decl(CXXMetaprogram, DC, CXXMetaprogramLoc), Representation(Fn),
-        Call(nullptr) {}
+  CXXInjectorDecl(Kind DK, DeclContext *DC, SourceLocation L,
+                  FunctionDecl *Fn)
+      : Decl(DK, DC, L), Representation(Fn) { }
 
 public:
-  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
-                                    SourceLocation CXXMetaprogramLoc,
-                                    FunctionDecl *Fn);
-  static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-
   /// Returns true if there is a de-sugared representation of
   /// the declaration.
   bool hasRepresentation() const {
@@ -4079,6 +4057,43 @@ public:
     this->NumInjectedDecls = NumInjectedDecls;
   }
 
+  // Implement isa/cast/dyncast/etc.
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) {
+    return K >= firstCXXInjector && K <= lastCXXInjector;
+  }
+};
+
+/// Represents a C++ metaprogram-declaration.
+///
+/// A metaprogram-declaration contains a sequence of statements that are
+/// evaluated at compile-time. For example:
+///
+/// \code
+/// constexpr {
+///   // statements
+/// }
+/// \endcode
+///
+/// When the metaprogram-declaration appears in namespace or class scope, this
+/// class contains a \c constexpr \c void function that contains the parsed body
+/// of the declaration.
+class CXXMetaprogramDecl : public CXXInjectorDecl {
+  virtual void anchor();
+
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
+      : CXXInjectorDecl(CXXMetaprogram, DC, CXXMetaprogramLoc) { }
+
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
+                     FunctionDecl *Fn)
+      : CXXInjectorDecl(CXXMetaprogram, DC, CXXMetaprogramLoc, Fn) { }
+
+public:
+  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                    SourceLocation CXXMetaprogramLoc,
+                                    FunctionDecl *Fn);
+  static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
   SourceRange getSourceRange() const override;
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -4095,80 +4110,21 @@ public:
 /// \code
 /// constexpr -> fragment-or-reflection;
 /// \endcode
-class CXXInjectionDecl : public Decl {
+class CXXInjectionDecl : public CXXInjectorDecl {
   virtual void anchor();
 
-  /// The de-sugared form of the declaration.
-  FunctionDecl *Representation;
-
-  /// The de-sugared call expression.
-  CallExpr *Call;
-
-  /// A placeholder for injected statements.
-  Stmt **InjectedStmts;
-
-  unsigned NumInjectedStmts = 0;
-
-  /// A placeholder for injected declarations.
-  Decl **InjectedDecls;
-
-  unsigned NumInjectedDecls = 0;
-
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
-      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(),
-        Call(nullptr) {}
+      : CXXInjectorDecl(CXXInjection, DC, CXXInjectionLoc) { }
 
   CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
                    FunctionDecl *Fn)
-      : Decl(CXXInjection, DC, CXXInjectionLoc), Representation(Fn),
-        Call(nullptr) {}
+      : CXXInjectorDecl(CXXInjection, DC, CXXInjectionLoc, Fn) { }
 
 public:
   static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
                                     SourceLocation CXXInjectionLoc,
                                     FunctionDecl *Fn);
   static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
-
-  /// Returns true if there is a de-sugared representation of
-  /// the declaration.
-  bool hasRepresentation() const {
-    return Representation;
-  }
-
-  /// Returns the function representation of the declaration.
-  FunctionDecl *getFunctionDecl() const {
-    return Representation;
-  }
-
-  /// Returns \c true if the injection-declaration has a body.
-  bool hasBody() const override;
-
-  /// Returns the body of the injection-declaration.
-  Stmt *getBody() const override;
-
-  /// Returns the expression that evaluates the injection-declaration.
-  CallExpr *getCallExpr() const { return Call; }
-
-  /// Sets the expression that evaluates the injection-declaration.
-  void setCallExpr(CallExpr *E) { Call = E; }
-
-  Stmt **getInjectedStmts() const { return InjectedStmts; }
-
-  unsigned getNumInjectedStmts() const { return NumInjectedStmts; }
-
-  void setInjectedStmts(Stmt **InjectedStmts, unsigned NumInjectedStmts) {
-    this->InjectedStmts = InjectedStmts;
-    this->NumInjectedStmts = NumInjectedStmts;
-  }
-
-  Decl **getInjectedDecls() const { return InjectedDecls; }
-
-  unsigned getNumInjectedDecls() const { return NumInjectedDecls; }
-
-  void setInjectedDecls(Decl **InjectedDecls, unsigned NumInjectedDecls) {
-    this->InjectedDecls = InjectedDecls;
-    this->NumInjectedDecls = NumInjectedDecls;
-  }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXInjection; }
