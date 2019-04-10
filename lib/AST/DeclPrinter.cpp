@@ -394,8 +394,8 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
           !isa<ClassTemplateSpecializationDecl>(DC))
         continue;
 
-    // Do not print metaprogramming related declarations.
-    if (isa<CXXMetaprogramDecl>(*D) || isa<CXXInjectionDecl>(*D))
+    // Do not print injector decls.
+    if (isa<CXXInjectorDecl>(*D))
       continue;
 
     // The next bits of code handle stuff like "struct {int x;} a,b"; we're

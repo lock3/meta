@@ -3428,8 +3428,8 @@ public:
   }
 
 private:
-  template<typename T>
-  void PushInjectedStmt(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts);
+  void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
+                        SmallVectorImpl<Stmt *> &Stmts);
 
   TypeLoc TransformTypeInObjectScope(TypeLoc TL,
                                      QualType ObjectType,
@@ -4566,9 +4566,8 @@ QualType TreeTransform<Derived>::RebuildQualifiedType(QualType T,
 }
 
 template<typename Derived>
-template<typename T>
 void
-TreeTransform<Derived>::PushInjectedStmt(T *MetaDecl,
+TreeTransform<Derived>::PushInjectedStmt(CXXInjectorDecl *MetaDecl,
                                          SmallVectorImpl<Stmt *> &Stmts) {
   for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
     Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
@@ -6886,13 +6885,9 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
     if (auto *VD = dyn_cast<DeclStmt>(Result.get())) {
       if (VD->isSingleDecl()) {
         Decl *D = VD->getSingleDecl();
-        // [Meta] metaprogram-declaration
-        if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
+
+        if (auto *MetaDecl = dyn_cast<CXXInjectorDecl>(D))
           PushInjectedStmt(MetaDecl, Statements);
-        // [Meta] injection-declaration
-        } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
-          PushInjectedStmt(MetaDecl, Statements);
-        }
       }
     }
   }

@@ -2419,9 +2419,8 @@ static bool BootstrapInjection(Sema &S, Decl *Injectee, IT *Injection,
   return !Injectee->isInvalidDecl();
 }
 
-template<typename MetaType>
 static bool InjectStmtFragment(Sema &S,
-                               MetaType *MD,
+                               CXXInjectorDecl *MD,
                                Decl *Injection,
                                const SmallVector<InjectionCapture, 8> &Captures,
                                Decl *Injectee) {
@@ -2482,9 +2481,8 @@ static bool InjectDeclFragment(Sema &S,
 }
 
 /// Inject a fragment into the current context.
-template<typename MetaType>
 static bool InjectFragment(Sema &S,
-                           MetaType *MD,
+                           CXXInjectorDecl *MD,
                            Decl *Injection,
                            const SmallVector<InjectionCapture, 8> &Captures,
                            Decl *Injectee) {
@@ -2507,8 +2505,7 @@ static bool InjectFragment(Sema &S,
 }
 
 // Inject a reflected base specifier into the current context.
-template<typename MetaType>
-static bool AddBase(Sema &S, MetaType *MD,
+static bool AddBase(Sema &S, CXXInjectorDecl *MD,
                     CXXBaseSpecifier *Injection, Decl *Injectee) {
   // SourceLocation POI = MD->getSourceRange().getEnd();
   // DeclContext *InjectionDC = Injection->getDeclContext();
@@ -2530,8 +2527,7 @@ static bool AddBase(Sema &S, MetaType *MD,
 }
 
 // Inject a reflected declaration into the current context.
-template<typename MetaType>
-static bool CopyDeclaration(Sema &S, MetaType *MD,
+static bool CopyDeclaration(Sema &S, CXXInjectorDecl *MD,
                             Decl *Injection,
                             const ReflectionModifiers &Modifiers,
                             Decl *Injectee) {
@@ -2654,8 +2650,7 @@ GetFragCaptures(InjectionEffect &IE) {
   return Captures;
 }
 
-template<typename MetaType>
-static bool ApplyFragmentInjection(Sema &S, MetaType *MD,
+static bool ApplyFragmentInjection(Sema &S, CXXInjectorDecl *MD,
                                    InjectionEffect &IE, Decl *Injectee) {
   Decl *Injection = const_cast<Decl *>(GetFragInjectionDecl(S, IE));
   SmallVector<InjectionCapture, 8> &&Captures = GetFragCaptures(IE);
@@ -2674,9 +2669,8 @@ GetInjectionBase(const Reflection &Refl) {
   return const_cast<CXXBaseSpecifier *>(ReachableBase);
 }
 
-template<typename MetaType>
 static bool
-ApplyReflectionBaseInjection(Sema &S, MetaType *MD,
+ApplyReflectionBaseInjection(Sema &S, CXXInjectorDecl *MD,
                              const Reflection &Refl, Decl *Injectee) {
   CXXBaseSpecifier *Injection = GetInjectionBase(Refl);
 
@@ -2697,9 +2691,8 @@ GetModifiers(const Reflection &Refl) {
   return Refl.getModifiers();
 }
 
-template<typename MetaType>
 static bool
-ApplyReflectionDeclInjection(Sema &S, MetaType *MD,
+ApplyReflectionDeclInjection(Sema &S, CXXInjectorDecl *MD,
                              const Reflection &Refl, Decl *Injectee) {
   Decl *Injection = GetInjectionDecl(Refl);
   ReflectionModifiers Modifiers = GetModifiers(Refl);
@@ -2707,8 +2700,7 @@ ApplyReflectionDeclInjection(Sema &S, MetaType *MD,
   return CopyDeclaration(S, MD, Injection, Modifiers, Injectee);
 }
 
-template<typename MetaType>
-static bool ApplyReflectionInjection(Sema &S, MetaType *MD,
+static bool ApplyReflectionInjection(Sema &S, CXXInjectorDecl *MD,
                                      InjectionEffect &IE, Decl *Injectee) {
   Reflection &&Refl = GetReflectionFromInjection(S, IE);
 
@@ -2718,10 +2710,8 @@ static bool ApplyReflectionInjection(Sema &S, MetaType *MD,
   return ApplyReflectionDeclInjection(S, MD, Refl, Injectee);
 }
 
-template<typename MetaType>
-bool ApplyInjectionImpl(Sema &SemaRef, MetaType *MD, InjectionEffect &IE) {
-  Decl *Injectee = GetInjecteeDecl(SemaRef, SemaRef.CurContext,
-                                   IE.ContextSpecifier);
+bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
+  Decl *Injectee = GetInjecteeDecl(*this, CurContext, IE.ContextSpecifier);
   if (!Injectee)
     return false;
 
@@ -2729,7 +2719,7 @@ bool ApplyInjectionImpl(Sema &SemaRef, MetaType *MD, InjectionEffect &IE) {
   // with the Injectee.
 
   if (IE.ExprType->isFragmentType()) {
-    return ApplyFragmentInjection(SemaRef, MD, IE, Injectee);
+    return ApplyFragmentInjection(*this, MD, IE, Injectee);
   }
 
   // Type checking should gauarantee that the type of
@@ -2738,15 +2728,8 @@ bool ApplyInjectionImpl(Sema &SemaRef, MetaType *MD, InjectionEffect &IE) {
   // a reflection.
   assert(IE.ExprType->isReflectionType());
 
-  return ApplyReflectionInjection(SemaRef, MD, IE, Injectee);
-}
+  return ApplyReflectionInjection(*this, MD, IE, Injectee);
 
-bool Sema::ApplyInjection(CXXInjectionDecl *MD, InjectionEffect &IE) {
-  return ApplyInjectionImpl(*this, MD, IE);
-}
-
-bool Sema::ApplyInjection(CXXMetaprogramDecl *MD, InjectionEffect &IE) {
-  return ApplyInjectionImpl(*this, MD, IE);
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -2754,26 +2737,14 @@ bool Sema::ApplyInjection(CXXMetaprogramDecl *MD, InjectionEffect &IE) {
 /// which the injection is applied.
 ///
 /// returns true if no errors are encountered, false otherwise.
-template<typename MetaType>
-static bool ApplyEffectsImpl(Sema &SemaRef, MetaType *MD,
-                             SmallVectorImpl<InjectionEffect> &Effects) {
-
+bool Sema::ApplyEffects(CXXInjectorDecl *MD,
+                        SmallVectorImpl<InjectionEffect> &Effects) {
   bool Ok = true;
   for (InjectionEffect &Effect : Effects) {
-    Ok &= SemaRef.ApplyInjection(MD, Effect);
+    Ok &= ApplyInjection(MD, Effect);
   }
 
   return Ok;
-}
-
-bool Sema::ApplyEffects(CXXInjectionDecl *MD,
-                        SmallVectorImpl<InjectionEffect> &Effects) {
-  return ApplyEffectsImpl(*this, MD, Effects);
-}
-
-bool Sema::ApplyEffects(CXXMetaprogramDecl *MD,
-                        SmallVectorImpl<InjectionEffect> &Effects) {
-  return ApplyEffectsImpl(*this, MD, Effects);
 }
 
 /// Check if there are any pending definitions of member functions for

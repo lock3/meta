@@ -2855,6 +2855,7 @@ private:
   Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
 
+  Decl *MaybeParseCXXInjectorDeclaration();
   Decl *ParseCXXMetaprogramDeclaration();
   Decl *ParseCXXInjectionDeclaration();
 

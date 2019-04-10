@@ -2687,12 +2687,9 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
   }
 
   if (Tok.is(tok::kw_consteval)) {
-    // [Meta] metaprogram-declaration
-    if (NextToken().is(tok::l_brace))
-      return Actions.ConvertDeclToDeclGroup(ParseCXXMetaprogramDeclaration());
-    // [Meta] injection-declaration
-    if (NextToken().is(tok::arrow))
-      return Actions.ConvertDeclToDeclGroup(ParseCXXInjectionDeclaration());
+    // [Meta] injector-declaration
+    if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
+      return Actions.ConvertDeclToDeclGroup(ParsedDecl);
   }
 
   // Hold late-parsed attributes so we can attach a Decl to them later.

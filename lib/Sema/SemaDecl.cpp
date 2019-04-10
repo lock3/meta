@@ -16979,7 +16979,7 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
     for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
       Decl *D = Elements[i];
 
-      if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+      if (!D || isa<CXXInjectorDecl>(D))
         continue;
 
       EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
@@ -17007,7 +17007,7 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
 
   for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
     Decl *D = Elements[i];
-    if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+    if (!D || isa<CXXInjectorDecl>(D))
       continue;
 
     EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
@@ -17126,7 +17126,7 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
   // Loop over all of the enumerator constants, changing their types to match
   // the type of the enum if needed.
   for (auto *D : Elements) {
-    if (!D || isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+    if (!D || isa<CXXInjectorDecl>(D))
       continue;
 
     EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);

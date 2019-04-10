@@ -1721,14 +1721,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
   case tok::kw_consteval:
-    // [Meta] metaprogram-declaration
-    if (NextToken().is(tok::l_brace)) {
-      SingleDecl = ParseCXXMetaprogramDeclaration();
-      break;
-    }
-    // [Meta] injection-declaration
-    if (NextToken().is(tok::arrow)) {
-      SingleDecl = ParseCXXInjectionDeclaration();
+    // [Meta] injector-declaration
+    if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {
+      SingleDecl = ParsedDecl;
       break;
     }
     LLVM_FALLTHROUGH;
@@ -4523,9 +4518,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     Diag(StartLoc, DiagID) << PrevSpec;
 }
 
-template<typename T>
 static void PushInjectedECD(
-    Parser &P, T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls,
+    Parser &P, CXXInjectorDecl *MetaDecl,
+    SmallVectorImpl<Decl *> &EnumConstantDecls,
     SmallVectorImpl<SuppressAccessChecks> &EnumAvailabilityDiags) {
   EnumAvailabilityDiags.emplace_back(P);
   EnumAvailabilityDiags.back().done();
@@ -4588,22 +4583,13 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
     if (getLangOpts().CPlusPlus && Tok.is(tok::kw_consteval)) {
-      // [Meta] metaprogram-declaration
-      if (NextToken().is(tok::l_brace)) {
-        CXXMetaprogramDecl *MetaDecl
-            = cast<CXXMetaprogramDecl>(ParseCXXMetaprogramDeclaration());
-        PushInjectedECD(*this, MetaDecl,
+      // [Meta] injector-declaration
+      if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {
+        PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
                         EnumConstantDecls, EnumAvailabilityDiags);
-      // [Meta] injection-declaration
-      } else if (NextToken().is(tok::arrow)) {
-        CXXInjectionDecl *MetaDecl
-            = cast<CXXInjectionDecl>(ParseCXXInjectionDeclaration());
-        PushInjectedECD(*this, MetaDecl,
-                        EnumConstantDecls, EnumAvailabilityDiags);
+        TryConsumeToken(tok::comma);
+        continue;
       }
-
-      TryConsumeToken(tok::comma);
-      continue;
     }
 
     // Parse enumerator. If failed, try skipping till the start of the next

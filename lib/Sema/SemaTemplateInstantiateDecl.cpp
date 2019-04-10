@@ -1184,14 +1184,12 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
 
   for (auto *D : Pattern->decls()) {
     if (auto *OldMD = dyn_cast<CXXMetaprogramDecl>(D)) {
-      CXXMetaprogramDecl *NewMD
-          = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
+      auto *NewMD = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
       PushInjectedECD(NewMD, Enumerators);
       continue;
     }
     if (auto *OldMD = dyn_cast<CXXInjectionDecl>(D)) {
-      CXXInjectionDecl *NewMD
-          = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
+      auto *NewMD = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
       PushInjectedECD(NewMD, Enumerators);
       continue;
     }

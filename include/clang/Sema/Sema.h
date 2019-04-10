@@ -10499,11 +10499,8 @@ public:
       SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
       SourceLocation RParenLoc);
 
-  bool ApplyInjection(CXXInjectionDecl *MD, InjectionEffect &IE);
-  bool ApplyInjection(CXXMetaprogramDecl *MD, InjectionEffect &IE);
-  bool ApplyEffects(CXXInjectionDecl *MD,
-                    SmallVectorImpl<InjectionEffect> &Effects);
-  bool ApplyEffects(CXXMetaprogramDecl *MD,
+  bool ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE);
+  bool ApplyEffects(CXXInjectorDecl *MD,
                     SmallVectorImpl<InjectionEffect> &Effects);
   bool HasPendingInjections(DeclContext *D);
   void InjectPendingFieldDefinitions();

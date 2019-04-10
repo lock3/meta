@@ -375,6 +375,26 @@ namespace {
   };
 }
 
+/// Parse an injector-declaration.
+///
+///  injector-declaration:
+///    metaprogram-declaration
+///    injection-declaration
+///
+Decl *Parser::MaybeParseCXXInjectorDeclaration() {
+  assert(Tok.is(tok::kw_consteval));
+
+  // [Meta] metaprogram-declaration
+  if (NextToken().is(tok::l_brace))
+    return ParseCXXMetaprogramDeclaration();
+
+  // [Meta] injection-declaration
+  if (NextToken().is(tok::arrow))
+    return ParseCXXInjectionDeclaration();
+
+  return nullptr;
+}
+
 /// Parse a metaprogram-declaration.
 ///
 /// \verbatim

@@ -977,8 +977,8 @@ bool Parser::isExprValueDiscarded() {
   return true;
 }
 
-template<typename T>
-void PushInjectedStmt(T *MetaDecl, SmallVectorImpl<Stmt *> &Stmts) {
+void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
+                      SmallVectorImpl<Stmt *> &Stmts) {
   for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
     Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
     Stmts.push_back(InjectedStmt);
@@ -1100,13 +1100,8 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       if (auto *VD = dyn_cast<DeclStmt>(Result)) {
         if (VD->isSingleDecl()) {
           Decl *D = VD->getSingleDecl();
-          // [Meta] metaprogram-declaration
-          if (auto *MetaDecl = dyn_cast<CXXMetaprogramDecl>(D)) {
+          if (auto *MetaDecl = dyn_cast<CXXInjectorDecl>(D))
             PushInjectedStmt(MetaDecl, Stmts);
-          // [Meta] injection-declaration
-          } else if (auto *MetaDecl = dyn_cast<CXXInjectionDecl>(D)) {
-            PushInjectedStmt(MetaDecl, Stmts);
-          }
         }
       }
     }
