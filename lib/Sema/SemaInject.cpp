@@ -356,8 +356,39 @@ public:
     // declaration. Otherwise, return nullptr and force a lookup or error.
     //
     // FIXME: This may not be valid for gotos and labels.
-    if (isInInjection(D))
+    if (isInInjection(D)) {
+      NamedDecl *ND = dyn_cast<NamedDecl>(D);
+      if (!ND) {
+        llvm::outs() << "Not named.\n";
+        return nullptr;
+      }
+      auto DLK = getInjectionDeclContext()->lookup(
+        cast<NamedDecl>(D)->getDeclName());
+      llvm::outs() << "LookupDecls\n";
+      for (auto LookupDecl : DLK) {
+        LookupDecl->dump();
+      }
+      llvm::outs() << "The injected context\n";
+      getInjectionDeclContext()->dumpDeclContext();
+      llvm::outs() << "Curcontext\n";
+      getSema().CurContext->dumpDeclContext();
+      LookupResult R(getSema(), ND->getDeclName(),
+                     ND->getLocation(), Sema::LookupOrdinaryName,
+                     Sema::ForVisibleRedeclaration);
+      if (!getSema().LookupQualifiedName(R, getSema().CurContext)) {
+        llvm::outs() << "Didn't find names\n";
+        // FIXME: use correct diagnostic
+        getSema().Diag(D->getLocation(), diag::err_no_member);
+        return nullptr;
+      }
+
+        const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+        llvm::outs() << "FoundNames\n";
+        for (auto *I : FoundNames) {
+          I->dump();
+        }
       return nullptr;
+    }
 
     if (!isInjectingFragment()) {
       // When copying existing declarations, if D is a member of the of the
@@ -1512,10 +1543,15 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
   switch (S->getStmtClass()) {
   case Stmt::DeclStmtClass:
     return InjectDeclStmt(cast<DeclStmt>(S));
-  default:
+  default: {
     // Some statements will not require any special logic.
-    InjectedStmts.push_back(TransformStmt(S).get());
-    return S;
+    StmtResult Res = TransformStmt(S);
+    if (!Res.isInvalid()) {
+      InjectedStmts.push_back(Res.get());
+      return Res.get();
+    }
+    return nullptr;
+  }
   }
 }
 
@@ -2568,6 +2604,10 @@ static bool InjectStmtFragment(Sema &S,
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     Ctx->AddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
+    llvm::outs() << "CAPTURES\n";
+    for (InjectionCapture Capu : Captures) {
+      Capu.Decl->dump();
+    }
 
     CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
     CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());

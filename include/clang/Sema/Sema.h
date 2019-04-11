@@ -703,6 +703,9 @@ public:
   /// completed.
   llvm::SmallVector<InjectionContext *, 4> PendingClassMemberInjections;
 
+  /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
+  bool AnalyzingRequiredDeclarator = false;
+
   class DelayedDiagnostics;
 
   class DelayedDiagnosticsState {

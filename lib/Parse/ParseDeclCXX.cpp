@@ -913,7 +913,7 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
   Declarator DeclaratorInfo(DS, Ctx);
   ParseDeclarator(DeclaratorInfo);
 
-  DeclEnd = Tok.getLocation();
+  ExpectAndConsume(tok::semi);
 
   return Actions.ActOnCXXRequiredDeclaratorDecl(getCurScope(),
                                                 RequiresLoc,

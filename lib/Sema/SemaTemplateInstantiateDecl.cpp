@@ -1000,7 +1000,19 @@ Decl
 =======
 Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   CXXRequiredDeclaratorDecl *D) {
-  llvm_unreachable("Not implemented yet.");
+  // FIXME: Do this eventually
+  // SubstQualifier(getSema(), D, NewD, TemplateArgs);
+  TypeSourceInfo *NewTSI =
+    SemaRef.SubstType(D->getTypeSourceInfo()->getTypeLoc(),
+                        TemplateArgs, D->getLocation(), D->getDeclName());
+  if (!NewTSI)
+    return nullptr;
+
+  return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
+                                           SemaRef.CurContext,
+                                           D->getDeclName(),
+                                           NewTSI->getType(),
+                                           NewTSI, D->getRequiresLoc());
 }
 
 >>>>>>> Stub of CXXRequiredDeclaratorDecl

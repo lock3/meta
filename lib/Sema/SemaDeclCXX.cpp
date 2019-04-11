@@ -10925,8 +10925,12 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
 Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
                                            SourceLocation RequiresLoc,
                                            Declarator &D) {
+  // We don't want the declarator we create to be added to the scope.
+  AnalyzingRequiredDeclarator = true;
   DeclaratorDecl *DDecl
     = cast<DeclaratorDecl>(ActOnDeclarator(getCurScope(), D));
+  // We don't need this anymore, make sure it doesn't stay set.
+  AnalyzingRequiredDeclarator = false;
   if (!DDecl)
     return nullptr;
 
@@ -10934,8 +10938,10 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   TypeSourceInfo *TSI = DDecl->getTypeSourceInfo();
   QualType T = TSI->getType();
 
-  return CXXRequiredDeclaratorDecl::Create(Context, CurContext, Name,
-                                           T, TSI, RequiresLoc);
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, Name,
+                                      T, TSI, RequiresLoc);
+  return RDD;
 }
 
 namespace {

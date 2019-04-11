@@ -77,6 +77,7 @@ namespace {
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
     void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
     void VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
+    void VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
     void VisitCXXRecordDecl(CXXRecordDecl *D);
     void VisitLinkageSpecDecl(LinkageSpecDecl *D);
     void VisitTemplateDecl(const TemplateDecl *D);
@@ -960,6 +961,12 @@ DeclPrinter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
     Out << "class ";
 
   QualType T = QualType(D->getTypeForDecl(), 0);
+}
+
+void
+DeclPrinter::VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
+  Out << "requires ";
+  QualType T = D->getTypeSourceInfo()->getType();
   printDeclType(T, D->getName());
 }
 
