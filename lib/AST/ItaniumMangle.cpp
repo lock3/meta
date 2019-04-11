@@ -537,6 +537,7 @@ private:
                         unsigned knownArity);
   void mangleCastExpression(const Expr *E, StringRef CastEncoding);
   void mangleInitListElements(const InitListExpr *InitList);
+  void mangleReflectionOp(const ReflectionOperand &Op);
   void mangleExpression(const Expr *E, unsigned Arity = UnknownArity);
   void mangleCXXCtorType(CXXCtorType T, const CXXRecordDecl *InheritedFrom);
   void mangleCXXDtorType(CXXDtorType T);
@@ -3496,6 +3497,48 @@ void CXXNameMangler::mangleInitListElements(const InitListExpr *InitList) {
     mangleExpression(InitList->getInit(i));
 }
 
+void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
+  switch (Op.getKind()) {
+  case ReflectionOperand::Invalid: {
+    Out << "Inv";
+    return;
+  }
+  case ReflectionOperand::Type: {
+    Out << "Ty";
+    mangleType(Op.getAsType());
+    return;
+  }
+  case ReflectionOperand::Template: {
+    mangleTemplatePrefix(Op.getAsTemplate());
+    return;
+  }
+  case ReflectionOperand::Namespace: {
+    Decl *D = Op.getAsNamespace().getNamespaceAsDecl();
+    if (NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
+      mangleName(NSD);
+    } else {
+      assert(isa<TranslationUnitDecl>(D));
+      Out << "Tu";
+    }
+    return;
+  }
+  case ReflectionOperand::Expression: {
+    mangleExpression(Op.getAsExpression());
+    return;
+  }
+  case ReflectionOperand::Declaration: {
+    NamedDecl *ND = cast<NamedDecl>(Op.getAsDeclaration());
+    mangleName(ND);
+    return;
+  }
+  case ReflectionOperand::BaseSpecifier: {
+    break;
+  }
+  }
+
+  llvm_unreachable("unhandled reflection kind");
+}
+
 void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
   // <expression> ::= <unary operator-name> <expression>
   //              ::= <binary operator-name> <expression> <expression>
@@ -3612,9 +3655,14 @@ recurse:
   }
 
   case Expr::CXXReflectExprClass: {
-    Out << "Re" << reinterpret_cast<std::size_t>(E);
+    Out << "Re";
+
+    const CXXReflectExpr *RE = cast<CXXReflectExpr>(E);
+    const ReflectionOperand &Op = RE->getOperand();
+
+    mangleReflectionOp(Op);
     break;
-  }
+ }
 
   case Expr::CXXUuidofExprClass: {
     const CXXUuidofExpr *UE = cast<CXXUuidofExpr>(E);

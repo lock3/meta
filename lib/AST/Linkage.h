@@ -102,10 +102,12 @@ class LinkageComputer {
     CachedLinkageInfo[makeCacheKey(ND, Kind)] = Info;
   }
 
-  LinkageInfo getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
+  LinkageInfo getLVForTemplateArgumentList(ASTContext &Ctx,
+                                           ArrayRef<TemplateArgument> Args,
                                            LVComputationKind computation);
 
-  LinkageInfo getLVForTemplateArgumentList(const TemplateArgumentList &TArgs,
+  LinkageInfo getLVForTemplateArgumentList(ASTContext &Ctx,
+                                           const TemplateArgumentList &TArgs,
                                            LVComputationKind computation);
 
   void mergeTemplateLV(LinkageInfo &LV, const FunctionDecl *fn,
