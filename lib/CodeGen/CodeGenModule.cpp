@@ -4903,11 +4903,8 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   case Decl::StaticAssert:
   case Decl::CXXMetaprogram:
   case Decl::CXXInjection:
-  case Decl::CXXRequiredType:
-    // Nothing to do.
-    break;
-
   case Decl::CXXRequiredDeclarator:
+  case Decl::CXXRequiredType:
     // Nothing to do.
     break;
 

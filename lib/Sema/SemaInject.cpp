@@ -1486,6 +1486,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
   case Decl::CXXRequiredDeclarator:
+  case Decl::CXXRequiredType:
+    // No reason to ever inject these.
     return nullptr;
   default:
     break;

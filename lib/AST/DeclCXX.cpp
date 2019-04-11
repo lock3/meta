@@ -3052,7 +3052,24 @@ CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
 CXXRequiredDeclaratorDecl *
 CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
                                               unsigned ID) {
-  return nullptr;
+  llvm_unreachable("unimplemented.");
+}
+
+CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
+                                         SourceLocation TL, IdentifierInfo *Id)
+  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), TypenameLoc(TL)
+{
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
+                            SourceLocation TL, IdentifierInfo *Id) {
+  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, TL, Id);
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
+  llvm_unreachable("unimplemented.");
 }
 
 static const char *getAccessName(AccessSpecifier AS) {
