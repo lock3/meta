@@ -473,6 +473,12 @@ public:
     setPSet(E, {});
   }
 
+  void VisitCompoundLiteralExpr(const CompoundLiteralExpr *E) {
+      // C99 construct. We ignore it, but still set the pset to satisfy the
+      // VisitStmt() post-condition.
+      setPSet(E, {});
+  }
+
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
     if (!TE->getSubExpr())
       return;
