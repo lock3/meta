@@ -9496,6 +9496,13 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                                        SourceLocation IdentLoc,
                                        IdentifierInfo *Ident) {
   R.clear();
+
+  // We must not do typo corrections while reflecting.
+  // Emitting diagnostics from typo correction breaks the tenative parse
+  // we use for reflexpr operand parsing.
+  if (S.isReflecting())
+    return false;
+
   if (TypoCorrection Corrected =
           S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS,
                         llvm::make_unique<NamespaceValidatorCCC>(),

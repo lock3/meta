@@ -26,7 +26,7 @@ consteval void metafn(info source) {
   };
 }
 
-namespace meta_class_ns {
+namespace parent_ns {
   class(metafn) metaclass {
   };
 }
@@ -42,7 +42,7 @@ consteval void compiler_print_type_definition(info type_reflection) {
 consteval {
   compiler_print_type_definition(reflexpr(::global_foo));
   compiler_print_type_definition(reflexpr(ns::ns_foo));
-  compiler_print_type_definition(reflexpr(meta_class_ns::parent_ns_foo));
+  compiler_print_type_definition(reflexpr(parent_ns::parent_ns_foo));
 }
 
 int main() {
