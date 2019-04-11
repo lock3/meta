@@ -2744,6 +2744,28 @@ def TypeTagForDatatype : InheritableAttr {
   let Documentation = [TypeTagForDatatypeDocs];
 }
 
+def Owner : InheritableAttr {
+  let Spellings = [CXX11<"gsl", "Owner">];
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Pointer : InheritableAttr {
+  let Spellings = [CXX11<"gsl", "Pointer">];
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Lifetimeconst : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Lifetime : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
 // Microsoft-related attributes
 
 def MSNoVTable : InheritableAttr, TargetSpecificAttr<TargetMicrosoftCXXABI> {

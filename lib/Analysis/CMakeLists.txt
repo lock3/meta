@@ -16,6 +16,9 @@ add_clang_library(clangAnalysis
   CodeInjector.cpp
   Dominators.cpp
   ExprMutationAnalyzer.cpp
+  Lifetime.cpp
+  LifetimeTypeCategory.cpp
+  LifetimePsetBuilder.cpp
   LiveVariables.cpp
   ObjCNoReturn.cpp
   PostOrderCFGView.cpp
