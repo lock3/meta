@@ -315,7 +315,8 @@ static const Decl *getOutermostFuncOrBlockContext(const Decl *D) {
 /// Note that we don't take an LVComputationKind because we always
 /// want to honor the visibility of template arguments in the same way.
 LinkageInfo
-LinkageComputer::getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
+LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
+                                              ArrayRef<TemplateArgument> Args,
                                               LVComputationKind computation) {
   LinkageInfo LV;
 
@@ -324,8 +325,39 @@ LinkageComputer::getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
     case TemplateArgument::Reflected:
-    case TemplateArgument::Expression:
       continue;
+
+    case TemplateArgument::Expression: {
+      Expr *E = Arg.getAsExpr();
+      if (E->getType()->isReflectionType()) {
+        Expr::EvalResult Result;
+        bool EvalStatus = E->EvaluateAsRValue(Result, Ctx);
+        assert(EvalStatus);
+
+        Reflection Refl(Ctx, Result.Val);
+        switch (Refl.getKind()) {
+        case RK_type: {
+          LV.merge(getLVForType(*Refl.getAsType(), computation));
+          continue;
+        }
+        case RK_declaration: {
+          const Decl *D = Refl.getAsDeclaration();
+          if (const auto *ND = dyn_cast<NamedDecl>(D)) {
+            LV.merge(getLVForDecl(ND, computation));
+            continue;
+          }
+          LLVM_FALLTHROUGH;
+        }
+        case RK_invalid:
+        case RK_expression:
+        case RK_base_specifier: {
+          LV.merge(LinkageInfo::internal());
+          continue;
+        }
+        }
+      }
+      continue;
+    }
 
     case TemplateArgument::Type:
       LV.merge(getLVForType(*Arg.getAsType(), computation));
@@ -350,7 +382,8 @@ LinkageComputer::getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
       continue;
 
     case TemplateArgument::Pack:
-      LV.merge(getLVForTemplateArgumentList(Arg.getPackAsArray(), computation));
+      LV.merge(getLVForTemplateArgumentList(Ctx, Arg.getPackAsArray(),
+                                            computation));
       continue;
     }
     llvm_unreachable("bad template argument kind");
@@ -360,9 +393,10 @@ LinkageComputer::getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
 }
 
 LinkageInfo
-LinkageComputer::getLVForTemplateArgumentList(const TemplateArgumentList &TArgs,
+LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
+                                              const TemplateArgumentList &TArgs,
                                               LVComputationKind computation) {
-  return getLVForTemplateArgumentList(TArgs.asArray(), computation);
+  return getLVForTemplateArgumentList(Ctx, TArgs.asArray(), computation);
 }
 
 static bool shouldConsiderTemplateVisibility(const FunctionDecl *fn,
@@ -399,7 +433,8 @@ void LinkageComputer::mergeTemplateLV(
 
   // Merge information from the template arguments.
   const TemplateArgumentList &templateArgs = *specInfo->TemplateArguments;
-  LinkageInfo argsLV = getLVForTemplateArgumentList(templateArgs, computation);
+  LinkageInfo argsLV = getLVForTemplateArgumentList(fn->getASTContext(),
+                                                    templateArgs, computation);
   LV.mergeMaybeWithVisibility(argsLV, considerVisibility);
 }
 
@@ -470,7 +505,8 @@ void LinkageComputer::mergeTemplateLV(
   // template-argument visibility if we've got an explicit
   // instantiation with a visibility attribute.
   const TemplateArgumentList &templateArgs = spec->getTemplateArgs();
-  LinkageInfo argsLV = getLVForTemplateArgumentList(templateArgs, computation);
+  LinkageInfo argsLV = getLVForTemplateArgumentList(spec->getASTContext(),
+                                                    templateArgs, computation);
   if (considerVisibility)
     LV.mergeVisibility(argsLV);
   LV.mergeExternalVisibility(argsLV);
@@ -522,7 +558,8 @@ void LinkageComputer::mergeTemplateLV(LinkageInfo &LV,
   // template-argument visibility if we've got an explicit
   // instantiation with a visibility attribute.
   const TemplateArgumentList &templateArgs = spec->getTemplateArgs();
-  LinkageInfo argsLV = getLVForTemplateArgumentList(templateArgs, computation);
+  LinkageInfo argsLV = getLVForTemplateArgumentList(spec->getASTContext(),
+                                                    templateArgs, computation);
   if (considerVisibility)
     LV.mergeVisibility(argsLV);
   LV.mergeExternalVisibility(argsLV);
