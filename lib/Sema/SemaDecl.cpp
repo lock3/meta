@@ -7594,6 +7594,14 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
     NewVD->setInvalidDecl();
     return;
   }
+
+  bool isConstexprContext = NewVD->isConstexpr()
+                         || NewVD->getDeclContext()->isConstexprContext();
+  if (!isConstexprContext && T->isMetaType()) {
+    Diag(NewVD->getLocation(), diag::err_meta_type_constexpr);
+    NewVD->setInvalidDecl();
+    return;
+  }
 }
 
 /// Perform semantic checking on a newly-created variable
