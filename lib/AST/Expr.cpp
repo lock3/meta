@@ -3195,6 +3195,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case OpaqueValueExprClass:
   case CXXConstantExprClass:
   case CXXReflectExprClass:
+  case CXXInvalidReflectionExprClass:
   case CXXReflectionTraitExprClass:
   case CXXReflectPrintLiteralExprClass:
   case CXXReflectPrintReflectionExprClass:

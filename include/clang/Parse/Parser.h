@@ -2803,6 +2803,7 @@ private:
 
   ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
+  ExprResult ParseCXXInvalidReflectionExpression();
   ExprResult ParseCXXReflectionTrait();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();

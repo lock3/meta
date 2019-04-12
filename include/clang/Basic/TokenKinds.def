@@ -66,17 +66,6 @@
 #define ANNOTATION(X) TOK(annot_ ## X)
 #endif
 
-// [Meta] Keyword macros for reflection queries.
-#ifndef REFLECTION_TRAIT
-#define REFLECTION_TRAIT(N,I,K) KEYWORD(I, KEYCXX11)
-#endif
-#ifndef REFLECTION_TRAIT_1
-#define REFLECTION_TRAIT_1(I,K) REFLECTION_TRAIT(1,I,K)
-#endif
-#ifndef REFLECTION_TRAIT_2
-#define REFLECTION_TRAIT_2(I,K) REFLECTION_TRAIT(2,I,K)
-#endif
-
 //===----------------------------------------------------------------------===//
 // Preprocessor keywords.
 //===----------------------------------------------------------------------===//
@@ -399,6 +388,7 @@ KEYWORD(unreflexpr                  , KEYREFLECT)
 KEYWORD(idexpr                      , KEYREFLECT)
 KEYWORD(valueof                     , KEYREFLECT)
 KEYWORD(__reflect                   , KEYREFLECT)
+KEYWORD(__invalid_reflection        , KEYREFLECT)
 KEYWORD(__reflect_print             , KEYREFLECT)
 KEYWORD(__reflect_pretty_print      , KEYREFLECT)
 KEYWORD(__reflect_dump              , KEYREFLECT)
@@ -850,9 +840,6 @@ ANNOTATION(module_include)
 ANNOTATION(module_begin)
 ANNOTATION(module_end)
 
-#undef REFLECTION_TRAIT_2
-#undef REFLECTION_TRAIT_1
-#undef REFLECTION_TRAIT
 #undef ANNOTATION
 #undef TESTING_KEYWORD
 #undef OBJC_AT_KEYWORD

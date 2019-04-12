@@ -149,6 +149,12 @@ public:
   }
 };
 
+/// Represents an invalid reflection.
+struct InvalidReflection {
+  // The evaluated error message expr.
+  const Expr *ErrorMessage;
+};
+
 /// Represents an operand to the reflection operator.
 class ReflectionOperand {
 public:
@@ -175,7 +181,11 @@ private:
 
 public:
   ReflectionOperand()
-    : Kind(Invalid), Data(nullptr)
+    : Kind(Invalid)
+  { }
+
+  ReflectionOperand(InvalidReflection *IR)
+    : Kind(Invalid), Data(IR)
   { }
 
   ReflectionOperand(QualType T)
@@ -200,11 +210,19 @@ public:
   ReflectionOpKind getKind() const { return Kind; }
 
   /// Returns true if the reflection is invalid.
-  bool isInvalid() const { return !Data; }
+  bool isInvalid() const { return Kind == Invalid; }
 
   /// Returns the opaque reflection pointer.
   const void *getOpaqueReflectionValue() const {
     return Data;
+  }
+
+  /// Returns the invalid reflection information.
+  ///
+  /// This can and will be null in most cases.
+  InvalidReflection *getAsInvalidReflection() const {
+    assert(getKind() == Invalid && "not invalid");
+    return reinterpret_cast<InvalidReflection *>(Data);
   }
 
   /// Returns this as a type operand.
@@ -456,6 +474,11 @@ struct Reflection {
   /// True if this reflects a base class specifier.
   bool isBase() const {
     return getKind() == RK_base_specifier;
+  }
+
+  /// Returns this as an invalid reflection.
+  const InvalidReflection *getAsInvalidReflection() const {
+    return Ref.getInvalidReflectionInfo();
   }
 
   /// Returns this as a type.

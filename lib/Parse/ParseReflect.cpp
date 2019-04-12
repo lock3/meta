@@ -107,6 +107,35 @@ ExprResult Parser::ParseCXXReflectExpression() {
                                      T.getCloseLocation());
 }
 
+/// Parse an invalid reflection.
+///
+/// \verbatim
+///  primary-expression:
+///    __valid_reflection '(' error-message ')'
+/// \endverbatim
+ExprResult Parser::ParseCXXInvalidReflectionExpression() {
+  assert(Tok.is(tok::kw___invalid_reflection) && "Not '__invalid_reflection'");
+
+  SourceLocation BuiltinLoc = ConsumeToken();
+  BalancedDelimiterTracker T(*this, tok::l_paren);
+
+  if (T.expectAndConsume(diag::err_expected_lparen_after, "__invalid_reflection"))
+    return ExprError();
+
+  ExprResult MessageExpr = ParseConstantExpression();
+
+  if (MessageExpr.isInvalid()) {
+    SkipUntil(tok::r_paren, StopAtSemi);
+    return ExprError();
+  }
+
+  if (T.consumeClose())
+    return ExprError();
+
+  return Actions.ActOnCXXInvalidReflectionExpr(MessageExpr.get(), BuiltinLoc,
+                                               T.getCloseLocation());
+}
+
 /// Parse a reflection trait.
 ///
 /// \verbatim
@@ -346,8 +375,10 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
   if (T.consumeClose())
     return true;
 
-  DeclarationNameInfo NameInfo = Actions.BuildReflectedIdName(
-                                            KWLoc, Parts, T.getCloseLocation());
+  DeclarationNameInfo NameInfo;
+  if (Actions.BuildReflectedIdName(KWLoc, Parts,
+                                   T.getCloseLocation(), NameInfo))
+    return true;
 
   TemplateNameKind TNK;
   TemplateTy Template;

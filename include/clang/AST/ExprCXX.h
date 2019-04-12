@@ -4656,6 +4656,7 @@ class CXXReflectExpr : public Expr {
   SourceLocation RParenLoc;
 
   CXXReflectExpr(QualType T);
+  CXXReflectExpr(QualType T, InvalidReflection *Arg);
   CXXReflectExpr(QualType T, QualType Arg);
   CXXReflectExpr(QualType T, TemplateName Arg);
   CXXReflectExpr(QualType T, NamespaceName Arg);
@@ -4667,6 +4668,10 @@ class CXXReflectExpr : public Expr {
     : Expr(CXXReflectExprClass, Empty) {}
 
 public:
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, InvalidReflection *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
   static CXXReflectExpr *Create(ASTContext &C, QualType T,
                                 SourceLocation KW, QualType Arg,
                                 SourceLocation LP, SourceLocation RP);
@@ -4735,6 +4740,65 @@ public:
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXReflectExprClass;
   }
+};
+
+class CXXInvalidReflectionExpr : public Expr {
+  Stmt *Message;
+  SourceLocation BuiltinLoc, RParenLoc;
+
+  CXXInvalidReflectionExpr(QualType Type, Expr *Message,
+                           SourceLocation BuiltinLoc, SourceLocation RParenLoc)
+      : Expr(CXXInvalidReflectionExprClass, Type, VK_RValue, OK_Ordinary, false,
+         Message->isTypeDependent() || Message->isValueDependent(),
+         Message->isInstantiationDependent(),
+         Message->containsUnexpandedParameterPack()),
+    Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) { }
+
+  explicit CXXInvalidReflectionExpr(EmptyShell Empty)
+    : Expr(CXXInvalidReflectionExprClass, Empty) { }
+
+public:
+  static CXXInvalidReflectionExpr *Create(const ASTContext &C, QualType Type,
+                                          Expr *Message,
+                                          SourceLocation BuiltinLoc,
+                                          SourceLocation RParenLoc);
+
+  static CXXInvalidReflectionExpr *CreateEmpty(const ASTContext &C,
+                                               EmptyShell Empty);
+
+  /// Return the string to be used by the invalid reflection during
+  /// diagnostics.
+  Expr *getMessage() { return cast<Expr>(Message); }
+
+  /// Return the string to be used by the invalid reflection during
+  /// diagnostics.
+  const Expr *getMessage() const { return cast<Expr>(Message); }
+
+  /// Sets the string to be used by the invalid reflection during
+  /// diagnostics.
+  void setMessage(Expr *M) { Message = M; }
+
+  /// Return the location of the \c __invalid_reflection token.
+  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
+
+  /// Set the location of the \c __invalid_reflection token.
+  void setBuiltinLoc(SourceLocation L) { BuiltinLoc = L; }
+
+  /// Return the location of final right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Set the location of final right parenthesis.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return BuiltinLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInvalidReflectionExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Message, &Message + 1); }
 };
 
 /// \brief A reflection trait intrinsic.

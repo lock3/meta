@@ -1697,6 +1697,10 @@ CXXReflectExpr::CXXReflectExpr(QualType T)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, false, false, false), Ref() { }
 
+CXXReflectExpr::CXXReflectExpr(QualType T, InvalidReflection *Arg)
+  : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
+         false, false, false, false), Ref(Arg) { }
+
 CXXReflectExpr::CXXReflectExpr(QualType T, QualType Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, Arg->isDependentType(), Arg->isDependentType(), false),
@@ -1721,6 +1725,16 @@ CXXReflectExpr::CXXReflectExpr(QualType T, Decl *Arg)
 CXXReflectExpr::CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, false, false, false), Ref(Arg) { }
+
+CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
+                                       SourceLocation KW, InvalidReflection *Arg,
+                                       SourceLocation LP, SourceLocation RP) {
+  CXXReflectExpr *E = new (C) CXXReflectExpr (T, Arg);
+  E->setKeywordLoc(KW);
+  E->setLParenLoc(LP);
+  E->setRParenLoc(RP);
+  return E;
+}
 
 CXXReflectExpr *CXXReflectExpr::Create(ASTContext &C, QualType T,
                                        SourceLocation KW, QualType Arg,
@@ -1790,6 +1804,20 @@ CXXReflectExpr *CXXReflectExpr::CreateInvalid(ASTContext &C, QualType T,
   E->setLParenLoc(LP);
   E->setRParenLoc(RP);
   return E;
+}
+
+CXXInvalidReflectionExpr *
+CXXInvalidReflectionExpr::Create(const ASTContext &C,
+                                 QualType Type, Expr *Message,
+                                 SourceLocation BuiltinLoc,
+                                 SourceLocation RParenLoc) {
+  return new (C) CXXInvalidReflectionExpr(Type, Message, BuiltinLoc, RParenLoc);
+}
+
+CXXInvalidReflectionExpr *
+CXXInvalidReflectionExpr::CreateEmpty(const ASTContext &C,
+                                      EmptyShell Empty) {
+  return new (C) CXXInvalidReflectionExpr(Empty);
 }
 
 template<typename P>

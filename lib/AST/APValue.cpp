@@ -317,21 +317,28 @@ bool APValue::isInvalidReflection() const {
   return getReflectionKind() == RK_invalid;
 }
 
+const InvalidReflection *APValue::getInvalidReflectionInfo() const {
+  assert(getReflectionKind() == RK_invalid);
+
+  using InvalidReflTy = const InvalidReflection *;
+  return reinterpret_cast<InvalidReflTy>(getOpaqueReflectionValue());
+}
+
 QualType APValue::getReflectedType() const {
   assert(getReflectionKind() == RK_type);
   return QualType::getFromOpaquePtr(getOpaqueReflectionValue());
 }
-  
+
 const Decl *APValue::getReflectedDeclaration() const {
   assert(getReflectionKind() == RK_declaration);
   return reinterpret_cast<const Decl *>(getOpaqueReflectionValue());
 }
-  
+
 const Expr *APValue::getReflectedExpression() const {
   assert(getReflectionKind() == RK_expression);
   return reinterpret_cast<const Expr *>(getOpaqueReflectionValue());
 }
-  
+
 const CXXBaseSpecifier *APValue::getReflectedBaseSpecifier() const {
   assert(getReflectionKind() == RK_base_specifier);
   return reinterpret_cast<const CXXBaseSpecifier *>(getOpaqueReflectionValue());

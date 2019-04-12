@@ -265,6 +265,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXFoldExprClass:
   case Stmt::CXXConstantExprClass:
   case Stmt::CXXReflectExprClass:
+  case Stmt::CXXInvalidReflectionExprClass:
   case Stmt::CXXReflectionTraitExprClass:
   case Stmt::CXXReflectPrintLiteralExprClass:
   case Stmt::CXXReflectPrintReflectionExprClass:

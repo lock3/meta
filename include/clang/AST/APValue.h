@@ -33,6 +33,7 @@ namespace clang {
   class CXXRecordDecl;
   class CXXBaseSpecifier;
   class QualType;
+  struct InvalidReflection;
 
 /// \brief The kind of construct reflected.
 enum ReflectionKind {
@@ -462,15 +463,18 @@ public:
   /// True if this is the invalid reflection.
   bool isInvalidReflection() const;
 
+  /// Returns the invalid reflection information.
+  const InvalidReflection *getInvalidReflectionInfo() const;
+
   /// Returns the reflected type.
   QualType getReflectedType() const;
-  
+
   /// Returns the reflected template declaration.
   const Decl *getReflectedDeclaration() const;
-  
+
   /// Returns the reflected expression.
   const Expr *getReflectedExpression() const;
-  
+
   /// Returns the reflected base class specifier.
   const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
 

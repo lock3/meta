@@ -3637,6 +3637,7 @@ recurse:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
+  case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionTraitExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
