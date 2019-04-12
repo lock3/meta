@@ -182,6 +182,7 @@ DependentVectorType::DependentVectorType(
     Expr *SizeExpr, SourceLocation Loc, VectorType::VectorKind VecKind)
     : Type(DependentVector, CanonType, /*Dependent=*/true,
            /*InstantiationDependent=*/true,
+           ElementType->isMetaType(),
            ElementType->isVariablyModifiedType(),
            ElementType->containsUnexpandedParameterPack() ||
                (SizeExpr && SizeExpr->containsUnexpandedParameterPack())),
@@ -206,6 +207,7 @@ DependentSizedExtVectorType::DependentSizedExtVectorType(const
                                                          SourceLocation loc)
     : Type(DependentSizedExtVector, can, /*Dependent=*/true,
            /*InstantiationDependent=*/true,
+           ElementType->isMetaType(),
            ElementType->isVariablyModifiedType(),
            (ElementType->containsUnexpandedParameterPack() ||
             (SizeExpr && SizeExpr->containsUnexpandedParameterPack()))),
@@ -225,6 +227,7 @@ DependentAddressSpaceType::DependentAddressSpaceType(
     Expr *AddrSpaceExpr, SourceLocation loc)
     : Type(DependentAddressSpace, can, /*Dependent=*/true,
            /*InstantiationDependent=*/true,
+           PointeeType->isMetaType(),
            PointeeType->isVariablyModifiedType(),
            (PointeeType->containsUnexpandedParameterPack() ||
             (AddrSpaceExpr &&
@@ -248,6 +251,7 @@ VectorType::VectorType(TypeClass tc, QualType vecType, unsigned nElements,
                        QualType canonType, VectorKind vecKind)
     : Type(tc, canonType, vecType->isDependentType(),
            vecType->isInstantiationDependentType(),
+           vecType->isMetaType(),
            vecType->isVariablyModifiedType(),
            vecType->containsUnexpandedParameterPack()),
       ElementType(vecType) {
@@ -621,6 +625,7 @@ ObjCTypeParamType::ObjCTypeParamType(const ObjCTypeParamDecl *D,
                                      ArrayRef<ObjCProtocolDecl *> protocols)
     : Type(ObjCTypeParam, can, can->isDependentType(),
            can->isInstantiationDependentType(),
+           /*MetaType=*/false,
            can->isVariablyModifiedType(),
            /*ContainsUnexpandedParameterPack=*/false),
       OTPDecl(const_cast<ObjCTypeParamDecl*>(D)) {
@@ -633,6 +638,7 @@ ObjCObjectType::ObjCObjectType(QualType Canonical, QualType Base,
                                bool isKindOf)
     : Type(ObjCObject, Canonical, Base->isDependentType(),
            Base->isInstantiationDependentType(),
+           /*MetaType=*/false,
            Base->isVariablyModifiedType(),
            Base->containsUnexpandedParameterPack()),
       BaseType(Base) {
@@ -2649,8 +2655,9 @@ DependentTemplateSpecializationType::DependentTemplateSpecializationType(
                          NestedNameSpecifier *NNS, const IdentifierInfo *Name,
                          ArrayRef<TemplateArgument> Args,
                          QualType Canon)
-  : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon, true, true,
-                    /*VariablyModified=*/false,
+  : TypeWithKeyword(Keyword, DependentTemplateSpecialization, Canon,
+                    /*Dependent=*/true, /*InstantiationDependent=*/true,
+                    /*MetaType=*/false, /*VariablyModified=*/false,
                     NNS && NNS->containsUnexpandedParameterPack()),
     NNS(NNS), Name(Name) {
   DependentTemplateSpecializationTypeBits.NumArgs = Args.size();
@@ -3143,6 +3150,7 @@ QualType TypedefType::desugar() const {
 TypeOfExprType::TypeOfExprType(Expr *E, QualType can)
     : Type(TypeOfExpr, can, E->isTypeDependent(),
            E->isInstantiationDependent(),
+           E->getType()->isMetaType(),
            E->getType()->isVariablyModifiedType(),
            E->containsUnexpandedParameterPack()),
       TOExpr(E) {}
@@ -3169,6 +3177,7 @@ DecltypeType::DecltypeType(Expr *E, QualType underlyingType, QualType can)
   // type-dependent even if its expression is only instantiation-dependent.
     : Type(Decltype, can, E->isInstantiationDependent(),
            E->isInstantiationDependent(),
+           E->getType()->isMetaType(),
            E->getType()->isVariablyModifiedType(),
            E->containsUnexpandedParameterPack()),
       E(E), UnderlyingType(underlyingType) {}
@@ -3193,14 +3202,15 @@ void DependentDecltypeType::Profile(llvm::FoldingSetNodeID &ID,
 ReflectedType::ReflectedType(Expr *E, QualType T, QualType Can)
   : Type(Reflected, Can, E->isInstantiationDependent(),
          E->isInstantiationDependent(),
-         E->getType()->isVariablyModifiedType(), 
-         E->containsUnexpandedParameterPack()), 
+         T->isMetaType(),
+         E->getType()->isVariablyModifiedType(),
+         E->containsUnexpandedParameterPack()),
     Reflection(E), UnderlyingType(T) {
 }
 
-bool ReflectedType::isSugared() const { 
+bool ReflectedType::isSugared() const {
   // A reflected type is sugared if it's non-dependent.
-  return !Reflection->isInstantiationDependent(); 
+  return !Reflection->isInstantiationDependent();
 }
 
 QualType ReflectedType::desugar() const {
@@ -3224,6 +3234,7 @@ UnaryTransformType::UnaryTransformType(QualType BaseType,
                                        QualType CanonicalType)
     : Type(UnaryTransform, CanonicalType, BaseType->isDependentType(),
            BaseType->isInstantiationDependentType(),
+           BaseType->isMetaType(),
            BaseType->isVariablyModifiedType(),
            BaseType->containsUnexpandedParameterPack()),
       BaseType(BaseType), UnderlyingType(UnderlyingType), UKind(UKind) {}
@@ -3236,6 +3247,7 @@ DependentUnaryTransformType::DependentUnaryTransformType(const ASTContext &C,
 TagType::TagType(TypeClass TC, const TagDecl *D, QualType can)
     : Type(TC, can, D->isDependentType(),
            /*InstantiationDependent=*/D->isDependentType(),
+           /*MetaType=*/false,
            /*VariablyModified=*/false,
            /*ContainsUnexpandedParameterPack=*/false),
       decl(const_cast<TagDecl*>(D)) {}
@@ -3351,7 +3363,10 @@ SubstTemplateTypeParmPackType::
 SubstTemplateTypeParmPackType(const TemplateTypeParmType *Param,
                               QualType Canon,
                               const TemplateArgument &ArgPack)
-    : Type(SubstTemplateTypeParmPack, Canon, true, true, false, true),
+    : Type(SubstTemplateTypeParmPack, Canon, /*Dependent=*/true,
+           /*InstantiationDependent=*/true, /*MetaType=*/false,
+           /*VariablyModified=*/false,
+           /*ContainsUnexpandedParameterPack=*/true),
       Replaced(Param), Arguments(ArgPack.pack_begin()) {
   SubstTemplateTypeParmPackTypeBits.NumArgs = ArgPack.pack_size();
 }
@@ -3403,7 +3418,8 @@ TemplateSpecializationType(TemplateName T,
          Canon.isNull()? QualType(this, 0) : Canon,
          Canon.isNull()? true : Canon->isDependentType(),
          Canon.isNull()? true : Canon->isInstantiationDependentType(),
-         false,
+         Canon.isNull()? false : Canon->isMetaType(),
+         /*VariablyModified=*/false,
          T.containsUnexpandedParameterPack()), Template(T) {
   TemplateSpecializationTypeBits.NumArgs = Args.size();
   TemplateSpecializationTypeBits.TypeAlias = !AliasedType.isNull();

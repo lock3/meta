@@ -98,7 +98,7 @@ void access_init()
     const int a = 10; // expected-note {{member is declared here}}
   };
 
-  static const info v[] = {reflexpr(V), reflexpr(U)};
+  static constexpr info v[] = {reflexpr(V), reflexpr(U)};
 
   struct T : private typename(...v) { // expected-note {{declared private here}} expected-note {{constrained by private inheritance here}} expected-note {{declared private here}} expected-note {{constrained by private inheritance here}}
     T() : typename(...v)()
