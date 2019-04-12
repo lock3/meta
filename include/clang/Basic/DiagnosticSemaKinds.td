@@ -2521,6 +2521,8 @@ def err_concatenate_wrong_operand_type : Error<
 def err_constexpr_range_iteration_failed : Error<
   "constexpr range iteration failed">;
 
+def err_meta_type_constexpr : Error<"meta type variables must be constexpr">;
+
 // variadic reifiers
 def err_namespace_as_variadic_reifier : Error<
   "'namespace' cannot be used as a variadic reifier.">;

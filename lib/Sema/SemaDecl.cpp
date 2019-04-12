@@ -7605,6 +7605,14 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
     NewVD->setInvalidDecl();
     return;
   }
+
+  bool isConstexprContext = NewVD->isConstexpr()
+                         || NewVD->getDeclContext()->isConstexprContext();
+  if (!isConstexprContext && T->isMetaType()) {
+    Diag(NewVD->getLocation(), diag::err_meta_type_constexpr);
+    NewVD->setInvalidDecl();
+    return;
+  }
 }
 
 /// Perform semantic checking on a newly-created variable
@@ -15772,6 +15780,13 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
         if (!getLangOpts().MicrosoftExt)
           NewFD->setInvalidDecl();
       }
+    }
+
+    if (T->isMetaType()) {
+      // FIXME: This is a bit of hack, we should probably replace the
+      // type rather than modifying it directly.
+      const RecordType *RT = cast<RecordType>(Record->getTypeForDecl());
+      const_cast<RecordType *>(RT)->setMetaType();
     }
   }
 
