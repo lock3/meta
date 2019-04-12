@@ -1577,8 +1577,6 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   SourceLocation CoawaitLoc;
   if (getLangOpts().Reflection && Tok.is(tok::ellipsis))
     EllipsisLoc = ConsumeToken();
-  else if(getLangOpts().Reflection && Tok.is(tok::kw_constexpr))
-    ConstexprLoc = ConsumeToken();
   else if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
 
@@ -1678,6 +1676,13 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     // In C++0x, "for (T NS:a" might not be a typo for ::
     bool MightBeForRangeStmt = getLangOpts().CPlusPlus;
     ColonProtectionRAIIObject ColonProtection(*this, MightBeForRangeStmt);
+
+    // If reflection is enabled, this might be an expansion
+    // over a constexpr range.
+    if (getLangOpts().Reflection && EllipsisLoc.isValid()) {
+      if (Tok.is(tok::kw_constexpr))
+        ConstexprLoc = Tok.getLocation();
+    }
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy DG = ParseSimpleDeclaration(
