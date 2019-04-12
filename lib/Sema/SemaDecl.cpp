@@ -15716,6 +15716,13 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
           NewFD->setInvalidDecl();
       }
     }
+
+    if (T->isMetaType()) {
+      // FIXME: This is a bit of hack, we should probably replace the
+      // type rather than modifying it directly.
+      const RecordType *RT = cast<RecordType>(Record->getTypeForDecl());
+      const_cast<RecordType *>(RT)->setMetaType();
+    }
   }
 
   // FIXME: We need to pass in the attributes given an AST

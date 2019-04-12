@@ -18,5 +18,8 @@ int main() {
   {
     meta::info reflection = reflexpr(void); // expected-error {{meta type variables must be constexpr}}
   }
+  {
+    meta_type_class tc; // expected-error {{meta type variables must be constexpr}}
+  }
   return 0;
 }
