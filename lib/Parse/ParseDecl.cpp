@@ -3790,7 +3790,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.SetTypeQual(DeclSpec::TQ_restrict, Loc, PrevSpec, DiagID,
                                  getLangOpts());
       break;
-
+      
     // C++ typename-specifier:
     case tok::kw_typename:
       if (TryAnnotateTypeOrScopeToken()) {
