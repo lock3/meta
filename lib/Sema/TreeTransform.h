@@ -1451,8 +1451,8 @@ public:
   ExprResult RebuildCXXInvalidReflectionExpr(Expr *Message,
                                              SourceLocation BuiltinLoc,
                                              SourceLocation RParenLoc) {
-    return ExprError();
-    // return getSema().ActOnCXXInvalidExpr(Message, BuiltinLoc, RParenLoc);
+    return getSema().ActOnCXXInvalidReflectionExpr(Message, BuiltinLoc,
+                                                   RParenLoc);
   }
 
   /// Build a new reflection trait expression.
