@@ -2274,6 +2274,12 @@ void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
   #endif
 }
 
+void StmtPrinter::VisitCXXInvalidReflectionExpr(CXXInvalidReflectionExpr *E) {
+  OS << "__invalid_reflection(";
+  PrintExpr(E->getMessage());
+  OS << ')';
+}
+
 void StmtPrinter::VisitCXXReflectionReadQueryExpr(
                                                 CXXReflectionReadQueryExpr *E) {
   OS << "__reflect(";

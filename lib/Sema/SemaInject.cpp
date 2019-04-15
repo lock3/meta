@@ -432,7 +432,10 @@ public:
                                    CtxBldr.getRangeEndCall());
 
     while (!Traverser) {
-      Reflection R = EvaluateReflection(SemaRef, *Traverser);
+      Reflection R;
+      if (EvaluateReflection(SemaRef, *Traverser, R))
+        return true;
+
       Decl *ReflectD = const_cast<Decl *>(R.getAsDeclaration());
       Parms.push_back(cast<ParmVarDecl>(ReflectD));
 

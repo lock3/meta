@@ -736,6 +736,13 @@ bool APValue::isInvalidReflection() const {
   return getReflectionKind() == RK_invalid;
 }
 
+const InvalidReflection *APValue::getInvalidReflectionInfo() const {
+  assert(getReflectionKind() == RK_invalid);
+
+  using InvalidReflTy = const InvalidReflection *;
+  return reinterpret_cast<InvalidReflTy>(getOpaqueReflectionValue());
+}
+
 QualType APValue::getReflectedType() const {
   assert(getReflectionKind() == RK_type);
   return QualType::getFromOpaquePtr(getOpaqueReflectionValue());

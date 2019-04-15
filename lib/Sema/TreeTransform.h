@@ -1455,6 +1455,16 @@ public:
     return getSema().BuildConstantExpression(E);
   }
 
+  /// Build a new \c __invalid_reflection expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXInvalidReflectionExpr(Expr *Message,
+                                             SourceLocation BuiltinLoc,
+                                             SourceLocation RParenLoc) {
+    return ExprError();
+    // return getSema().ActOnCXXInvalidExpr(Message, BuiltinLoc, RParenLoc);
+  }
 
   /// Build a new reflection query read expression.
   ///
@@ -3926,7 +3936,12 @@ TreeTransform<Derived>
     }
 
     SourceRange Range = NameInfo.getCXXReflectedIdNameRange();
-    return getSema().BuildReflectedIdName(Range.getBegin(), NewArgs, Range.getEnd());
+    DeclarationNameInfo DNI;
+    if (getSema().BuildReflectedIdName(Range.getBegin(), NewArgs,
+                                       Range.getEnd(), DNI))
+      return DeclarationNameInfo();
+
+    return DNI;
   }
   }
 
@@ -7639,6 +7654,20 @@ TreeTransform<Derived>::TransformCXXReflectExpr(CXXReflectExpr *E) {
   }
   }
   llvm_unreachable("invalid reflection");
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXInvalidReflectionExpr(
+                                                  CXXInvalidReflectionExpr *E) {
+  ExprResult Message = getDerived().TransformExpr(E->getMessage());
+  if (Message.isInvalid())
+    return ExprError();
+
+  // Always rebuild so that __invalid_reflection diagnostics can be emitted
+  // within template instantiations.
+  return getDerived().RebuildCXXInvalidReflectionExpr(
+      Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
 }
 
 template <typename Derived>

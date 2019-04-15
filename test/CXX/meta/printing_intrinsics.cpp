@@ -2,6 +2,12 @@
 
 #include "reflection_query.h"
 
+namespace meta {
+  using info = decltype(reflexpr(void));
+}
+
+constexpr meta::info invalid_refl = __invalid_reflection("custom error message");
+
 template<typename T>
 struct S1 {
   constexpr S1() = default;
@@ -50,6 +56,9 @@ void test() {
   constexpr auto l1_print = __reflect_print("hello ", " world ", 1);
   constexpr auto l2_print = __reflect_print("hello ", " world ", world_num);
   // constexpr auto l3_print = __reflect_print(user_name, " is not a valid user.");
+
+  constexpr auto __dummy_pretty_print = __reflect_pretty_print(invalid_refl);
+  constexpr auto __dummy_dump = __reflect_dump(invalid_refl);
 }
 
 class C {
