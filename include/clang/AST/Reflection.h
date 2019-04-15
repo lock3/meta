@@ -149,6 +149,12 @@ public:
   }
 };
 
+/// Represents an invalid reflection.
+struct InvalidReflection {
+  // The evaluated error message expr.
+  const Expr *ErrorMessage;
+};
+
 /// Represents an operand to the reflection operator.
 class ReflectionOperand {
 public:
@@ -175,7 +181,11 @@ private:
 
 public:
   ReflectionOperand()
-    : Kind(Invalid), Data(nullptr)
+    : Kind(Invalid)
+  { }
+
+  ReflectionOperand(InvalidReflection *IR)
+    : Kind(Invalid), Data(IR)
   { }
 
   ReflectionOperand(QualType T)
@@ -200,11 +210,19 @@ public:
   ReflectionOpKind getKind() const { return Kind; }
 
   /// Returns true if the reflection is invalid.
-  bool isInvalid() const { return !Data; }
+  bool isInvalid() const { return Kind == Invalid; }
 
   /// Returns the opaque reflection pointer.
   const void *getOpaqueReflectionValue() const {
     return Data;
+  }
+
+  /// Returns the invalid reflection information.
+  ///
+  /// This can and will be null in most cases.
+  InvalidReflection *getAsInvalidReflection() const {
+    assert(getKind() == Invalid && "not invalid");
+    return reinterpret_cast<InvalidReflection *>(Data);
   }
 
   /// Returns this as a type operand.
@@ -509,12 +527,12 @@ public:
 ///
 /// FIXME: This might not need diagnostics; we could simply return invalid
 /// reflections, which would make the class much, much easier to implement.
-struct Reflection {
+class Reflection {
   /// The AST context is needed for global information.
   ASTContext *Ctx;
 
   /// The reflected entity or construct.
-  const APValue Ref;
+  APValue Ref;
 
   /// The expression defining the query.
   const Expr *Query;
@@ -523,6 +541,7 @@ struct Reflection {
   /// evaluation.
   SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
+public:
   Reflection()
     : Ctx(nullptr), Ref(APValue(RK_invalid, nullptr)), Query(), Diag() {
   }
@@ -539,6 +558,21 @@ struct Reflection {
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
     : Ctx(&C), Ref(R), Query(Query), Diag(D) {
     assert(Ref.isReflection() && "not a reflection");
+  }
+
+  /// Returns the ASTContext for this reflection.
+  ASTContext &getContext() const {
+    return *Ctx;
+  }
+
+  /// Returns the related query for this reflection, if present.
+  const Expr *getQuery() const {
+    return Query;
+  }
+
+  /// Returns the vector holding diagnostics for query evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *getDiag() const {
+    return Diag;
   }
 
   /// Returns the reflection kind.
@@ -574,6 +608,11 @@ struct Reflection {
   /// True if this reflects a base class specifier.
   bool isBase() const {
     return getKind() == RK_base_specifier;
+  }
+
+  /// Returns this as an invalid reflection.
+  const InvalidReflection *getAsInvalidReflection() const {
+    return Ref.getInvalidReflectionInfo();
   }
 
   /// Returns this as a type.
@@ -627,7 +666,7 @@ struct Reflection {
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
 
-Reflection EvaluateReflection(Sema &S, Expr *E);
+  bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
 
 } // namespace clang
 

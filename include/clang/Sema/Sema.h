@@ -8803,6 +8803,9 @@ public:
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
 
+  ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, InvalidReflection *IR,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation RParenLoc);
   ExprResult BuildCXXReflectExpr(SourceLocation KWLoc, QualType T,
                                  SourceLocation LParenLoc,
                                  SourceLocation RParenLoc);
@@ -8827,6 +8830,14 @@ public:
 
   ExprResult BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc);
 
+  ExprResult ActOnCXXInvalidReflectionExpr(Expr *MessageExpr,
+                                           SourceLocation BuiltinLoc,
+                                           SourceLocation RParenLoc);
+
+  ExprResult BuildCXXInvalidReflectionExpr(Expr *MessageExpr,
+                                           SourceLocation BuiltinLoc,
+                                           SourceLocation RParenLoc);
+
   ExprResult ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
                                          SmallVectorImpl<Expr *> &Args,
                                          SourceLocation LParenLoc,
@@ -8835,7 +8846,6 @@ public:
                                           SmallVectorImpl<Expr *> &Args,
                                           SourceLocation LParenLoc,
                                           SourceLocation RparenLoc);
-
   ExprResult ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                          SmallVectorImpl<Expr *> &Args,
                                          SourceLocation LParenLoc,
@@ -8962,9 +8972,10 @@ public:
                                                   SourceLocation EllipsisLoc,
                                                   SourceLocation RParenLoc);
 
-  DeclarationNameInfo BuildReflectedIdName(SourceLocation OpLoc,
-                                           SmallVectorImpl<Expr *> &Parts,
-                                           SourceLocation EndLoc);
+  bool BuildReflectedIdName(SourceLocation OpLoc,
+                            SmallVectorImpl<Expr *> &Parts,
+                            SourceLocation EndLoc,
+                            DeclarationNameInfo &Result);
 
   bool BuildInitialDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
                               const DeclarationName &Name,

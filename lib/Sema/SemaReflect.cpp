@@ -118,6 +118,11 @@ ExprResult Sema::ActOnCXXReflectExpr(SourceLocation Loc,
   return ExprError();
 }
 
+ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, InvalidReflection *IR,
+                                     SourceLocation LP, SourceLocation RP) {
+  return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, IR, LP, RP);
+}
+
 ExprResult Sema::BuildCXXReflectExpr(SourceLocation Loc, QualType T,
                                      SourceLocation LP, SourceLocation RP) {
   return CXXReflectExpr::Create(Context, Context.MetaInfoTy, Loc, T, LP, RP);
@@ -158,9 +163,12 @@ ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
   assert(Reflection.isReflection());
 
   switch (Reflection.getReflectionKind()) {
-  case RK_invalid:
-    return BuildInvalidCXXReflectExpr(/*Loc=*/Loc, /*LP=*/SourceLocation(),
-                                      /*RP=*/SourceLocation());
+  case RK_invalid: {
+    auto ReflOp = const_cast<InvalidReflection *>(
+                                         Reflection.getInvalidReflectionInfo());
+    return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
+                               /*RP=*/SourceLocation());
+  }
   case RK_declaration: {
     auto ReflOp = const_cast<Decl *>(Reflection.getReflectedDeclaration());
     return BuildCXXReflectExpr(/*Loc=*/Loc, ReflOp, /*LP=*/SourceLocation(),
@@ -188,6 +196,60 @@ ExprResult Sema::BuildCXXReflectExpr(APValue Reflection, SourceLocation Loc) {
   }
 
   llvm_unreachable("invalid reflection kind");
+}
+
+/// Handle a call to \c __invalid_reflection.
+ExprResult Sema::ActOnCXXInvalidReflectionExpr(Expr *MessageExpr,
+                                               SourceLocation BuiltinLoc,
+                                               SourceLocation RParenLoc) {
+  if (DiagnoseUnexpandedParameterPack(MessageExpr))
+    return ExprError();
+
+  return BuildCXXInvalidReflectionExpr(MessageExpr, BuiltinLoc, RParenLoc);
+}
+
+static QualType DeduceCanonicalType(Sema &S, Expr *E) {
+  QualType Ty = E->getType();
+  if (AutoType *D = Ty->getContainedAutoType()) {
+    Ty = D->getDeducedType();
+    if (!Ty.getTypePtr())
+      llvm_unreachable("Undeduced value reflection");
+  }
+  return S.Context.getCanonicalType(Ty);
+}
+
+/// Build a \c __invalid_reflection expression.
+ExprResult Sema::BuildCXXInvalidReflectionExpr(Expr *MessageExpr,
+                                               SourceLocation BuiltinLoc,
+                                               SourceLocation RParenLoc) {
+  assert(MessageExpr != nullptr);
+
+  ExprResult Converted = DefaultFunctionArrayLvalueConversion(MessageExpr);
+  if (Converted.isInvalid())
+    return ExprError();
+  MessageExpr = Converted.get();
+
+  // Get the canonical type of the expression.
+  QualType T = DeduceCanonicalType(*this, MessageExpr);
+
+  // Ensure we're working with a valid operand.
+  if (!T.isCXXStringLiteralType()) {
+    SourceLocation &&Loc = MessageExpr->getExprLoc();
+    Diag(Loc, diag::err_invalid_reflection_wrong_operand_type);
+    return ExprError();
+  }
+
+  return CXXInvalidReflectionExpr::Create(Context, Context.MetaInfoTy,
+                                          MessageExpr, BuiltinLoc, RParenLoc);
+}
+
+static bool SetType(QualType& Ret, QualType T) {
+  Ret = T;
+  return true;
+}
+
+static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
+  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
 }
 
 // Check that the argument has the right type. Ignore references and
@@ -260,15 +322,6 @@ static bool SetQuery(Sema &SemaRef, Expr *&Arg, ReflectionQuery &Query) {
 
   Query = static_cast<ReflectionQuery>(Result.Val.getInt().getExtValue());
   return true;
-}
-
-static bool SetType(QualType& Ret, QualType T) {
-  Ret = T;
-  return true;
-}
-
-static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
-  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
 }
 
 // Gets the type and query from Arg for a query read operation.
@@ -392,16 +445,6 @@ static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
  });
 }
 
-static QualType DeduceCanonicalType(Sema &S, Expr *E) {
-  QualType Ty = E->getType();
-  if (AutoType *D = Ty->getContainedAutoType()) {
-    Ty = D->getDeducedType();
-    if (!Ty.getTypePtr())
-      llvm_unreachable("Undeduced value reflection");
-  }
-  return S.Context.getCanonicalType(Ty);
-}
-
 ExprResult Sema::ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                              SmallVectorImpl<Expr *> &Args,
                                              SourceLocation LParenLoc,
@@ -513,6 +556,26 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
+static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
+                                      const Reflection &R) {
+  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
+
+  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
+  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
+  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+
+  SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
+}
+
 ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
                                     Expr *Refl,
                                     SourceLocation LParenLoc,
@@ -523,9 +586,14 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
     return new (Context) CXXIdExprExpr(Context.DependentTy, Refl, KWLoc,
                                        LParenLoc, LParenLoc);
 
-  Reflection R = EvaluateReflection(*this, Refl);
-  if (R.isInvalid())
+  Reflection R;
+  if (EvaluateReflection(*this, Refl, R))
     return ExprError();
+
+  if (R.isInvalid()) {
+    DiagnoseInvalidReflection(*this, Refl, R);
+    return ExprError();
+  }
 
   if (R.isExpression()) {
     if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(R.getAsExpression())) {
@@ -883,8 +951,10 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
   llvm::SmallVector<Expr *, 1> Parts = {Expression};
 
-  DeclarationNameInfo DNI = 
-    SemaRef.BuildReflectedIdName(SourceLocation(), Parts, SourceLocation());
+  DeclarationNameInfo DNI;
+  if (SemaRef.BuildReflectedIdName(SourceLocation(), Parts,
+                                   SourceLocation(), DNI))
+    return ExprError();
 
   UnqualifiedId Result;
   TemplateNameKind TNK;
@@ -1028,9 +1098,14 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (!CheckReflectionOperand(*this, Refl))
     return ExprError();
 
-  Reflection R = EvaluateReflection(*this, Refl);
-  if (R.isInvalid())
+  Reflection R;
+  if (EvaluateReflection(*this, Refl, R))
     return ExprError();
+
+  if (R.isInvalid()) {
+    DiagnoseInvalidReflection(*this, Refl, R);
+    return ExprError();
+  }
 
   Expr *Eval = ReflectionToValueExpr(*this, R, KWLoc);
   if (!Eval) {
@@ -1188,11 +1263,14 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  Reflection Refl = EvaluateReflection(S, E);
+  Reflection Refl;
+  if (EvaluateReflection(S, E, Refl))
+    return false;
 
   switch (Refl.getKind()) {
   case RK_invalid:
-    llvm_unreachable("Should already be validated");
+    DiagnoseInvalidReflection(S, E, Refl);
+    return false;
 
   case RK_type: {
     const QualType QT = Refl.getAsType();
@@ -1218,11 +1296,13 @@ AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
   llvm_unreachable("Unsupported reflection type");
 }
 
-/// Constructs a new identifier from the expressions in Parts. Returns nullptr
-/// on error.
-DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
-                                               SmallVectorImpl<Expr *> &Parts,
-                                               SourceLocation EndLoc) {
+/// Constructs a new identifier from the expressions in Parts.
+///
+/// Returns true upon error.
+bool Sema::BuildReflectedIdName(SourceLocation BeginLoc,
+                                SmallVectorImpl<Expr *> &Parts,
+                                SourceLocation EndLoc,
+                                DeclarationNameInfo &Result) {
 
   // If any components are dependent, we can't compute the name.
   if (HasDependentParts(Parts)) {
@@ -1230,7 +1310,8 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
       = Context.DeclarationNames.getCXXReflectedIdName(Parts.size(), &Parts[0]);
     DeclarationNameInfo NameInfo(Name, BeginLoc);
     NameInfo.setCXXReflectedIdNameRange({BeginLoc, EndLoc});
-    return NameInfo;
+    Result = NameInfo;
+    return false;
   }
 
   SmallString<256> Buf;
@@ -1250,35 +1331,36 @@ DeclarationNameInfo Sema::BuildReflectedIdName(SourceLocation BeginLoc,
     // a string part that will constitute a declaration name.
     if (T->isConstantArrayType()) {
       if (!AppendCharacterArray(*this, OS, E, T))
-        return DeclarationNameInfo();
+        return true;
     }
     else if (T->isPointerType()) {
       if (!AppendCharacterPointer(*this, OS, E, T))
-        return DeclarationNameInfo();
+        return true;
     }
     else if (T->isIntegerType()) {
       if (I == 0) {
         // An identifier cannot start with an integer value.
         Diag(ExprLoc, diag::err_reflected_id_with_integer_prefix);
-        return DeclarationNameInfo();
+        return true;
       }
       if (!AppendInteger(*this, OS, E, T))
-        return DeclarationNameInfo();
+        return true;
     }
     else if (CheckReflectionOperand(*this, E)) {
       if (!AppendReflection(*this, OS, E))
-        return DeclarationNameInfo();
+        return true;
     }
     else {
       Diag(ExprLoc, diag::err_reflected_id_invalid_operand_type) << T;
-      return DeclarationNameInfo();
+      return true;
     }
   }
 
   // FIXME: Should we always return a declaration name?
   IdentifierInfo *Id = &PP.getIdentifierTable().get(Buf);
   DeclarationName Name = Context.DeclarationNames.getIdentifier(Id);
-  return DeclarationNameInfo(Name, BeginLoc);
+  Result = DeclarationNameInfo(Name, BeginLoc);
+  return false;
 }
 
 /// Handle construction of non-dependent identifiers, and test to
@@ -1379,9 +1461,14 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return QualType();
 
-  Reflection Refl = EvaluateReflection(*this, E);
-  if (Refl.isInvalid())
+  Reflection Refl;
+  if (EvaluateReflection(*this, E, Refl))
     return QualType();
+
+  if (Refl.isInvalid()) {
+    DiagnoseInvalidReflection(*this, E, Refl);
+    return QualType();
+  }
 
   if (!Refl.isType()) {
     Diag(E->getExprLoc(), diag::err_expression_not_type_reflection);
@@ -1459,10 +1546,13 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return ParsedTemplateArgument();
 
-  Reflection Refl = EvaluateReflection(*this, E);
+  Reflection Refl;
+  if (EvaluateReflection(*this, E, Refl))
+    return ParsedTemplateArgument();
 
   switch (Refl.getKind()) {
   case RK_invalid:
+    DiagnoseInvalidReflection(*this, E, Refl);
     return ParsedTemplateArgument();
 
   case RK_type: {

@@ -485,6 +485,10 @@ void ASTStmtReader::VisitCXXReflectExpr(CXXReflectExpr *S) {
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitCXXInvalidReflectionExpr(CXXInvalidReflectionExpr *S) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtReader::VisitCXXReflectionReadQueryExpr(
                                                 CXXReflectionReadQueryExpr *E) {
   llvm_unreachable("unimplemented");

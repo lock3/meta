@@ -1165,6 +1165,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXFoldExprClass:
     case Stmt::CXXConstantExprClass:
     case Stmt::CXXReflectExprClass:
+    case Stmt::CXXInvalidReflectionExprClass:
     case Stmt::CXXReflectionReadQueryExprClass:
     case Stmt::CXXReflectionWriteQueryExprClass:
     case Stmt::CXXReflectPrintLiteralExprClass:

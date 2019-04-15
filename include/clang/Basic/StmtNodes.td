@@ -166,6 +166,7 @@ def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
 // [Meta] expressions
 def CXXConstantExpr : DStmt<Expr>;
 def CXXReflectExpr : DStmt<Expr>;
+def CXXInvalidReflectionExpr : DStmt<Expr>;
 def CXXReflectionReadQueryExpr : DStmt<Expr>;
 def CXXReflectionWriteQueryExpr : DStmt<Expr>;
 def CXXReflectPrintLiteralExpr : DStmt<Expr>;

@@ -5270,6 +5270,7 @@ public:
     return DerivedSuccess(E->getValue(), E);
   }
 
+  bool VisitCXXInvalidReflectionExpr(const CXXInvalidReflectionExpr *E);
   bool VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *E);
   bool VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *E);
 
@@ -5387,7 +5388,7 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 
     switch(EV.getReflectionKind()) {
     case RK_invalid: {
-      llvm::errs() << "<null>";
+      llvm::errs() << "<invalid>";
       return true;
     }
 
@@ -5428,6 +5429,10 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   llvm_unreachable("unhandled expression type");
 }
 
+static void CompletePrint() {
+  llvm::outs() << '\n';
+}
+
 static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   QualType T = Info.Ctx.getCanonicalType(PE->getType());
   if (const BuiltinType *Ty = T->getAs<BuiltinType>()) {
@@ -5435,7 +5440,8 @@ static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 
     switch(EV.getReflectionKind()) {
     case RK_invalid: {
-      llvm::errs() << "<null>";
+      llvm::errs() << "<invalid>";
+      CompletePrint();
       return true;
     }
 
@@ -5473,8 +5479,29 @@ static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
   llvm_unreachable("unhandled expression type");
 }
 
-static void CompletePrint() {
-  llvm::outs() << '\n';
+template<typename Derived>
+bool ExprEvaluatorBase<Derived>::VisitCXXInvalidReflectionExpr(
+                                            const CXXInvalidReflectionExpr *E) {
+  // This never produces a value.
+  //
+  // FIXME: We probably want to evaluate the sub-expression for potential
+  // errors before stopping at these conditions.
+  if (Info.checkingPotentialConstantExpression())
+    return false;
+  if (Info.checkingForOverflow())
+    return false;
+
+  /// Evaluate the message.
+  APValue MessageAPValue;
+  if (!Evaluate(MessageAPValue, Info, E->getMessage()))
+    return Error(E->getMessage(), diag::note_invalid_subexpr_in_const_expr);
+
+  const Expr *Message = MessageAPValue.getLValueBase().get<const Expr *>();
+  APValue Result(RK_invalid, new (Info.Ctx) InvalidReflection{
+      Message
+  });
+
+  return DerivedSuccess(Result, E);
 }
 
 template<typename Derived>
@@ -11383,7 +11410,7 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
     return Success(Result, E);
   }
   case ReflectionOperand::Invalid: {
-    APValue Result(RK_invalid, nullptr);
+    APValue Result(RK_invalid, Ref.getAsInvalidReflection());
     return Success(Result, E);
   }
   }
@@ -11987,6 +12014,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXNoexceptExprClass:
   case Expr::CXXConstantExprClass:
   case Expr::CXXReflectExprClass:
+  case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionReadQueryExprClass:
   case Expr::CXXReflectionWriteQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:

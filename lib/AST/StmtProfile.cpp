@@ -1896,6 +1896,11 @@ void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *S) {
   ID.AddInteger(reinterpret_cast<std::size_t>(Operand.getOpaqueReflectionValue()));
 }
 
+void StmtProfiler::VisitCXXInvalidReflectionExpr(
+                                            const CXXInvalidReflectionExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitCXXReflectionReadQueryExpr(
                                           const CXXReflectionReadQueryExpr *E) {
   VisitExpr(E);
