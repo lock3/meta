@@ -356,16 +356,8 @@ public:
     // declaration. Otherwise, return nullptr and force a lookup or error.
     //
     // FIXME: This may not be valid for gotos and labels.
-    if (isInInjection(D)) {
-      if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
-        // Here we're using a variable declared with a 'requires typename'
-        // declaration. We'll need to deduce its type from the outer scope.
-        if (VD->getType()->isDependentType()) {
-          
-        }
-      }
+    if (isInInjection(D))
       return nullptr;
-    }
 
     if (!isInjectingFragment()) {
       // When copying existing declarations, if D is a member of the of the
@@ -435,10 +427,12 @@ public:
     const CXXRequiredTypeDecl *RTD = RTT->getDecl();
 
     QualType RequiredType = GetRequiredType(RTD);
-
     TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(RequiredType);
     NewTL.setNameLoc(TL.getNameLoc());
 
+    // If we found it, then this is a safe modification.
+    if (!RequiredType.isNull())
+      TLB.TypeWasModifiedSafely(RequiredType);
     return RequiredType;
   }
 
@@ -993,19 +987,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   bool Invalid = InjectDeclarator(D, DNI, TSI);
 
   // FIXME: Check for re-declaration.
-  if (D->getType()->isDependentType()) {
-    DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
-    Scope *S = getSema().getScopeForContext(InjecteeAsDC);
-
-    LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
-                   Sema::LookupAnyName);
-    if (getSema().LookupName(R, S)) {
-      llvm::outs() << "looked up name\n";
-    } else {
-      llvm::outs() << "didn't look up name\n";
-    }
-  }
-
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
       TSI->getType(), TSI, D->getStorageClass());
@@ -1472,16 +1453,20 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
+<<<<<<< HEAD
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
   case Decl::CXXRequiredDeclarator:
+=======
+>>>>>>> Requires Typename declaration implemented.
   case Decl::CXXRequiredType:
+    return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
+  case Decl::CXXRequiredDeclarator:
     // No reason to ever inject these.
     return nullptr;
   default:
     break;
   }
-  D->dump();
   llvm_unreachable("unhandled declaration");
 }
 
@@ -1882,9 +1867,12 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
 Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
   Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+<<<<<<< HEAD
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
+=======
+>>>>>>> Requires Typename declaration implemented.
 
   // Find the name of the declared type and look it up.
   LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
@@ -2597,10 +2585,6 @@ static bool InjectStmtFragment(Sema &S,
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
     Ctx->AddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
-    llvm::outs() << "CAPTURES\n";
-    for (InjectionCapture Capu : Captures) {
-      Capu.Decl->dump();
-    }
 
     CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
     CompoundStmt *FragmentBlock = cast<CompoundStmt>(InjectionSFD->getBody());

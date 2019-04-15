@@ -4051,7 +4051,7 @@ QualType ASTContext::getTemplateTypeParmType(unsigned Depth, unsigned Index,
 
 QualType
 ASTContext::getCXXRequiredTypeType(CXXRequiredTypeDecl *D) const {
-  return DependentTy;
+  llvm_unreachable("Todo");
 }
 
 TypeSourceInfo *

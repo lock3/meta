@@ -5583,6 +5583,8 @@ public:
 };
 
 class CXXRequiredTypeType : public Type {
+  friend class ASTContext; // ASTContext creates these.
+
   CXXRequiredTypeDecl *RequiresDecl;
 
   CXXRequiredTypeType(const CXXRequiredTypeDecl *D)
