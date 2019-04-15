@@ -586,7 +586,6 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
-
   case Type::Attributed:
     if (!IsStructurallyEquivalent(Context,
                                   cast<AttributedType>(T1)->getModifiedType(),

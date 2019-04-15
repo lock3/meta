@@ -4283,6 +4283,19 @@ public:
   static bool classofKind(Kind K) { return K == CXXRequiredType; }
 };
 
+/// Represents a requires declaration which was not marked with
+/// \c typename
+/// This declares a typed name exists somewhere outside of the fragment,
+/// but does not look it up until the fragment is injected.
+///
+/// \code
+/// __fragment {
+///  requires int x;
+///  x = 42;
+/// }
+/// \endcode
+///
+/// Like an UnresolvedUsingValueDecl, these only declare non-types.
 class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// The location of the 'requires' keyword
   SourceLocation RequiresLoc;

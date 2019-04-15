@@ -918,7 +918,6 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
   return Actions.ActOnCXXRequiredDeclaratorDecl(getCurScope(),
                                                 RequiresLoc,
                                                 DeclaratorInfo);
->>>>>>> Parsing requireddeclaratordecls
 }
 
 /// ParseStaticAssertDeclaration - Parse C++0x or C11 static_assert-declaration.

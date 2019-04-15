@@ -9524,7 +9524,7 @@ Sema::ActOnDependentTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
 TypeResult
 Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
                         const CXXScopeSpec &SS, const IdentifierInfo &II,
-                        SourceLocation IdLoc) {
+                       SourceLocation IdLoc) {
   if (SS.isInvalid())
     return true;
 

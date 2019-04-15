@@ -285,6 +285,7 @@ public:
   void VisitFunctionType(const FunctionType *T);
   void VisitFunctionProtoType(const FunctionProtoType *T);
   void VisitUnresolvedUsingType(const UnresolvedUsingType *T);
+  void VisitCXXRequiredTypeType(const CXXRequiredTypeType *T);
   void VisitTypedefType(const TypedefType *T);
   void VisitUnaryTransformType(const UnaryTransformType *T);
   void VisitTagType(const TagType *T);

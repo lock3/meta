@@ -4828,6 +4828,9 @@ public:
   Decl *ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
                                        SourceLocation RequiresLoc,
                                        Declarator &D);
+  Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+                                 SourceLocation TypenameLoc,
+                                 IdentifierInfo *Id);
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.

@@ -357,36 +357,13 @@ public:
     //
     // FIXME: This may not be valid for gotos and labels.
     if (isInInjection(D)) {
-      NamedDecl *ND = dyn_cast<NamedDecl>(D);
-      if (!ND) {
-        llvm::outs() << "Not named.\n";
-        return nullptr;
-      }
-      auto DLK = getInjectionDeclContext()->lookup(
-        cast<NamedDecl>(D)->getDeclName());
-      llvm::outs() << "LookupDecls\n";
-      for (auto LookupDecl : DLK) {
-        LookupDecl->dump();
-      }
-      llvm::outs() << "The injected context\n";
-      getInjectionDeclContext()->dumpDeclContext();
-      llvm::outs() << "Curcontext\n";
-      getSema().CurContext->dumpDeclContext();
-      LookupResult R(getSema(), ND->getDeclName(),
-                     ND->getLocation(), Sema::LookupOrdinaryName,
-                     Sema::ForVisibleRedeclaration);
-      if (!getSema().LookupQualifiedName(R, getSema().CurContext)) {
-        llvm::outs() << "Didn't find names\n";
-        // FIXME: use correct diagnostic
-        getSema().Diag(D->getLocation(), diag::err_no_member);
-        return nullptr;
-      }
-
-        const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
-        llvm::outs() << "FoundNames\n";
-        for (auto *I : FoundNames) {
-          I->dump();
+      if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
+        // Here we're using a variable declared with a 'requires typename'
+        // declaration. We'll need to deduce its type from the outer scope.
+        if (VD->getType()->isDependentType()) {
+          
         }
+      }
       return nullptr;
     }
 
@@ -1016,6 +993,18 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   bool Invalid = InjectDeclarator(D, DNI, TSI);
 
   // FIXME: Check for re-declaration.
+  if (D->getType()->isDependentType()) {
+    DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+    Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+
+    LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
+                   Sema::LookupAnyName);
+    if (getSema().LookupName(R, S)) {
+      llvm::outs() << "looked up name\n";
+    } else {
+      llvm::outs() << "didn't look up name\n";
+    }
+  }
 
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
@@ -1572,6 +1561,8 @@ Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   };
 
   if (S->isSingleDecl()) {
+    // FIXME dependent stuff can't be added to the scope,
+    // we gotta do the lookup here
     if (Decl *NewDecl = AddDeclToInjecteeScope(S->getSingleDecl())) {
       DeclGroupRef NewDG(NewDecl);
       DeclStmt *NewS =

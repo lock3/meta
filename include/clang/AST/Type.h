@@ -5582,6 +5582,35 @@ public:
   }
 };
 
+class CXXRequiredTypeType : public Type {
+  CXXRequiredTypeDecl *RequiresDecl;
+
+  CXXRequiredTypeType(const CXXRequiredTypeDecl *D)
+    : Type(CXXRequiredType, QualType(), /*Dependent=*/true,
+           /*InstantiationDependent=*/true, /*VariablyModified=*/false,
+           /*ContainsUnexpandedParameterPack=*/false),
+      RequiresDecl(const_cast<CXXRequiredTypeDecl*>(D))
+    {}
+
+public:
+  CXXRequiredTypeDecl *getDecl() const { return RequiresDecl; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == CXXRequiredType;
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    return Profile(ID, RequiresDecl);
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      const CXXRequiredTypeDecl *D) {
+    ID.AddPointer(D);
+  }
+};
 
 /// This class wraps the list of protocol qualifiers. For types that can
 /// take ObjC protocol qualifers, they can subclass this class.

@@ -1434,6 +1434,9 @@ public:
                           bool ParameterPack,
                           TemplateTypeParmDecl *ParmDecl = nullptr) const;
 
+  QualType
+  getCXXRequiredTypeType(CXXRequiredTypeDecl *D) const;
+
   QualType getTemplateSpecializationType(TemplateName T,
                                          ArrayRef<TemplateArgument> Args,
                                          QualType Canon = QualType()) const;

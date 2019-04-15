@@ -1031,6 +1031,11 @@ public:
     VisitType(T);
   }
 
+  void VisitCXXRequiredTypeType(const CXXRequiredTypeType *T) {
+    AddDecl(T->getDecl());
+    VisitType(T);
+  }
+
   void VisitVectorType(const VectorType *T) {
     AddQualType(T->getElementType());
     ID.AddInteger(T->getNumElements());

@@ -1183,7 +1183,7 @@ namespace serialization {
 
       /// A CXXDependentVariadicReifier record.
       TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 50,
-      
+
       /// A CXXRequiredTypeType record.
       TYPE_CXX_REQUIRED = 51,
     };
