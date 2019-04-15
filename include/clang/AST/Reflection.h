@@ -414,12 +414,12 @@ inline bool isNameQuery(ReflectionQuery Q) {
 ///
 /// FIXME: This might not need diagnostics; we could simply return invalid
 /// reflections, which would make the class much, much easier to implement.
-struct Reflection {
+class Reflection {
   /// The AST context is needed for global information.
   ASTContext *Ctx;
 
   /// The reflected entity or construct.
-  const APValue Ref;
+  APValue Ref;
 
   /// The expression defining the query.
   const CXXReflectionTraitExpr *Query;
@@ -428,6 +428,7 @@ struct Reflection {
   /// evaluation.
   SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
+public:
   Reflection()
     : Ctx(nullptr), Ref(APValue(RK_invalid, nullptr)), Query(), Diag() {
   }
@@ -444,6 +445,21 @@ struct Reflection {
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
     : Ctx(&C), Ref(R), Query(E), Diag(D) {
     assert(Ref.isReflection() && "not a reflection");
+  }
+
+  /// Returns the ASTContext for this reflection.
+  ASTContext &getContext() const {
+    return *Ctx;
+  }
+
+  /// Returns the related query for this reflection, if present.
+  const CXXReflectionTraitExpr *getQuery() const {
+    return Query;
+  }
+
+  /// Returns the vector holding diagnostics for query evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *getDiag() const {
+    return Diag;
   }
 
   /// Returns the reflection kind.

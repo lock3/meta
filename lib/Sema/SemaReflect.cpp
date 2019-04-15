@@ -462,7 +462,7 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
-static Reflection EvaluateReflection(Sema &S, Expr *E) {
+static bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
@@ -470,15 +470,21 @@ static Reflection EvaluateReflection(Sema &S, Expr *E) {
     S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       S.Diag(PD.first, PD.second);
-    return Reflection();
+    return true;
   }
 
-  return Reflection(S.Context, Result.Val);
+  R = Reflection(S.Context, Result.Val);
+  return false;
 }
 
 static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
                                       const Reflection &R) {
+  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
+
   const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
   const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
   const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
 
@@ -488,7 +494,6 @@ static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
   Message->outputString(OS);
   std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
 
-  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
   SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
 }
 
@@ -502,7 +507,10 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
     return new (Context) CXXIdExprExpr(Context.DependentTy, Refl, KWLoc,
                                        LParenLoc, LParenLoc);
 
-  Reflection R = EvaluateReflection(*this, Refl);
+  Reflection R;
+  if (EvaluateReflection(*this, Refl, R))
+    return ExprError();
+
   if (R.isInvalid()) {
     DiagnoseInvalidReflection(*this, Refl, R);
     return ExprError();
@@ -1093,7 +1101,10 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   if (!CheckReflectionOperand(*this, Refl))
     return ExprError();
 
-  Reflection R = EvaluateReflection(*this, Refl);
+  Reflection R;
+  if (EvaluateReflection(*this, Refl, R))
+    return ExprError();
+
   if (R.isInvalid()) {
     DiagnoseInvalidReflection(*this, Refl, R);
     return ExprError();
@@ -1255,7 +1266,9 @@ AppendReflectedType(Sema& S, llvm::raw_ostream &OS, const Expr *ReflExpr,
 
 static bool
 AppendReflection(Sema& S, llvm::raw_ostream &OS, Expr *E) {
-  Reflection Refl = EvaluateReflection(S, E);
+  Reflection Refl;
+  if (EvaluateReflection(S, E, Refl))
+    return false;
 
   switch (Refl.getKind()) {
   case RK_invalid:
@@ -1451,7 +1464,10 @@ QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return QualType();
 
-  Reflection Refl = EvaluateReflection(*this, E);
+  Reflection Refl;
+  if (EvaluateReflection(*this, E, Refl))
+    return QualType();
+
   if (Refl.isInvalid()) {
     DiagnoseInvalidReflection(*this, E, Refl);
     return QualType();
@@ -1533,7 +1549,9 @@ Sema::ActOnReflectedTemplateArgument(SourceLocation KWLoc, Expr *E) {
   if (!CheckReflectionOperand(*this, E))
     return ParsedTemplateArgument();
 
-  Reflection Refl = EvaluateReflection(*this, E);
+  Reflection Refl;
+  if (EvaluateReflection(*this, E, Refl))
+    return ParsedTemplateArgument();
 
   switch (Refl.getKind()) {
   case RK_invalid:

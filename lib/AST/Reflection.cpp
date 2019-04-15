@@ -20,13 +20,13 @@
 using namespace clang;
 
 /// Returns an APValue-packaged truth value.
-static APValue makeBool(ASTContext *C, bool B) {
-  return APValue(C->MakeIntValue(B, C->BoolTy));
+static APValue makeBool(ASTContext &C, bool B) {
+  return APValue(C.MakeIntValue(B, C.BoolTy));
 }
 
 /// Sets result to the truth value of B and returns true.
 static bool SuccessBool(const Reflection &R, APValue &Result, bool B) {
-  Result = makeBool(R.Ctx, B);
+  Result = makeBool(R.getContext(), B);
   return true;
 }
 
@@ -40,10 +40,10 @@ static bool SuccessFalse(const Reflection &R, APValue &Result) {
 
 template<typename F>
 static bool CustomError(const Reflection &R, F BuildDiagnostic) {
-  if (R.Diag) {
+  if (SmallVectorImpl<PartialDiagnosticAt> *Diag = R.getDiag()) {
     // FIXME: We could probably do a better job with the location.
-    SourceLocation Loc = R.Query->getExprLoc();
-    R.Diag->push_back(std::make_pair(Loc, BuildDiagnostic()));
+    SourceLocation Loc = R.getQuery()->getExprLoc();
+    Diag->push_back(std::make_pair(Loc, BuildDiagnostic()));
   }
   return false;
 }
@@ -71,7 +71,7 @@ static QualType getQualType(const APValue &R) {
 static bool Error(const Reflection &R) {
   return CustomError(R, [&]() {
     PartialDiagnostic PD(diag::note_reflection_not_defined,
-                         R.Ctx->getDiagAllocator());
+                         R.getContext().getDiagAllocator());
 
     switch (R.getKind()) {
     case RK_type:
@@ -91,7 +91,7 @@ static bool Error(const Reflection &R) {
 static bool ErrorUnimplemented(const Reflection &R) {
   return CustomError(R, [&]() {
     return PartialDiagnostic(diag::note_reflection_query_unimplemented,
-                             R.Ctx->getDiagAllocator());
+                             R.getContext().getDiagAllocator());
   });
 }
 
@@ -158,7 +158,7 @@ struct MaybeType {
 /// rather than e.g., aliases.
 static QualType getCanonicalType(const Reflection &R) {
   if (R.isType()) {
-    return R.Ctx->getCanonicalType(getQualType(R));
+    return R.getContext().getCanonicalType(getQualType(R));
   }
 
   return QualType();
@@ -987,13 +987,13 @@ static std::uint32_t TraitsToUnsignedInt(Traits S) {
 }
 
 template <typename Traits>
-static APValue makeTraits(ASTContext *C, Traits S) {
-  return APValue(C->MakeIntValue(TraitsToUnsignedInt(S), C->UnsignedIntTy));
+static APValue makeTraits(ASTContext &C, Traits S) {
+  return APValue(C.MakeIntValue(TraitsToUnsignedInt(S), C.UnsignedIntTy));
 }
 
 template <typename Traits>
 static bool SuccessTraits(const Reflection &R, Traits S, APValue &Result) {
-  Result = makeTraits(R.Ctx, S);
+  Result = makeTraits(R.getContext(), S);
   return true;
 }
 
@@ -1478,7 +1478,7 @@ static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
 static bool getEntity(const Reflection &R, APValue &Result) {
   if (R.isType()) {
     /// The entity is the canonical type.
-    QualType T = R.Ctx->getCanonicalType(R.getAsType());
+    QualType T = R.getContext().getCanonicalType(R.getAsType());
     return makeReflection(T, Result);
   }
   if (R.isDeclaration()) {
@@ -1497,7 +1497,7 @@ static bool getEntity(const Reflection &R, APValue &Result) {
   if (R.isBase()) {
     // The entity is the canonical type named by the specifier.
     const CXXBaseSpecifier *Base = R.getAsBase();
-    QualType T = R.Ctx->getCanonicalType(Base->getType());
+    QualType T = R.getContext().getCanonicalType(Base->getType());
     return makeReflection(T, Result);
   }
   return Error(R);
@@ -1645,6 +1645,8 @@ MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
 }
 
 bool getName(const Reflection R, APValue &Result) {
+  ASTContext &Ctx = R.getContext();
+
   if (R.isType()) {
     QualType T = R.getAsType();
 
@@ -1653,14 +1655,13 @@ bool getName(const Reflection R, APValue &Result) {
       T = LIT->getType();
 
     // Render the string of the type.
-    PrintingPolicy PP = R.Ctx->getPrintingPolicy();
+    PrintingPolicy PP = Ctx.getPrintingPolicy();
     PP.SuppressTagKeyword = true;
-    Expr *Str = MakeConstCharPointer(*R.Ctx, T.getAsString(PP),
-                                     SourceLocation());
+    Expr *Str = MakeConstCharPointer(Ctx, T.getAsString(PP), SourceLocation());
 
     // Generate the result value.
     Expr::EvalResult Eval;
-    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, *R.Ctx))
+    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, Ctx))
       return false;
     Result = Eval.Val;
     return true;
@@ -1669,12 +1670,12 @@ bool getName(const Reflection R, APValue &Result) {
   if (const NamedDecl *ND = dyn_cast<NamedDecl>(getReachableDecl(R))) {
     if (IdentifierInfo *II = ND->getIdentifier()) {
       // Get the identifier of the declaration.
-      Expr *Str = MakeConstCharPointer(*R.Ctx, II->getName(),
+      Expr *Str = MakeConstCharPointer(Ctx, II->getName(),
                                        SourceLocation());
 
       // Generate the result value.
       Expr::EvalResult Eval;
-      if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, *R.Ctx))
+      if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, Ctx))
         return false;
       Result = Eval.Val;
       return true;
