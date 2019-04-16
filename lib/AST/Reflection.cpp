@@ -1989,7 +1989,7 @@ bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!E->EvaluateAsRValue(Result, S.Context)) {
-    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
+    S.Diag(E->getExprLoc(), diag::err_reflection_not_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       S.Diag(PD.first, PD.second);
     return true;
@@ -1997,6 +1997,25 @@ bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
 
   R = Reflection(S.Context, Result.Val);
   return false;
+}
+
+void DiagnoseInvalidReflection(Sema &SemaRef, Expr *E, const Reflection &R) {
+  SemaRef.Diag(E->getExprLoc(), diag::err_reify_invalid_reflection);
+
+  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
+  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
+  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+
+  SemaRef.Diag(E->getExprLoc(), diag::note_user_defined_note) << NonQuote;
 }
 
 }
