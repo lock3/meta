@@ -483,6 +483,14 @@ struct enum_traits {
 
 } // end internal namespace
 
+// Placeholder for constexpr string.
+using string_type = const char*;
+
+// An invalid reflection with the given error message.
+consteval info invalid_reflection(string_type error_message) {
+  return __invalid_reflection(error_message);
+}
+
 // True if x is an invalid reflection.
 consteval bool is_invalid(info x) {
   return __reflect(detail::query_is_invalid, x);
@@ -1036,9 +1044,6 @@ consteval bool is_class_member(info x) {
 
 // -------------------------------------------------------------------------- //
 // Name
-
-// Placeholder for constexpr string.
-using string_type = const char*;
 
 consteval string_type name_of(info x) {
   return __reflect(detail::query_get_name, x);
