@@ -29,6 +29,31 @@ struct Templated {
   };
 };
 
+struct NonTemplatedGen {
+  enum Foo {
+    consteval {
+      for (int i = 0; i < 3; ++i) {
+        -> __fragment enum {
+          unqualid("VAL_", i) = i * 5
+        };
+      }
+    }
+  };
+};
+
+template<int K>
+struct TemplatedGen {
+  enum Foo {
+    consteval {
+      for (int i = 0; i < 3; ++i) {
+        -> __fragment enum {
+          unqualid("VAL_", i + K) = i * 5
+        };
+      }
+    }
+  };
+};
+
 int main() {
   {
     static_assert(NonTemplated::Foo::A == 0);
@@ -49,6 +74,16 @@ int main() {
     static_assert(Templated<1>::Foo::F == 42);
     static_assert(Templated<1>::Foo::G == 43);
     static_assert(Templated<1>::Foo::H == 44);
+  }
+  {
+    static_assert(NonTemplatedGen::Foo::VAL_0 == 0);
+    static_assert(NonTemplatedGen::Foo::VAL_1 == 5);
+    static_assert(NonTemplatedGen::Foo::VAL_2 == 10);
+  }
+  {
+    static_assert(TemplatedGen<1>::Foo::VAL_1 == 0);
+    static_assert(TemplatedGen<1>::Foo::VAL_2 == 5);
+    static_assert(TemplatedGen<1>::Foo::VAL_3 == 10);
   }
   return 0;
 }

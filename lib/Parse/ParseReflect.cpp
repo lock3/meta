@@ -381,7 +381,7 @@ ExprResult Parser::ParseCXXValueOfExpression() {
 
 /// Parse a reflected id
 ///
-///   unqualified-id:
+///   reflected-unqualid-id:
 ///     'unqaulid' '(' reflection ')'
 ///
 /// Returns true if parsing or semantic analysis fail.

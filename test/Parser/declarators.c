@@ -123,13 +123,13 @@ enum E11 {
 };
 
 enum E12 {
-  ,  // expected-error{{expected identifier}}
+  ,  // expected-error{{expected an enumerator identifier}}
   A2
 };
 void func_E12(enum E12 *p) { *p = A2; }
 
 enum E13 {
-  1D,  // expected-error{{expected identifier}}
+  1D,  // expected-error{{expected an enumerator identifier}}
   A3
 };
 void func_E13(enum E13 *p) { *p = A3; }
