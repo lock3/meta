@@ -501,6 +501,7 @@ public:
   Decl *InjectFunctionTemplateDecl(FunctionTemplateDecl *D);
   Decl *InjectTemplateTypeParmDecl(TemplateTypeParmDecl *D);
   Decl *InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
+  Decl *InjectTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
 
@@ -1420,6 +1421,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectTemplateTypeParmDecl(cast<TemplateTypeParmDecl>(D));
   case Decl::NonTypeTemplateParm:
     return InjectNonTypeTemplateParmDecl(cast<NonTypeTemplateParmDecl>(D));
+  case Decl::TemplateTemplateParm:
+    return InjectTemplateTemplateParmDecl(cast<TemplateTemplateParmDecl>(D));
   case Decl::StaticAssert:
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   case Decl::EnumConstant:
@@ -1728,6 +1731,40 @@ Decl *InjectionContext::InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D
       return nullptr;
 
     Parm->setDefaultArgument(DefaultArg.get());
+  }
+
+  return Parm;
+}
+
+Decl *InjectionContext::InjectTemplateTemplateParmDecl(
+                                                  TemplateTemplateParmDecl *D) {
+  TemplateParameterList *Params = TransformTemplateParameterList(
+                                                    D->getTemplateParameters());
+
+  TemplateTemplateParmDecl *Parm = TemplateTemplateParmDecl::Create(
+      getSema().Context, getSema().CurContext, D->getLocation(), D->getDepth(),
+      D->getPosition(), D->isParameterPack(), D->getIdentifier(), Params);
+  AddDeclSubstitution(D, Parm);
+
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Parm->getDeclContext()))
+    Parm->setAccess(RD->getDefaultAccessSpecifier());
+
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+    NestedNameSpecifierLoc QualifierLoc = TransformNestedNameSpecifierLoc(
+                             D->getDefaultArgument().getTemplateQualifierLoc());
+
+    CXXScopeSpec SS;
+    SS.Adopt(QualifierLoc);
+    TemplateName TName = TransformTemplateName(
+        SS, D->getDefaultArgument().getArgument().getAsTemplate(),
+        D->getDefaultArgument().getTemplateNameLoc());
+
+    if (!TName.isNull())
+      Parm->setDefaultArgument(
+          getSema().Context,
+          TemplateArgumentLoc(TemplateArgument(TName),
+                              QualifierLoc,
+                              D->getDefaultArgument().getTemplateNameLoc()));
   }
 
   return Parm;
