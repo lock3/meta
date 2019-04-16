@@ -18,6 +18,11 @@ consteval void test_metaclass(meta::info source) {
     template<int Y> struct MemberClassValTemplate {
       constexpr int get_t_val() { return Y; }
     };
+
+    template<template<typename> class H, typename S>
+    struct MemberClassTemplateTemplate {
+      H<S> template_val;
+    };
   };
 
   -> __fragment struct {
@@ -28,15 +33,27 @@ consteval void test_metaclass(meta::info source) {
 class(test_metaclass) test_class {
 };
 
+template<typename T>
+struct Container {
+  constexpr T get_val() { return 1; }
+};
+
 int main() {
-  test_class::MemberClassTemplate<int> metaclass_nested_class_int;
+  using MCTIntTy = test_class::MemberClassTemplate<int>;
+  MCTIntTy metaclass_nested_class_int;
   metaclass_nested_class_int.t_val = 1;
 
-  test_class::MemberClassTemplate<float> metaclass_nested_class_float;
+  using MCTFloatTy = test_class::MemberClassTemplate<float>;
+  MCTFloatTy metaclass_nested_class_float;
   metaclass_nested_class_float.float_val = 1;
 
-  test_class::MemberClassValTemplate<1> metaclass_nested_class_val;
+  using MCVTy = test_class::MemberClassValTemplate<1>;
+  MCVTy metaclass_nested_class_val;
   static_assert(metaclass_nested_class_val.get_t_val() == 1);
+
+  using MCTTTy = test_class::MemberClassTemplateTemplate<Container, int>;
+  MCTTTy metaclass_nested_template_template;
+  static_assert(metaclass_nested_template_template.template_val.get_val() == 1);
 
   return 0;
 }
