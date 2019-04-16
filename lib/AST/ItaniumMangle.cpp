@@ -3500,7 +3500,9 @@ void CXXNameMangler::mangleInitListElements(const InitListExpr *InitList) {
 void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
   switch (Op.getKind()) {
   case ReflectionOperand::Invalid: {
-    Out << "Inv";
+    Out << "Iv";
+    if (auto *InvalidRefl = Op.getAsInvalidReflection())
+      mangleExpression(InvalidRefl->ErrorMessage);
     return;
   }
   case ReflectionOperand::Type: {

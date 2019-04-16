@@ -11,10 +11,10 @@ auto do_the_thing() {
   return 0;
 }
 
-// FIXME: Add test for invalid reflection.
-// void test1() {
-//   do_the_thing<reflexpr()>();
-// }
+void test1() {
+  // CHECK: define internal i32 @_Z12do_the_thingIXReIvLA4_KcEEEDav(
+  do_the_thing<__invalid_reflection("Abc")>();
+}
 
 namespace {
   struct PrivType {
