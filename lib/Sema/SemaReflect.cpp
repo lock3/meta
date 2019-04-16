@@ -952,27 +952,28 @@ getAsCXXIdExprExpr(Sema &SemaRef, Expr *Expression,
 static ExprResult
 getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
 {
+  SourceLocation &&Loc = Expression->getExprLoc();
+
   llvm::SmallVector<Expr *, 1> Parts = {Expression};
 
   DeclarationNameInfo DNI;
-  if (SemaRef.BuildReflectedIdName(SourceLocation(), Parts,
-                                   SourceLocation(), DNI))
+  if (SemaRef.BuildReflectedIdName(Loc, Parts, Loc, DNI))
     return ExprError();
 
   UnqualifiedId Result;
   TemplateNameKind TNK;
   OpaquePtr<TemplateName> Template;
   CXXScopeSpec TempSS;
-  if (SemaRef.BuildInitialDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+  if (SemaRef.BuildInitialDeclnameId(Loc, TempSS, DNI.getName(),
                                      SourceLocation(), TNK, Template, Result))
     return ExprError();
 
   SmallVector<TemplateIdAnnotation *, 1> TemplateIds;
-  if (SemaRef.CompleteDeclnameId(SourceLocation(), TempSS, DNI.getName(),
+  if (SemaRef.CompleteDeclnameId(Loc, TempSS, DNI.getName(),
                                  SourceLocation(), TNK, Template,
-                                 SourceLocation(), ASTTemplateArgsPtr(),
-                                 SourceLocation(), TemplateIds, Result,
-                                 SourceLocation()))
+                                 Loc, ASTTemplateArgsPtr(),
+                                 Loc, TemplateIds, Result,
+                                 Loc))
     return ExprError();
 
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
@@ -982,9 +983,7 @@ getAsCXXReflectedDeclname(Sema &SemaRef, Expr *Expression)
                               /*HasTrailingLParen=*/false,
                               /*IsAddresOfOperand=*/false);
 
-  if(BuiltExpr.isInvalid())
-    return ExprError();
-  return BuiltExpr;
+  return BuiltExpr.isInvalid() ? ExprError() : BuiltExpr;
 }
 
 static QualType
