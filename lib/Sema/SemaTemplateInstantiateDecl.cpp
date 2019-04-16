@@ -1213,10 +1213,11 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       isInvalid = true;
     }
 
+    DeclarationNameInfo DNI
+      = SemaRef.SubstDeclarationNameInfo(EC->getNameInfo(), TemplateArgs);
     EnumConstantDecl *EnumConst
       = SemaRef.CheckEnumConstant(Enum, SemaRef.LastEnumConstDecl,
-                                  EC->getLocation(), EC->getIdentifier(),
-                                  Value.get());
+                                  DNI, Value.get());
 
     if (isInvalid) {
       if (EnumConst)

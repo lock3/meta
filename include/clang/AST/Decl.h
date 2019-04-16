@@ -2841,16 +2841,17 @@ class EnumConstantDecl : public ValueDecl, public Mergeable<EnumConstantDecl> {
   llvm::APSInt Val; // The value.
 
 protected:
-  EnumConstantDecl(DeclContext *DC, SourceLocation L,
-                   IdentifierInfo *Id, QualType T, Expr *E,
+  EnumConstantDecl(DeclContext *DC, SourceLocation NameLoc,
+                   const DeclarationName &Name, QualType T, Expr *E,
                    const llvm::APSInt &V)
-    : ValueDecl(EnumConstant, DC, L, Id, T), Init((Stmt*)E), Val(V) {}
+    : ValueDecl(EnumConstant, DC, NameLoc, Name, T), Init((Stmt*)E), Val(V) {}
 
 public:
   friend class StmtIteratorBase;
 
   static EnumConstantDecl *Create(ASTContext &C, EnumDecl *DC,
-                                  SourceLocation L, IdentifierInfo *Id,
+                                  SourceLocation NameLoc,
+                                  const DeclarationName &Name,
                                   QualType T, Expr *E,
                                   const llvm::APSInt &V);
   static EnumConstantDecl *CreateDeserialized(ASTContext &C, unsigned ID);

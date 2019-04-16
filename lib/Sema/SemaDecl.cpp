@@ -16534,8 +16534,7 @@ static QualType getNextLargerIntegralType(ASTContext &Context, QualType T) {
 
 EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
                                           EnumConstantDecl *LastEnumConst,
-                                          SourceLocation IdLoc,
-                                          IdentifierInfo *Id,
+                                          const DeclarationNameInfo &NameInfo,
                                           Expr *Val) {
   unsigned IntWidth = Context.getTargetInfo().getIntWidth();
   llvm::APSInt EnumVal(IntWidth);
@@ -16578,10 +16577,10 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           // expression checking.
           if (!isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
             if (getLangOpts().MSVCCompat) {
-              Diag(IdLoc, diag::ext_enumerator_too_large) << EltTy;
+              Diag(NameInfo.getLoc(), diag::ext_enumerator_too_large) << EltTy;
               Val = ImpCastExprToType(Val, EltTy, CK_IntegralCast).get();
             } else
-              Diag(IdLoc, diag::err_enumerator_too_large) << EltTy;
+              Diag(NameInfo.getLoc(), diag::err_enumerator_too_large) << EltTy;
           } else
             Val = ImpCastExprToType(Val, EltTy,
                                     EltTy->isBooleanType() ?
@@ -16602,7 +16601,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
 
           // Complain if the value is not representable in an int.
           if (!isRepresentableIntegerValue(Context, EnumVal, Context.IntTy))
-            Diag(IdLoc, diag::ext_enum_value_not_int)
+            Diag(NameInfo.getLoc(), diag::ext_enum_value_not_int)
               << EnumVal.toString(10) << Val->getSourceRange()
               << (EnumVal.isUnsigned() || EnumVal.isNonNegative());
           else if (!Context.hasSameType(Val->getType(), Context.IntTy)) {
@@ -16660,11 +16659,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           ++EnumVal;
           if (Enum->isFixed())
             // When the underlying type is fixed, this is ill-formed.
-            Diag(IdLoc, diag::err_enumerator_wrapped)
+            Diag(NameInfo.getLoc(), diag::err_enumerator_wrapped)
               << EnumVal.toString(10)
               << EltTy;
           else
-            Diag(IdLoc, diag::ext_enumerator_increment_too_large)
+            Diag(NameInfo.getLoc(), diag::ext_enumerator_increment_too_large)
               << EnumVal.toString(10);
         } else {
           EltTy = T;
@@ -16684,11 +16683,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
         // permits enumerator values that are representable in some larger
         // integral type.
         if (!getLangOpts().CPlusPlus && !T.isNull())
-          Diag(IdLoc, diag::warn_enum_value_overflow);
+          Diag(NameInfo.getLoc(), diag::warn_enum_value_overflow);
       } else if (!getLangOpts().CPlusPlus &&
                  !isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
         // Enforce C99 6.7.2.2p2 even when we compute the next value.
-        Diag(IdLoc, diag::ext_enum_value_not_int)
+        Diag(NameInfo.getLoc(), diag::ext_enum_value_not_int)
           << EnumVal.toString(10) << 1;
       }
     }
@@ -16701,8 +16700,8 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
     EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
   }
 
-  return EnumConstantDecl::Create(Context, Enum, IdLoc, Id, EltTy,
-                                  Val, EnumVal);
+  return EnumConstantDecl::Create(Context, Enum, NameInfo.getLoc(),
+                                  NameInfo.getName(), EltTy, Val, EnumVal);
 }
 
 Sema::SkipBodyInfo Sema::shouldSkipAnonEnumBody(Scope *S, IdentifierInfo *II,
@@ -16732,7 +16731,7 @@ Sema::SkipBodyInfo Sema::shouldSkipAnonEnumBody(Scope *S, IdentifierInfo *II,
 }
 
 Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
-                              SourceLocation IdLoc, IdentifierInfo *Id,
+                              const DeclarationNameInfo &NameInfo,
                               const ParsedAttributesView &Attrs,
                               SourceLocation EqualLoc, Expr *Val) {
   EnumDecl *TheEnumDecl = cast<EnumDecl>(theEnumDecl);
@@ -16745,13 +16744,13 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
 
   // Verify that there isn't already something declared with this name in this
   // scope.
-  LookupResult R(*this, Id, IdLoc, LookupOrdinaryName, ForVisibleRedeclaration);
+  LookupResult R(*this, NameInfo, LookupOrdinaryName, ForVisibleRedeclaration);
   LookupName(R, S);
   NamedDecl *PrevDecl = R.getAsSingle<NamedDecl>();
 
   if (PrevDecl && PrevDecl->isTemplateParameter()) {
     // Maybe we will complain about the shadowed template parameter.
-    DiagnoseTemplateParameterShadow(IdLoc, PrevDecl);
+    DiagnoseTemplateParameterShadow(NameInfo.getLoc(), PrevDecl);
     // Just pretend that we didn't see the previous declaration.
     PrevDecl = nullptr;
   }
@@ -16762,11 +16761,10 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
   // - every enumerator of every member of class T that is an unscoped
   // enumerated type
   if (getLangOpts().CPlusPlus && !TheEnumDecl->isScoped())
-    DiagnoseClassNameShadow(TheEnumDecl->getDeclContext(),
-                            DeclarationNameInfo(Id, IdLoc));
+    DiagnoseClassNameShadow(TheEnumDecl->getDeclContext(), NameInfo);
 
   EnumConstantDecl *New =
-    CheckEnumConstant(TheEnumDecl, LastEnumConst, IdLoc, Id, Val);
+    CheckEnumConstant(TheEnumDecl, LastEnumConst, NameInfo, Val);
   if (!New)
     return nullptr;
 
@@ -16782,10 +16780,11 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
            "Received TagDecl when not in C++!");
     if (!isa<TagDecl>(PrevDecl) && isDeclInScope(PrevDecl, CurContext, S)) {
       if (isa<EnumConstantDecl>(PrevDecl))
-        Diag(IdLoc, diag::err_redefinition_of_enumerator) << Id;
+        Diag(NameInfo.getLoc(), diag::err_redefinition_of_enumerator)
+          << NameInfo.getName();
       else
-        Diag(IdLoc, diag::err_redefinition) << Id;
-      notePreviousDefinition(PrevDecl, IdLoc);
+        Diag(NameInfo.getLoc(), diag::err_redefinition) << NameInfo.getName();
+      notePreviousDefinition(PrevDecl, NameInfo.getLoc());
       return nullptr;
     }
   }

@@ -1802,9 +1802,9 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
     Value = TransformExpr(UninstValue);
   }
 
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
   Decl *EnumConstDecl = getSema().CheckEnumConstant(
-      ED, getSema().LastEnumConstDecl, D->getLocation(),
-      D->getIdentifier(), Value.get());
+      ED, getSema().LastEnumConstDecl, DNI, Value.get());
 
   if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(ED->getDeclContext()))
     EnumConstDecl->setAccess(RD->getDefaultAccessSpecifier());

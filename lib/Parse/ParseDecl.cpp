@@ -4552,15 +4552,40 @@ static bool isEnumFragment(Scope *S) {
   return InEnum;
 }
 
+bool Parser::ParseEnumeratorIdentifier(DeclarationNameInfo &NameInfo) {
+  if (Tok.is(tok::kw_unqualid)) {
+    CXXScopeSpec SS;
+    UnqualifiedId UnqualifiedId;
+    if (ParseCXXReflectedId(SS, /*TemplateKWLoc=*/SourceLocation(),
+                            UnqualifiedId))
+      return true;
+
+    NameInfo = Actions.GetNameFromUnqualifiedId(UnqualifiedId);
+    return false;
+  }
+
+  // Parse enumerator. If failed, try skipping till the start of the next
+  // enumerator definition.
+  if (Tok.isNot(tok::identifier))
+    return true;
+
+  IdentifierInfo *Ident = Tok.getIdentifierInfo();
+  SourceLocation IdentLoc = ConsumeToken();
+  NameInfo = DeclarationNameInfo(Ident, IdentLoc);
+
+  return false;
+}
+
 /// ParseEnumBody - Parse a {} enclosed enumerator-list.
 ///       enumerator-list:
 ///         enumerator
 ///         enumerator-list ',' enumerator
 ///       enumerator:
-///         enumeration-constant attributes[opt]
-///         enumeration-constant attributes[opt] '=' constant-expression
-///       enumeration-constant:
+///         enumerator-identifier attributes[opt]
+///         enumerator-identifier attributes[opt] '=' constant-expression
+///       enumerator-identifier:
 ///         identifier
+///         reflected-unqualid-id
 ///
 void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Enter the scope of the enum body and start the definition.
@@ -4592,17 +4617,14 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
       }
     }
 
-    // Parse enumerator. If failed, try skipping till the start of the next
-    // enumerator definition.
-    if (Tok.isNot(tok::identifier)) {
-      Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    DeclarationNameInfo NameInfo;
+    if (ParseEnumeratorIdentifier(NameInfo)) {
+      Diag(Tok.getLocation(), diag::err_expected_enumerator_identifier);
       if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
           TryConsumeToken(tok::comma))
         continue;
       break;
     }
-    IdentifierInfo *Ident = Tok.getIdentifierInfo();
-    SourceLocation IdentLoc = ConsumeToken();
 
     // If attributes exist after the enumerator, parse them.
     ParsedAttributesWithRange attrs(AttrFactory);
@@ -4630,7 +4652,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
     // Install the enumerator constant into EnumDecl.
     Decl *EnumConstDecl = Actions.ActOnEnumConstant(
         getCurScope(), EnumDecl, Actions.LastEnumConstDecl,
-        IdentLoc, Ident, attrs, EqualLoc, AssignedVal.get());
+        NameInfo, attrs, EqualLoc, AssignedVal.get());
     EnumAvailabilityDiags.back().done();
 
     EnumConstantDecls.push_back(EnumConstDecl);

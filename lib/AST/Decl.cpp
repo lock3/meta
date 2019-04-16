@@ -4554,16 +4554,18 @@ bool CapturedDecl::isNothrow() const { return BodyAndNothrow.getInt(); }
 void CapturedDecl::setNothrow(bool Nothrow) { BodyAndNothrow.setInt(Nothrow); }
 
 EnumConstantDecl *EnumConstantDecl::Create(ASTContext &C, EnumDecl *CD,
-                                           SourceLocation L,
-                                           IdentifierInfo *Id, QualType T,
-                                           Expr *E, const llvm::APSInt &V) {
-  return new (C, CD) EnumConstantDecl(CD, L, Id, T, E, V);
+                                           SourceLocation NameLoc,
+                                           const DeclarationName &Name,
+                                           QualType T, Expr *E,
+                                           const llvm::APSInt &V) {
+  return new (C, CD) EnumConstantDecl(CD, NameLoc, Name, T, E, V);
 }
 
 EnumConstantDecl *
 EnumConstantDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(), nullptr,
-                                      QualType(), nullptr, llvm::APSInt());
+  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(),
+                                      DeclarationName(), QualType(),
+                                      nullptr, llvm::APSInt());
 }
 
 void IndirectFieldDecl::anchor() {}
