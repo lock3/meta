@@ -414,36 +414,7 @@ public:
   }
 
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
-                               SmallVectorImpl<ParmVarDecl *> &Parms) {
-    ExprResult TransformedOperand = getDerived().TransformExpr(
-                                                              Injected.Operand);
-    if (TransformedOperand.isInvalid())
-      return true;
-
-    Expr *Operand = TransformedOperand.get();
-    Sema::ExpansionContextBuilder CtxBldr(SemaRef, SemaRef.getCurScope(),
-                                          Operand);
-    if (CtxBldr.BuildCalls())
-      ; // TODO: Diag << failed to build calls
-
-    // Traverse the range now and add the exprs to the vector
-    Sema::RangeTraverser Traverser(SemaRef, CtxBldr.getKind(),
-                                   CtxBldr.getRangeBeginCall(),
-                                   CtxBldr.getRangeEndCall());
-
-    while (!Traverser) {
-      Reflection R;
-      if (EvaluateReflection(SemaRef, *Traverser, R))
-        return true;
-
-      Decl *ReflectD = const_cast<Decl *>(R.getAsDeclaration());
-      Parms.push_back(cast<ParmVarDecl>(ReflectD));
-
-      ++Traverser;
-    }
-
-    return false;
-  }
+                               SmallVectorImpl<ParmVarDecl *> &Parms);
 
   bool ExpandInjectedParameters(
      ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams) {
@@ -624,6 +595,59 @@ bool InjectionContext::isInInjection(Decl *D) {
       return false;
     DC = DC->getParent();
   }
+  return false;
+}
+
+static ParmVarDecl *GetReflectedPVD(const Reflection &R) {
+  if (!R.isDeclaration())
+    return nullptr;
+
+  Decl *ReflectD = const_cast<Decl *>(R.getAsDeclaration());
+  return dyn_cast<ParmVarDecl>(ReflectD);
+}
+
+bool InjectionContext::ExpandInjectedParameter(
+                                        const CXXInjectedParmsInfo &Injected,
+                                        SmallVectorImpl<ParmVarDecl *> &Parms) {
+  ExprResult TransformedOperand = getDerived().TransformExpr(
+                                                            Injected.Operand);
+  if (TransformedOperand.isInvalid())
+    return true;
+
+  Expr *Operand = TransformedOperand.get();
+  Sema::ExpansionContextBuilder CtxBldr(SemaRef, SemaRef.getCurScope(),
+                                        Operand);
+  if (CtxBldr.BuildCalls())
+    ; // TODO: Diag << failed to build calls
+
+  // Traverse the range now and add the exprs to the vector
+  Sema::RangeTraverser Traverser(SemaRef, CtxBldr.getKind(),
+                                 CtxBldr.getRangeBeginCall(),
+                                 CtxBldr.getRangeEndCall());
+
+  while (!Traverser) {
+    Expr *CurExpr = *Traverser;
+
+    Reflection R;
+    if (EvaluateReflection(SemaRef, CurExpr, R))
+      return true;
+
+    if (R.isInvalid()) {
+      DiagnoseInvalidReflection(SemaRef, CurExpr, R);
+      return true;
+    }
+
+    ParmVarDecl *ReflectedPVD = GetReflectedPVD(R);
+    if (!ReflectedPVD) {
+      SourceLocation &&CurExprLoc = CurExpr->getExprLoc();
+      SemaRef.Diag(CurExprLoc, diag::err_reflection_not_parm_var_decl);
+      return true;
+    }
+
+    Parms.push_back(ReflectedPVD);
+    ++Traverser;
+  }
+
   return false;
 }
 

@@ -668,6 +668,8 @@ public:
 
   bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
 
+  void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
+
 } // namespace clang
 
 #endif

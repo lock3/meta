@@ -556,26 +556,6 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
-static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
-                                      const Reflection &R) {
-  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
-
-  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
-  if (!InvalidRefl)
-    return;
-
-  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
-  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
-
-  // Evaluate the message so that we can transform it into a string.
-  SmallString<256> Buf;
-  llvm::raw_svector_ostream OS(Buf);
-  Message->outputString(OS);
-  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
-
-  SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
-}
-
 ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
                                     Expr *Refl,
                                     SourceLocation LParenLoc,
@@ -1117,7 +1097,8 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   if (!Eval->EvaluateAsAnyValue(Result, Context)) {
-    Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
+    SourceLocation &&ExprLoc = Eval->getExprLoc();
+    Diag(ExprLoc, diag::err_reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();

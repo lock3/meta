@@ -2501,10 +2501,12 @@ def err_expression_not_type_reflection : Error<
   "expression does not reflect a type">;
 def err_expression_not_value_reflection : Error<
   "expression does not reflect a value">;
-def reflection_not_constant_expression : Error<
+def err_reflection_not_constant_expression : Error<
   "reflection is not a constant expression">;
-def reflection_reflects_non_constant_expression : Error<
+def err_reflection_reflects_non_constant_expression : Error<
   "reflection reflects an expression which is not constexpr">;
+def err_reflection_not_parm_var_decl : Error<
+  "reflection does not reflect a parameter">;
 def err_reflection_not_known : Error<
   "expression does not reflect a construct">;
 def err_empty_type_reflection : Error<
