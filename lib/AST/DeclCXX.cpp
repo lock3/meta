@@ -3049,6 +3049,25 @@ CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
                                                  TInfo, RequiresLoc);
 }
 
+CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
+                                                     DeclContext *DC,
+                                                     DeclaratorDecl *DD,
+                                                     SourceLocation RL)
+  :DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
+                  QualType(Context.DependentTy),
+                  Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
+                  RL), RequiresLoc(RL)
+{
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclaratorDecl *RequiredDecl,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC,
+                                                 RequiredDecl, RequiresLoc);
+}
+
 CXXRequiredDeclaratorDecl *
 CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
                                               unsigned ID) {

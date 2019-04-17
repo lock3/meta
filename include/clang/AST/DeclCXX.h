@@ -4300,21 +4300,36 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// The location of the 'requires' keyword
   SourceLocation RequiresLoc;
 
+  /// The type of the actual declarator. (RequiredDeclaratorDecls
+  /// are always dependently typed.)
+  QualType DeclaratorType;
+
+  /// The TypeSourceInfo of the actual declarator, see above.
+  TypeSourceInfo *DeclaratorTInfo;
+
   CXXRequiredDeclaratorDecl(DeclContext *DC, DeclarationName N,
                             QualType T, TypeSourceInfo *TInfo,
                             SourceLocation RL)
     : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, N, T, TInfo, RL),
       RequiresLoc(RL)
     { }
+  CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
+                            DeclaratorDecl *DD, SourceLocation RL);
 public:
- static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
+  static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
                                            DeclarationName N, QualType T,
                                            TypeSourceInfo *TInfo,
+                                           SourceLocation RequiresLoc);
+  static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                           DeclaratorDecl *RequiredDecl,
                                            SourceLocation RequiresLoc);
   static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
                                                        unsigned ID);
 
   SourceLocation getRequiresLoc() const { return RequiresLoc; }
+
+  QualType getDeclaratorType() const { return DeclaratorType; }
+  TypeSourceInfo *getDeclaratorTInfo() const { return DeclaratorTInfo; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }

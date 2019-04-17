@@ -283,6 +283,26 @@ public:
     return QualType();
   }
 
+  DeclaratorDecl *GetRequiredDeclarator(const Decl *D) {
+    if (!isa<DeclaratorDecl>(D))
+      return nullptr;
+
+    auto Iter = RequiredDecls.find(cast<DeclaratorDecl>(D));
+    if (Iter != RequiredDecls.end())
+      return Iter->second;
+    return nullptr;
+  }
+
+  DeclaratorDecl *GetRequiredOverload(const Decl *D) {
+    if (!isa<DeclaratorDecl>(D))
+      return nullptr;
+
+    auto Iter = RequiredOverloads.find(cast<DeclaratorDecl>(D));
+    if (Iter != RequiredOverloads.end())
+      return Iter->second;
+    return nullptr;
+  }
+
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool isInInjection(Decl *D);
 
@@ -417,7 +437,98 @@ public:
       return R;
     }
 
+    DeclaratorDecl *DD = GetRequiredDeclarator(E->getDecl());
+    if (!DD)
+      DD = GetRequiredOverload(E->getDecl());
+    llvm::outs() << "Transforming DRE\n";
+    if (DD) {
+      llvm::outs() << "FOUND\n";
+      DD->dump();
+      TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
+      if (E->hasExplicitTemplateArgs()) {
+        TemplateArgs = &TransArgs;
+        TransArgs.setLAngleLoc(E->getLAngleLoc());
+        TransArgs.setRAngleLoc(E->getRAngleLoc());
+        if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                    E->getNumTemplateArgs(),
+                                                    TransArgs))
+          return ExprError();
+      }
+
+      if (isa<ValueDecl>(DD)) {
+        DeclarationNameInfo DNI(DD->getDeclName(), DD->getLocation());
+        return RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD),
+                                  DNI, TemplateArgs);
+      }
+    }
+
     return Base::TransformDeclRefExpr(E);
+  }
+
+  ExprResult TransformCallExpr(CallExpr *E) {
+    llvm::outs() << "TRANSFORMCALLEXPR\n";
+    if (DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee())) {
+      llvm::outs() << "Callee was DRE\n";
+      if (DeclaratorDecl *D = GetRequiredOverload(Callee->getDecl())) {
+        llvm::outs() << "Callee was required\n";
+        bool ArgChanged;
+        llvm::SmallVector<Expr *, 8> Args;
+        if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                           &ArgChanged))
+          return ExprError();
+        DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+        Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+        LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
+                       Sema::LookupOrdinaryName);
+
+        ExprResult NewCallee = TransformDeclRefExpr(Callee);
+        llvm::outs() << "NEW CALLEE\n";
+        NewCallee.get()->dump();
+        // if (NewCallee.isInvalid()) {
+        //   llvm::outs() << "NewCallee invalid\n";
+        //   return ExprError();
+        // }
+        
+        SourceLocation FakeLParenLoc
+          = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
+        // ExprResult NewCall = RebuildCallExpr(NewCallee.get(), FakeLParenLoc,
+        //                        Args, E->getRParenLoc());
+        // llvm::outs() << "NewCall\n";
+        // NewCall.get()->dump();
+        // return NewCall;
+
+        if (!getSema().LookupName(R, S))
+          return ExprError();
+        // In a dependent context, we won't find the original scope and have
+        // to use the parser setup. In a non-dependent context, we'll want
+        // the original parsed scope.
+        if (!S) {
+          ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+          S = ParserLookup.getCurScope();
+        }
+
+        if (!R.isOverloadedResult())
+          llvm_unreachable("not overloaded");
+
+       const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+
+        UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+          SemaRef.Context,
+          /*NamingClass=*/nullptr, Callee->getQualifierLoc(),
+          DeclarationNameInfo(D->getDeclName(), Callee->getLocation()),
+          /*ADL=*/true, /*Overloaded=*/R.isOverloadedResult(),
+          FoundNames.begin(), FoundNames.end());
+
+        ExprResult NewCall2 =
+          RebuildCallExpr(Fn, E->getBeginLoc(),
+                          Args, E->getRParenLoc());
+        llvm::outs() << "NewCall2\n";
+        NewCall2.get()->dump();
+        return NewCall2;
+      }
+    }
+
+    return Base::TransformCallExpr(E);
   }
 
   QualType TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
@@ -528,6 +639,7 @@ public:
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
+  Decl *InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
 
   Stmt *InjectStmtImpl(Stmt *S);
   Stmt *InjectStmt(Stmt *S);
@@ -546,6 +658,12 @@ public:
 
   /// A mapping of required typenames to their corresponding declared types.
   llvm::DenseMap<CXXRequiredTypeDecl *, QualType> RequiredTypes;
+
+  /// A mapping of requires declarators to their corresponding declarators.
+  llvm::DenseMap<DeclaratorDecl *, DeclaratorDecl *> RequiredDecls;
+
+  /// A mapping of requires declarators with overload sets.
+  llvm::DenseMap<DeclaratorDecl *, DeclaratorDecl *> RequiredOverloads;
 
   /// A list of expanded parameter injections to be cleaned up.
   llvm::SmallVector<SmallVector<ParmVarDecl *, 8> *, 4> ParamInjectionCleanups;
@@ -981,7 +1099,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
 
 Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
-
+  
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
@@ -1453,17 +1571,10 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
-<<<<<<< HEAD
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
   case Decl::CXXRequiredDeclarator:
-=======
->>>>>>> Requires Typename declaration implemented.
-  case Decl::CXXRequiredType:
-    return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
-  case Decl::CXXRequiredDeclarator:
-    // No reason to ever inject these.
-    return nullptr;
+    return InjectCXXRequiredDeclaratorDecl(cast<CXXRequiredDeclaratorDecl>(D));
   default:
     break;
   }
@@ -1867,13 +1978,11 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
 Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
   Scope *S = getSema().getScopeForContext(InjecteeAsDC);
-<<<<<<< HEAD
+  
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
-=======
->>>>>>> Requires Typename declaration implemented.
-
+  
   // Find the name of the declared type and look it up.
   LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
                  Sema::LookupAnyName);
@@ -1908,6 +2017,47 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
     // We didn't find any declaration with this name.
     SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
     return nullptr;
+  }
+
+  return nullptr;
+}
+
+Decl *
+InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+  Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+
+  // In a dependent context, we won't find the original scope and have
+  // to use the parser setup. In a non-dependent context, we'll want
+  // the original parsed scope.
+  if (!S) {
+    ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+    S = ParserLookup.getCurScope();
+  }
+
+  // Find the name of the declarator outside of the fragment.
+  LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
+                 Sema::LookupAnyName);
+  if (getSema().LookupName(R, S)) {
+    if (R.isSingleResult()) {
+      NamedDecl *FoundDecl = R.getFoundDecl();
+      if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
+        return nullptr;
+      RequiredDecls.insert({D, cast<DeclaratorDecl>(FoundDecl)});
+    } else if (R.isOverloadedResult()) {
+      llvm::outs() << "Overloaded\n";
+      NamedDecl *RepresentativeDecl = R.getRepresentativeDecl();
+      if (RepresentativeDecl->isInvalidDecl() ||
+          !isa<DeclaratorDecl>(RepresentativeDecl))
+          return nullptr;
+      RequiredOverloads.insert({D, cast<DeclaratorDecl>(RepresentativeDecl)});
+      R.getRepresentativeDecl()->dump();
+      const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+      D->dump();
+    } else {
+      SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
+        << "required declarator.";
+    }
   }
 
   return nullptr;

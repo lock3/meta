@@ -3054,7 +3054,8 @@ ExprResult Sema::BuildDeclarationNameExpr(
       break;
 
     // Non-type template parameters are either l-values or r-values
-    // depending on the type.
+    // depending on the type. Required declarators act similarly.
+    case Decl::CXXRequiredDeclarator:
     case Decl::NonTypeTemplateParm: {
       if (const ReferenceType *reftype = type->getAs<ReferenceType>()) {
         type = reftype->getPointeeType();
@@ -3156,8 +3157,6 @@ ExprResult Sema::BuildDeclarationNameExpr(
 
     case Decl::CXXDeductionGuide:
       llvm_unreachable("building reference to deduction guide");
-    case Decl::CXXRequiredDeclarator:
-      llvm_unreachable("Building reference to requires declaration.");
 
     case Decl::MSProperty:
       valueKind = VK_LValue;

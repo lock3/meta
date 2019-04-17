@@ -37,6 +37,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Sema/Template.h"
+#include "clang/Sema/ParserLookupSetup.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -10928,9 +10929,13 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   // We don't want the declarator we create to be added to the scope.
   AnalyzingRequiredDeclarator = true;
   DeclaratorDecl *DDecl
-    = cast<DeclaratorDecl>(ActOnDeclarator(getCurScope(), D));
+    = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
   // We don't need this anymore, make sure it doesn't stay set.
   AnalyzingRequiredDeclarator = false;
+  // It doesn't matter if this is auto.
+  ParsingInitForAutoVars.erase(DDecl);
+  llvm::outs() << "The decl:\n";
+  DDecl->dump();
   if (!DDecl)
     return nullptr;
 
@@ -10938,9 +10943,11 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   TypeSourceInfo *TSI = DDecl->getTypeSourceInfo();
   QualType T = TSI->getType();
 
+
   CXXRequiredDeclaratorDecl *RDD =
-    CXXRequiredDeclaratorDecl::Create(Context, CurContext, Name,
-                                      T, TSI, RequiresLoc);
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+  getCurScope()->AddDecl(RDD);
+  IdResolver->AddDecl(RDD); 
   return RDD;
 }
 
@@ -10951,8 +10958,6 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
     CXXRequiredTypeDecl::Create(Context, CurContext,
                                 RequiresLoc, TypenameLoc, Id);
 
-  // RTD->setTypeForDecl(Context.DependentTy);
-  
   getCurScope()->AddDecl(RTD);
   IdResolver->AddDecl(RTD);
   return RTD;
