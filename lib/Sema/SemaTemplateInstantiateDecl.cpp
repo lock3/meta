@@ -931,6 +931,7 @@ static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
   if (NewBody.isInvalid())
     return nullptr;
   NewFn->setBody(NewBody.get());
+  SemaRef.DiscardCleanupsInEvaluationContext();
 
   // Build the constexpr declaration.
   MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
