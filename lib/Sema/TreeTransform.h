@@ -11517,8 +11517,8 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   if (Old->getNamingClass()) {
     CXXRecordDecl *NamingClass
       = cast_or_null<CXXRecordDecl>(getDerived().TransformDecl(
-                                      Old->getNameLoc(),
-                                      Old->getNamingClass()));
+							       Old->getNameLoc(),
+							       Old->getNamingClass()));
     if (!NamingClass) {
       R.clear();
       return ExprError();

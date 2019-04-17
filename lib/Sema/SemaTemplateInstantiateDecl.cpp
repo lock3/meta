@@ -1013,6 +1013,16 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
                                            NewTSI, D->getRequiresLoc());
 }
 
+Decl
+*TemplateDeclInstantiator::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  IdentifierInfo *Id = D->getNameInfo().getName().getAsIdentifierInfo();
+  return CXXRequiredTypeDecl::Create(SemaRef.Context,
+                                     SemaRef.CurContext,
+                                     D->getRequiresLoc(),
+                                     D->getTypenameLoc(),
+                                     Id);
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];

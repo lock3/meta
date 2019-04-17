@@ -1435,7 +1435,7 @@ public:
                           TemplateTypeParmDecl *ParmDecl = nullptr) const;
 
   QualType
-  getCXXRequiredTypeType(CXXRequiredTypeDecl *D) const;
+  getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const;
 
   QualType getTemplateSpecializationType(TemplateName T,
                                          ArrayRef<TemplateArgument> Args,

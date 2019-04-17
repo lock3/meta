@@ -4050,8 +4050,10 @@ QualType ASTContext::getTemplateTypeParmType(unsigned Depth, unsigned Index,
 }
 
 QualType
-ASTContext::getCXXRequiredTypeType(CXXRequiredTypeDecl *D) const {
-  llvm_unreachable("Todo");
+ASTContext::getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const {
+  Type *newType = new (*this, TypeAlignment) CXXRequiredTypeType(D);
+  Types.push_back(newType);
+  return QualType(newType, 0);
 }
 
 TypeSourceInfo *

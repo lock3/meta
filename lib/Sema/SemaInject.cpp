@@ -502,8 +502,8 @@ public:
         // In a dependent context, we won't find the original scope and have
         // to use the parser setup. In a non-dependent context, we'll want
         // the original parsed scope.
+        ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
         if (!S) {
-          ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
           S = ParserLookup.getCurScope();
         }
 
@@ -1643,44 +1643,27 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
 }
 
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
-  auto AddDeclToInjecteeScope = [this](Decl *OldDecl) -> Decl* {
+  auto AddDeclToInjectee = [this](Decl *OldDecl) -> Decl* {
     Decl *D = InjectDecl(OldDecl);
     if (!D || D->isInvalidDecl())
       return nullptr;
 
-    Scope *FunctionScope =
-      getSema().getScopeForContext(Decl::castToDeclContext(Injectee));
-    getSema().IdResolver->AddDecl(cast<NamedDecl>(D));
-    FunctionScope->AddDecl(D);
-
     return D;
   };
 
-  if (S->isSingleDecl()) {
-    // FIXME dependent stuff can't be added to the scope,
-    // we gotta do the lookup here
-    if (Decl *NewDecl = AddDeclToInjecteeScope(S->getSingleDecl())) {
-      DeclGroupRef NewDG(NewDecl);
-      DeclStmt *NewS =
-        new (getSema().getASTContext()) DeclStmt(NewDG, S->getBeginLoc(),
-                                                 S->getEndLoc());
-      TransformDeclStmt(NewS);
-      InjectedStmts.push_back(NewS);
-      return NewS;
-    }
-    return nullptr;
+  llvm::SmallVector<Decl *, 4> Decls;
+  for (Decl *D : S->decls()) {
+    if (Decl *NewDecl = AddDeclToInjectee(D))
+      Decls.push_back(NewDecl);
+     else
+       return nullptr;
   }
 
-  DeclGroup &DG = S->getDeclGroup().getDeclGroup();
-  bool Invalid = false;
-  for (std::size_t I = 0; I < DG.size(); ++I)
-    if (!AddDeclToInjecteeScope(DG[I]))
-      Invalid = true;
-
-  if (Invalid)
+  StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
+  if (Res.isInvalid())
     return nullptr;
-  InjectedStmts.push_back(S);
-  return S;
+  InjectedStmts.push_back(Res.get());
+  return Res.get();
 }
 
 template <typename MetaType>
@@ -1978,11 +1961,11 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
 Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
   Scope *S = getSema().getScopeForContext(InjecteeAsDC);
-  
+
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
-  
+
   // Find the name of the declared type and look it up.
   LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
                  Sema::LookupAnyName);
@@ -2030,8 +2013,8 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
   // In a dependent context, we won't find the original scope and have
   // to use the parser setup. In a non-dependent context, we'll want
   // the original parsed scope.
+  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
   if (!S) {
-    ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
     S = ParserLookup.getCurScope();
   }
 

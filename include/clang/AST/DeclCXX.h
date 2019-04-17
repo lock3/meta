@@ -4334,7 +4334,7 @@ public:
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }
 };
-  
+ 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
