@@ -12,7 +12,7 @@ auto do_the_thing() {
 }
 
 void test1() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXReIvLA4_KcEEEDav(
+  // CHECK: define internal i32 @_Z12do_the_thingIXRe{{[0-9]+}}EEDav(
   do_the_thing<__invalid_reflection("Abc")>();
 }
 
@@ -60,7 +60,7 @@ void test7() {
 }
 
 void test8() {
-  // CHECK: define internal i32 @_Z12do_the_thingIXReplLi1ELi2EEEDav(
+  // CHECK: define internal i32 @_Z12do_the_thingIXRe{{[0-9]+}}EEDav(
   do_the_thing<reflexpr(1 + 2)>();
 }
 
