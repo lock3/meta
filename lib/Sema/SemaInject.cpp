@@ -3180,8 +3180,10 @@ static void
 ActOnCXXMetaError(Sema &Sema, Decl *D, DeclContext *OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
   MD->setInvalidDecl();
+
   FunctionDecl *Fn = MD->getFunctionDecl();
-  Sema.ActOnStartOfFunctionDef(nullptr, Fn);
+
+  Sema.DiscardCleanupsInEvaluationContext();
   Sema.ActOnFinishFunctionBody(Fn, nullptr);
 
   Sema.CurContext = OriginalDC;
