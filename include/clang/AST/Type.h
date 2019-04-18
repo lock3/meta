@@ -2566,7 +2566,7 @@ class PointerType : public Type, public llvm::FoldingSetNode {
   PointerType(QualType Pointee, QualType CanonicalPtr)
       : Type(Pointer, CanonicalPtr, Pointee->isDependentType(),
              Pointee->isInstantiationDependentType(),
-             /*MetaType=*/false,
+             Pointee->isMetaType(),
              Pointee->isVariablyModifiedType(),
              Pointee->containsUnexpandedParameterPack()),
         PointeeType(Pointee) {}
