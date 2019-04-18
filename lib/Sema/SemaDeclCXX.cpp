@@ -10939,11 +10939,6 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   if (!DDecl)
     return nullptr;
 
-  DeclarationName Name(D.getIdentifier());
-  TypeSourceInfo *TSI = DDecl->getTypeSourceInfo();
-  QualType T = TSI->getType();
-
-
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
   getCurScope()->AddDecl(RDD);
@@ -10953,10 +10948,10 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
 
 Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
                                      SourceLocation TypenameLoc,
-                                     IdentifierInfo *Id) {
+                                     IdentifierInfo *Id, bool Typename) {
   CXXRequiredTypeDecl *RTD =
     CXXRequiredTypeDecl::Create(Context, CurContext,
-                                RequiresLoc, TypenameLoc, Id);
+                                RequiresLoc, TypenameLoc, Id, Typename);
 
   getCurScope()->AddDecl(RTD);
   IdResolver->AddDecl(RTD);

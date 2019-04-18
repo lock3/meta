@@ -61,7 +61,7 @@ bool Parser::isCXXDeclarationStatement() {
     // required-declarator-decl:
     return true;
   case tok::kw_requires:
-    if (NextToken().is(tok::kw_typename))
+    if (NextToken().is(tok::kw_typename) || NextToken().is(tok::kw_class))
       ParsingTypenameRequires = true;
     return true;
   case tok::kw_requires:

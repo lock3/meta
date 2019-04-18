@@ -1019,8 +1019,8 @@ Decl
   return CXXRequiredTypeDecl::Create(SemaRef.Context,
                                      SemaRef.CurContext,
                                      D->getRequiresLoc(),
-                                     D->getTypenameLoc(),
-                                     Id);
+                                     D->getSpecLoc(),
+                                     Id, D->wasDeclaredWithTypename());
 }
 
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {

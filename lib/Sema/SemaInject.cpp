@@ -440,10 +440,7 @@ public:
     DeclaratorDecl *DD = GetRequiredDeclarator(E->getDecl());
     if (!DD)
       DD = GetRequiredOverload(E->getDecl());
-    llvm::outs() << "Transforming DRE\n";
     if (DD) {
-      llvm::outs() << "FOUND\n";
-      DD->dump();
       TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
       if (E->hasExplicitTemplateArgs()) {
         TemplateArgs = &TransArgs;
@@ -466,11 +463,8 @@ public:
   }
 
   ExprResult TransformCallExpr(CallExpr *E) {
-    llvm::outs() << "TRANSFORMCALLEXPR\n";
     if (DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee())) {
-      llvm::outs() << "Callee was DRE\n";
       if (DeclaratorDecl *D = GetRequiredOverload(Callee->getDecl())) {
-        llvm::outs() << "Callee was required\n";
         bool ArgChanged;
         llvm::SmallVector<Expr *, 8> Args;
         if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
@@ -482,15 +476,14 @@ public:
                        Sema::LookupOrdinaryName);
 
         ExprResult NewCallee = TransformDeclRefExpr(Callee);
-        llvm::outs() << "NEW CALLEE\n";
         NewCallee.get()->dump();
         // if (NewCallee.isInvalid()) {
         //   llvm::outs() << "NewCallee invalid\n";
         //   return ExprError();
         // }
-        
-        SourceLocation FakeLParenLoc
-          = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
+
+        // SourceLocation FakeLParenLoc
+        //   = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
         // ExprResult NewCall = RebuildCallExpr(NewCallee.get(), FakeLParenLoc,
         //                        Args, E->getRParenLoc());
         // llvm::outs() << "NewCall\n";
@@ -522,8 +515,6 @@ public:
         ExprResult NewCall2 =
           RebuildCallExpr(Fn, E->getBeginLoc(),
                           Args, E->getRParenLoc());
-        llvm::outs() << "NewCall2\n";
-        NewCall2.get()->dump();
         return NewCall2;
       }
     }
@@ -2034,9 +2025,6 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
           !isa<DeclaratorDecl>(RepresentativeDecl))
           return nullptr;
       RequiredOverloads.insert({D, cast<DeclaratorDecl>(RepresentativeDecl)});
-      R.getRepresentativeDecl()->dump();
-      const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
-      D->dump();
     } else {
       SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
         << "required declarator.";

@@ -973,7 +973,12 @@ DeclPrinter::VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
 
 void
 DeclPrinter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  Out << "requires typename ";
+  Out << "requires ";
+  if (D->wasDeclaredWithTypename())
+    Out << "typename ";
+  else
+    Out << "class ";
+  
   QualType T = QualType(D->getTypeForDecl(), 0);
   printDeclType(T, D->getName());
 }

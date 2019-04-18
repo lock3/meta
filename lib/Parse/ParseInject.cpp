@@ -191,8 +191,6 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
   CXXStmtFragmentDecl *Body =
     CXXStmtFragmentDecl::Create(Actions.getASTContext(), CurContext, IntroLoc);
   Body->setBody(cast<CompoundStmt>(Block.get()));
-  llvm::outs() << "The parsed body:\n";
-  Body->dump();
 
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Body);
 }

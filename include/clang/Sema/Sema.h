@@ -4830,7 +4830,7 @@ public:
                                        Declarator &D);
   Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
                                  SourceLocation TypenameLoc,
-                                 IdentifierInfo *Id);
+                                 IdentifierInfo *Id, bool Typename);
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.

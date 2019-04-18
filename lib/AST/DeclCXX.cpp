@@ -3075,15 +3075,17 @@ CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
 }
 
 CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
-                                         SourceLocation TL, IdentifierInfo *Id)
-  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), TypenameLoc(TL)
+                                         SourceLocation SL, IdentifierInfo *Id,
+                                         bool Typename)
+  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), SpecLoc(SL),
+    WasDeclaredWithTypename(Typename)
 {
 }
 
 CXXRequiredTypeDecl *
 CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
-                            SourceLocation TL, IdentifierInfo *Id) {
-  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, TL, Id);
+                            SourceLocation SL, IdentifierInfo *Id, bool Typename) {
+  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, SL, Id, Typename);
 }
 
 CXXRequiredTypeDecl *
