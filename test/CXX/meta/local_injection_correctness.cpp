@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 -freflection -std=c++1z %s
-// expected-no-diagnostics
 
 #define assert(E) if (!(E)) __builtin_abort();
 
@@ -28,6 +27,18 @@ T h() {
   };
 }
 
+template<int x>
+constexpr auto templ_frag = __fragment {
+  return x;
+};
+
+constexpr int temple_frag_inst(bool bigNum) {
+  if (bigNum) {
+    consteval -> templ_frag<10>;
+  }
+  consteval -> templ_frag<0>;
+}
+
 int main() {
   // MetaprogramDecl
   consteval {
@@ -39,4 +50,5 @@ int main() {
   assert(f() == 9);
   assert(g() == 9);
   assert(h<int>() == int());
+  assert(temple_frag_inst(true) > temple_frag_inst(false));
 }

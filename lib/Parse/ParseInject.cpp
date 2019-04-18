@@ -176,11 +176,11 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
   SourceLocation IntroLoc = Tok.getLocation();
 
   // We need a function scope in order to parse a compound statement
-  // in a file context. 
-  Sema::FunctionScopeRAII FSRAII(Actions);
+  // in a file context.
   Actions.PushFunctionScope();
+  Sema::FunctionScopeRAII FunctionScopeCleanup(Actions);
 
-  // Parse the actual block. This consumes the braces.  
+  // Parse the actual block. This consumes the braces.
   StmtResult Block = ParseCompoundStatementBody();
   if (Block.isInvalid()) {
     Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
