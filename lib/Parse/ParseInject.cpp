@@ -323,7 +323,7 @@ StmtResult Parser::ParseCXXInjectionStatement() {
   /// Get a fragment or reflection as the operand of the injection statement.
   ExprResult Operand = ParseExpression();
   if (Operand.isInvalid())
-    return StmtResult();
+    return StmtError();
 
   Operand = Actions.CorrectDelayedTyposInExpr(Operand);
   if (Operand.isInvalid())
