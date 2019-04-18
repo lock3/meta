@@ -442,11 +442,11 @@ enum class StorageModifier : unsigned {
 };
 
 class ReflectionModifiers {
-  AccessModifier Access : 3;
-  StorageModifier Storage : 2;
-  unsigned AddConstexpr : 1;
-  unsigned AddVirtual : 1;
-  unsigned AddPureVirtual : 1;
+  AccessModifier Access;
+  StorageModifier Storage;
+  bool AddConstexpr;
+  bool AddVirtual;
+  bool AddPureVirtual;
   const Expr *NewName;
 public:
   ReflectionModifiers()

@@ -1172,6 +1172,9 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
     if (isa<CXXRecordDecl>(D) && cast<CXXRecordDecl>(D)->isLambda()) {
       OS << "lambda";
       HasKindDecoration = true;
+    } else if (isa<CXXRecordDecl>(D) && cast<CXXRecordDecl>(D)->isFragment()) {
+      OS << "fragment";
+      HasKindDecoration = true;
     } else {
       OS << "anonymous";
     }

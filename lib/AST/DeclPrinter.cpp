@@ -614,7 +614,12 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     if (D->isInlineSpecified())  Out << "inline ";
     if (D->isVirtualAsWritten()) Out << "virtual ";
     if (D->isModulePrivate())    Out << "__module_private__ ";
-    if (D->isConstexpr() && !D->isExplicitlyDefaulted()) Out << "constexpr ";
+    if (D->isConstexpr() && !D->isExplicitlyDefaulted()) {
+      if (D->isImmediate())
+        Out << "consteval ";
+      else
+        Out << "constexpr ";
+    }
     if ((CDecl && CDecl->isExplicitSpecified()) ||
         (ConversionDecl && ConversionDecl->isExplicitSpecified()) ||
         (GuideDecl && GuideDecl->isExplicitSpecified()))

@@ -3502,12 +3502,6 @@ void CXXNameMangler::mangleInitListElements(const InitListExpr *InitList) {
 
 void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
   switch (Op.getKind()) {
-  case ReflectionOperand::Invalid: {
-    Out << "Iv";
-    if (auto *InvalidRefl = Op.getAsInvalidReflection())
-      mangleExpression(InvalidRefl->ErrorMessage);
-    return;
-  }
   case ReflectionOperand::Type: {
     Out << "Ty";
     mangleType(Op.getAsType());
@@ -3527,17 +3521,16 @@ void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
     }
     return;
   }
-  case ReflectionOperand::Expression: {
-    mangleExpression(Op.getAsExpression());
-    return;
-  }
   case ReflectionOperand::Declaration: {
     NamedDecl *ND = cast<NamedDecl>(Op.getAsDeclaration());
     mangleName(ND);
     return;
   }
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Expression:
   case ReflectionOperand::BaseSpecifier: {
-    break;
+    Out << reinterpret_cast<std::uintmax_t>(Op.getOpaqueReflectionValue());
+    return;
   }
   }
 

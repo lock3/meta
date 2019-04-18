@@ -967,6 +967,9 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   if (!D->hasBody())
     return D;
 
+  SemaRef.PushFunctionScope();
+  Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
+
   Sema::ContextRAII SavedContext(SemaRef, D);
 
   SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;

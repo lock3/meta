@@ -9446,6 +9446,8 @@ def err_modify_virtual_constructor : Error<
   "cannot make a constructor virtual">;
 def err_modify_constexpr_field : Error<
   "cannot make a non-static data member constexpr">;
+def err_invalid_type_transformer_operand : Error<
+  "invalid operand of type %0; expected a reflection">;
 } // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {

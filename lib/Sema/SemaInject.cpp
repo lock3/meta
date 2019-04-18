@@ -3180,8 +3180,10 @@ static void
 ActOnCXXMetaError(Sema &Sema, Decl *D, DeclContext *OriginalDC) {
   MetaType *MD = cast<MetaType>(D);
   MD->setInvalidDecl();
+
   FunctionDecl *Fn = MD->getFunctionDecl();
-  Sema.ActOnStartOfFunctionDef(nullptr, Fn);
+
+  Sema.DiscardCleanupsInEvaluationContext();
   Sema.ActOnFinishFunctionBody(Fn, nullptr);
 
   Sema.CurContext = OriginalDC;
@@ -3350,6 +3352,18 @@ CXXRecordDecl *Sema::ActOnFinishMetaclass(CXXRecordDecl *Proto, Scope *S,
   return Class;
 }
 
+static bool CheckTypeTransformerOperand(Sema &S, Expr *Operand) {
+  QualType OperandType = Operand->getType();
+
+  if (!OperandType->isReflectionType()) {
+    S.Diag(Operand->getExprLoc(), diag::err_invalid_type_transformer_operand)
+      << OperandType;
+    return true;
+  }
+
+  return false;
+}
+
 Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
                                                        bool IsClass,
                                                        SourceLocation IdLoc,
@@ -3366,6 +3380,13 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
     Class->setAccess(RD->getDefaultAccessSpecifier());
 
   CurContext->addDecl(Class);
+
+  // Check the type, and if invalid, abort before completing the class.
+  if (CheckTypeTransformerOperand(*this, Reflection)) {
+    Class->setInvalidDecl();
+    return DeclGroupPtrTy::make(DeclGroupRef(Class));
+  }
+
   StartDefinition(Class);
 
   ContextRAII ClassContext(*this, Class);
