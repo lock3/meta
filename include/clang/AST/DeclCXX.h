@@ -4233,6 +4233,56 @@ public:
     return static_cast<CXXStmtFragmentDecl *>(const_cast<DeclContext*>(DC));
   }
 };
+
+/// Represents a dependent requires declaration which was marked with
+/// \c typename
+/// Similar to a CXXRequiredDeclaratorDecl, this declares a type exists
+/// outside of the fragment, but lookup is not performed until injection.
+///
+/// \code
+/// __fragment {
+///   requires typename S;
+///   S instance;
+/// }
+/// \endcode
+///
+/// The type associated with a CXXRequiredTypeDecl is currently always
+/// always a typename type.
+class CXXRequiredTypeDecl : public TypeDecl {
+  /// The source location of the 'requires' keyword
+  SourceLocation RequiresLoc;
+
+  /// The source location of the 'typename' or 'class' keyword
+  SourceLocation SpecLoc;
+
+  /// True if this was declared with the 'typename' keyword
+  bool WasDeclaredWithTypename : 1;
+
+  CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
+                      SourceLocation SL, IdentifierInfo *Id,
+                      bool Typename);
+public:
+  static CXXRequiredTypeDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                     SourceLocation RL, SourceLocation SL,
+                                     IdentifierInfo *Id, bool Typename);
+  static CXXRequiredTypeDecl *CreateDeserialized(ASTContext &Ctx, unsigned ID);
+
+  /// Get the location of the 'requires' keyword.
+  SourceLocation getRequiresLoc() const { return RequiresLoc; }
+  /// Get the location of the 'typename' or 'class' keyword.
+  SourceLocation getSpecLoc() const { return SpecLoc; }
+
+  /// Was this declared with the 'typename' keyword?
+  bool wasDeclaredWithTypename() const { return WasDeclaredWithTypename; }
+
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXRequiredType; }
+};
+
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
 const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,

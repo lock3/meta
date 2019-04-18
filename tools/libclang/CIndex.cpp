@@ -1566,6 +1566,10 @@ bool CursorVisitor::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
   return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
 }
 
+bool CursorVisitor::VisitCXXRequiredTypeTypeLoc(CXXRequiredTypeTypeLoc TL) {
+  return Visit(MakeCursorTypeRef(TL.getDecl(), TL.getNameLoc(), TU));
+}
+
 bool CursorVisitor::VisitTagTypeLoc(TagTypeLoc TL) {
   if (TL.isDefinition())
     return Visit(MakeCXCursor(TL.getDecl(), TU, RegionOfInterest));
@@ -6256,6 +6260,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::CXXMetaprogram:
   case Decl::CXXInjection:
   case Decl::CXXStmtFragment:
+  case Decl::CXXRequiredType:
     return C;
 
   // Declaration kinds that don't make any sense here, but are

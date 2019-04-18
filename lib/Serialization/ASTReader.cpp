@@ -6081,6 +6081,12 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
                   ReadDeclAs<UnresolvedUsingTypenameDecl>(*Loc.F, Record, Idx));
   }
 
+  case TYPE_CXX_REQUIRED: {
+    unsigned Idx = 0;
+    return Context.getTypeDeclType(
+                  ReadDeclAs<CXXRequiredTypeDecl>(*Loc.F, Record, Idx));
+  }
+
   case TYPE_TYPEDEF: {
     if (Record.size() != 2) {
       Error("incorrect encoding of typedef type");
@@ -6608,6 +6614,10 @@ void TypeLocReader::VisitFunctionNoProtoTypeLoc(FunctionNoProtoTypeLoc TL) {
 }
 
 void TypeLocReader::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
+  TL.setNameLoc(ReadSourceLocation());
+}
+
+void TypeLocReader::VisitCXXRequiredTypeTypeLoc(CXXRequiredTypeTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation());
 }
 

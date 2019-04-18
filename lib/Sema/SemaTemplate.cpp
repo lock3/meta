@@ -5455,6 +5455,11 @@ bool UnnamedLocalNoLinkageFinder::VisitUnresolvedUsingType(
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitCXXRequiredTypeType(
+                                                 const CXXRequiredTypeType *T) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitTypeOfExprType(const TypeOfExprType*) {
   return false;
 }

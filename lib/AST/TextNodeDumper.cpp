@@ -1154,6 +1154,10 @@ void TextNodeDumper::VisitUnresolvedUsingType(const UnresolvedUsingType *T) {
   dumpDeclRef(T->getDecl());
 }
 
+void TextNodeDumper::VisitCXXRequiredTypeType(const CXXRequiredTypeType *T) {
+  dumpDeclRef(T->getDecl());
+}
+
 void TextNodeDumper::VisitTypedefType(const TypedefType *T) {
   dumpDeclRef(T->getDecl());
 }

@@ -3840,6 +3840,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::DependentName:
   case Type::DependentTemplateSpecialization:
   case Type::Auto:
+  case Type::CXXRequiredType:
     return ResultIfUnknown;
 
   // Dependent template specializations can instantiate to pointer

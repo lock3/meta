@@ -42,6 +42,7 @@ class ObjCTypeParamDecl;
 class TemplateTypeParmDecl;
 class UnqualTypeLoc;
 class UnresolvedUsingTypenameDecl;
+class CXXRequiredTypeDecl;
 
 // Predeclare all the type nodes.
 #define ABSTRACT_TYPELOC(Class, Base)
@@ -688,6 +689,16 @@ class UnresolvedUsingTypeLoc :
                                      UnresolvedUsingType> {
 public:
   UnresolvedUsingTypenameDecl *getDecl() const {
+    return getTypePtr()->getDecl();
+  }
+};
+
+class CXXRequiredTypeTypeLoc :
+    public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
+                                     CXXRequiredTypeTypeLoc,
+                                     CXXRequiredTypeType> {
+public:
+  CXXRequiredTypeDecl *getDecl() const {
     return getTypePtr()->getDecl();
   }
 };
