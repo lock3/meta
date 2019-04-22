@@ -10934,8 +10934,6 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   AnalyzingRequiredDeclarator = false;
   // It doesn't matter if this is auto.
   // ParsingInitForAutoVars.erase(DDecl);
-  llvm::outs() << "The decl:\n";
-  DDecl->dump();
   if (!DDecl)
     return nullptr;
 

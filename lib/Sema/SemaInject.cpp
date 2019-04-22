@@ -454,8 +454,6 @@ public:
       ExprResult Res =
         RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD),
                            DNI, TemplateArgs);
-      llvm::outs() << "result\n";
-      Res.get()->dump();
       return Res;
     }
 
@@ -2018,8 +2016,19 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
       NamedDecl *FoundDecl = R.getFoundDecl();
       if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
         return nullptr;
+
+      DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+
+      QualType RDDTy = D->getDeclaratorType();
+      QualType FoundDeclTy = FoundDeclarator->getType();
+      if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
+        SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
+          RDDTy << FoundDeclTy;
+        return nullptr;
+      }
+
       // fixme: support functions
-      RequiredDecls.insert({D, cast<DeclaratorDecl>(FoundDecl)});
+      RequiredDecls.insert({D, FoundDeclarator});
     } else if (R.isOverloadedResult()) {
       SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
       return nullptr;
