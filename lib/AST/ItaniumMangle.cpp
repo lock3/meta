@@ -511,6 +511,7 @@ private:
   // Declare manglers for every type class.
 #define ABSTRACT_TYPE(CLASS, PARENT)
 #define NON_CANONICAL_TYPE(CLASS, PARENT)
+#define META_TYPE(CLASS, PARENT)
 #define TYPE(CLASS, PARENT) void mangleType(const CLASS##Type *T);
 #include "clang/AST/TypeNodes.def"
 
@@ -2443,6 +2444,10 @@ void CXXNameMangler::mangleType(QualType T) {
     case Type::CLASS: \
       llvm_unreachable("can't mangle non-canonical type " #CLASS "Type"); \
       return;
+#define META_TYPE(CLASS, PARENT) \
+    case Type::CLASS: \
+      llvm_unreachable("can't mangle meta type " #CLASS "Type"); \
+      return;
 #define TYPE(CLASS, PARENT) \
     case Type::CLASS: \
       mangleType(static_cast<const CLASS##Type*>(ty)); \
@@ -3184,12 +3189,6 @@ void CXXNameMangler::mangleType(const PackExpansionType *T) {
   // <type>  ::= Dp <type>          # pack expansion (C++0x)
   Out << "Dp";
   mangleType(T->getPattern());
-}
-
-void CXXNameMangler::mangleType(const CXXDependentVariadicReifierType *T) {
-  // <type>  ::= Dp <type>          # pack expansion (C++0x)
-  Out << "Dp";
-  mangleType(T->getRange()->getType());
 }
 
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {
