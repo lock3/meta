@@ -5812,17 +5812,8 @@ QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
                                                         ReflectedTypeLoc TL) {
   const ReflectedType *T = TL.getTypePtr();
 
-  // reflectedtype expressions are not potentially evaluated contexts.
-  //
-  // FIXME: This is totally misleading, since we are definitely going to
-  // evaluate the expression (just not at runtime).
-  // FIXME: changing this due to merge conflics / make sure it's right
-  // old version:
-  // EnterExpressionEvaluationContext Unevaluated(
-  //     SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
-  //     /*IsDecltype=*/true);
   EnterExpressionEvaluationContext Unevaluated(
-      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   ExprResult E = getDerived().TransformExpr(T->getReflection());
   if (E.isInvalid())

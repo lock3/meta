@@ -3340,7 +3340,7 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
 }
 
 void CXXNameMangler::mangleType(const ReflectedType *T) {
-// <type> ::= RT <expression> E  # decltype of an expression
+  // <type> ::= RT <expression> E  # decltype of an expression
   Out << "RT";
   mangleExpression(T->getReflection());
   Out << 'E';
