@@ -741,6 +741,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case TypeAlias:
     case TemplateTypeParm:
     case ObjCTypeParam:
+    case CXXRequiredType:
       return IDNS_Ordinary | IDNS_Type;
 
     case UnresolvedUsingTypename:

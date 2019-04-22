@@ -4819,6 +4819,9 @@ public:
                               SourceLocation UsingLoc, UnqualifiedId &Name,
                               const ParsedAttributesView &AttrList,
                               TypeResult Type, Decl *DeclFromDeclSpec);
+  Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+                                 SourceLocation TypenameLoc,
+                                 IdentifierInfo *Id, bool Typename);
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.

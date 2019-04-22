@@ -2738,9 +2738,15 @@ private:
   Decl *ParseNamespaceAlias(SourceLocation NamespaceLoc,
                             SourceLocation AliasLoc, IdentifierInfo *Alias,
                             SourceLocation &DeclEnd);
+  Decl *ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
+                             ParsedAttributesWithRange &Attrs);
+
+private:
+  bool ParsingTypenameRequires = false;
 
   //===--------------------------------------------------------------------===//
   // C++ 9: classes [class] and C structs/unions.
+public:
   bool isValidAfterTypeSpecifier(bool CouldBeBitfield);
   void ParseClassSpecifier(tok::TokenKind TagTokKind, SourceLocation TagLoc,
                            DeclSpec &DS, const ParsedTemplateInfo &TemplateInfo,

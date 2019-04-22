@@ -276,6 +276,13 @@ public:
     }
   }
 
+  QualType GetRequiredType(const CXXRequiredTypeDecl *D) {
+    auto Iter = RequiredTypes.find(D);
+    if (Iter != RequiredTypes.end())
+      return Iter->second;
+    return QualType();
+  }
+
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool isInInjection(Decl *D);
 
@@ -413,6 +420,19 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
+  QualType TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
+                                        CXXRequiredTypeTypeLoc TL) {
+    // Find the name of the declared type and look it up in the map.
+    const CXXRequiredTypeType *RTT = cast<CXXRequiredTypeType>(TL.getTypePtr());
+    const CXXRequiredTypeDecl *RTD = RTT->getDecl();
+
+    QualType RequiredType = GetRequiredType(RTD);
+    // If we found it, then this is a safe modification.
+    if (!RequiredType.isNull())
+      TLB.TypeWasModifiedSafely(RequiredType);
+    return RequiredType;
+  }
+
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
                                SmallVectorImpl<ParmVarDecl *> &Parms);
 
@@ -504,6 +524,7 @@ public:
   Decl *InjectTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
+  Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
 
   Stmt *InjectStmtImpl(Stmt *S);
   Stmt *InjectStmt(Stmt *S);
@@ -519,6 +540,9 @@ public:
   /// A mapping of injected parameters to their corresponding
   /// expansions.
   llvm::DenseMap<ParmVarDecl *, SmallVector<ParmVarDecl *, 4>> InjectedParms;
+
+  /// A mapping of required typenames to their corresponding declared types.
+  llvm::DenseMap<CXXRequiredTypeDecl *, QualType> RequiredTypes;
 
   /// A list of expanded parameter injections to be cleaned up.
   llvm::SmallVector<SmallVector<ParmVarDecl *, 8> *, 4> ParamInjectionCleanups;
@@ -1427,6 +1451,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
+  case Decl::CXXRequiredType:
+    return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
   default:
     break;
   }
@@ -1817,6 +1843,54 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   }
 
   return EnumConstDecl;
+}
+
+/// Find the actual TypeDecl named by a CXXRequiredTypeDecl. Always returns
+/// nullptr as this declaration doesn't actually need injected.
+Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+  Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+  ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
+  if (!S)
+    S = ParserLookup.getCurScope();
+
+  // Find the name of the declared type and look it up.
+  LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
+                 Sema::LookupAnyName);
+  if (getSema().LookupName(R, S)) {
+    // More than one UDT by this name was found:
+    // we don't know which one to use.
+    // TODO: Should we merge the types instead?
+    if (!R.isSingleResult()) {
+      SemaRef.Diag(D->getLocation(),
+                   diag::err_ambiguous_required_typename);
+      return nullptr;
+    }
+
+    // If we found an unambiguous UDT, we are good to go.
+    if (R.isSingleTagDecl()) {
+      NamedDecl *FoundName = R.getFoundDecl();
+      if (!isa<TypeDecl>(FoundName)) {
+        SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+        return nullptr;
+      }
+
+      const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
+      QualType ResultType(FoundType, 0);
+      RequiredTypes.insert({D, ResultType});
+    } else {
+      // The name was found but it wasn't a UDT.
+      // FIXME: Are there non-builtin types that aren't TagDecls?
+      SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+      return nullptr;
+    }
+  } else {
+    // We didn't find any declaration with this name.
+    SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
+    return nullptr;
+  }
+
+  return nullptr;
 }
 
 } // namespace clang

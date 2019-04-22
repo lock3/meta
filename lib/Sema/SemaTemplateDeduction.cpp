@@ -621,6 +621,7 @@ static bool IsPossiblyOpaquelyQualifiedType(QualType T) {
   case Type::Decltype:
   case Type::UnresolvedUsing:
   case Type::TemplateTypeParm:
+  case Type::CXXRequiredType:
     return true;
 
   case Type::ConstantArray:
@@ -2114,6 +2115,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::PackExpansion:
     case Type::CXXDependentVariadicReifier:
     case Type::Pipe:
+    case Type::CXXRequiredType:
       // No template argument deduction for these types
       return Sema::TDK_Success;
   }
@@ -5591,6 +5593,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::UnresolvedUsing:
   case Type::Pipe:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXRequiredType:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)

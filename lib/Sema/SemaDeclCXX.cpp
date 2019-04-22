@@ -10911,6 +10911,18 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
   return AliasDecl;
 }
 
+Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+                                     SourceLocation TypenameLoc,
+                                     IdentifierInfo *Id, bool Typename) {
+  CXXRequiredTypeDecl *RTD =
+    CXXRequiredTypeDecl::Create(Context, CurContext,
+                                RequiresLoc, TypenameLoc, Id, Typename);
+
+  getCurScope()->AddDecl(RTD);
+  IdResolver->AddDecl(RTD);
+  return RTD;
+}
+
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

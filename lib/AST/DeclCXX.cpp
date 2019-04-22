@@ -3019,6 +3019,27 @@ CXXStmtFragmentDecl
   return new (Cxt, DC) CXXStmtFragmentDecl(DC, IntroLoc);
 }
 
+CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
+                                         SourceLocation SL, IdentifierInfo *Id,
+                                         bool Typename)
+  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), SpecLoc(SL),
+    WasDeclaredWithTypename(Typename)
+{
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
+                            SourceLocation SL, IdentifierInfo *Id, bool Typename) {
+  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, SL, Id, Typename);
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
+  IdentifierInfo *II = &Ctx.Idents.get("");
+  return new (Ctx, ID) CXXRequiredTypeDecl(nullptr, SourceLocation(),
+                                           SourceLocation(), II, true);
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

@@ -2475,6 +2475,11 @@ def err_invalid_immediate : Error<
   "%select{function parameter|function pointer}0 "
   "cannot be consteval">;
 
+def err_ambiguous_required_typename : Error<
+    "Named type in 'requires typename' cannot be ambiguous.">;
+def err_required_typename_not_found : Error<
+    "Required type not found.">;
+
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;

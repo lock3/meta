@@ -1451,6 +1451,9 @@ public:
                                     const TemplateArgumentListInfo &Args,
                                     QualType Canon = QualType()) const;
 
+  QualType
+  getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const;
+
   QualType getParenType(QualType NamedType) const;
 
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,

@@ -905,6 +905,11 @@ public:
     return SemaRef.Context.getTypeDeclType(Typedef);
   }
 
+  /// Build a new required type type.
+  QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
+    return SemaRef.Context.getCXXRequiredTypeType(D);
+  }
+
   /// Build a new class/struct/union type.
   QualType RebuildRecordType(RecordDecl *Record) {
     return SemaRef.Context.getTypeDeclType(Record);
@@ -5810,6 +5815,29 @@ TreeTransform<Derived>::TransformUnresolvedUsingType(TypeLocBuilder &TLB,
   return Result;
 }
 
+template<typename Derived> QualType
+TreeTransform<Derived>::TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
+                                                 CXXRequiredTypeTypeLoc TL) {
+  const CXXRequiredTypeType *T = TL.getTypePtr();
+  CXXRequiredTypeDecl *D =
+    cast_or_null<CXXRequiredTypeDecl>(getDerived().TransformDecl(
+                                        TL.getNameLoc(), T->getDecl()));
+  if (!D)
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() || D != T->getDecl()) {
+    Result = getDerived().RebuildCXXRequiredTypeType(D);
+    if (Result.isNull())
+      return QualType();
+  }
+
+  TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+
+  return Result;
+}
+
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformTypedefType(TypeLocBuilder &TLB,
                                                       TypedefTypeLoc TL) {
@@ -5929,17 +5957,8 @@ QualType TreeTransform<Derived>::TransformReflectedType(TypeLocBuilder &TLB,
                                                         ReflectedTypeLoc TL) {
   const ReflectedType *T = TL.getTypePtr();
 
-  // reflectedtype expressions are not potentially evaluated contexts.
-  //
-  // FIXME: This is totally misleading, since we are definitely going to
-  // evaluate the expression (just not at runtime).
-  // FIXME: changing this due to merge conflics / make sure it's right
-  // old version:
-  // EnterExpressionEvaluationContext Unevaluated(
-  //     SemaRef, Sema::ExpressionEvaluationContext::Unevaluated, nullptr,
-  //     /*IsDecltype=*/true);
   EnterExpressionEvaluationContext Unevaluated(
-      SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   ExprResult E = getDerived().TransformExpr(T->getReflection());
   if (E.isInvalid())

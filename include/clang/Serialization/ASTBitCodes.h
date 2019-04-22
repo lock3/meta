@@ -1183,6 +1183,9 @@ namespace serialization {
 
       /// A CXXDependentVariadicReifier record.
       TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 50,
+      
+      /// A CXXRequiredTypeType record.
+      TYPE_CXX_REQUIRED = 51,
     };
 
     /// The type IDs for special types constructed by semantic
@@ -1557,6 +1560,9 @@ namespace serialization {
 
       /// A CXXInjectionDecl record.
       DECL_CXX_INJECTION,
+
+      /// A CXXRequiredTypeDecl record.
+      DECL_CXX_REQUIRED_TYPE,
 
       DECL_LAST = DECL_CXX_INJECTION
     };

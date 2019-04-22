@@ -35,6 +35,7 @@ def Named : Decl<"named declarations", 1>;
             def ClassTemplatePartialSpecialization
               : DDecl<ClassTemplateSpecialization>;
     def TemplateTypeParm : DDecl<Type>;
+    def CXXRequiredType : DDecl<Type>;
   def Value : DDecl<Named, "value declarations", 1>;
     def EnumConstant : DDecl<Value, "enumerators">;
     def UnresolvedUsingValue : DDecl<Value>;

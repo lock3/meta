@@ -874,6 +874,36 @@ Decl *Parser::ParseAliasDeclarationAfterDeclarator(
                                        DeclFromDeclSpec);
 }
 
+Decl *
+Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
+                             ParsedAttributesWithRange &Attrs) {
+  assert(Tok.is(tok::kw_requires) && "Not requires!");
+  SourceLocation RequiresLoc = ConsumeToken();
+
+  // We have a declaration the form 'requires typename T'
+  if (Tok.is(tok::kw_typename) || Tok.is(tok::kw_class)) {
+    bool DeclaredWithTypename = Tok.is(tok::kw_typename);
+
+    SourceLocation SpecLoc = ConsumeToken();
+    CXXScopeSpec SS;
+    if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
+                                       /*EnteringContext=*/false, nullptr,
+                                       /*IsTypename*/ true))
+      return nullptr;
+
+    if (!Tok.is(tok::identifier))
+      return nullptr;
+
+    IdentifierInfo *TypeId = Tok.getIdentifierInfo();
+    ConsumeToken();
+
+    return Actions.ActOnCXXRequiredTypeDecl(RequiresLoc, SpecLoc, TypeId,
+                                            DeclaredWithTypename);
+  }
+
+  llvm_unreachable("Required Declarator Declarations unimplemented.");
+}
+
 /// ParseStaticAssertDeclaration - Parse C++0x or C11 static_assert-declaration.
 ///
 /// [C++0x] static_assert-declaration:

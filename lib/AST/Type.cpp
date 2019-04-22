@@ -768,6 +768,7 @@ public:
   // None of the clients of this transformation can occur where
   // there are dependent types, so skip dependent types.
 #define TYPE(Class, Base)
+#define META_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) \
   QualType Visit##Class##Type(const Class##Type *T) { return QualType(T, 0); }
 #include "clang/AST/TypeNodes.def"
@@ -3839,6 +3840,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::DependentName:
   case Type::DependentTemplateSpecialization:
   case Type::Auto:
+  case Type::CXXRequiredType:
     return ResultIfUnknown;
 
   // Dependent template specializations can instantiate to pointer

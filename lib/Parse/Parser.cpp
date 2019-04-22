@@ -1683,6 +1683,14 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
       return Result;
     }
 
+    /// Parse a C++ required-typename-specifier
+    /// e.g. "requires typename T::type", but only if we are not
+    /// parsing a typename-specifier.
+    if (ParsingTypenameRequires) {
+      ParsingTypenameRequires = false;
+      return false;
+    }
+
     // Parse a C++ typename-specifier, e.g., "typename T::type".
     //
     //   typename-specifier:

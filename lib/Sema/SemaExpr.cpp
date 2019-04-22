@@ -4047,6 +4047,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base)
+#define META_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
 #define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base)
 #include "clang/AST/TypeNodes.def"
@@ -4066,6 +4067,9 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::ObjCObjectPointer:
     case Type::ObjCTypeParam:
     case Type::Pipe:
+#define TYPE(Class, Base)
+#define META_TYPE(Class, Base) case Type::Class:
+#include "clang/AST/TypeNodes.def"
       llvm_unreachable("type class is never variably-modified!");
     case Type::Adjusted:
       T = cast<AdjustedType>(Ty)->getOriginalType();
