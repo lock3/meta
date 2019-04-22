@@ -891,11 +891,14 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
                                        /*IsTypename*/ true))
       return nullptr;
 
+    // The actual name of the type.
     if (!Tok.is(tok::identifier))
       return nullptr;
-
     IdentifierInfo *TypeId = Tok.getIdentifierInfo();
     ConsumeToken();
+
+    // Eat the ';'.
+    ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
 
     return Actions.ActOnCXXRequiredTypeDecl(RequiresLoc, SpecLoc, TypeId,
                                             DeclaredWithTypename);

@@ -843,6 +843,13 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     }
     goto dont_know;
 
+  case tok::kw_requires:
+    if (getLangOpts().Reflection) {
+      SourceLocation DeclEnd;
+      return ParseDeclaration(DeclaratorContext::FileContext, DeclEnd, attrs);
+    }
+    goto dont_know;
+
   case tok::kw___if_exists:
   case tok::kw___if_not_exists:
     ParseMicrosoftIfExistsExternalDeclaration();

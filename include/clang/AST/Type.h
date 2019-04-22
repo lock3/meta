@@ -4191,8 +4191,10 @@ class CXXRequiredTypeType : public Type {
   CXXRequiredTypeDecl *RequiresDecl;
 
   CXXRequiredTypeType(const CXXRequiredTypeDecl *D)
-    : Type(CXXRequiredType, QualType(), /*Dependent=*/true,
-           /*InstantiationDependent=*/true, /*MetaType=*/false,
+    : Type(CXXRequiredType, QualType(this, 0),
+           /*Dependent=*/true,
+           /*InstantiationDependent=*/true,
+           /*MetaType=*/false,
            /*VariablyModified=*/false,
            /*ContainsUnexpandedParameterPack=*/false),
       RequiresDecl(const_cast<CXXRequiredTypeDecl*>(D))

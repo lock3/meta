@@ -10918,8 +10918,7 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
     CXXRequiredTypeDecl::Create(Context, CurContext,
                                 RequiresLoc, TypenameLoc, Id, Typename);
 
-  getCurScope()->AddDecl(RTD);
-  IdResolver->AddDecl(RTD);
+  PushOnScopeChains(RTD, getCurScope());
   return RTD;
 }
 
