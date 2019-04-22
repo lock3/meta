@@ -15356,9 +15356,14 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
     }
   }
 
-  // Notify the consumer that we've defined a tag.
-  if (!Tag->isInvalidDecl())
+  if (!Tag->isInvalidDecl()) {
+    // Notify the consumer that we've defined a tag.
     Consumer.HandleTagDeclDefinition(Tag);
+
+    // Inject any namespace definitions waiting upon the completion of
+    // the record.
+    InjectPendingNamespaceInjections();
+  }
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {

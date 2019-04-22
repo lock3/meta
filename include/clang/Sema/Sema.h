@@ -703,6 +703,13 @@ public:
   /// completed.
   llvm::SmallVector<InjectionContext *, 4> PendingClassMemberInjections;
 
+  struct PendingInjectionEffect {
+    CXXInjectorDecl *MD;
+    InjectionEffect Effect;
+  };
+
+  llvm::SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
+
   class DelayedDiagnostics;
 
   class DelayedDiagnosticsState {
@@ -10520,10 +10527,7 @@ public:
   void InjectPendingMethodDefinitions();
   void InjectPendingFieldDefinitions(InjectionContext *Cxt);
   void InjectPendingMethodDefinitions(InjectionContext *Cxt);
-  void InjectPendingDefinition(InjectionContext *Cxt, FieldDecl *Frag,
-                               FieldDecl *New);
-  void InjectPendingDefinition(InjectionContext *Cxt, CXXMethodDecl *Frag,
-                               CXXMethodDecl *New);
+  bool InjectPendingNamespaceInjections();
 
   CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,
                                      TagUseKind TUK = TUK_Definition);

@@ -77,6 +77,11 @@ struct InjectionEffect {
                   const CXXInjectionContextSpecifier &ContextSpecifier)
     : ExprType(ExprType), ExprValue(ExprValue),
       ContextSpecifier(ContextSpecifier) { }
+
+  InjectionEffect(const InjectionEffect &Effect,
+                  const CXXInjectionContextSpecifier &ContextOverride)
+    : ExprType(Effect.ExprType), ExprValue(Effect.ExprValue),
+      ContextSpecifier(ContextOverride) { }
 };
 
 //===--------------------------------------------------------------------===//

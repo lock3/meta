@@ -2742,6 +2742,36 @@ GetInjecteeDecl(Sema &S, DeclContext *CurContext,
   llvm_unreachable("Invalid injection context specifier.");
 }
 
+static bool isInsideRecord(const DeclContext *DC) {
+  do {
+    if (DC->isRecord())
+      return true;
+    DC = DC->getParent();
+  } while (DC);
+  return false;
+}
+
+static bool isInjectingIntoNamespace(const Decl *Injectee) {
+  return Decl::castToDeclContext(Injectee)->isFileContext();
+}
+
+static CXXInjectionContextSpecifier
+GetDelayedNamespaceContext(const CXXInjectionContextSpecifier &CurSpecifier) {
+  switch (CurSpecifier.getContextKind()) {
+  case CXXInjectionContextSpecifier::CurrentContext:
+    llvm_unreachable("injection should not be delayed");
+
+  case CXXInjectionContextSpecifier::ParentNamespace: {
+    return CXXInjectionContextSpecifier();
+  }
+
+  case CXXInjectionContextSpecifier::SpecifiedNamespace:
+    return CurSpecifier;
+  }
+
+  llvm_unreachable("Invalid injection context specifier.");
+}
+
 static const Decl *
 GetFragInjectionDecl(Sema &S, InjectionEffect &IE) {
   Reflection &&Refl = GetReflectionFromFrag(S, IE);
@@ -2854,6 +2884,17 @@ bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
   if (!Injectee)
     return false;
 
+  // If we're inside of a record, injecting namespace members, delay
+  // injection until we finish the class.
+  if (isInsideRecord(CurContext) && isInjectingIntoNamespace(Injectee)) {
+    // Push a modified injection effect with an adjusted context for replay
+    // after completion of the current record.
+    auto &&NewSpecifier = GetDelayedNamespaceContext(IE.ContextSpecifier);
+    InjectionEffect NewEffect(IE, NewSpecifier);
+    PendingNamespaceInjections.push_back({MD, NewEffect});
+    return true;
+  }
+
   // FIXME: We need to validate the Injection is compatible
   // with the Injectee.
 
@@ -2868,7 +2909,6 @@ bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
   assert(IE.ExprType->isReflectionType());
 
   return ApplyReflectionInjection(*this, MD, IE, Injectee);
-
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -3048,6 +3088,17 @@ void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
 
 void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
   InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
+}
+
+bool Sema::InjectPendingNamespaceInjections() {
+  bool Ok = true;
+
+  for (auto &&PendingEffect : PendingNamespaceInjections) {
+    Ok &= ApplyInjection(PendingEffect.MD, PendingEffect.Effect);
+  }
+  PendingNamespaceInjections.clear();
+
+  return Ok;
 }
 
 template <typename MetaType>
