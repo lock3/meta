@@ -2026,6 +2026,12 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
           RDDTy << FoundDeclTy;
         return nullptr;
       }
+      if (RDDTy != FoundDeclTy) {
+        SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
+        SemaRef.Diag(D->getLocation(), diag::note_required_bad_conv)
+          << RDDTy << FoundDeclTy;
+        return nullptr;
+      }
 
       // fixme: support functions
       RequiredDecls.insert({D, FoundDeclarator});

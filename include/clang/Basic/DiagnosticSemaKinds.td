@@ -2483,6 +2483,9 @@ def err_required_function : Error<
     "Required declarator cannot be a function.">;
 def err_required_decl_mismatch : Error<
     "Required conflicting types %diff{($ vs $) |}0,1">;
+def note_required_bad_conv : Note<
+    "required declarator candidate not viable: "
+    "cannot convert declarator of type %diff{($ to $) |}0,1">;
 
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
