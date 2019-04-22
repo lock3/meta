@@ -427,9 +427,10 @@ public:
     const CXXRequiredTypeDecl *RTD = RTT->getDecl();
 
     QualType RequiredType = GetRequiredType(RTD);
-    // If we found it, then this is a safe modification.
-    if (!RequiredType.isNull())
-      TLB.TypeWasModifiedSafely(RequiredType);
+
+    TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(RequiredType);
+    NewTL.setNameLoc(TL.getNameLoc());
+
     return RequiredType;
   }
 
