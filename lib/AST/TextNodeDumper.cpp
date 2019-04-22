@@ -408,12 +408,10 @@ void TextNodeDumper::dumpBareDeclRef(const Decl *D) {
     OS << D->getDeclKindName();
   }
   dumpPointer(D);
-
   if (const NamedDecl *ND = dyn_cast<NamedDecl>(D)) {
     ColorScope Color(OS, ShowColors, DeclNameColor);
     OS << " '" << ND->getDeclName() << '\'';
   }
-
   if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
     dumpType(VD->getType());
 }

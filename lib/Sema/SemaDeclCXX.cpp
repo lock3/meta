@@ -10933,7 +10933,7 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   // We don't need this anymore, make sure it doesn't stay set.
   AnalyzingRequiredDeclarator = false;
   // It doesn't matter if this is auto.
-  ParsingInitForAutoVars.erase(DDecl);
+  // ParsingInitForAutoVars.erase(DDecl);
   llvm::outs() << "The decl:\n";
   DDecl->dump();
   if (!DDecl)
@@ -10942,7 +10942,7 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
   getCurScope()->AddDecl(RDD);
-  IdResolver->AddDecl(RDD); 
+  IdResolver->AddDecl(RDD);
   return RDD;
 }
 

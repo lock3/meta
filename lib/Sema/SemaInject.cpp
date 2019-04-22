@@ -438,9 +438,7 @@ public:
     }
 
     DeclaratorDecl *DD = GetRequiredDeclarator(E->getDecl());
-    if (!DD)
-      DD = GetRequiredOverload(E->getDecl());
-    if (DD) {
+    if (DD && isa<ValueDecl>(DD)) {
       TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
       if (E->hasExplicitTemplateArgs()) {
         TemplateArgs = &TransArgs;
@@ -452,16 +450,19 @@ public:
           return ExprError();
       }
 
-      if (isa<ValueDecl>(DD)) {
-        DeclarationNameInfo DNI(DD->getDeclName(), DD->getLocation());
-        return RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD),
-                                  DNI, TemplateArgs);
-      }
+      DeclarationNameInfo DNI(DD->getDeclName(), DD->getLocation());
+      ExprResult Res =
+        RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD),
+                           DNI, TemplateArgs);
+      llvm::outs() << "result\n";
+      Res.get()->dump();
+      return Res;
     }
 
     return Base::TransformDeclRefExpr(E);
   }
 
+  #if 0
   ExprResult TransformCallExpr(CallExpr *E) {
     if (DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee())) {
       if (DeclaratorDecl *D = GetRequiredOverload(Callee->getDecl())) {
@@ -521,6 +522,7 @@ public:
 
     return Base::TransformCallExpr(E);
   }
+  #endif
 
   QualType TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
                                         CXXRequiredTypeTypeLoc TL) {
@@ -1966,7 +1968,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
     // TODO: Should we merge the types instead?
     if (!R.isSingleResult()) {
       SemaRef.Diag(D->getLocation(),
-                   diag::err_ambiguous_required_typename);
+                   diag::err_ambiguous_required_name) << 0;
       return nullptr;
     }
 
@@ -1989,7 +1991,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
     }
   } else {
     // We didn't find any declaration with this name.
-    SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 0;
     return nullptr;
   }
 
@@ -2005,9 +2007,8 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
   // to use the parser setup. In a non-dependent context, we'll want
   // the original parsed scope.
   ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
-  if (!S) {
+  if (!S)
     S = ParserLookup.getCurScope();
-  }
 
   // Find the name of the declarator outside of the fragment.
   LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
@@ -2017,21 +2018,19 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
       NamedDecl *FoundDecl = R.getFoundDecl();
       if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
         return nullptr;
+      // fixme: support functions
       RequiredDecls.insert({D, cast<DeclaratorDecl>(FoundDecl)});
     } else if (R.isOverloadedResult()) {
-      llvm::outs() << "Overloaded\n";
-      NamedDecl *RepresentativeDecl = R.getRepresentativeDecl();
-      if (RepresentativeDecl->isInvalidDecl() ||
-          !isa<DeclaratorDecl>(RepresentativeDecl))
-          return nullptr;
-      RequiredOverloads.insert({D, cast<DeclaratorDecl>(RepresentativeDecl)});
+      SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
+      return nullptr;
     } else {
       SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
         << "required declarator.";
+      return nullptr;
     }
   }
 
-  return nullptr;
+  return D;
 }
 
 } // namespace clang

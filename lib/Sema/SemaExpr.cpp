@@ -15047,7 +15047,10 @@ static DeclContext *getParentOfCapturingContextOrNull(DeclContext *DC, VarDecl *
   if (isa<BlockDecl>(DC) || isa<CapturedDecl>(DC) || isLambdaCallOperator(DC))
     return getLambdaAwareParentOfDeclContext(DC);
   else if (Var->hasLocalStorage()) {
-    if (Diagnose)
+    // We tried to reference a paramter without requiring it.
+    bool DiagnoseBadFragCapture =
+      isa<ParmVarDecl>(Var) && isa<CXXFragmentDecl>(DC);
+    if (Diagnose || DiagnoseBadFragCapture)
        diagnoseUncapturableValueReference(S, Loc, Var, DC);
   }
   return nullptr;

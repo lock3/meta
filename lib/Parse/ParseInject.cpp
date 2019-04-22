@@ -177,8 +177,9 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
 
   // We need a function scope in order to parse a compound statement
   // in a file context.
-  Actions.PushFunctionScope();
   Sema::FunctionScopeRAII FunctionScopeCleanup(Actions);
+  Actions.PushFunctionScope(); 
+  // Sema::SynthesizedFunctionScope SFS(Actions, Decl::castToDeclContext(Fragment));
 
   // Parse the actual block. This consumes the braces.
   StmtResult Block = ParseCompoundStatementBody();

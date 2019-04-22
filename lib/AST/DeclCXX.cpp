@@ -3058,6 +3058,8 @@ CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
                   RL), RequiresLoc(RL)
 {
+  DeclaratorTInfo = DD->getTypeSourceInfo();
+  DeclaratorType = DeclaratorTInfo->getType();
 }
 
 CXXRequiredDeclaratorDecl *
