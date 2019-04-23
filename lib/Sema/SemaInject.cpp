@@ -1482,12 +1482,12 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
     return D;
 
   Decl* R = InjectDeclImpl(D);
-  if (!R)
-    return nullptr;
+  if (!R || R->isInvalidDecl())
+    return R;
 
   // If we injected a top-level declaration, notify the AST consumer,
   // so that it can be processed for code generation.
-  if (isa<TranslationUnitDecl>(R->getDeclContext()))
+  if (R->getDeclContext()->isFileContext())
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
 
   return R;
