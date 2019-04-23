@@ -2756,7 +2756,14 @@ private:
   Decl *ParseNamespaceAlias(SourceLocation NamespaceLoc,
                             SourceLocation AliasLoc, IdentifierInfo *Alias,
                             SourceLocation &DeclEnd);
-  Decl *ParseCXXRequiredDecl(AccessSpecifier = AS_none);
+
+  Decl *ParseCXXRequiredTypenameDecl(SourceLocation RequiresLoc,
+                                     DeclaratorContext Ctx, AccessSpecifier AS);
+  Decl *ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
+                                       DeclaratorContext Ctx,
+                                       AccessSpecifier AS);
+  Decl *ParseCXXRequiredDecl(DeclaratorContext Ctx,
+                             AccessSpecifier AS = AS_none);
 
 private:
   bool ParsingTypenameRequires = false;

@@ -4928,6 +4928,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   case Decl::CXXMetaprogram:
   case Decl::CXXInjection:
   case Decl::CXXRequiredType:
+  case Decl::CXXRequiredDeclarator:
     // Nothing to do.
     break;
 

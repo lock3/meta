@@ -1209,6 +1209,10 @@ public:
   /// exception specifications in cases where they're part of the type.
   bool hasSameFunctionTypeIgnoringExceptionSpec(QualType T, QualType U);
 
+  /// Determine whether two function types are the same, ignoring
+  /// the return type.
+  bool hasSameFunctionTypeIgnoringReturn(QualType T, QualType U);
+
   /// Change the exception specification on a function once it is
   /// delay-parsed, instantiated, or computed.
   void adjustExceptionSpec(FunctionDecl *FD,

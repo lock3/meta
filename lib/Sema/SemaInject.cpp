@@ -19,6 +19,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/Type.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Template.h"
 #include "clang/Sema/SemaInternal.h"
@@ -29,6 +30,7 @@ namespace clang {
   enum InjectedDefType : unsigned;
   struct InjectionInfo;
   class InjectionContext;
+  class FunctionProtoType;
 }
 
 template<typename DeclType, InjectedDefType DefType>
@@ -549,6 +551,7 @@ public:
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
+  Decl *InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
 
   Stmt *InjectStmtImpl(Stmt *S);
   Stmt *InjectStmt(Stmt *S);
@@ -562,6 +565,9 @@ public:
 
   /// A mapping of required typenames to their corresponding declared types.
   llvm::DenseMap<CXXRequiredTypeDecl *, QualType> RequiredTypes;
+
+  /// A mapping of requires declarators to their corresponding declarators.
+  llvm::DenseMap<DeclaratorDecl *, DeclaratorDecl *> RequiredDecls;
 
   /// A list of expanded parameter injections to be cleaned up.
   llvm::SmallVector<SmallVector<ParmVarDecl *, 8> *, 4> ParamInjectionCleanups;
@@ -1631,6 +1637,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
+  case Decl::CXXRequiredDeclarator:
+    return InjectCXXRequiredDeclaratorDecl(cast<CXXRequiredDeclaratorDecl>(D));
   default:
     break;
   }
@@ -1758,13 +1766,23 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
     return InjectDeclStmt(cast<DeclStmt>(S));
   default:
     // Some statements will not require any special logic.
-    InjectedStmts.push_back(TransformStmt(S).get());
-    return S;
+    StmtResult NewS = TransformStmt(S);
+    if (NewS.isInvalid())
+      return nullptr;
+    InjectedStmts.push_back(NewS.get());
+    return NewS.get();
   }
 }
 
 static bool isRequiresDecl(Decl *D) {
-  return isa<CXXRequiredTypeDecl>(D);
+  return isa<CXXRequiredTypeDecl>(D) || isa<CXXRequiredDeclaratorDecl>(D);
+}
+
+static bool isRequiresDecl(DeclStmt *DS) {
+  if (!DS->isSingleDecl())
+    return false;
+
+  return isRequiresDecl(DS->getSingleDecl());
 }
 
 static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
@@ -1787,49 +1805,24 @@ static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
   return D;
 }
 
-static DeclStmt *CompleteDeclStmt(InjectionContext &Ctx, DeclGroupRef &GroupRef,
-                                  DeclStmt *Original) {
-  ASTContext &Context = Ctx.getSema().getASTContext();
-
-  DeclStmt *NewStmt = new (Context) DeclStmt(GroupRef, Original->getBeginLoc(),
-                                             Original->getEndLoc());
-  Ctx.InjectedStmts.push_back(NewStmt);
-
-  return NewStmt;
-}
-
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
-  ASTContext &Context = getSema().getASTContext();
+  llvm::SmallVector<Decl *, 4> Decls;
 
-  if (S->isSingleDecl()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, S->getSingleDecl())) {
-      DeclGroupRef NewDG(NewDecl);
-      return CompleteDeclStmt(*this, NewDG, S);
-    }
-    return nullptr;
-  } else {
-    DeclGroup &DG = S->getDeclGroup().getDeclGroup();
-
-    Decl **NewDecls = new Decl *[DG.size()];
-    bool Invalid = false;
-
-    for (unsigned I = 0; I < DG.size(); ++I) {
-      if (Decl *NewDecl = AddDeclToInjecteeScope(*this, DG[I])) {
-        NewDecls[I] = NewDecl;
-      } else {
-        Invalid = true;
-        break;
-      }
-    }
-
-    if (Invalid) {
-      delete [] NewDecls;
+  for (Decl *D : S->decls()) {
+    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D))
+      Decls.push_back(NewDecl);
+    else
       return nullptr;
-    }
-
-    DeclGroupRef NewDG = DeclGroupRef::Create(Context, NewDecls, DG.size());
-    return CompleteDeclStmt(*this, NewDG, S);
   }
+
+  StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
+  if (Res.isInvalid())
+    return nullptr;
+
+  DeclStmt *NewStmt = cast<DeclStmt>(Res.get());
+  if (!isRequiresDecl(NewStmt))
+    InjectedStmts.push_back(NewStmt);
+  return NewStmt;
 }
 
 template <typename MetaType>
@@ -2227,16 +2220,266 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   return EnumConstDecl;
 }
 
-/// Performs lookup and creates the mapping between the
-/// CXXRequiredTypeDecl *D, and the corresponding type.
+/// Creates the mapping between the CXXRequiredTypeDecl *D,
+/// and the corresponding type.
+///
+/// Returns true on error.
+static bool CXXRequiredDeclSubst(InjectionContext &Ctx,
+                                 LookupResult &R,
+                                 CXXRequiredTypeDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+
+  // More than one UDT by this name was found:
+  // we don't know which one to use.
+  // TODO: Should we merge the types instead?
+  if (!R.isSingleResult()) {
+    constexpr unsigned error_id = 0;
+    SemaRef.Diag(D->getLocation(),
+                 diag::err_ambiguous_required_name) << error_id;
+    return false;
+  }
+
+  // If we found an unambiguous UDT, we are good to go.
+  if (R.isSingleTagDecl()) {
+    NamedDecl *FoundName = R.getFoundDecl();
+    if (!isa<TypeDecl>(FoundName)) {
+      SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+      return true;
+    }
+
+    const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
+    QualType ResultType(FoundType, 0);
+    Ctx.RequiredTypes.insert({D, ResultType});
+  } else {
+    // The name was found but it wasn't a UDT.
+    // FIXME: Are there non-builtin types that aren't TagDecls?
+    SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+    return true;
+  }
+
+  return false;
+}
+
+static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
+  if (!isa<DeclaratorDecl>(Required) || !isa<DeclaratorDecl>(Found))
+    return true;
+  /// TODO: diagnostic here
+  if (isa<FunctionDecl>(Found) != isa<FunctionDecl>(Required))
+    return true;
+  if (isa<VarDecl>(Found) != isa<VarDecl>(Required))
+    return true;
+
+  bool DiagnoseTypeMismatch = false;
+  DeclaratorDecl *RequiredDeclarator = cast<DeclaratorDecl>(Required);
+  DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(Found);
+  QualType RDDTy = RequiredDeclarator->getType();
+  QualType FoundDeclTy = FoundDeclarator->getType();
+  SourceLocation RDLoc = RequiredDeclarator->getLocation();
+
+  // Constexpr-ness must match between what we required and what we found.
+  if (const FunctionDecl *FoundFD = dyn_cast<FunctionDecl>(FoundDeclarator)) {
+    FunctionDecl *FD = cast<FunctionDecl>(RequiredDeclarator);
+    if (FD->isConstexpr() != FoundFD->isConstexpr()) {
+      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
+                   << FD << FD->isConstexpr();
+      S.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
+      return true;
+    }
+
+    if (FD->getReturnType()->getContainedAutoType()) {
+      if (S.TypeCheckRequiredAutoReturn(FD->getLocation(),
+            FD->getReturnType(), FoundFD->getReturnType()))
+        return true;
+      DiagnoseTypeMismatch =
+        !S.Context.hasSameFunctionTypeIgnoringReturn(RDDTy, FoundDeclTy);
+    }
+  }
+  if (const VarDecl *FoundVD = dyn_cast<VarDecl>(FoundDeclarator)) {
+    VarDecl *VD = cast<VarDecl>(RequiredDeclarator);
+    if (VD->isConstexpr() != FoundVD->isConstexpr()) {
+      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
+        << VD << VD->isConstexpr();
+      S.Diag(FoundVD->getLocation(), diag::note_previous_declaration);
+      return true;
+    }
+
+    DiagnoseTypeMismatch = !S.Context.hasSameType(RDDTy, FoundDeclTy);
+  }
+
+  if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
+    S.Diag(RDLoc, diag::err_required_decl_mismatch) << RDDTy << FoundDeclTy;
+    return true;   // Types must match exactly, down to the specifier.
+  }
+  if (DiagnoseTypeMismatch) {
+    constexpr unsigned error_id = 1;
+    S.Diag(RDLoc, diag::err_required_name_not_found) << error_id;
+    S.Diag(RDLoc, diag::note_required_bad_conv) << RDDTy << FoundDeclTy;
+    return true;
+  }
+
+  return false;
+}
+
+static const FunctionProtoType *tryGetFunctionProtoType(QualType FromType) {
+  if (auto *FPT = FromType->getAs<FunctionProtoType>())
+    return FPT;
+
+  if (auto *MPT = FromType->getAs<MemberPointerType>())
+    return MPT->getPointeeType()->getAs<FunctionProtoType>();
+
+  return nullptr;
+}
+
+/// Called from CXXRequiredDeclaratorDeclSubst, handles the specific case of a
+/// function being required, e.g.:
+///
+/// \code
+/// __fragment {
+///   requires void foo(int n);
+/// };
+/// void foo() {}
+/// void foo(int n) {}
+/// \endcode
+///
+/// Will fail if the required overload does not match any declaration
+/// in the outer scope.
+/// Returns true on error.
+static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
+                                          LookupResult &R,
+                                          CXXRequiredDeclaratorDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+  TypeSourceInfo *TInfo = D->getDeclaratorTInfo();
+  if (!(TInfo->getType()->isFunctionType()))
+    return true;
+
+  const FunctionProtoType *FPT = tryGetFunctionProtoType(TInfo->getType());
+  if (!FPT)
+    llvm_unreachable("Indeterminate required function.");
+  // Create some fake parameters.
+  llvm::SmallVector<Expr *, 8> Params;
+  for (const QualType Ty : FPT->param_types()) {
+    ParmVarDecl *Param =
+      SemaRef.BuildParmVarDeclForTypedef(Ctx.getInjectionDeclContext(),
+                                         D->getLocation(), Ty);
+    Param->setScopeInfo(0, Params.size());
+    DeclRefExpr *ParamDRE =
+      DeclRefExpr::Create(Ctx.getContext(), NestedNameSpecifierLoc(),
+                          SourceLocation(), Param, false, SourceLocation(),
+                          Ty, VK_LValue);
+    Params.push_back(ParamDRE);
+  }
+
+  // Now build the call expression to ensure that this overload is valid.
+  // if (D->getDeclContext()->isRecord()) {
+  //   CXXScopeSpec SS;
+  //   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
+  //   // Use the parsed scope if it is available. If not, look it up.
+  //   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
+  //   if (!S)
+  //     S = ParserLookup.getCurScope();
+  //   ExprResult IME =
+  //     SemaRef.BuildImplicitMemberExpr(SS, SourceLocation(), R, true, S);
+  // } else { 
+  const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+  UnresolvedLookupExpr *ULE =
+    UnresolvedLookupExpr::Create(SemaRef.Context, nullptr,
+                                 D->getQualifierLoc(), D->getNameInfo(),
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 FoundNames.begin(), FoundNames.end());
+  // }
+
+  ExprResult CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
+                                             Params, SourceLocation());
+
+  if (CallRes.isInvalid()) {
+    SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
+      << "required declarator.";
+    return true;
+  }
+
+  CallExpr *Call = cast<CallExpr>(CallRes.get());
+  FunctionDecl *CalleeDecl = Call->getDirectCallee();
+  if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
+                                  CalleeDecl))
+    return true;
+  Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), CalleeDecl);
+  return false;
+}
+
+/// Creates the mapping between the CXXRequiredDeclaratorDecl *D,
+/// and the corresponding type.
+///
+/// Returns true on error.
+static bool CXXRequiredDeclSubst(InjectionContext &Ctx,
+                                 LookupResult &R,
+                                 CXXRequiredDeclaratorDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+  if (R.isSingleResult()) {
+    NamedDecl *FoundDecl = R.getFoundDecl();
+
+    if (!FoundDecl || FoundDecl->isInvalidDecl() ||
+        !isa<DeclaratorDecl>(FoundDecl))
+      return true;
+
+    DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+    if (D->getRequiredDeclarator()->getType()->isFunctionType())
+      return HandleFunctionDeclaratorSubst(Ctx, R, D);
+
+    if (isa<VarDecl>(D->getRequiredDeclarator())) {
+      if (!isa<VarDecl>(FoundDeclarator))
+        // TODO: Diagnostic
+        return true;
+
+      VarDecl *FoundVD = cast<VarDecl>(FoundDecl);
+      VarDecl *ReqVD = cast<VarDecl>(D->getRequiredDeclarator());
+      // If this is a required auto variable, deduce its type.
+      if (ReqVD->getType()->getContainedAutoType()) {
+        // If we don't have an initializer to deduce from, we'll
+        // invent one.
+        Expr *Init;
+        if (FoundVD->getInit())
+          Init = FoundVD->getInit();
+        else
+          Init = new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
+                         FoundVD->getType().getNonReferenceType(), VK_RValue);
+        if (!Init)
+          return true;
+
+        QualType DeducedType;
+        if (SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init, DeducedType)
+            == Sema::DAR_Failed) {
+          SemaRef.DiagnoseAutoDeductionFailure(ReqVD, Init);
+          return true;
+        }
+        D->getRequiredDeclarator()->setType(DeducedType);
+      }
+    }
+
+    if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
+                                    FoundDeclarator))
+      return true;
+
+    Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), FoundDeclarator);
+    return false;
+  } else if (R.isOverloadedResult()) {
+    return HandleFunctionDeclaratorSubst(Ctx, R, D);
+  }
+
+  // Unknown case
+  return true;
+}
+
+/// Performs lookup on a C++ required declaration.
 ///
 /// Returns true upon error.
-static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
-                                              CXXRequiredTypeDecl *D) {
+template<typename DeclType>
+static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx, DeclType *D) {
   Sema &SemaRef = Ctx.getSema();
 
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
+
+  // Use the parsed scope if it is available. If not, look it up.
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
@@ -2245,52 +2488,22 @@ static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
   LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
                  Sema::LookupAnyName);
   if (SemaRef.LookupName(R, S)) {
-    // More than one UDT by this name was found:
-    // we don't know which one to use.
-    // TODO: Should we merge the types instead?
-    if (!R.isSingleResult()) {
-      SemaRef.Diag(D->getLocation(),
-                   diag::err_ambiguous_required_typename);
-      return true;
-    }
-
-    // If we found an unambiguous UDT, we are good to go.
-    if (R.isSingleTagDecl()) {
-      NamedDecl *FoundName = R.getFoundDecl();
-      if (!isa<TypeDecl>(FoundName)) {
-        SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-        return true;
-      }
-
-      const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
-      QualType ResultType(FoundType, 0);
-      Ctx.RequiredTypes.insert({D, ResultType});
-    } else {
-      // The name was found but it wasn't a UDT.
-      // FIXME: Are there non-builtin types that aren't TagDecls?
-      SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-      return true;
-    }
+    return CXXRequiredDeclSubst(Ctx, R, D);
   } else {
+    unsigned error_id =
+      std::is_same<DeclType, CXXRequiredTypeDecl>::value ? 0 : 1;
+
     // We didn't find any type with this name.
-    SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
+      << error_id;
     return true;
   }
-
-  return false;
 }
 
-Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  DeclContext *Owner = getSema().CurContext;
-
-  DeclarationNameInfo DNI = TransformDeclarationName(D);
-  IdentifierInfo *Id = DNI.getName().getAsIdentifierInfo();
-
-  auto *RTD = CXXRequiredTypeDecl::Create(
-      getContext(), Owner, D->getRequiresLoc(),
-      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
-  AddDeclSubstitution(D, RTD);
-
+template<typename DeclType>
+static void
+SubstitueOrMaintainRequiredDecl(InjectionContext &Ctx, DeclContext *Owner,
+                                DeclType *NewDecl) {
   // If we're injecting this declaration, we should never add it to the owner
   // as that would result in the declaration showing up in the injectee.
   // Instead, we want to run lookup, and start the substitution process
@@ -2303,15 +2516,44 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   // Note that we can't perform lookup prior to the time that we're truly
   // injecting this, as that lookup would potentially occur in the wrong
   // context.
-  if (!MockInjectionContext) {
-    if (CXXRequiredTypeDeclTypeSubstitute(*this, RTD)) {
-      RTD->setInvalidDecl(true);
+
+  if (!Ctx.MockInjectionContext) {
+    if (CXXRequiredDeclSubstitute(Ctx, NewDecl)) {
+       NewDecl->setInvalidDecl(true);
     }
-  } else if (ShouldInjectInto(Owner)) {
-    Owner->addDecl(RTD);
+  } else if (Ctx.ShouldInjectInto(Owner)) {
+    Owner->addDecl(NewDecl);
   }
+}
+
+Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+  IdentifierInfo *Id = DNI.getName().getAsIdentifierInfo();
+
+  auto *RTD = CXXRequiredTypeDecl::Create(
+      getContext(), Owner, D->getRequiresLoc(),
+      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
+  AddDeclSubstitution(D, RTD);
+  SubstitueOrMaintainRequiredDecl(*this, Owner, RTD);
 
   return RTD;
+}
+
+Decl *
+InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  /// FIXME: does the declarator ever need transformed?
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,
+                                      D->getRequiredDeclarator(),
+                                      D->getRequiresLoc());
+  AddDeclSubstitution(D, RDD);
+  SubstitueOrMaintainRequiredDecl(*this, Owner, RDD);
+
+  return RDD;
 }
 
 } // namespace clang

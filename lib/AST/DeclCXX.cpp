@@ -2987,6 +2987,30 @@ CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
                                            SourceLocation(), II, true);
 }
 
+CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
+                                                     DeclContext *DC,
+                                                     DeclaratorDecl *DD,
+                                                     SourceLocation RL)
+  : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
+                   QualType(Context.DependentTy),
+                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
+                   RL), RequiresLoc(RL), RequiredDeclarator(DD) {
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclaratorDecl *RequiredDecl,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC, RequiredDecl,
+                                                 RequiresLoc);
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
+                                              unsigned ID) {
+  llvm_unreachable("unimplemented.");
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

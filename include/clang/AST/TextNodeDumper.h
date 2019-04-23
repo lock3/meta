@@ -316,6 +316,7 @@ public:
   void VisitNamespaceDecl(const NamespaceDecl *D);
   void VisitUsingDirectiveDecl(const UsingDirectiveDecl *D);
   void VisitNamespaceAliasDecl(const NamespaceAliasDecl *D);
+  void VisitCXXRequiredDeclaratorDecl(const CXXRequiredDeclaratorDecl *D);
   void VisitTypeAliasDecl(const TypeAliasDecl *D);
   void VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D);
   void VisitCXXRecordDecl(const CXXRecordDecl *D);

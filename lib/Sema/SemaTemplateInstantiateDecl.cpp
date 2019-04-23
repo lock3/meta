@@ -1100,6 +1100,33 @@ Decl
   return Inst;
 }
 
+Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
+  CXXRequiredDeclaratorDecl *D) {
+  // FIXME: Do this eventually
+  // SubstQualifier(getSema(), D, NewD, TemplateArgs);
+  SemaRef.AnalyzingRequiredDeclarator = true;
+  DeclaratorDecl *NewDecl =
+    cast<DeclaratorDecl>(SemaRef.SubstDecl(D->getRequiredDeclarator(),
+                                           SemaRef.CurContext, TemplateArgs));
+  SemaRef.AnalyzingRequiredDeclarator = false;
+
+  if (!NewDecl || NewDecl->isInvalidDecl())
+    return nullptr;
+
+  if (NewDecl->getType()->getContainedAutoType()) {
+    /// We haven't deduced the type on this yet.
+    QualType Sub = SemaRef.SubstAutoType(
+      NewDecl->getType(), SemaRef.Context.DependentTy);
+    NewDecl->setType(Sub);
+  }
+  SemaRef.CurrentInstantiationScope
+    ->InstantiatedLocal(D->getRequiredDeclarator(), NewDecl);
+
+  return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
+                                           SemaRef.CurContext,
+                                           NewDecl,
+                                           D->getRequiresLoc());
+}
 
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
@@ -2859,7 +2886,7 @@ Decl *TemplateDeclInstantiator::VisitUsingDecl(UsingDecl *D) {
 
   // Process the shadow decls.
   for (auto *Shadow : D->shadows()) {
-    // FIXME: UsingShadowDecl doesn't preserve its immediate target, so
+    // FIXME: UsingShadowDecl doelsn't preserve its immediate target, so
     // reconstruct it in the case where it matters.
     NamedDecl *OldTarget = Shadow->getTargetDecl();
     if (auto *CUSD = dyn_cast<ConstructorUsingShadowDecl>(Shadow))
@@ -4761,6 +4788,9 @@ void Sema::InstantiateVariableInitializer(
 
     // We'll add an initializer to a for-range declaration later.
     if (Var->isCXXForRangeDecl() || Var->isObjCForDecl())
+      return;
+
+    if (AnalyzingRequiredDeclarator)
       return;
 
     ActOnUninitializedDecl(Var);
