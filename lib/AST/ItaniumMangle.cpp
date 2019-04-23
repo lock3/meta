@@ -1995,11 +1995,6 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
         cast<UnresolvedUsingType>(Ty)->getDecl());
     break;
 
-  case Type::CXXRequiredType:
-    mangleSourceNameWithAbiTags(
-        cast<CXXRequiredTypeType>(Ty)->getDecl());
-    break;
-
   case Type::Enum:
   case Type::Record:
     mangleSourceNameWithAbiTags(cast<TagType>(Ty)->getDecl());
@@ -2875,10 +2870,6 @@ void CXXNameMangler::mangleBareFunctionType(const FunctionProtoType *Proto,
 // <type>            ::= <class-enum-type>
 // <class-enum-type> ::= <name>
 void CXXNameMangler::mangleType(const UnresolvedUsingType *T) {
-  mangleName(T->getDecl());
-}
-
-void CXXNameMangler::mangleType(const CXXRequiredTypeType *T) {
   mangleName(T->getDecl());
 }
 

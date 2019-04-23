@@ -253,7 +253,6 @@ public:
   void VisitCXXThisExpr(const CXXThisExpr *Node);
   void VisitCXXFunctionalCastExpr(const CXXFunctionalCastExpr *Node);
   void VisitCXXUnresolvedConstructExpr(const CXXUnresolvedConstructExpr *Node);
-  void VisitCXXRequiredTypeType(const CXXRequiredTypeType *T);
   void VisitCXXConstructExpr(const CXXConstructExpr *Node);
   void VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *Node);
   void VisitCXXNewExpr(const CXXNewExpr *Node);

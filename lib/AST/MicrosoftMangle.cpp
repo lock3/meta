@@ -2402,17 +2402,6 @@ void MicrosoftCXXNameMangler::mangleType(const UnresolvedUsingType *T,
     << Range;
 }
 
-void MicrosoftCXXNameMangler::mangleType(const CXXRequiredTypeType *T,
-                                         Qualifiers, SourceRange Range) {
-  // Probably should be mangled as a template instantiation; need to see what
-  // VC does first.
-  DiagnosticsEngine &Diags = Context.getDiags();
-  unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-    "cannot mangle this required dependent type yet");
-  Diags.Report(Range.getBegin(), DiagID)
-    << Range;
-}
-
 // <type>        ::= <union-type> | <struct-type> | <class-type> | <enum-type>
 // <union-type>  ::= T <name>
 // <struct-type> ::= U <name>

@@ -1567,9 +1567,6 @@ namespace serialization {
       /// A CXXRequiredDeclaratorDecl record.
       DECL_CXX_REQUIRED_DECLARATOR,
 
-      /// A CXXRequiredTypeDecl record.
-      DECL_CXX_REQUIRED_TYPE,
-
       DECL_LAST = DECL_CXX_INJECTION
     };
 

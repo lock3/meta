@@ -4049,13 +4049,6 @@ QualType ASTContext::getTemplateTypeParmType(unsigned Depth, unsigned Index,
   return QualType(TypeParm, 0);
 }
 
-QualType
-ASTContext::getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const {
-  Type *newType = new (*this, TypeAlignment) CXXRequiredTypeType(D);
-  Types.push_back(newType);
-  return QualType(newType, 0);
-}
-
 TypeSourceInfo *
 ASTContext::getTemplateSpecializationTypeInfo(TemplateName Name,
                                               SourceLocation NameLoc,

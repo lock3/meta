@@ -3091,25 +3091,6 @@ CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
   llvm_unreachable("unimplemented.");
 }
 
-CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
-                                         SourceLocation SL, IdentifierInfo *Id,
-                                         bool Typename)
-  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), SpecLoc(SL),
-    WasDeclaredWithTypename(Typename)
-{
-}
-
-CXXRequiredTypeDecl *
-CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
-                            SourceLocation SL, IdentifierInfo *Id, bool Typename) {
-  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, SL, Id, Typename);
-}
-
-CXXRequiredTypeDecl *
-CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
-  llvm_unreachable("unimplemented.");
-}
-
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:

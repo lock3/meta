@@ -125,7 +125,6 @@ namespace clang {
     void VisitEmptyDecl(EmptyDecl *D);
     void VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D);
     void VisitCXXInjectionDecl(CXXInjectionDecl *D);
-    void VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
     void VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
     void VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
 
@@ -1126,11 +1125,6 @@ void ASTDeclWriter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
 void ASTDeclWriter::VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
   VisitDecl(D);
   Code = serialization::DECL_CXX_REQUIRED_DECLARATOR;
-}
-
-void ASTDeclWriter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  VisitDecl(D);
-  Code = serialization::DECL_CXX_REQUIRED_TYPE;
 }
 
 void ASTDeclWriter::VisitBlockDecl(BlockDecl *D) {

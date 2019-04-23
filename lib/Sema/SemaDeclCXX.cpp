@@ -10944,18 +10944,6 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   return RDD;
 }
 
-Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
-                                     SourceLocation TypenameLoc,
-                                     IdentifierInfo *Id, bool Typename) {
-  CXXRequiredTypeDecl *RTD =
-    CXXRequiredTypeDecl::Create(Context, CurContext,
-                                RequiresLoc, TypenameLoc, Id, Typename);
-
-  getCurScope()->AddDecl(RTD);
-  IdResolver->AddDecl(RTD);
-  return RTD;
-}
-
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

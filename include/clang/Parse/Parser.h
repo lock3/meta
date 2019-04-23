@@ -2872,8 +2872,6 @@ public:
 
   DeclGroupPtrTy ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc);
 
-  bool ParsingTypenameRequires = false;
-
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.
