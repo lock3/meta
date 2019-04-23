@@ -4307,12 +4307,9 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// The TypeSourceInfo of the actual declarator, see above.
   TypeSourceInfo *DeclaratorTInfo;
 
-  CXXRequiredDeclaratorDecl(DeclContext *DC, DeclarationName N,
+  CXXRequiredDeclaratorDecl(ASTContext &Ctx, DeclContext *DC, DeclarationName N,
                             QualType T, TypeSourceInfo *TInfo,
-                            SourceLocation RL)
-    : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, N, T, TInfo, RL),
-      RequiresLoc(RL)
-    { }
+                            SourceLocation RL);
   CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
                             DeclaratorDecl *DD, SourceLocation RL);
 public:

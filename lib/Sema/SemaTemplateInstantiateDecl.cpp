@@ -1001,7 +1001,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   // FIXME: Do this eventually
   // SubstQualifier(getSema(), D, NewD, TemplateArgs);
   TypeSourceInfo *NewTSI =
-    SemaRef.SubstType(D->getTypeSourceInfo()->getTypeLoc(),
+    SemaRef.SubstType(D->getDeclaratorTInfo()->getTypeLoc(),
                         TemplateArgs, D->getLocation(), D->getDeclName());
   if (!NewTSI)
     return nullptr;
