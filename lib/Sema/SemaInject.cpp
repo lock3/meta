@@ -1922,6 +1922,18 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
       D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
   AddDeclSubstitution(D, RTD);
 
+  // If we're injecting this declaration, we should never add it to the owner
+  // as that would result in the declaration showing up in the injectee.
+  // Instead, we want to run lookup, and start the substitution process
+  // so that this declaration and its corresponding type effectively disappears.
+  //
+  // On the other hand, if we're rebuilding this declaration for later use,
+  // we do need to add it to the declaration, so that when this fragment is
+  // later injected we can run lookup, and start the substitution process.
+  //
+  // Note that we can't perform lookup prior to the time that we're truly
+  // injecting this, as that lookup would potentially occur in the wrong
+  // context.
   if (!MockInjectionContext) {
     if (CXXRequiredTypeDeclTypeSubstitute(*this, RTD)) {
       RTD->setInvalidDecl(true);
