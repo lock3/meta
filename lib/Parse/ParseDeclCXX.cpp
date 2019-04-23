@@ -906,7 +906,22 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
                                             DeclaredWithTypename);
   }
 
-  llvm_unreachable("Required Declarator Declarations unimplemented.");
+  DeclSpecContext DSC = getDeclSpecContextFromDeclaratorContext(Ctx);
+
+  // Get the specifiers and declarator we are going to require.
+  DeclSpec DS(AttrFactory);
+  DS.addAttributes(Attrs);
+  ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS_none, DSC);
+
+  Declarator DeclaratorInfo(DS, Ctx);
+  ParseDeclarator(DeclaratorInfo);
+
+  // Eat the ';'.
+  ExpectAndConsume(tok::semi);
+
+  return Actions.ActOnCXXRequiredDeclaratorDecl(getCurScope(),
+                                                RequiresLoc,
+                                                DeclaratorInfo);
 }
 
 /// ParseStaticAssertDeclaration - Parse C++0x or C11 static_assert-declaration.

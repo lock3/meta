@@ -10,7 +10,7 @@
 //  This file implements semantic rules for the injection of declarations into
 //  various declarative contexts.
 //
-//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===g//
 
 #include "TreeTransform.h"
 #include "clang/AST/ASTConsumer.h"
@@ -283,6 +283,16 @@ public:
     return QualType();
   }
 
+  DeclaratorDecl *GetRequiredDeclarator(const Decl *D) {
+    if (!isa<DeclaratorDecl>(D))
+      return nullptr;
+
+    auto Iter = RequiredDecls.find(cast<DeclaratorDecl>(D));
+    if (Iter != RequiredDecls.end())
+      return Iter->second;
+    return nullptr;
+  }
+
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool isInInjection(Decl *D);
 
@@ -417,6 +427,26 @@ public:
       return R;
     }
 
+    DeclaratorDecl *DD = GetRequiredDeclarator(E->getDecl());
+    if (DD && isa<ValueDecl>(DD)) {
+      TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
+      if (E->hasExplicitTemplateArgs()) {
+        TemplateArgs = &TransArgs;
+        TransArgs.setLAngleLoc(E->getLAngleLoc());
+        TransArgs.setRAngleLoc(E->getRAngleLoc());
+        if (getDerived().TransformTemplateArguments(E->getTemplateArgs(),
+                                                    E->getNumTemplateArgs(),
+                                                    TransArgs))
+          return ExprError();
+      }
+
+      DeclarationNameInfo DNI(DD->getDeclName(), DD->getLocation());
+      ExprResult Res =
+        RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD),
+                           DNI, TemplateArgs);
+      return Res;
+    }
+
     return Base::TransformDeclRefExpr(E);
   }
 
@@ -535,6 +565,7 @@ public:
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
+  Decl *InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
 
   Stmt *InjectStmtImpl(Stmt *S);
   Stmt *InjectStmt(Stmt *S);
@@ -553,6 +584,9 @@ public:
 
   /// A mapping of required typenames to their corresponding declared types.
   llvm::DenseMap<CXXRequiredTypeDecl *, QualType> RequiredTypes;
+
+  /// A mapping of requires declarators to their corresponding declarators.
+  llvm::DenseMap<DeclaratorDecl *, DeclaratorDecl *> RequiredDecls;
 
   /// A list of expanded parameter injections to be cleaned up.
   llvm::SmallVector<SmallVector<ParmVarDecl *, 8> *, 4> ParamInjectionCleanups;
@@ -1590,6 +1624,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
+  case Decl::CXXRequiredDeclarator:
+    return InjectCXXRequiredDeclaratorDecl(cast<CXXRequiredDeclaratorDecl>(D));
   default:
     break;
   }
@@ -1682,49 +1718,20 @@ static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
   return D;
 }
 
-static DeclStmt *CompleteDeclStmt(InjectionContext &Ctx, DeclGroupRef &GroupRef,
-                                  DeclStmt *Original) {
-  ASTContext &Context = Ctx.getSema().getASTContext();
-
-  DeclStmt *NewStmt = new (Context) DeclStmt(GroupRef, Original->getBeginLoc(),
-                                             Original->getEndLoc());
-  Ctx.InjectedStmts.push_back(NewStmt);
-
-  return NewStmt;
-}
-
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
-  ASTContext &Context = getSema().getASTContext();
-
-  if (S->isSingleDecl()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, S->getSingleDecl())) {
-      DeclGroupRef NewDG(NewDecl);
-      return CompleteDeclStmt(*this, NewDG, S);
-    }
-    return nullptr;
-  } else {
-    DeclGroup &DG = S->getDeclGroup().getDeclGroup();
-
-    Decl **NewDecls = new Decl *[DG.size()];
-    bool Invalid = false;
-
-    for (unsigned I = 0; I < DG.size(); ++I) {
-      if (Decl *NewDecl = AddDeclToInjecteeScope(*this, DG[I])) {
-        NewDecls[I] = NewDecl;
-      } else {
-        Invalid = true;
-        break;
-      }
-    }
-
-    if (Invalid) {
-      delete [] NewDecls;
-      return nullptr;
-    }
-
-    DeclGroupRef NewDG = DeclGroupRef::Create(Context, NewDecls, DG.size());
-    return CompleteDeclStmt(*this, NewDG, S);
+  llvm::SmallVector<Decl *, 4> Decls;
+  for (Decl *D : S->decls()) {
+    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D))
+      Decls.push_back(NewDecl);
+     else
+       return nullptr;
   }
+
+  StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
+  if (Res.isInvalid())
+    return nullptr;
+  InjectedStmts.push_back(Res.get());
+  return Res.get();
 }
 
 template <typename MetaType>
@@ -2140,8 +2147,8 @@ static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
     // TODO: Should we merge the types instead?
     if (!R.isSingleResult()) {
       SemaRef.Diag(D->getLocation(),
-                   diag::err_ambiguous_required_typename);
-      return true;
+                   diag::err_ambiguous_required_name) << 0;
+      return nullptr;
     }
 
     // If we found an unambiguous UDT, we are good to go.
@@ -2163,7 +2170,7 @@ static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
     }
   } else {
     // We didn't find any type with this name.
-    SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 0;
     return true;
   }
 
@@ -2202,6 +2209,59 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   }
 
   return RTD;
+}
+
+Decl *
+InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+  Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+
+  // In a dependent context, we won't find the original scope and have
+  // to use the parser setup. In a non-dependent context, we'll want
+  // the original parsed scope.
+  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+  if (!S)
+    S = ParserLookup.getCurScope();
+
+  // Find the name of the declarator outside of the fragment.
+  LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
+                 Sema::LookupAnyName);
+  if (getSema().LookupName(R, S)) {
+    if (R.isSingleResult()) {
+      NamedDecl *FoundDecl = R.getFoundDecl();
+      if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
+        return nullptr;
+
+      DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+
+      QualType RDDTy = D->getDeclaratorType();
+      QualType FoundDeclTy = FoundDeclarator->getType();
+      if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
+        SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
+          RDDTy << FoundDeclTy;
+        return nullptr;
+      }
+      if (RDDTy != FoundDeclTy) {
+        SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
+        SemaRef.Diag(D->getLocation(), diag::note_required_bad_conv)
+          << RDDTy << FoundDeclTy;
+        return nullptr;
+      }
+
+      // fixme: support functions
+      RequiredDecls.insert({D, FoundDeclarator});
+      return D;
+    } else if (R.isOverloadedResult()) {
+      SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
+    } else {
+      SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
+        << "required declarator.";
+    }
+  } else {
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
+  };
+
+  return nullptr;
 }
 
 } // namespace clang

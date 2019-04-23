@@ -1497,6 +1497,12 @@ void TextNodeDumper::VisitNamespaceAliasDecl(const NamespaceAliasDecl *D) {
   dumpDeclRef(D->getAliasedNamespace());
 }
 
+void TextNodeDumper::VisitCXXRequiredDeclaratorDecl(
+                                           const CXXRequiredDeclaratorDecl *D) {
+  dumpName(D);
+  dumpType(D->getTypeSourceInfo()->getType());
+}
+
 void TextNodeDumper::VisitTypeAliasDecl(const TypeAliasDecl *D) {
   dumpName(D);
   dumpType(D->getUnderlyingType());

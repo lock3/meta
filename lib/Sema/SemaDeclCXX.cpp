@@ -10942,6 +10942,27 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
   return RTD;
 }
 
+Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
+                                           SourceLocation RequiresLoc,
+                                           Declarator &D) {
+  // We don't want the declarator we create to be added to the scope.
+  AnalyzingRequiredDeclarator = true;
+  DeclaratorDecl *DDecl
+    = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
+  // We don't need this anymore, make sure it doesn't stay set.
+  AnalyzingRequiredDeclarator = false;
+  // It doesn't matter if this is auto.
+  // ParsingInitForAutoVars.erase(DDecl);
+  if (!DDecl)
+    return nullptr;
+
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+  getCurScope()->AddDecl(RDD);
+  IdResolver->AddDecl(RDD);
+  return RDD;
+}
+
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

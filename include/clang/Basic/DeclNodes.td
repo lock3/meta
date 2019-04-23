@@ -63,6 +63,7 @@ def Named : Decl<"named declarations", 1>;
         def Decomposition : DDecl<Var>;
         def OMPCapturedExpr : DDecl<Var>;
       def NonTypeTemplateParm : DDecl<Declarator>;
+      def CXXRequiredDeclarator : DDecl<Declarator>;
   def Template : DDecl<Named, "templates", 1>;
     def RedeclarableTemplate : DDecl<Template, "redeclarable templates", 1>;
       def FunctionTemplate : DDecl<RedeclarableTemplate>;

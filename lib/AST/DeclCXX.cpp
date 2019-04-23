@@ -3040,6 +3040,57 @@ CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
                                            SourceLocation(), II, true);
 }
 
+CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Ctx,
+                                                     DeclContext *DC,
+                                                     DeclarationName N,
+                                                     QualType T,
+                                                     TypeSourceInfo *TInfo,
+                                                     SourceLocation RL)
+  : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, N,
+                   QualType(Ctx.DependentTy),
+                   Ctx.CreateTypeSourceInfo(Ctx.DependentTy), RL),
+    RequiresLoc(RL)
+{
+   DeclaratorTInfo = TInfo;
+   DeclaratorType = T;
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclarationName N, QualType T,
+                                  TypeSourceInfo *TInfo,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC, N, T, TInfo,
+                                                 RequiresLoc);
+}
+
+CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
+                                                     DeclContext *DC,
+                                                     DeclaratorDecl *DD,
+                                                     SourceLocation RL)
+  :DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
+                  QualType(Context.DependentTy),
+                  Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
+                  RL), RequiresLoc(RL)
+{
+  DeclaratorTInfo = DD->getTypeSourceInfo();
+  DeclaratorType = DeclaratorTInfo->getType();
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclaratorDecl *RequiredDecl,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC,
+                                                 RequiredDecl, RequiresLoc);
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
+                                              unsigned ID) {
+  llvm_unreachable("unimplemented.");
+}
+
 static const char *getAccessName(AccessSpecifier AS) {
   switch (AS) {
     case AS_none:
