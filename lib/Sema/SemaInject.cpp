@@ -2035,17 +2035,18 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
 
       // fixme: support functions
       RequiredDecls.insert({D, FoundDeclarator});
+      return D;
     } else if (R.isOverloadedResult()) {
       SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
-      return nullptr;
     } else {
       SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
         << "required declarator.";
-      return nullptr;
     }
-  }
+  } else {
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
+  };
 
-  return D;
+  return nullptr;
 }
 
 } // namespace clang

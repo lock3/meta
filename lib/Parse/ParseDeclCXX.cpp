@@ -906,9 +906,10 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
 
   DeclSpecContext DSC = getDeclSpecContextFromDeclaratorContext(Ctx);
 
+  // Get the specifiers and declarator we are going to require.
   DeclSpec DS(AttrFactory);
   DS.addAttributes(Attrs);
-  ParseSpecifierQualifierList(DS, AS_none, DSC);
+  ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS_none, DSC);
 
   Declarator DeclaratorInfo(DS, Ctx);
   ParseDeclarator(DeclaratorInfo);
