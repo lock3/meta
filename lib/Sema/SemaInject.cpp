@@ -2585,9 +2585,8 @@ static bool InjectStmtFragment(Sema &S,
   });
 }
 
-template<typename MetaType>
 static bool InjectDeclFragment(Sema &S,
-                               MetaType *MD,
+                               CXXInjectorDecl *MD,
                                Decl *Injection,
                                const SmallVector<InjectionCapture, 8> &Captures,
                                Decl *Injectee) {
