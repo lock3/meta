@@ -1487,7 +1487,9 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
 
   // If we injected a top-level declaration, notify the AST consumer,
   // so that it can be processed for code generation.
-  if (R->getDeclContext()->isFileContext())
+  //
+  // Avoid doing this if only rebuilding the declaration.
+  if (R->getDeclContext()->isFileContext() && !MockInjectionContext)
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
 
   return R;
