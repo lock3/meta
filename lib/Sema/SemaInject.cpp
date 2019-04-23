@@ -420,18 +420,26 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
-  QualType TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
-                                        CXXRequiredTypeTypeLoc TL) {
-    // Find the name of the declared type and look it up in the map.
-    const CXXRequiredTypeType *RTT = cast<CXXRequiredTypeType>(TL.getTypePtr());
-    const CXXRequiredTypeDecl *RTD = RTT->getDecl();
+  QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
+    QualType RequiredType = GetRequiredType(D);
 
-    QualType RequiredType = GetRequiredType(RTD);
+    // Case 1, we've found a replacement type, use it.
+    if (!RequiredType.isNull()) {
+      return RequiredType;
+    }
 
-    TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(RequiredType);
-    NewTL.setNameLoc(TL.getNameLoc());
+    // Case 2, we haven't found a replacement type, but
+    // we're only trying to rebuild currently, perform default
+    // transform.
+    if (MockInjectionContext) {
+      using Base = TreeTransform<InjectionContext>;
+      return Base::RebuildCXXRequiredTypeType(D);
+    }
 
-    return RequiredType;
+    // Case 3, we haven't found a replacement type, and we
+    // aren't rebuilding, an error should've been emitted during
+    // injection of the RequirdeTypeDecl.
+    return QualType();
   }
 
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
@@ -1175,8 +1183,10 @@ static void InjectClassDefinition(InjectionContext &Ctx, DeclContext *Owner,
     InjectClassDefinition(Ctx, D, Class);
 
   if (ShouldImmediatelyInjectPendingDefinitions(
-          Ctx.Injectee, Owner, InjectIntoOwner))
+        Ctx.Injectee, Owner, InjectIntoOwner)) {
     InjectPendingDefinitionsWithCleanup(Ctx);
+    Ctx.getSema().InjectPendingNamespaceInjections();
+  }
 }
 
 Decl *InjectionContext::InjectCXXRecordDecl(CXXRecordDecl *D) {
@@ -1472,12 +1482,14 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
     return D;
 
   Decl* R = InjectDeclImpl(D);
-  if (!R)
-    return nullptr;
+  if (!R || R->isInvalidDecl())
+    return R;
 
   // If we injected a top-level declaration, notify the AST consumer,
   // so that it can be processed for code generation.
-  if (isa<TranslationUnitDecl>(R->getDeclContext()))
+  //
+  // Avoid doing this if only rebuilding the declaration.
+  if (R->getDeclContext()->isFileContext() && !MockInjectionContext)
     getSema().Consumer.HandleTopLevelDecl(DeclGroupRef(R));
 
   return R;
@@ -1846,26 +1858,31 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   return EnumConstDecl;
 }
 
-/// Find the actual TypeDecl named by a CXXRequiredTypeDecl. Always returns
-/// nullptr as this declaration doesn't actually need injected.
-Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
-  Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+/// Performs lookup and creates the mapping between the
+/// CXXRequiredTypeDecl *D, and the corresponding type.
+///
+/// Returns true upon error.
+static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
+                                              CXXRequiredTypeDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+
+  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
+  Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
 
   // Find the name of the declared type and look it up.
-  LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
+  LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
                  Sema::LookupAnyName);
-  if (getSema().LookupName(R, S)) {
+  if (SemaRef.LookupName(R, S)) {
     // More than one UDT by this name was found:
     // we don't know which one to use.
     // TODO: Should we merge the types instead?
     if (!R.isSingleResult()) {
       SemaRef.Diag(D->getLocation(),
                    diag::err_ambiguous_required_typename);
-      return nullptr;
+      return true;
     }
 
     // If we found an unambiguous UDT, we are good to go.
@@ -1873,25 +1890,59 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
       NamedDecl *FoundName = R.getFoundDecl();
       if (!isa<TypeDecl>(FoundName)) {
         SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-        return nullptr;
+        return true;
       }
 
       const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
       QualType ResultType(FoundType, 0);
-      RequiredTypes.insert({D, ResultType});
+      Ctx.RequiredTypes.insert({D, ResultType});
     } else {
       // The name was found but it wasn't a UDT.
       // FIXME: Are there non-builtin types that aren't TagDecls?
       SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-      return nullptr;
+      return true;
     }
   } else {
-    // We didn't find any declaration with this name.
+    // We didn't find any type with this name.
     SemaRef.Diag(D->getLocation(), diag::err_required_typename_not_found);
-    return nullptr;
+    return true;
   }
 
-  return nullptr;
+  return false;
+}
+
+Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+  IdentifierInfo *Id = DNI.getName().getAsIdentifierInfo();
+
+  auto *RTD = CXXRequiredTypeDecl::Create(
+      getContext(), Owner, D->getRequiresLoc(),
+      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
+  AddDeclSubstitution(D, RTD);
+
+  // If we're injecting this declaration, we should never add it to the owner
+  // as that would result in the declaration showing up in the injectee.
+  // Instead, we want to run lookup, and start the substitution process
+  // so that this declaration and its corresponding type effectively disappears.
+  //
+  // On the other hand, if we're rebuilding this declaration for later use,
+  // we do need to add it to the declaration, so that when this fragment is
+  // later injected we can run lookup, and start the substitution process.
+  //
+  // Note that we can't perform lookup prior to the time that we're truly
+  // injecting this, as that lookup would potentially occur in the wrong
+  // context.
+  if (!MockInjectionContext) {
+    if (CXXRequiredTypeDeclTypeSubstitute(*this, RTD)) {
+      RTD->setInvalidDecl(true);
+    }
+  } else if (ShouldInjectInto(Owner)) {
+    Owner->addDecl(RTD);
+  }
+
+  return RTD;
 }
 
 } // namespace clang
@@ -2585,9 +2636,8 @@ static bool InjectStmtFragment(Sema &S,
   });
 }
 
-template<typename MetaType>
 static bool InjectDeclFragment(Sema &S,
-                               MetaType *MD,
+                               CXXInjectorDecl *MD,
                                Decl *Injection,
                                const SmallVector<InjectionCapture, 8> &Captures,
                                Decl *Injectee) {
@@ -2742,6 +2792,36 @@ GetInjecteeDecl(Sema &S, DeclContext *CurContext,
   llvm_unreachable("Invalid injection context specifier.");
 }
 
+static bool isInsideRecord(const DeclContext *DC) {
+  do {
+    if (DC->isRecord())
+      return true;
+    DC = DC->getParent();
+  } while (DC);
+  return false;
+}
+
+static bool isInjectingIntoNamespace(const Decl *Injectee) {
+  return Decl::castToDeclContext(Injectee)->isFileContext();
+}
+
+static CXXInjectionContextSpecifier
+GetDelayedNamespaceContext(const CXXInjectionContextSpecifier &CurSpecifier) {
+  switch (CurSpecifier.getContextKind()) {
+  case CXXInjectionContextSpecifier::CurrentContext:
+    llvm_unreachable("injection should not be delayed");
+
+  case CXXInjectionContextSpecifier::ParentNamespace: {
+    return CXXInjectionContextSpecifier();
+  }
+
+  case CXXInjectionContextSpecifier::SpecifiedNamespace:
+    return CurSpecifier;
+  }
+
+  llvm_unreachable("Invalid injection context specifier.");
+}
+
 static const Decl *
 GetFragInjectionDecl(Sema &S, InjectionEffect &IE) {
   Reflection &&Refl = GetReflectionFromFrag(S, IE);
@@ -2854,6 +2934,17 @@ bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
   if (!Injectee)
     return false;
 
+  // If we're inside of a record, injecting namespace members, delay
+  // injection until we finish the class.
+  if (isInsideRecord(CurContext) && isInjectingIntoNamespace(Injectee)) {
+    // Push a modified injection effect with an adjusted context for replay
+    // after completion of the current record.
+    auto &&NewSpecifier = GetDelayedNamespaceContext(IE.ContextSpecifier);
+    InjectionEffect NewEffect(IE, NewSpecifier);
+    PendingNamespaceInjections.push_back({MD, NewEffect});
+    return true;
+  }
+
   // FIXME: We need to validate the Injection is compatible
   // with the Injectee.
 
@@ -2868,7 +2959,6 @@ bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
   assert(IE.ExprType->isReflectionType());
 
   return ApplyReflectionInjection(*this, MD, IE, Injectee);
-
 }
 
 /// Inject a sequence of source code fragments or modification requests
@@ -3048,6 +3138,17 @@ void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
 
 void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
   InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
+}
+
+bool Sema::InjectPendingNamespaceInjections() {
+  bool Ok = true;
+
+  while (!PendingNamespaceInjections.empty()) {
+    auto &&PendingEffect = PendingNamespaceInjections.pop_back_val();
+    Ok &= ApplyInjection(PendingEffect.MD, PendingEffect.Effect);
+  }
+
+  return Ok;
 }
 
 template <typename MetaType>

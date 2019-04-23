@@ -1,27 +1,73 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang_cc1 -freflection -std=c++2a %s
 
 #include "reflection_query.h"
+
+#define assert(E) if (!(E)) __builtin_abort();
 
 using info = decltype(reflexpr(void));
 
 namespace ns { }
 
+struct simple_struct {
+  int var = 0;
+
+  consteval {
+    -> namespace __fragment namespace {
+      requires typename simple_struct;
+
+      int get_val(const simple_struct &inst) {
+        return inst.var;
+      }
+    };
+  }
+};
+
 consteval void metafn(info source) {
   -> namespace(::) __fragment namespace {
-    class global_foo {
+    struct global_foo {
       int var = 1;
+
+      consteval {
+        -> namespace __fragment namespace {
+          requires typename global_foo;
+
+          int get_val(const global_foo &inst) {
+            return inst.var;
+          }
+        };
+      }
     };
   };
 
   -> namespace(ns) __fragment namespace {
-    class ns_foo {
+    struct ns_foo {
       int var = 2;
+
+      consteval {
+        -> namespace __fragment namespace {
+          requires typename ns_foo;
+
+          int get_val(const ns_foo &inst) {
+            return inst.var;
+          }
+        };
+      }
     };
   };
 
   -> namespace __fragment namespace {
-    class parent_ns_foo {
-        int var = 3;
+    struct parent_ns_foo {
+      int var = 3;
+
+      consteval {
+        -> namespace __fragment namespace {
+          requires typename parent_ns_foo;
+
+          int get_val(const parent_ns_foo &inst) {
+            return inst.var;
+          }
+        };
+      }
     };
   };
 }
@@ -31,21 +77,12 @@ namespace parent_ns {
   };
 }
 
-consteval info definition_of(info type_reflection) {
-  return __reflect(query_get_definition, type_reflection);
-}
-
-consteval void compiler_print_type_definition(info type_reflection) {
-  (void) __reflect_pretty_print(definition_of(type_reflection));
-}
-
-consteval {
-  compiler_print_type_definition(reflexpr(::global_foo));
-  compiler_print_type_definition(reflexpr(ns::ns_foo));
-  compiler_print_type_definition(reflexpr(parent_ns::parent_ns_foo));
-}
-
 int main() {
+  assert(get_val(simple_struct()) == 0);
+  assert(get_val(global_foo()) == 1);
+  assert(ns::get_val(ns::ns_foo()) == 2);
+  assert(parent_ns::get_val(parent_ns::parent_ns_foo()) == 3);
+
   return 0;
 }
 

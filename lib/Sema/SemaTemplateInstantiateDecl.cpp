@@ -988,11 +988,14 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
 Decl
 *TemplateDeclInstantiator::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   IdentifierInfo *Id = D->getNameInfo().getName().getAsIdentifierInfo();
-  return CXXRequiredTypeDecl::Create(SemaRef.Context,
-                                     SemaRef.CurContext,
-                                     D->getRequiresLoc(),
-                                     D->getSpecLoc(),
-                                     Id, D->wasDeclaredWithTypename());
+
+  auto *Inst = CXXRequiredTypeDecl::Create(
+      SemaRef.Context, Owner, D->getRequiresLoc(),
+      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
+
+  Owner->addDecl(Inst);
+
+  return Inst;
 }
 
 

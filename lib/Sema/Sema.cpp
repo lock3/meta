@@ -369,6 +369,7 @@ Sema::~Sema() {
 
   assert(DelayedTypos.empty() && "Uncorrected typos!");
   assert(PendingClassMemberInjections.empty() && "Incomplete injections!");
+  assert(PendingNamespaceInjections.empty() && "Incomplete injections!");
 }
 
 /// makeUnavailableInSystemHeader - There is an error in the current
