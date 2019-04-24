@@ -1730,7 +1730,14 @@ Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
   if (Res.isInvalid())
     return nullptr;
-  InjectedStmts.push_back(Res.get());
+  DeclStmt *ResDS = cast<DeclStmt>(Res.get());
+  bool IsRequiredDeclaration =
+    ResDS->getSingleDecl() && 
+    (isa<CXXRequiredDeclaratorDecl>(ResDS->getSingleDecl()) ||
+     isa<CXXRequiredTypeDecl>(ResDS->getSingleDecl()));
+
+  if (!IsRequiredDeclaration)
+    InjectedStmts.push_back(Res.get());
   return Res.get();
 }
 
