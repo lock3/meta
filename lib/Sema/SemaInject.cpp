@@ -2148,7 +2148,7 @@ static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
     if (!R.isSingleResult()) {
       SemaRef.Diag(D->getLocation(),
                    diag::err_ambiguous_required_name) << 0;
-      return nullptr;
+      return false;
     }
 
     // If we found an unambiguous UDT, we are good to go.
