@@ -532,9 +532,58 @@ TemplateDeclInstantiator::VisitLabelDecl(LabelDecl *D) {
   return Inst;
 }
 
+static bool
+InstantiateFunctionBody(Sema &SemaRef,
+                        const MultiLevelTemplateArgumentList &TemplateArgs,
+                        FunctionDecl *OldFn, FunctionDecl *NewFn) {
+  // FIXME: We probably need to manage the function's definition a little
+  // better. Note that we can't use InstantiateFunctionDefinition; that
+  // assumes that the NewFn will have a template pattern, and that
+  // it is not defined.
+  StmtResult NewBody;
+  {
+    Sema::ContextRAII Switch(SemaRef, NewFn);
+    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+    NewBody = SemaRef.SubstStmt(OldFn->getBody(), TemplateArgs,
+                                ExistingMappings);
+  }
+
+  if (NewBody.isInvalid())
+    return true;
+
+  NewFn->setBody(NewBody.get());
+  return false;
+}
+
 Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
-  llvm_unreachable("Namespaces cannot be instantiated");
+  // Build the namespace.
+  //
+  // FIXME: Search for a previous declaration of the namespace so that they
+  // can be stitched together (i.e., redo lookup).
+  NamespaceDecl *Inst = NamespaceDecl::Create(
+      SemaRef.Context, Owner, D->isInline(), D->getLocation(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr);
+
+  Owner->addDecl(Inst);
+
+  // Rebuild the namespace members
+  for (Decl *OldMember : D->decls()) {
+    Decl *NewMember = SemaRef.SubstDecl(OldMember, Inst, TemplateArgs);
+
+    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(NewMember)) {
+      Inst->addDecl(FD);
+
+      if (InstantiateFunctionBody(SemaRef, TemplateArgs,
+                                  cast<FunctionDecl>(OldMember), FD))
+        FD->setInvalidDecl();
+    }
+
+    if (!NewMember || NewMember->isInvalidDecl())
+      Inst->setInvalidDecl(true);
+  }
+
+  return Inst;
 }
 
 Decl *
@@ -918,19 +967,8 @@ static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
   if (!NewFn || NewFn->isInvalidDecl())
     return nullptr;
 
-  // FIXME: We probably need to manage the function's definition a little
-  // better. Note that we can't use InstantiateFunctionDefinition; that
-  // assumes that the NewFn will have a template pattern.
-  StmtResult NewBody;
-  {
-    Sema::ContextRAII Switch(SemaRef, NewFn);
-    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
-    NewBody = SemaRef.SubstStmt(Fn->getBody(), TemplateArgs,
-                                ExistingMappings);
-  }
-  if (NewBody.isInvalid())
+  if (InstantiateFunctionBody(SemaRef, TemplateArgs, Fn, NewFn))
     return nullptr;
-  NewFn->setBody(NewBody.get());
 
   // Build the constexpr declaration.
   MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
@@ -994,6 +1032,8 @@ Decl
       D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
 
   Owner->addDecl(Inst);
+
+  SemaRef.CurrentInstantiationScope->InstantiatedLocal(D, Inst);
 
   return Inst;
 }
@@ -1795,6 +1835,12 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   } else if (D->isMetaprogram()) {
     // Metaprograms are always instantiated
     // into their owning context.
+    DC = Owner;
+  } else if (Owner->getParent() && Owner->getParent()->isFragment()) {
+    assert(Owner->isFileContext());
+
+    // Functions instantiated inside of a namespace fragment,
+    // are always in the owner.
     DC = Owner;
   } else {
     DC = SemaRef.FindInstantiatedContext(D->getLocation(), D->getDeclContext(),
