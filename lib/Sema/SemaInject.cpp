@@ -2124,16 +2124,97 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   return EnumConstDecl;
 }
 
-/// Performs lookup and creates the mapping between the
-/// CXXRequiredTypeDecl *D, and the corresponding type.
+/// Creates the mapping between the CXXRequiredTypeDecl *D,
+/// and the corresponding type.
+///
+/// Returns true on error.
+static bool CXXRequiredTypeDeclTypeSubst(InjectionContext &Ctx,
+                                         LookupResult &R,
+                                         CXXRequiredTypeDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+  
+  // If we found an unambiguous UDT, we are good to go.
+  if (R.isSingleTagDecl()) {
+    NamedDecl *FoundName = R.getFoundDecl();
+    if (!isa<TypeDecl>(FoundName)) {
+      SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+      return true;
+    }
+
+    const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
+    QualType ResultType(FoundType, 0);
+    Ctx.RequiredTypes.insert({D, ResultType});
+  } else {
+    // The name was found but it wasn't a UDT.
+    // FIXME: Are there non-builtin types that aren't TagDecls?
+    SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
+    return true;
+  }
+
+  return false;
+}
+
+/// Creates the mapping between the CXXRequiredDeclaratorDecl *D,
+/// and the corresponding type.
+///
+/// Returns true on error.
+static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
+                                           LookupResult &R,
+                                           CXXRequiredDeclaratorDecl *D) {
+  constexpr unsigned error_id = 1;
+  Sema &SemaRef = Ctx.getSema();
+
+  if (R.isSingleResult()) {
+    NamedDecl *FoundDecl = R.getFoundDecl();
+    if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
+      return true;
+
+    DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+
+    QualType RDDTy = D->getDeclaratorType();
+    QualType FoundDeclTy = FoundDeclarator->getType();
+
+    // In the case of mismatched references, we want a more specific error.
+    if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
+      SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
+        RDDTy << FoundDeclTy;
+      return true;
+    }
+
+    // Types must match exactly, down to the specifier.
+    if (RDDTy != FoundDeclTy) {
+      SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
+        << error_id;
+      SemaRef.Diag(D->getLocation(), diag::note_required_bad_conv)
+        << RDDTy << FoundDeclTy;
+      return true;
+    }
+
+    // fixme: support functions
+    Ctx.RequiredDecls.insert({D, FoundDeclarator});
+  } else if (R.isOverloadedResult()) {
+    SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
+    return true;
+  } else {
+    SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
+      << "required declarator.";
+    return true;
+  }
+
+  return false;
+}
+
+/// Performs lookup on a C++ required declaration.
 ///
 /// Returns true upon error.
-static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
-                                              CXXRequiredTypeDecl *D) {
+static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
+                                      NamedDecl *D) {
   Sema &SemaRef = Ctx.getSema();
+  unsigned error_id = isa<CXXRequiredTypeDecl>(D) ? 0 : 1;
 
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
+  // Use the parsed scope if it is available. If not, look it up.
   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
   if (!S)
     S = ParserLookup.getCurScope();
@@ -2145,36 +2226,29 @@ static bool CXXRequiredTypeDeclTypeSubstitute(InjectionContext &Ctx,
     // More than one UDT by this name was found:
     // we don't know which one to use.
     // TODO: Should we merge the types instead?
+    // TODO: this will have to get moved once overloads are supported.
     if (!R.isSingleResult()) {
       SemaRef.Diag(D->getLocation(),
-                   diag::err_ambiguous_required_name) << 0;
+                   diag::err_ambiguous_required_name) << error_id;
       return false;
     }
 
-    // If we found an unambiguous UDT, we are good to go.
-    if (R.isSingleTagDecl()) {
-      NamedDecl *FoundName = R.getFoundDecl();
-      if (!isa<TypeDecl>(FoundName)) {
-        SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-        return true;
-      }
-
-      const Type *FoundType = cast<TypeDecl>(FoundName)->getTypeForDecl();
-      QualType ResultType(FoundType, 0);
-      Ctx.RequiredTypes.insert({D, ResultType});
-    } else {
-      // The name was found but it wasn't a UDT.
-      // FIXME: Are there non-builtin types that aren't TagDecls?
-      SemaRef.Diag(D->getLocation(), diag::err_using_typename_non_type);
-      return true;
-    }
+    // Perform substitution.
+    if (isa<CXXRequiredTypeDecl>(D))
+      return
+        CXXRequiredTypeDeclTypeSubst(Ctx, R, cast<CXXRequiredTypeDecl>(D));
+    else if (isa<CXXRequiredDeclaratorDecl>(D))
+      return
+        CXXRequiredDeclaratorDeclSubst(Ctx, R,
+                                       cast<CXXRequiredDeclaratorDecl>(D));
+    else
+      llvm_unreachable("Unknown required declaration.");
   } else {
     // We didn't find any type with this name.
-    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 0;
+    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
+      << error_id;
     return true;
   }
-
-  return false;
 }
 
 Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
@@ -2201,7 +2275,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   // injecting this, as that lookup would potentially occur in the wrong
   // context.
   if (!MockInjectionContext) {
-    if (CXXRequiredTypeDeclTypeSubstitute(*this, RTD)) {
+    if (CXXRequiredDeclSubstitute(*this, RTD)) {
       RTD->setInvalidDecl(true);
     }
   } else if (ShouldInjectInto(Owner)) {
@@ -2213,55 +2287,25 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
 
 Decl *
 InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
-  DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
-  Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+  DeclContext *Owner = getSema().CurContext;
 
-  // In a dependent context, we won't find the original scope and have
-  // to use the parser setup. In a non-dependent context, we'll want
-  // the original parsed scope.
-  ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
-  if (!S)
-    S = ParserLookup.getCurScope();
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+  TypeSourceInfo *TInfo = TransformType(D->getDeclaratorTInfo());
 
-  // Find the name of the declarator outside of the fragment.
-  LookupResult R(getSema(), D->getDeclName(), D->getLocation(),
-                 Sema::LookupAnyName);
-  if (getSema().LookupName(R, S)) {
-    if (R.isSingleResult()) {
-      NamedDecl *FoundDecl = R.getFoundDecl();
-      if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
-        return nullptr;
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner, DNI.getName(),
+                                      TInfo->getType(), TInfo,
+                                      D->getRequiresLoc());
+  AddDeclSubstitution(D, RDD);
 
-      DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+  if (!MockInjectionContext) {
+    if (CXXRequiredDeclSubstitute(*this, RDD))
+      RDD->setInvalidDecl(true);
+  } else if (ShouldInjectInto(Owner)) {
+    Owner->addDecl(RDD);
+  }
 
-      QualType RDDTy = D->getDeclaratorType();
-      QualType FoundDeclTy = FoundDeclarator->getType();
-      if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
-        SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
-          RDDTy << FoundDeclTy;
-        return nullptr;
-      }
-      if (RDDTy != FoundDeclTy) {
-        SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
-        SemaRef.Diag(D->getLocation(), diag::note_required_bad_conv)
-          << RDDTy << FoundDeclTy;
-        return nullptr;
-      }
-
-      // fixme: support functions
-      RequiredDecls.insert({D, FoundDeclarator});
-      return D;
-    } else if (R.isOverloadedResult()) {
-      SemaRef.Diag(D->getLocation(), diag::err_ambiguous_required_name) << 1;
-    } else {
-      SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
-        << "required declarator.";
-    }
-  } else {
-    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
-  };
-
-  return nullptr;
+  return RDD;
 }
 
 } // namespace clang
