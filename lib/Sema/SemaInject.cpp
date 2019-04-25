@@ -450,6 +450,119 @@ public:
     return Base::TransformDeclRefExpr(E);
   }
 
+  ExprResult TransformCallExpr(CallExpr *E) {
+    DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee());
+    if (!Callee)
+      return Base::TransformCallExpr(E);
+
+    Decl *Replacement = GetDeclReplacement(Callee->getDecl());
+    if (!Replacement)
+      return Base::TransformCallExpr(E);
+    
+    DeclaratorDecl *DD = nullptr;
+    if (isa<CXXRequiredDeclaratorDecl>(Replacement))
+        DD = GetRequiredDeclarator(
+          cast<CXXRequiredDeclaratorDecl>(Replacement));
+    if (!DD)
+      return Base::TransformCallExpr(E);
+
+    TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
+    if (Callee->hasExplicitTemplateArgs()) {
+      TemplateArgs = &TransArgs;
+      TransArgs.setLAngleLoc(Callee->getLAngleLoc());
+      TransArgs.setRAngleLoc(Callee->getRAngleLoc());
+      if (getDerived().TransformTemplateArguments(Callee->getTemplateArgs(),
+                                                  Callee->getNumTemplateArgs(),
+                                                  TransArgs))
+        return ExprError();
+    }
+
+    bool ArgChanged;
+    llvm::SmallVector<Expr *, 8> Args;
+    if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                       &ArgChanged))
+      return ExprError();
+
+
+
+    DeclarationNameInfo DNI = TransformDeclarationName(DD);
+    ExprResult NewCallee =
+      RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD), DNI,
+                         TemplateArgs);
+    SourceLocation FakeLParenLoc
+      = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
+    ExprResult Res =
+      RebuildCallExpr(NewCallee.get(), FakeLParenLoc, Args,
+                      E->getRParenLoc());
+    return Res.get();
+
+    return Base::TransformCallExpr(E);
+  }
+
+ #if 0
+  ExprResult TransformCallExpr(CallExpr *E) {
+    if (DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee())) {
+      if (DeclaratorDecl *D = GetRequiredOverload(Callee->getDecl())) {
+        bool ArgChanged;
+        llvm::SmallVector<Expr *, 8> Args;
+        if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                           &ArgChanged))
+          return ExprError();
+        DeclContext *InjecteeAsDC = Decl::castToDeclContext(Injectee);
+        Scope *S = getSema().getScopeForContext(InjecteeAsDC);
+        LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
+                       Sema::LookupOrdinaryName);
+
+        ExprResult NewCallee = TransformDeclRefExpr(Callee);
+        NewCallee.get()->dump();
+        // if (NewCallee.isInvalid()) {
+        //   llvm::outs() << "NewCallee invalid\n";
+        //   return ExprError();
+        // }
+
+        // SourceLocation FakeLParenLoc
+        //   = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
+        // ExprResult NewCall = RebuildCallExpr(NewCallee.get(), FakeLParenLoc,
+        //                        Args, E->getRParenLoc());
+        // llvm::outs() << "NewCall\n";
+        // NewCall.get()->dump();
+        // return NewCall;
+
+        if (!getSema().LookupName(R, S))
+          return ExprError();
+        // In a dependent context, we won't find the original scope and have
+        // to use the parser setup. In a non-dependent context, we'll want
+        // the original parsed scope.
+        ParserLookupSetup ParserLookup(getSema(), getSema().CurContext);
+        if (!S) {
+          S = ParserLookup.getCurScope();
+        }
+
+        if (!R.isOverloadedResult())
+          llvm_unreachable("not overloaded");
+
+       const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+
+        UnresolvedLookupExpr *Fn = UnresolvedLookupExpr::Create(
+          SemaRef.Context,
+          /*NamingClass=*/nullptr, Callee->getQualifierLoc(),
+          DeclarationNameInfo(D->getDeclName(), Callee->getLocation()),
+          /*ADL=*/true, /*Overloaded=*/R.isOverloadedResult(),
+          FoundNames.begin(), FoundNames.end());
+
+        ExprResult NewCall2 =
+          RebuildCallExpr(Fn, E->getBeginLoc(),
+                          Args, E->getRParenLoc());
+        return NewCall2;
+      }
+    }
+
+    return Base::TransformCallExpr(E);
+  }
+  #endif
+
+
+  
   QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
     QualType RequiredType = GetRequiredType(D);
 
@@ -2139,7 +2252,17 @@ static bool CXXRequiredTypeDeclTypeSubst(InjectionContext &Ctx,
                                          LookupResult &R,
                                          CXXRequiredTypeDecl *D) {
   Sema &SemaRef = Ctx.getSema();
-  
+
+  // More than one UDT by this name was found:
+  // we don't know which one to use.
+  // TODO: Should we merge the types instead?
+  if (!R.isSingleResult()) {
+    constexpr unsigned error_id = 0;
+    SemaRef.Diag(D->getLocation(),
+                 diag::err_ambiguous_required_name) << error_id;
+    return false;
+  }
+
   // If we found an unambiguous UDT, we are good to go.
   if (R.isSingleTagDecl()) {
     NamedDecl *FoundName = R.getFoundDecl();
@@ -2230,16 +2353,6 @@ static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
   LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
                  Sema::LookupAnyName);
   if (SemaRef.LookupName(R, S)) {
-    // More than one UDT by this name was found:
-    // we don't know which one to use.
-    // TODO: Should we merge the types instead?
-    // TODO: this will have to get moved once overloads are supported.
-    if (!R.isSingleResult()) {
-      SemaRef.Diag(D->getLocation(),
-                   diag::err_ambiguous_required_name) << error_id;
-      return false;
-    }
-
     // Perform substitution.
     if (isa<CXXRequiredTypeDecl>(D))
       return
