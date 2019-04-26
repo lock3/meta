@@ -979,10 +979,6 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // this class.
   if (ShouldInjectInto(Owner)) {
     CheckInjectedFunctionDecl(getSema(), Fn, Owner);
-
-    if (D->isThisDeclarationADefinition())
-      SemaRef.CheckForFunctionRedefinition(Fn);
-
     Owner->addDecl(Fn);
   }
 
@@ -992,15 +988,20 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Also, function decls never appear in class scope (we hope),
   // so we shouldn't be doing this too early.
   if (D->isThisDeclarationADefinition()) {
+    SemaRef.ActOnStartOfFunctionDef(nullptr, Fn);
+
+    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
+    Sema::ContextRAII FnCtx (getSema(), Fn);
+
+    StmtResult NewBody;
     if (Stmt *OldBody = D->getBody()) {
-      Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-      Sema::ContextRAII FnCtx (getSema(), Fn);
-      StmtResult NewBody = TransformStmt(OldBody);
+      NewBody = TransformStmt(OldBody);
       if (NewBody.isInvalid())
         Fn->setInvalidDecl();
-      else
-        Fn->setBody(NewBody.get());
     }
+
+    SemaRef.ActOnFinishFunctionBody(Fn, NewBody.get(),
+                                    /*IsInstantiation=*/true);
   }
 
   return Fn;
@@ -3065,19 +3066,23 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
                                     CXXMethodDecl *NewMethod) {
   Sema &S = Ctx->getSema();
 
-  Sema::SynthesizedFunctionScope Scope(S, NewMethod);
+  S.ActOnStartOfFunctionDef(nullptr, NewMethod);
 
+  Sema::SynthesizedFunctionScope Scope(S, NewMethod);
   Sema::ContextRAII MethodCtx(S, NewMethod);
-  StmtResult Body = Ctx->TransformStmt(OldMethod->getBody());
-  if (Body.isInvalid())
+
+  StmtResult NewBody = Ctx->TransformStmt(OldMethod->getBody());
+  if (NewBody.isInvalid())
     NewMethod->setInvalidDecl();
   else {
     // Declarations without bodies should already be handled by
     // InjectCXXMethodDecl. If we've reached this point and we have a valid,
     // but null, body, something has gone wrong.
-    assert(Body.get() && "A defined method was injected without its body.");
-    NewMethod->setBody(Body.get());
+    assert(NewBody.get() && "A defined method was injected without its body.");
+    NewMethod->setBody(NewBody.get());
   }
+
+  S.ActOnFinishFunctionBody(NewMethod, NewBody.get(), /*IsInstantiation=*/true);
 
   if (CXXConstructorDecl *OldCtor = dyn_cast<CXXConstructorDecl>(OldMethod)) {
     CXXConstructorDecl *NewCtor = cast<CXXConstructorDecl>(NewMethod);
