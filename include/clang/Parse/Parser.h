@@ -2831,7 +2831,6 @@ public:
 
   bool ParseCXXReflectedId(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
                            UnqualifiedId &Result);
-  ExprResult ParseCXXUnreflexprExpression();
   ExprResult ParseCXXIdExprExpression();
   ExprResult ParseCXXValueOfExpression();
   TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
