@@ -935,6 +935,18 @@ static bool InjectVariableInitializer(InjectionContext &Ctx,
   return New;
 }
 
+static void CheckInjectedFunctionDecl(Sema &SemaRef, FunctionDecl *FD,
+                                      DeclContext *Owner) {
+  // FIXME: Is this right?
+  LookupResult Previous(
+    SemaRef, FD->getDeclName(), SourceLocation(),
+    Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  SemaRef.CheckFunctionDeclaration(/*Scope=*/nullptr, FD, Previous,
+                                   /*IsMemberSpecialization=*/false);
+}
+
 Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -965,21 +977,30 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
 
   // Don't register the declaration if we're merely attempting to transform
   // this class.
-  if (ShouldInjectInto(Owner))
-    Owner->addDecl(Fn);
+  if (ShouldInjectInto(Owner)) {
+    CheckInjectedFunctionDecl(getSema(), Fn, Owner);
 
-  // If the function has a body, inject that also. Note that namespace-scope
-  // function definitions are never deferred. Also, function decls never
-  // appear in class scope (we hope), so we shouldn't be doing this too
-  // early.
-  if (Stmt *OldBody = D->getBody()) {
-    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-    Sema::ContextRAII FnCtx (getSema(), Fn);
-    StmtResult NewBody = TransformStmt(OldBody);
-    if (NewBody.isInvalid())
-      Fn->setInvalidDecl();
-    else
-      Fn->setBody(NewBody.get());
+    if (D->isThisDeclarationADefinition())
+      SemaRef.CheckForFunctionRedefinition(Fn);
+
+    Owner->addDecl(Fn);
+  }
+
+  // If the function has a defined body, that it owns, inject that also.
+  //
+  // Note that namespace-scope function definitions are never deferred.
+  // Also, function decls never appear in class scope (we hope),
+  // so we shouldn't be doing this too early.
+  if (D->isThisDeclarationADefinition()) {
+    if (Stmt *OldBody = D->getBody()) {
+      Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
+      Sema::ContextRAII FnCtx (getSema(), Fn);
+      StmtResult NewBody = TransformStmt(OldBody);
+      if (NewBody.isInvalid())
+        Fn->setInvalidDecl();
+      else
+        Fn->setBody(NewBody.get());
+    }
   }
 
   return Fn;
@@ -1397,14 +1418,7 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // Don't register the declaration if we're merely attempting to transform
   // this method.
   if (ShouldInjectInto(Owner)) {
-    // FIXME: Is this right?
-    LookupResult Previous(
-      SemaRef, Method->getDeclName(), SourceLocation(),
-      Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
-    SemaRef.LookupQualifiedName(Previous, Owner);
-
-    getSema().CheckFunctionDeclaration(/*Scope=*/nullptr, Method, Previous,
-                                       /*IsMemberSpecialization=*/false);
+    CheckInjectedFunctionDecl(getSema(), Method, Owner);
     Owner->addDecl(Method);
   }
 
