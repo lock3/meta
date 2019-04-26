@@ -2333,12 +2333,6 @@ void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   OS << ')';
 }
 
-void StmtPrinter::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
-  OS << "unreflexpr(reflexpr(";
-  PrintExpr(E->getReflectedDeclExpr());
-  OS << "))";
-}
-
 void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
   OS << "idexpr(...)"; // TODO Finish this
 }

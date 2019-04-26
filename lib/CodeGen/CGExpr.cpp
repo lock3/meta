@@ -1379,9 +1379,6 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     LValueBaseInfo BI;
     return LValue::MakeAddr(Addr, T, getContext(), BI, TBAAAccessInfo());
   }
-
-  case Expr::CXXUnreflexprExprClass:
-    return EmitLValue(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr());
   }
 }
 

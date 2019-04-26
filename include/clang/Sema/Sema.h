@@ -9002,9 +9002,6 @@ public:
                           SmallVectorImpl<TemplateIdAnnotation *> &CleanupList,
                           UnqualifiedId &Result, SourceLocation EndLoc);
 
-  ExprResult ActOnCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
-  ExprResult BuildCXXUnreflexprExpression(SourceLocation Loc, Expr *Ref);
-
   QualType BuildReflectedType(SourceLocation TypenameLoc, Expr *E);
   TypeResult ActOnReflectedTypeSpecifier(SourceLocation TypenameLoc, Expr *E);
 
