@@ -1519,11 +1519,6 @@ public:
     return getSema().ActOnCXXCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
 
-  /// Build a new reflected value expression.
-  ExprResult RebuildCXXUnreflexprExpr(SourceLocation Loc, Expr *E) {
-    return getSema().BuildCXXUnreflexprExpression(Loc, E);
-  }
-
   /// Build a new Objective-C \@try statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
@@ -7684,18 +7679,6 @@ TreeTransform<Derived>::TransformCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   // template instantiations.
   return getDerived().RebuildCXXCompilerErrorExpr(
       Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
-}
-
-template <typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
-  ExprResult ReflectedDeclExpr = TransformExpr(E->getReflectedDeclExpr());
-
-  if (ReflectedDeclExpr.isInvalid())
-    return ExprError();
-
-  return getDerived().RebuildCXXUnreflexprExpr(E->getExprLoc(),
-                                               ReflectedDeclExpr.get());
 }
 
 template<typename Derived>

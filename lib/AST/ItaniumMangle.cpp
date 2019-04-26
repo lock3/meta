@@ -4364,10 +4364,6 @@ recurse:
     Out << "v18co_yield";
     mangleExpression(cast<CoawaitExpr>(E)->getOperand());
     break;
-
-  case Expr::CXXUnreflexprExprClass:
-    mangleExpression(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr());
-    break;
   }
 }
 

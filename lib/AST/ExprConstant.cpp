@@ -5209,13 +5209,6 @@ public:
 
   bool VisitCXXReflectionTraitExpr(const CXXReflectionTraitExpr *E);
 
-  bool VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
-    APValue Result;
-    if (!Evaluate(Result, Info, E->getReflectedDeclExpr()))
-      return false;
-    return DerivedSuccess(Result, E);
-  }
-
   bool VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
     SmallString<256> Buf;
     llvm::raw_svector_ostream OS(Buf);
@@ -11829,10 +11822,6 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
     return ICEDiag(IK_NotICE, E->getBeginLoc());
-
-  case Expr::CXXUnreflexprExprClass:
-    // A reflected value is an ICE if it's reference is.
-    return CheckICE(cast<CXXUnreflexprExpr>(E)->getReflectedDeclExpr(), Ctx);
 
   case Expr::InitListExprClass: {
     // C++03 [dcl.init]p13: If T is a scalar type, then a declaration of the

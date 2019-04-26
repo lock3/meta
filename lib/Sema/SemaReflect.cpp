@@ -1426,34 +1426,6 @@ bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
   return false;
 }
 
-ExprResult Sema::ActOnCXXUnreflexprExpression(SourceLocation Loc,
-                                              Expr *Reflection) {
-  return BuildCXXUnreflexprExpression(Loc, Reflection);
-}
-
-ExprResult Sema::BuildCXXUnreflexprExpression(SourceLocation Loc,
-                                              Expr *E) {
-  // TODO: Process the reflection E, UnresolveLookupExpr
-
-  // Don't act on dependent expressions, just preserve them.
-  // if (E->isTypeDependent() || E->isValueDependent())
-  //   return new (Context) CXXUnreflexprExpr(E, Context.DependentTy,
-  //                                          VK_RValue, OK_Ordinary, Loc);
-
-  // The operand must be a reflection.
-  // if (!CheckReflectionOperand(*this, E))
-  //   return ExprError();
-
-  // TODO: Process the reflection E, into DeclRefExpr
-
-  // CXXUnreflexprExpr *Val =
-  //     new (Context) CXXUnreflexprExpr(E, E->getType(), E->getValueKind(),
-  //                                     E->getObjectKind(), Loc);
-
-  // return Val;
-  return ExprError();
-}
-
 /// Evaluates the given expression and yields the computed type.
 QualType Sema::BuildReflectedType(SourceLocation TypenameLoc, Expr *E) {
   if (E->isTypeDependent() || E->isValueDependent())

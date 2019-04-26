@@ -1917,10 +1917,6 @@ void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXUnreflexprExpr(const CXXUnreflexprExpr *E) {
-  VisitExpr(E);
-}
-
 void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
   VisitExpr(E);
 }

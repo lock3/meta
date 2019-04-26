@@ -5087,52 +5087,6 @@ public:
   child_range children() { return child_range(&Message, &Message + 1); }
 };
 
-class CXXUnreflexprExpr : public Expr {
-  Expr *ReflectedDeclExpr;
-
-  /// The location of the unreflexpr operator.
-  SourceLocation OpLoc;
-
-  /// The location of the right paren
-  SourceLocation RParenLoc;
-public:
-  CXXUnreflexprExpr(Expr *ReflectedDeclExpr, QualType T,
-                    ExprValueKind VK, ExprObjectKind OK, SourceLocation OpLoc,
-                    SourceLocation RParenLoc)
-    : Expr(CXXUnreflexprExprClass, T, VK, OK,
-           ReflectedDeclExpr->isTypeDependent(),
-           ReflectedDeclExpr->isValueDependent(),
-           ReflectedDeclExpr->isInstantiationDependent(),
-           ReflectedDeclExpr->containsUnexpandedParameterPack()),
-      ReflectedDeclExpr(ReflectedDeclExpr),
-      OpLoc(OpLoc), RParenLoc(RParenLoc) {}
-
-  CXXUnreflexprExpr(EmptyShell Empty)
-    : Expr(CXXUnreflexprExprClass, Empty) {}
-
-  Expr *getReflectedDeclExpr() const { return ReflectedDeclExpr; }
-
-  SourceLocation getBeginLoc() const LLVM_READONLY {
-    return OpLoc;
-  }
-
-  SourceLocation getEndLoc() const LLVM_READONLY {
-    return RParenLoc;
-  }
-
-  child_range children() {
-    return child_range(child_iterator(), child_iterator());
-  }
-
-  const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
-  }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXUnreflexprExprClass;
-  }
-};
-
 class CXXIdExprExpr : public Expr {
   Expr *Reflection;
 

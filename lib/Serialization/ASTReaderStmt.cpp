@@ -512,10 +512,6 @@ void ASTStmtReader::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
   llvm_unreachable("unimplemented");
 }
 
-void ASTStmtReader::VisitCXXUnreflexprExpr(CXXUnreflexprExpr *E) {
-  llvm_unreachable("unimplemented");
-}
-
 void ASTStmtReader::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
   llvm_unreachable("unimplemented");
 }
