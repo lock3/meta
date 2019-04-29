@@ -976,7 +976,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   Fn->setInvalidDecl(Invalid);
 
   // Don't register the declaration if we're merely attempting to transform
-  // this class.
+  // this function.
   if (ShouldInjectInto(Owner)) {
     CheckInjectedFunctionDecl(getSema(), Fn, Owner);
     Owner->addDecl(Fn);
@@ -1007,6 +1007,17 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   return Fn;
 }
 
+static void CheckInjectedVarDecl(Sema &SemaRef, VarDecl *VD,
+                                 DeclContext *Owner) {
+  // FIXME: Is this right?
+  LookupResult Previous(
+    SemaRef, VD->getDeclName(), VD->getLocation(),
+    Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  SemaRef.CheckVariableDeclaration(VD, Previous);
+}
+
 Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -1029,7 +1040,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 
   Var->setImplicit(D->isImplicit());
   Var->setInvalidDecl(Invalid);
-  Owner->addDecl(Var);
 
   // If we are instantiating a local extern declaration, the
   // instantiation belongs lexically to the containing function.
@@ -1061,6 +1071,13 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
     if (D->isUsed(false))
       Var->setIsUsed();
     Var->setReferenced(D->isReferenced());
+  }
+
+  // Don't register the declaration if we're merely attempting to transform
+  // this variable.
+  if (ShouldInjectInto(Owner)) {
+    CheckInjectedVarDecl(SemaRef, Var, Owner);
+    Owner->addDecl(Var);
   }
 
   // FIXME: Instantiate attributes.
