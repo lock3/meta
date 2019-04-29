@@ -449,29 +449,6 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
                                     TemplateIds, Result, T.getCloseLocation());
 }
 
-/// Parse a reflected-value-expression.
-///
-/// \verbatim
-///   unreflexpr-expression:
-///     'unreflexpr' '(' reflection ')'
-/// \endverbatim
-///
-/// The constant expression must be a reflection of a type.
-ExprResult Parser::ParseCXXUnreflexprExpression() {
-  assert(Tok.is(tok::kw_unreflexpr) && "expected 'unreflexpr'");
-  SourceLocation Loc = ConsumeToken();
-
-  BalancedDelimiterTracker T(*this, tok::l_paren);
-  if (T.expectAndConsume(diag::err_expected_lparen_after, "unreflexpr"))
-    return ExprError();
-  ExprResult Result = ParseConstantExpression();
-  if (T.consumeClose())
-    return ExprError();
-  if (Result.isInvalid())
-    return ExprError();
-  return Actions.ActOnCXXUnreflexprExpression(Loc, Result.get());
-}
-
 /// Parse a type reflection specifier.
 ///
 /// \verbatim
