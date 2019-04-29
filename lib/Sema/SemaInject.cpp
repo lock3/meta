@@ -1269,6 +1269,38 @@ Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
   return Var;
 }
 
+static NamedDecl *getPreviousFieldDecl(Sema &SemaRef, FieldDecl *FD,
+                                       DeclContext *Owner) {
+  // FIXME: Is this right?
+  LookupResult Previous(
+    SemaRef, FD->getDeclName(), FD->getLocation(),
+    Sema::LookupMemberName, SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  NamedDecl *PrevDecl = nullptr;
+  switch (Previous.getResultKind()) {
+    case LookupResult::Found:
+    case LookupResult::FoundUnresolvedValue:
+      PrevDecl = Previous.getAsSingle<NamedDecl>();
+      break;
+
+    case LookupResult::FoundOverloaded:
+      PrevDecl = Previous.getRepresentativeDecl();
+      break;
+
+    case LookupResult::NotFound:
+    case LookupResult::NotFoundInCurrentInstantiation:
+    case LookupResult::Ambiguous:
+      break;
+  }
+  Previous.suppressDiagnostics();
+
+  if (PrevDecl && !SemaRef.isDeclInScope(PrevDecl, Owner))
+    PrevDecl = nullptr;
+
+  return PrevDecl;
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   if (GetModifiers().getStorageModifier() == StorageModifier::Static) {
     return InjectStaticDataMemberDecl(D);
@@ -1282,11 +1314,13 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   // FIXME: Substitute through the bit width.
   Expr *BitWidth = nullptr;
 
+  NamedDecl *PrevDecl = getPreviousFieldDecl(SemaRef, D, Owner);
+
   // Build and check the field.
   FieldDecl *Field = getSema().CheckFieldDecl(
       DNI.getName(), TSI->getType(), TSI, Owner, D->getLocation(),
       D->isMutable(), BitWidth, D->getInClassInitStyle(), D->getInnerLocStart(),
-      D->getAccess(), nullptr);
+      D->getAccess(), PrevDecl);
   AddDeclSubstitution(D, Field);
 
   // FIXME: Propagate attributes?
