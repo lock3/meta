@@ -1311,8 +1311,20 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   CXXRecordDecl *Owner;
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
-  // FIXME: Substitute through the bit width.
+  // Substitute through the bit width.
   Expr *BitWidth = nullptr;
+  {
+    // The bit-width expression is a constant expression.
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+    ExprResult NewBitWidth = TransformExpr(D->getBitWidth());
+    if (NewBitWidth.isInvalid()) {
+      Invalid = true;
+    } else {
+      BitWidth = NewBitWidth.get();
+    }
+  }
 
   NamedDecl *PrevDecl = getPreviousFieldDecl(SemaRef, D, Owner);
 
