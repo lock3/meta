@@ -1658,17 +1658,23 @@ Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
     DeclGroup &DG = S->getDeclGroup().getDeclGroup();
 
     Decl **NewDecls = new Decl *[DG.size()];
+    bool Invalid = false;
 
     for (unsigned I = 0; I < DG.size(); ++I) {
       if (Decl *NewDecl = AddDeclToInjecteeScope(*this, DG[I])) {
         NewDecls[I] = NewDecl;
-      } else
-        return nullptr;
+      } else {
+        Invalid = true;
+        break;
+      }
+    }
+
+    if (Invalid) {
+      delete [] NewDecls;
+      return nullptr;
     }
 
     DeclGroupRef NewDG = DeclGroupRef::Create(Context, NewDecls, DG.size());
-
-    delete NewDecls;
     return CompleteDeclStmt(*this, NewDG, S);
   }
 }
