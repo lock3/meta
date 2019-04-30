@@ -26,5 +26,5 @@ struct Foo {
   int y = 0;
 };
 
-// CHECK: define linkonce_odr void @_ZN3FooC2Ev(%struct.Foo* %this) unnamed_addr #0 comdat align 2 {
+// CHECK: define linkonce_odr void @_ZN3FooC2Ev(%struct.Foo* %this)
 typename(reflexpr(Foo)) get_foo() { return Foo(); }

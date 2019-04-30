@@ -976,7 +976,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   Fn->setInvalidDecl(Invalid);
 
   // Don't register the declaration if we're merely attempting to transform
-  // this class.
+  // this function.
   if (ShouldInjectInto(Owner)) {
     CheckInjectedFunctionDecl(getSema(), Fn, Owner);
     Owner->addDecl(Fn);
@@ -1007,6 +1007,17 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   return Fn;
 }
 
+static void CheckInjectedVarDecl(Sema &SemaRef, VarDecl *VD,
+                                 DeclContext *Owner) {
+  // FIXME: Is this right?
+  LookupResult Previous(
+    SemaRef, VD->getDeclName(), VD->getLocation(),
+    Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  SemaRef.CheckVariableDeclaration(VD, Previous);
+}
+
 Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -1029,7 +1040,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
 
   Var->setImplicit(D->isImplicit());
   Var->setInvalidDecl(Invalid);
-  Owner->addDecl(Var);
 
   // If we are instantiating a local extern declaration, the
   // instantiation belongs lexically to the containing function.
@@ -1061,6 +1071,13 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
     if (D->isUsed(false))
       Var->setIsUsed();
     Var->setReferenced(D->isReferenced());
+  }
+
+  // Don't register the declaration if we're merely attempting to transform
+  // this variable.
+  if (ShouldInjectInto(Owner)) {
+    CheckInjectedVarDecl(SemaRef, Var, Owner);
+    Owner->addDecl(Var);
   }
 
   // FIXME: Instantiate attributes.
@@ -1252,6 +1269,38 @@ Decl* InjectionContext::InjectStaticDataMemberDecl(FieldDecl *D) {
   return Var;
 }
 
+static NamedDecl *getPreviousFieldDecl(Sema &SemaRef, FieldDecl *FD,
+                                       DeclContext *Owner) {
+  // FIXME: Is this right?
+  LookupResult Previous(
+    SemaRef, FD->getDeclName(), FD->getLocation(),
+    Sema::LookupMemberName, SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  NamedDecl *PrevDecl = nullptr;
+  switch (Previous.getResultKind()) {
+    case LookupResult::Found:
+    case LookupResult::FoundUnresolvedValue:
+      PrevDecl = Previous.getAsSingle<NamedDecl>();
+      break;
+
+    case LookupResult::FoundOverloaded:
+      PrevDecl = Previous.getRepresentativeDecl();
+      break;
+
+    case LookupResult::NotFound:
+    case LookupResult::NotFoundInCurrentInstantiation:
+    case LookupResult::Ambiguous:
+      break;
+  }
+  Previous.suppressDiagnostics();
+
+  if (PrevDecl && !SemaRef.isDeclInScope(PrevDecl, Owner))
+    PrevDecl = nullptr;
+
+  return PrevDecl;
+}
+
 Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   if (GetModifiers().getStorageModifier() == StorageModifier::Static) {
     return InjectStaticDataMemberDecl(D);
@@ -1262,14 +1311,28 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   CXXRecordDecl *Owner;
   bool Invalid = InjectMemberDeclarator(D, DNI, TSI, Owner);
 
-  // FIXME: Substitute through the bit width.
+  // Substitute through the bit width.
   Expr *BitWidth = nullptr;
+  {
+    // The bit-width expression is a constant expression.
+    EnterExpressionEvaluationContext Unevaluated(
+        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+    ExprResult NewBitWidth = TransformExpr(D->getBitWidth());
+    if (NewBitWidth.isInvalid()) {
+      Invalid = true;
+    } else {
+      BitWidth = NewBitWidth.get();
+    }
+  }
+
+  NamedDecl *PrevDecl = getPreviousFieldDecl(SemaRef, D, Owner);
 
   // Build and check the field.
   FieldDecl *Field = getSema().CheckFieldDecl(
       DNI.getName(), TSI->getType(), TSI, Owner, D->getLocation(),
       D->isMutable(), BitWidth, D->getInClassInitStyle(), D->getInnerLocStart(),
-      D->getAccess(), nullptr);
+      D->getAccess(), PrevDecl);
   AddDeclSubstitution(D, Field);
 
   // FIXME: Propagate attributes?
