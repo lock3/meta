@@ -1607,43 +1607,67 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
   }
 }
 
+static bool isRequiresDecl(Decl *D) {
+  return isa<CXXRequiredTypeDecl>(D);
+}
+
+static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
+  Sema &SemaRef = Ctx.getSema();
+
+  Decl *D = Ctx.InjectDecl(OldDecl);
+  if (!D || D->isInvalidDecl())
+    return nullptr;
+
+  if (isRequiresDecl(D))
+    return nullptr;
+
+  // Add the declaration to scope, we don't need to add it to the context,
+  // as this should have been handled by the injection of the decl.
+  Scope *FunctionScope =
+    SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
+  SemaRef.PushOnScopeChains(cast<NamedDecl>(D), FunctionScope,
+                            /*AddToContext=*/false);
+
+  return D;
+}
+
+static DeclStmt *CompleteDeclStmt(InjectionContext &Ctx, DeclGroupRef &GroupRef,
+                                  DeclStmt *Original) {
+  ASTContext &Context = Ctx.getSema().getASTContext();
+
+  DeclStmt *NewStmt = new (Context) DeclStmt(GroupRef, Original->getBeginLoc(),
+                                             Original->getEndLoc());
+  Ctx.InjectedStmts.push_back(NewStmt);
+
+  return NewStmt;
+}
+
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
-  auto AddDeclToInjecteeScope = [this](Decl *OldDecl) -> Decl* {
-    Decl *D = InjectDecl(OldDecl);
-    if (!D || D->isInvalidDecl())
-      return nullptr;
-
-    Scope *FunctionScope =
-      getSema().getScopeForContext(Decl::castToDeclContext(Injectee));
-    getSema().IdResolver->AddDecl(cast<NamedDecl>(D));
-    FunctionScope->AddDecl(D);
-
-    return D;
-  };
+  ASTContext &Context = getSema().getASTContext();
 
   if (S->isSingleDecl()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(S->getSingleDecl())) {
+    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, S->getSingleDecl())) {
       DeclGroupRef NewDG(NewDecl);
-      DeclStmt *NewS =
-        new (getSema().getASTContext()) DeclStmt(NewDG, S->getBeginLoc(),
-                                                 S->getEndLoc());
-      TransformDeclStmt(NewS);
-      InjectedStmts.push_back(NewS);
-      return NewS;
+      return CompleteDeclStmt(*this, NewDG, S);
     }
     return nullptr;
+  } else {
+    DeclGroup &DG = S->getDeclGroup().getDeclGroup();
+
+    Decl **NewDecls = new Decl *[DG.size()];
+
+    for (unsigned I = 0; I < DG.size(); ++I) {
+      if (Decl *NewDecl = AddDeclToInjecteeScope(*this, DG[I])) {
+        NewDecls[I] = NewDecl;
+      } else
+        return nullptr;
+    }
+
+    DeclGroupRef NewDG = DeclGroupRef::Create(Context, NewDecls, DG.size());
+
+    delete NewDecls;
+    return CompleteDeclStmt(*this, NewDG, S);
   }
-
-  DeclGroup &DG = S->getDeclGroup().getDeclGroup();
-  bool Invalid = false;
-  for (std::size_t I = 0; I < DG.size(); ++I)
-    if (!AddDeclToInjecteeScope(DG[I]))
-      Invalid = true;
-
-  if (Invalid)
-    return nullptr;
-  InjectedStmts.push_back(S);
-  return S;
 }
 
 template <typename MetaType>
