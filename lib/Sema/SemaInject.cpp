@@ -1563,6 +1563,9 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   if (!R || R->isInvalidDecl())
     return R;
 
+  // Ensure we've actually made an effort to rebuilt the decl.
+  assert(R != D);
+
   // If we injected a top-level declaration, notify the AST consumer,
   // so that it can be processed for code generation.
   //
