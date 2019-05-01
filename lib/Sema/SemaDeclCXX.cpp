@@ -10958,8 +10958,8 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
-  getCurScope()->AddDecl(RDD);
-  IdResolver->AddDecl(RDD);
+  // getCurScope()->AddDecl(RDD);
+  // IdResolver->AddDecl(RDD);
   return RDD;
 }
 

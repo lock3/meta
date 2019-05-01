@@ -1750,7 +1750,6 @@ public:
   void diagnoseEquivalentInternalLinkageDeclarations(
       SourceLocation Loc, const NamedDecl *D,
       ArrayRef<const NamedDecl *> Equiv);
-  bool isOverloadedRequiredDeclaration(NamedDecl *Best, NamedDecl *Cand);
 
   bool isUsualDeallocationFunction(const CXXMethodDecl *FD);
 

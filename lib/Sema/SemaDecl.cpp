@@ -5567,7 +5567,7 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
 
   bool AddToScope = true;
   if (AnalyzingRequiredDeclarator)
-    AddToScope = false;
+    AddToScope = true;
   if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef) {
     if (TemplateParamLists.size()) {
       Diag(D.getIdentifierLoc(), diag::err_template_typedef);

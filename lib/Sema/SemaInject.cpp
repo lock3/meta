@@ -453,50 +453,50 @@ public:
   }
 
   ExprResult TransformCallExpr(CallExpr *E) {
-    DeclRefExpr *Callee = dyn_cast<DeclRefExpr>(E->getCallee());
-    if (!Callee)
-      return Base::TransformCallExpr(E);
+    ExprResult Callee = TransformExpr(E->getCallee());
+    // if (!Callee)
+    //   return Base::TransformCallExpr(E);
 
-    Decl *Replacement = GetDeclReplacement(Callee->getDecl());
-    if (!Replacement)
-      return Base::TransformCallExpr(E);
+    // Decl *Replacement = GetDeclReplacement(Callee->getDecl());
+    // if (!Replacement)
+    //   return Base::TransformCallExpr(E);
     
-    DeclaratorDecl *DD = nullptr;
-    if (isa<CXXRequiredDeclaratorDecl>(Replacement))
-        DD = GetRequiredDeclarator(
-          cast<CXXRequiredDeclaratorDecl>(Replacement));
-    if (!DD)
-      return Base::TransformCallExpr(E);
+    // DeclaratorDecl *DD = nullptr;
+    // if (isa<CXXRequiredDeclaratorDecl>(Replacement))
+    //     DD = GetRequiredDeclarator(
+    //       cast<CXXRequiredDeclaratorDecl>(Replacement));
+    // if (!DD)
+    //   return Base::TransformCallExpr(E);
 
-    TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
-    if (Callee->hasExplicitTemplateArgs()) {
-      TemplateArgs = &TransArgs;
-      TransArgs.setLAngleLoc(Callee->getLAngleLoc());
-      TransArgs.setRAngleLoc(Callee->getRAngleLoc());
-      if (getDerived().TransformTemplateArguments(Callee->getTemplateArgs(),
-                                                  Callee->getNumTemplateArgs(),
-                                                  TransArgs))
-        return ExprError();
-    }
+    // TemplateArgumentListInfo TransArgs, *TemplateArgs = nullptr;
+    // if (Callee->hasExplicitTemplateArgs()) {
+    //   TemplateArgs = &TransArgs;
+    //   TransArgs.setLAngleLoc(Callee->getLAngleLoc());
+    //   TransArgs.setRAngleLoc(Callee->getRAngleLoc());
+    //   if (getDerived().TransformTemplateArguments(Callee->getTemplateArgs(),
+    //                                               Callee->getNumTemplateArgs(),
+    //                                               TransArgs))
+    //     return ExprError();
+    // }
 
-    bool ArgChanged;
-    llvm::SmallVector<Expr *, 8> Args;
-    if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
-                       &ArgChanged))
-      return ExprError();
+    // bool ArgChanged;
+    // llvm::SmallVector<Expr *, 8> Args;
+    // if (TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+    //                    &ArgChanged))
+    //   return ExprError();
 
 
 
-    DeclarationNameInfo DNI = TransformDeclarationName(DD);
-    ExprResult NewCallee =
-      RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD), DNI,
-                         TemplateArgs);
-    SourceLocation FakeLParenLoc
-      = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
-    ExprResult Res =
-      RebuildCallExpr(NewCallee.get(), FakeLParenLoc, Args,
-                      E->getRParenLoc());
-    return Res.get();
+    // DeclarationNameInfo DNI = TransformDeclarationName(DD);
+    // ExprResult NewCallee =
+    //   RebuildDeclRefExpr(DD->getQualifierLoc(), cast<ValueDecl>(DD), DNI,
+    //                      TemplateArgs);
+    // SourceLocation FakeLParenLoc
+    //   = ((Expr *)NewCallee.get())->getSourceRange().getBegin();
+    // ExprResult Res =
+    //   RebuildCallExpr(NewCallee.get(), FakeLParenLoc, Args,
+    //                   E->getRParenLoc());
+    // return Res.get();
 
     return Base::TransformCallExpr(E);
   }
@@ -2357,7 +2357,7 @@ static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
 
   CallExpr *Call = cast<CallExpr>(CallRes.get());
   FunctionDecl *CalleeDecl = Call->getDirectCallee();
-  Ctx.RequiredDecls.insert({D, CalleeDecl});
+  Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), CalleeDecl});
   return false;
 }
 
@@ -2407,7 +2407,7 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
   }
 
   // fixme: support functions
-  Ctx.RequiredDecls.insert({D, FoundDeclarator});
+  Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), FoundDeclarator});
 
   return false;
 }
