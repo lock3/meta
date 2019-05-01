@@ -1230,24 +1230,6 @@ bool Sema::IsOverload(FunctionDecl *New, FunctionDecl *Old,
   return false;
 }
 
-/// Checks availability of the function depending on the current
-/// function context. Inside an unavailable function, unavailability is ignored.
-///
-/// \returns true if \arg FD is unavailable and current context is inside
-/// an available function, false otherwise.
-bool Sema::isFunctionConsideredUnavailable(FunctionDecl *FD) {
-  if (!FD->isUnavailable())
-    return false;
-
-  // Walk up the context of the caller.
-  Decl *C = cast<Decl>(CurContext);
-  do {
-    if (C->isUnavailable())
-      return false;
-  } while ((C = cast_or_null<Decl>(C->getDeclContext())));
-  return true;
-}
-
 /// Tries a user-defined conversion from From to ToType.
 ///
 /// Produces an implicit conversion sequence for when a standard conversion
@@ -7662,6 +7644,12 @@ BuiltinCandidateTypeSet::AddTypesConvertedFrom(QualType Ty,
     }
   }
 }
+/// Helper function for adjusting address spaces for the pointer or reference
+/// operands of builtin operators depending on the argument.
+static QualType AdjustAddressSpaceForBuiltinOperandType(Sema &S, QualType T,
+                                                        Expr *Arg) {
+  return S.Context.getAddrSpaceQualType(T, Arg->getType().getAddressSpace());
+}
 
 /// Helper function for AddBuiltinOperatorCandidates() that adds
 /// the volatile- and non-volatile-qualified assignment operators for the
@@ -7673,15 +7661,17 @@ static void AddBuiltinAssignmentOperatorCandidates(Sema &S,
   QualType ParamTypes[2];
 
   // T& operator=(T&, T)
-  ParamTypes[0] = S.Context.getLValueReferenceType(T);
+  ParamTypes[0] = S.Context.getLValueReferenceType(
+      AdjustAddressSpaceForBuiltinOperandType(S, T, Args[0]));
   ParamTypes[1] = T;
   S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet,
                         /*IsAssignmentOperator=*/true);
 
   if (!S.Context.getCanonicalType(T).isVolatileQualified()) {
     // volatile T& operator=(volatile T&, T)
-    ParamTypes[0]
-      = S.Context.getLValueReferenceType(S.Context.getVolatileType(T));
+    ParamTypes[0] = S.Context.getLValueReferenceType(
+        AdjustAddressSpaceForBuiltinOperandType(S, S.Context.getVolatileType(T),
+                                                Args[0]));
     ParamTypes[1] = T;
     S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet,
                           /*IsAssignmentOperator=*/true);
@@ -8508,17 +8498,16 @@ public:
            Right < LastPromotedArithmeticType; ++Right) {
         QualType ParamTypes[2];
         ParamTypes[1] = ArithmeticTypes[Right];
-
+        auto LeftBaseTy = AdjustAddressSpaceForBuiltinOperandType(
+            S, ArithmeticTypes[Left], Args[0]);
         // Add this built-in operator as a candidate (VQ is empty).
-        ParamTypes[0] =
-          S.Context.getLValueReferenceType(ArithmeticTypes[Left]);
+        ParamTypes[0] = S.Context.getLValueReferenceType(LeftBaseTy);
         S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet,
                               /*IsAssigmentOperator=*/isEqualOp);
 
         // Add this built-in operator as a candidate (VQ is 'volatile').
         if (VisibleTypeConversionsQuals.hasVolatile()) {
-          ParamTypes[0] =
-            S.Context.getVolatileType(ArithmeticTypes[Left]);
+          ParamTypes[0] = S.Context.getVolatileType(LeftBaseTy);
           ParamTypes[0] = S.Context.getLValueReferenceType(ParamTypes[0]);
           S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet,
                                 /*IsAssigmentOperator=*/isEqualOp);
@@ -8574,14 +8563,14 @@ public:
            Right < LastPromotedIntegralType; ++Right) {
         QualType ParamTypes[2];
         ParamTypes[1] = ArithmeticTypes[Right];
-
+        auto LeftBaseTy = AdjustAddressSpaceForBuiltinOperandType(
+            S, ArithmeticTypes[Left], Args[0]);
         // Add this built-in operator as a candidate (VQ is empty).
-        ParamTypes[0] =
-          S.Context.getLValueReferenceType(ArithmeticTypes[Left]);
+        ParamTypes[0] = S.Context.getLValueReferenceType(LeftBaseTy);
         S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet);
         if (VisibleTypeConversionsQuals.hasVolatile()) {
           // Add this built-in operator as a candidate (VQ is 'volatile').
-          ParamTypes[0] = ArithmeticTypes[Left];
+          ParamTypes[0] = LeftBaseTy;
           ParamTypes[0] = S.Context.getVolatileType(ParamTypes[0]);
           ParamTypes[0] = S.Context.getLValueReferenceType(ParamTypes[0]);
           S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet);
@@ -9451,9 +9440,7 @@ OverloadCandidateSet::BestViableFunction(Sema &S, SourceLocation Loc,
   }
 
   // Best is the best viable function.
-  if (Best->Function &&
-      (Best->Function->isDeleted() ||
-       S.isFunctionConsideredUnavailable(Best->Function)))
+  if (Best->Function && Best->Function->isDeleted())
     return OR_Deleted;
 
   if (!EquivalentCands.empty())
@@ -10373,7 +10360,7 @@ static void NoteFunctionCandidate(Sema &S, OverloadCandidate *Cand,
 
   // Note deleted candidates, but only if they're viable.
   if (Cand->Viable) {
-    if (Fn->isDeleted() || S.isFunctionConsideredUnavailable(Fn)) {
+    if (Fn->isDeleted()) {
       std::string FnDesc;
       std::pair<OverloadCandidateKind, OverloadCandidateSelect> FnKindPair =
           ClassifyOverloadCandidate(S, Cand->FoundDecl, Fn, FnDesc);
@@ -10794,8 +10781,8 @@ void OverloadCandidateSet::NoteCandidates(
     }
   }
 
-  std::stable_sort(Cands.begin(), Cands.end(),
-            CompareOverloadCandidatesForDisplay(S, OpLoc, Args.size(), Kind));
+  llvm::stable_sort(
+      Cands, CompareOverloadCandidatesForDisplay(S, OpLoc, Args.size(), Kind));
 
   bool ReportedAmbiguousConversions = false;
 
@@ -11918,15 +11905,6 @@ public:
 
 }
 
-static std::unique_ptr<CorrectionCandidateCallback>
-MakeValidator(Sema &SemaRef, MemberExpr *ME, size_t NumArgs,
-              bool HasTemplateArgs, bool AllowTypoCorrection) {
-  if (!AllowTypoCorrection)
-    return llvm::make_unique<NoTypoCorrectionCCC>();
-  return llvm::make_unique<FunctionCallFilterCCC>(SemaRef, NumArgs,
-                                                  HasTemplateArgs, ME);
-}
-
 /// Attempts to recover from a call where no functions were found.
 ///
 /// Returns true if new candidates were found.
@@ -11961,16 +11939,22 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
   LookupResult R(SemaRef, ULE->getName(), ULE->getNameLoc(),
                  Sema::LookupOrdinaryName);
   bool DoDiagnoseEmptyLookup = EmptyLookup;
-  if (!DiagnoseTwoPhaseLookup(SemaRef, Fn->getExprLoc(), SS, R,
-                              OverloadCandidateSet::CSK_Normal,
-                              ExplicitTemplateArgs, Args,
-                              &DoDiagnoseEmptyLookup) &&
-    (!DoDiagnoseEmptyLookup || SemaRef.DiagnoseEmptyLookup(
-        S, SS, R,
-        MakeValidator(SemaRef, dyn_cast<MemberExpr>(Fn), Args.size(),
-                      ExplicitTemplateArgs != nullptr, AllowTypoCorrection),
-        ExplicitTemplateArgs, Args)))
-    return ExprError();
+  if (!DiagnoseTwoPhaseLookup(
+          SemaRef, Fn->getExprLoc(), SS, R, OverloadCandidateSet::CSK_Normal,
+          ExplicitTemplateArgs, Args, &DoDiagnoseEmptyLookup)) {
+    NoTypoCorrectionCCC NoTypoValidator{};
+    FunctionCallFilterCCC FunctionCallValidator(SemaRef, Args.size(),
+                                                ExplicitTemplateArgs != nullptr,
+                                                dyn_cast<MemberExpr>(Fn));
+    CorrectionCandidateCallback &Validator =
+        AllowTypoCorrection
+            ? static_cast<CorrectionCandidateCallback &>(FunctionCallValidator)
+            : static_cast<CorrectionCandidateCallback &>(NoTypoValidator);
+    if (!DoDiagnoseEmptyLookup ||
+        SemaRef.DiagnoseEmptyLookup(S, SS, R, Validator, ExplicitTemplateArgs,
+                                    Args))
+      return ExprError();
+  }
 
   assert(!R.empty() && "lookup results empty despite recovery");
 
@@ -12138,9 +12122,7 @@ static ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
 
   case OR_Deleted: {
     SemaRef.Diag(Fn->getBeginLoc(), diag::err_ovl_deleted_call)
-        << (*Best)->Function->isDeleted() << ULE->getName()
-        << SemaRef.getDeletedOrUnavailableSuffix((*Best)->Function)
-        << Fn->getSourceRange();
+        << ULE->getName() << Fn->getSourceRange();
     CandidateSet->NoteCandidates(SemaRef, OCD_AllCandidates, Args);
 
     // We emitted an error for the unavailable/deleted function call but keep
@@ -12385,10 +12367,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, UnaryOperatorKind Opc,
 
   case OR_Deleted:
     Diag(OpLoc, diag::err_ovl_deleted_oper)
-      << Best->Function->isDeleted()
-      << UnaryOperator::getOpcodeStr(Opc)
-      << getDeletedOrUnavailableSuffix(Best->Function)
-      << Input->getSourceRange();
+        << UnaryOperator::getOpcodeStr(Opc) << Input->getSourceRange();
     CandidateSet.NoteCandidates(*this, OCD_AllCandidates, ArgsArray,
                                 UnaryOperator::getOpcodeStr(Opc), OpLoc);
     return ExprError();
@@ -12676,10 +12655,8 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
         return ExprError();
       } else {
         Diag(OpLoc, diag::err_ovl_deleted_oper)
-          << Best->Function->isDeleted()
-          << BinaryOperator::getOpcodeStr(Opc)
-          << getDeletedOrUnavailableSuffix(Best->Function)
-          << Args[0]->getSourceRange() << Args[1]->getSourceRange();
+            << BinaryOperator::getOpcodeStr(Opc) << Args[0]->getSourceRange()
+            << Args[1]->getSourceRange();
       }
       CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args,
                                   BinaryOperator::getOpcodeStr(Opc), OpLoc);
@@ -12848,11 +12825,8 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
 
     case OR_Deleted:
       Diag(LLoc, diag::err_ovl_deleted_oper)
-        << Best->Function->isDeleted() << "[]"
-        << getDeletedOrUnavailableSuffix(Best->Function)
-        << Args[0]->getSourceRange() << Args[1]->getSourceRange();
-      CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args,
-                                  "[]", LLoc);
+          << "[]" << Args[0]->getSourceRange() << Args[1]->getSourceRange();
+      CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args, "[]", LLoc);
       return ExprError();
     }
 
@@ -13037,10 +13011,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
 
     case OR_Deleted:
       Diag(UnresExpr->getMemberLoc(), diag::err_ovl_deleted_member_call)
-        << Best->Function->isDeleted()
-        << DeclName
-        << getDeletedOrUnavailableSuffix(Best->Function)
-        << MemExprE->getSourceRange();
+          << DeclName << MemExprE->getSourceRange();
       CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args);
       // FIXME: Leaking incoming expressions!
       return ExprError();
@@ -13264,9 +13235,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
   case OR_Deleted:
     Diag(Object.get()->getBeginLoc(), diag::err_ovl_deleted_object_call)
-        << Best->Function->isDeleted() << Object.get()->getType()
-        << getDeletedOrUnavailableSuffix(Best->Function)
-        << Object.get()->getSourceRange();
+        << Object.get()->getType() << Object.get()->getSourceRange();
     CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args);
     break;
   }
@@ -13494,11 +13463,7 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc,
     return ExprError();
 
   case OR_Deleted:
-    Diag(OpLoc,  diag::err_ovl_deleted_oper)
-      << Best->Function->isDeleted()
-      << "->"
-      << getDeletedOrUnavailableSuffix(Best->Function)
-      << Base->getSourceRange();
+    Diag(OpLoc, diag::err_ovl_deleted_oper) << "->" << Base->getSourceRange();
     CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Base);
     return ExprError();
   }

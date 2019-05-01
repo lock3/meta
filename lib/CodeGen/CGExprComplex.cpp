@@ -327,15 +327,12 @@ public:
 
 Address CodeGenFunction::emitAddrOfRealComponent(Address addr,
                                                  QualType complexType) {
-  CharUnits offset = CharUnits::Zero();
-  return Builder.CreateStructGEP(addr, 0, offset, addr.getName() + ".realp");
+  return Builder.CreateStructGEP(addr, 0, addr.getName() + ".realp");
 }
 
 Address CodeGenFunction::emitAddrOfImagComponent(Address addr,
                                                  QualType complexType) {
-  QualType eltType = complexType->castAs<ComplexType>()->getElementType();
-  CharUnits offset = getContext().getTypeSizeInChars(eltType);
-  return Builder.CreateStructGEP(addr, 1, offset, addr.getName() + ".imagp");
+  return Builder.CreateStructGEP(addr, 1, addr.getName() + ".imagp");
 }
 
 /// EmitLoadOfLValue - Given an RValue reference for a complex, emit code to
@@ -513,6 +510,8 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastKind CK, Expr *Op,
   case CK_IntToOCLSampler:
   case CK_FixedPointCast:
   case CK_FixedPointToBoolean:
+  case CK_FixedPointToIntegral:
+  case CK_IntegralToFixedPoint:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_FloatingRealToComplex:

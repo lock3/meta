@@ -422,7 +422,7 @@ static void initOption(AnalyzerOptions::ConfigTable &Config,
 
   OptionField = DefaultVal;
   bool HasFailed = getStringOption(Config, Name, std::to_string(DefaultVal))
-                     .getAsInteger(10, OptionField);
+                     .getAsInteger(0, OptionField);
   if (Diags && HasFailed)
     Diags->Report(diag::err_analyzer_config_invalid_input)
       << Name << "an unsigned";
@@ -551,7 +551,7 @@ static void parseSanitizerKinds(StringRef FlagName,
                                 DiagnosticsEngine &Diags, SanitizerSet &S) {
   for (const auto &Sanitizer : Sanitizers) {
     SanitizerMask K = parseSanitizerValue(Sanitizer, /*AllowGroups=*/false);
-    if (K == 0)
+    if (K == SanitizerMask())
       Diags.Report(diag::err_drv_invalid_value) << FlagName << Sanitizer;
     else
       S.set(K, true);
@@ -588,6 +588,7 @@ static void setPGOInstrumentor(CodeGenOptions &Opts, ArgList &Args,
                    .Case("none", CodeGenOptions::ProfileNone)
                    .Case("clang", CodeGenOptions::ProfileClangInstr)
                    .Case("llvm", CodeGenOptions::ProfileIRInstr)
+                   .Case("csllvm", CodeGenOptions::ProfileCSIRInstr)
                    .Default(~0U);
   if (I == ~0U) {
     Diags.Report(diag::err_drv_invalid_pgo_instrumentor) << A->getAsString(Args)
@@ -610,9 +611,12 @@ static void setPGOUseInstrumentor(CodeGenOptions &Opts,
   }
   std::unique_ptr<llvm::IndexedInstrProfReader> PGOReader =
     std::move(ReaderOrErr.get());
-  if (PGOReader->isIRLevelProfile())
-    Opts.setProfileUse(CodeGenOptions::ProfileIRInstr);
-  else
+  if (PGOReader->isIRLevelProfile()) {
+    if (PGOReader->hasCSIRLevelProfile())
+      Opts.setProfileUse(CodeGenOptions::ProfileCSIRInstr);
+    else
+      Opts.setProfileUse(CodeGenOptions::ProfileIRInstr);
+  } else
     Opts.setProfileUse(CodeGenOptions::ProfileClangInstr);
 }
 
@@ -1214,6 +1218,11 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   if (!Opts.OptRecordFile.empty())
     NeedLocTracking = true;
 
+  if (Arg *A = Args.getLastArg(OPT_opt_record_passes)) {
+    Opts.OptRecordPasses = A->getValue();
+    NeedLocTracking = true;
+  }
+
   if (Arg *A = Args.getLastArg(OPT_Rpass_EQ)) {
     Opts.OptimizationRemarkPattern =
         GenerateOptimizationRemarkRegex(Diags, Args, A);
@@ -1404,9 +1413,9 @@ static bool checkVerifyPrefixes(const std::vector<std::string> &VerifyPrefixes,
   for (const auto &Prefix : VerifyPrefixes) {
     // Every prefix must start with a letter and contain only alphanumeric
     // characters, hyphens, and underscores.
-    auto BadChar = std::find_if(Prefix.begin(), Prefix.end(),
-                                [](char C){return !isAlphanumeric(C)
-                                                  && C != '-' && C != '_';});
+    auto BadChar = llvm::find_if(Prefix, [](char C) {
+      return !isAlphanumeric(C) && C != '-' && C != '_';
+    });
     if (BadChar != Prefix.end() || !isLetter(Prefix[0])) {
       Success = false;
       if (Diags) {
@@ -1708,6 +1717,7 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   Opts.ShowHelp = Args.hasArg(OPT_help);
   Opts.ShowStats = Args.hasArg(OPT_print_stats);
   Opts.ShowTimers = Args.hasArg(OPT_ftime_report);
+  Opts.TimeTrace = Args.hasArg(OPT_ftime_trace);
   Opts.ShowVersion = Args.hasArg(OPT_version);
   Opts.ASTMergeFiles = Args.getAllArgValues(OPT_ast_merge);
   Opts.LLVMArgs = Args.getAllArgValues(OPT_mllvm);
@@ -2590,20 +2600,25 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.Blocks = Args.hasArg(OPT_fblocks) || (Opts.OpenCL
     && Opts.OpenCLVersion == 200);
   Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
-  Opts.CoroutinesTS = Args.hasArg(OPT_fcoroutines_ts);
+  Opts.Coroutines = Opts.CPlusPlus2a || Args.hasArg(OPT_fcoroutines_ts);
 
   // Enable [[]] attributes in C++11 by default.
   Opts.DoubleSquareBracketAttributes =
       Args.hasFlag(OPT_fdouble_square_bracket_attributes,
                    OPT_fno_double_square_bracket_attributes, Opts.CPlusPlus11);
 
+  Opts.CPlusPlusModules = Opts.CPlusPlus2a;
   Opts.ModulesTS = Args.hasArg(OPT_fmodules_ts);
-  Opts.Modules = Args.hasArg(OPT_fmodules) || Opts.ModulesTS;
+  Opts.Modules =
+      Args.hasArg(OPT_fmodules) || Opts.ModulesTS || Opts.CPlusPlusModules;
   Opts.ModulesStrictDeclUse = Args.hasArg(OPT_fmodules_strict_decluse);
   Opts.ModulesDeclUse =
       Args.hasArg(OPT_fmodules_decluse) || Opts.ModulesStrictDeclUse;
+  // FIXME: We only need this in C++ modules / Modules TS if we might textually
+  // enter a different module (eg, when building a header unit).
   Opts.ModulesLocalVisibility =
-      Args.hasArg(OPT_fmodules_local_submodule_visibility) || Opts.ModulesTS;
+      Args.hasArg(OPT_fmodules_local_submodule_visibility) || Opts.ModulesTS ||
+      Opts.CPlusPlusModules;
   Opts.ModulesCodegen = Args.hasArg(OPT_fmodules_codegen);
   Opts.ModulesDebugInfo = Args.hasArg(OPT_fmodules_debuginfo);
   Opts.ModulesSearchAll = Opts.Modules &&
@@ -2675,6 +2690,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.MaxTypeAlign = getLastArgIntValue(Args, OPT_fmax_type_align_EQ, 0, Diags);
   Opts.AlignDouble = Args.hasArg(OPT_malign_double);
   Opts.PICLevel = getLastArgIntValue(Args, OPT_pic_level, 0, Diags);
+  Opts.ROPI = Args.hasArg(OPT_fropi);
+  Opts.RWPI = Args.hasArg(OPT_frwpi);
   Opts.PIE = Args.hasArg(OPT_pic_is_pie);
   Opts.Static = Args.hasArg(OPT_static_define);
   Opts.DumpRecordLayoutsSimple = Args.hasArg(OPT_fdump_record_layouts_simple);
@@ -2840,7 +2857,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   // Set the flag to prevent the implementation from emitting device exception
   // handling code for those requiring so.
-  Opts.OpenMPHostCXXExceptions = Opts.Exceptions && Opts.CXXExceptions;
   if ((Opts.OpenMPIsDevice && T.isNVPTX()) || Opts.OpenCLCPlusPlus) {
     Opts.Exceptions = 0;
     Opts.CXXExceptions = 0;
@@ -2852,6 +2868,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Opts.OpenMPCUDABlocksPerSM =
         getLastArgIntValue(Args, options::OPT_fopenmp_cuda_blocks_per_sm_EQ,
                            Opts.OpenMPCUDABlocksPerSM, Diags);
+    Opts.OpenMPCUDAReductionBufNum = getLastArgIntValue(
+        Args, options::OPT_fopenmp_cuda_teams_reduction_recs_num_EQ,
+        Opts.OpenMPCUDAReductionBufNum, Diags);
   }
 
   // Prevent auto-widening the representation of loop counters during an
@@ -2887,6 +2906,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Diags.Report(diag::err_drv_omp_host_ir_file_not_found)
           << Opts.OMPHostIRFile;
   }
+
+  Opts.SYCLIsDevice = Args.hasArg(options::OPT_fsycl_is_device);
 
   // Set CUDA mode for OpenMP target NVPTX if specified in options
   Opts.OpenMPCUDAMode = Opts.OpenMPIsDevice && T.isNVPTX() &&

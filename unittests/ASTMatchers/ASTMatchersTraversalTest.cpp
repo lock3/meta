@@ -454,6 +454,20 @@ TEST(Matcher, HasReceiver) {
       objcMessageExpr(hasReceiver(declRefExpr(to(varDecl(hasName("x"))))))));
 }
 
+TEST(Matcher, isClassMessage) {
+  EXPECT_TRUE(matchesObjC(
+      "@interface NSString +(NSString *) stringWithFormat; @end "
+      "void f() { [NSString stringWithFormat]; }",
+      objcMessageExpr(isClassMessage())));
+
+  EXPECT_FALSE(matchesObjC(
+      "@interface NSString @end "
+      "void f(NSString *x) {"
+      "[x containsString];"
+      "}",
+      objcMessageExpr(isClassMessage())));
+}
+
 TEST(Matcher, isInstanceMessage) {
   EXPECT_TRUE(matchesObjC(
       "@interface NSString @end "
@@ -467,6 +481,138 @@ TEST(Matcher, isInstanceMessage) {
       "void f() { [NSString stringWithFormat]; }",
       objcMessageExpr(isInstanceMessage())));
 
+}
+
+TEST(Matcher, isClassMethod) {
+  EXPECT_TRUE(matchesObjC(
+    "@interface Bar + (void)bar; @end",
+    objcMethodDecl(isClassMethod())));
+
+  EXPECT_TRUE(matchesObjC(
+    "@interface Bar @end"
+    "@implementation Bar + (void)bar {} @end",
+    objcMethodDecl(isClassMethod())));
+
+  EXPECT_FALSE(matchesObjC(
+    "@interface Foo - (void)foo; @end",
+    objcMethodDecl(isClassMethod())));
+
+  EXPECT_FALSE(matchesObjC(
+    "@interface Foo @end "
+    "@implementation Foo - (void)foo {} @end",
+    objcMethodDecl(isClassMethod())));
+}
+
+TEST(Matcher, isInstanceMethod) {
+  EXPECT_TRUE(matchesObjC(
+    "@interface Foo - (void)foo; @end",
+    objcMethodDecl(isInstanceMethod())));
+
+  EXPECT_TRUE(matchesObjC(
+    "@interface Foo @end "
+    "@implementation Foo - (void)foo {} @end",
+    objcMethodDecl(isInstanceMethod())));
+
+  EXPECT_FALSE(matchesObjC(
+    "@interface Bar + (void)bar; @end",
+    objcMethodDecl(isInstanceMethod())));
+
+  EXPECT_FALSE(matchesObjC(
+    "@interface Bar @end"
+    "@implementation Bar + (void)bar {} @end",
+    objcMethodDecl(isInstanceMethod())));
+}
+
+TEST(MatcherCXXMemberCallExpr, On) {
+  auto Snippet1 = R"cc(
+        struct Y {
+          void m();
+        };
+        void z(Y y) { y.m(); }
+      )cc";
+  auto Snippet2 = R"cc(
+        struct Y {
+          void m();
+        };
+        struct X : public Y {};
+        void z(X x) { x.m(); }
+      )cc";
+  auto MatchesY = cxxMemberCallExpr(on(hasType(cxxRecordDecl(hasName("Y")))));
+  EXPECT_TRUE(matches(Snippet1, MatchesY));
+  EXPECT_TRUE(notMatches(Snippet2, MatchesY));
+
+  auto MatchesX = cxxMemberCallExpr(on(hasType(cxxRecordDecl(hasName("X")))));
+  EXPECT_TRUE(matches(Snippet2, MatchesX));
+
+  // Parens are ignored.
+  auto Snippet3 = R"cc(
+    struct Y {
+      void m();
+    };
+    Y g();
+    void z(Y y) { (g()).m(); }
+  )cc";
+  auto MatchesCall = cxxMemberCallExpr(on(callExpr()));
+  EXPECT_TRUE(matches(Snippet3, MatchesCall));
+}
+
+TEST(MatcherCXXMemberCallExpr, OnImplicitObjectArgument) {
+  auto Snippet1 = R"cc(
+    struct Y {
+      void m();
+    };
+    void z(Y y) { y.m(); }
+  )cc";
+  auto Snippet2 = R"cc(
+    struct Y {
+      void m();
+    };
+    struct X : public Y {};
+    void z(X x) { x.m(); }
+  )cc";
+  auto MatchesY = cxxMemberCallExpr(
+      onImplicitObjectArgument(hasType(cxxRecordDecl(hasName("Y")))));
+  EXPECT_TRUE(matches(Snippet1, MatchesY));
+  EXPECT_TRUE(matches(Snippet2, MatchesY));
+
+  auto MatchesX = cxxMemberCallExpr(
+      onImplicitObjectArgument(hasType(cxxRecordDecl(hasName("X")))));
+  EXPECT_TRUE(notMatches(Snippet2, MatchesX));
+
+  // Parens are not ignored.
+  auto Snippet3 = R"cc(
+    struct Y {
+      void m();
+    };
+    Y g();
+    void z(Y y) { (g()).m(); }
+  )cc";
+  auto MatchesCall = cxxMemberCallExpr(onImplicitObjectArgument(callExpr()));
+  EXPECT_TRUE(notMatches(Snippet3, MatchesCall));
+}
+
+TEST(Matcher, HasObjectExpr) {
+  auto Snippet1 = R"cc(
+        struct X {
+          int m;
+          int f(X x) { return x.m; }
+        };
+      )cc";
+  auto Snippet2 = R"cc(
+        struct X {
+          int m;
+          int f(X x) { return m; }
+        };
+      )cc";
+  auto MatchesX =
+      memberExpr(hasObjectExpression(hasType(cxxRecordDecl(hasName("X")))));
+  EXPECT_TRUE(matches(Snippet1, MatchesX));
+  EXPECT_TRUE(notMatches(Snippet2, MatchesX));
+
+  auto MatchesXPointer = memberExpr(
+      hasObjectExpression(hasType(pointsTo(cxxRecordDecl(hasName("X"))))));
+  EXPECT_TRUE(notMatches(Snippet1, MatchesXPointer));
+  EXPECT_TRUE(matches(Snippet2, MatchesXPointer));
 }
 
 TEST(ForEachArgumentWithParam, ReportsNoFalsePositives) {

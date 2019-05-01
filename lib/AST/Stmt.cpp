@@ -320,6 +320,23 @@ CompoundStmt *CompoundStmt::CreateEmpty(const ASTContext &C,
   return New;
 }
 
+const Expr *ValueStmt::getExprStmt() const {
+  const Stmt *S = this;
+  do {
+    if (const auto *E = dyn_cast<Expr>(S))
+      return E;
+
+    if (const auto *LS = dyn_cast<LabelStmt>(S))
+      S = LS->getSubStmt();
+    else if (const auto *AS = dyn_cast<AttributedStmt>(S))
+      S = AS->getSubStmt();
+    else
+      llvm_unreachable("unknown kind of ValueStmt");
+  } while (isa<ValueStmt>(S));
+
+  return nullptr;
+}
+
 const char *LabelStmt::getName() const {
   return getDecl()->getIdentifier()->getNameStart();
 }
@@ -1235,6 +1252,10 @@ CapturedStmt *CapturedStmt::CreateDeserialized(const ASTContext &Context,
 Stmt::child_range CapturedStmt::children() {
   // Children are captured field initializers.
   return child_range(getStoredStmts(), getStoredStmts() + NumCaptures);
+}
+
+Stmt::const_child_range CapturedStmt::children() const {
+  return const_child_range(getStoredStmts(), getStoredStmts() + NumCaptures);
 }
 
 CapturedDecl *CapturedStmt::getCapturedDecl() {

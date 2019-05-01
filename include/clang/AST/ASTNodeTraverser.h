@@ -393,6 +393,13 @@ public:
     Visit(D->getInit());
   }
 
+  void VisitOMPAllocateDecl(const OMPAllocateDecl *D) {
+    for (const auto *E : D->varlists())
+      Visit(E);
+    for (const auto *C : D->clauselists())
+      Visit(C);
+  }
+
   void VisitCXXMetaprogramDecl(const CXXMetaprogramDecl *D) {
     if (D->hasBody())
       Visit(D->getBody());

@@ -429,7 +429,7 @@ ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
     if (I == 1)
       continue;
 
-    ExprResult Arg = DefaultLvalueConversion(Args[I]);
+    ExprResult Arg = DefaultFunctionArrayLvalueConversion(Args[I]);
     if (Arg.isInvalid())
       return ExprError();
     Args[I] = Arg.get();

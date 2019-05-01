@@ -1755,6 +1755,20 @@ public:
     return getSpecializationKind() == TSK_ExplicitSpecialization;
   }
 
+  /// Is this an explicit specialization at class scope (within the class that
+  /// owns the primary template)? For example:
+  ///
+  /// \code
+  /// template<typename T> struct Outer {
+  ///   template<typename U> struct Inner;
+  ///   template<> struct Inner; // class-scope explicit specialization
+  /// };
+  /// \endcode
+  bool isClassScopeExplicitSpecialization() const {
+    return isExplicitSpecialization() &&
+           isa<CXXRecordDecl>(getLexicalDeclContext());
+  }
+
   /// True if this declaration is an explicit specialization,
   /// explicit instantiation declaration, or explicit instantiation
   /// definition.
@@ -2588,6 +2602,11 @@ public:
 
   bool isExplicitSpecialization() const {
     return getSpecializationKind() == TSK_ExplicitSpecialization;
+  }
+
+  bool isClassScopeExplicitSpecialization() const {
+    return isExplicitSpecialization() &&
+           isa<CXXRecordDecl>(getLexicalDeclContext());
   }
 
   /// True if this declaration is an explicit specialization,
