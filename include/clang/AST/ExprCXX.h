@@ -588,6 +588,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// The null pointer literal (C++11 [lex.nullptr])
@@ -616,6 +620,10 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -659,6 +667,10 @@ public:
   }
 
   child_range children() { return child_range(&SubExpr, &SubExpr + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&SubExpr, &SubExpr + 1);
+  }
 };
 
 /// A C++ \c typeid expression (C++ [expr.typeid]), which gets
@@ -749,6 +761,15 @@ public:
     auto **begin = reinterpret_cast<Stmt **>(&Operand);
     return child_range(begin, begin + 1);
   }
+
+  const_child_range children() const {
+    if (isTypeOperand())
+      return const_child_range(const_child_iterator(), const_child_iterator());
+
+    auto **begin =
+        reinterpret_cast<Stmt **>(&const_cast<CXXTypeidExpr *>(this)->Operand);
+    return const_child_range(begin, begin + 1);
+  }
 };
 
 /// A member reference to an MSPropertyDecl.
@@ -801,6 +822,11 @@ public:
 
   child_range children() {
     return child_range((Stmt**)&BaseExpr, (Stmt**)&BaseExpr + 1);
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<MSPropertyRefExpr *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
   }
 
   static bool classof(const Stmt *T) {
@@ -877,6 +903,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(&SubExprs[0], &SubExprs[0] + NUM_SUBEXPRS);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&SubExprs[0], &SubExprs[0] + NUM_SUBEXPRS);
   }
 };
 
@@ -959,6 +989,14 @@ public:
     auto **begin = reinterpret_cast<Stmt **>(&Operand);
     return child_range(begin, begin + 1);
   }
+
+  const_child_range children() const {
+    if (isTypeOperand())
+      return const_child_range(const_child_iterator(), const_child_iterator());
+    auto **begin =
+        reinterpret_cast<Stmt **>(&const_cast<CXXUuidofExpr *>(this)->Operand);
+    return const_child_range(begin, begin + 1);
+  }
 };
 
 /// Represents the \c this expression in C++.
@@ -1004,6 +1042,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -1062,6 +1104,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(&Operand, Operand ? &Operand + 1 : &Operand);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&Operand, Operand ? &Operand + 1 : &Operand);
   }
 };
 
@@ -1124,6 +1170,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// A use of a default initializer in a constructor or in aggregate
@@ -1178,6 +1228,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -1256,6 +1310,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&SubExpr, &SubExpr + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&SubExpr, &SubExpr + 1);
+  }
 };
 
 /// Represents a call to a C++ constructor.
@@ -1439,6 +1497,11 @@ public:
   child_range children() {
     return child_range(getTrailingArgs(), getTrailingArgs() + getNumArgs());
   }
+
+  const_child_range children() const {
+    auto Children = const_cast<CXXConstructExpr *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
 };
 
 /// Represents a call to an inherited base class constructor from an
@@ -1506,6 +1569,10 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -1864,6 +1931,11 @@ public:
     // Includes initialization exprs plus body stmt
     return child_range(getStoredStmts(), getStoredStmts() + NumCaptures + 1);
   }
+
+  const_child_range children() const {
+    return const_child_range(getStoredStmts(),
+                             getStoredStmts() + NumCaptures + 1);
+  }
 };
 
 /// An expression "T()" which creates a value-initialized rvalue of type
@@ -1906,6 +1978,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -2163,6 +2239,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(raw_arg_begin(), raw_arg_end()); }
+
+  const_child_range children() const {
+    return const_child_range(const_cast<CXXNewExpr *>(this)->children());
+  }
 };
 
 /// Represents a \c delete expression for memory deallocation and
@@ -2229,6 +2309,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&Argument, &Argument + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Argument, &Argument + 1);
+  }
 };
 
 /// Stores the type being destroyed by a pseudo-destructor expression.
@@ -2417,6 +2501,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&Base, &Base + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Base, &Base + 1);
+  }
 };
 
 /// A type trait used in the implementation of various C++11 and
@@ -2501,6 +2589,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// An Embarcadero array type trait, as used in the implementation of
@@ -2568,6 +2660,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// An expression trait intrinsic.
@@ -2627,6 +2723,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -2920,6 +3020,10 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == UnresolvedLookupExprClass;
   }
@@ -3074,6 +3178,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// Represents an expression -- generally a full-expression -- that
@@ -3143,6 +3251,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&SubExpr, &SubExpr + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&SubExpr, &SubExpr + 1);
+  }
 };
 
 /// Describes an explicit type conversion that uses functional
@@ -3271,6 +3383,12 @@ public:
   child_range children() {
     auto **begin = reinterpret_cast<Stmt **>(arg_begin());
     return child_range(begin, begin + arg_size());
+  }
+
+  const_child_range children() const {
+    auto **begin = reinterpret_cast<Stmt **>(
+        const_cast<CXXUnresolvedConstructExpr *>(this)->arg_begin());
+    return const_child_range(begin, begin + arg_size());
   }
 };
 
@@ -3535,6 +3653,12 @@ public:
       return child_range(child_iterator(), child_iterator());
     return child_range(&Base, &Base + 1);
   }
+
+  const_child_range children() const {
+    if (isImplicitAccess())
+      return const_child_range(const_child_iterator(), const_child_iterator());
+    return const_child_range(&Base, &Base + 1);
+  }
 };
 
 /// Represents a C++ member access expression for which lookup
@@ -3698,6 +3822,12 @@ public:
       return child_range(child_iterator(), child_iterator());
     return child_range(&Base, &Base + 1);
   }
+
+  const_child_range children() const {
+    if (isImplicitAccess())
+      return const_child_range(const_child_iterator(), const_child_iterator());
+    return const_child_range(&Base, &Base + 1);
+  }
 };
 
 DeclAccessPair *OverloadExpr::getTrailingResults() {
@@ -3767,6 +3897,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&Operand, &Operand + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Operand, &Operand + 1);
+  }
 };
 
 /// Represents a C++11 pack expansion that produces a sequence of
@@ -3846,6 +3980,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(&Pattern, &Pattern + 1);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&Pattern, &Pattern + 1);
   }
 };
 
@@ -4026,6 +4164,10 @@ public:
   child_range children() {
     return child_range(child_iterator(), child_iterator());
   }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 };
 
 /// Represents a reference to a non-type template parameter
@@ -4072,6 +4214,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(&Replacement, &Replacement + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Replacement, &Replacement + 1);
+  }
 };
 
 /// Represents a reference to a non-type template parameter pack that
@@ -4133,6 +4279,10 @@ public:
   // Iterators
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -4205,6 +4355,10 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 
@@ -4328,6 +4482,15 @@ public:
     auto ES = State.get<ExtraState *>();
     return child_range(&ES->Temporary, &ES->Temporary + 1);
   }
+
+  const_child_range children() const {
+    if (State.is<Stmt *>())
+      return const_child_range(State.getAddrOfPtr1(),
+                               State.getAddrOfPtr1() + 1);
+
+    auto ES = State.get<ExtraState *>();
+    return const_child_range(&ES->Temporary, &ES->Temporary + 1);
+  }
 };
 
 /// Represents a folding of a pack over an operator.
@@ -4393,6 +4556,10 @@ public:
 
   // Iterators
   child_range children() { return child_range(SubExprs, SubExprs + 2); }
+
+  const_child_range children() const {
+    return const_child_range(SubExprs, SubExprs + 2);
+  }
 };
 
 /// Represents an expression that might suspend coroutine execution;
@@ -4484,6 +4651,10 @@ public:
     return child_range(SubExprs, SubExprs + SubExpr::Count);
   }
 
+  const_child_range children() const {
+    return const_child_range(SubExprs, SubExprs + SubExpr::Count);
+  }
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CoawaitExprClass ||
            T->getStmtClass() == CoyieldExprClass;
@@ -4567,6 +4738,10 @@ public:
   }
 
   child_range children() { return child_range(SubExprs, SubExprs + 2); }
+
+  const_child_range children() const {
+    return const_child_range(SubExprs, SubExprs + 2);
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == DependentCoawaitExprClass;

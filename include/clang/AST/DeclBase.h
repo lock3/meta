@@ -41,6 +41,7 @@ namespace clang {
 class ASTContext;
 class ASTMutationListener;
 class Attr;
+class BlockDecl;
 class DeclContext;
 class ExternalSourceSymbolAttr;
 class FunctionDecl;
@@ -598,10 +599,6 @@ public:
   bool isModulePrivate() const {
     return getModuleOwnershipKind() == ModuleOwnershipKind::ModulePrivate;
   }
-
-  /// Whether this declaration is exported (by virtue of being lexically
-  /// within an ExportDecl or by being a NamespaceDecl).
-  bool isExported() const;
 
   /// Return true if this declaration has an attribute which acts as
   /// definition of the entity, such as 'alias' or 'ifunc'.
@@ -1665,6 +1662,11 @@ class DeclContext {
     /// A bit that indicates this block is passed directly to a function as a
     /// non-escaping parameter.
     uint64_t DoesNotEscape : 1;
+
+    /// A bit that indicates whether it's possible to avoid coying this block to
+    /// the heap when it initializes or is assigned to a local variable with
+    /// automatic storage.
+    uint64_t CanAvoidCopyToHeap : 1;
   };
 
   /// Number of non-inherited bits in BlockDeclBitfields.
@@ -1786,6 +1788,10 @@ public:
   }
 
   bool isClosure() const { return getDeclKind() == Decl::Block; }
+
+  /// Return this DeclContext if it is a BlockDecl. Otherwise, return the
+  /// innermost enclosing BlockDecl or null if there are no enclosing blocks.
+  const BlockDecl *getInnermostBlockDecl() const;
 
   bool isObjCContainer() const {
     switch (getDeclKind()) {

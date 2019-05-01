@@ -24,6 +24,7 @@
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/TimeProfiler.h"
 
 using namespace clang;
 
@@ -436,9 +437,10 @@ Decl *Parser::ParseExportDeclaration() {
 
   // The Modules TS draft says "An export-declaration shall declare at least one
   // entity", but the intent is that it shall contain at least one declaration.
-  if (Tok.is(tok::r_brace))
+  if (Tok.is(tok::r_brace) && getLangOpts().ModulesTS) {
     Diag(ExportLoc, diag::err_export_empty)
         << SourceRange(ExportLoc, Tok.getLocation());
+  }
 
   while (!tryParseMisplacedModuleImport() && Tok.isNot(tok::r_brace) &&
          Tok.isNot(tok::eof)) {
@@ -1278,9 +1280,11 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::ampamp:             // struct foo {...} &&        R = ...
   case tok::identifier:         // struct foo {...} V         ;
   case tok::r_paren:            //(struct foo {...} )         {4}
+  case tok::coloncolon:         // struct foo {...} ::        a::b;
   case tok::annot_cxxscope:     // struct foo {...} a::       b;
   case tok::annot_typename:     // struct foo {...} a         ::b;
   case tok::annot_template_id:  // struct foo {...} a<int>    ::b;
+  case tok::kw_decltype:        // struct foo {...} decltype  (a)::b;
   case tok::l_paren:            // struct foo {...} (         x);
   case tok::comma:              // __builtin_offsetof(struct foo{...} ,
   case tok::kw_operator:        // struct foo       operator  ++() {...}
@@ -3149,9 +3153,14 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
     DiagnoseUnexpectedNamespace(cast<NamedDecl>(TagDecl));
     return nullptr;
 
+  case tok::kw_private:
+    // FIXME: We don't accept GNU attributes on access specifiers in OpenCL mode
+    // yet.
+    if (getLangOpts().OpenCL && !NextToken().is(tok::colon))
+      return ParseCXXClassMemberDeclaration(AS, AccessAttrs);
+    LLVM_FALLTHROUGH;
   case tok::kw_public:
-  case tok::kw_protected:
-  case tok::kw_private: {
+  case tok::kw_protected: {
     AccessSpecifier NewAS = getAccessSpecifierIfPresent();
     assert(NewAS != AS_none);
     // Current token is a C++ access specifier.
@@ -3210,6 +3219,12 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
          TagType == DeclSpec::TST_interface ||
          TagType == DeclSpec::TST_union  ||
          TagType == DeclSpec::TST_class) && "Invalid TagType!");
+
+  llvm::TimeTraceScope TimeScope("ParseClass", [&]() {
+    if (auto *TD = dyn_cast_or_null<NamedDecl>(TagDecl))
+      return TD->getQualifiedNameAsString();
+    return std::string("<anonymous>");
+  });
 
   PrettyDeclStackTraceEntry CrashInfo(Actions.Context, TagDecl, RecordLoc,
                                       "parsing struct/union/class body");
@@ -3597,13 +3612,13 @@ MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
     ExprVector ArgExprs;
 
     if (ParseMemInitExprList(ConstructorDecl, SS, II, DS, TemplateTypeTy, IdLoc,
-                            LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
+                             LParenLoc, ArgExprs, RParenLoc, EllipsisLoc))
       return true;
 
     return Actions.ActOnMemInitializer(ConstructorDecl, getCurScope(), SS, II,
                                        TemplateTypeTy, DS, IdLoc,
-                                       LParenLoc, ArgExprs, RParenLoc,
-                                       EllipsisLoc);
+                                       LParenLoc, ArgExprs,
+                                       RParenLoc, EllipsisLoc);
   }
 
   if (getLangOpts().CPlusPlus11)
@@ -3667,20 +3682,20 @@ Parser::ParseMemInitExprList(Decl *ConstructorDecl,
 
   // Parse the optional expression-list.
   CommaLocsTy CommaLocs;
+  auto RunSignatureHelp = [&] {
+    QualType PreferredType = Actions.ProduceCtorInitMemberSignatureHelp(
+        getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
+        T.getOpenLocation());
+    CalledSignatureHelp = true;
+    return PreferredType;
+  };
   if (Tok.isNot(tok::r_paren) &&
       ParseExpressionList(ArgExprs, CommaLocs, [&] {
-        QualType PreferredType = Actions.ProduceCtorInitMemberSignatureHelp(
-            getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
-            T.getOpenLocation());
-        CalledSignatureHelp = true;
-        Actions.CodeCompleteExpression(getCurScope(), PreferredType);
+        PreferredType.enterFunctionArgument(Tok.getLocation(),
+                                            RunSignatureHelp);
       })) {
-    if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
-      Actions.ProduceCtorInitMemberSignatureHelp(
-          getCurScope(), ConstructorDecl, SS, TemplateTypeTy, ArgExprs, II,
-          T.getOpenLocation());
-      CalledSignatureHelp = true;
-    }
+    if (PP.isCodeCompletionReached() && !CalledSignatureHelp)
+      RunSignatureHelp();
     SkipUntil(tok::r_paren, StopAtSemi);
     return true;
   }

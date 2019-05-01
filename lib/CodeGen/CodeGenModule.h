@@ -124,6 +124,9 @@ struct ObjCEntrypoints {
   /// void objc_allocWithZone(id);
   llvm::FunctionCallee objc_allocWithZone;
 
+  /// void objc_alloc_init(id);
+  llvm::FunctionCallee objc_alloc_init;
+
   /// void objc_autoreleasePoolPop(void*);
   llvm::FunctionCallee objc_autoreleasePoolPop;
 
@@ -451,7 +454,9 @@ private:
   SmallVector<GlobalInitData, 8> PrioritizedCXXGlobalInits;
 
   /// Global destructor functions and arguments that need to run on termination.
-  std::vector<std::pair<llvm::WeakTrackingVH, llvm::Constant *>> CXXGlobalDtors;
+  std::vector<
+      std::tuple<llvm::FunctionType *, llvm::WeakTrackingVH, llvm::Constant *>>
+      CXXGlobalDtors;
 
   /// The complete set of modules that has been imported.
   llvm::SetVector<clang::Module *> ImportedModules;
@@ -949,16 +954,24 @@ public:
   // Produce code for this constructor/destructor. This method doesn't try
   // to apply any ABI rules about which other constructors/destructors
   // are needed or if they are alias to each other.
-  llvm::Function *codegenCXXStructor(const CXXMethodDecl *MD,
-                                     StructorType Type);
+  llvm::Function *codegenCXXStructor(GlobalDecl GD);
 
   /// Return the address of the constructor/destructor of the given type.
   llvm::Constant *
-  getAddrOfCXXStructor(const CXXMethodDecl *MD, StructorType Type,
-                       const CGFunctionInfo *FnInfo = nullptr,
+  getAddrOfCXXStructor(GlobalDecl GD, const CGFunctionInfo *FnInfo = nullptr,
                        llvm::FunctionType *FnType = nullptr,
                        bool DontDefer = false,
-                       ForDefinition_t IsForDefinition = NotForDefinition);
+                       ForDefinition_t IsForDefinition = NotForDefinition) {
+    return cast<llvm::Constant>(getAddrAndTypeOfCXXStructor(GD, FnInfo, FnType,
+                                                            DontDefer,
+                                                            IsForDefinition)
+                                    .getCallee());
+  }
+
+  llvm::FunctionCallee getAddrAndTypeOfCXXStructor(
+      GlobalDecl GD, const CGFunctionInfo *FnInfo = nullptr,
+      llvm::FunctionType *FnType = nullptr, bool DontDefer = false,
+      ForDefinition_t IsForDefinition = NotForDefinition);
 
   /// Given a builtin id for a function like "__builtin_fabsf", return a
   /// Function* for "fabsf".
@@ -998,8 +1011,9 @@ public:
   void addCompilerUsedGlobal(llvm::GlobalValue *GV);
 
   /// Add a destructor and object to add to the C++ global destructor function.
-  void AddCXXDtorEntry(llvm::Constant *DtorFn, llvm::Constant *Object) {
-    CXXGlobalDtors.emplace_back(DtorFn, Object);
+  void AddCXXDtorEntry(llvm::FunctionCallee DtorFn, llvm::Constant *Object) {
+    CXXGlobalDtors.emplace_back(DtorFn.getFunctionType(), DtorFn.getCallee(),
+                                Object);
   }
 
   /// Create or return a runtime function declaration with the specified type

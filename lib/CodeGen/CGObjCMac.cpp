@@ -2008,9 +2008,8 @@ CGObjCMac::GenerateMessageSendSuper(CodeGen::CodeGenFunction &CGF,
                          "objc_super");
   llvm::Value *ReceiverAsObject =
     CGF.Builder.CreateBitCast(Receiver, ObjCTypes.ObjectPtrTy);
-  CGF.Builder.CreateStore(
-      ReceiverAsObject,
-      CGF.Builder.CreateStructGEP(ObjCSuper, 0, CharUnits::Zero()));
+  CGF.Builder.CreateStore(ReceiverAsObject,
+                          CGF.Builder.CreateStructGEP(ObjCSuper, 0));
 
   // If this is a class message the metaclass is passed as the target.
   llvm::Value *Target;
@@ -2045,8 +2044,7 @@ CGObjCMac::GenerateMessageSendSuper(CodeGen::CodeGenFunction &CGF,
   llvm::Type *ClassTy =
     CGM.getTypes().ConvertType(CGF.getContext().getObjCClassType());
   Target = CGF.Builder.CreateBitCast(Target, ClassTy);
-  CGF.Builder.CreateStore(Target,
-          CGF.Builder.CreateStructGEP(ObjCSuper, 1, CGF.getPointerSize()));
+  CGF.Builder.CreateStore(Target, CGF.Builder.CreateStructGEP(ObjCSuper, 1));
   return EmitMessageSend(CGF, Return, ResultType,
                          EmitSelector(CGF, Sel),
                          ObjCSuper.getPointer(), ObjCTypes.SuperPtrCTy,
@@ -6264,7 +6262,8 @@ CGObjCNonFragileABIMac::BuildClassObject(const ObjCInterfaceDecl *CI,
 bool CGObjCNonFragileABIMac::ImplementationIsNonLazy(
     const ObjCImplDecl *OD) const {
   return OD->getClassMethod(GetNullarySelector("load")) != nullptr ||
-         OD->getClassInterface()->hasAttr<ObjCNonLazyClassAttr>();
+         OD->getClassInterface()->hasAttr<ObjCNonLazyClassAttr>() ||
+         OD->hasAttr<ObjCNonLazyClassAttr>();
 }
 
 void CGObjCNonFragileABIMac::GetClassSizeInfo(const ObjCImplementationDecl *OID,
@@ -6811,7 +6810,7 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocolRef(
     // reference or not. At module finalization we add the empty
     // contents for protocols which were referenced but never defined.
     llvm::SmallString<64> Protocol;
-    llvm::raw_svector_ostream(Protocol) << "\01l_OBJC_PROTOCOL_$_"
+    llvm::raw_svector_ostream(Protocol) << "_OBJC_PROTOCOL_$_"
                                         << PD->getObjCRuntimeNameAsString();
 
     Entry = new llvm::GlobalVariable(CGM.getModule(), ObjCTypes.ProtocolnfABITy,
@@ -6903,7 +6902,7 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
   } else {
     llvm::SmallString<64> symbolName;
     llvm::raw_svector_ostream(symbolName)
-      << "\01l_OBJC_PROTOCOL_$_" << PD->getObjCRuntimeNameAsString();
+      << "_OBJC_PROTOCOL_$_" << PD->getObjCRuntimeNameAsString();
 
     Entry = values.finishAndCreateGlobal(symbolName, CGM.getPointerAlign(),
                                          /*constant*/ false,
@@ -6919,7 +6918,7 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
   // Use this protocol meta-data to build protocol list table in section
   // __DATA, __objc_protolist
   llvm::SmallString<64> ProtocolRef;
-  llvm::raw_svector_ostream(ProtocolRef) << "\01l_OBJC_LABEL_PROTOCOL_$_"
+  llvm::raw_svector_ostream(ProtocolRef) << "_OBJC_LABEL_PROTOCOL_$_"
                                          << PD->getObjCRuntimeNameAsString();
 
   llvm::GlobalVariable *PTGV =
@@ -7156,8 +7155,7 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
   args[1].setRValue(RValue::get(mref.getPointer()));
 
   // Load the function to call from the message ref table.
-  Address calleeAddr =
-      CGF.Builder.CreateStructGEP(mref, 0, CharUnits::Zero());
+  Address calleeAddr = CGF.Builder.CreateStructGEP(mref, 0);
   llvm::Value *calleePtr = CGF.Builder.CreateLoad(calleeAddr, "msgSend_fn");
 
   calleePtr = CGF.Builder.CreateBitCast(calleePtr, MSI.MessengerType);
@@ -7354,9 +7352,8 @@ CGObjCNonFragileABIMac::GenerateMessageSendSuper(CodeGen::CodeGenFunction &CGF,
 
   llvm::Value *ReceiverAsObject =
     CGF.Builder.CreateBitCast(Receiver, ObjCTypes.ObjectPtrTy);
-  CGF.Builder.CreateStore(
-      ReceiverAsObject,
-      CGF.Builder.CreateStructGEP(ObjCSuper, 0, CharUnits::Zero()));
+  CGF.Builder.CreateStore(ReceiverAsObject,
+                          CGF.Builder.CreateStructGEP(ObjCSuper, 0));
 
   // If this is a class message the metaclass is passed as the target.
   llvm::Value *Target;
@@ -7370,8 +7367,7 @@ CGObjCNonFragileABIMac::GenerateMessageSendSuper(CodeGen::CodeGenFunction &CGF,
   llvm::Type *ClassTy =
     CGM.getTypes().ConvertType(CGF.getContext().getObjCClassType());
   Target = CGF.Builder.CreateBitCast(Target, ClassTy);
-  CGF.Builder.CreateStore(
-      Target, CGF.Builder.CreateStructGEP(ObjCSuper, 1, CGF.getPointerSize()));
+  CGF.Builder.CreateStore(Target, CGF.Builder.CreateStructGEP(ObjCSuper, 1));
 
   return (isVTableDispatchedSelector(Sel))
     ? EmitVTableMessageSend(CGF, Return, ResultType, Sel,

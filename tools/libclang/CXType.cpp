@@ -1,4 +1,4 @@
-//===- CXTypes.cpp - Implements 'CXTypes' aspect of libclang ------------===//
+//===- CXType.cpp - Implements 'CXTypes' aspect of libclang ---------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -109,6 +109,7 @@ static CXTypeKind GetTypeKind(QualType T) {
     TKCASE(VariableArray);
     TKCASE(DependentSizedArray);
     TKCASE(Vector);
+    TKCASE(ExtVector);
     TKCASE(MemberPointer);
     TKCASE(Auto);
     TKCASE(Elaborated);
@@ -600,6 +601,7 @@ CXString clang_getTypeKindSpelling(enum CXTypeKind K) {
     TKIND(VariableArray);
     TKIND(DependentSizedArray);
     TKIND(Vector);
+    TKIND(ExtVector);
     TKIND(MemberPointer);
     TKIND(Auto);
     TKIND(Elaborated);
@@ -804,6 +806,9 @@ CXType clang_getElementType(CXType CT) {
     case Type::Vector:
       ET = cast<VectorType> (TP)->getElementType();
       break;
+    case Type::ExtVector:
+      ET = cast<ExtVectorType>(TP)->getElementType();
+      break;
     case Type::Complex:
       ET = cast<ComplexType> (TP)->getElementType();
       break;
@@ -826,6 +831,9 @@ long long clang_getNumElements(CXType CT) {
       break;
     case Type::Vector:
       result = cast<VectorType> (TP)->getNumElements();
+      break;
+    case Type::ExtVector:
+      result = cast<ExtVectorType>(TP)->getNumElements();
       break;
     default:
       break;
@@ -891,6 +899,9 @@ long long clang_Type_getAlignOf(CXType T) {
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
+  if (const auto *Deduced = dyn_cast<DeducedType>(QT))
+    if (Deduced->getDeducedType().isNull())
+      return CXTypeLayoutError_Undeduced;
   // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl
   // if (QT->isFunctionType()) return 4; // Bug #15511 - should be 1
   // if (QT->isVoidType()) return 1;
@@ -928,6 +939,9 @@ long long clang_Type_getSizeOf(CXType T) {
     return CXTypeLayoutError_Dependent;
   if (!QT->isConstantSizeType())
     return CXTypeLayoutError_NotConstantSize;
+  if (const auto *Deduced = dyn_cast<DeducedType>(QT))
+    if (Deduced->getDeducedType().isNull())
+      return CXTypeLayoutError_Undeduced;
   // [gcc extension] lib/AST/ExprConstant.cpp:1372
   //                 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
@@ -1239,6 +1253,16 @@ unsigned clang_Cursor_isAnonymous(CXCursor C){
 
   return 0;
 }
+
+unsigned clang_Cursor_isAnonymousRecordDecl(CXCursor C){
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  if (const RecordDecl *FD = dyn_cast_or_null<RecordDecl>(D))
+    return FD->isAnonymousStructOrUnion();
+  return 0;
+}
+
 CXType clang_Type_getNamedType(CXType CT){
   QualType T = GetQualType(CT);
   const Type *TP = T.getTypePtrOrNull();

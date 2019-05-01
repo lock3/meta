@@ -433,7 +433,7 @@ def err_objc_expected_property_attr : Error<"unknown property attribute %0">;
 def err_objc_properties_require_objc2 : Error<
   "properties are an Objective-C 2 feature">;
 def err_objc_unexpected_attr : Error<
-  "prefix attribute must be followed by an interface or protocol">;
+  "prefix attribute must be followed by an interface, protocol, or implementation">;
 def err_objc_postfix_attribute : Error <
   "postfix attributes are not allowed on Objective-C directives">;
 def err_objc_postfix_attribute_hint : Error <
@@ -1136,8 +1136,6 @@ def err_opencl_logical_exclusive_or : Error<
 // OpenCL C++.
 def err_openclcxx_virtual_function : Error<
   "virtual functions are not supported in OpenCL C++">;
-def err_openclcxx_reserved : Error<
-  "'%0' is a reserved keyword in OpenCL C++">;
 
 // OpenMP support.
 def warn_pragma_omp_ignored : Warning<
@@ -1166,7 +1164,7 @@ def err_omp_decl_in_declare_simd : Error<
 def err_omp_unknown_map_type : Error<
   "incorrect map type, expected one of 'to', 'from', 'tofrom', 'alloc', 'release', or 'delete'">;
 def err_omp_unknown_map_type_modifier : Error<
-  "incorrect map type modifier, expected 'always' or 'close'">;
+  "incorrect map type modifier, expected 'always', 'close', or 'mapper'">;
 def err_omp_map_type_missing : Error<
   "missing map type">;
 def err_omp_map_type_modifier_missing : Error<
@@ -1180,7 +1178,7 @@ def err_omp_declare_target_unexpected_clause: Error<
 def err_omp_expected_clause: Error<
   "expected at least one clause on '#pragma omp %0' directive">;
 def err_omp_mapper_illegal_identifier : Error<
-  "illegal identifier on 'omp declare mapper' directive">;
+  "illegal OpenMP user-defined mapper identifier">;
 def err_omp_mapper_expected_declarator : Error<
   "expected declarator on 'omp declare mapper' directive">;
 
@@ -1228,15 +1226,22 @@ def err_unexpected_module_decl : Error<
   "module declaration can only appear at the top level">;
 def err_module_expected_ident : Error<
   "expected a module name after '%select{module|import}0'">;
-def err_module_implementation_partition : Error<
-  "module partition must be declared 'export'">;
 def err_attribute_not_module_attr : Error<
   "%0 attribute cannot be applied to a module">;
 def err_attribute_not_import_attr : Error<
   "%0 attribute cannot be applied to a module import">;
 def err_module_expected_semi : Error<
   "expected ';' after module name">;
+def err_global_module_introducer_not_at_start : Error<
+  "'module;' introducing a global module fragment can appear only "
+  "at the start of the translation unit">;
+def err_module_fragment_exported : Error<
+  "%select{global|private}0 module fragment cannot be exported">;
+def err_private_module_fragment_expected_semi : Error<
+  "expected ';' after private module fragment declaration">;
 def err_missing_before_module_end : Error<"expected %0 at end of module">;
+def err_unsupported_module_partition : Error<
+  "sorry, module partitions are not yet supported">;
 
 def err_export_empty : Error<"export declaration cannot be empty">;
 }

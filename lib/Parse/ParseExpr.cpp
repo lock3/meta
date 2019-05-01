@@ -547,7 +547,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 }
 
 namespace {
-class CastExpressionIdValidator : public CorrectionCandidateCallback {
+class CastExpressionIdValidator final : public CorrectionCandidateCallback {
  public:
   CastExpressionIdValidator(Token Next, bool AllowTypes, bool AllowNonTypes)
       : NextToken(Next), AllowNonTypes(AllowNonTypes) {
@@ -574,6 +574,10 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
         return true;
     }
     return false;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<CastExpressionIdValidator>(*this);
   }
 
  private:
@@ -1047,7 +1051,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     SourceLocation TemplateKWLoc;
     Token Replacement;
     auto Validator = llvm::make_unique<CastExpressionIdValidator>(
-        Tok, isTypeCast != NotTypeCast, isTypeCast != IsTypeCast);
+        /*Next=*/Tok,
+        /*AllowTypes=*/isTypeCast != NotTypeCast,
+        /*AllowNonTypes=*/isTypeCast != IsTypeCast);
     Validator->IsAddressOfOperand = isAddressOfOperand;
     if (Tok.isOneOf(tok::periodstar, tok::arrowstar)) {
       Validator->WantExpressionKeywords = false;
@@ -1706,34 +1712,25 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
 
       ExprVector ArgExprs;
       CommaLocsTy CommaLocs;
-
-      if (Tok.is(tok::code_completion)) {
+      auto RunSignatureHelp = [&]() -> QualType {
         QualType PreferredType = Actions.ProduceCallSignatureHelp(
-            getCurScope(), LHS.get(), None, PT.getOpenLocation());
+            getCurScope(), LHS.get(), ArgExprs, PT.getOpenLocation());
         CalledSignatureHelp = true;
-        Actions.CodeCompleteExpression(getCurScope(), PreferredType);
-        cutOffParsing();
-        return ExprError();
-      }
-
+        return PreferredType;
+      };
       if (OpKind == tok::l_paren || !LHS.isInvalid()) {
         if (Tok.isNot(tok::r_paren)) {
           if (ParseExpressionList(ArgExprs, CommaLocs, [&] {
-                QualType PreferredType = Actions.ProduceCallSignatureHelp(
-                    getCurScope(), LHS.get(), ArgExprs, PT.getOpenLocation());
-                CalledSignatureHelp = true;
-                Actions.CodeCompleteExpression(getCurScope(), PreferredType);
+                PreferredType.enterFunctionArgument(Tok.getLocation(),
+                                                    RunSignatureHelp);
               })) {
             (void)Actions.CorrectDelayedTyposInExpr(LHS);
             // If we got an error when parsing expression list, we don't call
             // the CodeCompleteCall handler inside the parser. So call it here
             // to make sure we get overload suggestions even when we are in the
             // middle of a parameter.
-            if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
-              Actions.ProduceCallSignatureHelp(getCurScope(), LHS.get(),
-                                               ArgExprs, PT.getOpenLocation());
-              CalledSignatureHelp = true;
-            }
+            if (PP.isCodeCompletionReached() && !CalledSignatureHelp)
+              RunSignatureHelp();
             LHS = ExprError();
           } else if (LHS.isInvalid()) {
             for (auto &E : ArgExprs)
@@ -2916,18 +2913,11 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 /// \endverbatim
 bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
                                  SmallVectorImpl<SourceLocation> &CommaLocs,
-                                 llvm::function_ref<void()> Completer) {
+                                 llvm::function_ref<void()> ExpressionStarts) {
   bool SawError = false;
   while (1) {
-    if (Tok.is(tok::code_completion)) {
-      if (Completer)
-        Completer();
-      else
-        Actions.CodeCompleteExpression(getCurScope(),
-                                       PreferredType.get(Tok.getLocation()));
-      cutOffParsing();
-      return true;
-    }
+    if (ExpressionStarts)
+      ExpressionStarts();
 
     ExprResult ArgExpr;
     bool VariadicReifier = isVariadicReifier();

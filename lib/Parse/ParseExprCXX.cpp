@@ -563,7 +563,7 @@ ExprResult Parser::tryParseCXXIdExpression(CXXScopeSpec &SS, bool isAddressOfOpe
 
   ExprResult E = Actions.ActOnIdExpression(
       getCurScope(), SS, TemplateKWLoc, Name, Tok.is(tok::l_paren),
-      isAddressOfOperand, nullptr, /*IsInlineAsmIdentifier=*/false,
+      isAddressOfOperand, /*CCC=*/nullptr, /*IsInlineAsmIdentifier=*/false,
       &Replacement);
   if (!E.isInvalid() && !E.isUnset() && Tok.is(tok::less))
     checkPotentialAngleBracket(E);
@@ -1693,20 +1693,21 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
     ExprVector Exprs;
     CommaLocsTy CommaLocs;
 
+    auto RunSignatureHelp = [&]() {
+      QualType PreferredType = Actions.ProduceConstructorSignatureHelp(
+          getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
+          DS.getEndLoc(), Exprs, T.getOpenLocation());
+      CalledSignatureHelp = true;
+      return PreferredType;
+    };
+
     if (Tok.isNot(tok::r_paren)) {
       if (ParseExpressionList(Exprs, CommaLocs, [&] {
-            QualType PreferredType = Actions.ProduceConstructorSignatureHelp(
-                getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
-                DS.getEndLoc(), Exprs, T.getOpenLocation());
-            CalledSignatureHelp = true;
-            Actions.CodeCompleteExpression(getCurScope(), PreferredType);
+            PreferredType.enterFunctionArgument(Tok.getLocation(),
+                                                RunSignatureHelp);
           })) {
-        if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
-          Actions.ProduceConstructorSignatureHelp(
-              getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
-              DS.getEndLoc(), Exprs, T.getOpenLocation());
-          CalledSignatureHelp = true;
-        }
+        if (PP.isCodeCompletionReached() && !CalledSignatureHelp)
+          RunSignatureHelp();
         SkipUntil(tok::r_paren, StopAtSemi);
         return ExprError();
       }
@@ -2016,6 +2017,13 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
   case tok::kw_bool:
     DS.SetTypeSpecType(DeclSpec::TST_bool, Loc, PrevSpec, DiagID, Policy);
     break;
+#define GENERIC_IMAGE_TYPE(ImgType, Id)                                        \
+  case tok::kw_##ImgType##_t:                                                  \
+    DS.SetTypeSpecType(DeclSpec::TST_##ImgType##_t, Loc, PrevSpec, DiagID,     \
+                       Policy);                                                \
+    break;
+#include "clang/Basic/OpenCLImageTypes.def"
+
   case tok::annot_decltype:
   case tok::kw_decltype:
     DS.SetRangeEnd(ParseDecltypeSpecifier(DS));
@@ -2864,23 +2872,21 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
     ConstructorLParen = T.getOpenLocation();
     if (Tok.isNot(tok::r_paren)) {
       CommaLocsTy CommaLocs;
+      auto RunSignatureHelp = [&]() {
+        ParsedType TypeRep =
+            Actions.ActOnTypeName(getCurScope(), DeclaratorInfo).get();
+        QualType PreferredType = Actions.ProduceConstructorSignatureHelp(
+            getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
+            DeclaratorInfo.getEndLoc(), ConstructorArgs, ConstructorLParen);
+        CalledSignatureHelp = true;
+        return PreferredType;
+      };
       if (ParseExpressionList(ConstructorArgs, CommaLocs, [&] {
-            ParsedType TypeRep =
-                Actions.ActOnTypeName(getCurScope(), DeclaratorInfo).get();
-            QualType PreferredType = Actions.ProduceConstructorSignatureHelp(
-                getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
-                DeclaratorInfo.getEndLoc(), ConstructorArgs, ConstructorLParen);
-            CalledSignatureHelp = true;
-            Actions.CodeCompleteExpression(getCurScope(), PreferredType);
+            PreferredType.enterFunctionArgument(Tok.getLocation(),
+                                                RunSignatureHelp);
           })) {
-        if (PP.isCodeCompletionReached() && !CalledSignatureHelp) {
-          ParsedType TypeRep =
-              Actions.ActOnTypeName(getCurScope(), DeclaratorInfo).get();
-          Actions.ProduceConstructorSignatureHelp(
-              getCurScope(), TypeRep.get()->getCanonicalTypeInternal(),
-              DeclaratorInfo.getEndLoc(), ConstructorArgs, ConstructorLParen);
-          CalledSignatureHelp = true;
-        }
+        if (PP.isCodeCompletionReached() && !CalledSignatureHelp)
+          RunSignatureHelp();
         SkipUntil(tok::semi, StopAtSemi | StopBeforeMatch);
         return ExprError();
       }

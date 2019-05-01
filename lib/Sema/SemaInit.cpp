@@ -144,16 +144,43 @@ static StringInitFailureKind IsStringInit(Expr *init, QualType declType,
 static void updateStringLiteralType(Expr *E, QualType Ty) {
   while (true) {
     E->setType(Ty);
-    if (isa<StringLiteral>(E) || isa<ObjCEncodeExpr>(E))
+    E->setValueKind(VK_RValue);
+    if (isa<StringLiteral>(E) || isa<ObjCEncodeExpr>(E)) {
       break;
-    else if (ParenExpr *PE = dyn_cast<ParenExpr>(E))
+    } else if (ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
       E = PE->getSubExpr();
-    else if (UnaryOperator *UO = dyn_cast<UnaryOperator>(E))
+    } else if (UnaryOperator *UO = dyn_cast<UnaryOperator>(E)) {
+      assert(UO->getOpcode() == UO_Extension);
       E = UO->getSubExpr();
-    else if (GenericSelectionExpr *GSE = dyn_cast<GenericSelectionExpr>(E))
+    } else if (GenericSelectionExpr *GSE = dyn_cast<GenericSelectionExpr>(E)) {
       E = GSE->getResultExpr();
-    else
+    } else if (ChooseExpr *CE = dyn_cast<ChooseExpr>(E)) {
+      E = CE->getChosenSubExpr();
+    } else {
       llvm_unreachable("unexpected expr in string literal init");
+    }
+  }
+}
+
+/// Fix a compound literal initializing an array so it's correctly marked
+/// as an rvalue.
+static void updateGNUCompoundLiteralRValue(Expr *E) {
+  while (true) {
+    E->setValueKind(VK_RValue);
+    if (isa<CompoundLiteralExpr>(E)) {
+      break;
+    } else if (ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
+      E = PE->getSubExpr();
+    } else if (UnaryOperator *UO = dyn_cast<UnaryOperator>(E)) {
+      assert(UO->getOpcode() == UO_Extension);
+      E = UO->getSubExpr();
+    } else if (GenericSelectionExpr *GSE = dyn_cast<GenericSelectionExpr>(E)) {
+      E = GSE->getResultExpr();
+    } else if (ChooseExpr *CE = dyn_cast<ChooseExpr>(E)) {
+      E = CE->getChosenSubExpr();
+    } else {
+      llvm_unreachable("unexpected expr in array compound literal init");
+    }
   }
 }
 
@@ -2181,7 +2208,7 @@ namespace {
 
 // Callback to only accept typo corrections that are for field members of
 // the given struct or union.
-class FieldInitializerValidatorCCC : public CorrectionCandidateCallback {
+class FieldInitializerValidatorCCC final : public CorrectionCandidateCallback {
  public:
   explicit FieldInitializerValidatorCCC(RecordDecl *RD)
       : Record(RD) {}
@@ -2189,6 +2216,10 @@ class FieldInitializerValidatorCCC : public CorrectionCandidateCallback {
   bool ValidateCandidate(const TypoCorrection &candidate) override {
     FieldDecl *FD = candidate.getCorrectionDeclAs<FieldDecl>();
     return FD && FD->getDeclContext()->getRedeclContext()->Equals(Record);
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<FieldInitializerValidatorCCC>(*this);
   }
 
  private:
@@ -2393,10 +2424,10 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
 
         // Name lookup didn't find anything.
         // Determine whether this was a typo for another field name.
+        FieldInitializerValidatorCCC CCC(RT->getDecl());
         if (TypoCorrection Corrected = SemaRef.CorrectTypo(
                 DeclarationNameInfo(FieldName, D->getFieldLoc()),
-                Sema::LookupMemberName, /*Scope=*/nullptr, /*SS=*/nullptr,
-                llvm::make_unique<FieldInitializerValidatorCCC>(RT->getDecl()),
+                Sema::LookupMemberName, /*Scope=*/nullptr, /*SS=*/nullptr, CCC,
                 Sema::CTK_ErrorRecovery, RT->getDecl())) {
           SemaRef.diagnoseTypo(
               Corrected,
@@ -4733,7 +4764,15 @@ static void TryReferenceInitializationCore(Sema &S,
   //        copy-initialization (8.5). The reference is then bound to the
   //        temporary. [...]
 
-  InitializedEntity TempEntity = InitializedEntity::InitializeTemporary(cv1T1);
+  // Ignore address space of reference type at this point and perform address
+  // space conversion after the reference binding step.
+  QualType cv1T1IgnoreAS =
+      T1Quals.hasAddressSpace()
+          ? S.Context.getQualifiedType(T1, T1Quals.withoutAddressSpace())
+          : cv1T1;
+
+  InitializedEntity TempEntity =
+      InitializedEntity::InitializeTemporary(cv1T1IgnoreAS);
 
   // FIXME: Why do we use an implicit conversion here rather than trying
   // copy-initialization?
@@ -4768,8 +4807,9 @@ static void TryReferenceInitializationCore(Sema &S,
   //        than, cv2; otherwise, the program is ill-formed.
   unsigned T1CVRQuals = T1Quals.getCVRQualifiers();
   unsigned T2CVRQuals = T2Quals.getCVRQualifiers();
-  if (RefRelationship == Sema::Ref_Related &&
-      (T1CVRQuals | T2CVRQuals) != T1CVRQuals) {
+  if ((RefRelationship == Sema::Ref_Related &&
+       (T1CVRQuals | T2CVRQuals) != T1CVRQuals) ||
+      !T1Quals.isAddressSpaceSupersetOf(T2Quals)) {
     Sequence.SetFailed(InitializationSequence::FK_ReferenceInitDropsQualifiers);
     return;
   }
@@ -4783,7 +4823,11 @@ static void TryReferenceInitializationCore(Sema &S,
     return;
   }
 
-  Sequence.AddReferenceBindingStep(cv1T1, /*bindingTemporary=*/true);
+  Sequence.AddReferenceBindingStep(cv1T1IgnoreAS, /*bindingTemporary=*/true);
+
+  if (T1Quals.hasAddressSpace())
+    Sequence.AddQualificationConversionStep(cv1T1, isLValueRef ? VK_LValue
+                                                               : VK_XValue);
 }
 
 /// Attempt character array initialization from a string literal
@@ -5542,8 +5586,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
     // array from a compound literal that creates an array of the same
     // type, so long as the initializer has no side effects.
     if (!S.getLangOpts().CPlusPlus && Initializer &&
-        (isa<ConstantExpr>(Initializer->IgnoreParens()) ||
-         isa<CompoundLiteralExpr>(Initializer->IgnoreParens())) &&
+        isa<CompoundLiteralExpr>(Initializer->IgnoreParens()) &&
         Initializer->getType()->isArrayType()) {
       const ArrayType *SourceAT
         = Context.getAsArrayType(Initializer->getType());
@@ -7279,9 +7322,19 @@ ExprResult Sema::TemporaryMaterializationConversion(Expr *E) {
 ExprResult Sema::PerformQualificationConversion(Expr *E, QualType Ty,
                                                 ExprValueKind VK,
                                                 CheckedConversionKind CCK) {
-  CastKind CK = (Ty.getAddressSpace() != E->getType().getAddressSpace())
-                    ? CK_AddressSpaceConversion
-                    : CK_NoOp;
+
+  CastKind CK = CK_NoOp;
+
+  if (VK == VK_RValue) {
+    auto PointeeTy = Ty->getPointeeType();
+    auto ExprPointeeTy = E->getType()->getPointeeType();
+    if (!PointeeTy.isNull() &&
+        PointeeTy.getAddressSpace() != ExprPointeeTy.getAddressSpace())
+      CK = CK_AddressSpaceConversion;
+  } else if (Ty.getAddressSpace() != E->getType().getAddressSpace()) {
+    CK = CK_AddressSpaceConversion;
+  }
+
   return ImpCastExprToType(E, Ty, CK, VK, /*BasePath=*/nullptr, CCK);
 }
 
@@ -7956,6 +8009,7 @@ ExprResult InitializationSequence::Perform(Sema &S,
       S.Diag(Kind.getLocation(), diag::ext_array_init_copy)
         << Step->Type << CurInit.get()->getType()
         << CurInit.get()->getSourceRange();
+      updateGNUCompoundLiteralRValue(CurInit.get());
       LLVM_FALLTHROUGH;
     case SK_ArrayInit:
       // If the destination type is an incomplete array type, update the
@@ -8596,7 +8650,7 @@ bool InitializationSequence::Diagnose(Sema &S,
           = FailedCandidateSet.BestViableFunction(S, Kind.getLocation(), Best);
         if (Ovl != OR_Deleted) {
           S.Diag(Kind.getLocation(), diag::err_ovl_deleted_init)
-            << true << DestType << ArgsRange;
+              << DestType << ArgsRange;
           llvm_unreachable("Inconsistent overload resolution?");
           break;
         }
@@ -8610,7 +8664,7 @@ bool InitializationSequence::Diagnose(Sema &S,
             << DestType << ArgsRange;
         else
           S.Diag(Kind.getLocation(), diag::err_ovl_deleted_init)
-            << true << DestType << ArgsRange;
+              << DestType << ArgsRange;
 
         S.NoteDeletedFunction(Best->Function);
         break;

@@ -1139,7 +1139,6 @@ static bool checkTupleLikeDecomposition(Sema &S,
         }
       }
     }
-    S.FilterAcceptableTemplateNames(MemberGet);
   }
 
   unsigned I = 0;
@@ -3197,7 +3196,11 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     //   declared] with the same access [as the template].
     if (auto *DG = dyn_cast<CXXDeductionGuideDecl>(NonTemplateMember)) {
       auto *TD = DG->getDeducedTemplate();
-      if (AS != TD->getAccess()) {
+      // Access specifiers are only meaningful if both the template and the
+      // deduction guide are from the same scope.
+      if (AS != TD->getAccess() &&
+          TD->getDeclContext()->getRedeclContext()->Equals(
+              DG->getDeclContext()->getRedeclContext())) {
         Diag(DG->getBeginLoc(), diag::err_deduction_guide_wrong_access);
         Diag(TD->getBeginLoc(), diag::note_deduction_guide_template_access)
             << TD->getAccess();
@@ -3820,7 +3823,7 @@ namespace {
 
 // Callback to only accept typo corrections that can be a valid C++ member
 // intializer: either a non-static field member or a base class.
-class MemInitializerValidatorCCC : public CorrectionCandidateCallback {
+class MemInitializerValidatorCCC final : public CorrectionCandidateCallback {
 public:
   explicit MemInitializerValidatorCCC(CXXRecordDecl *ClassDecl)
       : ClassDecl(ClassDecl) {}
@@ -3832,6 +3835,10 @@ public:
       return isa<TypeDecl>(ND);
     }
     return false;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<MemInitializerValidatorCCC>(*this);
   }
 
 private:
@@ -3974,11 +3981,10 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
 
       // If no results were found, try to correct typos.
       TypoCorrection Corr;
+      MemInitializerValidatorCCC CCC(ClassDecl);
       if (R.empty() && BaseType.isNull() &&
-          (Corr = CorrectTypo(
-               R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-               llvm::make_unique<MemInitializerValidatorCCC>(ClassDecl),
-               CTK_ErrorRecovery, ClassDecl))) {
+          (Corr = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
+                              CCC, CTK_ErrorRecovery, ClassDecl))) {
         if (FieldDecl *Member = Corr.getCorrectionDeclAs<FieldDecl>()) {
           // We have found a non-static data member with a similar
           // name to what was typed; complain and initialize that
@@ -5744,9 +5750,11 @@ void Sema::checkClassLevelDLLAttribute(CXXRecordDecl *Class) {
 
   TemplateSpecializationKind TSK = Class->getTemplateSpecializationKind();
 
-  // Ignore explicit dllexport on explicit class template instantiation declarations.
+  // Ignore explicit dllexport on explicit class template instantiation
+  // declarations, except in MinGW mode.
   if (ClassExported && !ClassAttr->isInherited() &&
-      TSK == TSK_ExplicitInstantiationDeclaration) {
+      TSK == TSK_ExplicitInstantiationDeclaration &&
+      !Context.getTargetInfo().getTriple().isWindowsGNUEnvironment()) {
     Class->dropAttr<DLLExportAttr>();
     return;
   }
@@ -5771,9 +5779,12 @@ void Sema::checkClassLevelDLLAttribute(CXXRecordDecl *Class) {
         continue;
 
       if (MD->isInlined()) {
-        // MinGW does not import or export inline methods.
+        // MinGW does not import or export inline methods. But do it for
+        // template instantiations.
         if (!Context.getTargetInfo().getCXXABI().isMicrosoft() &&
-            !Context.getTargetInfo().getTriple().isWindowsItaniumEnvironment())
+            !Context.getTargetInfo().getTriple().isWindowsItaniumEnvironment() &&
+            TSK != TSK_ExplicitInstantiationDeclaration &&
+            TSK != TSK_ExplicitInstantiationDefinition)
           continue;
 
         // MSVC versions before 2015 don't export the move assignment operators
@@ -8033,14 +8044,14 @@ void Sema::ActOnFinishCXXMemberSpecification(
 /// definition of the class is complete.
 void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   if (ClassDecl->needsImplicitDefaultConstructor()) {
-    ++ASTContext::NumImplicitDefaultConstructors;
+    ++getASTContext().NumImplicitDefaultConstructors;
 
     if (ClassDecl->hasInheritedConstructor())
       DeclareImplicitDefaultConstructor(ClassDecl);
   }
 
   if (ClassDecl->needsImplicitCopyConstructor()) {
-    ++ASTContext::NumImplicitCopyConstructors;
+    ++getASTContext().NumImplicitCopyConstructors;
 
     // If the properties or semantics of the copy constructor couldn't be
     // determined while the class was being declared, force a declaration
@@ -8062,7 +8073,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (getLangOpts().CPlusPlus11 && ClassDecl->needsImplicitMoveConstructor()) {
-    ++ASTContext::NumImplicitMoveConstructors;
+    ++getASTContext().NumImplicitMoveConstructors;
 
     if (ClassDecl->needsOverloadResolutionForMoveConstructor() ||
         ClassDecl->hasInheritedConstructor())
@@ -8070,7 +8081,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (ClassDecl->needsImplicitCopyAssignment()) {
-    ++ASTContext::NumImplicitCopyAssignmentOperators;
+    ++getASTContext().NumImplicitCopyAssignmentOperators;
 
     // If we have a dynamic class, then the copy assignment operator may be
     // virtual, so we have to declare it immediately. This ensures that, e.g.,
@@ -8083,7 +8094,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (getLangOpts().CPlusPlus11 && ClassDecl->needsImplicitMoveAssignment()) {
-    ++ASTContext::NumImplicitMoveAssignmentOperators;
+    ++getASTContext().NumImplicitMoveAssignmentOperators;
 
     // Likewise for the move assignment operator.
     if (ClassDecl->isDynamicClass() ||
@@ -8093,7 +8104,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (ClassDecl->needsImplicitDestructor()) {
-    ++ASTContext::NumImplicitDestructors;
+    ++getASTContext().NumImplicitDestructors;
 
     // If we have a dynamic class, then the destructor may be virtual, so we
     // have to declare the destructor immediately. This ensures that, e.g., it
@@ -9096,6 +9107,9 @@ void Sema::ActOnFinishNamespaceDef(Decl *Dcl, SourceLocation RBrace) {
   PopDeclContext();
   if (Namespc->hasAttr<VisibilityAttr>())
     PopPragmaVisibility(true, RBrace);
+  // If this namespace contains an export-declaration, export it now.
+  if (DeferredExportedNamespaces.erase(Namespc))
+    Dcl->setModuleOwnershipKind(Decl::ModuleOwnershipKind::VisibleWhenImported);
 }
 
 CXXRecordDecl *Sema::getStdBadAlloc() const {
@@ -9415,12 +9429,16 @@ static bool IsUsingDirectiveInToplevelContext(DeclContext *CurContext) {
 namespace {
 
 // Callback to only accept typo corrections that are namespaces.
-class NamespaceValidatorCCC : public CorrectionCandidateCallback {
+class NamespaceValidatorCCC final : public CorrectionCandidateCallback {
 public:
   bool ValidateCandidate(const TypoCorrection &candidate) override {
     if (NamedDecl *ND = candidate.getCorrectionDecl())
       return isa<NamespaceDecl>(ND) || isa<NamespaceAliasDecl>(ND);
     return false;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<NamespaceValidatorCCC>(*this);
   }
 };
 
@@ -9431,16 +9449,15 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                                        SourceLocation IdentLoc,
                                        IdentifierInfo *Ident) {
   R.clear();
-
   // We must not do typo corrections while reflecting.
   // Emitting diagnostics from typo correction breaks the tenative parse
   // we use for reflexpr operand parsing.
   if (S.isReflecting())
     return false;
 
+  NamespaceValidatorCCC CCC{};
   if (TypoCorrection Corrected =
-          S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS,
-                        llvm::make_unique<NamespaceValidatorCCC>(),
+          S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS, CCC,
                         Sema::CTK_ErrorRecovery)) {
     if (DeclContext *DC = S.computeDeclContext(SS, false)) {
       std::string CorrectedStr(Corrected.getAsString(S.getLangOpts()));
@@ -9961,7 +9978,7 @@ static CXXBaseSpecifier *findDirectBaseWithType(CXXRecordDecl *Derived,
 }
 
 namespace {
-class UsingValidatorCCC : public CorrectionCandidateCallback {
+class UsingValidatorCCC final : public CorrectionCandidateCallback {
 public:
   UsingValidatorCCC(bool HasTypenameKeyword, bool IsInstantiation,
                     NestedNameSpecifier *NNS, CXXRecordDecl *RequireMemberOf)
@@ -10029,6 +10046,10 @@ public:
       return HasTypenameKeyword || !IsInstantiation;
 
     return !HasTypenameKeyword;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<UsingValidatorCCC>(*this);
   }
 
 private:
@@ -10187,12 +10208,11 @@ NamedDecl *Sema::BuildUsingDeclaration(
         isa<TranslationUnitDecl>(LookupContext) &&
         getSourceManager().isInSystemHeader(UsingLoc))
       return nullptr;
-    if (TypoCorrection Corrected = CorrectTypo(
-            R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-            llvm::make_unique<UsingValidatorCCC>(
-                HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
-                dyn_cast<CXXRecordDecl>(CurContext)),
-            CTK_ErrorRecovery)) {
+    UsingValidatorCCC CCC(HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
+                          dyn_cast<CXXRecordDecl>(CurContext));
+    if (TypoCorrection Corrected =
+            CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS, CCC,
+                        CTK_ErrorRecovery)) {
       // We reject candidates where DroppedSpecifier == true, hence the
       // literal '0' below.
       diagnoseTypo(Corrected, PDiag(diag::err_no_member_suggest)
@@ -11108,7 +11128,7 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   DefaultCon->setTrivial(ClassDecl->hasTrivialDefaultConstructor());
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitDefaultConstructorsDeclared;
+  ++getASTContext().NumImplicitDefaultConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, DefaultCon);
@@ -11382,7 +11402,7 @@ CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
                                 ClassDecl->hasTrivialDestructorForCall());
 
   // Note that we have declared this destructor.
-  ++ASTContext::NumImplicitDestructorsDeclared;
+  ++getASTContext().NumImplicitDestructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, Destructor);
@@ -11991,7 +12011,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
       : ClassDecl->hasTrivialCopyAssignment());
 
   // Note that we have added this copy-assignment operator.
-  ++ASTContext::NumImplicitCopyAssignmentOperatorsDeclared;
+  ++getASTContext().NumImplicitCopyAssignmentOperatorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, CopyAssignment);
@@ -12313,7 +12333,7 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
       : ClassDecl->hasTrivialMoveAssignment());
 
   // Note that we have added this copy-assignment operator.
-  ++ASTContext::NumImplicitMoveAssignmentOperatorsDeclared;
+  ++getASTContext().NumImplicitMoveAssignmentOperatorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, MoveAssignment);
@@ -12695,7 +12715,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
            : ClassDecl->hasTrivialCopyConstructorForCall()));
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitCopyConstructorsDeclared;
+  ++getASTContext().NumImplicitCopyConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, CopyConstructor);
@@ -12824,7 +12844,7 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
            : ClassDecl->hasTrivialMoveConstructorForCall()));
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitMoveConstructorsDeclared;
+  ++getASTContext().NumImplicitMoveConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, MoveConstructor);
