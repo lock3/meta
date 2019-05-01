@@ -1032,6 +1032,8 @@ Sema::CheckOverload(Scope *S, FunctionDecl *New, const LookupResult &Old,
         Match = *I;
         return Ovl_NonFunction;
       }
+    } else if (isa<CXXRequiredDeclaratorDecl>(OldD)) {
+      return Ovl_Overload;
     } else {
       // (C++ 13p1):
       //   Only function declarations can be overloaded; object and type
@@ -9352,6 +9354,24 @@ bool Sema::isEquivalentInternalLinkageDeclaration(const NamedDecl *A,
   return false;
 }
 
+bool Sema::isOverloadedRequiredDeclaration(NamedDecl *Best, NamedDecl *Cand) {
+  if (!isa<CXXRequiredDeclaratorDecl>(Best) ||
+      !isa<CXXRequiredDeclaratorDecl>(Cand))
+    return false;
+
+  const CXXRequiredDeclaratorDecl *BestRDD =
+    cast<CXXRequiredDeclaratorDecl>(Best);
+  const CXXRequiredDeclaratorDecl *CandRDD =
+    cast<CXXRequiredDeclaratorDecl>(Cand);
+
+  // The signatures are the same, this is a duplicate, not an overload.
+  if (Context.hasSameType(BestRDD->getDeclaratorType(),
+                          CandRDD->getDeclaratorType()))
+    return false;
+
+  return true;
+}
+
 void Sema::diagnoseEquivalentInternalLinkageDeclarations(
     SourceLocation Loc, const NamedDecl *D, ArrayRef<const NamedDecl *> Equiv) {
   Diag(Loc, diag::ext_equivalent_internal_linkage_decl_in_modules) << D;
@@ -11692,6 +11712,24 @@ static void AddOverloadedCallCandidate(Sema &S,
                                    ExplicitTemplateArgs, Args, CandidateSet,
                                    /*SuppressUsedConversions=*/false,
                                    PartialOverloading);
+    return;
+  }
+
+  /// FIXME: this creates a no op in the case of multiple
+  /// overloaded requires functions.
+  if (CXXRequiredDeclaratorDecl *RDD =
+      dyn_cast<CXXRequiredDeclaratorDecl>(Callee)) {
+    // Prevent ill-formed function decls to be added as overload candidates.
+    if (!dyn_cast<FunctionProtoType>(
+          RDD->getDeclaratorType()->getAs<FunctionType>()))
+      return;
+
+    FunctionDecl *FD = cast<FunctionDecl>(RDD->getRequiredDeclarator());
+
+    S.AddOverloadCandidate(FD, FoundDecl,
+                           Args, CandidateSet,
+                           /*SuppressUsedConversions=*/false,
+                           PartialOverloading);
     return;
   }
 

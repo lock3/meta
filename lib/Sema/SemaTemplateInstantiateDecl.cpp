@@ -1100,17 +1100,25 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   CXXRequiredDeclaratorDecl *D) {
   // FIXME: Do this eventually
   // SubstQualifier(getSema(), D, NewD, TemplateArgs);
-  TypeSourceInfo *NewTSI =
-    SemaRef.SubstType(D->getDeclaratorTInfo()->getTypeLoc(),
-                        TemplateArgs, D->getLocation(), D->getDeclName());
-  if (!NewTSI)
-    return nullptr;
+  // TypeSourceInfo *NewTSI =
+  //   SemaRef.SubstType(D->getDeclaratorTInfo()->getTypeLoc(),
+  //                       TemplateArgs, D->getLocation(), D->getDeclName());
+  // if (!NewTSI)
+  //   return nullptr;
 
+  DeclaratorDecl *NewDecl =
+    cast<DeclaratorDecl>(SemaRef.SubstDecl(D->getRequiredDeclarator(),
+                                           SemaRef.CurContext, TemplateArgs));
+
+  // return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
+  //                                          SemaRef.CurContext,
+  //                                          D->getDeclName(),
+  //                                          NewTSI->getType(),
+  //                                          NewTSI, D->getRequiresLoc());
   return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
                                            SemaRef.CurContext,
-                                           D->getDeclName(),
-                                           NewTSI->getType(),
-                                           NewTSI, D->getRequiresLoc());
+                                           NewDecl,
+                                           D->getRequiresLoc());
 }
 
 

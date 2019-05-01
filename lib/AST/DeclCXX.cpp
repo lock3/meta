@@ -3071,7 +3071,7 @@ CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
   :DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
                   QualType(Context.DependentTy),
                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
-                  RL), RequiresLoc(RL)
+                  RL), RequiresLoc(RL), RequiredDeclarator(DD)
 {
   DeclaratorTInfo = DD->getTypeSourceInfo();
   DeclaratorType = DeclaratorTInfo->getType();

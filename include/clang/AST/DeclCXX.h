@@ -4307,6 +4307,8 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// The TypeSourceInfo of the actual declarator, see above.
   TypeSourceInfo *DeclaratorTInfo;
 
+  DeclaratorDecl *RequiredDeclarator;
+
   CXXRequiredDeclaratorDecl(ASTContext &Ctx, DeclContext *DC, DeclarationName N,
                             QualType T, TypeSourceInfo *TInfo,
                             SourceLocation RL);
@@ -4328,9 +4330,20 @@ public:
   QualType getDeclaratorType() const { return DeclaratorType; }
   TypeSourceInfo *getDeclaratorTInfo() const { return DeclaratorTInfo; }
 
+  DeclaratorDecl *getRequiredDeclarator() const { return RequiredDeclarator; }
+
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }
 };
+
+// class CXXRequiredFunctionDecl : public FunctionDecl {
+//   SourceLocation RequiresLoc;
+
+//   CXXRequiredFunctionDecl(FunctionDecl *D);
+// public:
+//   static CXXRequiredFunctionDecl *Create(ASTContext &Ctx, FunctionDecl *D,
+//                                          SourceLocation RequiresLoc);
+// };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.
