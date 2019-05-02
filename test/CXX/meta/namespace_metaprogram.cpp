@@ -26,6 +26,16 @@ constexpr auto fragment = __fragment namespace {
   struct class_b {
     int x = 1;
   };
+
+  enum enum_a {
+    EN_A = 1,
+    EN_B = 3
+  };
+
+  enum class enum_class_a {
+    EN_A = 5,
+    EN_B = 10
+  };
 };
 
 namespace foo {
@@ -51,6 +61,12 @@ int main() {
     foo::class_b clazz;
     assert(clazz.x == 1);
   }
+
+  assert(foo::EN_A == 1);
+  assert(foo::EN_B == 3);
+
+  assert(foo::enum_class_a::EN_A == static_cast<foo::enum_class_a>(5));
+  assert(foo::enum_class_a::EN_B == static_cast<foo::enum_class_a>(10));
 
   return 0;
 };

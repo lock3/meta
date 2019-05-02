@@ -532,6 +532,7 @@ public:
   Decl *InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
   Decl *InjectTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
+  Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
 
@@ -1573,6 +1574,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectTemplateTemplateParmDecl(cast<TemplateTemplateParmDecl>(D));
   case Decl::StaticAssert:
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
+  case Decl::Enum:
+    return InjectEnumDecl(cast<EnumDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   case Decl::CXXRequiredType:
@@ -1973,6 +1976,101 @@ Decl *InjectionContext::InjectStaticAssertDecl(StaticAssertDecl *D) {
                                               D->isFailed());
 }
 
+template<typename T>
+static void PushInjectedECD(
+    T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
+    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
+static void InstantiateEnumDefinition(InjectionContext &Ctx, EnumDecl *Enum,
+                                      EnumDecl *Pattern) {
+  Sema &SemaRef = Ctx.getSema();
+
+  Enum->startDefinition();
+
+  // Update the location to refer to the definition.
+  Enum->setLocation(Pattern->getLocation());
+
+  SmallVector<Decl *, 4> Enumerators;
+
+  EnumConstantDecl *OriginalLastEnumConst = SemaRef.LastEnumConstDecl;
+  SemaRef.LastEnumConstDecl = nullptr;
+
+  for (auto *OldEnumerator : Pattern->decls()) {
+    // Don't transform invalid declarations.
+    if (OldEnumerator->isInvalidDecl())
+      continue;
+
+    // Pull in any injected meta decls.
+    Decl *NewEnumerator = Ctx.InjectDecl(OldEnumerator);
+    if (auto *MD = dyn_cast<CXXInjectorDecl>(NewEnumerator)) {
+      PushInjectedECD(MD, Enumerators);
+      continue;
+    }
+
+    // FIXME: This is really strange.
+    //
+    // Bypass the normal mechanism for enumerators, inject
+    // them immediately.
+    assert(Ctx.InjectedDecls.back() == NewEnumerator);
+    Ctx.InjectedDecls.pop_back();
+
+    EnumConstantDecl *EC = cast<EnumConstantDecl>(NewEnumerator);
+    Enumerators.push_back(EC);
+  }
+
+  SemaRef.LastEnumConstDecl = OriginalLastEnumConst;
+
+  SemaRef.ActOnEnumBody(Enum->getLocation(), Enum->getBraceRange(), Enum,
+                        Enumerators, nullptr, ParsedAttributesView());
+}
+
+Decl *InjectionContext::InjectEnumDecl(EnumDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  // FIXME: Lookup previous decl
+
+  EnumDecl *Enum = EnumDecl::Create(
+      SemaRef.Context, Owner, D->getBeginLoc(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr, D->isScoped(),
+      D->isScopedUsingClassTag(), D->isFixed());
+  AddDeclSubstitution(D, Enum);
+
+  Sema::ContextRAII SavedContext(SemaRef, Enum);
+  if (D->isFixed()) {
+    if (TypeSourceInfo *TI = D->getIntegerTypeSourceInfo()) {
+      // If we have type source information for the underlying type, it means it
+      // has been explicitly set by the user. Perform substitution on it before
+      // moving on.
+      TypeSourceInfo *NewTI = TransformType(TI);
+      if (!NewTI || SemaRef.CheckEnumUnderlyingType(NewTI))
+        Enum->setIntegerType(SemaRef.Context.IntTy);
+      else
+        Enum->setIntegerTypeSourceInfo(NewTI);
+    } else {
+      assert(!D->getIntegerType()->isDependentType()
+             && "Dependent type without type source info");
+      Enum->setIntegerType(D->getIntegerType());
+    }
+  }
+
+  Enum->setInstantiationOfMemberEnum(D, TSK_ImplicitInstantiation);
+  ApplyAccess(GetModifiers(), Enum, D);
+
+  if (ShouldInjectInto(Owner))
+    Owner->addDecl(Enum);
+
+  if (EnumDecl *Def = D->getDefinition())
+    InstantiateEnumDefinition(*this, Enum, Def);
+
+  return Enum;
+}
+
 Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -1991,8 +2089,7 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   Decl *EnumConstDecl = getSema().CheckEnumConstant(
       ED, getSema().LastEnumConstDecl, DNI, Value.get());
 
-  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(ED->getDeclContext()))
-    EnumConstDecl->setAccess(RD->getDefaultAccessSpecifier());
+  EnumConstDecl->setAccess(ED->getAccess());
 
   bool InjectIntoOwner = ShouldInjectInto(Owner);
   if (InjectIntoOwner) {
