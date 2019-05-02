@@ -36,6 +36,10 @@ consteval -> __fragment namespace {
 };
 
 class Foo { // expected-note {{previous definition is here}}
+  class Bar; // expected-note {{previous declaration is here}}
+  consteval -> __fragment class {
+    class Bar; // expected-warning {{class member cannot be redeclared}}
+  };
 };
 
 consteval -> __fragment namespace {

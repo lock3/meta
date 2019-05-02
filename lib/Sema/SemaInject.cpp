@@ -1186,6 +1186,15 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
 
     NamedDecl *PrevDecl = GetPreviousTagDecl(SemaRef, DNI, Owner);
     if (TagDecl *PrevTagDecl = dyn_cast_or_null<TagDecl>(PrevDecl)) {
+      // C++11 [class.mem]p1:
+      //   A member shall not be declared twice in the member-specification,
+      //   except that a nested class or member class template can be declared
+      //   and then later defined.
+      if (!D->hasDefinition() && PrevDecl->isCXXClassMember()) {
+        SemaRef.Diag(DNI.getLoc(), diag::ext_member_redeclared);
+        SemaRef.Diag(PrevTagDecl->getLocation(), diag::note_previous_declaration);
+      }
+
       if (!Invalid) {
         // Diagnose attempts to redefine a tag.
         if (D->hasDefinition()) {
