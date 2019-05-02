@@ -1156,8 +1156,19 @@ static bool InjectClassDefinition(InjectionContext &Ctx,
   return NewClass->isInvalidDecl();
 }
 
+static NamedDecl *GetPreviousTagDecl(Sema &SemaRef, const DeclarationNameInfo &DNI,
+                                     DeclContext *Owner) {
+  LookupResult Previous(SemaRef, DNI, Sema::LookupTagName,
+                        SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  return Previous.empty() ? nullptr : Previous.getFoundDecl();
+}
+
 static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
                                       CXXRecordDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+
   bool Invalid = false;
 
   // FIXME: Do a lookup for previous declarations.
@@ -1172,10 +1183,25 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
     DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
     if (!DNI.getName())
       Invalid = true;
+
+    NamedDecl *PrevDecl = GetPreviousTagDecl(SemaRef, DNI, Owner);
+    if (TagDecl *PrevTagDecl = dyn_cast_or_null<TagDecl>(PrevDecl)) {
+      if (!Invalid) {
+        // Diagnose attempts to redefine a tag.
+        if (D->hasDefinition()) {
+          if (NamedDecl *Def = PrevTagDecl->getDefinition()) {
+            SemaRef.Diag(DNI.getLoc(), diag::err_redefinition) << DNI.getName();
+            SemaRef.notePreviousDefinition(Def, DNI.getLoc());
+            Invalid = true;
+          }
+        }
+      }
+    }
+
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
         D->getLocation(), DNI.getName().getAsIdentifierInfo(),
-        /*PrevDecl=*/nullptr);
+        cast_or_null<CXXRecordDecl>(PrevDecl));
   }
   Ctx.AddDeclSubstitution(D, Class);
 

@@ -34,3 +34,11 @@ consteval -> __fragment namespace {
   int foo_var; // expected-error {{redefinition of 'foo_var'}}
   float bar_var; // expected-error {{redefinition of 'bar_var' with a different type: 'float' vs 'int'}}
 };
+
+class Foo { // expected-note {{previous definition is here}}
+};
+
+consteval -> __fragment namespace {
+  class Foo { //expected-error {{redefinition of 'Foo'}}
+  };
+};
