@@ -642,9 +642,9 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
     TemplateSpecializationKind TSK = New->getTemplateSpecializationKind();
     // Template specializations may be redeclared consteval!
     if ((TSK != TSK_ExplicitSpecialization && New->isImmediate()) ||
-	(TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
+        (TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
       Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-	<< New << New->isImmediate();
+        << New << New->isImmediate();
       Diag(Old->getLocation(), diag::note_previous_declaration);
       Invalid = true;
     }
@@ -10945,11 +10945,11 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
 Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
                                            SourceLocation RequiresLoc,
                                            Declarator &D) {
-  // We don't want the declarator we create to be added to the scope.
+  // We don't want to check for linkage, memoize that we're
+  // working on a required declarator for later checks.
   AnalyzingRequiredDeclarator = true;
   DeclaratorDecl *DDecl
     = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
-  // We don't need this anymore, make sure it doesn't stay set.
   AnalyzingRequiredDeclarator = false;
   // It doesn't matter if this is auto.
   // ParsingInitForAutoVars.erase(DDecl);
@@ -10958,8 +10958,6 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
-  // getCurScope()->AddDecl(RDD);
-  // IdResolver->AddDecl(RDD);
   return RDD;
 }
 
