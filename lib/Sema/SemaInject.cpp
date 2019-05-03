@@ -426,6 +426,14 @@ public:
     return !NewContent;
   }
 
+  ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+    if (Expr *R = GetPlaceholderReplacement(E)) {
+      return R;
+    }
+
+    return Base::TransformDeclRefExpr(E);
+  }
+
   QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
     QualType RequiredType = GetRequiredType(D);
 
