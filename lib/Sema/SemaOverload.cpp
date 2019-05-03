@@ -11694,7 +11694,7 @@ static void AddOverloadedCallCandidate(Sema &S,
                                    PartialOverloading);
     return;
   }
-  
+
   assert(!KnownValid && "unhandled case in overloaded call candidate");
 }
 

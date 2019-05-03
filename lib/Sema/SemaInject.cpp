@@ -1674,7 +1674,7 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
 }
 
 static bool isRequiresDecl(Decl *D) {
-  return isa<CXXRequiredTypeDecl>(D);
+  return isa<CXXRequiredTypeDecl>(D) || isa<CXXRequiredDeclaratorDecl>(D);
 }
 
 static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
