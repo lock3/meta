@@ -3488,6 +3488,10 @@ public:
     return cast_or_null<EnumDecl>(TagDecl::getDefinition());
   }
 
+  bool hasDefinition() const {
+    return getDefinition();
+  }
+
   static EnumDecl *Create(ASTContext &C, DeclContext *DC,
                           SourceLocation StartLoc, SourceLocation IdLoc,
                           IdentifierInfo *Id, EnumDecl *PrevDecl,

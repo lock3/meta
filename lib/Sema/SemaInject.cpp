@@ -1166,6 +1166,38 @@ static NamedDecl *GetPreviousTagDecl(Sema &SemaRef, const DeclarationNameInfo &D
   return Previous.empty() ? nullptr : Previous.getFoundDecl();
 }
 
+template<typename T>
+static void
+CheckInjectedTagDecl(Sema &SemaRef, const DeclarationNameInfo &DNI,
+                     DeclContext *Owner, T *D,
+                     NamedDecl *&PrevDecl, bool &Invalid) {
+  if (!DNI.getName())
+    Invalid = true;
+
+  PrevDecl = GetPreviousTagDecl(SemaRef, DNI, Owner);
+  if (TagDecl *PrevTagDecl = dyn_cast_or_null<TagDecl>(PrevDecl)) {
+    // C++11 [class.mem]p1:
+    //   A member shall not be declared twice in the member-specification,
+    //   except that a nested class or member class template can be declared
+    //   and then later defined.
+    if (!D->hasDefinition() && PrevDecl->isCXXClassMember()) {
+      SemaRef.Diag(DNI.getLoc(), diag::ext_member_redeclared);
+      SemaRef.Diag(PrevTagDecl->getLocation(), diag::note_previous_declaration);
+    }
+
+    if (!Invalid) {
+      // Diagnose attempts to redefine a tag.
+      if (D->hasDefinition()) {
+        if (NamedDecl *Def = PrevTagDecl->getDefinition()) {
+          SemaRef.Diag(DNI.getLoc(), diag::err_redefinition) << DNI.getName();
+          SemaRef.notePreviousDefinition(Def, DNI.getLoc());
+          Invalid = true;
+        }
+      }
+    }
+  }
+}
+
 static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
                                       CXXRecordDecl *D) {
   Sema &SemaRef = Ctx.getSema();
@@ -1182,31 +1214,9 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
         D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
   } else {
     DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
-    if (!DNI.getName())
-      Invalid = true;
 
-    NamedDecl *PrevDecl = GetPreviousTagDecl(SemaRef, DNI, Owner);
-    if (TagDecl *PrevTagDecl = dyn_cast_or_null<TagDecl>(PrevDecl)) {
-      // C++11 [class.mem]p1:
-      //   A member shall not be declared twice in the member-specification,
-      //   except that a nested class or member class template can be declared
-      //   and then later defined.
-      if (!D->hasDefinition() && PrevDecl->isCXXClassMember()) {
-        SemaRef.Diag(DNI.getLoc(), diag::ext_member_redeclared);
-        SemaRef.Diag(PrevTagDecl->getLocation(), diag::note_previous_declaration);
-      }
-
-      if (!Invalid) {
-        // Diagnose attempts to redefine a tag.
-        if (D->hasDefinition()) {
-          if (NamedDecl *Def = PrevTagDecl->getDefinition()) {
-            SemaRef.Diag(DNI.getLoc(), diag::err_redefinition) << DNI.getName();
-            SemaRef.notePreviousDefinition(Def, DNI.getLoc());
-            Invalid = true;
-          }
-        }
-      }
-    }
+    NamedDecl *PrevDecl;
+    CheckInjectedTagDecl(SemaRef, DNI, Owner, D, PrevDecl, Invalid);
 
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
@@ -2033,7 +2043,11 @@ static void InstantiateEnumDefinition(InjectionContext &Ctx, EnumDecl *Enum,
 Decl *InjectionContext::InjectEnumDecl(EnumDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
-  // FIXME: Lookup previous decl
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+
+  bool Invalid = false;
+  NamedDecl *PrevDecl;
+  CheckInjectedTagDecl(SemaRef, DNI, Owner, D, PrevDecl, Invalid);
 
   EnumDecl *Enum = EnumDecl::Create(
       SemaRef.Context, Owner, D->getBeginLoc(), D->getLocation(),
@@ -2061,6 +2075,8 @@ Decl *InjectionContext::InjectEnumDecl(EnumDecl *D) {
 
   Enum->setInstantiationOfMemberEnum(D, TSK_ImplicitInstantiation);
   ApplyAccess(GetModifiers(), Enum, D);
+  if (Invalid)
+    Enum->setInvalidDecl(true);
 
   if (ShouldInjectInto(Owner))
     Owner->addDecl(Enum);
