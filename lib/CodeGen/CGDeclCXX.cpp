@@ -97,7 +97,7 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
     return;
   }
 
-  llvm::Constant *Func;
+  llvm::FunctionCallee Func;
   llvm::Constant *Argument;
 
   // Special-case non-array C++ destructors, if they have the right signature.
@@ -117,7 +117,7 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
     assert(!Record->hasTrivialDestructor());
     CXXDestructorDecl *Dtor = Record->getDestructor();
 
-    Func = CGM.getAddrOfCXXStructor(Dtor, StructorType::Complete);
+    Func = CGM.getAddrAndTypeOfCXXStructor(GlobalDecl(Dtor, Dtor_Complete));
     Argument = llvm::ConstantExpr::getBitCast(
         Addr.getPointer(), CGF.getTypes().ConvertType(Type)->getPointerTo());
 
@@ -214,8 +214,8 @@ void CodeGenFunction::EmitCXXGlobalVarDeclInit(const VarDecl &D,
 
 /// Create a stub function, suitable for being passed to atexit,
 /// which passes the given address to the given destructor function.
-llvm::Constant *CodeGenFunction::createAtExitStub(const VarDecl &VD,
-                                                  llvm::Constant *dtor,
+llvm::Function *CodeGenFunction::createAtExitStub(const VarDecl &VD,
+                                                  llvm::FunctionCallee dtor,
                                                   llvm::Constant *addr) {
   // Get the destructor function type, void(*)(void).
   llvm::FunctionType *ty = llvm::FunctionType::get(CGM.VoidTy, false);
@@ -226,19 +226,19 @@ llvm::Constant *CodeGenFunction::createAtExitStub(const VarDecl &VD,
   }
 
   const CGFunctionInfo &FI = CGM.getTypes().arrangeNullaryFunction();
-  llvm::Function *fn = CGM.CreateGlobalInitOrDestructFunction(ty, FnName.str(),
-                                                              FI,
-                                                              VD.getLocation());
+  llvm::Function *fn = CGM.CreateGlobalInitOrDestructFunction(
+      ty, FnName.str(), FI, VD.getLocation());
 
   CodeGenFunction CGF(CGM);
 
-  CGF.StartFunction(&VD, CGM.getContext().VoidTy, fn, FI, FunctionArgList());
+  CGF.StartFunction(GlobalDecl(&VD, DynamicInitKind::AtExit),
+                    CGM.getContext().VoidTy, fn, FI, FunctionArgList());
 
   llvm::CallInst *call = CGF.Builder.CreateCall(dtor, addr);
 
  // Make sure the call and the callee agree on calling convention.
   if (llvm::Function *dtorFn =
-        dyn_cast<llvm::Function>(dtor->stripPointerCasts()))
+          dyn_cast<llvm::Function>(dtor.getCallee()->stripPointerCasts()))
     call->setCallingConv(dtorFn->getCallingConv());
 
   CGF.FinishFunction();
@@ -248,7 +248,7 @@ llvm::Constant *CodeGenFunction::createAtExitStub(const VarDecl &VD,
 
 /// Register a global destructor using the C atexit runtime function.
 void CodeGenFunction::registerGlobalDtorWithAtExit(const VarDecl &VD,
-                                                   llvm::Constant *dtor,
+                                                   llvm::FunctionCallee dtor,
                                                    llvm::Constant *addr) {
   // Create a function which calls the destructor.
   llvm::Constant *dtorStub = createAtExitStub(VD, dtor, addr);
@@ -467,7 +467,8 @@ CodeGenModule::EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
   } else if (auto *IPA = D->getAttr<InitPriorityAttr>()) {
     OrderGlobalInits Key(IPA->getPriority(), PrioritizedCXXGlobalInits.size());
     PrioritizedCXXGlobalInits.push_back(std::make_pair(Key, Fn));
-  } else if (isTemplateInstantiation(D->getTemplateSpecializationKind())) {
+  } else if (isTemplateInstantiation(D->getTemplateSpecializationKind()) ||
+             getContext().GetGVALinkageForVariable(D) == GVA_DiscardableODR) {
     // C++ [basic.start.init]p2:
     //   Definitions of explicitly specialized class template static data
     //   members have ordered initialization. Other class template static data
@@ -481,6 +482,11 @@ CodeGenModule::EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
     // minor startup time optimization.  In the MS C++ ABI, there are no guard
     // variables, so this COMDAT key is required for correctness.
     AddGlobalCtor(Fn, 65535, COMDATKey);
+    if (getTarget().getCXXABI().isMicrosoft() && COMDATKey) {
+      // In The MS C++, MS add template static data member in the linker
+      // drective.
+      addUsedGlobal(COMDATKey);
+    }
   } else if (D->hasAttr<SelectAnyAttr>()) {
     // SelectAny globals will be comdat-folded. Put the initializer into a
     // COMDAT group associated with the global, so the initializers get folded
@@ -603,8 +609,8 @@ void CodeGenFunction::GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
 
   CurEHLocation = D->getBeginLoc();
 
-  StartFunction(GlobalDecl(D), getContext().VoidTy, Fn,
-                getTypes().arrangeNullaryFunction(),
+  StartFunction(GlobalDecl(D, DynamicInitKind::Initializer),
+                getContext().VoidTy, Fn, getTypes().arrangeNullaryFunction(),
                 FunctionArgList(), D->getLocation(),
                 D->getInit()->getExprLoc());
 
@@ -681,8 +687,8 @@ CodeGenFunction::GenerateCXXGlobalInitFunc(llvm::Function *Fn,
 
 void CodeGenFunction::GenerateCXXGlobalDtorsFunc(
     llvm::Function *Fn,
-    const std::vector<std::pair<llvm::WeakTrackingVH, llvm::Constant *>>
-        &DtorsAndObjects) {
+    const std::vector<std::tuple<llvm::FunctionType *, llvm::WeakTrackingVH,
+                                 llvm::Constant *>> &DtorsAndObjects) {
   {
     auto NL = ApplyDebugLocation::CreateEmpty(*this);
     StartFunction(GlobalDecl(), getContext().VoidTy, Fn,
@@ -692,9 +698,11 @@ void CodeGenFunction::GenerateCXXGlobalDtorsFunc(
 
     // Emit the dtors, in reverse order from construction.
     for (unsigned i = 0, e = DtorsAndObjects.size(); i != e; ++i) {
-      llvm::Value *Callee = DtorsAndObjects[e - i - 1].first;
-      llvm::CallInst *CI = Builder.CreateCall(Callee,
-                                          DtorsAndObjects[e - i - 1].second);
+      llvm::FunctionType *CalleeTy;
+      llvm::Value *Callee;
+      llvm::Constant *Arg;
+      std::tie(CalleeTy, Callee, Arg) = DtorsAndObjects[e - i - 1];
+      llvm::CallInst *CI = Builder.CreateCall(CalleeTy, Callee, Arg);
       // Make sure the call and the callee agree on calling convention.
       if (llvm::Function *F = dyn_cast<llvm::Function>(Callee))
         CI->setCallingConv(F->getCallingConv());

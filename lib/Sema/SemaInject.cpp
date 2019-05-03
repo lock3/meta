@@ -532,6 +532,7 @@ public:
   Decl *InjectNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
   Decl *InjectTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
+  Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
 
@@ -793,13 +794,22 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
 Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
+  SourceLocation &&NamespaceLoc = D->getBeginLoc();
+  SourceLocation &&Loc = D->getLocation();
+
+  bool IsInline = D->isInline();
+  bool IsInvalid = false;
+  bool IsStd = false;
+  bool AddToKnown = false;
+  NamespaceDecl *PrevNS = nullptr;
+  SemaRef.CheckNamespaceDeclaration(
+      D->getIdentifier(), NamespaceLoc, Loc,
+      IsInline, IsInvalid, IsStd, AddToKnown, PrevNS);
+
   // Build the namespace.
-  //
-  // FIXME: Search for a previous declaration of the namespace so that they
-  // can be stitched together (i.e., redo lookup).
   NamespaceDecl *Ns = NamespaceDecl::Create(
-      getContext(), Owner, D->isInline(), D->getLocation(), D->getLocation(),
-      D->getIdentifier(), /*PrevDecl=*/nullptr);
+      getContext(), Owner, IsInline, NamespaceLoc,
+      Loc, D->getIdentifier(), PrevNS);
   AddDeclSubstitution(D, Ns);
 
   Owner->addDecl(Ns);
@@ -1156,8 +1166,51 @@ static bool InjectClassDefinition(InjectionContext &Ctx,
   return NewClass->isInvalidDecl();
 }
 
+static NamedDecl *GetPreviousTagDecl(Sema &SemaRef, const DeclarationNameInfo &DNI,
+                                     DeclContext *Owner) {
+  LookupResult Previous(SemaRef, DNI, Sema::LookupTagName,
+                        SemaRef.forRedeclarationInCurContext());
+  SemaRef.LookupQualifiedName(Previous, Owner);
+
+  return Previous.empty() ? nullptr : Previous.getFoundDecl();
+}
+
+template<typename T>
+static void
+CheckInjectedTagDecl(Sema &SemaRef, const DeclarationNameInfo &DNI,
+                     DeclContext *Owner, T *D,
+                     NamedDecl *&PrevDecl, bool &Invalid) {
+  if (!DNI.getName())
+    Invalid = true;
+
+  PrevDecl = GetPreviousTagDecl(SemaRef, DNI, Owner);
+  if (TagDecl *PrevTagDecl = dyn_cast_or_null<TagDecl>(PrevDecl)) {
+    // C++11 [class.mem]p1:
+    //   A member shall not be declared twice in the member-specification,
+    //   except that a nested class or member class template can be declared
+    //   and then later defined.
+    if (!D->hasDefinition() && PrevDecl->isCXXClassMember()) {
+      SemaRef.Diag(DNI.getLoc(), diag::ext_member_redeclared);
+      SemaRef.Diag(PrevTagDecl->getLocation(), diag::note_previous_declaration);
+    }
+
+    if (!Invalid) {
+      // Diagnose attempts to redefine a tag.
+      if (D->hasDefinition()) {
+        if (NamedDecl *Def = PrevTagDecl->getDefinition()) {
+          SemaRef.Diag(DNI.getLoc(), diag::err_redefinition) << DNI.getName();
+          SemaRef.notePreviousDefinition(Def, DNI.getLoc());
+          Invalid = true;
+        }
+      }
+    }
+  }
+}
+
 static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
                                       CXXRecordDecl *D) {
+  Sema &SemaRef = Ctx.getSema();
+
   bool Invalid = false;
 
   // FIXME: Do a lookup for previous declarations.
@@ -1170,12 +1223,14 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
         D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
   } else {
     DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
-    if (!DNI.getName())
-      Invalid = true;
+
+    NamedDecl *PrevDecl;
+    CheckInjectedTagDecl(SemaRef, DNI, Owner, D, PrevDecl, Invalid);
+
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
         D->getLocation(), DNI.getName().getAsIdentifierInfo(),
-        /*PrevDecl=*/nullptr);
+        cast_or_null<CXXRecordDecl>(PrevDecl));
   }
   Ctx.AddDeclSubstitution(D, Class);
 
@@ -1538,6 +1593,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectTemplateTemplateParmDecl(cast<TemplateTemplateParmDecl>(D));
   case Decl::StaticAssert:
     return InjectStaticAssertDecl(cast<StaticAssertDecl>(D));
+  case Decl::Enum:
+    return InjectEnumDecl(cast<EnumDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
   case Decl::CXXRequiredType:
@@ -1562,6 +1619,9 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   Decl* R = InjectDeclImpl(D);
   if (!R || R->isInvalidDecl())
     return R;
+
+  // Ensure we've actually made an effort to rebuilt the decl.
+  assert(R != D);
 
   // If we injected a top-level declaration, notify the AST consumer,
   // so that it can be processed for code generation.
@@ -1607,43 +1667,73 @@ Stmt *InjectionContext::InjectStmtImpl(Stmt *S) {
   }
 }
 
+static bool isRequiresDecl(Decl *D) {
+  return isa<CXXRequiredTypeDecl>(D);
+}
+
+static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
+  Sema &SemaRef = Ctx.getSema();
+
+  Decl *D = Ctx.InjectDecl(OldDecl);
+  if (!D || D->isInvalidDecl())
+    return nullptr;
+
+  if (isRequiresDecl(D))
+    return nullptr;
+
+  // Add the declaration to scope, we don't need to add it to the context,
+  // as this should have been handled by the injection of the decl.
+  Scope *FunctionScope =
+    SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
+  SemaRef.PushOnScopeChains(cast<NamedDecl>(D), FunctionScope,
+                            /*AddToContext=*/false);
+
+  return D;
+}
+
+static DeclStmt *CompleteDeclStmt(InjectionContext &Ctx, DeclGroupRef &GroupRef,
+                                  DeclStmt *Original) {
+  ASTContext &Context = Ctx.getSema().getASTContext();
+
+  DeclStmt *NewStmt = new (Context) DeclStmt(GroupRef, Original->getBeginLoc(),
+                                             Original->getEndLoc());
+  Ctx.InjectedStmts.push_back(NewStmt);
+
+  return NewStmt;
+}
+
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
-  auto AddDeclToInjecteeScope = [this](Decl *OldDecl) -> Decl* {
-    Decl *D = InjectDecl(OldDecl);
-    if (!D || D->isInvalidDecl())
-      return nullptr;
-
-    Scope *FunctionScope =
-      getSema().getScopeForContext(Decl::castToDeclContext(Injectee));
-    getSema().IdResolver->AddDecl(cast<NamedDecl>(D));
-    FunctionScope->AddDecl(D);
-
-    return D;
-  };
+  ASTContext &Context = getSema().getASTContext();
 
   if (S->isSingleDecl()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(S->getSingleDecl())) {
+    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, S->getSingleDecl())) {
       DeclGroupRef NewDG(NewDecl);
-      DeclStmt *NewS =
-        new (getSema().getASTContext()) DeclStmt(NewDG, S->getBeginLoc(),
-                                                 S->getEndLoc());
-      TransformDeclStmt(NewS);
-      InjectedStmts.push_back(NewS);
-      return NewS;
+      return CompleteDeclStmt(*this, NewDG, S);
     }
     return nullptr;
+  } else {
+    DeclGroup &DG = S->getDeclGroup().getDeclGroup();
+
+    Decl **NewDecls = new Decl *[DG.size()];
+    bool Invalid = false;
+
+    for (unsigned I = 0; I < DG.size(); ++I) {
+      if (Decl *NewDecl = AddDeclToInjecteeScope(*this, DG[I])) {
+        NewDecls[I] = NewDecl;
+      } else {
+        Invalid = true;
+        break;
+      }
+    }
+
+    if (Invalid) {
+      delete [] NewDecls;
+      return nullptr;
+    }
+
+    DeclGroupRef NewDG = DeclGroupRef::Create(Context, NewDecls, DG.size());
+    return CompleteDeclStmt(*this, NewDG, S);
   }
-
-  DeclGroup &DG = S->getDeclGroup().getDeclGroup();
-  bool Invalid = false;
-  for (std::size_t I = 0; I < DG.size(); ++I)
-    if (!AddDeclToInjecteeScope(DG[I]))
-      Invalid = true;
-
-  if (Invalid)
-    return nullptr;
-  InjectedStmts.push_back(S);
-  return S;
 }
 
 template <typename MetaType>
@@ -1905,6 +1995,107 @@ Decl *InjectionContext::InjectStaticAssertDecl(StaticAssertDecl *D) {
                                               D->isFailed());
 }
 
+template<typename T>
+static void PushInjectedECD(
+    T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
+    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
+static void InstantiateEnumDefinition(InjectionContext &Ctx, EnumDecl *Enum,
+                                      EnumDecl *Pattern) {
+  Sema &SemaRef = Ctx.getSema();
+
+  Enum->startDefinition();
+
+  // Update the location to refer to the definition.
+  Enum->setLocation(Pattern->getLocation());
+
+  SmallVector<Decl *, 4> Enumerators;
+
+  EnumConstantDecl *OriginalLastEnumConst = SemaRef.LastEnumConstDecl;
+  SemaRef.LastEnumConstDecl = nullptr;
+
+  for (auto *OldEnumerator : Pattern->decls()) {
+    // Don't transform invalid declarations.
+    if (OldEnumerator->isInvalidDecl())
+      continue;
+
+    // Pull in any injected meta decls.
+    Decl *NewEnumerator = Ctx.InjectDecl(OldEnumerator);
+    if (auto *MD = dyn_cast<CXXInjectorDecl>(NewEnumerator)) {
+      PushInjectedECD(MD, Enumerators);
+      continue;
+    }
+
+    // FIXME: This is really strange.
+    //
+    // Bypass the normal mechanism for enumerators, inject
+    // them immediately.
+    assert(Ctx.InjectedDecls.back() == NewEnumerator);
+    Ctx.InjectedDecls.pop_back();
+
+    EnumConstantDecl *EC = cast<EnumConstantDecl>(NewEnumerator);
+    Enumerators.push_back(EC);
+  }
+
+  SemaRef.LastEnumConstDecl = OriginalLastEnumConst;
+
+  SemaRef.ActOnEnumBody(Enum->getLocation(), Enum->getBraceRange(), Enum,
+                        Enumerators, nullptr, ParsedAttributesView());
+}
+
+Decl *InjectionContext::InjectEnumDecl(EnumDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+
+  bool Invalid = false;
+  NamedDecl *PrevDecl;
+  CheckInjectedTagDecl(SemaRef, DNI, Owner, D, PrevDecl, Invalid);
+
+  EnumDecl *Enum = EnumDecl::Create(
+      SemaRef.Context, Owner, D->getBeginLoc(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr, D->isScoped(),
+      D->isScopedUsingClassTag(), D->isFixed());
+  AddDeclSubstitution(D, Enum);
+
+  Sema::ContextRAII SavedContext(SemaRef, Enum);
+  if (D->isFixed()) {
+    if (TypeSourceInfo *TI = D->getIntegerTypeSourceInfo()) {
+      // If we have type source information for the underlying type, it means it
+      // has been explicitly set by the user. Perform substitution on it before
+      // moving on.
+      TypeSourceInfo *NewTI = TransformType(TI);
+      if (!NewTI || SemaRef.CheckEnumUnderlyingType(NewTI))
+        Enum->setIntegerType(SemaRef.Context.IntTy);
+      else
+        Enum->setIntegerTypeSourceInfo(NewTI);
+    } else {
+      assert(!D->getIntegerType()->isDependentType()
+             && "Dependent type without type source info");
+      Enum->setIntegerType(D->getIntegerType());
+    }
+  }
+
+  Enum->setInstantiationOfMemberEnum(D, TSK_ImplicitInstantiation);
+  ApplyAccess(GetModifiers(), Enum, D);
+  if (Invalid)
+    Enum->setInvalidDecl(true);
+
+  if (ShouldInjectInto(Owner))
+    Owner->addDecl(Enum);
+
+  if (EnumDecl *Def = D->getDefinition())
+    InstantiateEnumDefinition(*this, Enum, Def);
+
+  return Enum;
+}
+
 Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -1923,8 +2114,7 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   Decl *EnumConstDecl = getSema().CheckEnumConstant(
       ED, getSema().LastEnumConstDecl, DNI, Value.get());
 
-  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(ED->getDeclContext()))
-    EnumConstDecl->setAccess(RD->getDefaultAccessSpecifier());
+  EnumConstDecl->setAccess(ED->getAccess());
 
   bool InjectIntoOwner = ShouldInjectInto(Owner);
   if (InjectIntoOwner) {

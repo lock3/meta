@@ -34,3 +34,30 @@ consteval -> __fragment namespace {
   int foo_var; // expected-error {{redefinition of 'foo_var'}}
   float bar_var; // expected-error {{redefinition of 'bar_var' with a different type: 'float' vs 'int'}}
 };
+
+class Foo { // expected-note {{previous definition is here}}
+  class Bar; // expected-note {{previous declaration is here}}
+  consteval -> __fragment class {
+    class Bar; // expected-warning {{class member cannot be redeclared}}
+  };
+
+  enum EFoo { }; // expected-note {{previous definition is here}}
+  enum EFooSized : unsigned; // expected-note {{previous declaration is here}}
+  consteval -> __fragment class {
+    enum EFoo { }; // expected-error {{redefinition of 'EFoo'}}
+    enum EFooSized : unsigned; // expected-warning  {{class member cannot be redeclared}}
+  };
+};
+
+consteval -> __fragment namespace {
+  class Foo { //expected-error {{redefinition of 'Foo'}}
+  };
+};
+
+enum EFoo { // expected-note {{previous definition is here}}
+};
+
+consteval -> __fragment namespace {
+  enum EFoo { // expected-error {{redefinition of 'EFoo'}}
+  };
+}

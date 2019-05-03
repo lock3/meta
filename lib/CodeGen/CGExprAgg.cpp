@@ -765,8 +765,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
 
         // Build a GEP to refer to the subobject.
         Address valueAddr =
-            CGF.Builder.CreateStructGEP(valueDest.getAddress(), 0,
-                                        CharUnits());
+            CGF.Builder.CreateStructGEP(valueDest.getAddress(), 0);
         valueDest = AggValueSlot::forAddr(valueAddr,
                                           valueDest.getQualifiers(),
                                           valueDest.isExternallyDestructed(),
@@ -786,11 +785,12 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
       CGF.CreateAggTemp(atomicType, "atomic-to-nonatomic.temp");
     CGF.EmitAggExpr(E->getSubExpr(), atomicSlot);
 
-    Address valueAddr =
-      Builder.CreateStructGEP(atomicSlot.getAddress(), 0, CharUnits());
+    Address valueAddr = Builder.CreateStructGEP(atomicSlot.getAddress(), 0);
     RValue rvalue = RValue::getAggregate(valueAddr, atomicSlot.isVolatile());
     return EmitFinalDestCopy(valueType, rvalue);
   }
+  case CK_AddressSpaceConversion:
+     return Visit(E->getSubExpr());
 
   case CK_LValueToRValue:
     // If we're loading from a volatile type, force the destination
@@ -801,6 +801,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     }
 
     LLVM_FALLTHROUGH;
+
 
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -858,10 +859,12 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_CopyAndAutoreleaseBlockObject:
   case CK_BuiltinFnToFnPtr:
   case CK_ZeroToOCLOpaqueType:
-  case CK_AddressSpaceConversion:
+
   case CK_IntToOCLSampler:
   case CK_FixedPointCast:
   case CK_FixedPointToBoolean:
+  case CK_FixedPointToIntegral:
+  case CK_IntegralToFixedPoint:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }

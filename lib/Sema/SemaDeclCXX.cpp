@@ -1139,7 +1139,6 @@ static bool checkTupleLikeDecomposition(Sema &S,
         }
       }
     }
-    S.FilterAcceptableTemplateNames(MemberGet);
   }
 
   unsigned I = 0;
@@ -3242,7 +3241,11 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     //   declared] with the same access [as the template].
     if (auto *DG = dyn_cast<CXXDeductionGuideDecl>(NonTemplateMember)) {
       auto *TD = DG->getDeducedTemplate();
-      if (AS != TD->getAccess()) {
+      // Access specifiers are only meaningful if both the template and the
+      // deduction guide are from the same scope.
+      if (AS != TD->getAccess() &&
+          TD->getDeclContext()->getRedeclContext()->Equals(
+              DG->getDeclContext()->getRedeclContext())) {
         Diag(DG->getBeginLoc(), diag::err_deduction_guide_wrong_access);
         Diag(TD->getBeginLoc(), diag::note_deduction_guide_template_access)
             << TD->getAccess();
@@ -3865,7 +3868,7 @@ namespace {
 
 // Callback to only accept typo corrections that can be a valid C++ member
 // intializer: either a non-static field member or a base class.
-class MemInitializerValidatorCCC : public CorrectionCandidateCallback {
+class MemInitializerValidatorCCC final : public CorrectionCandidateCallback {
 public:
   explicit MemInitializerValidatorCCC(CXXRecordDecl *ClassDecl)
       : ClassDecl(ClassDecl) {}
@@ -3877,6 +3880,10 @@ public:
       return isa<TypeDecl>(ND);
     }
     return false;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<MemInitializerValidatorCCC>(*this);
   }
 
 private:
@@ -4019,11 +4026,10 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
 
       // If no results were found, try to correct typos.
       TypoCorrection Corr;
+      MemInitializerValidatorCCC CCC(ClassDecl);
       if (R.empty() && BaseType.isNull() &&
-          (Corr = CorrectTypo(
-               R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-               llvm::make_unique<MemInitializerValidatorCCC>(ClassDecl),
-               CTK_ErrorRecovery, ClassDecl))) {
+          (Corr = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
+                              CCC, CTK_ErrorRecovery, ClassDecl))) {
         if (FieldDecl *Member = Corr.getCorrectionDeclAs<FieldDecl>()) {
           // We have found a non-static data member with a similar
           // name to what was typed; complain and initialize that
@@ -5789,9 +5795,11 @@ void Sema::checkClassLevelDLLAttribute(CXXRecordDecl *Class) {
 
   TemplateSpecializationKind TSK = Class->getTemplateSpecializationKind();
 
-  // Ignore explicit dllexport on explicit class template instantiation declarations.
+  // Ignore explicit dllexport on explicit class template instantiation
+  // declarations, except in MinGW mode.
   if (ClassExported && !ClassAttr->isInherited() &&
-      TSK == TSK_ExplicitInstantiationDeclaration) {
+      TSK == TSK_ExplicitInstantiationDeclaration &&
+      !Context.getTargetInfo().getTriple().isWindowsGNUEnvironment()) {
     Class->dropAttr<DLLExportAttr>();
     return;
   }
@@ -5816,9 +5824,12 @@ void Sema::checkClassLevelDLLAttribute(CXXRecordDecl *Class) {
         continue;
 
       if (MD->isInlined()) {
-        // MinGW does not import or export inline methods.
+        // MinGW does not import or export inline methods. But do it for
+        // template instantiations.
         if (!Context.getTargetInfo().getCXXABI().isMicrosoft() &&
-            !Context.getTargetInfo().getTriple().isWindowsItaniumEnvironment())
+            !Context.getTargetInfo().getTriple().isWindowsItaniumEnvironment() &&
+            TSK != TSK_ExplicitInstantiationDeclaration &&
+            TSK != TSK_ExplicitInstantiationDefinition)
           continue;
 
         // MSVC versions before 2015 don't export the move assignment operators
@@ -8084,14 +8095,14 @@ void Sema::ActOnFinishCXXMemberSpecification(
 /// definition of the class is complete.
 void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   if (ClassDecl->needsImplicitDefaultConstructor()) {
-    ++ASTContext::NumImplicitDefaultConstructors;
+    ++getASTContext().NumImplicitDefaultConstructors;
 
     if (ClassDecl->hasInheritedConstructor())
       DeclareImplicitDefaultConstructor(ClassDecl);
   }
 
   if (ClassDecl->needsImplicitCopyConstructor()) {
-    ++ASTContext::NumImplicitCopyConstructors;
+    ++getASTContext().NumImplicitCopyConstructors;
 
     // If the properties or semantics of the copy constructor couldn't be
     // determined while the class was being declared, force a declaration
@@ -8113,7 +8124,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (getLangOpts().CPlusPlus11 && ClassDecl->needsImplicitMoveConstructor()) {
-    ++ASTContext::NumImplicitMoveConstructors;
+    ++getASTContext().NumImplicitMoveConstructors;
 
     if (ClassDecl->needsOverloadResolutionForMoveConstructor() ||
         ClassDecl->hasInheritedConstructor())
@@ -8121,7 +8132,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (ClassDecl->needsImplicitCopyAssignment()) {
-    ++ASTContext::NumImplicitCopyAssignmentOperators;
+    ++getASTContext().NumImplicitCopyAssignmentOperators;
 
     // If we have a dynamic class, then the copy assignment operator may be
     // virtual, so we have to declare it immediately. This ensures that, e.g.,
@@ -8134,7 +8145,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (getLangOpts().CPlusPlus11 && ClassDecl->needsImplicitMoveAssignment()) {
-    ++ASTContext::NumImplicitMoveAssignmentOperators;
+    ++getASTContext().NumImplicitMoveAssignmentOperators;
 
     // Likewise for the move assignment operator.
     if (ClassDecl->isDynamicClass() ||
@@ -8144,7 +8155,7 @@ void Sema::AddImplicitlyDeclaredMembersToClass(CXXRecordDecl *ClassDecl) {
   }
 
   if (ClassDecl->needsImplicitDestructor()) {
-    ++ASTContext::NumImplicitDestructors;
+    ++getASTContext().NumImplicitDestructors;
 
     // If we have a dynamic class, then the destructor may be virtual, so we
     // have to declare the destructor immediately. This ensures that, e.g., it
@@ -8949,9 +8960,9 @@ void Sema::CheckDeductionGuideDeclarator(Declarator &D, QualType &R,
 /// reopened.
 static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
                                             SourceLocation Loc,
-                                            IdentifierInfo *II, bool *IsInline,
+                                            IdentifierInfo *II, bool &IsInline,
                                             NamespaceDecl *PrevNS) {
-  assert(*IsInline != PrevNS->isInline());
+  assert(IsInline != PrevNS->isInline());
 
   // HACK: Work around a bug in libstdc++4.6's <atomic>, where
   // std::__atomic[0,1,2] are defined as non-inline namespaces, then reopened as
@@ -8959,12 +8970,12 @@ static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
   //
   // We support this just well enough to get that case working; this is not
   // sufficient to support reopening namespaces as inline in general.
-  if (*IsInline && II && II->getName().startswith("__atomic") &&
+  if (IsInline && II && II->getName().startswith("__atomic") &&
       S.getSourceManager().isInSystemHeader(Loc)) {
     // Mark all prior declarations of the namespace as inline.
     for (NamespaceDecl *NS = PrevNS->getMostRecentDecl(); NS;
          NS = NS->getPreviousDecl())
-      NS->setInline(*IsInline);
+      NS->setInline(IsInline);
     // Patch up the lookup table for the containing namespace. This isn't really
     // correct, but it's good enough for this particular case.
     for (auto *I : PrevNS->decls())
@@ -8982,25 +8993,13 @@ static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
     S.Diag(Loc, diag::err_inline_namespace_mismatch);
 
   S.Diag(PrevNS->getLocation(), diag::note_previous_definition);
-  *IsInline = PrevNS->isInline();
+  IsInline = PrevNS->isInline();
 }
 
-/// ActOnStartNamespaceDef - This is called at the start of a namespace
-/// definition.
-Decl *Sema::ActOnStartNamespaceDef(
-    Scope *NamespcScope, SourceLocation InlineLoc, SourceLocation NamespaceLoc,
-    SourceLocation IdentLoc, IdentifierInfo *II, SourceLocation LBrace,
-    const ParsedAttributesView &AttrList, UsingDirectiveDecl *&UD) {
-  SourceLocation StartLoc = InlineLoc.isValid() ? InlineLoc : NamespaceLoc;
-  // For anonymous namespace, take the location of the left brace.
-  SourceLocation Loc = II ? IdentLoc : LBrace;
-  bool IsInline = InlineLoc.isValid();
-  bool IsInvalid = false;
-  bool IsStd = false;
-  bool AddToKnown = false;
-  Scope *DeclRegionScope = NamespcScope->getParent();
-
-  NamespaceDecl *PrevNS = nullptr;
+void Sema::CheckNamespaceDeclaration(
+    IdentifierInfo *II, SourceLocation StartLoc, SourceLocation Loc,
+    bool &IsInline, bool &IsInvalid, bool &IsStd, bool &AddToKnown,
+    NamespaceDecl *&PrevNS) {
   if (II) {
     // C++ [namespace.def]p2:
     //   The identifier in an original-namespace-definition shall not
@@ -9013,7 +9012,7 @@ Decl *Sema::ActOnStartNamespaceDef(
     // Since namespace names are unique in their scope, and we don't
     // look through using directives, just look for any ordinary names
     // as if by qualified name lookup.
-    LookupResult R(*this, II, IdentLoc, LookupOrdinaryName,
+    LookupResult R(*this, II, Loc, LookupOrdinaryName,
                    ForExternalRedeclaration);
     LookupQualifiedName(R, CurContext->getRedeclContext());
     NamedDecl *PrevDecl =
@@ -9023,8 +9022,8 @@ Decl *Sema::ActOnStartNamespaceDef(
     if (PrevNS) {
       // This is an extended namespace definition.
       if (IsInline != PrevNS->isInline())
-        DiagnoseNamespaceInlineMismatch(*this, NamespaceLoc, Loc, II,
-                                        &IsInline, PrevNS);
+        DiagnoseNamespaceInlineMismatch(*this, StartLoc, Loc, II,
+                                        IsInline, PrevNS);
     } else if (PrevDecl) {
       // This is an invalid name redefinition.
       Diag(Loc, diag::err_redefinition_different_kind)
@@ -9068,9 +9067,29 @@ Decl *Sema::ActOnStartNamespaceDef(
     }
 
     if (PrevNS && IsInline != PrevNS->isInline() && !ExitingFragment)
-      DiagnoseNamespaceInlineMismatch(*this, NamespaceLoc, NamespaceLoc, II,
-                                      &IsInline, PrevNS);
+      DiagnoseNamespaceInlineMismatch(*this, StartLoc, StartLoc, II,
+                                      IsInline, PrevNS);
   }
+}
+
+/// ActOnStartNamespaceDef - This is called at the start of a namespace
+/// definition.
+Decl *Sema::ActOnStartNamespaceDef(
+    Scope *NamespcScope, SourceLocation InlineLoc, SourceLocation NamespaceLoc,
+    SourceLocation IdentLoc, IdentifierInfo *II, SourceLocation LBrace,
+    const ParsedAttributesView &AttrList, UsingDirectiveDecl *&UD) {
+  SourceLocation StartLoc = InlineLoc.isValid() ? InlineLoc : NamespaceLoc;
+  // For anonymous namespace, take the location of the left brace.
+  SourceLocation Loc = II ? IdentLoc : LBrace;
+  bool IsInline = InlineLoc.isValid();
+  bool IsInvalid = false;
+  bool IsStd = false;
+  bool AddToKnown = false;
+  Scope *DeclRegionScope = NamespcScope->getParent();
+
+  NamespaceDecl *PrevNS = nullptr;
+  CheckNamespaceDeclaration(II, StartLoc, Loc, IsInline, IsInvalid,
+                            IsStd, AddToKnown, PrevNS);
 
   NamespaceDecl *Namespc = NamespaceDecl::Create(Context, CurContext, IsInline,
                                                  StartLoc, Loc, II, PrevNS);
@@ -9161,6 +9180,9 @@ void Sema::ActOnFinishNamespaceDef(Decl *Dcl, SourceLocation RBrace) {
   PopDeclContext();
   if (Namespc->hasAttr<VisibilityAttr>())
     PopPragmaVisibility(true, RBrace);
+  // If this namespace contains an export-declaration, export it now.
+  if (DeferredExportedNamespaces.erase(Namespc))
+    Dcl->setModuleOwnershipKind(Decl::ModuleOwnershipKind::VisibleWhenImported);
 }
 
 CXXRecordDecl *Sema::getStdBadAlloc() const {
@@ -9480,12 +9502,16 @@ static bool IsUsingDirectiveInToplevelContext(DeclContext *CurContext) {
 namespace {
 
 // Callback to only accept typo corrections that are namespaces.
-class NamespaceValidatorCCC : public CorrectionCandidateCallback {
+class NamespaceValidatorCCC final : public CorrectionCandidateCallback {
 public:
   bool ValidateCandidate(const TypoCorrection &candidate) override {
     if (NamedDecl *ND = candidate.getCorrectionDecl())
       return isa<NamespaceDecl>(ND) || isa<NamespaceAliasDecl>(ND);
     return false;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<NamespaceValidatorCCC>(*this);
   }
 };
 
@@ -9496,16 +9522,15 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                                        SourceLocation IdentLoc,
                                        IdentifierInfo *Ident) {
   R.clear();
-
   // We must not do typo corrections while reflecting.
   // Emitting diagnostics from typo correction breaks the tenative parse
   // we use for reflexpr operand parsing.
   if (S.isReflecting())
     return false;
 
+  NamespaceValidatorCCC CCC{};
   if (TypoCorrection Corrected =
-          S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS,
-                        llvm::make_unique<NamespaceValidatorCCC>(),
+          S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS, CCC,
                         Sema::CTK_ErrorRecovery)) {
     if (DeclContext *DC = S.computeDeclContext(SS, false)) {
       std::string CorrectedStr(Corrected.getAsString(S.getLangOpts()));
@@ -10026,7 +10051,7 @@ static CXXBaseSpecifier *findDirectBaseWithType(CXXRecordDecl *Derived,
 }
 
 namespace {
-class UsingValidatorCCC : public CorrectionCandidateCallback {
+class UsingValidatorCCC final : public CorrectionCandidateCallback {
 public:
   UsingValidatorCCC(bool HasTypenameKeyword, bool IsInstantiation,
                     NestedNameSpecifier *NNS, CXXRecordDecl *RequireMemberOf)
@@ -10094,6 +10119,10 @@ public:
       return HasTypenameKeyword || !IsInstantiation;
 
     return !HasTypenameKeyword;
+  }
+
+  std::unique_ptr<CorrectionCandidateCallback> clone() override {
+    return llvm::make_unique<UsingValidatorCCC>(*this);
   }
 
 private:
@@ -10252,12 +10281,11 @@ NamedDecl *Sema::BuildUsingDeclaration(
         isa<TranslationUnitDecl>(LookupContext) &&
         getSourceManager().isInSystemHeader(UsingLoc))
       return nullptr;
-    if (TypoCorrection Corrected = CorrectTypo(
-            R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-            llvm::make_unique<UsingValidatorCCC>(
-                HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
-                dyn_cast<CXXRecordDecl>(CurContext)),
-            CTK_ErrorRecovery)) {
+    UsingValidatorCCC CCC(HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
+                          dyn_cast<CXXRecordDecl>(CurContext));
+    if (TypoCorrection Corrected =
+            CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS, CCC,
+                        CTK_ErrorRecovery)) {
       // We reject candidates where DroppedSpecifier == true, hence the
       // literal '0' below.
       diagnoseTypo(Corrected, PDiag(diag::err_no_member_suggest)
@@ -11184,7 +11212,7 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   DefaultCon->setTrivial(ClassDecl->hasTrivialDefaultConstructor());
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitDefaultConstructorsDeclared;
+  ++getASTContext().NumImplicitDefaultConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, DefaultCon);
@@ -11458,7 +11486,7 @@ CXXDestructorDecl *Sema::DeclareImplicitDestructor(CXXRecordDecl *ClassDecl) {
                                 ClassDecl->hasTrivialDestructorForCall());
 
   // Note that we have declared this destructor.
-  ++ASTContext::NumImplicitDestructorsDeclared;
+  ++getASTContext().NumImplicitDestructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, Destructor);
@@ -12083,7 +12111,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
       : ClassDecl->hasTrivialCopyAssignment());
 
   // Note that we have added this copy-assignment operator.
-  ++ASTContext::NumImplicitCopyAssignmentOperatorsDeclared;
+  ++getASTContext().NumImplicitCopyAssignmentOperatorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, CopyAssignment);
@@ -12405,7 +12433,7 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
       : ClassDecl->hasTrivialMoveAssignment());
 
   // Note that we have added this copy-assignment operator.
-  ++ASTContext::NumImplicitMoveAssignmentOperatorsDeclared;
+  ++getASTContext().NumImplicitMoveAssignmentOperatorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, MoveAssignment);
@@ -12787,7 +12815,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
            : ClassDecl->hasTrivialCopyConstructorForCall()));
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitCopyConstructorsDeclared;
+  ++getASTContext().NumImplicitCopyConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, CopyConstructor);
@@ -12916,7 +12944,7 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
            : ClassDecl->hasTrivialMoveConstructorForCall()));
 
   // Note that we have declared this constructor.
-  ++ASTContext::NumImplicitMoveConstructorsDeclared;
+  ++getASTContext().NumImplicitMoveConstructorsDeclared;
 
   Scope *S = getScopeForContext(ClassDecl);
   CheckImplicitSpecialMemberDeclaration(S, MoveConstructor);

@@ -708,7 +708,8 @@ private:
   /// must be the same.
   /// \param Name Name of the variable.
   llvm::Constant *getOrCreateInternalVariable(llvm::Type *Ty,
-                                              const llvm::Twine &Name);
+                                              const llvm::Twine &Name,
+                                              unsigned AddressSpace = 0);
 
   /// Set of threadprivate variables with the generated initializer.
   llvm::StringSet<> ThreadPrivateWithDefinition;
@@ -761,11 +762,20 @@ private:
                             llvm::Function *TaskFunction, QualType SharedsTy,
                             Address Shareds, const OMPTaskDataTy &Data);
 
+  /// Returns default address space for the constant firstprivates, 0 by
+  /// default.
+  virtual unsigned getDefaultFirstprivateAddressSpace() const { return 0; }
+
 public:
   explicit CGOpenMPRuntime(CodeGenModule &CGM)
       : CGOpenMPRuntime(CGM, ".", ".") {}
   virtual ~CGOpenMPRuntime() {}
   virtual void clear();
+
+  /// Checks if the \p Body is the \a CompoundStmt and returns its child
+  /// statement iff there is only one that is not evaluatable at the compile
+  /// time.
+  static const Stmt *getSingleCompoundChild(ASTContext &Ctx, const Stmt *Body);
 
   /// Get the platform-specific name separator.
   std::string getName(ArrayRef<StringRef> Parts) const;
@@ -1224,7 +1234,7 @@ public:
   /// \param RHSExprs List of RHS in \a ReductionOps reduction operations.
   /// \param ReductionOps List of reduction operations in form 'LHS binop RHS'
   /// or 'operator binop(LHS, RHS)'.
-  llvm::Function *emitReductionFunction(CodeGenModule &CGM, SourceLocation Loc,
+  llvm::Function *emitReductionFunction(SourceLocation Loc,
                                         llvm::Type *ArgsType,
                                         ArrayRef<const Expr *> Privates,
                                         ArrayRef<const Expr *> LHSExprs,
@@ -1414,6 +1424,11 @@ public:
   virtual void registerTargetGlobalVariable(const VarDecl *VD,
                                             llvm::Constant *Addr);
 
+  /// Registers provided target firstprivate variable as global on the
+  /// target.
+  llvm::Constant *registerTargetFirstprivateCopy(CodeGenFunction &CGF,
+                                                 const VarDecl *VD);
+
   /// Emit the global \a GD if it is meaningful for the target. Returns
   /// if it was emitted successfully.
   /// \param GD Global to scan.
@@ -1555,7 +1570,7 @@ public:
   /// schedule clause.
   virtual void getDefaultScheduleAndChunk(CodeGenFunction &CGF,
       const OMPLoopDirective &S, OpenMPScheduleClauseKind &ScheduleKind,
-      const Expr *&ChunkExpr) const {}
+      const Expr *&ChunkExpr) const;
 
   /// Emits call of the outlined function with the provided arguments,
   /// translating these arguments to correct target-specific arguments.
@@ -1587,8 +1602,12 @@ public:
 
   /// Perform check on requires decl to ensure that target architecture
   /// supports unified addressing
-  virtual void checkArchForUnifiedAddressing(CodeGenModule &CGM,
-                                             const OMPRequiresDecl *D) const {}
+  virtual void checkArchForUnifiedAddressing(const OMPRequiresDecl *D) const {}
+
+  /// Checks if the variable has associated OMPAllocateDeclAttr attribute with
+  /// the predefined allocator and translates it into the corresponding address
+  /// space.
+  virtual bool hasAllocateAttributeForGlobalVar(const VarDecl *VD, LangAS &AS);
 };
 
 /// Class supports emissionof SIMD-only code.
@@ -2153,6 +2172,12 @@ public:
   /// \param TargetParam Corresponding target-specific parameter.
   Address getParameterAddress(CodeGenFunction &CGF, const VarDecl *NativeParam,
                               const VarDecl *TargetParam) const override;
+
+  /// Gets the OpenMP-specific address of the local variable.
+  Address getAddressOfLocalVariable(CodeGenFunction &CGF,
+                                    const VarDecl *VD) override {
+    return Address::invalid();
+  }
 };
 
 } // namespace CodeGen

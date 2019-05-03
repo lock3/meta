@@ -349,10 +349,6 @@ sema::CompoundScopeInfo &Sema::getCurCompoundScope() const {
   return getCurFunction()->CompoundScopes.back();
 }
 
-bool Sema::isCurCompoundStmtAStmtExpr() const {
-  return getCurCompoundScope().IsStmtExpr;
-}
-
 StmtResult Sema::ActOnCompoundStmt(SourceLocation L, SourceLocation R,
                                    ArrayRef<Stmt *> Elts, bool isStmtExpr) {
   const unsigned NumElts = Elts.size();
@@ -945,7 +941,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     bool ShouldCheckConstantCond = HasConstantCond;
 
     // Sort all the scalar case values so we can easily detect duplicates.
-    std::stable_sort(CaseVals.begin(), CaseVals.end(), CmpCaseVals);
+    llvm::stable_sort(CaseVals, CmpCaseVals);
 
     if (!CaseVals.empty()) {
       for (unsigned i = 0, e = CaseVals.size(); i != e; ++i) {
@@ -993,7 +989,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     if (!CaseRanges.empty()) {
       // Sort all the case ranges by their low value so we can easily detect
       // overlaps between ranges.
-      std::stable_sort(CaseRanges.begin(), CaseRanges.end());
+      llvm::stable_sort(CaseRanges);
 
       // Scan the ranges, computing the high values and removing empty ranges.
       std::vector<llvm::APSInt> HiVals;
@@ -1112,7 +1108,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
         AdjustAPSInt(Val, CondWidth, CondIsSigned);
         EnumVals.push_back(std::make_pair(Val, EDI));
       }
-      std::stable_sort(EnumVals.begin(), EnumVals.end(), CmpEnumVals);
+      llvm::stable_sort(EnumVals, CmpEnumVals);
       auto EI = EnumVals.begin(), EIEnd =
         std::unique(EnumVals.begin(), EnumVals.end(), EqEnumVals);
 
@@ -1263,7 +1259,7 @@ Sema::DiagnoseAssignmentEnum(QualType DstType, QualType SrcType,
           }
           if (EnumVals.empty())
             return;
-          std::stable_sort(EnumVals.begin(), EnumVals.end(), CmpEnumVals);
+          llvm::stable_sort(EnumVals, CmpEnumVals);
           EnumValsTy::iterator EIend =
               std::unique(EnumVals.begin(), EnumVals.end(), EqEnumVals);
 
@@ -5082,12 +5078,10 @@ StmtResult Sema::ActOnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
                                   ArrayRef<Stmt *> Handlers) {
   // Don't report an error if 'try' is used in system headers.
   if (!getLangOpts().CXXExceptions &&
-      !getSourceManager().isInSystemHeader(TryLoc) &&
-      (!getLangOpts().OpenMPIsDevice ||
-       !getLangOpts().OpenMPHostCXXExceptions ||
-       isInOpenMPTargetExecutionDirective() ||
-       isInOpenMPDeclareTargetContext()))
-    Diag(TryLoc, diag::err_exceptions_disabled) << "try";
+      !getSourceManager().isInSystemHeader(TryLoc) && !getLangOpts().CUDA) {
+    // Delay error emission for the OpenMP device code.
+    targetDiag(TryLoc, diag::err_exceptions_disabled) << "try";
+  }
 
   // Exceptions aren't allowed in CUDA device code.
   if (getLangOpts().CUDA)

@@ -23,6 +23,7 @@ public:
   explicit Linker(const ToolChain &TC);
   bool isLinkJob() const override;
   bool hasIntegratedCPP() const override;
+  std::string getLinkerPath(const llvm::opt::ArgList &Args) const;
   void ConstructJob(Compilation &C, const JobAction &JA,
                     const InputInfo &Output, const InputInfoList &Inputs,
                     const llvm::opt::ArgList &TCArgs,
@@ -64,7 +65,6 @@ private:
       llvm::opt::ArgStringList &CC1Args) const override;
   void AddCXXStdlibLibArgs(const llvm::opt::ArgList &Args,
                            llvm::opt::ArgStringList &CmdArgs) const override;
-  std::string getThreadModel() const override;
 
   const char *getDefaultLinker() const override { return "wasm-ld"; }
 

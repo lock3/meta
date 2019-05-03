@@ -72,6 +72,17 @@ constexpr auto fragment = __fragment struct X {
       return t.y;
     }
   };
+
+public:
+  enum enum_a {
+    EN_A = 1,
+    EN_B = 3
+  };
+
+  enum class enum_class_a {
+    EN_A = 5,
+    EN_B = 10
+  };
 };
 
 class Foo {
@@ -129,6 +140,10 @@ int main() {
   }
 
   assert(InternalFragClass::instance_count == 0);
+  assert(Foo::EN_A == 1);
+  assert(Foo::EN_B == 3);
+  assert(Foo::enum_class_a::EN_A == static_cast<Foo::enum_class_a>(5));
+  assert(Foo::enum_class_a::EN_B == static_cast<Foo::enum_class_a>(10));
 
   return 0;
 };

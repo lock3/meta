@@ -1598,8 +1598,8 @@ void CXXRecordDecl::removeConversion(const NamedDecl *ConvDecl) {
   for (unsigned I = 0, E = Convs.size(); I != E; ++I) {
     if (Convs[I].getDecl() == ConvDecl) {
       Convs.erase(I);
-      assert(std::find(Convs.begin(), Convs.end(), ConvDecl) == Convs.end()
-             && "conversion was found multiple times in unresolved set");
+      assert(llvm::find(Convs, ConvDecl) == Convs.end() &&
+             "conversion was found multiple times in unresolved set");
       return;
     }
   }
@@ -2597,59 +2597,6 @@ NamespaceDecl *UsingDirectiveDecl::getNominatedNamespace() {
   if (auto *NA = dyn_cast_or_null<NamespaceAliasDecl>(NominatedNamespace))
     return NA->getNamespace();
   return cast_or_null<NamespaceDecl>(NominatedNamespace);
-}
-
-NamespaceDecl::NamespaceDecl(ASTContext &C, DeclContext *DC, bool Inline,
-                             SourceLocation StartLoc, SourceLocation IdLoc,
-                             IdentifierInfo *Id, NamespaceDecl *PrevDecl)
-    : NamedDecl(Namespace, DC, IdLoc, Id), DeclContext(Namespace),
-      redeclarable_base(C), LocStart(StartLoc),
-      AnonOrFirstNamespaceAndInline(nullptr, Inline) {
-  setPreviousDecl(PrevDecl);
-
-  if (PrevDecl)
-    AnonOrFirstNamespaceAndInline.setPointer(PrevDecl->getOriginalNamespace());
-}
-
-NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
-                                     bool Inline, SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
-                                     NamespaceDecl *PrevDecl) {
-  return new (C, DC) NamespaceDecl(C, DC, Inline, StartLoc, IdLoc, Id,
-                                   PrevDecl);
-}
-
-NamespaceDecl *NamespaceDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) NamespaceDecl(C, nullptr, false, SourceLocation(),
-                                   SourceLocation(), nullptr, nullptr);
-}
-
-NamespaceDecl *NamespaceDecl::getOriginalNamespace() {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-const NamespaceDecl *NamespaceDecl::getOriginalNamespace() const {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-bool NamespaceDecl::isOriginalNamespace() const { return isFirstDecl(); }
-
-NamespaceDecl *NamespaceDecl::getNextRedeclarationImpl() {
-  return getNextRedeclaration();
-}
-
-NamespaceDecl *NamespaceDecl::getPreviousDeclImpl() {
-  return getPreviousDecl();
-}
-
-NamespaceDecl *NamespaceDecl::getMostRecentDeclImpl() {
-  return getMostRecentDecl();
 }
 
 void NamespaceAliasDecl::anchor() {}

@@ -611,6 +611,7 @@ TEST_F(FormatTestObjC, FormatObjCMethodDeclarations) {
 
 TEST_F(FormatTestObjC, FormatObjCMethodExpr) {
   verifyFormat("[foo bar:baz];");
+  verifyFormat("[foo bar]->baz;");
   verifyFormat("return [foo bar:baz];");
   verifyFormat("return (a)[foo bar:baz];");
   verifyFormat("f([foo bar:baz]);");
@@ -1326,6 +1327,58 @@ TEST_F(FormatTestObjC, AlwaysBreakBeforeMultilineStrings) {
                "        rr:42\n"
                "    ssssss:@\"ee\"\n"
                "           @\"fffff\"];");
+}
+
+TEST_F(FormatTestObjC, DisambiguatesCallsFromCppLambdas) {
+  verifyFormat("x = ([a foo:bar] && b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] + b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] + !b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] + ~b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] - b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] / b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] % b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] | b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] || b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] && b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] == b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] != b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] <= b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] >= b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] << b->c == 'd');");
+  verifyFormat("x = ([a foo:bar] ? b->c == 'd' : 'e');");
+  // FIXME: The following are wrongly classified as C++ lambda expressions.
+  // For example this code:
+  //   x = ([a foo:bar] & b->c == 'd');
+  // is formatted as:
+  //   x = ([a foo:bar] & b -> c == 'd');
+  // verifyFormat("x = ([a foo:bar] & b->c == 'd');");
+  // verifyFormat("x = ([a foo:bar] > b->c == 'd');");
+  // verifyFormat("x = ([a foo:bar] < b->c == 'd');");
+  // verifyFormat("x = ([a foo:bar] >> b->c == 'd');");
+}
+
+TEST_F(FormatTestObjC,  DisambiguatesCallsFromStructuredBindings) {
+  verifyFormat("int f() {\n"
+               "  if (a && [f arg])\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  if (a & [f arg])\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  for (auto &[elem] : list)\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  for (auto &&[elem] : list)\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat(
+      "int f() {\n"
+      "  for (auto /**/ const /**/ volatile /**/ && /**/ [elem] : list)\n"
+      "    return 0;\n"
+      "}");
 }
 
 } // end namespace

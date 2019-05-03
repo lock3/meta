@@ -115,6 +115,11 @@ bool X86TargetInfo::initFeatureMap(
   if (Kind != CK_Lakemont)
     setFeatureEnabledImpl(Features, "x87", true);
 
+  // Enable cmpxchg8 for i586 and greater CPUs. Include generic for backwards
+  // compatibility.
+  if (Kind >= CK_i586 || Kind == CK_Generic)
+    setFeatureEnabledImpl(Features, "cx8", true);
+
   switch (Kind) {
   case CK_Generic:
   case CK_i386:
@@ -122,6 +127,7 @@ bool X86TargetInfo::initFeatureMap(
   case CK_i586:
   case CK_Pentium:
   case CK_PentiumPro:
+  case CK_i686:
   case CK_Lakemont:
     break;
 
@@ -214,11 +220,12 @@ bool X86TargetInfo::initFeatureMap(
     setFeatureEnabledImpl(Features, "ssse3", true);
     setFeatureEnabledImpl(Features, "sahf", true);
     LLVM_FALLTHROUGH;
+  case CK_Nocona:
+    setFeatureEnabledImpl(Features, "cx16", true);
+    LLVM_FALLTHROUGH;
   case CK_Yonah:
   case CK_Prescott:
-  case CK_Nocona:
     setFeatureEnabledImpl(Features, "sse3", true);
-    setFeatureEnabledImpl(Features, "cx16", true);
     LLVM_FALLTHROUGH;
   case CK_PentiumM:
   case CK_Pentium4:
@@ -347,6 +354,11 @@ bool X86TargetInfo::initFeatureMap(
     setFeatureEnabledImpl(Features, "sahf", true);
     break;
 
+  case CK_ZNVER2:
+    setFeatureEnabledImpl(Features, "clwb", true);
+    setFeatureEnabledImpl(Features, "rdpid", true);
+    setFeatureEnabledImpl(Features, "wbnoinvd", true);
+    LLVM_FALLTHROUGH;
   case CK_ZNVER1:
     setFeatureEnabledImpl(Features, "adx", true);
     setFeatureEnabledImpl(Features, "aes", true);
@@ -415,23 +427,20 @@ bool X86TargetInfo::initFeatureMap(
   // Enable popcnt if sse4.2 is enabled and popcnt is not explicitly disabled.
   auto I = Features.find("sse4.2");
   if (I != Features.end() && I->getValue() &&
-      std::find(FeaturesVec.begin(), FeaturesVec.end(), "-popcnt") ==
-          FeaturesVec.end())
+      llvm::find(FeaturesVec, "-popcnt") == FeaturesVec.end())
     Features["popcnt"] = true;
 
   // Enable prfchw if 3DNow! is enabled and prfchw is not explicitly disabled.
   I = Features.find("3dnow");
   if (I != Features.end() && I->getValue() &&
-      std::find(FeaturesVec.begin(), FeaturesVec.end(), "-prfchw") ==
-          FeaturesVec.end())
+      llvm::find(FeaturesVec, "-prfchw") == FeaturesVec.end())
     Features["prfchw"] = true;
 
   // Additionally, if SSE is enabled and mmx is not explicitly disabled,
   // then enable MMX.
   I = Features.find("sse");
   if (I != Features.end() && I->getValue() &&
-      std::find(FeaturesVec.begin(), FeaturesVec.end(), "-mmx") ==
-          FeaturesVec.end())
+      llvm::find(FeaturesVec, "-mmx") == FeaturesVec.end())
     Features["mmx"] = true;
 
   return true;
@@ -770,6 +779,8 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
       HasMOVBE = true;
     } else if (Feature == "+sgx") {
       HasSGX = true;
+    } else if (Feature == "+cx8") {
+      HasCX8 = true;
     } else if (Feature == "+cx16") {
       HasCX16 = true;
     } else if (Feature == "+fxsr") {
@@ -864,6 +875,9 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
 /// definitions for this particular subtarget.
 void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
                                      MacroBuilder &Builder) const {
+  // Inline assembly supports X86 flag outputs. 
+  Builder.defineMacro("__GCC_ASM_FLAG_OUTPUTS__");
+
   std::string CodeModel = getTargetOpts().CodeModel;
   if (CodeModel == "default")
     CodeModel = "small";
@@ -917,6 +931,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__tune_pentium2__");
     LLVM_FALLTHROUGH;
   case CK_PentiumPro:
+  case CK_i686:
     defineCPUMacros(Builder, "i686");
     defineCPUMacros(Builder, "pentiumpro");
     break;
@@ -1026,6 +1041,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   case CK_ZNVER1:
     defineCPUMacros(Builder, "znver1");
+    break;
+  case CK_ZNVER2:
+    defineCPUMacros(Builder, "znver2");
     break;
   case CK_Geode:
     defineCPUMacros(Builder, "geode");
@@ -1261,14 +1279,14 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   }
 
-  if (CPU >= CK_i486) {
+  if (CPU >= CK_i486 || CPU == CK_Generic) {
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
   }
-  if (CPU >= CK_i586)
+  if (HasCX8)
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
-  if (HasCX16)
+  if (HasCX16 && getTriple().getArch() == llvm::Triple::x86_64)
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16");
 
   if (HasFloat128)
@@ -1380,6 +1398,7 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("clflushopt", HasCLFLUSHOPT)
       .Case("clwb", HasCLWB)
       .Case("clzero", HasCLZERO)
+      .Case("cx8", HasCX8)
       .Case("cx16", HasCX16)
       .Case("f16c", HasF16C)
       .Case("fma", HasFMA)
@@ -1526,18 +1545,6 @@ void X86TargetInfo::getCPUSpecificCPUDispatchFeatures(
   WholeList.split(Features, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 }
 
-std::string X86TargetInfo::getCPUKindCanonicalName(CPUKind Kind) const {
-  switch (Kind) {
-  case CK_Generic:
-    return "";
-#define PROC(ENUM, STRING, IS64BIT)                                            \
-  case CK_##ENUM:                                                              \
-    return STRING;
-#include "clang/Basic/X86Target.def"
-  }
-  llvm_unreachable("Invalid CPUKind");
-}
-
 // We can't use a generic validation scheme for the cpus accepted here
 // versus subtarget cpus accepted in the target attribute because the
 // variables intitialized by the runtime only support the below currently
@@ -1551,6 +1558,40 @@ bool X86TargetInfo::validateCpuIs(StringRef FeatureStr) const {
 #define X86_CPU_SUBTYPE_COMPAT(ARCHNAME, ENUM, STR) .Case(STR, true)
 #include "llvm/Support/X86TargetParser.def"
       .Default(false);
+}
+
+static unsigned matchAsmCCConstraint(const char *&Name) {
+  auto RV = llvm::StringSwitch<unsigned>(Name)
+                .Case("@cca", 4)
+                .Case("@ccae", 5)
+                .Case("@ccb", 4)
+                .Case("@ccbe", 5)
+                .Case("@ccc", 4)
+                .Case("@cce", 4)
+                .Case("@ccz", 4)
+                .Case("@ccg", 4)
+                .Case("@ccge", 5)
+                .Case("@ccl", 4)
+                .Case("@ccle", 5)
+                .Case("@ccna", 5)
+                .Case("@ccnae", 6)
+                .Case("@ccnb", 5)
+                .Case("@ccnbe", 6)
+                .Case("@ccnc", 5)
+                .Case("@ccne", 5)
+                .Case("@ccnz", 5)
+                .Case("@ccng", 5)
+                .Case("@ccnge", 6)
+                .Case("@ccnl", 5)
+                .Case("@ccnle", 6)
+                .Case("@ccno", 5)
+                .Case("@ccnp", 5)
+                .Case("@ccns", 5)
+                .Case("@cco", 4)
+                .Case("@ccp", 4)
+                .Case("@ccs", 4)
+                .Default(0);
+  return RV;
 }
 
 bool X86TargetInfo::validateAsmConstraint(
@@ -1635,6 +1676,14 @@ bool X86TargetInfo::validateAsmConstraint(
   case 'C': // SSE floating point constant.
   case 'G': // x87 floating point constant.
     return true;
+  case '@':
+    // CC condition changes.
+    if (auto Len = matchAsmCCConstraint(Name)) {
+      Name += Len - 1;
+      Info.setAllowsRegister();
+      return true;
+    }
+    return false;
   }
 }
 
@@ -1706,6 +1755,13 @@ bool X86TargetInfo::validateOperandSize(StringRef Constraint,
 
 std::string X86TargetInfo::convertConstraint(const char *&Constraint) const {
   switch (*Constraint) {
+  case '@':
+    if (auto Len = matchAsmCCConstraint(Constraint)) {
+      std::string Converted = "{" + std::string(Constraint, Len) + "}";
+      Constraint += Len - 1;
+      return Converted;
+    }
+    return std::string(1, *Constraint);
   case 'a':
     return std::string("{ax}");
   case 'b':
@@ -1768,10 +1824,9 @@ void X86TargetInfo::fillValidCPUList(SmallVectorImpl<StringRef> &Values) const {
 #define PROC(ENUM, STRING, IS64BIT)                                            \
   if (IS64BIT || getTriple().getArch() == llvm::Triple::x86)                   \
     Values.emplace_back(STRING);
-  // Go through CPUKind checking to ensure that the alias is de-aliased and
-  // 64 bit-ness is checked.
+  // For aliases we need to lookup the CPUKind to check get the 64-bit ness.
 #define PROC_ALIAS(ENUM, ALIAS)                                                \
-  if (checkCPUKind(getCPUKind(ALIAS)))                                         \
+  if (checkCPUKind(CK_##ENUM))                                                      \
     Values.emplace_back(ALIAS);
 #include "clang/Basic/X86Target.def"
 }
