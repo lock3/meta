@@ -964,8 +964,6 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   TypeSourceInfo* TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
 
-  // FIXME: Check for redeclaration.
-
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
       D->getStorageClass(), D->isInlineSpecified(), D->hasWrittenPrototype(),
@@ -1034,8 +1032,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  // FIXME: Check for re-declaration.
 
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
@@ -1212,8 +1208,6 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
   Sema &SemaRef = Ctx.getSema();
 
   bool Invalid = false;
-
-  // FIXME: Do a lookup for previous declarations.
 
   CXXRecordDecl *Class;
   if (D->isInjectedClassName()) {
