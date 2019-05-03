@@ -339,6 +339,18 @@ public:
   /// isFunctionScope() - Return true if this scope is a function scope.
   bool isFunctionScope() const { return (getFlags() & Scope::FnScope); }
 
+  /// isMetaFunctionScope() - Return true if this scope is a function scope
+  /// for a meta function.
+  bool isMetaFunctionScope() const {
+    if (!isFunctionScope())
+      return false;
+
+    if (auto *FnDecl = dyn_cast<FunctionDecl>(Entity))
+      return FnDecl->isMetaprogram();
+
+    return false;
+  }
+
   /// isClassScope - Return true if this scope is a class/struct/union scope.
   bool isClassScope() const {
     return (getFlags() & Scope::ClassScope);

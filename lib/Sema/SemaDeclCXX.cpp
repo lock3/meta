@@ -8960,9 +8960,9 @@ void Sema::CheckDeductionGuideDeclarator(Declarator &D, QualType &R,
 /// reopened.
 static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
                                             SourceLocation Loc,
-                                            IdentifierInfo *II, bool *IsInline,
+                                            IdentifierInfo *II, bool &IsInline,
                                             NamespaceDecl *PrevNS) {
-  assert(*IsInline != PrevNS->isInline());
+  assert(IsInline != PrevNS->isInline());
 
   // HACK: Work around a bug in libstdc++4.6's <atomic>, where
   // std::__atomic[0,1,2] are defined as non-inline namespaces, then reopened as
@@ -8970,12 +8970,12 @@ static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
   //
   // We support this just well enough to get that case working; this is not
   // sufficient to support reopening namespaces as inline in general.
-  if (*IsInline && II && II->getName().startswith("__atomic") &&
+  if (IsInline && II && II->getName().startswith("__atomic") &&
       S.getSourceManager().isInSystemHeader(Loc)) {
     // Mark all prior declarations of the namespace as inline.
     for (NamespaceDecl *NS = PrevNS->getMostRecentDecl(); NS;
          NS = NS->getPreviousDecl())
-      NS->setInline(*IsInline);
+      NS->setInline(IsInline);
     // Patch up the lookup table for the containing namespace. This isn't really
     // correct, but it's good enough for this particular case.
     for (auto *I : PrevNS->decls())
@@ -8993,25 +8993,13 @@ static void DiagnoseNamespaceInlineMismatch(Sema &S, SourceLocation KeywordLoc,
     S.Diag(Loc, diag::err_inline_namespace_mismatch);
 
   S.Diag(PrevNS->getLocation(), diag::note_previous_definition);
-  *IsInline = PrevNS->isInline();
+  IsInline = PrevNS->isInline();
 }
 
-/// ActOnStartNamespaceDef - This is called at the start of a namespace
-/// definition.
-Decl *Sema::ActOnStartNamespaceDef(
-    Scope *NamespcScope, SourceLocation InlineLoc, SourceLocation NamespaceLoc,
-    SourceLocation IdentLoc, IdentifierInfo *II, SourceLocation LBrace,
-    const ParsedAttributesView &AttrList, UsingDirectiveDecl *&UD) {
-  SourceLocation StartLoc = InlineLoc.isValid() ? InlineLoc : NamespaceLoc;
-  // For anonymous namespace, take the location of the left brace.
-  SourceLocation Loc = II ? IdentLoc : LBrace;
-  bool IsInline = InlineLoc.isValid();
-  bool IsInvalid = false;
-  bool IsStd = false;
-  bool AddToKnown = false;
-  Scope *DeclRegionScope = NamespcScope->getParent();
-
-  NamespaceDecl *PrevNS = nullptr;
+void Sema::CheckNamespaceDeclaration(
+    IdentifierInfo *II, SourceLocation StartLoc, SourceLocation Loc,
+    bool &IsInline, bool &IsInvalid, bool &IsStd, bool &AddToKnown,
+    NamespaceDecl *&PrevNS) {
   if (II) {
     // C++ [namespace.def]p2:
     //   The identifier in an original-namespace-definition shall not
@@ -9024,7 +9012,7 @@ Decl *Sema::ActOnStartNamespaceDef(
     // Since namespace names are unique in their scope, and we don't
     // look through using directives, just look for any ordinary names
     // as if by qualified name lookup.
-    LookupResult R(*this, II, IdentLoc, LookupOrdinaryName,
+    LookupResult R(*this, II, Loc, LookupOrdinaryName,
                    ForExternalRedeclaration);
     LookupQualifiedName(R, CurContext->getRedeclContext());
     NamedDecl *PrevDecl =
@@ -9034,8 +9022,8 @@ Decl *Sema::ActOnStartNamespaceDef(
     if (PrevNS) {
       // This is an extended namespace definition.
       if (IsInline != PrevNS->isInline())
-        DiagnoseNamespaceInlineMismatch(*this, NamespaceLoc, Loc, II,
-                                        &IsInline, PrevNS);
+        DiagnoseNamespaceInlineMismatch(*this, StartLoc, Loc, II,
+                                        IsInline, PrevNS);
     } else if (PrevDecl) {
       // This is an invalid name redefinition.
       Diag(Loc, diag::err_redefinition_different_kind)
@@ -9079,9 +9067,29 @@ Decl *Sema::ActOnStartNamespaceDef(
     }
 
     if (PrevNS && IsInline != PrevNS->isInline() && !ExitingFragment)
-      DiagnoseNamespaceInlineMismatch(*this, NamespaceLoc, NamespaceLoc, II,
-                                      &IsInline, PrevNS);
+      DiagnoseNamespaceInlineMismatch(*this, StartLoc, StartLoc, II,
+                                      IsInline, PrevNS);
   }
+}
+
+/// ActOnStartNamespaceDef - This is called at the start of a namespace
+/// definition.
+Decl *Sema::ActOnStartNamespaceDef(
+    Scope *NamespcScope, SourceLocation InlineLoc, SourceLocation NamespaceLoc,
+    SourceLocation IdentLoc, IdentifierInfo *II, SourceLocation LBrace,
+    const ParsedAttributesView &AttrList, UsingDirectiveDecl *&UD) {
+  SourceLocation StartLoc = InlineLoc.isValid() ? InlineLoc : NamespaceLoc;
+  // For anonymous namespace, take the location of the left brace.
+  SourceLocation Loc = II ? IdentLoc : LBrace;
+  bool IsInline = InlineLoc.isValid();
+  bool IsInvalid = false;
+  bool IsStd = false;
+  bool AddToKnown = false;
+  Scope *DeclRegionScope = NamespcScope->getParent();
+
+  NamespaceDecl *PrevNS = nullptr;
+  CheckNamespaceDeclaration(II, StartLoc, Loc, IsInline, IsInvalid,
+                            IsStd, AddToKnown, PrevNS);
 
   NamespaceDecl *Namespc = NamespaceDecl::Create(Context, CurContext, IsInline,
                                                  StartLoc, Loc, II, PrevNS);

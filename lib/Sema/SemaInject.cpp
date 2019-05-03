@@ -794,13 +794,22 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
 Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
+  SourceLocation &&NamespaceLoc = D->getBeginLoc();
+  SourceLocation &&Loc = D->getLocation();
+
+  bool IsInline = D->isInline();
+  bool IsInvalid = false;
+  bool IsStd = false;
+  bool AddToKnown = false;
+  NamespaceDecl *PrevNS = nullptr;
+  SemaRef.CheckNamespaceDeclaration(
+      D->getIdentifier(), NamespaceLoc, Loc,
+      IsInline, IsInvalid, IsStd, AddToKnown, PrevNS);
+
   // Build the namespace.
-  //
-  // FIXME: Search for a previous declaration of the namespace so that they
-  // can be stitched together (i.e., redo lookup).
   NamespaceDecl *Ns = NamespaceDecl::Create(
-      getContext(), Owner, D->isInline(), D->getLocation(), D->getLocation(),
-      D->getIdentifier(), /*PrevDecl=*/nullptr);
+      getContext(), Owner, IsInline, NamespaceLoc,
+      Loc, D->getIdentifier(), PrevNS);
   AddDeclSubstitution(D, Ns);
 
   Owner->addDecl(Ns);

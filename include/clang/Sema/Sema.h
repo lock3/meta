@@ -4747,6 +4747,11 @@ public:
 
   //===---------------------------- C++ Features --------------------------===//
 
+  void CheckNamespaceDeclaration(IdentifierInfo *II, SourceLocation StartLoc,
+                                 SourceLocation Loc, bool &IsInline,
+                                 bool &IsInvalid, bool &IsStd, bool &AddToKnown,
+                                 NamespaceDecl *&PrevNS);
+
   // Act on C++ namespaces
   Decl *ActOnStartNamespaceDef(Scope *S, SourceLocation InlineLoc,
                                SourceLocation NamespaceLoc,

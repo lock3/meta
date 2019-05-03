@@ -145,7 +145,8 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
 
   if (getCurScope()->isClassScope() || getCurScope()->isTemplateParamScope() ||
       getCurScope()->isInObjcMethodScope() || getCurScope()->getBlockParent() ||
-      getCurScope()->getFnParent()) {
+      (getCurScope()->getFnParent() &&
+       !getCurScope()->getFnParent()->isMetaFunctionScope())) {
     Diag(T.getOpenLocation(), diag::err_namespace_nonnamespace_scope);
     SkipUntil(tok::r_brace);
     return nullptr;
