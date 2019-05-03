@@ -2490,8 +2490,6 @@ def err_ambiguous_required_name : Error<
     "Required %select{type|declarator}0 cannot be ambiguous.">;
 def err_required_name_not_found : Error<
     "Required %select{type|declarator}0 not found.">;
-def err_required_function : Error<
-    "Required declarator cannot be a function.">;
 def err_required_decl_mismatch : Error<
     "Required conflicting types %diff{($ vs $) |}0,1">;
 def note_required_bad_conv : Note<

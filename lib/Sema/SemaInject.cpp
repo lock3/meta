@@ -363,6 +363,8 @@ public:
     // If we've EVER seen a replacement, then return that.
     if (Decl *Repl = GetDeclReplacement(D))
       return Repl;
+    if (Decl *Repl = GetRequiredDeclarator(dyn_cast<DeclaratorDecl>(D)))
+      return Repl;
 
     // If D is part of the injection, then we must have seen a previous
     // declaration. Otherwise, return nullptr and force a lookup or error.
@@ -423,7 +425,7 @@ public:
 
     return !NewContent;
   }
-  
+
   QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
     QualType RequiredType = GetRequiredType(D);
 
@@ -2207,7 +2209,7 @@ static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
   ExprResult CallRes =
     SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
                           Params, SourceLocation());
-  
+
   if (CallRes.isInvalid()) {
     SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
       << "required declarator.";
@@ -2229,7 +2231,6 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
                                            CXXRequiredDeclaratorDecl *D) {
   constexpr unsigned error_id = 1;
   Sema &SemaRef = Ctx.getSema();
-
   NamedDecl *FoundDecl = nullptr;
   if (R.isSingleResult())
     FoundDecl = R.getFoundDecl();
@@ -2246,6 +2247,17 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
 
   DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
 
+  // Constexpr-ness must match between what we required and what we found.
+  if (const FunctionDecl *FoundFD = dyn_cast<FunctionDecl>(FoundDeclarator)) {
+    FunctionDecl *FD = cast<FunctionDecl>(D->getRequiredDeclarator());
+    if (FD->isConstexpr() != FoundFD->isConstexpr()) {
+      SemaRef.Diag(D->getLocation(), diag::err_constexpr_redecl_mismatch)
+                   << FD << FD->isConstexpr();
+      SemaRef.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
+      return true;
+    }
+  }
+
   QualType RDDTy = D->getDeclaratorType();
   QualType FoundDeclTy = FoundDeclarator->getType();
 
@@ -2253,10 +2265,8 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
   if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
     SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
       RDDTy << FoundDeclTy;
-    return true;
+    return true;   // Types must match exactly, down to the specifier.
   }
-
-  // Types must match exactly, down to the specifier.
   if (RDDTy != FoundDeclTy) {
     SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
       << error_id;
@@ -2265,9 +2275,7 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
     return true;
   }
 
-  // fixme: support functions
   Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), FoundDeclarator});
-
   return false;
 }
 
