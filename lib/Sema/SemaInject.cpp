@@ -286,7 +286,7 @@ public:
   }
 
   DeclaratorDecl *GetRequiredDeclarator(const Decl *D) {
-    if (!isa<DeclaratorDecl>(D))
+    if (!D || !isa<DeclaratorDecl>(D))
       return nullptr;
 
     auto Iter = RequiredDecls.find(cast<DeclaratorDecl>(D));
@@ -363,7 +363,7 @@ public:
     // If we've EVER seen a replacement, then return that.
     if (Decl *Repl = GetDeclReplacement(D))
       return Repl;
-    if (Decl *Repl = GetRequiredDeclarator(dyn_cast<DeclaratorDecl>(D)))
+    if (Decl *Repl = GetRequiredDeclarator(dyn_cast_or_null<DeclaratorDecl>(D)))
       return Repl;
 
     // If D is part of the injection, then we must have seen a previous

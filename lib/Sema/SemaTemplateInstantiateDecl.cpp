@@ -1106,9 +1106,11 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   // if (!NewTSI)
   //   return nullptr;
 
+  SemaRef.AnalyzingRequiredDeclarator = true;
   DeclaratorDecl *NewDecl =
     cast<DeclaratorDecl>(SemaRef.SubstDecl(D->getRequiredDeclarator(),
                                            SemaRef.CurContext, TemplateArgs));
+  SemaRef.AnalyzingRequiredDeclarator = false;
 
   // return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
   //                                          SemaRef.CurContext,
@@ -4782,6 +4784,9 @@ void Sema::InstantiateVariableInitializer(
 
     // We'll add an initializer to a for-range declaration later.
     if (Var->isCXXForRangeDecl() || Var->isObjCForDecl())
+      return;
+
+    if (AnalyzingRequiredDeclarator)
       return;
 
     ActOnUninitializedDecl(Var);
