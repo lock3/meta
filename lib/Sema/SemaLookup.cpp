@@ -566,11 +566,6 @@ void LookupResult::resolveKind() {
       HasFunctionTemplate = true;
     } else if (isa<FunctionDecl>(D)) {
       HasFunction = true;
-    } else if (isa<CXXRequiredDeclaratorDecl>(D)) {
-      const CXXRequiredDeclaratorDecl *RDD = cast<CXXRequiredDeclaratorDecl>(D);
-      if (!RDD->getDeclaratorType().isNull() &&
-          RDD->getDeclaratorType()->isFunctionType())
-        HasFunction = true;
     } else {
       if (HasNonFunction) {
         // If we're about to create an ambiguity between two declarations that
