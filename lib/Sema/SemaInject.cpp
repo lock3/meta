@@ -2149,6 +2149,11 @@ static bool CXXRequiredTypeDeclTypeSubst(InjectionContext &Ctx,
 static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
   if (!isa<DeclaratorDecl>(Required) || !isa<DeclaratorDecl>(Found))
     return true;
+  /// TODO: diagnostic here
+  if (isa<FunctionDecl>(Found) != isa<FunctionDecl>(Required))
+    return true;
+  if (isa<VarDecl>(Found) != isa<VarDecl>(Required))
+    return true;
 
   DeclaratorDecl *RequiredDeclarator = cast<DeclaratorDecl>(Required);
   DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(Found);
