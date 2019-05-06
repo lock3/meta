@@ -2158,6 +2158,43 @@ static bool CXXRequiredTypeDeclTypeSubst(InjectionContext &Ctx,
   return false;
 }
 
+static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
+  if (!isa<DeclaratorDecl>(Required) || !isa<DeclaratorDecl>(Found))
+    return true;
+
+  DeclaratorDecl *RequiredDeclarator = cast<DeclaratorDecl>(Required);
+  DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(Found);
+  SourceLocation RDLoc = RequiredDeclarator->getLocation();
+
+  // Constexpr-ness must match between what we required and what we found.
+  if (const FunctionDecl *FoundFD = dyn_cast<FunctionDecl>(FoundDeclarator)) {
+    FunctionDecl *FD = cast<FunctionDecl>(RequiredDeclarator);
+    if (FD->isConstexpr() != FoundFD->isConstexpr()) {
+      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
+                   << FD << FD->isConstexpr();
+      S.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
+      return true;
+    }
+  }
+
+  QualType RDDTy = RequiredDeclarator->getType();
+  QualType FoundDeclTy = FoundDeclarator->getType();
+
+  if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
+    S.Diag(RDLoc, diag::err_required_decl_mismatch) << RDDTy << FoundDeclTy;
+    return true;   // Types must match exactly, down to the specifier.
+  }
+
+  if (RDDTy != FoundDeclTy) {
+    constexpr unsigned error_id = 1;
+    S.Diag(RDLoc, diag::err_required_name_not_found) << error_id;
+    S.Diag(RDLoc, diag::note_required_bad_conv) << RDDTy << FoundDeclTy;
+    return true;
+  }
+
+  return false;
+}
+
 static const FunctionProtoType *tryGetFunctionProtoType(QualType FromType) {
   if (auto *FPT = FromType->getAs<FunctionProtoType>())
     return FPT;
@@ -2237,14 +2274,15 @@ static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
 static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
                                            LookupResult &R,
                                            CXXRequiredDeclaratorDecl *D) {
-  constexpr unsigned error_id = 1;
   Sema &SemaRef = Ctx.getSema();
   NamedDecl *FoundDecl = nullptr;
   if (R.isSingleResult())
     FoundDecl = R.getFoundDecl();
-  else if (R.isOverloadedResult()) {
+
+  if (R.isOverloadedResult())
     return HandleOverloadedDeclaratorSubst(Ctx, R, D);
-  } else {
+
+  if (!FoundDecl) {
     SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
       << "required declarator.";
     return true;
@@ -2252,36 +2290,13 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
 
   if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
     return true;
-
   DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
 
-  // Constexpr-ness must match between what we required and what we found.
-  if (const FunctionDecl *FoundFD = dyn_cast<FunctionDecl>(FoundDeclarator)) {
-    FunctionDecl *FD = cast<FunctionDecl>(D->getRequiredDeclarator());
-    if (FD->isConstexpr() != FoundFD->isConstexpr()) {
-      SemaRef.Diag(D->getLocation(), diag::err_constexpr_redecl_mismatch)
-                   << FD << FD->isConstexpr();
-      SemaRef.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
-      return true;
-    }
-  }
-
-  QualType RDDTy = D->getDeclaratorType();
-  QualType FoundDeclTy = FoundDeclarator->getType();
-
-  // In the case of mismatched references, we want a more specific error.
-  if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
-    SemaRef.Diag(D->getLocation(), diag::err_required_decl_mismatch) <<
-      RDDTy << FoundDeclTy;
-    return true;   // Types must match exactly, down to the specifier.
-  }
-  if (RDDTy != FoundDeclTy) {
-    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
-      << error_id;
-    SemaRef.Diag(D->getLocation(), diag::note_required_bad_conv)
-      << RDDTy << FoundDeclTy;
+  if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
+                                  FoundDeclarator))
     return true;
-  }
+  if (FoundDeclarator->getType()->isFunctionType())
+    return HandleOverloadedDeclaratorSubst(Ctx, R, D);
 
   Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), FoundDeclarator});
   return false;
