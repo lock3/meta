@@ -284,17 +284,7 @@ public:
       return Iter->second;
     return QualType();
   }
-
-  DeclaratorDecl *GetRequiredDeclarator(const Decl *D) {
-    if (!D || !isa<DeclaratorDecl>(D))
-      return nullptr;
-
-    auto Iter = RequiredDecls.find(cast<DeclaratorDecl>(D));
-    if (Iter != RequiredDecls.end())
-      return Iter->second;
-    return nullptr;
-  }
-
+  
   /// Returns true if D is within an injected fragment or cloned declaration.
   bool isInInjection(Decl *D);
 
@@ -362,8 +352,6 @@ public:
 
     // If we've EVER seen a replacement, then return that.
     if (Decl *Repl = GetDeclReplacement(D))
-      return Repl;
-    if (Decl *Repl = GetRequiredDeclarator(dyn_cast_or_null<DeclaratorDecl>(D)))
       return Repl;
 
     // If D is part of the injection, then we must have seen a previous
@@ -2263,7 +2251,7 @@ static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
 
   CallExpr *Call = cast<CallExpr>(CallRes.get());
   FunctionDecl *CalleeDecl = Call->getDirectCallee();
-  Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), CalleeDecl});
+  Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), CalleeDecl);
   return false;
 }
 
@@ -2298,7 +2286,7 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
   if (FoundDeclarator->getType()->isFunctionType())
     return HandleOverloadedDeclaratorSubst(Ctx, R, D);
 
-  Ctx.RequiredDecls.insert({D->getRequiredDeclarator(), FoundDeclarator});
+  Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), FoundDeclarator);
   return false;
 }
 
@@ -2376,9 +2364,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
 Decl *
 InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
   DeclContext *Owner = getSema().CurContext;
-
-  // DeclarationNameInfo DNI = TransformDeclarationName(D);
-  // TypeSourceInfo *TInfo = TransformType(D->getDeclaratorTInfo());
+  
   /// FIXME: does the declarator ever need transformed?
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,
