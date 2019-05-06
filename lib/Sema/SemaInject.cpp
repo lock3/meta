@@ -2164,6 +2164,15 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
       return true;
     }
   }
+  if (const VarDecl *FoundVD = dyn_cast<VarDecl>(FoundDeclarator)) {
+    VarDecl *VD = cast<VarDecl>(RequiredDeclarator);
+    if (VD->isConstexpr() != FoundVD->isConstexpr()) {
+      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
+        << VD << VD->isConstexpr();
+      S.Diag(FoundVD->getLocation(), diag::note_previous_declaration);
+      return true;
+    }
+  }
 
   QualType RDDTy = RequiredDeclarator->getType();
   QualType FoundDeclTy = FoundDeclarator->getType();
