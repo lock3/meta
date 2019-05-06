@@ -2187,7 +2187,7 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
     return true;   // Types must match exactly, down to the specifier.
   }
 
-  if (RDDTy != FoundDeclTy) {
+  if (!S.Context.hasSameType(RDDTy, FoundDeclTy)) {
     constexpr unsigned error_id = 1;
     S.Diag(RDLoc, diag::err_required_name_not_found) << error_id;
     S.Diag(RDLoc, diag::note_required_bad_conv) << RDDTy << FoundDeclTy;
@@ -2278,8 +2278,31 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
                                            CXXRequiredDeclaratorDecl *D) {
   Sema &SemaRef = Ctx.getSema();
   NamedDecl *FoundDecl = nullptr;
-  if (R.isSingleResult())
+  if (R.isSingleResult()) {
     FoundDecl = R.getFoundDecl();
+
+    if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
+      return true;
+    DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+    if (SemaRef.ParsingInitForAutoVars.count(D->getRequiredDeclarator())) {
+      if (VarDecl *VD = dyn_cast<VarDecl>(FoundDecl)) {
+        QualType ReplacedType;
+        Expr *Init = VD->getInit();
+        Sema::DeduceAutoResult Res =
+          SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init,
+                                 ReplacedType);
+        SemaRef.ParsingInitForAutoVars.erase(D->getRequiredDeclarator());
+        if (Res == Sema::DAR_Succeeded) {
+          D->getRequiredDeclarator()->setType(ReplacedType);
+        } else {
+          SemaRef.Diag(D->getLocation(), diag::err_auto_var_deduction_failure)
+            << D->getDeclName() << D->getDeclaratorType() << Init->getType();
+          SemaRef.Diag(VD->getLocation(), diag::note_required_candidate);
+          return true;
+        }
+      }
+    }
+  }
 
   if (R.isOverloadedResult())
     return HandleOverloadedDeclaratorSubst(Ctx, R, D);
@@ -2378,7 +2401,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
 Decl *
 InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
   DeclContext *Owner = getSema().CurContext;
-  
+
   /// FIXME: does the declarator ever need transformed?
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,

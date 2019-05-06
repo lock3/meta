@@ -2495,7 +2495,9 @@ def err_required_decl_mismatch : Error<
 def note_required_bad_conv : Note<
     "required declarator candidate not viable: "
     "cannot convert declarator of type %diff{($ to $) |}0,1">;
-    
+def note_required_candidate : Note<
+    "required candidate:">;
+
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
