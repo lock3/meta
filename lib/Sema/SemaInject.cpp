@@ -521,6 +521,7 @@ public:
   Decl *InjectDecl(Decl *D);
   Decl *MockInjectDecl(Decl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
+  Decl *InjectFriendDecl(FriendDecl *D);
   Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
   Decl *InjectCXXInjectionDecl(CXXInjectionDecl *D);
 
@@ -982,6 +983,8 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Set properties.
   Fn->setInlineSpecified(D->isInlineSpecified());
   Fn->setInvalidDecl(Invalid);
+  if (D->getFriendObjectKind() != Decl::FOK_None)
+    Fn->setObjectOfFriendDecl();
 
   // Don't register the declaration if we're merely attempting to transform
   // this function.
@@ -1568,6 +1571,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::AccessSpec:
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
+  case Decl::Friend:
+    return InjectFriendDecl(cast<FriendDecl>(D));
   case Decl::CXXMetaprogram:
     return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
   case Decl::CXXInjection:
@@ -1642,6 +1647,70 @@ Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
   CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return AccessSpecDecl::Create(
       getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
+}
+
+static bool GetFriendTargetDeclContext(Sema &SemaRef, FriendDecl *D, DeclContext *DOwner,
+                                       Decl *ND, DeclContext *&DC) {
+  if (auto *FD = dyn_cast<FunctionDecl>(ND)) {
+    LookupResult Previous(
+                          SemaRef, FD->getDeclName(), SourceLocation(),
+                          Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+
+    Scope *S = SemaRef.getScopeForContext(DOwner);
+    CXXScopeSpec SS;
+    SS.Adopt(FD->getQualifierLoc());
+
+    Scope *DCScope = nullptr;
+    return SemaRef.GetFriendFunctionDC(Previous, S, SS, FD->getNameInfo(),
+                                       D->getFriendLoc(), D->getLocation(),
+                                       FD->hasBody(), isa<FunctionTemplateDecl>(FD), DC, DCScope);
+  }
+
+  DC = DOwner;
+  return false;
+}
+
+Decl *InjectionContext::InjectFriendDecl(FriendDecl *D) {
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+
+  if (TypeSourceInfo *Ty = D->getFriendType()) {
+    TypeSourceInfo *InstTy;
+    if (D->isUnsupportedFriend()) {
+      InstTy = Ty;
+    } else {
+      InstTy = TransformType(Ty);
+    }
+    if (!InstTy)
+      return nullptr;
+
+    FriendDecl *FD = SemaRef.CheckFriendTypeDecl(D->getBeginLoc(),
+                                                 D->getFriendLoc(), InstTy);
+    if (!FD)
+      return nullptr;
+
+    FD->setAccess(AS_public);
+    FD->setUnsupportedFriend(D->isUnsupportedFriend());
+    Owner->addDecl(FD);
+    return FD;
+  }
+
+  Decl *ND = MockInjectDecl(D->getFriendDecl());
+
+  DeclContext *NDDC = nullptr;
+  if (GetFriendTargetDeclContext(SemaRef, D, Owner, ND, NDDC))
+    return nullptr;
+
+  ND->setDeclContext(NDDC);
+  NDDC->addDecl(ND);
+
+  FriendDecl *FD =
+    FriendDecl::Create(SemaRef.Context, Owner, D->getLocation(),
+                       cast<NamedDecl>(ND), D->getFriendLoc());
+
+  FD->setAccess(AS_public);
+  FD->setUnsupportedFriend(D->isUnsupportedFriend());
+  Owner->addDecl(FD);
+  return FD;
 }
 
 Stmt *InjectionContext::InjectStmt(Stmt *S) {

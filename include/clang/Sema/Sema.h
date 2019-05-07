@@ -6140,6 +6140,15 @@ public:
                                   TypeSourceInfo *TSInfo);
   Decl *ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                             MultiTemplateParamsArg TemplateParams);
+
+  bool GetFriendFunctionDC(LookupResult &Previous,
+                           Scope *S, CXXScopeSpec &SS,
+                           const DeclarationNameInfo &NameInfo,
+                           SourceLocation StartLoc,
+                           SourceLocation Loc,
+                           bool IsFunctionDefinition,
+                           bool IsTemplateId,
+                           DeclContext *&DC, Scope *&DCScope);
   NamedDecl *ActOnFriendFunctionDecl(Scope *S, Declarator &D,
                                      MultiTemplateParamsArg TemplateParams);
 
