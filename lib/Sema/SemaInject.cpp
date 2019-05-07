@@ -2284,21 +2284,29 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
     if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
       return true;
     DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
-    if (SemaRef.ParsingInitForAutoVars.count(D->getRequiredDeclarator())) {
+
+    if (D->getDeclaratorType()->getAs<AutoType>()) {
       if (VarDecl *VD = dyn_cast<VarDecl>(FoundDecl)) {
         QualType ReplacedType;
         Expr *Init = VD->getInit();
-        Sema::DeduceAutoResult Res =
-          SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init,
-                                 ReplacedType);
-        SemaRef.ParsingInitForAutoVars.erase(D->getRequiredDeclarator());
-        if (Res == Sema::DAR_Succeeded) {
-          D->getRequiredDeclarator()->setType(ReplacedType);
+
+        if (Init) {
+          Sema::DeduceAutoResult Res =
+            SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init,
+                                   ReplacedType);
+          if (Res == Sema::DAR_Succeeded) {
+            D->getRequiredDeclarator()->setType(ReplacedType);
+          } else {
+            SemaRef.Diag(D->getLocation(), diag::err_auto_var_deduction_failure)
+              << D->getDeclName() << D->getDeclaratorType() << Init->getType();
+            SemaRef.Diag(VD->getLocation(), diag::note_required_candidate);
+            return true;
+          }
         } else {
-          SemaRef.Diag(D->getLocation(), diag::err_auto_var_deduction_failure)
-            << D->getDeclName() << D->getDeclaratorType() << Init->getType();
-          SemaRef.Diag(VD->getLocation(), diag::note_required_candidate);
-          return true;
+          QualType T =
+            SemaRef.SubstAutoType(D->getDeclaratorType(), VD->getType());
+          D->getRequiredDeclarator()->setType(T);
+          T->dump();
         }
       }
     }
