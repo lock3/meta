@@ -11568,17 +11568,19 @@ void Sema::ActOnFinishCXXMemberDecls() {
 /// If there are any pending method definitions, we need to
 /// handle them now. Field definitions should have already
 /// been handled, and the class should be complete.
-static void ProcessMethodInjections(Sema &SemaRef, CXXRecordDecl *D) {
+static void
+ProcessPendingDefinitionInjections(Sema &SemaRef, CXXRecordDecl *D) {
   if (D->isCXXClassMember()) // Not an outermost class
     return;
   if (!SemaRef.HasPendingInjections(D))
     return;
   SemaRef.InjectPendingMethodDefinitions();
+  SemaRef.InjectPendingFriendFunctionDefinitions();
 }
 
 void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
   if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
-    ProcessMethodInjections(*this, RD);
+    ProcessPendingDefinitionInjections(*this, RD);
     if (RD->isPrototypeClass())
       return;
   }

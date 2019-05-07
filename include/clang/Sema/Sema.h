@@ -10620,8 +10620,10 @@ public:
   bool HasPendingInjections(DeclContext *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();
-  void InjectPendingFieldDefinitions(InjectionContext *Cxt);
-  void InjectPendingMethodDefinitions(InjectionContext *Cxt);
+  void InjectPendingFriendFunctionDefinitions();
+  void InjectPendingFieldDefinitions(InjectionContext *Ctx);
+  void InjectPendingMethodDefinitions(InjectionContext *Ctx);
+  void InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx);
   bool InjectPendingNamespaceInjections();
 
   CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,

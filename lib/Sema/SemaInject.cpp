@@ -47,7 +47,8 @@ struct TypedValue {
 
 enum InjectedDefType : unsigned {
   InjectedDef_Field,
-  InjectedDef_Method
+  InjectedDef_Method,
+  InjectedDef_FriendFunction
 };
 
 /// Records information about a definition inside a fragment that must be
@@ -958,6 +959,27 @@ static void CheckInjectedFunctionDecl(Sema &SemaRef, FunctionDecl *FD,
                                    /*IsMemberSpecialization=*/false);
 }
 
+static void InjectFunctionDefinition(InjectionContext *Ctx,
+                                     FunctionDecl *OldFunction,
+                                     FunctionDecl *NewFunction) {
+  Sema &S = Ctx->getSema();
+
+  S.ActOnStartOfFunctionDef(nullptr, NewFunction);
+
+  Sema::SynthesizedFunctionScope Scope(S, NewFunction);
+  Sema::ContextRAII FnCtx(S, NewFunction);
+
+  StmtResult NewBody;
+  if (Stmt *OldBody = OldFunction->getBody()) {
+    NewBody = Ctx->TransformStmt(OldBody);
+    if (NewBody.isInvalid())
+      NewFunction->setInvalidDecl();
+  }
+
+  S.ActOnFinishFunctionBody(NewFunction, NewBody.get(),
+                            /*IsInstantiation=*/true);
+}
+
 Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
@@ -999,20 +1021,12 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Also, function decls never appear in class scope (we hope),
   // so we shouldn't be doing this too early.
   if (D->isThisDeclarationADefinition()) {
-    SemaRef.ActOnStartOfFunctionDef(nullptr, Fn);
-
-    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-    Sema::ContextRAII FnCtx (getSema(), Fn);
-
-    StmtResult NewBody;
-    if (Stmt *OldBody = D->getBody()) {
-      NewBody = TransformStmt(OldBody);
-      if (NewBody.isInvalid())
-        Fn->setInvalidDecl();
+    bool IsFriend = D->getFriendObjectKind() != Decl::FOK_None;
+    if (IsFriend) {
+      AddPendingDefinition(InjectedDef(InjectedDef_FriendFunction, D, Fn));
+    } else {
+      InjectFunctionDefinition(this, D, Fn);
     }
-
-    SemaRef.ActOnFinishFunctionBody(Fn, NewBody.get(),
-                                    /*IsInstantiation=*/true);
   }
 
   return Fn;
@@ -1263,6 +1277,7 @@ static void InjectPendingDefinitionsWithCleanup(InjectionContext &Ctx) {
 
   InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(&Ctx, Injection);
   InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(&Ctx, Injection);
+  InjectPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(&Ctx, Injection);
 
   Injection->ResetClassMemberData();
 }
@@ -3353,6 +3368,12 @@ void Sema::InjectPendingMethodDefinitions() {
   for (auto &&Ctx : PendingClassMemberInjections) {
     InjectPendingMethodDefinitions(Ctx);
   }
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions() {
+  for (auto &&Ctx : PendingClassMemberInjections) {
+    InjectPendingFriendFunctionDefinitions(Ctx);
+  }
   CleanupUsedContexts(PendingClassMemberInjections);
 }
 
@@ -3447,6 +3468,12 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   }
 }
 
+static void InjectPendingDefinition(InjectionContext *Ctx,
+                                    FunctionDecl *OldFunction,
+                                    FunctionDecl *NewFunction) {
+  InjectFunctionDefinition(Ctx, OldFunction, NewFunction);
+}
+
 template<typename DeclType, InjectedDefType DefType>
 static void InjectPendingDefinitions(InjectionContext *Ctx,
                                      InjectionInfo *Injection) {
@@ -3473,6 +3500,10 @@ void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
 
 void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
   InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx) {
+  InjectAllPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(Ctx);
 }
 
 bool Sema::InjectPendingNamespaceInjections() {

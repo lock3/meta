@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang_cc1 -freflection -std=c++2a %s
 
 class Bar;
 
@@ -7,7 +7,11 @@ class Foo {
 
   consteval -> __fragment class Z {
     friend class Bar;
+
     friend int do_thing(const Z& f);
+    friend int do_other_thing(const Z& f) {
+      return f.x;
+    }
   };
 };
 
