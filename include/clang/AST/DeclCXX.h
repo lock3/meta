@@ -4304,11 +4304,21 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// the declarator owned by this declaration.
   DeclaratorDecl *RequiredDeclarator;
 
+  /// If the required declarator was written as type 'auto', we'll
+  /// have to store it to retain any qualifiers, i.e. 'auto *'.
+  QualType WrittenAutoType;
+
+  /// Whehter or not the required declarator was declared with
+  /// any form of auto: auto, auto *, auto &&, etc.
+  unsigned WrittenWithAuto : 1;
+
   CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
-                            DeclaratorDecl *DD, SourceLocation RL);
+                            DeclaratorDecl *DD, QualType WrittenAutoType,
+                            SourceLocation RL);
 public:
   static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
                                            DeclaratorDecl *RequiredDecl,
+                                           QualType WrittenAutoType,
                                            SourceLocation RequiresLoc);
   static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
                                                        unsigned ID);
@@ -4318,11 +4328,16 @@ public:
   QualType getDeclaratorType() const {
     return RequiredDeclarator->getType();
   }
+
   TypeSourceInfo *getDeclaratorTInfo() const {
     return RequiredDeclarator->getTypeSourceInfo();
   }
 
   DeclaratorDecl *getRequiredDeclarator() const { return RequiredDeclarator; }
+  bool wasWrittenWithAuto() const { return WrittenWithAuto; }
+  QualType getWrittenAutoType() const {
+    return WrittenAutoType;
+  }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }

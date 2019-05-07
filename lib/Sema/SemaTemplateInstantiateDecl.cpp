@@ -1109,6 +1109,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
                                            SemaRef.CurContext,
                                            NewDecl,
+                                           D->getWrittenAutoType(),
                                            D->getRequiresLoc());
 }
 

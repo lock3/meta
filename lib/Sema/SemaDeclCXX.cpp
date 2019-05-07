@@ -10955,18 +10955,24 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   if (!DDecl)
     return nullptr;
 
+  // Note the auto type, if there is one.
+  QualType WrittenAutoType;
   // We'll deal with auto deduction later.
-  if (DDecl->getType()->getAs<AutoType>()) {
+  if (ParsingInitForAutoVars.count(DDecl)) {
     ParsingInitForAutoVars.erase(DDecl);
+    WrittenAutoType = DDecl->getType();
+    QualType Sub = SubstAutoType(DDecl->getType(), Context.DependentTy);
+
     // Since we haven't deduced the auto type, we will run
     // into problems if the user actually tries to use this
     // declarator. Set it to dependent now, we'll change it
     // back later.
-    DDecl->setType(Context.DependentTy);
+    DDecl->setType(Sub);
   }
 
   CXXRequiredDeclaratorDecl *RDD =
-    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl,
+                                      WrittenAutoType, RequiresLoc);
   return RDD;
 }
 

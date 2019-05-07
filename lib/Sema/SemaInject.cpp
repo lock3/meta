@@ -2283,15 +2283,33 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
 
     if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
       return true;
-    DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
 
-    // This is only dependent at this point if we overwrote an auto type.
-    if (D->getDeclaratorType()->isDependentType()) {
-      D->getRequiredDeclarator()->setType(SemaRef.Context.getAutoDeductType());
-          QualType T =
-            SemaRef.SubstAutoType(D->getDeclaratorType(),
-                                  FoundDeclarator->getType());
-          D->getRequiredDeclarator()->setType(T);
+    // Deduce an auto type if there was wone
+    if (D->wasWrittenWithAuto()) {
+      if (isa<VarDecl>(FoundDecl) != isa<VarDecl>(D->getRequiredDeclarator()))
+        // TODO: Diagnostic
+        return true;
+
+      VarDecl *FoundVD = cast<VarDecl>(FoundDecl);
+      VarDecl *ReqVD = cast<VarDecl>(D->getRequiredDeclarator());
+
+      Expr *Init;
+      if (FoundVD->getInit())
+        Init = FoundVD->getInit();
+      else
+        Init =
+          new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
+                                                FoundVD->getType(), VK_RValue);
+      if (!Init)
+        return true;
+
+      QualType DeducedType;
+      if (SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init, DeducedType)
+          == Sema::DAR_Failed) {
+        SemaRef.DiagnoseAutoDeductionFailure(ReqVD, Init);
+        return true;
+      }
+      ReqVD->setType(DeducedType);
     }
   }
 
@@ -2397,6 +2415,7 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,
                                       D->getRequiredDeclarator(),
+                                      D->getWrittenAutoType(),
                                       D->getRequiresLoc());
   AddDeclSubstitution(D, RDD);
 
