@@ -4300,25 +4300,13 @@ class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
   /// The location of the 'requires' keyword
   SourceLocation RequiresLoc;
 
-  /// The type of the actual declarator. (RequiredDeclaratorDecls
-  /// are always dependently typed.)
-  QualType DeclaratorType;
-
-  /// The TypeSourceInfo of the actual declarator, see above.
-  TypeSourceInfo *DeclaratorTInfo;
-
+  /// The actual declarator we are requiring, alternatively
+  /// the declarator owned by this declaration.
   DeclaratorDecl *RequiredDeclarator;
 
-  CXXRequiredDeclaratorDecl(ASTContext &Ctx, DeclContext *DC, DeclarationName N,
-                            QualType T, TypeSourceInfo *TInfo,
-                            SourceLocation RL);
   CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
                             DeclaratorDecl *DD, SourceLocation RL);
 public:
-  static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
-                                           DeclarationName N, QualType T,
-                                           TypeSourceInfo *TInfo,
-                                           SourceLocation RequiresLoc);
   static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
                                            DeclaratorDecl *RequiredDecl,
                                            SourceLocation RequiresLoc);
@@ -4327,8 +4315,12 @@ public:
 
   SourceLocation getRequiresLoc() const { return RequiresLoc; }
 
-  QualType getDeclaratorType() const { return DeclaratorType; }
-  TypeSourceInfo *getDeclaratorTInfo() const { return DeclaratorTInfo; }
+  QualType getDeclaratorType() const {
+    return RequiredDeclarator->getType();
+  }
+  TypeSourceInfo *getDeclaratorTInfo() const {
+    return RequiredDeclarator->getTypeSourceInfo();
+  }
 
   DeclaratorDecl *getRequiredDeclarator() const { return RequiredDeclarator; }
 

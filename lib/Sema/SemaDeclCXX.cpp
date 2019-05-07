@@ -10951,10 +10951,19 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   DeclaratorDecl *DDecl
     = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
   AnalyzingRequiredDeclarator = false;
-  // It doesn't matter if this is auto.
-  // ParsingInitForAutoVars.erase(DDecl);
+
   if (!DDecl)
     return nullptr;
+
+  // We'll deal with auto deduction later.
+  if (DDecl->getType()->getAs<AutoType>()) {
+    ParsingInitForAutoVars.erase(DDecl);
+    // Since we haven't deduced the auto type, we will run
+    // into problems if the user actually tries to use this
+    // declarator. Set it to dependent now, we'll change it
+    // back later.
+    DDecl->setType(Context.DependentTy);
+  }
 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);

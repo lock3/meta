@@ -2285,30 +2285,13 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
       return true;
     DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
 
-    if (D->getDeclaratorType()->getAs<AutoType>()) {
-      if (VarDecl *VD = dyn_cast<VarDecl>(FoundDecl)) {
-        QualType ReplacedType;
-        Expr *Init = VD->getInit();
-
-        if (Init) {
-          Sema::DeduceAutoResult Res =
-            SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init,
-                                   ReplacedType);
-          if (Res == Sema::DAR_Succeeded) {
-            D->getRequiredDeclarator()->setType(ReplacedType);
-          } else {
-            SemaRef.Diag(D->getLocation(), diag::err_auto_var_deduction_failure)
-              << D->getDeclName() << D->getDeclaratorType() << Init->getType();
-            SemaRef.Diag(VD->getLocation(), diag::note_required_candidate);
-            return true;
-          }
-        } else {
+    // This is only dependent at this point if we overwrote an auto type.
+    if (D->getDeclaratorType()->isDependentType()) {
+      D->getRequiredDeclarator()->setType(SemaRef.Context.getAutoDeductType());
           QualType T =
-            SemaRef.SubstAutoType(D->getDeclaratorType(), VD->getType());
+            SemaRef.SubstAutoType(D->getDeclaratorType(),
+                                  FoundDeclarator->getType());
           D->getRequiredDeclarator()->setType(T);
-          T->dump();
-        }
-      }
     }
   }
 
