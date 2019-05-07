@@ -6295,6 +6295,8 @@ static bool shouldConsiderLinkage(const FunctionDecl *FD) {
     return true;
   if (DC->isRecord())
     return false;
+  if (DC->isFragmentContext())
+    return false;
   llvm_unreachable("Unexpected context");
 }
 

@@ -47,7 +47,8 @@ struct TypedValue {
 
 enum InjectedDefType : unsigned {
   InjectedDef_Field,
-  InjectedDef_Method
+  InjectedDef_Method,
+  InjectedDef_FriendFunction
 };
 
 /// Records information about a definition inside a fragment that must be
@@ -521,6 +522,7 @@ public:
   Decl *InjectDecl(Decl *D);
   Decl *MockInjectDecl(Decl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
+  Decl *InjectFriendDecl(FriendDecl *D);
   Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
   Decl *InjectCXXInjectionDecl(CXXInjectionDecl *D);
 
@@ -957,14 +959,33 @@ static void CheckInjectedFunctionDecl(Sema &SemaRef, FunctionDecl *FD,
                                    /*IsMemberSpecialization=*/false);
 }
 
+static void InjectFunctionDefinition(InjectionContext *Ctx,
+                                     FunctionDecl *OldFunction,
+                                     FunctionDecl *NewFunction) {
+  Sema &S = Ctx->getSema();
+
+  S.ActOnStartOfFunctionDef(nullptr, NewFunction);
+
+  Sema::SynthesizedFunctionScope Scope(S, NewFunction);
+  Sema::ContextRAII FnCtx(S, NewFunction);
+
+  StmtResult NewBody;
+  if (Stmt *OldBody = OldFunction->getBody()) {
+    NewBody = Ctx->TransformStmt(OldBody);
+    if (NewBody.isInvalid())
+      NewFunction->setInvalidDecl();
+  }
+
+  S.ActOnFinishFunctionBody(NewFunction, NewBody.get(),
+                            /*IsInstantiation=*/true);
+}
+
 Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
   DeclarationNameInfo DNI;
   TypeSourceInfo* TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  // FIXME: Check for redeclaration.
 
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
@@ -984,6 +1005,8 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Set properties.
   Fn->setInlineSpecified(D->isInlineSpecified());
   Fn->setInvalidDecl(Invalid);
+  if (D->getFriendObjectKind() != Decl::FOK_None)
+    Fn->setObjectOfFriendDecl();
 
   // Don't register the declaration if we're merely attempting to transform
   // this function.
@@ -998,20 +1021,12 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Also, function decls never appear in class scope (we hope),
   // so we shouldn't be doing this too early.
   if (D->isThisDeclarationADefinition()) {
-    SemaRef.ActOnStartOfFunctionDef(nullptr, Fn);
-
-    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-    Sema::ContextRAII FnCtx (getSema(), Fn);
-
-    StmtResult NewBody;
-    if (Stmt *OldBody = D->getBody()) {
-      NewBody = TransformStmt(OldBody);
-      if (NewBody.isInvalid())
-        Fn->setInvalidDecl();
+    bool IsFriend = D->getFriendObjectKind() != Decl::FOK_None;
+    if (IsFriend) {
+      AddPendingDefinition(InjectedDef(InjectedDef_FriendFunction, D, Fn));
+    } else {
+      InjectFunctionDefinition(this, D, Fn);
     }
-
-    SemaRef.ActOnFinishFunctionBody(Fn, NewBody.get(),
-                                    /*IsInstantiation=*/true);
   }
 
   return Fn;
@@ -1034,8 +1049,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  // FIXME: Check for re-declaration.
 
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
@@ -1213,8 +1226,6 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
 
   bool Invalid = false;
 
-  // FIXME: Do a lookup for previous declarations.
-
   CXXRecordDecl *Class;
   if (D->isInjectedClassName()) {
     DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
@@ -1266,6 +1277,7 @@ static void InjectPendingDefinitionsWithCleanup(InjectionContext &Ctx) {
 
   InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(&Ctx, Injection);
   InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(&Ctx, Injection);
+  InjectPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(&Ctx, Injection);
 
   Injection->ResetClassMemberData();
 }
@@ -1574,6 +1586,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::AccessSpec:
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
+  case Decl::Friend:
+    return InjectFriendDecl(cast<FriendDecl>(D));
   case Decl::CXXMetaprogram:
     return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
   case Decl::CXXInjection:
@@ -1648,6 +1662,70 @@ Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
   CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
   return AccessSpecDecl::Create(
       getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
+}
+
+static bool GetFriendTargetDeclContext(Sema &SemaRef, FriendDecl *D, DeclContext *DOwner,
+                                       Decl *ND, DeclContext *&DC) {
+  if (auto *FD = dyn_cast<FunctionDecl>(ND)) {
+    LookupResult Previous(
+                          SemaRef, FD->getDeclName(), SourceLocation(),
+                          Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+
+    Scope *S = SemaRef.getScopeForContext(DOwner);
+    CXXScopeSpec SS;
+    SS.Adopt(FD->getQualifierLoc());
+
+    Scope *DCScope = nullptr;
+    return SemaRef.GetFriendFunctionDC(Previous, S, SS, FD->getNameInfo(),
+                                       D->getFriendLoc(), D->getLocation(),
+                                       FD->hasBody(), isa<FunctionTemplateDecl>(FD), DC, DCScope);
+  }
+
+  DC = DOwner;
+  return false;
+}
+
+Decl *InjectionContext::InjectFriendDecl(FriendDecl *D) {
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+
+  if (TypeSourceInfo *Ty = D->getFriendType()) {
+    TypeSourceInfo *InstTy;
+    if (D->isUnsupportedFriend()) {
+      InstTy = Ty;
+    } else {
+      InstTy = TransformType(Ty);
+    }
+    if (!InstTy)
+      return nullptr;
+
+    FriendDecl *FD = SemaRef.CheckFriendTypeDecl(D->getBeginLoc(),
+                                                 D->getFriendLoc(), InstTy);
+    if (!FD)
+      return nullptr;
+
+    FD->setAccess(AS_public);
+    FD->setUnsupportedFriend(D->isUnsupportedFriend());
+    Owner->addDecl(FD);
+    return FD;
+  }
+
+  Decl *ND = MockInjectDecl(D->getFriendDecl());
+
+  DeclContext *NDDC = nullptr;
+  if (GetFriendTargetDeclContext(SemaRef, D, Owner, ND, NDDC))
+    return nullptr;
+
+  ND->setDeclContext(NDDC);
+  NDDC->addDecl(ND);
+
+  FriendDecl *FD =
+    FriendDecl::Create(SemaRef.Context, Owner, D->getLocation(),
+                       cast<NamedDecl>(ND), D->getFriendLoc());
+
+  FD->setAccess(AS_public);
+  FD->setUnsupportedFriend(D->isUnsupportedFriend());
+  Owner->addDecl(FD);
+  return FD;
 }
 
 Stmt *InjectionContext::InjectStmt(Stmt *S) {
@@ -3290,6 +3368,12 @@ void Sema::InjectPendingMethodDefinitions() {
   for (auto &&Ctx : PendingClassMemberInjections) {
     InjectPendingMethodDefinitions(Ctx);
   }
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions() {
+  for (auto &&Ctx : PendingClassMemberInjections) {
+    InjectPendingFriendFunctionDefinitions(Ctx);
+  }
   CleanupUsedContexts(PendingClassMemberInjections);
 }
 
@@ -3384,6 +3468,12 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   }
 }
 
+static void InjectPendingDefinition(InjectionContext *Ctx,
+                                    FunctionDecl *OldFunction,
+                                    FunctionDecl *NewFunction) {
+  InjectFunctionDefinition(Ctx, OldFunction, NewFunction);
+}
+
 template<typename DeclType, InjectedDefType DefType>
 static void InjectPendingDefinitions(InjectionContext *Ctx,
                                      InjectionInfo *Injection) {
@@ -3410,6 +3500,10 @@ void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
 
 void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
   InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx) {
+  InjectAllPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(Ctx);
 }
 
 bool Sema::InjectPendingNamespaceInjections() {

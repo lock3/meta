@@ -4871,7 +4871,8 @@ public:
                               SourceLocation UsingLoc, UnqualifiedId &Name,
                               const ParsedAttributesView &AttrList,
                               TypeResult Type, Decl *DeclFromDeclSpec);
-  Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+  Decl *ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
+                                 SourceLocation RequiresLoc,
                                  SourceLocation TypenameLoc,
                                  IdentifierInfo *Id, bool Typename);
 
@@ -6140,6 +6141,15 @@ public:
                                   TypeSourceInfo *TSInfo);
   Decl *ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                             MultiTemplateParamsArg TemplateParams);
+
+  bool GetFriendFunctionDC(LookupResult &Previous,
+                           Scope *S, CXXScopeSpec &SS,
+                           const DeclarationNameInfo &NameInfo,
+                           SourceLocation StartLoc,
+                           SourceLocation Loc,
+                           bool IsFunctionDefinition,
+                           bool IsTemplateId,
+                           DeclContext *&DC, Scope *&DCScope);
   NamedDecl *ActOnFriendFunctionDecl(Scope *S, Declarator &D,
                                      MultiTemplateParamsArg TemplateParams);
 
@@ -10610,8 +10620,10 @@ public:
   bool HasPendingInjections(DeclContext *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();
-  void InjectPendingFieldDefinitions(InjectionContext *Cxt);
-  void InjectPendingMethodDefinitions(InjectionContext *Cxt);
+  void InjectPendingFriendFunctionDefinitions();
+  void InjectPendingFieldDefinitions(InjectionContext *Ctx);
+  void InjectPendingMethodDefinitions(InjectionContext *Ctx);
+  void InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx);
   bool InjectPendingNamespaceInjections();
 
   CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,
