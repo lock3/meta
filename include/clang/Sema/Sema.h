@@ -4871,7 +4871,8 @@ public:
                               SourceLocation UsingLoc, UnqualifiedId &Name,
                               const ParsedAttributesView &AttrList,
                               TypeResult Type, Decl *DeclFromDeclSpec);
-  Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+  Decl *ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
+                                 SourceLocation RequiresLoc,
                                  SourceLocation TypenameLoc,
                                  IdentifierInfo *Id, bool Typename);
 

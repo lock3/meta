@@ -878,8 +878,7 @@ Decl *Parser::ParseAliasDeclarationAfterDeclarator(
 }
 
 Decl *
-Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
-                             ParsedAttributesWithRange &Attrs) {
+Parser::ParseCXXRequiredDecl(AccessSpecifier AS) {
   assert(Tok.is(tok::kw_requires) && "Not requires!");
   SourceLocation RequiresLoc = ConsumeToken();
 
@@ -903,7 +902,7 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
     // Eat the ';'.
     ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
 
-    return Actions.ActOnCXXRequiredTypeDecl(RequiresLoc, SpecLoc, TypeId,
+    return Actions.ActOnCXXRequiredTypeDecl(AS, RequiresLoc, SpecLoc, TypeId,
                                             DeclaredWithTypename);
   }
 
@@ -2729,6 +2728,9 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
       return Actions.ConvertDeclToDeclGroup(ParsedDecl);
   }
+
+  if (Tok.is(tok::kw_requires))
+    return Actions.ConvertDeclToDeclGroup(ParseCXXRequiredDecl(AS));
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;

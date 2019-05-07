@@ -10939,12 +10939,14 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
   return AliasDecl;
 }
 
-Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+Decl *Sema::ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
+                                     SourceLocation RequiresLoc,
                                      SourceLocation TypenameLoc,
                                      IdentifierInfo *Id, bool Typename) {
   CXXRequiredTypeDecl *RTD =
     CXXRequiredTypeDecl::Create(Context, CurContext,
                                 RequiresLoc, TypenameLoc, Id, Typename);
+  RTD->setAccess(AS);
 
   PushOnScopeChains(RTD, getCurScope());
   return RTD;
