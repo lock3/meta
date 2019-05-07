@@ -3043,24 +3043,19 @@ CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
 CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
                                                      DeclContext *DC,
                                                      DeclaratorDecl *DD,
-                                                     QualType WrittenAutoType,
                                                      SourceLocation RL)
   :DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
                   QualType(Context.DependentTy),
                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
-                  RL),
-   RequiresLoc(RL), RequiredDeclarator(DD), WrittenAutoType(WrittenAutoType),
-   WrittenWithAuto(!WrittenAutoType.isNull())
+                  RL), RequiresLoc(RL), RequiredDeclarator(DD)
 {
 }
 
 CXXRequiredDeclaratorDecl *
 CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
                                   DeclaratorDecl *RequiredDecl,
-                                  QualType WrittenAutoType,
                                   SourceLocation RequiresLoc) {
-  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC,
-                                                 RequiredDecl, WrittenAutoType,
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC, RequiredDecl,
                                                  RequiresLoc);
 }
 

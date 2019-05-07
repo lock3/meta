@@ -2285,7 +2285,8 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
       return true;
 
     // Deduce an auto type if there was wone
-    if (D->wasWrittenWithAuto()) {
+    if (SemaRef.ParsingInitForAutoVars.count(D->getRequiredDeclarator())) {
+      SemaRef.ParsingInitForAutoVars.erase(D->getRequiredDeclarator());
       if (isa<VarDecl>(FoundDecl) != isa<VarDecl>(D->getRequiredDeclarator()))
         // TODO: Diagnostic
         return true;
@@ -2415,7 +2416,6 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,
                                       D->getRequiredDeclarator(),
-                                      D->getWrittenAutoType(),
                                       D->getRequiresLoc());
   AddDeclSubstitution(D, RDD);
 
