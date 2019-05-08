@@ -110,6 +110,19 @@ struct InjectionInfo {
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
 
+  /// The set of local declarations that have been transformed.
+  /// These are declaration mappings that only make sense when paired
+  /// with the injection, as they may be mapped to different declarations
+  /// across different injections. Currently, this means injections
+  /// which occur during fragment injection, as apposed to declaration
+  /// cloning.
+  llvm::DenseMap<Decl *, Decl *> TransformedLocalDecls;
+
+  /// A mapping of fragment placeholders to their typed compile-time
+  /// values. This is used by TreeTransformer to replace references with
+  /// constant expressions.
+  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
+
   /// True if we've injected a field. If we have, this injection context
   /// must be preserved until we've finished rebuilding all injected
   /// constructors.
@@ -189,9 +202,22 @@ public:
     CurInjection = PreviousInjection;
   }
 
+  llvm::DenseMap<Decl *, Decl *> &GetDeclTransformMap() {
+    if (isInjectingFragment()) {
+      return CurInjection->TransformedLocalDecls;
+    } else {
+      return TransformedLocalDecls;
+    }
+  }
+
+  void transformedLocalDecl(Decl *Old, Decl *New) {
+    auto &TransformedDecls = GetDeclTransformMap();
+    assert(TransformedDecls.count(Old) == 0 && "Overwriting substitution");
+    TransformedDecls[Old] = New;
+  }
+
   /// Adds a substitution from one declaration to another.
   void AddDeclSubstitution(const Decl *Old, Decl *New) {
-    assert(TransformedLocalDecls.count(Old) == 0 && "Overwriting substitution");
     transformedLocalDecl(const_cast<Decl*>(Old), New);
   }
 
@@ -202,22 +228,6 @@ public:
       return;
     }
     AddDeclSubstitution(Old, New);
-  }
-
-  /// Adds a substitution from a fragment placeholder to its
-  /// (type) constant value.
-  void MaybeAddPlaceholderSubstitution(Decl *Orig, QualType T,
-                                       const APValue &V) {
-    assert(isa<VarDecl>(Orig) && "Expected a variable declaration");
-    auto RIter = PlaceholderSubsts.find(Orig);
-    if (RIter != PlaceholderSubsts.end()) {
-      // FIXME: This doesn't fully check for equivalence of the APValue.
-      assert((RIter->second.Type == T
-              && RIter->second.Value.getKind() == V.getKind())
-             && "Overwriting substitution");
-      return;
-    }
-    PlaceholderSubsts.try_emplace(Orig, T, V);
   }
 
   /// Adds substitutions for each placeholder in the fragment.
@@ -239,7 +249,7 @@ public:
       QualType Ty = IC.Decl->getType();
       APValue Val = IC.Value;
 
-      MaybeAddPlaceholderSubstitution(Var, Ty, Val);
+      CurInjection->PlaceholderSubsts.try_emplace(Var, Ty, Val);
     }
   }
 
@@ -253,8 +263,9 @@ public:
   /// Returns a replacement for D if a substitution has been registered or
   /// nullptr if no such replacement exists.
   Decl *GetDeclReplacement(Decl *D) {
-    auto Iter = TransformedLocalDecls.find(D);
-    if (Iter != TransformedLocalDecls.end())
+    auto &TransformedDecls = GetDeclTransformMap();
+    auto Iter = TransformedDecls.find(D);
+    if (Iter != TransformedDecls.end())
       return Iter->second;
     else
       return nullptr;
@@ -262,6 +273,7 @@ public:
 
   /// Returns a replacement expression if E refers to a placeholder.
   Expr *GetPlaceholderReplacement(DeclRefExpr *E) {
+    auto &PlaceholderSubsts = CurInjection->PlaceholderSubsts;
     auto Iter = PlaceholderSubsts.find(E->getDecl());
     if (Iter != PlaceholderSubsts.end()) {
       // Build a new constant expression as the replacement. The source
@@ -543,11 +555,6 @@ public:
   Stmt *InjectDeclStmt(DeclStmt *S);
 
   // Members
-
-  /// A mapping of fragment placeholders to their typed compile-time
-  /// values. This is used by TreeTransformer to replace references with
-  /// constant expressions.
-  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
 
   /// A mapping of injected parameters to their corresponding
   /// expansions.
@@ -2961,7 +2968,7 @@ static bool InjectStmtFragment(Sema &S,
                                const SmallVector<InjectionCapture, 8> &Captures,
                                Decl *Injectee) {
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
-    Ctx->AddDeclSubstitution(Injection, Injectee);
+    Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
