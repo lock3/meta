@@ -39,8 +39,19 @@ void addition(T a, T b)
   };
 }
 
+template<typename T>
+void reference(T &ref) {
+  consteval -> __fragment {
+    requires auto &ref;
+    ref = 10;
+  };
+}
+
 void test() {
   addition(10, 10);
+  int ref;
+  reference(ref);
+  assert(ref == 10);
 }
 };
 
