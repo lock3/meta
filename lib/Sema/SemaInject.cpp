@@ -2305,9 +2305,8 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
       if (FoundVD->getInit())
         Init = FoundVD->getInit();
       else
-        Init =
-          new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
-                                                FoundVD->getType(), VK_RValue);
+        Init = new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
+                           FoundVD->getType().getNonReferenceType(), VK_RValue);
       if (!Init)
         return true;
 

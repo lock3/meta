@@ -11,9 +11,17 @@ void pointers() {
   };
 }
 
+template<typename T>
+void references(T &ref) {
+  consteval -> __fragment {
+    requires auto ref; // expected-error {{Required conflicting types ('int' vs 'int &')}}
+  };
+}
+
 void test() {
   pointers<int>(); // expected-note {{in instantiation of function template specialization 'bad::pointers<int>' requested here}}
-pointers<int>();
+  int ref;
+  references<int>(ref); // expected-note {{in instantiation of function template specialization 'bad::references<int>' requested here}}
 }
 };
 
