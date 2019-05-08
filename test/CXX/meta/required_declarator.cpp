@@ -26,9 +26,9 @@ void reference_2(T req) {
 
 template<typename T>
 void constexpr_mismatch() {
-  constexpr T a = T();
+  constexpr T a = T(); // expected-note {{previous declaration is here}}
   consteval -> __fragment {
-    requires T a; // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('int' to 'const int')}}
+    requires T a; // expected-error {{non-constexpr declaration of 'a' follows constexpr declaration}}
   };
 }
 

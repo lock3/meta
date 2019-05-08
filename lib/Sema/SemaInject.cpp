@@ -419,6 +419,14 @@ public:
       return R;
     }
 
+    // if (Decl *R = GetDeclReplacement(E->getDecl())) {
+    //   if (isa<ValueDecl>(R))
+    //     return RebuildDeclRefExpr(E->getQualifierLoc(),
+    //                               cast<ValueDecl>(R),
+    //                               E->getNameInfo(),
+    //                               E->getTemplateArgs());
+    // }
+
     return Base::TransformDeclRefExpr(E);
   }
 
@@ -2284,9 +2292,8 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
     if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
       return true;
 
-    // Deduce an auto type if there was wone
-    if (SemaRef.ParsingInitForAutoVars.count(D->getRequiredDeclarator())) {
-      SemaRef.ParsingInitForAutoVars.erase(D->getRequiredDeclarator());
+    // Deduce an auto type if there was one
+    if (D->getDeclaratorType()->getContainedAutoType()) {
       if (isa<VarDecl>(FoundDecl) != isa<VarDecl>(D->getRequiredDeclarator()))
         // TODO: Diagnostic
         return true;
@@ -2310,7 +2317,7 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
         SemaRef.DiagnoseAutoDeductionFailure(ReqVD, Init);
         return true;
       }
-      ReqVD->setType(DeducedType);
+      D->getRequiredDeclarator()->setType(DeducedType);
     }
   }
 
