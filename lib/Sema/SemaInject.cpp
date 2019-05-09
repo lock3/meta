@@ -2805,6 +2805,12 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *Operand) {
+  // An injection stmt can only appear in constexpr contexts
+  if (!CurContext->isConstexprContext()) {
+    Diag(Loc, diag::err_injection_stmt_constexpr);
+    return StmtError();
+  }
+
   // If the operand is not dependent, it must be resolveable either
   // to an injectable reflection, or a fragment.
   //
