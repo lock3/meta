@@ -2309,7 +2309,6 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
     if (D->getRequiredDeclarator()->getType()->isFunctionType())
       return HandleFunctionDeclaratorSubst(Ctx, R, D);
 
-    // Deduce an auto type if there was one
     if (isa<VarDecl>(D->getRequiredDeclarator())) {
       if (!isa<VarDecl>(FoundDeclarator))
         // TODO: Diagnostic
@@ -2317,7 +2316,10 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
 
       VarDecl *FoundVD = cast<VarDecl>(FoundDecl);
       VarDecl *ReqVD = cast<VarDecl>(D->getRequiredDeclarator());
+      // If this is a required auto variable, deduce its type.
       if (FoundVD->getType()->getContainedAutoType()) {
+        // If we don't have an initializer to deduce from, we'll
+        // invent one.
         Expr *Init;
         if (FoundVD->getInit())
           Init = FoundVD->getInit();
