@@ -2800,6 +2800,22 @@ bool ASTContext::hasSameFunctionTypeIgnoringExceptionSpec(QualType T,
                       getFunctionTypeWithExceptionSpec(U, EST_None)));
 }
 
+bool ASTContext::hasSameFunctionTypeIgnoringReturn(QualType T, QualType U) {
+  assert(T->isFunctionType() && U->isFunctionType());
+
+  if (hasSameType(T, U))
+    return true;
+
+  const auto *TProto = T->getAs<FunctionProtoType>();
+  QualType TNoReturn = getFunctionType(DependentTy, TProto->getParamTypes(),
+                                       TProto->getExtProtoInfo());
+  const auto *UProto = U->getAs<FunctionProtoType>();
+  QualType UNoReturn = getFunctionType(DependentTy, UProto->getParamTypes(),
+                                       UProto->getExtProtoInfo());
+  return hasSameType(TNoReturn, UNoReturn);
+
+}
+
 void ASTContext::adjustExceptionSpec(
     FunctionDecl *FD, const FunctionProtoType::ExceptionSpecInfo &ESI,
     bool AsWritten) {

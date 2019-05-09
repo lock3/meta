@@ -2163,8 +2163,11 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
   if (isa<VarDecl>(Found) != isa<VarDecl>(Required))
     return true;
 
+  bool DiagnoseTypeMismatch = false;
   DeclaratorDecl *RequiredDeclarator = cast<DeclaratorDecl>(Required);
   DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(Found);
+  QualType RDDTy = RequiredDeclarator->getType();
+  QualType FoundDeclTy = FoundDeclarator->getType();
   SourceLocation RDLoc = RequiredDeclarator->getLocation();
 
   // Constexpr-ness must match between what we required and what we found.
@@ -2176,6 +2179,14 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
       S.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
       return true;
     }
+
+    if (FD->getReturnType()->getContainedAutoType()) {
+      if (S.TypeCheckRequiredAutoReturn(FD->getLocation(),
+            FD->getReturnType(), FoundFD->getReturnType()))
+        return true;
+      DiagnoseTypeMismatch =
+        !S.Context.hasSameFunctionTypeIgnoringReturn(RDDTy, FoundDeclTy);
+    }
   }
   if (const VarDecl *FoundVD = dyn_cast<VarDecl>(FoundDeclarator)) {
     VarDecl *VD = cast<VarDecl>(RequiredDeclarator);
@@ -2185,17 +2196,15 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
       S.Diag(FoundVD->getLocation(), diag::note_previous_declaration);
       return true;
     }
-  }
 
-  QualType RDDTy = RequiredDeclarator->getType();
-  QualType FoundDeclTy = FoundDeclarator->getType();
+    DiagnoseTypeMismatch = !S.Context.hasSameType(RDDTy, FoundDeclTy);
+  }
 
   if ((RDDTy->isReferenceType() != FoundDeclTy->isReferenceType())) {
     S.Diag(RDLoc, diag::err_required_decl_mismatch) << RDDTy << FoundDeclTy;
     return true;   // Types must match exactly, down to the specifier.
   }
-
-  if (!S.Context.hasSameType(RDDTy, FoundDeclTy)) {
+  if (DiagnoseTypeMismatch) {
     constexpr unsigned error_id = 1;
     S.Diag(RDLoc, diag::err_required_name_not_found) << error_id;
     S.Diag(RDLoc, diag::note_required_bad_conv) << RDDTy << FoundDeclTy;
@@ -2215,8 +2224,8 @@ static const FunctionProtoType *tryGetFunctionProtoType(QualType FromType) {
   return nullptr;
 }
 
-/// Called from CXXRequiredDeclaratorDeclSubst, handles the specific case of an
-/// overloaded function being required, e.g.:
+/// Called from CXXRequiredDeclaratorDeclSubst, handles the specific case of a
+/// function being required, e.g.:
 ///
 /// \code
 /// __fragment {
@@ -2229,9 +2238,9 @@ static const FunctionProtoType *tryGetFunctionProtoType(QualType FromType) {
 /// Will fail if the required overload does not match any declaration
 /// in the outer scope.
 /// Returns true on error.
-static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
-                                            LookupResult &R,
-                                            CXXRequiredDeclaratorDecl *D) {
+static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
+                                          LookupResult &R,
+                                          CXXRequiredDeclaratorDecl *D) {
   Sema &SemaRef = Ctx.getSema();
   TypeSourceInfo *TInfo = D->getDeclaratorTInfo();
   if (!(TInfo->getType()->isFunctionType()))
@@ -2273,6 +2282,9 @@ static bool HandleOverloadedDeclaratorSubst(InjectionContext &Ctx,
 
   CallExpr *Call = cast<CallExpr>(CallRes.get());
   FunctionDecl *CalleeDecl = Call->getDirectCallee();
+  if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
+                                  CalleeDecl))
+    return true;
   Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), CalleeDecl);
   return false;
 }
@@ -2289,58 +2301,54 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
   if (R.isSingleResult()) {
     FoundDecl = R.getFoundDecl();
 
-    if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
+    if (!FoundDecl || FoundDecl->isInvalidDecl() ||
+        !isa<DeclaratorDecl>(FoundDecl))
       return true;
 
+    DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
+    if (D->getRequiredDeclarator()->getType()->isFunctionType())
+      return HandleFunctionDeclaratorSubst(Ctx, R, D);
+
     // Deduce an auto type if there was one
-    if (D->getDeclaratorType()->getContainedAutoType()) {
-      if (isa<VarDecl>(FoundDecl) != isa<VarDecl>(D->getRequiredDeclarator()))
+    if (isa<VarDecl>(D->getRequiredDeclarator())) {
+      if (!isa<VarDecl>(FoundDeclarator))
         // TODO: Diagnostic
         return true;
 
       VarDecl *FoundVD = cast<VarDecl>(FoundDecl);
       VarDecl *ReqVD = cast<VarDecl>(D->getRequiredDeclarator());
+      if (FoundVD->getType()->getContainedAutoType()) {
+        Expr *Init;
+        if (FoundVD->getInit())
+          Init = FoundVD->getInit();
+        else
+          Init = new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
+                         FoundVD->getType().getNonReferenceType(), VK_RValue);
+        if (!Init)
+          return true;
 
-      Expr *Init;
-      if (FoundVD->getInit())
-        Init = FoundVD->getInit();
-      else
-        Init = new (SemaRef.Context) OpaqueValueExpr(FoundVD->getLocation(),
-                           FoundVD->getType().getNonReferenceType(), VK_RValue);
-      if (!Init)
-        return true;
-
-      QualType DeducedType;
-      if (SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init, DeducedType)
-          == Sema::DAR_Failed) {
-        SemaRef.DiagnoseAutoDeductionFailure(ReqVD, Init);
-        return true;
+        QualType DeducedType;
+        if (SemaRef.DeduceAutoType(D->getDeclaratorTInfo(), Init, DeducedType)
+            == Sema::DAR_Failed) {
+          SemaRef.DiagnoseAutoDeductionFailure(ReqVD, Init);
+          return true;
+        }
+        D->getRequiredDeclarator()->setType(DeducedType);
       }
-      D->getRequiredDeclarator()->setType(DeducedType);
     }
+
+    if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
+                                    FoundDeclarator))
+      return true;
+
+    Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), FoundDeclarator);
+    return false;
+  } else if (R.isOverloadedResult()) {
+    return HandleFunctionDeclaratorSubst(Ctx, R, D);
   }
 
-  if (R.isOverloadedResult())
-    return HandleOverloadedDeclaratorSubst(Ctx, R, D);
-
-  if (!FoundDecl) {
-    SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
-      << "required declarator.";
-    return true;
-  }
-
-  if (FoundDecl->isInvalidDecl() || !isa<DeclaratorDecl>(FoundDecl))
-    return true;
-  DeclaratorDecl *FoundDeclarator = cast<DeclaratorDecl>(FoundDecl);
-
-  if (TypeCheckRequiredDeclarator(SemaRef, D->getRequiredDeclarator(),
-                                  FoundDeclarator))
-    return true;
-  if (FoundDeclarator->getType()->isFunctionType())
-    return HandleOverloadedDeclaratorSubst(Ctx, R, D);
-
-  Ctx.AddDeclSubstitution(D->getRequiredDeclarator(), FoundDeclarator);
-  return false;
+  // Unknown case
+  return true;
 }
 
 /// Performs lookup on a C++ required declaration.
@@ -2405,6 +2413,8 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   // context.
   if (!MockInjectionContext) {
     if (CXXRequiredDeclSubstitute(*this, RTD)) {
+      getSema().Diag(D->getLocation(), diag::err_undeclared_use)
+        << "required declarator.";
       RTD->setInvalidDecl(true);
     }
   } else if (ShouldInjectInto(Owner)) {
