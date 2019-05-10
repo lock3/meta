@@ -16,11 +16,10 @@ void test() {
 
 namespace ovl {
 constexpr auto fragment = __fragment {
-  requires int f1(); // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('int ()' to 'int (int)')}}
+  requires int f1(); // expected-error {{use of undeclared required declarator.}} // expected-error {{no matching function for call to 'f1'}}
   requires int f1(int a);
 };
-
-int f1(int a) { return a; }
+int f1(int a) { return a; } // expected-note {{candidate function not viable: requires single argument 'a', but no arguments were provided}}
 
 void test() {
   consteval -> fragment;

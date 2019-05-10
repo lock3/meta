@@ -2264,15 +2264,26 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
   }
 
   // Now build the call expression to ensure that this overload is valid.
+  // if (D->getDeclContext()->isRecord()) {
+  //   CXXScopeSpec SS;
+  //   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
+  //   // Use the parsed scope if it is available. If not, look it up.
+  //   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
+  //   if (!S)
+  //     S = ParserLookup.getCurScope();
+  //   ExprResult IME =
+  //     SemaRef.BuildImplicitMemberExpr(SS, SourceLocation(), R, true, S);
+  // } else { 
   const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
-  UnresolvedLookupExpr *ULE = UnresolvedLookupExpr::Create(
-    SemaRef.Context, nullptr, D->getQualifierLoc(),
-    D->getNameInfo(), /*ADL=*/true, /*Overloaded=*/true,
-    FoundNames.begin(), FoundNames.end());
+  UnresolvedLookupExpr *ULE =
+    UnresolvedLookupExpr::Create(SemaRef.Context, nullptr,
+                                 D->getQualifierLoc(), D->getNameInfo(),
+                                 /*ADL=*/true, /*Overloaded=*/true,
+                                 FoundNames.begin(), FoundNames.end());
+  // }
 
-  ExprResult CallRes =
-    SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
-                          Params, SourceLocation());
+  ExprResult CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
+                                             Params, SourceLocation());
 
   if (CallRes.isInvalid()) {
     SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
@@ -2317,7 +2328,7 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
       VarDecl *FoundVD = cast<VarDecl>(FoundDecl);
       VarDecl *ReqVD = cast<VarDecl>(D->getRequiredDeclarator());
       // If this is a required auto variable, deduce its type.
-      if (FoundVD->getType()->getContainedAutoType()) {
+      if (ReqVD->getType()->getContainedAutoType()) {
         // If we don't have an initializer to deduce from, we'll
         // invent one.
         Expr *Init;
