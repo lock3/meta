@@ -1233,12 +1233,23 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
 
   bool Invalid = false;
 
+  // This is a bit weird, but we need to delay type creation
+  // if we're injecting a class decl for a template,
+  // to ensure the type has knowledge that it's for a templated
+  // class, rather than a normal class.
+  //
+  // This has immediately visible impact, with regards to
+  // constructors of injected classes, as these are not resolveable
+  // without delaying type creation.
+  bool DelayTypeCreation = D->getDescribedClassTemplate();
+
   CXXRecordDecl *Class;
   if (D->isInjectedClassName()) {
     DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
-        D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
+        D->getLocation(), DN.getAsIdentifierInfo(),
+        /*PrevDecl=*/nullptr, DelayTypeCreation);
   } else {
     DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
 
@@ -1248,7 +1259,7 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
         D->getLocation(), DNI.getName().getAsIdentifierInfo(),
-        cast_or_null<CXXRecordDecl>(PrevDecl));
+        cast_or_null<CXXRecordDecl>(PrevDecl), DelayTypeCreation);
   }
   Ctx.AddDeclSubstitution(D, Class);
 
@@ -1896,6 +1907,11 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
 
   // FIXME: Other attributes to process?
   Class->setDescribedClassTemplate(Template);
+
+  // Build the type for the class template declaration now.
+  QualType T = Template->getInjectedClassNameSpecialization();
+  T = getSema().Context.getInjectedClassNameType(Class, T);
+
   ApplyAccess(GetModifiers(), Template, D);
 
   // Don't register the declaration if we're merely attempting to transform
