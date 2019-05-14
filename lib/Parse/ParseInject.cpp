@@ -321,7 +321,7 @@ StmtResult Parser::ParseCXXInjectionStatement() {
     return StmtError();
 
   /// Get a fragment or reflection as the operand of the injection statement.
-  ExprResult Operand = ParseExpression();
+  ExprResult Operand = ParseConstantExpression();
   if (Operand.isInvalid())
     return StmtError();
 

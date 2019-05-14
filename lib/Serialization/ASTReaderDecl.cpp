@@ -3925,6 +3925,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   case DECL_CXX_REQUIRED_TYPE:
     D = CXXRequiredTypeDecl::CreateDeserialized(Context, ID);
     break;
+  case DECL_CXX_REQUIRED_DECLARATOR:
+    D = CXXRequiredDeclaratorDecl::CreateDeserialized(Context, ID);
+    break;
   }
 
   assert(D && "Unknown declaration reading AST file");

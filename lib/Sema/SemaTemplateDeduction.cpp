@@ -5703,3 +5703,19 @@ bool hasDeducibleTemplateParameters(Sema &S,
 
   return Deduced.any();
 }
+
+bool
+Sema::TypeCheckRequiredAutoReturn(SourceLocation Loc,
+                                  QualType TypeWithAuto, QualType Replacement) {
+  TemplateDeductionInfo Info(Loc);
+  unsigned TDF = 0;
+  SmallVector<DeducedTemplateArgument, 1> Deduced;
+  auto Res = DeduceTemplateArgumentsByTypeMatch(*this, nullptr, TypeWithAuto,
+                                               Replacement, Info, Deduced, TDF);
+  if (Res != TDK_Success) {
+    Diag(Info.getLocation(), diag::err_auto_inconsistent_deduction) <<
+      Info.FirstArg << Info.SecondArg << Loc;
+  }
+
+  return Res != TDK_Success;
+}

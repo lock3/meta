@@ -725,6 +725,8 @@ public:
   };
 
   llvm::SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
+  /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
+  bool AnalyzingRequiredDeclarator = false;
 
   class DelayedDiagnostics;
 
@@ -4875,6 +4877,11 @@ public:
                                  SourceLocation RequiresLoc,
                                  SourceLocation TypenameLoc,
                                  IdentifierInfo *Id, bool Typename);
+  Decl *ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
+                                       SourceLocation RequiresLoc,
+                                       Declarator &D);
+  bool TypeCheckRequiredAutoReturn(SourceLocation Loc,
+                                   QualType TypeWithAuto, QualType Replacement);
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.

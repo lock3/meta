@@ -642,9 +642,9 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
     TemplateSpecializationKind TSK = New->getTemplateSpecializationKind();
     // Template specializations may be redeclared consteval!
     if ((TSK != TSK_ExplicitSpecialization && New->isImmediate()) ||
-	(TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
+        (TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
       Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-	<< New << New->isImmediate();
+        << New << New->isImmediate();
       Diag(Old->getLocation(), diag::note_previous_declaration);
       Invalid = true;
     }
@@ -10950,6 +10950,35 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
 
   PushOnScopeChains(RTD, getCurScope());
   return RTD;
+}
+
+Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
+                                           SourceLocation RequiresLoc,
+                                           Declarator &D) {
+  // We don't want to check for linkage, memoize that we're
+  // working on a required declarator for later checks.
+  AnalyzingRequiredDeclarator = true;
+  DeclaratorDecl *DDecl
+    = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
+  AnalyzingRequiredDeclarator = false;
+
+  if (!DDecl)
+    return nullptr;
+
+  // We'll deal with auto deduction later.
+  if (ParsingInitForAutoVars.count(DDecl)) {
+    ParsingInitForAutoVars.erase(DDecl);
+
+    // Since we haven't deduced the auto type, we will run
+    // into problems if the user actually tries to use this
+    // declarator. Make it a dependent deduced auto type.
+    QualType Sub = SubstAutoType(DDecl->getType(), Context.DependentTy);
+    DDecl->setType(Sub);
+  }
+
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+  return RDD;
 }
 
 namespace {

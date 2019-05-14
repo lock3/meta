@@ -713,6 +713,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Binding:
     case NonTypeTemplateParm:
     case VarTemplate:
+    case CXXRequiredDeclarator:
       // These (C++-only) declarations are found by redeclaration lookup for
       // tag types, so we include them in the tag namespace.
       return IDNS_Ordinary | IDNS_Tag;
@@ -1110,6 +1111,9 @@ bool DeclContext::isDependentContext() const {
       return true;
 
     if (Record->isDependentLambda())
+      return true;
+
+    if (Record->isPrototypeClass())
       return true;
   }
 
