@@ -37,8 +37,6 @@ ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
     return ActOnReflectedTemplate(Arg);
   assert(Arg.getKind() == ParsedTemplateArgument::Type);
 
-  // llvm::outs() << "GOT TYPE\n";
-  // T.get().get()->dump();
   return ParsedReflectionOperand(T.get(), Arg.getLocation());
 }
 
@@ -46,31 +44,22 @@ ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
   assert(T.getKind() == ParsedTemplateArgument::Template);
   const CXXScopeSpec& SS = T.getScopeSpec();
   ParsedTemplateTy Temp = T.getAsTemplate();
-  
-  // llvm::outs() << "GOT TEMPLATE\n";
-  // Temp.get().getAsTemplateDecl()->dump();
+
   return ParsedReflectionOperand(SS, Temp, T.getLocation());
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
                                                       SourceLocation &Loc,
                                                       Decl *D) {
-  // llvm::outs() << "GOT NAMESPACE\n";
-  // D->dump();
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(SourceLocation Loc) {
-  // llvm::outs() << "GOT NAMESPACE\n";
-  // D->dump();
   // Clang uses TUDecl in place of having a global namespace.
   return ParsedReflectionOperand(Context.getTranslationUnitDecl(), Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
-  
-  // llvm::outs() << "GOT EXPRESSION\n";
-  // E->dump();
   return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
