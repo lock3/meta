@@ -4126,6 +4126,9 @@ public:
                                     FunctionDecl *Fn);
   static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
+  /// Returns the injection statement for the injection-decl.
+  Stmt *getInjectionStmt() const;
+
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXInjection; }
 
