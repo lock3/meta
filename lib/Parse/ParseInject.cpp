@@ -180,6 +180,11 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
   Actions.PushFunctionScope();
   Sema::FunctionScopeRAII FunctionScopeCleanup(Actions);
 
+  CXXStmtFragmentDecl *Body =
+    CXXStmtFragmentDecl::Create(Actions.getASTContext(),
+                                Actions.CurContext, IntroLoc);
+  Actions.PushDeclContext(getCurScope(), Body);
+
   // Parse the actual block. This consumes the braces.
   StmtResult Block = ParseCompoundStatementBody();
   if (Block.isInvalid()) {
@@ -187,10 +192,8 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
     return nullptr;
   }
 
-  DeclContext *CurContext = Actions.CurContext;
-  CXXStmtFragmentDecl *Body =
-    CXXStmtFragmentDecl::Create(Actions.getASTContext(), CurContext, IntroLoc);
   Body->setBody(cast<CompoundStmt>(Block.get()));
+  Actions.PopDeclContext();
 
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Body);
 }

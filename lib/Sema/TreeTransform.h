@@ -3466,10 +3466,11 @@ public:
                                             RParenLoc);
   }
 
-private:
+protected:
   void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
                         SmallVectorImpl<Stmt *> &Stmts);
 
+private:
   TypeLoc TransformTypeInObjectScope(TypeLoc TL,
                                      QualType ObjectType,
                                      NamedDecl *FirstQualifierInScope,

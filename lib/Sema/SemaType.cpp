@@ -4704,7 +4704,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
 
       // If we see "T var();" or "T var(T());" at block scope, it is probably
       // an attempt to initialize a variable, not a function declaration.
-      if (FTI.isAmbiguous)
+      if (FTI.isAmbiguous && !S.AnalyzingRequiredDeclarator)
         warnAboutAmbiguousFunction(S, D, DeclType, T);
 
       FunctionType::ExtInfo EI(

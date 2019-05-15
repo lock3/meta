@@ -1060,19 +1060,20 @@ Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
 
 Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
 {
-  if (!D->hasBody())
-    return D;
-
   SemaRef.PushFunctionScope();
   Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
 
   Sema::ContextRAII SavedContext(SemaRef, D);
 
   SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
-  StmtResult NewBody =
-    SemaRef.SubstStmt(D->getBody(), TemplateArgs, ExistingMappings);
-  if (NewBody.isInvalid())
-    return nullptr;
+  StmtResult NewBody;
+  if (D->hasBody()) {
+    NewBody = SemaRef.SubstStmt(D->getBody(), TemplateArgs, ExistingMappings);
+    if (NewBody.isInvalid())
+      return nullptr;
+  } else {
+    NewBody = {};
+  }
 
   CXXStmtFragmentDecl *Inst =
       CXXStmtFragmentDecl::Create(SemaRef.Context, Owner, D->getBeginLoc());

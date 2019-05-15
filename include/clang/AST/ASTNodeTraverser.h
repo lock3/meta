@@ -419,6 +419,11 @@ public:
       Visit(D->getBody());
   }
 
+  void VisitCXXFragmentDecl(const CXXFragmentDecl *D) {
+    if (D->getContent())
+      Visit(D->getContent());
+  }
+
   template <typename SpecializationDecl>
   void dumpTemplateDeclSpecialization(const SpecializationDecl *D) {
     for (const auto *RedeclWithBadType : D->redecls()) {

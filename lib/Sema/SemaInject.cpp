@@ -419,14 +419,6 @@ public:
       return R;
     }
 
-    // if (Decl *R = GetDeclReplacement(E->getDecl())) {
-    //   if (isa<ValueDecl>(R))
-    //     return RebuildDeclRefExpr(E->getQualifierLoc(),
-    //                               cast<ValueDecl>(R),
-    //                               E->getNameInfo(),
-    //                               E->getTemplateArgs());
-    // }
-
     return Base::TransformDeclRefExpr(E);
   }
 
@@ -544,6 +536,7 @@ public:
   Decl *InjectStaticAssertDecl(StaticAssertDecl *D);
   Decl *InjectEnumDecl(EnumDecl *D);
   Decl *InjectEnumConstantDecl(EnumConstantDecl *D);
+  Decl *InjectCXXStmtFragmentDecl(CXXStmtFragmentDecl *D);
   Decl *InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D);
   Decl *InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D);
 
@@ -1602,6 +1595,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectEnumDecl(cast<EnumDecl>(D));
   case Decl::EnumConstant:
     return InjectEnumConstantDecl(cast<EnumConstantDecl>(D));
+  case Decl::CXXStmtFragment:
+    return InjectCXXStmtFragmentDecl(cast<CXXStmtFragmentDecl>(D));
   case Decl::CXXRequiredType:
     return InjectCXXRequiredTypeDecl(cast<CXXRequiredTypeDecl>(D));
   case Decl::CXXRequiredDeclarator:
@@ -1681,6 +1676,10 @@ static bool isRequiresDecl(Decl *D) {
   return isa<CXXRequiredTypeDecl>(D) || isa<CXXRequiredDeclaratorDecl>(D);
 }
 
+static bool isMetaDecl(Decl *D) {
+  return isa<CXXInjectorDecl>(D);
+}
+
 static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
   Sema &SemaRef = Ctx.getSema();
 
@@ -1690,6 +1689,8 @@ static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
 
   if (isRequiresDecl(D))
     return nullptr;
+  if (isa<CXXMetaprogramDecl>(D) || isa<CXXInjectionDecl>(D))
+    return D;
 
   // Add the declaration to scope, we don't need to add it to the context,
   // as this should have been handled by the injection of the decl.
@@ -1703,21 +1704,23 @@ static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
 
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   llvm::SmallVector<Decl *, 4> Decls;
+  unsigned IsRequiredDeclaration = false;
   for (Decl *D : S->decls()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D))
+    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D)) {
+      IsRequiredDeclaration |= isRequiresDecl(NewDecl);
+
       Decls.push_back(NewDecl);
-     else
+      if (isMetaDecl(NewDecl)) {
+        CXXInjectorDecl *MetaDecl = cast<CXXInjectorDecl>(NewDecl);
+        PushInjectedStmt(MetaDecl, InjectedStmts);
+      }
+    } else
        return nullptr;
   }
 
   StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
   if (Res.isInvalid())
     return nullptr;
-  DeclStmt *ResDS = cast<DeclStmt>(Res.get());
-  bool IsRequiredDeclaration =
-    ResDS->getSingleDecl() && 
-    (isa<CXXRequiredDeclaratorDecl>(ResDS->getSingleDecl()) ||
-     isa<CXXRequiredTypeDecl>(ResDS->getSingleDecl()));
 
   if (!IsRequiredDeclaration)
     InjectedStmts.push_back(Res.get());
@@ -2114,6 +2117,18 @@ Decl *InjectionContext::InjectEnumConstantDecl(EnumConstantDecl *D) {
   return EnumConstDecl;
 }
 
+Decl *InjectionContext::InjectCXXStmtFragmentDecl(CXXStmtFragmentDecl *D) {
+  if (MockInjectionContext) {
+    CXXStmtFragmentDecl *SFD =
+      CXXStmtFragmentDecl::Create(getContext(), SemaRef.CurContext,
+                                  D->getBeginLoc());
+    SFD->setBody(D->getBody());
+    return SFD;
+  }
+
+  return nullptr;
+}
+
 /// Creates the mapping between the CXXRequiredTypeDecl *D,
 /// and the corresponding type.
 ///
@@ -2264,13 +2279,26 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
   }
 
   // Now build the call expression to ensure that this overload is valid.
-  // if (D->getDeclContext()->isRecord()) {
-  //   CXXScopeSpec SS;
-  //   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
-  //   // Use the parsed scope if it is available. If not, look it up.
-  //   ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
-  //   if (!S)
-  //     S = ParserLookup.getCurScope();
+  ExprResult CallRes;
+  if (isa<CXXMethodDecl>(D->getDeclContext())) {
+    CXXScopeSpec SS;
+    DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
+    Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
+    // Use the parsed scope if it is available. If not, look it up.
+    ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
+    if (!S)
+      S = ParserLookup.getCurScope();
+    ExprResult IME =
+      SemaRef.BuildPossibleImplicitMemberExpr(SS, SourceLocation(), R,
+                                              nullptr, S);
+    llvm::outs() << "The member expr\n";
+    IME.get()->dump();
+    CallRes = SemaRef.ActOnCallExpr(nullptr, IME.get(), SourceLocation(),
+                                    Params, SourceLocation());
+    llvm::outs() << "the call\n";
+    CallRes.get()->dump();
+  } else {
+
   //   ExprResult IME =
   //     SemaRef.BuildImplicitMemberExpr(SS, SourceLocation(), R, true, S);
   // } else { 
@@ -2280,10 +2308,9 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
                                  D->getQualifierLoc(), D->getNameInfo(),
                                  /*ADL=*/true, /*Overloaded=*/true,
                                  FoundNames.begin(), FoundNames.end());
-  // }
-
-  ExprResult CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
-                                             Params, SourceLocation());
+    CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
+                                    Params, SourceLocation());
+  }
 
   if (CallRes.isInvalid()) {
     SemaRef.Diag(D->getLocation(), diag::err_undeclared_use)
