@@ -2952,7 +2952,7 @@ Stmt *CXXInjectionDecl::getInjectionStmt() const {
   auto *BodyPtr = cast<CompoundStmt>(getBody());
   assert(BodyPtr->size() == 1);
   return *(BodyPtr->body_begin());
-};
+}
 
 void CXXFragmentDecl::anchor() {}
 

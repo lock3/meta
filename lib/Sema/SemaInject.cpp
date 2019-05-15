@@ -1825,10 +1825,11 @@ Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   return NewStmt;
 }
 
-template <typename MetaType>
-static Decl *
-InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
-  Sema &Sema = Ctx.getSema();
+// FIXME: To preserve Injector type these have to be slightly different methods
+// it would be nice to combine this logic again in a way that preserves type.
+
+Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  Sema &Sema = getSema();
 
   // We can use the ActOn* members since the initial parsing for these
   // declarations is trivial (i.e., don't have to translate declarators).
@@ -1837,7 +1838,7 @@ InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
   DeclContext *OriginalDC;
   Sema.ActOnStartCXXMetaprogramDecl(New, OriginalDC);
 
-  StmtResult S = Ctx.TransformStmt(D->getBody());
+  StmtResult S = TransformStmt(D->getBody());
   if (!S.isInvalid())
     Sema.ActOnFinishCXXMetaprogramDecl(New, S.get(), OriginalDC);
   else
@@ -1846,12 +1847,29 @@ InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
   return New;
 }
 
-Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
-  return InjectCXXMetaDecl(*this, D);
-}
-
 Decl *InjectionContext::InjectCXXInjectionDecl(CXXInjectionDecl *D) {
-  return InjectCXXMetaDecl(*this, D);
+  Sema &Sema = getSema();
+
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  Decl *New = Sema.ActOnCXXInjectionDecl(D->getLocation());
+
+  DeclContext *OriginalDC;
+  Sema.ActOnStartCXXInjectionDecl(New, OriginalDC);
+
+  // Transform the injection stmt rather than the entire body
+  // because this is originally built via a single injection statement
+  // rather than the body of the function representation.
+  //
+  // While either would result in a logically correct program, this ensures
+  // pretty printing gives a sane result.
+  StmtResult S = TransformStmt(D->getInjectionStmt());
+  if (!S.isInvalid())
+    Sema.ActOnFinishCXXInjectionDecl(New, S.get(), OriginalDC);
+  else
+    Sema.ActOnCXXInjectionDeclError(New, OriginalDC);
+
+  return New;
 }
 
 TemplateParameterList *
