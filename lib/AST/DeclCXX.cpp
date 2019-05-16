@@ -2948,6 +2948,12 @@ CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned I
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
 }
 
+Stmt *CXXInjectionDecl::getInjectionStmt() const {
+  auto *BodyPtr = cast<CompoundStmt>(getBody());
+  assert(BodyPtr->size() == 1);
+  return *(BodyPtr->body_begin());
+}
+
 void CXXFragmentDecl::anchor() {}
 
 CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
