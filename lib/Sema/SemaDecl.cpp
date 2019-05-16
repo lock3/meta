@@ -15324,12 +15324,9 @@ void Sema::StartDefinition(TagDecl *D) {
 /// and the class is otherwise both declaration, and
 /// definition complete.
 static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
-  if (!D) // Not a class
+  if (!D || !SemaRef.ShouldInjectPendingDefinitionsOf(D))
     return;
-  if (D->isCXXClassMember()) // Not an outermost class
-    return;
-  if (!SemaRef.HasPendingInjections(D))
-    return;
+
   SemaRef.InjectPendingFieldDefinitions();
 }
 

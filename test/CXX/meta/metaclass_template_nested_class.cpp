@@ -4,6 +4,18 @@ namespace meta {
   using info = decltype(reflexpr(void));
 }
 
+consteval auto generate_func() {
+  return __fragment struct S {
+    int int_val = 12;
+
+    constexpr S() = default;
+
+    consteval int get_int() const {
+      return 24;
+    }
+  };
+}
+
 consteval void test_metaclass(meta::info source) {
   -> __fragment struct {
     template<typename T> struct MemberClassTemplate {
@@ -22,6 +34,11 @@ consteval void test_metaclass(meta::info source) {
     template<template<typename> class H, typename S>
     struct MemberClassTemplateTemplate {
       H<S> template_val;
+    };
+
+    template<typename T>
+    class MemberClassTemplateWithMetaprogram {
+      consteval -> generate_func();
     };
   };
 
@@ -54,6 +71,11 @@ int main() {
   using MCTTTy = test_class::MemberClassTemplateTemplate<Container, int>;
   MCTTTy metaclass_nested_template_template;
   static_assert(metaclass_nested_template_template.template_val.get_val() == 1);
+
+  using MCTWMTy = test_class::MemberClassTemplateWithMetaprogram<int>;
+  constexpr MCTWMTy metaclass_nested_class_metaprogram;
+  static_assert(metaclass_nested_class_metaprogram.int_val == 12);
+  static_assert(metaclass_nested_class_metaprogram.get_int() == 24);
 
   return 0;
 }

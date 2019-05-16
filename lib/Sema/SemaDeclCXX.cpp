@@ -11599,10 +11599,9 @@ void Sema::ActOnFinishCXXMemberDecls() {
 /// been handled, and the class should be complete.
 static void
 ProcessPendingDefinitionInjections(Sema &SemaRef, CXXRecordDecl *D) {
-  if (D->isCXXClassMember()) // Not an outermost class
+  if (!SemaRef.ShouldInjectPendingDefinitionsOf(D))
     return;
-  if (!SemaRef.HasPendingInjections(D))
-    return;
+
   SemaRef.InjectPendingMethodDefinitions();
   SemaRef.InjectPendingFriendFunctionDefinitions();
 }
