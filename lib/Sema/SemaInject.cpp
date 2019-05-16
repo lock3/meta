@@ -3640,6 +3640,23 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   return false;
 }
 
+/// Returns true if the DeclContext D both has pending injections
+/// and is in a state suiteable for injecting those injections.
+bool Sema::ShouldInjectPendingDefinitionsOf(CXXRecordDecl *D) {
+  assert(D && "CXXRecordDecl must be specified");
+
+  if (!HasPendingInjections(D))
+    return false;
+
+  if (D->isCXXClassMember()) {
+    auto *ParentClass = cast<CXXRecordDecl>(D->getDeclContext());
+    if (!ParentClass->isCompleteDefinition())
+      return false;
+  }
+
+  return true;
+}
+
 static void CleanupUsedContexts(
       llvm::SmallVectorImpl<InjectionContext *>& PendingClassMemberInjections) {
   while (!PendingClassMemberInjections.empty()) {

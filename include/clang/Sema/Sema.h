@@ -10625,6 +10625,7 @@ public:
   bool ApplyEffects(CXXInjectorDecl *MD,
                     SmallVectorImpl<InjectionEffect> &Effects);
   bool HasPendingInjections(DeclContext *D);
+  bool ShouldInjectPendingDefinitionsOf(CXXRecordDecl *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();
   void InjectPendingFriendFunctionDefinitions();
