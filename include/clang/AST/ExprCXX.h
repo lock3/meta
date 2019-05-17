@@ -5273,10 +5273,8 @@ public:
                 SourceLocation KeywordLoc,
                 SourceLocation LParenLoc, SourceLocation RParenLoc)
     : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary,
-           Reflection->isTypeDependent(),
-           Reflection->isValueDependent(),
-           Reflection->isInstantiationDependent(),
-           Reflection->containsUnexpandedParameterPack()),
+           /*TD=*/true, /*VD=*/true, /*ID=*/true,
+           /*ContainsUnexpandedParameterPack=*/false),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
 
@@ -5503,10 +5501,8 @@ public:
                  SourceLocation RParenLoc,
                  SourceLocation EllipsisLoc = SourceLocation())
     : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
-           Reflection->isValueDependent() || Reflection->isTypeDependent(),
-           Reflection->isValueDependent(),
-           Reflection->isInstantiationDependent(),
-           Reflection->containsUnexpandedParameterPack()),
+           /*TD=*/true, /*VD=*/true, /*ID=*/true,
+           /*ContainsUnexpandedParameterPack=*/false),
       Reflection(Reflection),
       KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
       EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
