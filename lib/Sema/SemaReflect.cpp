@@ -261,7 +261,7 @@ static bool GetTypeAndQuery(Sema &SemaRef, Expr *&Arg, QualType &ResultTy,
                             ReflectionQuery& Query) {
   // Guess these values initially.
   ResultTy = SemaRef.Context.DependentTy;
-  Query = RQ_unknown;
+  Query = getUnknownReflectionQuery();
 
   if (Arg->isTypeDependent() || Arg->isValueDependent())
     return true;

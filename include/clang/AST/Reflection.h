@@ -257,158 +257,22 @@ public:
   }
 };
 
-enum ReflectionQuery {
-  RQ_unknown,
+enum ReflectionQuery : unsigned;
 
-  RQ_is_invalid,
-  RQ_is_entity,
-  RQ_is_unnamed,
-
-  // Declarations
-  RQ_is_variable,
-  RQ_is_function,
-  RQ_is_class,
-  RQ_is_union,
-  RQ_is_unscoped_enum,
-  RQ_is_scoped_enum,
-  RQ_is_enumerator,
-  RQ_is_bitfield,
-  RQ_is_static_data_member,
-  RQ_is_nonstatic_data_member,
-  RQ_is_static_member_function,
-  RQ_is_nonstatic_member_function,
-  RQ_is_copy_assignment_operator,
-  RQ_is_move_assignment_operator,
-  RQ_is_constructor,
-  RQ_is_default_constructor,
-  RQ_is_copy_constructor,
-  RQ_is_move_constructor,
-  RQ_is_destructor,
-
-  // Types
-  RQ_is_type,
-  RQ_is_function_type,
-  RQ_is_class_type,
-  RQ_is_union_type,
-  RQ_is_enum_type,
-  RQ_is_scoped_enum_type,
-  RQ_is_void_type,
-  RQ_is_null_pointer_type,
-  RQ_is_integral_type,
-  RQ_is_floating_point_type,
-  RQ_is_array_type,
-  RQ_is_pointer_type,
-  RQ_is_lvalue_reference_type,
-  RQ_is_rvalue_reference_type,
-  RQ_is_member_object_pointer_type,
-  RQ_is_member_function_pointer_type,
-  RQ_is_closure_type,
-
-  // Namespaces and aliases
-  RQ_is_namespace,
-  RQ_is_namespace_alias,
-  RQ_is_type_alias,
-
-  // Templates and specializations
-  RQ_is_template,
-  RQ_is_class_template,
-  RQ_is_alias_template,
-  RQ_is_function_template,
-  RQ_is_variable_template,
-  RQ_is_static_member_function_template,
-  RQ_is_nonstatic_member_function_template,
-  RQ_is_constructor_template,
-  RQ_is_destructor_template,
-  RQ_is_concept,
-  RQ_is_specialization,
-  RQ_is_partial_specialization,
-  RQ_is_explicit_specialization,
-  RQ_is_implicit_instantiation,
-  RQ_is_explicit_instantiation,
-
-  // Base class specifiers
-  RQ_is_direct_base,
-  RQ_is_virtual_base,
-
-  // Parameters
-  RQ_is_function_parameter,
-  RQ_is_template_parameter,
-  RQ_is_type_template_parameter,
-  RQ_is_nontype_template_parameter,
-  RQ_is_template_template_parameter,
-
-  // Expressions
-  RQ_is_expression,
-  RQ_is_lvalue,
-  RQ_is_xvalue,
-  RQ_is_rvalue,
-  RQ_is_value,
-
-  // Scope
-  RQ_is_local,
-  RQ_is_class_member,
-
-  // Access queries
-  RQ_has_default_access,
-
-  // Traits
-  RQ_get_decl_traits,
-  RQ_get_linkage_traits,
-  RQ_get_access_traits,
-  RQ_get_type_traits,
-
-  // Associated reflections
-  RQ_get_entity,
-  RQ_get_parent,
-  RQ_get_type,
-  RQ_get_return_type,
-  RQ_get_this_ref_type,
-  RQ_get_definition,
-
-  // Traversal
-  RQ_get_begin,
-  RQ_get_next,
-
-  // Name
-  RQ_get_name,
-  RQ_get_display_name,
-
-  // Labels for kinds of queries. These need to be updated when new
-  // queries are added.
-
-  // Predicates -- these return bool.
-  RQ_first_predicate = RQ_is_invalid,
-  RQ_last_predicate = RQ_has_default_access,
-  // Traits -- these return unsigned.
-  RQ_first_trait = RQ_get_decl_traits,
-  RQ_last_trait = RQ_get_type_traits,
-  // Associated reflections -- these return meta::info.
-  RQ_first_assoc = RQ_get_entity,
-  RQ_last_assoc = RQ_get_next,
-  // Names -- these return const char*
-  RQ_first_name = RQ_get_name,
-  RQ_last_name = RQ_get_display_name,
-};
+/// Returns the ReflectionQuery value representing an unknown reflection query.
+ReflectionQuery getUnknownReflectionQuery();
 
 /// True if Q is a predicate.
-inline bool isPredicateQuery(ReflectionQuery Q) {
-  return RQ_first_predicate <= Q && Q <= RQ_last_predicate;
-}
+bool isPredicateQuery(ReflectionQuery Q);
 
 /// True if Q returns trait information.
-inline bool isTraitQuery(ReflectionQuery Q) {
-  return RQ_first_trait <= Q && Q <= RQ_last_trait;
-}
+bool isTraitQuery(ReflectionQuery Q);
 
 /// True if Q returns an associated reflection.
-inline bool isAssociatedReflectionQuery(ReflectionQuery Q) {
-  return RQ_first_assoc <= Q && Q <= RQ_last_assoc;
-}
+bool isAssociatedReflectionQuery(ReflectionQuery Q);
 
 /// True if Q returns a name.
-inline bool isNameQuery(ReflectionQuery Q) {
-  return RQ_first_name <= Q && Q <= RQ_last_name;
-}
+bool isNameQuery(ReflectionQuery Q);
 
 /// The reflection class provides context for evaluating queries.
 ///
