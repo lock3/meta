@@ -56,7 +56,7 @@ consteval void make_pure_virtual(info &refl) {
 consteval int count_data_members(info refl) {
   int total = 0;
 
-  for (info member : member_range(refl)) {
+  for (info member : meta::range(refl)) {
     if (is_data_member(member))
       ++total;
   }
@@ -81,7 +81,7 @@ consteval void compiler_print_lines(int count) {
 // Library code: implementing the metaclass (once)
 
 consteval void interface(info source) {
-  for (info mem : member_range(source)) {
+  for (info mem : meta::range(source)) {
     compiler_require(!is_data_member(mem), "interfaces may not contain data");
     compiler_require(!is_copy(mem) && !is_move(mem),
        "interfaces may not copy or move; consider"

@@ -4,7 +4,7 @@
 #include "reflection_iterator.h"
 
 constexpr void dupe(meta::info source) {
-  for (meta::info mem : member_range(source)) {
+  for (meta::info mem : meta::range(source)) {
     -> mem;
   };
 };

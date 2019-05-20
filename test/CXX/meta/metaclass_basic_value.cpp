@@ -86,7 +86,7 @@ consteval void BasicValue(info source) {
   bool needs_copy_assign_op = true;
   bool needs_move_assign_op = true;
 
-  for (auto f : member_range(definition_of(source))) {
+  for (auto f : meta::range(definition_of(source))) {
     if (is_default_constructor(f))
       needs_default_ctor = false;
     if (is_copy_constructor(f))
@@ -124,7 +124,7 @@ consteval void BasicValue(info source) {
       BasicValueDefaults& operator=(BasicValueDefaults&& that) = default;
     };
 
-  for (auto f : member_range(definition_of(source))) {
+  for (auto f : meta::range(definition_of(source))) {
     if (is_data_member(f)) {
       make_private(f);
     } else if (is_member_function(f)) {

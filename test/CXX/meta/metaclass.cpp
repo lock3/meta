@@ -25,7 +25,7 @@ constexpr void interface(meta::info source) {
     int dedicated_field = 0;
   };
 
-  for (meta::info mem : member_range(source)) {
+  for (meta::info mem : meta::range(source)) {
     -> mem;
   }
 };

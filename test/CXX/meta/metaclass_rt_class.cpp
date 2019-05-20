@@ -47,7 +47,7 @@ consteval void compiler_print_type_definition(info type_reflection) {
 }
 
 consteval void gen_impl(info proto) {
-  for (info mem : member_range(proto)) {
+  for (info mem : meta::range(proto)) {
     // Handle data members
     if (is_data_member(mem)) {
       make_private(mem);
@@ -65,7 +65,7 @@ consteval void gen_impl(info proto) {
 }
 
 consteval void gen_void_fn(info fn) {
-  member_range params(fn);
+  meta::range params(fn);
   -> __fragment struct {
     virtual HRESULT unqualid(name_of(fn))(-> params) {
       this->m_impl.unqualid(name_of(fn))(unqualid(... params));
@@ -76,7 +76,7 @@ consteval void gen_void_fn(info fn) {
 
 constexpr void gen_non_void_fn(info fn) {
   info ret_type = return_type_of(fn);
-  member_range params(fn);
+  meta::range params(fn);
   -> __fragment struct {
     virtual HRESULT unqualid(name_of(fn))(-> params, typename(ret_type)* retval) {
       *retval = this->m_impl.unqualid(name_of(fn))(unqualid(... params));
@@ -99,7 +99,7 @@ constexpr void rt_class(info proto) {
   };
 
   // Generate wrappers that call into the implementation.
-  for (info mem : member_range(proto)) {
+  for (info mem : meta::range(proto)) {
     if (!is_member_function(mem))
       continue;
 

@@ -3,17 +3,17 @@
 #include "reflection_iterator.h"
 
 consteval void test_metaclass(meta::info source) {
-    for (auto method : member_range(source)) {
-      -> __fragment class {
-        public:
-        constexpr int unqualid(method)() { return 10; }
-      };
-    }
+  for (auto method : meta::range(source)) {
+    -> __fragment class {
+    public:
+      constexpr int unqualid(method)() { return 10; }
+    };
+  }
 }
 
 class(test_metaclass) test_class {
-    int fn_1();
-    int fn_2();
+  int fn_1();
+  int fn_2();
 };
 
 int main() {

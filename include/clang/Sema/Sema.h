@@ -4395,6 +4395,9 @@ public:
                                 const DeclarationNameInfo &NameInfo,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
+  ExprValueKind getValueKindForDeclReference(QualType &T, ValueDecl *VD,
+                                             SourceLocation Loc);
+
   ExprResult BuildDeclarationNameExpr(const CXXScopeSpec &SS,
                                       LookupResult &R,
                                       bool NeedsADL,

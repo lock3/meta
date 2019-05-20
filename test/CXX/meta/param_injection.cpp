@@ -17,7 +17,7 @@ class foo {
   consteval {
     {
       meta::info fn_refl = reflexpr(bar::do_thing);
-      member_range params(fn_refl);
+      meta::range params(fn_refl);
 
       -> __fragment struct {
         constexpr int new_do_thing(-> params) const {
@@ -27,7 +27,7 @@ class foo {
     }
     {
       meta::info fn_refl = reflexpr(bar::undefined_do_thing);
-      member_range params(fn_refl);
+      meta::range params(fn_refl);
 
       -> __fragment struct {
         constexpr int new_undefined_do_thing(-> params) const {
@@ -43,7 +43,7 @@ class foo_two {
   consteval {
     {
       meta::info fn_refl = reflexpr(bar::do_thing);
-      member_range params(fn_refl);
+      meta::range params(fn_refl);
 
       -> __fragment struct {
         constexpr int new_do_thing(-> params) const {
@@ -53,7 +53,7 @@ class foo_two {
     }
     {
       meta::info fn_refl = reflexpr(bar::undefined_do_thing);
-      member_range params(fn_refl);
+      meta::range params(fn_refl);
 
       -> __fragment struct {
         constexpr int new_undefined_do_thing(-> params) const {
