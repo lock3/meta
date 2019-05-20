@@ -2946,6 +2946,185 @@ static void
 diagnoseUncapturableValueReference(Sema &S, SourceLocation loc,
                                    ValueDecl *var, DeclContext *DC);
 
+ExprValueKind Sema::getValueKindForDeclReference(QualType &T, ValueDecl *VD,
+                                                 SourceLocation Loc) {
+    ExprValueKind valueKind = VK_RValue;
+
+    switch (VD->getKind()) {
+    // Ignore all the non-ValueDecl kinds.
+#define ABSTRACT_DECL(kind)
+#define VALUE(type, base)
+#define DECL(type, base) \
+    case Decl::type:
+#include "clang/AST/DeclNodes.inc"
+      llvm_unreachable("invalid value decl kind");
+
+    // These shouldn't make it here.
+    case Decl::ObjCAtDefsField:
+      llvm_unreachable("forming non-member reference to ivar?");
+
+    // Enum constants are always r-values and never references.
+    // Unresolved using declarations are dependent.
+    case Decl::EnumConstant:
+    case Decl::UnresolvedUsingValue:
+    case Decl::OMPDeclareReduction:
+    case Decl::OMPDeclareMapper:
+      valueKind = VK_RValue;
+      break;
+
+    // Fields and indirect fields that got here must be for
+    // pointer-to-member expressions; we just call them l-values for
+    // internal consistency, because this subexpression doesn't really
+    // exist in the high-level semantics.
+    case Decl::Field:
+    case Decl::IndirectField:
+    case Decl::ObjCIvar:
+      assert(getLangOpts().CPlusPlus &&
+             "building reference to field in C?");
+
+      // These can't have reference type in well-formed programs, but
+      // for internal consistency we do this anyway.
+      T = T.getNonReferenceType();
+      valueKind = VK_LValue;
+      break;
+
+    // Non-type template parameters are either l-values or r-values
+    // depending on the type.
+    case Decl::NonTypeTemplateParm: {
+      if (const ReferenceType *reftype = T->getAs<ReferenceType>()) {
+        T = reftype->getPointeeType();
+        valueKind = VK_LValue; // even if the parameter is an r-value reference
+        break;
+      }
+
+      // For non-references, we need to strip qualifiers just in case
+      // the template parameter was declared as 'const int' or whatever.
+      valueKind = VK_RValue;
+      T = T.getUnqualifiedType();
+      break;
+    }
+
+    case Decl::Var:
+    case Decl::VarTemplateSpecialization:
+    case Decl::VarTemplatePartialSpecialization:
+    case Decl::Decomposition:
+    case Decl::OMPCapturedExpr:
+      // In C, "extern void blah;" is valid and is an r-value.
+      if (!getLangOpts().CPlusPlus &&
+          !T.hasQualifiers() &&
+          T->isVoidType()) {
+        valueKind = VK_RValue;
+        break;
+      }
+      LLVM_FALLTHROUGH;
+
+    case Decl::ImplicitParam:
+    case Decl::ParmVar: {
+      // These are always l-values.
+      valueKind = VK_LValue;
+      T = T.getNonReferenceType();
+
+      // FIXME: Does the addition of const really only apply in
+      // potentially-evaluated contexts? Since the variable isn't actually
+      // captured in an unevaluated context, it seems that the answer is no.
+      if (!isUnevaluatedContext()) {
+        QualType CapturedType = getCapturedDeclRefType(cast<VarDecl>(VD), Loc);
+        if (!CapturedType.isNull())
+          T = CapturedType;
+      }
+
+      break;
+    }
+
+    case Decl::Binding: {
+      // These are always lvalues.
+      valueKind = VK_LValue;
+      T = T.getNonReferenceType();
+      // FIXME: Support lambda-capture of BindingDecls, once CWG actually
+      // decides how that's supposed to work.
+      auto *BD = cast<BindingDecl>(VD);
+      if (BD->getDeclContext()->isFunctionOrMethod() &&
+          BD->getDeclContext() != CurContext)
+        diagnoseUncapturableValueReference(*this, Loc, BD, CurContext);
+      break;
+    }
+
+    case Decl::Function: {
+      if (unsigned BID = cast<FunctionDecl>(VD)->getBuiltinID()) {
+        if (!Context.BuiltinInfo.isPredefinedLibFunction(BID)) {
+          T = Context.BuiltinFnTy;
+          valueKind = VK_RValue;
+          break;
+        }
+      }
+
+      const FunctionType *fty = T->castAs<FunctionType>();
+
+      // If we're referring to a function with an __unknown_anytype
+      // result type, make the entire expression __unknown_anytype.
+      if (fty->getReturnType() == Context.UnknownAnyTy) {
+        T = Context.UnknownAnyTy;
+        valueKind = VK_RValue;
+        break;
+      }
+
+      // Functions are l-values in C++.
+      if (getLangOpts().CPlusPlus) {
+        valueKind = VK_LValue;
+        break;
+      }
+
+      // C99 DR 316 says that, if a function type comes from a
+      // function definition (without a prototype), that type is only
+      // used for checking compatibility. Therefore, when referencing
+      // the function, we pretend that we don't have the full function
+      // type.
+      if (!cast<FunctionDecl>(VD)->hasPrototype() &&
+          isa<FunctionProtoType>(fty))
+        T = Context.getFunctionNoProtoType(fty->getReturnType(),
+                                           fty->getExtInfo());
+
+      // Functions are r-values in C.
+      valueKind = VK_RValue;
+      break;
+    }
+
+    case Decl::CXXDeductionGuide:
+      llvm_unreachable("building reference to deduction guide");
+
+    case Decl::MSProperty:
+      valueKind = VK_LValue;
+      break;
+
+    case Decl::CXXMethod:
+      // If we're referring to a method with an __unknown_anytype
+      // result type, make the entire expression __unknown_anytype.
+      // This should only be possible with a type written directly.
+      if (const FunctionProtoType *proto
+            = dyn_cast<FunctionProtoType>(VD->getType()))
+        if (proto->getReturnType() == Context.UnknownAnyTy) {
+          T = Context.UnknownAnyTy;
+          valueKind = VK_RValue;
+          break;
+        }
+
+      // C++ methods are l-values if static, r-values if non-static.
+      if (cast<CXXMethodDecl>(VD)->isStatic()) {
+        valueKind = VK_LValue;
+        break;
+      }
+      LLVM_FALLTHROUGH;
+
+    case Decl::CXXConversion:
+    case Decl::CXXDestructor:
+    case Decl::CXXConstructor:
+      valueKind = VK_RValue;
+      break;
+    }
+
+    return valueKind;
+}
+
 /// Complete semantic analysis for a reference to the given declaration.
 ExprResult Sema::BuildDeclarationNameExpr(
     const CXXScopeSpec &SS, const DeclarationNameInfo &NameInfo, NamedDecl *D,
@@ -3006,180 +3185,8 @@ ExprResult Sema::BuildDeclarationNameExpr(
       ResolveExceptionSpec(Loc, FPT);
       type = VD->getType();
     }
-    ExprValueKind valueKind = VK_RValue;
-
-    switch (D->getKind()) {
-    // Ignore all the non-ValueDecl kinds.
-#define ABSTRACT_DECL(kind)
-#define VALUE(type, base)
-#define DECL(type, base) \
-    case Decl::type:
-#include "clang/AST/DeclNodes.inc"
-      llvm_unreachable("invalid value decl kind");
-
-    // These shouldn't make it here.
-    case Decl::ObjCAtDefsField:
-      llvm_unreachable("forming non-member reference to ivar?");
-
-    // Enum constants are always r-values and never references.
-    // Unresolved using declarations are dependent.
-    case Decl::EnumConstant:
-    case Decl::UnresolvedUsingValue:
-    case Decl::OMPDeclareReduction:
-    case Decl::OMPDeclareMapper:
-      valueKind = VK_RValue;
-      break;
-
-    // Fields and indirect fields that got here must be for
-    // pointer-to-member expressions; we just call them l-values for
-    // internal consistency, because this subexpression doesn't really
-    // exist in the high-level semantics.
-    case Decl::Field:
-    case Decl::IndirectField:
-    case Decl::ObjCIvar:
-      assert(getLangOpts().CPlusPlus &&
-             "building reference to field in C?");
-
-      // These can't have reference type in well-formed programs, but
-      // for internal consistency we do this anyway.
-      type = type.getNonReferenceType();
-      valueKind = VK_LValue;
-      break;
-
-    // Non-type template parameters are either l-values or r-values
-    // depending on the type.
-    case Decl::NonTypeTemplateParm: {
-      if (const ReferenceType *reftype = type->getAs<ReferenceType>()) {
-        type = reftype->getPointeeType();
-        valueKind = VK_LValue; // even if the parameter is an r-value reference
-        break;
-      }
-
-      // For non-references, we need to strip qualifiers just in case
-      // the template parameter was declared as 'const int' or whatever.
-      valueKind = VK_RValue;
-      type = type.getUnqualifiedType();
-      break;
-    }
-
-    case Decl::Var:
-    case Decl::VarTemplateSpecialization:
-    case Decl::VarTemplatePartialSpecialization:
-    case Decl::Decomposition:
-    case Decl::OMPCapturedExpr:
-      // In C, "extern void blah;" is valid and is an r-value.
-      if (!getLangOpts().CPlusPlus &&
-          !type.hasQualifiers() &&
-          type->isVoidType()) {
-        valueKind = VK_RValue;
-        break;
-      }
-      LLVM_FALLTHROUGH;
-
-    case Decl::ImplicitParam:
-    case Decl::ParmVar: {
-      // These are always l-values.
-      valueKind = VK_LValue;
-      type = type.getNonReferenceType();
-
-      // FIXME: Does the addition of const really only apply in
-      // potentially-evaluated contexts? Since the variable isn't actually
-      // captured in an unevaluated context, it seems that the answer is no.
-      if (!isUnevaluatedContext()) {
-        QualType CapturedType = getCapturedDeclRefType(cast<VarDecl>(VD), Loc);
-        if (!CapturedType.isNull())
-          type = CapturedType;
-      }
-
-      break;
-    }
-
-    case Decl::Binding: {
-      // These are always lvalues.
-      valueKind = VK_LValue;
-      type = type.getNonReferenceType();
-      // FIXME: Support lambda-capture of BindingDecls, once CWG actually
-      // decides how that's supposed to work.
-      auto *BD = cast<BindingDecl>(VD);
-      if (BD->getDeclContext()->isFunctionOrMethod() &&
-          BD->getDeclContext() != CurContext)
-        diagnoseUncapturableValueReference(*this, Loc, BD, CurContext);
-      break;
-    }
-
-    case Decl::Function: {
-      if (unsigned BID = cast<FunctionDecl>(VD)->getBuiltinID()) {
-        if (!Context.BuiltinInfo.isPredefinedLibFunction(BID)) {
-          type = Context.BuiltinFnTy;
-          valueKind = VK_RValue;
-          break;
-        }
-      }
-
-      const FunctionType *fty = type->castAs<FunctionType>();
-
-      // If we're referring to a function with an __unknown_anytype
-      // result type, make the entire expression __unknown_anytype.
-      if (fty->getReturnType() == Context.UnknownAnyTy) {
-        type = Context.UnknownAnyTy;
-        valueKind = VK_RValue;
-        break;
-      }
-
-      // Functions are l-values in C++.
-      if (getLangOpts().CPlusPlus) {
-        valueKind = VK_LValue;
-        break;
-      }
-
-      // C99 DR 316 says that, if a function type comes from a
-      // function definition (without a prototype), that type is only
-      // used for checking compatibility. Therefore, when referencing
-      // the function, we pretend that we don't have the full function
-      // type.
-      if (!cast<FunctionDecl>(VD)->hasPrototype() &&
-          isa<FunctionProtoType>(fty))
-        type = Context.getFunctionNoProtoType(fty->getReturnType(),
-                                              fty->getExtInfo());
-
-      // Functions are r-values in C.
-      valueKind = VK_RValue;
-      break;
-    }
-
-    case Decl::CXXDeductionGuide:
-      llvm_unreachable("building reference to deduction guide");
-
-    case Decl::MSProperty:
-      valueKind = VK_LValue;
-      break;
-
-    case Decl::CXXMethod:
-      // If we're referring to a method with an __unknown_anytype
-      // result type, make the entire expression __unknown_anytype.
-      // This should only be possible with a type written directly.
-      if (const FunctionProtoType *proto
-            = dyn_cast<FunctionProtoType>(VD->getType()))
-        if (proto->getReturnType() == Context.UnknownAnyTy) {
-          type = Context.UnknownAnyTy;
-          valueKind = VK_RValue;
-          break;
-        }
-
-      // C++ methods are l-values if static, r-values if non-static.
-      if (cast<CXXMethodDecl>(VD)->isStatic()) {
-        valueKind = VK_LValue;
-        break;
-      }
-      LLVM_FALLTHROUGH;
-
-    case Decl::CXXConversion:
-    case Decl::CXXDestructor:
-    case Decl::CXXConstructor:
-      valueKind = VK_RValue;
-      break;
-    }
-
+    ExprValueKind valueKind = getValueKindForDeclReference(
+        type, cast<ValueDecl>(D), Loc);
     return BuildDeclRefExpr(VD, type, valueKind, NameInfo, &SS, FoundD,
                             TemplateArgs);
   }
