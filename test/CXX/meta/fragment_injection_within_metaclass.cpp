@@ -3,7 +3,7 @@
 #include "reflection_iterator.h"
 
 consteval void test_metaclass(meta::info source) {
-  for (auto method : member_range(source)) {
+  for (auto method : meta::range(source)) {
     -> method;
   }
 }
@@ -14,7 +14,7 @@ class base_test_class {
 };
 
 consteval void do_thing() {
-  for (auto field : member_range(reflexpr(base_test_class))) {
+  for (auto field : meta::range(reflexpr(base_test_class))) {
     -> __fragment class {
         public:
         constexpr int unqualid("fn_", field)() { return 10; }

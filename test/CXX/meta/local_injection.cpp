@@ -1,7 +1,5 @@
 // RUN: %clang_cc1 -freflection -std=c++1z -fsyntax-only -verify %s -Wmissing-noreturn
 
-#define assert(E) if (!(E)) __builtin_abort();
-
 consteval int f1() {
   consteval {
     -> __fragment {
@@ -18,7 +16,7 @@ consteval int f2() { // expected-error {{no return statement in constexpr functi
   };
 }
 
-int f3() {
+constexpr int f3() {
   consteval {
     -> __fragment {
       constexpr int x = 10;
@@ -41,6 +39,6 @@ constexpr int f4() {
 
 int main() {
   static_assert(f1() == 42);
-  assert(f3() == 10);
+  static_assert(f3() == 10);
   static_assert(f4<12>() == 12);
 }

@@ -4,8 +4,6 @@
 
 struct assertion { };
 
-#define assert(E) if (!(E)) __builtin_abort();
-
 struct S {
   enum E { X, Y };
   enum class EC { X, Y };
