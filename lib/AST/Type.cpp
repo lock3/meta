@@ -461,6 +461,15 @@ bool Type::isStructureType() const {
   return false;
 }
 
+bool Type::isMetaType() const {
+  const Type *CanonType = getCanonicalTypeInternal().getTypePtr();
+  if (CanonType != this) {
+    return CanonType->isMetaType();
+  }
+
+  return TypeBits.MetaType;
+}
+
 bool Type::isObjCBoxableRecordType() const {
   if (const auto *RT = getAs<RecordType>())
     return RT->getDecl()->hasAttr<ObjCBoxableAttr>();

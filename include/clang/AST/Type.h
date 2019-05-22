@@ -1991,6 +1991,7 @@ public:
   bool isRecordType() const;
   bool isClassType() const;
   bool isStructureType() const;
+  bool isMetaType() const;
   bool isObjCBoxableRecordType() const;
   bool isInterfaceType() const;
   bool isStructureOrClassType() const;
@@ -2104,9 +2105,6 @@ public:
   /// Whether this type is a dependent type, meaning that its definition
   /// somehow depends on a template parameter (C++ [temp.dep.type]).
   bool isDependentType() const { return TypeBits.Dependent; }
-
-  /// Whether this type is a meta type.
-  bool isMetaType() const { return TypeBits.MetaType; }
 
   /// Determine whether this type is an instantiation-dependent type,
   /// meaning that the type involves a template parameter (even if the

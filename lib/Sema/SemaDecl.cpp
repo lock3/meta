@@ -7636,14 +7636,6 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
     NewVD->setInvalidDecl();
     return;
   }
-
-  bool isConstexprContext = NewVD->isConstexpr()
-                         || NewVD->getDeclContext()->isConstexprContext();
-  if (!isConstexprContext && T->isMetaType()) {
-    Diag(NewVD->getLocation(), diag::err_meta_type_constexpr);
-    NewVD->setInvalidDecl();
-    return;
-  }
 }
 
 /// Perform semantic checking on a newly-created variable
@@ -12199,6 +12191,14 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     }
   }
 
+  bool isConstexprContext = var->isConstexpr()
+                         || var->getDeclContext()->isConstexprContext();
+  if (!isConstexprContext && type->isMetaType()) {
+    Diag(var->getLocation(), diag::err_meta_type_constexpr);
+    var->setInvalidDecl();
+    return;
+  }
+
   // Require the destructor.
   if (const RecordType *recordType = baseType->getAs<RecordType>())
     FinalizeVarWithDestructor(var, recordType);
@@ -15807,8 +15807,11 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
     if (T->isMetaType()) {
       // FIXME: This is a bit of hack, we should probably replace the
       // type rather than modifying it directly.
-      const RecordType *RT = cast<RecordType>(Record->getTypeForDecl());
-      const_cast<RecordType *>(RT)->setMetaType();
+      const Type *T = Record->getTypeForDecl();
+
+      if (auto *RT = dyn_cast<RecordType>(T)) {
+        const_cast<RecordType *>(RT)->setMetaType();
+      }
     }
   }
 
