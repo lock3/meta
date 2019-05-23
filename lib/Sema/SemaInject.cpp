@@ -3565,6 +3565,8 @@ static bool ApplyReflectionInjection(Sema &S, CXXInjectorDecl *MD,
 }
 
 bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
+  CodeInjectionTracker InjectingCode(*this);
+
   Decl *Injectee = GetInjecteeDecl(*this, CurContext, IE.ContextSpecifier);
   if (!Injectee)
     return false;
@@ -3795,6 +3797,8 @@ static void InjectPendingDefinitions(InjectionContext *Ctx,
 
 template<typename DeclType, InjectedDefType DefType>
 static void InjectAllPendingDefinitions(InjectionContext *Ctx) {
+  Sema::CodeInjectionTracker InjectingCode(Ctx->getSema());
+
   Ctx->ForEachPendingInjection([&Ctx] {
     InjectPendingDefinitions<DeclType, DefType>(Ctx, Ctx->CurInjection);
   });

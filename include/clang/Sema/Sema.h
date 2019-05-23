@@ -725,6 +725,24 @@ public:
   };
 
   llvm::SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
+
+  /// True if we're currently injecting code.
+  bool IsInjectingCode = false;
+
+  class CodeInjectionTracker {
+    Sema &S;
+    bool PreviousValue;
+  public:
+    CodeInjectionTracker(Sema &S)
+      : S(S), PreviousValue(S.IsInjectingCode) {
+      S.IsInjectingCode = true;
+    }
+
+    ~CodeInjectionTracker() {
+      S.IsInjectingCode = PreviousValue;
+    }
+  };
+
   /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
   bool AnalyzingRequiredDeclarator = false;
 
