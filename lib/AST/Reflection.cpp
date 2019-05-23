@@ -20,156 +20,251 @@
 
 namespace clang {
   enum ReflectionQuery : unsigned {
-    RQ_unknown,
+    query_unknown,
 
-    RQ_is_invalid,
-    RQ_is_entity,
-    RQ_is_unnamed,
+    query_is_invalid,
+    query_is_entity,
+    query_is_unnamed,
 
-    // Declarations
-    RQ_is_variable,
-    RQ_is_function,
-    RQ_is_class,
-    RQ_is_union,
-    RQ_is_unscoped_enum,
-    RQ_is_scoped_enum,
-    RQ_is_enumerator,
-    RQ_is_bitfield,
-    RQ_is_static_data_member,
-    RQ_is_nonstatic_data_member,
-    RQ_is_static_member_function,
-    RQ_is_nonstatic_member_function,
-    RQ_is_copy_assignment_operator,
-    RQ_is_move_assignment_operator,
-    RQ_is_constructor,
-    RQ_is_default_constructor,
-    RQ_is_copy_constructor,
-    RQ_is_move_constructor,
-    RQ_is_destructor,
+    /// Scope
+    query_is_local,
+    query_is_class_member,
 
-    // Types
-    RQ_is_type,
-    RQ_is_function_type,
-    RQ_is_class_type,
-    RQ_is_union_type,
-    RQ_is_enum_type,
-    RQ_is_scoped_enum_type,
-    RQ_is_void_type,
-    RQ_is_null_pointer_type,
-    RQ_is_integral_type,
-    RQ_is_floating_point_type,
-    RQ_is_array_type,
-    RQ_is_pointer_type,
-    RQ_is_lvalue_reference_type,
-    RQ_is_rvalue_reference_type,
-    RQ_is_member_object_pointer_type,
-    RQ_is_member_function_pointer_type,
-    RQ_is_closure_type,
+    /// Declarations
+
+    // Variables
+    query_is_variable,
+    query_has_static_storage,
+    query_has_thread_local_storage,
+    query_has_automatic_local_storage,
+
+    // Functions
+    query_is_function,
+    // query_has_ellipsis,
+
+    // Classes
+    query_is_class,
+    query_has_virtual_destructor,
+
+    // Class Members
+
+    // Data Members
+    query_is_static_data_member,
+    query_is_nonstatic_data_member,
+    query_is_bit_field,
+
+    // Member Functions
+    query_is_static_member_function,
+    query_is_nonstatic_member_function,
+    query_is_override,
+    query_is_override_specified,
+    query_is_deleted,
+    query_is_virtual,
+    query_is_pure_virtual,
+
+    // Special Members
+    query_is_constructor,
+    query_is_default_constructor,
+    query_is_copy_constructor,
+    query_is_move_constructor,
+    query_is_copy_assignment_operator,
+    query_is_move_assignment_operator,
+    query_is_destructor,
+    query_is_defaulted,
+    query_is_explicit,
+
+    // Access
+    query_has_access,
+    query_is_public,
+    query_is_protected,
+    query_is_private,
+    query_has_default_access,
+
+    // Union
+    query_is_union,
 
     // Namespaces and aliases
-    RQ_is_namespace,
-    RQ_is_namespace_alias,
-    RQ_is_type_alias,
+    query_is_namespace,
+    query_is_namespace_alias,
+    query_is_type_alias,
 
-    // Templates and specializations
-    RQ_is_template,
-    RQ_is_class_template,
-    RQ_is_alias_template,
-    RQ_is_function_template,
-    RQ_is_variable_template,
-    RQ_is_static_member_function_template,
-    RQ_is_nonstatic_member_function_template,
-    RQ_is_constructor_template,
-    RQ_is_destructor_template,
-    RQ_is_concept,
-    RQ_is_specialization,
-    RQ_is_partial_specialization,
-    RQ_is_explicit_specialization,
-    RQ_is_implicit_instantiation,
-    RQ_is_explicit_instantiation,
+    // Enums
+    query_is_unscoped_enum,
+    query_is_scoped_enum,
+
+    // Enumerators
+    query_is_enumerator,
+
+    // Templates
+    query_is_template,
+    query_is_class_template,
+    query_is_alias_template,
+    query_is_function_template,
+    query_is_variable_template,
+    query_is_static_member_function_template,
+    query_is_nonstatic_member_function_template,
+    query_is_constructor_template,
+    query_is_destructor_template,
+    query_is_concept,
+
+    // Specializations
+    query_is_specialization,
+    query_is_partial_specialization,
+    query_is_explicit_specialization,
+    query_is_implicit_instantiation,
+    query_is_explicit_instantiation,
 
     // Base class specifiers
-    RQ_is_direct_base,
-    RQ_is_virtual_base,
+    query_is_direct_base,
+    query_is_virtual_base,
 
     // Parameters
-    RQ_is_function_parameter,
-    RQ_is_template_parameter,
-    RQ_is_type_template_parameter,
-    RQ_is_nontype_template_parameter,
-    RQ_is_template_template_parameter,
+    query_is_function_parameter,
+    query_is_template_parameter,
+    query_is_type_template_parameter,
+    query_is_nontype_template_parameter,
+    query_is_template_template_parameter,
+    query_has_default_argument,
+
+    // Types
+    query_is_type,
+    query_is_fundamental_type,
+    query_is_arithmetic_type,
+    query_is_scalar_type,
+    query_is_object_type,
+    query_is_compound_type,
+    query_is_function_type,
+    query_is_class_type,
+    query_is_union_type,
+    query_is_unscoped_enum_type,
+    query_is_scoped_enum_type,
+    query_is_void_type,
+    query_is_null_pointer_type,
+    query_is_integral_type,
+    query_is_floating_point_type,
+    query_is_array_type,
+    query_is_pointer_type,
+    query_is_lvalue_reference_type,
+    query_is_rvalue_reference_type,
+    query_is_member_object_pointer_type,
+    query_is_member_function_pointer_type,
+    query_is_closure_type,
+
+    // Type properties
+    query_is_incomplete_type,
+    query_is_const_type,
+    query_is_volatile_type,
+    query_is_trivial_type,
+    query_is_trivially_copyable_type,
+    query_is_standard_layout_type,
+    query_is_pod_type,
+    query_is_literal_type,
+    query_is_empty_type,
+    query_is_polymorphic_type,
+    query_is_abstract_type,
+    query_is_final_type,
+    query_is_aggregate_type,
+    query_is_signed_type,
+    query_is_unsigned_type,
+    query_has_unique_object_representations_type,
+
+    // Type operations
+    query_is_default_constructible_type,
+    query_is_trivially_default_constructible_type,
+    query_is_nothrow_default_constructible_type,
+    query_is_move_constructible_type,
+    query_is_trivially_move_constructible_type,
+    query_is_nothrow_move_constructible_type,
+    query_is_assignable_type,
+    query_is_trivially_assignable_type,
+    query_is_nothrow_assignable_type,
+    query_is_copy_assignable_type,
+    query_is_trivially_copy_assignable_type,
+    query_is_nothrow_copy_assignable_type,
+    query_is_move_assignable_type,
+    query_is_trivially_move_assignable_type,
+    query_is_nothrow_move_assignable_type,
+    query_is_destructible_type,
+    query_is_trivially_destructible_type,
+    query_is_nothrow_destructible_type,
+    query_is_swappable_type,
+    query_is_nothrow_swappable_type,
+
+    // Captures
+    query_has_default_ref_capture,
+    query_has_default_copy_capture,
+    query_is_capture,
+    query_is_simple_capture,
+    query_is_ref_capture,
+    query_is_copy_capture,
+    query_is_explicit_capture,
+    query_is_init_capture,
+    query_has_captures,
 
     // Expressions
-    RQ_is_expression,
-    RQ_is_lvalue,
-    RQ_is_xvalue,
-    RQ_is_rvalue,
-    RQ_is_value,
-
-    // Scope
-    RQ_is_local,
-    RQ_is_class_member,
-
-    // Access queries
-    RQ_has_default_access,
+    query_is_expression,
+    query_is_lvalue,
+    query_is_xvalue,
+    query_is_rvalue,
+    query_is_value,
 
     // Traits
-    RQ_get_decl_traits,
-    RQ_get_linkage_traits,
-    RQ_get_access_traits,
-    RQ_get_type_traits,
+    query_get_decl_traits,
+    query_get_linkage_traits,
+    query_get_access_traits,
+    query_get_type_traits,
 
     // Associated reflections
-    RQ_get_entity,
-    RQ_get_parent,
-    RQ_get_type,
-    RQ_get_return_type,
-    RQ_get_this_ref_type,
-    RQ_get_definition,
+    query_get_entity,
+    query_get_parent,
+    query_get_type,
+    query_get_return_type,
+    query_get_this_ref_type,
+    query_get_definition,
 
     // Traversal
-    RQ_get_begin,
-    RQ_get_next,
+    query_get_begin,
+    query_get_next,
 
     // Name
-    RQ_get_name,
-    RQ_get_display_name,
+    query_get_name,
+    query_get_display_name,
 
     // Labels for kinds of queries. These need to be updated when new
     // queries are added.
 
     // Predicates -- these return bool.
-    RQ_first_predicate = RQ_is_invalid,
-    RQ_last_predicate = RQ_has_default_access,
+    query_first_predicate = query_is_invalid,
+    query_last_predicate = query_is_value,
     // Traits -- these return unsigned.
-    RQ_first_trait = RQ_get_decl_traits,
-    RQ_last_trait = RQ_get_type_traits,
+    query_first_trait = query_get_decl_traits,
+    query_last_trait = query_get_type_traits,
     // Associated reflections -- these return meta::info.
-    RQ_first_assoc = RQ_get_entity,
-    RQ_last_assoc = RQ_get_next,
+    query_first_assoc = query_get_entity,
+    query_last_assoc = query_get_next,
     // Names -- these return const char*
-    RQ_first_name = RQ_get_name,
-    RQ_last_name = RQ_get_display_name,
+    query_first_name = query_get_name,
+    query_last_name = query_get_display_name,
   };
 
   ReflectionQuery getUnknownReflectionQuery() {
-    return RQ_unknown;
+    return query_unknown;
   }
 
   bool isPredicateQuery(ReflectionQuery Q) {
-    return RQ_first_predicate <= Q && Q <= RQ_last_predicate;
+    return query_first_predicate <= Q && Q <= query_last_predicate;
   }
 
   bool isTraitQuery(ReflectionQuery Q) {
-    return RQ_first_trait <= Q && Q <= RQ_last_trait;
+    return query_first_trait <= Q && Q <= query_last_trait;
   }
 
   bool isAssociatedReflectionQuery(ReflectionQuery Q) {
-    return RQ_first_assoc <= Q && Q <= RQ_last_assoc;
+    return query_first_assoc <= Q && Q <= query_last_assoc;
   }
 
   bool isNameQuery(ReflectionQuery Q) {
-    return RQ_first_name <= Q && Q <= RQ_last_name;
+    return query_first_name <= Q && Q <= query_last_name;
   }
 }
 
@@ -367,10 +462,32 @@ static bool isUnnamed(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static const VarDecl *getAsVarDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return dyn_cast<VarDecl>(D);
+  return nullptr;
+}
+
 /// Returns true if R designates a variable.
 static bool isVariable(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<VarDecl>(D));
+  return SuccessBool(R, Result, getAsVarDecl(R));
+}
+
+static bool hasStaticStorage(const Reflection &R, APValue &Result) {
+  if (const VarDecl *D = getAsVarDecl(R))
+    return SuccessBool(R, Result, D->getStorageDuration() == SD_Static);
+  return SuccessFalse(R, Result);
+}
+
+static bool hasThreadLocalStorage(const Reflection &R, APValue &Result) {
+  if (const VarDecl *D = getAsVarDecl(R))
+    return SuccessBool(R, Result, D->getStorageDuration() == SD_Thread);
+  return SuccessFalse(R, Result);
+}
+
+static bool hasAutomaticLocalStorage(const Reflection &R, APValue &Result) {
+  if (const VarDecl *D = getAsVarDecl(R))
+    return SuccessBool(R, Result, D->getStorageDuration() == SD_Automatic);
   return SuccessFalse(R, Result);
 }
 
@@ -387,59 +504,30 @@ static const CXXRecordDecl *getReachableRecordDecl(const Reflection &R) {
   return nullptr;
 }
 
-/// Returns true if R designates a class.
-static bool isClass(const Reflection &R, APValue &Result) {
-  if (const CXXRecordDecl *D = getReachableRecordDecl(R))
-    return SuccessBool(R, Result, D->isClass() || D->isStruct());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a union.
-static bool isUnion(const Reflection &R, APValue &Result) {
-  if (const CXXRecordDecl *D = getReachableRecordDecl(R))
-    return SuccessBool(R, Result, D->isUnion());
-  return SuccessFalse(R, Result);
-}
-
-static const EnumDecl *getReachableEnumDecl(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<EnumDecl>(D);
+static const CXXRecordDecl *getReachableClassDecl(const Reflection &R) {
+  if (const CXXRecordDecl *D = getReachableRecordDecl(R)) {
+    if (D->isClass() || D->isStruct())
+      return D;
+  }
   return nullptr;
 }
 
-/// Returns true if R designates an unscoped enum.
-static bool isUnscopedEnum(const Reflection &R, APValue &Result) {
-  if (const EnumDecl *D = getReachableEnumDecl(R))
-    return SuccessBool(R, Result, !D->isScoped());
-  return SuccessFalse(R, Result);
+/// Returns true if R designates a class.
+static bool isClass(const Reflection &R, APValue &Result) {
+  return SuccessBool(R, Result, getReachableClassDecl(R));
 }
 
-/// Returns true if R designates a scoped enum.
-static bool isScopedEnum(const Reflection &R, APValue &Result) {
-  if (const EnumDecl *D = getReachableEnumDecl(R))
-    return SuccessBool(R, Result, D->isScoped());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates an enumerator.
-static bool isEnumerator(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<EnumConstantDecl>(D));
+static bool hasVirtualDestructor(const Reflection &R, APValue &Result) {
+  if (const CXXRecordDecl *D = getReachableClassDecl(R)) {
+    if (const CXXDestructorDecl *DD = D->getDestructor())
+      return SuccessBool(R, Result, DD->isVirtual());
+  }
   return SuccessFalse(R, Result);
 }
 
 /// Returns the reflected data member.
 static const FieldDecl *getAsDataMember(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<FieldDecl>(D);
-  return nullptr;
-}
-
-/// Returns true if R designates a nonstatic data member.
-static bool isBitField(const Reflection &R, APValue &Result) {
-  if (const FieldDecl *D = getAsDataMember(R))
-    return SuccessBool(R, Result, D->isBitField());
-  return SuccessFalse(R, Result);
+  return dyn_cast_or_null<FieldDecl>(getReachableDecl(R));
 }
 
 /// Returns true if R designates a static member variable.
@@ -453,50 +541,75 @@ static bool isStaticDataMember(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a nonstatic data member.
 static bool isNonstaticDataMember(const Reflection &R, APValue &Result) {
   if (const FieldDecl *D = getAsDataMember(R))
-    // FIXME: Is a bitfield a non-static data member?
     return SuccessTrue(R, Result);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a nonstatic data member.
+static bool isBitField(const Reflection &R, APValue &Result) {
+  if (const FieldDecl *D = getAsDataMember(R))
+    return SuccessBool(R, Result, D->isBitField());
   return SuccessFalse(R, Result);
 }
 
 /// Returns the reflected member function.
 static const CXXMethodDecl *getAsMemberFunction(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<CXXMethodDecl>(D);
-  return nullptr;
+  return dyn_cast_or_null<CXXMethodDecl>(getReachableDecl(R));
 }
 
-/// Returns true if R designates a static member function
+/// Returns the reflected constructor.
+static const CXXConstructorDecl *getReachableConstructor(const Reflection &R) {
+  return dyn_cast_or_null<CXXConstructorDecl>(getReachableDecl(R));
+}
+
+/// Returns true if R designates a static member function.
 static bool isStaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
     return SuccessBool(R, Result, M->isStatic());
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a nonstatic member function
+/// Returns true if R designates a nonstatic member function.
 static bool isNonstaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
     return SuccessBool(R, Result, M->isInstance());
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a copy assignment operator
-static bool isCopyAssignmentOperator(const Reflection &R, APValue &Result) {
+/// Returns true if R designates an overridden member function.
+static bool isOverride(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
-    return SuccessBool(R, Result, M->isCopyAssignmentOperator());
+    return SuccessBool(R, Result, M->size_overridden_methods() > 0);
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a move assignment operator
-static bool isMoveAssignmentOperator(const Reflection &R, APValue &Result) {
+/// returns true if R designates a member function with
+/// the override specifier present.
+static bool isOverrideSpecified(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
-    return SuccessBool(R, Result, M->isMoveAssignmentOperator());
+    return SuccessBool(R, Result, M->hasAttr<OverrideAttr>());
   return SuccessFalse(R, Result);
 }
 
-static const CXXConstructorDecl *getReachableConstructor(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
-    return dyn_cast<CXXConstructorDecl>(D);
-  return nullptr;
+/// Returns true if R designates a deleted member function..
+static bool isDeleted(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isDeleted());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a virtual member function.
+static bool isVirtual(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isVirtual());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a pure virtual member function.
+static bool isPureVirtual(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isVirtual() && M->isPure());
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a constructor.
@@ -527,6 +640,20 @@ static bool isMoveConstructor(const Reflection &R,APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a copy assignment operator
+static bool isCopyAssignmentOperator(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isCopyAssignmentOperator());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a move assignment operator
+static bool isMoveAssignmentOperator(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isMoveAssignmentOperator());
+  return SuccessFalse(R, Result);
+}
+
 /// Returns true if R designates an enumerator.
 static bool isDestructor(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
@@ -534,122 +661,70 @@ static bool isDestructor(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a type.
-static bool isType(const Reflection &R, APValue &Result) {
-  return SuccessBool(R, Result, R.isType());
+/// Returns true if R designates a defaulted member function.
+static bool isDefaulted(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isDefaulted());
+  return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a function type.
-static bool isFunctionType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R)) {
-    return SuccessBool(R, Result, T->isFunctionType());
+/// Returns true if R designates a explicit member function.
+static bool isExplicit(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return SuccessBool(R, Result, M->isExplicitSpecified());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has specified access.
+static bool hasAccess(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getAccess() != AS_none);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has public access.
+static bool isPublic(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getAccess() == AS_public);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has protected access.
+static bool isProtected(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getAccess() == AS_protected);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has private access.
+static bool isPrivate(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, D->getAccess() == AS_private);
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has default access.
+static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
+      for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
+        if (isa<AccessSpecDecl>(CurDecl))
+          return SuccessFalse(R, Result);
+        if (CurDecl == D)
+          return SuccessTrue(R, Result);
+      }
+    }
   }
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a class type.
-static bool isClassType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R)) {
-    return SuccessBool(R, Result, T->isRecordType());
-  }
+/// Returns true if R designates a union.
+static bool isUnion(const Reflection &R, APValue &Result) {
+  if (const CXXRecordDecl *D = getReachableRecordDecl(R))
+    return SuccessBool(R, Result, D->isUnion());
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a union type.
-static bool isUnionType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isUnionType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates an enum type.
-static bool isEnumType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isEnumeralType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a scoped enum type.
-static bool isScopedEnumType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isScopedEnumeralType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has void type.
-static bool isVoidType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isVoidType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has nullptr type.
-static bool isNullPtrType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isNullPtrType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has integral type.
-static bool isIntegralType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isIntegralOrEnumerationType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has floating point type.
-static bool isFloatingPointType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isFloatingType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has array type.
-static bool isArrayType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isArrayType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has pointer type.
-static bool isPointerType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isPointerType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has lvalue reference type.
-static bool isLValueReferenceType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isLValueReferenceType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has rvalue reference type.
-static bool isRValueReferenceType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isRValueReferenceType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has member object pointer type.
-static bool isMemberObjectPointerType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isMemberDataPointerType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R has member function pointer type.
-static bool isMemberFunctionPointerType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R))
-    return SuccessBool(R, Result, T->isMemberFunctionPointerType());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a closure type.
-static bool isClosureType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
 
 /// Returns true if R designates a namespace.
 static bool isNamespace(const Reflection &R, APValue &Result) {
@@ -674,17 +749,49 @@ static bool isTypeAlias(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+static const EnumDecl *getReachableEnumDecl(const Reflection &R) {
+  if (const Decl *D = getReachableDecl(R))
+    return dyn_cast<EnumDecl>(D);
+  return nullptr;
+}
+
+/// Returns true if R designates an unscoped enum.
+static bool isUnscopedEnum(const Reflection &R, APValue &Result) {
+  if (const EnumDecl *D = getReachableEnumDecl(R))
+    return SuccessBool(R, Result, !D->isScoped());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a scoped enum.
+static bool isScopedEnum(const Reflection &R, APValue &Result) {
+  if (const EnumDecl *D = getReachableEnumDecl(R))
+    return SuccessBool(R, Result, D->isScoped());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates an enumerator.
+static bool isEnumerator(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<EnumConstantDecl>(D));
+  return SuccessFalse(R, Result);
+}
+
 /// Returns true if R designates a template.
 static bool isTemplate(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, D->isTemplateDecl());
+    return SuccessBool(R, Result, D->isTemplated());
   return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a class template.
 static bool isClassTemplate(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<ClassTemplateDecl>(D));
+  if (const Decl *D = getReachableDecl(R)) {
+    if (isa<ClassTemplateDecl>(D))
+      return SuccessTrue(R, Result);
+
+    if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+      return SuccessBool(R, Result, RD->isClass() && RD->isTemplated());
+  }
   return SuccessFalse(R, Result);
 }
 
@@ -697,8 +804,13 @@ static bool isAliasTemplate(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a function template.
 static bool isFunctionTemplate(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, isa<FunctionTemplateDecl>(D));
+  if (const Decl *D = getReachableDecl(R)) {
+    if (isa<FunctionTemplateDecl>(D))
+      return SuccessTrue(R, Result);
+
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+      return SuccessBool(R, Result, FD->isTemplated());
+  }
   return SuccessFalse(R, Result);
 }
 
@@ -711,9 +823,15 @@ static bool isVariableTemplate(const Reflection &R, APValue &Result) {
 
 /// Returns the reflected template member function.
 static const CXXMethodDecl *getAsTemplateMemberFunction(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
+  if (const Decl *D = getReachableDecl(R)) {
     if (const FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(D))
       return dyn_cast<CXXMethodDecl>(D->getAsFunction());
+
+    if (const CXXMethodDecl *RD = dyn_cast<CXXMethodDecl>(D)) {
+      if (RD->isTemplated())
+        return RD;
+    }
+  }
   return nullptr;
 }
 
@@ -850,7 +968,9 @@ static bool isVirtualBase(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a function parameter.
 static bool isFunctionParameter(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
+  if (const Decl *D = getReachableDecl(R))
+    return SuccessBool(R, Result, isa<ParmVarDecl>(D));
+  return SuccessFalse(R, Result);
 }
 
 /// Returns true if R designates a template parameter.
@@ -874,11 +994,430 @@ static bool isNontypeTemplateParameter(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Return true if R designates a template template parameter.
+/// Returns true if R designates a template template parameter.
 static bool isTemplateTemplateParameter(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessBool(R, Result, D->getKind() == Decl::TemplateTemplateParm);
   return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a parameter with a default argument.
+static bool hasDefaultArgument(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const ParmVarDecl *PVD = dyn_cast<ParmVarDecl>(D))
+      return SuccessBool(R, Result, PVD->hasDefaultArg());
+  }
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a type.
+static bool isType(const Reflection &R, APValue &Result) {
+  return SuccessBool(R, Result, R.isType());
+}
+
+/// Returns true if R designates a fundamental type.
+static bool isFundamentalType(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isFundamentalType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates an arithmetic type.
+static bool isArithmeticType(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isArithmeticType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a scalar type.
+static bool isScalarType(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isScalarType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates an object type.
+static bool isObjectType(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isObjectType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a compound type.
+static bool isCompoundType(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isCompoundType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a function type.
+static bool isFunctionType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isFunctionType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a class type.
+static bool isClassType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isRecordType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a union type.
+static bool isUnionType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isUnionType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates an unscoped enum type.
+static bool isUnscopedEnumType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isEnumeralType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a scoped enum type.
+static bool isScopedEnumType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isScopedEnumeralType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has void type.
+static bool isVoidType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isVoidType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has nullptr type.
+static bool isNullPtrType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isNullPtrType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has integral type.
+static bool isIntegralType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isIntegralOrEnumerationType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has floating point type.
+static bool isFloatingPointType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isFloatingType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has array type.
+static bool isArrayType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isArrayType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has pointer type.
+static bool isPointerType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isPointerType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has lvalue reference type.
+static bool isLValueReferenceType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isLValueReferenceType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has rvalue reference type.
+static bool isRValueReferenceType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isRValueReferenceType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has member object pointer type.
+static bool isMemberObjectPointerType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isMemberDataPointerType());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R has member function pointer type.
+static bool isMemberFunctionPointerType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, T->isMemberFunctionPointerType());
+  return SuccessFalse(R, Result);
+}
+
+static const RecordType *getAsRecordType(const Reflection &R) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return dyn_cast<RecordType>(*T);
+  }
+  return nullptr;
+}
+
+/// Returns true if R designates a closure type.
+static bool isClosureType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    RecordDecl *RTD = T->getDecl();
+    return SuccessBool(R, Result, RTD->isLambda());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isIncompleteType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isIncompleteType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isConstType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, (*T).isConstQualified());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isVolatileType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, (*T).isVolatileQualified());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isTrivialType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    ASTContext &Context = R.getContext();
+    return SuccessBool(R, Result, (*T).isTrivialType(Context));
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isTriviallyCopyableType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    ASTContext &Context = R.getContext();
+    return SuccessBool(R, Result, (*T).isTriviallyCopyableType(Context));
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isStandardLayoutType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isStandardLayoutType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isPODType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    ASTContext &Context = R.getContext();
+    return SuccessBool(R, Result, (*T).isPODType(Context));
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isLiteralType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    ASTContext &Context = R.getContext();
+    return SuccessBool(R, Result, T->isLiteralType(Context));
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isEmptyType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->isEmpty());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isPolymorphicType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->isPolymorphic());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isAbstractType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->isAbstract());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isFinalType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->hasAttr<FinalAttr>());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isAggregateType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isAggregateType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isSignedType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isSignedIntegerType() || T->isFloatingType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isUnsignedType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    return SuccessBool(R, Result, T->isUnsignedIntegerType());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool hasUniqueObjectRepresentationsType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    ASTContext &Context = R.getContext();
+    return SuccessBool(R, Result, Context.hasUniqueObjectRepresentations(*T));
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isDefaultConstructibleType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->hasDefaultConstructor());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isTriviallyDefaultConstructibleType(const Reflection &R, APValue &Result) {
+  if (const RecordType *T = getAsRecordType(R)) {
+    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
+    return SuccessBool(R, Result, RTD->hasDefaultConstructor());
+  }
+  return SuccessFalse(R, Result);
+}
+
+static bool isNothrowDefaultConstructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isMoveConstructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isTriviallyMoveConstructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowMoveConstructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isTriviallyAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isCopyAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isTriviallyCopyAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowCopyAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isMoveAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isTriviallyMoveAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowMoveAssignableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isDestructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isTriviallyDestructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowDestructibleType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isSwappableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isNothrowSwappableType(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+/// Captures
+
+static bool hasDefaultRefCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool hasDefaultCopyCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isSimpleCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isRefCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isCopyCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isExplicitCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool isInitCapture(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
+}
+
+static bool hasCaptures(const Reflection &R, APValue &Result) {
+  return ErrorUnimplemented(R);
 }
 
 /// Returns true if R designates an expression.
@@ -955,177 +1494,331 @@ static bool isClassMember(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R has default access.
-static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R)) {
-    if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
-      for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
-        if (isa<AccessSpecDecl>(CurDecl))
-          return SuccessFalse(R, Result);
-        if (CurDecl == D)
-          return SuccessTrue(R, Result);
-      }
-    }
-  }
-  return SuccessFalse(R, Result);
-}
-
 bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
   assert(isPredicateQuery(Q) && "invalid query");
   switch (Q) {
-  case RQ_is_invalid:
+  case query_is_invalid:
     return ::isInvalid(*this, Result);
-  case RQ_is_entity:
+  case query_is_entity:
     return isEntity(*this, Result);
-  case RQ_is_unnamed:
+  case query_is_unnamed:
     return isUnnamed(*this, Result);
 
-  case RQ_is_variable:
-    return isVariable(*this, Result);
-  case RQ_is_function:
-    return isFunction(*this, Result);
-  case RQ_is_class:
-    return isClass(*this, Result);
-  case RQ_is_union:
-    return isUnion(*this, Result);
-  case RQ_is_unscoped_enum:
-    return isUnscopedEnum(*this, Result);
-  case RQ_is_scoped_enum:
-    return isScopedEnum(*this, Result);
-  case RQ_is_enumerator:
-    return isEnumerator(*this, Result);
-  case RQ_is_bitfield:
-    return isBitField(*this, Result);
-  case RQ_is_static_data_member:
-    return isStaticDataMember(*this, Result);
-  case RQ_is_nonstatic_data_member:
-    return isNonstaticDataMember(*this, Result);
-  case RQ_is_static_member_function:
-    return isStaticMemberFunction(*this, Result);
-  case RQ_is_nonstatic_member_function:
-    return isNonstaticMemberFunction(*this, Result);
-  case RQ_is_copy_assignment_operator:
-    return isCopyAssignmentOperator(*this, Result);
-  case RQ_is_move_assignment_operator:
-    return isMoveAssignmentOperator(*this, Result);
-  case RQ_is_constructor:
-    return isConstructor(*this, Result);
-  case RQ_is_default_constructor:
-    return isDefaultConstructor(*this, Result);
-  case RQ_is_copy_constructor:
-    return isCopyConstructor(*this, Result);
-  case RQ_is_move_constructor:
-    return isMoveConstructor(*this, Result);
-  case RQ_is_destructor:
-    return isDestructor(*this, Result);
-
-  case RQ_is_type:
-    return ::isType(*this, Result);
-  case RQ_is_function_type:
-    return isFunctionType(*this, Result);
-  case RQ_is_class_type:
-      return isClassType(*this, Result);
-  case RQ_is_union_type:
-    return isUnionType(*this, Result);
-  case RQ_is_enum_type:
-    return isEnumType(*this, Result);
-  case RQ_is_scoped_enum_type:
-    return isScopedEnumType(*this, Result);
-  case RQ_is_void_type:
-    return isVoidType(*this, Result);
-  case RQ_is_null_pointer_type:
-      return isNullPtrType(*this, Result);
-  case RQ_is_integral_type:
-    return isIntegralType(*this, Result);
-  case RQ_is_floating_point_type:
-    return isFloatingPointType(*this, Result);
-  case RQ_is_array_type:
-    return isArrayType(*this, Result);
-  case RQ_is_pointer_type:
-    return isPointerType(*this, Result);
-  case RQ_is_lvalue_reference_type:
-    return isLValueReferenceType(*this, Result);
-  case RQ_is_rvalue_reference_type:
-    return isRValueReferenceType(*this, Result);
-  case RQ_is_member_object_pointer_type:
-    return isMemberObjectPointerType(*this, Result);
-  case RQ_is_member_function_pointer_type:
-    return isMemberFunctionPointerType(*this, Result);
-  case RQ_is_closure_type:
-    return isClosureType(*this, Result);
-
-  case RQ_is_namespace:
-    return isNamespace(*this, Result);
-  case RQ_is_namespace_alias:
-    return isNamespaceAlias(*this, Result);
-  case RQ_is_type_alias:
-    return isTypeAlias(*this, Result);
-
-  case RQ_is_template:
-    return isTemplate(*this, Result);
-  case RQ_is_class_template:
-    return isClassTemplate(*this, Result);
-  case RQ_is_alias_template:
-    return isAliasTemplate(*this, Result);
-  case RQ_is_function_template:
-    return isFunctionTemplate(*this, Result);
-  case RQ_is_variable_template:
-    return isVariableTemplate(*this, Result);
-  case RQ_is_static_member_function_template:
-    return isStaticMemberFunctionTemplate(*this, Result);
-  case RQ_is_nonstatic_member_function_template:
-    return isNonstaticMemberFunctionTemplate(*this, Result);
-  case RQ_is_constructor_template:
-    return isConstructorTemplate(*this, Result);
-  case RQ_is_destructor_template:
-    return isDestructorTemplate(*this, Result);
-  case RQ_is_concept:
-    return isConcept(*this, Result);
-  case RQ_is_specialization:
-    return isSpecialization(*this, Result);
-  case RQ_is_partial_specialization:
-    return isPartialSpecialization(*this, Result);
-  case RQ_is_explicit_specialization:
-    return isExplicitSpecialization(*this, Result);
-  case RQ_is_implicit_instantiation:
-    return isImplicitInstantiation(*this, Result);
-  case RQ_is_explicit_instantiation:
-    return isExplicitInstantiation(*this, Result);
-
-  case RQ_is_direct_base:
-    return isDirectBase(*this, Result);
-  case RQ_is_virtual_base:
-    return isVirtualBase(*this, Result);
-
-  case RQ_is_function_parameter:
-    return isFunctionParameter(*this, Result);
-  case RQ_is_template_parameter:
-    return isTemplateParameter(*this, Result);
-  case RQ_is_type_template_parameter:
-    return isTypeTemplateParameter(*this, Result);
-  case RQ_is_nontype_template_parameter:
-    return isNontypeTemplateParameter(*this, Result);
-  case RQ_is_template_template_parameter:
-    return isTemplateTemplateParameter(*this, Result);
-
-  case RQ_is_expression:
-    return ::isExpression(*this, Result);
-  case RQ_is_lvalue:
-    return isLValue(*this, Result);
-  case RQ_is_xvalue:
-    return isXValue(*this, Result);
-  case RQ_is_rvalue:
-    return isRValue(*this, Result);
-  case RQ_is_value:
-    return isValue(*this, Result);
-
-  case RQ_is_local:
+  /// Scope
+  case query_is_local:
     return isLocal(*this, Result);
-  case RQ_is_class_member:
+  case query_is_class_member:
     return isClassMember(*this, Result);
 
-  case RQ_has_default_access:
+  /// Declarations
+
+  // Variables
+  case query_is_variable:
+    return isVariable(*this, Result);
+  case query_has_static_storage:
+    return hasStaticStorage(*this, Result);
+  case query_has_thread_local_storage:
+    return hasThreadLocalStorage(*this, Result);
+  case query_has_automatic_local_storage:
+    return hasAutomaticLocalStorage(*this, Result);
+
+  // Functions
+  case query_is_function:
+    return isFunction(*this, Result);
+
+  // Classes
+  case query_is_class:
+    return isClass(*this, Result);
+  case query_has_virtual_destructor:
+    return hasVirtualDestructor(*this, Result);
+
+  // Class Members
+
+  // Data Members
+  case query_is_static_data_member:
+    return isStaticDataMember(*this, Result);
+  case query_is_nonstatic_data_member:
+    return isNonstaticDataMember(*this, Result);
+  case query_is_bit_field:
+    return isBitField(*this, Result);
+
+  // Member Functions
+  case query_is_static_member_function:
+    return isStaticMemberFunction(*this, Result);
+  case query_is_nonstatic_member_function:
+    return isNonstaticMemberFunction(*this, Result);
+  case query_is_override:
+    return isOverride(*this, Result);
+  case query_is_override_specified:
+    return isOverrideSpecified(*this, Result);
+  case query_is_deleted:
+    return isDeleted(*this, Result);
+  case query_is_virtual:
+    return isVirtual(*this, Result);
+  case query_is_pure_virtual:
+    return isPureVirtual(*this, Result);
+
+  // Special Members
+  case query_is_constructor:
+    return isConstructor(*this, Result);
+  case query_is_default_constructor:
+    return isDefaultConstructor(*this, Result);
+  case query_is_copy_constructor:
+    return isCopyConstructor(*this, Result);
+  case query_is_move_constructor:
+    return isMoveConstructor(*this, Result);
+  case query_is_copy_assignment_operator:
+    return isCopyAssignmentOperator(*this, Result);
+  case query_is_move_assignment_operator:
+    return isMoveAssignmentOperator(*this, Result);
+  case query_is_destructor:
+    return isDestructor(*this, Result);
+  case query_is_defaulted:
+    return isDefaulted(*this, Result);
+  case query_is_explicit:
+    return isExplicit(*this, Result);
+
+  // Access
+  case query_has_access:
+    return hasAccess(*this, Result);
+  case query_is_public:
+    return isPublic(*this, Result);
+  case query_is_protected:
+    return isProtected(*this, Result);
+  case query_is_private:
+    return isPrivate(*this, Result);
+  case query_has_default_access:
     return hasDefaultAccess(*this, Result);
+
+  // Union
+  case query_is_union:
+    return isUnion(*this, Result);
+
+  // Namespaces
+  case query_is_namespace:
+    return isNamespace(*this, Result);
+  case query_is_namespace_alias:
+    return isNamespaceAlias(*this, Result);
+  case query_is_type_alias:
+    return isTypeAlias(*this, Result);
+
+  // Enums
+  case query_is_unscoped_enum:
+    return isUnscopedEnum(*this, Result);
+  case query_is_scoped_enum:
+    return isScopedEnum(*this, Result);
+
+  // Enumerators
+  case query_is_enumerator:
+    return isEnumerator(*this, Result);
+
+  // Templates
+  case query_is_template:
+    return isTemplate(*this, Result);
+  case query_is_class_template:
+    return isClassTemplate(*this, Result);
+  case query_is_alias_template:
+    return isAliasTemplate(*this, Result);
+  case query_is_function_template:
+    return isFunctionTemplate(*this, Result);
+  case query_is_variable_template:
+    return isVariableTemplate(*this, Result);
+  case query_is_static_member_function_template:
+    return isStaticMemberFunctionTemplate(*this, Result);
+  case query_is_nonstatic_member_function_template:
+    return isNonstaticMemberFunctionTemplate(*this, Result);
+  case query_is_constructor_template:
+    return isConstructorTemplate(*this, Result);
+  case query_is_destructor_template:
+    return isDestructorTemplate(*this, Result);
+  case query_is_concept:
+    return isConcept(*this, Result);
+
+  // Specializations
+  case query_is_specialization:
+    return isSpecialization(*this, Result);
+  case query_is_partial_specialization:
+    return isPartialSpecialization(*this, Result);
+  case query_is_explicit_specialization:
+    return isExplicitSpecialization(*this, Result);
+  case query_is_implicit_instantiation:
+    return isImplicitInstantiation(*this, Result);
+  case query_is_explicit_instantiation:
+    return isExplicitInstantiation(*this, Result);
+
+  // Base class specifiers
+  case query_is_direct_base:
+    return isDirectBase(*this, Result);
+  case query_is_virtual_base:
+    return isVirtualBase(*this, Result);
+
+  // Parameters
+  case query_is_function_parameter:
+    return isFunctionParameter(*this, Result);
+  case query_is_template_parameter:
+    return isTemplateParameter(*this, Result);
+  case query_is_type_template_parameter:
+    return isTypeTemplateParameter(*this, Result);
+  case query_is_nontype_template_parameter:
+    return isNontypeTemplateParameter(*this, Result);
+  case query_is_template_template_parameter:
+    return isTemplateTemplateParameter(*this, Result);
+  case query_has_default_argument:
+    return hasDefaultArgument(*this, Result);
+
+  // Types
+  case query_is_type:
+    return ::isType(*this, Result);
+  case query_is_fundamental_type:
+    return isFundamentalType(*this, Result);
+  case query_is_arithmetic_type:
+    return isArithmeticType(*this, Result);
+  case query_is_scalar_type:
+    return isScalarType(*this, Result);
+  case query_is_object_type:
+    return isObjectType(*this, Result);
+  case query_is_compound_type:
+    return isCompoundType(*this, Result);
+  case query_is_function_type:
+    return isFunctionType(*this, Result);
+  case query_is_class_type:
+      return isClassType(*this, Result);
+  case query_is_union_type:
+    return isUnionType(*this, Result);
+  case query_is_unscoped_enum_type:
+    return isUnscopedEnumType(*this, Result);
+  case query_is_scoped_enum_type:
+    return isScopedEnumType(*this, Result);
+  case query_is_void_type:
+    return isVoidType(*this, Result);
+  case query_is_null_pointer_type:
+      return isNullPtrType(*this, Result);
+  case query_is_integral_type:
+    return isIntegralType(*this, Result);
+  case query_is_floating_point_type:
+    return isFloatingPointType(*this, Result);
+  case query_is_array_type:
+    return isArrayType(*this, Result);
+  case query_is_pointer_type:
+    return isPointerType(*this, Result);
+  case query_is_lvalue_reference_type:
+    return isLValueReferenceType(*this, Result);
+  case query_is_rvalue_reference_type:
+    return isRValueReferenceType(*this, Result);
+  case query_is_member_object_pointer_type:
+    return isMemberObjectPointerType(*this, Result);
+  case query_is_member_function_pointer_type:
+    return isMemberFunctionPointerType(*this, Result);
+  case query_is_closure_type:
+    return isClosureType(*this, Result);
+
+  // Type properties
+  case query_is_incomplete_type:
+    return isIncompleteType(*this, Result);
+  case query_is_const_type:
+    return isConstType(*this, Result);
+  case query_is_volatile_type:
+    return isVolatileType(*this, Result);
+  case query_is_trivial_type:
+    return isTrivialType(*this, Result);
+  case query_is_trivially_copyable_type:
+    return isTriviallyCopyableType(*this, Result);
+  case query_is_standard_layout_type:
+    return isStandardLayoutType(*this, Result);
+  case query_is_pod_type:
+    return isPODType(*this, Result);
+  case query_is_literal_type:
+    return isLiteralType(*this, Result);
+  case query_is_empty_type:
+    return isEmptyType(*this, Result);
+  case query_is_polymorphic_type:
+    return isPolymorphicType(*this, Result);
+  case query_is_abstract_type:
+    return isAbstractType(*this, Result);
+  case query_is_final_type:
+    return isFinalType(*this, Result);
+  case query_is_aggregate_type:
+    return isAggregateType(*this, Result);
+  case query_is_signed_type:
+    return isSignedType(*this, Result);
+  case query_is_unsigned_type:
+    return isUnsignedType(*this, Result);
+  case query_has_unique_object_representations_type:
+    return hasUniqueObjectRepresentationsType(*this, Result);
+
+  // Type operation
+  case query_is_default_constructible_type:
+    return isDefaultConstructibleType(*this, Result);
+  case query_is_trivially_default_constructible_type:
+    return isTriviallyDefaultConstructibleType(*this, Result);
+  case query_is_nothrow_default_constructible_type:
+    return isNothrowDefaultConstructibleType(*this, Result);
+  case query_is_move_constructible_type:
+    return isMoveConstructibleType(*this, Result);
+  case query_is_trivially_move_constructible_type:
+    return isTriviallyMoveConstructibleType(*this, Result);
+  case query_is_nothrow_move_constructible_type:
+    return isNothrowMoveConstructibleType(*this, Result);
+  case query_is_assignable_type:
+    return isAssignableType(*this, Result);
+  case query_is_trivially_assignable_type:
+    return isTriviallyAssignableType(*this, Result);
+  case query_is_nothrow_assignable_type:
+    return isNothrowAssignableType(*this, Result);
+  case query_is_copy_assignable_type:
+    return isCopyAssignableType(*this, Result);
+  case query_is_trivially_copy_assignable_type:
+    return isTriviallyCopyAssignableType(*this, Result);
+  case query_is_nothrow_copy_assignable_type:
+    return isNothrowCopyAssignableType(*this, Result);
+  case query_is_move_assignable_type:
+    return isMoveAssignableType(*this, Result);
+  case query_is_trivially_move_assignable_type:
+    return isTriviallyMoveAssignableType(*this, Result);
+  case query_is_nothrow_move_assignable_type:
+    return isNothrowMoveAssignableType(*this, Result);
+  case query_is_destructible_type:
+    return isDestructibleType(*this, Result);
+  case query_is_trivially_destructible_type:
+    return isTriviallyDestructibleType(*this, Result);
+  case query_is_nothrow_destructible_type:
+    return isNothrowDestructibleType(*this, Result);
+  case query_is_swappable_type:
+    return isSwappableType(*this, Result);
+  case query_is_nothrow_swappable_type:
+    return isNothrowSwappableType(*this, Result);
+
+  // Captures
+  case query_has_default_ref_capture:
+    return hasDefaultRefCapture(*this, Result);
+  case query_has_default_copy_capture:
+    return hasDefaultCopyCapture(*this, Result);
+  case query_is_capture:
+    return isCapture(*this, Result);
+  case query_is_simple_capture:
+    return isSimpleCapture(*this, Result);
+  case query_is_ref_capture:
+    return isRefCapture(*this, Result);
+  case query_is_copy_capture:
+    return isCopyCapture(*this, Result);
+  case query_is_explicit_capture:
+    return isExplicitCapture(*this, Result);
+  case query_is_init_capture:
+    return isInitCapture(*this, Result);
+  case query_has_captures:
+    return hasCaptures(*this, Result);
+
+  // Expressions
+  case query_is_expression:
+    return ::isExpression(*this, Result);
+  case query_is_lvalue:
+    return isLValue(*this, Result);
+  case query_is_xvalue:
+    return isXValue(*this, Result);
+  case query_is_rvalue:
+    return isRValue(*this, Result);
+  case query_is_value:
+    return isValue(*this, Result);
 
   default:
     break;
@@ -1566,13 +2259,13 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
   // Traits
-  case RQ_get_decl_traits:
+  case query_get_decl_traits:
     return makeDeclTraits(*this, Result);
-  case RQ_get_linkage_traits:
+  case query_get_linkage_traits:
     return makeLinkageTraits(*this, Result);
-  case RQ_get_access_traits:
+  case query_get_access_traits:
     return makeAccessTraits(*this, Result);
-  case RQ_get_type_traits:
+  case query_get_type_traits:
     return makeTypeTraits(*this, Result);
 
   default:
@@ -1692,9 +2385,8 @@ static bool getThisRefType(const Reflection &R, APValue &Result) {
 }
 
 static bool getDefinition(const Reflection &R, APValue &Result) {
-  if (const TypeDecl *TD = getAsTypeDecl(R)) {
-    if (isa<TagDecl>(TD))
-      return makeReflection(TD, Result);
+  if (const Decl *D = getReachableDecl(R)) {
+    return makeReflection(D, Result);
   }
   return Error(R);
 }
@@ -1730,9 +2422,13 @@ static const Decl *getNextMember(const Decl *D) {
 
 /// Returns the reachable declaration context for R, if any.
 static const DeclContext *getReachableDeclContext(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
+  if (const Decl *D = getReachableDecl(R)) {
     if (const DeclContext *DC = dyn_cast<DeclContext>(D))
       return DC;
+
+    if (const TemplateDecl *TD = dyn_cast<TemplateDecl>(D))
+      return dyn_cast<DeclContext>(TD->getTemplatedDecl());
+  }
   return nullptr;
 }
 
@@ -1753,23 +2449,23 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   assert(isAssociatedReflectionQuery(Q) && "invalid query");
   switch (Q) {
   // Associated reflections
-  case RQ_get_entity:
+  case query_get_entity:
     return getEntity(*this, Result);
-  case RQ_get_parent:
+  case query_get_parent:
     return getParent(*this, Result);
-  case RQ_get_type:
+  case query_get_type:
     return getType(*this, Result);
-  case RQ_get_return_type:
+  case query_get_return_type:
     return getReturnType(*this, Result);
-  case RQ_get_this_ref_type:
+  case query_get_this_ref_type:
     return getThisRefType(*this, Result);
-  case RQ_get_definition:
+  case query_get_definition:
     return getDefinition(*this, Result);
 
   // Traversal
-  case RQ_get_begin:
+  case query_get_begin:
     return getBegin(*this, Result);
-  case RQ_get_next:
+  case query_get_next:
     return getNext(*this, Result);
 
   default:
@@ -1850,8 +2546,8 @@ bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
 
   switch (Q) {
   // Names
-  case RQ_get_name:
-  case RQ_get_display_name:
+  case query_get_name:
+  case query_get_display_name:
     return getName(*this, Result);
 
   default:

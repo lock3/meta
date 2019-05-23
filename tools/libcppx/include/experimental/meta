@@ -30,120 +30,215 @@ consteval info type_of(info x);
 namespace detail {
 
 enum reflection_query : unsigned {
-  query_unknown,
+    query_unknown,
 
-  query_is_invalid,
-  query_is_entity,
-  query_is_unnamed,
+    query_is_invalid,
+    query_is_entity,
+    query_is_unnamed,
 
-  // Objects, references, bitfields, and functions
-  query_is_variable,
-  query_is_function,
-  query_is_class,
-  query_is_union,
-  query_is_unscoped_enum,
-  query_is_scoped_enum,
-  query_is_enumerator,
-  query_is_bitfield,
-  query_is_static_data_member,
-  query_is_nonstatic_data_member,
-  query_is_static_member_function,
-  query_is_nonstatic_member_function,
-  query_is_copy_assignment_operator,
-  query_is_move_assignment_operator,
-  query_is_constructor,
-  query_is_default_constructor,
-  query_is_copy_constructor,
-  query_is_move_constructor,
-  query_is_destructor,
+    /// Scope
+    query_is_local,
+    query_is_class_member,
 
-  // Types
-  query_is_type,
-  query_is_function_type,
-  query_is_class_type,
-  query_is_union_type,
-  query_is_enum_type,
-  query_is_scoped_enum_type,
-  query_is_void_type,
-  query_is_null_pointer_type,
-  query_is_integral_type,
-  query_is_floating_point_type,
-  query_is_array_type,
-  query_is_pointer_type,
-  query_is_lvalue_reference_type,
-  query_is_rvalue_reference_type,
-  query_is_member_object_pointer_type,
-  query_is_member_function_pointer_type,
-  query_is_closure_type,
+    /// Declarations
 
-  // Namespaces and aliases
-  query_is_namespace,
-  query_is_namespace_alias,
-  query_is_type_alias,
+    // Variables
+    query_is_variable,
+    query_has_static_storage,
+    query_has_thread_local_storage,
+    query_has_automatic_local_storage,
 
-  // Templates and specializations
-  query_is_template,
-  query_is_class_template,
-  query_is_alias_template,
-  query_is_function_template,
-  query_is_variable_template,
-  query_is_static_member_function_template,
-  query_is_nonstatic_member_function_template,
-  query_is_constructor_template,
-  query_is_destructor_template,
-  query_is_concept,
-  query_is_specialization,
-  query_is_partial_specialization,
-  query_is_explicit_specialization,
-  query_is_implicit_instantiation,
-  query_is_explicit_instantiation,
+    // Functions
+    query_is_function,
+    // query_has_ellipsis,
 
-  // Base class specifiers
-  query_is_direct_base,
-  query_is_virtual_base,
+    // Classes
+    query_is_class,
+    query_has_virtual_destructor,
 
-  // Parameters
-  query_is_function_parameter,
-  query_is_template_parameter,
-  query_is_type_template_parameter,
-  query_is_nontype_template_parameter,
-  query_is_template_template_parameter,
+    // Class Members
 
-  // Expressions
-  query_is_expression,
-  query_is_lvalue,
-  query_is_xvalue,
-  query_is_rvalue,
-  query_is_value,
+    // Data Members
+    query_is_static_data_member,
+    query_is_nonstatic_data_member,
+    query_is_bit_field,
 
-  // Scope
-  query_is_local,
-  query_is_class_member,
+    // Member Functions
+    query_is_static_member_function,
+    query_is_nonstatic_member_function,
+    query_is_override,
+    query_is_override_specified,
+    query_is_deleted,
+    query_is_virtual,
+    query_is_pure_virtual,
 
-  // Access queries
-  query_has_default_access,
+    // Special Members
+    query_is_constructor,
+    query_is_default_constructor,
+    query_is_copy_constructor,
+    query_is_move_constructor,
+    query_is_copy_assignment_operator,
+    query_is_move_assignment_operator,
+    query_is_destructor,
+    query_is_defaulted,
+    query_is_explicit,
 
-  // Traits
-  query_get_decl_traits,
-  query_get_linkage_traits,
-  query_get_access_traits,
-  query_get_type_traits,
+    // Access
+    query_has_access,
+    query_is_public,
+    query_is_protected,
+    query_is_private,
+    query_has_default_access,
 
-  // Associated reflections
-  query_get_entity,
-  query_get_parent,
-  query_get_type,
-  query_get_return_type,
-  query_get_this_ref_type,
-  query_get_definition,
+    // Union
+    query_is_union,
 
-  // Traversal
-  query_get_begin,
-  query_get_next,
+    // Namespaces and aliases
+    query_is_namespace,
+    query_is_namespace_alias,
+    query_is_type_alias,
 
-  // Name
-  query_get_name,
-  query_get_display_name
+    // Enums
+    query_is_unscoped_enum,
+    query_is_scoped_enum,
+
+    // Enumerators
+    query_is_enumerator,
+
+    // Templates
+    query_is_template,
+    query_is_class_template,
+    query_is_alias_template,
+    query_is_function_template,
+    query_is_variable_template,
+    query_is_static_member_function_template,
+    query_is_nonstatic_member_function_template,
+    query_is_constructor_template,
+    query_is_destructor_template,
+    query_is_concept,
+
+    // Specializations
+    query_is_specialization,
+    query_is_partial_specialization,
+    query_is_explicit_specialization,
+    query_is_implicit_instantiation,
+    query_is_explicit_instantiation,
+
+    // Base class specifiers
+    query_is_direct_base,
+    query_is_virtual_base,
+
+    // Parameters
+    query_is_function_parameter,
+    query_is_template_parameter,
+    query_is_type_template_parameter,
+    query_is_nontype_template_parameter,
+    query_is_template_template_parameter,
+    query_has_default_argument,
+
+    // Types
+    query_is_type,
+    query_is_fundamental_type,
+    query_is_arithmetic_type,
+    query_is_scalar_type,
+    query_is_object_type,
+    query_is_compound_type,
+    query_is_function_type,
+    query_is_class_type,
+    query_is_union_type,
+    query_is_unscoped_enum_type,
+    query_is_scoped_enum_type,
+    query_is_void_type,
+    query_is_null_pointer_type,
+    query_is_integral_type,
+    query_is_floating_point_type,
+    query_is_array_type,
+    query_is_pointer_type,
+    query_is_lvalue_reference_type,
+    query_is_rvalue_reference_type,
+    query_is_member_object_pointer_type,
+    query_is_member_function_pointer_type,
+    query_is_closure_type,
+
+    // Type properties
+    query_is_incomplete_type,
+    query_is_const_type,
+    query_is_volatile_type,
+    query_is_trivial_type,
+    query_is_trivially_copyable_type,
+    query_is_standard_layout_type,
+    query_is_pod_type,
+    query_is_literal_type,
+    query_is_empty_type,
+    query_is_polymorphic_type,
+    query_is_abstract_type,
+    query_is_final_type,
+    query_is_aggregate_type,
+    query_is_signed_type,
+    query_is_unsigned_type,
+    query_has_unique_object_representations_type,
+
+    // Type operations
+    query_is_default_constructible_type,
+    query_is_trivially_default_constructible_type,
+    query_is_nothrow_default_constructible_type,
+    query_is_move_constructible_type,
+    query_is_trivially_move_constructible_type,
+    query_is_nothrow_move_constructible_type,
+    query_is_assignable_type,
+    query_is_trivially_assignable_type,
+    query_is_nothrow_assignable_type,
+    query_is_copy_assignable_type,
+    query_is_trivially_copy_assignable_type,
+    query_is_nothrow_copy_assignable_type,
+    query_is_move_assignable_type,
+    query_is_trivially_move_assignable_type,
+    query_is_nothrow_move_assignable_type,
+    query_is_destructible_type,
+    query_is_trivially_destructible_type,
+    query_is_nothrow_destructible_type,
+    query_is_swappable_type,
+    query_is_nothrow_swappable_type,
+
+    // Captures
+    query_has_default_ref_capture,
+    query_has_default_copy_capture,
+    query_is_capture,
+    query_is_simple_capture,
+    query_is_ref_capture,
+    query_is_copy_capture,
+    query_is_explicit_capture,
+    query_is_init_capture,
+    query_has_captures,
+
+    // Expressions
+    query_is_expression,
+    query_is_lvalue,
+    query_is_xvalue,
+    query_is_rvalue,
+    query_is_value,
+
+    // Traits
+    query_get_decl_traits,
+    query_get_linkage_traits,
+    query_get_access_traits,
+    query_get_type_traits,
+
+    // Associated reflections
+    query_get_entity,
+    query_get_parent,
+    query_get_type,
+    query_get_return_type,
+    query_get_this_ref_type,
+    query_get_definition,
+
+    // Traversal
+    query_get_begin,
+    query_get_next,
+
+    // Name
+    query_get_name,
+    query_get_display_name
 };
 
 static constexpr unsigned get_decl_traits(info x) {
@@ -466,24 +561,56 @@ consteval info invalid_reflection(string_type error_message) {
   return __invalid_reflection(error_message);
 }
 
+/// Classification
+
 // True if x is an invalid reflection.
-consteval bool is_invalid(info x) {
-  return __reflect(detail::query_is_invalid, x);
+consteval bool is_invalid(info reflection) {
+  return __reflect(detail::query_is_invalid, reflection);
 }
+
+/// Enumerators
+
+// True if x reflects an enumerator.
+consteval bool is_enumerator(info reflection) {
+  return __reflect(detail::query_is_enumerator, reflection);
+}
+
+/// Variables
 
 // True if x reflects a variable.
-consteval bool is_variable(info x) {
-  return __reflect(detail::query_is_variable, x);
+consteval bool is_variable(info reflection) {
+  return __reflect(detail::query_is_variable, reflection);
 }
+
+consteval bool has_static_storage_duration(info variable) {
+  return __reflect(detail::query_has_static_storage, variable);
+}
+
+consteval bool has_thread_local_storage_duration(info variable) {
+  return __reflect(detail::query_has_thread_local_storage, variable);
+}
+
+consteval bool has_automatic_local_storage_duration(info variable) {
+  return __reflect(detail::query_has_automatic_local_storage, variable);
+}
+
+/// Functions
 
 // True if x reflects a function.
-consteval bool is_function(info x) {
-  return __reflect(detail::query_is_function, x);
+consteval bool is_function(info reflection) {
+  return __reflect(detail::query_is_function, reflection);
 }
 
+/// Classes
+
 // True if x reflects a class.
-consteval bool is_class(info x) {
-  return __reflect(detail::query_is_class, x);
+consteval bool is_class(info reflection) {
+  return __reflect(detail::query_is_class, reflection);
+}
+
+// True if x has a virtual destructor, either directly, or via a parent class.
+consteval bool has_virtual_destructor(info class_type) {
+  return __reflect(detail::query_has_virtual_destructor, class_type);
 }
 
 // True if x reflects a union.
@@ -501,69 +628,132 @@ consteval bool is_scoped_enum(info x) {
   return __reflect(detail::query_is_scoped_enum, x);
 }
 
-// True if x reflects an enumerator.
-consteval bool is_enumerator(info x) {
-  return __reflect(detail::query_is_enumerator, x);
-}
+/// Class Members
 
-// True if x reflects a bitfield.
-consteval bool is_bitfield(info x) {
-  return __reflect(detail::query_is_bitfield, x);
-}
+/// Data Members
 
 // True if x reflects a static data member.
-consteval bool is_static_data_member(info x) {
-  return __reflect(detail::query_is_static_data_member, x);
-}
-
-// True if x reflects a static member function.
-consteval bool is_static_member_function(info x) {
-  return __reflect(detail::query_is_static_member_function, x);
+consteval bool is_static_data_member(info reflection) {
+  return __reflect(detail::query_is_static_data_member, reflection);
 }
 
 // True if x reflects a nonstatic data member.
-consteval bool is_data_member(info x) {
-  return __reflect(detail::query_is_nonstatic_data_member, x);
+consteval bool is_nonstatic_data_member(info reflection) {
+  return __reflect(detail::query_is_nonstatic_data_member, reflection);
+}
+
+// True if x reflects a data member.
+consteval bool is_data_member(info reflection) {
+  return is_nonstatic_data_member(reflection) || is_static_data_member(reflection);
+}
+
+// True if x reflects a bit field.
+consteval bool is_bit_field(info reflection) {
+  return __reflect(detail::query_is_bit_field, reflection);
+}
+
+/// Member Functions
+
+// True if x reflects a static member function.
+consteval bool is_static_member_function(info reflection) {
+  return __reflect(detail::query_is_static_member_function, reflection);
 }
 
 // True if x reflects a nonstatic member function.
-consteval bool is_member_function(info x) {
-  return __reflect(detail::query_is_nonstatic_member_function, x);
+consteval bool is_nonstatic_member_function(info reflection) {
+  return __reflect(detail::query_is_nonstatic_member_function, reflection);
 }
 
-// True if x reflects a copy assignment operator.
-consteval bool is_copy_assignment_operator(info x) {
-  return __reflect(detail::query_is_copy_assignment_operator, x);
+// True if x reflects a member function.
+consteval bool is_member_function(info reflection) {
+  return is_nonstatic_member_function(reflection) || is_static_member_function(reflection);
 }
 
-// True if x reflects a move assignment operator.
-consteval bool is_move_assignment_operator(info x) {
-  return __reflect(detail::query_is_move_assignment_operator, x);
+consteval bool is_override(info mem_function) {
+  return __reflect(detail::query_is_override, mem_function);
 }
+
+consteval bool is_override_specified(info mem_function) {
+  return __reflect(detail::query_is_override, mem_function);
+}
+
+consteval bool is_deleted(info mem_function) {
+  return __reflect(detail::query_is_deleted, mem_function);
+}
+
+consteval bool is_virtual(info mem_function) {
+  return __reflect(detail::query_is_virtual, mem_function);
+}
+
+consteval bool is_pure_virtual(info mem_function) {
+  return __reflect(detail::query_is_pure_virtual, mem_function);
+}
+
+/// Special Members
 
 // True if x reflects a constructor.
-consteval bool is_constructor(info x) {
-  return __reflect(detail::query_is_constructor, x);
+consteval bool is_constructor(info reflection) {
+  return __reflect(detail::query_is_constructor, reflection);
 }
 
 // True if x reflects a default constructor.
-consteval bool is_default_constructor(info x) {
-  return __reflect(detail::query_is_default_constructor, x);
+consteval bool is_default_constructor(info reflection) {
+  return __reflect(detail::query_is_default_constructor, reflection);
 }
 
 // True if x reflects a copy constructor.
-consteval bool is_copy_constructor(info x) {
-  return __reflect(detail::query_is_copy_constructor, x);
+consteval bool is_copy_constructor(info reflection) {
+  return __reflect(detail::query_is_copy_constructor, reflection);
 }
 
 // True if x reflects a move constructor.
-consteval bool is_move_constructor(info x) {
-  return __reflect(detail::query_is_move_constructor, x);
+consteval bool is_move_constructor(info reflection) {
+  return __reflect(detail::query_is_move_constructor, reflection);
+}
+
+// True if x reflects a copy assignment operator.
+consteval bool is_copy_assignment_operator(info reflection) {
+  return __reflect(detail::query_is_copy_assignment_operator, reflection);
+}
+
+// True if x reflects a move assignment operator.
+consteval bool is_move_assignment_operator(info reflection) {
+  return __reflect(detail::query_is_move_assignment_operator, reflection);
 }
 
 // True if x reflects a destructor.
-consteval bool is_destructor(info x) {
-  return __reflect(detail::query_is_destructor, x);
+consteval bool is_destructor(info reflection) {
+  return __reflect(detail::query_is_destructor, reflection);
+}
+
+consteval bool is_defaulted(info spec_mem_function) {
+  return __reflect(detail::query_is_defaulted, spec_mem_function);
+}
+
+consteval bool is_explicit(info spec_mem_function) {
+  return __reflect(detail::query_is_explicit, spec_mem_function);
+}
+
+/// Access
+
+consteval bool has_access(info reflection) {
+  return __reflect(detail::query_has_access, reflection);
+}
+
+consteval bool is_public(info base_or_mem) {
+  return __reflect(detail::query_is_public, base_or_mem);
+}
+
+consteval bool is_protected(info base_or_mem) {
+  return __reflect(detail::query_is_protected, base_or_mem);
+}
+
+consteval bool is_private(info base_or_mem) {
+  return __reflect(detail::query_is_private, base_or_mem);
+}
+
+consteval bool has_default_access(info base_or_mem) {
+  return __reflect(detail::query_has_default_access, base_or_mem);
 }
 
 // True if x reflects a type.
@@ -1008,8 +1198,8 @@ constexpr std::ptrdiff_t distance(iterator first, iterator last) {
 // Scope queries
 
 // True if x is in local scope.
-consteval bool is_local(info x) {
-  return __reflect(detail::query_is_local, x);
+consteval bool is_local(info reflection) {
+  return __reflect(detail::query_is_local, reflection);
 }
 
 // True if x is a member of a class.
@@ -1041,41 +1231,6 @@ consteval bool has_external_linkage(info x) {
 
 consteval bool has_internal_linkage(info x) {
   return detail::linkage_traits(x).kind == detail::lk_internal;
-}
-
-consteval bool has_automatic_storage(info x) {
-  return detail::variable_traits(x).storage == detail::sk_automatic;
-}
-
-consteval bool has_static_storage(info x) {
-  return detail::variable_traits(x).storage == detail::sk_static;
-}
-
-consteval bool has_thread_storage(info x) {
-  return detail::variable_traits(x).storage == detail::sk_thread;
-}
-
-consteval bool has_access(info x) {
-  return detail::access_traits(x).kind != detail::ak_none;
-}
-
-consteval bool has_default_access(info x) {
-  return __reflect(detail::query_has_default_access, x);
-}
-
-consteval bool is_public(info x) {
-  assert(has_access(x));
-  return detail::access_traits(x).kind != detail::ak_public;
-}
-
-consteval bool is_private(info x) {
-  assert(has_access(x));
-  return detail::access_traits(x).kind != detail::ak_private;
-}
-
-consteval bool is_protected(info x) {
-  assert(has_access(x));
-  return detail::access_traits(x).kind != detail::ak_protected;
 }
 
 consteval bool is_extern(info x) {
@@ -1119,22 +1274,6 @@ consteval bool is_conversion(info x) {
   return detail::method_traits(x).kind == detail::mk_conversion;
 }
 
-consteval bool is_explicit(info x) {
-  return detail::method_traits(x).is_explicit;
-}
-
-consteval bool is_virtual(info x) {
-  return detail::method_traits(x).is_virtual;
-}
-
-consteval bool is_pure_virtual(info x) {
-  return detail::method_traits(x).is_pure;
-}
-
-consteval bool is_override(info x) {
-  return detail::method_traits(x).is_override;
-}
-
 consteval bool is_final(info x) {
   if (is_class_type(x))
     return detail::class_traits(x).is_final;
@@ -1142,10 +1281,6 @@ consteval bool is_final(info x) {
     return detail::method_traits(x).is_final;
 
   assert(false);
-}
-
-consteval bool is_defaulted(info x) {
-  return detail::method_traits(x).is_defaulted;
 }
 
 consteval bool is_mutable(info x) {
@@ -1165,15 +1300,6 @@ consteval bool is_defined(info x) {
     return true;
 
   assert(false);
-}
-
-consteval bool is_deleted(info x) {
-  if (is_member_function(x))
-    return detail::method_traits(x).is_deleted;
-  if (is_function(x))
-    return detail::function_traits(x).is_deleted;
-
-  return false;
 }
 
 consteval bool is_declared_struct(info x) {
