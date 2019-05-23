@@ -897,7 +897,8 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
       // get that value (prior to conversions).
       const Expr *LoBeforePromotion = Lo;
       GetTypeBeforeIntegralPromotion(LoBeforePromotion);
-      llvm::APSInt LoVal = LoBeforePromotion->EvaluateKnownConstInt(Context);
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+      llvm::APSInt LoVal = LoBeforePromotion->EvaluateKnownConstInt(EvalCtx);
 
       // Check the unconverted value is within the range of possible values of
       // the switch expression.
@@ -930,7 +931,8 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     bool HasConstantCond = false;
     if (!HasDependentValue && !TheDefaultStmt) {
       Expr::EvalResult Result;
-      HasConstantCond = CondExpr->EvaluateAsInt(Result, Context,
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+      HasConstantCond = CondExpr->EvaluateAsInt(Result, EvalCtx,
                                                 Expr::SE_AllowSideEffects);
       if (Result.Val.isInt())
         ConstantCondValue = Result.Val.getInt();
@@ -1000,7 +1002,8 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
         const Expr *HiBeforePromotion = Hi;
         GetTypeBeforeIntegralPromotion(HiBeforePromotion);
-        llvm::APSInt HiVal = HiBeforePromotion->EvaluateKnownConstInt(Context);
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+        llvm::APSInt HiVal = HiBeforePromotion->EvaluateKnownConstInt(EvalCtx);
 
         // Check the unconverted value is within the range of possible values of
         // the switch expression.
@@ -1132,8 +1135,9 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
           Diag(CaseExpr->getExprLoc(), diag::warn_not_in_enum)
             << CondTypeBeforePromotion;
 
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
         llvm::APSInt Hi =
-          RI->second->getRHS()->EvaluateKnownConstInt(Context);
+          RI->second->getRHS()->EvaluateKnownConstInt(EvalCtx);
         AdjustAPSInt(Hi, CondWidth, CondIsSigned);
 
         CaseExpr = RI->second->getRHS();
@@ -1174,8 +1178,9 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
         // Drop unneeded case ranges
         for (; RI != CaseRanges.end(); RI++) {
+          Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
           llvm::APSInt Hi =
-            RI->second->getRHS()->EvaluateKnownConstInt(Context);
+            RI->second->getRHS()->EvaluateKnownConstInt(EvalCtx);
           AdjustAPSInt(Hi, CondWidth, CondIsSigned);
           if (EI->first <= Hi)
             break;
@@ -1228,13 +1233,14 @@ Sema::DiagnoseAssignmentEnum(QualType DstType, QualType SrcType,
   if (const EnumType *ET = DstType->getAs<EnumType>())
     if (!Context.hasSameUnqualifiedType(SrcType, DstType) &&
         SrcType->isIntegerType()) {
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
       if (!SrcExpr->isTypeDependent() && !SrcExpr->isValueDependent() &&
-          SrcExpr->isIntegerConstantExpr(Context)) {
+          SrcExpr->isIntegerConstantExpr(EvalCtx)) {
         // Get the bitwidth of the enum value before promotions.
         unsigned DstWidth = Context.getIntWidth(DstType);
         bool DstIsSigned = DstType->isSignedIntegerOrEnumerationType();
 
-        llvm::APSInt RhsVal = SrcExpr->EvaluateKnownConstInt(Context);
+        llvm::APSInt RhsVal = SrcExpr->EvaluateKnownConstInt(EvalCtx);
         AdjustAPSInt(RhsVal, DstWidth, DstIsSigned);
         const EnumDecl *ED = ET->getDecl();
 
@@ -1588,7 +1594,7 @@ namespace {
 
   public:
     BreakContinueFinder(Sema &S, const Stmt* Body) :
-        Inherited(S.Context) {
+        Inherited(Expr::EvalContext(S.Context, S.GetReflectionCallbackObj())) {
       Visit(Body);
     }
 
@@ -2366,7 +2372,9 @@ static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
       SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
 
   Expr::EvalResult Result;
-  if (!Ref.get()->EvaluateAsInt(Result, SemaRef.Context)) {
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!Ref.get()->EvaluateAsInt(Result, EvalCtx)) {
     // FIXME: This is probably not the right error.
     SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
     return false;
@@ -3539,7 +3547,9 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalResult Result;
-  if (!CountCall->EvaluateAsInt(Result, SemaRef.Context))
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!CountCall->EvaluateAsInt(Result, EvalCtx))
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();

@@ -509,11 +509,12 @@ ExprResult Sema::BuildCXXTypeId(QualType TypeInfoType,
     }
   }
 
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (E->getType()->isVariablyModifiedType())
     return ExprError(Diag(TypeidLoc, diag::err_variably_modified_typeid)
                      << E->getType());
   else if (!inTemplateInstantiation() &&
-           E->HasSideEffects(Context, WasEvaluated)) {
+           E->HasSideEffects(EvalCtx, WasEvaluated)) {
     // The expression operand for typeid is in an unevaluated expression
     // context, so side effects could result in unintended consequences.
     Diag(E->getExprLoc(), WasEvaluated
@@ -2008,12 +2009,13 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
     // unparenthesized array type.
     if (!ArraySize->isValueDependent()) {
       llvm::APSInt Value;
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
       // We've already performed any required implicit conversion to integer or
       // unscoped enumeration type.
       // FIXME: Per CWG1464, we are required to check the value prior to
       // converting to size_t. This will never find a negative array size in
       // C++14 onwards, because Value is always unsigned here!
-      if (ArraySize->isIntegerConstantExpr(Value, Context)) {
+      if (ArraySize->isIntegerConstantExpr(Value, EvalCtx)) {
         if (Value.isSigned() && Value.isNegative()) {
           return ExprError(Diag(ArraySize->getBeginLoc(),
                                 diag::err_typecheck_negative_array_size)
@@ -5011,7 +5013,8 @@ static bool evaluateTypeTrait(Sema &S, TypeTrait Kind, SourceLocation KWLoc,
 
       // The initialization succeeded; now make sure there are no non-trivial
       // calls.
-      return !Result.get()->hasNonTrivialCall(S.Context);
+      Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+      return !Result.get()->hasNonTrivialCall(EvalCtx);
     }
 
     llvm_unreachable("unhandled type trait");
@@ -5021,6 +5024,13 @@ static bool evaluateTypeTrait(Sema &S, TypeTrait Kind, SourceLocation KWLoc,
   }
 
   return false;
+}
+
+bool
+Sema::ReflectionCallbackImpl::EvalTypeTrait(TypeTrait Kind,
+                                            ArrayRef<TypeSourceInfo *> Args) {
+  return evaluateTypeTrait(SemaRef, Kind, SourceLocation(),
+                           Args, SourceLocation());
 }
 
 ExprResult Sema::BuildTypeTrait(TypeTrait Kind, SourceLocation KWLoc,
@@ -5250,7 +5260,8 @@ static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, QualType LhsT,
       if (LhsT.getNonReferenceType().hasNonTrivialObjCLifetime())
         return false;
 
-      return !Result.get()->hasNonTrivialCall(Self.Context);
+      Expr::EvalContext EvalCtx(Self.Context, Self.GetReflectionCallbackObj());
+      return !Result.get()->hasNonTrivialCall(EvalCtx);
     }
 
     llvm_unreachable("unhandled type trait");
@@ -7229,7 +7240,8 @@ ExprResult Sema::BuildCXXNoexceptExpr(SourceLocation KeyLoc, Expr *Operand,
   // The operand may have been modified when checking the placeholder type.
   Operand = R.get();
 
-  if (!inTemplateInstantiation() && Operand->HasSideEffects(Context, false)) {
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!inTemplateInstantiation() && Operand->HasSideEffects(EvalCtx, false)) {
     // The expression operand for noexcept is in an unevaluated expression
     // context, so side effects could result in unintended consequences.
     Diag(Operand->getExprLoc(), diag::warn_side_effects_unevaluated_context);
@@ -7944,15 +7956,17 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
 
-/// Try to evaluate an immediate function. 
+/// Try to evaluate an immediate function.
 static ExprResult
 EvaluateImmediateFunction(Sema &SemaRef, Expr *E)
 {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
   bool Ok = E->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen,
-                                      SemaRef.Context);
+                                      EvalCtx);
   if (Ok)
     return new (SemaRef.Context) CXXConstantExpr(E, std::move(Result.Val));
 
@@ -7978,10 +7992,11 @@ Sema::BuildConstantExpression(Expr *E)
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (E->isRValue())
-    OK = E->EvaluateAsRValue(Result, Context);
+    OK = E->EvaluateAsRValue(Result, EvalCtx);
   else if (E->isLValue())
-    OK = E->EvaluateAsLValue(Result, Context);
+    OK = E->EvaluateAsLValue(Result, EvalCtx);
   else
     llvm_unreachable("invalid value category");
 

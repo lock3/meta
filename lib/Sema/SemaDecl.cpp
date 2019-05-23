@@ -5635,8 +5635,9 @@ static QualType TryToFixInvalidVariablyModifiedType(QualType T,
     return QualType();
 
   Expr::EvalResult Result;
+  Expr::EvalContext EvalCtx(Context, nullptr);
   if (!VLATy->getSizeExpr() ||
-      !VLATy->getSizeExpr()->EvaluateAsInt(Result, Context))
+      !VLATy->getSizeExpr()->EvaluateAsInt(Result, EvalCtx))
     return QualType();
 
   llvm::APSInt Res = Result.Val.getInt();
@@ -11523,6 +11524,8 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
 
     // We allow integer constant expressions in all cases.
     } else if (DclT->isIntegralOrEnumerationType()) {
+      Expr::EvalContext EvalCtx(Context, this->GetReflectionCallbackObj());
+
       // Check whether the expression is a constant expression.
       SourceLocation Loc;
       if (getLangOpts().CPlusPlus11 && DclT.isVolatileQualified())
@@ -11531,12 +11534,12 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
         Diag(VDecl->getLocation(), diag::err_in_class_initializer_volatile);
       else if (Init->isValueDependent())
         ; // Nothing to check.
-      else if (Init->isIntegerConstantExpr(Context, &Loc))
+      else if (Init->isIntegerConstantExpr(EvalCtx, &Loc))
         ; // Ok, it's an ICE!
       else if (Init->getType()->isScopedEnumeralType() &&
-               Init->isCXX11ConstantExpr(Context))
+               Init->isCXX11ConstantExpr(EvalCtx))
         ; // Ok, it is a scoped-enum constant expression.
-      else if (Init->isEvaluatable(Context)) {
+      else if (Init->isEvaluatable(EvalCtx)) {
         // If we can constant fold the initializer through heroics, accept it,
         // but report this as a use of an extension for -pedantic.
         Diag(Loc, diag::ext_in_class_initializer_non_constant)
@@ -11564,7 +11567,8 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
         Diag(VDecl->getLocation(), diag::ext_in_class_initializer_float_type)
           << DclT << Init->getSourceRange();
 
-        if (!Init->isValueDependent() && !Init->isEvaluatable(Context)) {
+        Expr::EvalContext EvalCtx(Context, this->GetReflectionCallbackObj());
+        if (!Init->isValueDependent() && !Init->isEvaluatable(EvalCtx)) {
           Diag(Init->getExprLoc(), diag::err_in_class_initializer_non_constant)
             << Init->getSourceRange();
           VDecl->setInvalidDecl();
@@ -12165,8 +12169,9 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
           << attr->getRange();
         if (getLangOpts().CPlusPlus11) {
           APValue Value;
+          Expr::EvalContext EvalCtx(Context, this->GetReflectionCallbackObj());
           SmallVector<PartialDiagnosticAt, 8> Notes;
-          Init->EvaluateAsInitializer(Value, getASTContext(), var, Notes);
+          Init->EvaluateAsInitializer(Value, EvalCtx, var, Notes);
           for (auto &it : Notes)
             Diag(it.first, it.second);
         } else {
@@ -12418,7 +12423,8 @@ void Sema::FinalizeDeclaration(Decl *ThisDecl) {
       continue;
     }
     llvm::APSInt MagicValueInt;
-    if (!MagicValueExpr->isIntegerConstantExpr(MagicValueInt, Context)) {
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (!MagicValueExpr->isIntegerConstantExpr(MagicValueInt, EvalCtx)) {
       Diag(I->getRange().getBegin(),
            diag::err_type_tag_for_datatype_not_ice)
         << LangOpts.CPlusPlus << MagicValueExpr->getSourceRange();

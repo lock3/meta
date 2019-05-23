@@ -51,6 +51,7 @@ namespace clang {
   class ObjCPropertyRefExpr;
   class OpaqueValueExpr;
   class ParmVarDecl;
+  struct ReflectionCallback;
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
@@ -127,6 +128,8 @@ protected:
   explicit Expr(StmtClass SC, EmptyShell) : ValueStmt(SC) { }
 
 public:
+  struct EvalContext;
+
   QualType getType() const { return TR; }
   void setType(QualType t) {
     // In C++, the type of an expression is always adjusted so that it
@@ -496,22 +499,22 @@ public:
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
-  bool isIntegerConstantExpr(llvm::APSInt &Result, const ASTContext &Ctx,
+  bool isIntegerConstantExpr(llvm::APSInt &Result, const EvalContext &Ctx,
                              SourceLocation *Loc = nullptr,
                              bool isEvaluated = true) const;
-  bool isIntegerConstantExpr(const ASTContext &Ctx,
+  bool isIntegerConstantExpr(const EvalContext &Ctx,
                              SourceLocation *Loc = nullptr) const;
 
   /// isCXX98IntegralConstantExpr - Return true if this expression is an
   /// integral constant expression in C++98. Can only be used in C++.
-  bool isCXX98IntegralConstantExpr(const ASTContext &Ctx) const;
+  bool isCXX98IntegralConstantExpr(const EvalContext &Ctx) const;
 
   /// isCXX11ConstantExpr - Return true if this expression is a constant
   /// expression in C++11. Can only be used in C++.
   ///
   /// Note: This does not perform the implicit conversions required by C++11
   /// [expr.const]p5.
-  bool isCXX11ConstantExpr(const ASTContext &Ctx, APValue *Result = nullptr,
+  bool isCXX11ConstantExpr(const EvalContext &Ctx, APValue *Result = nullptr,
                            SourceLocation *Loc = nullptr) const;
 
   /// isPotentialConstantExpr - Return true if this function's definition
@@ -579,20 +582,29 @@ public:
     bool isGlobalLValue() const;
   };
 
+  /// EvalContext is a struct with state information for use by evaluation.
+  struct EvalContext {
+    ASTContext &ASTCtx;
+    ReflectionCallback *CB;
+
+    EvalContext(const ASTContext &ASTCtx, ReflectionCallback *CB)
+      : ASTCtx(const_cast<ASTContext &>(ASTCtx)), CB(CB) {}
+  };
+
   /// EvaluateAsRValue - Return true if this is a constant which we can fold to
   /// an rvalue using any crazy technique (that has nothing to do with language
   /// standards) that we want to, even if the expression has side-effects. If
   /// this function returns true, it returns the folded constant in Result. If
   /// the expression is a glvalue, an lvalue-to-rvalue conversion will be
   /// applied.
-  bool EvaluateAsRValue(EvalResult &Result, const ASTContext &Ctx,
+  bool EvaluateAsRValue(EvalResult &Result, const EvalContext &Ctx,
                         bool InConstantContext = false) const;
 
   /// EvaluateAsBooleanCondition - Return true if this is a constant
   /// which we can fold and convert to a boolean condition using
   /// any crazy technique that we want to, even if the expression has
   /// side-effects.
-  bool EvaluateAsBooleanCondition(bool &Result, const ASTContext &Ctx) const;
+  bool EvaluateAsBooleanCondition(bool &Result, const EvalContext &Ctx) const;
 
   enum SideEffectsKind {
     SE_NoSideEffects,          ///< Strictly evaluate the expression.
@@ -603,25 +615,25 @@ public:
 
   /// EvaluateAsInt - Return true if this is a constant which we can fold and
   /// convert to an integer, using any crazy technique that we want to.
-  bool EvaluateAsInt(EvalResult &Result, const ASTContext &Ctx,
+  bool EvaluateAsInt(EvalResult &Result, const EvalContext &Ctx,
                      SideEffectsKind AllowSideEffects = SE_NoSideEffects) const;
 
   /// EvaluateAsFloat - Return true if this is a constant which we can fold and
   /// convert to a floating point value, using any crazy technique that we
   /// want to.
   bool
-  EvaluateAsFloat(llvm::APFloat &Result, const ASTContext &Ctx,
+  EvaluateAsFloat(llvm::APFloat &Result, const EvalContext &Ctx,
                   SideEffectsKind AllowSideEffects = SE_NoSideEffects) const;
 
   /// EvaluateAsFloat - Return true if this is a constant which we can fold and
   /// convert to a fixed point value.
   bool EvaluateAsFixedPoint(
-      EvalResult &Result, const ASTContext &Ctx,
+      EvalResult &Result, const EvalContext &Ctx,
       SideEffectsKind AllowSideEffects = SE_NoSideEffects) const;
 
   /// isEvaluatable - Call EvaluateAsRValue to see if this expression can be
   /// constant folded without side-effects, but discard the result.
-  bool isEvaluatable(const ASTContext &Ctx,
+  bool isEvaluatable(const EvalContext &Ctx,
                      SideEffectsKind AllowSideEffects = SE_NoSideEffects) const;
 
   /// HasSideEffects - This routine returns true for all those expressions
@@ -631,39 +643,39 @@ public:
   /// potential side effects (such as function call-like expressions,
   /// instantiation-dependent expressions, or invocations from a macro) as not
   /// having side effects.
-  bool HasSideEffects(const ASTContext &Ctx,
+  bool HasSideEffects(const EvalContext &Ctx,
                       bool IncludePossibleEffects = true) const;
 
   /// Determine whether this expression involves a call to any function
   /// that is not trivial.
-  bool hasNonTrivialCall(const ASTContext &Ctx) const;
+  bool hasNonTrivialCall(const EvalContext &Ctx) const;
 
   /// EvaluateKnownConstInt - Call EvaluateAsRValue and return the folded
   /// integer. This must be called on an expression that constant folds to an
   /// integer.
   llvm::APSInt EvaluateKnownConstInt(
-      const ASTContext &Ctx,
+      const EvalContext &Ctx,
       SmallVectorImpl<PartialDiagnosticAt> *Diag = nullptr) const;
 
   llvm::APSInt EvaluateKnownConstIntCheckOverflow(
-      const ASTContext &Ctx,
+      const EvalContext &Ctx,
       SmallVectorImpl<PartialDiagnosticAt> *Diag = nullptr) const;
 
-  void EvaluateForOverflow(const ASTContext &Ctx) const;
+  void EvaluateForOverflow(const EvalContext &Ctx) const;
 
   /// EvaluateAsLValue - Evaluate an expression to see if we can fold it to an
   /// lvalue with link time known address, with no side-effects.
-  bool EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const;
+  bool EvaluateAsLValue(EvalResult &Result, const EvalContext &Ctx) const;
 
   /// EvaluateAsAnyValue - Evaluate an expression to fold it as either an
   /// lvalue or an rvalue, depending on the kind of expression.
-  bool EvaluateAsAnyValue(EvalResult &Result, const ASTContext &Ctx) const;
+  bool EvaluateAsAnyValue(EvalResult &Result, const EvalContext &Ctx) const;
 
   /// EvaluateAsInitializer - Evaluate an expression as if it were the
   /// initializer of the given declaration. Returns true if the initializer
   /// can be folded to a constant, and produces any relevant notes. In C++11,
   /// notes will be produced if the expression is not a constant expression.
-  bool EvaluateAsInitializer(APValue &Result, const ASTContext &Ctx,
+  bool EvaluateAsInitializer(APValue &Result, const EvalContext &Ctx,
                              const VarDecl *VD,
                              SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 
@@ -671,7 +683,7 @@ public:
   /// of a call to the given function with the given arguments, inside an
   /// unevaluated context. Returns true if the expression could be folded to a
   /// constant.
-  bool EvaluateWithSubstitution(APValue &Value, ASTContext &Ctx,
+  bool EvaluateWithSubstitution(APValue &Value, const EvalContext &Ctx,
                                 const FunctionDecl *Callee,
                                 ArrayRef<const Expr*> Args,
                                 const Expr *This = nullptr) const;
@@ -681,7 +693,7 @@ public:
 
   /// Evaluate an expression that is required to be a constant expression.
   bool EvaluateAsConstantExpr(EvalResult &Result, ConstExprUsage Usage,
-                              const ASTContext &Ctx) const;
+                              const EvalContext &Ctx) const;
 
   /// If the current Expr is a pointer, this will try to statically
   /// determine the number of bytes available where the pointer is pointing.
@@ -690,7 +702,7 @@ public:
   ///
   /// \param Type - How to evaluate the size of the Expr, as defined by the
   /// "type" parameter of __builtin_object_size
-  bool tryEvaluateObjectSize(uint64_t &Result, ASTContext &Ctx,
+  bool tryEvaluateObjectSize(uint64_t &Result, const EvalContext &Ctx,
                              unsigned Type) const;
 
   /// Enumeration used to describe the kind of Null pointer constant
@@ -2688,7 +2700,7 @@ public:
 
   /// Return true if this is a call to __assume() or __builtin_assume() with
   /// a non-value-dependent constant parameter evaluating as false.
-  bool isBuiltinAssumeFalse(const ASTContext &Ctx) const;
+  bool isBuiltinAssumeFalse(const EvalContext &Ctx) const;
 
   bool isCallToStdMove() const {
     const FunctionDecl *FD = getDirectCallee();
@@ -3933,7 +3945,7 @@ public:
 
   void setExprs(const ASTContext &C, ArrayRef<Expr *> Exprs);
 
-  llvm::APSInt getShuffleMaskIdx(const ASTContext &Ctx, unsigned N) const {
+  llvm::APSInt getShuffleMaskIdx(const EvalContext &Ctx, unsigned N) const {
     assert((N < NumExprs - 2) && "Shuffle idx out of range!");
     return getExpr(N+2)->EvaluateKnownConstInt(Ctx);
   }

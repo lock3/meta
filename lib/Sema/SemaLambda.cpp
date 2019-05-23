@@ -1460,7 +1460,8 @@ mapImplicitCaptureStyle(CapturingScopeInfo::ImplicitCaptureStyle ICS) {
 bool Sema::CaptureHasSideEffects(const Capture &From) {
   if (!From.isVLATypeCapture()) {
     Expr *Init = From.getInitExpr();
-    if (Init && Init->HasSideEffects(Context))
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (Init && Init->HasSideEffects(EvalCtx))
       return true;
   }
 

@@ -145,7 +145,7 @@ ExprResult Parser::ParseCXXInvalidReflectionExpression() {
 ///   primary-expression:
 ///     __reflect '(' expression-list ')'
 /// \endverbatim
-ExprResult Parser::ParseCXXReflectionTrait() {
+ExprResult Parser::ParseCXXReflectionReadQuery() {
   assert(Tok.is(tok::kw___reflect) && "Not __reflect");
   SourceLocation Loc = ConsumeToken();
 
@@ -169,7 +169,7 @@ ExprResult Parser::ParseCXXReflectionTrait() {
 
   SourceLocation LPLoc = Parens.getOpenLocation();
   SourceLocation RPLoc = Parens.getCloseLocation();
-  return Actions.ActOnCXXReflectionTrait(Loc, Args, LPLoc, RPLoc);
+  return Actions.ActOnCXXReflectionReadQuery(Loc, Args, LPLoc, RPLoc);
 }
 
 /// Parse a reflective pretty print of integer and string values.

@@ -4679,7 +4679,9 @@ bool OpenMPIterationSpaceChecker::setStep(Expr *NewStep, bool Subtract) {
     //  > or >= then incr-expr must cause var to increase on each iteration of
     //  the loop.
     llvm::APSInt Result;
-    bool IsConstant = NewStep->isIntegerConstantExpr(Result, SemaRef.Context);
+    Expr::EvalContext EvalCtx(
+        SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    bool IsConstant = NewStep->isIntegerConstantExpr(Result, EvalCtx);
     bool IsUnsigned = !NewStep->getType()->hasSignedIntegerRepresentation();
     bool IsConstNeg =
         IsConstant && Result.isSigned() && (Subtract != Result.isNegative());
@@ -5107,7 +5109,9 @@ tryBuildCapture(Sema &SemaRef, Expr *Capture,
                 llvm::MapVector<const Expr *, DeclRefExpr *> &Captures) {
   if (SemaRef.CurContext->isDependentContext())
     return ExprResult(Capture);
-  if (Capture->isEvaluatable(SemaRef.Context, Expr::SE_AllowSideEffects))
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (Capture->isEvaluatable(EvalCtx, Expr::SE_AllowSideEffects))
     return SemaRef.PerformImplicitConversion(
         Capture->IgnoreImpCasts(), Capture->getType(), Sema::AA_Converting,
         /*AllowExplicit=*/true);
@@ -5719,7 +5723,9 @@ static bool fitsInto(unsigned Bits, bool Signed, const Expr *E, Sema &SemaRef) {
   if (E == nullptr)
     return false;
   llvm::APSInt Result;
-  if (E->isIntegerConstantExpr(Result, SemaRef.Context))
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (E->isIntegerConstantExpr(Result, EvalCtx))
     return Signed ? Result.isSignedIntN(Bits) : Result.isIntN(Bits);
   return false;
 }
@@ -5781,14 +5787,18 @@ checkOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
   if (CollapseLoopCountExpr) {
     // Found 'collapse' clause - calculate collapse number.
     Expr::EvalResult Result;
-    if (CollapseLoopCountExpr->EvaluateAsInt(Result, SemaRef.getASTContext()))
+    Expr::EvalContext EvalCtx(
+        SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    if (CollapseLoopCountExpr->EvaluateAsInt(Result, EvalCtx))
       NestedLoopCount = Result.Val.getInt().getLimitedValue();
   }
   unsigned OrderedLoopCount = 1;
   if (OrderedLoopCountExpr) {
     // Found 'ordered' clause - calculate collapse number.
     Expr::EvalResult EVResult;
-    if (OrderedLoopCountExpr->EvaluateAsInt(EVResult, SemaRef.getASTContext())) {
+    Expr::EvalContext EvalCtx(
+        SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    if (OrderedLoopCountExpr->EvaluateAsInt(EVResult, EvalCtx)) {
       llvm::APSInt Result = EVResult.Val.getInt();
       if (Result.getLimitedValue() < NestedLoopCount) {
         SemaRef.Diag(OrderedLoopCountExpr->getExprLoc(),
@@ -5970,8 +5980,10 @@ checkOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
   // Calculate the last iteration number beforehand instead of doing this on
   // each iteration. Do not do this if the number of iterations may be kfold-ed.
   llvm::APSInt Result;
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
   bool IsConstant =
-      LastIteration.get()->isIntegerConstantExpr(Result, SemaRef.Context);
+      LastIteration.get()->isIntegerConstantExpr(Result, EvalCtx);
   ExprResult CalcLastIteration;
   if (!IsConstant) {
     ExprResult SaveRef =
@@ -6464,8 +6476,9 @@ static bool checkSimdlenSafelenSpecified(Sema &S,
         SafelenLength->containsUnexpandedParameterPack())
       return false;
     Expr::EvalResult SimdlenResult, SafelenResult;
-    SimdlenLength->EvaluateAsInt(SimdlenResult, S.Context);
-    SafelenLength->EvaluateAsInt(SafelenResult, S.Context);
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    SimdlenLength->EvaluateAsInt(SimdlenResult, EvalCtx);
+    SafelenLength->EvaluateAsInt(SafelenResult, EvalCtx);
     llvm::APSInt SimdlenRes = SimdlenResult.Val.getInt();
     llvm::APSInt SafelenRes = SafelenResult.Val.getInt();
     // OpenMP 4.5 [2.8.1, simd Construct, Restrictions]
@@ -6716,7 +6729,8 @@ StmtResult Sema::ActOnOpenMPCriticalDirective(
           E->isInstantiationDependent()) {
         DependentHint = true;
       } else {
-        Hint = E->EvaluateKnownConstInt(Context);
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+        Hint = E->EvaluateKnownConstInt(EvalCtx);
         HintLoc = C->getBeginLoc();
       }
     }
@@ -6733,9 +6747,10 @@ StmtResult Sema::ActOnOpenMPCriticalDirective(
       else
         Diag(StartLoc, diag::note_omp_critical_no_hint) << 0;
       if (const auto *C = Pair.first->getSingleClause<OMPHintClause>()) {
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
         Diag(C->getBeginLoc(), diag::note_omp_critical_hint_here)
             << 1
-            << C->getHint()->EvaluateKnownConstInt(Context).toString(
+            << C->getHint()->EvaluateKnownConstInt(EvalCtx).toString(
                    /*Radix=*/10, /*Signed=*/false);
       } else {
         Diag(Pair.first->getBeginLoc(), diag::note_omp_critical_no_hint) << 1;
@@ -9676,7 +9691,9 @@ static bool isNonNegativeIntegerValue(Expr *&ValExpr, Sema &SemaRef,
     ValExpr = Value.get();
     // The expression must evaluate to a non-negative integer value.
     llvm::APSInt Result;
-    if (ValExpr->isIntegerConstantExpr(Result, SemaRef.Context) &&
+    Expr::EvalContext EvalCtx(
+        SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    if (ValExpr->isIntegerConstantExpr(Result, EvalCtx) &&
         Result.isSigned() &&
         !((!StrictlyPositive && Result.isNonNegative()) ||
           (StrictlyPositive && Result.isStrictlyPositive()))) {
@@ -10224,7 +10241,8 @@ OMPClause *Sema::ActOnOpenMPScheduleClause(
       //  chunk_size must be a loop invariant integer expression with a positive
       //  value.
       llvm::APSInt Result;
-      if (ValExpr->isIntegerConstantExpr(Result, Context)) {
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+      if (ValExpr->isIntegerConstantExpr(Result, EvalCtx)) {
         if (Result.isSigned() && !Result.isStrictlyPositive()) {
           Diag(ChunkSizeLoc, diag::err_omp_negative_expression_in_clause)
               << "schedule" << 1 << ChunkSize->getSourceRange();
@@ -11533,7 +11551,7 @@ struct ReductionData {
 } // namespace
 
 static bool checkOMPArraySectionConstantForReduction(
-    ASTContext &Context, const OMPArraySectionExpr *OASE, bool &SingleElement,
+    Expr::EvalContext &EvalCtx, const OMPArraySectionExpr *OASE, bool &SingleElement,
     SmallVectorImpl<llvm::APSInt> &ArraySizes) {
   const Expr *Length = OASE->getLength();
   if (Length == nullptr) {
@@ -11547,7 +11565,7 @@ static bool checkOMPArraySectionConstantForReduction(
     ArraySizes.push_back(llvm::APSInt::get(1));
   } else {
     Expr::EvalResult Result;
-    if (!Length->EvaluateAsInt(Result, Context))
+    if (!Length->EvaluateAsInt(Result, EvalCtx))
       return false;
 
     llvm::APSInt ConstantLengthValue = Result.Val.getInt();
@@ -11572,7 +11590,7 @@ static bool checkOMPArraySectionConstantForReduction(
       ArraySizes.push_back(llvm::APSInt::get(1));
     } else {
       Expr::EvalResult Result;
-      if (!Length->EvaluateAsInt(Result, Context))
+      if (!Length->EvaluateAsInt(Result, EvalCtx))
         return false;
 
       llvm::APSInt ConstantLengthValue = Result.Val.getInt();
@@ -11901,8 +11919,9 @@ static bool actOnOMPReductionKindClause(
     if (OASE) {
       bool SingleElement;
       llvm::SmallVector<llvm::APSInt, 4> ArraySizes;
+      Expr::EvalContext EvalCtx(Context, S.GetReflectionCallbackObj());
       ConstantLengthOASE = checkOMPArraySectionConstantForReduction(
-          Context, OASE, SingleElement, ArraySizes);
+          EvalCtx, OASE, SingleElement, ArraySizes);
 
       // If we don't have a single element, we must emit a constant array type.
       if (ConstantLengthOASE && !SingleElement) {
@@ -12453,7 +12472,8 @@ OMPClause *Sema::ActOnOpenMPLinearClause(
     // Warn about zero linear step (it would be probably better specified as
     // making corresponding variables 'const').
     llvm::APSInt Result;
-    bool IsConstant = StepExpr->isIntegerConstantExpr(Result, Context);
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    bool IsConstant = StepExpr->isIntegerConstantExpr(Result, EvalCtx);
     if (IsConstant && !Result.isNegative() && !Result.isStrictlyPositive())
       Diag(StepLoc, diag::warn_omp_linear_step_zero)
         << TemplateArgument(Vars[0], TemplateArgument::Expression)
@@ -12885,7 +12905,8 @@ Sema::ActOnOpenMPDependClause(OpenMPDependClauseKind DepKind,
   if (DepKind == OMPC_DEPEND_sink || DepKind == OMPC_DEPEND_source) {
     if (const Expr *OrderedCountExpr =
             DSAStack->getParentOrderedRegionParam().first) {
-      TotalDepCount = OrderedCountExpr->EvaluateKnownConstInt(Context);
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+      TotalDepCount = OrderedCountExpr->EvaluateKnownConstInt(EvalCtx);
       TotalDepCount.setIsUnsigned(/*Val=*/true);
     }
   }
@@ -13087,7 +13108,9 @@ static bool checkArrayExpressionDoesNotReferToWholeSize(Sema &SemaRef,
   // covering the whole dimension.
   if (LowerBound) {
     Expr::EvalResult Result;
-    if (!LowerBound->EvaluateAsInt(Result, SemaRef.getASTContext()))
+    Expr::EvalContext EvalCtx(
+        SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+    if (!LowerBound->EvaluateAsInt(Result, EvalCtx))
       return false; // Can't get the integer value as a constant.
 
     llvm::APSInt ConstLowerBound = Result.Val.getInt();
@@ -13111,7 +13134,9 @@ static bool checkArrayExpressionDoesNotReferToWholeSize(Sema &SemaRef,
     return false;
 
   Expr::EvalResult Result;
-  if (!Length->EvaluateAsInt(Result, SemaRef.getASTContext()))
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!Length->EvaluateAsInt(Result, EvalCtx))
     return false; // Can't get the integer value as a constant.
 
   llvm::APSInt ConstLength = Result.Val.getInt();
@@ -13146,7 +13171,9 @@ static bool checkArrayExpressionDoesNotReferToUnitySize(Sema &SemaRef,
 
   // Check if the length evaluates to 1.
   Expr::EvalResult Result;
-  if (!Length->EvaluateAsInt(Result, SemaRef.getASTContext()))
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!Length->EvaluateAsInt(Result, EvalCtx))
     return false; // Can't get the integer value as a constant.
 
   llvm::APSInt ConstLength = Result.Val.getInt();
@@ -13308,7 +13335,9 @@ static const Expr *checkMapClauseExpressionBase(
 
       if (const auto *TE = dyn_cast<CXXThisExpr>(E)) {
         Expr::EvalResult Result;
-        if (CurE->getIdx()->EvaluateAsInt(Result, SemaRef.getASTContext())) {
+        Expr::EvalContext EvalCtx(
+            SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+        if (CurE->getIdx()->EvaluateAsInt(Result, EvalCtx)) {
           if (!Result.Val.getInt().isNullValue()) {
             SemaRef.Diag(CurE->getIdx()->getExprLoc(),
                          diag::err_omp_invalid_map_this_expr);
@@ -13368,8 +13397,9 @@ static const Expr *checkMapClauseExpressionBase(
       if (const auto *TE = dyn_cast<CXXThisExpr>(E)) {
         Expr::EvalResult ResultR;
         Expr::EvalResult ResultL;
-        if (CurE->getLength()->EvaluateAsInt(ResultR,
-                                             SemaRef.getASTContext())) {
+        Expr::EvalContext EvalCtx(
+            SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+        if (CurE->getLength()->EvaluateAsInt(ResultR, EvalCtx)) {
           if (!ResultR.Val.getInt().isOneValue()) {
             SemaRef.Diag(CurE->getLength()->getExprLoc(),
                          diag::err_omp_invalid_map_this_expr);
@@ -13377,8 +13407,8 @@ static const Expr *checkMapClauseExpressionBase(
                          diag::note_omp_invalid_length_on_this_ptr_mapping);
           }
         }
-        if (CurE->getLowerBound() && CurE->getLowerBound()->EvaluateAsInt(
-                                        ResultL, SemaRef.getASTContext())) {
+        if (CurE->getLowerBound() &&
+            CurE->getLowerBound()->EvaluateAsInt(ResultL, EvalCtx)) {
           if (!ResultL.Val.getInt().isNullValue()) {
             SemaRef.Diag(CurE->getLowerBound()->getExprLoc(),
                          diag::err_omp_invalid_map_this_expr);
@@ -14602,7 +14632,8 @@ OMPClause *Sema::ActOnOpenMPDistScheduleClause(
       //  chunk_size must be a loop invariant integer expression with a positive
       //  value.
       llvm::APSInt Result;
-      if (ValExpr->isIntegerConstantExpr(Result, Context)) {
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+      if (ValExpr->isIntegerConstantExpr(Result, EvalCtx)) {
         if (Result.isSigned() && !Result.isStrictlyPositive()) {
           Diag(ChunkSizeLoc, diag::err_omp_negative_expression_in_clause)
               << "dist_schedule" << ChunkSize->getSourceRange();

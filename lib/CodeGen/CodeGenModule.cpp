@@ -4660,7 +4660,8 @@ ConstantAddress CodeGenModule::GetAddrOfGlobalTemporary(
 
   // Try evaluating it now, it might have a constant initializer.
   Expr::EvalResult EvalResult;
-  if (!Value && Init->EvaluateAsRValue(EvalResult, getContext()) &&
+  Expr::EvalContext EvalCtx(getContext(), nullptr);
+  if (!Value && Init->EvaluateAsRValue(EvalResult, EvalCtx) &&
       !EvalResult.hasSideEffects())
     Value = &EvalResult.Val;
 

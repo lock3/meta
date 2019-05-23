@@ -1126,8 +1126,8 @@ void AggExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   // potentially cause a block copy, we need to evaluate the RHS first
   // so that the assignment goes the right place.
   // This is pretty semantically fragile.
-  if (isBlockVarRef(E->getLHS()) &&
-      E->getRHS()->HasSideEffects(CGF.getContext())) {
+  Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+  if (isBlockVarRef(E->getLHS()) && E->getRHS()->HasSideEffects(EvalCtx)) {
     // Ensure that we have a destination, and evaluate the RHS into that.
     EnsureDest(E->getRHS()->getType());
     Visit(E->getRHS());

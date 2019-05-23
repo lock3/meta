@@ -2908,7 +2908,8 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
 
   if (IsForRef) {
     EvalResult Result;
-    if (EvaluateAsLValue(Result, Ctx) && !Result.HasSideEffects)
+    EvalContext EvalCtx(Ctx, nullptr);
+    if (EvaluateAsLValue(Result, EvalCtx) && !Result.HasSideEffects)
       return true;
     if (Culprit)
       *Culprit = this;
@@ -2982,7 +2983,8 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
           if (Field->isBitField()) {
             // Bitfields have to evaluate to an integer.
             EvalResult Result;
-            if (!Elt->EvaluateAsInt(Result, Ctx)) {
+            EvalContext EvalCtx(Ctx, nullptr);
+            if (!Elt->EvaluateAsInt(Result, EvalCtx)) {
               if (Culprit)
                 *Culprit = Elt;
               return false;
@@ -3061,14 +3063,15 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef,
   // Allow certain forms of UB in constant initializers: signed integer
   // overflow and floating-point division by zero. We'll give a warning on
   // these, but they're common enough that we have to accept them.
-  if (isEvaluatable(Ctx, SE_AllowUndefinedBehavior))
+  EvalContext EvalCtx(Ctx, nullptr);
+  if (isEvaluatable(EvalCtx, SE_AllowUndefinedBehavior))
     return true;
   if (Culprit)
     *Culprit = this;
   return false;
 }
 
-bool CallExpr::isBuiltinAssumeFalse(const ASTContext &Ctx) const {
+bool CallExpr::isBuiltinAssumeFalse(const EvalContext &Ctx) const {
   const FunctionDecl* FD = getDirectCallee();
   if (!FD || (FD->getBuiltinID() != Builtin::BI__assume &&
               FD->getBuiltinID() != Builtin::BI__builtin_assume))
@@ -3088,7 +3091,7 @@ namespace {
     bool HasSideEffects;
 
   public:
-    explicit SideEffectFinder(const ASTContext &Context, bool IncludePossible)
+    explicit SideEffectFinder(const Expr::EvalContext &Context, bool IncludePossible)
       : Inherited(Context),
         IncludePossibleEffects(IncludePossible), HasSideEffects(false) { }
 
@@ -3102,7 +3105,7 @@ namespace {
   };
 }
 
-bool Expr::HasSideEffects(const ASTContext &Ctx,
+bool Expr::HasSideEffects(const EvalContext &Ctx,
                           bool IncludePossibleEffects) const {
   // In circumstances where we care about definite side effects instead of
   // potential side effects, we want to ignore expressions that are part of a
@@ -3167,7 +3170,7 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXConstantExprClass:
   case CXXReflectExprClass:
   case CXXInvalidReflectionExprClass:
-  case CXXReflectionTraitExprClass:
+  case CXXReflectionReadQueryExprClass:
   case CXXReflectPrintLiteralExprClass:
   case CXXReflectPrintReflectionExprClass:
   case CXXReflectDumpReflectionExprClass:
@@ -3402,7 +3405,7 @@ namespace {
     bool NonTrivial;
 
   public:
-    explicit NonTrivialCallFinder(const ASTContext &Context)
+    explicit NonTrivialCallFinder(const Expr::EvalContext &Context)
       : Inherited(Context), NonTrivial(false) { }
 
     bool hasNonTrivialCall() const { return NonTrivial; }
@@ -3441,7 +3444,7 @@ namespace {
   };
 }
 
-bool Expr::hasNonTrivialCall(const ASTContext &Ctx) const {
+bool Expr::hasNonTrivialCall(const EvalContext &Ctx) const {
   NonTrivialCallFinder Finder(Ctx);
   Finder.Visit(this);
   return Finder.hasNonTrivialCall();
@@ -3546,6 +3549,7 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
       (Ctx.getLangOpts().CPlusPlus && getType()->isEnumeralType()))
     return NPCK_NotNull;
 
+  Expr::EvalContext EvalCtx(Ctx, nullptr);
   if (Ctx.getLangOpts().CPlusPlus11) {
     // C++11 [conv.ptr]p1: A null pointer constant is an integer literal with
     // value zero or a prvalue of type std::nullptr_t.
@@ -3553,16 +3557,16 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
     const IntegerLiteral *Lit = dyn_cast<IntegerLiteral>(this);
     if (Lit && !Lit->getValue())
       return NPCK_ZeroLiteral;
-    else if (!Ctx.getLangOpts().MSVCCompat || !isCXX98IntegralConstantExpr(Ctx))
+    else if (!Ctx.getLangOpts().MSVCCompat || !isCXX98IntegralConstantExpr(EvalCtx))
       return NPCK_NotNull;
   } else {
     // If we have an integer constant expression, we need to *evaluate* it and
     // test for the value 0.
-    if (!isIntegerConstantExpr(Ctx))
+    if (!isIntegerConstantExpr(EvalCtx))
       return NPCK_NotNull;
   }
 
-  if (EvaluateKnownConstInt(Ctx) != 0)
+  if (EvaluateKnownConstInt(EvalCtx) != 0)
     return NPCK_NotNull;
 
   if (isa<IntegerLiteral>(this))

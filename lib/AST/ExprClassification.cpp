@@ -193,7 +193,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::DesignatedInitUpdateExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXInvalidReflectionExprClass:
-  case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectionReadQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:

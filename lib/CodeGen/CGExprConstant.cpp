@@ -1686,13 +1686,13 @@ llvm::Constant *ConstantEmitter::emitForMemory(CodeGenModule &CGM,
 llvm::Constant *ConstantEmitter::tryEmitPrivate(const Expr *E,
                                                 QualType destType) {
   Expr::EvalResult Result;
-
+  Expr::EvalContext EvalCtx(CGM.getContext(), nullptr);
   bool Success = false;
 
   if (destType->isReferenceType())
-    Success = E->EvaluateAsLValue(Result, CGM.getContext());
+    Success = E->EvaluateAsLValue(Result, EvalCtx);
   else
-    Success = E->EvaluateAsRValue(Result, CGM.getContext(), InConstantContext);
+    Success = E->EvaluateAsRValue(Result, EvalCtx, InConstantContext);
 
   llvm::Constant *C;
   if (Success && !Result.HasSideEffects)
@@ -1707,13 +1707,13 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
                                                 QualType DestType,
                                                 CodeGenFunction *CGF) {
   Expr::EvalResult Result;
-
+  Expr::EvalContext EvalCtx(Context, nullptr);
   bool Success = false;
 
   if (DestType->isReferenceType())
-    Success = E->EvaluateAsLValue(Result, Context);
+    Success = E->EvaluateAsLValue(Result, EvalCtx);
   else
-    Success = E->EvaluateAsRValue(Result, Context);
+    Success = E->EvaluateAsRValue(Result, EvalCtx);
 
   llvm::Constant *C = nullptr;
   if (Success && !Result.HasSideEffects)

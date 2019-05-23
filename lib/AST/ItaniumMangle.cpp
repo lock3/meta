@@ -3635,7 +3635,7 @@ recurse:
   case Expr::AtomicExprClass:
   case Expr::CXXConstantExprClass:
   case Expr::CXXInvalidReflectionExprClass:
-  case Expr::CXXReflectionTraitExprClass:
+  case Expr::CXXReflectionReadQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
@@ -3964,7 +3964,8 @@ recurse:
       QualType T = (ImplicitlyConvertedToType.isNull() ||
                     !ImplicitlyConvertedToType->isIntegerType())? SAE->getType()
                                                     : ImplicitlyConvertedToType;
-      llvm::APSInt V = SAE->EvaluateKnownConstInt(Context.getASTContext());
+      Expr::EvalContext EvalCtx(Context.getASTContext(), nullptr);
+      llvm::APSInt V = SAE->EvaluateKnownConstInt(EvalCtx);
       mangleIntegerLiteral(T, V);
       break;
     }

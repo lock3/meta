@@ -23,7 +23,6 @@
 namespace clang {
 
 class CXXBaseSpecifier;
-class CXXReflectionTraitExpr;
 class Decl;
 class Expr;
 class NamespaceDecl;
@@ -257,16 +256,22 @@ public:
   }
 };
 
+struct ReflectionCallback {
+  virtual ~ReflectionCallback() { }
+  virtual bool EvalTypeTrait(TypeTrait Kind,
+                             ArrayRef<TypeSourceInfo *> Args) = 0;
+};
+
 enum ReflectionQuery : unsigned;
 
 /// Returns the ReflectionQuery value representing an unknown reflection query.
 ReflectionQuery getUnknownReflectionQuery();
 
+unsigned getMinNumQueryArguments(ReflectionQuery Q);
+unsigned getMaxNumQueryArguments(ReflectionQuery Q);
+
 /// True if Q is a predicate.
 bool isPredicateQuery(ReflectionQuery Q);
-
-/// True if Q returns trait information.
-bool isTraitQuery(ReflectionQuery Q);
 
 /// True if Q returns an associated reflection.
 bool isAssociatedReflectionQuery(ReflectionQuery Q);
@@ -286,7 +291,7 @@ class Reflection {
   APValue Ref;
 
   /// The expression defining the query.
-  const CXXReflectionTraitExpr *Query;
+  const Expr *Query;
 
   /// Points to a vector of diagnostics, to be populated during query
   /// evaluation.
@@ -305,7 +310,10 @@ public:
   }
 
   /// Construct a reflection that will be used to evaluate a query.
-  Reflection(ASTContext &C, const APValue &R, const CXXReflectionTraitExpr *E,
+  ///
+  /// DEPRECATED: Avoid using this class for evaluation state,
+  /// instead it should be used as a useful wrapper around APValue reflections.
+  Reflection(ASTContext &C, const APValue &R, const Expr *E,
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
     : Ctx(&C), Ref(R), Query(E), Diag(D) {
     assert(Ref.isReflection() && "not a reflection");
@@ -317,7 +325,7 @@ public:
   }
 
   /// Returns the related query for this reflection, if present.
-  const CXXReflectionTraitExpr *getQuery() const {
+  const Expr *getQuery() const {
     return Query;
   }
 
@@ -381,12 +389,6 @@ public:
     return Ref.getReflectedBaseSpecifier();
   }
 
-  /// Evaluates the predicate designated by Q.
-  bool EvaluatePredicate(ReflectionQuery Q, APValue &Result);
-
-  /// Returns the traits designated by Q.
-  bool GetTraits(ReflectionQuery Q, APValue &Result);
-
   /// Returns the reflected construct designated by Q.
   bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 
@@ -396,6 +398,57 @@ public:
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
+
+class ReflectionQueryEvaluator {
+  /// The AST context is needed for global information.
+  ASTContext *Ctx;
+
+  /// Optional callbacks to Sema functionality.
+  ReflectionCallback *CB;
+
+  /// The query to evaluate.
+  ReflectionQuery Query;
+
+  /// The expression defining the query.
+  const Expr *QueryExpr;
+
+  /// Points to a vector of diagnostics, to be populated during query
+  /// evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *Diag;
+public:
+  ReflectionQueryEvaluator(ASTContext &C, ReflectionCallback *CB,
+                           ReflectionQuery Q, const Expr *E,
+                           SmallVectorImpl<PartialDiagnosticAt> *D)
+    : Ctx(&C), CB(CB), Query(Q), QueryExpr(E), Diag(D) {
+  }
+
+  /// Returns the ASTContext for this evaluation.
+  ASTContext &getContext() const {
+    return *Ctx;
+  }
+
+  ReflectionCallback *getCallbacks() const {
+    return CB;
+  }
+
+  ReflectionQuery getQuery() const {
+    return Query;
+  }
+
+  /// Returns the related query for this evaluation, if present.
+  const Expr *getQueryExpr() const {
+    return QueryExpr;
+  }
+
+  /// Returns the vector holding diagnostics for query evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *getDiag() const {
+    return Diag;
+  }
+
+  /// Evaluates the predicate designated by Q.
+  bool EvaluatePredicate(SmallVectorImpl<APValue> &Args, APValue &Result);
+};
+
 } // namespace clang
 
 #endif

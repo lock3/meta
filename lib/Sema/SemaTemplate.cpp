@@ -3150,7 +3150,8 @@ Sema::findFailedBooleanCondition(Expr *Cond) {
       *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
     bool Succeeded;
-    if (Term->EvaluateAsBooleanCondition(Succeeded, Context) &&
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (Term->EvaluateAsBooleanCondition(Succeeded, EvalCtx) &&
         !Succeeded) {
       FailedCond = TermAsWritten;
       break;
@@ -5687,7 +5688,8 @@ isNullPointerValueTemplateArgument(Sema &S, NonTypeTemplateParmDecl *Param,
   Expr::EvalResult EvalResult;
   SmallVector<PartialDiagnosticAt, 8> Notes;
   EvalResult.Diag = &Notes;
-  if (!Arg->EvaluateAsRValue(EvalResult, S.Context) ||
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!Arg->EvaluateAsRValue(EvalResult, EvalCtx) ||
       EvalResult.HasSideEffects) {
     SourceLocation DiagLoc = Arg->getExprLoc();
 

@@ -270,7 +270,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXConstantExprClass:
   case Stmt::CXXReflectExprClass:
   case Stmt::CXXInvalidReflectionExprClass:
-  case Stmt::CXXReflectionTraitExprClass:
+  case Stmt::CXXReflectionReadQueryExprClass:
   case Stmt::CXXReflectPrintLiteralExprClass:
   case Stmt::CXXReflectPrintReflectionExprClass:
   case Stmt::CXXReflectDumpReflectionExprClass:

@@ -2647,18 +2647,20 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
   }
 
   Expr *IndexExpr = nullptr;
+  Expr::EvalContext EvalCtx(
+      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
   llvm::APSInt DesignatedStartIndex, DesignatedEndIndex;
   if (D->isArrayDesignator()) {
     IndexExpr = DIE->getArrayIndex(*D);
-    DesignatedStartIndex = IndexExpr->EvaluateKnownConstInt(SemaRef.Context);
+    DesignatedStartIndex = IndexExpr->EvaluateKnownConstInt(EvalCtx);
     DesignatedEndIndex = DesignatedStartIndex;
   } else {
     assert(D->isArrayRangeDesignator() && "Need array-range designator");
 
     DesignatedStartIndex =
-      DIE->getArrayRangeStart(*D)->EvaluateKnownConstInt(SemaRef.Context);
+      DIE->getArrayRangeStart(*D)->EvaluateKnownConstInt(EvalCtx);
     DesignatedEndIndex =
-      DIE->getArrayRangeEnd(*D)->EvaluateKnownConstInt(SemaRef.Context);
+      DIE->getArrayRangeEnd(*D)->EvaluateKnownConstInt(EvalCtx);
     IndexExpr = DIE->getArrayRangeEnd(*D);
 
     // Codegen can't handle evaluating array range designators that have side
@@ -2667,7 +2669,7 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
     // elements with something that has a side effect, so codegen can emit an
     // "error unsupported" error instead of miscompiling the app.
     if (DesignatedStartIndex.getZExtValue()!=DesignatedEndIndex.getZExtValue()&&
-        DIE->getInit()->HasSideEffects(SemaRef.Context) && !VerifyOnly)
+        DIE->getInit()->HasSideEffects(EvalCtx) && !VerifyOnly)
       FullyStructuredList->sawArrayRangeDesignator();
   }
 
@@ -5305,8 +5307,9 @@ static bool TryOCLSamplerInitialization(Sema &S,
                                         InitializationSequence &Sequence,
                                         QualType DestType,
                                         Expr *Initializer) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (!S.getLangOpts().OpenCL || !DestType->isSamplerT() ||
-      (!Initializer->isIntegerConstantExpr(S.Context) &&
+      (!Initializer->isIntegerConstantExpr(EvalCtx) &&
       !Initializer->getType()->isSamplerT()))
     return false;
 
@@ -5315,8 +5318,9 @@ static bool TryOCLSamplerInitialization(Sema &S,
 }
 
 static bool IsZeroInitializer(Expr *Initializer, Sema &S) {
-  return Initializer->isIntegerConstantExpr(S.getASTContext()) &&
-    (Initializer->EvaluateKnownConstInt(S.getASTContext()) == 0);
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  return Initializer->isIntegerConstantExpr(EvalCtx) &&
+    (Initializer->EvaluateKnownConstInt(EvalCtx) == 0);
 }
 
 static bool TryOCLZeroOpaqueTypeInitialization(Sema &S,
@@ -5590,9 +5594,10 @@ void InitializationSequence::InitializeFrom(Sema &S,
         Initializer->getType()->isArrayType()) {
       const ArrayType *SourceAT
         = Context.getAsArrayType(Initializer->getType());
+      Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
       if (!hasCompatibleArrayTypes(S.Context, DestAT, SourceAT))
         SetFailed(FK_ArrayTypeMismatch);
-      else if (Initializer->HasSideEffects(S.Context))
+      else if (Initializer->HasSideEffects(EvalCtx))
         SetFailed(FK_NonConstantArrayInit);
       else {
         AddArrayInitStep(DestType, /*IsGNUExtension*/true);
@@ -8133,7 +8138,8 @@ ExprResult InitializationSequence::Perform(Sema &S,
         }
 
         Expr::EvalResult EVResult;
-        Init->EvaluateAsInt(EVResult, S.Context);
+        Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+        Init->EvaluateAsInt(EVResult, EvalCtx);
         llvm::APSInt Result = EVResult.Val.getInt();
         const uint64_t SamplerValue = Result.getLimitedValue();
         // 32-bit value of sampler's initializer is interpreted as
@@ -9095,7 +9101,8 @@ static void DiagnoseNarrowingInInitList(Sema &S,
   // C++11 [dcl.init.list]p7: Check whether this is a narrowing conversion.
   APValue ConstantValue;
   QualType ConstantType;
-  switch (SCS->getNarrowingKind(S.Context, PostInit, ConstantValue,
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  switch (SCS->getNarrowingKind(EvalCtx, PostInit, ConstantValue,
                                 ConstantType)) {
   case NK_Not_Narrowing:
   case NK_Dependent_Narrowing:

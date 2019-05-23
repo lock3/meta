@@ -103,7 +103,8 @@ bool BuiltinFunctionChecker::evalCall(const CallExpr *CE,
     SValBuilder &SVB = C.getSValBuilder();
     SVal V = UnknownVal();
     Expr::EvalResult EVResult;
-    if (CE->EvaluateAsInt(EVResult, C.getASTContext(), Expr::SE_NoSideEffects)) {
+    Expr::EvalContext EvalCtx(C.getASTContext(), nullptr);
+    if (CE->EvaluateAsInt(EVResult, EvalCtx, Expr::SE_NoSideEffects)) {
       // Make sure the result has the correct type.
       llvm::APSInt Result = EVResult.Val.getInt();
       BasicValueFactory &BVF = SVB.getBasicValueFactory();

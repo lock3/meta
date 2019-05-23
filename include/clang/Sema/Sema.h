@@ -8830,7 +8830,22 @@ public:
 private:
   bool ReflectionScope = false;
 
+  struct ReflectionCallbackImpl : public ReflectionCallback {
+    Sema &SemaRef;
+
+    ReflectionCallbackImpl(Sema &SemaRef) : SemaRef(SemaRef) { }
+
+    virtual bool EvalTypeTrait(TypeTrait Kind,
+                               ArrayRef<TypeSourceInfo *> Args) override;
+  };
+
+  ReflectionCallbackImpl ReflectionCallbackObj;
+
 public:
+  ReflectionCallback *GetReflectionCallbackObj() {
+    return &ReflectionCallbackObj;
+  }
+
   bool isReflecting() const {
     return ReflectionScope;
   }
@@ -8885,10 +8900,10 @@ public:
                                            SourceLocation BuiltinLoc,
                                            SourceLocation RParenLoc);
 
-  ExprResult ActOnCXXReflectionTrait(SourceLocation KWLoc,
-                                     SmallVectorImpl<Expr *> &Args,
-                                     SourceLocation LParenLoc,
-                                     SourceLocation RparenLoc);
+  ExprResult ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
+                                         SmallVectorImpl<Expr *> &Args,
+                                         SourceLocation LParenLoc,
+                                         SourceLocation RparenLoc);
 
   ExprResult ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                          SmallVectorImpl<Expr *> &Args,
@@ -10420,7 +10435,9 @@ public:
           HasKnownValue(IsConstexpr && Condition.get() &&
                         !Condition.get()->isValueDependent()),
           KnownValue(HasKnownValue &&
-                     !!Condition.get()->EvaluateKnownConstInt(S.Context)) {}
+                     !!Condition.get()->EvaluateKnownConstInt(
+                          Expr::EvalContext(
+                              S.Context, S.GetReflectionCallbackObj()))) {}
     explicit ConditionResult(bool Invalid)
         : ConditionVar(nullptr), Condition(nullptr), Invalid(Invalid),
           HasKnownValue(false), KnownValue(false) {}

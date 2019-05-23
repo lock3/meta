@@ -1934,10 +1934,11 @@ static void checkIntToPointerCast(bool CStyle, SourceLocation Loc,
   // Not warning on reinterpret_cast, boolean, constant expressions, etc
   // are not explicit design choices, but consistent with GCC's behavior.
   // Feel free to modify them if you've reason/evidence for an alternative.
+  Expr::EvalContext EvalCtx(Self.Context, Self.GetReflectionCallbackObj());
   if (CStyle && SrcType->isIntegralType(Self.Context)
       && !SrcType->isBooleanType()
       && !SrcType->isEnumeralType()
-      && !SrcExpr->isIntegerConstantExpr(Self.Context)
+      && !SrcExpr->isIntegerConstantExpr(EvalCtx)
       && Self.Context.getTypeSize(DestType) >
          Self.Context.getTypeSize(SrcType)) {
     // Separate between casts to void* and non-void* pointers.
@@ -2598,7 +2599,8 @@ void CastOperation::CheckCStyleCast() {
     // OpenCL v2.0 s6.13.10 - Allow casts from '0' to event_t type.
     if (Self.getLangOpts().OpenCL && DestType->isEventT()) {
       Expr::EvalResult Result;
-      if (SrcExpr.get()->EvaluateAsInt(Result, Self.Context)) {
+      Expr::EvalContext EvalCtx(Self.Context, Self.GetReflectionCallbackObj());
+      if (SrcExpr.get()->EvaluateAsInt(Result, EvalCtx)) {
         llvm::APSInt CastInt = Result.Val.getInt();
         if (0 == CastInt) {
           Kind = CK_ZeroToOCLOpaqueType;

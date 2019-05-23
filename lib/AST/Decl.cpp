@@ -331,7 +331,8 @@ LinkageComputer::getLVForTemplateArgumentList(ASTContext &Ctx,
       Expr *E = Arg.getAsExpr();
       if (E->getType()->isReflectionType()) {
         Expr::EvalResult Result;
-        bool EvalStatus = E->EvaluateAsRValue(Result, Ctx);
+        Expr::EvalContext EvalCtx(Ctx, nullptr);
+        bool EvalStatus = E->EvaluateAsRValue(Result, EvalCtx);
         assert(EvalStatus);
 
         Reflection Refl(Ctx, Result.Val);
@@ -2353,8 +2354,8 @@ APValue *VarDecl::evaluateValue(
   }
 
   Eval->IsEvaluating = true;
-
-  bool Result = Init->EvaluateAsInitializer(Eval->Evaluated, getASTContext(),
+  Expr::EvalContext EvalCtx(getASTContext(), nullptr);
+  bool Result = Init->EvaluateAsInitializer(Eval->Evaluated, EvalCtx,
                                             this, Notes);
 
   // Ensure the computed APValue is cleaned up later if evaluation succeeded,
@@ -2429,7 +2430,8 @@ bool VarDecl::checkInitIsICE() const {
     return false;
   Eval->CheckingICE = true;
 
-  Eval->IsICE = Init->isIntegerConstantExpr(getASTContext());
+  Expr::EvalContext EvalCtx(getASTContext(), nullptr);
+  Eval->IsICE = Init->isIntegerConstantExpr(EvalCtx);
   Eval->CheckingICE = false;
   Eval->CheckedICE = true;
   return Eval->IsICE;
@@ -3886,7 +3888,9 @@ bool FieldDecl::isAnonymousStructOrUnion() const {
 
 unsigned FieldDecl::getBitWidthValue(const ASTContext &Ctx) const {
   assert(isBitField() && "not a bitfield");
-  return getBitWidth()->EvaluateKnownConstInt(Ctx).getZExtValue();
+
+  Expr::EvalContext EvalCtx(Ctx, nullptr);
+  return getBitWidth()->EvaluateKnownConstInt(EvalCtx).getZExtValue();
 }
 
 bool FieldDecl::isZeroLengthBitField(const ASTContext &Ctx) const {

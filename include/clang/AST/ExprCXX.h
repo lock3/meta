@@ -4976,12 +4976,13 @@ public:
   child_range children() { return child_range(&Message, &Message + 1); }
 };
 
-/// \brief A reflection trait intrinsic.
-/// 
-/// A reflection trait is a query of an AST node. All traits accept a sequence
-/// of arguments (expressions), the first of which is the encoded value of
-/// the AST node.
-class CXXReflectionTraitExpr : public Expr {
+/// A reflection read query intrinsic.
+///
+/// A reflection read query is a query to retreive information
+/// about a reflected entity.
+/// All read queries accept a sequence of arguments (expressions,
+/// the first of which is the reflection needing updated.
+class CXXReflectionReadQueryExpr : public Expr {
 protected:
   ReflectionQuery Query;
   unsigned NumArgs;
@@ -4991,13 +4992,14 @@ protected:
   SourceLocation RParenLoc;
 
 public:
-  CXXReflectionTraitExpr(ASTContext &C, QualType T, ReflectionQuery Q,
-                         ArrayRef<Expr *> Args,
-                         SourceLocation KeywordLoc,
-                         SourceLocation LParenLoc,
-                         SourceLocation RParenLoc);
+  CXXReflectionReadQueryExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+                             ArrayRef<Expr *> Args,
+                             SourceLocation KeywordLoc,
+                             SourceLocation LParenLoc,
+                             SourceLocation RParenLoc);
 
-  CXXReflectionTraitExpr(StmtClass SC, EmptyShell Empty) : Expr(SC, Empty) {}
+  CXXReflectionReadQueryExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
 
   /// Returns the trait's query value.
   ReflectionQuery getQuery() const { return Query; }

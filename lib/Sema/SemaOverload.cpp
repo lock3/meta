@@ -291,8 +291,9 @@ static const Expr *IgnoreNarrowingConversion(const Expr *Converted) {
 /// \param IgnoreFloatToIntegralConversion If true type-narrowing conversions
 ///        from floating point types to integral types should be ignored.
 NarrowingKind StandardConversionSequence::getNarrowingKind(
-    ASTContext &Ctx, const Expr *Converted, APValue &ConstantValue,
+    Expr::EvalContext &EvalCtx, const Expr *Converted, APValue &ConstantValue,
     QualType &ConstantType, bool IgnoreFloatToIntegralConversion) const {
+  ASTContext &Ctx = EvalCtx.ASTCtx;
   assert(Ctx.getLangOpts().CPlusPlus && "narrowing check outside C++");
 
   // C++11 [dcl.init.list]p7:
@@ -340,7 +341,7 @@ NarrowingKind StandardConversionSequence::getNarrowingKind(
       if (Initializer->isValueDependent())
         return NK_Dependent_Narrowing;
 
-      if (Initializer->isIntegerConstantExpr(IntConstantValue, Ctx)) {
+      if (Initializer->isIntegerConstantExpr(IntConstantValue, EvalCtx)) {
         // Convert the integer to the floating type.
         llvm::APFloat Result(Ctx.getFloatTypeSemantics(ToType));
         Result.convertFromAPInt(IntConstantValue, IntConstantValue.isSigned(),
@@ -377,7 +378,7 @@ NarrowingKind StandardConversionSequence::getNarrowingKind(
       if (Initializer->isValueDependent())
         return NK_Dependent_Narrowing;
 
-      if (Initializer->isCXX11ConstantExpr(Ctx, &ConstantValue)) {
+      if (Initializer->isCXX11ConstantExpr(EvalCtx, &ConstantValue)) {
         // Constant!
         assert(ConstantValue.isFloat());
         llvm::APFloat FloatVal = ConstantValue.getFloat();
@@ -423,7 +424,7 @@ NarrowingKind StandardConversionSequence::getNarrowingKind(
       if (Initializer->isValueDependent())
         return NK_Dependent_Narrowing;
 
-      if (!Initializer->isIntegerConstantExpr(InitializerValue, Ctx)) {
+      if (!Initializer->isIntegerConstantExpr(InitializerValue, EvalCtx)) {
         // Such conversions on variables are always narrowing.
         return NK_Variable_Narrowing;
       }
@@ -1744,6 +1745,7 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
   // conversion.
   bool IncompatibleObjC = false;
   ImplicitConversionKind SecondICK = ICK_Identity;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (S.Context.hasSameUnqualifiedType(FromType, ToType)) {
     // The unqualified versions of the types are the same: there's no
     // conversion to do.
@@ -1843,13 +1845,13 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     // appropriately.
     return true;
   } else if (ToType->isEventT() &&
-             From->isIntegerConstantExpr(S.getASTContext()) &&
-             From->EvaluateKnownConstInt(S.getASTContext()) == 0) {
+             From->isIntegerConstantExpr(EvalCtx) &&
+             From->EvaluateKnownConstInt(EvalCtx) == 0) {
     SCS.Second = ICK_Zero_Event_Conversion;
     FromType = ToType;
   } else if (ToType->isQueueT() &&
-             From->isIntegerConstantExpr(S.getASTContext()) &&
-             (From->EvaluateKnownConstInt(S.getASTContext()) == 0)) {
+             From->isIntegerConstantExpr(EvalCtx) &&
+             (From->EvaluateKnownConstInt(EvalCtx) == 0)) {
     SCS.Second = ICK_Zero_Queue_Conversion;
     FromType = ToType;
   } else {
@@ -2090,8 +2092,9 @@ bool Sema::IsIntegralPromotion(Expr *From, QualType FromType, QualType ToType) {
   if (From) {
     if (FieldDecl *MemberDecl = From->getSourceBitField()) {
       llvm::APSInt BitWidth;
+      Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
       if (FromType->isIntegralType(Context) &&
-          MemberDecl->getBitWidth()->isIntegerConstantExpr(BitWidth, Context)) {
+          MemberDecl->getBitWidth()->isIntegerConstantExpr(BitWidth, EvalCtx)) {
         llvm::APSInt ToSize(BitWidth.getBitWidth(), BitWidth.isUnsigned());
         ToSize = Context.getTypeSize(ToType);
 
@@ -5451,6 +5454,8 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
            << From->getType() << From->getSourceRange() << T;
   }
 
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+
   ExprResult Result =
       S.PerformImplicitConversion(From, T, ICS, Sema::AA_Converting);
   if (Result.isInvalid())
@@ -5459,7 +5464,7 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
   // Check for a narrowing implicit conversion.
   APValue PreNarrowingValue;
   QualType PreNarrowingType;
-  switch (SCS->getNarrowingKind(S.Context, Result.get(), PreNarrowingValue,
+  switch (SCS->getNarrowingKind(EvalCtx, Result.get(), PreNarrowingValue,
                                 PreNarrowingType)) {
   case NK_Dependent_Narrowing:
     // Implicit conversion to a narrower type, but the expression is
@@ -5495,7 +5500,7 @@ static ExprResult CheckConvertedConstantExpression(Sema &S, Expr *From,
                                    ? Expr::EvaluateForMangling
                                    : Expr::EvaluateForCodeGen;
 
-  if (!Result.get()->EvaluateAsConstantExpr(Eval, Usage, S.Context) ||
+  if (!Result.get()->EvaluateAsConstantExpr(Eval, Usage, EvalCtx) ||
       (RequireInt && !Eval.Val.isInt())) {
     // The expression can't be folded, so we can't keep it at this position in
     // the AST.
@@ -6357,12 +6362,13 @@ EnableIfAttr *Sema::CheckEnableIf(FunctionDecl *Function, ArrayRef<Expr *> Args,
           /*MissingImplicitThis=*/true, DiscardedThis, ConvertedArgs))
     return *EnableIfAttrs.begin();
 
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   for (auto *EIA : EnableIfAttrs) {
     APValue Result;
     // FIXME: This doesn't consider value-dependent cases, because doing so is
     // very difficult. Ideally, we should handle them more gracefully.
     if (!EIA->getCond()->EvaluateWithSubstitution(
-            Result, Context, Function, llvm::makeArrayRef(ConvertedArgs)))
+            Result, EvalCtx, Function, llvm::makeArrayRef(ConvertedArgs)))
       return EIA;
 
     if (!Result.isInt() || !Result.getInt().getBoolValue())
@@ -6419,11 +6425,12 @@ bool Sema::diagnoseArgDependentDiagnoseIfAttrs(const FunctionDecl *Function,
       *this, Function, /*ArgDependent=*/true, Loc,
       [&](const DiagnoseIfAttr *DIA) {
         APValue Result;
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
         // It's sane to use the same Args for any redecl of this function, since
         // EvaluateWithSubstitution only cares about the position of each
         // argument in the arg list, not the ParmVarDecl* it maps to.
-        if (!DIA->getCond()->EvaluateWithSubstitution(
-                Result, Context, cast<FunctionDecl>(DIA->getParent()), Args, ThisArg))
+        if (!DIA->getCond()->EvaluateWithSubstitution(Result, EvalCtx,
+                  cast<FunctionDecl>(DIA->getParent()), Args, ThisArg))
           return false;
         return Result.isInt() && Result.getInt().getBoolValue();
       });
@@ -6435,7 +6442,8 @@ bool Sema::diagnoseArgIndependentDiagnoseIfAttrs(const NamedDecl *ND,
       *this, ND, /*ArgDependent=*/false, Loc,
       [&](const DiagnoseIfAttr *DIA) {
         bool Result;
-        return DIA->getCond()->EvaluateAsBooleanCondition(Result, Context) &&
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+        return DIA->getCond()->EvaluateAsBooleanCondition(Result, EvalCtx) &&
                Result;
       });
 }
@@ -9540,11 +9548,11 @@ void MaybeEmitInheritedConstructorNote(Sema &S, Decl *FoundDecl) {
 
 } // end anonymous namespace
 
-static bool isFunctionAlwaysEnabled(const ASTContext &Ctx,
+static bool isFunctionAlwaysEnabled(const Expr::EvalContext &EvalCtx,
                                     const FunctionDecl *FD) {
   for (auto *EnableIf : FD->specific_attrs<EnableIfAttr>()) {
     bool AlwaysTrue;
-    if (!EnableIf->getCond()->EvaluateAsBooleanCondition(AlwaysTrue, Ctx))
+    if (!EnableIf->getCond()->EvaluateAsBooleanCondition(AlwaysTrue, EvalCtx))
       return false;
     if (!AlwaysTrue)
       return false;
@@ -9563,7 +9571,8 @@ static bool checkAddressOfFunctionIsAvailable(Sema &S, const FunctionDecl *FD,
                                               bool Complain,
                                               bool InOverloadResolution,
                                               SourceLocation Loc) {
-  if (!isFunctionAlwaysEnabled(S.Context, FD)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!isFunctionAlwaysEnabled(EvalCtx, FD)) {
     if (Complain) {
       if (InOverloadResolution)
         S.Diag(FD->getBeginLoc(),

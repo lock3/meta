@@ -6474,7 +6474,7 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
 
 /// Checks if the expression is constant or does not have non-trivial function
 /// calls.
-static bool isTrivial(ASTContext &Ctx, const Expr * E) {
+static bool isTrivial(const Expr::EvalContext &Ctx, const Expr * E) {
   // We can skip constant expressions.
   // We can skip expressions with trivial calls or simple expressions.
   return (E->isEvaluatable(Ctx, Expr::SE_AllowUndefinedBehavior) ||
@@ -6484,12 +6484,14 @@ static bool isTrivial(ASTContext &Ctx, const Expr * E) {
 
 const Stmt *CGOpenMPRuntime::getSingleCompoundChild(ASTContext &Ctx,
                                                     const Stmt *Body) {
+  Expr::EvalContext EvalCtx(Ctx, nullptr);
+
   const Stmt *Child = Body->IgnoreContainers();
   while (const auto *C = dyn_cast_or_null<CompoundStmt>(Child)) {
     Child = nullptr;
     for (const Stmt *S : C->body()) {
       if (const auto *E = dyn_cast<Expr>(S)) {
-        if (isTrivial(Ctx, E))
+        if (isTrivial(EvalCtx, E))
           continue;
       }
       // Some of the statements can be ignored.
@@ -6498,7 +6500,7 @@ const Stmt *CGOpenMPRuntime::getSingleCompoundChild(ASTContext &Ctx,
         continue;
       // Analyze declarations.
       if (const auto *DS = dyn_cast<DeclStmt>(S)) {
-        if (llvm::all_of(DS->decls(), [&Ctx](const Decl *D) {
+        if (llvm::all_of(DS->decls(), [EvalCtx](const Decl *D) {
               if (isa<EmptyDecl>(D) || isa<DeclContext>(D) ||
                   isa<TypeDecl>(D) || isa<PragmaCommentDecl>(D) ||
                   isa<PragmaDetectMismatchDecl>(D) || isa<UsingDecl>(D) ||
@@ -6510,9 +6512,9 @@ const Stmt *CGOpenMPRuntime::getSingleCompoundChild(ASTContext &Ctx,
               if (!VD)
                 return false;
               return VD->isConstexpr() ||
-                     ((VD->getType().isTrivialType(Ctx) ||
+                     ((VD->getType().isTrivialType(EvalCtx.ASTCtx) ||
                        VD->getType()->isReferenceType()) &&
-                      (!VD->hasInit() || isTrivial(Ctx, VD->getInit())));
+                      (!VD->hasInit() || isTrivial(EvalCtx, VD->getInit())));
             }))
           continue;
       }
@@ -6672,7 +6674,8 @@ static llvm::Value *getNumThreads(CodeGenFunction &CGF, const CapturedStmt *CS,
         if (IfClause) {
           const Expr *Cond = IfClause->getCondition();
           bool Result;
-          if (Cond->EvaluateAsBooleanCondition(Result, CGF.getContext())) {
+          Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+          if (Cond->EvaluateAsBooleanCondition(Result, EvalCtx)) {
             if (!Result)
               return CGF.Builder.getInt32(1);
           } else {
@@ -6863,7 +6866,8 @@ emitNumThreadsForTargetDirective(CodeGenFunction &CGF,
       if (IfClause) {
         const Expr *Cond = IfClause->getCondition();
         bool Result;
-        if (Cond->EvaluateAsBooleanCondition(Result, CGF.getContext())) {
+        Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+        if (Cond->EvaluateAsBooleanCondition(Result, EvalCtx)) {
           if (!Result)
             return Bld.getInt32(1);
         } else {
@@ -7195,7 +7199,8 @@ private:
 
     // Check if the length evaluates to 1.
     Expr::EvalResult Result;
-    if (!Length->EvaluateAsInt(Result, CGF.getContext()))
+    Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+    if (!Length->EvaluateAsInt(Result, EvalCtx))
       return true; // Can have more that size 1.
 
     llvm::APSInt ConstLength = Result.Val.getInt();
@@ -10033,6 +10038,7 @@ void CGOpenMPRuntime::emitDeclareSimdFunction(const FunctionDecl *FD,
     ParamPositions.try_emplace(P->getCanonicalDecl(), ParamPos);
     ++ParamPos;
   }
+  Expr::EvalContext EvalCtx(C, nullptr);
   while (FD) {
     for (const auto *Attr : FD->specific_attrs<OMPDeclareSimdDeclAttr>()) {
       llvm::SmallVector<ParamAttrTy, 8> ParamAttrs(ParamPositions.size());
@@ -10066,7 +10072,7 @@ void CGOpenMPRuntime::emitDeclareSimdFunction(const FunctionDecl *FD,
         }
         ParamAttrs[Pos].Alignment =
             (*NI)
-                ? (*NI)->EvaluateKnownConstInt(C)
+                ? (*NI)->EvaluateKnownConstInt(EvalCtx)
                 : llvm::APSInt::getUnsigned(
                       C.toCharUnitsFromBits(C.getOpenMPDefaultSimdAlign(ParmTy))
                           .getQuantity());
@@ -10089,7 +10095,7 @@ void CGOpenMPRuntime::emitDeclareSimdFunction(const FunctionDecl *FD,
         ParamAttr.Kind = Linear;
         if (*SI) {
           Expr::EvalResult Result;
-          if (!(*SI)->EvaluateAsInt(Result, C, Expr::SE_AllowSideEffects)) {
+          if (!(*SI)->EvaluateAsInt(Result, EvalCtx, Expr::SE_AllowSideEffects)) {
             if (const auto *DRE =
                     cast<DeclRefExpr>((*SI)->IgnoreParenImpCasts())) {
               if (const auto *StridePVD = cast<ParmVarDecl>(DRE->getDecl())) {
@@ -10109,7 +10115,7 @@ void CGOpenMPRuntime::emitDeclareSimdFunction(const FunctionDecl *FD,
       SourceLocation ExprLoc;
       const Expr *VLENExpr = Attr->getSimdlen();
       if (VLENExpr) {
-        VLENVal = VLENExpr->EvaluateKnownConstInt(C);
+        VLENVal = VLENExpr->EvaluateKnownConstInt(EvalCtx);
         ExprLoc = VLENExpr->getExprLoc();
       }
       OMPDeclareSimdDeclAttr::BranchStateTy State = Attr->getBranchState();

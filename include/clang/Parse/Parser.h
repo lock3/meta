@@ -2822,7 +2822,7 @@ private:
   ParsedReflectionOperand ParseCXXReflectOperand();
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXInvalidReflectionExpression();
-  ExprResult ParseCXXReflectionTrait();
+  ExprResult ParseCXXReflectionReadQuery();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();

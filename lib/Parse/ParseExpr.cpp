@@ -1452,7 +1452,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return ParseExpressionTrait();
 
   case tok::kw___reflect:
-    return ParseCXXReflectionTrait();
+    return ParseCXXReflectionReadQuery();
 
   case tok::kw___invalid_reflection:
     return ParseCXXInvalidReflectionExpression();

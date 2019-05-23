@@ -8985,7 +8985,8 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
         if (VAT) {
           llvm::APSInt TheInt;
           Expr *E = VAT->getSizeExpr();
-          if (E && E->isIntegerConstantExpr(TheInt, *this))
+          Expr::EvalContext EvalCtx(*this, nullptr);
+          if (E && E->isIntegerConstantExpr(TheInt, EvalCtx))
             return std::make_pair(true, TheInt);
           else
             return std::make_pair(false, TheInt);
@@ -9968,7 +9969,8 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
     return true;
 
   // Variables that have initialization with side-effects are required.
-  if (VD->getInit() && VD->getInit()->HasSideEffects(*this) &&
+  Expr::EvalContext EvalCtx(*this, nullptr);
+  if (VD->getInit() && VD->getInit()->HasSideEffects(EvalCtx) &&
       // We can get a value-dependent initializer during error recovery.
       (VD->getInit()->isValueDependent() || !VD->evaluateValue()))
     return true;

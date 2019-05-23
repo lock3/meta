@@ -4616,7 +4616,8 @@ struct BaseAndFieldInfo {
     AllToInit.push_back(Init);
 
     // Check whether this initializer makes the field "used".
-    if (Init->getInit()->HasSideEffects(S.Context))
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    if (Init->getInit()->HasSideEffects(EvalCtx))
       S.UnusedPrivateFields.remove(Init->getAnyMember());
 
     return false;
@@ -9591,6 +9592,11 @@ Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
     // expression (which is a tentative parse), so don't diagnose the
     // error.
     return nullptr;
+  }
+
+  if (isReflecting()) {
+    if (auto *AD = R.getAsSingle<NamespaceAliasDecl>())
+      return AD;
   }
 
   return R.getAsSingle<NamespaceDecl>();

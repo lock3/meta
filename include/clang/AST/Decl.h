@@ -380,6 +380,11 @@ public:
     return isExternalFormalLinkage(getLinkageInternal());
   }
 
+  /// True if this decl has internal linkage.
+  bool hasInternalFormalLinkage() const {
+    return isInternalFormalLinkage(getLinkageInternal());
+  }
+
   bool isExternallyVisible() const {
     return clang::isExternallyVisible(getLinkageInternal());
   }

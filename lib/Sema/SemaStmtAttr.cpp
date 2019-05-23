@@ -305,7 +305,8 @@ static Attr *handleOpenCLUnrollHint(Sema &S, Stmt *St, const ParsedAttr &A,
     Expr *E = A.getArgAsExpr(0);
     llvm::APSInt ArgVal(32);
 
-    if (!E->isIntegerConstantExpr(ArgVal, S.Context)) {
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    if (!E->isIntegerConstantExpr(ArgVal, EvalCtx)) {
       S.Diag(A.getLoc(), diag::err_attribute_argument_type)
           << A << AANT_ArgumentIntegerConstant << E->getSourceRange();
       return nullptr;

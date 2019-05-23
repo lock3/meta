@@ -67,7 +67,7 @@ constexpr int test() {
 
   constexpr auto r4 = reflexpr(EC);
   static_assert(__reflect(query_is_type, r4));
-  static_assert(__reflect(query_is_enum_type, r4));
+  static_assert(__reflect(query_is_unscoped_enum_type, r4));
   static_assert(__reflect(query_is_scoped_enum_type, r4));
 
   constexpr auto r5 = reflexpr(EC::A);

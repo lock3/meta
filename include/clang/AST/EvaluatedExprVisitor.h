@@ -22,19 +22,18 @@
 
 namespace clang {
 
-class ASTContext;
-
 /// Given a potentially-evaluated expression, this visitor visits all
 /// of its potentially-evaluated subexpressions, recursively.
 template<template <typename> class Ptr, typename ImplClass>
 class EvaluatedExprVisitorBase : public StmtVisitorBase<Ptr, ImplClass, void> {
 protected:
-  const ASTContext &Context;
+  Expr::EvalContext Context;
 
 public:
 #define PTR(CLASS) typename Ptr<CLASS>::type
 
-  explicit EvaluatedExprVisitorBase(const ASTContext &Context) : Context(Context) { }
+  explicit EvaluatedExprVisitorBase(const Expr::EvalContext &Context)
+      : Context(Context) { }
 
   // Expressions that have no potentially-evaluated subexpressions (but may have
   // other sub-expressions).
@@ -82,7 +81,7 @@ public:
   }
 
   void VisitCallExpr(PTR(CallExpr) CE) {
-    if (!CE->isUnevaluatedBuiltinCall(Context))
+    if (!CE->isUnevaluatedBuiltinCall(Context.ASTCtx))
       return static_cast<ImplClass*>(this)->VisitExpr(CE);
   }
 
@@ -112,7 +111,8 @@ class EvaluatedExprVisitor
     : public EvaluatedExprVisitorBase<std::add_pointer, ImplClass> {
 public:
   explicit EvaluatedExprVisitor(const ASTContext &Context)
-      : EvaluatedExprVisitorBase<std::add_pointer, ImplClass>(Context) {}
+      : EvaluatedExprVisitorBase<std::add_pointer, ImplClass>(
+            Expr::EvalContext(Context, nullptr)) {}
 };
 
 /// ConstEvaluatedExprVisitor - This class visits 'const Expr *'s.
@@ -120,7 +120,7 @@ template <typename ImplClass>
 class ConstEvaluatedExprVisitor
     : public EvaluatedExprVisitorBase<llvm::make_const_ptr, ImplClass> {
 public:
-  explicit ConstEvaluatedExprVisitor(const ASTContext &Context)
+  explicit ConstEvaluatedExprVisitor(const Expr::EvalContext &Context)
       : EvaluatedExprVisitorBase<llvm::make_const_ptr, ImplClass>(Context) {}
 };
 }

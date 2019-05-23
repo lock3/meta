@@ -517,7 +517,13 @@ public:
   NamedDecl *getFoundDecl() const {
     assert(getResultKind() == Found
            && "getFoundDecl called on non-unique result");
-    return (*begin())->getUnderlyingDecl();
+
+    NamedDecl *D = *begin();
+
+    if (!getSema().isReflecting())
+      D = D->getUnderlyingDecl();
+
+    return D;
   }
 
   /// Fetches a representative decl.  Useful for lazy diagnostics.

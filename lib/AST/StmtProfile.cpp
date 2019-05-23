@@ -1902,8 +1902,8 @@ void StmtProfiler::VisitCXXInvalidReflectionExpr(
   VisitExpr(E);
 }
 
-void StmtProfiler::VisitCXXReflectionTraitExpr(
-                                              const CXXReflectionTraitExpr *E) {
+void StmtProfiler::VisitCXXReflectionReadQueryExpr(
+                                          const CXXReflectionReadQueryExpr *E) {
   VisitExpr(E);
 }
 

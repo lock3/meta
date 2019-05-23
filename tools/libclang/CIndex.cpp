@@ -3781,7 +3781,8 @@ static const ExprEvalResult* evaluateExpr(Expr *expr, CXCursor C) {
     return nullptr;
 
   expr = expr->IgnoreParens();
-  if (!expr->EvaluateAsRValue(ER, ctx))
+  Expr::EvalContext EvalCtx(ctx, nullptr);
+  if (!expr->EvaluateAsRValue(ER, EvalCtx))
     return nullptr;
 
   QualType rettype;
