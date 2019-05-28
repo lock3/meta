@@ -1099,13 +1099,13 @@ Decl
 
 Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   CXXRequiredDeclaratorDecl *D) {
-  // FIXME: Do this eventually
-  // SubstQualifier(getSema(), D, NewD, TemplateArgs);
   SemaRef.AnalyzingRequiredDeclarator = true;
   DeclaratorDecl *NewDecl =
     cast<DeclaratorDecl>(SemaRef.SubstDecl(D->getRequiredDeclarator(),
                                            SemaRef.CurContext, TemplateArgs));
   SemaRef.AnalyzingRequiredDeclarator = false;
+  NewDecl->setRequired();
+  SemaRef.RequiredDeclarators.push_back(NewDecl);
 
   if (!NewDecl || NewDecl->isInvalidDecl())
     return nullptr;
@@ -1119,10 +1119,13 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   SemaRef.CurrentInstantiationScope
     ->InstantiatedLocal(D->getRequiredDeclarator(), NewDecl);
 
-  return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
-                                           SemaRef.CurContext,
-                                           NewDecl,
-                                           D->getRequiresLoc());
+  CXXRequiredDeclaratorDecl *NewRDD =
+    CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
+                                      SemaRef.CurContext,
+                                      NewDecl,
+                                      D->getRequiresLoc());
+  Owner->addDecl(NewRDD);
+  return NewRDD;
 }
 
 
@@ -1924,9 +1927,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     // into their owning context.
     DC = Owner;
   } else if (Owner->getParent() && Owner->getParent()->isFragment()) {
-    assert(Owner->isFileContext());
+    assert(Owner->isFileContext() || isa<CXXStmtFragmentDecl>(Owner));
 
-    // Functions instantiated inside of a namespace fragment,
+    // Functions instantiated inside of a namespace or block fragment,
     // are always in the owner.
     DC = Owner;
   } else {
@@ -2402,7 +2405,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     if (Previous.isSingleTagDecl())
       Previous.clear();
   }
-  if (!IsClassScopeSpecialization)
+  if (!IsClassScopeSpecialization && !D->isRequired())
     SemaRef.CheckFunctionDeclaration(nullptr, Method, Previous,
                                      IsExplicitSpecialization);
 

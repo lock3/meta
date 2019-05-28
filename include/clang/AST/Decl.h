@@ -706,11 +706,15 @@ class DeclaratorDecl : public ValueDecl {
   ExtInfo *getExtInfo() { return DeclInfo.get<ExtInfo*>(); }
   const ExtInfo *getExtInfo() const { return DeclInfo.get<ExtInfo*>(); }
 
+  // True if this is a C++ required declarator.
+  unsigned Required : 1;
+
 protected:
   DeclaratorDecl(Kind DK, DeclContext *DC, SourceLocation L,
                  DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                  SourceLocation StartL)
-      : ValueDecl(DK, DC, L, N, T), DeclInfo(TInfo), InnerLocStart(StartL) {}
+    : ValueDecl(DK, DC, L, N, T), DeclInfo(TInfo),
+      InnerLocStart(StartL), Required() {}
 
 public:
   friend class ASTDeclReader;
@@ -757,6 +761,10 @@ public:
     return hasExtInfo() ? getExtInfo()->QualifierLoc
                         : NestedNameSpecifierLoc();
   }
+
+  // Determine whether or not this is a C++ required declarator.
+  void setRequired(bool I = true) { Required = I; }
+  bool isRequired() const { return Required; }
 
   void setQualifierInfo(NestedNameSpecifierLoc QualifierLoc);
 

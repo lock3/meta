@@ -1380,6 +1380,8 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   }
 
   NamedDecl *PrevDecl = getPreviousFieldDecl(SemaRef, D, Owner);
+  if (D->isRequired())
+    return PrevDecl;
 
   // Build and check the field.
   FieldDecl *Field = getSema().CheckFieldDecl(
@@ -1470,8 +1472,6 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
                                    D->isInlineSpecified(), D->isConstexpr(),
                                    D->getEndLoc());
   }
-  AddDeclSubstitution(D, Method);
-  UpdateFunctionParms(D, Method);
 
   // Propagate Template Attributes
   MemberSpecializationInfo *MemberSpecInfo = D->getMemberSpecializationInfo();
@@ -1531,6 +1531,12 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
 
   if (!Method->isInvalidDecl())
     Method->setInvalidDecl(Invalid);
+
+  if (D->isRequired())
+    return Method;
+
+  AddDeclSubstitution(D, Method);
+  UpdateFunctionParms(D, Method);
 
   // Don't register the declaration if we're merely attempting to transform
   // this method.
@@ -2201,6 +2207,11 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
         return true;
       DiagnoseTypeMismatch =
         !S.Context.hasSameFunctionTypeIgnoringReturn(RDDTy, FoundDeclTy);
+    } else {
+      // There may be default arguments in the required declarator declaration,
+      // so we can only really check for a return type mismatch here.
+      DiagnoseTypeMismatch = !S.Context.hasSameType(FD->getReturnType(),
+                                                    FoundFD->getReturnType());
     }
   }
   if (const VarDecl *FoundVD = dyn_cast<VarDecl>(FoundDeclarator)) {
@@ -2232,11 +2243,18 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
 static const FunctionProtoType *tryGetFunctionProtoType(QualType FromType) {
   if (auto *FPT = FromType->getAs<FunctionProtoType>())
     return FPT;
- 
+
   if (auto *MPT = FromType->getAs<MemberPointerType>())
     return MPT->getPointeeType()->getAs<FunctionProtoType>();
- 
+
   return nullptr;
+}
+
+// Create a this pointer without any qualifiers.
+static QualType createFakeThisPtr(CXXRecordDecl *D) {
+  ASTContext &C = D->getASTContext();
+  QualType ClassType = C.getTypeDeclType(D);
+  return C.getPointerType(ClassType);
 }
 
 /// Called from CXXRequiredDeclaratorDeclSubst, handles the specific case of a
@@ -2280,34 +2298,34 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
 
   // Now build the call expression to ensure that this overload is valid.
   ExprResult CallRes;
-  if (isa<CXXMethodDecl>(D->getDeclContext())) {
+  if (isa<CXXRecordDecl>(D->getDeclContext())) {
     CXXScopeSpec SS;
     DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
     Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
     // Use the parsed scope if it is available. If not, look it up.
+ 
     ParserLookupSetup ParserLookup(SemaRef, SemaRef.CurContext);
     if (!S)
       S = ParserLookup.getCurScope();
+
+    // Create a this pointer for the injectee.
+    // FIXME: We haven't selected the overload yet, so we don't
+    // know the qualifiers on the this type. Also, we need to check
+    // for static functions.
+    QualType ThisType = createFakeThisPtr(cast<CXXRecordDecl>(Ctx.Injectee));
+    SemaRef.CXXThisTypeOverride = ThisType;
     ExprResult IME =
       SemaRef.BuildPossibleImplicitMemberExpr(SS, SourceLocation(), R,
                                               nullptr, S);
-    llvm::outs() << "The member expr\n";
-    IME.get()->dump();
     CallRes = SemaRef.ActOnCallExpr(nullptr, IME.get(), SourceLocation(),
                                     Params, SourceLocation());
-    llvm::outs() << "the call\n";
-    CallRes.get()->dump();
   } else {
-
-  //   ExprResult IME =
-  //     SemaRef.BuildImplicitMemberExpr(SS, SourceLocation(), R, true, S);
-  // } else { 
-  const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
-  UnresolvedLookupExpr *ULE =
-    UnresolvedLookupExpr::Create(SemaRef.Context, nullptr,
-                                 D->getQualifierLoc(), D->getNameInfo(),
-                                 /*ADL=*/true, /*Overloaded=*/true,
-                                 FoundNames.begin(), FoundNames.end());
+    const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
+    UnresolvedLookupExpr *ULE =
+      UnresolvedLookupExpr::Create(SemaRef.Context, nullptr,
+                                   D->getQualifierLoc(), D->getNameInfo(),
+                                   /*ADL=*/true, /*Overloaded=*/true,
+                                   FoundNames.begin(), FoundNames.end());
     CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
                                     Params, SourceLocation());
   }
@@ -2407,8 +2425,32 @@ static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
     S = ParserLookup.getCurScope();
 
   // Find the name of the declared type and look it up.
+  // If this is a fragment struct, we're only looking up members.
+  // FIXME: how to avoid this duplication?
+  if (isa<CXXMethodDecl>(D->getDeclContext())) {
+    LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
+                   Sema::LookupMemberName);
+    if (SemaRef.LookupName(R, S)) {
+      // Perform substitution.
+      if (isa<CXXRequiredTypeDecl>(D))
+        return
+          CXXRequiredTypeDeclTypeSubst(Ctx, R, cast<CXXRequiredTypeDecl>(D));
+      else if (isa<CXXRequiredDeclaratorDecl>(D))
+        return
+          CXXRequiredDeclaratorDeclSubst(Ctx, R,
+                                         cast<CXXRequiredDeclaratorDecl>(D));
+      else
+        llvm_unreachable("Unknown required declaration.");
+    } else {
+      // We didn't find any type with this name.
+      SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
+        << error_id;
+      return true;
+    }
+  }
+
   LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
-                 Sema::LookupAnyName);
+                 Sema::LookupOrdinaryName);
   if (SemaRef.LookupName(R, S)) {
     // Perform substitution.
     if (isa<CXXRequiredTypeDecl>(D))

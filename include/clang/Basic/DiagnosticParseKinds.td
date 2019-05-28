@@ -583,6 +583,10 @@ def warn_empty_init_statement : Warning<
   "empty initialization statement of '%select{if|switch|range-based for}0' "
   "has no effect">, InGroup<EmptyInitStatement>, DefaultIgnore;
 
+// C++ Meta
+def err_nns_in_required_decl : Error<"Nested name specifiers are not permitted "
+    "in required declarations.">;
+
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
 

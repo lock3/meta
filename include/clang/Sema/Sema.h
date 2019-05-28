@@ -4876,6 +4876,7 @@ public:
                                        Declarator &D);
   bool TypeCheckRequiredAutoReturn(SourceLocation Loc,
                                    QualType TypeWithAuto, QualType Replacement);
+  llvm::SmallVector<DeclaratorDecl *, 4> RequiredDeclarators;
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.

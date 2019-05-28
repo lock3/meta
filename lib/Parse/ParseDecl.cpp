@@ -5504,7 +5504,8 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
         D.getContext() == DeclaratorContext::FileContext ||
         D.getContext() == DeclaratorContext::MemberContext;
     CXXScopeSpec SS;
-    ParseOptionalCXXScopeSpecifier(SS, nullptr, EnteringContext);
+    if (!Actions.AnalyzingRequiredDeclarator)
+      ParseOptionalCXXScopeSpecifier(SS, nullptr, EnteringContext);
 
     if (SS.isNotEmpty()) {
       if (Tok.isNot(tok::star)) {

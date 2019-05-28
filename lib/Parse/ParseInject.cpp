@@ -62,6 +62,19 @@ Decl *Parser::ParseCXXNamespaceFragment(Decl *Fragment) {
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Ns);
 }
 
+static void RemoveRequiredDeclarators(Sema &S, Decl *ClassDecl) {
+  assert(isa<CXXRecordDecl>(ClassDecl));
+  CXXRecordDecl *Record = cast<CXXRecordDecl>(ClassDecl);
+
+  llvm::SmallVector<DeclaratorDecl *, 4> RequiredDecls;
+  for (auto *Member : Record->decls())
+    if (DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(Member))
+      if (DD->isRequired())
+        RequiredDecls.push_back(DD);
+  for (DeclaratorDecl *RD : RequiredDecls)
+    Record->removeDecl(RD);
+}
+
 /// ParseCXXClassFragment
 Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   assert(Tok.isOneOf(tok::kw_struct, tok::kw_class, tok::kw_union) &&
@@ -118,9 +131,11 @@ Decl *Parser::ParseCXXClassFragment(Decl *Fragment) {
   ParseCXXMemberSpecification(ClassKeyLoc, SourceLocation(), PA, TagType,
                               ClassDecl);
 
-  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, ClassDecl);
-}
+  RemoveRequiredDeclarators(Actions, ClassDecl);
 
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, ClassDecl);
+
+}
 /// ParseCXXEnumFragment
 Decl *Parser::ParseCXXEnumFragment(Decl *Fragment) {
   assert(Tok.is(tok::kw_enum) && "expected 'enum'");

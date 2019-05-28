@@ -892,6 +892,8 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
                                        /*EnteringContext=*/false, nullptr,
                                        /*IsTypename*/ true))
       return nullptr;
+    if (!SS.isEmpty())
+      Diag(Tok, diag::err_nns_in_required_decl);
 
     // The actual name of the type.
     if (!Tok.is(tok::identifier))
@@ -914,7 +916,23 @@ Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, SourceLocation &DeclEnd,
   ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS_none, DSC);
 
   Declarator DeclaratorInfo(DS, Ctx);
-  ParseDeclarator(DeclaratorInfo);
+  // if (Actions.CurContext->isRecord() ||
+  //     Actions.CurContext->getParent()->isRecord()) {
+  //   VirtSpecifiers VS;
+  //   ExprResult BitfieldSize;
+  //   LateParsedAttrList LateAttrs;
+  //   ParseCXXMemberDeclaratorBeforeInitializer(DeclaratorInfo,
+  //                                             VS, BitfieldSize,
+  //                                             LateAttrs);
+  // } else {
+    ParseDeclarator(DeclaratorInfo);
+  // }
+
+  // nested-name-specifiers not permitted in required declarations.
+  if (!DeclaratorInfo.getCXXScopeSpec().isEmpty()) {
+    Diag(Tok, diag::err_nns_in_required_decl);
+    return nullptr;
+  }
 
   // Eat the ';'.
   ExpectAndConsume(tok::semi);
@@ -2738,6 +2756,15 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                                  UsingLoc, DeclEnd, AS);
   }
 
+  // [Meta] required-member-declaration
+  if (Tok.is(tok::kw_requires)) {
+    ParsedAttributesWithRange Attrs(AttrFactory);
+    SourceLocation End;
+    Decl *ParsedDecl =
+      ParseCXXRequiredDecl(DeclaratorContext::MemberContext, End, Attrs);
+    return Actions.ConvertDeclToDeclGroup(ParsedDecl);
+  }
+
   if (Tok.is(tok::kw_consteval)) {
     // [Meta] injector-declaration
     if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
@@ -3288,7 +3315,6 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
   case tok::annot_pragma_openmp:
     return ParseOpenMPDeclarativeDirectiveWithExtDecl(AS, AccessAttrs, TagType,
                                                       TagDecl);
-
   default:
     return ParseCXXClassMemberDeclaration(AS, AccessAttrs);
   }

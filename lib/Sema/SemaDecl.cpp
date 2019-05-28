@@ -8037,6 +8037,16 @@ static StorageClass getFunctionStorageClass(Sema &SemaRef, Declarator &D) {
   return SC_None;
 }
 
+/// True if we are creating a required declarator within a nested scope of a
+/// fragment struct.
+static bool CreatingRequiredMethod(Sema &SemaRef, DeclContext *DC) {
+  if (!SemaRef.AnalyzingRequiredDeclarator)
+    return false;
+  if (isa<CXXRecordDecl>(DC->getParent()))
+    return true;
+  return false;
+}
+
 static FunctionDecl* CreateNewFunctionDecl(Sema &SemaRef, Declarator &D,
                                            DeclContext *DC, QualType &R,
                                            TypeSourceInfo *TInfo,
@@ -8157,6 +8167,15 @@ static FunctionDecl* CreateNewFunctionDecl(Sema &SemaRef, Declarator &D,
     CXXMethodDecl *Ret = CXXMethodDecl::Create(
         SemaRef.Context, cast<CXXRecordDecl>(DC), D.getBeginLoc(), NameInfo, R,
         TInfo, SC, isInline, isConstexpr, SourceLocation());
+    IsVirtualOkay = !Ret->isStatic();
+    return Ret;
+  } else if (CreatingRequiredMethod(SemaRef, DC)) {
+    // In this case we are in a nested scope of a fragment struct, most likely
+    // a function.
+    CXXMethodDecl *Ret = CXXMethodDecl::Create(
+      SemaRef.Context, cast<CXXRecordDecl>(DC->getParent()), D.getBeginLoc(),
+      NameInfo, R, TInfo, SC, isInline, isConstexpr, SourceLocation());
+    // FIXME: is virtual okay?
     IsVirtualOkay = !Ret->isStatic();
     return Ret;
   } else {

@@ -10948,12 +10948,24 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   // We don't want to check for linkage, memoize that we're
   // working on a required declarator for later checks.
   AnalyzingRequiredDeclarator = true;
-  DeclaratorDecl *DDecl
-    = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
+  Decl *Dclrtr = nullptr;
+
+  if (CurContext->isRecord() || CurContext->getParent()->isRecord()) {
+    MultiTemplateParamsArg Args;
+    VirtSpecifiers VS;
+    Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS_public, D, Args,
+                                      nullptr, VS, ICIS_NoInit);
+  } else
+    Dclrtr = ActOnDeclarator(CurScope, D);
+  if (!Dclrtr)
+    return nullptr;
+  DeclaratorDecl *DDecl = cast<DeclaratorDecl>(Dclrtr);
   AnalyzingRequiredDeclarator = false;
 
   if (!DDecl)
     return nullptr;
+  DDecl->setRequired();
+  RequiredDeclarators.push_back(DDecl);
 
   // We'll deal with auto deduction later.
   if (ParsingInitForAutoVars.count(DDecl)) {
@@ -10968,6 +10980,12 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
 
   CXXRequiredDeclaratorDecl *RDD =
     CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+
+  if (!RDD || RDD->isInvalidDecl())
+    return nullptr;
+  if (isa<CXXRecordDecl>(CurContext))
+    CurContext->addDecl(RDD);
+
   return RDD;
 }
 
