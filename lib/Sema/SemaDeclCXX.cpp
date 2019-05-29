@@ -10931,64 +10931,6 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
   return AliasDecl;
 }
 
-Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
-                                     SourceLocation TypenameLoc,
-                                     IdentifierInfo *Id, bool Typename) {
-  CXXRequiredTypeDecl *RTD =
-    CXXRequiredTypeDecl::Create(Context, CurContext,
-                                RequiresLoc, TypenameLoc, Id, Typename);
-
-  PushOnScopeChains(RTD, getCurScope());
-  return RTD;
-}
-
-Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
-                                           SourceLocation RequiresLoc,
-                                           Declarator &D) {
-  // We don't want to check for linkage, memoize that we're
-  // working on a required declarator for later checks.
-  AnalyzingRequiredDeclarator = true;
-  Decl *Dclrtr = nullptr;
-
-  if (CurContext->isRecord() || CurContext->getParent()->isRecord()) {
-    MultiTemplateParamsArg Args;
-    VirtSpecifiers VS;
-    Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS_public, D, Args,
-                                      nullptr, VS, ICIS_NoInit);
-  } else
-    Dclrtr = ActOnDeclarator(CurScope, D);
-  if (!Dclrtr)
-    return nullptr;
-  DeclaratorDecl *DDecl = cast<DeclaratorDecl>(Dclrtr);
-  AnalyzingRequiredDeclarator = false;
-
-  if (!DDecl)
-    return nullptr;
-  DDecl->setRequired();
-  RequiredDeclarators.push_back(DDecl);
-
-  // We'll deal with auto deduction later.
-  if (ParsingInitForAutoVars.count(DDecl)) {
-    ParsingInitForAutoVars.erase(DDecl);
-
-    // Since we haven't deduced the auto type, we will run
-    // into problems if the user actually tries to use this
-    // declarator. Make it a dependent deduced auto type.
-    QualType Sub = SubstAutoType(DDecl->getType(), Context.DependentTy);
-    DDecl->setType(Sub);
-  }
-
-  CXXRequiredDeclaratorDecl *RDD =
-    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
-
-  if (!RDD || RDD->isInvalidDecl())
-    return nullptr;
-  if (isa<CXXRecordDecl>(CurContext))
-    CurContext->addDecl(RDD);
-
-  return RDD;
-}
-
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

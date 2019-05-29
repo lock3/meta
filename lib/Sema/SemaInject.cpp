@@ -4166,15 +4166,60 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
   return DeclGroupPtrTy::make(DeclGroupRef(Class));
 }
 
-// void Sema::RemoveRequiredDeclaratorsFromClass(Decl *ClassDecl) {
-//   assert(isa<CXXRecordDecl>(ClassDecl));
-//   CXXRecordDecl *Record = cast<CXXRecordDecl>(ClassDecl);
+Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+                                     SourceLocation TypenameLoc,
+                                     IdentifierInfo *Id, bool Typename) {
+  CXXRequiredTypeDecl *RTD =
+    CXXRequiredTypeDecl::Create(Context, CurContext,
+                                RequiresLoc, TypenameLoc, Id, Typename);
 
-//   llvm::SmallVector<DeclaratorDecl *, 4> RequiredDecls;
-//   for (auto *Member : Record->decls())
-//     if (DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(Member))
-//       if (DD->isRequired())
-//         RequiredDecls.push_back(DD);
-//   for (DeclaratorDecl *RD : RequiredDecls)
-//     Record->removeDecl(RD);
-// }
+  PushOnScopeChains(RTD, getCurScope());
+  return RTD;
+}
+
+Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
+                                           SourceLocation RequiresLoc,
+                                           Declarator &D) {
+  // We don't want to check for linkage, memoize that we're
+  // working on a required declarator for later checks.
+  AnalyzingRequiredDeclarator = true;
+  Decl *Dclrtr = nullptr;
+
+  if (CurContext->isRecord() || CurContext->getParent()->isRecord()) {
+    MultiTemplateParamsArg Args;
+    VirtSpecifiers VS;
+    Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS_public, D, Args,
+                                      nullptr, VS, ICIS_NoInit);
+  } else
+    Dclrtr = ActOnDeclarator(CurScope, D);
+  if (!Dclrtr)
+    return nullptr;
+  DeclaratorDecl *DDecl = cast<DeclaratorDecl>(Dclrtr);
+  AnalyzingRequiredDeclarator = false;
+
+  if (!DDecl)
+    return nullptr;
+  DDecl->setRequired();
+  RequiredDeclarators.push_back(DDecl);
+
+  // We'll deal with auto deduction later.
+  if (ParsingInitForAutoVars.count(DDecl)) {
+    ParsingInitForAutoVars.erase(DDecl);
+
+    // Since we haven't deduced the auto type, we will run
+    // into problems if the user actually tries to use this
+    // declarator. Make it a dependent deduced auto type.
+    QualType Sub = SubstAutoType(DDecl->getType(), Context.DependentTy);
+    DDecl->setType(Sub);
+  }
+
+  CXXRequiredDeclaratorDecl *RDD =
+    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
+
+  if (!RDD || RDD->isInvalidDecl())
+    return nullptr;
+  if (isa<CXXRecordDecl>(CurContext))
+    CurContext->addDecl(RDD);
+
+  return RDD;
+}
