@@ -2405,7 +2405,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     if (Previous.isSingleTagDecl())
       Previous.clear();
   }
-  if (!IsClassScopeSpecialization && !D->isRequired())
+  if (!IsClassScopeSpecialization)
     SemaRef.CheckFunctionDeclaration(nullptr, Method, Previous,
                                      IsExplicitSpecialization);
 

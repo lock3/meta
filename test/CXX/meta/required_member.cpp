@@ -41,12 +41,12 @@ struct DependentFields {
 
 template<typename T>
 struct DependentMethods {
-  // T f() { return int(); }
+  T f() { return int(); }
   T f(int a) { return a; }
 
   consteval -> __fragment struct {
     requires T f(int a);
-    // requires T f();
+    requires T f();
     T foo() {
       return f(30);
     }

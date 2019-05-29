@@ -969,8 +969,7 @@ DeclPrinter::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
 void
 DeclPrinter::VisitCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) {
   Out << "requires ";
-  QualType T = D->getTypeSourceInfo()->getType();
-  printDeclType(T, D->getName());
+  printDeclType(D->getDeclaratorType(), D->getRequiredDeclarator()->getName());
 }
 
 void DeclPrinter::VisitEmptyDecl(EmptyDecl *D) {

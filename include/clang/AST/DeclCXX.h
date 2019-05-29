@@ -4296,7 +4296,7 @@ public:
 /// \endcode
 ///
 /// Like an UnresolvedUsingValueDecl, these only declare non-types.
-class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
+class CXXRequiredDeclaratorDecl : public Decl {
   /// The location of the 'requires' keyword
   SourceLocation RequiresLoc;
 

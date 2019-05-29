@@ -2179,6 +2179,11 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
       continue;
     }
 
+    // A temporary created by a CXXRequiredDeclaratorDecl.
+    if (isa<DeclaratorDecl>(Member))
+      if (cast<DeclaratorDecl>(Member)->isRequired())
+        continue;
+
     Decl *NewMember = Instantiator.Visit(Member);
     if (NewMember) {
       if (FieldDecl *Field = dyn_cast<FieldDecl>(NewMember)) {

@@ -3047,8 +3047,7 @@ ExprResult Sema::BuildDeclarationNameExpr(
       break;
 
     // Non-type template parameters are either l-values or r-values
-    // depending on the type. Required declarators act similarly.
-    case Decl::CXXRequiredDeclarator:
+    // depending on the type.
     case Decl::NonTypeTemplateParm: {
       if (const ReferenceType *reftype = type->getAs<ReferenceType>()) {
         type = reftype->getPointeeType();

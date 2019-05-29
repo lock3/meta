@@ -1380,8 +1380,6 @@ Decl *InjectionContext::InjectFieldDecl(FieldDecl *D) {
   }
 
   NamedDecl *PrevDecl = getPreviousFieldDecl(SemaRef, D, Owner);
-  if (D->isRequired())
-    return PrevDecl;
 
   // Build and check the field.
   FieldDecl *Field = getSema().CheckFieldDecl(
@@ -1623,6 +1621,12 @@ Decl *InjectionContext::InjectDecl(Decl *D) {
   // not be resolved.
   if (!isInInjection(D))
     return D;
+
+  // A required declarator is created as a temporary during parsing.
+  // Its analogue already exists in the injectee; don't inject it.
+  if (isa<DeclaratorDecl>(D))
+    if (cast<DeclaratorDecl>(D)->isRequired())
+      return D;
 
   Decl* R = InjectDeclImpl(D);
   if (!R || R->isInvalidDecl())
@@ -2323,7 +2327,8 @@ static bool HandleFunctionDeclaratorSubst(InjectionContext &Ctx,
     const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
     UnresolvedLookupExpr *ULE =
       UnresolvedLookupExpr::Create(SemaRef.Context, nullptr,
-                                   D->getQualifierLoc(), D->getNameInfo(),
+                                  D->getRequiredDeclarator()->getQualifierLoc(),
+                                   D->getRequiredDeclarator()->getNameInfo(),
                                    /*ADL=*/true, /*Overloaded=*/true,
                                    FoundNames.begin(), FoundNames.end());
     CallRes = SemaRef.ActOnCallExpr(nullptr, ULE, SourceLocation(),
@@ -2413,9 +2418,9 @@ static bool CXXRequiredDeclaratorDeclSubst(InjectionContext &Ctx,
 ///
 /// Returns true upon error.
 static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
-                                      NamedDecl *D) {
+                                      Decl *D) {
+  assert(isa<CXXRequiredDeclaratorDecl>(D) || isa<CXXRequiredTypeDecl>(D));
   Sema &SemaRef = Ctx.getSema();
-  unsigned error_id = isa<CXXRequiredTypeDecl>(D) ? 0 : 1;
 
   DeclContext *InjecteeAsDC = Decl::castToDeclContext(Ctx.Injectee);
   Scope *S = SemaRef.getScopeForContext(InjecteeAsDC);
@@ -2424,50 +2429,29 @@ static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
   if (!S)
     S = ParserLookup.getCurScope();
 
-  // Find the name of the declared type and look it up.
-  // If this is a fragment struct, we're only looking up members.
-  // FIXME: how to avoid this duplication?
-  if (isa<CXXMethodDecl>(D->getDeclContext())) {
-    LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
-                   Sema::LookupMemberName);
+  if (isa<CXXRequiredTypeDecl>(D)) {
+    LookupResult R(SemaRef, cast<NamedDecl>(D)->getDeclName(),
+                   D->getLocation(), Sema::LookupOrdinaryName);
     if (SemaRef.LookupName(R, S)) {
-      // Perform substitution.
-      if (isa<CXXRequiredTypeDecl>(D))
-        return
-          CXXRequiredTypeDeclTypeSubst(Ctx, R, cast<CXXRequiredTypeDecl>(D));
-      else if (isa<CXXRequiredDeclaratorDecl>(D))
-        return
-          CXXRequiredDeclaratorDeclSubst(Ctx, R,
-                                         cast<CXXRequiredDeclaratorDecl>(D));
-      else
-        llvm_unreachable("Unknown required declaration.");
+      return CXXRequiredTypeDeclTypeSubst(Ctx, R, cast<CXXRequiredTypeDecl>(D));
     } else {
-      // We didn't find any type with this name.
-      SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
-        << error_id;
+      SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 0;
       return true;
     }
-  }
-
-  LookupResult R(SemaRef, D->getDeclName(), D->getLocation(),
-                 Sema::LookupOrdinaryName);
-  if (SemaRef.LookupName(R, S)) {
-    // Perform substitution.
-    if (isa<CXXRequiredTypeDecl>(D))
-      return
-        CXXRequiredTypeDeclTypeSubst(Ctx, R, cast<CXXRequiredTypeDecl>(D));
-    else if (isa<CXXRequiredDeclaratorDecl>(D))
-      return
-        CXXRequiredDeclaratorDeclSubst(Ctx, R,
-                                       cast<CXXRequiredDeclaratorDecl>(D));
-    else
-      llvm_unreachable("Unknown required declaration.");
-  } else {
-    // We didn't find any type with this name.
-    SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found)
-      << error_id;
-    return true;
-  }
+  } else if (isa<CXXRequiredDeclaratorDecl>(D)) {
+    DeclarationName DeclName =
+     cast<CXXRequiredDeclaratorDecl>(D)->getRequiredDeclarator()->getDeclName();
+    LookupResult R(SemaRef, DeclName, D->getLocation(),
+                   Sema::LookupOrdinaryName);
+    if (SemaRef.LookupName(R, S)) {
+      return CXXRequiredDeclaratorDeclSubst(Ctx, R,
+                                            cast<CXXRequiredDeclaratorDecl>(D));
+    } else {
+      SemaRef.Diag(D->getLocation(), diag::err_required_name_not_found) << 1;
+      return true;
+    }
+  } else
+    llvm_unreachable("Unknown required declaration.");
 }
 
 Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
@@ -4181,3 +4165,16 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
 
   return DeclGroupPtrTy::make(DeclGroupRef(Class));
 }
+
+// void Sema::RemoveRequiredDeclaratorsFromClass(Decl *ClassDecl) {
+//   assert(isa<CXXRecordDecl>(ClassDecl));
+//   CXXRecordDecl *Record = cast<CXXRecordDecl>(ClassDecl);
+
+//   llvm::SmallVector<DeclaratorDecl *, 4> RequiredDecls;
+//   for (auto *Member : Record->decls())
+//     if (DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(Member))
+//       if (DD->isRequired())
+//         RequiredDecls.push_back(DD);
+//   for (DeclaratorDecl *RD : RequiredDecls)
+//     Record->removeDecl(RD);
+// }

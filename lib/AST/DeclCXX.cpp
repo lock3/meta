@@ -3044,10 +3044,8 @@ CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
                                                      DeclContext *DC,
                                                      DeclaratorDecl *DD,
                                                      SourceLocation RL)
-  :DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
-                  QualType(Context.DependentTy),
-                  Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
-                  RL), RequiresLoc(RL), RequiredDeclarator(DD)
+  : Decl(CXXRequiredDeclarator, DC, RL),
+   RequiresLoc(RL), RequiredDeclarator(DD)
 {
 }
 
