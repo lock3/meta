@@ -615,10 +615,14 @@ InstantiateFunctionBody(Sema &SemaRef,
 
 Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
+  assert(D->getDeclContext()->isFragment()
+         && "Only fragments may contain transformable namespaces");
+
   // Build the namespace.
   //
-  // FIXME: Search for a previous declaration of the namespace so that they
-  // can be stitched together (i.e., redo lookup).
+  // We don't actually want to find the previous declaration and perform any
+  // "stiching", as the namespace name, if present, is really just a
+  // localized name for use inside of the fragment.
   NamespaceDecl *Inst = NamespaceDecl::Create(
       SemaRef.Context, Owner, D->isInline(), D->getLocation(), D->getLocation(),
       D->getIdentifier(), /*PrevDecl=*/nullptr);
@@ -1105,7 +1109,6 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
                                            SemaRef.CurContext, TemplateArgs));
   SemaRef.AnalyzingRequiredDeclarator = false;
   NewDecl->setRequired();
-  SemaRef.RequiredDeclarators.push_back(NewDecl);
 
   if (!NewDecl || NewDecl->isInvalidDecl())
     return nullptr;
@@ -1127,7 +1130,6 @@ Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
   Owner->addDecl(NewRDD);
   return NewRDD;
 }
-
 
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =

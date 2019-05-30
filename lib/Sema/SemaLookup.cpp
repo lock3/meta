@@ -4634,7 +4634,7 @@ std::unique_ptr<TypoCorrectionConsumer> Sema::makeTypoCorrectionConsumer(
     return nullptr;
 
   // Never try to correct typos during any kind of code synthesis.
-  if (!CodeSynthesisContexts.empty())
+  if (!CodeSynthesisContexts.empty() || IsInjectingCode)
     return nullptr;
 
   // Don't try to correct 'super'.

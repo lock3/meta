@@ -145,7 +145,8 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
 
   if (getCurScope()->isClassScope() || getCurScope()->isTemplateParamScope() ||
       getCurScope()->isInObjcMethodScope() || getCurScope()->getBlockParent() ||
-      getCurScope()->getFnParent()) {
+      (getCurScope()->getFnParent() &&
+       !getCurScope()->getFnParent()->isMetaFunctionScope())) {
     Diag(T.getOpenLocation(), diag::err_namespace_nonnamespace_scope);
     SkipUntil(tok::r_brace);
     return nullptr;
@@ -2692,10 +2693,9 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
   // [Meta] required-member-declaration
   if (Tok.is(tok::kw_requires)) {
-    ParsedAttributesWithRange Attrs(AttrFactory);
-    SourceLocation End;
+    ProhibitAttributes(attrs);
     Decl *ParsedDecl =
-      ParseCXXRequiredDecl(DeclaratorContext::MemberContext, End, Attrs);
+      ParseCXXRequiredDecl(DeclaratorContext::MemberContext, AS);
     return Actions.ConvertDeclToDeclGroup(ParsedDecl);
   }
 
@@ -2704,7 +2704,7 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
       return Actions.ConvertDeclToDeclGroup(ParsedDecl);
   }
-
+  
   // Hold late-parsed attributes so we can attach a Decl to them later.
   LateParsedAttrList CommonLateParsedAttrs;
 

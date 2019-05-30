@@ -32,7 +32,7 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
   // Perform the tentative parses first since isCXXTypeId tends to rewrite
   // tokens, which can subsequent parses a bit wonky.
 
-  // Otherwise, tentatively parse a template-name.
+  // Tentatively parse a template-name.
   {
     TentativeParsingAction TPA(*this);
     ParsedTemplateArgument T = ParseTemplateTemplateArgument();
@@ -62,11 +62,14 @@ ParsedReflectionOperand Parser::ParseCXXReflectOperand() {
     TPA.Revert();
   }
 
-  // Try parsing this as type-id first.
+  // Otherwise, try parsing this as type-id.
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     // FIXME: Create a new DeclaratorContext?
     TypeResult T =
       ParseTypeName(nullptr, DeclaratorContext::TemplateArgContext);
+    if (T.isInvalid()) {
+      return ParsedReflectionOperand();
+    }
     return Actions.ActOnReflectedType(T.get());
   }
 

@@ -2,8 +2,7 @@
 
 namespace bad {
 template<typename T, typename U>
-void mismatched_types() 
-{
+void mismatched_types() {
   T req;
   consteval -> __fragment {
     requires U req; // expected-error {{Required declarator not found.}} // expected-note {{required declarator candidate not viable: cannot convert declarator of type ('char' to 'int')}}

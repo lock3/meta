@@ -9512,6 +9512,8 @@ def note_await_ready_no_bool_conversion : Note<
 }
 
 let CategoryName = "Injection Issue" in {
+def err_injection_stmt_constexpr : Error<
+  "injection statements can only appear in constexpr contexts">;
 def err_invalid_injection_operand : Error<
   "invalid operand of type %0; expected a reflection or fragment">;
 def err_invalid_injection : Error<

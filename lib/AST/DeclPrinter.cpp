@@ -106,6 +106,8 @@ namespace {
     void VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D);
     void VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D);
     void VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D);
+    void VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D);
+    void VisitCXXInjectionDecl(CXXInjectionDecl *D);
 
     void printTemplateParameters(const TemplateParameterList *Params);
     void printTemplateArguments(const TemplateArgumentList &Args,
@@ -397,9 +399,18 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
           !isa<ClassTemplateSpecializationDecl>(DC))
         continue;
 
-    // Do not print injector decls.
-    if (isa<CXXInjectorDecl>(*D))
+    // Do not print injector decls, unless in a dependent context where
+    // they haven't been evaluated.
+    if (isa<CXXInjectorDecl>(*D)) {
+      // FIXME: Should we give them access specifier rules instead?
+      // Handle this here as injectors do not have access specifiers.
+      if (DC->isDependentContext()) {
+        this->Indent();
+        Visit(*D);
+        Out << "\n";
+      }
       continue;
+    }
 
     // The next bits of code handle stuff like "struct {int x;} a,b"; we're
     // forced to merge the declarations because there's no other way to
@@ -1718,5 +1729,25 @@ void DeclPrinter::VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D) {
 
 void DeclPrinter::VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D) {
   D->getInit()->printPretty(Out, nullptr, Policy, Indentation);
+}
+
+void DeclPrinter::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  Out << "consteval {\n";
+
+  Indentation += Policy.Indentation;
+  // FIXME: This adds extra brackets.
+  cast<CompoundStmt>(D->getBody())->printPretty(Out, nullptr, Policy, Indentation);
+  Indentation -= Policy.Indentation;
+
+  Indent();
+  Out << "};";
+}
+
+void DeclPrinter::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  Out << "consteval ";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.IncludeNewlines = false;
+  D->getInjectionStmt()->printPretty(Out, nullptr, SubPolicy, 0);
+  Out << ";";
 }
 

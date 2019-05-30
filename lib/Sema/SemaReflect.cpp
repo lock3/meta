@@ -40,8 +40,6 @@ ParsedReflectionOperand Sema::ActOnReflectedType(TypeResult T) {
     return ActOnReflectedTemplate(Arg);
   assert(Arg.getKind() == ParsedTemplateArgument::Type);
 
-  // llvm::outs() << "GOT TYPE\n";
-  // T.get().get()->dump();
   return ParsedReflectionOperand(T.get(), Arg.getLocation());
 }
 
@@ -49,31 +47,22 @@ ParsedReflectionOperand Sema::ActOnReflectedTemplate(ParsedTemplateArgument T) {
   assert(T.getKind() == ParsedTemplateArgument::Template);
   const CXXScopeSpec& SS = T.getScopeSpec();
   ParsedTemplateTy Temp = T.getAsTemplate();
-  
-  // llvm::outs() << "GOT TEMPLATE\n";
-  // Temp.get().getAsTemplateDecl()->dump();
+
   return ParsedReflectionOperand(SS, Temp, T.getLocation());
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(CXXScopeSpec &SS,
                                                       SourceLocation &Loc,
                                                       Decl *D) {
-  // llvm::outs() << "GOT NAMESPACE\n";
-  // D->dump();
   return ParsedReflectionOperand(SS, D, Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedNamespace(SourceLocation Loc) {
-  // llvm::outs() << "GOT NAMESPACE\n";
-  // D->dump();
   // Clang uses TUDecl in place of having a global namespace.
   return ParsedReflectionOperand(Context.getTranslationUnitDecl(), Loc);
 }
 
 ParsedReflectionOperand Sema::ActOnReflectedExpression(Expr *E) {
-  
-  // llvm::outs() << "GOT EXPRESSION\n";
-  // E->dump();
   return ParsedReflectionOperand(E, E->getBeginLoc());
 }
 
@@ -556,12 +545,32 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
+static DeclRefExpr *DeclReflectionToDeclRefExpr(Sema &S, const Reflection &R,
+                                         SourceLocation SL) {
+  assert(R.isDeclaration());
+
+  // If this is a value declaration, then construct a DeclRefExpr.
+  if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
+    QualType T = VD->getType();
+    ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
+    ExprValueKind VK = S.getValueKindForDeclReference(T, NCVD, SL);
+    return cast<DeclRefExpr>(S.BuildDeclRefExpr(NCVD, T, VK, SL).get());
+  }
+
+  return nullptr;
+}
+
+static DeclRefExpr *UseDeclRefExprForIdExpr(Sema &S, const DeclRefExpr *DRE) {
+  Decl *ReferencedDecl = const_cast<NamedDecl *>(DRE->getFoundDecl());
+  ReferencedDecl->markUsed(S.Context);
+  return const_cast<DeclRefExpr *>(DRE);
+}
+
 ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
                                     Expr *Refl,
                                     SourceLocation LParenLoc,
                                     SourceLocation RParenLoc,
-                                    SourceLocation EllipsisLoc)
-{
+                                    SourceLocation EllipsisLoc) {
   if (Refl->isTypeDependent() || Refl->isValueDependent())
     return new (Context) CXXIdExprExpr(Context.DependentTy, Refl, KWLoc,
                                        LParenLoc, LParenLoc);
@@ -575,12 +584,15 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
     return ExprError();
   }
 
-  if (R.isExpression()) {
-    if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(R.getAsExpression())) {
-      Decl *ReferencedDecl = const_cast<NamedDecl *>(Ref->getFoundDecl());
-      ReferencedDecl->markUsed(Context);
+  if (R.isDeclaration()) {
+    if (const DeclRefExpr *DRE = DeclReflectionToDeclRefExpr(*this, R, KWLoc)) {
+      return UseDeclRefExprForIdExpr(*this, DRE);
+    }
+  }
 
-      return const_cast<DeclRefExpr *>(Ref);
+  if (R.isExpression()) {
+    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(R.getAsExpression())) {
+      return UseDeclRefExprForIdExpr(*this, DRE);
     }
   }
 
@@ -589,20 +601,6 @@ ExprResult Sema::ActOnCXXIdExprExpr(SourceLocation KWLoc,
   return ExprError();
 }
 
-static Expr *DeclReflectionToValueExpr(Sema &S, const Reflection &R,
-                                       SourceLocation SL) {
-  assert(R.isDeclaration());
-
-  // If this is a value declaration, then build a DeclRefExpr to evaluate.
-  if (const ValueDecl *VD = dyn_cast<ValueDecl>(R.getAsDeclaration())) {
-    QualType T = VD->getType();
-    ExprValueKind VK = Expr::getValueKindForType(T);
-    ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
-    return S.BuildDeclRefExpr(NCVD, T, VK, SL).get();
-  }
-
-  return nullptr;
-}
 
 static Expr *ExprReflectionToValueExpr(Sema &S, const Reflection &R,
                                        SourceLocation SL) {
@@ -615,7 +613,7 @@ static Expr *BuildInitialReflectionToValueExpr(Sema &S, const Reflection &R,
                                                SourceLocation SL) {
   switch (R.getKind()) {
   case RK_declaration:
-    return DeclReflectionToValueExpr(S, R, SL);
+    return DeclReflectionToDeclRefExpr(S, R, SL);
   case RK_expression:
     return ExprReflectionToValueExpr(S, R, SL);
   default:

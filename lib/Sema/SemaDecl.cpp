@@ -6295,6 +6295,8 @@ static bool shouldConsiderLinkage(const FunctionDecl *FD) {
     return true;
   if (DC->isRecord())
     return false;
+  if (DC->isFragmentContext())
+    return false;
   llvm_unreachable("Unexpected context");
 }
 
@@ -7644,14 +7646,6 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
   if (NewVD->isConstexpr() && !T->isDependentType() &&
       RequireLiteralType(NewVD->getLocation(), T,
                          diag::err_constexpr_var_non_literal)) {
-    NewVD->setInvalidDecl();
-    return;
-  }
-
-  bool isConstexprContext = NewVD->isConstexpr()
-                         || NewVD->getDeclContext()->isConstexprContext();
-  if (!isConstexprContext && T->isMetaType()) {
-    Diag(NewVD->getLocation(), diag::err_meta_type_constexpr);
     NewVD->setInvalidDecl();
     return;
   }
@@ -12230,6 +12224,14 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     }
   }
 
+  bool isConstexprContext = var->isConstexpr()
+                         || var->getDeclContext()->isConstexprContext();
+  if (!isConstexprContext && type->isMetaType()) {
+    Diag(var->getLocation(), diag::err_meta_type_constexpr);
+    var->setInvalidDecl();
+    return;
+  }
+
   // Require the destructor.
   if (const RecordType *recordType = baseType->getAs<RecordType>())
     FinalizeVarWithDestructor(var, recordType);
@@ -15341,12 +15343,9 @@ void Sema::StartDefinition(TagDecl *D) {
 /// and the class is otherwise both declaration, and
 /// definition complete.
 static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
-  if (!D) // Not a class
+  if (!D || !SemaRef.ShouldInjectPendingDefinitionsOf(D))
     return;
-  if (D->isCXXClassMember()) // Not an outermost class
-    return;
-  if (!SemaRef.HasPendingInjections(D))
-    return;
+
   SemaRef.InjectPendingFieldDefinitions();
 }
 
@@ -15897,8 +15896,11 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
     if (T->isMetaType()) {
       // FIXME: This is a bit of hack, we should probably replace the
       // type rather than modifying it directly.
-      const RecordType *RT = cast<RecordType>(Record->getTypeForDecl());
-      const_cast<RecordType *>(RT)->setMetaType();
+      const Type *T = Record->getTypeForDecl();
+
+      if (auto *RT = dyn_cast<RecordType>(T)) {
+        const_cast<RecordType *>(RT)->setMetaType();
+      }
     }
   }
 

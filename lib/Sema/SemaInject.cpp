@@ -49,7 +49,8 @@ struct TypedValue {
 
 enum InjectedDefType : unsigned {
   InjectedDef_Field,
-  InjectedDef_Method
+  InjectedDef_Method,
+  InjectedDef_FriendFunction
 };
 
 /// Records information about a definition inside a fragment that must be
@@ -110,6 +111,19 @@ struct InjectionInfo {
 
   /// The modifiers to apply to injection.
   ReflectionModifiers Modifiers;
+
+  /// The set of local declarations that have been transformed.
+  /// These are declaration mappings that only make sense when paired
+  /// with the injection, as they may be mapped to different declarations
+  /// across different injections. Currently, this means injections
+  /// which occur during fragment injection, as apposed to declaration
+  /// cloning.
+  llvm::DenseMap<Decl *, Decl *> TransformedLocalDecls;
+
+  /// A mapping of fragment placeholders to their typed compile-time
+  /// values. This is used by TreeTransformer to replace references with
+  /// constant expressions.
+  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
 
   /// True if we've injected a field. If we have, this injection context
   /// must be preserved until we've finished rebuilding all injected
@@ -190,9 +204,22 @@ public:
     CurInjection = PreviousInjection;
   }
 
+  llvm::DenseMap<Decl *, Decl *> &GetDeclTransformMap() {
+    if (isInjectingFragment()) {
+      return CurInjection->TransformedLocalDecls;
+    } else {
+      return TransformedLocalDecls;
+    }
+  }
+
+  void transformedLocalDecl(Decl *Old, Decl *New) {
+    auto &TransformedDecls = GetDeclTransformMap();
+    assert(TransformedDecls.count(Old) == 0 && "Overwriting substitution");
+    TransformedDecls[Old] = New;
+  }
+
   /// Adds a substitution from one declaration to another.
   void AddDeclSubstitution(const Decl *Old, Decl *New) {
-    assert(TransformedLocalDecls.count(Old) == 0 && "Overwriting substitution");
     transformedLocalDecl(const_cast<Decl*>(Old), New);
   }
 
@@ -203,22 +230,6 @@ public:
       return;
     }
     AddDeclSubstitution(Old, New);
-  }
-
-  /// Adds a substitution from a fragment placeholder to its
-  /// (type) constant value.
-  void MaybeAddPlaceholderSubstitution(Decl *Orig, QualType T,
-                                       const APValue &V) {
-    assert(isa<VarDecl>(Orig) && "Expected a variable declaration");
-    auto RIter = PlaceholderSubsts.find(Orig);
-    if (RIter != PlaceholderSubsts.end()) {
-      // FIXME: This doesn't fully check for equivalence of the APValue.
-      assert((RIter->second.Type == T
-              && RIter->second.Value.getKind() == V.getKind())
-             && "Overwriting substitution");
-      return;
-    }
-    PlaceholderSubsts.try_emplace(Orig, T, V);
   }
 
   /// Adds substitutions for each placeholder in the fragment.
@@ -240,7 +251,7 @@ public:
       QualType Ty = IC.Decl->getType();
       APValue Val = IC.Value;
 
-      MaybeAddPlaceholderSubstitution(Var, Ty, Val);
+      CurInjection->PlaceholderSubsts.try_emplace(Var, Ty, Val);
     }
   }
 
@@ -254,8 +265,9 @@ public:
   /// Returns a replacement for D if a substitution has been registered or
   /// nullptr if no such replacement exists.
   Decl *GetDeclReplacement(Decl *D) {
-    auto Iter = TransformedLocalDecls.find(D);
-    if (Iter != TransformedLocalDecls.end())
+    auto &TransformedDecls = GetDeclTransformMap();
+    auto Iter = TransformedDecls.find(D);
+    if (Iter != TransformedDecls.end())
       return Iter->second;
     else
       return nullptr;
@@ -263,6 +275,7 @@ public:
 
   /// Returns a replacement expression if E refers to a placeholder.
   Expr *GetPlaceholderReplacement(DeclRefExpr *E) {
+    auto &PlaceholderSubsts = CurInjection->PlaceholderSubsts;
     auto Iter = PlaceholderSubsts.find(E->getDecl());
     if (Iter != PlaceholderSubsts.end()) {
       // Build a new constant expression as the replacement. The source
@@ -523,6 +536,7 @@ public:
   Decl *InjectDecl(Decl *D);
   Decl *MockInjectDecl(Decl *D);
   Decl *InjectAccessSpecDecl(AccessSpecDecl *D);
+  Decl *InjectFriendDecl(FriendDecl *D);
   Decl *InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D);
   Decl *InjectCXXInjectionDecl(CXXInjectionDecl *D);
 
@@ -545,11 +559,6 @@ public:
   Stmt *InjectDeclStmt(DeclStmt *S);
 
   // Members
-
-  /// A mapping of fragment placeholders to their typed compile-time
-  /// values. This is used by TreeTransformer to replace references with
-  /// constant expressions.
-  llvm::DenseMap<Decl *, TypedValue> PlaceholderSubsts;
 
   /// A mapping of injected parameters to their corresponding
   /// expansions.
@@ -801,13 +810,22 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
 Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
+  SourceLocation &&NamespaceLoc = D->getBeginLoc();
+  SourceLocation &&Loc = D->getLocation();
+
+  bool IsInline = D->isInline();
+  bool IsInvalid = false;
+  bool IsStd = false;
+  bool AddToKnown = false;
+  NamespaceDecl *PrevNS = nullptr;
+  SemaRef.CheckNamespaceDeclaration(
+      D->getIdentifier(), NamespaceLoc, Loc,
+      IsInline, IsInvalid, IsStd, AddToKnown, PrevNS);
+
   // Build the namespace.
-  //
-  // FIXME: Search for a previous declaration of the namespace so that they
-  // can be stitched together (i.e., redo lookup).
   NamespaceDecl *Ns = NamespaceDecl::Create(
-      getContext(), Owner, D->isInline(), D->getLocation(), D->getLocation(),
-      D->getIdentifier(), /*PrevDecl=*/nullptr);
+      getContext(), Owner, IsInline, NamespaceLoc,
+      Loc, D->getIdentifier(), PrevNS);
   AddDeclSubstitution(D, Ns);
 
   Owner->addDecl(Ns);
@@ -955,14 +973,33 @@ static void CheckInjectedFunctionDecl(Sema &SemaRef, FunctionDecl *FD,
                                    /*IsMemberSpecialization=*/false);
 }
 
+static void InjectFunctionDefinition(InjectionContext *Ctx,
+                                     FunctionDecl *OldFunction,
+                                     FunctionDecl *NewFunction) {
+  Sema &S = Ctx->getSema();
+
+  S.ActOnStartOfFunctionDef(nullptr, NewFunction);
+
+  Sema::SynthesizedFunctionScope Scope(S, NewFunction);
+  Sema::ContextRAII FnCtx(S, NewFunction);
+
+  StmtResult NewBody;
+  if (Stmt *OldBody = OldFunction->getBody()) {
+    NewBody = Ctx->TransformStmt(OldBody);
+    if (NewBody.isInvalid())
+      NewFunction->setInvalidDecl();
+  }
+
+  S.ActOnFinishFunctionBody(NewFunction, NewBody.get(),
+                            /*IsInstantiation=*/true);
+}
+
 Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   DeclContext *Owner = getSema().CurContext;
 
   DeclarationNameInfo DNI;
   TypeSourceInfo* TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  // FIXME: Check for redeclaration.
 
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
@@ -982,6 +1019,8 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Set properties.
   Fn->setInlineSpecified(D->isInlineSpecified());
   Fn->setInvalidDecl(Invalid);
+  if (D->getFriendObjectKind() != Decl::FOK_None)
+    Fn->setObjectOfFriendDecl();
 
   // Don't register the declaration if we're merely attempting to transform
   // this function.
@@ -996,20 +1035,12 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   // Also, function decls never appear in class scope (we hope),
   // so we shouldn't be doing this too early.
   if (D->isThisDeclarationADefinition()) {
-    SemaRef.ActOnStartOfFunctionDef(nullptr, Fn);
-
-    Sema::SynthesizedFunctionScope Scope(getSema(), Fn);
-    Sema::ContextRAII FnCtx (getSema(), Fn);
-
-    StmtResult NewBody;
-    if (Stmt *OldBody = D->getBody()) {
-      NewBody = TransformStmt(OldBody);
-      if (NewBody.isInvalid())
-        Fn->setInvalidDecl();
+    bool IsFriend = D->getFriendObjectKind() != Decl::FOK_None;
+    if (IsFriend) {
+      AddPendingDefinition(InjectedDef(InjectedDef_FriendFunction, D, Fn));
+    } else {
+      InjectFunctionDefinition(this, D, Fn);
     }
-
-    SemaRef.ActOnFinishFunctionBody(Fn, NewBody.get(),
-                                    /*IsInstantiation=*/true);
   }
 
   return Fn;
@@ -1032,8 +1063,6 @@ Decl *InjectionContext::InjectVarDecl(VarDecl *D) {
   DeclarationNameInfo DNI;
   TypeSourceInfo *TSI;
   bool Invalid = InjectDeclarator(D, DNI, TSI);
-
-  // FIXME: Check for re-declaration.
 
   VarDecl *Var = VarDecl::Create(
       getContext(), Owner, D->getInnerLocStart(), DNI.getLoc(), DNI.getName(),
@@ -1211,14 +1240,23 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
 
   bool Invalid = false;
 
-  // FIXME: Do a lookup for previous declarations.
+  // This is a bit weird, but we need to delay type creation
+  // if we're injecting a class decl for a template,
+  // to ensure the type has knowledge that it's for a templated
+  // class, rather than a normal class.
+  //
+  // This has immediately visible impact, with regards to
+  // constructors of injected classes, as these are not resolveable
+  // without delaying type creation.
+  bool DelayTypeCreation = D->getDescribedClassTemplate();
 
   CXXRecordDecl *Class;
   if (D->isInjectedClassName()) {
     DeclarationName DN = cast<CXXRecordDecl>(Owner)->getDeclName();
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
-        D->getLocation(), DN.getAsIdentifierInfo(), /*PrevDecl=*/nullptr);
+        D->getLocation(), DN.getAsIdentifierInfo(),
+        /*PrevDecl=*/nullptr, DelayTypeCreation);
   } else {
     DeclarationNameInfo DNI = Ctx.TransformDeclarationName(D);
 
@@ -1228,7 +1266,7 @@ static CXXRecordDecl *InjectClassDecl(InjectionContext &Ctx, DeclContext *Owner,
     Class = CXXRecordDecl::Create(
         Ctx.getContext(), D->getTagKind(), Owner, D->getBeginLoc(),
         D->getLocation(), DNI.getName().getAsIdentifierInfo(),
-        cast_or_null<CXXRecordDecl>(PrevDecl));
+        cast_or_null<CXXRecordDecl>(PrevDecl), DelayTypeCreation);
   }
   Ctx.AddDeclSubstitution(D, Class);
 
@@ -1264,6 +1302,7 @@ static void InjectPendingDefinitionsWithCleanup(InjectionContext &Ctx) {
 
   InjectPendingDefinitions<FieldDecl, InjectedDef_Field>(&Ctx, Injection);
   InjectPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(&Ctx, Injection);
+  InjectPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(&Ctx, Injection);
 
   Injection->ResetClassMemberData();
 }
@@ -1576,6 +1615,8 @@ Decl *InjectionContext::InjectDeclImpl(Decl *D) {
     return InjectCXXMethodDecl(cast<CXXMethodDecl>(D));
   case Decl::AccessSpec:
     return InjectAccessSpecDecl(cast<AccessSpecDecl>(D));
+  case Decl::Friend:
+    return InjectFriendDecl(cast<FriendDecl>(D));
   case Decl::CXXMetaprogram:
     return InjectCXXMetaprogramDecl(cast<CXXMetaprogramDecl>(D));
   case Decl::CXXInjection:
@@ -1662,6 +1703,70 @@ Decl *InjectionContext::InjectAccessSpecDecl(AccessSpecDecl *D) {
       getContext(), D->getAccess(), Owner, D->getLocation(), D->getColonLoc());
 }
 
+static bool GetFriendTargetDeclContext(Sema &SemaRef, FriendDecl *D, DeclContext *DOwner,
+                                       Decl *ND, DeclContext *&DC) {
+  if (auto *FD = dyn_cast<FunctionDecl>(ND)) {
+    LookupResult Previous(
+                          SemaRef, FD->getDeclName(), SourceLocation(),
+                          Sema::LookupOrdinaryName, SemaRef.forRedeclarationInCurContext());
+
+    Scope *S = SemaRef.getScopeForContext(DOwner);
+    CXXScopeSpec SS;
+    SS.Adopt(FD->getQualifierLoc());
+
+    Scope *DCScope = nullptr;
+    return SemaRef.GetFriendFunctionDC(Previous, S, SS, FD->getNameInfo(),
+                                       D->getFriendLoc(), D->getLocation(),
+                                       FD->hasBody(), isa<FunctionTemplateDecl>(FD), DC, DCScope);
+  }
+
+  DC = DOwner;
+  return false;
+}
+
+Decl *InjectionContext::InjectFriendDecl(FriendDecl *D) {
+  CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
+
+  if (TypeSourceInfo *Ty = D->getFriendType()) {
+    TypeSourceInfo *InstTy;
+    if (D->isUnsupportedFriend()) {
+      InstTy = Ty;
+    } else {
+      InstTy = TransformType(Ty);
+    }
+    if (!InstTy)
+      return nullptr;
+
+    FriendDecl *FD = SemaRef.CheckFriendTypeDecl(D->getBeginLoc(),
+                                                 D->getFriendLoc(), InstTy);
+    if (!FD)
+      return nullptr;
+
+    FD->setAccess(AS_public);
+    FD->setUnsupportedFriend(D->isUnsupportedFriend());
+    Owner->addDecl(FD);
+    return FD;
+  }
+
+  Decl *ND = MockInjectDecl(D->getFriendDecl());
+
+  DeclContext *NDDC = nullptr;
+  if (GetFriendTargetDeclContext(SemaRef, D, Owner, ND, NDDC))
+    return nullptr;
+
+  ND->setDeclContext(NDDC);
+  NDDC->addDecl(ND);
+
+  FriendDecl *FD =
+    FriendDecl::Create(SemaRef.Context, Owner, D->getLocation(),
+                       cast<NamedDecl>(ND), D->getFriendLoc());
+
+  FD->setAccess(AS_public);
+  FD->setUnsupportedFriend(D->isUnsupportedFriend());
+  Owner->addDecl(FD);
+  return FD;
+}
+
 Stmt *InjectionContext::InjectStmt(Stmt *S) {
   Stmt *NewS = InjectStmtImpl(S);
 
@@ -1688,6 +1793,13 @@ static bool isRequiresDecl(Decl *D) {
 
 static bool isMetaDecl(Decl *D) {
   return isa<CXXInjectorDecl>(D);
+}
+  
+static bool isRequiresDecl(DeclStmt *DS) {
+  if (!DS->isSingleDecl())
+    return false;
+
+  return isRequiresDecl(DS->getSingleDecl());
 }
 
 static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
@@ -1725,22 +1837,24 @@ Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
         PushInjectedStmt(MetaDecl, InjectedStmts);
       }
     } else
-       return nullptr;
+      return nullptr;
   }
 
   StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
   if (Res.isInvalid())
     return nullptr;
 
-  if (!IsRequiredDeclaration)
-    InjectedStmts.push_back(Res.get());
-  return Res.get();
+  DeclStmt *NewStmt = cast<DeclStmt>(Res.get());
+  if (!isRequiresDecl(NewStmt))
+    InjectedStmts.push_back(NewStmt);
+  return NewStmt;
 }
 
-template <typename MetaType>
-static Decl *
-InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
-  Sema &Sema = Ctx.getSema();
+// FIXME: To preserve Injector type these have to be slightly different methods
+// it would be nice to combine this logic again in a way that preserves type.
+
+Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  Sema &Sema = getSema();
 
   // We can use the ActOn* members since the initial parsing for these
   // declarations is trivial (i.e., don't have to translate declarators).
@@ -1749,7 +1863,7 @@ InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
   DeclContext *OriginalDC;
   Sema.ActOnStartCXXMetaprogramDecl(New, OriginalDC);
 
-  StmtResult S = Ctx.TransformStmt(D->getBody());
+  StmtResult S = TransformStmt(D->getBody());
   if (!S.isInvalid())
     Sema.ActOnFinishCXXMetaprogramDecl(New, S.get(), OriginalDC);
   else
@@ -1758,12 +1872,29 @@ InjectCXXMetaDecl(InjectionContext &Ctx, MetaType *D) {
   return New;
 }
 
-Decl *InjectionContext::InjectCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
-  return InjectCXXMetaDecl(*this, D);
-}
-
 Decl *InjectionContext::InjectCXXInjectionDecl(CXXInjectionDecl *D) {
-  return InjectCXXMetaDecl(*this, D);
+  Sema &Sema = getSema();
+
+  // We can use the ActOn* members since the initial parsing for these
+  // declarations is trivial (i.e., don't have to translate declarators).
+  Decl *New = Sema.ActOnCXXInjectionDecl(D->getLocation());
+
+  DeclContext *OriginalDC;
+  Sema.ActOnStartCXXInjectionDecl(New, OriginalDC);
+
+  // Transform the injection stmt rather than the entire body
+  // because this is originally built via a single injection statement
+  // rather than the body of the function representation.
+  //
+  // While either would result in a logically correct program, this ensures
+  // pretty printing gives a sane result.
+  StmtResult S = TransformStmt(D->getInjectionStmt());
+  if (!S.isInvalid())
+    Sema.ActOnFinishCXXInjectionDecl(New, S.get(), OriginalDC);
+  else
+    Sema.ActOnCXXInjectionDeclError(New, OriginalDC);
+
+  return New;
 }
 
 TemplateParameterList *
@@ -1812,6 +1943,11 @@ Decl *InjectionContext::InjectClassTemplateDecl(ClassTemplateDecl *D) {
 
   // FIXME: Other attributes to process?
   Class->setDescribedClassTemplate(Template);
+
+  // Build the type for the class template declaration now.
+  QualType T = Template->getInjectedClassNameSpecialization();
+  T = getSema().Context.getInjectedClassNameType(Class, T);
+
   ApplyAccess(GetModifiers(), Template, D);
 
   // Don't register the declaration if we're merely attempting to transform
@@ -2454,17 +2590,10 @@ static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx,
     llvm_unreachable("Unknown required declaration.");
 }
 
-Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
-  DeclContext *Owner = getSema().CurContext;
-
-  DeclarationNameInfo DNI = TransformDeclarationName(D);
-  IdentifierInfo *Id = DNI.getName().getAsIdentifierInfo();
-
-  auto *RTD = CXXRequiredTypeDecl::Create(
-      getContext(), Owner, D->getRequiresLoc(),
-      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
-  AddDeclSubstitution(D, RTD);
-
+template<typename DeclType>
+static void
+SubstituteOrMaintainRequiredDecl(InjectionContext &Ctx, DeclContext *Owner,
+                                 DeclType *NewDecl) {
   // If we're injecting this declaration, we should never add it to the owner
   // as that would result in the declaration showing up in the injectee.
   // Instead, we want to run lookup, and start the substitution process
@@ -2477,15 +2606,26 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
   // Note that we can't perform lookup prior to the time that we're truly
   // injecting this, as that lookup would potentially occur in the wrong
   // context.
-  if (!MockInjectionContext) {
-    if (CXXRequiredDeclSubstitute(*this, RTD)) {
-      getSema().Diag(D->getLocation(), diag::err_undeclared_use)
-        << "required declarator.";
-      RTD->setInvalidDecl(true);
+  if (!Ctx.MockInjectionContext) {
+    if (CXXRequiredDeclSubstitute(Ctx, NewDecl)) {
+       NewDecl->setInvalidDecl(true);
     }
-  } else if (ShouldInjectInto(Owner)) {
-    Owner->addDecl(RTD);
+  } else if (Ctx.ShouldInjectInto(Owner)) {
+    Owner->addDecl(NewDecl);
   }
+} 
+
+Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  DeclContext *Owner = getSema().CurContext;
+
+  DeclarationNameInfo DNI = TransformDeclarationName(D);
+  IdentifierInfo *Id = DNI.getName().getAsIdentifierInfo();
+
+  auto *RTD = CXXRequiredTypeDecl::Create(
+      getContext(), Owner, D->getRequiresLoc(),
+      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
+  AddDeclSubstitution(D, RTD);
+  SubstituteOrMaintainRequiredDecl(*this, Owner, RTD);
 
   return RTD;
 }
@@ -2500,13 +2640,7 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
                                       D->getRequiredDeclarator(),
                                       D->getRequiresLoc());
   AddDeclSubstitution(D, RDD);
-
-  if (!MockInjectionContext) {
-    if (CXXRequiredDeclSubstitute(*this, RDD))
-      RDD->setInvalidDecl(true);
-  } else if (ShouldInjectInto(Owner)) {
-    Owner->addDecl(RDD);
-  }
+  SubstituteOrMaintainRequiredDecl(*this, Owner, RDD);
 
   return RDD;
 }
@@ -3018,6 +3152,12 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *Operand) {
+  // An injection stmt can only appear in constexpr contexts
+  if (!CurContext->isConstexprContext()) {
+    Diag(Loc, diag::err_injection_stmt_constexpr);
+    return StmtError();
+  }
+
   // If the operand is not dependent, it must be resolveable either
   // to an injectable reflection, or a fragment.
   //
@@ -3181,7 +3321,7 @@ static bool InjectStmtFragment(Sema &S,
                                const SmallVector<InjectionCapture, 8> &Captures,
                                Decl *Injectee) {
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
-    Ctx->AddDeclSubstitution(Injection, Injectee);
+    Ctx->MaybeAddDeclSubstitution(Injection, Injectee);
     Ctx->AddPlaceholderSubstitutions(Injection->getDeclContext(), Captures);
 
     CXXStmtFragmentDecl *InjectionSFD = cast<CXXStmtFragmentDecl>(Injection);
@@ -3496,6 +3636,8 @@ static bool ApplyReflectionInjection(Sema &S, CXXInjectorDecl *MD,
 }
 
 bool Sema::ApplyInjection(CXXInjectorDecl *MD, InjectionEffect &IE) {
+  CodeInjectionTracker InjectingCode(*this);
+
   Decl *Injectee = GetInjecteeDecl(*this, CurContext, IE.ContextSpecifier);
   if (!Injectee)
     return false;
@@ -3571,6 +3713,23 @@ bool Sema::HasPendingInjections(DeclContext *D) {
   return false;
 }
 
+/// Returns true if the DeclContext D both has pending injections
+/// and is in a state suiteable for injecting those injections.
+bool Sema::ShouldInjectPendingDefinitionsOf(CXXRecordDecl *D) {
+  assert(D && "CXXRecordDecl must be specified");
+
+  if (!HasPendingInjections(D))
+    return false;
+
+  if (D->isCXXClassMember()) {
+    auto *ParentClass = cast<CXXRecordDecl>(D->getDeclContext());
+    if (!ParentClass->isCompleteDefinition())
+      return false;
+  }
+
+  return true;
+}
+
 static void CleanupUsedContexts(
       llvm::SmallVectorImpl<InjectionContext *>& PendingClassMemberInjections) {
   while (!PendingClassMemberInjections.empty()) {
@@ -3587,6 +3746,12 @@ void Sema::InjectPendingFieldDefinitions() {
 void Sema::InjectPendingMethodDefinitions() {
   for (auto &&Ctx : PendingClassMemberInjections) {
     InjectPendingMethodDefinitions(Ctx);
+  }
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions() {
+  for (auto &&Ctx : PendingClassMemberInjections) {
+    InjectPendingFriendFunctionDefinitions(Ctx);
   }
   CleanupUsedContexts(PendingClassMemberInjections);
 }
@@ -3682,6 +3847,12 @@ static void InjectPendingDefinition(InjectionContext *Ctx,
   }
 }
 
+static void InjectPendingDefinition(InjectionContext *Ctx,
+                                    FunctionDecl *OldFunction,
+                                    FunctionDecl *NewFunction) {
+  InjectFunctionDefinition(Ctx, OldFunction, NewFunction);
+}
+
 template<typename DeclType, InjectedDefType DefType>
 static void InjectPendingDefinitions(InjectionContext *Ctx,
                                      InjectionInfo *Injection) {
@@ -3697,6 +3868,8 @@ static void InjectPendingDefinitions(InjectionContext *Ctx,
 
 template<typename DeclType, InjectedDefType DefType>
 static void InjectAllPendingDefinitions(InjectionContext *Ctx) {
+  Sema::CodeInjectionTracker InjectingCode(Ctx->getSema());
+
   Ctx->ForEachPendingInjection([&Ctx] {
     InjectPendingDefinitions<DeclType, DefType>(Ctx, Ctx->CurInjection);
   });
@@ -3708,6 +3881,10 @@ void Sema::InjectPendingFieldDefinitions(InjectionContext *Ctx) {
 
 void Sema::InjectPendingMethodDefinitions(InjectionContext *Ctx) {
   InjectAllPendingDefinitions<CXXMethodDecl, InjectedDef_Method>(Ctx);
+}
+
+void Sema::InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx) {
+  InjectAllPendingDefinitions<FunctionDecl, InjectedDef_FriendFunction>(Ctx);
 }
 
 bool Sema::InjectPendingNamespaceInjections() {
@@ -4166,12 +4343,14 @@ Sema::DeclGroupPtrTy Sema::ActOnCXXTypeTransformerDecl(SourceLocation UsingLoc,
   return DeclGroupPtrTy::make(DeclGroupRef(Class));
 }
 
-Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+Decl *Sema::ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
+                                     SourceLocation RequiresLoc,
                                      SourceLocation TypenameLoc,
                                      IdentifierInfo *Id, bool Typename) {
   CXXRequiredTypeDecl *RTD =
     CXXRequiredTypeDecl::Create(Context, CurContext,
                                 RequiresLoc, TypenameLoc, Id, Typename);
+  RTD->setAccess(AS);
 
   PushOnScopeChains(RTD, getCurScope());
   return RTD;
@@ -4179,7 +4358,8 @@ Decl *Sema::ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
 
 Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
                                            SourceLocation RequiresLoc,
-                                           Declarator &D) {
+                                           Declarator &D,
+                                           AccessSpecifier AS) {
   // We don't want to check for linkage, memoize that we're
   // working on a required declarator for later checks.
   AnalyzingRequiredDeclarator = true;
@@ -4188,7 +4368,7 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   if (CurContext->isRecord() || CurContext->getParent()->isRecord()) {
     MultiTemplateParamsArg Args;
     VirtSpecifiers VS;
-    Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS_public, D, Args,
+    Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS, D, Args,
                                       nullptr, VS, ICIS_NoInit);
   } else
     Dclrtr = ActOnDeclarator(CurScope, D);
@@ -4200,7 +4380,7 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   if (!DDecl)
     return nullptr;
   DDecl->setRequired();
-  RequiredDeclarators.push_back(DDecl);
+  DDecl->setAccess(AS);
 
   // We'll deal with auto deduction later.
   if (ParsingInitForAutoVars.count(DDecl)) {

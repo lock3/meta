@@ -59,56 +59,66 @@ int get(std::tuple<TupleValType...>& t) {
   return 0;
 }
 
-struct member_iterator
-{
-  constexpr member_iterator()
-    : m_info()
-  { }
+namespace meta {
+  struct iterator
+  {
+    constexpr iterator()
+      : m_info()
+    { }
 
-  constexpr member_iterator(meta::info x)
-    : m_info(__reflect(query_get_begin, x))
-  { }
+    constexpr iterator(meta::info x)
+      : m_info(__reflect(query_get_begin, x))
+    { }
 
-  constexpr meta::info operator*() const {
-    return m_info;
+    constexpr meta::info operator*() const {
+      return m_info;
+    }
+
+    constexpr iterator operator++() {
+      m_info = __reflect(query_get_next, m_info);
+      return *this;
+    }
+
+    constexpr iterator operator++(int) {
+      iterator tmp = *this;
+      operator++();
+      return tmp;
+    }
+
+    constexpr friend bool operator==(iterator a, iterator b) {
+      return a.m_info == b.m_info;
+    }
+
+    constexpr friend bool operator!=(iterator a, iterator b) {
+      return a.m_info != b.m_info;
+    }
+
+    meta::info m_info;
+  };
+
+  struct range
+  {
+    constexpr range() { }
+
+    constexpr range(meta::info cxt)
+      : m_first(cxt), m_last()
+    { }
+
+    constexpr iterator begin() const { return m_first; }
+
+    constexpr iterator end() const { return m_last; }
+
+    iterator m_first;
+    iterator m_last;
+  };
+
+  consteval iterator begin(info x) {
+    return iterator(x);
   }
 
-  constexpr member_iterator operator++() {
-    m_info = __reflect(query_get_next, m_info);
-    return *this;
+  consteval iterator end(info x) {
+    return iterator();
   }
-
-  constexpr member_iterator operator++(int) {
-    member_iterator tmp = *this;
-    operator++();
-    return tmp;
-  }
-
-  constexpr friend bool operator==(member_iterator a, member_iterator b) {
-    return a.m_info == b.m_info;
-  }
-
-  constexpr friend bool operator!=(member_iterator a, member_iterator b) {
-    return a.m_info != b.m_info;
-  }
-
-  meta::info m_info;
-};
-
-struct member_range
-{
-  constexpr member_range() { }
-
-  constexpr member_range(meta::info cxt)
-    : m_first(cxt), m_last()
-  { }
-
-  constexpr member_iterator begin() const { return m_first; }
-
-  constexpr member_iterator end() const { return m_last; }
-
-  member_iterator m_first;
-  member_iterator m_last;
-};
+}
 
 #endif

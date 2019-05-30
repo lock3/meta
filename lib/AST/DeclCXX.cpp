@@ -2599,59 +2599,6 @@ NamespaceDecl *UsingDirectiveDecl::getNominatedNamespace() {
   return cast_or_null<NamespaceDecl>(NominatedNamespace);
 }
 
-NamespaceDecl::NamespaceDecl(ASTContext &C, DeclContext *DC, bool Inline,
-                             SourceLocation StartLoc, SourceLocation IdLoc,
-                             IdentifierInfo *Id, NamespaceDecl *PrevDecl)
-    : NamedDecl(Namespace, DC, IdLoc, Id), DeclContext(Namespace),
-      redeclarable_base(C), LocStart(StartLoc),
-      AnonOrFirstNamespaceAndInline(nullptr, Inline) {
-  setPreviousDecl(PrevDecl);
-
-  if (PrevDecl)
-    AnonOrFirstNamespaceAndInline.setPointer(PrevDecl->getOriginalNamespace());
-}
-
-NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
-                                     bool Inline, SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
-                                     NamespaceDecl *PrevDecl) {
-  return new (C, DC) NamespaceDecl(C, DC, Inline, StartLoc, IdLoc, Id,
-                                   PrevDecl);
-}
-
-NamespaceDecl *NamespaceDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) NamespaceDecl(C, nullptr, false, SourceLocation(),
-                                   SourceLocation(), nullptr, nullptr);
-}
-
-NamespaceDecl *NamespaceDecl::getOriginalNamespace() {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-const NamespaceDecl *NamespaceDecl::getOriginalNamespace() const {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-bool NamespaceDecl::isOriginalNamespace() const { return isFirstDecl(); }
-
-NamespaceDecl *NamespaceDecl::getNextRedeclarationImpl() {
-  return getNextRedeclaration();
-}
-
-NamespaceDecl *NamespaceDecl::getPreviousDeclImpl() {
-  return getPreviousDecl();
-}
-
-NamespaceDecl *NamespaceDecl::getMostRecentDeclImpl() {
-  return getMostRecentDecl();
-}
-
 void NamespaceAliasDecl::anchor() {}
 
 NamespaceAliasDecl *NamespaceAliasDecl::getNextRedeclarationImpl() {
@@ -2999,6 +2946,12 @@ CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
 
 CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
+}
+
+Stmt *CXXInjectionDecl::getInjectionStmt() const {
+  auto *BodyPtr = cast<CompoundStmt>(getBody());
+  assert(BodyPtr->size() == 1);
+  return *(BodyPtr->body_begin());
 }
 
 void CXXFragmentDecl::anchor() {}

@@ -3,31 +3,29 @@
 
 #include "reflection_iterator.h"
 
-#define assert(E) if (!(E)) __builtin_abort();
-
 constexpr void interface(meta::info source) {
   int default_val = 1;
   -> __fragment struct {
     int val = default_val;
 
-    void set_foo(const int& val) {
+    constexpr void set_foo(const int& val) {
       this->val = val;
     }
 
-    int foo() {
+    constexpr int foo() const {
       return val;
     }
 
-    void reset_foo() {
+    constexpr void reset_foo() {
       set_foo(default_val);
     }
   };
 
   -> __fragment struct {
-    int dedicated_field;
+    int dedicated_field = 0;
   };
 
-  for (meta::info mem : member_range(source)) {
+  for (meta::info mem : meta::range(source)) {
     -> mem;
   }
 };
@@ -36,23 +34,52 @@ class(interface) Thing {
   int inline_value;
 
 public:
-  Thing(int inline_value = 3) : inline_value{inline_value} { }
+  constexpr Thing(int inline_value = 3) : inline_value{inline_value} { }
 
-  int get_inline_value() { return inline_value; }
+  constexpr int get_inline_value() const { return inline_value; }
 };
 
-int main() {
+// Test #1
+
+consteval {
+  constexpr Thing thing;
+  static_assert(thing.foo() == 1);
+}
+
+// Test #2
+
+constexpr Thing test_2_val() {
   Thing thing;
-
-  assert(thing.foo() == 1);
-
   thing.set_foo(2);
-  assert(thing.foo() == 2);
+  return thing;
+}
 
+consteval {
+  constexpr Thing thing = test_2_val();
+  static_assert(thing.foo() == 2);
+}
+
+// Test #3
+
+constexpr Thing test_3_val() {
+  Thing thing;
+  thing.set_foo(2);
   thing.reset_foo();
-  assert(thing.foo() == 1);
+  return thing;
+}
 
-  assert(thing.get_inline_value() == 3);
+consteval {
+  constexpr Thing thing = test_3_val();
+  static_assert(thing.foo() == 1);
+}
 
+// Test #4
+
+consteval {
+  constexpr Thing thing;
+  static_assert(thing.get_inline_value() == 3);
+}
+
+int main() {
   return 0;
 }

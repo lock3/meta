@@ -461,6 +461,15 @@ bool Type::isStructureType() const {
   return false;
 }
 
+bool Type::isMetaType() const {
+  const Type *CanonType = getCanonicalTypeInternal().getTypePtr();
+  if (CanonType != this) {
+    return CanonType->isMetaType();
+  }
+
+  return TypeBits.MetaType;
+}
+
 bool Type::isFragmentType() const {
   if (CXXRecordDecl *RD = getAsCXXRecordDecl())
     return RD->isFragment();

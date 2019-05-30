@@ -1,6 +1,5 @@
 // RUN: %clang_cc1 -freflection -std=c++1z %s
 
-#include "reflection_query.h"
 #include "reflection_iterator.h"
 
 consteval char const* name_of(meta::info x) {
@@ -17,7 +16,7 @@ extern "C" int puts(char const* str);
 
 template<typename T> // requires Enum<T>
 char const* to_string(T val) {
-  static constexpr auto range = member_range(reflexpr(T));
+  static constexpr auto range = meta::range(reflexpr(T));
   for... (constexpr meta::info member : range) {
     if (valueof(member) == val)
       return name_of(member);

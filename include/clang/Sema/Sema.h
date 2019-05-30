@@ -509,6 +509,7 @@ public:
   // #pragma pack.
   // Sentinel to represent when the stack is set to mac68k alignment.
   static const unsigned kMac68kAlignmentSentinel = ~0U;
+
   PragmaStack<unsigned> PackStack;
   // The current #pragma pack values and locations at each #include.
   struct PackIncludeState {
@@ -725,8 +726,23 @@ public:
   };
 
   llvm::SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
-  /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
-  bool AnalyzingRequiredDeclarator = false;
+
+  /// True if we're currently injecting code.
+  bool IsInjectingCode = false;
+
+  class CodeInjectionTracker {
+    Sema &S;
+    bool PreviousValue;
+  public:
+    CodeInjectionTracker(Sema &S)
+      : S(S), PreviousValue(S.IsInjectingCode) {
+      S.IsInjectingCode = true;
+    }
+
+    ~CodeInjectionTracker() {
+      S.IsInjectingCode = PreviousValue;
+    }
+  };
 
   class DelayedDiagnostics;
 
@@ -4395,6 +4411,9 @@ public:
                                 const DeclarationNameInfo &NameInfo,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
+  ExprValueKind getValueKindForDeclReference(QualType &T, ValueDecl *VD,
+                                             SourceLocation Loc);
+
   ExprResult BuildDeclarationNameExpr(const CXXScopeSpec &SS,
                                       LookupResult &R,
                                       bool NeedsADL,
@@ -4749,6 +4768,11 @@ public:
 
   //===---------------------------- C++ Features --------------------------===//
 
+  void CheckNamespaceDeclaration(IdentifierInfo *II, SourceLocation StartLoc,
+                                 SourceLocation Loc, bool &IsInline,
+                                 bool &IsInvalid, bool &IsStd, bool &AddToKnown,
+                                 NamespaceDecl *&PrevNS);
+
   // Act on C++ namespaces
   Decl *ActOnStartNamespaceDef(Scope *S, SourceLocation InlineLoc,
                                SourceLocation NamespaceLoc,
@@ -4868,15 +4892,18 @@ public:
                               SourceLocation UsingLoc, UnqualifiedId &Name,
                               const ParsedAttributesView &AttrList,
                               TypeResult Type, Decl *DeclFromDeclSpec);
-  Decl *ActOnCXXRequiredTypeDecl(SourceLocation RequiresLoc,
+  Decl *ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
+                                 SourceLocation RequiresLoc,
                                  SourceLocation TypenameLoc,
                                  IdentifierInfo *Id, bool Typename);
   Decl *ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
                                        SourceLocation RequiresLoc,
-                                       Declarator &D);
+                                       Declarator &D,
+                                       AccessSpecifier AS = AS_none);
   bool TypeCheckRequiredAutoReturn(SourceLocation Loc,
                                    QualType TypeWithAuto, QualType Replacement);
-  llvm::SmallVector<DeclaratorDecl *, 4> RequiredDeclarators;
+  /// Are we currently semantically analyzing a CXXRequiredDeclaratorDecl?
+  bool AnalyzingRequiredDeclarator = false;
 
   /// BuildCXXConstructExpr - Creates a complete call to a constructor,
   /// including handling of its default argument expressions.
@@ -6143,6 +6170,15 @@ public:
                                   TypeSourceInfo *TSInfo);
   Decl *ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                             MultiTemplateParamsArg TemplateParams);
+
+  bool GetFriendFunctionDC(LookupResult &Previous,
+                           Scope *S, CXXScopeSpec &SS,
+                           const DeclarationNameInfo &NameInfo,
+                           SourceLocation StartLoc,
+                           SourceLocation Loc,
+                           bool IsFunctionDefinition,
+                           bool IsTemplateId,
+                           DeclContext *&DC, Scope *&DCScope);
   NamedDecl *ActOnFriendFunctionDecl(Scope *S, Declarator &D,
                                      MultiTemplateParamsArg TemplateParams);
 
@@ -10611,10 +10647,13 @@ public:
   bool ApplyEffects(CXXInjectorDecl *MD,
                     SmallVectorImpl<InjectionEffect> &Effects);
   bool HasPendingInjections(DeclContext *D);
+  bool ShouldInjectPendingDefinitionsOf(CXXRecordDecl *D);
   void InjectPendingFieldDefinitions();
   void InjectPendingMethodDefinitions();
-  void InjectPendingFieldDefinitions(InjectionContext *Cxt);
-  void InjectPendingMethodDefinitions(InjectionContext *Cxt);
+  void InjectPendingFriendFunctionDefinitions();
+  void InjectPendingFieldDefinitions(InjectionContext *Ctx);
+  void InjectPendingMethodDefinitions(InjectionContext *Ctx);
+  void InjectPendingFriendFunctionDefinitions(InjectionContext *Ctx);
   bool InjectPendingNamespaceInjections();
 
   CXXRecordDecl *ActOnStartMetaclass(CXXRecordDecl *Class, Expr *Metafunction,

@@ -375,7 +375,25 @@ void StmtPrinter::VisitCXXExpansionStmt(CXXExpansionStmt *Node) {
 
 void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
   // FIXME: Actually print something meaningful.
-  Indent() << "-> { ... }";
+  Indent() << "-> ";
+  CXXInjectionContextSpecifier ContextSpecifier = Node->getContextSpecifier();
+  switch (ContextSpecifier.getContextKind()) {
+  case CXXInjectionContextSpecifier::CurrentContext:
+    break;
+
+  case CXXInjectionContextSpecifier::ParentNamespace:
+    OS << "namespace ";
+    break;
+
+  case CXXInjectionContextSpecifier::SpecifiedNamespace:
+    OS << "namespace(";
+    OS << *cast<NamespaceDecl>(ContextSpecifier.getSpecifiedNamespace());
+    OS << ") ";
+    break;
+  }
+
+  Visit(Node->getOperand());
+
   if (Policy.IncludeNewlines) OS << "\n";
 }
 

@@ -2813,7 +2813,6 @@ bool ASTContext::hasSameFunctionTypeIgnoringReturn(QualType T, QualType U) {
   QualType UNoReturn = getFunctionType(DependentTy, UProto->getParamTypes(),
                                        UProto->getExtProtoInfo());
   return hasSameType(TNoReturn, UNoReturn);
-
 }
 
 void ASTContext::adjustExceptionSpec(

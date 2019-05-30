@@ -1721,7 +1721,8 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
   case tok::kw_requires:
-    SingleDecl = ParseCXXRequiredDecl(Context, DeclEnd, attrs);
+    ProhibitAttributes(attrs);
+    SingleDecl = ParseCXXRequiredDecl(Context);
     break;
   case tok::kw_consteval:
     // [Meta] injector-declaration
