@@ -4368,6 +4368,7 @@ Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
   if (CurContext->isRecord() || CurContext->getParent()->isRecord()) {
     MultiTemplateParamsArg Args;
     VirtSpecifiers VS;
+
     Dclrtr = ActOnCXXMemberDeclarator(CurScope, AS, D, Args,
                                       nullptr, VS, ICIS_NoInit);
   } else

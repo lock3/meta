@@ -580,6 +580,13 @@ Parser::ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
   DeclSpec DS(AttrFactory);
   ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS, DSC);
 
+  // 'friend' does not make sense here. We cannot declare anything new.
+  if (DS.isFriendSpecified()) {
+    Diag(DS.getBeginLoc(), diag::err_expected_unqualified_id) << 0;
+    SkipUntil(tok::semi, StopAtSemi | StopBeforeMatch);
+    return nullptr;
+  }
+
   Declarator DeclaratorInfo(DS, Ctx);
   ParseDeclarator(DeclaratorInfo);
 
