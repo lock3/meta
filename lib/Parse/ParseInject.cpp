@@ -598,10 +598,32 @@ Parser::ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
                                                 AS);
 }
 
+/// True if we are in a fragment but not in any subcontext
+/// within that fragment. (i.e. a class fragment that isn't
+/// defining a new method.)
+static bool isTopLevelFragmentContext(DeclContext *DC) {
+  if (DC->isFragment())
+    return true;
+
+  if (DC->isStatementFragment() ||
+      DC->isNamespace() || DC->isRecord()) {
+    Decl *DCAsDecl = Decl::castFromDeclContext(DC);
+    return DCAsDecl->isInFragment();
+  }
+
+  return false;
+}
+
 Decl *
 Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, AccessSpecifier AS) {
   assert(Tok.is(tok::kw_requires) && "Not requires!");
   SourceLocation RequiresLoc = ConsumeToken();
+
+  if (!isTopLevelFragmentContext(Actions.CurContext)) {
+    Diag(RequiresLoc, diag::err_required_invalid_in_context);
+    SkipUntil(tok::semi, StopAtSemi | StopBeforeMatch);
+    return nullptr;
+  }
 
   // We have a declaration the form 'requires typename T'
   if (Tok.isOneOf(tok::kw_typename, tok::kw_class))

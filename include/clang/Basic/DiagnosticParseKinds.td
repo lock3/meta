@@ -586,6 +586,8 @@ def warn_empty_init_statement : Warning<
 // C++ Meta
 def err_nns_in_required_decl : Error<"Nested name specifiers are not permitted "
     "in required declarations.">;
+def err_required_invalid_in_context : Error<"Required declaration outside of "
+    "fragment">;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
