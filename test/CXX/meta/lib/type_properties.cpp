@@ -4,7 +4,7 @@
 
 class forward_declared_class;
 
-constexpr auto forward_class_refl = reflexpr(forward_declared_class);
+constexpr meta::info forward_class_refl = reflexpr(forward_declared_class);
 static_assert(__reflect(query_is_incomplete_type, forward_class_refl));
 static_assert(!__reflect(query_is_const_type, forward_class_refl));
 static_assert(!__reflect(query_is_volatile_type, forward_class_refl));
@@ -24,7 +24,7 @@ static_assert(!__reflect(query_has_unique_object_representations_type, forward_c
 
 const int x = 0;
 
-constexpr auto const_var_refl = reflexpr(x);
+constexpr meta::info const_var_refl = reflexpr(x);
 static_assert(!__reflect(query_is_incomplete_type, const_var_refl));
 static_assert(!__reflect(query_is_const_type, const_var_refl));
 static_assert(!__reflect(query_is_volatile_type, const_var_refl));
@@ -42,7 +42,7 @@ static_assert(!__reflect(query_is_signed_type, const_var_refl));
 static_assert(!__reflect(query_is_unsigned_type, const_var_refl));
 static_assert(!__reflect(query_has_unique_object_representations_type, const_var_refl));
 
-constexpr auto const_var_type_refl = __reflect(query_get_type, const_var_refl);
+constexpr meta::info const_var_type_refl = __reflect(query_get_type, const_var_refl);
 static_assert(!__reflect(query_is_incomplete_type, const_var_type_refl));
 static_assert(__reflect(query_is_const_type, const_var_type_refl));
 static_assert(!__reflect(query_is_volatile_type, const_var_type_refl));
@@ -62,7 +62,7 @@ static_assert(__reflect(query_has_unique_object_representations_type, const_var_
 
 unsigned y = 0;
 
-constexpr auto unsigned_var_refl = reflexpr(y);
+constexpr meta::info unsigned_var_refl = reflexpr(y);
 static_assert(!__reflect(query_is_incomplete_type, unsigned_var_refl));
 static_assert(!__reflect(query_is_const_type, unsigned_var_refl));
 static_assert(!__reflect(query_is_volatile_type, unsigned_var_refl));
@@ -80,7 +80,7 @@ static_assert(!__reflect(query_is_signed_type, unsigned_var_refl));
 static_assert(!__reflect(query_is_unsigned_type, unsigned_var_refl));
 static_assert(!__reflect(query_has_unique_object_representations_type, unsigned_var_refl));
 
-constexpr auto unsigned_var_type_refl = __reflect(query_get_type, unsigned_var_refl);
+constexpr meta::info unsigned_var_type_refl = __reflect(query_get_type, unsigned_var_refl);
 static_assert(!__reflect(query_is_incomplete_type, unsigned_var_type_refl));
 static_assert(!__reflect(query_is_const_type, unsigned_var_type_refl));
 static_assert(!__reflect(query_is_volatile_type, unsigned_var_type_refl));
@@ -100,7 +100,7 @@ static_assert(__reflect(query_has_unique_object_representations_type, unsigned_v
 
 float z = 0;
 
-constexpr auto float_var_refl = reflexpr(z);
+constexpr meta::info float_var_refl = reflexpr(z);
 static_assert(!__reflect(query_is_incomplete_type, float_var_refl));
 static_assert(!__reflect(query_is_const_type, float_var_refl));
 static_assert(!__reflect(query_is_volatile_type, float_var_refl));
@@ -118,7 +118,7 @@ static_assert(!__reflect(query_is_signed_type, float_var_refl));
 static_assert(!__reflect(query_is_unsigned_type, float_var_refl));
 static_assert(!__reflect(query_has_unique_object_representations_type, float_var_refl));
 
-constexpr auto float_var_type_refl = __reflect(query_get_type, float_var_refl);
+constexpr meta::info float_var_type_refl = __reflect(query_get_type, float_var_refl);
 static_assert(!__reflect(query_is_incomplete_type, float_var_type_refl));
 static_assert(!__reflect(query_is_const_type, float_var_type_refl));
 static_assert(!__reflect(query_is_volatile_type, float_var_type_refl));
@@ -139,7 +139,7 @@ static_assert(!__reflect(query_has_unique_object_representations_type, float_var
 class empty_class {
 };
 
-constexpr auto empty_class_refl = reflexpr(empty_class);
+constexpr meta::info empty_class_refl = reflexpr(empty_class);
 static_assert(!__reflect(query_is_incomplete_type, empty_class_refl));
 static_assert(!__reflect(query_is_const_type, empty_class_refl));
 static_assert(!__reflect(query_is_volatile_type, empty_class_refl));
@@ -164,7 +164,7 @@ public:
   virtual void do_thing() = 0;
 };
 
-constexpr auto abstract_class_refl = reflexpr(abstract_class);
+constexpr meta::info abstract_class_refl = reflexpr(abstract_class);
 static_assert(!__reflect(query_is_incomplete_type, abstract_class_refl));
 static_assert(!__reflect(query_is_const_type, abstract_class_refl));
 static_assert(!__reflect(query_is_volatile_type, abstract_class_refl));
@@ -185,7 +185,7 @@ static_assert(!__reflect(query_has_unique_object_representations_type, abstract_
 class child_class : abstract_class {
 };
 
-constexpr auto child_class_refl = reflexpr(child_class);
+constexpr meta::info child_class_refl = reflexpr(child_class);
 static_assert(!__reflect(query_is_incomplete_type, child_class_refl));
 static_assert(!__reflect(query_is_const_type, child_class_refl));
 static_assert(!__reflect(query_is_volatile_type, child_class_refl));
@@ -207,7 +207,7 @@ class polymorphic_class {
   virtual void do_thing() { }
 };
 
-constexpr auto polymorphic_class_refl = reflexpr(polymorphic_class);
+constexpr meta::info polymorphic_class_refl = reflexpr(polymorphic_class);
 static_assert(!__reflect(query_is_incomplete_type, polymorphic_class_refl));
 static_assert(!__reflect(query_is_const_type, polymorphic_class_refl));
 static_assert(!__reflect(query_is_volatile_type, polymorphic_class_refl));
@@ -228,7 +228,7 @@ static_assert(!__reflect(query_has_unique_object_representations_type, polymorph
 class final_child_class final : polymorphic_class {
 };
 
-constexpr auto final_child_class_refl = reflexpr(final_child_class);
+constexpr meta::info final_child_class_refl = reflexpr(final_child_class);
 static_assert(!__reflect(query_is_incomplete_type, final_child_class_refl));
 static_assert(!__reflect(query_is_const_type, final_child_class_refl));
 static_assert(!__reflect(query_is_volatile_type, final_child_class_refl));
@@ -251,7 +251,7 @@ public:
   non_aggregate_type() { }
 };
 
-constexpr auto non_aggregate_type_refl = reflexpr(non_aggregate_type);
+constexpr meta::info non_aggregate_type_refl = reflexpr(non_aggregate_type);
 static_assert(!__reflect(query_is_incomplete_type, non_aggregate_type_refl));
 static_assert(!__reflect(query_is_const_type, non_aggregate_type_refl));
 static_assert(!__reflect(query_is_volatile_type, non_aggregate_type_refl));
@@ -276,7 +276,7 @@ public:
   non_aggregate_copyable_type(const non_aggregate_copyable_type& ty) { }
 };
 
-constexpr auto non_aggregate_copyable_type_refl = reflexpr(non_aggregate_copyable_type);
+constexpr meta::info non_aggregate_copyable_type_refl = reflexpr(non_aggregate_copyable_type);
 static_assert(!__reflect(query_is_incomplete_type, non_aggregate_copyable_type_refl));
 static_assert(!__reflect(query_is_const_type, non_aggregate_copyable_type_refl));
 static_assert(!__reflect(query_is_volatile_type, non_aggregate_copyable_type_refl));
@@ -298,7 +298,7 @@ class class_with_static_members {
   static int member;
 };
 
-constexpr auto class_with_static_members_type_refl = reflexpr(class_with_static_members);
+constexpr meta::info class_with_static_members_type_refl = reflexpr(class_with_static_members);
 static_assert(!__reflect(query_is_incomplete_type, class_with_static_members_type_refl));
 static_assert(!__reflect(query_is_const_type, class_with_static_members_type_refl));
 static_assert(!__reflect(query_is_volatile_type, class_with_static_members_type_refl));
@@ -323,7 +323,7 @@ public:
   constexpr trivially_copyable_constexpr_class() : x(1) { }
 };
 
-constexpr auto trivially_copyable_constexpr_class_type_refl = reflexpr(trivially_copyable_constexpr_class);
+constexpr meta::info trivially_copyable_constexpr_class_type_refl = reflexpr(trivially_copyable_constexpr_class);
 static_assert(!__reflect(query_is_incomplete_type, trivially_copyable_constexpr_class_type_refl));
 static_assert(!__reflect(query_is_const_type, trivially_copyable_constexpr_class_type_refl));
 static_assert(!__reflect(query_is_volatile_type, trivially_copyable_constexpr_class_type_refl));
@@ -349,7 +349,7 @@ public:
   constexpr constexpr_class(const constexpr_class &c) : x(c.x) { }
 };
 
-constexpr auto constexpr_class_type_refl = reflexpr(constexpr_class);
+constexpr meta::info constexpr_class_type_refl = reflexpr(constexpr_class);
 static_assert(!__reflect(query_is_incomplete_type, constexpr_class_type_refl));
 static_assert(!__reflect(query_is_const_type, constexpr_class_type_refl));
 static_assert(!__reflect(query_is_volatile_type, constexpr_class_type_refl));
