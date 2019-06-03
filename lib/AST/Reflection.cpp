@@ -1151,6 +1151,7 @@ static bool isClosureType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an incomplete type.
 static bool isIncompleteType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, T->isIncompleteType());
@@ -1158,6 +1159,7 @@ static bool isIncompleteType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a type with const specified.
 static bool isConstType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, (*T).isConstQualified());
@@ -1165,6 +1167,7 @@ static bool isConstType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a type with volatile specified.
 static bool isVolatileType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, (*T).isVolatileQualified());
@@ -1172,6 +1175,7 @@ static bool isVolatileType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a trivial type.
 static bool isTrivialType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     ASTContext &Context = R.getContext();
@@ -1180,6 +1184,7 @@ static bool isTrivialType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a trivially copyable type.
 static bool isTriviallyCopyableType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     ASTContext &Context = R.getContext();
@@ -1188,6 +1193,7 @@ static bool isTriviallyCopyableType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a standard layout type.
 static bool isStandardLayoutType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, T->isStandardLayoutType());
@@ -1195,6 +1201,7 @@ static bool isStandardLayoutType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R deisgnates a POD.
 static bool isPODType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     ASTContext &Context = R.getContext();
@@ -1203,6 +1210,7 @@ static bool isPODType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a literal type.
 static bool isLiteralType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     ASTContext &Context = R.getContext();
@@ -1211,6 +1219,7 @@ static bool isLiteralType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an empty type.
 static bool isEmptyType(const Reflection &R, APValue &Result) {
   if (const RecordType *T = getAsRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
@@ -1219,6 +1228,7 @@ static bool isEmptyType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a polymorphic type.
 static bool isPolymorphicType(const Reflection &R, APValue &Result) {
   if (const RecordType *T = getAsRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
@@ -1227,6 +1237,7 @@ static bool isPolymorphicType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an abstract type.
 static bool isAbstractType(const Reflection &R, APValue &Result) {
   if (const RecordType *T = getAsRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
@@ -1235,6 +1246,7 @@ static bool isAbstractType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a final type.
 static bool isFinalType(const Reflection &R, APValue &Result) {
   if (const RecordType *T = getAsRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
@@ -1243,6 +1255,7 @@ static bool isFinalType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an aggregate type.
 static bool isAggregateType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, T->isAggregateType());
@@ -1250,6 +1263,7 @@ static bool isAggregateType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a signed type.
 static bool isSignedType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, T->isSignedIntegerType() || T->isFloatingType());
@@ -1257,6 +1271,7 @@ static bool isSignedType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates an unsigned type.
 static bool isUnsignedType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     return SuccessBool(R, Result, T->isUnsignedIntegerType());
@@ -1264,6 +1279,7 @@ static bool isUnsignedType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Returns true if R designates a type with unique object representations.
 static bool hasUniqueObjectRepresentationsType(const Reflection &R, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     ASTContext &Context = R.getContext();
