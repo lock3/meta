@@ -154,28 +154,6 @@ enum reflection_query {
     query_is_unsigned_type,
     query_has_unique_object_representations_type,
 
-    // Type operations
-    query_is_default_constructible_type,
-    query_is_trivially_default_constructible_type,
-    query_is_nothrow_default_constructible_type,
-    query_is_move_constructible_type,
-    query_is_trivially_move_constructible_type,
-    query_is_nothrow_move_constructible_type,
-    query_is_assignable_type,
-    query_is_trivially_assignable_type,
-    query_is_nothrow_assignable_type,
-    query_is_copy_assignable_type,
-    query_is_trivially_copy_assignable_type,
-    query_is_nothrow_copy_assignable_type,
-    query_is_move_assignable_type,
-    query_is_trivially_move_assignable_type,
-    query_is_nothrow_move_assignable_type,
-    query_is_destructible_type,
-    query_is_trivially_destructible_type,
-    query_is_nothrow_destructible_type,
-    query_is_swappable_type,
-    query_is_nothrow_swappable_type,
-
     // Captures
     query_has_default_ref_capture,
     query_has_default_copy_capture,

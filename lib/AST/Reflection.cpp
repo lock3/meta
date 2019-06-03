@@ -168,28 +168,6 @@ namespace clang {
     query_is_unsigned_type,
     query_has_unique_object_representations_type,
 
-    // Type operations
-    query_is_default_constructible_type,
-    query_is_trivially_default_constructible_type,
-    query_is_nothrow_default_constructible_type,
-    query_is_move_constructible_type,
-    query_is_trivially_move_constructible_type,
-    query_is_nothrow_move_constructible_type,
-    query_is_assignable_type,
-    query_is_trivially_assignable_type,
-    query_is_nothrow_assignable_type,
-    query_is_copy_assignable_type,
-    query_is_trivially_copy_assignable_type,
-    query_is_nothrow_copy_assignable_type,
-    query_is_move_assignable_type,
-    query_is_trivially_move_assignable_type,
-    query_is_nothrow_move_assignable_type,
-    query_is_destructible_type,
-    query_is_trivially_destructible_type,
-    query_is_nothrow_destructible_type,
-    query_is_swappable_type,
-    query_is_nothrow_swappable_type,
-
     // Captures
     query_has_default_ref_capture,
     query_has_default_copy_capture,
@@ -1294,94 +1272,6 @@ static bool hasUniqueObjectRepresentationsType(const Reflection &R, APValue &Res
   return SuccessFalse(R, Result);
 }
 
-static bool isDefaultConstructibleType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
-    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
-    return SuccessBool(R, Result, RTD->hasDefaultConstructor());
-  }
-  return SuccessFalse(R, Result);
-}
-
-static bool isTriviallyDefaultConstructibleType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
-    CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
-    return SuccessBool(R, Result, RTD->hasDefaultConstructor());
-  }
-  return SuccessFalse(R, Result);
-}
-
-static bool isNothrowDefaultConstructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isMoveConstructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isTriviallyMoveConstructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowMoveConstructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isTriviallyAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isCopyAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isTriviallyCopyAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowCopyAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isMoveAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isTriviallyMoveAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowMoveAssignableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isDestructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isTriviallyDestructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowDestructibleType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isSwappableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
-static bool isNothrowSwappableType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
-}
-
 /// Captures
 
 static bool hasDefaultRefCapture(const Reflection &R, APValue &Result) {
@@ -1745,48 +1635,6 @@ bool Reflection::EvaluatePredicate(ReflectionQuery Q, APValue &Result) {
     return isUnsignedType(*this, Result);
   case query_has_unique_object_representations_type:
     return hasUniqueObjectRepresentationsType(*this, Result);
-
-  // Type operation
-  case query_is_default_constructible_type:
-    return isDefaultConstructibleType(*this, Result);
-  case query_is_trivially_default_constructible_type:
-    return isTriviallyDefaultConstructibleType(*this, Result);
-  case query_is_nothrow_default_constructible_type:
-    return isNothrowDefaultConstructibleType(*this, Result);
-  case query_is_move_constructible_type:
-    return isMoveConstructibleType(*this, Result);
-  case query_is_trivially_move_constructible_type:
-    return isTriviallyMoveConstructibleType(*this, Result);
-  case query_is_nothrow_move_constructible_type:
-    return isNothrowMoveConstructibleType(*this, Result);
-  case query_is_assignable_type:
-    return isAssignableType(*this, Result);
-  case query_is_trivially_assignable_type:
-    return isTriviallyAssignableType(*this, Result);
-  case query_is_nothrow_assignable_type:
-    return isNothrowAssignableType(*this, Result);
-  case query_is_copy_assignable_type:
-    return isCopyAssignableType(*this, Result);
-  case query_is_trivially_copy_assignable_type:
-    return isTriviallyCopyAssignableType(*this, Result);
-  case query_is_nothrow_copy_assignable_type:
-    return isNothrowCopyAssignableType(*this, Result);
-  case query_is_move_assignable_type:
-    return isMoveAssignableType(*this, Result);
-  case query_is_trivially_move_assignable_type:
-    return isTriviallyMoveAssignableType(*this, Result);
-  case query_is_nothrow_move_assignable_type:
-    return isNothrowMoveAssignableType(*this, Result);
-  case query_is_destructible_type:
-    return isDestructibleType(*this, Result);
-  case query_is_trivially_destructible_type:
-    return isTriviallyDestructibleType(*this, Result);
-  case query_is_nothrow_destructible_type:
-    return isNothrowDestructibleType(*this, Result);
-  case query_is_swappable_type:
-    return isSwappableType(*this, Result);
-  case query_is_nothrow_swappable_type:
-    return isNothrowSwappableType(*this, Result);
 
   // Captures
   case query_has_default_ref_capture:
