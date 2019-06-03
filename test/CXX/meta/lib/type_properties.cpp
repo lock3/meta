@@ -22,9 +22,9 @@ static_assert(!__reflect(query_is_signed_type, forward_class_refl));
 static_assert(!__reflect(query_is_unsigned_type, forward_class_refl));
 static_assert(!__reflect(query_has_unique_object_representations_type, forward_class_refl));
 
-const int x = 0;
+const int w = 0;
 
-constexpr meta::info const_var_refl = reflexpr(x);
+constexpr meta::info const_var_refl = reflexpr(w);
 static_assert(!__reflect(query_is_incomplete_type, const_var_refl));
 static_assert(!__reflect(query_is_const_type, const_var_refl));
 static_assert(!__reflect(query_is_volatile_type, const_var_refl));
@@ -59,6 +59,44 @@ static_assert(!__reflect(query_is_aggregate_type, const_var_type_refl));
 static_assert(__reflect(query_is_signed_type, const_var_type_refl));
 static_assert(!__reflect(query_is_unsigned_type, const_var_type_refl));
 static_assert(__reflect(query_has_unique_object_representations_type, const_var_type_refl));
+
+volatile int x = 0;
+
+constexpr meta::info volatile_var_refl = reflexpr(x);
+static_assert(!__reflect(query_is_incomplete_type, volatile_var_refl));
+static_assert(!__reflect(query_is_const_type, volatile_var_refl));
+static_assert(!__reflect(query_is_volatile_type, volatile_var_refl));
+static_assert(!__reflect(query_is_trivial_type, volatile_var_refl));
+static_assert(!__reflect(query_is_trivially_copyable_type, volatile_var_refl));
+static_assert(!__reflect(query_is_standard_layout_type, volatile_var_refl));
+static_assert(!__reflect(query_is_pod_type, volatile_var_refl));
+static_assert(!__reflect(query_is_literal_type, volatile_var_refl));
+static_assert(!__reflect(query_is_empty_type, volatile_var_refl));
+static_assert(!__reflect(query_is_polymorphic_type, volatile_var_refl));
+static_assert(!__reflect(query_is_abstract_type, volatile_var_refl));
+static_assert(!__reflect(query_is_final_type, volatile_var_refl));
+static_assert(!__reflect(query_is_aggregate_type, volatile_var_refl));
+static_assert(!__reflect(query_is_signed_type, volatile_var_refl));
+static_assert(!__reflect(query_is_unsigned_type, volatile_var_refl));
+static_assert(!__reflect(query_has_unique_object_representations_type, volatile_var_refl));
+
+constexpr meta::info volatile_var_type_refl =  __reflect(query_get_type, volatile_var_refl);
+static_assert(!__reflect(query_is_incomplete_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_const_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_volatile_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_trivial_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_trivially_copyable_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_standard_layout_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_pod_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_literal_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_empty_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_polymorphic_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_abstract_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_final_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_aggregate_type, volatile_var_type_refl));
+static_assert(__reflect(query_is_signed_type, volatile_var_type_refl));
+static_assert(!__reflect(query_is_unsigned_type, volatile_var_type_refl));
+static_assert(__reflect(query_has_unique_object_representations_type, volatile_var_type_refl));
 
 unsigned y = 0;
 
