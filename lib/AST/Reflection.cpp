@@ -1135,8 +1135,17 @@ static bool isMemberFunctionPointerType(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-static const RecordType *getAsRecordType(const Reflection &R) {
+static MaybeType getAsCompleteType(const Reflection &R) {
   if (MaybeType T = getCanonicalType(R)) {
+    if (!T->isIncompleteType())
+      return T;
+  }
+
+  return { QualType() };
+}
+
+static const RecordType *getAsCompleteRecordType(const Reflection &R) {
+  if (MaybeType T = getAsCompleteType(R)) {
     return dyn_cast<RecordType>(*T);
   }
   return nullptr;
@@ -1144,7 +1153,7 @@ static const RecordType *getAsRecordType(const Reflection &R) {
 
 /// Returns true if R designates a closure type.
 static bool isClosureType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
+  if (const RecordType *T = getAsCompleteRecordType(R)) {
     RecordDecl *RTD = T->getDecl();
     return SuccessBool(R, Result, RTD->isLambda());
   }
@@ -1221,7 +1230,7 @@ static bool isLiteralType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates an empty type.
 static bool isEmptyType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
+  if (const RecordType *T = getAsCompleteRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
     return SuccessBool(R, Result, RTD->isEmpty());
   }
@@ -1230,7 +1239,7 @@ static bool isEmptyType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a polymorphic type.
 static bool isPolymorphicType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
+  if (const RecordType *T = getAsCompleteRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
     return SuccessBool(R, Result, RTD->isPolymorphic());
   }
@@ -1239,7 +1248,7 @@ static bool isPolymorphicType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates an abstract type.
 static bool isAbstractType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
+  if (const RecordType *T = getAsCompleteRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
     return SuccessBool(R, Result, RTD->isAbstract());
   }
@@ -1248,7 +1257,7 @@ static bool isAbstractType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a final type.
 static bool isFinalType(const Reflection &R, APValue &Result) {
-  if (const RecordType *T = getAsRecordType(R)) {
+  if (const RecordType *T = getAsCompleteRecordType(R)) {
     CXXRecordDecl *RTD = cast<CXXRecordDecl>(T->getDecl());
     return SuccessBool(R, Result, RTD->hasAttr<FinalAttr>());
   }
@@ -1257,7 +1266,7 @@ static bool isFinalType(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates an aggregate type.
 static bool isAggregateType(const Reflection &R, APValue &Result) {
-  if (MaybeType T = getCanonicalType(R)) {
+  if (MaybeType T = getAsCompleteType(R)) {
     return SuccessBool(R, Result, T->isAggregateType());
   }
   return SuccessFalse(R, Result);
