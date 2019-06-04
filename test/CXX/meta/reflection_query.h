@@ -178,12 +178,15 @@ enum reflection_query {
     query_get_access_traits,
     query_get_type_traits,
 
-    // Associated reflections
-    query_get_entity,
-    query_get_parent,
+    // Associated types
     query_get_type,
     query_get_return_type,
     query_get_this_ref_type,
+    query_get_underlying_type,
+
+    // Entities
+    query_get_entity,
+    query_get_parent,
     query_get_definition,
 
     // Traversal

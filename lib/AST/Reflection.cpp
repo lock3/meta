@@ -192,12 +192,15 @@ namespace clang {
     query_get_access_traits,
     query_get_type_traits,
 
-    // Associated reflections
-    query_get_entity,
-    query_get_parent,
+    // Associated types
     query_get_type,
     query_get_return_type,
     query_get_this_ref_type,
+    query_get_underlying_type,
+
+    // Entities
+    query_get_entity,
+    query_get_parent,
     query_get_definition,
 
     // Traversal
@@ -235,7 +238,7 @@ namespace clang {
     query_first_trait = query_get_decl_traits,
     query_last_trait = query_get_type_traits,
     // Associated reflections -- these return meta::info.
-    query_first_assoc = query_get_entity,
+    query_first_assoc = query_get_type,
     query_last_assoc = query_make_unsigned,
     // Names -- these return const char*
     query_first_name = query_get_name,
@@ -2214,6 +2217,43 @@ static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
   return true;
 }
 
+static bool getType(const Reflection &R, APValue &Result) {
+  if (const Expr *E = getExpr(R))
+    return makeReflection(E->getType(), Result);
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
+      return makeReflection(VD->getType(), Result);
+
+    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D)) {
+      ASTContext &Context = R.getContext();
+      return makeReflection(Context.getTypeDeclType(TD), Result);
+    }
+  }
+
+  // FIXME: Emit an appropriate error diagnostic.
+  return Error(R);
+}
+
+static bool getReturnType(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+      return makeReflection(FD->getReturnType(), Result);
+  }
+  return Error(R);
+}
+
+static bool getThisRefType(const Reflection &R, APValue &Result) {
+  if (const CXXMethodDecl *M = getAsMemberFunction(R))
+    return makeReflection(M->getThisType(), Result);
+  return Error(R);
+}
+
+static bool getUnderlyingType(const Reflection &R, APValue &Result) {
+  if (const EnumDecl *ED = getReachableEnumDecl(R))
+    return makeReflection(ED->getIntegerType(), Result);
+  return Error(R);
+}
+
 static bool getEntity(const Reflection &R, APValue &Result) {
   if (R.isType()) {
     /// The entity is the canonical type.
@@ -2246,32 +2286,6 @@ static bool getParent(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return makeReflection(D->getDeclContext(), Result);
   return Error(R);
-}
-
-static bool getType(const Reflection &R, APValue &Result) {
-  if (const Expr *E = getExpr(R))
-    return makeReflection(E->getType(), Result);
-  if (const Decl *D = getReachableDecl(R)) {
-    if (const TypeDecl *TD = dyn_cast<TypeDecl>(D))
-      return makeReflection(TD->getTypeForDecl(), Result);
-    if (const ValueDecl *VD = dyn_cast<ValueDecl>(D))
-      return makeReflection(VD->getType(), Result);
-  }
-
-  // FIXME: Emit an appropriate error diagnostic.
-  return Error(R);
-}
-
-static bool getReturnType(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R)) {
-    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-      return makeReflection(FD->getReturnType(), Result);
-  }
-  return Error(R);
-}
-
-static bool getThisRefType(const Reflection &R, APValue &Result) {
-  return ErrorUnimplemented(R);
 }
 
 static bool getDefinition(const Reflection &R, APValue &Result) {
@@ -2549,17 +2563,21 @@ static bool makeUnsigned(const Reflection &R, APValue &Result) {
 bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   assert(isAssociatedReflectionQuery(Q) && "invalid query");
   switch (Q) {
-  // Associated reflections
-  case query_get_entity:
-    return getEntity(*this, Result);
-  case query_get_parent:
-    return getParent(*this, Result);
+  // Associated types
   case query_get_type:
     return getType(*this, Result);
   case query_get_return_type:
     return getReturnType(*this, Result);
   case query_get_this_ref_type:
     return getThisRefType(*this, Result);
+  case query_get_underlying_type:
+    return getUnderlyingType(*this, Result);
+
+  // Entities
+  case query_get_entity:
+    return getEntity(*this, Result);
+  case query_get_parent:
+    return getParent(*this, Result);
   case query_get_definition:
     return getDefinition(*this, Result);
 
