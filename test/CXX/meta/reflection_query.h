@@ -190,6 +190,23 @@ enum reflection_query {
     query_get_begin,
     query_get_next,
 
+    // Type transformation
+    query_remove_cv,
+    query_remove_const,
+    query_remove_volatile,
+    query_add_cv,
+    query_add_const,
+    query_add_volatile,
+    query_remove_reference,
+    query_add_lvalue_reference,
+    query_add_rvalue_reference,
+    query_remove_pointer,
+    query_add_pointer,
+    query_remove_cvref,
+    query_decay,
+    query_make_signed,
+    query_make_unsigned,
+
     // Name
     query_get_name,
     query_get_display_name,

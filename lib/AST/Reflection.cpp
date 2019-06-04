@@ -204,6 +204,23 @@ namespace clang {
     query_get_begin,
     query_get_next,
 
+    // Type transformations
+    query_remove_cv,
+    query_remove_const,
+    query_remove_volatile,
+    query_add_cv,
+    query_add_const,
+    query_add_volatile,
+    query_remove_reference,
+    query_add_lvalue_reference,
+    query_add_rvalue_reference,
+    query_remove_pointer,
+    query_add_pointer,
+    query_remove_cvref,
+    query_decay,
+    query_make_signed,
+    query_make_unsigned,
+
     // Name
     query_get_name,
     query_get_display_name,
@@ -219,7 +236,7 @@ namespace clang {
     query_last_trait = query_get_type_traits,
     // Associated reflections -- these return meta::info.
     query_first_assoc = query_get_entity,
-    query_last_assoc = query_get_next,
+    query_last_assoc = query_make_unsigned,
     // Names -- these return const char*
     query_first_name = query_get_name,
     query_last_name = query_get_display_name,
@@ -2318,6 +2335,217 @@ static bool getNext(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static bool removeCv(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (T.isConstQualified() && T.isVolatileQualified()) {
+      // Strip the const qualifier out of the qualifiers and rebuild the type.
+      Qualifiers Quals = T.getQualifiers();
+      Quals.removeConst();
+      Quals.removeVolatile();
+      QualifierCollector QualCol(Quals);
+      QualType NewType(T.getTypePtr(), 0);
+      NewType = QualCol.apply(R.getContext(), NewType);
+      return makeReflection(NewType, Result);
+    }
+
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool removeConst(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (T.isConstQualified()) {
+      // Strip the const qualifier out of the qualifiers and rebuild the type.
+      Qualifiers Quals = T.getQualifiers();
+      Quals.removeConst();
+      QualifierCollector QualCol(Quals);
+      QualType NewType(T.getTypePtr(), 0);
+      NewType = QualCol.apply(R.getContext(), NewType);
+      return makeReflection(NewType, Result);
+    }
+
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool removeVolatile(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (T.isVolatileQualified()) {
+      // Strip the volatile qualifier out of the
+      // qualifiers and rebuild the type.
+      Qualifiers Quals = T.getQualifiers();
+      Quals.removeVolatile();
+      QualifierCollector QualCol(Quals);
+      QualType NewType(T.getTypePtr(), 0);
+      NewType = QualCol.apply(R.getContext(), NewType);
+      return makeReflection(NewType, Result);
+    }
+
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool addCv(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (!T.isConstQualified())
+      T.addConst();
+    if (!T.isVolatileQualified())
+      T.addVolatile();
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool addConst(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (!T.isConstQualified())
+      T.addConst();
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool addVolatile(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (!T.isVolatileQualified())
+      T.addVolatile();
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool removeReference(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    return makeReflection(T.getNonReferenceType(), Result);
+  }
+
+  return Error(R);
+}
+
+static bool addLvalueReference(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    QualType NewT = R.getContext().getLValueReferenceType(T);
+    return makeReflection(NewT, Result);
+  }
+
+  return Error(R);
+}
+
+static bool addRvalueReference(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    QualType NewT = R.getContext().getRValueReferenceType(T);
+    return makeReflection(NewT, Result);
+  }
+
+  return Error(R);
+}
+
+static bool removePointer(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = MT->getPointeeType();
+    if (!T.isNull())
+      return makeReflection(T, Result);
+    return makeReflection(*MT, Result);
+  }
+
+  return Error(R);
+}
+
+static bool addPointer(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = R.getContext().getPointerType(*MT);
+    if (!T.isNull())
+      return makeReflection(T, Result);
+    return makeReflection(*MT, Result);
+  }
+
+  return Error(R);
+}
+
+static bool removeCvRef(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = (*MT).getNonReferenceType();
+    if (T.isConstQualified() || T.isVolatileQualified()) {
+      // Strip the const qualifier out of the qualifiers and rebuild the type.
+      Qualifiers Quals = T.getQualifiers();
+      if (T.isConstQualified())
+        Quals.removeConst();
+      if (T.isVolatileQualified())
+        Quals.removeVolatile();
+      QualifierCollector QualCol(Quals);
+      QualType NewType(T.getTypePtr(), 0);
+      NewType = QualCol.apply(R.getContext(), NewType);
+      return makeReflection(NewType, Result);
+    }
+
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool decay(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    if (!MT->canDecayToPointerType())
+      return Error(R);
+    QualType T = R.getContext().getDecayedType(*MT);
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool makeSigned(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+
+    // We can only reliably accept fixed point types here as not all
+    // unsigned types have a signed equivalent (i.e. char8_t)
+    if (!T->isFixedPointType())
+      return Error(R);
+
+    if (!T->isSignedIntegerType()) {
+      QualType SignT = R.getContext().getCorrespondingSignedFixedPointType(T);
+      return makeReflection(SignT, Result);
+    }
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+static bool makeUnsigned(const Reflection &R, APValue &Result) {
+  if (MaybeType MT = getCanonicalType(R)) {
+    QualType T = *MT;
+    if (!T->isUnsignedIntegerType()) {
+      QualType UnsT = R.getContext().getCorrespondingUnsignedType(T);
+      return makeReflection(UnsT, Result);
+    }
+    return makeReflection(T, Result);
+  }
+
+  return Error(R);
+}
+
+
 bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   assert(isAssociatedReflectionQuery(Q) && "invalid query");
   switch (Q) {
@@ -2340,6 +2568,38 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getBegin(*this, Result);
   case query_get_next:
     return getNext(*this, Result);
+
+  // Type transformation
+  case query_remove_cv:
+    return removeCv(*this, Result);
+  case query_remove_const:
+    return removeConst(*this, Result);
+  case query_remove_volatile:
+    return removeVolatile(*this, Result);
+  case query_add_cv:
+    return addCv(*this, Result);
+  case query_add_const:
+    return addConst(*this, Result);
+  case query_add_volatile:
+    return addVolatile(*this, Result);
+  case query_remove_reference:
+    return removeReference(*this, Result);
+  case query_add_lvalue_reference:
+    return addLvalueReference(*this, Result);
+  case query_add_rvalue_reference:
+    return addRvalueReference(*this, Result);
+  case query_remove_pointer:
+    return removePointer(*this, Result);
+  case query_add_pointer:
+    return addPointer(*this, Result);
+  case query_remove_cvref:
+    return removeCvRef(*this, Result);
+  case query_decay:
+    return decay(*this, Result);
+  case query_make_signed:
+    return makeSigned(*this, Result);
+  case query_make_unsigned:
+    return makeUnsigned(*this, Result);
 
   default:
     break;
