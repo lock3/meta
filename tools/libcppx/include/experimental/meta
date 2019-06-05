@@ -178,28 +178,6 @@ enum reflection_query : unsigned {
     query_is_unsigned_type,
     query_has_unique_object_representations_type,
 
-    // Type operations
-    query_is_default_constructible_type,
-    query_is_trivially_default_constructible_type,
-    query_is_nothrow_default_constructible_type,
-    query_is_move_constructible_type,
-    query_is_trivially_move_constructible_type,
-    query_is_nothrow_move_constructible_type,
-    query_is_assignable_type,
-    query_is_trivially_assignable_type,
-    query_is_nothrow_assignable_type,
-    query_is_copy_assignable_type,
-    query_is_trivially_copy_assignable_type,
-    query_is_nothrow_copy_assignable_type,
-    query_is_move_assignable_type,
-    query_is_trivially_move_assignable_type,
-    query_is_nothrow_move_assignable_type,
-    query_is_destructible_type,
-    query_is_trivially_destructible_type,
-    query_is_nothrow_destructible_type,
-    query_is_swappable_type,
-    query_is_nothrow_swappable_type,
-
     // Captures
     query_has_default_ref_capture,
     query_has_default_copy_capture,
@@ -224,21 +202,41 @@ enum reflection_query : unsigned {
     query_get_access_traits,
     query_get_type_traits,
 
-    // Associated reflections
-    query_get_entity,
-    query_get_parent,
+    // Associated types
     query_get_type,
     query_get_return_type,
     query_get_this_ref_type,
+    query_get_underlying_type,
+
+    // Entities
+    query_get_entity,
+    query_get_parent,
     query_get_definition,
 
     // Traversal
     query_get_begin,
     query_get_next,
 
+    // Type transformations
+    query_remove_cv,
+    query_remove_const,
+    query_remove_volatile,
+    query_add_cv,
+    query_add_const,
+    query_add_volatile,
+    query_remove_reference,
+    query_add_lvalue_reference,
+    query_add_rvalue_reference,
+    query_remove_pointer,
+    query_add_pointer,
+    query_remove_cvref,
+    query_decay,
+    query_make_signed,
+    query_make_unsigned,
+
     // Name
     query_get_name,
-    query_get_display_name
+    query_get_display_name,
 };
 
 static constexpr unsigned get_decl_traits(info x) {
@@ -793,7 +791,9 @@ consteval bool has_union_type(info x) {
 
 // True if x reflects an enum type.
 consteval bool is_enum_type(info x) {
-  return __reflect(detail::query_is_enum_type, x);
+  __builtin_abort();
+  return false;
+  // return __reflect(detail::query_is_enum_type, x);
 }
 
 // True if x reflects an entity with enum type.
