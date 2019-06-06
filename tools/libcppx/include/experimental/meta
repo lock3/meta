@@ -201,6 +201,7 @@ enum reflection_query : unsigned {
     query_get_linkage_traits,
     query_get_access_traits,
     query_get_type_traits,
+    query_get_type_type_traits,
 
     // Associated types
     query_get_type,
@@ -253,6 +254,10 @@ static constexpr unsigned get_access_traits(info x) {
 
 static constexpr unsigned get_type_traits(info x) {
   return __reflect(query_get_type_traits, x);
+}
+
+static constexpr unsigned get_type_type_traits(info x) {
+  return __reflect(query_get_type_type_traits, x);
 }
 
 // Kinds of linkage.
@@ -507,14 +512,20 @@ static constexpr class_kind get_class_kind(unsigned n) {
 // TODO: Accumulate all known type traits for classes.
 struct class_traits {
   constexpr explicit class_traits(unsigned n)
-    : linkage       (get_linkage(n)),    // 0x01 | 0x02
-      access        (get_access(n)),     // 0x04 | 0x08
-      kind          (get_class_kind(n)), // 0x10 | 0x20
-      is_complete   (n & 0x40),
-      is_polymorphic(n & 0x80),
-      is_abstract   (n & 0x100),
-      is_final      (n & 0x200),
-      is_empty      (n & 0x400)
+    : linkage               (get_linkage(n)),    // 0x01 | 0x02
+      access                (get_access(n)),     // 0x04 | 0x08
+      kind                  (get_class_kind(n)), // 0x10 | 0x20
+      is_complete           (n & 0x40),
+      is_polymorphic        (n & 0x80),
+      is_abstract           (n & 0x100),
+      is_final              (n & 0x200),
+      is_empty              (n & 0x400),
+      is_trivial            (n & 0x800),
+      is_trivially_copyable (n & 0x1000),
+      is_pod                (n & 0x2000),
+      is_standard_layout    (n & 0x4000),
+      is_aggregate          (n & 0x8000),
+      is_literal            (n & 0x10000)
   { }
 
   constexpr explicit class_traits(info x)
@@ -529,6 +540,12 @@ struct class_traits {
   bool is_abstract : 1;
   bool is_final : 1;
   bool is_empty : 1;
+  bool is_trivial : 1;
+  bool is_trivially_copyable : 1;
+  bool is_pod : 1;
+  bool is_standard_layout : 1;
+  bool is_aggregate : 1;
+  bool is_literal : 1;
 };
 
 struct enum_traits {
@@ -549,6 +566,61 @@ struct enum_traits {
   bool is_complete : 1;
 };
 
+struct type_type_traits {
+  constexpr explicit type_type_traits(unsigned n)
+    : is_const       (n & 0x01),
+      is_volatile    (n & 0x02),
+      is_rvalue_ref  (n & 0x04),
+      is_lvalue_ref  (n & 0x08),
+      is_pointer     (n & 0x10),
+      is_signed      (n & 0x20),
+      is_unsigned    (n & 0x40),
+      is_literal     (n & 0x80),
+      is_trivial     (n & 0x100),
+      is_fundamental (n & 0x200),
+      is_arithmetic  (n & 0x400),
+      is_scalar      (n & 0x800),
+      is_object      (n & 0x1000),
+      is_compound    (n & 0x2000),
+      is_function    (n & 0x4000),
+      is_class       (n & 0x8000),
+      is_union       (n & 0x10000),
+      is_void        (n & 0x20000),
+      is_nullptr     (n & 0x40000),
+      is_integral    (n & 0x80000),
+      is_float       (n & 0x100000),
+      is_array       (n & 0x200000),
+      is_enum        (n & 0x400000)
+    {}
+
+  constexpr explicit type_type_traits(info x)
+    : type_type_traits(get_type_type_traits(x))
+    {}
+
+  bool is_const       : 1;
+  bool is_volatile    : 1;
+  bool is_rvalue_ref  : 1;
+  bool is_lvalue_ref  : 1;
+  bool is_pointer     : 1;
+  bool is_signed      : 1;
+  bool is_unsigned    : 1;
+  bool is_literal     : 1;
+  bool is_trivial     : 1;
+  bool is_fundamental : 1;
+  bool is_arithmetic  : 1;
+  bool is_scalar      : 1;
+  bool is_object      : 1;
+  bool is_compound    : 1;
+  bool is_function    : 1;
+  bool is_class       : 1;
+  bool is_union       : 1;
+  bool is_void        : 1;
+  bool is_nullptr     : 1;
+  bool is_integral    : 1;
+  bool is_float       : 1;
+  bool is_array       : 1;
+  bool is_enum        : 1;
+};
 } // end internal namespace
 
 // Placeholder for constexpr string.
@@ -601,29 +673,9 @@ consteval bool is_function(info reflection) {
 
 /// Classes
 
-// True if x reflects a class.
-consteval bool is_class(info reflection) {
-  return __reflect(detail::query_is_class, reflection);
-}
-
 // True if x has a virtual destructor, either directly, or via a parent class.
 consteval bool has_virtual_destructor(info class_type) {
   return __reflect(detail::query_has_virtual_destructor, class_type);
-}
-
-// True if x reflects a union.
-consteval bool is_union(info x) {
-  return __reflect(detail::query_is_union, x);
-}
-
-// True if x reflects an enum.
-consteval bool is_enum(info x) {
-  return __reflect(detail::query_is_unscoped_enum, x);
-}
-
-// True if x reflects a scoped enum.
-consteval bool is_scoped_enum(info x) {
-  return __reflect(detail::query_is_scoped_enum, x);
 }
 
 /// Class Members
@@ -759,9 +811,59 @@ consteval bool is_type(info x) {
   return __reflect(detail::query_is_type, x);
 }
 
+// True if x reflects a fundamental type.
+consteval bool is_fundamental_type(info x) {
+  return detail::type_type_traits(x).is_fundamental;
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_fundamental_type(info x) {
+  return is_fundamental_type(type_of(x));
+}
+
+// True if x reflects a arithmetic type.
+consteval bool is_arithmetic_type(info x) {
+  return detail::type_type_traits(x).is_arithmetic;
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_arithmetic_type(info x) {
+  return is_arithmetic_type(type_of(x));
+}
+
+// True if x reflects a scalar type.
+consteval bool is_scalar_type(info x) {
+  return detail::type_type_traits(x).is_scalar;
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_scalar_type(info x) {
+  return is_scalar_type(type_of(x));
+}
+
+// True if x reflects a object type.
+consteval bool is_object_type(info x) {
+  return detail::type_type_traits(x).is_object;
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_object_type(info x) {
+  return is_object_type(type_of(x));
+}
+
+// True if x reflects a compound type.
+consteval bool is_compound_type(info x) {
+  return detail::type_type_traits(x).is_compound;
+}
+
+// True if x reflects an entity with function type.
+consteval bool has_compound_type(info x) {
+  return is_compound_type(type_of(x));
+}
+
 // True if x reflects a function type.
 consteval bool is_function_type(info x) {
-  return __reflect(detail::query_is_function_type, x);
+  return detail::type_type_traits(x).is_function;
 }
 
 // True if x reflects an entity with function type.
@@ -771,7 +873,7 @@ consteval bool has_function_type(info x) {
 
 // True if x reflects a class type.
 consteval bool is_class_type(info x) {
-  return __reflect(detail::query_is_class_type, x);
+  return detail::type_type_traits(x).is_class;
 }
 
 // True if x reflects an entity with class type.
@@ -781,7 +883,7 @@ consteval bool has_class_type(info x) {
 
 // True if x reflects a union type.
 consteval bool is_union_type(info x) {
-  return __reflect(detail::query_is_union_type, x);
+  return detail::type_type_traits(x).is_union;
 }
 
 // True if x reflects an entity with union type.
@@ -791,9 +893,7 @@ consteval bool has_union_type(info x) {
 
 // True if x reflects an enum type.
 consteval bool is_enum_type(info x) {
-  __builtin_abort();
-  return false;
-  // return __reflect(detail::query_is_enum_type, x);
+  return detail::type_type_traits(x).is_enum;
 }
 
 // True if x reflects an entity with enum type.
@@ -803,7 +903,7 @@ consteval bool has_enum_type(info x) {
 
 // True if x reflects a scoped enum type.
 consteval bool is_scoped_enum_type(info x) {
-  return __reflect(detail::query_is_scoped_enum_type, x);
+  return detail::enum_traits(x).is_scoped;
 }
 
 // True if x reflects an entity with scoped enum type.
@@ -813,7 +913,7 @@ consteval bool has_scoped_enum_type(info x) {
 
 // True if x reflects an entity with void type.
 consteval bool is_void_type(info x) {
-  return __reflect(detail::query_is_void_type, x);
+  return detail::type_type_traits(x).is_nullptr;
 }
 
 // True if x reflects an entity with void type.
@@ -823,7 +923,7 @@ consteval bool has_void_type(info x) {
 
 // True if x reflects a null pointer type.
 consteval bool is_null_pointer_type(info x) {
-  return __reflect(detail::query_is_null_pointer_type, x);
+  return detail::type_type_traits(x).is_nullptr;
 }
 
 // True if x reflects an entity with null pointer type.
@@ -833,7 +933,7 @@ consteval bool has_null_pointer_type(info x) {
 
 // True if x reflects an integral type.
 consteval bool is_integral_type(info x) {
-  return __reflect(detail::query_is_integral_type, x);
+  return detail::type_type_traits(x).is_integral;
 }
 
 // True if x reflects an entity with integral type.
@@ -843,7 +943,7 @@ consteval bool has_integeral_type(info x) {
 
 // True if x reflects a floating point type.
 consteval bool is_floating_point_type(info x) {
-  return __reflect(detail::query_is_floating_point_type, x);
+  return detail::type_type_traits(x).is_float;
 }
 
 // True if x reflects an entity with floating point type.
@@ -853,7 +953,7 @@ consteval bool has_floating_point_type(info x) {
 
 // True if x reflects an array type.
 consteval bool is_array_type(info x) {
-  return __reflect(detail::query_is_array_type, x);
+  return detail::type_type_traits(x).is_array;
 }
 
 // True if x reflects an entity with array type.
@@ -863,7 +963,7 @@ consteval bool has_array_type(info x) {
 
 // True if x reflects a pointer type.
 consteval bool is_pointer_type(info x) {
-  return __reflect(detail::query_is_pointer_type, x);
+  return detail::type_type_traits(x).is_pointer;
 }
 
 // True if x reflects an entity with pointer type.
@@ -873,7 +973,7 @@ consteval bool has_pointer_type(info x) {
 
 // True if x reflects a lvalue reference type.
 consteval bool is_lvalue_reference_type(info x) {
-  return __reflect(detail::query_is_lvalue_reference_type, x);
+  return detail::type_type_traits(x).is_lvalue_ref;
 }
 
 // True if x reflects an entity with lvalue reference type.
@@ -883,7 +983,7 @@ consteval bool has_lvalue_reference_type(info x) {
 
 // True if x reflets a rvalue reference type.
 consteval bool is_rvalue_reference_type(info x) {
-  return __reflect(detail::query_is_rvalue_reference_type, x);
+  return detail::type_type_traits(x).is_rvalue_ref;
 }
 
 // True if x reflets an entity with rvalue reference type.
@@ -1069,6 +1169,78 @@ consteval bool is_rvalue(info x) {
 // True if x reflects a value.
 consteval bool is_value(info x) {
   return __reflect(detail::query_is_value, x);
+}
+
+// -------------------------------------------------------------------------- //
+// Type property queries
+// True if x reflects a const type. Only true for top-level const types.
+// e.g., is_const_type(reflexpr(const int*)) is false, where as
+// is_const_type(reflexpr(int const*)) is true.
+consteval bool is_const_type(info x) {
+  return detail::type_type_traits(x).is_const;
+}
+
+// True if x reflects a top-level volatile type (see above).
+consteval bool is_volatile_type(info x) {
+  return detail::type_type_traits(x).is_volatile;
+}
+
+// True if x reflects a trivial type.
+consteval bool is_trivial_type(info x) {
+  if (is_class_type(x))
+    return detail::class_traits(x).is_trivial;
+  return detail::type_type_traits(x).is_trivial;
+}
+
+// True if x reflects a literal type.
+consteval bool is_literal_type(info x) {
+  return detail::type_type_traits(x).is_literal;
+}
+
+consteval bool is_empty_type(info x) {
+  return detail::class_traits(x).is_empty;
+}
+
+consteval bool is_polymorphic_type(info x) {
+  return detail::class_traits(x).is_polymorphic;
+}
+
+consteval bool is_abstract_type(info x) {
+  return detail::class_traits(x).is_abstract;
+}
+
+consteval bool is_final_type(info x) {
+  return detail::class_traits(x).is_final;
+}
+
+// True if x reflects a signed integer type.
+consteval bool is_signed_type(info x) {
+  if (!is_integral_type(x))
+    return false;
+  return detail::type_type_traits(x).is_signed;
+}
+
+// True if x reflects an unsigned integer type.
+consteval bool is_unsigned_type(info x) {
+  if (!is_integral_type(x))
+    return false;
+  return detail::type_type_traits(x).is_unsigned;
+}
+
+consteval bool is_trivially_copyable_type(info x) {
+  return detail::class_traits(x).is_trivially_copyable;
+}
+
+consteval bool is_standard_layout_type(info x) {
+  return detail::class_traits(x).is_standard_layout;
+}
+
+consteval bool is_pod_type(info x) {
+  return detail::class_traits(x).is_pod;
+}
+
+consteval bool is_aggregate_type(info x) {
+  return detail::class_traits(x).is_aggregate;
 }
 
 // -------------------------------------------------------------------------- //

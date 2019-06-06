@@ -191,6 +191,7 @@ namespace clang {
     query_get_linkage_traits,
     query_get_access_traits,
     query_get_type_traits,
+    query_get_type_type_traits,
 
     // Associated types
     query_get_type,
@@ -236,7 +237,7 @@ namespace clang {
     query_last_predicate = query_is_value,
     // Traits -- these return unsigned.
     query_first_trait = query_get_decl_traits,
-    query_last_trait = query_get_type_traits,
+    query_last_trait = query_get_type_type_traits,
     // Associated reflections -- these return meta::info.
     query_first_assoc = query_get_type,
     query_last_assoc = query_make_unsigned,
@@ -2085,7 +2086,13 @@ struct ClassTraits {
   unsigned Abstract : 1;
   unsigned Final : 1;
   unsigned Empty : 1;
-  unsigned Rest : 21;
+  unsigned Trivial : 1;
+  unsigned TriviallyCopyable : 1;
+  unsigned POD : 1;
+  unsigned StandardLayout : 1;
+  unsigned Aggregate : 1;
+  unsigned Literal   : 1;
+  unsigned Rest : 15;
 };
 
 static ClassKindTrait getClassKind(const CXXRecordDecl *D) {
@@ -2112,6 +2119,12 @@ static ClassTraits getClassTraits(const CXXRecordDecl *D) {
     T.Abstract = D->isAbstract();
     T.Final = D->hasAttr<FinalAttr>();
     T.Empty = D->isEmpty();
+    T.Trivial = D->isTrivial();
+    T.TriviallyCopyable = D->isTriviallyCopyable();
+    T.POD = D->isPOD();
+    T.StandardLayout = D->isStandardLayout();
+    T.Aggregate = D->isAggregate();
+    T.Literal = D->isLiteral();
   }
   return T;
 }
@@ -2148,6 +2161,67 @@ static bool makeTypeTraits(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+struct TypeTypeTraits {
+  unsigned Const       : 1;
+  unsigned Volatile    : 1;
+  unsigned RvalueRef   : 1;
+  unsigned LvalueRef   : 1;
+  unsigned Pointer     : 1;
+  unsigned Signed      : 1;
+  unsigned Unsigned    : 1;
+  unsigned Literal     : 1;
+  unsigned Trivial     : 1;
+  unsigned Fundamental : 1;
+  unsigned Arithmetic  : 1;
+  unsigned Scalar      : 1;
+  unsigned Object      : 1;
+  unsigned Compound    : 1;
+  unsigned Function    : 1;
+  unsigned Class       : 1;
+  unsigned Union       : 1;
+  unsigned Void        : 1;
+  unsigned Nullptr     : 1;
+  unsigned Integral    : 1;
+  unsigned Float       : 1;
+  unsigned Array       : 1;
+  unsigned Enum        : 1;
+  unsigned Rest        : 9;
+};
+
+static TypeTypeTraits
+getTypeTypeTraits(const ASTContext &Ctx, const QualType& T) {
+  TypeTypeTraits Traits = TypeTypeTraits();
+  Traits.Const          = T.isConstQualified();
+  Traits.Volatile       = T.isVolatileQualified();
+  Traits.RvalueRef      = T->isRValueReferenceType();
+  Traits.LvalueRef      = T->isLValueReferenceType();
+  Traits.Pointer        = T->isPointerType();
+  Traits.Signed         = T->isSignedIntegerType();
+  Traits.Unsigned       = T->isUnsignedIntegerType();
+  Traits.Literal        = T->isLiteralType(Ctx);
+  Traits.Trivial        = T.isTrivialType(Ctx);
+  Traits.Fundamental    = T->isFundamentalType();
+  Traits.Arithmetic     = T->isArithmeticType();
+  Traits.Scalar         = T->isScalarType();
+  Traits.Object         = T->isObjectType();
+  Traits.Compound       = T->isCompoundType();
+  Traits.Function       = T->isFunctionType();
+  Traits.Class          = T->isClassType() || T->isStructureType();
+  Traits.Union          = T->isUnionType();
+  Traits.Void           = T->isVoidType();
+  Traits.Nullptr        = T->isNullPtrType();
+  Traits.Integral       = T->isIntegralType(Ctx);
+  Traits.Float          = T->isFloatingType();
+  Traits.Array          = T->isArrayType();
+  return Traits;
+}
+
+static bool makeTypeTypeTraits(const Reflection &R, APValue &Result) {
+  if (const MaybeType T = getCanonicalType(R))
+    return SuccessTraits(R, getTypeTypeTraits(R.getContext(), *T), Result);
+  return Error(R);
+}
+
 bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
   assert(isTraitQuery(Q) && "invalid query");
   switch (Q) {
@@ -2160,6 +2234,8 @@ bool Reflection::GetTraits(ReflectionQuery Q, APValue &Result) {
     return makeAccessTraits(*this, Result);
   case query_get_type_traits:
     return makeTypeTraits(*this, Result);
+  case query_get_type_type_traits:
+    return makeTypeTypeTraits(*this, Result);
 
   default:
     break;
