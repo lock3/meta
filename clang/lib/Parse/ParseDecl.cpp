@@ -331,6 +331,13 @@ unsigned Parser::ParseAttributeArgsCommon(
     IdentifierInfo *AttrName, SourceLocation AttrNameLoc,
     ParsedAttributes &Attrs, SourceLocation *EndLoc, IdentifierInfo *ScopeName,
     SourceLocation ScopeLoc, ParsedAttr::Syntax Syntax) {
+
+  if (attributeIsTypeArgAttr(*AttrName)) {
+    ParseAttributeWithTypeArg(*AttrName, AttrNameLoc, Attrs, EndLoc, ScopeName,
+                              ScopeLoc, Syntax);
+    return 1;
+  }
+
   // Ignore the left paren location for now.
   ConsumeParen();
 
