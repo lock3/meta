@@ -11901,6 +11901,10 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     return ICEDiag(IK_NotICE, E->getBeginLoc());
   }
 
+  case Expr::CXXSelectMemberExprClass:
+    // This is an ICE if its Base is an ICE
+    return CheckICE(cast<CXXSelectMemberExpr>(E)->getBase(), Ctx);
+
   case Expr::SizeOfPackExprClass:
   case Expr::GNUNullExprClass:
     // GCC considers the GNU __null value to be an integral constant expression.

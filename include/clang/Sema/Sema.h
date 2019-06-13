@@ -3961,6 +3961,12 @@ public:
                                    SourceLocation ColonLoc, Stmt *RangeVar, 
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind, bool IsConstexpr);
+  /// Build a CXXExpansionStmt over a pack.
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
 
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
   

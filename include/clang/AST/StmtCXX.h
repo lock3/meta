@@ -226,7 +226,7 @@ public:
   }
 };
 
-/// \brief The base class of all expansion statements.
+/// The base class of all expansion statements.
 ///
 /// Tuple and pack expansion statements have the following form:
 ///
@@ -261,6 +261,11 @@ protected:
   /// this value is not meaningful.
   std::size_t Size;
 
+  /// \brief The range expression (range-expr in (auto x : range-expr)).
+  /// This is only used for parameter pack expansions that do not otherwise
+  /// have a range variable we can access.
+  Expr *RangeExpr;
+
   /// \brief The statements instantiated from the loop body. These are not
   /// sub-expressions.
   Stmt **InstantiatedStmts;
@@ -273,20 +278,37 @@ public:
     RK_Range,
     RK_Tuple,
     RK_Struct,
+    RK_Pack,
     RK_Unknown,
   };
 
+  /// An expansion over an array, range, tuple, or struct.
   CXXExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
                    TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
                    SourceLocation CL, SourceLocation RPL, RangeKind RK)
-      : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), ColonLoc(CL),
-        RParenLoc(RPL), Size(N), InstantiatedStmts(nullptr), StmtRangeKind(RK) {
+    : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), EllipsisLoc(EL),
+      ColonLoc(CL), RParenLoc(RPL), Size(N), RangeExpr(nullptr),
+      InstantiatedStmts(nullptr), StmtRangeKind(RK) {
     SubExprs[LOOP] = LoopVar;
     SubExprs[RANGE] = RangeVar;
     SubExprs[BODY] = nullptr;
   }
-  
+
+  /// An expansion over a parameter pack does not have a range variable,
+  /// but the range itself is still significant, as it contains the pack.
+  CXXExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
+                   TemplateParameterList *Parms,
+                   std::size_t N, SourceLocation FL, SourceLocation EL,
+                   SourceLocation CL, SourceLocation RPL)
+    : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), EllipsisLoc(EL),
+      ColonLoc(CL), RParenLoc(RPL), Size(N), RangeExpr(RangeExpr),
+      InstantiatedStmts(nullptr), StmtRangeKind(RK_Pack) {
+    SubExprs[LOOP] = LoopVar;
+    SubExprs[RANGE] = nullptr;
+    SubExprs[BODY] = nullptr;
+  }
+
   CXXExpansionStmt(EmptyShell Empty) : Stmt(CXXExpansionStmtClass, Empty) {}
 
   /// \brief Returns the statement containing the range declaration.
@@ -322,6 +344,14 @@ public:
 
   /// \brief Returns the number of instantiated statements.
   std::size_t getSize() const { return Size; }
+  void setSize(std::size_t N) { Size = N; }
+
+  /// \brief Returns the range expression of a pack expansion statement.
+  Expr *getRangeExpr() const {
+    assert(StmtRangeKind == RK_Pack &&
+           "Range-expr only meaningful for pack expansions!") ;
+    return RangeExpr;
+  }
 
   /// \brief Set the sequence of instantiated statements.
   void setInstantiatedStatements(Stmt **S) {

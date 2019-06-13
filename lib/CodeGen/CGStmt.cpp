@@ -1035,7 +1035,9 @@ CodeGenFunction::EmitCXXExpansionStmt(const CXXExpansionStmt &S,
   LexicalScope ForScope(*this, S.getSourceRange());
 
   // Evaluate the first pieces before the loop.
-  EmitStmt(S.getRangeVarStmt());
+  // There is no range variable for pack expansions.
+  if (S.getRangeKind() != CXXExpansionStmt::RK_Pack)
+    EmitStmt(S.getRangeVarStmt());
 
   ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
   for (std::size_t I = 0; I < S.getSize(); ++I) {

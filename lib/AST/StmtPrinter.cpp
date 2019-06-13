@@ -365,7 +365,10 @@ void StmtPrinter::VisitCXXExpansionStmt(CXXExpansionStmt *Node) {
   SubPolicy.SuppressInitializers = true;
   Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
   OS << " : ";
-  PrintExpr(Node->getRangeInit());
+  if (Node->getRangeKind() == CXXExpansionStmt::RK_Pack)
+    PrintExpr(Node->getRangeExpr());
+  else
+    PrintExpr(Node->getRangeInit());
   OS << ") {\n";
   PrintStmt(Node->getBody());
   Indent() << "}";
