@@ -87,6 +87,18 @@ struct range
   // constexpr static int size() { return N; }
 };
 
+template <typename T, typename U>
+struct Struct {
+  const T i = T();
+  const T j = T();
+  const U k = U();
+
+  struct something {
+    const int f = 10;
+  };
+
+  const U l = U();
+};
 
 
 // Tests
@@ -127,8 +139,24 @@ void test_constexpr_range() {
     ;
 }
 
+void test_struct() {
+  Struct<double, char> s;
+  for... (auto x : s)
+    ;
+}
+
+template<typename... Targs>
+void test_pack(Targs... args) {
+  for... (auto x : args)
+    ;
+}
+
 int main() {
   test_array();
+  test_constexpr_tuple();
   test_constexpr_array();
+  test_constexpr_range();
+  test_struct();
+  test_pack();
 }
 

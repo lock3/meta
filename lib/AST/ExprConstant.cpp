@@ -4039,7 +4039,7 @@ static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
 
 // Evaluate a statement.
 static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
-                                   const Stmt *S, const SwitchCase *Case) {
+                                  const Stmt *S, const SwitchCase *Case) {
   if (!Info.nextStep(S))
     return ESR_Failed;
 
@@ -4306,11 +4306,30 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
-  case Stmt::CXXExpansionStmtClass: {
-    const CXXExpansionStmt *ES = cast<CXXExpansionStmt>(S);
+  case Stmt::CXXCompositeExpansionStmtClass: {
+    const CXXCompositeExpansionStmt *ES = cast<CXXCompositeExpansionStmt>(S);
     BlockScopeRAII Scope(Info);
 
     EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeVarStmt());
+    if (ESR != ESR_Succeeded)
+      return ESR;
+
+    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+      BlockScopeRAII InnerScope(Info);
+
+      ESR = EvaluateStmt(Result, Info, SubStmt);
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
+
+    return ESR_Succeeded;
+  }
+
+  case Stmt::CXXPackExpansionStmtClass: {
+    const CXXPackExpansionStmt *ES = cast<CXXPackExpansionStmt>(S);
+    BlockScopeRAII Scope(Info);
+
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeExprStmt());
     if (ESR != ESR_Succeeded)
       return ESR;
 
@@ -5615,6 +5634,8 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
+  bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
+  bool VisitCXXSelectPackExpr(const CXXSelectPackExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -5864,6 +5885,21 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 
   return Success &&
          HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
+}
+
+bool
+LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
+  const MemberExpr *Member = dyn_cast<MemberExpr>(E->getValue());
+  if (!Member)
+    return false;
+  return VisitMemberExpr(Member);
+}
+
+bool LValueExprEvaluator::VisitCXXSelectPackExpr(const CXXSelectPackExpr *E) {
+  const Expr *Expansion = E->getValue();
+  if (!Expansion)
+    return false;
+  return VisitExpr(Expansion);
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -11900,6 +11936,11 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
     return ICEDiag(IK_NotICE, E->getBeginLoc());
   }
 
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass:
+    // This is an ICE if its Base is an ICE
+    return CheckICE(cast<CXXSelectionExpr>(E)->getBase(), Ctx);
+
   case Expr::SizeOfPackExprClass:
   case Expr::GNUNullExprClass:
     // GCC considers the GNU __null value to be an integral constant expression.
@@ -11937,10 +11978,6 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CXXIdExprExprClass:
   case Expr::CXXReflectedIdExprClass:
   case Expr::CXXValueOfExprClass:
-    return NoDiag();
-  
-  case Expr::PackSelectionExprClass:
-    // FIXME: expression is type-dependent so we don't really know.
     return NoDiag();
 
   case Expr::CallExprClass:

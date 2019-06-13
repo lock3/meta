@@ -3955,6 +3955,12 @@ public:
                                    SourceLocation ColonLoc, Stmt *RangeVar, 
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind, bool IsConstexpr);
+  /// Build a CXXExpansionStmt over a pack.
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
 
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
   
@@ -6161,6 +6167,22 @@ public:
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
   void ActOnBaseSpecifiers(Decl *ClassDecl,
                            MutableArrayRef<CXXBaseSpecifier *> Bases);
+
+  /// Find the base class to decompose in a built-in decomposition of a class
+  /// type. This base class search is, unfortunately, not quite like any other
+  /// that we perform anywhere else in C++.
+  DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
+                                           const CXXRecordDecl *RD,
+                                           CXXCastPath &BasePath);
+  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
+                                      VarDecl *Base, Expr *Index,
+                                      SourceLocation KWLoc = SourceLocation(),
+                                      SourceLocation BaseLoc = SourceLocation(),
+                                      SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
+                                    SourceLocation KWLoc = SourceLocation(),
+                                    SourceLocation BaseLoc = SourceLocation(),
+                                    SourceLocation IdxLoc = SourceLocation());
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,

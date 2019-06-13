@@ -398,6 +398,7 @@ KEYWORD(__reflect_pretty_print      , KEYREFLECT)
 KEYWORD(__reflect_dump              , KEYREFLECT)
 KEYWORD(__compiler_error            , KEYREFLECT)
 KEYWORD(__concatenate               , KEYREFLECT)
+KEYWORD(__select_member             , KEYREFLECT)
 
 // C++ char8_t proposal
 CXX2A_KEYWORD(char8_t               , CHAR8SUPPORT)

@@ -139,6 +139,8 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::MSPropertyRefExprClass:
   case Expr::MSPropertySubscriptExprClass:
   case Expr::OMPArraySectionExprClass:
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass:
     return Cl::CL_LValue;
 
     // C99 6.5.2.5p5 says that compound literals are lvalues.
@@ -203,10 +205,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CXXReflectedIdExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
-    return Cl::CL_PRValue;
-
-  case Expr::PackSelectionExprClass:
-    /// This is always dependent, so we'll treat it as a prvalue.
     return Cl::CL_PRValue;
 
   case Expr::ConstantExprClass:

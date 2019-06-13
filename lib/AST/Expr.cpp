@@ -3180,7 +3180,8 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXReflectedIdExprClass:
   case CXXConcatenateExprClass:
   case CXXDependentVariadicReifierExprClass:
-  case PackSelectionExprClass:
+  case CXXSelectMemberExprClass:
+  case CXXSelectPackExprClass:
     // These never have a side-effect.
     return false;
 
