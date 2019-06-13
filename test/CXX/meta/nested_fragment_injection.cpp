@@ -22,7 +22,7 @@ class z {
 
     consteval -> __fragment class k2 {
       consteval -> frag;
-    }
+    };
   };
 };
 

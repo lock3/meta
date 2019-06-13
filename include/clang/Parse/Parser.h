@@ -2888,7 +2888,11 @@ public:
 
   Decl *MaybeParseCXXInjectorDeclaration();
   Decl *ParseCXXMetaprogramDeclaration();
+private:
+  Decl *ParseCXXInjectionDeclaration(bool IncludeTerminator);
+public:
   Decl *ParseCXXInjectionDeclaration();
+  Decl *ParseCXXTerminatedInjectionDeclaration();
 
   bool ParseCXXInjectedParameter(
                         SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);

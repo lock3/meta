@@ -12,7 +12,7 @@ namespace shape {
       constexpr unsigned calculate(const square& s) {
         return s.width * s.height;
       }
-    }
+    };
   };
 }
 

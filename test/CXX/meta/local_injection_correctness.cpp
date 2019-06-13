@@ -6,7 +6,7 @@
 int f() {
   consteval -> __fragment {
     return 9;
-  }
+  };
 }
 
 int g() {
@@ -43,7 +43,7 @@ int main() {
   // MetaprogramDecl
   consteval {
     -> frag;
-  };
+  }
   // InjectionDecl
   consteval -> frag;
 

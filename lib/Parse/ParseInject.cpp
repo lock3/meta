@@ -379,7 +379,7 @@ namespace {
 ///
 ///  injector-declaration:
 ///    metaprogram-declaration
-///    injection-declaration
+///    terminated-injection-declaration
 ///
 Decl *Parser::MaybeParseCXXInjectorDeclaration() {
   assert(Tok.is(tok::kw_consteval));
@@ -388,9 +388,9 @@ Decl *Parser::MaybeParseCXXInjectorDeclaration() {
   if (NextToken().is(tok::l_brace))
     return ParseCXXMetaprogramDeclaration();
 
-  // [Meta] injection-declaration
+  // [Meta] terminated-injection-declaration
   if (NextToken().is(tok::arrow))
-    return ParseCXXInjectionDeclaration();
+    return ParseCXXTerminatedInjectionDeclaration();
 
   return nullptr;
 }
@@ -427,15 +427,7 @@ Decl *Parser::ParseCXXMetaprogramDeclaration() {
   return D;
 }
 
-
-/// Parse a C++ injection declaration.
-///
-///   injection-declaration:
-///     'consteval' '->' fragment ';'
-///     'consteval' '->' reflection ';'
-///
-/// Returns the group of declarations parsed.
-Decl *Parser::ParseCXXInjectionDeclaration() {
+Decl *Parser::ParseCXXInjectionDeclaration(bool IncludeTerminator) {
   assert(Tok.is(tok::kw_consteval));
   SourceLocation ConstevalLoc = ConsumeToken();
   assert(Tok.is(tok::arrow) && "expected '->' token");
@@ -458,7 +450,33 @@ Decl *Parser::ParseCXXInjectionDeclaration() {
   else
     Actions.ActOnCXXInjectionDeclError(D, OriginalDC);
 
+  if (IncludeTerminator) {
+    // Parse the ending simicolon.
+    ExpectAndConsume(tok::semi);
+  }
+
   return D;
+}
+
+/// Parse a C++ injection declaration.
+///
+///   injection-declaration:
+///     'consteval' '->' fragment
+///     'consteval' '->' reflection
+///
+/// Returns the injector declaration.
+Decl *Parser::ParseCXXInjectionDeclaration() {
+  return ParseCXXInjectionDeclaration(false);
+}
+
+/// Parse a C++ injection declaration.
+///
+///   terminated-injection-declaration:
+///     injection-declaration ';'
+///
+/// Returns the injector declaration.
+Decl *Parser::ParseCXXTerminatedInjectionDeclaration() {
+  return ParseCXXInjectionDeclaration(true);
 }
 
 /// Parse a C++ injected parameter.
