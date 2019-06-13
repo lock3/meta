@@ -1029,8 +1029,15 @@ static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
   if (!NewFn || NewFn->isInvalidDecl())
     return nullptr;
 
-  if (InstantiateFunctionBody(SemaRef, TemplateArgs, Fn, NewFn))
-    return nullptr;
+  {
+    Sema::ContextRAII SavedContext(SemaRef, NewFn);
+
+    SemaRef.PushFunctionScope();
+    Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
+
+    if (InstantiateFunctionBody(SemaRef, TemplateArgs, Fn, NewFn))
+      return nullptr;
+  }
 
   // Build the constexpr declaration.
   MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
@@ -1067,10 +1074,13 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   if (!D->hasBody())
     return D;
 
+  CXXStmtFragmentDecl *Inst =
+      CXXStmtFragmentDecl::Create(SemaRef.Context, Owner, D->getBeginLoc());
+
+  Sema::ContextRAII SavedContext(SemaRef, Inst);
+
   SemaRef.PushFunctionScope();
   Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
-
-  Sema::ContextRAII SavedContext(SemaRef, D);
 
   SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
   StmtResult NewBody =
@@ -1078,8 +1088,6 @@ Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
   if (NewBody.isInvalid())
     return nullptr;
 
-  CXXStmtFragmentDecl *Inst =
-      CXXStmtFragmentDecl::Create(SemaRef.Context, Owner, D->getBeginLoc());
   Inst->setBody(NewBody.get());
   Owner->addDecl(Inst);
   return Inst;
