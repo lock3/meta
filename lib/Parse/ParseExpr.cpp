@@ -1242,6 +1242,10 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXValueOfExpression();
     break;
 
+  case tok::kw___select_member:
+    Res = ParseCXXSelectMemberExpr();
+    break;
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       ParsedType Type = getTypeAnnotation(Tok);

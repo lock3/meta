@@ -2231,3 +2231,15 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 
   return Value;
 }
+
+LValue
+CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
+  Expr::EvalResult Res;
+  bool success = E->getIndex()->EvaluateAsInt(Res, getContext());
+
+  if (!success)
+    llvm_unreachable("Bad index in selection.");
+  std::size_t I = Res.Val.getInt().getZExtValue();
+
+  return EmitLValue(E->getFields()[I]);
+}

@@ -2489,6 +2489,10 @@ def err_invalid_immediate : Error<
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
+def err_select_index_not_constant : Error<
+  "Index of a __select expression must be a constant expression.">;
+def err_select_index_exceeds_bounds : Error<
+  "A member may not be selected at an out-of-bounds index.">;
 
 // Reflection
 def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;

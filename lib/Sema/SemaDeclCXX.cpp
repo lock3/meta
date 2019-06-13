@@ -1233,12 +1233,10 @@ static bool checkTupleLikeDecomposition(Sema &S,
   return false;
 }
 
-/// Find the base class to decompose in a built-in decomposition of a class type.
-/// This base class search is, unfortunately, not quite like any other that we
-/// perform anywhere else in C++.
-static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
-                                                const CXXRecordDecl *RD,
-                                                CXXCastPath &BasePath) {
+DeclAccessPair
+Sema::FindDecomposableBaseClass(SourceLocation Loc,
+                                const CXXRecordDecl *RD,
+                                CXXCastPath &BasePath) {
   auto BaseHasFields = [](const CXXBaseSpecifier *Specifier,
                           CXXBasePath &Path) {
     return Specifier->getType()->getAsCXXRecordDecl()->hasDirectFields();
@@ -1265,10 +1263,10 @@ static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
     for (auto &P : Paths) {
       if (!BestPath)
         BestPath = &P;
-      else if (!S.Context.hasSameType(P.back().Base->getType(),
+      else if (!Context.hasSameType(P.back().Base->getType(),
                                       BestPath->back().Base->getType())) {
         //   ... the same ...
-        S.Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
+        Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
           << false << RD << BestPath->back().Base->getType()
           << P.back().Base->getType();
         return DeclAccessPair();
@@ -1279,26 +1277,26 @@ static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
 
     //   ... unambiguous ...
     QualType BaseType = BestPath->back().Base->getType();
-    if (Paths.isAmbiguous(S.Context.getCanonicalType(BaseType))) {
-      S.Diag(Loc, diag::err_decomp_decl_ambiguous_base)
-        << RD << BaseType << S.getAmbiguousPathsDisplayString(Paths);
+    if (Paths.isAmbiguous(Context.getCanonicalType(BaseType))) {
+      Diag(Loc, diag::err_decomp_decl_ambiguous_base)
+        << RD << BaseType << getAmbiguousPathsDisplayString(Paths);
       return DeclAccessPair();
     }
 
     //   ... [accessible, implied by other rules] base class of E.
-    S.CheckBaseClassAccess(Loc, BaseType, S.Context.getRecordType(RD),
+    CheckBaseClassAccess(Loc, BaseType, Context.getRecordType(RD),
                            *BestPath, diag::err_decomp_decl_inaccessible_base);
     AS = BestPath->Access;
 
     ClassWithFields = BaseType->getAsCXXRecordDecl();
-    S.BuildBasePathArray(Paths, BasePath);
+    BuildBasePathArray(Paths, BasePath);
   }
 
   // The above search did not check whether the selected class itself has base
   // classes with fields, so check that now.
   CXXBasePaths Paths;
   if (ClassWithFields->lookupInBases(BaseHasFields, Paths)) {
-    S.Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
+    Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
       << (ClassWithFields == RD) << RD << ClassWithFields
       << Paths.front().back().Base->getType();
     return DeclAccessPair();
@@ -1316,7 +1314,7 @@ static bool checkMemberDecomposition(Sema &S, ArrayRef<BindingDecl*> Bindings,
 
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
-      findDecomposableBaseClass(S, Src->getLocation(), OrigRD, BasePath);
+      S.FindDecomposableBaseClass(Src->getLocation(), OrigRD, BasePath);
   const CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
     return true;

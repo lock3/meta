@@ -3347,3 +3347,55 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
   ConsumeAnyToken();
   return Result;
 }
+
+ExprResult
+Parser::ParseCXXSelectMemberExpr() {
+  assert(Tok.is(tok::kw___select_member) && "Not __select_member!");
+  SourceLocation KWLoc = ConsumeToken();
+
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+  llvm::SmallVector<Expr *, 2> Exprs;
+  llvm::SmallVector<SourceLocation, 1> CommaLocs;
+  ParseExpressionList(Exprs, CommaLocs, llvm::function_ref<void()>(nullptr));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  if (Exprs.size() != 2)
+    return ExprError();
+
+  // If we cannot find a record decl for the record object,
+  // just quit now.
+  Expr *Base = Exprs.front();
+  Expr *Index = Exprs.back();
+  // // TODO: will this conflict with unqualid or idexpr?
+  if (!isa<DeclRefExpr>(Base))
+    return ExprError();
+  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
+
+  // If this is a parameter pack, we don't need any knowledge
+  // of the record and there won't be a VarDecl. Just return here.
+  if (BaseDRE->containsUnexpandedParameterPack())
+    return Actions.ActOnCXXSelectMemberExpr(BaseDRE, Index,
+                                            KWLoc,
+                                            BaseDRE->getLocation(),
+                                            Index->getExprLoc());
+
+  // Otherwise, we are trying to destructure a class.
+  Decl *FoundDecl = BaseDRE->getFoundDecl();
+  if (!isa<VarDecl>(FoundDecl))
+    return ExprError();
+  VarDecl *BaseVar =
+    cast<VarDecl>(FoundDecl);
+  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
+  if (!Record && !BaseVar->getType()->isDependentType())
+    return ExprError();
+  
+  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
+                                          KWLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
+}

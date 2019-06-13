@@ -2369,6 +2369,22 @@ public:
                                               ColonLoc, Length, RBracketLoc);
   }
 
+  /// Build a new C++ selection expression
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXSelectMemberExpr(CXXRecordDecl *RD, VarDecl *Base,
+                                   Expr *Index, SourceLocation KW,
+                                   SourceLocation B, SourceLocation I) {
+    return getSema().ActOnCXXSelectMemberExpr(RD, Base, Index, KW, B, I);
+  }
+
+  ExprResult RebuildCXXSelectMemberExpr(Expr *Base, Expr *Index,
+                                        SourceLocation KWLoc,
+                                        SourceLocation B, SourceLocation I) {
+    return getSema().ActOnCXXSelectMemberExpr(Base, Index, KWLoc, B, I);
+  }
+
   /// Build a new call expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -10152,6 +10168,46 @@ TreeTransform<Derived>::TransformOMPArraySectionExpr(OMPArraySectionExpr *E) {
   return getDerived().RebuildOMPArraySectionExpr(
       Base.get(), E->getBase()->getEndLoc(), LowerBound.get(), E->getColonLoc(),
       Length.get(), E->getRBracketLoc());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  ExprResult NewIndex =
+    getDerived().TransformExpr(E->getIndex());
+  if (NewIndex.isInvalid())
+    return ExprError();
+
+  ExprResult NewBase =
+    getDerived().TransformExpr(E->getBase());
+  if (NewBase.isInvalid())
+    return ExprError();
+
+  // If we are a selecting on a pack, we are done.
+  if (NewBase.get()->containsUnexpandedParameterPack())
+    return getDerived().RebuildCXXSelectMemberExpr(NewBase.get(),
+                                                   NewIndex.get(),
+                                                   E->getKeywordLoc(),
+                                                   E->getBaseLoc(),
+                                                   E->getIdxLoc());
+  
+  Decl *NewBaseDecl =
+    cast<DeclRefExpr>(NewBase.get())->getFoundDecl();
+  NewBaseDecl =
+    getDerived().TransformDecl(E->getBase()->getExprLoc(), NewBaseDecl);
+
+  Decl *RD;
+  if (E->getRecord())
+    RD = TransformDecl(E->getRecordLoc(), E->getRecord());
+  else
+    RD = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
+
+  return getDerived().RebuildCXXSelectMemberExpr(cast<CXXRecordDecl>(RD),
+                                                 cast<VarDecl>(NewBaseDecl),
+                                                 NewIndex.get(),
+                                                 E->getKeywordLoc(),
+                                                 E->getBaseLoc(),
+                                                 E->getIdxLoc());
 }
 
 template<typename Derived>

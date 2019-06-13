@@ -5362,6 +5362,108 @@ public:
   }
 };
 
+/// Projects the Nth public, nonstatic field of a record.
+class CXXSelectMemberExpr : public Expr {
+  Expr *Base;
+  
+  /// All fields in the projected record.
+  Expr **Fields;
+
+  /// The Index expression, as in Base[Index]
+  Expr *Index;
+
+  /// The number of fields in the projected record
+  std::size_t NumFields;
+
+  CXXRecordDecl *Record;
+
+  /// The location of the record.
+  SourceLocation RecordLoc;
+
+  /// The location of the __select keyword
+  SourceLocation KeywordLoc;
+
+  /// The location of the object being projected on
+  SourceLocation BaseLoc;
+
+  /// The location of the projection index.
+  SourceLocation IdxLoc;
+
+public:  
+  CXXSelectMemberExpr(Expr *Base,
+                 QualType T,
+                 Expr **Fields,
+                 Expr *Index,
+                 std::size_t NumFields,
+                 CXXRecordDecl *RD,
+                 SourceLocation RecordLoc,
+                 SourceLocation KWLoc = SourceLocation(),
+                 SourceLocation BaseLoc = SourceLocation(),
+                 SourceLocation IdxLoc = SourceLocation())
+    : Expr(CXXSelectMemberExprClass, T, VK_LValue,
+           OK_Ordinary,
+           Base->isTypeDependent() || Index->isTypeDependent(),
+           Base->isValueDependent() || Index->isValueDependent(),
+           Base->isInstantiationDependent() || Index->isInstantiationDependent(),
+           /*containsUnexpandedParameterPack=*/false),
+      Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
+      Record(RD), RecordLoc(RecordLoc), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
+      IdxLoc(IdxLoc) {}
+
+  CXXSelectMemberExpr(Expr *Base,
+                 QualType T,
+                 Expr **Fields,
+                 Expr *Index,
+                 std::size_t NumFields,
+                 bool dependent,
+                 SourceLocation KWLoc = SourceLocation(),
+                 SourceLocation BaseLoc = SourceLocation(),
+                 SourceLocation IdxLoc = SourceLocation())
+    : Expr(CXXSelectMemberExprClass, T, VK_LValue,
+           OK_Ordinary,
+           dependent || Index->isTypeDependent(),
+           dependent || Index->isValueDependent(),
+           dependent || Index->isInstantiationDependent(),
+           /*containsUnexpandedParameterPack=*/false),
+      Base(Base), Fields(Fields), Index(Index), NumFields(NumFields),
+      Record(nullptr), RecordLoc(), KeywordLoc(KWLoc), BaseLoc(BaseLoc),
+      IdxLoc(IdxLoc) {}
+
+  CXXSelectMemberExpr(EmptyShell Empty)
+    : Expr(CXXSelectMemberExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  Expr *getBase() const { return Base; }
+  SourceLocation getRecordLoc() const { return RecordLoc; }
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+  SourceLocation getBaseLoc() const { return BaseLoc; }
+  SourceLocation getIdxLoc() const  { return IdxLoc; }
+  CXXRecordDecl *getRecord() const { return Record; }
+  Expr **getFields() const { return Fields; }
+  Expr *getIndex() const { return Index; }
+  std::size_t getNumFields() const { return NumFields; }
+
+  SourceLocation getBeginLoc() const {
+    return KeywordLoc.isValid() ? getKeywordLoc() : getRecordLoc();
+  }
+
+  SourceLocation getEndLoc() const {
+    return IdxLoc.isValid() ? getIdxLoc() : getRecordLoc();
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectMemberExprClass;
+  }
+};
+
 /// Represents a reflected id-expression of the form '(. args .)'.
 /// Some of the arguments in args are dependent.
 class CXXReflectedIdExpr final

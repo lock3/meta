@@ -5607,6 +5607,7 @@ public:
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
+  bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -5856,6 +5857,17 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 
   return Success &&
          HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
+}
+
+bool LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
+  APSInt Index;
+  if (!EvaluateInteger(E->getIndex(), Index, Info))
+    return false;
+
+  std::size_t I = Index.getZExtValue();
+  if (MemberExpr *Member = dyn_cast<MemberExpr>(E->getFields()[I]))
+    return VisitMemberExpr(Member);
+  return false;
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {

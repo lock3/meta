@@ -2853,6 +2853,9 @@ private:
   /// Parse a variadic reifier as a member/base initializer.
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
+  /// Parse a __select expression
+  ExprResult ParseCXXSelectMemberExpr();
+
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
   /// Parse clauses for '#pragma omp declare simd'.

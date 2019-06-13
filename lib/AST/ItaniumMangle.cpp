@@ -4058,6 +4058,16 @@ recurse:
     break;
   }
 
+  case Expr::CXXSelectMemberExprClass: {
+    const CXXSelectMemberExpr *SME = cast<CXXSelectMemberExpr>(E);
+
+    // Treated as a binary operator, see: ArraySubscriptExpr
+    Out << "ix";
+    mangleExpression(SME->getBase());
+    mangleExpression(SME->getIndex());
+    break;
+  }
+
   case Expr::CompoundAssignOperatorClass: // fallthrough
   case Expr::BinaryOperatorClass: {
     const BinaryOperator *BO = cast<BinaryOperator>(E);
