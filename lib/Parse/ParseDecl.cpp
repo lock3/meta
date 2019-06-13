@@ -4585,6 +4585,8 @@ bool Parser::ParseEnumeratorIdentifier(DeclarationNameInfo &NameInfo) {
 ///       enumerator:
 ///         enumerator-identifier attributes[opt]
 ///         enumerator-identifier attributes[opt] '=' constant-expression
+///         metaprogram-declaration
+///         injection-declaration
 ///       enumerator-identifier:
 ///         identifier
 ///         reflected-unqualid-id
@@ -4610,12 +4612,23 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
     if (getLangOpts().CPlusPlus && Tok.is(tok::kw_consteval)) {
-      // [Meta] injector-declaration
-      if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {
-        PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
-                        EnumConstantDecls, EnumAvailabilityDiags);
-        TryConsumeToken(tok::comma);
-        continue;
+      // [Meta] metaprogram-declaration
+      if (NextToken().is(tok::l_brace)) {
+        if (auto *ParsedDecl = ParseCXXMetaprogramDeclaration()) {
+          PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
+                          EnumConstantDecls, EnumAvailabilityDiags);
+          TryConsumeToken(tok::comma);
+          continue;
+        }
+      }
+      // [Meta] injection-declaration
+      if (NextToken().is(tok::arrow)) {
+        if (auto *ParsedDecl = ParseCXXInjectionDeclaration()) {
+          PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
+                          EnumConstantDecls, EnumAvailabilityDiags);
+          TryConsumeToken(tok::comma);
+          continue;
+        }
       }
     }
 

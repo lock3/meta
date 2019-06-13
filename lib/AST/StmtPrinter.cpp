@@ -195,10 +195,31 @@ void StmtPrinter::VisitNullStmt(NullStmt *Node) {
   Indent() << ";" << NL;
 }
 
+static CXXInjectorDecl *GetInjectorFromDeclStmt(DeclStmt *DS) {
+  if (!DS->isSingleDecl())
+    return nullptr;
+
+  return dyn_cast_or_null<CXXInjectorDecl>(DS->getSingleDecl());
+}
+
 void StmtPrinter::VisitDeclStmt(DeclStmt *Node) {
+  auto *InjectorDecl = GetInjectorFromDeclStmt(Node);
+  if (InjectorDecl) {
+    // Do not print injector decls, unless in a dependent context where
+    // they haven't been evaluated.
+    DeclContext *InjectorDC = InjectorDecl->getDeclContext();
+    if (!InjectorDC->isDependentContext()) {
+      return;
+    }
+  }
+
   Indent();
   PrintRawDeclStmt(Node);
-  OS << ";" << NL;
+
+  // Injectors do not require a simicolon, and will print one if they have one.
+  if (!InjectorDecl) {
+    OS << ";" << NL;
+  }
 }
 
 void StmtPrinter::VisitCompoundStmt(CompoundStmt *Node) {
