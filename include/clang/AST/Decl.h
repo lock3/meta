@@ -1756,11 +1756,11 @@ private:
 
   unsigned ODRHash;
 
-  /// Wether this variable has 'constexpr' implicitly specified.
+  /// Wether this function has 'constexpr' implicitly specified.
   bool IsConstexprSpecified;
 
-  /// Whether this variable is 'immediate'.
-  bool IsImmediate;
+  /// Whether this function is 'consteval'.
+  bool IsConsteval;
 
   /// End part of this FunctionDecl's source range.
   ///
@@ -2112,15 +2112,15 @@ public:
     FunctionDeclBits.InstantiationIsPending = IC;
   }
 
-  /// Whether this is an immediate constexpr function.
-  bool isImmediate() const { return IsImmediate; }
-  void setImmediate(bool II) { IsImmediate = II; }
+  /// Whether this is a consteval function.
+  bool isConsteval() const { return IsConsteval; }
+  void setConsteval(bool II) { IsConsteval = II; }
 
   /// \brief Whether the constexpr specifier was written explicitly or derived
-  /// from an immediate specifier.
+  /// from a consteval specifier.
   bool isConstexprSpecified() const {
     return IsConstexprSpecified;
-  }  
+  }
   void setConstexprSpecified(bool II) {
     IsConstexprSpecified = II;
   }

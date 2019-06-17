@@ -2765,7 +2765,7 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.HasODRHash = false;
 
   setConstexprSpecified(false);
-  setImmediate(false);
+  setConsteval(false);
 }
 
 void FunctionDecl::getNameForDiagnostic(

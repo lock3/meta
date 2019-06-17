@@ -8688,8 +8688,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       if (!NewFD->isConstexpr()) {
         NewFD->setConstexpr(true);
         NewFD->setConstexprSpecified(false);
-      } 
-      NewFD->setImmediate(true);
+      }
+      NewFD->setConsteval(true);
     }
 
     if (isConstexpr) {

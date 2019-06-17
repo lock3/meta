@@ -8016,7 +8016,7 @@ Sema::FinishCallExpr(Expr *E)
   // Actually evaluate the immediate function.
   if (CXXMemberCallExpr *MemCall = dyn_cast<CXXMemberCallExpr>(E)) {
     CXXMethodDecl *Method = MemCall->getMethodDecl();
-    if (Method && Method->isImmediate()) {
+    if (Method && Method->isConsteval()) {
       ExprResult Value = EvaluateImmediateFunction(*this, MemCall);
       if (Value.isInvalid())
         return ExprError();
@@ -8024,7 +8024,7 @@ Sema::FinishCallExpr(Expr *E)
     }
   } else if (CallExpr *Call = dyn_cast<CallExpr>(E)) {
     if (FunctionDecl *Callee = Call->getDirectCallee()) {
-      if (Callee && Callee->isImmediate()) {
+      if (Callee && Callee->isConsteval()) {
         ExprResult Value = EvaluateImmediateFunction(*this, Call);
         if (Value.isInvalid())
           return ExprError();
