@@ -1068,6 +1068,10 @@ bool DeclContext::isFragmentContext() const {
   do {
     if (DC->isFragment())
       return true;
+    if (auto *RD = dyn_cast<CXXRecordDecl>(DC)) {
+      if (RD->isPrototypeClass())
+        return true;
+    }
     DC = DC->getParent();
   } while (DC);
   return false;
