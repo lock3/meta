@@ -8049,9 +8049,8 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
     ExprResult BaseDRE =
       BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
     return new (Context) CXXSelectMemberExpr(BaseDRE.get(), Context.DependentTy,
-                                             nullptr, Index, 0,
-                                             nullptr, SourceLocation(), KWLoc,
-                                             BaseLoc, IdxLoc);
+                                             Index, nullptr, SourceLocation(),
+                                             KWLoc, BaseLoc);
   }
 
   CXXCastPath BasePath;
@@ -8136,8 +8135,7 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   if (BaseRef->isTypeDependent() || Index->isTypeDependent()
       || Index->isValueDependent()) {
     return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             FieldArray, Index, Fields->size(),
-                                             RD, Loc, KWLoc, BaseLoc, IdxLoc);
+                                             Index, RD, Loc, KWLoc, BaseLoc);
   }
 
   // Index must be an integral or enumerator type.
@@ -8160,9 +8158,7 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   }
 
   return new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
-                                           FieldArray, ComputedIndex,
-                                           Fields->size(), RD, Loc, KWLoc,
-                                           BaseLoc, IdxLoc);
+                                           Index, RD, Loc, KWLoc, BaseLoc);
 
 }
 
@@ -8175,9 +8171,8 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
   if (isa<DeclRefExpr>(Base) && Base->isTypeDependent()) {
     cast<DeclRefExpr>(Base)->getDecl()->dump();
     return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
-                                             nullptr, Index, -1,
-                                             nullptr, SourceLocation(), KWLoc,
-                                             BaseLoc, IdxLoc);
+                                             Index, nullptr, SourceLocation(),
+                                             KWLoc, BaseLoc);
   }
 
   // If we haven't already destructured this base, go ahead and destructure.
@@ -8201,9 +8196,7 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
   // just return the temporary expr.
   if (Index->isTypeDependent() || Index->isValueDependent()) {
     return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
-                                             FieldArray, Index, Parms.size(),
-                                             nullptr, SourceLocation(),
-                                             KWLoc, BaseLoc, IdxLoc);
+                                             Index, KWLoc, BaseLoc);
   }
 
   // Index must be an integral or enumerator type.
@@ -8225,9 +8218,6 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
     return ExprError();
   }
 
-  bool dependent = isa<DeclRefExpr>(Base);
   return new (Context) CXXSelectMemberExpr(Base, Parms[I]->getType(),
-                                           FieldArray, ComputedIndex,
-                                           Parms.size(), dependent,
-                                           KWLoc, BaseLoc, IdxLoc);
+                                           Index, KWLoc, BaseLoc);
 }

@@ -3696,7 +3696,9 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
 
   CXXSelectMemberExpr *RangeAccessor =
     cast<CXXSelectMemberExpr>(Projection.get());
-  std::size_t Size = RangeAccessor->getNumFields();
+  std::size_t Size =
+    SemaRef.Context.Destructures.find(RangeType->getAsCXXRecordDecl())
+    ->second->size();
 
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);

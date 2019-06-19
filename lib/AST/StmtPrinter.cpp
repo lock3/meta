@@ -1315,7 +1315,7 @@ void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *Node) {
   OS << "__select_member(";
   PrintExpr(Node->getBase());
   OS << ", ";
-  PrintExpr(Node->getIndex());
+  PrintExpr(Node->getSelector());
   OS << ")";
 }
 
@@ -2174,14 +2174,6 @@ void StmtPrinter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
   PrintExpr(E->getPattern());
   OS << "...";
-}
-
-void StmtPrinter::VisitPackSelectionExpr(PackSelectionExpr *E) {
-  OS << "__select(";
-  PrintExpr(E->getPack());
-  OS << ", ";
-  PrintExpr(E->getSelector());
-  OS << ")";
 }
 
 void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {

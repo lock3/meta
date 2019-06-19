@@ -785,6 +785,11 @@ void ASTStmtReader::VisitOMPArraySectionExpr(OMPArraySectionExpr *E) {
   E->setRBracketLoc(ReadSourceLocation());
 }
 
+void ASTStmtReader::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
+}
+
 void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   VisitExpr(E);
 }
@@ -1811,11 +1816,6 @@ void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
   E->EllipsisLoc = ReadSourceLocation();
   E->NumExpansions = Record.readInt();
   E->Pattern = Record.readSubExpr();
-}
-
-void ASTStmtReader::VisitPackSelectionExpr(PackSelectionExpr *E) {
-  // FIXME: Implement me.
-  assert(false);
 }
 
 void ASTStmtReader::VisitSizeOfPackExpr(SizeOfPackExpr *E) {

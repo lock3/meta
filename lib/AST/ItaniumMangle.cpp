@@ -3592,7 +3592,6 @@ recurse:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
-  case Expr::PackSelectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 
@@ -4064,7 +4063,7 @@ recurse:
     // Treated as a binary operator, see: ArraySubscriptExpr
     Out << "ix";
     mangleExpression(SME->getBase());
-    mangleExpression(SME->getIndex());
+    mangleExpression(SME->getSelector());
     break;
   }
 

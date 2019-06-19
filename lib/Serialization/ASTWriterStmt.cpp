@@ -699,6 +699,11 @@ void ASTStmtWriter::VisitOMPArraySectionExpr(OMPArraySectionExpr *E) {
   Code = serialization::EXPR_OMP_ARRAY_SECTION;
 }
 
+void ASTStmtWriter::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
+}
+
 void ASTStmtWriter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   VisitExpr(E);
 }
@@ -1785,11 +1790,6 @@ void ASTStmtWriter::VisitPackExpansionExpr(PackExpansionExpr *E) {
   Record.push_back(E->NumExpansions);
   Record.AddStmt(E->getPattern());
   Code = serialization::EXPR_PACK_EXPANSION;
-}
-
-void ASTStmtWriter::VisitPackSelectionExpr(PackSelectionExpr *E) {
-  // FIXME: Implement me.
-  assert(false);
 }
 
 void ASTStmtWriter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {

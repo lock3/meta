@@ -518,11 +518,6 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     K = CXCursor_PackExpansionExpr;
     break;
 
-  case Stmt::PackSelectionExprClass:
-    /// FIXME
-    K = CXCursor_UnexposedExpr;
-    break;
-
   case Stmt::SizeOfPackExprClass:
     K = CXCursor_SizeOfPackExpr;
     break;

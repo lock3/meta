@@ -2235,7 +2235,7 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(Address ThisAddr,
 LValue
 CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
   Expr::EvalResult Res;
-  bool success = E->getIndex()->EvaluateAsInt(Res, getContext());
+  bool success = E->getSelector()->EvaluateAsInt(Res, getContext());
 
   if (!success)
     llvm_unreachable("Bad index in selection.");

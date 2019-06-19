@@ -5860,9 +5860,8 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 }
 
 bool LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
-  return false;
   APSInt Index;
-  if (!EvaluateInteger(E->getIndex(), Index, Info))
+  if (!EvaluateInteger(E->getSelector(), Index, Info))
     return false;
 
   std::size_t I = Index.getZExtValue();
@@ -11951,10 +11950,6 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::CXXIdExprExprClass:
   case Expr::CXXReflectedIdExprClass:
   case Expr::CXXValueOfExprClass:
-    return NoDiag();
-  
-  case Expr::PackSelectionExprClass:
-    // FIXME: expression is type-dependent so we don't really know.
     return NoDiag();
 
   case Expr::CallExprClass:
