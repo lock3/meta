@@ -1102,12 +1102,6 @@ public:
   /// Emit a warning for all pending noderef expressions that we recorded.
   void WarnOnPendingNoDerefs(ExpressionEvaluationContextRecord &Rec);
 
-  /// Current destructuring of a structure or pack expansion.
-  /// Holds the destructured fields of the record most recently
-  /// destructured by a CXXSelectMemberExpr. Used for CXXExpansionStmts
-  /// over pack expansions or classes.
-  llvm::DenseMap<Expr *, SmallVector<Expr *, 8>*> CurDestructures;
-
   /// Compute the mangling number context for a lambda expression or
   /// block literal.
   ///

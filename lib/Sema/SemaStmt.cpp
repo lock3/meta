@@ -2900,6 +2900,8 @@ struct ExpansionStatementBuilder
   // DeclRef to __range.begin() and __range.end()
   Expr *BeginCallRef;
   Expr *EndCallRef;
+
+  SizeOfPackExpr *PackSize;
 };
 
 ExpansionStatementBuilder::
@@ -2910,6 +2912,17 @@ ExpansionStatementBuilder(Sema &S, Scope *CS, Sema::BuildForRangeKind K,
     IsConstexpr(IsConstexpr)
 {
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
+
+  SourceLocation Loc;
+  if (isa<DeclRefExpr>(RangeExpr)) {
+    NamedDecl *PackDecl =
+      cast<NamedDecl>(cast<DeclRefExpr>(RangeExpr)->getDecl());
+    PackSize = SizeOfPackExpr::Create(S.Context, Loc, PackDecl, Loc, Loc);
+  } else if (isa<FunctionParmPackExpr>(RangeExpr)) {
+    FunctionParmPackExpr *FPPE = cast<FunctionParmPackExpr>(RangeExpr);
+    PackSize = SizeOfPackExpr::Create(S.Context, Loc, FPPE->getParameterPack(),
+                                      Loc, Loc, FPPE->getNumExpansions());
+  }
 
   // Within a constexpr expansion, the loop variable is constexpr.
   //
@@ -2963,6 +2976,24 @@ ExpansionStatementBuilder(Sema &S, Sema::BuildForRangeKind K,
     RangeExpr(RangeExpr), IsConstexpr(IsConstexpr), ForLoc(), AnnotationLoc(),
     ColonLoc(), RParenLoc() {
   LoopVar = cast<VarDecl>(LoopDeclStmt->getSingleDecl());
+
+  SourceLocation Loc;
+  if (isa<DeclRefExpr>(RangeExpr)) {
+    NamedDecl *PackDecl =
+      cast<NamedDecl>(cast<DeclRefExpr>(RangeExpr)->getDecl());
+    PackSize = SizeOfPackExpr::Create(S.Context, Loc, PackDecl, Loc, Loc);
+  } else if (isa<FunctionParmPackExpr>(RangeExpr)) {
+    FunctionParmPackExpr *FPPE = cast<FunctionParmPackExpr>(RangeExpr);
+    PackSize = SizeOfPackExpr::Create(S.Context, Loc, FPPE->getParameterPack(),
+                                      Loc, Loc, FPPE->getNumExpansions());
+  } else if (isa<SubstNonTypeTemplateParmPackExpr>(RangeExpr)) {
+    SubstNonTypeTemplateParmPackExpr *NTTPE =
+      cast<SubstNonTypeTemplateParmPackExpr>(RangeExpr);
+    unsigned N = NTTPE->getParameterPack()->getNumExpansionTypes();
+    PackSize = SizeOfPackExpr::Create(S.Context, Loc, NTTPE->getParameterPack(),
+                                      Loc, Loc, N);
+  }
+
   RangeDeclStmt = nullptr;
   RangeVar = nullptr;
   RangeRef = nullptr;
@@ -3216,27 +3247,39 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
   // Normally this is done in FinishRangeVar(), but we don't have a RangeVar
   // to finish.
   if (!LoopVar->isInvalidDecl() && Kind != Sema::BFRK_Check) {
-    if (RangeExpr->isValueDependent() &&
-        isa<DeclRefExpr>(RangeExpr)) {
-      LoopVar->setType(SemaRef.Context.DependentTy);
-    } else {
-      QualType SubstType = SemaRef.SubstAutoType(LoopVar->getType(),
-                                                 SemaRef.Context.DependentTy);
-      LoopVar->setType(SubstType);
-    }
+    QualType SubstType = SemaRef.SubstAutoType(LoopVar->getType(),
+                                               SemaRef.Context.DependentTy);
+    LoopVar->setType(SubstType);
   }
 
+  // If we can't get a size, we're still dependent.
+  if (PackSize->isValueDependent()) {
   // The pack may still be type dependent even after we transform and
   // instantiate it. It will no longer be a DeclRefExpr once it has been
   // transformed, however. Issue this check to prevent an infinite cycle
   // of building dependent expansions.
   // FIXME: isexpansion probably works here. this is clearly wrong.
-  if (isa<DeclRefExpr>(RangeExpr) && RangeExpr->isTypeDependent())
-    return BuildDependentExpansion(/*PackExpansion=*/true);  
+  // if (isa<DeclRefExpr>(RangeExpr) && RangeExpr->isTypeDependent()) {
+  //   Decl *RangeDecl = cast<DeclRefExpr>(RangeExpr)->getDecl();
+
+  //   if (isa<ParmVarDecl>(RangeDecl)) {
+  //     ParmVarDecl *RangePVD = cast<ParmVarDecl>(RangeDecl);
+  //     if (RangePVD->isParameterPack()) {
+  //       llvm::outs() << "Range expr pattern\n";
+  //       // RangePVD->getTemplateInstantiationPattern()->dump();
+  //     }
+  //   }
+    return BuildDependentExpansion(/*PackExpansion=*/true);
+  }
 
   std::size_t Size;
-  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
+  CXXRecordDecl *Record;
+  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr)) {
     Size = FPPE->getNumExpansions();
+    QualType Pattern =
+      dyn_cast<PackExpansionType>(FPPE->getParameterPack()->getType())->getPattern();
+    Record->dump();
+  }
   else
     llvm_unreachable("Unimplemented pack expansion!\n");
 
@@ -3464,6 +3507,11 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     RangeType, BeginVar, EndVar, ColonLoc, /*CoroutineLoc=*/SourceLocation(),
     &CandidateSet, &BeginExpr, &EndExpr, &BEFFailure);
 
+  // If __range.begin() or __range.end() are not defined,
+  // this is, by definition, not a range.
+  if (BeginExpr.isInvalid() || EndExpr.isInvalid())
+    return StmtError();
+
   // Don't bother diagnosing errors. We have more cases to diagnose.
   if (Kind == Sema::BFRK_Build && RangeStatus != Sema::FRS_Success)
     return StmtError();
@@ -3640,7 +3688,29 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
-  return StmtError();
+  ExprResult Projection =
+    SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
+                                     RangeVar, InductionRef);
+  if (Projection.isInvalid())
+    return StmtError();
+
+  CXXSelectMemberExpr *RangeAccessor =
+    cast<CXXSelectMemberExpr>(Projection.get());
+  std::size_t Size = RangeAccessor->getNumFields();
+
+  // Make the range accessor the initializer of the loop variable.
+  SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);
+
+  if (LoopVar->isInvalidDecl())
+    return StmtError();
+
+  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
+                                                RangeDeclStmt,
+                                                TemplateParms,
+                                                Size, ForLoc,
+                                                AnnotationLoc, ColonLoc,
+                                                RParenLoc,
+                                                CXXExpansionStmt::RK_Struct);
 }
 
 /// Build a C++ expansion statement.

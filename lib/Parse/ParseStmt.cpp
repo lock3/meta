@@ -1700,10 +1700,8 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
 
     // If reflection is enabled, this might be an expansion
     // over a constexpr range.
-    if (getLangOpts().Reflection && EllipsisLoc.isValid()) {
-      if (Tok.is(tok::kw_constexpr))
-        ConstexprLoc = Tok.getLocation();
-    }
+    if (getLangOpts().Reflection && EllipsisLoc.isValid())
+      TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy DG = ParseSimpleDeclaration(

@@ -2241,5 +2241,9 @@ CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
     llvm_unreachable("Bad index in selection.");
   std::size_t I = Res.Val.getInt().getZExtValue();
 
-  return EmitLValue(E->getFields()[I]);
+  auto Iter = getContext().Destructures.find(E->getRecord());
+  if (Iter == getContext().Destructures.end())
+    llvm_unreachable("Destructure doesn't exist?");
+
+  return EmitLValue((*Iter->second)[I]);
 }

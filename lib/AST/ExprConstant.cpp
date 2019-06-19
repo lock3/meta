@@ -5860,14 +5860,23 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
 }
 
 bool LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
+  return false;
   APSInt Index;
   if (!EvaluateInteger(E->getIndex(), Index, Info))
     return false;
 
   std::size_t I = Index.getZExtValue();
-  if (MemberExpr *Member = dyn_cast<MemberExpr>(E->getFields()[I]))
-    return VisitMemberExpr(Member);
-  return false;
+  auto Iter = Info.Ctx.Destructures.find(E->getRecord());
+
+  if (Iter == Info.Ctx.Destructures.end())
+    return false;
+  MemberExpr *Member = dyn_cast<MemberExpr>((*Iter->second)[I]);
+  if (!Member)
+    return false;
+  return VisitMemberExpr(Member);
+  // if (MemberExpr *Member = dyn_cast<MemberExpr>(E->getFields()[I]))
+  //   return VisitMemberExpr(Member);
+  // return false;
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {

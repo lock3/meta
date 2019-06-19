@@ -15,6 +15,7 @@
 
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/Stmt.h"
 #include "llvm/Support/Compiler.h"
@@ -272,6 +273,8 @@ protected:
 
   friend class ASTStmtReader;
 
+  SizeOfPackExpr *PackSize = nullptr;
+
 public:
   enum RangeKind {
     RK_Array,
@@ -334,6 +337,10 @@ public:
 
   /// Returns loop induction variable.
   NonTypeTemplateParmDecl *getInductionVariable();
+
+  /// Returns the size of the pack being expanded over.
+  SizeOfPackExpr *getPackSize() const { return PackSize; }
+  void setPackSize(SizeOfPackExpr *E) { PackSize = E; }
 
   /// \brief Returns the parsed body of the loop.
   const Stmt *getBody() const { return SubExprs[BODY]; }

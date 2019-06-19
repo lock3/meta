@@ -8062,13 +8062,13 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   if (!RD)
     return true;
   SourceLocation Loc = RD->getLocation();
-  
+
   auto *Fields = new (Context) llvm::SmallVector<Expr *, 8>;
-  
+
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
-  auto It = CurDestructures.find(Base->getInit());
-  if (It != CurDestructures.end()) {
+  auto It = Context.Destructures.find(OrigRD);
+  if (It != Context.Destructures.end()) {
     Fields = It->second;
   } else {
     QualType BaseClassType =
@@ -8119,7 +8119,7 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
     // TODO: create "BadNumberOfBindings()" equivalent for
     // expansions.
     assert(I == Fields->size() && "Bad Number of Bindings");
-    CurDestructures.insert({Base->getInit(), Fields});
+    Context.Destructures.insert({OrigRD, Fields});
   }
 
   // There is no need to keep this as a vector, we will
@@ -8173,6 +8173,7 @@ Sema::ActOnCXXSelectMemberExpr(Expr *Base, Expr *Index,
                                SourceLocation IdxLoc)
 {
   if (isa<DeclRefExpr>(Base) && Base->isTypeDependent()) {
+    cast<DeclRefExpr>(Base)->getDecl()->dump();
     return new (Context) CXXSelectMemberExpr(Base, Context.DependentTy,
                                              nullptr, Index, -1,
                                              nullptr, SourceLocation(), KWLoc,
