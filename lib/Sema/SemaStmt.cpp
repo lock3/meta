@@ -3284,7 +3284,7 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
     llvm_unreachable("Unimplemented pack expansion!\n");
 
   ExprResult PackAccessor =
-    SemaRef.ActOnCXXSelectMemberExpr(RangeExpr, InductionRef);
+    SemaRef.ActOnCXXSelectPackExpr(RangeExpr, InductionRef);
   if (PackAccessor.isInvalid())
     return StmtError();
 

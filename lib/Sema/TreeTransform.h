@@ -2390,11 +2390,11 @@ public:
                                               SourceLocation());
   }
 
-  ExprResult RebuildCXXSelectMemberExpr(Expr *Base, Expr *Index,
-                                        SourceLocation KWLoc,
-                                        SourceLocation B) {
-    return getSema().ActOnCXXSelectMemberExpr(Base, Index, KWLoc, B,
-                                              SourceLocation());
+  ExprResult RebuildCXXSelectPackExpr(Expr *Base, Expr *Index,
+                                      SourceLocation KWLoc,
+                                      SourceLocation B) {
+    return getSema().ActOnCXXSelectPackExpr(Base, Index, KWLoc, B,
+                                            SourceLocation());
   }
 
   /// Build a new call expression.
@@ -10212,13 +10212,6 @@ TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
     getDerived().TransformExpr(E->getBase());
   if (NewBase.isInvalid())
     return ExprError();
-
-  // If we are a selecting on a pack, we are done.
-  if (NewBase.get()->containsUnexpandedParameterPack())
-    return getDerived().RebuildCXXSelectMemberExpr(NewBase.get(),
-                                                   NewSel.get(),
-                                                   E->getSelectLoc(),
-                                                   E->getBaseLoc());
   
   Decl *NewBaseDecl =
     cast<DeclRefExpr>(NewBase.get())->getFoundDecl();
@@ -10236,6 +10229,25 @@ TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
                                                  NewSel.get(),
                                                  E->getSelectLoc(),
                                                  E->getBaseLoc());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  ExprResult NewSel =
+    getDerived().TransformExpr(E->getSelector());
+  if (NewSel.isInvalid())
+    return ExprError();
+
+  ExprResult NewBase =
+    getDerived().TransformExpr(E->getBase());
+  if (NewBase.isInvalid())
+    return ExprError();
+
+  return getDerived().RebuildCXXSelectPackExpr(NewBase.get(),
+                                               NewSel.get(),
+                                               E->getSelectLoc(),
+                                               E->getBaseLoc());
 }
 
 template<typename Derived>

@@ -5608,6 +5608,7 @@ public:
   bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
   bool VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
+  bool VisitCXXSelectPackExpr(const CXXSelectPackExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
   bool VisitUnaryImag(const UnaryOperator *E);
@@ -5873,9 +5874,22 @@ bool LValueExprEvaluator::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *E)
   if (!Member)
     return false;
   return VisitMemberExpr(Member);
-  // if (MemberExpr *Member = dyn_cast<MemberExpr>(E->getFields()[I]))
-  //   return VisitMemberExpr(Member);
-  // return false;
+}
+
+bool LValueExprEvaluator::VisitCXXSelectPackExpr(const CXXSelectPackExpr *E) {
+  APSInt Index;
+  if (!EvaluateInteger(E->getSelector(), Index, Info))
+    return false;
+
+  std::size_t I = Index.getZExtValue();
+  auto Iter = Info.Ctx.Destructures.find(E->getPack());
+
+  if (Iter == Info.Ctx.Destructures.end())
+    return false;
+  Expr *Expansion = (*Iter->second)[I];
+  if (!Expansion)
+    return false;
+  return VisitExpr(Expansion);
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -11910,8 +11924,9 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   }
 
   case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass:
     // This is an ICE if its Base is an ICE
-    return CheckICE(cast<CXXSelectMemberExpr>(E)->getBase(), Ctx);
+    return CheckICE(cast<CXXSelectionExpr>(E)->getBase(), Ctx);
 
   case Expr::SizeOfPackExprClass:
   case Expr::GNUNullExprClass:

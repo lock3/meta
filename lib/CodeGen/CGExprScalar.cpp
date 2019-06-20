@@ -564,6 +564,7 @@ public:
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
   Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
+  Value *VisitCXXSelectPackExpr(CXXSelectPackExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitConvertVectorExpr(ConvertVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
@@ -1817,6 +1818,10 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
 }
 
 Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  return EmitLoadOfLValue(E);
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
   return EmitLoadOfLValue(E);
 }
 

@@ -280,6 +280,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXConcatenateExprClass:
   case Stmt::CXXDependentVariadicReifierExprClass:
   case Stmt::CXXSelectMemberExprClass:
+  case Stmt::CXXSelectPackExprClass:
   case Stmt::CXXStdInitializerListExprClass:
   case Stmt::CXXScalarValueInitExprClass:
   case Stmt::CXXUuidofExprClass:

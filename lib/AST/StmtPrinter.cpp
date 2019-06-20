@@ -1319,6 +1319,14 @@ void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitCXXSelectPackExpr(CXXSelectPackExpr *Node) {
+  OS << "__select_member(";
+  PrintExpr(Node->getBase());
+  OS << ", ";
+  PrintExpr(Node->getSelector());
+  OS << ")";
+}
+
 void StmtPrinter::PrintCallArgs(CallExpr *Call) {
   for (unsigned i = 0, e = Call->getNumArgs(); i != e; ++i) {
     if (isa<CXXDefaultArgExpr>(Call->getArg(i))) {

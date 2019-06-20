@@ -1251,6 +1251,7 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::OffsetOfExprClass:
   case Expr::PackExpansionExprClass:
   case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass:
   case Expr::PseudoObjectExprClass:
   case Expr::SubstNonTypeTemplateParmExprClass:
   case Expr::SubstNonTypeTemplateParmPackExprClass:

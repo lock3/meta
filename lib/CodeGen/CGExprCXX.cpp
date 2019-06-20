@@ -2247,3 +2247,19 @@ CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
 
   return EmitLValue((*Iter->second)[I]);
 }
+
+LValue
+CodeGenFunction::EmitCXXSelectPackExpr(const CXXSelectPackExpr *E) {
+  Expr::EvalResult Res;
+  bool success = E->getSelector()->EvaluateAsInt(Res, getContext());
+
+  if (!success)
+    llvm_unreachable("Bad index in selection.");
+  std::size_t I = Res.Val.getInt().getZExtValue();
+
+  auto Iter = getContext().Destructures.find(E->getPack());
+  if (Iter == getContext().Destructures.end())
+    llvm_unreachable("Destructure doesn't exist?");
+
+  return EmitLValue((*Iter->second)[I]);
+}

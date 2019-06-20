@@ -794,6 +794,10 @@ void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
   VisitExpr(E);
 }
 
+void ASTStmtReader::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  VisitExpr(E);
+}
+
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   unsigned NumArgs = Record.readInt();

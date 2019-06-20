@@ -4057,8 +4057,9 @@ recurse:
     break;
   }
 
-  case Expr::CXXSelectMemberExprClass: {
-    const CXXSelectMemberExpr *SME = cast<CXXSelectMemberExpr>(E);
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass: {
+    const CXXSelectionExpr *SME = cast<CXXSelectMemberExpr>(E);
 
     // Treated as a binary operator, see: ArraySubscriptExpr
     Out << "ix";

@@ -3375,14 +3375,18 @@ Parser::ParseCXXSelectMemberExpr() {
   if (!isa<DeclRefExpr>(Base))
     return ExprError();
   DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
+  // const PackExpansionType *PET = cast<PackExpansionType>(BaseDRE->getType());
+  // llvm::outs() << "Num expansions:\n";
+  // if (PET->getNumExpansions())
+  //   llvm::outs() << PET->getNumExpansions() << '\n';
 
   // If this is a parameter pack, we don't need any knowledge
   // of the record and there won't be a VarDecl. Just return here.
   if (BaseDRE->containsUnexpandedParameterPack())
-    return Actions.ActOnCXXSelectMemberExpr(BaseDRE, Index,
-                                            KWLoc,
-                                            BaseDRE->getLocation(),
-                                            Index->getExprLoc());
+    return Actions.ActOnCXXSelectPackExpr(BaseDRE, Index,
+                                          KWLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
 
   // Otherwise, we are trying to destructure a class.
   Decl *FoundDecl = BaseDRE->getFoundDecl();
@@ -3393,7 +3397,7 @@ Parser::ParseCXXSelectMemberExpr() {
   CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
   if (!Record && !BaseVar->getType()->isDependentType())
     return ExprError();
-  
+
   return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
                                           KWLoc,
                                           BaseDRE->getLocation(),

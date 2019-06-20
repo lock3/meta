@@ -5313,19 +5313,26 @@ class CXXSelectionExpr : public Expr {
   friend class ASTStmtWriter;
 
 protected:
+  /// The location of the __select keyword.
   SourceLocation SelectLoc;
+
+  /// The location of the object being projected on
+  SourceLocation BaseLoc;
+
+  /// The base object and integral selector.
   Stmt *Args[2];
 
 public:
   CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
-                    Expr *Sel, SourceLocation SelectLoc)
+                   Expr *Sel, SourceLocation SelectLoc,
+                   SourceLocation BaseLoc)
     : Expr(SC, T, Base->getValueKind(),
            Base->getObjectKind(),
            Base->isTypeDependent() || Sel->isTypeDependent(),
            Base->isValueDependent() || Sel->isValueDependent(),
            Base->isInstantiationDependent() || Sel->isInstantiationDependent(),
            /*ContainsUnexpandedParameterPack=*/false),
-      SelectLoc(SelectLoc), Args{Base, Sel} {}
+      SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel} {}
 
   CXXSelectionExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
@@ -5342,6 +5349,9 @@ public:
   /// expansion.
   SourceLocation getSelectLoc() const { return SelectLoc; }
 
+  /// Return the location of the base object being selected upon.
+  SourceLocation getBaseLoc() const { return BaseLoc; }
+
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();
@@ -5357,7 +5367,8 @@ public:
   SourceLocation getEndLoc() const LLVM_READONLY { return SelectLoc; }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXSelectMemberExprClass;
+    return T->getStmtClass() == CXXSelectMemberExprClass ||
+      T->getStmtClass() == CXXSelectPackExprClass;
   }
 
   // Iterators
@@ -5373,9 +5384,6 @@ class CXXSelectMemberExpr : public CXXSelectionExpr {
 
   /// The location of the record.
   SourceLocation RecordLoc;
-
-  /// The location of the object being projected on
-  SourceLocation BaseLoc;
 public:
   CXXSelectMemberExpr(Expr *Base,
                       QualType T,
@@ -5384,17 +5392,8 @@ public:
                       SourceLocation RecordLoc,
                       SourceLocation KWLoc = SourceLocation(),
                       SourceLocation BaseLoc = SourceLocation())
-    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, KWLoc),
-      Record(RD), RecordLoc(RecordLoc), BaseLoc(BaseLoc)
-    {}
-
-  CXXSelectMemberExpr(Expr *Base,
-                      QualType T,
-                      Expr *Index,
-                      SourceLocation KWLoc = SourceLocation(),
-                      SourceLocation BaseLoc = SourceLocation())
-    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, KWLoc),
-      Record(nullptr), RecordLoc(), BaseLoc(BaseLoc)
+    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index,
+                       KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc)
     {}
 
   CXXSelectMemberExpr(EmptyShell Empty)
@@ -5402,11 +5401,34 @@ public:
 
   /// Returns the source code location of the (optional) ellipsis.
   SourceLocation getRecordLoc() const { return RecordLoc; }
-  SourceLocation getBaseLoc() const { return BaseLoc; }
   CXXRecordDecl *getRecord() const { return Record; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXSelectMemberExprClass;
+  }
+};
+
+class CXXSelectPackExpr : public CXXSelectionExpr {
+  VarDecl *Pack;
+  
+public:
+  CXXSelectPackExpr(Expr *Base,
+                    QualType T,
+                    Expr *Index,
+                    VarDecl *Pack,
+                    SourceLocation KWLoc = SourceLocation(),
+                    SourceLocation BaseLoc = SourceLocation())
+    : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, KWLoc, BaseLoc),
+      Pack(Pack)
+    {}
+
+  CXXSelectPackExpr(EmptyShell Empty)
+    : CXXSelectionExpr(CXXSelectPackExprClass, Empty) {}
+
+  VarDecl *getPack() const { return Pack; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectPackExprClass;
   }
 };
 

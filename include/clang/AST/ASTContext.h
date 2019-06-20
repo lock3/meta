@@ -573,7 +573,7 @@ public:
   /// Active destructures of structures or parameter packs, used by
   /// expansion statements. Maps a record decl to its destructured fields.
   using MemberVector = llvm::SmallVector<Expr *, 8>;
-  llvm::DenseMap<const CXXRecordDecl *, MemberVector *> Destructures;
+  llvm::DenseMap<const Decl *, MemberVector *> Destructures;
 
   /// Container for either a single DynTypedNode or for an ArrayRef to
   /// DynTypedNode. For use with ParentMap.

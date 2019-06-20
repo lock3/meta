@@ -151,6 +151,7 @@ def CXXNoexceptExpr : DStmt<Expr>;
 def PackExpansionExpr : DStmt<Expr>;
 def CXXSelectionExpr : DStmt<Expr, 1>;
 def CXXSelectMemberExpr : DStmt<CXXSelectionExpr>;
+def CXXSelectPackExpr : DStmt<CXXSelectionExpr>;
 def SizeOfPackExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmPackExpr : DStmt<Expr>;

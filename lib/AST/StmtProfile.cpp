@@ -1133,6 +1133,10 @@ void StmtProfiler::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCXXSelectPackExpr(const CXXSelectPackExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitCallExpr(const CallExpr *S) {
   VisitExpr(S);
 }
