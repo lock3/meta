@@ -2843,6 +2843,22 @@ Stmt *FunctionDecl::getBody(const FunctionDecl *&Definition) const {
   return nullptr;
 }
 
+bool FunctionDecl::doesThisDeclarationHaveAUserDefinedBody() const {
+  if (!doesThisDeclarationHaveABody())
+    return false;
+
+  if (isPure())
+    return false;
+
+  if (isDefaulted())
+    return false;
+
+  if (isDeleted())
+    return false;
+
+  return true;
+}
+
 void FunctionDecl::setBody(Stmt *B) {
   Body = B;
   if (B)

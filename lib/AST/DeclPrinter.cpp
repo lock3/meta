@@ -479,12 +479,12 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
     else if (isa<ObjCMethodDecl>(*D) && cast<ObjCMethodDecl>(*D)->hasBody())
       Terminator = nullptr;
     else if (auto FD = dyn_cast<FunctionDecl>(*D)) {
-      if (FD->doesThisDeclarationHaveANonTrivialBody())
+      if (FD->doesThisDeclarationHaveAUserDefinedBody())
         Terminator = nullptr;
       else
         Terminator = ";";
     } else if (auto TD = dyn_cast<FunctionTemplateDecl>(*D)) {
-      if (TD->getTemplatedDecl()->doesThisDeclarationHaveANonTrivialBody())
+      if (TD->getTemplatedDecl()->doesThisDeclarationHaveAUserDefinedBody())
         Terminator = nullptr;
       else
         Terminator = ";";
@@ -507,9 +507,9 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       Out << Terminator;
     if (!Policy.TerseOutput &&
         ((isa<FunctionDecl>(*D) &&
-          cast<FunctionDecl>(*D)->doesThisDeclarationHaveANonTrivialBody()) ||
+          cast<FunctionDecl>(*D)->doesThisDeclarationHaveAUserDefinedBody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveANonTrivialBody())))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveAUserDefinedBody())))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
