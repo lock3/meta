@@ -2026,6 +2026,10 @@ public:
     return (Body || isLateTemplateParsed()) && !isTrivial();
   }
 
+  /// Returns whether this specific declaration has a user provided
+  /// body.
+  bool doesThisDeclarationHaveAUserDefinedBody() const;
+
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }
 

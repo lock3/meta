@@ -5416,7 +5416,7 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 }
 
 static void CompletePrint() {
-  llvm::outs() << '\n';
+  llvm::errs() << '\n';
 }
 
 static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
