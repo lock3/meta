@@ -335,6 +335,8 @@ unsigned Parser::ParseAttributeArgsCommon(
   if (attributeIsTypeArgAttr(*AttrName)) {
     ParseAttributeWithTypeArg(*AttrName, AttrNameLoc, Attrs, EndLoc, ScopeName,
                               ScopeLoc, Syntax);
+    // FIXME: when attributeIsTypeArgAttr() is true, assumes that the attribute
+    // takes a single parameter.
     return 1;
   }
 

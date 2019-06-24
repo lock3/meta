@@ -4552,7 +4552,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   assert(DerefTypeLoc && "no type source info for attribute argument");
 
   if (ParmType->isVoidType()) {
-    S.Diag(AL.getLoc(), diag::warn_attribute_type_not_supported) << AL << "'void'";
+    S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument) << "'void'" << AL;
     return;
   }
 
@@ -7144,8 +7144,6 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleSuppressAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Owner:
-    handleLifetimeCategoryAttr(S, D, AL);
-    break;
   case ParsedAttr::AT_Pointer:
     handleLifetimeCategoryAttr(S, D, AL);
     break;
