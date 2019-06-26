@@ -3676,8 +3676,8 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
     return StmtError();
   // FIXME: in the case where the destructured type is non-dependent,
   // but in a dependent context, this never gets rebuilt... why?
-  // if (Projection.get()->getType()->isDependentType())
-  //   return BuildDependentExpansion();
+  if (Projection.get()->getType()->isDependentType())
+    return BuildDependentExpansion();
 
   std::size_t Size =
     SemaRef.Context.Destructures.find(RangeVar->getInit())
@@ -3985,6 +3985,9 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   } else {
     Expr *RangeInit = Expansion->getRangeInit();
     if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
+      return Expansion;
+    Decl *RangeVar = Expansion->getRangeVariable();
+    if (RangeVar->getDeclContext()->isDependentContext())
       return Expansion;
   }
 

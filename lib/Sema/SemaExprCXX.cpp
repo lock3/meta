@@ -8129,12 +8129,11 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
 
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
-  if (BaseRef->isTypeDependent() || Index->isTypeDependent()
-      || Index->isValueDependent()) {
-    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             Index, Fields->size(), RD, Loc,
-                                             KWLoc, BaseLoc);
-  }
+  // if (Index->isTypeDependent() || Index->isValueDependent()) {
+  //   return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+  //                                            Index, Fields->size(), RD, Loc,
+  //                                            KWLoc, BaseLoc);
+  // }
 
   // Index must be an integral or enumerator type.
   if (!Index->getType()->isIntegralOrEnumerationType())
@@ -8165,8 +8164,7 @@ Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
                              SourceLocation BaseLoc,
                              SourceLocation IdxLoc)
 {
-  TemplateArgument BaseArg(Base, TemplateArgument::Expression);
-  assert(BaseArg.isPackExpansion() ||
+  TemplateArgument BaseArg(Base, TemplateArgument::Expression);  assert(BaseArg.isPackExpansion() ||
          BaseArg.containsUnexpandedParameterPack());
 
   llvm::Optional<unsigned> Size = getFullyPackExpandedSize(BaseArg);
