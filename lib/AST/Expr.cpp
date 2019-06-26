@@ -3177,6 +3177,8 @@ bool Expr::HasSideEffects(const ASTContext &Ctx,
   case CXXReflectedIdExprClass:
   case CXXConcatenateExprClass:
   case CXXDependentVariadicReifierExprClass:
+  case CXXSelectMemberExprClass:
+  case CXXSelectPackExprClass:
     // These never have a side-effect.
     return false;
 

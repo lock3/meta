@@ -3059,11 +3059,9 @@ ExpansionStatementBuilder::Build()
 
   // Try building a tuple expansion.
   // FIXME: Disabled for variadic reifiers.
-  #if 0
   ForStmt = BuildExpansionOverTuple();
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
-  #endif
 
   // If that doesn't succeed, try with a constexpr range.
   ForStmt = BuildExpansionOverRange();
@@ -3373,11 +3371,11 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // Do an initial lookup for 'NNS::get' where 'NNS' is the declaration
   // context of the range type.
   LookupResult R(SemaRef, DNI.getName(), ColonLoc, Sema::LookupOrdinaryName);
-  if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext())) {
-    SemaRef.Diag(ColonLoc, diag::err_no_member)
-        << Name << RangeClass->getParent();
+  // For now just fail if we can't find a get function, this is probably not a
+  // tuple.
+  if (!SemaRef.LookupQualifiedName(R, RangeClass->getDeclContext()))
     return StmtError();
-  }
+
   const UnresolvedSetImpl &FoundNames = R.asUnresolvedSet();
 
   // Build the lookup expression 'NNS::get<I>'.
@@ -3678,11 +3676,11 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
     return StmtError();
   // FIXME: in the case where the destructured type is non-dependent,
   // but in a dependent context, this never gets rebuilt... why?
-  if (Projection.get()->getType()->isDependentType())
-    return BuildDependentExpansion();
+  // if (Projection.get()->getType()->isDependentType())
+  //   return BuildDependentExpansion();
 
   std::size_t Size =
-    SemaRef.Context.Destructures.find(RangeType->getAsCXXRecordDecl())
+    SemaRef.Context.Destructures.find(RangeVar->getInit())
     ->second->size();
 
   // Make the range accessor the initializer of the loop variable.

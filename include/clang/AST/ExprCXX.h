@@ -5325,10 +5325,14 @@ protected:
   /// The computed expression this selection refers to.
   const Expr *Value = nullptr;
 
+  /// The number of fields or expansions in the structure we
+  /// are selecting on.
+  std::size_t NumFields;
+
 public:
   CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
-                   Expr *Sel, SourceLocation SelectLoc,
-                   SourceLocation BaseLoc)
+                   Expr *Sel, std::size_t NumFields,
+                   SourceLocation SelectLoc, SourceLocation BaseLoc)
     : Expr(SC, T, Base->getValueKind(),
            Base->getObjectKind(),
            Base->isTypeDependent() || Sel->isTypeDependent(),
@@ -5394,11 +5398,12 @@ public:
   CXXSelectMemberExpr(Expr *Base,
                       QualType T,
                       Expr *Index,
+                      std::size_t NumFields,
                       CXXRecordDecl *RD,
                       SourceLocation RecordLoc,
                       SourceLocation KWLoc = SourceLocation(),
                       SourceLocation BaseLoc = SourceLocation())
-    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index,
+    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, NumFields,
                        KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc)
     {}
 
@@ -5422,11 +5427,12 @@ public:
   CXXSelectPackExpr(Expr *Base,
                     QualType T,
                     Expr *Index,
+                    std::size_t NumFields,
                     const VarDecl *Pack,
                     SourceLocation KWLoc = SourceLocation(),
                     SourceLocation BaseLoc = SourceLocation())
-    : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, KWLoc, BaseLoc),
-      Pack(Pack)
+    : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, NumFields,
+                       KWLoc, BaseLoc), Pack(Pack)
     {}
 
   CXXSelectPackExpr(EmptyShell Empty)

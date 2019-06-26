@@ -6174,7 +6174,7 @@ public:
   DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
                                            const CXXRecordDecl *RD,
                                            CXXCastPath &BasePath);
-  ExprResult ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD,
+  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
                                       VarDecl *Base, Expr *Index,
                                       SourceLocation KWLoc = SourceLocation(),
                                       SourceLocation BaseLoc = SourceLocation(),

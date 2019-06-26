@@ -83,7 +83,7 @@ void select_constexpr() {
 
 template<typename T, typename U, typename S>
 void select_dependent_constexpr() {
-  static constexpr dependent_record<T,U, S> r(0, 1, 2, 3, 4, 5, 6);
+  static constexpr dependent_record<T, U, S> r(0, 1, 2, 3, 4, 5, 6);
   static_assert(__select_member(r, 0) == 0);
   static_assert(__select_member(r, 1) == 1);
   static_assert(__select_member(r, 2) == 2);

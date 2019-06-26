@@ -10217,16 +10217,17 @@ TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
     cast<DeclRefExpr>(NewBase.get())->getDecl();
   NewBaseDecl =
     getDerived().TransformDecl(E->getBase()->getExprLoc(), NewBaseDecl);
+  if (!isa<VarDecl>(NewBaseDecl))
+    return ExprError();
 
-  // We want to transform the record to ensure that we don't wind up reusing
-  // fields that were destructured in a dependent context.
-  CXXRecordDecl *NewRecord = cast<CXXRecordDecl>(getDerived().TransformDecl(
-                                                   E->getRecordLoc(),
-                                                   E->getRecord()));
+  CXXRecordDecl *NewRecord = E->getRecord();
+  if (!NewRecord) {
+    NewRecord = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
+  }
   if (!NewRecord)
     return ExprError();
 
-  return getDerived().RebuildCXXSelectMemberExpr(E->getRecord(),
+  return getDerived().RebuildCXXSelectMemberExpr(NewRecord,
                                                  cast<VarDecl>(NewBaseDecl),
                                                  NewSel.get(),
                                                  E->getSelectLoc(),
