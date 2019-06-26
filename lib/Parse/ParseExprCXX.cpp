@@ -3372,13 +3372,10 @@ Parser::ParseCXXSelectMemberExpr() {
   Expr *Base = Exprs.front();
   Expr *Index = Exprs.back();
   // // TODO: will this conflict with unqualid or idexpr?
+  // FIXME: what about typos?
   if (!isa<DeclRefExpr>(Base))
     return ExprError();
   DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
-  // const PackExpansionType *PET = cast<PackExpansionType>(BaseDRE->getType());
-  // llvm::outs() << "Num expansions:\n";
-  // if (PET->getNumExpansions())
-  //   llvm::outs() << PET->getNumExpansions() << '\n';
 
   // If this is a parameter pack, we don't need any knowledge
   // of the record and there won't be a VarDecl. Just return here.
@@ -3389,7 +3386,7 @@ Parser::ParseCXXSelectMemberExpr() {
                                           Index->getExprLoc());
 
   // Otherwise, we are trying to destructure a class.
-  Decl *FoundDecl = BaseDRE->getFoundDecl();
+  Decl *FoundDecl = BaseDRE->getDecl();
   if (!isa<VarDecl>(FoundDecl))
     return ExprError();
   VarDecl *BaseVar =

@@ -2241,11 +2241,12 @@ CodeGenFunction::EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E) {
     llvm_unreachable("Bad index in selection.");
   std::size_t I = Res.Val.getInt().getZExtValue();
 
-  auto Iter = getContext().Destructures.find(E->getRecord());
-  if (Iter == getContext().Destructures.end())
-    llvm_unreachable("Destructure doesn't exist?");
+  // auto Iter = getContext().Destructures.find(E->getRecord());
+  // if (Iter == getContext().Destructures.end())
+  //   llvm_unreachable("Destructure doesn't exist?");
 
-  return EmitLValue((*Iter->second)[I]);
+  // return EmitLValue((*Iter->second)[I]);
+  return EmitLValue(E->getValue());
 }
 
 LValue
@@ -2257,9 +2258,17 @@ CodeGenFunction::EmitCXXSelectPackExpr(const CXXSelectPackExpr *E) {
     llvm_unreachable("Bad index in selection.");
   std::size_t I = Res.Val.getInt().getZExtValue();
 
-  auto Iter = getContext().Destructures.find(E->getPack());
-  if (Iter == getContext().Destructures.end())
-    llvm_unreachable("Destructure doesn't exist?");
+  // auto Iter = getContext().Destructures.find(E->getPack());
+  // if (Iter == getContext().Destructures.end())
+  //   llvm_unreachable("Destructure doesn't exist?");
+  // const Expr *Val;
+  // if (auto *FPPE = dyn_cast<FunctionParmPackExpr>(E->getBase())) {
+  //   ParmVarDecl *Expansion = FPPE->getExpansion(I);
+  //  Val = BuildDeclRefExpr(Expansion, Expansion->getType().getNonReferenceType(),
+  //                          VK_LValue, Expansion->getLocation());
+  // } else
+  //   llvm_unreachable("Invalid expansion.");
 
-  return EmitLValue((*Iter->second)[I]);
+  // return EmitLValue((*Iter->second)[I]);
+  return EmitLValue(E->getValue());
 }

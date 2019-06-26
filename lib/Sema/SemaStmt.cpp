@@ -3254,32 +3254,12 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
 
   // If we can't get a size, we're still dependent.
   if (PackSize->isValueDependent()) {
-  // The pack may still be type dependent even after we transform and
-  // instantiate it. It will no longer be a DeclRefExpr once it has been
-  // transformed, however. Issue this check to prevent an infinite cycle
-  // of building dependent expansions.
-  // FIXME: isexpansion probably works here. this is clearly wrong.
-  // if (isa<DeclRefExpr>(RangeExpr) && RangeExpr->isTypeDependent()) {
-  //   Decl *RangeDecl = cast<DeclRefExpr>(RangeExpr)->getDecl();
-
-  //   if (isa<ParmVarDecl>(RangeDecl)) {
-  //     ParmVarDecl *RangePVD = cast<ParmVarDecl>(RangeDecl);
-  //     if (RangePVD->isParameterPack()) {
-  //       llvm::outs() << "Range expr pattern\n";
-  //       // RangePVD->getTemplateInstantiationPattern()->dump();
-  //     }
-  //   }
     return BuildDependentExpansion(/*PackExpansion=*/true);
   }
 
   std::size_t Size;
-  CXXRecordDecl *Record;
-  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr)) {
+  if (FunctionParmPackExpr *FPPE = dyn_cast<FunctionParmPackExpr>(RangeExpr))
     Size = FPPE->getNumExpansions();
-    QualType Pattern =
-      dyn_cast<PackExpansionType>(FPPE->getParameterPack()->getType())->getPattern();
-    Record->dump();
-  }
   else
     llvm_unreachable("Unimplemented pack expansion!\n");
 
@@ -3688,14 +3668,19 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
+  if (RangeVar->getDeclContext()->isDependentContext() )
+    return BuildDependentExpansion();
+
   ExprResult Projection =
     SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
                                      RangeVar, InductionRef);
   if (Projection.isInvalid())
     return StmtError();
+  // FIXME: in the case where the destructured type is non-dependent,
+  // but in a dependent context, this never gets rebuilt... why?
+  if (Projection.get()->getType()->isDependentType())
+    return BuildDependentExpansion();
 
-  CXXSelectMemberExpr *RangeAccessor =
-    cast<CXXSelectMemberExpr>(Projection.get());
   std::size_t Size =
     SemaRef.Context.Destructures.find(RangeType->getAsCXXRecordDecl())
     ->second->size();
@@ -4003,6 +3988,10 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
     Expr *RangeInit = Expansion->getRangeInit();
     if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
       return Expansion;
+  }
+
+  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
+    return Expansion;
   }
 
   // When there are no members, return an empty compound statement.

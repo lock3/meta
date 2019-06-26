@@ -8044,23 +8044,28 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
    // Get the type of the struct we are trying to expand.
   QualType BaseType = Base->getType().getNonReferenceType();
 
-  // If the base is dependent, we won't be able to do any destructuring yet.
-  if (BaseType->isDependentType()) {
-    ExprResult BaseDRE =
-      BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
-    return new (Context) CXXSelectMemberExpr(BaseDRE.get(), Context.DependentTy,
-                                             Index, nullptr, SourceLocation(),
-                                             KWLoc, BaseLoc);
-  }
+  ExprResult BaseDRE =
+    BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+  if (BaseDRE.isInvalid())
+    return ExprError();
+  Expr *BaseRef = BaseDRE.get();
 
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
     FindDecomposableBaseClass
     (Base->getLocation(), OrigRD, BasePath);
-  CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
+  CXXRecordDecl *RD = cast<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
-    return true;
+    return ExprError();
   SourceLocation Loc = RD->getLocation();
+
+  // If the base is dependent, we won't be able to do any destructuring yet.
+  if (BaseType->isDependentType() ||
+      Base->getDeclContext()->isDependentContext()) {
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, RD, Loc,
+                                             KWLoc, BaseLoc);
+  }
 
   auto *Fields = new (Context) llvm::SmallVector<Expr *, 8>;
 
@@ -8121,15 +8126,6 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
     Context.Destructures.insert({OrigRD, Fields});
   }
 
-  // There is no need to keep this as a vector, we will
-  // not be adding anything to it.
-  Expr **FieldArray = new (Context) Expr *[Fields->size()];
-  std::copy(Fields->begin(), Fields->end(), FieldArray);
-
-  ExprResult BaseDRE =
-    BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
-  Expr *BaseRef = BaseDRE.get();
-
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
   if (BaseRef->isTypeDependent() || Index->isTypeDependent()
@@ -8139,16 +8135,12 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
   }
 
   // Index must be an integral or enumerator type.
-  ExprResult IndexRV = DefaultLvalueConversion(Index);
-  if (IndexRV.isInvalid())
-    return ExprError();
-  Expr *ComputedIndex = IndexRV.get();
-  if (!ComputedIndex->getType()->isIntegralOrEnumerationType())
+  if (!Index->getType()->isIntegralOrEnumerationType())
     return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
 
   // Index must be a constant expression.
   Expr::EvalResult Res;
-  if (!ComputedIndex->EvaluateAsInt(Res, Context))
+  if (!Index->EvaluateAsInt(Res, Context))
     return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
 
   unsigned I = Res.Val.getInt().getZExtValue();
@@ -8157,9 +8149,11 @@ Sema::ActOnCXXSelectMemberExpr(const CXXRecordDecl *OrigRD, VarDecl *Base,
     return ExprError();
   }
 
-  return new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
-                                           Index, RD, Loc, KWLoc, BaseLoc);
-
+  CXXSelectMemberExpr *Sel =
+    new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
+                                      Index, RD, Loc, KWLoc, BaseLoc);
+  Sel->setValue((*Fields)[I]);
+  return Sel;
 }
 
 ExprResult
@@ -8181,46 +8175,41 @@ Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
                                            Index, nullptr, KWLoc, BaseLoc);
 
   // The pack is expanded, so we will destructure it.
-  Decl *Pack;
-  auto *Parms = new (Context) llvm::SmallVector<Expr *, 8>;
+  const VarDecl *Pack;
   if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
     Pack = FPPE->getParameterPack();
 
-    auto Iter = Context.Destructures.find(Pack);
-    if (Iter == Context.Destructures.end()) {
-      for (std::size_t I = 0; I < FPPE->getNumExpansions(); ++I) {
-        VarDecl *Parm = FPPE->getExpansion(I);
-        ExprResult ParmRef =
-          BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
-                           VK_LValue, Parm->getLocation());
-        if (ParmRef.isInvalid())
-          return ExprError();
-        Parms->push_back(ParmRef.get());
-      }
+    // auto Iter = Context.Destructures.find(Pack);
+    // if (Iter == Context.Destructures.end()) {
+    //   auto *Parms = new (Context) llvm::SmallVector<Expr *, 8>;
+    //   for (std::size_t I = 0; I < FPPE->getNumExpansions(); ++I) {
+    //     VarDecl *Parm = FPPE->getExpansion(I);
+    //     ExprResult ParmRef =
+    //       BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
+    //                        VK_LValue, Parm->getLocation());
+    //     if (ParmRef.isInvalid())
+    //       return ExprError();
+    //     Parms->push_back(ParmRef.get());
+    //   }
 
-      Context.Destructures.insert({Pack, Parms});
-    }
-  }
+    //   Context.Destructures.insert({Pack, Parms});
+    // }
+  } else
+    llvm_unreachable("Unimplemented pack expansion.");
 
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
-  if (Index->isTypeDependent() || Index->isValueDependent()) {
+  if (Index->isTypeDependent() || Index->isValueDependent())
     return new (Context) CXXSelectPackExpr(Base, Context.DependentTy,
-                                           Index, cast<VarDecl>(Pack),
-                                           KWLoc, BaseLoc);
-  }
+                                           Index, Pack, KWLoc, BaseLoc);
 
   // Index must be an integral or enumerator type.
-  ExprResult IndexRV = DefaultLvalueConversion(Index);
-  if (IndexRV.isInvalid())
-    return ExprError();
-  Expr *ComputedIndex = IndexRV.get();
-  if (!ComputedIndex->getType()->isIntegralOrEnumerationType())
+  if (!Index->getType()->isIntegralOrEnumerationType())
     return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
 
   // Index must be a constant expression.
   Expr::EvalResult Res;
-  if (!ComputedIndex->EvaluateAsInt(Res, Context))
+  if (!Index->EvaluateAsInt(Res, Context))
     return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
   std::size_t I = Res.Val.getInt().getZExtValue();
 
@@ -8229,11 +8218,42 @@ Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
     return ExprError();
   }
 
-  CXXSelectPackExpr *Sel =
-    new (Context) CXXSelectPackExpr(Base, (*Parms)[I]->getType(),
-                                    Index, cast<VarDecl>(Pack),
-                                    KWLoc, BaseLoc);
+  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
+    CXXSelectPackExpr *Sel =
+      new (Context) CXXSelectPackExpr(Base, FPPE->getExpansion(I)->getType(),
+                                      Index, Pack, KWLoc, BaseLoc);
+    // If we got to this point, we know it's not type-dependent anymore.
+    Sel->setTypeDependent(false);
+    VarDecl *Parm = FPPE->getExpansion(I);
+    ExprResult ParmRef =
+      BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
+                       VK_LValue, Parm->getLocation());
+    if (ParmRef.isInvalid())
+      return ExprError();
+    Sel->setValue(ParmRef.get());
+    return Sel;
+
+    // auto Iter = Context.Destructures.find(Pack);
+    // if (Iter == Context.Destructures.end()) {
+    //   auto *Parms = new (Context) llvm::SmallVector<Expr *, 8>;
+    //   for (std::size_t I = 0; I < FPPE->getNumExpansions(); ++I) {
+    //     if (ParmRef.isInvalid())
+    //       return ExprError();
+    //     Parms->push_back(ParmRef.get());
+    //   }
+
+    //   Context.Destructures.insert({Pack, Parms});
+    // }
+  } else
+    llvm_unreachable("Unimplemented pack expansion.");
+
+  return ExprError();
+
+  // auto *Parms = Context.Destructures.find(Pack)->second;
+  // CXXSelectPackExpr *Sel =
+  //   new (Context) CXXSelectPackExpr(Base, (*Parms)[I]->getType(),
+  //                                   Index, Pack, KWLoc, BaseLoc);
   // If we got to this point, we know it's not type-dependent anymore.
-  Sel->setTypeDependent(false);
-  return Sel;
+  // Sel->setTypeDependent(false);
+  // return Sel;
 }

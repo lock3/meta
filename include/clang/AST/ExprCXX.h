@@ -5322,6 +5322,9 @@ protected:
   /// The base object and integral selector.
   Stmt *Args[2];
 
+  /// The computed expression this selection refers to.
+  const Expr *Value = nullptr;
+
 public:
   CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
                    Expr *Sel, SourceLocation SelectLoc,
@@ -5344,6 +5347,9 @@ public:
   /// Retrieve selector integral selector argument.
   const Expr *getSelector() const { return reinterpret_cast<Expr *>(Args[1]); }
   Expr *getSelector() { return reinterpret_cast<Expr *>(Args[1]); }
+
+  const Expr *getValue() const { return Value; }
+  void setValue(Expr *V) { Value = V; }
 
   /// Retrieve the location of the ellipsis that describes this pack
   /// expansion.
@@ -5409,13 +5415,14 @@ public:
 };
 
 class CXXSelectPackExpr : public CXXSelectionExpr {
-  VarDecl *Pack;
-  
+  /// The ParameterPack of the pack expansion we are selecting on.
+  const VarDecl *Pack;
+
 public:
   CXXSelectPackExpr(Expr *Base,
                     QualType T,
                     Expr *Index,
-                    VarDecl *Pack,
+                    const VarDecl *Pack,
                     SourceLocation KWLoc = SourceLocation(),
                     SourceLocation BaseLoc = SourceLocation())
     : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, KWLoc, BaseLoc),
@@ -5425,7 +5432,7 @@ public:
   CXXSelectPackExpr(EmptyShell Empty)
     : CXXSelectionExpr(CXXSelectPackExprClass, Empty) {}
 
-  VarDecl *getPack() const { return Pack; }
+  const VarDecl *getPack() const { return Pack; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXSelectPackExprClass;

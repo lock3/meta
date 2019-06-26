@@ -2384,8 +2384,8 @@ public:
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCXXSelectMemberExpr(CXXRecordDecl *RD, VarDecl *Base,
-                                   Expr *Index, SourceLocation KW,
-                                   SourceLocation B) {
+                                        Expr *Index, SourceLocation KW,
+                                        SourceLocation B) {
     return getSema().ActOnCXXSelectMemberExpr(RD, Base, Index, KW, B,
                                               SourceLocation());
   }
@@ -10212,19 +10212,21 @@ TreeTransform<Derived>::TransformCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
     getDerived().TransformExpr(E->getBase());
   if (NewBase.isInvalid())
     return ExprError();
-  
+
   Decl *NewBaseDecl =
-    cast<DeclRefExpr>(NewBase.get())->getFoundDecl();
+    cast<DeclRefExpr>(NewBase.get())->getDecl();
   NewBaseDecl =
     getDerived().TransformDecl(E->getBase()->getExprLoc(), NewBaseDecl);
 
-  Decl *RD;
-  if (E->getRecord())
-    RD = TransformDecl(E->getRecordLoc(), E->getRecord());
-  else
-    RD = cast<VarDecl>(NewBaseDecl)->getType()->getAsCXXRecordDecl();
+  // We want to transform the record to ensure that we don't wind up reusing
+  // fields that were destructured in a dependent context.
+  CXXRecordDecl *NewRecord = cast<CXXRecordDecl>(getDerived().TransformDecl(
+                                                   E->getRecordLoc(),
+                                                   E->getRecord()));
+  if (!NewRecord)
+    return ExprError();
 
-  return getDerived().RebuildCXXSelectMemberExpr(cast<CXXRecordDecl>(RD),
+  return getDerived().RebuildCXXSelectMemberExpr(E->getRecord(),
                                                  cast<VarDecl>(NewBaseDecl),
                                                  NewSel.get(),
                                                  E->getSelectLoc(),
