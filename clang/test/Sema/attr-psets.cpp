@@ -1214,6 +1214,15 @@ void g() {
 }
 } // namespace TypeId
 
+namespace vaargs {
+void f(int num, ...) {
+  __builtin_va_list list;
+  __builtin_va_start(list, num);
+  int *p = __builtin_va_arg(list, int*);
+  __builtin_va_end(list);
+}
+} // namespace vaargs
+
 namespace crashes {
 // This used to crash with missing pset.
 // It's mainly about knowing if the first argument

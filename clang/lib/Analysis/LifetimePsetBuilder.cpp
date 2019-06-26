@@ -480,9 +480,13 @@ public:
   }
 
   void VisitCompoundLiteralExpr(const CompoundLiteralExpr *E) {
-      // C99 construct. We ignore it, but still set the pset to satisfy the
-      // VisitStmt() post-condition.
-      setPSet(E, {});
+    // C99 construct. We ignore it, but still set the pset to satisfy the
+    // VisitStmt() post-condition.
+    setPSet(E, {});
+  }
+
+  void VisitVAArgExpr(const VAArgExpr *E) {
+    setPSet(E, {});
   }
 
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
