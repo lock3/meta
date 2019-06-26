@@ -439,9 +439,15 @@ public:
             E, PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
         return;
       }
+      auto Ctor = E->getConstructor();
+      auto ParmTy = Ctor->getParamDecl(0)->getType();
       auto TC = classifyTypeCategory(E->getArg(0)->getType());
+      // For ctors taking a const reference we assume that we will not take the address of
+      // the argument but copy it.
+      // TODO: Use the function call rules here.
       if (TC == TypeCategory::Owner ||
-          E->getConstructor()->isCopyOrMoveConstructor())
+          Ctor->isCopyOrMoveConstructor() ||
+          (ParmTy->isReferenceType() && ParmTy->getPointeeType().isConstQualified()))
         setPSet(E, derefPSet(getPSet(E->getArg(0))));
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));

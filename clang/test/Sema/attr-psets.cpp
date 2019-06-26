@@ -21,11 +21,21 @@ struct general_iterator {
 };
 
 template <typename T>
+struct general_const_iterator {
+  general_const_iterator() = default;
+  general_const_iterator(const general_iterator<T> &);
+  T &operator*() const;
+};
+
+template <typename T>
 struct vector {
   using iterator = general_iterator<T>;
+  using const_iterator = general_const_iterator<T>;
   vector(unsigned = 0);
   iterator begin();
   iterator end();
+  const_iterator cbegin() const;
+  const_iterator cend() const;
   T &operator[](unsigned);
   T &at(unsigned);
   T *data();
@@ -1129,6 +1139,12 @@ void enum_casts() {
   };
   EN E1, E2;
   ((int &)E1) |= ((int)E2);
+}
+
+void iterator_conversion() {
+  std::vector<int> v;
+  std::vector<int>::const_iterator it = v.begin();
+  __lifetime_pset(it); // expected-warning {{(v')}}
 }
 
 namespace CXXScalarValueInitExpr {
