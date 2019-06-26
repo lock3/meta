@@ -114,7 +114,7 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
   // MSVC: _Ptr_base is a base class of shared_ptr, and we only see
   // _Ptr_base when calling get() on a shared_ptr.
   static std::set<StringRef> StdOwners{"stack", "queue", "priority_queue",
-                                       "optional", "_Ptr_base"};
+                                       "optional", "_Ptr_base", "array"};
   static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   auto *Decl = T->getAsCXXRecordDecl();
   if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())

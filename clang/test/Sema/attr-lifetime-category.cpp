@@ -68,6 +68,9 @@ template <typename T>
 struct queue {};
 
 template <typename T>
+struct array {};
+
+template <typename T>
 struct priority_queue {};
 
 template <typename... T>
@@ -139,6 +142,7 @@ void owner() {
   __lifetime_type_category<decltype(std::queue<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::priority_queue<int>())>(); // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::optional<int>())>();       // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::array<int>())>();       // expected-warning {{Owner}}
   using IntVector = std::vector<int>;
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_implicit_owner())>(); // expected-warning {{Owner}}
