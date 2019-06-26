@@ -1300,6 +1300,7 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
             DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
           PMap.emplace(P_deref, DerefPS);
         }
+        LLVM_FALLTHROUGH;
       default:
         break;
       }
