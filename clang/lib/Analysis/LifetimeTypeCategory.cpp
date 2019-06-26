@@ -276,6 +276,7 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 
 TypeClassification classifyTypeCategory(const Type *T) {
   static std::map<const Type *, TypeClassification> Cache;
+  T = T->getUnqualifiedDesugaredType();
 
   auto I = Cache.find(T);
   if (I != Cache.end())
