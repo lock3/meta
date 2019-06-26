@@ -220,6 +220,10 @@ void ref_exprs() {
   __lifetime_pset_ref(refp); // expected-warning {{pset(refp) = ((lifetime-extended temporary through refp))}}
   p = refp;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+
+  const std::vector<int> &v = std::vector<int>();
+  std::vector<int>::const_iterator it = v.cbegin();
+  __lifetime_pset(it); // expected-warning {{pset(it) = ((lifetime-extended temporary through v)')}}
 }
 
 void addr_and_dref() {
@@ -1078,7 +1082,7 @@ void pruned_branch(bool cond) {
   void returns_void();
   0 ? void() : returns_void(); // has not pset, should not crash.
 
-  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{(temporary))}}
+  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{pset(cond ? OwnerOfInt() : OwnerOfInt()) = ((lifetime-extended temporary through (unknown))')}}
 }
 
 void parameter_psets(int value,
