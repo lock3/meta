@@ -4534,9 +4534,7 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 }
 
 static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
- // if (!checkAttributeAtLeastNumArgs(S, AL, 1))
-  //  return;
-
+  // Only one lifetime attribute is allowed for a specific Decl node.
   if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL))
     return;
   if (checkAttrMutualExclusion<PointerAttr>(S, D, AL))
@@ -4556,11 +4554,29 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
   }
 
+  // To check if earlier decls attributes do not conflic the newly parsed ones
+  // we always add (and check) the attribute to the cannonical decl.
+  D = D->getCanonicalDecl();
   if(AL.getKind() ==  ParsedAttr::AT_Owner) {
+    if (checkAttrMutualExclusion<PointerAttr>(S, D, AL))
+      return;
+    if (const auto *Attr = D->getAttr<OwnerAttr>()) {
+      if (Attr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
+        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible) << AL << Attr;
+        S.Diag(Attr->getLocation(), diag::note_conflicting_attribute);
+      }
+    }
     D->addAttr(::new (S.Context) OwnerAttr(
       AL.getRange(), S.Context, DerefTypeLoc, AL.getAttributeSpellingListIndex()));
-  }
-  else {
+  } else {
+    if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL))
+      return;
+    if (const auto *Attr = D->getAttr<PointerAttr>()) {
+      if (Attr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
+        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible) << AL << Attr;
+        S.Diag(Attr->getLocation(), diag::note_conflicting_attribute);
+      }
+    }
     D->addAttr(::new (S.Context) PointerAttr(
       AL.getRange(), S.Context, DerefTypeLoc, AL.getAttributeSpellingListIndex()));
   }

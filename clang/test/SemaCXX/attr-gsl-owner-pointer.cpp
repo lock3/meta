@@ -50,6 +50,15 @@ class [[gsl::Pointer(S)]] APointer {};
 class AddOwnerLater {};
 class [[gsl::Owner(int)]] AddOwnerLater;
 
-// TODO: diagnose me
 class [[gsl::Pointer(int)]] AddConflictLater {};
 class [[gsl::Owner(int)]] AddConflictLater;
+// expected-error@-1 {{'Owner' and 'Pointer' attributes are not compatible}}
+// expected-note@-3 {{conflicting attribute is here}}
+
+class [[gsl::Owner(int)]] AddConflictLater2 {};
+class [[gsl::Owner(float)]] AddConflictLater2;
+// expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
+// expected-note@-3 {{conflicting attribute is here}}
+
+class [[gsl::Owner(int)]] AddTheSameLater {};
+class [[gsl::Owner(int)]] AddTheSameLater;
