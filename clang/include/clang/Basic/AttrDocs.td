@@ -4157,3 +4157,25 @@ This attribute does not affect optimizations in any way, unlike GCC's
 ``__attribute__((malloc))``.
 }];
 }
+
+def LifetimeOwnerDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+When annotating a class ``O`` with ``[[gsl::Owner(T)]]``, then each function
+that returns cv-qualified ``T&`` or ``T*`` is assumed to return a
+pointer/reference to the data owned by ``O``.The owned data assumed to be freed
+ once the owning object's lifetime end.
+
+This attribute may be used by analysis tools but will not have effect on code
+generation.
+}];
+}
+
+def LifetimePointerDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+When annotating a class ``P`` with ``[[gsl::Pointer(T)]]``, it assumed to be a
+non-owning type that might dangle. Static analysis tools might use this
+information to try to detect memory errors.
+}];
+}
