@@ -67,6 +67,7 @@ public:
   virtual void noteForbiddenCast(SourceLocation Loc) = 0;
   virtual void noteDereferenced(SourceLocation Loc) = 0;
   virtual void noteModified(SourceLocation Loc) = 0;
+  virtual void noteDeleted(SourceLocation Loc) = 0;
   virtual void noteAssigned(SourceLocation Loc) = 0;
   virtual void noteParameterNull(SourceLocation Loc) = 0;
   virtual void noteNullDefaultConstructed(SourceLocation Loc) = 0;

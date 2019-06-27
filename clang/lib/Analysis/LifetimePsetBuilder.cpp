@@ -494,6 +494,19 @@ public:
     setPSet(E, {});
   }
 
+  void VisitCXXDeleteExpr(const CXXDeleteExpr *DE) {
+    if (hasPSet(DE->getArgument())) {
+      PSet PS = getPSet(DE->getArgument());
+      for (const auto& Var : PS.vars()) {
+        if (Var.second != 0)
+          ; // TODO: diagnose? We are deleting the buffer of on owner?
+        else
+          invalidateVar(Var.first, 0,
+            InvalidationReason::Deleted(DE->getSourceRange()));
+      }
+    }
+  }
+
   void VisitCXXThrowExpr(const CXXThrowExpr *TE) {
     if (!TE->getSubExpr())
       return;

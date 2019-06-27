@@ -3229,6 +3229,7 @@ def note_null_reason_default_construct: Note<"default-constructed Pointers are a
 def note_null_reason_compared_to_null: Note<"is compared to null here">;
 def note_forbidden_cast: Note<"used a forbidden cast here">;
 def note_modified: Note<"modified here">;
+def note_deleted: Note<"deleted here">;
 def note_assigned: Note<"assigned here">;
 def note_here: Note<"here">;
 

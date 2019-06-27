@@ -169,7 +169,8 @@ class InvalidationReason {
     TEMPORARY_LEFT_SCOPE,
     FORBIDDEN_CAST,
     DEREFERENCED,
-    MODIFIED
+    MODIFIED,
+    DELETED
   } Reason;
 
   const VarDecl *Pointee;
@@ -205,6 +206,9 @@ public:
     case MODIFIED:
       Reporter.noteModified(getLoc());
       return;
+    case DELETED:
+      Reporter.noteDeleted(getLoc());
+      return;
     }
     llvm_unreachable("Invalid InvalidationReason::Reason");
   }
@@ -233,6 +237,10 @@ public:
 
   static InvalidationReason Modified(SourceRange Range) {
     return {Range, MODIFIED};
+  }
+
+  static InvalidationReason Deleted(SourceRange Range) {
+    return {Range, DELETED};
   }
 };
 

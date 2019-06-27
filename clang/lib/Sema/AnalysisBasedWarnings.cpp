@@ -2050,6 +2050,10 @@ public:
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_modified);
   }
+  void noteDeleted(SourceLocation Loc) final {
+    if(!IgnoreCurrentWarning)
+      S.Diag(Loc, diag::note_deleted);
+  }
   void noteAssigned(SourceLocation Loc) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Loc, diag::note_assigned);
