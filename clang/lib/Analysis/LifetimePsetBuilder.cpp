@@ -759,6 +759,10 @@ public:
             Ret.merge(CA.PS);
         }
       }
+      // For not_null types assume that the callee did not set them
+      // to null.
+      if (!isNullableType(OutputType))
+        Ret.removeNull();
       if (Ret.isUnknown())
         Ret.addStatic();
       return Ret;

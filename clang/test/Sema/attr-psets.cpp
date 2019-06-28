@@ -827,6 +827,16 @@ void return_pointer() {
   __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
 }
 
+void return_not_null_type() {
+  int &ret_ref(int *p);
+  int *ret_ptr(int *p);
+
+  int *q = &ret_ref(nullptr);
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((static)}}
+  q = ret_ptr(nullptr);
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((null))}}
+}
+
 void test_annotations(gsl::nullable<const int *> p,
                       gsl::not_null<const int *> q) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
