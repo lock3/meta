@@ -3203,7 +3203,7 @@ ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
   if (!PackExpansion)
     return new (SemaRef.Context) CXXCompositeExpansionStmt(
       LoopDeclStmt, RangeDeclStmt, TemplateParms, /*Size=*/-1,
-      ForLoc, AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
+      ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
   return new (SemaRef.Context) CXXPackExpansionStmt(
     LoopDeclStmt, RangeExpr, TemplateParms, /*Size=*/-1,
     ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
@@ -3314,7 +3314,7 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
 
   return new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Array);
+    AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr denotes an tuple, expand over the elements of the array.
@@ -3395,7 +3395,7 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
 
   return new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Tuple);
+    AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3625,7 +3625,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   llvm::APSInt Count = Result.Val.getInt();
   return new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Range);
+    AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3669,7 +3669,7 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
 
   return new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Size, ForLoc,
-    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Struct);
+    AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// Build a C++ expansion statement.

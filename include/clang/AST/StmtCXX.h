@@ -267,27 +267,14 @@ protected:
   Stmt **InstantiatedStmts;
 
   friend class ASTStmtReader;
-
-public:
-  enum RangeKind {
-    RK_Array,
-    RK_Range,
-    RK_Tuple,
-    RK_Struct,
-    RK_Pack,
-    RK_Unknown,
-  };
-
-private:
-  RangeKind StmtRangeKind;
 public:
 
   CXXExpansionStmt(StmtClass SC, DeclStmt *LoopVar,
                    TemplateParameterList *Parms, std::size_t N,
                    SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL, RangeKind RK)
+                   SourceLocation CL, SourceLocation RPL)
     : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N),
-      InstantiatedStmts(nullptr), StmtRangeKind(RK) {
+      InstantiatedStmts(nullptr) {
     SubExprs[LOOP] = LoopVar;
     SubExprs[RANGE] = SubExprs[BODY] = nullptr;
   }
@@ -342,8 +329,6 @@ public:
   SourceLocation getColonLoc() const { return ColonLoc; }
   SourceLocation getRParenLoc() const { return RParenLoc; }
 
-  RangeKind getRangeKind() const { return StmtRangeKind; }
-
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();
@@ -387,9 +372,9 @@ public:
   CXXCompositeExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
                    TemplateParameterList *Parms,
                    std::size_t N, SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL, RangeKind RK)
+                   SourceLocation CL, SourceLocation RPL)
     : CXXExpansionStmt(CXXCompositeExpansionStmtClass, LoopVar,
-                       Parms, N, FL, EL, CL, RPL, RK) {
+                       Parms, N, FL, EL, CL, RPL) {
     SubExprs[RANGE] = RangeVar;
   }
 
@@ -433,7 +418,7 @@ public:
                        std::size_t N, SourceLocation FL, SourceLocation EL,
                        SourceLocation CL, SourceLocation RPL)
     : CXXExpansionStmt(CXXPackExpansionStmtClass, LoopVar, Parms, N,
-                       FL, EL, CL, RPL, RK_Pack) {
+                       FL, EL, CL, RPL) {
       SubExprs[RANGE] = RangeExpr;
     }
 
