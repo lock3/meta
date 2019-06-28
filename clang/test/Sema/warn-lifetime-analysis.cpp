@@ -89,6 +89,15 @@ struct map {
 };
 } // namespace std
 
+namespace gsl {
+template <typename T>
+using nullable = T;
+
+
+template <typename T>
+using not_null = T;
+} // namespace gsl
+
 struct Owner {
   ~Owner();
   int m;
@@ -181,6 +190,13 @@ void delete_pointee_userdefined(my_pointer p) {
     return;
   delete &(*p); // expected-note {{deleted here}}
   (void)*p;     // expected-warning {{passing a dangling pointer as argument}}
+}
+
+void copy_null_ptr(int *p, my_pointer p2) {
+  gsl::not_null<int* > q = p;        // expected-warning {{dereferencing a possibly null pointer}}
+  q = p;                             // expected-warning {{dereferencing a possibly null pointer}}
+  gsl::not_null<my_pointer> q2 = p2; // expected-warning {{dereferencing a possibly null pointer}}
+  q2 = p2;                           // expected-warning {{dereferencing a possibly null pointer}}
 }
 
 void function_call() {

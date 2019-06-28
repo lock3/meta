@@ -314,10 +314,10 @@ public:
       // Do we need to handle raw pointers annotated as owners?
     } else if (TC == TypeCategory::Pointer) {
       // This assignment updates a Pointer.
-      PSet RHS = getPSet(BO->getRHS());
-      if (RHS.containsNull())
-        RHS.addNullReason(NullReason::assigned(BO->getRHS()->getSourceRange()));
-      setPSet(getPSet(BO->getLHS()), RHS, BO->getRHS()->getSourceRange());
+      SourceRange Range = BO->getRHS()->getSourceRange();
+      PSet LHS = handlePointerAssign(BO->getLHS()->getType(),
+                                     getPSet(BO->getRHS()), Range, true);
+      setPSet(getPSet(BO->getLHS()), LHS, Range);
     }
 
     setPSet(BO, getPSet(BO->getLHS()));
@@ -668,9 +668,11 @@ public:
               TypeCategory::Pointer &&
           classifyTypeCategory(OC->getArg(1)->getType()) ==
               TypeCategory::Pointer) {
-        auto PSetRHS = getPSet(getPSet(OC->getArg(1)));
-        setPSet(getPSet(OC->getArg(0)), PSetRHS, CallE->getSourceRange());
-        setPSet(CallE, PSetRHS);
+        SourceRange Range = CallE->getSourceRange();
+        PSet RHS = getPSet(getPSet(OC->getArg(1)));
+        RHS = handlePointerAssign(OC->getArg(0)->getType(), RHS, Range, true);
+        setPSet(getPSet(OC->getArg(0)), RHS, Range);
+        setPSet(CallE, RHS);
         return;
       }
     }
@@ -876,6 +878,19 @@ public:
 
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
+  PSet handlePointerAssign(QualType LHS, PSet RHS, SourceRange Range,
+                           bool AddReason) {
+    if (RHS.containsNull()) {
+      if (AddReason)
+        RHS.addNullReason(NullReason::assigned(Range));
+      if (!isNullableType(LHS)) {
+        Reporter.warnDerefNull(Range.getBegin(), RHS.isSingleton());
+        RHS = PSet{};
+      }
+    }
+    return RHS;
+  }
+
 public:
   PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                PSetsMap &PMap, const PSet &PSetOfAllParams,
@@ -894,12 +909,11 @@ public:
     case TypeCategory::Pointer: {
       PSet PS;
       if (Initializer) {
-        PS = getPSet(Initializer);
-
         // For raw pointers, show here the assignment. For other Pointers,
         // we will have seen a CXXConstructor, which added a NullReason.
-        if (PS.containsNull() && VD->getType()->isPointerType())
-          PS.addNullReason(NullReason::assigned(Range));
+        PS = handlePointerAssign(VD->getType(), getPSet(Initializer),
+                                 VD->getSourceRange(),
+                                 VD->getType()->isPointerType());
       } else if (VD->hasGlobalStorage()) {
         // Never treat local statics as uninitialized.
         PS = PSet::staticVar(/*TODO*/ false);
