@@ -1212,15 +1212,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
 } // namespace lifetime
 
 static const Stmt *getRealTerminator(const CFGBlock &B) {
-  if (B.succ_size() == 1)
+  if (B.succ_size() == 1 ||
+      B.rbegin()->getKind() != CFGElement::Kind::Statement)
     return nullptr;
-  const Stmt *LastCFGStmt = nullptr;
-  for (const CFGElement &Element : B) {
-    if (auto CFGSt = Element.getAs<CFGStmt>()) {
-      LastCFGStmt = CFGSt->getStmt();
-    }
-  }
-  return LastCFGStmt;
+  return B.rbegin()->castAs<CFGStmt>().getStmt();
 }
 
 // Update PSets in Builder through all CFGElements of this block
