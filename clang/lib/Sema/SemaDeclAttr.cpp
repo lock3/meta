@@ -4535,9 +4535,8 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
 static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Only one lifetime attribute is allowed for a specific Decl node.
-  if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL))
-    return;
-  if (checkAttrMutualExclusion<PointerAttr>(S, D, AL))
+  if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL) ||
+      checkAttrMutualExclusion<PointerAttr>(S, D, AL))
     return;
 
   if (!AL.hasParsedType()) {
@@ -4554,7 +4553,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
   }
 
-  // To check if earlier decls attributes do not conflic the newly parsed ones
+  // To check if earlier decl attributes do not conflict the newly parsed ones
   // we always add (and check) the attribute to the cannonical decl.
   D = D->getCanonicalDecl();
   if(AL.getKind() ==  ParsedAttr::AT_Owner) {
