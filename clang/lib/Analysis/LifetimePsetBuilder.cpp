@@ -316,7 +316,7 @@ public:
       // This assignment updates a Pointer.
       SourceRange Range = BO->getRHS()->getSourceRange();
       PSet LHS = handlePointerAssign(BO->getLHS()->getType(),
-                                     getPSet(BO->getRHS()), Range, true);
+                                     getPSet(BO->getRHS()), Range);
       setPSet(getPSet(BO->getLHS()), LHS, Range);
     }
 
@@ -670,7 +670,7 @@ public:
               TypeCategory::Pointer) {
         SourceRange Range = CallE->getSourceRange();
         PSet RHS = getPSet(getPSet(OC->getArg(1)));
-        RHS = handlePointerAssign(OC->getArg(0)->getType(), RHS, Range, true);
+        RHS = handlePointerAssign(OC->getArg(0)->getType(), RHS, Range);
         setPSet(getPSet(OC->getArg(0)), RHS, Range);
         setPSet(CallE, RHS);
         return;
@@ -883,7 +883,7 @@ public:
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
   PSet handlePointerAssign(QualType LHS, PSet RHS, SourceRange Range,
-                           bool AddReason) {
+                           bool AddReason=true) {
     if (RHS.containsNull()) {
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range));

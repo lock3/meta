@@ -101,8 +101,8 @@ using nullable = T;
 
 template <typename T>
 struct not_null {
-  constexpr operator T() const;
-  constexpr T operator->() const;
+  constexpr operator T() const { return T(); }
+  constexpr T operator->() const { return T(); }
 };
 } // namespace gsl
 
@@ -830,9 +830,12 @@ void return_pointer() {
 void return_not_null_type() {
   int &ret_ref(int *p);
   int *ret_ptr(int *p);
+  gsl::not_null<int*> ret_nonnull(int* p);
 
   int *q = &ret_ref(nullptr);
   __lifetime_pset(q); // expected-warning {{pset(q) = ((static)}}
+  q = ret_nonnull(nullptr);
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((static))}}
   q = ret_ptr(nullptr);
   __lifetime_pset(q); // expected-warning {{pset(q) = ((null))}}
 }
