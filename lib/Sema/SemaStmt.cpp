@@ -1,4 +1,4 @@
-//===--- SemaStmt.cpp - Semantic Analysis for Statements ------------------===//
+//===--- Semastmt.cpp - Semantic Analysis for Statements ------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -3666,22 +3666,14 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
-  if (RangeVar->getDeclContext()->isDependentContext() )
-    return BuildDependentExpansion();
-
   ExprResult Projection =
     SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
                                      RangeVar, InductionRef);
   if (Projection.isInvalid())
     return StmtError();
-  // FIXME: in the case where the destructured type is non-dependent,
-  // but in a dependent context, this never gets rebuilt... why?
-  if (Projection.get()->getType()->isDependentType())
-    return BuildDependentExpansion();
 
   std::size_t Size =
-    SemaRef.Context.Destructures.find(RangeVar->getInit())
-    ->second->size();
+    cast<CXXSelectMemberExpr>(Projection.get())->getNumFields();
 
   // Make the range accessor the initializer of the loop variable.
   SemaRef.AddInitializerToDecl(LoopVar, Projection.get(), false);
@@ -3986,14 +3978,14 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
     Expr *RangeInit = Expansion->getRangeInit();
     if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
       return Expansion;
-    Decl *RangeVar = Expansion->getRangeVariable();
-    if (RangeVar->getDeclContext()->isDependentContext())
-      return Expansion;
+    // Decl *RangeVar = Expansion->getRangeVariable();
+    // if (RangeVar->getDeclContext()->isDependentContext())
+    //   return Expansion;
   }
 
-  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
-    return Expansion;
-  }
+  // if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
+  //   return Expansion;
+  // }
 
   // When there are no members, return an empty compound statement.
   if (Expansion->getSize() == 0) {

@@ -5339,7 +5339,8 @@ public:
            Base->isValueDependent() || Sel->isValueDependent(),
            Base->isInstantiationDependent() || Sel->isInstantiationDependent(),
            /*ContainsUnexpandedParameterPack=*/false),
-      SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel} {}
+      SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel},
+      NumFields(NumFields) {}
 
   CXXSelectionExpr(StmtClass SC, EmptyShell Empty)
     : Expr(SC, Empty) {}
@@ -5354,6 +5355,8 @@ public:
 
   const Expr *getValue() const { return Value; }
   void setValue(Expr *V) { Value = V; }
+
+  std::size_t getNumFields() const { return NumFields; }
 
   /// Retrieve the location of the ellipsis that describes this pack
   /// expansion.

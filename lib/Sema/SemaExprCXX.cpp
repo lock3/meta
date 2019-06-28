@@ -8051,10 +8051,9 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
   Expr *BaseRef = BaseDRE.get();
 
   // If the base is dependent, we won't be able to do any destructuring yet.
-  if (BaseType->isDependentType() ||
-      Base->getDeclContext()->isDependentContext()) {
+  if (BaseType->isDependentType()) {
     return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-                                             Index, -1, nullptr,
+                                             Index, 0, nullptr,
                                              Base->getLocation(), KWLoc,
                                              BaseLoc);
   }
@@ -8129,11 +8128,11 @@ Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
 
   // If the index is dependent, there's nothing more to do,
   // just return the temporary expr.
-  // if (Index->isTypeDependent() || Index->isValueDependent()) {
-  //   return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
-  //                                            Index, Fields->size(), RD, Loc,
-  //                                            KWLoc, BaseLoc);
-  // }
+  if (Index->isTypeDependent() || Index->isValueDependent()) {
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, Fields->size(), RD, Loc,
+                                             KWLoc, BaseLoc);
+  }
 
   // Index must be an integral or enumerator type.
   if (!Index->getType()->isIntegralOrEnumerationType())

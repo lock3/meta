@@ -8258,7 +8258,7 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
       NewStmt = getDerived().RebuildCXXExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
         RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
-    else 
+    else
       NewStmt = getDerived().RebuildCXXExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
         LoopVar.get(), S->getRParenLoc());
@@ -8273,7 +8273,7 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
 
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.
-  if (Body.get() != S->getBody()/* && NewStmt.get() == S*/) {
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
     if (S->getRangeKind() == CXXExpansionStmt::RK_Pack)
       NewStmt = getDerived().RebuildCXXExpansionStmt(
         S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
