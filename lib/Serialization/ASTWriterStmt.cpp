@@ -1371,10 +1371,17 @@ void ASTStmtWriter::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   Code = serialization::STMT_CXX_FOR_RANGE;
 }
 
-void ASTStmtWriter::VisitCXXExpansionStmt(CXXExpansionStmt *S) {
+void ASTStmtWriter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
-  Code = serialization::STMT_CXX_EXPANSION;
+  Code = serialization::STMT_CXX_PACK_EXPANSION;
+}
+
+void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
+                                                 CXXCompositeExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_COMP_EXPANSION;
 }
 
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {

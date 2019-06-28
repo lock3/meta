@@ -2941,8 +2941,10 @@ public:
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
-  void EmitCXXExpansionStmt(const CXXExpansionStmt &S,
+  void EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
                             ArrayRef<const Attr *> Attrs = None);
+  void EmitCXXCompositeExpansionStmt(const CXXCompositeExpansionStmt &S,
+                                     ArrayRef<const Attr *> Attrs = None);
 
   /// Controls insertion of cancellation exit blocks in worksharing constructs.
   class OMPCancelStackRAII {

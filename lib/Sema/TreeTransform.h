@@ -2189,11 +2189,11 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildCXXExpansionStmt(SourceLocation ForLoc,
-                                     SourceLocation EllipsisLoc,
-                                     SourceLocation ColonLoc,
-                                     Stmt *RangeVar, Stmt *LoopVar,
-                                     SourceLocation RParenLoc) {
+  StmtResult RebuildCXXCompositeExpansionStmt(SourceLocation ForLoc,
+                                              SourceLocation EllipsisLoc,
+                                              SourceLocation ColonLoc,
+                                              Stmt *RangeVar, Stmt *LoopVar,
+                                              SourceLocation RParenLoc) {
     // FIXME: Whether this builds a constexpr loop or not depends entirely
     // on whether the loop variable is declared constexpr.
     return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar,
@@ -2201,11 +2201,11 @@ public:
                                            Sema::BFRK_Rebuild, false);
   }
 
-  StmtResult RebuildCXXExpansionStmt(SourceLocation ForLoc,
-                                     SourceLocation EllipsisLoc,
-                                     SourceLocation ColonLoc,
-                                     Expr *RangeExpr, Stmt *LoopVar,
-                                     SourceLocation RParenLoc) {
+  StmtResult RebuildCXXPackExpansionStmt(SourceLocation ForLoc,
+                                         SourceLocation EllipsisLoc,
+                                         SourceLocation ColonLoc,
+                                         Expr *RangeExpr, Stmt *LoopVar,
+                                         SourceLocation RParenLoc) {
     return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar,
                                            ColonLoc, RangeExpr, RParenLoc,
                                            Sema::BFRK_Rebuild, false);
@@ -8232,18 +8232,11 @@ TreeTransform<Derived>::TransformCXXForRangeStmt(CXXForRangeStmt *S) {
 
 template <typename Derived>
 StmtResult
-TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
-  StmtResult RangeVar;
+TreeTransform<Derived>::TransformCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
   ExprResult RangeExpr;
-  if (S->getRangeKind() == CXXExpansionStmt::RK_Pack) {
-    RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
-    if (RangeExpr.isInvalid())
-      return StmtError();
-  } else {
-    RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
-    if (RangeVar.isInvalid())
-      return StmtError();
-  }
+  RangeExpr = getDerived().TransformExpr(S->getRangeExpr());
+  if (RangeExpr.isInvalid())
+    return StmtError();
 
   // FIXME: Is this actually an evaluated expression.
   StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
@@ -8252,16 +8245,10 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
 
   StmtResult NewStmt = S;
   if (getDerived().AlwaysRebuild() ||
-      RangeVar.get() != S->getRangeVarStmt() ||
       LoopVar.get() != S->getLoopVarStmt()) {
-    if (S->getRangeKind() == CXXExpansionStmt::RK_Pack)
-      NewStmt = getDerived().RebuildCXXExpansionStmt(
-        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
-        RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
-    else
-      NewStmt = getDerived().RebuildCXXExpansionStmt(
-        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
-        LoopVar.get(), S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXPackExpansionStmt(
+      S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
+      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }
@@ -8274,14 +8261,58 @@ TreeTransform<Derived>::TransformCXXExpansionStmt(CXXExpansionStmt *S) {
   // Body has changed but we didn't rebuild the for-range statement. Rebuild
   // it now so we have a new statement to attach the body to.
   if (Body.get() != S->getBody() && NewStmt.get() == S) {
-    if (S->getRangeKind() == CXXExpansionStmt::RK_Pack)
-      NewStmt = getDerived().RebuildCXXExpansionStmt(
-        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
-        RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
-    else 
-      NewStmt = getDerived().RebuildCXXExpansionStmt(
-        S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
-        LoopVar.get(), S->getRParenLoc());
+    NewStmt = getDerived().RebuildCXXPackExpansionStmt(
+      S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(),
+      RangeExpr.get(), LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  if (NewStmt.get() == S)
+    return S;
+
+  CXXExpansionStmt *TES = cast<CXXExpansionStmt>(NewStmt.get());
+  return getSema().FinishCXXExpansionStmt(TES, Body.get());
+}
+
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXCompositeExpansionStmt(
+                                                 CXXCompositeExpansionStmt *S) {
+  StmtResult RangeVar;
+  ExprResult RangeExpr;
+  RangeVar = getDerived().TransformStmt(S->getRangeVarStmt());
+  if (RangeVar.isInvalid())
+    return StmtError();
+
+
+  // FIXME: Is this actually an evaluated expression.
+  StmtResult LoopVar = getDerived().TransformStmt(S->getLoopVarStmt());
+  if (LoopVar.isInvalid())
+    return StmtError();
+
+  StmtResult NewStmt = S;
+  if (getDerived().AlwaysRebuild() ||
+      RangeVar.get() != S->getRangeVarStmt() ||
+      LoopVar.get() != S->getLoopVarStmt()) {
+    NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
+      S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+      LoopVar.get(), S->getRParenLoc());
+    if (NewStmt.isInvalid())
+      return StmtError();
+  }
+
+  StmtResult Body = getDerived().TransformStmt(S->getBody());
+
+  if (Body.isInvalid())
+    return StmtError();
+
+  // Body has changed but we didn't rebuild the for-range statement. Rebuild
+  // it now so we have a new statement to attach the body to.
+  if (Body.get() != S->getBody() && NewStmt.get() == S) {
+    NewStmt = getDerived().RebuildCXXCompositeExpansionStmt(
+      S->getForLoc(), S->getEllipsisLoc(), S->getColonLoc(), RangeVar.get(),
+      LoopVar.get(), S->getRParenLoc());
     if (NewStmt.isInvalid())
       return StmtError();
   }

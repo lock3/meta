@@ -4036,7 +4036,7 @@ static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
 
 // Evaluate a statement.
 static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
-                                   const Stmt *S, const SwitchCase *Case) {
+                                  const Stmt *S, const SwitchCase *Case) {
   if (!Info.nextStep(S))
     return ESR_Failed;
 
@@ -4303,11 +4303,30 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     return ESR_Succeeded;
   }
 
-  case Stmt::CXXExpansionStmtClass: {
-    const CXXExpansionStmt *ES = cast<CXXExpansionStmt>(S);
+  case Stmt::CXXCompositeExpansionStmtClass: {
+    const CXXCompositeExpansionStmt *ES = cast<CXXCompositeExpansionStmt>(S);
     BlockScopeRAII Scope(Info);
 
     EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeVarStmt());
+    if (ESR != ESR_Succeeded)
+      return ESR;
+
+    for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
+      BlockScopeRAII InnerScope(Info);
+
+      ESR = EvaluateStmt(Result, Info, SubStmt);
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
+
+    return ESR_Succeeded;
+  }
+
+  case Stmt::CXXPackExpansionStmtClass: {
+    const CXXPackExpansionStmt *ES = cast<CXXPackExpansionStmt>(S);
+    BlockScopeRAII Scope(Info);
+
+    EvalStmtResult ESR = EvaluateStmt(Result, Info, ES->getRangeExprStmt());
     if (ESR != ESR_Succeeded)
       return ESR;
 

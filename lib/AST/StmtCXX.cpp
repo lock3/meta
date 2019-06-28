@@ -85,10 +85,16 @@ const VarDecl *CXXForRangeStmt::getLoopVariable() const {
   return const_cast<CXXForRangeStmt *>(this)->getLoopVariable();
 }
 
-VarDecl *CXXExpansionStmt::getRangeVariable() {
+VarDecl *CXXCompositeExpansionStmt::getRangeVariable() {
   Decl *RV = cast<DeclStmt>(getRangeVarStmt())->getSingleDecl();
   assert(RV && "No range variable in CXXExpansionStmt");
   return cast<VarDecl>(RV);
+}
+
+Expr *CXXPackExpansionStmt::getRangeExpr() const {
+  assert(isa<Expr>(getRangeExprStmt()) && "Range is not an expression.");
+  Expr *RangeExpr = cast<Expr>(getRangeExprStmt());
+  return RangeExpr;
 }
 
 VarDecl *CXXExpansionStmt::getLoopVariable() {

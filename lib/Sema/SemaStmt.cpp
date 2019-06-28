@@ -3201,15 +3201,12 @@ ExpansionStatementBuilder::BuildDependentExpansion(bool PackExpansion)
   // dependent. We can use this information to avoid problems during semantic
   // analysis of the body.
   if (!PackExpansion)
-    return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
-                                                  TemplateParms, /*Size=*/-1,
-                                                  ForLoc, AnnotationLoc,
-                                                  ColonLoc, RParenLoc,
-                                                  CXXExpansionStmt::RK_Unknown);
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeExpr,
-                                                TemplateParms, /*Size=*/-1,
-                                                ForLoc, AnnotationLoc,
-                                                ColonLoc, RParenLoc);
+    return new (SemaRef.Context) CXXCompositeExpansionStmt(
+      LoopDeclStmt, RangeDeclStmt, TemplateParms, /*Size=*/-1,
+      ForLoc, AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Unknown);
+  return new (SemaRef.Context) CXXPackExpansionStmt(
+    LoopDeclStmt, RangeExpr, TemplateParms, /*Size=*/-1,
+    ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr contains an unexpanded parameter pack, then build
@@ -3271,8 +3268,8 @@ ExpansionStatementBuilder::BuildExpansionOverPack()
     return StmtError();
 
   return new (SemaRef.Context)
-    CXXExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, Size,
-                     ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
+    CXXPackExpansionStmt(LoopDeclStmt, RangeExpr, TemplateParms, Size,
+                         ForLoc, AnnotationLoc, ColonLoc, RParenLoc);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3315,13 +3312,9 @@ ExpansionStatementBuilder::BuildExpansionOverArray()
   ConstantArrayType const *ArrayTy = cast<ConstantArrayType>(RangeType);
   llvm::APSInt Size(ArrayTy->getSize(), true);
 
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
-                                                RangeDeclStmt,
-                                                TemplateParms,
-                                                Size.getExtValue(), ForLoc,
-                                                AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Array);
+  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
+    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Array);
 }
 
 /// When range-expr denotes an tuple, expand over the elements of the array.
@@ -3400,12 +3393,9 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   if (!GetTupleSize(SemaRef, ColonLoc, RangeType, Size))
     return StmtError();
 
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt, RangeDeclStmt,
-                                                TemplateParms,
-                                                Size.getExtValue(), ForLoc,
-                                                AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Tuple);
+  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size.getExtValue(), ForLoc,
+    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Tuple);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3633,13 +3623,9 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
-                                                RangeDeclStmt,
-                                                TemplateParms,
-                                                Count.getExtValue(), ForLoc,
-                                                AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Range);
+  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+    LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
+    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Range);
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3681,13 +3667,9 @@ ExpansionStatementBuilder::BuildExpansionOverClass()
   if (LoopVar->isInvalidDecl())
     return StmtError();
 
-  return new (SemaRef.Context) CXXExpansionStmt(LoopDeclStmt,
-                                                RangeDeclStmt,
-                                                TemplateParms,
-                                                Size, ForLoc,
-                                                AnnotationLoc, ColonLoc,
-                                                RParenLoc,
-                                                CXXExpansionStmt::RK_Struct);
+  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+    LoopDeclStmt, RangeDeclStmt, TemplateParms, Size, ForLoc,
+    AnnotationLoc, ColonLoc, RParenLoc, CXXExpansionStmt::RK_Struct);
 }
 
 /// Build a C++ expansion statement.
@@ -3970,22 +3952,15 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
   // If the range initializer is dependent, then we can't deduce its
   // type or instantiate the body. Just return the statement as-is.
   // If the expansion is a pack expansion, there is no range init.
-  if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Pack) {
-    Expr *RangeExpr = Expansion->getRangeExpr();
+  if (isa<CXXPackExpansionStmt>(Expansion)) {
+    Expr *RangeExpr = cast<CXXPackExpansionStmt>(Expansion)->getRangeExpr();
     if (isa<DeclRefExpr>(RangeExpr))
       return Expansion;
   } else {
-    Expr *RangeInit = Expansion->getRangeInit();
+    Expr *RangeInit = cast<CXXCompositeExpansionStmt>(Expansion)->getRangeInit();
     if (RangeInit->isTypeDependent() || RangeInit->isValueDependent())
       return Expansion;
-    // Decl *RangeVar = Expansion->getRangeVariable();
-    // if (RangeVar->getDeclContext()->isDependentContext())
-    //   return Expansion;
   }
-
-  // if (Expansion->getRangeKind() == CXXExpansionStmt::RK_Unknown) {
-  //   return Expansion;
-  // }
 
   // When there are no members, return an empty compound statement.
   if (Expansion->getSize() == 0) {

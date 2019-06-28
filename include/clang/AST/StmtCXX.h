@@ -262,18 +262,11 @@ protected:
   /// this value is not meaningful.
   std::size_t Size;
 
-  /// \brief The range expression (range-expr in (auto x : range-expr)).
-  /// This is only used for parameter pack expansions that do not otherwise
-  /// have a range variable we can access.
-  Expr *RangeExpr;
-
   /// \brief The statements instantiated from the loop body. These are not
   /// sub-expressions.
   Stmt **InstantiatedStmts;
 
   friend class ASTStmtReader;
-
-  SizeOfPackExpr *PackSize = nullptr;
 
 public:
   enum RangeKind {
@@ -285,50 +278,27 @@ public:
     RK_Unknown,
   };
 
-  /// An expansion over an array, range, tuple, or struct.
-  CXXExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
-                   TemplateParameterList *Parms,
-                   std::size_t N, SourceLocation FL, SourceLocation EL,
+private:
+  RangeKind StmtRangeKind;
+public:
+
+  CXXExpansionStmt(StmtClass SC, DeclStmt *LoopVar,
+                   TemplateParameterList *Parms, std::size_t N,
+                   SourceLocation FL, SourceLocation EL,
                    SourceLocation CL, SourceLocation RPL, RangeKind RK)
-    : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), EllipsisLoc(EL),
-      ColonLoc(CL), RParenLoc(RPL), Size(N), RangeExpr(nullptr),
+    : Stmt(SC), ForLoc(FL), ColonLoc(CL), RParenLoc(RPL), Size(N),
       InstantiatedStmts(nullptr), StmtRangeKind(RK) {
     SubExprs[LOOP] = LoopVar;
-    SubExprs[RANGE] = RangeVar;
-    SubExprs[BODY] = nullptr;
+    SubExprs[RANGE] = SubExprs[BODY] = nullptr;
   }
 
-  /// An expansion over a parameter pack does not have a range variable,
-  /// but the range itself is still significant, as it contains the pack.
-  CXXExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
-                   TemplateParameterList *Parms,
-                   std::size_t N, SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL)
-    : Stmt(CXXExpansionStmtClass), Parms(Parms), ForLoc(FL), EllipsisLoc(EL),
-      ColonLoc(CL), RParenLoc(RPL), Size(N), RangeExpr(RangeExpr),
-      InstantiatedStmts(nullptr), StmtRangeKind(RK_Pack) {
-    SubExprs[LOOP] = LoopVar;
-    SubExprs[RANGE] = nullptr;
-    SubExprs[BODY] = nullptr;
-  }
+  CXXExpansionStmt(StmtClass SC, EmptyShell Empty)
+    : Stmt(SC, Empty) {}
 
-  CXXExpansionStmt(EmptyShell Empty) : Stmt(CXXExpansionStmtClass, Empty) {}
-
-  /// \brief Returns the statement containing the range declaration.
-  Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
-
-  /// \brief The range variable.
-  const VarDecl *getRangeVariable() const;  
-  VarDecl *getRangeVariable();
-
-  /// \brief The original range expression.
-  const Expr *getRangeInit() const { return getRangeVariable()->getInit(); }
-  Expr *getRangeInit() { return getRangeVariable()->getInit(); }
-
-  /// \brief Returns the dependent loop variable declaration.
+  /// Returns the dependent loop variable declaration.
   DeclStmt *getLoopVarStmt() const { return cast<DeclStmt>(SubExprs[LOOP]); }
 
-  /// \brief Get the loop variable.
+  /// Get the loop variable.
   const VarDecl *getLoopVariable() const;
   VarDecl *getLoopVariable();
 
@@ -338,29 +308,18 @@ public:
   /// Returns loop induction variable.
   NonTypeTemplateParmDecl *getInductionVariable();
 
-  /// Returns the size of the pack being expanded over.
-  SizeOfPackExpr *getPackSize() const { return PackSize; }
-  void setPackSize(SizeOfPackExpr *E) { PackSize = E; }
-
-  /// \brief Returns the parsed body of the loop.
+  /// Returns the parsed body of the loop.
   const Stmt *getBody() const { return SubExprs[BODY]; }
   Stmt *getBody() { return SubExprs[BODY]; }
 
-  /// \brief Set the body of the loop.
+  /// Set the body of the loop.
   void setBody(Stmt *S) { SubExprs[BODY] = S; }
 
-  /// \brief Returns the number of instantiated statements.
+  /// Returns the number of instantiated statements.
   std::size_t getSize() const { return Size; }
   void setSize(std::size_t N) { Size = N; }
 
-  /// \brief Returns the range expression of a pack expansion statement.
-  Expr *getRangeExpr() const {
-    assert(StmtRangeKind == RK_Pack &&
-           "Range-expr only meaningful for pack expansions!") ;
-    return RangeExpr;
-  }
-
-  /// \brief Set the sequence of instantiated statements.
+  /// Set the sequence of instantiated statements.
   void setInstantiatedStatements(Stmt **S) {
     assert(!InstantiatedStmts && "instantiated statements already defined");
     InstantiatedStmts = S;
@@ -385,10 +344,6 @@ public:
 
   RangeKind getRangeKind() const { return StmtRangeKind; }
 
-private:
-  RangeKind StmtRangeKind;
-
-public:
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {
     return getBeginLoc();
@@ -396,7 +351,7 @@ public:
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
                             "Use getEndLoc instead") {
     return getEndLoc();
-  }  
+  }
 
   SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY {
@@ -409,9 +364,114 @@ public:
   child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
 
   static bool classof(const Stmt *T) {
-    return T->getStmtClass() == CXXExpansionStmtClass;
+    return T->getStmtClass() == CXXCompositeExpansionStmtClass ||
+      T->getStmtClass() == CXXPackExpansionStmtClass;
+  }
+};
+
+class CXXCompositeExpansionStmt : public CXXExpansionStmt {
+
+public:
+  /// Returns the statement containing the range declaration.
+  Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
+
+  /// The range variable.
+  const VarDecl *getRangeVariable() const;
+  VarDecl *getRangeVariable();
+
+  /// The original range expression.
+  const Expr *getRangeInit() const { return getRangeVariable()->getInit(); }
+  Expr *getRangeInit() { return getRangeVariable()->getInit(); }
+
+  /// An expansion over an array, range, tuple, or struct.
+  CXXCompositeExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
+                   TemplateParameterList *Parms,
+                   std::size_t N, SourceLocation FL, SourceLocation EL,
+                   SourceLocation CL, SourceLocation RPL, RangeKind RK)
+    : CXXExpansionStmt(CXXCompositeExpansionStmtClass, LoopVar,
+                       Parms, N, FL, EL, CL, RPL, RK) {
+    SubExprs[RANGE] = RangeVar;
   }
 
+  CXXCompositeExpansionStmt(EmptyShell Empty)
+    : CXXExpansionStmt(CXXCompositeExpansionStmtClass, Empty) {}
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    if (SubExprs[BODY])
+      return SubExprs[BODY]->getEndLoc();
+    return RParenLoc;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXCompositeExpansionStmtClass;
+  }
+};
+
+class CXXPackExpansionStmt : public CXXExpansionStmt {
+  // A sizeof... expression. We aren't actually concerned with
+  // the value of this expression: we can use this to determine
+  // whether or not the pack has been expanded yet.
+  SizeOfPackExpr *PackSize = nullptr;
+public:
+  /// An expansion over a parameter pack does not have a range variable,
+  /// but the range itself is still significant, as it contains the pack.
+  CXXPackExpansionStmt(DeclStmt *LoopVar, Expr *RangeExpr,
+                       TemplateParameterList *Parms,
+                       std::size_t N, SourceLocation FL, SourceLocation EL,
+                       SourceLocation CL, SourceLocation RPL)
+    : CXXExpansionStmt(CXXPackExpansionStmtClass, LoopVar, Parms, N,
+                       FL, EL, CL, RPL, RK_Pack) {
+      SubExprs[RANGE] = RangeExpr;
+    }
+
+  CXXPackExpansionStmt(EmptyShell Empty)
+    : CXXExpansionStmt(CXXPackExpansionStmtClass, Empty) {}
+
+  // Returns the range expression as a statement.
+  Stmt *getRangeExprStmt() const { return SubExprs[RANGE]; }
+
+  /// Returns the range expression.
+  Expr *getRangeExpr() const;
+
+  /// Returns the size of the pack being expanded over.
+  SizeOfPackExpr *getPackSize() const { return PackSize; }
+  void setPackSize(SizeOfPackExpr *E) { PackSize = E; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return ForLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    if (SubExprs[BODY])
+      return SubExprs[BODY]->getEndLoc();
+    return RParenLoc;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&SubExprs[0], &SubExprs[END]); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXPackExpansionStmtClass;
+  }
 };
 
 /// Representation of a Microsoft __if_exists or __if_not_exists

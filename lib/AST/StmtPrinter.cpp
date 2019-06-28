@@ -359,22 +359,35 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   PrintControlledStmt(Node->getBody());
 }
 
-void StmtPrinter::VisitCXXExpansionStmt(CXXExpansionStmt *Node) {
+void StmtPrinter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *Node) {
   Indent() << "for... (";
   PrintingPolicy SubPolicy(Policy);
   SubPolicy.SuppressInitializers = true;
   Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
   OS << " : ";
-  if (Node->getRangeKind() == CXXExpansionStmt::RK_Pack)
-    PrintExpr(Node->getRangeExpr());
-  else
-    PrintExpr(Node->getRangeInit());
+  PrintExpr(Node->getRangeInit());
   OS << ") {\n";
   PrintStmt(Node->getBody());
   Indent() << "}";
   if (Policy.IncludeNewlines)
     OS << "\n";
 }
+
+void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeExpr());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
 
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();

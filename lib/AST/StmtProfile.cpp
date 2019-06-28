@@ -341,7 +341,12 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXExpansionStmt(const CXXExpansionStmt *S) {
+void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+}
+
+void StmtProfiler::VisitCXXCompositeExpansionStmt(
+                                           const CXXCompositeExpansionStmt *S) {
   VisitStmt(S);
 }
 
