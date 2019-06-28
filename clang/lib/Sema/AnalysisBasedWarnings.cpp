@@ -1963,13 +1963,34 @@ public:
 
 namespace clang {
 namespace lifetime {
+const int Warnings[] = {
+  diag::warn_deref_dangling,
+  diag::warn_deref_nullptr,
+  diag::warn_assign_nullptr,
+  diag::warn_parameter_null,
+  diag::warn_return_dangling,
+  diag::warn_parameter_null
+};
+const int Notes[] = {
+  diag::note_never_initialized,
+  diag::note_temporary_destroyed,
+  diag::note_dereferenced,
+  diag::note_forbidden_cast,
+  diag::note_modified,
+  diag::note_deleted,
+  diag::note_assigned,
+  diag::note_null_reason_parameter,
+  diag::note_null_reason_default_construct,
+  diag::note_null_reason_compared_to_null
+};
+
 class Reporter : public LifetimeReporterBase {
   Sema &S;
   std::set<SourceLocation> WarningLocs;
   bool IgnoreCurrentWarning = false;
   
-  bool enableIfNew(SourceLocation Loc) {
-    auto I = WarningLocs.insert(Loc);
+  bool enableIfNew(SourceRange Range) {
+    auto I = WarningLocs.insert(Range.getBegin());
     IgnoreCurrentWarning = !I.second;
     return !IgnoreCurrentWarning;
   }
@@ -1983,105 +2004,49 @@ public:
       S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
   }
 
-  void warnDerefDangling(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_deref_dangling) << possibly;
+  void warn(WarnType T, SourceRange Range, bool Possibly) final {
+    assert((unsigned)T < sizeof(Warnings)/sizeof(Warnings[0]));
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), Warnings[(int)T]) << Possibly << Range;
   }
-  void warnDerefNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
+  void warnParameterDangling(SourceRange Range, bool Indirectly) final {
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_parameter_dangling) << Indirectly
+        << Range;
   }
-  void warnAssignNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_assign_nullptr) << possibly;
+  void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) final {
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_non_static_throw) << ThrownPset
+        << Range;
   }
-  void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
-                           const std::string &Pointee) final {
-    if(enableIfNew(LocParam1)) {
-      S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
-      S.Diag(LocParam2, diag::note_here);
-    }
+  void warnReturnWrongPset(SourceRange Range, StringRef RetPset,
+                           StringRef ExpectedPset) final {
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_return_wrong_pset) << RetPset
+        << ExpectedPset << Range;
   }
-  void warnParameterDangling(SourceLocation Loc, bool indirectly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
+  void warnPointerArithmetic(SourceRange Range) final {
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_lifetime_pointer_arithmetic);
   }
-  void warnParameterNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_parameter_null) << possibly;
-  }
-  void warnReturnDangling(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_dangling) << possibly;
-  }
-  void warnReturnNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_null) << possibly;
-  }
-  void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_non_static_throw) << ThrownPset;
-  }
-  void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
-  }
-  void warnPointerArithmetic(SourceLocation Loc) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_lifetime_pointer_arithmetic);
-  }
-  void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
+  void notePointeeLeftScope(SourceRange Range, std::string Name) final {
     if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_pointee_left_scope) << Name;
+      S.Diag(Range.getBegin(), diag::note_pointee_left_scope) << Name << Range;
   }
-  void noteNeverInitialized(SourceLocation Loc) final {
+  void note(NoteType T, SourceRange Range) final {
+    assert((unsigned)T < sizeof(Notes)/sizeof(Notes[0]));
     if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_never_initialized);
+      S.Diag(Range.getBegin(), Notes[(int)T]) << Range;
   }
-  void noteTemporaryDestroyed(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_temporary_destroyed);
-  }
-  void noteForbiddenCast(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_forbidden_cast);
-  }
-  void noteDereferenced(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_dereferenced);
-  }
-  void noteModified(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_modified);
-  }
-  void noteDeleted(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_deleted);
-  }
-  void noteAssigned(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_assigned);
-  }
-  void noteParameterNull(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_parameter);
-  }
-  void noteNullDefaultConstructed(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_default_construct);
-  }
-  void noteNullComparedToNull(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_compared_to_null);
-  }
-  void debugPset(SourceLocation Loc, StringRef Variable,
+  void debugPset(SourceRange Range, StringRef Variable,
                  std::string Pset) final {
-    S.Diag(Loc, diag::warn_pset) << Variable << Pset;
+    S.Diag(Range.getBegin(), diag::warn_pset) << Variable << Pset << Range;
   }
 
-  void debugTypeCategory(SourceLocation Loc,
+  void debugTypeCategory(SourceRange Range,
                          TypeCategory Category, StringRef Pointee) final {
-    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category << !Pointee.empty() << Pointee;
+    S.Diag(Range.getBegin(), diag::warn_lifetime_type_category) << (int)Category
+      << !Pointee.empty() << Pointee;
   }
 };
 } // namespace lifetime

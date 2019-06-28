@@ -160,87 +160,57 @@ struct Variable {
 
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Range.isValid()
-// TODO: We should use source ranges rather than single locations
-//       for user friendliness.
 class InvalidationReason {
-  enum EReason {
-    NOT_INITIALIZED,
-    POINTEE_LEFT_SCOPE,
-    TEMPORARY_LEFT_SCOPE,
-    FORBIDDEN_CAST,
-    DEREFERENCED,
-    MODIFIED,
-    DELETED
-  } Reason;
-
+  NoteType Reason;
   const VarDecl *Pointee;
   SourceRange Range;
 
-  InvalidationReason(SourceRange Range, EReason Reason,
+  InvalidationReason(SourceRange Range, NoteType Reason,
                      const VarDecl *Pointee = nullptr)
       : Reason(Reason), Pointee(Pointee), Range(Range) {
     assert(Range.isValid());
   }
 
 public:
-  SourceLocation getLoc() const { return Range.getBegin(); }
+  SourceRange getRange() const { return Range; }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
-    switch (Reason) {
-    case NOT_INITIALIZED:
-      Reporter.noteNeverInitialized(getLoc());
-      return;
-    case POINTEE_LEFT_SCOPE:
+    if (Reason == NoteType::PointeeLeftScope) {
       assert(Pointee);
-      Reporter.notePointeeLeftScope(getLoc(), Pointee->getNameAsString());
-      return;
-    case TEMPORARY_LEFT_SCOPE:
-      Reporter.noteTemporaryDestroyed(getLoc());
-      return;
-    case FORBIDDEN_CAST:
-      Reporter.noteForbiddenCast(getLoc());
-      return;
-    case DEREFERENCED:
-      Reporter.noteDereferenced(getLoc());
-      return;
-    case MODIFIED:
-      Reporter.noteModified(getLoc());
-      return;
-    case DELETED:
-      Reporter.noteDeleted(getLoc());
+      Reporter.notePointeeLeftScope(Range, Pointee->getNameAsString());
       return;
     }
-    llvm_unreachable("Invalid InvalidationReason::Reason");
+    Reporter.note(Reason, Range);
   }
 
   static InvalidationReason NotInitialized(SourceRange Range) {
-    return {Range, NOT_INITIALIZED};
+    return {Range, NoteType::NeverInit};
   }
 
   static InvalidationReason PointeeLeftScope(SourceRange Range,
                                              const VarDecl *Pointee) {
     assert(Pointee);
-    return {Range, POINTEE_LEFT_SCOPE, Pointee};
+    return {Range, NoteType::PointeeLeftScope, Pointee};
   }
 
   static InvalidationReason TemporaryLeftScope(SourceRange Range) {
-    return {Range, TEMPORARY_LEFT_SCOPE};
+    return {Range, NoteType::TempDestroyed};
   }
 
   static InvalidationReason Dereferenced(SourceRange Range) {
-    return {Range, DEREFERENCED};
+    return {Range, NoteType::Dereferenced};
   }
 
   static InvalidationReason ForbiddenCast(SourceRange Range) {
-    return {Range, FORBIDDEN_CAST};
+    return {Range, NoteType::ForbiddenCast};
   }
 
   static InvalidationReason Modified(SourceRange Range) {
-    return {Range, MODIFIED};
+    return {Range, NoteType::Modified};
   }
 
   static InvalidationReason Deleted(SourceRange Range) {
-    return {Range, DELETED};
+    return {Range, NoteType::Deleted};
   }
 };
 
@@ -249,53 +219,36 @@ class NullReason {
   SourceRange Range;
 
 public:
-  enum EReason {
-    ASSIGNED,
-    PARAMETER_NULL,
-    DEFAULT_CONSTRUCTED,
-    COMPARED_TO_NULL,
-    NULLPTR_CONSTANT
-  } Reason;
+  NoteType Reason;
 
-  NullReason(SourceRange Range, EReason Reason) : Range(Range), Reason(Reason) {
+  NullReason(SourceRange Range, NoteType Reason) : Range(Range), Reason(Reason) {
     assert(Range.isValid());
   }
 
-  static NullReason assigned(SourceRange Range) { return {Range, ASSIGNED}; }
+  static NullReason assigned(SourceRange Range) {
+    return {Range, NoteType::Assigned};
+  }
 
   static NullReason parameterNull(SourceRange Range) {
-    return {Range, PARAMETER_NULL};
+    return {Range, NoteType::ParamNull};
   }
 
   static NullReason defaultConstructed(SourceRange Range) {
-    return {Range, DEFAULT_CONSTRUCTED};
+    return {Range, NoteType::NullDefaultConstructed};
   }
 
   static NullReason comparedToNull(SourceRange Range) {
-    return {Range, COMPARED_TO_NULL};
+    return {Range, NoteType::ComparedToNull};
   }
 
   static NullReason nullptrConstant(SourceRange Range) {
-    return {Range, NULLPTR_CONSTANT};
+    return {Range, NoteType::NullConstant};
   }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
-    switch (Reason) {
-    case ASSIGNED:
-      Reporter.noteAssigned(Range.getBegin());
-      break;
-    case PARAMETER_NULL:
-      Reporter.noteParameterNull(Range.getBegin());
-      break;
-    case DEFAULT_CONSTRUCTED:
-      Reporter.noteNullDefaultConstructed(Range.getBegin());
-      break;
-    case COMPARED_TO_NULL:
-      Reporter.noteNullComparedToNull(Range.getBegin());
-      break;
-    case NULLPTR_CONSTANT:
-      break; // not diagnosed, hopefully obvious
-    }
+    if (Reason == NoteType::NullConstant)
+      return; // not diagnosed, hopefully obvious
+    Reporter.note(Reason, Range);
   }
 };
 

@@ -43,39 +43,46 @@ extern DefineClassTemplateSpecializationTy
 
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
+enum class WarnType {
+  DerefDangling,
+  DerefNull,
+  AssignNull,
+  ParamNull,
+  ReturnDangling,
+  ReturnNull
+};
+
+enum class NoteType {
+  NeverInit,
+  TempDestroyed,
+  Dereferenced,
+  ForbiddenCast,
+  Modified,
+  Deleted,
+  Assigned,
+  ParamNull,
+  NullDefaultConstructed,
+  ComparedToNull,
+  NullConstant,
+  PointeeLeftScope
+};
+
 class LifetimeReporterBase {
 public:
   virtual ~LifetimeReporterBase() = default;
   virtual void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
                                 std::string ActualPset) = 0;
-  virtual void warnDerefDangling(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnDerefNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnAssignNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnParametersAlias(SourceLocation LocParam1,
-                                   SourceLocation LocParam2,
-                                   const std::string &Pointee) = 0;
-  virtual void warnParameterDangling(SourceLocation Loc, bool indirectly) = 0;
-  virtual void warnParameterNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnReturnDangling(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnReturnNull(SourceLocation Loc, bool possibly) = 0;
-  virtual void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset,
+  virtual void warn(WarnType T, SourceRange Range, bool Possibly) = 0;
+  virtual void warnParameterDangling(SourceRange Range, bool Indirectly) = 0;
+  virtual void warnReturnWrongPset(SourceRange Range, StringRef RetPset,
                                    StringRef ExpectedPset) = 0;
-  virtual void warnPointerArithmetic(SourceLocation Loc) = 0;
-  virtual void notePointeeLeftScope(SourceLocation Loc, std::string Name) = 0;
-  virtual void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) = 0;
-  virtual void noteNeverInitialized(SourceLocation Loc) = 0;
-  virtual void noteTemporaryDestroyed(SourceLocation Loc) = 0;
-  virtual void noteForbiddenCast(SourceLocation Loc) = 0;
-  virtual void noteDereferenced(SourceLocation Loc) = 0;
-  virtual void noteModified(SourceLocation Loc) = 0;
-  virtual void noteDeleted(SourceLocation Loc) = 0;
-  virtual void noteAssigned(SourceLocation Loc) = 0;
-  virtual void noteParameterNull(SourceLocation Loc) = 0;
-  virtual void noteNullDefaultConstructed(SourceLocation Loc) = 0;
-  virtual void noteNullComparedToNull(SourceLocation Loc) = 0;
-  virtual void debugPset(SourceLocation Loc, StringRef Variable,
+  virtual void warnPointerArithmetic(SourceRange Range) = 0;
+  virtual void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) = 0;
+  virtual void notePointeeLeftScope(SourceRange Range, std::string Name) = 0;
+  virtual void note(NoteType T, SourceRange Range) = 0;
+  virtual void debugPset(SourceRange Range, StringRef Variable,
                          std::string Pset) = 0;
-  virtual void debugTypeCategory(SourceLocation Loc, TypeCategory Category,
+  virtual void debugTypeCategory(SourceRange Range, TypeCategory Category,
                                  StringRef Pointee = "") = 0;
 };
 

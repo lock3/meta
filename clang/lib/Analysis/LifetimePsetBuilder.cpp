@@ -429,7 +429,7 @@ public:
       }
     }
     if (RetPSet.containsInvalid()) {
-      Reporter.warnReturnDangling(R->getReturnLoc(), false);
+      Reporter.warn(WarnType::ReturnDangling, R->getSourceRange(), false);
       RetPSet.explainWhyInvalid(Reporter);
     } /* else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
        Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
@@ -591,14 +591,13 @@ public:
       IsConversionToBool = ConvDecl->getConversionType()->isPointerType() ||
                            ConvDecl->getConversionType()->isBooleanType();
     if (CA.PS.containsInvalid()) {
-      Reporter.warnParameterDangling(CA.Range.getBegin(),
-                                     /*indirectly=*/false);
+      Reporter.warnParameterDangling(CA.Range, /*indirectly=*/false);
       CA.PS.explainWhyInvalid(Reporter);
       // suppress further diagnostics, e.g. when this input is returned
       CA.PS = {};
     } else if (CA.PS.containsNull() && !IsConversionToBool &&
                (!isNullableType(CA.ParamQType) || IsInputThis)) {
-      Reporter.warnParameterNull(CA.Range.getBegin(), !CA.PS.isNull());
+      Reporter.warn(WarnType::ParamNull, CA.Range, !CA.PS.isNull());
       CA.PS.explainWhyNull(Reporter);
     }
   }
@@ -793,7 +792,7 @@ public:
 
       if (PS.containsBase(V, order))
         setPSet(PSet::singleton(Pointer), PSet::invalid(Reason),
-                Reason.getLoc());
+                Reason.getRange());
     }
   }
 
@@ -823,7 +822,8 @@ public:
                           return KV.first.isLifetimeExtendedTemporaryBy(VD);
                         });
         if (PsetContainsTemporary)
-          setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getLoc());
+          setPSet(PSet::singleton(Var), PSet::invalid(Reason),
+                  Reason.getRange());
         ++I;
       }
     }
@@ -888,7 +888,7 @@ public:
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range));
       if (!isNullableType(LHS)) {
-        Reporter.warnAssignNull(Range.getBegin(), RHS.isSingleton());
+        Reporter.warn(WarnType::AssignNull, Range, RHS.isSingleton());
         RHS = PSet{};
       }
     }
@@ -1052,13 +1052,13 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
 
 bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) {
   if (PS.containsInvalid()) {
-    Reporter.warnDerefDangling(Range.getBegin(), !PS.isInvalid());
+    Reporter.warn(WarnType::DerefDangling, Range, !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
     return false;
   }
 
   if (PS.containsNull()) {
-    Reporter.warnDerefNull(Range.getBegin(), !PS.isNull());
+    Reporter.warn(WarnType::DerefNull, Range, !PS.isNull());
     PS.explainWhyNull(Reporter);
     return false;
   }
