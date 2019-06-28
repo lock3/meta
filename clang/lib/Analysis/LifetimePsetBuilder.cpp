@@ -888,7 +888,7 @@ public:
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range));
       if (!isNullableType(LHS)) {
-        Reporter.warnDerefNull(Range.getBegin(), RHS.isSingleton());
+        Reporter.warnAssignNull(Range.getBegin(), RHS.isSingleton());
         RHS = PSet{};
       }
     }

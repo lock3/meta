@@ -50,6 +50,7 @@ public:
                                 std::string ActualPset) = 0;
   virtual void warnDerefDangling(SourceLocation Loc, bool possibly) = 0;
   virtual void warnDerefNull(SourceLocation Loc, bool possibly) = 0;
+  virtual void warnAssignNull(SourceLocation Loc, bool possibly) = 0;
   virtual void warnParametersAlias(SourceLocation LocParam1,
                                    SourceLocation LocParam2,
                                    const std::string &Pointee) = 0;

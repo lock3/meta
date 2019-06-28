@@ -1991,6 +1991,10 @@ public:
     if(enableIfNew(Loc))
       S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
   }
+  void warnAssignNull(SourceLocation Loc, bool possibly) final {
+    if(enableIfNew(Loc))
+      S.Diag(Loc, diag::warn_assign_nullptr) << possibly;
+  }
   void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
                            const std::string &Pointee) final {
     if(enableIfNew(LocParam1)) {

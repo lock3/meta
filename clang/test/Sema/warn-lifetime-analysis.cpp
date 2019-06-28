@@ -193,10 +193,10 @@ void delete_pointee_userdefined(my_pointer p) {
 }
 
 void copy_null_ptr(int *p, my_pointer p2) {
-  gsl::not_null<int* > q = p;        // expected-warning {{dereferencing a possibly null pointer}}
-  q = p;                             // expected-warning {{dereferencing a possibly null pointer}}
-  gsl::not_null<my_pointer> q2 = p2; // expected-warning {{dereferencing a possibly null pointer}}
-  q2 = p2;                           // expected-warning {{dereferencing a possibly null pointer}}
+  gsl::not_null<int* > q = p;        // expected-warning {{assigning a possibly null pointer to a non-null object}}
+  q = p;                             // expected-warning {{assigning a possibly null pointer to a non-null object}}
+  gsl::not_null<my_pointer> q2 = p2; // expected-warning {{assigning a possibly null pointer to a non-null object}}
+  q2 = p2;                           // expected-warning {{assigning a possibly null pointer to a non-null object}}
 }
 
 void function_call() {

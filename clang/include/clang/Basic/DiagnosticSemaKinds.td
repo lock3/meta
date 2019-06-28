@@ -3199,6 +3199,8 @@ def warn_pset_of_global : Warning<"the pset of '%0' must be a subset of {(static
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null pointer">,
   InGroup<LifetimeNull>, DefaultIgnore;
+def warn_assign_nullptr : Warning<"assigning a%select{| possibly}0 null pointer to a non-null object">,
+  InGroup<LifetimeNull>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_parameter_alias : Warning<"this argument points to the same variable '%0' as another argument">,
