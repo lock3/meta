@@ -97,6 +97,7 @@ struct Owner {
 
 struct [[gsl::Pointer]] my_pointer {
   int &operator*();
+  operator bool() const;
 };
 
 void deref_uninitialized() {
@@ -167,6 +168,19 @@ int *global_null_p = nullptr;   // OK
 
 void uninitialized_static() {
   static int *p; // OK, statics initialize to null
+}
+
+void delete_pointee(int *p) {
+  int *q = p;
+  delete q; // expected-note {{deleted here}}
+  (void)*p; // expected-warning {{dereferencing a dangling pointer}}
+}
+
+void delete_pointee_userdefined(my_pointer p) {
+  if (!p)
+    return;
+  delete &(*p); // expected-note {{deleted here}}
+  (void)*p;     // expected-warning {{passing a dangling pointer as argument}}
 }
 
 void function_call() {

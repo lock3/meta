@@ -240,11 +240,11 @@ public:
     PSet Singleton = PSet::singleton(E);
     setPSet(E, Singleton);
     if (hasPSet(E->GetTemporaryExpr())) {
-        auto TC = classifyTypeCategory(E->GetTemporaryExpr()->getType());
-        if (TC == TypeCategory::Owner)
-          setPSet(Singleton, PSet::singleton(E, 1), E->getSourceRange());
-        else
-          setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
+      auto TC = classifyTypeCategory(E->GetTemporaryExpr()->getType());
+      if (TC == TypeCategory::Owner)
+        setPSet(Singleton, PSet::singleton(E, 1), E->getSourceRange());
+      else
+        setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
     }
   }
 
@@ -447,12 +447,12 @@ public:
       auto Ctor = E->getConstructor();
       auto ParmTy = Ctor->getParamDecl(0)->getType();
       auto TC = classifyTypeCategory(E->getArg(0)->getType());
-      // For ctors taking a const reference we assume that we will not take the address of
-      // the argument but copy it.
+      // For ctors taking a const reference we assume that we will not take the
+      // address of the argument but copy it.
       // TODO: Use the function call rules here.
-      if (TC == TypeCategory::Owner ||
-          Ctor->isCopyOrMoveConstructor() ||
-          (ParmTy->isReferenceType() && ParmTy->getPointeeType().isConstQualified()))
+      if (TC == TypeCategory::Owner || Ctor->isCopyOrMoveConstructor() ||
+          (ParmTy->isReferenceType() &&
+           ParmTy->getPointeeType().isConstQualified()))
         setPSet(E, derefPSet(getPSet(E->getArg(0))));
       else if (TC == TypeCategory::Pointer)
         setPSet(E, getPSet(E->getArg(0)));
@@ -490,19 +490,17 @@ public:
     setPSet(E, {});
   }
 
-  void VisitVAArgExpr(const VAArgExpr *E) {
-    setPSet(E, {});
-  }
+  void VisitVAArgExpr(const VAArgExpr *E) { setPSet(E, {}); }
 
   void VisitCXXDeleteExpr(const CXXDeleteExpr *DE) {
     if (hasPSet(DE->getArgument())) {
       PSet PS = getPSet(DE->getArgument());
-      for (const auto& Var : PS.vars()) {
+      for (const auto &Var : PS.vars()) {
         if (Var.second != 0)
           ; // TODO: diagnose? We are deleting the buffer of on owner?
         else
           invalidateVar(Var.first, 0,
-            InvalidationReason::Deleted(DE->getSourceRange()));
+                        InvalidationReason::Deleted(DE->getSourceRange()));
       }
     }
   }
@@ -562,7 +560,7 @@ public:
     // At this point we have Pointer arguments except 'Owner&&' and 'const
     // Owner&'
     Args.Input.emplace_back(Range, getPSet(Arg), ParamType);
-    diagnoseInput(Args.Input.back(), IsInputThis);
+    diagnoseInput(FD, Args.Input.back(), IsInputThis);
 
     // Input includes the deref location of all reference arguments except:
     // - Owner&&
@@ -573,7 +571,7 @@ public:
         (PointeeCat == TypeCategory::Owner ||
          PointeeCat == TypeCategory::Pointer)) {
       Args.Input.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);
-      diagnoseInput(Args.Input.back(), IsInputThis);
+      diagnoseInput(FD, Args.Input.back(), IsInputThis);
     }
 
     if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
@@ -586,14 +584,19 @@ public:
 
   /// Returns the psets of each expressions in PinArgs,
   /// plus the psets of dereferencing each pset further.
-  void diagnoseInput(CallArgument &CA, bool IsInputThis) {
+  void diagnoseInput(const FunctionDecl *FD, CallArgument &CA,
+                     bool IsInputThis) {
+    bool IsConversionToBool = false;
+    if (const auto *ConvDecl = dyn_cast_or_null<CXXConversionDecl>(FD))
+      IsConversionToBool = ConvDecl->getConversionType()->isPointerType() ||
+                           ConvDecl->getConversionType()->isBooleanType();
     if (CA.PS.containsInvalid()) {
       Reporter.warnParameterDangling(CA.Range.getBegin(),
                                      /*indirectly=*/false);
       CA.PS.explainWhyInvalid(Reporter);
       // suppress further diagnostics, e.g. when this input is returned
       CA.PS = {};
-    } else if (CA.PS.containsNull() &&
+    } else if (CA.PS.containsNull() && !IsConversionToBool &&
                (!isNullableType(CA.ParamQType) || IsInputThis)) {
       Reporter.warnParameterNull(CA.Range.getBegin(), !CA.PS.isNull());
       CA.PS.explainWhyNull(Reporter);
@@ -901,8 +904,8 @@ public:
         // Never treat local statics as uninitialized.
         PS = PSet::staticVar(/*TODO*/ false);
       } else {
-        PS =
-          PSet::invalid(InvalidationReason::NotInitialized(VD->getLocation()));
+        PS = PSet::invalid(
+            InvalidationReason::NotInitialized(VD->getLocation()));
       }
       setPSet(PSet::singleton(VD), PS, Range);
       break;
