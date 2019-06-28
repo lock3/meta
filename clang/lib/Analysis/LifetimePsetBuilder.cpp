@@ -1252,6 +1252,16 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
                       InvalidationReason::TemporaryLeftScope(S->getEndLoc()));
         // Remove all materialized temporaries that are not extended.
         eraseVariable(nullptr, S->getEndLoc());
+        // Clean up PSets for subexpressions. We should never reference
+        // subexpressions again after the full expression ended. The
+        // problem is, it is not trivial to find out the end of a full
+        // expression with linearized CFGs. Just after the
+        // ExprWithCleanups node we might still need the resulting
+        // RValue, thus PSetsOfExpr is not always cleaned.
+        // TODO: clean this up by properly tracking end of full exprs.
+        RefersTo.clear();
+        if (isa<DeclStmt>(S))
+          PSetsOfExpr.clear();
       }
 
       break;
