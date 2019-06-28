@@ -2615,7 +2615,7 @@ static void checkNewAttributesAfterDef(Sema &S, Decl *New, const Decl *Old) {
       ++I;
       continue;
     } else if (isa<OwnerAttr>(NewAttribute) || isa<PointerAttr>(NewAttribute)) {
-      // gsl::Owner and gsl::Pointer are allowed to be added tp a class after it
+      // gsl::Owner and gsl::Pointer are allowed to be added to a class after it
       // is defined.
       ++I;
       continue;
