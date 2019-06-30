@@ -4534,11 +4534,6 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 }
 
 static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
-  // Only one lifetime attribute is allowed for a specific Decl node.
-  if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL) ||
-      checkAttrMutualExclusion<PointerAttr>(S, D, AL))
-    return;
-
   if (!AL.hasParsedType()) {
     S.Diag(AL.getLoc(), diag::err_attribute_wrong_number_arguments) << AL << 1;
     return;

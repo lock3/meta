@@ -32,12 +32,8 @@ class [[gsl::Owner(int)]] [[gsl::Pointer(int)]] BothOwnerPointer {};
 // expected-note@-2 {{conflicting attribute is here}}
 
 class [[gsl::Owner(int)]] [[gsl::Owner(int)]] DuplicateOwner {};
-// expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
-// expected-note@-2 {{conflicting attribute is here}}
 
 class [[gsl::Pointer(int)]] [[gsl::Pointer(int)]] DuplicatePointer {};
-// expected-error@-1 {{'Pointer' and 'Pointer' attributes are not compatible}}
-// expected-note@-2 {{conflicting attribute is here}}
 
 class [[gsl::Owner(void)]] OwnerVoidDerefType {};
 // expected-error@-1 {{'void' is an invalid argument to attribute 'Owner'}}
