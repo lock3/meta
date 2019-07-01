@@ -1592,7 +1592,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
-  // Parse 'for...', 'for constexpr', or 'for co_await'.
+  // Parse 'for...' or 'for co_await'.
   SourceLocation EllipsisLoc;
   SourceLocation ConstexprLoc;
   SourceLocation CoawaitLoc;
