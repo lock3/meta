@@ -482,6 +482,8 @@ TYPE_TRAIT_N(__is_trivially_constructible, IsTriviallyConstructible, KEYCXX)
 TYPE_TRAIT_1(__is_trivially_copyable, IsTriviallyCopyable, KEYCXX)
 TYPE_TRAIT_2(__is_trivially_assignable, IsTriviallyAssignable, KEYCXX)
 TYPE_TRAIT_2(__reference_binds_to_temporary, ReferenceBindsToTemporary, KEYCXX)
+TYPE_TRAIT_1(__is_gsl_owner, IsGslOwner, KEYCXX)
+TYPE_TRAIT_1(__is_gsl_pointer, IsGslPointer, KEYCXX)
 KEYWORD(__underlying_type           , KEYCXX)
 
 // Embarcadero Expression Traits

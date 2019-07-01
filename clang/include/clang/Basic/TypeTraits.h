@@ -44,6 +44,8 @@ namespace clang {
     UTT_IsFloatingPoint,
     UTT_IsFunction,
     UTT_IsFundamental,
+    UTT_IsGslOwner,
+    UTT_IsGslPointer,
     UTT_IsIntegral,
     UTT_IsInterfaceClass,
     UTT_IsLiteral,

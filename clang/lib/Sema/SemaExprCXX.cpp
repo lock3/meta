@@ -4434,6 +4434,8 @@ static bool CheckUnaryTypeTraitTypeCompleteness(Sema &S, TypeTrait UTT,
   case UTT_IsNothrowDestructible:
   case UTT_IsTriviallyDestructible:
   case UTT_HasUniqueObjectRepresentations:
+  case UTT_IsGslOwner:
+  case UTT_IsGslPointer:
     if (ArgTy->isIncompleteArrayType() || ArgTy->isVoidType())
       return true;
 
@@ -4875,6 +4877,14 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,
     return !T->isIncompleteType();
   case UTT_HasUniqueObjectRepresentations:
     return C.hasUniqueObjectRepresentations(T);
+  case UTT_IsGslOwner:
+    if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
+      return RD->getCanonicalDecl()->hasAttr<OwnerAttr>();
+    return false;
+  case UTT_IsGslPointer:
+    if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
+      return RD->getCanonicalDecl()->hasAttr<PointerAttr>();
+    return false;
   }
 }
 
