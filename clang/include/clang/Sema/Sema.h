@@ -6085,6 +6085,8 @@ public:
       ClassTemplateSpecializationDecl *BaseTemplateSpec,
       SourceLocation BaseLoc);
 
+  void addOwnerPointerAttribute(CXXRecordDecl *Record);
+
   void CheckCompletedCXXClass(CXXRecordDecl *Record);
 
   /// Check that the C++ class annoated with "trivial_abi" satisfies all the

@@ -6036,6 +6036,57 @@ static bool canPassInRegisters(Sema &S, CXXRecordDecl *D,
   return HasNonDeletedCopyOrMove;
 }
 
+/// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
+/// \pre Record->getIdentifiers() is non-null
+void Sema::addOwnerPointerAttribute(CXXRecordDecl *Record) {
+
+  static llvm::StringSet<> StdOwners{
+      "any",
+      "array",
+      "deque",
+      "forward_list",
+      "vector",
+      "list",
+      "map",
+      "multiset",
+      "multimap",
+      "optional",
+      "priority_queue",
+      "queue",
+      "regex",
+      "set",
+      "stack",
+      "unordered_set",
+      "unordered_map",
+      "unordered_multiset",
+      "unordered_multimap",
+      "variant",
+  };
+  static llvm::StringSet<> StdPointers{
+      "basic_regex",
+      "basic_string_view",
+      "reference_wrapper",
+      "regex_iterator",
+  };
+
+  if (!Record->isInStdNamespace())
+    return;
+
+  CXXRecordDecl *Canonical = Record->getCanonicalDecl();
+  if (Canonical->hasAttr<OwnerAttr>() || Canonical->hasAttr<PointerAttr>())
+    return;
+
+  if (StdOwners.count(Record->getName())) {
+    Canonical->addAttr(::new (Context) OwnerAttr(SourceRange{}, Context,
+                                                 /*DerefType*/ nullptr,
+                                                 /*Spelling=*/0));
+  } else if (StdPointers.count(Record->getName())) {
+    Canonical->addAttr(::new (Context) PointerAttr(SourceRange{}, Context,
+                                                   /*DerefType*/ nullptr,
+                                                   /*Spelling=*/0));
+  }
+}
+
 /// Perform semantic checks on a class definition that has been
 /// completing, introducing implicitly-declared members, checking for
 /// abstract types, etc.
@@ -6095,6 +6146,8 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
         break;
       }
     }
+
+    addOwnerPointerAttribute(Record);
   }
 
   // Warn if the class has virtual methods but non-virtual public destructor.

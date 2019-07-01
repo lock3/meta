@@ -75,16 +75,27 @@ static_assert(__is_gsl_owner(OwnerWithEmptyParameterList), "");
 class [[gsl::Pointer()]] PointerWithEmptyParameterList{};
 static_assert(__is_gsl_pointer(PointerWithEmptyParameterList), "");
 
-
 class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
 // expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
 // expected-note@-2 {{conflicting attribute is here}}
 
-
 namespace std {
-    template<typename T>
-    class vector {
+class any {
+};
+static_assert(__is_gsl_owner(any), "");
 
-    };
-    static_assert(__is_gsl_owner(vector<int>), "");
+template <typename T>
+class vector {
+};
+static_assert(__is_gsl_owner(vector<int>), "");
+
+template <
+    class CharT,
+    class Traits>
+class basic_regex;
+static_assert(__is_gsl_pointer(basic_regex<char, void>), "");
+
+class thread;
+static_assert(!__is_gsl_pointer(thread), "");
+static_assert(!__is_gsl_owner(thread), "");
 } // namespace std
