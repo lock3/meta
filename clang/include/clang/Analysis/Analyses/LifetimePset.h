@@ -127,15 +127,11 @@ struct Variable {
     std::string Ret;
     if (Var.is<const MaterializeTemporaryExpr *>()) {
       auto *MD = Var.get<const MaterializeTemporaryExpr *>();
-      if (MD) {
-        Ret = "(lifetime-extended temporary through ";
-        if (MD->getExtendingDecl())
-          Ret += std::string(MD->getExtendingDecl()->getName()) + ")";
-        else
-          Ret += "(unknown))";
-      } else {
+      if (MD && MD->getExtendingDecl()) {
+        Ret = "(lifetime-extended temporary through " +
+          MD->getExtendingDecl()->getName().str() + ")";
+      } else
         Ret = "(temporary)";
-      }
     } else {
       auto *VD = Var.get<const VarDecl *>();
       Ret = (VD ? std::string(VD->getName()) : "this");

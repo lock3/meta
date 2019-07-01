@@ -1095,7 +1095,7 @@ void pruned_branch(bool cond) {
   void returns_void();
   0 ? void() : returns_void(); // has not pset, should not crash.
 
-  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{pset(cond ? OwnerOfInt() : OwnerOfInt()) = ((lifetime-extended temporary through (unknown))')}}
+  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{pset(cond ? OwnerOfInt() : OwnerOfInt()) = ((temporary)')}}
 }
 
 void parameter_psets(int value,
