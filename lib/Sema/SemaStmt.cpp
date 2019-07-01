@@ -3557,7 +3557,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   // anyway.
 
   // If the range is a class, search for a nested size member.
-  CallExpr *CountCall = nullptr;
+  Expr *CountCall = nullptr;
   if (CXXRecordDecl *Class = RangeType->getAsCXXRecordDecl()) {
     DeclarationNameInfo SizeNameInfo(
         &SemaRef.Context.Idents.get("size"), ColonLoc);
@@ -3579,7 +3579,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
         SemaRef.ActOnCallExpr(CurScope, MemberRef.get(), ColonLoc, None,
                               ColonLoc, nullptr);
       if (!Call.isInvalid())
-        CountCall = cast<CallExpr>(Call.get());
+        CountCall = Call.get();
     }
   }
 
@@ -3605,7 +3605,7 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
         ExprResult SizeCall =
             SemaRef.ActOnCallExpr(CurScope, SizeFn, ColonLoc, Args, ColonLoc);
         if (!SizeCall.isInvalid())
-          CountCall = cast<CallExpr>(SizeCall.get());
+          CountCall = SizeCall.get();
       }
     }
   }
