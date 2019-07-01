@@ -303,7 +303,7 @@ public:
     ContainsNull = true;
     NullReasons.push_back(Reason);
   }
-  void removeNull() { ContainsNull = false; }
+  void removeNull() { ContainsNull = false;  NullReasons.clear(); }
   void removeEverythingButNull() {
     ContainsInvalid = false;
     InvReasons.clear();
