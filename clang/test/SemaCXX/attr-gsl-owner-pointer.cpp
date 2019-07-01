@@ -15,9 +15,8 @@ S [[gsl::Owner]] Instance;
 // expected-error@-1 {{'Owner' attribute cannot be applied to types}}
 
 class [[gsl::Owner]] OwnerMissingParameter{};
-// expected-error@-1 {{'Owner' attribute takes one argument}}
+
 class [[gsl::Pointer]] PointerMissingParameter{};
-// expected-error@-1 {{'Pointer' attribute takes one argument}}
 
 class [[gsl::Owner(7)]] OwnerDerefNoType{};
 // expected-error@-1 {{expected a type}} expected-error@-1 {{expected ')'}}
@@ -58,3 +57,11 @@ class [[gsl::Owner(float)]] AddConflictLater2;
 
 class [[gsl::Owner(int)]] AddTheSameLater{};
 class [[gsl::Owner(int)]] AddTheSameLater;
+
+class [[gsl::Owner()]] OwnerWithEmptyParameterList{};
+
+class [[gsl::Pointer()]] PointerWithEmptyParameterList{};
+
+class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
+// expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
+// expected-note@-2 {{conflicting attribute is here}}
