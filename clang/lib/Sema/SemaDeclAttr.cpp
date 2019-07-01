@@ -4546,28 +4546,32 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   // To check if earlier decl attributes do not conflict the newly parsed ones
   // we always add (and check) the attribute to the cannonical decl.
   D = D->getCanonicalDecl();
-  if(AL.getKind() == ParsedAttr::AT_Owner) {
+  if (AL.getKind() == ParsedAttr::AT_Owner) {
     if (checkAttrMutualExclusion<PointerAttr>(S, D, AL))
       return;
     if (const auto *OAttr = D->getAttr<OwnerAttr>()) {
       if (OAttr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
-        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible) << AL << OAttr;
+        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
+            << AL << OAttr;
         S.Diag(OAttr->getLocation(), diag::note_conflicting_attribute);
       }
     }
-    D->addAttr(::new (S.Context) OwnerAttr(
-      AL.getRange(), S.Context, DerefTypeLoc, AL.getAttributeSpellingListIndex()));
+    D->addAttr(::new (S.Context)
+                   OwnerAttr(AL.getRange(), S.Context, DerefTypeLoc,
+                             AL.getAttributeSpellingListIndex()));
   } else {
     if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL))
       return;
     if (const auto *PAttr = D->getAttr<PointerAttr>()) {
       if (PAttr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
-        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible) << AL << PAttr;
+        S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
+            << AL << PAttr;
         S.Diag(PAttr->getLocation(), diag::note_conflicting_attribute);
       }
     }
-    D->addAttr(::new (S.Context) PointerAttr(
-      AL.getRange(), S.Context, DerefTypeLoc, AL.getAttributeSpellingListIndex()));
+    D->addAttr(::new (S.Context)
+                   PointerAttr(AL.getRange(), S.Context, DerefTypeLoc,
+                               AL.getAttributeSpellingListIndex()));
   }
 }
 

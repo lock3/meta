@@ -212,13 +212,13 @@ namespace TestSuppress {
 }
 
 namespace TestLifetimeCategories {
-  class [[gsl::Owner(int)]] AOwner {};
-  // CHECK: CXXRecordDecl{{.*}} class AOwner
-  // CHECK: OwnerAttr {{.*}} int
-  class [[gsl::Pointer(int)]] APointer {};
-  // CHECK: CXXRecordDecl{{.*}} class APointer
-  // CHECK: PointerAttr {{.*}} int
-}
+class [[gsl::Owner(int)]] AOwner{};
+// CHECK: CXXRecordDecl{{.*}} class AOwner
+// CHECK: OwnerAttr {{.*}} int
+class [[gsl::Pointer(int)]] APointer{};
+// CHECK: CXXRecordDecl{{.*}} class APointer
+// CHECK: PointerAttr {{.*}} int
+} // namespace TestLifetimeCategories
 
 // Verify the order of attributes in the Ast. It must reflect the order
 // in the parsed source.
