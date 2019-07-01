@@ -205,7 +205,7 @@ void LifetimeContext::TraverseBlocks() {
     MaxIterations = IterationCount;
 }
 
-/// Check that the function adheres to the lifetime profile
+/// Check that the function adheres to the lifetime profile.
 void runAnalysis(
     const FunctionDecl *Func, ASTContext &Context,
     LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
@@ -221,13 +221,10 @@ void runAnalysis(
   GlobalDefineClassTemplateSpecialization = DefineClassTemplateSpecialization;
 
   if (auto *M = dyn_cast<CXXMethodDecl>(Func)) {
-    if (M->isInstance()) {
-      // Do not check the bodies of methods on Owners
-      auto Class =
-          classifyTypeCategory(M->getThisType()->getPointeeType());
-      if (Class.TC == TypeCategory::Owner)
-        return;
-    }
+    // Do not check the bodies of methods on Owners.
+    auto Class = classifyTypeCategory(M->getParent()->getTypeForDecl());
+    if (Class.TC == TypeCategory::Owner)
+      return;
   }
 
   LifetimeContext LC(Context, Reporter, Func, IsConvertible);
