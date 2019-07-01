@@ -4535,12 +4535,15 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
 static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   TypeSourceInfo *DerefTypeLoc = nullptr;
-  QualType ParmType = S.GetTypeFromParser(AL.getTypeArg(), &DerefTypeLoc);
-  assert(DerefTypeLoc && "no type source info for attribute argument");
+  QualType ParmType;
+  if (AL.hasParsedType()) {
+    ParmType = S.GetTypeFromParser(AL.getTypeArg(), &DerefTypeLoc);
 
-  if (ParmType->isVoidType()) {
-    S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument) << "'void'" << AL;
-    return;
+    if (ParmType->isVoidType()) {
+      S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument)
+          << "'void'" << AL;
+      return;
+    }
   }
 
   // To check if earlier decl attributes do not conflict the newly parsed ones
@@ -4550,7 +4553,10 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     if (checkAttrMutualExclusion<PointerAttr>(S, D, AL))
       return;
     if (const auto *OAttr = D->getAttr<OwnerAttr>()) {
-      if (OAttr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
+      const Type *ExistingDerefType = OAttr->getDerefTypeLoc()
+                                          ? OAttr->getDerefType().getTypePtr()
+                                          : nullptr;
+      if (ExistingDerefType != ParmType.getTypePtrOrNull()) {
         S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
             << AL << OAttr;
         S.Diag(OAttr->getLocation(), diag::note_conflicting_attribute);
@@ -4563,7 +4569,10 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     if (checkAttrMutualExclusion<OwnerAttr>(S, D, AL))
       return;
     if (const auto *PAttr = D->getAttr<PointerAttr>()) {
-      if (PAttr->getDerefType().getTypePtr() != ParmType.getTypePtr()) {
+      const Type *ExistingDerefType = PAttr->getDerefTypeLoc()
+                                          ? PAttr->getDerefType().getTypePtr()
+                                          : nullptr;
+      if (ExistingDerefType != ParmType.getTypePtrOrNull()) {
         S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
             << AL << PAttr;
         S.Diag(PAttr->getLocation(), diag::note_conflicting_attribute);

@@ -2769,14 +2769,14 @@ def TypeTagForDatatype : InheritableAttr {
 def Owner : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Owner">];
   let Subjects = SubjectList<[CXXRecord]>;
-  let Args = [TypeArgument<"DerefType">];
+  let Args = [TypeArgument<"DerefType", 1>];
   let Documentation = [LifetimeOwnerDocs];
 }
 
 def Pointer : InheritableAttr {
   let Subjects = SubjectList<[CXXRecord]>;
   let Spellings = [CXX11<"gsl", "Pointer">];
-  let Args = [TypeArgument<"DerefType">];
+  let Args = [TypeArgument<"DerefType", 1>];
   let Documentation = [LifetimePointerDocs];
 }
 
