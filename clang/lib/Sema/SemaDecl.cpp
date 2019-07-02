@@ -15076,7 +15076,7 @@ CreateNewDecl:
     mergeDeclAttributes(New, PrevDecl);
 
   if (auto *CXXRD = dyn_cast<CXXRecordDecl>(New))
-    addOwnerPointerAttribute(CXXRD);
+    addDefaultOwnerPointerAttribute(CXXRD);
 
   // If there's a #pragma GCC visibility in scope, set the visibility of this
   // record.

@@ -6085,7 +6085,10 @@ public:
       ClassTemplateSpecializationDecl *BaseTemplateSpec,
       SourceLocation BaseLoc);
 
-  void addOwnerPointerAttribute(CXXRecordDecl *Record);
+  void addDefaultOwnerPointerAttribute(NamedDecl *ND,
+                                       CXXRecordDecl *UnderlyingRecord);
+  void addDefaultOwnerPointerAttribute(CXXRecordDecl *Record);
+  void addDefaultOwnerPointerAttribute(TypedefNameDecl *TD);
 
   void CheckCompletedCXXClass(CXXRecordDecl *Record);
 

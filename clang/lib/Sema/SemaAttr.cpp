@@ -85,9 +85,66 @@ void Sema::AddMsStructLayoutForRecord(RecordDecl *RD) {
         MSVtorDispAttr::CreateImplicit(Context, VtorDispStack.CurrentValue));
 }
 
+template <typename Attribute>
+static void addOwnerPointerAttributeIfNotExisting(ASTContext &Context,
+                                                  CXXRecordDecl *Record) {
+  CXXRecordDecl *Canonical = Record->getCanonicalDecl();
+  if (Canonical->hasAttr<OwnerAttr>() || Canonical->hasAttr<PointerAttr>())
+    return;
+
+  Canonical->addAttr(::new (Context) Attribute(SourceRange{}, Context,
+                                               /*DerefType*/ nullptr,
+                                               /*Spelling=*/0));
+}
+
+/// Add gsl::Pointer attribute to std::container::iterator
+/// \param ND The declaration that introduces the name std::container::iterator.
+/// \param UnderlyingRecord The record named by ND.
+void Sema::addDefaultOwnerPointerAttribute(NamedDecl *ND,
+                                           CXXRecordDecl *UnderlyingRecord) {
+  if (!UnderlyingRecord)
+    return;
+
+  const auto *Parent = dyn_cast<CXXRecordDecl>(ND->getDeclContext());
+  if (!Parent)
+    return;
+
+  static llvm::StringSet<> Containers{
+      "array",
+      "deque",
+      "forward_list",
+      "vector",
+      "list",
+      "map",
+      "multiset",
+      "multimap",
+      "priority_queue",
+      "queue",
+      "regex",
+      "set",
+      "stack",
+      "string",
+      "unordered_set",
+      "unordered_map",
+      "unordered_multiset",
+      "unordered_multimap",
+  };
+
+  static llvm::StringSet<> Iterators{"iterator", "const_iterator"};
+
+  if (Parent->isInStdNamespace() && Iterators.count(ND->getName()) &&
+      Containers.count(Parent->getName()))
+    addOwnerPointerAttributeIfNotExisting<PointerAttr>(Context,
+                                                       UnderlyingRecord);
+}
+
+void Sema::addDefaultOwnerPointerAttribute(TypedefNameDecl *TD) {
+  addDefaultOwnerPointerAttribute(
+      TD, TD->getUnderlyingType().getCanonicalType()->getAsCXXRecordDecl());
+}
+
 /// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
-/// \pre Record->getIdentifiers() is non-null
-void Sema::addOwnerPointerAttribute(CXXRecordDecl *Record) {
+void Sema::addDefaultOwnerPointerAttribute(CXXRecordDecl *Record) {
   static llvm::StringSet<> StdOwners{
       "any",
       "array",
@@ -105,6 +162,7 @@ void Sema::addOwnerPointerAttribute(CXXRecordDecl *Record) {
       "set",
       "stack",
       "string",
+      "unique_ptr",
       "unordered_set",
       "unordered_map",
       "unordered_multiset",
@@ -121,22 +179,20 @@ void Sema::addOwnerPointerAttribute(CXXRecordDecl *Record) {
   if (!Record->getIdentifier())
     return;
 
-  if (!Record->isInStdNamespace())
-    return;
+  if (Record->isInStdNamespace()) {
+    CXXRecordDecl *Canonical = Record->getCanonicalDecl();
+    if (Canonical->hasAttr<OwnerAttr>() || Canonical->hasAttr<PointerAttr>())
+      return;
 
-  CXXRecordDecl *Canonical = Record->getCanonicalDecl();
-  if (Canonical->hasAttr<OwnerAttr>() || Canonical->hasAttr<PointerAttr>())
+    if (StdOwners.count(Record->getName())) {
+      addOwnerPointerAttributeIfNotExisting<OwnerAttr>(Context, Record);
+    } else if (StdPointers.count(Record->getName())) {
+      addOwnerPointerAttributeIfNotExisting<PointerAttr>(Context, Record);
+    }
     return;
-
-  if (StdOwners.count(Record->getName())) {
-    Canonical->addAttr(::new (Context) OwnerAttr(SourceRange{}, Context,
-                                                 /*DerefType*/ nullptr,
-                                                 /*Spelling=*/0));
-  } else if (StdPointers.count(Record->getName())) {
-    Canonical->addAttr(::new (Context) PointerAttr(SourceRange{}, Context,
-                                                   /*DerefType*/ nullptr,
-                                                   /*Spelling=*/0));
   }
+
+  addDefaultOwnerPointerAttribute(Record, Record);
 }
 
 void Sema::ActOnPragmaOptionsAlign(PragmaOptionsAlignKind Kind,

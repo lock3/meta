@@ -699,6 +699,7 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
   }
 
   SemaRef.InstantiateAttrs(TemplateArgs, D, Typedef);
+  SemaRef.addDefaultOwnerPointerAttribute(Typedef);
 
   Typedef->setAccess(D->getAccess());
 

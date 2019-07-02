@@ -88,8 +88,31 @@ static_assert(__is_gsl_owner(any), "");
 // Complete template
 template <typename T>
 class vector {
+public:
+  class iterator {};
 };
 static_assert(__is_gsl_owner(vector<int>), "");
+static_assert(__is_gsl_pointer(vector<int>::iterator), "");
+
+template <typename T>
+class set_iterator {};
+
+template <typename T>
+class set {
+public:
+  using iterator = set_iterator<T>;
+};
+static_assert(__is_gsl_pointer(set<int>::iterator), "");
+
+template <typename T>
+class map_iterator {};
+
+template <typename T>
+class map {
+public:
+  typedef map_iterator<T> iterator;
+};
+static_assert(__is_gsl_pointer(map<int>::iterator), "");
 
 // list has an implicit gsl::Owner attribute,
 // but explicit attributes take precedence.
