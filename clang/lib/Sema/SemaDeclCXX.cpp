@@ -6095,8 +6095,6 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
         break;
       }
     }
-
-    addOwnerPointerAttribute(Record);
   }
 
   // Warn if the class has virtual methods but non-virtual public destructor.

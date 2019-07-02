@@ -80,20 +80,34 @@ class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
 // expected-note@-2 {{conflicting attribute is here}}
 
 namespace std {
+// Complete class
 class any {
 };
 static_assert(__is_gsl_owner(any), "");
 
+// Complete template
 template <typename T>
 class vector {
 };
 static_assert(__is_gsl_owner(vector<int>), "");
 
+// list has an implicit gsl::Owner attribute,
+// but explicit attributes take precedence.
+template <typename T>
+class [[gsl::Pointer]] list{};
+static_assert(!__is_gsl_owner(list<int>), "");
+static_assert(__is_gsl_pointer(list<int>), "");
+
+// Forward declared template
 template <
     class CharT,
     class Traits>
 class basic_regex;
 static_assert(__is_gsl_pointer(basic_regex<char, void>), "");
+
+template <class T>
+class reference_wrapper;
+static_assert(__is_gsl_pointer(reference_wrapper<char>), "");
 
 class thread;
 static_assert(!__is_gsl_pointer(thread), "");
