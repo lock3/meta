@@ -2768,23 +2768,27 @@ def TypeTagForDatatype : InheritableAttr {
 
 def Owner : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Owner">];
+  let Subjects = SubjectList<[CXXRecord]>;
   let Documentation = [Undocumented]; // FIXME
 }
 
 def Pointer : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Pointer">];
+  let Subjects = SubjectList<[CXXRecord]>;
   let Documentation = [Undocumented]; // FIXME
 }
 
 def Lifetimeconst : InheritableParamAttr {
   let Spellings = [CXX11<"gsl", "lifetime_const">];
-  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Subjects = SubjectList<[Function, ParmVar]>;
   let Documentation = [Undocumented]; // FIXME
 }
 
 def Lifetime : InheritableParamAttr {
   let Spellings = [CXX11<"gsl", "lifetime">];
-  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Subjects = SubjectList<[Function, ParmVar]>;
+  let Args = [VariadicExprArgument<"Pointees">];
+  let LateParsed = 1;
   let Documentation = [Undocumented]; // FIXME
 }
 
