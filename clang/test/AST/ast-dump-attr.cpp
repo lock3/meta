@@ -218,6 +218,14 @@ class [[gsl::Owner(int)]] AOwner{};
 class [[gsl::Pointer(int)]] APointer{};
 // CHECK: CXXRecordDecl{{.*}} class APointer
 // CHECK: PointerAttr {{.*}} int
+
+class [[gsl::Pointer]] PointerWithoutArgument{};
+// CHECK: CXXRecordDecl{{.*}} class PointerWithoutArgument
+// CHECK: PointerAttr
+
+class [[gsl::Owner]] OwnerWithoutArgument{};
+// CHECK: CXXRecordDecl{{.*}} class OwnerWithoutArgument
+// CHECK: OwnerAttr
 } // namespace TestLifetimeCategories
 
 // Verify the order of attributes in the Ast. It must reflect the order

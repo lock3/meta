@@ -338,6 +338,8 @@ namespace {
            << "      OS << \" \" << SA->get" << getUpperName()
            << "()->getName();\n";
       } else if (type == "TypeSourceInfo *") {
+        if (isOptional())
+          OS << "    if (SA->get" << getUpperName() << "Loc())";
         OS << "    OS << \" \" << SA->get" << getUpperName()
            << "().getAsString();\n";
       } else if (type == "bool") {
