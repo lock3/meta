@@ -4381,6 +4381,9 @@ static bool CheckUnaryTypeTraitTypeCompleteness(Sema &S, TypeTrait UTT,
 
   // This type trait always returns false, checking the type is moot.
   case UTT_IsInterfaceClass:
+
+  case UTT_IsGslOwner:
+  case UTT_IsGslPointer:
     return true;
 
   // C++14 [meta.unary.prop]:
@@ -4434,8 +4437,6 @@ static bool CheckUnaryTypeTraitTypeCompleteness(Sema &S, TypeTrait UTT,
   case UTT_IsNothrowDestructible:
   case UTT_IsTriviallyDestructible:
   case UTT_HasUniqueObjectRepresentations:
-  case UTT_IsGslOwner:
-  case UTT_IsGslPointer:
     if (ArgTy->isIncompleteArrayType() || ArgTy->isVoidType())
       return true;
 
