@@ -79,6 +79,11 @@ class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
 // expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
 // expected-note@-2 {{conflicting attribute is here}}
 
+
+static_assert(!__is_gsl_pointer(int), "");
+static_assert(__is_gsl_pointer(int&), "");
+static_assert(__is_gsl_pointer(int*), "");
+
 namespace std {
 // Complete class
 class any {

@@ -4883,6 +4883,8 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,
       return RD->getCanonicalDecl()->hasAttr<OwnerAttr>();
     return false;
   case UTT_IsGslPointer:
+    if (T->hasPointerRepresentation())
+      return true;
     if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
       return RD->getCanonicalDecl()->hasAttr<PointerAttr>();
     return false;
