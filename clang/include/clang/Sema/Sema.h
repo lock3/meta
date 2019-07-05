@@ -2074,6 +2074,7 @@ public:
                           SmallVectorImpl<CXXMethodDecl*> &OverloadedMethods);
   void NoteHiddenVirtualMethods(CXXMethodDecl *MD,
                           SmallVectorImpl<CXXMethodDecl*> &OverloadedMethods);
+  void GslLifetimeAttrFillSemanticInfo(FunctionDecl *NewFD);
   // Returns true if the function declaration is a redeclaration
   bool CheckFunctionDeclaration(Scope *S,
                                 FunctionDecl *NewFD, LookupResult &Previous,

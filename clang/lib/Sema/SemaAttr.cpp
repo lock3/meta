@@ -862,3 +862,36 @@ void Sema::PopPragmaVisibility(bool IsNamespaceEnd, SourceLocation EndLoc) {
   if (Stack->empty())
     FreeVisContext();
 }
+
+static void processLifetimeAttr(LifetimeAttr *LAttr, FunctionDecl *FD) {
+  int InsertPos = 0;
+  for (StringRef Pointee : LAttr->pointees()) {
+    Pointee = Pointee.ltrim('*');
+    // TODO(?): quadratic.
+    bool Found = false;
+    int ParamPos = 0;
+    for (const ParmVarDecl *PVD : FD->parameters()) {
+      ++ParamPos;
+      if (PVD->getName() != Pointee)
+        continue;
+      *(LAttr->parsedPointees_begin() + InsertPos) = ParamIdx(ParamPos, PVD);
+      break;
+    }
+    if (!Found) {
+      // TODO: diagnose
+      break;
+    }
+    ++InsertPos;
+  }
+}
+
+void Sema::GslLifetimeAttrFillSemanticInfo(FunctionDecl *NewFD) {
+  if (auto *LAttr = NewFD->getAttr<LifetimeAttr>())
+    processLifetimeAttr(LAttr, NewFD);
+  for (const ParmVarDecl *PVD : NewFD->parameters()) {
+    if (auto *LAttr = PVD->getAttr<LifetimeAttr>())
+      processLifetimeAttr(LAttr, NewFD);
+  }
+
+  // TODO: copy attr to the canonical decl.
+}

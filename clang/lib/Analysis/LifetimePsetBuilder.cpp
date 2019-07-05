@@ -1325,38 +1325,51 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       if (isNullableType(ParamTy))
         PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
     } else {
-      Variable P_deref(PVD);
-      P_deref.deref();
-      PS = PSet::singleton(P_deref);
-      if (isNullableType(ParamTy))
-        PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-
-      QualType PointeeType = getPointeeType(ParamTy);
-      switch (classifyTypeCategory(PointeeType)) {
-      case TypeCategory::Owner: {
-        PSet DerefPS = PSet::singleton(P_deref, 1);
+      if (const auto *LAttr = PVD->getAttr<LifetimeAttr>()) {
+        unsigned DataPos = 0;
+        for (ParamIdx Idx : LAttr->parsedPointees()) {
+          const ParmVarDecl *Pointee = FD->getParamDecl(Idx.getASTIndex());
+          Variable V(Pointee);
+          for (unsigned I = 0; I < *(LAttr->parsedDerefs_begin() + DataPos);
+               ++I)
+            V.deref();
+          PS.merge(PSet::singleton(V));
+          ++DataPos;
+        }
+      } else {
+        Variable P_deref(PVD);
+        P_deref.deref();
+        PS = PSet::singleton(P_deref);
         if (isNullableType(ParamTy))
-          DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-        PMap.emplace(P_deref, DerefPS);
-        break;
-      }
-      case TypeCategory::Pointer:
-        if (!PointeeType.isConstQualified()) {
-          // Output params are initially invalid.
-          PMap.emplace(P_deref,
-                       PSet::invalid(InvalidationReason::NotInitialized(
-                           PVD->getSourceRange())));
-        } else {
-          // staticVar to allow further derefs (if this is Pointer to a Pointer
-          // to a Pointer etc)
-          PSet DerefPS = PSet::staticVar();
+          PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
+
+        QualType PointeeType = getPointeeType(ParamTy);
+        switch (classifyTypeCategory(PointeeType)) {
+        case TypeCategory::Owner: {
+          PSet DerefPS = PSet::singleton(P_deref, 1);
           if (isNullableType(ParamTy))
             DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
           PMap.emplace(P_deref, DerefPS);
+          break;
         }
-        LLVM_FALLTHROUGH;
-      default:
-        break;
+        case TypeCategory::Pointer:
+          if (!PointeeType.isConstQualified()) {
+            // Output params are initially invalid.
+            PMap.emplace(P_deref,
+                        PSet::invalid(InvalidationReason::NotInitialized(
+                            PVD->getSourceRange())));
+          } else {
+            // staticVar to allow further derefs (if this is Pointer to a Pointer
+            // to a Pointer etc)
+            PSet DerefPS = PSet::staticVar();
+            if (isNullableType(ParamTy))
+              DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
+            PMap.emplace(P_deref, DerefPS);
+          }
+          LLVM_FALLTHROUGH;
+        default:
+          break;
+        }
       }
     }
     PSetForAllParams.merge(PS);

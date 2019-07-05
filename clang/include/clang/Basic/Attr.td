@@ -172,17 +172,19 @@ class FunctionArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
                                                                           opt,
                                                                           fake>;
 class NamedArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
-                                                                          opt,
-                                                                          fake>;
+                                                                       opt,
+                                                                       fake>;
 class TypeArgument<string name, bit opt = 0> : Argument<name, opt>;
 class UnsignedArgument<string name, bit opt = 0> : Argument<name, opt>;
-class VariadicUnsignedArgument<string name> : Argument<name, 1>;
+class VariadicUnsignedArgument<string name, bit opt = 1, bit fake = 0> :
+    Argument<name, opt, fake>;
 class VariadicExprArgument<string name> : Argument<name, 1>;
 class VariadicStringArgument<string name> : Argument<name, 1>;
 class VariadicIdentifierArgument<string name> : Argument<name, 1>;
 
 // Like VariadicUnsignedArgument except values are ParamIdx.
-class VariadicParamIdxArgument<string name> : Argument<name, 1>;
+class VariadicParamIdxArgument<string name, bit opt = 1, bit fake = 0> :
+    Argument<name, opt, fake>;
 
 // A list of identifiers matching parameters or ParamIdx indices.
 class VariadicParamOrParamIdxArgument<string name> : Argument<name, 1>;
@@ -2787,7 +2789,9 @@ def Lifetimeconst : InheritableParamAttr {
 def Lifetime : InheritableParamAttr {
   let Spellings = [CXX11<"gsl", "lifetime">];
   let Subjects = SubjectList<[Function, ParmVar]>;
-  let Args = [VariadicExprArgument<"Pointees">];
+  let Args = [VariadicStringArgument<"Pointees">,
+              VariadicParamIdxArgument<"ParsedPointees", /*opt*/0, /*fake*/1>,
+              VariadicUnsignedArgument<"ParsedDerefs", /*opt*/0, /*fake*/1>];
   let LateParsed = 1;
   let Documentation = [Undocumented]; // FIXME
 }

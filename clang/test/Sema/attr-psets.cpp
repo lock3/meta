@@ -1165,12 +1165,12 @@ void iterator_conversion() {
 }
 
 namespace annotations {
-void basic(int *a, int *b [[gsl::lifetime(*a)]]) {
-  // __lifetime_pset(b); // TODOexpected-warning {{((*a))}}
+void basic(int *a, int *b [[gsl::lifetime("*a")]]) {
+  __lifetime_pset(b); // expected-warning {{((*a))}}
 }
-/* void basic_lateparse(int *a [[gsl::lifetime(*b)]], int *b) {
-  __lifetime_pset(b); // TODOexpected-warning {{((*a))}}
-} */
+void basic_lateparse(int *a [[gsl::lifetime("*b")]], int *b) {
+  __lifetime_pset(a); // expected-warning {{((*b))}}
+}
 } // namespace annotations
 
 namespace CXXScalarValueInitExpr {

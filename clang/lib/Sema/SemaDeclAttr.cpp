@@ -4533,6 +4533,32 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
       DiagnosticIdentifiers.size(), AL.getAttributeSpellingListIndex()));
 }
 
+static void handleGslLifetimeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  std::vector<StringRef> PSets;
+  std::vector<unsigned> Derefs;
+  for (unsigned I = 0, E = AL.getNumArgs(); I != E; ++I) {
+    StringRef PSet;
+
+    if (!S.checkStringLiteralArgumentAttr(AL, I, PSet, nullptr))
+      return;
+
+    PSets.push_back(PSet);
+    unsigned Deref = 0;
+    // TODO: support whitespaces?
+    while (PSet.consume_front("*"))
+      Deref++;
+    Derefs.push_back(Deref);
+    // TODO: diagnose if Deref > 2 (?)
+  }
+  // The Params vector cannot be filled here, we need the full function
+  // declaration for that. Thus that aspect is handled later.
+  std::vector<ParamIdx> Params(PSets.size());
+  D->addAttr(::new (S.Context) LifetimeAttr(
+      AL.getRange(), S.Context, PSets.data(), PSets.size(), Params.data(),
+      Params.size(), Derefs.data(),
+      Derefs.size(), AL.getAttributeSpellingListIndex()));
+}
+
 bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,
                                 const FunctionDecl *FD) {
   if (Attrs.isInvalid())
@@ -7120,7 +7146,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleSimpleAttribute<LifetimeconstAttr>(S, D, AL);
     break;
   case ParsedAttr::AT_Lifetime:
-    handleSimpleAttribute<LifetimeAttr>(S, D, AL);
+    handleGslLifetimeAttr(S, D, AL);
     break;
   case ParsedAttr::AT_OpenCLKernel:
     handleSimpleAttribute<OpenCLKernelAttr>(S, D, AL);
