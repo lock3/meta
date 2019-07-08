@@ -2775,10 +2775,10 @@ def Owner : InheritableAttr {
 }
 
 def Pointer : InheritableAttr {
-  let Subjects = SubjectList<[CXXRecord]>;
   let Spellings = [CXX11<"gsl", "Pointer">];
+  let Subjects = SubjectList<[CXXRecord]>;
   let Args = [TypeArgument<"DerefType", 1>];
-  let MeaningfulToClassTemplateDefinition = 1;
+    let MeaningfulToClassTemplateDefinition = 1;
   let Documentation = [LifetimePointerDocs];
 }
 
