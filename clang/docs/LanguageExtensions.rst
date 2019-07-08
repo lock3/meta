@@ -330,11 +330,11 @@ Builtin Macros
 ``__BASE_FILE__``
   Defined to a string that contains the name of the main input file passed to
   Clang.
-  
+
 ``__FILE_NAME__``
   Clang-specific extension that functions similar to ``__FILE__`` but only
   renders the last path component (the filename) instead of an invocation
-  dependent full path to that file. 
+  dependent full path to that file.
 
 ``__COUNTER__``
   Defined to an integer value that starts at zero and is incremented each time
@@ -2542,6 +2542,13 @@ Analyzer <https://clang-analyzer.llvm.org/>`_. These attributes are documented
 in the analyzer's `list of source-level annotations
 <https://clang-analyzer.llvm.org/annotations.html>`_.
 
+Use ``__is_gsl_pointer(T)`` to check if the type ``T`` is a pointer, reference
+or a class with an implicit or explicit ``[[gsl::Pointer]]`` attribute. Clang
+implicitly adds that attribute to suitable classes from namespace ``std``.
+
+Use ``__is_gsl_owner(T)`` to check if the type ``T`` a class with an implicit
+or explicit ``[[gsl::Owner]]`` attribute. Clang implicitly adds that attribute
+to suitable classes from namespace ``std``.
 
 Extensions for Dynamic Analysis
 ===============================
