@@ -84,6 +84,8 @@ static_assert(!__is_gsl_pointer(int), "");
 static_assert(__is_gsl_pointer(int&), "");
 static_assert(__is_gsl_pointer(int*), "");
 
+
+// Test builtin annotation for std types.
 namespace std {
 // Complete class
 class any {
