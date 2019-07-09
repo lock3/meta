@@ -4164,7 +4164,8 @@ def LifetimeOwnerDocs : Documentation {
 When annotating a class ``O`` with ``[[gsl::Owner(T)]]``, then each function
 that returns cv-qualified ``T&`` or ``T*`` is assumed to return a
 pointer/reference to the data owned by ``O``. The owned data is assumed to end
-its lifetime once the owning object's lifetime ends.
+its lifetime once the owning object's lifetime ends. The argument is ``T`` is
+optional.
 
 This attribute may be used by analysis tools but will not have effect on code
 generation.
@@ -4174,8 +4175,10 @@ generation.
 def LifetimePointerDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-When annotating a class ``P`` with ``[[gsl::Pointer(T)]]``, it assumed to be a
+When annotating a class with ``[[gsl::Pointer(T)]]``, it assumed to be a
 non-owning type whose objects can point to ``T`` type objects or dangle.
+The argument is ``T`` is optional.
+
 This attribute may be used by analysis tools but will not have effect on code
 generation.
 
