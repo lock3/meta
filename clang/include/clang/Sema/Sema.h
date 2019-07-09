@@ -6085,10 +6085,17 @@ public:
       ClassTemplateSpecializationDecl *BaseTemplateSpec,
       SourceLocation BaseLoc);
 
-  void addDefaultOwnerPointerAttribute(NamedDecl *ND,
-                                       CXXRecordDecl *UnderlyingRecord);
-  void addDefaultOwnerPointerAttribute(CXXRecordDecl *Record);
-  void addDefaultOwnerPointerAttribute(TypedefNameDecl *TD);
+  /// Add gsl::Pointer attribute to std::container::iterator
+  /// \param ND The declaration that introduces the name
+  /// std::container::iterator. \param UnderlyingRecord The record named by ND.
+  void addDefaultGslPointerAttribute(NamedDecl *ND,
+                                     CXXRecordDecl *UnderlyingRecord);
+
+  /// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
+  void addDefaultGslOwnerPointerAttribute(CXXRecordDecl *Record);
+
+  /// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
+  void addDefaultGslPointerAttribute(TypedefNameDecl *TD);
 
   void CheckCompletedCXXClass(CXXRecordDecl *Record);
 

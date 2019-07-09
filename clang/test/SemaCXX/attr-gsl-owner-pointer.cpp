@@ -131,7 +131,7 @@ template <
     class CharT,
     class Traits>
 class basic_regex;
-static_assert(__is_gsl_pointer(basic_regex<char, void>), "");
+static_assert(__is_gsl_owner(basic_regex<char, void>), "");
 
 template <class T>
 class reference_wrapper;
