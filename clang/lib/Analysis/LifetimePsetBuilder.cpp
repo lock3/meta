@@ -1309,6 +1309,27 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
+static PSet attrToPSet(GslPostAttr::PointsToLoc Loc) {
+  const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(Loc.Base->getDeclContext());
+  if (ND && ND->getName() == "gsl") {
+    PSet PS;
+    StringRef Name = Loc.Base->getName();
+    if (Name == "Null")
+      PS.addNull(NullReason::parameterNull(Loc.Base->getSourceRange()));
+    else if (Name == "Static")
+      PS.addStatic();
+    else if (Name == "Invalid")
+      PS = PSet::invalid(
+               InvalidationReason::NotInitialized(Loc.Base->getSourceRange()));
+    return PS;
+  } else {
+    Variable V(Loc.Base);
+    for (const FieldDecl *F : Loc.FieldsAndDerefs)
+      V.addFieldRef(F);
+    return PSet::singleton(V);
+  }
+}
+
 PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   PSet PSetForAllParams;
   auto *PreAttr = FD->getAttr<GslPreAttr>();
@@ -1334,13 +1355,8 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
         HasRelevantAttr = AttrIt != PreAttr->Pointers.end();
       }
       if (HasRelevantAttr) {
-        for (GslPostAttr::PointsToLoc Loc : AttrIt->second) {
-          Variable V(Loc.Base);
-          for (const FieldDecl *F : Loc.FieldsAndDerefs)
-            V.addFieldRef(F);
-          // TODO: Handle null, invalid, static
-          PS.merge(PSet::singleton(V));
-        }
+        for (GslPostAttr::PointsToLoc Loc : AttrIt->second)
+          PS.merge(attrToPSet(Loc));
       } else {
         Variable P_deref(PVD);
         P_deref.deref();

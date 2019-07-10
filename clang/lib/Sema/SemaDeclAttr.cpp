@@ -4548,7 +4548,7 @@ static const Expr *getGslPsetArg(const Expr *E) {
       return nullptr;
     if (FD->getName() != "pset")
       return nullptr;
-    return CE->getArg(0)->IgnoreImplicit();
+    return ignoreReturnValues(CE->getArg(0));
   }
   return nullptr;
 }
@@ -4566,7 +4566,7 @@ GslPostAttr::PointsToSet collectPSet(const Expr *E) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
-        GslPostAttr::PointsToSet Elem = collectPSet(Init->IgnoreImplicit());
+        GslPostAttr::PointsToSet Elem = collectPSet(ignoreReturnValues(Init));
         if (Elem.empty())
           return Elem;
         Result.push_back(Elem.front());

@@ -12,14 +12,25 @@ void __lifetime_type_category() {}
 namespace gsl {
 // All have different values.
 // TODO: these prohibit using initializer_list<T>.. probably need tuples.
-void * const Null = nullptr;
-void * const Static = (void *)&Null;
-void * const Invalid = (void *)&Static; 
+struct null_t {
+  template<typename T>
+  operator T() const { return T(nullptr); }
+} Null;
+struct static_t {
+  template <typename T>
+  operator T() const { return (T)(void*)this; } // TODO: get rid of this warning.
+} Static;
+struct invalid_t {
+  template <typename T>
+  operator T() const { return (T)(void*)this; } // TODO: get rid of this warning.
+} Invalid;
 
 template <typename T>
 struct CheckSingle {
   CheckSingle(const T &t) : data(t) {}
   const T &data;
+  template<typename S>
+  operator CheckSingle<S> () { return CheckSingle<S>(S(data)); }
 };
 
 template <typename T>
@@ -29,26 +40,29 @@ struct CheckVariadic {
   std::initializer_list<T> ptrs;
 };
 
-template<typename T>
-bool operator==(CheckSingle<T> lhs, CheckSingle<T> rhs) {
+template <typename T, typename S>
+bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   // TODO: these cannot be checked right?
-  if ((void *)lhs.data == Static || (void*)lhs.data == Invalid ||
-      (void *)rhs.data == Static || (void*)rhs.data == Invalid)
-      return true;
+  if ((void *)lhs.data == (void *)&Static || (void *)lhs.data == (void *)&Invalid ||
+      (void *)rhs.data == (void *)&Static || (void *)rhs.data == (void *)&Invalid)
+    return true;
+  // TODO: maybe make this a customization point?
+  //       user defined gsl::Pointers might not have operator==.
+  //       Alternative: fall back to &deref(UserPtr).
   if (lhs.data == rhs.data)
     return true;
   return false;
 }
 
-template<typename T>
-bool operator==(const CheckVariadic<T>& lhs, CheckSingle<T> rhs) {
+template<typename T, typename S>
+bool operator==(const CheckVariadic<T>& lhs, CheckSingle<S> rhs) {
   return std::any_of(lhs.ptrs.begin(), lhs.ptrs.end(), [&rhs](const T &ptr) {
     return CheckSingle<T>(ptr) == rhs;
   });
 }
 
-template<typename T>
-bool operator==(const CheckSingle<T>& lhs, CheckVariadic<T> rhs) {
+template<typename T, typename S>
+bool operator==(const CheckSingle<T>& lhs, CheckVariadic<S> rhs) {
   return rhs == lhs; 
 }
 
@@ -61,7 +75,11 @@ template<typename T>
 CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
   return CheckVariadic<T>(ptrs);
 }
-}
+
+// TODO: support deref
+// TODO: support member selection (change in Attr representation)
+// TODO: handle references (auto deref?)
+} // namespace gsl
 
 using namespace gsl;
 
@@ -69,10 +87,21 @@ void basic(int *a, int *b) [[gsl::pre(pset(b) == pset(a))]] {
   __lifetime_pset(b); // expected-warning {{((*a))}}
 }
 
+void specials(int *a, int *b, int *c)
+    [[gsl::pre(pset(a) == pset(Null))]]
+    [[gsl::pre(pset(b) == pset(Static))]]
+    [[gsl::pre(pset(c) == pset(Invalid))]] {
+  __lifetime_pset(a); // expected-warning {{((null))}}
+  __lifetime_pset(b); // expected-warning {{((static))}}
+  __lifetime_pset(c); // expected-warning {{((invalid))}}
+}
+
 void variadic(int *a, int *b, int *c)
     [[gsl::pre(pset(b) == pset({a, c}))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
 }
+
+// TODO: swapped variadic
 
 /* Will not compile! What should this mean for the state of the analysis?
    The source of the problem is that the following constraint can 
@@ -96,8 +125,14 @@ void double_variadic(int *a, int *b, int *c)
 
 void multiple_annotations(int *a, int *b, int *c)
     [[gsl::pre(pset(b) == pset(a))]]
-    [[gsl::pre(pset(c) == pset(a))]]
-    {
+    [[gsl::pre(pset(c) == pset(a))]] {
   __lifetime_pset(b); // expected-warning {{((*a))}}
   __lifetime_pset(c); // expected-warning {{((*a))}}
+}
+
+void multiple_annotations_chained(int *a, int *b, int *c)
+    [[gsl::pre(pset(b) == pset(a))]]
+    [[gsl::pre(pset(c) == pset(b))]] {
+  __lifetime_pset(b); // expected-warning {{((*a))}}
+  //__lifetime_pset(c); // TODOexpected-warning {{((*a))}}
 }
