@@ -10088,8 +10088,6 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
     }
   }
 
-  GslLifetimeAttrFillSemanticInfo(NewFD);
-
   if (CheckMultiVersionFunction(*this, NewFD, Redeclaration, OldDecl,
                                 MergeTypeWithPrevious, Previous))
     return Redeclaration;

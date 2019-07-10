@@ -2786,13 +2786,39 @@ def Lifetimeconst : InheritableParamAttr {
   let Documentation = [Undocumented]; // FIXME
 }
 
-def Lifetime : InheritableParamAttr {
-  let Spellings = [CXX11<"gsl", "lifetime">];
-  let Subjects = SubjectList<[Function, ParmVar]>;
-  let Args = [VariadicStringArgument<"Pointees">,
-              VariadicParamIdxArgument<"ParsedPointees", /*opt*/0, /*fake*/1>,
-              VariadicUnsignedArgument<"ParsedDerefs", /*opt*/0, /*fake*/1>];
-  let LateParsed = 1;
+def GslPre : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "pre">];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"PreExpr">];
+  let AdditionalMembers = [{
+public:
+  llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet> Pointers;
+
+  // TODO: have a more restrictive public API.
+  }];
+  bit ParseArgumentsAsUnevaluated = 0;
+  bit MeaningfulToClassTemplateDefinition = 0;
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def GslPost : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "post">];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"PostExpr">];
+  let AdditionalMembers = [{
+public:
+  // TODO: Move the PointsToSet somewhere else.
+  struct PointsToLoc {
+    const VarDecl * Base = nullptr;
+    SmallVector<const FieldDecl *, 4> FieldsAndDerefs;
+  };
+  using PointsToSet = SmallVector<PointsToLoc, 4>;
+  llvm::DenseMap<const VarDecl *, PointsToSet> Pointers;
+
+  // TODO: have a more restrictive public API.
+  }];
+  bit ParseArgumentsAsUnevaluated = 0;
+  bit MeaningfulToClassTemplateDefinition = 0;
   let Documentation = [Undocumented]; // FIXME
 }
 

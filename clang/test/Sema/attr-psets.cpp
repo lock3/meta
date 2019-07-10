@@ -1164,15 +1164,6 @@ void iterator_conversion() {
   __lifetime_pset(it); // expected-warning {{(v')}}
 }
 
-namespace annotations {
-void basic(int *a, int *b [[gsl::lifetime("*a")]]) {
-  __lifetime_pset(b); // expected-warning {{((*a))}}
-}
-void basic_lateparse(int *a [[gsl::lifetime("*b")]], int *b) {
-  __lifetime_pset(a); // expected-warning {{((*b))}}
-}
-} // namespace annotations
-
 namespace CXXScalarValueInitExpr {
 template <typename a>
 class b {

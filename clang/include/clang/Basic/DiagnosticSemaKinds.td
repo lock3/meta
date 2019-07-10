@@ -3219,6 +3219,8 @@ def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 wh
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_lifetime_pointer_arithmetic : Warning<"pointer arithmetic disables lifetime analysis">,
   InGroup<LifetimePointerArithmetic>, DefaultIgnore;
+def warn_unsupported_expression : Warning<"this pre/postcondition is not supported">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
 
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;

@@ -845,6 +845,9 @@ namespace std {
 
   template<class BidirIt, class UnaryPredicate>
   BidirIt stable_partition(BidirIt first, BidirIt last, UnaryPredicate p);
+
+  template<class InputIt, class UnaryPredicate>
+  bool any_of(InputIt first, InputIt last, UnaryPredicate p);
 }
 
 namespace std {

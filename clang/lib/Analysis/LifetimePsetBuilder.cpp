@@ -1311,6 +1311,7 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
 
 PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   PSet PSetForAllParams;
+  auto *PreAttr = FD->getAttr<GslPreAttr>();
   for (const ParmVarDecl *PVD : FD->parameters()) {
     QualType ParamTy = PVD->getType();
     TypeCategory TC = classifyTypeCategory(ParamTy);
@@ -1325,16 +1326,20 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       if (isNullableType(ParamTy))
         PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
     } else {
-      if (const auto *LAttr = PVD->getAttr<LifetimeAttr>()) {
-        unsigned DataPos = 0;
-        for (ParamIdx Idx : LAttr->parsedPointees()) {
-          const ParmVarDecl *Pointee = FD->getParamDecl(Idx.getASTIndex());
-          Variable V(Pointee);
-          for (unsigned I = 0; I < *(LAttr->parsedDerefs_begin() + DataPos);
-               ++I)
-            V.deref();
+      bool HasRelevantAttr = false;
+      llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet>::iterator
+          AttrIt;
+      if (PreAttr) {
+        AttrIt = PreAttr->Pointers.find(PVD);
+        HasRelevantAttr = AttrIt != PreAttr->Pointers.end();
+      }
+      if (HasRelevantAttr) {
+        for (GslPostAttr::PointsToLoc Loc : AttrIt->second) {
+          Variable V(Loc.Base);
+          for (const FieldDecl *F : Loc.FieldsAndDerefs)
+            V.addFieldRef(F);
+          // TODO: Handle null, invalid, static
           PS.merge(PSet::singleton(V));
-          ++DataPos;
         }
       } else {
         Variable P_deref(PVD);

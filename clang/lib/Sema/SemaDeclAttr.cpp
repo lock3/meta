@@ -4533,30 +4533,79 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
       DiagnosticIdentifiers.size(), AL.getAttributeSpellingListIndex()));
 }
 
-static void handleGslLifetimeAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
-  std::vector<StringRef> PSets;
-  std::vector<unsigned> Derefs;
-  for (unsigned I = 0, E = AL.getNumArgs(); I != E; ++I) {
-    StringRef PSet;
+static const Expr *ignoreReturnValues(const Expr *E) {
+  E = E->IgnoreImplicit();
+  if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
+    return CE->getArg(0)->IgnoreImplicit();
+  return E;
+}
 
-    if (!S.checkStringLiteralArgumentAttr(AL, I, PSet, nullptr))
-      return;
-
-    PSets.push_back(PSet);
-    unsigned Deref = 0;
-    // TODO: support whitespaces?
-    while (PSet.consume_front("*"))
-      Deref++;
-    Derefs.push_back(Deref);
-    // TODO: diagnose if Deref > 2 (?)
+static const Expr *getGslPsetArg(const Expr *E) {
+  E = ignoreReturnValues(E);
+  if (const auto *CE = dyn_cast<CallExpr>(E)) {
+    const FunctionDecl *FD = CE->getDirectCallee();
+    if (!FD)
+      return nullptr;
+    if (FD->getName() != "pset")
+      return nullptr;
+    return CE->getArg(0)->IgnoreImplicit();
   }
-  // The Params vector cannot be filled here, we need the full function
-  // declaration for that. Thus that aspect is handled later.
-  std::vector<ParamIdx> Params(PSets.size());
-  D->addAttr(::new (S.Context) LifetimeAttr(
-      AL.getRange(), S.Context, PSets.data(), PSets.size(), Params.data(),
-      Params.size(), Derefs.data(),
-      Derefs.size(), AL.getAttributeSpellingListIndex()));
+  return nullptr;
+}
+
+GslPostAttr::PointsToSet collectPSet(const Expr *E) {
+  GslPostAttr::PointsToSet Result;
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+    GslPostAttr::PointsToLoc Loc;
+    Loc.Base = dyn_cast<VarDecl>(DRE->getDecl());
+    Loc.FieldsAndDerefs.push_back(nullptr);
+    if (Loc.Base)
+      Result.push_back(Loc);
+    return Result;
+  } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
+    E = StdInit->getSubExpr()->IgnoreImplicit();
+    if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
+      for (const auto *Init : InitList->inits()) {
+        GslPostAttr::PointsToSet Elem = collectPSet(Init->IgnoreImplicit());
+        if (Elem.empty())
+          return Elem;
+        Result.push_back(Elem.front());
+      }
+    }
+  }
+  return Result;
+}
+
+static bool fillPointersFromExpr(
+    const Expr *E,
+    llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet> &Pointers) {
+  const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
+  if (!OCE || OCE->getOperator() != OO_EqualEqual)
+    return false;
+
+  // TODO: support swapped args.
+  const Expr *LHS = getGslPsetArg(OCE->getArg(0));
+  if (!LHS || !isa<DeclRefExpr>(LHS))
+    return false;
+  const Expr *RHS = getGslPsetArg(OCE->getArg(1));
+  if (!RHS)
+    return false;
+
+  const VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl());
+  GslPostAttr::PointsToSet PSet = collectPSet(RHS);
+  if (PSet.empty())
+    return false;
+  Pointers.insert(std::make_pair(VD, PSet));
+  return true;
+}
+
+static void handleGslPreAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  auto *PAttr =
+      ::new (S.Context) GslPreAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
+                                   AL.getAttributeSpellingListIndex());
+  if (!fillPointersFromExpr(PAttr->getPreExpr(), PAttr->Pointers))
+    S.Diag(AL.getLoc(), diag::warn_unsupported_expression);
+  D->addAttr(PAttr);
 }
 
 bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,
@@ -7145,8 +7194,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_Lifetimeconst:
     handleSimpleAttribute<LifetimeconstAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_Lifetime:
-    handleGslLifetimeAttr(S, D, AL);
+  case ParsedAttr::AT_GslPre:
+    handleGslPreAttr(S, D, AL);
     break;
   case ParsedAttr::AT_OpenCLKernel:
     handleSimpleAttribute<OpenCLKernelAttr>(S, D, AL);
