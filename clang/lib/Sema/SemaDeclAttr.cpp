@@ -4593,19 +4593,24 @@ static bool fillPointersFromExpr(
 
   const VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl());
   GslPostAttr::PointsToSet PSet = collectPSet(RHS);
-  if (PSet.empty())
+  if (PSet.empty() || Pointers.count(VD))
     return false;
   Pointers.insert(std::make_pair(VD, PSet));
   return true;
 }
 
 static void handleGslPreAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
-  auto *PAttr =
-      ::new (S.Context) GslPreAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
-                                   AL.getAttributeSpellingListIndex());
-  if (!fillPointersFromExpr(PAttr->getPreExpr(), PAttr->Pointers))
+  GslPreAttr *PAttr;
+  if (auto *Existing = D->getAttr<GslPreAttr>())
+    PAttr = Existing;
+  else {
+    PAttr = ::new (S.Context)
+        GslPreAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
+                   AL.getAttributeSpellingListIndex());
+    D->addAttr(PAttr);
+  }
+  if (!fillPointersFromExpr(AL.getArgAsExpr(0), PAttr->Pointers))
     S.Diag(AL.getLoc(), diag::warn_unsupported_expression);
-  D->addAttr(PAttr);
 }
 
 bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,

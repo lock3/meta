@@ -74,8 +74,30 @@ void variadic(int *a, int *b, int *c)
   __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
 }
 
-/* Will not compile!
+/* Will not compile! What should this mean for the state of the analysis?
+   The source of the problem is that the following constraint can 
+   be satisfied multiple ways:
+   pset(a, b) == pset(c, d)
+   Possible solution #1:
+    pset(a) == {*a}
+    pset(b) == {*a, b}
+    pset(c) == {*a}
+    pset(d) == {*b}
+   Possible solution #2:
+    pset(a) == {*a}
+    pset(b) == {*a}
+    pset(c) == {*a}
+    pset(d) == {*a}
+   And so on...
 void double_variadic(int *a, int *b, int *c)
     [[gsl::pre(pset({a, b}) == pset({b, c}))]] {
 }
 */
+
+void multiple_annotations(int *a, int *b, int *c)
+    [[gsl::pre(pset(b) == pset(a))]]
+    [[gsl::pre(pset(c) == pset(a))]]
+    {
+  __lifetime_pset(b); // expected-warning {{((*a))}}
+  __lifetime_pset(c); // expected-warning {{((*a))}}
+}
