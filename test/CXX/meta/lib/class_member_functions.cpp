@@ -8,15 +8,13 @@ class Foo {
   virtual void c() { }
   virtual void d() = 0;
   void e() = delete;
-  operator int();
 };
 
 namespace foo_base {
   constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(Foo));
   static_assert(__reflect(query_is_static_member_function, method_1));
   static_assert(!__reflect(query_is_nonstatic_member_function, method_1));
-  static_assert(__reflect(query_is_normal_member_function, method_1));
-  static_assert(!__reflect(query_is_conversion_member_function, method_1));
+  static_assert(__reflect(query_is_normal, method_1));
   static_assert(!__reflect(query_is_override, method_1));
   static_assert(!__reflect(query_is_override_specified, method_1));
   static_assert(!__reflect(query_is_deleted, method_1));
@@ -26,8 +24,7 @@ namespace foo_base {
   constexpr meta::info method_2 = __reflect(query_get_next, method_1);
   static_assert(!__reflect(query_is_static_member_function, method_2));
   static_assert(__reflect(query_is_nonstatic_member_function, method_2));
-  static_assert(__reflect(query_is_normal_member_function, method_2));
-  static_assert(!__reflect(query_is_conversion_member_function, method_2));
+  static_assert(__reflect(query_is_normal, method_2));
   static_assert(!__reflect(query_is_override, method_2));
   static_assert(!__reflect(query_is_override_specified, method_2));
   static_assert(!__reflect(query_is_deleted, method_2));
@@ -37,8 +34,7 @@ namespace foo_base {
   constexpr meta::info method_3 = __reflect(query_get_next, method_2);
   static_assert(!__reflect(query_is_static_member_function, method_3));
   static_assert(__reflect(query_is_nonstatic_member_function, method_3));
-  static_assert(__reflect(query_is_normal_member_function, method_3));
-  static_assert(!__reflect(query_is_conversion_member_function, method_3));
+  static_assert(__reflect(query_is_normal, method_3));
   static_assert(!__reflect(query_is_override, method_3));
   static_assert(!__reflect(query_is_override_specified, method_3));
   static_assert(!__reflect(query_is_deleted, method_3));
@@ -48,8 +44,7 @@ namespace foo_base {
   constexpr meta::info method_4 = __reflect(query_get_next, method_3);
   static_assert(!__reflect(query_is_static_member_function, method_4));
   static_assert(__reflect(query_is_nonstatic_member_function, method_4));
-  static_assert(__reflect(query_is_normal_member_function, method_4));
-  static_assert(!__reflect(query_is_conversion_member_function, method_4));
+  static_assert(__reflect(query_is_normal, method_4));
   static_assert(!__reflect(query_is_override, method_4));
   static_assert(!__reflect(query_is_override_specified, method_4));
   static_assert(!__reflect(query_is_deleted, method_4));
@@ -59,24 +54,12 @@ namespace foo_base {
   constexpr meta::info method_5 = __reflect(query_get_next, method_4);
   static_assert(!__reflect(query_is_static_member_function, method_5));
   static_assert(__reflect(query_is_nonstatic_member_function, method_5));
-  static_assert(__reflect(query_is_normal_member_function, method_5));
-  static_assert(!__reflect(query_is_conversion_member_function, method_5));
+  static_assert(__reflect(query_is_normal, method_5));
   static_assert(!__reflect(query_is_override, method_5));
   static_assert(!__reflect(query_is_override_specified, method_5));
   static_assert(__reflect(query_is_deleted, method_5));
   static_assert(!__reflect(query_is_virtual, method_5));
   static_assert(!__reflect(query_is_pure_virtual, method_5));
-
-  constexpr meta::info method_6 = __reflect(query_get_next, method_5);
-  static_assert(!__reflect(query_is_static_member_function, method_6));
-  static_assert(__reflect(query_is_nonstatic_member_function, method_6));
-  static_assert(!__reflect(query_is_normal_member_function, method_6));
-  static_assert(__reflect(query_is_conversion_member_function, method_6));
-  static_assert(!__reflect(query_is_override, method_6));
-  static_assert(!__reflect(query_is_override_specified, method_6));
-  static_assert(!__reflect(query_is_deleted, method_6));
-  static_assert(!__reflect(query_is_virtual, method_6));
-  static_assert(!__reflect(query_is_pure_virtual, method_6));
 }
 
 class FooChildImplicit : Foo {
@@ -88,8 +71,7 @@ namespace foo_child_implicit {
   constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(FooChildImplicit));
   static_assert(!__reflect(query_is_static_member_function, method_1));
   static_assert(__reflect(query_is_nonstatic_member_function, method_1));
-  static_assert(__reflect(query_is_normal_member_function, method_1));
-  static_assert(!__reflect(query_is_conversion_member_function, method_1));
+  static_assert(__reflect(query_is_normal, method_1));
   static_assert(__reflect(query_is_override, method_1));
   static_assert(!__reflect(query_is_override_specified, method_1));
   static_assert(!__reflect(query_is_deleted, method_1));
@@ -99,8 +81,7 @@ namespace foo_child_implicit {
   constexpr meta::info method_2 = __reflect(query_get_next, method_1);
   static_assert(!__reflect(query_is_static_member_function, method_2));
   static_assert(__reflect(query_is_nonstatic_member_function, method_2));
-  static_assert(__reflect(query_is_normal_member_function, method_2));
-  static_assert(!__reflect(query_is_conversion_member_function, method_2));
+  static_assert(__reflect(query_is_normal, method_2));
   static_assert(__reflect(query_is_override, method_2));
   static_assert(!__reflect(query_is_override_specified, method_2));
   static_assert(!__reflect(query_is_deleted, method_2));
@@ -117,8 +98,7 @@ namespace foo_child_explicit {
   constexpr meta::info method_1 = __reflect(query_get_begin, reflexpr(FooChildExplicit));
   static_assert(!__reflect(query_is_static_member_function, method_1));
   static_assert(__reflect(query_is_nonstatic_member_function, method_1));
-  static_assert(__reflect(query_is_normal_member_function, method_1));
-  static_assert(!__reflect(query_is_conversion_member_function, method_1));
+  static_assert(__reflect(query_is_normal, method_1));
   static_assert(__reflect(query_is_override, method_1));
   static_assert(__reflect(query_is_override_specified, method_1));
   static_assert(!__reflect(query_is_deleted, method_1));
@@ -128,8 +108,7 @@ namespace foo_child_explicit {
   constexpr meta::info method_2 = __reflect(query_get_next, method_1);
   static_assert(!__reflect(query_is_static_member_function, method_2));
   static_assert(__reflect(query_is_nonstatic_member_function, method_2));
-  static_assert(__reflect(query_is_normal_member_function, method_2));
-  static_assert(!__reflect(query_is_conversion_member_function, method_2));
+  static_assert(__reflect(query_is_normal, method_2));
   static_assert(__reflect(query_is_override, method_2));
   static_assert(__reflect(query_is_override_specified, method_2));
   static_assert(!__reflect(query_is_deleted, method_2));

@@ -26,9 +26,8 @@ namespace clang {
     query_is_entity,
     query_is_named,
 
-    /// Scope
+    // Scopes
     query_is_local,
-    query_is_class_member,
 
     // Variables
     query_is_variable,
@@ -49,6 +48,7 @@ namespace clang {
     query_is_declared_class,
 
     // Class members
+    query_is_class_member,
 
     // Data members
     query_is_static_data_member,
@@ -59,8 +59,7 @@ namespace clang {
     // Member functions
     query_is_static_member_function,
     query_is_nonstatic_member_function,
-    query_is_normal_member_function,
-    query_is_conversion_member_function,
+    query_is_normal,
     query_is_override,
     query_is_override_specified,
     query_is_deleted,
@@ -75,6 +74,7 @@ namespace clang {
     query_is_copy_assignment_operator,
     query_is_move_assignment_operator,
     query_is_destructor,
+    query_is_conversion,
     query_is_defaulted,
     query_is_explicit,
 
@@ -250,7 +250,7 @@ namespace clang {
     query_make_signed,
     query_make_unsigned,
 
-    // Name
+    // Names
     query_get_name,
     query_get_display_name,
 
@@ -567,6 +567,22 @@ static bool isNamed(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+/// Scope
+
+static const DeclContext *getReachableRedeclContext(const Reflection &R) {
+  if (const Decl *D = getReachableAliasDecl(R))
+    if (const DeclContext *DC = D->getLexicalDeclContext())
+      return DC->getRedeclContext();
+  return nullptr;
+}
+
+/// Returns true if R designates a local entity.
+static bool isLocal(const Reflection &R, APValue &Result) {
+  if (const DeclContext *DC = getReachableRedeclContext(R))
+    return SuccessBool(R, Result, DC->isFunctionOrMethod());
+  return SuccessFalse(R, Result);
+}
+
 static const VarDecl *getAsVarDecl(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
     return dyn_cast<VarDecl>(D);
@@ -603,8 +619,8 @@ static bool isFunction(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-// Returns true if R designates a function
-// with the noexcept exception specifier.
+/// Returns true if R designates a function
+/// with the noexcept exception specifier.
 static bool isNoexcept(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     if(isa<FunctionDecl>(D))
@@ -613,6 +629,8 @@ static bool isNoexcept(const Reflection &R, APValue &Result) {
         return SuccessBool(R, Result, Proto->hasNoexceptExceptionSpec());
   return SuccessFalse(R, Result);
 }
+
+/// Classes
 
 static const CXXRecordDecl *getReachableRecordDecl(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R))
@@ -670,6 +688,17 @@ static bool isDeclaredClass(ReflectionQueryEvaluator &Eval,
   }
   return SuccessFalse(Eval, Result);
 }
+
+/// Class members
+
+/// Returns true if R designates a class member.
+static bool isClassMember(const Reflection &R, APValue &Result) {
+  if (const DeclContext *DC = getReachableRedeclContext(R))
+    return SuccessBool(R, Result, DC->isRecord());
+  return SuccessFalse(R, Result);
+}
+
+/// Data members
 
 /// Returns the reflected data member.
 static const FieldDecl *getAsDataMember(const Reflection &R) {
@@ -733,23 +762,12 @@ static bool isNonstaticMemberFunction(const Reflection &R, APValue &Result) {
 }
 
 /// Returns true if Args[1] designates a normal member function.
-static bool isNormalMemberFunction(ReflectionQueryEvaluator &Eval,
-                                   SmallVectorImpl<APValue> &Args,
-                                   APValue &Result) {
+static bool isNormal(ReflectionQueryEvaluator &Eval,
+                     SmallVectorImpl<APValue> &Args,
+                     APValue &Result) {
   Reflection R(Eval.getContext(), Args[1]);
   if (const Decl *D = getReachableDecl(R)) {
     return SuccessBool(Eval, Result, D->getKind() == Decl::Kind::CXXMethod);
-  }
-  return SuccessFalse(Eval, Result);
-}
-
-/// Returns true if Args[1] designates a conversion member function.
-static bool isConversionMemberFunction(ReflectionQueryEvaluator &Eval,
-                                       SmallVectorImpl<APValue> &Args,
-                                       APValue &Result) {
-  Reflection R(Eval.getContext(), Args[1]);
-  if (const Decl *D = getReachableDecl(R)) {
-    return SuccessBool(Eval, Result, isa<CXXConversionDecl>(D));
   }
   return SuccessFalse(Eval, Result);
 }
@@ -837,6 +855,17 @@ static bool isDestructor(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessBool(R, Result, isa<CXXDestructorDecl>(D));
   return SuccessFalse(R, Result);
+}
+
+/// Returns true if Args[1] designates a conversion member function.
+static bool isConversion(ReflectionQueryEvaluator &Eval,
+                         SmallVectorImpl<APValue> &Args,
+                         APValue &Result) {
+  Reflection R(Eval.getContext(), Args[1]);
+  if (const Decl *D = getReachableDecl(R)) {
+    return SuccessBool(Eval, Result, isa<CXXConversionDecl>(D));
+  }
+  return SuccessFalse(Eval, Result);
 }
 
 /// Returns true if R designates a defaulted member function.
@@ -1784,27 +1813,6 @@ static bool isValue(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-static const DeclContext *getReachableRedeclContext(const Reflection &R) {
-  if (const Decl *D = getReachableAliasDecl(R))
-    if (const DeclContext *DC = D->getLexicalDeclContext())
-      return DC->getRedeclContext();
-  return nullptr;
-}
-
-/// Returns true if R designates a local entity.
-static bool isLocal(const Reflection &R, APValue &Result) {
-  if (const DeclContext *DC = getReachableRedeclContext(R))
-    return SuccessBool(R, Result, DC->isFunctionOrMethod());
-  return SuccessFalse(R, Result);
-}
-
-/// Returns true if R designates a class member.
-static bool isClassMember(const Reflection &R, APValue &Result) {
-  if (const DeclContext *DC = getReachableRedeclContext(R))
-    return SuccessBool(R, Result, DC->isRecord());
-  return SuccessFalse(R, Result);
-}
-
 static bool isTypeOperation(ReflectionQuery Q) {
   return query_first_type_operation <= Q && Q <= query_last_type_operation;
 }
@@ -1833,13 +1841,10 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_named:
     return isNamed(makeReflection(*this, Args[1]), Result);
 
-  /// Scope
+  // Scopes
+
   case query_is_local:
     return isLocal(makeReflection(*this, Args[1]), Result);
-  case query_is_class_member:
-    return isClassMember(makeReflection(*this, Args[1]), Result);
-
-  /// Declarations
 
   // Variables
   case query_is_variable:
@@ -1869,9 +1874,11 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_declared_class:
     return isDeclaredClass(*this, Args, Result);
 
-  // Class Members
+  // Class members
+  case query_is_class_member:
+    return isClassMember(makeReflection(*this, Args[1]), Result);
 
-  // Data Members
+  // Data members
   case query_is_static_data_member:
     return isStaticDataMember(makeReflection(*this, Args[1]), Result);
   case query_is_nonstatic_data_member:
@@ -1881,15 +1888,13 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_mutable:
     return isMutable(*this, Args, Result);
 
-  // Member Functions
+  // Member functions
   case query_is_static_member_function:
     return isStaticMemberFunction(makeReflection(*this, Args[1]), Result);
   case query_is_nonstatic_member_function:
     return isNonstaticMemberFunction(makeReflection(*this, Args[1]), Result);
-  case query_is_normal_member_function:
-    return isNormalMemberFunction(*this, Args, Result);
-  case query_is_conversion_member_function:
-    return isConversionMemberFunction(*this, Args, Result);
+  case query_is_normal:
+    return isNormal(*this, Args, Result);
   case query_is_override:
     return isOverride(makeReflection(*this, Args[1]), Result);
   case query_is_override_specified:
@@ -1901,7 +1906,7 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_pure_virtual:
     return isPureVirtual(makeReflection(*this, Args[1]), Result);
 
-  // Special Members
+  // Special members
   case query_is_constructor:
     return isConstructor(makeReflection(*this, Args[1]), Result);
   case query_is_default_constructor:
@@ -1916,7 +1921,9 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
     return isMoveAssignmentOperator(makeReflection(*this, Args[1]), Result);
   case query_is_destructor:
     return isDestructor(makeReflection(*this, Args[1]), Result);
-  case query_is_defaulted:
+  case query_is_conversion:
+    return isConversion(*this, Args, Result);
+   case query_is_defaulted:
     return isDefaulted(makeReflection(*this, Args[1]), Result);
   case query_is_explicit:
     return isExplicit(makeReflection(*this, Args[1]), Result);
@@ -1962,7 +1969,6 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   // Namespaces
   case query_is_namespace:
     return isNamespace(makeReflection(*this, Args[1]), Result);
-
 
   // Aliases
   case query_is_namespace_alias:
@@ -2048,7 +2054,7 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_function_type:
     return isFunctionType(makeReflection(*this, Args[1]), Result);
   case query_is_class_type:
-      return isClassType(makeReflection(*this, Args[1]), Result);
+    return isClassType(makeReflection(*this, Args[1]), Result);
   case query_is_union_type:
     return isUnionType(makeReflection(*this, Args[1]), Result);
   case query_is_unscoped_enum_type:
@@ -2058,7 +2064,7 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   case query_is_void_type:
     return isVoidType(makeReflection(*this, Args[1]), Result);
   case query_is_null_pointer_type:
-      return isNullPtrType(makeReflection(*this, Args[1]), Result);
+    return isNullPtrType(makeReflection(*this, Args[1]), Result);
   case query_is_integral_type:
     return isIntegralType(makeReflection(*this, Args[1]), Result);
   case query_is_floating_point_type:

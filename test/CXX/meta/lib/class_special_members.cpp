@@ -10,6 +10,8 @@ class Foo {
 
   Foo &operator=(const Foo& f) = default;
   Foo &operator=(Foo&& f) = default;
+
+  operator int() { return 0; }
 };
 
 namespace foo {
@@ -21,6 +23,7 @@ namespace foo {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_1));
   static_assert(!__reflect(query_is_move_assignment_operator, member_1));
   static_assert(!__reflect(query_is_destructor, member_1));
+  static_assert(!__reflect(query_is_conversion, member_1));
   static_assert(__reflect(query_is_defaulted, member_1));
   static_assert(!__reflect(query_is_explicit, member_1));
 
@@ -32,6 +35,7 @@ namespace foo {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_2));
   static_assert(!__reflect(query_is_move_assignment_operator, member_2));
   static_assert(!__reflect(query_is_destructor, member_2));
+  static_assert(!__reflect(query_is_conversion, member_2));
   static_assert(__reflect(query_is_defaulted, member_2));
   static_assert(!__reflect(query_is_explicit, member_2));
 
@@ -43,6 +47,7 @@ namespace foo {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_3));
   static_assert(!__reflect(query_is_move_assignment_operator, member_3));
   static_assert(!__reflect(query_is_destructor, member_3));
+  static_assert(!__reflect(query_is_conversion, member_3));
   static_assert(__reflect(query_is_defaulted, member_3));
   static_assert(!__reflect(query_is_explicit, member_3));
 
@@ -54,6 +59,7 @@ namespace foo {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_4));
   static_assert(!__reflect(query_is_move_assignment_operator, member_4));
   static_assert(__reflect(query_is_destructor, member_4));
+  static_assert(!__reflect(query_is_conversion, member_4));
   static_assert(__reflect(query_is_defaulted, member_4));
   static_assert(!__reflect(query_is_explicit, member_4));
 
@@ -65,6 +71,7 @@ namespace foo {
   static_assert(__reflect(query_is_copy_assignment_operator, member_5));
   static_assert(!__reflect(query_is_move_assignment_operator, member_5));
   static_assert(!__reflect(query_is_destructor, member_5));
+  static_assert(!__reflect(query_is_conversion, member_5));
   static_assert(__reflect(query_is_defaulted, member_5));
   static_assert(!__reflect(query_is_explicit, member_5));
 
@@ -76,8 +83,21 @@ namespace foo {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_6));
   static_assert(__reflect(query_is_move_assignment_operator, member_6));
   static_assert(!__reflect(query_is_destructor, member_6));
+  static_assert(!__reflect(query_is_conversion, member_6));
   static_assert(__reflect(query_is_defaulted, member_6));
   static_assert(!__reflect(query_is_explicit, member_6));
+
+  constexpr meta::info member_7 = __reflect(query_get_next, member_6);
+  static_assert(!__reflect(query_is_constructor, member_7));
+  static_assert(!__reflect(query_is_default_constructor, member_7));
+  static_assert(!__reflect(query_is_copy_constructor, member_7));
+  static_assert(!__reflect(query_is_move_constructor, member_7));
+  static_assert(!__reflect(query_is_copy_assignment_operator, member_7));
+  static_assert(!__reflect(query_is_move_assignment_operator, member_7));
+  static_assert(!__reflect(query_is_destructor, member_7));
+  static_assert(__reflect(query_is_conversion, member_7));
+  static_assert(!__reflect(query_is_defaulted, member_7));
+  static_assert(!__reflect(query_is_explicit, member_7));
 }
 
 class FooWrapper {
@@ -94,6 +114,7 @@ namespace foo_wrapper {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_1));
   static_assert(!__reflect(query_is_move_assignment_operator, member_1));
   static_assert(!__reflect(query_is_destructor, member_1));
+  static_assert(!__reflect(query_is_conversion, member_1));
   static_assert(!__reflect(query_is_defaulted, member_1));
   static_assert(!__reflect(query_is_explicit, member_1));
 
@@ -105,6 +126,7 @@ namespace foo_wrapper {
   static_assert(!__reflect(query_is_copy_assignment_operator, member_2));
   static_assert(!__reflect(query_is_move_assignment_operator, member_2));
   static_assert(!__reflect(query_is_destructor, member_2));
+  static_assert(!__reflect(query_is_conversion, member_2));
   static_assert(!__reflect(query_is_defaulted, member_2));
   static_assert(__reflect(query_is_explicit, member_2));
 }
