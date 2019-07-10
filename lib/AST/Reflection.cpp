@@ -427,6 +427,9 @@ static const TypeDecl *getAsTypeAliasDecl(const Reflection &R) {
   if (R.isType()) {
     const Type *T = &(*getQualType(R));
 
+    if (const ElaboratedType *ET = dyn_cast<ElaboratedType>(T))
+      T = &(*ET->desugar());
+
     if (const TypedefType *TDT = dyn_cast<TypedefType>(T))
       return TDT->getDecl();
 
@@ -850,45 +853,40 @@ static bool isExplicit(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+static AccessSpecifier getAccess(const Reflection &R) {
+  if (const Decl *D = getReachableAliasDecl(R))
+    return D->getAccess();
+
+  if (const CXXBaseSpecifier *B = getReachableBase(R))
+    return B->getAccessSpecifier();
+
+  return AS_none;
+}
+
 /// Returns true if R has specified access.
 static bool hasAccess(const Reflection &R, APValue &Result) {
-  if (const CXXBaseSpecifier *B = getReachableBase(R))
-    return SuccessBool(R, Result, B->getAccessSpecifier() != AS_none);
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, D->getAccess() != AS_none);
-  return SuccessFalse(R, Result);
+  AccessSpecifier AS = getAccess(R);
+  return SuccessBool(R, Result, AS != AS_none);
 }
 
 /// Returns true if R has public access.
 static bool isPublic(const Reflection &R, APValue &Result) {
-  if (const CXXBaseSpecifier *B = getReachableBase(R))
-    return SuccessBool(R, Result, B->getAccessSpecifier() == AS_public);
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, D->getAccess() == AS_public);
-  return SuccessFalse(R, Result);
+  return SuccessBool(R, Result, getAccess(R) == AS_public);
 }
 
 /// Returns true if R has protected access.
 static bool isProtected(const Reflection &R, APValue &Result) {
-  if (const CXXBaseSpecifier *B = getReachableBase(R))
-    return SuccessBool(R, Result, B->getAccessSpecifier() == AS_protected);
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, D->getAccess() == AS_protected);
-  return SuccessFalse(R, Result);
+  return SuccessBool(R, Result, getAccess(R) == AS_protected);
 }
 
 /// Returns true if R has private access.
 static bool isPrivate(const Reflection &R, APValue &Result) {
-  if (const CXXBaseSpecifier *B = getReachableBase(R))
-    return SuccessBool(R, Result, B->getAccessSpecifier() == AS_private);
-  if (const Decl *D = getReachableDecl(R))
-    return SuccessBool(R, Result, D->getAccess() == AS_private);
-  return SuccessFalse(R, Result);
+  return SuccessBool(R, Result, getAccess(R) == AS_private);
 }
 
 /// Returns true if R has default access.
 static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R)) {
+  if (const Decl *D = getReachableAliasDecl(R)) {
     if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
       for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
         if (isa<AccessSpecDecl>(CurDecl))
@@ -1787,7 +1785,7 @@ static bool isValue(const Reflection &R, APValue &Result) {
 }
 
 static const DeclContext *getReachableRedeclContext(const Reflection &R) {
-  if (const Decl *D = getReachableDecl(R))
+  if (const Decl *D = getReachableAliasDecl(R))
     if (const DeclContext *DC = D->getLexicalDeclContext())
       return DC->getRedeclContext();
   return nullptr;

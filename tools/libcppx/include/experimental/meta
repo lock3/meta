@@ -2519,7 +2519,7 @@ detail::require_spec_mem_function(info reflection,
 consteval void
 detail::require_base_or_mem(info reflection,
                             const char* custom_err) {
-  if (is_data_member(reflection) || is_member_function(reflection))
+  if (is_class_member(reflection))
     return;
   if (is_base_class(reflection))
     return;
@@ -2527,7 +2527,7 @@ detail::require_base_or_mem(info reflection,
   if(custom_err)
     __compiler_error(custom_err);
 
-  __compiler_error("Reflected entity must be a base class specifier or member declaration.");
+  __compiler_error("Reflected entity must be a base class specifier or class member.");
 }
 
 consteval void

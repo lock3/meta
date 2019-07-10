@@ -19,6 +19,7 @@ void foo() {
 struct wrapper_class {
   int var;
   void fn();
+  using alias = int;
 };
 
 constexpr meta::info class_member_var_refl = reflexpr(wrapper_class::var);
@@ -28,3 +29,7 @@ static_assert(__reflect(query_is_class_member, class_member_var_refl));
 constexpr meta::info class_member_fn_refl = reflexpr(wrapper_class::fn);
 static_assert(!__reflect(query_is_local, class_member_fn_refl));
 static_assert(__reflect(query_is_class_member, class_member_fn_refl));
+
+constexpr meta::info class_type_alias_refl = reflexpr(wrapper_class::alias);
+static_assert(!__reflect(query_is_local, class_type_alias_refl));
+static_assert(__reflect(query_is_class_member, class_type_alias_refl));
