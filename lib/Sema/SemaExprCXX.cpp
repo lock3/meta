@@ -8051,3 +8051,190 @@ Sema::FinishCallExpr(Expr *E)
   return MaybeBindToTemporary(E);
 }
 
+ExprResult
+Sema::ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD, VarDecl *Base,
+                               Expr *Index, SourceLocation KWLoc,
+                               SourceLocation BaseLoc, SourceLocation IdxLoc)
+{
+   // Get the type of the struct we are trying to expand.
+  QualType BaseType = Base->getType().getNonReferenceType();
+
+  ExprResult BaseDRE =
+    BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+  if (BaseDRE.isInvalid())
+    return ExprError();
+  Expr *BaseRef = BaseDRE.get();
+
+  // If the base is dependent, we won't be able to do any destructuring yet.
+  if (BaseType->isDependentType()) {
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, 0, nullptr,
+                                             Base->getLocation(), KWLoc,
+                                             BaseLoc);
+  }
+
+  CXXCastPath BasePath;
+  DeclAccessPair BasePair =
+    FindDecomposableBaseClass
+    (Base->getLocation(), OrigRD, BasePath);
+  CXXRecordDecl *RD = cast<CXXRecordDecl>(BasePair.getDecl());
+  if (!RD)
+    return ExprError();
+  SourceLocation Loc = RD->getLocation();
+
+  auto *Fields = new (Context) llvm::SmallVector<Expr *, 8>;
+
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  auto It = Context.Destructures.find(Base->getInit());
+  if (It != Context.Destructures.end()) {
+    Fields = It->second;
+  } else {
+    QualType BaseClassType =
+      Context.getQualifiedType(Context.getRecordType(RD),
+                               BaseType.getQualifiers());
+
+    // Create and store a reference expression to each field.
+    unsigned I = 0;
+    for (auto *FD : RD->fields()) {
+      if (FD->isUnnamedBitfield())
+        continue;
+
+      if (FD->isAnonymousStructOrUnion()) {
+        Diag
+          (Base->getLocation(), diag::err_decomp_decl_anon_union_member)
+          << BaseClassType << FD->getType()->isUnionType();
+        Diag(FD->getLocation(), diag::note_declared_at);
+        return true;
+      }
+
+      // The field must be accessible in the context of the expansion.
+      // We already checked that the base class is accessible.
+      CheckStructuredBindingMemberAccess(
+        Loc, const_cast<CXXRecordDecl *>(OrigRD),
+        DeclAccessPair::make(FD, CXXRecordDecl::MergeAccess(
+                               BasePair.getAccess(), FD->getAccess())));
+
+      // Initialize the binding to Base.FD
+      ExprResult E =
+        BuildDeclRefExpr(Base, BaseType, VK_LValue, BaseLoc);
+      if (E.isInvalid())
+        return true;
+      E = ImpCastExprToType(E.get(), BaseType, CK_UncheckedDerivedToBase,
+                            VK_LValue, &BasePath);
+      if (E.isInvalid())
+        return true;
+      E = BuildFieldReferenceExpr
+        (E.get(), /*IsArrow*/ false, Loc,
+         CXXScopeSpec(), FD, DeclAccessPair::make(FD, FD->getAccess()),
+         DeclarationNameInfo(FD->getDeclName(), Loc));
+      if (E.isInvalid())
+        return true;
+
+      Fields->push_back(E.get());
+      ++I;
+    }
+
+    // TODO: create "BadNumberOfBindings()" equivalent for
+    // expansions.
+    assert(I == Fields->size() && "Bad Number of Bindings");
+    Context.Destructures.insert({Base->getInit(), Fields});
+  }
+
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  if (Index->isTypeDependent() || Index->isValueDependent()) {
+    return new (Context) CXXSelectMemberExpr(BaseRef, Context.DependentTy,
+                                             Index, Fields->size(), RD, Loc,
+                                             KWLoc, BaseLoc);
+  }
+
+  // Index must be an integral or enumerator type.
+  if (!Index->getType()->isIntegralOrEnumerationType())
+    return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
+
+  // Index must be a constant expression.
+  Expr::EvalResult Res;
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!Index->EvaluateAsInt(Res, EvalCtx))
+    return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
+
+  unsigned I = Res.Val.getInt().getZExtValue();
+  if (I >= Fields->size()) {
+    Diag(BaseLoc, diag::err_select_index_exceeds_bounds);
+    return ExprError();
+  }
+
+  CXXSelectMemberExpr *Sel =
+    new (Context) CXXSelectMemberExpr(BaseRef, (*Fields)[I]->getType(),
+                                      Index, Fields->size(), RD, Loc,
+                                      KWLoc, BaseLoc);
+  Sel->setValue((*Fields)[I]);
+  return Sel;
+}
+
+ExprResult
+Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
+                             SourceLocation KWLoc,
+                             SourceLocation BaseLoc,
+                             SourceLocation IdxLoc)
+{
+  TemplateArgument BaseArg(Base, TemplateArgument::Expression);  assert(BaseArg.isPackExpansion() ||
+         BaseArg.containsUnexpandedParameterPack());
+
+  llvm::Optional<unsigned> Size = getFullyPackExpandedSize(BaseArg);
+  // This pack hasn't been expanded yet, so just wait until later.
+  if (!Size.hasValue())
+    // We could go through the rigmarole of trying to find the pack at this
+    // point, but we aren't going to use it yet anyway.
+    return new (Context) CXXSelectPackExpr(Base, Context.DependentTy,
+                                           Index, -1, nullptr, KWLoc, BaseLoc);
+
+  // The pack is expanded, so we will destructure it.
+  const VarDecl *Pack;
+  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
+    Pack = FPPE->getParameterPack();
+  } else
+    llvm_unreachable("Unimplemented pack expansion.");
+
+  // If the index is dependent, there's nothing more to do,
+  // just return the temporary expr.
+  if (Index->isTypeDependent() || Index->isValueDependent())
+    return new (Context) CXXSelectPackExpr(Base, Context.DependentTy,
+                                           Index, Size.getValue(), Pack,
+                                           KWLoc, BaseLoc);
+
+  // Index must be an integral or enumerator type.
+  if (!Index->getType()->isIntegralOrEnumerationType())
+    return ExprError(Diag(IdxLoc, diag::err_typecheck_subscript_not_integer));
+
+  // Index must be a constant expression.
+  Expr::EvalResult Res;
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!Index->EvaluateAsInt(Res, EvalCtx))
+    return ExprError(Diag(IdxLoc, diag::err_select_index_not_constant));
+  std::size_t I = Res.Val.getInt().getZExtValue();
+
+  if (I >= Size.getValue()) {
+    Diag(BaseLoc, diag::err_select_index_exceeds_bounds);
+    return ExprError();
+  }
+
+  if (auto FPPE = dyn_cast<FunctionParmPackExpr>(Base)) {
+    CXXSelectPackExpr *Sel =
+      new (Context) CXXSelectPackExpr(Base, FPPE->getExpansion(I)->getType(),
+                                      Index, Size.getValue(), Pack,
+                                      KWLoc, BaseLoc);
+    // If we got to this point, we know it's not type-dependent anymore.
+    Sel->setTypeDependent(false);
+    VarDecl *Parm = FPPE->getExpansion(I);
+    ExprResult ParmRef =
+      BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
+                       VK_LValue, Parm->getLocation());
+    if (ParmRef.isInvalid())
+      return ExprError();
+    Sel->setValue(ParmRef.get());
+    return Sel;
+  } else
+    llvm_unreachable("Unimplemented pack expansion.");
+}

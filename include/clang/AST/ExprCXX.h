@@ -4013,64 +4013,6 @@ public:
   }
 };
 
-/// Represents a C++11 pack selection that yields a single expression from
-/// a parameter pack or destructurable class. 
-///
-/// This is used internally to define the bodies of expansion statements.
-class PackSelectionExpr : public Expr {
-  friend class ASTStmtReader;
-  friend class ASTStmtWriter;
-
-  SourceLocation SelectLoc;
-  
-  Stmt *Args[2];
-
-public:
-  PackSelectionExpr(QualType T, Expr *Pack, Expr *Sel, SourceLocation SelectLoc)
-      : Expr(PackSelectionExprClass, T, Pack->getValueKind(),
-             Pack->getObjectKind(), /*TypeDependent=*/true,
-             /*ValueDependent=*/true, /*InstantiationDependent=*/true,
-             /*ContainsUnexpandedParameterPack=*/false),
-        SelectLoc(SelectLoc), Args{Pack, Sel} {}
-
-  PackSelectionExpr(EmptyShell Empty) : Expr(PackSelectionExprClass, Empty) {}
-
-  /// Retrieve the unexpanded pack or class object reference.
-  const Expr *getPack() const { return reinterpret_cast<Expr *>(Args[0]); }
-  Expr *getPack() { return reinterpret_cast<Expr *>(Args[0]); }
-
-  /// Retrieve selector integral selector argument.
-  const Expr *getSelector() const { return reinterpret_cast<Expr *>(Args[1]); }
-  Expr *getSelector() { return reinterpret_cast<Expr *>(Args[1]); }
-
-  /// Retrieve the location of the ellipsis that describes this pack
-  /// expansion.
-  SourceLocation getSelectLoc() const { return SelectLoc; }
-
-  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
-                            "Use getBeginLoc instead") {
-    return getBeginLoc();
-  }
-  SourceLocation getBeginLoc() const LLVM_READONLY {
-    return SelectLoc;
-  }
-
-  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
-                            "Use getEndLoc instead") {
-    return getEndLoc();
-  }
-  SourceLocation getEndLoc() const LLVM_READONLY { return SelectLoc; }
-
-  static bool classof(const Stmt *T) {
-    return T->getStmtClass() == PackSelectionExprClass;
-  }
-
-  // Iterators
-  child_range children() {
-    return child_range(&Args[0], &Args[0] + 2);
-  }
-};
-
 /// Represents an expression that computes the length of a parameter
 /// pack.
 ///
@@ -5453,6 +5395,150 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
+  }
+};
+
+/// Represents a C++11 selection that yields a single expression from
+/// a parameter pack or destructurable class.
+///
+/// This is used internally to define the bodies of expansion statements.
+class CXXSelectionExpr : public Expr {
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+
+protected:
+  /// The location of the __select keyword.
+  SourceLocation SelectLoc;
+
+  /// The location of the object being projected on
+  SourceLocation BaseLoc;
+
+  /// The base object and integral selector.
+  Stmt *Args[2];
+
+  /// The computed expression this selection refers to.
+  const Expr *Value = nullptr;
+
+  /// The number of fields or expansions in the structure we
+  /// are selecting on.
+  std::size_t NumFields;
+
+public:
+  CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
+                   Expr *Sel, std::size_t NumFields,
+                   SourceLocation SelectLoc, SourceLocation BaseLoc)
+    : Expr(SC, T, Base->getValueKind(),
+           Base->getObjectKind(),
+           Base->isTypeDependent() || Sel->isTypeDependent(),
+           Base->isValueDependent() || Sel->isValueDependent(),
+           Base->isInstantiationDependent() || Sel->isInstantiationDependent(),
+           /*ContainsUnexpandedParameterPack=*/false),
+      SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel},
+      NumFields(NumFields) {}
+
+  CXXSelectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Retrieve the unexpanded pack or class object reference.
+  const Expr *getBase() const { return reinterpret_cast<Expr *>(Args[0]); }
+  Expr *getBase() { return reinterpret_cast<Expr *>(Args[0]); }
+
+  /// Retrieve selector integral selector argument.
+  const Expr *getSelector() const { return reinterpret_cast<Expr *>(Args[1]); }
+  Expr *getSelector() { return reinterpret_cast<Expr *>(Args[1]); }
+
+  const Expr *getValue() const { return Value; }
+  void setValue(Expr *V) { Value = V; }
+
+  std::size_t getNumFields() const { return NumFields; }
+
+  /// Retrieve the location of the ellipsis that describes this pack
+  /// expansion.
+  SourceLocation getSelectLoc() const { return SelectLoc; }
+
+  /// Return the location of the base object being selected upon.
+  SourceLocation getBaseLoc() const { return BaseLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return SelectLoc;
+  }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY { return SelectLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectMemberExprClass ||
+      T->getStmtClass() == CXXSelectPackExprClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(&Args[0], &Args[0] + 2);
+  }
+};
+
+// Selects the __Nth public, nonstatic field of an object of record type.
+class CXXSelectMemberExpr : public CXXSelectionExpr {
+  /// The canonical record of the base we are selecting on.
+  CXXRecordDecl *Record;
+
+  /// The location of the record.
+  SourceLocation RecordLoc;
+public:
+  CXXSelectMemberExpr(Expr *Base,
+                      QualType T,
+                      Expr *Index,
+                      std::size_t NumFields,
+                      CXXRecordDecl *RD,
+                      SourceLocation RecordLoc,
+                      SourceLocation KWLoc = SourceLocation(),
+                      SourceLocation BaseLoc = SourceLocation())
+    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, NumFields,
+                       KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc)
+    {}
+
+  CXXSelectMemberExpr(EmptyShell Empty)
+    : CXXSelectionExpr(CXXSelectMemberExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getRecordLoc() const { return RecordLoc; }
+  CXXRecordDecl *getRecord() const { return Record; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectMemberExprClass;
+  }
+};
+
+class CXXSelectPackExpr : public CXXSelectionExpr {
+  /// The ParameterPack of the pack expansion we are selecting on.
+  const VarDecl *Pack;
+
+public:
+  CXXSelectPackExpr(Expr *Base,
+                    QualType T,
+                    Expr *Index,
+                    std::size_t NumFields,
+                    const VarDecl *Pack,
+                    SourceLocation KWLoc = SourceLocation(),
+                    SourceLocation BaseLoc = SourceLocation())
+    : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, NumFields,
+                       KWLoc, BaseLoc), Pack(Pack)
+    {}
+
+  CXXSelectPackExpr(EmptyShell Empty)
+    : CXXSelectionExpr(CXXSelectPackExprClass, Empty) {}
+
+  const VarDecl *getPack() const { return Pack; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectPackExprClass;
   }
 };
 

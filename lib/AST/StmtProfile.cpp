@@ -341,7 +341,12 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
-void StmtProfiler::VisitCXXExpansionStmt(const CXXExpansionStmt *S) {
+void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+}
+
+void StmtProfiler::VisitCXXCompositeExpansionStmt(
+                                           const CXXCompositeExpansionStmt *S) {
   VisitStmt(S);
 }
 
@@ -1133,6 +1138,18 @@ void StmtProfiler::VisitOMPArraySectionExpr(const OMPArraySectionExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCXXSelectionExpr(const CXXSelectionExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitCXXSelectPackExpr(const CXXSelectPackExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitCallExpr(const CallExpr *S) {
   VisitExpr(S);
 }
@@ -1819,10 +1836,6 @@ void StmtProfiler::VisitCXXNoexceptExpr(const CXXNoexceptExpr *S) {
 }
 
 void StmtProfiler::VisitPackExpansionExpr(const PackExpansionExpr *S) {
-  VisitExpr(S);
-}
-
-void StmtProfiler::VisitPackSelectionExpr(const PackSelectionExpr *S) {
   VisitExpr(S);
 }
 

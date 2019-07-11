@@ -2878,6 +2878,9 @@ public:
   /// Parse a variadic reifier as a member/base initializer.
   void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
 
+  /// Parse a __select expression
+  ExprResult ParseCXXSelectMemberExpr();
+
   // C++ Code Fragments
   Decl *ParseCXXNamespaceFragment(Decl *Fragment);
   Decl *ParseCXXClassFragment(Decl *Fragment);

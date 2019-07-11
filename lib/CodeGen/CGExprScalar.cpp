@@ -563,6 +563,8 @@ public:
   }
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+  Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
+  Value *VisitCXXSelectPackExpr(CXXSelectPackExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitConvertVectorExpr(ConvertVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
@@ -1815,6 +1817,14 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
     CGF.EmitBoundsCheck(E, E->getBase(), Idx, IdxTy, /*Accessed*/true);
 
   return Builder.CreateExtractElement(Base, Idx, "vecext");
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  return EmitLoadOfLValue(E);
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  return EmitLoadOfLValue(E);
 }
 
 static llvm::Constant *getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,

@@ -1179,7 +1179,10 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXValueOfExprClass:
     case Stmt::CXXConcatenateExprClass:
     case Stmt::CXXDependentVariadicReifierExprClass:
-    case Stmt::CXXExpansionStmtClass:
+    case Stmt::CXXPackExpansionStmtClass:
+    case Stmt::CXXCompositeExpansionStmtClass:
+    case Stmt::CXXSelectMemberExprClass:
+    case Stmt::CXXSelectPackExprClass:
     case Stmt::MSPropertyRefExprClass:
     case Stmt::MSPropertySubscriptExprClass:
     case Stmt::CXXUnresolvedConstructExprClass:
@@ -1191,7 +1194,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::TypoExprClass:
     case Stmt::CXXNoexceptExprClass:
     case Stmt::PackExpansionExprClass:
-    case Stmt::PackSelectionExprClass:
     case Stmt::SubstNonTypeTemplateParmPackExprClass:
     case Stmt::FunctionParmPackExprClass:
     case Stmt::CoroutineBodyStmtClass:
