@@ -83,14 +83,14 @@ static_assert(!__is_gsl_pointer(int), "");
 static_assert(__is_gsl_pointer(int &), "");
 static_assert(__is_gsl_pointer(int *), "");
 
-// Test builtin annotation for std types.
+// Test builtin attributes for std types.
 namespace std {
-// Complete class
+// Attributes are added to a (complete) class.
 class any {
 };
 static_assert(__is_gsl_owner(any), "");
 
-// Complete template
+// Attributes are added to a instantiatons of a complete template.
 template <typename T>
 class vector {
 public:
@@ -99,45 +99,60 @@ public:
 static_assert(__is_gsl_owner(vector<int>), "");
 static_assert(__is_gsl_pointer(vector<int>::iterator), "");
 
+// If std::container::iterator is a using declaration, Attributes are added to
+// the underlying class
 template <typename T>
-class set_iterator {};
+class __set_iterator {};
 
 template <typename T>
 class set {
 public:
-  using iterator = set_iterator<T>;
+  using iterator = __set_iterator<T>;
 };
 static_assert(__is_gsl_pointer(set<int>::iterator), "");
 
+// If std::container::iterator is a typedef, Attributes are added to the
+// underlying class. Inline namespaces are ignored when checking if
+// the class lives in the std namespace.
+inline namespace inlinens {
 template <typename T>
-class map_iterator {};
+class __map_iterator {};
 
 template <typename T>
 class map {
 public:
-  typedef map_iterator<T> iterator;
+  typedef __map_iterator<T> iterator;
 };
+} // namespace inlinens
 static_assert(__is_gsl_pointer(map<int>::iterator), "");
 
-// list has an implicit gsl::Owner attribute,
+// std::list has an implicit gsl::Owner attribute,
 // but explicit attributes take precedence.
 template <typename T>
 class [[gsl::Pointer]] list{};
 static_assert(!__is_gsl_owner(list<int>), "");
 static_assert(__is_gsl_pointer(list<int>), "");
 
-// Forward declared template
+// Forward declared template (Owner)
 template <
     class CharT,
     class Traits>
 class basic_regex;
 static_assert(__is_gsl_owner(basic_regex<char, void>), "");
 
+// Forward declared template (Pointer)
 template <class T>
 class reference_wrapper;
 static_assert(__is_gsl_pointer(reference_wrapper<char>), "");
 
-class thread;
-static_assert(!__is_gsl_pointer(thread), "");
-static_assert(!__is_gsl_owner(thread), "");
+class some_unknown_type;
+static_assert(!__is_gsl_pointer(some_unknown_type), "");
+static_assert(!__is_gsl_owner(some_unknown_type), "");
 } // namespace std
+
+namespace user {
+// If a class is not in the std namespace, we don't add implicit attributes.
+class any {
+};
+static_assert(!__is_gsl_owner(any), "");
+} // namespace user
