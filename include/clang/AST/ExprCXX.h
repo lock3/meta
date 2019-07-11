@@ -5010,7 +5010,7 @@ public:
 ///
 /// A reflection read query is a query to retreive information
 /// about a reflected entity.
-/// All write querys accept a sequence of arguments (expressions,
+/// All read queries accept a sequence of arguments (expressions,
 /// the first of which is the reflection needing updated.
 class CXXReflectionReadQueryExpr : public Expr {
 protected:

@@ -1,7 +1,6 @@
 // RUN: %clang_cc1 -freflection -std=c++1z %s
 
 #include "reflection_query.h"
-#include "reflection_traits.h"
 #include "reflection_mod.h"
 #include "reflection_iterator.h"
 
@@ -27,13 +26,13 @@ consteval bool is_member_function(info refl) {
 }
 
 consteval bool is_copy(info refl) {
-  method_traits method(__reflect(query_get_decl_traits, refl));
-  return method.is_copy_ctor || method.is_copy_assign;
+  return __reflect(query_is_copy_constructor, refl)
+      || __reflect(query_is_copy_assignment_operator, refl);
 }
 
 consteval bool is_move(info refl) {
-  method_traits method(__reflect(query_get_decl_traits, refl));
-  return method.is_move_ctor || method.is_move_assign;
+  return __reflect(query_is_move_constructor, refl)
+      || __reflect(query_is_move_assignment_operator, refl);
 }
 
 consteval bool has_default_access(info refl) {
@@ -41,8 +40,7 @@ consteval bool has_default_access(info refl) {
 }
 
 consteval bool is_public(info refl) {
-  access_traits access(__reflect(query_get_access_traits, refl));
-  return access_traits(access).kind == public_access;
+  return __reflect(query_is_public, refl);
 }
 
 consteval void make_public(info &refl) {

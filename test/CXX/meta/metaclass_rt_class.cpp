@@ -1,7 +1,6 @@
 // RUN: %clang_cc1 -freflection -std=c++1z %s
 
 #include "reflection_query.h"
-#include "reflection_traits.h"
 #include "reflection_mod.h"
 #include "reflection_iterator.h"
 

@@ -3970,7 +3970,8 @@ recurse:
       QualType T = (ImplicitlyConvertedToType.isNull() ||
                     !ImplicitlyConvertedToType->isIntegerType())? SAE->getType()
                                                     : ImplicitlyConvertedToType;
-      llvm::APSInt V = SAE->EvaluateKnownConstInt(Context.getASTContext());
+      Expr::EvalContext EvalCtx(Context.getASTContext(), nullptr);
+      llvm::APSInt V = SAE->EvaluateKnownConstInt(EvalCtx);
       mangleIntegerLiteral(T, V);
       break;
     }

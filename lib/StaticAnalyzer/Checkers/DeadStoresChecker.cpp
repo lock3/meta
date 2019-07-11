@@ -312,9 +312,10 @@ public:
       if (const DeclRefExpr *DR = dyn_cast<DeclRefExpr>(Ex))
         CheckDeclRef(DR, U, DeadIncrement, Live);
     }
-    else if (const DeclStmt *DS = dyn_cast<DeclStmt>(S))
+    else if (const DeclStmt *DS = dyn_cast<DeclStmt>(S)) {
       // Iterate through the decls.  Warn if any initializers are complex
       // expressions that are not live (never used).
+      Expr::EvalContext EvalCtx(Ctx, nullptr);
       for (const auto *DI : DS->decls()) {
         const auto *V = dyn_cast<VarDecl>(DI);
 
@@ -353,7 +354,7 @@ public:
               // If x is EVER assigned a new value later, don't issue
               // a warning.  This is because such initialization can be
               // due to defensive programming.
-              if (E->isEvaluatable(Ctx))
+              if (E->isEvaluatable(EvalCtx))
                 return;
 
               if (const DeclRefExpr *DRE =
@@ -384,6 +385,7 @@ public:
           }
         }
       }
+    }
   }
 };
 

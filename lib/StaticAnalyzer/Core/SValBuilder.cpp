@@ -362,7 +362,8 @@ Optional<SVal> SValBuilder::getConstantVal(const Expr *E) {
 
     ASTContext &Ctx = getContext();
     Expr::EvalResult Result;
-    if (E->EvaluateAsInt(Result, Ctx))
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
+    if (E->EvaluateAsInt(Result, EvalCtx))
       return makeIntVal(Result.Val.getInt());
 
     if (Loc::isLocType(E->getType()))

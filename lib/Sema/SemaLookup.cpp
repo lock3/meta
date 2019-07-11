@@ -435,6 +435,11 @@ static bool isPreferredLookupResult(Sema &S, Sema::LookupNameKind Kind,
 
   // For most kinds of declaration, it doesn't really matter which one we pick.
   if (!isa<FunctionDecl>(DUnderlying) && !isa<VarDecl>(DUnderlying)) {
+    // If we're reflecting, and the existing declaration is a namespace
+    // alias decl, prefer the alias decl.
+    if (S.isReflecting() && isa<NamespaceAliasDecl>(Existing))
+      return true;
+
     // If the existing declaration is hidden, prefer the new one. Otherwise,
     // keep what we've got.
     return !S.isVisible(Existing);

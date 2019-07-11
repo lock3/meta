@@ -232,15 +232,6 @@ ExprResult Sema::BuildCXXInvalidReflectionExpr(Expr *MessageExpr,
                                           MessageExpr, BuiltinLoc, RParenLoc);
 }
 
-static bool SetType(QualType& Ret, QualType T) {
-  Ret = T;
-  return true;
-}
-
-static bool SetCStrType(QualType& Ret, ASTContext &Ctx) {
-  return SetType(Ret, Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy)));
-}
-
 // Check that the argument has the right type. Ignore references and
 // cv-qualifiers on the expression.
 static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
@@ -260,20 +251,15 @@ static bool CheckReflectionOperand(Sema &SemaRef, Expr *E) {
 }
 
 // Validates a query intrinsics' argument count.
-//
-// FIXME: There are likely unary and n-ary queries,
-// this will likely need to become query dependent.
-static bool CheckQueryArgumentLength(Sema &SemaRef,
-                                     SourceLocation KWLoc,
-                                     const SmallVectorImpl<Expr *> &Args,
-                                     const std::size_t ExpectedLength) {
-  if (Args.size() != ExpectedLength) {
-    SemaRef.Diag(KWLoc, diag::err_reflection_wrong_arity)
-      << (int) ExpectedLength << (int) Args.size();
-    return false;
+static bool CheckArgumentsPresent(Sema &SemaRef,
+                                  SourceLocation KWLoc,
+                                  const SmallVectorImpl<Expr *> &Args) {
+  if (Args.empty()) {
+    SemaRef.Diag(KWLoc, diag::err_reflection_query_invalid);
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 // Sets the query as an unknown query of dependent type. This state
@@ -282,18 +268,18 @@ static bool CheckQueryArgumentLength(Sema &SemaRef,
 static void SetQueryAndTypeUnresolved(Sema &SemaRef, QualType &ResultTy,
                                       ReflectionQuery &Query) {
   ResultTy = SemaRef.Context.DependentTy;
-  Query = RQ_unknown;
+  Query = getUnknownReflectionQuery();
 }
 
 static bool CheckQueryType(Sema &SemaRef, Expr *&Arg) {
-  // FIXME: What type should this actually be?
   QualType T = Arg->getType();
+
   if (T->isIntegralType(SemaRef.Context)) {
     SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_wrong_type);
-    return false;
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 static bool SetQuery(Sema &SemaRef, Expr *&Arg, ReflectionQuery &Query) {
@@ -301,52 +287,78 @@ static bool SetQuery(Sema &SemaRef, Expr *&Arg, ReflectionQuery &Query) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
-  if (!Arg->EvaluateAsRValue(Result, SemaRef.Context)) {
+  Expr::EvalContext EvalCtx(SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!Arg->EvaluateAsRValue(Result, EvalCtx)) {
     // FIXME: This is not the right error.
     SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_not_constant);
     for (PartialDiagnosticAt PD : Diags)
       SemaRef.Diag(PD.first, PD.second);
-    return false;
+    return true;
   }
 
   Query = static_cast<ReflectionQuery>(Result.Val.getInt().getExtValue());
-  return true;
+  return false;
+}
+
+static bool SetType(QualType& Ret, QualType T) {
+  Ret = T;
+  return false;
+}
+
+static QualType GetCStrType(ASTContext &Ctx) {
+  return Ctx.getPointerType(Ctx.getConstType(Ctx.CharTy));
 }
 
 // Gets the type and query from Arg for a query read operation.
-// Returns false on error.
-static bool GetTypeAndQueryForRead(Sema &SemaRef, Expr *&Arg,
+// Returns true on error.
+static bool GetTypeAndQueryForRead(Sema &SemaRef, SmallVectorImpl<Expr *> &Args,
                                    QualType &ResultTy,
                                    ReflectionQuery &Query) {
   SetQueryAndTypeUnresolved(SemaRef, ResultTy, Query);
 
-  if (Arg->isTypeDependent() || Arg->isValueDependent())
-    return true;
+  Expr *QueryArg = Args[0];
+  if (QueryArg->isTypeDependent() || QueryArg->isValueDependent())
+    return false;
 
   // Convert to an rvalue.
-  ExprResult Conv = SemaRef.DefaultLvalueConversion(Arg);
+  ExprResult Conv = SemaRef.DefaultLvalueConversion(QueryArg);
   if (Conv.isInvalid())
-    return false;
-  Arg = Conv.get();
+    return true;
+  Args[0] = QueryArg = Conv.get();
 
-  if (!CheckQueryType(SemaRef, Arg))
-    return false;
+  if (CheckQueryType(SemaRef, QueryArg))
+    return true;
 
   // Resolve the query.
-  if (!SetQuery(SemaRef, Arg, Query))
-    return false;
+  if (SetQuery(SemaRef, QueryArg, Query))
+    return true;
 
   // Resolve the type.
   if (isPredicateQuery(Query))
     return SetType(ResultTy, SemaRef.Context.BoolTy);
-  if (isTraitQuery(Query))
-    return SetType(ResultTy, SemaRef.Context.UnsignedIntTy);
   if (isAssociatedReflectionQuery(Query))
     return SetType(ResultTy, SemaRef.Context.MetaInfoTy);
   if (isNameQuery(Query))
-    return SetCStrType(ResultTy, SemaRef.Context);
+    return SetType(ResultTy, GetCStrType(SemaRef.Context));
 
-  SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_invalid);
+  SemaRef.Diag(QueryArg->getExprLoc(), diag::err_reflection_query_invalid);
+  return true;
+}
+
+// Checks to see if the query arguments match
+static bool CheckQueryArgs(Sema &SemaRef, SourceLocation KWLoc,
+                           ReflectionQuery Query,
+                           SmallVectorImpl<Expr *> &Args) {
+  unsigned ExpectedMinArgCount = getMinNumQueryArguments(Query) + 1;
+  unsigned ExpectedMaxArgCount = getMaxNumQueryArguments(Query) + 1;
+  if (Args.size() < ExpectedMinArgCount || Args.size() > ExpectedMaxArgCount) {
+    SemaRef.Diag(KWLoc, diag::err_reflection_wrong_arity)
+      << ExpectedMinArgCount << ExpectedMaxArgCount << (int) Args.size();
+    return true;
+  }
+
+  // FIXME: Check to make sure the arguments are of the correct type.
+
   return false;
 }
 
@@ -354,13 +366,16 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
                                              SmallVectorImpl<Expr *> &Args,
                                              SourceLocation LParenLoc,
                                              SourceLocation RParenLoc) {
-  if (!CheckQueryArgumentLength(*this, KWLoc, Args, 2))
+  if (CheckArgumentsPresent(*this, KWLoc, Args))
     return ExprError();
 
   // Get the type of the query. Note that this will convert Args[0].
   QualType Ty;
   ReflectionQuery Query;
-  if (!GetTypeAndQueryForRead(*this, Args[0], Ty, Query))
+  if (GetTypeAndQueryForRead(*this, Args, Ty, Query))
+    return ExprError();
+
+  if (CheckQueryArgs(*this, KWLoc, Query, Args))
     return ExprError();
 
   // Convert the remaining operands to rvalues.
@@ -377,40 +392,44 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
 
 // Gets the type and query from Arg for a query write operation.
 // Returns false on error.
-static bool GetTypeAndQueryForWrite(Sema &SemaRef, Expr *&Arg,
+static bool GetTypeAndQueryForWrite(Sema &SemaRef, SmallVectorImpl<Expr *> &Args,
                                     QualType &ResultTy,
                                     ReflectionQuery &Query) {
   SetQueryAndTypeUnresolved(SemaRef, ResultTy, Query);
 
-  if (Arg->isTypeDependent() || Arg->isValueDependent())
+  Expr *QueryArg = Args[0];
+  if (QueryArg->isTypeDependent() || QueryArg->isValueDependent())
+    return false;
+
+  if (CheckQueryType(SemaRef, QueryArg))
     return true;
 
-  if (!CheckQueryType(SemaRef, Arg))
-    return false;
-
   // Resolve the query.
-  if (!SetQuery(SemaRef, Arg, Query))
-    return false;
+  if (SetQuery(SemaRef, QueryArg, Query))
+    return true;
 
   // Resolve the type.
   if (isModifierUpdateQuery(Query))
     return SetType(ResultTy, SemaRef.Context.VoidTy);
 
-  SemaRef.Diag(Arg->getExprLoc(), diag::err_reflection_query_invalid);
-  return false;
+  SemaRef.Diag(QueryArg->getExprLoc(), diag::err_reflection_query_invalid);
+  return true;
 }
 
 ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
                                               SmallVectorImpl<Expr *> &Args,
                                               SourceLocation LParenLoc,
                                               SourceLocation RParenLoc) {
-  if (!CheckQueryArgumentLength(*this, KWLoc, Args, 3))
+  if (CheckArgumentsPresent(*this, KWLoc, Args))
     return ExprError();
 
   // Get the type of the query. Note that this will convert Args[0].
   QualType Ty;
   ReflectionQuery Query;
-  if (!GetTypeAndQueryForWrite(*this, Args[0], Ty, Query))
+  if (GetTypeAndQueryForWrite(*this, Args, Ty, Query))
+    return ExprError();
+
+  if (CheckQueryArgs(*this, KWLoc, Query, Args))
     return ExprError();
 
   // Convert the remaining operands to rvalues.
@@ -839,8 +858,9 @@ Sema::RangeTraverser::operator bool()
 
     Expr *EqualExpr = Equal.get();
 
-    if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
-                                           SemaRef.Context)) {
+  Expr::EvalContext EvalCtx(SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  if (!EqualExpr->EvaluateAsConstantExpr(EqualRes, Expr::EvaluateForCodeGen,
+                                         EvalCtx)) {
       SemaRef.Diag(SourceLocation(), diag::err_constexpr_range_iteration_failed);
       for (PartialDiagnosticAt PD : Diags)
         SemaRef.Diag(PD.first, PD.second);
@@ -1094,9 +1114,9 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
-  if (!Eval->EvaluateAsAnyValue(Result, Context)) {
-    SourceLocation &&ExprLoc = Eval->getExprLoc();
-    Diag(ExprLoc, diag::err_reflection_reflects_non_constant_expression);
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!Eval->EvaluateAsAnyValue(Result, EvalCtx)) {
+    Diag(Eval->getExprLoc(), diag::err_reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();
@@ -1156,7 +1176,8 @@ static bool AppendCharacterArray(Sema& S, llvm::raw_ostream &OS, Expr *E,
 
   // Evaluate the expression.
   Expr::EvalResult Result;
-  if (!E->EvaluateAsLValue(Result, S.Context)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsLValue(Result, EvalCtx)) {
     // FIXME: Include notes in the diagnostics.
     S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
     return false;
@@ -1179,7 +1200,8 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
 
   // Try evaluating the expression as an rvalue and then extract the result.
   Expr::EvalResult Result;
-  if (!E->EvaluateAsRValue(Result, S.Context)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
     // FIXME: This is not the right error.
     S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
     return false;
@@ -1190,7 +1212,8 @@ static bool AppendCharacterPointer(Sema& S, llvm::raw_ostream &OS, Expr *E,
 
 static bool AppendInteger(Sema& S, llvm::raw_ostream &OS, Expr *E, QualType T) {
   Expr::EvalResult Result;
-  if (!E->EvaluateAsInt(Result, S.Context)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsInt(Result, EvalCtx)) {
     S.Diag(E->getBeginLoc(), diag::err_expr_not_ice) << 1;
     return false;
   }

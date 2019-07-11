@@ -579,7 +579,8 @@ void LoopInfoStack::push(BasicBlock *Header, clang::ASTContext &Ctx,
     } else if (LH) {
       auto *ValueExpr = LH->getValue();
       if (ValueExpr) {
-        llvm::APSInt ValueAPS = ValueExpr->EvaluateKnownConstInt(Ctx);
+        Expr::EvalContext EvalCtx(Ctx, nullptr);
+        llvm::APSInt ValueAPS = ValueExpr->EvaluateKnownConstInt(EvalCtx);
         ValueInt = ValueAPS.getSExtValue();
       }
 

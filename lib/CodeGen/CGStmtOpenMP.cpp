@@ -2336,7 +2336,8 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(
                                      S.getIterationVariable()->getType(),
                                      S.getBeginLoc());
         Expr::EvalResult Result;
-        if (ChunkExpr->EvaluateAsInt(Result, getContext())) {
+        Expr::EvalContext EvalCtx(getContext(), nullptr);
+        if (ChunkExpr->EvaluateAsInt(Result, EvalCtx)) {
           llvm::APSInt EvaluatedChunk = Result.Val.getInt();
           HasChunkSizeOne = (EvaluatedChunk.getLimitedValue() == 1);
         }

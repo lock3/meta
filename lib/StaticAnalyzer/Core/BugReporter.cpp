@@ -595,8 +595,10 @@ std::shared_ptr<PathDiagnosticControlFlowPiece> generateDiagForSwitchOP(
         }
       }
 
-      if (GetRawInt)
-        os << LHS->EvaluateKnownConstInt(PDB.getASTContext());
+      if (GetRawInt) {
+        Expr::EvalContext EvalCtx(PDB.getASTContext(), nullptr);
+        os << LHS->EvaluateKnownConstInt(EvalCtx);
+      }
 
       os << ":'  at line " << End.asLocation().getExpansionLineNumber();
       break;

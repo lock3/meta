@@ -2330,13 +2330,14 @@ void ExprEngine::processSwitch(SwitchNodeBuilder& builder) {
     const CaseStmt *Case = I.getCase();
 
     // Evaluate the LHS of the case value.
-    llvm::APSInt V1 = Case->getLHS()->EvaluateKnownConstInt(getContext());
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
+    llvm::APSInt V1 = Case->getLHS()->EvaluateKnownConstInt(EvalCtx);
     assert(V1.getBitWidth() == getContext().getIntWidth(CondE->getType()));
 
     // Get the RHS of the case, if it exists.
     llvm::APSInt V2;
     if (const Expr *E = Case->getRHS())
-      V2 = E->EvaluateKnownConstInt(getContext());
+      V2 = E->EvaluateKnownConstInt(EvalCtx);
     else
       V2 = V1;
 

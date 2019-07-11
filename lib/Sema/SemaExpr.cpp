@@ -1460,8 +1460,9 @@ Sema::CreateGenericSelectionExpr(SourceLocation KeyLoc,
 
   // The controlling expression is an unevaluated operand, so side effects are
   // likely unintended.
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (!inTemplateInstantiation() &&
-      ControllingExpr->HasSideEffects(Context, false))
+      ControllingExpr->HasSideEffects(EvalCtx, false))
     Diag(ControllingExpr->getExprLoc(),
          diag::warn_side_effects_unevaluated_context);
 
@@ -3869,9 +3870,10 @@ bool Sema::CheckUnaryExprOrTypeTraitOperand(Expr *E,
 
   // The operand for sizeof and alignof is in an unevaluated expression context,
   // so side effects could result in unintended consequences.
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if ((ExprKind == UETT_SizeOf || ExprKind == UETT_AlignOf ||
        ExprKind == UETT_PreferredAlignOf) &&
-      !inTemplateInstantiation() && E->HasSideEffects(Context, false))
+      !inTemplateInstantiation() && E->HasSideEffects(EvalCtx, false))
     Diag(E->getExprLoc(), diag::warn_side_effects_unevaluated_context);
 
   if (CheckObjCTraitOperandConstraints(*this, ExprTy, E->getExprLoc(),
@@ -4578,7 +4580,8 @@ ExprResult Sema::ActOnOMPArraySectionExpr(Expr *Base, SourceLocation LBLoc,
 
   if (LowerBound && !OriginalTy->isAnyPointerType()) {
     Expr::EvalResult Result;
-    if (LowerBound->EvaluateAsInt(Result, Context)) {
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (LowerBound->EvaluateAsInt(Result, EvalCtx)) {
       // OpenMP 4.5, [2.4 Array Sections]
       // The array section must be a subset of the original array.
       llvm::APSInt LowerBoundValue = Result.Val.getInt();
@@ -4592,7 +4595,8 @@ ExprResult Sema::ActOnOMPArraySectionExpr(Expr *Base, SourceLocation LBLoc,
 
   if (Length) {
     Expr::EvalResult Result;
-    if (Length->EvaluateAsInt(Result, Context)) {
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (Length->EvaluateAsInt(Result, EvalCtx)) {
       // OpenMP 4.5, [2.4 Array Sections]
       // The length must evaluate to non-negative integers.
       llvm::APSInt LengthValue = Result.Val.getInt();
@@ -8679,7 +8683,8 @@ static bool canConvertIntToOtherIntTy(Sema &S, ExprResult *Int,
   // possibly cause truncation, but accept cases where the scalar can be
   // demoted without loss of precision.
   Expr::EvalResult EVResult;
-  bool CstInt = Int->get()->EvaluateAsInt(EVResult, S.Context);
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  bool CstInt = Int->get()->EvaluateAsInt(EVResult, EvalCtx);
   int Order = S.Context.getIntegerTypeOrder(OtherIntTy, IntTy);
   bool IntSigned = IntTy->hasSignedIntegerRepresentation();
   bool OtherIntSigned = OtherIntTy->hasSignedIntegerRepresentation();
@@ -8716,7 +8721,8 @@ static bool canConvertIntTyToFloatTy(Sema &S, ExprResult *Int,
   // Determine if the integer constant can be expressed as a floating point
   // number of the appropriate type.
   Expr::EvalResult EVResult;
-  bool CstInt = Int->get()->EvaluateAsInt(EVResult, S.Context);
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  bool CstInt = Int->get()->EvaluateAsInt(EVResult, EvalCtx);
 
   uint64_t Bits = 0;
   if (CstInt) {
@@ -8794,7 +8800,8 @@ static bool tryGCCVectorConvertAndSplat(Sema &S, ExprResult *Scalar,
       // Reject cases where the scalar type is not a constant and has a higher
       // Order than the vector element type.
       llvm::APFloat Result(0.0);
-      bool CstScalar = Scalar->get()->EvaluateAsFloat(Result, S.Context);
+      Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+      bool CstScalar = Scalar->get()->EvaluateAsFloat(Result, EvalCtx);
       int Order = S.Context.getFloatingTypeOrder(VectorEltTy, ScalarTy);
       if (!CstScalar && Order < 0)
         return true;
@@ -9068,8 +9075,9 @@ static void DiagnoseBadDivideOrRemainderValues(Sema& S, ExprResult &LHS,
                                                SourceLocation Loc, bool IsDiv) {
   // Check for division/remainder by zero.
   Expr::EvalResult RHSValue;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (!RHS.get()->isValueDependent() &&
-      RHS.get()->EvaluateAsInt(RHSValue, S.Context) &&
+      RHS.get()->EvaluateAsInt(RHSValue, EvalCtx) &&
       RHSValue.Val.getInt() == 0)
     S.DiagRuntimeBehavior(Loc, RHS.get(),
                           S.PDiag(diag::warn_remainder_division_by_zero)
@@ -9449,9 +9457,10 @@ QualType Sema::CheckAdditionOperands(ExprResult &LHS, ExprResult &RHS,
           Context, Expr::NPC_ValueDependentIsNotNull)) {
     // In C++ adding zero to a null pointer is defined.
     Expr::EvalResult KnownVal;
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
     if (!getLangOpts().CPlusPlus ||
         (!IExp->isValueDependent() &&
-         (!IExp->EvaluateAsInt(KnownVal, Context) ||
+         (!IExp->EvaluateAsInt(KnownVal, EvalCtx) ||
           KnownVal.Val.getInt() != 0))) {
       // Check the conditions to see if this is the 'p = nullptr + n' idiom.
       bool IsGNUIdiom = BinaryOperator::isNullPointerArithmeticExtension(
@@ -9528,9 +9537,10 @@ QualType Sema::CheckSubtractionOperands(ExprResult &LHS, ExprResult &RHS,
                                            Expr::NPC_ValueDependentIsNotNull)) {
         // In C++ adding zero to a null pointer is defined.
         Expr::EvalResult KnownVal;
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
         if (!getLangOpts().CPlusPlus ||
             (!RHS.get()->isValueDependent() &&
-             (!RHS.get()->EvaluateAsInt(KnownVal, Context) ||
+             (!RHS.get()->EvaluateAsInt(KnownVal, EvalCtx) ||
               KnownVal.Val.getInt() != 0))) {
           diagnoseArithmeticOnNullPointer(*this, Loc, LHS.get(), false);
         }
@@ -9609,8 +9619,9 @@ static void DiagnoseBadShiftValues(Sema& S, ExprResult &LHS, ExprResult &RHS,
 
   // Check right/shifter operand
   Expr::EvalResult RHSResult;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (RHS.get()->isValueDependent() ||
-      !RHS.get()->EvaluateAsInt(RHSResult, S.Context))
+      !RHS.get()->EvaluateAsInt(RHSResult, EvalCtx))
     return;
   llvm::APSInt Right = RHSResult.Val.getInt();
 
@@ -9638,7 +9649,7 @@ static void DiagnoseBadShiftValues(Sema& S, ExprResult &LHS, ExprResult &RHS,
   Expr::EvalResult LHSResult;
   if (LHS.get()->isValueDependent() ||
       LHSType->hasUnsignedIntegerRepresentation() ||
-      !LHS.get()->EvaluateAsInt(LHSResult, S.Context))
+      !LHS.get()->EvaluateAsInt(LHSResult, EvalCtx))
     return;
   llvm::APSInt Left = LHSResult.Val.getInt();
 
@@ -10269,7 +10280,8 @@ static bool checkThreeWayNarrowingConversion(Sema &S, QualType ToType, Expr *E,
 
   APValue PreNarrowingValue;
   QualType PreNarrowingType;
-  switch (SCS.getNarrowingKind(S.Context, E, PreNarrowingValue,
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  switch (SCS.getNarrowingKind(EvalCtx, E, PreNarrowingValue,
                                PreNarrowingType,
                                /*IgnoreFloatToIntegralConversion*/ true)) {
   case NK_Dependent_Narrowing:
@@ -11020,7 +11032,8 @@ inline QualType Sema::CheckLogicalOperands(ExprResult &LHS, ExprResult &RHS,
     // happened to fold to true/false) then warn.
     // Parens on the RHS are ignored.
     Expr::EvalResult EVResult;
-    if (RHS.get()->EvaluateAsInt(EVResult, Context)) {
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (RHS.get()->EvaluateAsInt(EVResult, EvalCtx)) {
       llvm::APSInt Result = EVResult.Val.getInt();
       if ((getLangOpts().Bool && !RHS.get()->getType()->isBooleanType() &&
            !RHS.get()->getExprLoc().isMacroID()) ||
@@ -12760,16 +12773,18 @@ EmitDiagnosticForLogicalAndInLogicalOr(Sema &Self, SourceLocation OpLoc,
 /// 'true'.
 static bool EvaluatesAsTrue(Sema &S, Expr *E) {
   bool Res;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   return !E->isValueDependent() &&
-         E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && Res;
+         E->EvaluateAsBooleanCondition(Res, EvalCtx) && Res;
 }
 
 /// Returns true if the given expression can be evaluated as a constant
 /// 'false'.
 static bool EvaluatesAsFalse(Sema &S, Expr *E) {
   bool Res;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   return !E->isValueDependent() &&
-         E->EvaluateAsBooleanCondition(Res, S.getASTContext()) && !Res;
+         E->EvaluateAsBooleanCondition(Res, EvalCtx) && !Res;
 }
 
 /// Look for '&&' in the left hand of a '||' expr.
@@ -14492,9 +14507,10 @@ Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
 
   // Circumvent ICE checking in C++11 to avoid evaluating the expression twice
   // in the non-ICE case.
-  if (!getLangOpts().CPlusPlus11 && E->isIntegerConstantExpr(Context)) {
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!getLangOpts().CPlusPlus11 && E->isIntegerConstantExpr(EvalCtx)) {
     if (Result)
-      *Result = E->EvaluateKnownConstIntCheckOverflow(Context);
+      *Result = E->EvaluateKnownConstIntCheckOverflow(EvalCtx);
     return E;
   }
 
@@ -14504,7 +14520,7 @@ Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
 
   // Try to evaluate the expression, and produce diagnostics explaining why it's
   // not a constant expression as a side-effect.
-  bool Folded = E->EvaluateAsRValue(EvalResult, Context) &&
+  bool Folded = E->EvaluateAsRValue(EvalResult, EvalCtx) &&
                 EvalResult.Val.isInt() && !EvalResult.HasSideEffects;
 
   // In C++11, we can rely on diagnostics being produced for any expression
@@ -17017,7 +17033,8 @@ ExprResult Sema::CheckPlaceholderExpr(Expr *E) {
 bool Sema::CheckCaseExpression(Expr *E) {
   if (E->isTypeDependent())
     return true;
-  if (E->isValueDependent() || E->isIntegerConstantExpr(Context))
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (E->isValueDependent() || E->isIntegerConstantExpr(EvalCtx))
     return E->getType()->isIntegralOrEnumerationType();
   return false;
 }

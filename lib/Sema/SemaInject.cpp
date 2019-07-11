@@ -3926,7 +3926,8 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   Result.Diag = &Notes;
   Result.InjectionEffects = &Effects;
 
-  bool Folded = Call->EvaluateAsRValue(Result, Context);
+  Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
+  bool Folded = Call->EvaluateAsRValue(Result, EvalCtx);
   if (!Folded) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.

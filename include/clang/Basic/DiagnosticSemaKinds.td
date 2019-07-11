@@ -2516,7 +2516,7 @@ def err_reflection_query_not_constant : Error<
 def err_reflection_query_invalid : Error<
   "invalid query selector">;
 def err_reflection_wrong_arity : Error<
-  "expected %0 arguments, %1 given">;
+  "expected between %0 and %1 arguments, %2 given">;
 
 def err_expression_not_reflection : Error<
   "expression is not a reflection">;

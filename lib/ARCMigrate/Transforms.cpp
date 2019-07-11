@@ -165,7 +165,7 @@ SourceLocation trans::findSemiAfterLocation(SourceLocation loc,
 }
 
 bool trans::hasSideEffects(Expr *E, ASTContext &Ctx) {
-  if (!E || !E->HasSideEffects(Ctx))
+  if (!E || !E->HasSideEffects(Expr::EvalContext(Ctx, nullptr)))
     return false;
 
   E = E->IgnoreParenCasts();

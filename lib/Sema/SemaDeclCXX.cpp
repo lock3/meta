@@ -638,13 +638,13 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
   // template has a constexpr specifier then all its declarations shall
   // contain the constexpr specifier.
 
-  if (New->isImmediate() != Old->isImmediate()) {
+  if (New->isConsteval() != Old->isConsteval()) {
     TemplateSpecializationKind TSK = New->getTemplateSpecializationKind();
     // Template specializations may be redeclared consteval!
-    if ((TSK != TSK_ExplicitSpecialization && New->isImmediate()) ||
-        (TSK == TSK_ExplicitSpecialization && Old->isImmediate())) {
+    if ((TSK != TSK_ExplicitSpecialization && New->isConsteval()) ||
+        (TSK == TSK_ExplicitSpecialization && Old->isConsteval())) {
       Diag(New->getLocation(), diag::err_immediate_redecl_mismatch)
-        << New << New->isImmediate();
+        << New << New->isConsteval();
       Diag(Old->getLocation(), diag::note_previous_declaration);
       Invalid = true;
     }
@@ -4661,7 +4661,8 @@ struct BaseAndFieldInfo {
     AllToInit.push_back(Init);
 
     // Check whether this initializer makes the field "used".
-    if (Init->getInit()->HasSideEffects(S.Context))
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    if (Init->getInit()->HasSideEffects(EvalCtx))
       S.UnusedPrivateFields.remove(Init->getAnyMember());
 
     return false;
@@ -6755,7 +6756,7 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
       (getLangOpts().CPlusPlus14 ?
        !isa<CXXDestructorDecl>(MD)
        : isa<CXXConstructorDecl>(MD)) &&
-      MD->isImmediate() && !Constexpr &&
+      MD->isConsteval() && !Constexpr &&
       MD->getTemplatedKind() == FunctionDecl::TK_NonTemplate) {    
     Diag(MD->getBeginLoc(), diag::err_incorrect_defaulted_immediate) << CSM;
     HadError = true;
@@ -9664,6 +9665,11 @@ Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
     // expression (which is a tentative parse), so don't diagnose the
     // error.
     return nullptr;
+  }
+
+  if (isReflecting()) {
+    if (auto *AD = R.getAsSingle<NamespaceAliasDecl>())
+      return AD;
   }
 
   return R.getAsSingle<NamespaceDecl>();
