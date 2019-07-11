@@ -47,7 +47,6 @@ class LifetimeContext {
   LifetimeReporterBase &Reporter;
   IsConvertibleTy IsConvertible;
 
-  PSet PSetOfAllParams;
   std::map<const Expr *, PSet> PSetsOfExpr;
   std::map<const Expr *, PSet> RefersTo;
 
@@ -170,7 +169,7 @@ void LifetimeContext::TraverseBlocks() {
           continue;
 
         // ExitPSets are the function parameters.
-        PSetOfAllParams = PopulatePSetForParams(BC.ExitPMap, FuncDecl);
+        PopulatePSetForParams(BC.ExitPMap, FuncDecl);
         BC.Visited = true;
         continue;
       }
@@ -193,8 +192,8 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPMap = EntryPMap;
       BC.ExitPMap = BC.EntryPMap;
-      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetOfAllParams,
-                 PSetsOfExpr, RefersTo, *B, Reporter, ASTCtxt, IsConvertible);
+      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr, RefersTo, *B,
+                 Reporter, ASTCtxt, IsConvertible);
       BC.Visited = true;
       Updated = true;
     }

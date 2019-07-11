@@ -52,7 +52,6 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
   /// by their non-reference variable declaration or
   /// MaterializedTemporaryExpr plus (optional) FieldDecls.
   PSetsMap &PMap;
-  const PSet &PSetOfAllParams;
   std::map<const Expr *, PSet> &PSetsOfExpr;
   std::map<const Expr *, PSet> &RefersTo;
 
@@ -897,13 +896,11 @@ public:
 
 public:
   PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PMap, const PSet &PSetOfAllParams,
-               std::map<const Expr *, PSet> &PSetsOfExpr,
+               PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo,
                IsConvertibleTy IsConvertible)
       : Reporter(Reporter), ASTCtxt(ASTCtxt), IsConvertible(IsConvertible),
-        PMap(PMap), PSetOfAllParams(PSetOfAllParams), PSetsOfExpr(PSetsOfExpr),
-        RefersTo(RefersTo) {}
+        PMap(PMap), PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
 
   void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -1299,13 +1296,12 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 } // namespace lifetime
 
 void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
-                const PSet &PSetOfAllParams,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetOfAllParams, PSetsOfExpr,
-                       RefersTo, IsConvertible);
+  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
+                       IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
@@ -1330,8 +1326,7 @@ static PSet attrToPSet(LifetimeContractAttr::PointsToLoc Loc) {
   }
 }
 
-PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
-  PSet PSetForAllParams;
+void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   auto *PreAttr = FD->getAttr<LifetimeContractAttr>();
   for (const ParmVarDecl *PVD : FD->parameters()) {
     QualType ParamTy = PVD->getType();
@@ -1392,12 +1387,10 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
         }
       }
     }
-    PSetForAllParams.merge(PS);
     PMap.emplace(PVD, std::move(PS));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
-  return PSetForAllParams;
 }
 } // namespace lifetime
 } // namespace clang

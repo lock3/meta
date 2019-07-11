@@ -4553,7 +4553,7 @@ static const Expr *getGslPsetArg(const Expr *E) {
   return nullptr;
 }
 
-LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
+static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
   LifetimeContractAttr::PointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     LifetimeContractAttr::PointsToLoc Loc;
