@@ -4585,12 +4585,16 @@ static bool fillPointersFromExpr(
   if (!OCE || OCE->getOperator() != OO_EqualEqual)
     return false;
 
-  // TODO: support swapped args.
   const Expr *LHS = getGslPsetArg(OCE->getArg(0));
-  if (!LHS || !isa<DeclRefExpr>(LHS))
+  if (!LHS)
     return false;
   const Expr *RHS = getGslPsetArg(OCE->getArg(1));
   if (!RHS)
+    return false;
+  // TODO: setting PSets for deref locs not supported yet.
+  if (!isa<DeclRefExpr>(LHS))
+    std::swap(LHS, RHS);
+  if (!isa<DeclRefExpr>(LHS))
     return false;
 
   const VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl());

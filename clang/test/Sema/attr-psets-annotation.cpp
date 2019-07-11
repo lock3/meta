@@ -106,7 +106,10 @@ void variadic(int *a, int *b, int *c)
   __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
 }
 
-// TODO: swapped variadic
+void variadic_swapped(int *a, int *b, int *c)
+    [[gsl::pre(pset({a, c}) == pset(b))]] {
+  __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
+}
 
 /* For std::initializer_list conversions will not work.
    Maybe use type and no conversions required?
