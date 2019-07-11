@@ -56,6 +56,8 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   //       Alternative: fall back to &deref(UserPtr).
   //       Also for an array and a Ptr pointing into the array
   //       this should yield true. This is not the case now.
+  //       Also, checking if two iterators are pointing to the same
+  //       object is not possible.
   return lhs.data == rhs.data;
 }
 
