@@ -4553,10 +4553,10 @@ static const Expr *getGslPsetArg(const Expr *E) {
   return nullptr;
 }
 
-GslPostAttr::PointsToSet collectPSet(const Expr *E) {
-  GslPostAttr::PointsToSet Result;
+LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
+  LifetimeContractAttr::PointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
-    GslPostAttr::PointsToLoc Loc;
+    LifetimeContractAttr::PointsToLoc Loc;
     Loc.Base = dyn_cast<VarDecl>(DRE->getDecl());
     Loc.FieldsAndDerefs.push_back(nullptr);
     if (Loc.Base)
@@ -4566,7 +4566,8 @@ GslPostAttr::PointsToSet collectPSet(const Expr *E) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
-        GslPostAttr::PointsToSet Elem = collectPSet(ignoreReturnValues(Init));
+        LifetimeContractAttr::PointsToSet Elem =
+            collectPSet(ignoreReturnValues(Init));
         if (Elem.empty())
           return Elem;
         Result.push_back(Elem.front());
@@ -4578,7 +4579,8 @@ GslPostAttr::PointsToSet collectPSet(const Expr *E) {
 
 static bool fillPointersFromExpr(
     const Expr *E,
-    llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet> &Pointers) {
+    llvm::DenseMap<const VarDecl *, LifetimeContractAttr::PointsToSet>
+        &Pointers) {
   const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
   if (!OCE || OCE->getOperator() != OO_EqualEqual)
     return false;
@@ -4592,24 +4594,26 @@ static bool fillPointersFromExpr(
     return false;
 
   const VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl());
-  GslPostAttr::PointsToSet PSet = collectPSet(RHS);
+  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS);
   if (PSet.empty() || Pointers.count(VD))
     return false;
   Pointers.insert(std::make_pair(VD, PSet));
   return true;
 }
 
-static void handleGslPreAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
-  GslPreAttr *PAttr;
-  if (auto *Existing = D->getAttr<GslPreAttr>())
+static void handleLifetimeContractAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  LifetimeContractAttr *PAttr;
+  if (auto *Existing = D->getAttr<LifetimeContractAttr>())
     PAttr = Existing;
   else {
     PAttr = ::new (S.Context)
-        GslPreAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
-                   AL.getAttributeSpellingListIndex());
+        LifetimeContractAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
+                             AL.getAttributeSpellingListIndex());
     D->addAttr(PAttr);
   }
-  if (!fillPointersFromExpr(AL.getArgAsExpr(0), PAttr->Pointers))
+  if (!fillPointersFromExpr(AL.getArgAsExpr(0), PAttr->isPre()
+                                                    ? PAttr->PrePSets
+                                                    : PAttr->PostPSets))
     S.Diag(AL.getLoc(), diag::warn_unsupported_expression);
 }
 
@@ -7199,8 +7203,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_Lifetimeconst:
     handleSimpleAttribute<LifetimeconstAttr>(S, D, AL);
     break;
-  case ParsedAttr::AT_GslPre:
-    handleGslPreAttr(S, D, AL);
+  case ParsedAttr::AT_LifetimeContract:
+    handleLifetimeContractAttr(S, D, AL);
     break;
   case ParsedAttr::AT_OpenCLKernel:
     handleSimpleAttribute<OpenCLKernelAttr>(S, D, AL);

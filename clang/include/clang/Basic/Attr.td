@@ -2772,6 +2772,7 @@ def Owner : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Owner">];
   let Subjects = SubjectList<[CXXRecord]>;
   let Documentation = [Undocumented]; // FIXME
+  let MeaningfulToClassTemplateDefinition = 1;
 }
 
 def Pointer : InheritableAttr {
@@ -2784,41 +2785,29 @@ def Lifetimeconst : InheritableParamAttr {
   let Spellings = [CXX11<"gsl", "lifetime_const">];
   let Subjects = SubjectList<[Function, ParmVar]>;
   let Documentation = [Undocumented]; // FIXME
+  let MeaningfulToClassTemplateDefinition = 1;
 }
 
-def GslPre : InheritableParamAttr {
-  let Spellings = [CXX11<"gsl", "pre">];
+def LifetimeContract : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "pre">, CXX11<"gsl", "post">];
+  let Accessors = [Accessor<"isPre", [CXX11<"gsl", "pre">]>,
+                   Accessor<"isPost", [CXX11<"gsl", "post">]>];
   let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
-  let Args = [ExprArgument<"PreExpr">];
+  let Args = [ExprArgument<"Expr">];
   let AdditionalMembers = [{
 public:
-  llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet> Pointers;
-
-  // TODO: have a more restrictive public API.
-  }];
-  bit ParseArgumentsAsUnevaluated = 0;
-  bit MeaningfulToClassTemplateDefinition = 0;
-  let Documentation = [Undocumented]; // FIXME
-}
-
-def GslPost : InheritableParamAttr {
-  let Spellings = [CXX11<"gsl", "post">];
-  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
-  let Args = [ExprArgument<"PostExpr">];
-  let AdditionalMembers = [{
-public:
-  // TODO: Move the PointsToSet somewhere else.
+  // TODO: Lifetime::Variable might be moved here?
   struct PointsToLoc {
     const VarDecl * Base = nullptr;
     SmallVector<const FieldDecl *, 4> FieldsAndDerefs;
   };
   using PointsToSet = SmallVector<PointsToLoc, 4>;
-  llvm::DenseMap<const VarDecl *, PointsToSet> Pointers;
+  using PointsToMap = llvm::DenseMap<const VarDecl *, PointsToSet>;
+  PointsToMap PrePSets;
+  PointsToMap PostPSets;
 
   // TODO: have a more restrictive public API.
   }];
-  bit ParseArgumentsAsUnevaluated = 0;
-  bit MeaningfulToClassTemplateDefinition = 0;
   let Documentation = [Undocumented]; // FIXME
 }
 

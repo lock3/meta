@@ -10,19 +10,24 @@ template <typename T>
 void __lifetime_type_category() {}
 
 namespace gsl {
-// All have different values.
-// TODO: these prohibit using initializer_list<T>.. probably need tuples.
-struct null_t {
+// These classes are marked Owner so the lifetime analysis will not look into
+// the bodies of these methods. Maybe we need an annotation that will not mark
+// classes owner but still tell the analyzer to skip these classes?
+// Or whouls we use gsl::suppress for that (even on classes)?
+struct [[gsl::Owner]] null_t {
+  int operator*() const;
   template<typename T>
   operator T() const { return T(nullptr); }
 } Null;
-struct static_t {
+struct [[gsl::Owner]] static_t {
+  int operator*() const;
   template <typename T>
-  operator T() const { return (T)(void*)this; } // TODO: get rid of this warning.
+  operator T() const { return (T)(void*)this; }
 } Static;
-struct invalid_t {
+struct [[gsl::Owner]] invalid_t {
+  int operator*() const;
   template <typename T>
-  operator T() const { return (T)(void*)this; } // TODO: get rid of this warning.
+  operator T() const { return (T)(void*)this; }
 } Invalid;
 
 template <typename T>
@@ -49,6 +54,8 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   // TODO: maybe make this a customization point?
   //       user defined gsl::Pointers might not have operator==.
   //       Alternative: fall back to &deref(UserPtr).
+  //       Also for an array and a Ptr pointing into the array
+  //       this should yield true. This is not the case now.
   return lhs.data == rhs.data;
 }
 
@@ -76,7 +83,7 @@ CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
 
 // TODO: support deref
 // TODO: support member selection (change in Attr representation)
-// TODO: handle references (auto deref?)
+// TODO: handle references (auto deref and address of?)
 } // namespace gsl
 
 using namespace gsl;
@@ -100,6 +107,14 @@ void variadic(int *a, int *b, int *c)
 }
 
 // TODO: swapped variadic
+
+/* For std::initializer_list conversions will not work.
+   Maybe use type and no conversions required?
+void variadic_special(int *a, int *b, int *c)
+    [[gsl::pre(pset(b) == pset({a, Null}))]] {
+  __lifetime_pset(b); // TODOexpected-warning {{((*a), (null))}}
+}
+*/
 
 /* Will not compile! What should this mean for the state of the analysis?
    The source of the problem is that the following constraint can 

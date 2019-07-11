@@ -883,7 +883,7 @@ public:
   bool HandleClangAnalyzerPset(const CallExpr *CallE);
 
   PSet handlePointerAssign(QualType LHS, PSet RHS, SourceRange Range,
-                           bool AddReason=true) {
+                           bool AddReason = true) {
     if (RHS.containsNull()) {
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range));
@@ -1309,7 +1309,7 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
-static PSet attrToPSet(GslPostAttr::PointsToLoc Loc) {
+static PSet attrToPSet(LifetimeContractAttr::PointsToLoc Loc) {
   const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(Loc.Base->getDeclContext());
   if (ND && ND->getName() == "gsl") {
     PSet PS;
@@ -1320,7 +1320,7 @@ static PSet attrToPSet(GslPostAttr::PointsToLoc Loc) {
       PS.addStatic();
     else if (Name == "Invalid")
       PS = PSet::invalid(
-               InvalidationReason::NotInitialized(Loc.Base->getSourceRange()));
+          InvalidationReason::NotInitialized(Loc.Base->getSourceRange()));
     return PS;
   } else {
     Variable V(Loc.Base);
@@ -1332,7 +1332,7 @@ static PSet attrToPSet(GslPostAttr::PointsToLoc Loc) {
 
 PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   PSet PSetForAllParams;
-  auto *PreAttr = FD->getAttr<GslPreAttr>();
+  auto *PreAttr = FD->getAttr<LifetimeContractAttr>();
   for (const ParmVarDecl *PVD : FD->parameters()) {
     QualType ParamTy = PVD->getType();
     TypeCategory TC = classifyTypeCategory(ParamTy);
@@ -1348,14 +1348,13 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
         PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
     } else {
       bool HasRelevantAttr = false;
-      llvm::DenseMap<const VarDecl *, GslPostAttr::PointsToSet>::iterator
-          AttrIt;
+      LifetimeContractAttr::PointsToMap::iterator AttrIt;
       if (PreAttr) {
-        AttrIt = PreAttr->Pointers.find(PVD);
-        HasRelevantAttr = AttrIt != PreAttr->Pointers.end();
+        AttrIt = PreAttr->PrePSets.find(PVD);
+        HasRelevantAttr = AttrIt != PreAttr->PrePSets.end();
       }
       if (HasRelevantAttr) {
-        for (GslPostAttr::PointsToLoc Loc : AttrIt->second)
+        for (LifetimeContractAttr::PointsToLoc Loc : AttrIt->second)
           PS.merge(attrToPSet(Loc));
       } else {
         Variable P_deref(PVD);
@@ -1377,11 +1376,11 @@ PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
           if (!PointeeType.isConstQualified()) {
             // Output params are initially invalid.
             PMap.emplace(P_deref,
-                        PSet::invalid(InvalidationReason::NotInitialized(
-                            PVD->getSourceRange())));
+                         PSet::invalid(InvalidationReason::NotInitialized(
+                             PVD->getSourceRange())));
           } else {
-            // staticVar to allow further derefs (if this is Pointer to a Pointer
-            // to a Pointer etc)
+            // staticVar to allow further derefs (if this is Pointer to a
+            // Pointer to a Pointer etc)
             PSet DerefPS = PSet::staticVar();
             if (isNullableType(ParamTy))
               DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
