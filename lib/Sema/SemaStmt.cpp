@@ -1975,17 +1975,6 @@ static bool FinishForRangeVarDecl(Sema &SemaRef, VarDecl *Decl, Expr *Init,
   if (SemaRef.getLangOpts().ObjCAutoRefCount &&
       SemaRef.inferObjCARCLifetime(Decl))
     Decl->setInvalidDecl();
-
-  llvm::outs() << "INITIALIZING RANGEVAR\n";
-  if (isa<DeclRefExpr>(Init)) {
-    if (isa<VarDecl>(cast<DeclRefExpr>(Init)->getDecl())) {
-      VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(Init)->getDecl());
-      llvm::outs() << "isstaticlocal: " << VD->isStaticLocal() << '\n';
-      llvm::outs() << "storageduration: " << VD->getStorageDuration() << '\n';
-      llvm::outs() << "storageclass: " << VD->getStorageClass() << '\n';
-    }
-  }
-  
   SemaRef.AddInitializerToDecl(Decl, Init, /*DirectInit=*/false);
   SemaRef.FinalizeDeclaration(Decl);
   SemaRef.CurContext->addHiddenDecl(Decl);
