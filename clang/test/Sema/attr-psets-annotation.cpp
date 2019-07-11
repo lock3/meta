@@ -49,9 +49,7 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   // TODO: maybe make this a customization point?
   //       user defined gsl::Pointers might not have operator==.
   //       Alternative: fall back to &deref(UserPtr).
-  if (lhs.data == rhs.data)
-    return true;
-  return false;
+  return lhs.data == rhs.data;
 }
 
 template<typename T, typename S>
@@ -67,7 +65,7 @@ bool operator==(const CheckSingle<T>& lhs, CheckVariadic<S> rhs) {
 }
 
 template<typename T>
-CheckSingle<T> pset(T t) {
+CheckSingle<T> pset(const T &t) {
   return t;
 }
 
