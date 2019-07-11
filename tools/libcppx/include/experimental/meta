@@ -2612,11 +2612,11 @@ consteval std::ptrdiff_t distance(template_param_iterator first, template_param_
 //   __reflect_mod(detail::query_set_storage, variable, detail::sm_automatic);
 // }
 
+// Requires: is_data_member(data_mem)
+//
 // Updates the value of variable adding a static storage modifier.
 // When injected via declaration cloning, this storage modifier will result
 // in the injected declaration having static storage.
-//
-// Error if the reflected entity is not a data member.
 consteval void make_static(info& data_mem) {
   detail::require_data_member(data_mem);
   __reflect_mod(detail::query_set_storage, data_mem, detail::sm_static);
@@ -2632,10 +2632,10 @@ consteval void make_static(info& data_mem) {
 //   __reflect_mod(detail::query_set_storage, variable, detail::sm_thread_local);
 // }
 
+// Requires: is_data_member(data_mem)
+//
 // Updates the value of variable removing any storage modifier.
 // When injected via declaration cloning, the original storage shall be used.
-//
-// Error if the reflected entity is not a variable.
 consteval void clear_storage_modifier(info& data_mem) {
   detail::require_data_member(data_mem);
   __reflect_mod(detail::query_set_storage, data_mem, detail::sm_not_modified);
@@ -2643,57 +2643,52 @@ consteval void clear_storage_modifier(info& data_mem) {
 
 // Access
 
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
 // Updates the value of base_or_mem adding a default access modifier.
 // When injected via declaration cloning, this access modifier will result
 // in the injected declaration having access equivalent to the default access
 // for members in the given class kind, ie. for injection into a struct this
 // shall be public, for injection into a class this shall be private.
-//
-// Error if the reflected entity is not a direct or virtual base class
-// or member declaration.
 consteval void make_default(info& base_or_mem) {
   detail::require_base_or_mem(base_or_mem);
   __reflect_mod(detail::query_set_access, base_or_mem, detail::am_default);
 }
 
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
 // Updates the value of base_or_mem adding a public access modifier.
 // When injected via declaration cloning, this access modifier will result
 // in the injected declaration having public access.
-//
-// Error if the reflected entity is not a direct or virtual base class
-// or member declaration.
 consteval void make_public(info& base_or_mem) {
   detail::require_base_or_mem(base_or_mem);
   __reflect_mod(detail::query_set_access, base_or_mem, detail::am_public);
 }
 
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
 // Updates the value of base_or_mem adding a protected access modifier.
 // When injected via declaration cloning, this access modifier will result
 // in the injected declaration having protected access.
-//
-// Error if the reflected entity is not a direct or virtual base class
-// or member declaration.
 consteval void make_protected(info& base_or_mem) {
   detail::require_base_or_mem(base_or_mem);
   __reflect_mod(detail::query_set_access, base_or_mem, detail::am_protected);
 }
 
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
 // Updates the value of base_or_mem adding a private access modifier.
 // When injected via declaration cloning, this access modifier will result
 // in the injected declaration having private access.
-//
-// Error if the reflected entity is not a direct or virtual base class
-// or member declaration.
 consteval void make_private(info& base_or_mem) {
   detail::require_base_or_mem(base_or_mem);
   __reflect_mod(detail::query_set_access, base_or_mem, detail::am_private);
 }
 
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
 // Updates the value of base_or_mem removing any access modifier.
 // When injected via declaration cloning, the original access shall be used.
-//
-// Error if the reflected entity is not a direct or virtual base class
-// or member declaration.
 consteval void clear_access_modifier(info& base_or_mem) {
   detail::require_base_or_mem(base_or_mem);
   __reflect_mod(detail::query_set_access, base_or_mem, detail::am_not_modified);
@@ -2711,24 +2706,24 @@ consteval void make_constexpr(info& reflection, bool mark_constexpr = true) {
 
 // Virtual
 
+// Requires: is_member_function(mem_function)
+//
 // Updates the value of mem_function adding a virtual modifier if true,
 // removing any virtual modifier if false.
 // When injected via declaration cloning, a virtual modifier will result
 // in the injected declaration being virtual.
-//
-// Error if the reflected entity is not a member function.
 consteval void make_virtual(info& mem_function, bool mark_virtual = true) {
   detail::require_mem_function(mem_function);
   __reflect_mod(detail::query_set_add_virtual, mem_function, mark_virtual);
 }
 
+// Requires: is_member_function(mem_function)
+//
 // Updates the value of mem_function adding a pure virtual modifier if true,
 // removing any pure virtual modifier if false.
 // A pure virtual modifier effectively acts implicitly as a virtual modifier
 // if present. When injected via declaration cloning, a pure virtual modifier
 // will result in the injected declaration being pure virtual.
-//
-// Error if the reflected entity is not a member function.
 consteval void make_pure_virtual(info& mem_function, bool mark_pure_virtual = true) {
   detail::require_mem_function(mem_function);
   __reflect_mod(detail::query_set_add_pure_virtual, mem_function, mark_pure_virtual);
@@ -2736,12 +2731,12 @@ consteval void make_pure_virtual(info& mem_function, bool mark_pure_virtual = tr
 
 // Names
 
+// Requires: is_named(named)
+//
 // Updates the value of named adding a name modifier if non-null with the
 // specifier new_name, removing any name modifier if null.
 // When injected via declaration cloning, a name modifier will result
 // in the injected declaration having the specifier name.
-//
-// Error if the reflection does not have a name.
 consteval void set_new_name(info& named, const char* new_name) {
   detail::require_named(named);
   __reflect_mod(detail::query_set_new_name, named, new_name);
