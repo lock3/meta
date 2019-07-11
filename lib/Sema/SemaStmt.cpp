@@ -1975,6 +1975,17 @@ static bool FinishForRangeVarDecl(Sema &SemaRef, VarDecl *Decl, Expr *Init,
   if (SemaRef.getLangOpts().ObjCAutoRefCount &&
       SemaRef.inferObjCARCLifetime(Decl))
     Decl->setInvalidDecl();
+
+  llvm::outs() << "INITIALIZING RANGEVAR\n";
+  if (isa<DeclRefExpr>(Init)) {
+    if (isa<VarDecl>(cast<DeclRefExpr>(Init)->getDecl())) {
+      VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(Init)->getDecl());
+      llvm::outs() << "isstaticlocal: " << VD->isStaticLocal() << '\n';
+      llvm::outs() << "storageduration: " << VD->getStorageDuration() << '\n';
+      llvm::outs() << "storageclass: " << VD->getStorageClass() << '\n';
+    }
+  }
+  
   SemaRef.AddInitializerToDecl(Decl, Init, /*DirectInit=*/false);
   SemaRef.FinalizeDeclaration(Decl);
   SemaRef.CurContext->addHiddenDecl(Decl);
@@ -3087,7 +3098,14 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  RangeType = SemaRef.Context.getAutoRRefDeductType();
+  assert(isa<DeclRefExpr>(RangeExpr) && "Range expression is untyped?");
+
+  ValueDecl *VD = cast<DeclRefExpr>(RangeExpr)->getDecl();
+  QualType T = VD->getType();
+  if (T->isArrayType() || T->isFunctionType())
+    RangeType = SemaRef.Context.getAutoRRefDeductType();
+  else
+    RangeType = SemaRef.Context.getAutoDeductType();
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
@@ -3688,6 +3706,8 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                        SourceLocation RParenLoc,
                                        BuildForRangeKind Kind,
                                        bool IsConstexpr) {
+  if (!Range || !LoopVar)
+    return StmtError();
   ExpansionStatementBuilder Builder(*this, S, Kind, LoopVar, Range,
                                     IsConstexpr);
   Builder.ForLoc = ForLoc;
