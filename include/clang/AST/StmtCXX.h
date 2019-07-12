@@ -355,7 +355,12 @@ public:
 };
 
 class CXXCompositeExpansionStmt : public CXXExpansionStmt {
+  /// The statement declaring  __begin.
+  Stmt *BeginStmt;
 
+  /// The statement declaring __end.
+  Stmt *EndStmt;
+  
 public:
   /// Returns the statement containing the range declaration.
   Stmt *getRangeVarStmt() const { return SubExprs[RANGE]; }
@@ -370,9 +375,10 @@ public:
 
   /// An expansion over an array, range, tuple, or struct.
   CXXCompositeExpansionStmt(DeclStmt *LoopVar, DeclStmt *RangeVar,
-                   TemplateParameterList *Parms,
-                   std::size_t N, SourceLocation FL, SourceLocation EL,
-                   SourceLocation CL, SourceLocation RPL)
+                            TemplateParameterList *Parms,
+                            std::size_t N, SourceLocation FL,
+                            SourceLocation EL, SourceLocation CL,
+                            SourceLocation RPL)
     : CXXExpansionStmt(CXXCompositeExpansionStmtClass, LoopVar,
                        Parms, N, FL, EL, CL, RPL) {
     SubExprs[RANGE] = RangeVar;
@@ -380,6 +386,13 @@ public:
 
   CXXCompositeExpansionStmt(EmptyShell Empty)
     : CXXExpansionStmt(CXXCompositeExpansionStmtClass, Empty) {}
+
+  /// Accesses the declaration statements of __begin and __end respectively.
+  /// These are only relevant for range expansions.
+  Stmt *getBeginStmt() const { return BeginStmt; }
+  void setBeginStmt(Stmt *B) { BeginStmt = B; }
+  Stmt *getEndStmt() const { return EndStmt; }
+  void setEndStmt(Stmt *E) { EndStmt = E; }
 
   LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
                             "Use getBeginLoc instead") {

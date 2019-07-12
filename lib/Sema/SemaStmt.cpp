@@ -3112,6 +3112,9 @@ ExpansionStatementBuilder::BuildRangeVar()
 
   // Update the range's expression type.
   RangeType = RangeVar->getType().getNonReferenceType();
+  if (SemaRef.RequireCompleteType(RangeLoc, RangeType,
+                                  diag::err_for_range_incomplete_type))
+    return false;
 
   /// Build the expression __range for various uses.
   ExprResult RangeDRE =
@@ -3630,9 +3633,12 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+  auto Ret = new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
     AnnotationLoc, ColonLoc, RParenLoc);
+  Ret->setBeginStmt(BeginDecl.get());
+  Ret->setEndStmt(EndDecl.get());
+  return Ret;
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
