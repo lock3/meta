@@ -113,6 +113,10 @@ void test_constexpr_array() {
   static constexpr int arr[] = { 1, 2, 3, 4 };
   for... (constexpr int a : arr)
     ;
+  for... (constexpr int a : arr) {
+    for... (constexpr int b : arr)
+      ;
+  }
 }
 
 constexpr int global_arr[] = { 0, 1 };
@@ -125,6 +129,10 @@ void test_tuple() {
   tuple tup;
   for... (auto x : tup)
     ;
+  for... (auto x : tup) {
+    for... (auto x : tup)
+      ;
+  }
 }
 
 void test_constexpr_tuple() {
@@ -137,6 +145,10 @@ void test_constexpr_range() {
   static constexpr range<7> ints;
   for... (constexpr int n : ints)
     ;
+  for... (constexpr int n : ints) {
+    for... (constexpr int n : ints)
+      ;
+  }
 }
 
 void test_struct() {
