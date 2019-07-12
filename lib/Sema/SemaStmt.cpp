@@ -3366,6 +3366,8 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // is defined.
   // Get the name information for 'NNS::get'.
   CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
   NestedNameSpecifierLoc NNS =
       GetQualifiedNameForDecl(SemaRef.Context, RangeClass, ColonLoc);
   IdentifierInfo *Name = &SemaRef.Context.Idents.get("get");
@@ -3665,9 +3667,12 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
+  CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
+
   ExprResult Projection =
-    SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
-                                     RangeVar, InductionRef);
+    SemaRef.ActOnCXXSelectMemberExpr(RangeClass, RangeVar, InductionRef);
   if (Projection.isInvalid())
     return StmtError();
 
