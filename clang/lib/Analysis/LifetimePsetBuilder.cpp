@@ -983,8 +983,8 @@ PSet PSetsBuilder::getPSet(Variable P) {
   }
 
 #ifndef NDEBUG
-  llvm::errs() << "PSetsBuilder::getPSet: did not find pset for " << P.getName()
-               << "\n";
+  llvm::errs() << "PSetsBuilder::getPSet: did not find pset for '"
+               << P.getName() << "'\n";
   llvm_unreachable("Missing pset for Pointer");
 #endif
   return {};
@@ -1397,7 +1397,9 @@ static bool fillPointersFromExpr(const Expr *E,
 }
 
 void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
-  auto *PreAttr = FD->getAttr<LifetimeContractAttr>();
+  auto *PreAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
+  if (!PreAttr)
+    return;
   for (const ParmVarDecl *PVD : FD->parameters()) {
     QualType ParamTy = PVD->getType();
     TypeCategory TC = classifyTypeCategory(ParamTy);
@@ -1412,18 +1414,14 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       if (isNullableType(ParamTy))
         PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
     } else {
-      bool HasRelevantAttr = false;
-      LifetimeContractAttr::PointsToMap::iterator AttrIt;
-      if (PreAttr) {
-        for (const Expr *E : PreAttr->PreExprs) {
-          if (!fillPointersFromExpr(E, PreAttr->PrePSets))
-            continue; // TODO: warn
-        }
-        LifetimeContractAttr::PSetKey Key(PVD);
-        AttrIt = PreAttr->PrePSets.find(Key);
-        HasRelevantAttr = AttrIt != PreAttr->PrePSets.end();
+      for (const Expr *E : PreAttr->PreExprs) {
+        if (!fillPointersFromExpr(E, PreAttr->PrePSets))
+          continue; // TODO: warn
       }
-      if (HasRelevantAttr) {
+      LifetimeContractAttr::PSetKey Key(PVD);
+      LifetimeContractAttr::PointsToMap::iterator AttrIt =
+          PreAttr->PrePSets.find(Key);
+      if (AttrIt != PreAttr->PrePSets.end()) {
         for (LifetimeContractAttr::PointsToLoc Loc : AttrIt->second)
           PS.merge(attrToPSet(Loc));
       } else {
