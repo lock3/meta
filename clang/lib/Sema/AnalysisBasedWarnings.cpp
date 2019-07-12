@@ -2029,6 +2029,10 @@ public:
     if(enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_lifetime_pointer_arithmetic);
   }
+  void warnUnsupportedExpr(SourceRange Range) final {
+    if(enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_unsupported_expression);
+  }
   void notePointeeLeftScope(SourceRange Range, std::string Name) final {
     if(!IgnoreCurrentWarning)
       S.Diag(Range.getBegin(), diag::note_pointee_left_scope) << Name << Range;

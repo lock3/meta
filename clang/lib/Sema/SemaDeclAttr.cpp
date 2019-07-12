@@ -4533,78 +4533,6 @@ static void handleSuppressAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
       DiagnosticIdentifiers.size(), AL.getAttributeSpellingListIndex()));
 }
 
-static const Expr *ignoreReturnValues(const Expr *E) {
-  E = E->IgnoreImplicit();
-  if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
-    return CE->getArg(0)->IgnoreImplicit();
-  return E;
-}
-
-static const Expr *getGslPsetArg(const Expr *E) {
-  E = ignoreReturnValues(E);
-  if (const auto *CE = dyn_cast<CallExpr>(E)) {
-    const FunctionDecl *FD = CE->getDirectCallee();
-    if (!FD)
-      return nullptr;
-    if (FD->getName() != "pset")
-      return nullptr;
-    return ignoreReturnValues(CE->getArg(0));
-  }
-  return nullptr;
-}
-
-static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
-  LifetimeContractAttr::PointsToSet Result;
-  if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
-    LifetimeContractAttr::PointsToLoc Loc;
-    Loc.Base = dyn_cast<VarDecl>(DRE->getDecl());
-    Loc.FieldsAndDerefs.push_back(nullptr);
-    if (Loc.Base)
-      Result.push_back(Loc);
-    return Result;
-  } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
-    E = StdInit->getSubExpr()->IgnoreImplicit();
-    if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
-      for (const auto *Init : InitList->inits()) {
-        LifetimeContractAttr::PointsToSet Elem =
-            collectPSet(ignoreReturnValues(Init));
-        if (Elem.empty())
-          return Elem;
-        Result.push_back(Elem.front());
-      }
-    }
-  }
-  return Result;
-}
-
-static bool fillPointersFromExpr(
-    const Expr *E,
-    llvm::DenseMap<const VarDecl *, LifetimeContractAttr::PointsToSet>
-        &Pointers) {
-  const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
-  if (!OCE || OCE->getOperator() != OO_EqualEqual)
-    return false;
-
-  const Expr *LHS = getGslPsetArg(OCE->getArg(0));
-  if (!LHS)
-    return false;
-  const Expr *RHS = getGslPsetArg(OCE->getArg(1));
-  if (!RHS)
-    return false;
-  // TODO: setting PSets for deref locs not supported yet.
-  if (!isa<DeclRefExpr>(LHS))
-    std::swap(LHS, RHS);
-  if (!isa<DeclRefExpr>(LHS))
-    return false;
-
-  const VarDecl *VD = cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl());
-  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS);
-  if (PSet.empty() || Pointers.count(VD))
-    return false;
-  Pointers.insert(std::make_pair(VD, PSet));
-  return true;
-}
-
 static void handleLifetimeContractAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   LifetimeContractAttr *PAttr;
   if (auto *Existing = D->getAttr<LifetimeContractAttr>())
@@ -4615,10 +4543,10 @@ static void handleLifetimeContractAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
                              AL.getAttributeSpellingListIndex());
     D->addAttr(PAttr);
   }
-  if (!fillPointersFromExpr(AL.getArgAsExpr(0), PAttr->isPre()
-                                                    ? PAttr->PrePSets
-                                                    : PAttr->PostPSets))
-    S.Diag(AL.getLoc(), diag::warn_unsupported_expression);
+  if (PAttr->isPre())
+    PAttr->PreExprs.push_back(AL.getArgAsExpr(0));
+  else
+    PAttr->PostExprs.push_back(AL.getArgAsExpr(0));
 }
 
 bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,

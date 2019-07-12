@@ -1305,25 +1305,95 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
-static PSet attrToPSet(LifetimeContractAttr::PointsToLoc Loc) {
-  const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(Loc.Base->getDeclContext());
+static PSet attrToPSet(Variable V) {
+  // TODO: will not work for `this`.
+  const NamespaceDecl *ND =
+      dyn_cast<NamespaceDecl>(V.asVarDecl()->getDeclContext());
   if (ND && ND->getName() == "gsl") {
     PSet PS;
-    StringRef Name = Loc.Base->getName();
+    StringRef Name = V.asVarDecl()->getName();
     if (Name == "Null")
-      PS.addNull(NullReason::parameterNull(Loc.Base->getSourceRange()));
+      PS.addNull(NullReason::parameterNull(V.asVarDecl()->getSourceRange()));
     else if (Name == "Static")
       PS.addStatic();
     else if (Name == "Invalid")
       PS = PSet::invalid(
-          InvalidationReason::NotInitialized(Loc.Base->getSourceRange()));
+          InvalidationReason::NotInitialized(V.asVarDecl()->getSourceRange()));
     return PS;
   } else {
-    Variable V(Loc.Base);
-    for (const FieldDecl *F : Loc.FieldsAndDerefs)
-      V.addFieldRef(F);
     return PSet::singleton(V);
   }
+}
+
+static const Expr *ignoreReturnValues(const Expr *E) {
+  E = E->IgnoreImplicit();
+  if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
+    return CE->getArg(0)->IgnoreImplicit();
+  return E;
+}
+
+static const Expr *getGslPsetArg(const Expr *E) {
+  E = ignoreReturnValues(E);
+  if (const auto *CE = dyn_cast<CallExpr>(E)) {
+    const FunctionDecl *FD = CE->getDirectCallee();
+    if (!FD)
+      return nullptr;
+    if (FD->getName() != "pset")
+      return nullptr;
+    return ignoreReturnValues(CE->getArg(0));
+  }
+  return nullptr;
+}
+
+static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
+  LifetimeContractAttr::PointsToSet Result;
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+    LifetimeContractAttr::PointsToLoc Loc;
+    Loc.Var = dyn_cast<VarDecl>(DRE->getDecl());
+    Loc.FDs.push_back(nullptr);
+    if (Loc.Var)
+      Result.push_back(Loc);
+    return Result;
+  } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
+    E = StdInit->getSubExpr()->IgnoreImplicit();
+    if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
+      for (const auto *Init : InitList->inits()) {
+        LifetimeContractAttr::PointsToSet Elem =
+            collectPSet(ignoreReturnValues(Init));
+        if (Elem.empty())
+          return Elem;
+        Result.push_back(Elem.front());
+      }
+    }
+  }
+  return Result;
+}
+
+static bool fillPointersFromExpr(const Expr *E,
+                                 LifetimeContractAttr::PointsToMap &Pointers) {
+  const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
+  if (!OCE || OCE->getOperator() != OO_EqualEqual)
+    return false;
+
+  const Expr *LHS = getGslPsetArg(OCE->getArg(0));
+  if (!LHS)
+    return false;
+  const Expr *RHS = getGslPsetArg(OCE->getArg(1));
+  if (!RHS)
+    return false;
+  // TODO: setting PSets for deref locs not supported yet.
+  if (!isa<DeclRefExpr>(LHS))
+    std::swap(LHS, RHS);
+  if (!isa<DeclRefExpr>(LHS))
+    return false;
+
+  LifetimeContractAttr::PSetKey VD(
+      cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl()));
+  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS);
+  if (PSet.empty() || Pointers.count(VD))
+    return false;
+  Pointers.insert(std::make_pair(VD, PSet));
+  return true;
 }
 
 void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
@@ -1345,7 +1415,12 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
       bool HasRelevantAttr = false;
       LifetimeContractAttr::PointsToMap::iterator AttrIt;
       if (PreAttr) {
-        AttrIt = PreAttr->PrePSets.find(PVD);
+        for (const Expr *E : PreAttr->PreExprs) {
+          if (!fillPointersFromExpr(E, PreAttr->PrePSets))
+            continue; // TODO: warn
+        }
+        LifetimeContractAttr::PSetKey Key(PVD);
+        AttrIt = PreAttr->PrePSets.find(Key);
         HasRelevantAttr = AttrIt != PreAttr->PrePSets.end();
       }
       if (HasRelevantAttr) {

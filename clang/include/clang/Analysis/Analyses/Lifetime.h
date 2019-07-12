@@ -49,7 +49,7 @@ enum class WarnType {
   AssignNull,
   ParamNull,
   ReturnDangling,
-  ReturnNull
+  ReturnNull,
 };
 
 enum class NoteType {
@@ -77,6 +77,7 @@ public:
   virtual void warnReturnWrongPset(SourceRange Range, StringRef RetPset,
                                    StringRef ExpectedPset) = 0;
   virtual void warnPointerArithmetic(SourceRange Range) = 0;
+  virtual void warnUnsupportedExpr(SourceRange Range) = 0;
   virtual void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) = 0;
   virtual void notePointeeLeftScope(SourceRange Range, std::string Name) = 0;
   virtual void note(NoteType T, SourceRange Range) = 0;

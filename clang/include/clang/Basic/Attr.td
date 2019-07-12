@@ -2796,13 +2796,20 @@ def LifetimeContract : InheritableParamAttr {
   let Args = [ExprArgument<"Expr">];
   let AdditionalMembers = [{
 public:
-  // TODO: Lifetime::Variable might be moved here?
   struct PointsToLoc {
-    const VarDecl * Base = nullptr;
-    SmallVector<const FieldDecl *, 4> FieldsAndDerefs;
+    llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
+
+    /// Possibly empty list of fields and deref operations on the base.
+    /// The First entry is the field on base, next entry is the field inside
+    /// there, etc. Null pointers represent a deref operation.
+    llvm::SmallVector<const FieldDecl *, 4> FDs;
   };
   using PointsToSet = SmallVector<PointsToLoc, 4>;
-  using PointsToMap = llvm::DenseMap<const VarDecl *, PointsToSet>;
+  // TODO: this representation does not support fields.
+  using PSetKey = llvm::PointerIntPair<const VarDecl *, 2>;
+  using PointsToMap = llvm::DenseMap<PSetKey, PointsToSet>;
+  SmallVector<const Expr *, 8> PreExprs;
+  SmallVector<const Expr *, 8> PostExprs;
   PointsToMap PrePSets;
   PointsToMap PostPSets;
 
