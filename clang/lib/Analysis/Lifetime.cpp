@@ -214,6 +214,8 @@ void runAnalysis(
 
   if (!Func->doesThisDeclarationHaveABody())
     return;
+  if (!Func->getCanonicalDecl()->hasAttr<LifetimeContractAttr>())
+    return;
 
   GlobalLookupOperator = LookupOperator;
   GlobalLookupMemberFunction = LookupMemberFunction;

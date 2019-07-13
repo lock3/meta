@@ -2804,7 +2804,12 @@ public:
     /// there, etc. Null pointers represent a deref operation.
     llvm::SmallVector<const FieldDecl *, 4> FDs;
   };
-  using PointsToSet = SmallVector<PointsToLoc, 4>;
+  struct PointsToSet {
+    bool HasStatic = false;
+    bool HasNull = false;
+    bool HasInvalid = false;
+    SmallVector<PointsToLoc, 4> Pointees;
+  }; 
   // TODO: this representation does not support fields.
   using PSetKey = llvm::PointerIntPair<const VarDecl *, 2>;
   using PointsToMap = llvm::DenseMap<PSetKey, PointsToSet>;

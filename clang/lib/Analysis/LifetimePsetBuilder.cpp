@@ -412,8 +412,7 @@ public:
 
     // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
     // the ReturnStmt node
-    for (auto &V : RetPSet.vars()) {
-      auto &Var = V.first;
+    for (auto &Var : RetPSet.vars()) {
       if (Var.isTemporary() || Var.isLifetimeExtendedTemporary()) {
         RetPSet = PSet::invalid(
             InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
@@ -495,11 +494,9 @@ public:
     if (hasPSet(DE->getArgument())) {
       PSet PS = getPSet(DE->getArgument());
       for (const auto &Var : PS.vars()) {
-        if (Var.second != 0)
-          ; // TODO: diagnose? We are deleting the buffer of on owner?
-        else
-          invalidateVar(Var.first, 0,
-                        InvalidationReason::Deleted(DE->getSourceRange()));
+        // TODO: diagnose if we are deleting the buffer of on owner?
+        invalidateVar(Var, 0,
+                      InvalidationReason::Deleted(DE->getSourceRange()));
       }
     }
   }
@@ -712,8 +709,8 @@ public:
 
     // Invalidate owners taken by Pointer to non-const.
     for (const auto &Arg : Args.Oinvalidate) {
-      for (auto VarOrd : Arg.PS.vars()) {
-        invalidateVar(VarOrd.first, 1, InvalidationReason::Modified(Arg.Range));
+      for (auto Var : Arg.PS.vars()) {
+        invalidateVar(Var, 1, InvalidationReason::Modified(Arg.Range));
       }
     }
 
@@ -815,11 +812,10 @@ public:
       } else {
         auto &Var = I->first;
         auto &Pset = I->second;
-        bool PsetContainsTemporary =
-            std::any_of(Pset.vars().begin(), Pset.vars().end(),
-                        [VD](const std::pair<const Variable, unsigned> &KV) {
-                          return KV.first.isLifetimeExtendedTemporaryBy(VD);
-                        });
+        bool PsetContainsTemporary = std::any_of(
+            Pset.vars().begin(), Pset.vars().end(), [VD](const Variable &V) {
+              return V.isLifetimeExtendedTemporaryBy(VD);
+            });
         if (PsetContainsTemporary)
           setPSet(PSet::singleton(Var), PSet::invalid(Reason),
                   Reason.getRange());
@@ -862,8 +858,8 @@ public:
     if (P.containsInvalid())
       return PSet::invalid(P.invReasons());
 
-    for (auto &KV : P.vars())
-      Ret.merge(getPSet(KV.first));
+    for (auto &Var : P.vars())
+      Ret.merge(getPSet(Var));
 
     if (P.containsStatic())
       Ret.merge(PSet::staticVar(false));
@@ -1006,12 +1002,10 @@ PSet PSetsBuilder::derefPSet(const PSet &PS) {
   if (PS.containsStatic())
     RetPS.addStatic();
 
-  for (auto &KV : PS.vars()) {
-    const Variable &V = KV.first;
-    auto order = KV.second;
-
-    if (order > 0)
-      RetPS.insert(V, order + 1); // pset(o') = { o'' }
+  for (auto V : PS.vars()) {
+    int Order = V.getOrder();
+    if (Order > 0)
+      RetPS.insert(V.deref()); // pset(o') = { o'' }
     else
       RetPS.merge(getPSet(V));
   }
@@ -1030,19 +1024,19 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   }
 
   if (LHS.isSingleton()) {
-    Variable Var = LHS.vars().begin()->first;
+    Variable Var = *LHS.vars().begin();
     auto I = PMap.find(Var);
     if (I != PMap.end())
       I->second = std::move(RHS);
     else
       PMap.emplace(Var, RHS);
   } else {
-    for (auto &KV : LHS.vars()) {
-      auto I = PMap.find(KV.first);
+    for (auto &V : LHS.vars()) {
+      auto I = PMap.find(V);
       if (I != PMap.end())
         I->second.merge(RHS);
       else
-        PMap.emplace(KV.first, RHS);
+        PMap.emplace(V, RHS);
     }
   }
 }
@@ -1127,7 +1121,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     if (Ref.vars().size() != 1)
       return;
 
-    Variable V = Ref.vars().begin()->first;
+    Variable V = *Ref.vars().begin();
     PSet PS = getPSet(V);
     PSet PSElseBranch = PS;
     if (Positive) {
@@ -1305,26 +1299,6 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }
 
-static PSet attrToPSet(Variable V) {
-  // TODO: will not work for `this`.
-  const NamespaceDecl *ND =
-      dyn_cast<NamespaceDecl>(V.asVarDecl()->getDeclContext());
-  if (ND && ND->getName() == "gsl") {
-    PSet PS;
-    StringRef Name = V.asVarDecl()->getName();
-    if (Name == "Null")
-      PS.addNull(NullReason::parameterNull(V.asVarDecl()->getSourceRange()));
-    else if (Name == "Static")
-      PS.addStatic();
-    else if (Name == "Invalid")
-      PS = PSet::invalid(
-          InvalidationReason::NotInitialized(V.asVarDecl()->getSourceRange()));
-    return PS;
-  } else {
-    return PSet::singleton(V);
-  }
-}
-
 static const Expr *ignoreReturnValues(const Expr *E) {
   E = E->IgnoreImplicit();
   if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
@@ -1350,9 +1324,18 @@ static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     LifetimeContractAttr::PointsToLoc Loc;
     Loc.Var = dyn_cast<VarDecl>(DRE->getDecl());
+    if (!Loc.Var)
+      return Result;
     Loc.FDs.push_back(nullptr);
-    if (Loc.Var)
-      Result.push_back(Loc);
+    StringRef Name = DRE->getDecl()->getName();
+    if (Name == "Null")
+      Result.HasNull = true;
+    else if (Name == "Static")
+      Result.HasStatic = true;
+    else if (Name == "Invalid")
+      Result.HasInvalid = true;
+    else
+      Result.Pointees.push_back(Loc);
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
@@ -1360,9 +1343,9 @@ static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
       for (const auto *Init : InitList->inits()) {
         LifetimeContractAttr::PointsToSet Elem =
             collectPSet(ignoreReturnValues(Init));
-        if (Elem.empty())
+        if (Elem.Pointees.empty())
           return Elem;
-        Result.push_back(Elem.front());
+        Result.Pointees.push_back(Elem.Pointees.front());
       }
     }
   }
@@ -1390,77 +1373,85 @@ static bool fillPointersFromExpr(const Expr *E,
   LifetimeContractAttr::PSetKey VD(
       cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl()));
   LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS);
-  if (PSet.empty() || Pointers.count(VD))
-    return false;
-  Pointers.insert(std::make_pair(VD, PSet));
+  // TODO: diagnose failures for empty PSet.
+  Pointers[VD] = PSet;
   return true;
 }
 
-void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
-  auto *PreAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
-  if (!PreAttr)
-    return;
+static void fillPSetsForDecl(const FunctionDecl *FD,
+                             LifetimeContractAttr *PreAttr) {
+
+  LifetimeContractAttr::PointsToMap &Map = PreAttr->PrePSets;
+  // Fill default PSets.
   for (const ParmVarDecl *PVD : FD->parameters()) {
     QualType ParamTy = PVD->getType();
     TypeCategory TC = classifyTypeCategory(ParamTy);
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
       continue;
 
-    PSet PS;
-    if (TC == TypeCategory::Owner) {
-      PS = PSet::singleton(PVD, 1);
-
-      // TODO: nullable Owners don't exist in the paper (yet?)
-      if (isNullableType(ParamTy))
-        PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-    } else {
-      for (const Expr *E : PreAttr->PreExprs) {
-        if (!fillPointersFromExpr(E, PreAttr->PrePSets))
-          continue; // TODO: warn
-      }
-      LifetimeContractAttr::PSetKey Key(PVD);
-      LifetimeContractAttr::PointsToMap::iterator AttrIt =
-          PreAttr->PrePSets.find(Key);
-      if (AttrIt != PreAttr->PrePSets.end()) {
-        for (LifetimeContractAttr::PointsToLoc Loc : AttrIt->second)
-          PS.merge(attrToPSet(Loc));
-      } else {
-        Variable P_deref(PVD);
-        P_deref.deref();
-        PS = PSet::singleton(P_deref);
+    LifetimeContractAttr::PSetKey Key(PVD);
+    LifetimeContractAttr::PointsToSet PS;
+    LifetimeContractAttr::PointsToLoc ParamDerefLoc;
+    ParamDerefLoc.Var = PVD;
+    ParamDerefLoc.FDs.push_back(nullptr);
+    PS.Pointees.push_back(ParamDerefLoc);
+    // TODO: nullable Owners don't exist in the paper (yet?)
+    // TODO: nullreason not added yet!
+    //       maybe could be added at the Attr->PSet conv?
+    if (isNullableType(ParamTy))
+      PS.HasNull = true;
+    if (TC == TypeCategory::Pointer) {
+      LifetimeContractAttr::PSetKey P_deref(PVD, 1);
+      QualType PointeeType = getPointeeType(ParamTy);
+      LifetimeContractAttr::PointsToSet DerefPS;
+      switch (classifyTypeCategory(PointeeType)) {
+      case TypeCategory::Owner: {
+        LifetimeContractAttr::PointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
+        ParamDerefDerefLoc.FDs.push_back(nullptr);
+        DerefPS.Pointees.push_back(ParamDerefDerefLoc);
         if (isNullableType(ParamTy))
-          PS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-
-        QualType PointeeType = getPointeeType(ParamTy);
-        switch (classifyTypeCategory(PointeeType)) {
-        case TypeCategory::Owner: {
-          PSet DerefPS = PSet::singleton(P_deref, 1);
+          DerefPS.HasNull = true;
+        Map.try_emplace(P_deref, DerefPS);
+        break;
+      }
+      case TypeCategory::Pointer:
+        if (!PointeeType.isConstQualified()) {
+          // Output params are initially invalid.
+          DerefPS.HasInvalid = true;
+          Map.try_emplace(P_deref, DerefPS);
+        } else {
+          // staticVar to allow further derefs (if this is Pointer to a
+          // Pointer to a Pointer etc)
+          DerefPS.HasStatic = true;
           if (isNullableType(ParamTy))
-            DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-          PMap.emplace(P_deref, DerefPS);
-          break;
+            DerefPS.HasNull = true;
+          Map.try_emplace(P_deref, DerefPS);
         }
-        case TypeCategory::Pointer:
-          if (!PointeeType.isConstQualified()) {
-            // Output params are initially invalid.
-            PMap.emplace(P_deref,
-                         PSet::invalid(InvalidationReason::NotInitialized(
-                             PVD->getSourceRange())));
-          } else {
-            // staticVar to allow further derefs (if this is Pointer to a
-            // Pointer to a Pointer etc)
-            PSet DerefPS = PSet::staticVar();
-            if (isNullableType(ParamTy))
-              DerefPS.addNull(NullReason::parameterNull(PVD->getSourceRange()));
-            PMap.emplace(P_deref, DerefPS);
-          }
-          LLVM_FALLTHROUGH;
-        default:
-          break;
-        }
+        LLVM_FALLTHROUGH;
+      default:
+        break;
       }
     }
-    PMap.emplace(PVD, std::move(PS));
+    Map.try_emplace(Key, PS);
+  }
+
+  // Adust PSets based on annotations.
+  for (const Expr *E : PreAttr->PreExprs) {
+    if (!fillPointersFromExpr(E, PreAttr->PrePSets))
+      continue; // TODO: warn
+  }
+}
+
+void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
+  auto *PreAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
+
+  if (PreAttr->PrePSets.empty())
+    fillPSetsForDecl(FD, PreAttr);
+
+  for (const auto &Pair : PreAttr->PrePSets) {
+    Variable V(Pair.first.getPointer());
+    V.deref(Pair.first.getInt());
+    PMap.emplace(V, Pair.second);
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));

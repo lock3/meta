@@ -223,7 +223,7 @@ void ref_exprs() {
 
   const std::vector<int> &v = std::vector<int>();
   std::vector<int>::const_iterator it = v.cbegin();
-  __lifetime_pset(it); // expected-warning {{pset(it) = ((lifetime-extended temporary through v)')}}
+  __lifetime_pset(it); // expected-warning {{pset(it) = ((*(lifetime-extended temporary through v)))}}
 }
 
 void addr_and_dref() {
@@ -365,7 +365,7 @@ void ignore_pointer_to_member() {
 void if_stmt(const int *p, const char *q,
              gsl::nullable<std::unique_ptr<int>> up) {
   __lifetime_pset(p);  // expected-warning {{((*p), (null))}}
-  __lifetime_pset(up); // expected-warning {{pset(up) = ((null), up')}}
+  __lifetime_pset(up); // expected-warning {{pset(up) = ((*up), (null))}}
   int *alwaysNull = nullptr;
   bool b = p && q;
 
@@ -376,7 +376,7 @@ void if_stmt(const int *p, const char *q,
   }
 
   if (up) {
-    __lifetime_pset(up); // expected-warning {{pset(up) = (up')}}
+    __lifetime_pset(up); // expected-warning {{pset(up) = ((*up)}}
   } else {
     __lifetime_pset(up); // expected-warning {{pset(up) = ((null))}}
   }
@@ -646,7 +646,7 @@ void function_call4() {
 
   OwnerOfInt O;
   auto P = f(O);
-  __lifetime_pset(P); // expected-warning {{(O')}}
+  __lifetime_pset(P); // expected-warning {{((*O)}}
 }
 
 void indirect_function_call() {
@@ -774,47 +774,47 @@ void Example1_4() {
 
 void Example9() {
   std::vector<int> v1(100);
-  __lifetime_pset(v1); // expected-warning {{pset(v1) = (v1')}}
+  __lifetime_pset(v1); // expected-warning {{pset(v1) = ((*v1))}}
   int *pi = &v1[0];
-  __lifetime_pset(pi); // expected-warning {{pset(pi) = (v1')}}
+  __lifetime_pset(pi); // expected-warning {{pset(pi) = ((*v1))}}
   pi = &v1.at(0);
-  __lifetime_pset(pi); // expected-warning {{pset(pi) = (v1')}}
+  __lifetime_pset(pi); // expected-warning {{pset(pi) = ((*v1))}}
   auto v2 = std::move(v1);
-  //__lifetime_pset(pi); // TODOexpected-warning {{pset(pi) = (v2')}}
+  //__lifetime_pset(pi); // TODOexpected-warning {{pset(pi) = ((*v2))}}
 }
 
 void return_pointer() {
   std::vector<int> v1(100);
-  __lifetime_pset(v1); // expected-warning {{pset(v1) = (v1')}}
+  __lifetime_pset(v1); // expected-warning {{pset(v1) = ((*v1))}}
 
   int *f(const std::vector<int> &);
   const std::vector<int> &id(const std::vector<int> &);
   void invalidate(std::vector<int> &);
   int *p = f(v1);
-  __lifetime_pset(p); // expected-warning {{pset(p) = (v1')}}
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*v1))}}
   const std::vector<int> &v2 = id(v1);
   __lifetime_pset_ref(v2); // expected-warning {{pset(v2) = (v1)}}
   auto it = v1.begin();
-  __lifetime_pset(it); // expected-warning {{pset(it) = (v1')}}
+  __lifetime_pset(it); // expected-warning {{pset(it) = ((*v1))}}
   std::vector<int>::iterator it2;
   it2 = v1.begin();
-  __lifetime_pset(it2); // expected-warning {{pset(it2) = (v1')}}
+  __lifetime_pset(it2); // expected-warning {{pset(it2) = ((*v1))}}
 
   int &r = v1[0];
-  __lifetime_pset_ref(r); // expected-warning {{pset(r) = (v1')}}
-  __lifetime_pset(p);     // expected-warning {{pset(p) = (v1')}}
+  __lifetime_pset_ref(r); // expected-warning {{pset(r) = ((*v1))}}
+  __lifetime_pset(p);     // expected-warning {{pset(p) = ((*v1))}}
 
   auto it3 = std::begin(v1);
   int *pmem = v1.data();
-  __lifetime_pset(it3);  // expected-warning {{pset(it3) = (v1')}}
-  __lifetime_pset(pmem); // expected-warning {{pset(pmem) = (v1')}}
-  __lifetime_pset(p);    // expected-warning {{pset(p) = (v1')}}
+  __lifetime_pset(it3);  // expected-warning {{pset(it3) = ((*v1))}}
+  __lifetime_pset(pmem); // expected-warning {{pset(pmem) = ((*v1))}}
+  __lifetime_pset(p);    // expected-warning {{pset(p) = ((*v1))}}
 
   auto *v1p = &v1;
   __lifetime_pset(v1p); // expected-warning {{pset(v1p) = (v1)}}
 
   auto *pmem2 = v1p->data();
-  __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = (v1')}}
+  __lifetime_pset(pmem2); // expected-warning {{pset(pmem2) = ((*v1))}}
   invalidate(v1);
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 
@@ -857,12 +857,12 @@ void lifetime_const() {
     [[gsl::lifetime_const]] void peek() {}
   };
   Owner O;
-  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = ((*O))}}
   int *P = O.begin();
-  __lifetime_pset(P); // expected-warning {{pset(P) = (O')}}
+  __lifetime_pset(P); // expected-warning {{pset(P) = ((*O))}}
 
   O.peek();
-  __lifetime_pset(P); // expected-warning {{pset(P) = (O')}}
+  __lifetime_pset(P); // expected-warning {{pset(P) = ((*O))}}
 
   O.reset();
   __lifetime_pset(P); // expected-warning {{pset(P) = ((invalid))}}
@@ -871,11 +871,11 @@ void lifetime_const() {
 void associative_lifetime_const() {
   std::set<int> s;
   std::set<int>::iterator it = s.begin();
-  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
+  __lifetime_pset(it);  // expected-warning {{pset(it) = ((*s))}}
   s.insert(5);
-  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
+  __lifetime_pset(it);  // expected-warning {{pset(it) = ((*s))}}
   s.emplace(5);
-  __lifetime_pset(it);  // expected-warning {{pset(it) = (s')}}
+  __lifetime_pset(it);  // expected-warning {{pset(it) = ((*s))}}
 }
 
 void ambiguous_pointers(bool cond) {
@@ -930,18 +930,18 @@ class A {
 void deref_based_on_template_param() {
   // we determine DerefType(std::optional) by looking at it's template parameter
   std::optional<int> O;
-  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = ((*O))}}
   int &D = O.value();
-  __lifetime_pset_ref(D); // expected-warning {{pset(D) = (O')}}
+  __lifetime_pset_ref(D); // expected-warning {{pset(D) = ((*O))}}
   D = 1;
 
   int &f_ref(const std::optional<int> &O);
   int &D2 = f_ref(O);
-  __lifetime_pset_ref(D2); // expected-warning {{pset(D2) = (O')}}
+  __lifetime_pset_ref(D2); // expected-warning {{pset(D2) = ((*O))}}
 
   int *f_ptr(const std::optional<int> &O);
   int *D3 = f_ptr(O);
-  __lifetime_pset(D3); // expected-warning {{pset(D3) = (O')}}
+  __lifetime_pset(D3); // expected-warning {{pset(D3) = ((*O))}}
 }
 
 my_pointer global_pointer;
@@ -1011,16 +1011,16 @@ struct [[gsl::Owner]] OwnerPointsToTemplateType {
 
 void ownerPointsToTemplateType() {
   OwnerPointsToTemplateType<int> O;
-  __lifetime_pset(O); // expected-warning {{pset(O) = (O')}}
+  __lifetime_pset(O); // expected-warning {{pset(O) = ((*O))}}
   int *I = O.get();
-  __lifetime_pset(I); // expected-warning {{pset(I) = (O')}}
+  __lifetime_pset(I); // expected-warning {{pset(I) = ((*O))}}
 
   // When finding the pointee type of an Owner,
   // look through AutoType to find the ClassTemplateSpecialization.
   auto Oauto = OwnerPointsToTemplateType<int>();
-  __lifetime_pset(Oauto); // expected-warning {{pset(Oauto) = (Oauto')}}
+  __lifetime_pset(Oauto); // expected-warning {{pset(Oauto) = ((*Oauto)}}
   int *Iauto = Oauto.get();
-  __lifetime_pset(Iauto); // expected-warning {{pset(Iauto) = (Oauto')}}
+  __lifetime_pset(Iauto); // expected-warning {{pset(Iauto) = ((*Oauto)}}
 }
 
 void string_view_ctors(const char *c) {
@@ -1095,7 +1095,7 @@ void pruned_branch(bool cond) {
   void returns_void();
   0 ? void() : returns_void(); // has not pset, should not crash.
 
-  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{pset(cond ? OwnerOfInt() : OwnerOfInt()) = ((temporary)')}}
+  __lifetime_pset(cond ? OwnerOfInt() : OwnerOfInt()); // expected-warning {{pset(cond ? OwnerOfInt() : OwnerOfInt()) = ((*(temporary)))}}
 }
 
 void parameter_psets(int value,
@@ -1117,13 +1117,13 @@ void parameter_psets(int value,
 
   __lifetime_pset_ref(int_ref);       // expected-warning {{((*int_ref))}}
   __lifetime_pset_ref(const_int_ref); // expected-warning {{((*const_int_ref))}}
-  __lifetime_pset(owner_by_value);    // expected-warning {{(owner_by_value')}}
+  __lifetime_pset(owner_by_value);    // expected-warning {{((*owner_by_value))}}
 
   __lifetime_pset_ref(owner_ref); // expected-warning {{((*owner_ref))}}
-  __lifetime_pset(owner_ref);     /// expected-warning {{((*owner_ref)')}}
+  __lifetime_pset(owner_ref);     /// expected-warning {{((*(*owner_ref)))}}
 
   __lifetime_pset_ref(owner_const_ref); // expected-warning {{((*owner_const_ref))}}
-  __lifetime_pset(owner_const_ref);     // expected-warning {{((*owner_const_ref)')}}
+  __lifetime_pset(owner_const_ref);     // expected-warning {{((*(*owner_const_ref)))}}
 
   __lifetime_pset(ptr_by_value); // expected-warning {{((*ptr_by_value), (null))}}
 
@@ -1161,7 +1161,7 @@ void enum_casts() {
 void iterator_conversion() {
   std::vector<int> v;
   std::vector<int>::const_iterator it = v.begin();
-  __lifetime_pset(it); // expected-warning {{(v')}}
+  __lifetime_pset(it); // expected-warning {{((*v))}}
 }
 
 namespace CXXScalarValueInitExpr {

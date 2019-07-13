@@ -14,6 +14,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -126,7 +127,34 @@ struct Variable {
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { Data.FDs.push_back(FD); }
 
-  void deref() { Data.FDs.push_back(nullptr); }
+  Variable &deref(int Num = 1) {
+    while (Num--)
+      Data.FDs.push_back(nullptr);
+    return *this;
+  }
+
+  unsigned getOrder() const {
+    if (isThisPointer())
+      return 0;
+    // TODO: what if the pointee of a Pointer is an owner?
+    // This will be more complex!
+    QualType BaseType;
+    if (const auto *VD = asVarDecl())
+      BaseType = VD->getType();
+    else
+      BaseType =
+          Data.Var.dyn_cast<const MaterializeTemporaryExpr *>()->getType();
+    if (classifyTypeCategory(BaseType) != TypeCategory::Owner)
+      return 0;
+    int Order = 0;
+    for (const auto *FD : Data.FDs) {
+      if (!FD)
+        ++Order;
+      else
+        break;
+    }
+    return Order;
+  }
 
   bool isDeref() const {
     return !Data.FDs.empty() && Data.FDs.front() == nullptr;
@@ -260,12 +288,19 @@ public:
 /// - null
 /// - static
 /// - invalid
-/// - variables with an order
+/// - variables
 /// It a Pset contains non of that, its "unknown".
 class PSet {
 public:
   // Initializes an unknown pset
   PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
+  PSet(const LifetimeContractAttr::PointsToSet &S)
+      : ContainsNull(S.HasNull), ContainsInvalid(S.HasInvalid),
+        ContainsStatic(S.HasStatic) {
+    for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
+      Vars.emplace(L);
+    }
+  }
 
   bool operator==(const PSet &O) const {
     return ContainsInvalid == O.ContainsInvalid &&
@@ -294,11 +329,10 @@ public:
 
   /// Returns true if we look for S and we have S.field in the set.
   bool containsBase(Variable Var, unsigned Order = 0) const {
-    auto I = llvm::find_if(
-        Vars, [Var, Order](const std::pair<Variable, unsigned> &Other) {
-          return Var.isBaseEqual(Other.first) && Order <= Other.second;
-        });
-    return I != Vars.end() && I->second >= Order;
+    auto I = llvm::find_if(Vars, [Var, Order](const Variable &Other) {
+      return Var.isBaseEqual(Other) && Order <= Other.getOrder();
+    });
+    return I != Vars.end() && I->getOrder() >= Order;
   }
 
   bool containsNull() const { return ContainsNull; }
@@ -338,7 +372,7 @@ public:
            (ContainsStatic ^ ContainsNull ^ (Vars.size() == 1));
   }
 
-  const std::map<Variable, unsigned> &vars() const { return Vars; }
+  const std::set<Variable> &vars() const { return Vars; }
 
   const std::vector<InvalidationReason> &invReasons() const {
     return InvReasons;
@@ -360,11 +394,9 @@ public:
       return false;
 
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
-    for (auto &kv : Vars) {
-      auto &V = kv.first;
-      auto Order = kv.second;
-      auto i = O.Vars.find(V);
-      if (i == O.Vars.end() || i->second > Order)
+    for (auto &V : Vars) {
+      auto I = O.Vars.find(V);
+      if (I == O.Vars.end() || I->getOrder() > V.getOrder())
         return false;
     }
 
@@ -384,11 +416,8 @@ public:
       Entries.push_back("(null)");
     if (ContainsStatic)
       Entries.push_back("(static)");
-    for (const auto &V : Vars) {
-      Entries.push_back(V.first.getName());
-      for (size_t j = 0; j < V.second; ++j)
-        Entries.back().append("'");
-    }
+    for (const auto &V : Vars)
+      Entries.push_back(V.getName());
     std::sort(Entries.begin(), Entries.end());
     return "(" + llvm::join(Entries, ", ") + ")";
   }
@@ -409,14 +438,10 @@ public:
     ContainsStatic |= O.ContainsStatic;
 
     for (const auto &VO : O.Vars) {
-      auto V = Vars.find(VO.first);
-      if (V == Vars.end()) {
-        Vars.insert(VO);
-      } else {
-        // If this would contain o' and o'' it would be invalidated on KILL(o')
-        // and KILL(o'') which is the same for a pset only containing o''.
-        V->second = std::max(V->second, VO.second);
-      }
+      Vars.insert(VO);
+      // TODO?: optimization not implemented:
+      // If this would contain o' and o'' it would be invalidated on KILL(o')
+      // and KILL(o'') which is the same for a pset only containing o''.
     }
   }
 
@@ -426,27 +451,24 @@ public:
     return Ret;
   }
 
-  void insert(Variable Var, unsigned Order = 0) {
+  void insert(Variable Var, unsigned Deref = 0) {
     if (Var.hasStaticLifetime()) {
       ContainsStatic = true;
       return;
     }
 
+    // TODO?: optimalization not implemented:
     // If this would contain o' and o'' it would be invalidated on KILL(o')
     // and KILL(o'') which is the same for a pset only containing o''.
-    auto It = Vars.find(Var);
-    if (It != Vars.end())
-      Order = std::max(It->second, Order);
 
-    Vars[Var] = Order;
+    Vars.insert(Var);
   }
 
   void addFieldRef(const FieldDecl *FD) {
-    std::map<Variable, unsigned> NewVars;
-    for (auto &VO : Vars) {
-      Variable Var = VO.first;
+    std::set<Variable> NewVars;
+    for (auto Var : Vars) {
       Var.addFieldRef(FD);
-      NewVars.insert(std::make_pair(Var, VO.second));
+      NewVars.insert(Var);
     }
     Vars = NewVars;
   }
@@ -480,13 +502,15 @@ public:
     return ret;
   }
 
-  /// The pset contains one of obj, obj' or obj''
-  static PSet singleton(Variable Var, unsigned order = 0) {
+  /// The pset contains one element
+  static PSet singleton(Variable Var, unsigned Deref = 0) {
     PSet ret;
     if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
-    else
-      ret.Vars.emplace(Var, order);
+    else {
+      Var.deref(Deref);
+      ret.Vars.emplace(Var);
+    }
     return ret;
   }
 
@@ -494,13 +518,7 @@ private:
   int ContainsNull : 1;
   int ContainsInvalid : 1;
   int ContainsStatic : 1;
-  /// Maps Variable obj to order.
-  /// If Variable is not an Owner, order must be zero
-  /// (obj,0) == obj: points to obj
-  /// (obj,1) == obj': points to object owned directly by obj
-  /// (obj,2) == obj'': points an object kept alive indirectly (transitively)
-  /// via owner obj
-  std::map<Variable, unsigned> Vars;
+  std::set<Variable> Vars;
 
   std::vector<InvalidationReason> InvReasons;
   std::vector<NullReason> NullReasons;
