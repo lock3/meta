@@ -4159,27 +4159,51 @@ This attribute does not affect optimizations in any way, unlike GCC's
 }
 
 def LifetimeOwnerDocs : Documentation {
-  let Category = DocCatFunction;
+  let Category = DocCatDecl;
   let Content = [{
-When annotating a class ``O`` with ``[[gsl::Owner(T)]]``, then each function
-that returns cv-qualified ``T&`` or ``T*`` is assumed to return a
-pointer/reference to the data owned by ``O``. The owned data is assumed to end
-its lifetime once the owning object's lifetime ends.
+.. Note:: This attribute is experimental and its effect on analysis is subject to change in
+  a future version of clang.
 
-This attribute may be used by analysis tools but will not have effect on code
+The attribute ``[[gsl::Owner(T)]]`` applies to structs and classes that own an
+object of type ``T``:
+
+.. code-block:: c++
+
+  class [[gsl::Owner(int)]] IntOwner {
+  private:
+    int value;
+  public:
+    int *getInt() { return &value; }
+  };
+
+The argument ``T`` is optional.
+
+This attribute may be used by analysis tools and has no effect on code
 generation.
 }];
 }
 
 def LifetimePointerDocs : Documentation {
-  let Category = DocCatFunction;
+  let Category = DocCatDecl;
   let Content = [{
-When annotating a class ``P`` with ``[[gsl::Pointer(T)]]``, it assumed to be a
-non-owning type whose objects can point to ``T`` type objects or dangle.
-This attribute may be used by analysis tools but will not have effect on code
-generation.
+.. Note:: This attribute is experimental and its effect on analysis is subject to change in
+  a future version of clang.
 
-For example ``std::vector<int>::iterator`` might be annotated
-``[[gsl::Pointer(int)]]``.
+The attribute ``[[gsl::Pointer(T)]]`` applies to structs and classes that behave
+like pointers to an object of type ``T``:
+
+.. code-block:: c++
+
+  class [[gsl::Pointer(int)]] IntPointer {
+  private:
+    int *valuePointer;
+  public:
+    int *getInt() { return &valuePointer; }
+  };
+
+The argument ``T`` is optional.
+
+This attribute may be used by analysis tools and has no effect on code
+generation.
 }];
 }
