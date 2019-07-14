@@ -4561,6 +4561,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
             << AL << OAttr;
         S.Diag(OAttr->getLocation(), diag::note_conflicting_attribute);
       }
+      return;
     }
     D->addAttr(::new (S.Context)
                    OwnerAttr(AL.getRange(), S.Context, DerefTypeLoc,
@@ -4577,6 +4578,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
             << AL << PAttr;
         S.Diag(PAttr->getLocation(), diag::note_conflicting_attribute);
       }
+      return;
     }
     D->addAttr(::new (S.Context)
                    PointerAttr(AL.getRange(), S.Context, DerefTypeLoc,
