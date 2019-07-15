@@ -63,8 +63,10 @@ struct Variable {
     return false;
   }
 
+  // TODO: is this what we want when derefs are involved?
   bool isBaseEqual(const Variable &O) const { return Data.Var == O.Data.Var; }
 
+  // TODO: is this what we want when derefs are involved?
   bool hasStaticLifetime() const {
     if (const auto *VD = Data.Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
@@ -74,28 +76,8 @@ struct Variable {
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
   /// TODO: Should we cache the type instead of calculating?
   QualType getType() const {
-    QualType Base;
-    if (const auto *VD = Data.Var.dyn_cast<const VarDecl *>())
-      Base = VD->getType();
-    else if (const auto *MT =
-                 Data.Var.dyn_cast<const MaterializeTemporaryExpr *>())
-      Base = MT->getType();
-    else
-      assert(!Data.FDs.empty() && "Not yet supported for temporary and this.");
-
-    for (auto It = Data.FDs.rbegin(); It != Data.FDs.rend(); ++It) {
-      if (*It) {
-        assert(isThisPointer() || isTemporary() ||
-               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
-               Base->getAsCXXRecordDecl()->isDerivedFrom(
-                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
-        Base = (*It)->getType();
-        break;
-      } else {
-        Base = getPointeeType(Base);
-      }
-    }
-    return Base;
+    int Order;
+    return getTypeAndOrder(Order);
   }
 
   bool isField() const { return !Data.FDs.empty() && Data.FDs.back(); }
@@ -133,31 +115,14 @@ struct Variable {
     return *this;
   }
 
-  unsigned getOrder() const {
-    if (isThisPointer())
-      return 0;
-    // TODO: what if the pointee of a Pointer is an owner?
-    // This will be more complex!
-    QualType BaseType;
-    if (const auto *VD = asVarDecl())
-      BaseType = VD->getType();
-    else
-      BaseType =
-          Data.Var.dyn_cast<const MaterializeTemporaryExpr *>()->getType();
-    if (classifyTypeCategory(BaseType) != TypeCategory::Owner)
-      return 0;
-    int Order = 0;
-    for (const auto *FD : Data.FDs) {
-      if (!FD)
-        ++Order;
-      else
-        break;
-    }
-    return Order;
-  }
-
   bool isDeref() const {
     return !Data.FDs.empty() && Data.FDs.front() == nullptr;
+  }
+
+  unsigned getOrder() const {
+    int Order;
+    getTypeAndOrder(Order);
+    return Order >= 0 ? Order : 0;
   }
 
   std::string getName() const {
@@ -181,6 +146,40 @@ struct Variable {
         Ret = "(*" + Ret + ")";
     }
     return Ret;
+  }
+
+private:
+  QualType getTypeAndOrder(int &Order) const {
+    Order = -1;
+    QualType Base;
+    if (const auto *VD = Data.Var.dyn_cast<const VarDecl *>())
+      Base = VD->getType();
+    else if (const auto *MT =
+                 Data.Var.dyn_cast<const MaterializeTemporaryExpr *>())
+      Base = MT->getType();
+    else if (Data.FDs.empty()) {
+      // TODO: not supported for this and temporary yet.
+      return Base;
+    }
+
+    if (!Base.isNull() && classifyTypeCategory(Base) == TypeCategory::Owner)
+      Order = 0;
+    for (auto It = Data.FDs.begin(); It != Data.FDs.end(); ++It) {
+      if (*It) {
+        assert(isThisPointer() || isTemporary() ||
+               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
+               Base->getAsCXXRecordDecl()->isDerivedFrom(
+                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
+        Base = (*It)->getType();
+        if (Order == -1 && classifyTypeCategory(Base) == TypeCategory::Owner)
+          Order = 0;
+      } else {
+        Base = getPointeeType(Base);
+        if (Order >= 0)
+          ++Order;
+      }
+    }
+    return Base;
   }
 
   VarData Data;
@@ -332,7 +331,7 @@ public:
     auto I = llvm::find_if(Vars, [Var, Order](const Variable &Other) {
       return Var.isBaseEqual(Other) && Order <= Other.getOrder();
     });
-    return I != Vars.end() && I->getOrder() >= Order;
+    return I != Vars.end();
   }
 
   bool containsNull() const { return ContainsNull; }

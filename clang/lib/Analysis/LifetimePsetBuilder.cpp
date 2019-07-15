@@ -777,18 +777,19 @@ public:
   bool CheckPSetValidity(const PSet &PS, SourceRange Range);
 
   /// Invalidates all psets that point to V or something owned by V
-  void invalidateVar(Variable V, unsigned order, InvalidationReason Reason) {
+  void invalidateVar(Variable V, unsigned Order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
-      if (Pointer == V)
+      if (V.isBaseEqual(Pointer))
         continue; // Invalidating Owner' should not change the pset of Owner
       PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
-      if (PS.containsBase(V, order))
+      if (PS.containsBase(V, Order)) {
         setPSet(PSet::singleton(Pointer), PSet::invalid(Reason),
                 Reason.getRange());
+      }
     }
   }
 
