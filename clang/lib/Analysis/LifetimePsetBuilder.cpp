@@ -780,7 +780,7 @@ public:
   void invalidateVar(Variable V, unsigned Order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
-      if (V.isBaseEqual(Pointer))
+      if (V.isBaseEqual(Pointer) && Order > 0)
         continue; // Invalidating Owner' should not change the pset of Owner
       PSet &PS = I.second;
       if (PS.containsInvalid())
@@ -1452,7 +1452,15 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
   for (const auto &Pair : PreAttr->PrePSets) {
     Variable V(Pair.first.getPointer());
     V.deref(Pair.first.getInt());
-    PMap.emplace(V, Pair.second);
+    PSet PS(Pair.second);
+    if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
+      if (!V.isField() && !V.isDeref() && PS.containsNull())
+        PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
+      if (PS.containsInvalid())
+        PS = PSet::invalid(
+            InvalidationReason::NotInitialized(PVD->getSourceRange()));
+    }
+    PMap.emplace(V, PS);
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
