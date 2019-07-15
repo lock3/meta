@@ -1210,10 +1210,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     const auto LAttr = FD->getAttr<LifetimeContractAttr>();
     for (const auto &E : LAttr->PrePSets) {
       std::string KeyText = "Pre(";
-      for(unsigned I = 0; I < E.first.getInt(); ++I)
+      for (unsigned I = 0; I < E.first.getInt(); ++I)
         KeyText += "*";
       KeyText += E.first.getPointer()->getName();
-      KeyText +=  ")";
+      KeyText += ")";
       std::string PSetText = PSet(E.second).str();
       Reporter.debugPset(Range.getBegin(), KeyText, PSetText);
     }
@@ -1335,14 +1335,24 @@ static const Expr *getGslPsetArg(const Expr *E) {
   return nullptr;
 }
 
-static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
+LifetimeContractAttr::PointsToSet
+merge(LifetimeContractAttr::PointsToSet LHS,
+      const LifetimeContractAttr::PointsToSet &RHS) {
+  LHS.HasNull |= RHS.HasNull;
+  LHS.HasStatic |= RHS.HasStatic;
+  LHS.HasInvalid |= RHS.HasInvalid;
+  for (LifetimeContractAttr::PointsToLoc Loc : RHS.Pointees)
+    LHS.Pointees.push_back(Loc);
+  return LHS;
+}
+
+static LifetimeContractAttr::PointsToSet
+collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
   LifetimeContractAttr::PointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
-    LifetimeContractAttr::PointsToLoc Loc;
-    Loc.Var = dyn_cast<VarDecl>(DRE->getDecl());
-    if (!Loc.Var)
+    LifetimeContractAttr::PSetKey Key(dyn_cast<VarDecl>(DRE->getDecl()), 0);
+    if (!Key.getPointer())
       return Result;
-    Loc.FDs.push_back(nullptr);
     StringRef Name = DRE->getDecl()->getName();
     if (Name == "Null")
       Result.HasNull = true;
@@ -1351,17 +1361,17 @@ static LifetimeContractAttr::PointsToSet collectPSet(const Expr *E) {
     else if (Name == "Invalid")
       Result.HasInvalid = true;
     else
-      Result.Pointees.push_back(Loc);
+      Result = merge(Result, Pointers[Key]);
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
         LifetimeContractAttr::PointsToSet Elem =
-            collectPSet(ignoreReturnValues(Init));
+            collectPSet(ignoreReturnValues(Init), Pointers);
         if (Elem.Pointees.empty())
           return Elem;
-        Result.Pointees.push_back(Elem.Pointees.front());
+        Result = merge(Result, Elem);
       }
     }
   }
@@ -1388,7 +1398,7 @@ static bool fillPointersFromExpr(const Expr *E,
 
   LifetimeContractAttr::PSetKey VD(
       cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl()));
-  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS);
+  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS, Pointers);
   // TODO: diagnose failures for empty PSet.
   Pointers[VD] = PSet;
   return true;

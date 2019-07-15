@@ -94,7 +94,7 @@ CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
 using namespace gsl;
 
 void basic(int *a, int *b) [[gsl::pre(pset(b) == pset(a))]] {
-  __lifetime_pset(b); // expected-warning {{((*a))}}
+  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
 }
 
 void specials(int *a, int *b, int *c)
@@ -108,12 +108,12 @@ void specials(int *a, int *b, int *c)
 
 void variadic(int *a, int *b, int *c)
     [[gsl::pre(pset(b) == pset({a, c}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
+  __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
 }
 
 void variadic_swapped(int *a, int *b, int *c)
     [[gsl::pre(pset({a, c}) == pset(b))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (*c))}}
+  __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
 }
 
 /* For std::initializer_list conversions will not work.
@@ -147,15 +147,15 @@ void double_variadic(int *a, int *b, int *c)
 void multiple_annotations(int *a, int *b, int *c)
     [[gsl::pre(pset(b) == pset(a))]]
     [[gsl::pre(pset(c) == pset(a))]] {
-  __lifetime_pset(b); // expected-warning {{((*a))}}
-  __lifetime_pset(c); // expected-warning {{((*a))}}
+  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(c); // expected-warning {{((*a), (null))}}
 }
 
 void multiple_annotations_chained(int *a, int *b, int *c)
     [[gsl::pre(pset(b) == pset(a))]]
     [[gsl::pre(pset(c) == pset(b))]] {
-  __lifetime_pset(b); // expected-warning {{((*a))}}
-  //__lifetime_pset(c); // TODOexpected-warning {{((*a))}}
+  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(c); // expected-warning {{((*a), (null))}}
 }
 
 namespace dump_contracts {
