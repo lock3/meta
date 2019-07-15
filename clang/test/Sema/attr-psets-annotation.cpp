@@ -9,6 +9,9 @@ bool __lifetime_pset_ref(const T &) { return true; }
 template <typename T>
 void __lifetime_type_category() {}
 
+template <typename T>
+bool __lifetime_contracts(const T &) { return true; }
+
 namespace gsl {
 // These classes are marked Owner so the lifetime analysis will not look into
 // the bodies of these methods. Maybe we need an annotation that will not mark
@@ -153,4 +156,23 @@ void multiple_annotations_chained(int *a, int *b, int *c)
     [[gsl::pre(pset(c) == pset(b))]] {
   __lifetime_pset(b); // expected-warning {{((*a))}}
   //__lifetime_pset(c); // TODOexpected-warning {{((*a))}}
+}
+
+namespace dump_contracts {
+// Need to have bodies to fill the lifetime attr.
+void p(int *a) {}
+void p2(int *a, int &b) {}
+void p3(int *a, int *&b) {}
+
+void f() {
+    __lifetime_contracts(p);
+    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+    __lifetime_contracts(p2);
+    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+    // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
+    __lifetime_contracts(p3);
+    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+    // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
+    // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
+}
 }

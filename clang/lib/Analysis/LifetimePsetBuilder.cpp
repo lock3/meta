@@ -1157,6 +1157,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
                      .Case("__lifetime_pset_ref", 2)
                      .Case("__lifetime_type_category", 3)
                      .Case("__lifetime_type_category_arg", 4)
+                     .Case("__lifetime_contracts", 5)
                      .Default(0);
   if (FuncNum == 0)
     return false;
@@ -1199,6 +1200,22 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
                                  Class.PointeeType.getAsString());
     } else {
       Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
+    }
+    return true;
+  }
+  case 5: {
+    const auto *FD = dyn_cast<FunctionDecl>(
+        cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts())->getDecl());
+    FD = FD->getCanonicalDecl();
+    const auto LAttr = FD->getAttr<LifetimeContractAttr>();
+    for (const auto &E : LAttr->PrePSets) {
+      std::string KeyText = "Pre(";
+      for(unsigned I = 0; I < E.first.getInt(); ++I)
+        KeyText += "*";
+      KeyText += E.first.getPointer()->getName();
+      KeyText +=  ")";
+      std::string PSetText = PSet(E.second).str();
+      Reporter.debugPset(Range.getBegin(), KeyText, PSetText);
     }
     return true;
   }
@@ -1311,9 +1328,7 @@ static const Expr *getGslPsetArg(const Expr *E) {
   E = ignoreReturnValues(E);
   if (const auto *CE = dyn_cast<CallExpr>(E)) {
     const FunctionDecl *FD = CE->getDirectCallee();
-    if (!FD)
-      return nullptr;
-    if (FD->getName() != "pset")
+    if (!FD || FD->getName() != "pset")
       return nullptr;
     return ignoreReturnValues(CE->getArg(0));
   }
