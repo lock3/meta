@@ -20,7 +20,6 @@
 
 namespace clang {
 namespace lifetime {
-using VarData = LifetimeContractAttr::PointsToLoc;
 
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
@@ -32,9 +31,9 @@ using VarData = LifetimeContractAttr::PointsToLoc;
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
 struct Variable {
-  Variable(const VarDecl *VD) : Data{VD, {}} {}
-  Variable(const MaterializeTemporaryExpr *MT) : Data{MT, {}} {}
-  Variable(const VarData &Data) : Data(Data) {}
+  Variable(const VarDecl *VD, llvm::ArrayRef<const FieldDecl *> FDs = {})
+      : Var(VD), FDs(FDs.begin(), FDs.end()) {}
+  Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
 
   static Variable temporary() {
     return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
@@ -44,19 +43,18 @@ struct Variable {
   }
 
   bool operator==(const Variable &O) const {
-    return Data.Var == O.Data.Var && Data.FDs == O.Data.FDs;
+    return Var == O.Var && FDs == O.FDs;
   }
 
   bool operator!=(const Variable &O) const { return !(*this == O); }
 
   bool operator<(const Variable &O) const {
-    if (Data.Var != O.Data.Var)
-      return Data.Var < O.Data.Var;
-    if (Data.FDs.size() != O.Data.FDs.size())
-      return Data.FDs.size() < O.Data.FDs.size();
+    if (Var != O.Var)
+      return Var < O.Var;
+    if (FDs.size() != O.FDs.size())
+      return FDs.size() < O.FDs.size();
 
-    for (auto I = Data.FDs.begin(), J = O.Data.FDs.begin(); I != Data.FDs.end();
-         ++I, ++J) {
+    for (auto I = FDs.begin(), J = O.FDs.begin(); I != FDs.end(); ++I, ++J) {
       if (*I != *J)
         return std::less<const FieldDecl *>()(*I, *J);
     }
@@ -64,13 +62,13 @@ struct Variable {
   }
 
   // TODO: is this what we want when derefs are involved?
-  bool isBaseEqual(const Variable &O) const { return Data.Var == O.Data.Var; }
+  bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
   // TODO: is this what we want when derefs are involved?
   bool hasStaticLifetime() const {
-    if (const auto *VD = Data.Var.dyn_cast<const VarDecl *>())
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
-    return isThisPointer() && !Data.FDs.empty();
+    return isThisPointer() && !FDs.empty();
   }
 
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
@@ -80,44 +78,40 @@ struct Variable {
     return getTypeAndOrder(Order);
   }
 
-  bool isField() const { return !Data.FDs.empty() && Data.FDs.back(); }
+  bool isField() const { return !FDs.empty() && FDs.back(); }
 
   bool isThisPointer() const {
-    return Data.Var.is<const VarDecl *>() && !Data.Var.get<const VarDecl *>();
+    return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
   }
 
   bool isTemporary() const {
-    return Data.Var.is<const MaterializeTemporaryExpr *>() &&
-           !Data.Var.get<const MaterializeTemporaryExpr *>();
+    return Var.is<const MaterializeTemporaryExpr *>() &&
+           !Var.get<const MaterializeTemporaryExpr *>();
   }
 
   bool isLifetimeExtendedTemporary() const {
-    return Data.Var.is<const MaterializeTemporaryExpr *>() &&
-           Data.Var.get<const MaterializeTemporaryExpr *>();
+    return Var.is<const MaterializeTemporaryExpr *>() &&
+           Var.get<const MaterializeTemporaryExpr *>();
   }
 
   bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
     return isLifetimeExtendedTemporary() &&
-           Data.Var.get<const MaterializeTemporaryExpr *>()
-                   ->getExtendingDecl() == VD;
+           Var.get<const MaterializeTemporaryExpr *>()->getExtendingDecl() ==
+               VD;
   }
 
-  const VarDecl *asVarDecl() const {
-    return Data.Var.dyn_cast<const VarDecl *>();
-  }
+  const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
-  void addFieldRef(const FieldDecl *FD) { Data.FDs.push_back(FD); }
+  void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
   Variable &deref(int Num = 1) {
     while (Num--)
-      Data.FDs.push_back(nullptr);
+      FDs.push_back(nullptr);
     return *this;
   }
 
-  bool isDeref() const {
-    return !Data.FDs.empty() && Data.FDs.front() == nullptr;
-  }
+  bool isDeref() const { return !FDs.empty() && FDs.front() == nullptr; }
 
   unsigned getOrder() const {
     int Order;
@@ -127,19 +121,19 @@ struct Variable {
 
   std::string getName() const {
     std::string Ret;
-    if (Data.Var.is<const MaterializeTemporaryExpr *>()) {
-      auto *MD = Data.Var.get<const MaterializeTemporaryExpr *>();
+    if (Var.is<const MaterializeTemporaryExpr *>()) {
+      auto *MD = Var.get<const MaterializeTemporaryExpr *>();
       if (MD && MD->getExtendingDecl()) {
         Ret = "(lifetime-extended temporary through " +
               MD->getExtendingDecl()->getName().str() + ")";
       } else
         Ret = "(temporary)";
     } else {
-      auto *VD = Data.Var.get<const VarDecl *>();
+      auto *VD = Var.get<const VarDecl *>();
       Ret = (VD ? VD->getName() : "this");
     }
 
-    for (const auto *FD : Data.FDs) {
+    for (const auto *FD : FDs) {
       if (FD)
         Ret += "." + std::string(FD->getName());
       else
@@ -152,19 +146,18 @@ private:
   QualType getTypeAndOrder(int &Order) const {
     Order = -1;
     QualType Base;
-    if (const auto *VD = Data.Var.dyn_cast<const VarDecl *>())
+    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       Base = VD->getType();
-    else if (const auto *MT =
-                 Data.Var.dyn_cast<const MaterializeTemporaryExpr *>())
+    else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
       Base = MT->getType();
-    else if (Data.FDs.empty()) {
+    else if (FDs.empty()) {
       // TODO: not supported for this and temporary yet.
       return Base;
     }
 
     if (!Base.isNull() && classifyTypeCategory(Base) == TypeCategory::Owner)
       Order = 0;
-    for (auto It = Data.FDs.begin(); It != Data.FDs.end(); ++It) {
+    for (auto It = FDs.begin(); It != FDs.end(); ++It) {
       if (*It) {
         assert(isThisPointer() || isTemporary() ||
                (*It)->getParent() == Base->getAsCXXRecordDecl() ||
@@ -182,11 +175,13 @@ private:
     return Base;
   }
 
-  VarData Data;
-};
+  llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
 
-static_assert(sizeof(Variable) == sizeof(VarData),
-              "All members goes to VarBase.");
+  /// Possibly empty list of fields and deref operations on the base.
+  /// The First entry is the field on base, next entry is the field inside
+  /// there, etc. Null pointers represent a deref operation.
+  llvm::SmallVector<const FieldDecl *, 4> FDs;
+};
 
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Range.isValid()
@@ -293,11 +288,11 @@ class PSet {
 public:
   // Initializes an unknown pset
   PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
-  PSet(const LifetimeContractAttr::PointsToSet &S)
+  PSet(const LifetimeContractAttr::PointsToSet &S, const FunctionDecl *FD)
       : ContainsNull(S.HasNull), ContainsInvalid(S.HasInvalid),
         ContainsStatic(S.HasStatic) {
     for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
-      Vars.emplace(L);
+      Vars.emplace(FD->getParamDecl(L.BaseIndex), L.FDs);
     }
   }
 

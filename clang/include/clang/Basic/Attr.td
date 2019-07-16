@@ -2797,11 +2797,7 @@ def LifetimeContract : InheritableParamAttr {
   let AdditionalMembers = [{
 public:
   struct PointsToLoc {
-    llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
-
-    /// Possibly empty list of fields and deref operations on the base.
-    /// The First entry is the field on base, next entry is the field inside
-    /// there, etc. Null pointers represent a deref operation.
+    unsigned BaseIndex;
     llvm::SmallVector<const FieldDecl *, 4> FDs;
   };
   struct PointsToSet {

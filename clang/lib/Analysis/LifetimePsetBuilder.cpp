@@ -1220,7 +1220,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
             KeyText += "*";
           KeyText += FD->getParamDecl(E.first.first)->getName();
           KeyText += ")";
-          std::string PSetText = PSet(E.second).str();
+          std::string PSetText = PSet(E.second, FD).str();
           Reporter.debugPset(Range, KeyText, PSetText);
         };
     for (const auto &E : LAttr->PrePSets)

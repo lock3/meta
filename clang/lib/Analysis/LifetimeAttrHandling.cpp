@@ -137,7 +137,7 @@ public:
       AttrPSetKey ParamLoc(PVD->getFunctionScopeIndex(), 0);
       AttrPointsToSet PS;
       AttrPointsToLoc ParamDerefLoc;
-      ParamDerefLoc.Var = PVD;
+      ParamDerefLoc.BaseIndex = ParamLoc.first;
       ParamDerefLoc.FDs.push_back(nullptr);
       PS.Pointees.push_back(ParamDerefLoc);
       // TODO: nullable Owners don't exist in the paper (yet?)
@@ -266,7 +266,7 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
   for (const auto &Pair : ContractAttr->PrePSets) {
     Variable V(FD->getParamDecl(Pair.first.first));
     V.deref(Pair.first.second);
-    PSet PS(Pair.second);
+    PSet PS(Pair.second, FD);
     if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
       if (!V.isField() && !V.isDeref() && PS.containsNull())
         PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
@@ -279,7 +279,7 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
   for (const auto &Pair : ContractAttr->PostPSets) {
     Variable V(FD->getParamDecl(Pair.first.first));
     V.deref(Pair.first.second);
-    PMap.emplace(V, Pair.second);
+    PMap.emplace(V, PSet(Pair.second, FD));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
