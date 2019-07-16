@@ -436,12 +436,7 @@ public:
     }
     ContainsStatic |= O.ContainsStatic;
 
-    for (const auto &VO : O.Vars) {
-      Vars.insert(VO);
-      // TODO?: optimization not implemented:
-      // If this would contain o' and o'' it would be invalidated on KILL(o')
-      // and KILL(o'') which is the same for a pset only containing o''.
-    }
+    Vars.insert(O.Vars.begin(), O.Vars.end());
   }
 
   PSet operator+(const PSet &O) const {
@@ -455,10 +450,6 @@ public:
       ContainsStatic = true;
       return;
     }
-
-    // TODO?: optimalization not implemented:
-    // If this would contain o' and o'' it would be invalidated on KILL(o')
-    // and KILL(o'') which is the same for a pset only containing o''.
 
     Vars.insert(Var);
   }

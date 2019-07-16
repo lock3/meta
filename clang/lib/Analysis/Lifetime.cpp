@@ -143,7 +143,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       auto J = EntryPMap.find(Var);
       if (J == EntryPMap.end())
         EntryPMap.insert(I);
-      else if (!(PS == J->second))
+      else
         J->second.merge(PS);
     }
   }
