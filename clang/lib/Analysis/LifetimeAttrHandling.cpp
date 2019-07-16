@@ -8,11 +8,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Analysis/Analyses/Lifetime.h"
+#include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 
 namespace clang {
 namespace lifetime {
+
+// Easier access the attribute's representation.
+using AttrPointsToSet = LifetimeContractAttr::PointsToSet;
+using AttrPointsToMap = LifetimeContractAttr::PointsToMap;
+using AttrPointsToLoc = LifetimeContractAttr::PointsToLoc;
+using AttrPSetKey = LifetimeContractAttr::PSetKey;
 
 static const Expr *ignoreReturnValues(const Expr *E) {
   E = E->IgnoreImplicit();
@@ -32,20 +39,21 @@ static const Expr *getGslPsetArg(const Expr *E) {
   return nullptr;
 }
 
-LifetimeContractAttr::PointsToSet
-merge(LifetimeContractAttr::PointsToSet LHS,
-      const LifetimeContractAttr::PointsToSet &RHS) {
+static AttrPointsToSet merge(AttrPointsToSet LHS, const AttrPointsToSet &RHS) {
   LHS.HasNull |= RHS.HasNull;
   LHS.HasStatic |= RHS.HasStatic;
   LHS.HasInvalid |= RHS.HasInvalid;
-  for (LifetimeContractAttr::PointsToLoc Loc : RHS.Pointees)
+  for (AttrPointsToLoc Loc : RHS.Pointees)
     LHS.Pointees.push_back(Loc);
   return LHS;
 }
 
-static LifetimeContractAttr::PointsToSet
-collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
-  LifetimeContractAttr::PointsToSet Result;
+static bool isEmpty(const AttrPointsToSet Set) {
+  return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid && Set.HasStatic;
+}
+
+static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
+  AttrPointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     const auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
     if (!VD)
@@ -61,7 +69,7 @@ collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
       const auto *PVD = dyn_cast<ParmVarDecl>(VD);
       if (!PVD)
         return Result;
-      LifetimeContractAttr::PSetKey Key(PVD->getFunctionScopeIndex(), 0);
+      AttrPSetKey Key(PVD->getFunctionScopeIndex(), 0);
       Result = merge(Result, Pointers[Key]);
     }
     return Result;
@@ -69,8 +77,7 @@ collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
-        LifetimeContractAttr::PointsToSet Elem =
-            collectPSet(ignoreReturnValues(Init), Pointers);
+        AttrPointsToSet Elem = collectPSet(ignoreReturnValues(Init), Pointers);
         if (Elem.Pointees.empty())
           return Elem;
         Result = merge(Result, Elem);
@@ -80,8 +87,7 @@ collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
   return Result;
 }
 
-static bool fillPointersFromExpr(const Expr *E,
-                                 LifetimeContractAttr::PointsToMap &Pointers) {
+static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
   const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
   if (!OCE || OCE->getOperator() != OO_EqualEqual)
     return false;
@@ -99,87 +105,165 @@ static bool fillPointersFromExpr(const Expr *E,
   if (!isa<DeclRefExpr>(LHS))
     return false;
 
-  LifetimeContractAttr::PSetKey VD(
-      cast<ParmVarDecl>(cast<DeclRefExpr>(LHS)->getDecl())
-          ->getFunctionScopeIndex(),
-      0);
-  LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS, Pointers);
+  AttrPSetKey VD(cast<ParmVarDecl>(cast<DeclRefExpr>(LHS)->getDecl())
+                     ->getFunctionScopeIndex(),
+                 0);
+  AttrPointsToSet PSet = collectPSet(RHS, Pointers);
   // TODO: diagnose failures for empty PSet.
   Pointers[VD] = PSet;
   return true;
 }
 
-static void fillPSetsForDecl(const FunctionDecl *FD,
-                             LifetimeContractAttr *PreAttr) {
+namespace {
+class PSetCollector {
+public:
+  PSetCollector(const FunctionDecl *FD, const ASTContext &ASTCtxt,
+                IsConvertibleTy isConvertible)
+      : FD(FD), ASTCtxt(ASTCtxt), isConvertible(isConvertible) {}
 
-  LifetimeContractAttr::PointsToMap &Map = PreAttr->PrePSets;
-  // Fill default PSets.
-  for (const ParmVarDecl *PVD : FD->parameters()) {
-    QualType ParamTy = PVD->getType();
-    TypeCategory TC = classifyTypeCategory(ParamTy);
-    if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
-      continue;
+  void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
+    AttrPointsToMap &Map = ContractAttr->PrePSets;
+    // Fill default PSets.
+    // TODO: inputs to outputs matching needs to be done after
+    //       user defined annotations are processed.
 
-    LifetimeContractAttr::PSetKey Key(PVD->getFunctionScopeIndex(), 0);
-    LifetimeContractAttr::PointsToSet PS;
-    LifetimeContractAttr::PointsToLoc ParamDerefLoc;
-    ParamDerefLoc.Var = PVD;
-    ParamDerefLoc.FDs.push_back(nullptr);
-    PS.Pointees.push_back(ParamDerefLoc);
-    // TODO: nullable Owners don't exist in the paper (yet?)
-    // TODO: nullreason not added yet!
-    //       maybe could be added at the Attr->PSet conv?
-    if (isNullableType(ParamTy))
-      PS.HasNull = true;
-    if (TC == TypeCategory::Pointer) {
-      LifetimeContractAttr::PSetKey P_deref(PVD->getFunctionScopeIndex(), 1);
-      QualType PointeeType = getPointeeType(ParamTy);
-      LifetimeContractAttr::PointsToSet DerefPS;
-      switch (classifyTypeCategory(PointeeType)) {
-      case TypeCategory::Owner: {
-        LifetimeContractAttr::PointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
-        ParamDerefDerefLoc.FDs.push_back(nullptr);
-        DerefPS.Pointees.push_back(ParamDerefDerefLoc);
-        if (isNullableType(ParamTy))
-          DerefPS.HasNull = true;
-        Map.try_emplace(P_deref, DerefPS);
-        break;
-      }
-      case TypeCategory::Pointer:
-        if (!PointeeType.isConstQualified()) {
-          // Output params are initially invalid.
-          DerefPS.HasInvalid = true;
-          Map.try_emplace(P_deref, DerefPS);
-        } else {
-          // staticVar to allow further derefs (if this is Pointer to a
-          // Pointer to a Pointer etc)
-          DerefPS.HasStatic = true;
+    ParamDerivedLocations Locations;
+    for (const ParmVarDecl *PVD : FD->parameters()) {
+      QualType ParamTy = PVD->getType();
+      TypeCategory TC = classifyTypeCategory(ParamTy);
+      if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
+        continue;
+
+      AttrPSetKey ParamLoc(PVD->getFunctionScopeIndex(), 0);
+      AttrPointsToSet PS;
+      AttrPointsToLoc ParamDerefLoc;
+      ParamDerefLoc.Var = PVD;
+      ParamDerefLoc.FDs.push_back(nullptr);
+      PS.Pointees.push_back(ParamDerefLoc);
+      // TODO: nullable Owners don't exist in the paper (yet?)
+      if (isNullableType(ParamTy))
+        PS.HasNull = true;
+      if (TC == TypeCategory::Pointer) {
+        AttrPSetKey P_deref(PVD->getFunctionScopeIndex(), 1);
+        QualType PointeeType = getPointeeType(ParamTy);
+        AttrPointsToSet DerefPS;
+        switch (classifyTypeCategory(PointeeType)) {
+        case TypeCategory::Owner: {
+          AttrPointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
+          ParamDerefDerefLoc.FDs.push_back(nullptr);
+          DerefPS.Pointees.push_back(ParamDerefDerefLoc);
           if (isNullableType(ParamTy))
             DerefPS.HasNull = true;
           Map.try_emplace(P_deref, DerefPS);
+          if (ParamTy->isLValueReferenceType()) {
+            if (PointeeType.isConstQualified()) {
+              Locations.Input_weak.push_back(ParamLoc);
+              Locations.Input_weak.push_back(P_deref);
+            } else {
+              Locations.Input.push_back(ParamLoc);
+              Locations.Input.push_back(P_deref);
+            }
+          }
+          break;
         }
-        LLVM_FALLTHROUGH;
-      default:
-        break;
+        case TypeCategory::Pointer:
+          if (!PointeeType.isConstQualified()) {
+            // Output params are initially invalid.
+            DerefPS.HasInvalid = true;
+            Map.try_emplace(P_deref, DerefPS);
+            Locations.Output.push_back(P_deref);
+          } else {
+            // staticVar to allow further derefs (if this is Pointer to a
+            // Pointer to a Pointer etc)
+            DerefPS.HasStatic = true;
+            if (isNullableType(ParamTy))
+              DerefPS.HasNull = true;
+            Map.try_emplace(P_deref, DerefPS);
+          }
+          LLVM_FALLTHROUGH;
+        default:
+          if (!ParamTy->isRValueReferenceType())
+            Locations.Input.push_back(ParamLoc);
+          break;
+        }
       }
+      Map.try_emplace(ParamLoc, PS);
     }
-    Map.try_emplace(Key, PS);
+
+    // Compute default outputs
+    auto computeOutput = [&](QualType OutputType) {
+      AttrPointsToSet Ret;
+      for (AttrPSetKey K : Locations.Input) {
+        /* if (canAssign(CA.ParamQType, OutputType))
+          Ret.merge(CA.PS); */
+      }
+      if (isEmpty(Ret)) {
+        for (AttrPSetKey K : Locations.Input_weak) {
+          /* if (canAssign(CA.ParamQType, OutputType))
+            Ret.merge(CA.PS);*/
+        }
+      }
+      // For not_null types assume that the callee did not set them
+      // to null.
+      if (!isNullableType(OutputType))
+        Ret.HasNull = false;
+      if (isEmpty(Ret))
+        Ret.HasStatic = true;
+      return Ret;
+    };
+    for (AttrPSetKey O :Locations.Output) {
+      // TODO
+    }
+
+    // Adust PSets based on annotations.
+    for (const Expr *E : ContractAttr->PreExprs) {
+      if (!fillPointersFromExpr(E, ContractAttr->PrePSets))
+        continue; // TODO: warn
+    }
+    for (const Expr *E : ContractAttr->PostExprs) {
+      if (!fillPointersFromExpr(E, ContractAttr->PostPSets))
+        continue; // TODO: warn
+    }
   }
 
-  // Adust PSets based on annotations.
-  for (const Expr *E : PreAttr->PreExprs) {
-    if (!fillPointersFromExpr(E, PreAttr->PrePSets))
-      continue; // TODO: warn
+private:
+  bool canAssign(QualType From, QualType To) {
+    QualType FromPointee = getPointeeType(From);
+    if (FromPointee.isNull())
+      return false;
+
+    QualType ToPointee = getPointeeType(To);
+    if (ToPointee.isNull())
+      return false;
+
+    return isConvertible(ASTCtxt.getPointerType(FromPointee),
+                         ASTCtxt.getPointerType(ToPointee));
   }
-}
 
-void getPreconditionAssumptions(PSetsMap &PMap, const FunctionDecl *FD) {
-  auto *PreAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
+  struct ParamDerivedLocations {
+    std::vector<AttrPSetKey> Input_weak;
+    std::vector<AttrPSetKey> Input;
+    std::vector<AttrPSetKey> Output;
+  };
 
-  if (PreAttr->PrePSets.empty())
-    fillPSetsForDecl(FD, PreAttr);
+  const FunctionDecl *FD;
+  const ASTContext &ASTCtxt;
+  IsConvertibleTy isConvertible;
+};
 
-  for (const auto &Pair : PreAttr->PrePSets) {
+} // anonymous namespace
+
+void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
+                          const ASTContext &ASTCtxt,
+                          IsConvertibleTy isConvertible) {
+  auto *ContractAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
+
+  if (ContractAttr->PrePSets.empty()) {
+    PSetCollector Collector(FD, ASTCtxt, isConvertible);
+    Collector.fillPSetsForDecl(ContractAttr);
+  }
+
+  for (const auto &Pair : ContractAttr->PrePSets) {
     Variable V(FD->getParamDecl(Pair.first.first));
     V.deref(Pair.first.second);
     PSet PS(Pair.second);
@@ -191,6 +275,11 @@ void getPreconditionAssumptions(PSetsMap &PMap, const FunctionDecl *FD) {
             InvalidationReason::NotInitialized(PVD->getSourceRange()));
     }
     PMap.emplace(V, PS);
+  }
+  for (const auto &Pair : ContractAttr->PostPSets) {
+    Variable V(FD->getParamDecl(Pair.first.first));
+    V.deref(Pair.first.second);
+    PMap.emplace(V, Pair.second);
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));

@@ -10,6 +10,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSETBUILDER_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSETBUILDER_H
 
+#include "Lifetime.h"
 #include "LifetimePset.h"
 #include "clang/Basic/SourceLocation.h"
 
@@ -29,7 +30,9 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 IsConvertibleTy IsConvertible);
 
 /// Get the initial PSets for function parameters.
-void getPreconditionAssumptions(PSetsMap &PMap, const FunctionDecl *FD);
+void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
+                          const ASTContext &ASTCtxt,
+                          IsConvertibleTy isConvertible);
 } // namespace lifetime
 } // namespace clang
 

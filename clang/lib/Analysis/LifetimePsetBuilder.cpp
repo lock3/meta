@@ -1211,15 +1211,22 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
         cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts())->getDecl());
     FD = FD->getCanonicalDecl();
     const auto LAttr = FD->getAttr<LifetimeContractAttr>();
-    for (const auto &E : LAttr->PrePSets) {
-      std::string KeyText = "Pre(";
-      for (int I = 0; I < E.first.second; ++I)
-        KeyText += "*";
-      KeyText += FD->getParamDecl(E.first.first)->getName();
-      KeyText += ")";
-      std::string PSetText = PSet(E.second).str();
-      Reporter.debugPset(Range, KeyText, PSetText);
-    }
+    auto printContract =
+        [FD, this,
+         &Range](LifetimeContractAttr::PointsToMap::iterator::value_type E,
+                 const std::string &Contract) {
+          std::string KeyText = Contract + "(";
+          for (int I = 0; I < E.first.second; ++I)
+            KeyText += "*";
+          KeyText += FD->getParamDecl(E.first.first)->getName();
+          KeyText += ")";
+          std::string PSetText = PSet(E.second).str();
+          Reporter.debugPset(Range, KeyText, PSetText);
+        };
+    for (const auto &E : LAttr->PrePSets)
+      printContract(E, "Pre");
+    for (const auto &E : LAttr->PostPSets)
+      printContract(E, "Post");
     return true;
   }
   default:
