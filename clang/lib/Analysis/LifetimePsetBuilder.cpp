@@ -18,6 +18,8 @@
 namespace clang {
 namespace lifetime {
 
+namespace {
+
 static bool hasPSet(const Expr *E) {
   auto TC = classifyTypeCategory(E->getType());
   return TC == TypeCategory::Pointer || TC == TypeCategory::Owner;
@@ -936,7 +938,8 @@ public:
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                 llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                                 SourceRange Range);
-}; // namespace lifetime
+};
+} // anonymous namespace
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
