@@ -70,7 +70,7 @@ enum class NoteType {
 class LifetimeReporterBase {
 public:
   virtual ~LifetimeReporterBase() = default;
-  virtual void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+  virtual void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                                 std::string ActualPset) = 0;
   virtual void warn(WarnType T, SourceRange Range, bool Possibly) = 0;
   virtual void warnParameterDangling(SourceRange Range, bool Indirectly) = 0;

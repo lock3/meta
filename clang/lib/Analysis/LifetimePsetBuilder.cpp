@@ -198,7 +198,7 @@ public:
 
     // Unless we have seen the actual array, we assume it is pointer arithmetic.
     if (Ref.isUnknown())
-      Reporter.warnPointerArithmetic(E->getBeginLoc());
+      Reporter.warnPointerArithmetic(E->getSourceRange());
 
     setPSet(E, Ref);
   }
@@ -508,7 +508,7 @@ public:
       return;
     PSet ThrownPSet = getPSet(TE->getSubExpr());
     if (!ThrownPSet.isStatic())
-      Reporter.warnNonStaticThrow(TE->getEndLoc(), ThrownPSet.str());
+      Reporter.warnNonStaticThrow(TE->getSourceRange(), ThrownPSet.str());
   }
 
   struct CallArgument {
@@ -1021,7 +1021,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
     StringRef SourceText =
         Lexer::getSourceText(CharSourceRange::getTokenRange(Range),
                              ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
-    Reporter.warnPsetOfGlobal(Range.getBegin(), SourceText, RHS.str());
+    Reporter.warnPsetOfGlobal(Range, SourceText, RHS.str());
   }
 
   if (LHS.isSingleton()) {
@@ -1177,7 +1177,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     StringRef SourceText = Lexer::getSourceText(
         CharSourceRange::getTokenRange(CallE->getArg(0)->getSourceRange()),
         ASTCtxt.getSourceManager(), ASTCtxt.getLangOpts());
-    Reporter.debugPset(Range.getBegin(), SourceText, Set.str());
+    Reporter.debugPset(Range, SourceText, Set.str());
     return true;
   }
   case 3: {
@@ -1185,10 +1185,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     auto QType = Args->get(0).getAsType();
     auto Class = classifyTypeCategory(QType);
     if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
-      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+      Reporter.debugTypeCategory(Range, Class.TC,
                                  Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
+      Reporter.debugTypeCategory(Range, Class.TC);
     }
     return true;
   }
@@ -1196,10 +1196,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     auto QType = CallE->getArg(0)->getType();
     auto Class = classifyTypeCategory(QType);
     if (Class.TC == TypeCategory::Pointer || Class.TC == TypeCategory::Owner) {
-      Reporter.debugTypeCategory(Range.getBegin(), Class.TC,
+      Reporter.debugTypeCategory(Range, Class.TC,
                                  Class.PointeeType.getAsString());
     } else {
-      Reporter.debugTypeCategory(Range.getBegin(), Class.TC);
+      Reporter.debugTypeCategory(Range, Class.TC);
     }
     return true;
   }
@@ -1215,7 +1215,7 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
       KeyText += FD->getParamDecl(E.first.first)->getName();
       KeyText += ")";
       std::string PSetText = PSet(E.second).str();
-      Reporter.debugPset(Range.getBegin(), KeyText, PSetText);
+      Reporter.debugPset(Range, KeyText, PSetText);
     }
     return true;
   }

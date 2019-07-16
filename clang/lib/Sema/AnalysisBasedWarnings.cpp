@@ -1998,10 +1998,11 @@ class Reporter : public LifetimeReporterBase {
 public:
   Reporter(Sema &S) : S(S) {}
 
-  void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+  void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                         std::string ActualPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_pset_of_global)
+          << VariableName << ActualPset << Range;
   }
 
   void warn(WarnType T, SourceRange Range, bool Possibly) final {
