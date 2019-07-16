@@ -17,6 +17,7 @@ add_clang_library(clangAnalysis
   Dominators.cpp
   ExprMutationAnalyzer.cpp
   Lifetime.cpp
+  LifetimeAttrHandling.cpp
   LifetimeTypeCategory.cpp
   LifetimePsetBuilder.cpp
   LiveVariables.cpp

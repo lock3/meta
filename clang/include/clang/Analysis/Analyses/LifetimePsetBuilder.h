@@ -29,7 +29,7 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 IsConvertibleTy IsConvertible);
 
 /// Get the initial PSets for function parameters.
-void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);
+void getPreconditionAssumptions(PSetsMap &PMap, const FunctionDecl *FD);
 } // namespace lifetime
 } // namespace clang
 
