@@ -158,21 +158,33 @@ void multiple_annotations_chained(int *a, int *b, int *c)
   __lifetime_pset(c); // expected-warning {{((*a), (null))}}
 }
 
+void annotate_forward_decl(int *a, int *b)
+    [[gsl::pre(pset(b) == pset(a))]];
+
+void annotate_forward_decl(int *c, int *d) {
+  __lifetime_pset(d); // expected-warning {{((*c), (null))}}
+}
+
+// Repeated annotations on redeclarations are not checked as
+// they will automatically be checked with contracts.
+
 namespace dump_contracts {
 // Need to have bodies to fill the lifetime attr.
 void p(int *a) {}
 void p2(int *a, int &b) {}
 void p3(int *a, int *&b) {}
 
+// TODO: contracts for function pointers?
+
 void f() {
-    __lifetime_contracts(p);
-    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-    __lifetime_contracts(p2);
-    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-    // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
-    __lifetime_contracts(p3);
-    // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-    // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
-    // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
+  __lifetime_contracts(p);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  __lifetime_contracts(p2);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
+  __lifetime_contracts(p3);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
+  // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
 }
 }

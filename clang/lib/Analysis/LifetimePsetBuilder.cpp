@@ -1210,9 +1210,9 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     const auto LAttr = FD->getAttr<LifetimeContractAttr>();
     for (const auto &E : LAttr->PrePSets) {
       std::string KeyText = "Pre(";
-      for (unsigned I = 0; I < E.first.getInt(); ++I)
+      for (int I = 0; I < E.first.second; ++I)
         KeyText += "*";
-      KeyText += E.first.getPointer()->getName();
+      KeyText += FD->getParamDecl(E.first.first)->getName();
       KeyText += ")";
       std::string PSetText = PSet(E.second).str();
       Reporter.debugPset(Range.getBegin(), KeyText, PSetText);
@@ -1350,18 +1350,23 @@ static LifetimeContractAttr::PointsToSet
 collectPSet(const Expr *E, LifetimeContractAttr::PointsToMap &Pointers) {
   LifetimeContractAttr::PointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
-    LifetimeContractAttr::PSetKey Key(dyn_cast<VarDecl>(DRE->getDecl()), 0);
-    if (!Key.getPointer())
+    const auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
+    if (!VD)
       return Result;
-    StringRef Name = DRE->getDecl()->getName();
+    StringRef Name = VD->getName();
     if (Name == "Null")
       Result.HasNull = true;
     else if (Name == "Static")
       Result.HasStatic = true;
     else if (Name == "Invalid")
       Result.HasInvalid = true;
-    else
+    else {
+      const auto *PVD = dyn_cast<ParmVarDecl>(VD);
+      if (!PVD)
+        return Result;
+      LifetimeContractAttr::PSetKey Key(PVD->getFunctionScopeIndex(), 0);
       Result = merge(Result, Pointers[Key]);
+    }
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
@@ -1391,13 +1396,16 @@ static bool fillPointersFromExpr(const Expr *E,
   if (!RHS)
     return false;
   // TODO: setting PSets for deref locs not supported yet.
+  //       also allow null/static etc on both sides.
   if (!isa<DeclRefExpr>(LHS))
     std::swap(LHS, RHS);
   if (!isa<DeclRefExpr>(LHS))
     return false;
 
   LifetimeContractAttr::PSetKey VD(
-      cast<VarDecl>(cast<DeclRefExpr>(LHS)->getDecl()));
+      cast<ParmVarDecl>(cast<DeclRefExpr>(LHS)->getDecl())
+          ->getFunctionScopeIndex(),
+      0);
   LifetimeContractAttr::PointsToSet PSet = collectPSet(RHS, Pointers);
   // TODO: diagnose failures for empty PSet.
   Pointers[VD] = PSet;
@@ -1415,7 +1423,7 @@ static void fillPSetsForDecl(const FunctionDecl *FD,
     if (TC != TypeCategory::Pointer && TC != TypeCategory::Owner)
       continue;
 
-    LifetimeContractAttr::PSetKey Key(PVD);
+    LifetimeContractAttr::PSetKey Key(PVD->getFunctionScopeIndex(), 0);
     LifetimeContractAttr::PointsToSet PS;
     LifetimeContractAttr::PointsToLoc ParamDerefLoc;
     ParamDerefLoc.Var = PVD;
@@ -1427,7 +1435,7 @@ static void fillPSetsForDecl(const FunctionDecl *FD,
     if (isNullableType(ParamTy))
       PS.HasNull = true;
     if (TC == TypeCategory::Pointer) {
-      LifetimeContractAttr::PSetKey P_deref(PVD, 1);
+      LifetimeContractAttr::PSetKey P_deref(PVD->getFunctionScopeIndex(), 1);
       QualType PointeeType = getPointeeType(ParamTy);
       LifetimeContractAttr::PointsToSet DerefPS;
       switch (classifyTypeCategory(PointeeType)) {
@@ -1475,8 +1483,8 @@ void PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD) {
     fillPSetsForDecl(FD, PreAttr);
 
   for (const auto &Pair : PreAttr->PrePSets) {
-    Variable V(Pair.first.getPointer());
-    V.deref(Pair.first.getInt());
+    Variable V(FD->getParamDecl(Pair.first.first));
+    V.deref(Pair.first.second);
     PSet PS(Pair.second);
     if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
       if (!V.isField() && !V.isDeref() && PS.containsNull())

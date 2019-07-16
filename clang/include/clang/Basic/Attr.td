@@ -2811,7 +2811,7 @@ public:
     SmallVector<PointsToLoc, 4> Pointees;
   }; 
   // TODO: this representation does not support fields.
-  using PSetKey = llvm::PointerIntPair<const VarDecl *, 2>;
+  using PSetKey = std::pair<unsigned, char>;
   using PointsToMap = llvm::DenseMap<PSetKey, PointsToSet>;
   SmallVector<const Expr *, 8> PreExprs;
   SmallVector<const Expr *, 8> PostExprs;
