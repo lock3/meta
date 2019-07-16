@@ -49,7 +49,8 @@ static AttrPointsToSet merge(AttrPointsToSet LHS, const AttrPointsToSet &RHS) {
 }
 
 static bool isEmpty(const AttrPointsToSet Set) {
-  return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid && Set.HasStatic;
+  return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid &&
+         Set.HasStatic;
 }
 
 static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
@@ -122,11 +123,9 @@ public:
       : FD(FD), ASTCtxt(ASTCtxt), isConvertible(isConvertible) {}
 
   void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
-    AttrPointsToMap &Map = ContractAttr->PrePSets;
     // Fill default PSets.
     // TODO: inputs to outputs matching needs to be done after
     //       user defined annotations are processed.
-
     ParamDerivedLocations Locations;
     for (const ParmVarDecl *PVD : FD->parameters()) {
       QualType ParamTy = PVD->getType();
@@ -154,7 +153,7 @@ public:
           DerefPS.Pointees.push_back(ParamDerefDerefLoc);
           if (isNullableType(ParamTy))
             DerefPS.HasNull = true;
-          Map.try_emplace(P_deref, DerefPS);
+          ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
           if (ParamTy->isLValueReferenceType()) {
             if (PointeeType.isConstQualified()) {
               Locations.Input_weak.push_back(ParamLoc);
@@ -170,7 +169,7 @@ public:
           if (!PointeeType.isConstQualified()) {
             // Output params are initially invalid.
             DerefPS.HasInvalid = true;
-            Map.try_emplace(P_deref, DerefPS);
+            ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
             Locations.Output.push_back(P_deref);
           } else {
             // staticVar to allow further derefs (if this is Pointer to a
@@ -178,7 +177,7 @@ public:
             DerefPS.HasStatic = true;
             if (isNullableType(ParamTy))
               DerefPS.HasNull = true;
-            Map.try_emplace(P_deref, DerefPS);
+            ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
           }
           LLVM_FALLTHROUGH;
         default:
@@ -187,20 +186,20 @@ public:
           break;
         }
       }
-      Map.try_emplace(ParamLoc, PS);
+      ContractAttr->PrePSets.try_emplace(ParamLoc, PS);
     }
 
     // Compute default outputs
     auto computeOutput = [&](QualType OutputType) {
       AttrPointsToSet Ret;
       for (AttrPSetKey K : Locations.Input) {
-        /* if (canAssign(CA.ParamQType, OutputType))
-          Ret.merge(CA.PS); */
+        if (canAssign(getLocationType(K), OutputType))
+          Ret.Pointees.push_back(locFromKey(K));
       }
       if (isEmpty(Ret)) {
         for (AttrPSetKey K : Locations.Input_weak) {
-          /* if (canAssign(CA.ParamQType, OutputType))
-            Ret.merge(CA.PS);*/
+          if (canAssign(getLocationType(K), OutputType))
+            Ret.Pointees.push_back(locFromKey(K));
         }
       }
       // For not_null types assume that the callee did not set them
@@ -211,9 +210,8 @@ public:
         Ret.HasStatic = true;
       return Ret;
     };
-    for (AttrPSetKey O :Locations.Output) {
-      // TODO
-    }
+    for (AttrPSetKey O : Locations.Output)
+      ContractAttr->PostPSets[O] = computeOutput(getLocationType(O));
 
     // Adust PSets based on annotations.
     for (const Expr *E : ContractAttr->PreExprs) {
@@ -238,6 +236,20 @@ private:
 
     return isConvertible(ASTCtxt.getPointerType(FromPointee),
                          ASTCtxt.getPointerType(ToPointee));
+  }
+
+  QualType getLocationType(AttrPSetKey K) {
+    QualType Result = FD->getParamDecl(K.first)->getType();
+    for (int I = 0; I < K.second; ++I)
+      Result = getPointeeType(Result);
+    return Result;
+  }
+
+  AttrPointsToLoc locFromKey(AttrPSetKey K) {
+    AttrPointsToLoc Loc{K.first, {}};
+    for (int I = 0; I < K.second; ++I)
+      Loc.FDs.push_back(nullptr);
+    return Loc;
   }
 
   struct ParamDerivedLocations {
