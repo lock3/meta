@@ -784,6 +784,7 @@ namespace std {
   public:
     unique_ptr(const unique_ptr &) = delete;
     unique_ptr(unique_ptr &&);
+    ~unique_ptr();
 
     T *get() const;
 

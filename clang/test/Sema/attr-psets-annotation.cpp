@@ -216,9 +216,9 @@ void f() {
   // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
   // expected-warning@-4 {{pset(Post(*b)) = ((*a))}}
   __lifetime_contracts(parameter_psets);
-  // expected-warning@-1 {{pset(Pre(owner_by_value)) = ((*owner_by_value), (null))}}
+  // expected-warning@-1 {{pset(Pre(owner_by_value)) = ((*owner_by_value))}}
   // expected-warning@-2 {{pset(Pre(owner_ref)) = ((*owner_ref))}}
-  // expected-warning@-3 {{pset(Pre(*owner_ref)) = ((invalid))}}
+  // expected-warning@-3 {{pset(Pre(*owner_ref)) = ((*(*owner_ref)))}}
   // expected-warning@-4 {{pset(Pre(ptr_ref)) = ((*ptr_ref))}}
   // expected-warning@-5 {{pset(Pre(*ptr_ref)) = ((invalid))}}
   // expected-warning@-6 {{pset(Pre(ptr_const_ref)) = ((*ptr_const_ref))}}
@@ -228,14 +228,13 @@ void f() {
   // expected-warning@-10 {{pset(Pre(in)) = ((*in), (null))}}
   // expected-warning@-11 {{pset(Pre(*in)) = ((null), (static))}}
   // expected-warning@-12 {{pset(Pre(owner_const_ref)) = ((*owner_const_ref))}}
-  // expected-warning@-13 {{pset(Pre(*owner_const_ref)) = ((static))}}
+  // expected-warning@-13 {{pset(Pre(*owner_const_ref)) = ((*(*owner_const_ref)))}}
   // expected-warning@-14 {{pset(Pre(int_ref)) = ((*int_ref))}}
   // expected-warning@-15 {{pset(Pre(const_int_ref)) = ((*const_int_ref))}}
   // expected-warning@-16 {{pset(Pre(ptr_ptr)) = ((*ptr_ptr), (null))}}
   // expected-warning@-17 {{pset(Pre(*ptr_ptr)) = ((invalid))}}
   // expected-warning@-18 {{pset(Pre(ptr_by_value)) = ((*ptr_by_value), (null))}}
-  // expected-warning@-19 {{pset(Post(*ptr_ref)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
-  // expected-warning@-20 {{pset(Post(*owner_ref)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
-  // expected-warning@-21 {{pset(Post(*ptr_ptr)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
+  // expected-warning@-19 {{pset(Post(*ptr_ref)) = ((*(*owner_ref)), (*int_ref), (*ptr_by_value))}}
+  // expected-warning@-20 {{pset(Post(*ptr_ptr)) = ((*(*owner_ref)), (*int_ref), (*ptr_by_value))}}
 }
 }
