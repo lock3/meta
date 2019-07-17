@@ -186,6 +186,6 @@ void f() {
   // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
   // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
   // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
-  // expected-warning@-4 {{pset(Post(*b)) = (a)}}
+  // expected-warning@-4 {{pset(Post(*b)) = ((*a))}}
 }
 }

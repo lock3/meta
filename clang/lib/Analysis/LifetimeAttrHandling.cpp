@@ -194,12 +194,14 @@ public:
       AttrPointsToSet Ret;
       for (AttrPSetKey K : Locations.Input) {
         if (canAssign(getLocationType(K), OutputType))
-          Ret.Pointees.push_back(locFromKey(K));
+          Ret.Pointees.push_back(
+              locFromKey(AttrPSetKey(K.first, K.second + 1)));
       }
       if (isEmpty(Ret)) {
         for (AttrPSetKey K : Locations.Input_weak) {
           if (canAssign(getLocationType(K), OutputType))
-            Ret.Pointees.push_back(locFromKey(K));
+            Ret.Pointees.push_back(
+                locFromKey(AttrPSetKey(K.first, K.second + 1)));
         }
       }
       // For not_null types assume that the callee did not set them
