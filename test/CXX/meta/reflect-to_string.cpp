@@ -17,7 +17,7 @@ extern "C" int puts(char const* str);
 template<typename T> // requires Enum<T>
 char const* to_string(T val) {
   static constexpr auto range = meta::range(reflexpr(T));
-  for... (constexpr meta::info member : range) {
+  template for (constexpr meta::info member : range) {
     if (valueof(member) == val)
       return name_of(member);
   }

@@ -3087,14 +3087,10 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  assert(isa<DeclRefExpr>(RangeExpr) && "Range expression is untyped?");
-
-  ValueDecl *VD = cast<DeclRefExpr>(RangeExpr)->getDecl();
-  QualType T = VD->getType();
-  if (T->isArrayType() || T->isFunctionType())
-    RangeType = SemaRef.Context.getAutoRRefDeductType();
-  else
-    RangeType = SemaRef.Context.getAutoDeductType();
+  // We want to create a copy of the range variable if this is a constexpr
+  // expansion statement, but otherwise we'll just use an rvalue reference.
+  RangeType = IsConstexpr ? SemaRef.Context.getAutoDeductType() :
+    SemaRef.Context.getAutoRRefDeductType();
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
