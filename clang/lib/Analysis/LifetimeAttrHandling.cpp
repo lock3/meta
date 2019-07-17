@@ -172,8 +172,13 @@ public:
             InvalidPS.HasInvalid = true;
             ContractAttr->PrePSets.try_emplace(P_deref, InvalidPS);
             Locations.Output.push_back(P_deref);
-          } else
+          } else {
             ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
+            // TODO: In the paper we only add derefs for references and not for
+            // other pointers. Is this intentional?
+            if (ParamTy->isLValueReferenceType())
+              Locations.Input.push_back(P_deref);
+          }
           LLVM_FALLTHROUGH;
         default:
           if (!ParamTy->isRValueReferenceType())
@@ -189,14 +194,12 @@ public:
       AttrPointsToSet Ret;
       for (AttrPSetKey K : Locations.Input) {
         if (canAssign(getLocationType(K), OutputType))
-          Ret.Pointees.push_back(
-              locFromKey(AttrPSetKey(K.first, K.second + 1)));
+          Ret = merge(Ret, ContractAttr->PrePSets[K]);
       }
       if (isEmpty(Ret)) {
         for (AttrPSetKey K : Locations.Input_weak) {
           if (canAssign(getLocationType(K), OutputType))
-            Ret.Pointees.push_back(
-                locFromKey(AttrPSetKey(K.first, K.second + 1)));
+            Ret = merge(Ret, ContractAttr->PrePSets[K]);
         }
       }
       // For not_null types assume that the callee did not set them
