@@ -222,11 +222,11 @@ void f() {
   // expected-warning@-4 {{pset(Pre(ptr_ref)) = ((*ptr_ref))}}
   // expected-warning@-5 {{pset(Pre(*ptr_ref)) = ((invalid))}}
   // expected-warning@-6 {{pset(Pre(ptr_const_ref)) = ((*ptr_const_ref))}}
-  // expected-warning@-7 {{pset(Pre(*ptr_const_ref)) = ((static))}}
+  // expected-warning@-7 {{pset(Pre(*ptr_const_ref)) = ((*(*ptr_const_ref)), (null))}}
   // expected-warning@-8 {{pset(Pre(ptr_const_ptr)) = ((*ptr_const_ptr), (null))}}
-  // expected-warning@-9 {{pset(Pre(*ptr_const_ptr)) = ((null), (static))}}
+  // expected-warning@-9 {{pset(Pre(*ptr_const_ptr)) = ((*(*ptr_const_ptr)), (null))}}
   // expected-warning@-10 {{pset(Pre(in)) = ((*in), (null))}}
-  // expected-warning@-11 {{pset(Pre(*in)) = ((null), (static))}}
+  // expected-warning@-11 {{pset(Pre(*in)) = ((*(*in)), (null))}}
   // expected-warning@-12 {{pset(Pre(owner_const_ref)) = ((*owner_const_ref))}}
   // expected-warning@-13 {{pset(Pre(*owner_const_ref)) = ((*(*owner_const_ref)))}}
   // expected-warning@-14 {{pset(Pre(int_ref)) = ((*int_ref))}}

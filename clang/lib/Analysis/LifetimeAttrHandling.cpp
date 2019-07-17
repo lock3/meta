@@ -146,13 +146,13 @@ public:
         AttrPSetKey P_deref(PVD->getFunctionScopeIndex(), 1);
         QualType PointeeType = getPointeeType(ParamTy);
         AttrPointsToSet DerefPS;
+        AttrPointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
+        ParamDerefDerefLoc.FDs.push_back(nullptr);
+        DerefPS.Pointees.push_back(ParamDerefDerefLoc);
+        if (isNullableType(PointeeType))
+          DerefPS.HasNull = true;
         switch (classifyTypeCategory(PointeeType)) {
         case TypeCategory::Owner: {
-          AttrPointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
-          ParamDerefDerefLoc.FDs.push_back(nullptr);
-          DerefPS.Pointees.push_back(ParamDerefDerefLoc);
-          if (isNullableType(ParamTy))
-            DerefPS.HasNull = true;
           ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
           if (ParamTy->isLValueReferenceType()) {
             if (PointeeType.isConstQualified()) {
@@ -168,17 +168,12 @@ public:
         case TypeCategory::Pointer:
           if (!PointeeType.isConstQualified()) {
             // Output params are initially invalid.
-            DerefPS.HasInvalid = true;
-            ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
+            AttrPointsToSet InvalidPS;
+            InvalidPS.HasInvalid = true;
+            ContractAttr->PrePSets.try_emplace(P_deref, InvalidPS);
             Locations.Output.push_back(P_deref);
-          } else {
-            // staticVar to allow further derefs (if this is Pointer to a
-            // Pointer to a Pointer etc)
-            DerefPS.HasStatic = true;
-            if (isNullableType(ParamTy))
-              DerefPS.HasNull = true;
+          } else
             ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
-          }
           LLVM_FALLTHROUGH;
         default:
           if (!ParamTy->isRValueReferenceType())
