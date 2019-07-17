@@ -12,6 +12,23 @@ void __lifetime_type_category() {}
 template <typename T>
 bool __lifetime_contracts(const T &) { return true; }
 
+struct [[gsl::Pointer]] my_pointer {
+  my_pointer();
+  my_pointer &operator=(const my_pointer &);
+  int &operator*();
+};
+
+namespace gsl {
+template <typename T>
+using nullable = T;
+
+template <typename T>
+struct not_null {
+  constexpr operator T() const { return T(); }
+  constexpr T operator->() const { return T(); }
+};
+} // namespace gsl
+
 namespace gsl {
 // These classes are marked Owner so the lifetime analysis will not look into
 // the bodies of these methods. Maybe we need an annotation that will not mark
@@ -173,7 +190,18 @@ namespace dump_contracts {
 void p(int *a) {}
 void p2(int *a, int &b) {}
 void p3(int *a, int *&b) {}
-
+void parameter_psets(int value,
+                     char *const *in,
+                     int &int_ref,
+                     const int &const_int_ref,
+                     std::unique_ptr<int> owner_by_value,
+                     const std::unique_ptr<int> &owner_const_ref,
+                     std::unique_ptr<int> &owner_ref,
+                     my_pointer ptr_by_value,
+                     const my_pointer &ptr_const_ref,
+                     my_pointer &ptr_ref,
+                     my_pointer *ptr_ptr,
+                     const my_pointer *ptr_const_ptr) {}
 // TODO: contracts for function pointers?
 
 void f() {
@@ -187,5 +215,27 @@ void f() {
   // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
   // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
   // expected-warning@-4 {{pset(Post(*b)) = ((*a))}}
+  __lifetime_contracts(parameter_psets);
+  // expected-warning@-1 {{pset(Pre(owner_by_value)) = ((*owner_by_value), (null))}}
+  // expected-warning@-2 {{pset(Pre(owner_ref)) = ((*owner_ref))}}
+  // expected-warning@-3 {{pset(Pre(*owner_ref)) = ((invalid))}}
+  // expected-warning@-4 {{pset(Pre(ptr_ref)) = ((*ptr_ref))}}
+  // expected-warning@-5 {{pset(Pre(*ptr_ref)) = ((invalid))}}
+  // expected-warning@-6 {{pset(Pre(ptr_const_ref)) = ((*ptr_const_ref))}}
+  // expected-warning@-7 {{pset(Pre(*ptr_const_ref)) = ((static))}}
+  // expected-warning@-8 {{pset(Pre(ptr_const_ptr)) = ((*ptr_const_ptr), (null))}}
+  // expected-warning@-9 {{pset(Pre(*ptr_const_ptr)) = ((null), (static))}}
+  // expected-warning@-10 {{pset(Pre(in)) = ((*in), (null))}}
+  // expected-warning@-11 {{pset(Pre(*in)) = ((null), (static))}}
+  // expected-warning@-12 {{pset(Pre(owner_const_ref)) = ((*owner_const_ref))}}
+  // expected-warning@-13 {{pset(Pre(*owner_const_ref)) = ((static))}}
+  // expected-warning@-14 {{pset(Pre(int_ref)) = ((*int_ref))}}
+  // expected-warning@-15 {{pset(Pre(const_int_ref)) = ((*const_int_ref))}}
+  // expected-warning@-16 {{pset(Pre(ptr_ptr)) = ((*ptr_ptr), (null))}}
+  // expected-warning@-17 {{pset(Pre(*ptr_ptr)) = ((invalid))}}
+  // expected-warning@-18 {{pset(Pre(ptr_by_value)) = ((*ptr_by_value), (null))}}
+  // expected-warning@-19 {{pset(Post(*ptr_ref)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
+  // expected-warning@-20 {{pset(Post(*owner_ref)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
+  // expected-warning@-21 {{pset(Post(*ptr_ptr)) = ((*int_ref), (*owner_by_value), (*ptr_by_value))}}
 }
 }
