@@ -4314,6 +4314,18 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
     if (ESR != ESR_Succeeded)
       return ESR;
 
+    // Create the __begin and __end iterators if they exist.
+    if (ES->getBeginStmt()) {
+      ESR = EvaluateStmt(Result, Info, ES->getBeginStmt());
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
+    if (ES->getEndStmt()) {
+      ESR = EvaluateStmt(Result, Info, ES->getEndStmt());
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
+
     for (Stmt *SubStmt : ES->getInstantiatedStatements()) {
       BlockScopeRAII InnerScope(Info);
 
