@@ -293,6 +293,7 @@ public:
       : ContainsNull(S.HasNull), ContainsInvalid(S.HasInvalid),
         ContainsStatic(S.HasStatic) {
     for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
+      assert(L.BaseIndex != LifetimeContractAttr::PointsToLoc::ReturnVal);
       Vars.emplace(Params[L.BaseIndex], L.FDs);
     }
   }

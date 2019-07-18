@@ -36,26 +36,31 @@ namespace gsl {
 // Or whouls we use gsl::suppress for that (even on classes)?
 struct [[gsl::Owner]] null_t {
   int operator*() const;
-  template<typename T>
+  template <typename T>
   operator T() const { return T(nullptr); }
 } Null;
 struct [[gsl::Owner]] static_t {
   int operator*() const;
   template <typename T>
-  operator T() const { return (T)(void*)this; }
+  operator T() const { return (T)(void *)this; }
 } Static;
 struct [[gsl::Owner]] invalid_t {
   int operator*() const;
   template <typename T>
-  operator T() const { return (T)(void*)this; }
+  operator T() const { return (T)(void *)this; }
 } Invalid;
+struct [[gsl::Owner]] return_t {
+  int operator*() const;
+  template <typename T>
+  operator T() const { return (T)(void *)this; }
+} Return;
 
 template <typename T>
 struct CheckSingle {
   CheckSingle(const T &t) : data(t) {}
   const T &data;
-  template<typename S>
-  operator CheckSingle<S> () { return CheckSingle<S>(S(data)); }
+  template <typename S>
+  operator CheckSingle<S>() { return CheckSingle<S>(S(data)); }
 };
 
 template <typename T>
@@ -68,8 +73,8 @@ struct CheckVariadic {
 template <typename T, typename S>
 bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   // TODO: these cannot be checked right?
-  if ((void *)lhs.data == (void *)&Static || (void *)lhs.data == (void *)&Invalid ||
-      (void *)rhs.data == (void *)&Static || (void *)rhs.data == (void *)&Invalid)
+  if ((void *)lhs.data == (void *)&Static || (void *)lhs.data == (void *)&Invalid || (void *)lhs.data == (void *)&Return ||
+      (void *)rhs.data == (void *)&Static || (void *)rhs.data == (void *)&Invalid || (void *)rhs.data == (void *)&Return)
     return true;
   // TODO: maybe make this a customization point?
   //       user defined gsl::Pointers might not have operator==.
@@ -81,24 +86,24 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   return lhs.data == rhs.data;
 }
 
-template<typename T, typename S>
-bool operator==(const CheckVariadic<T>& lhs, CheckSingle<S> rhs) {
+template <typename T, typename S>
+bool operator==(const CheckVariadic<T> &lhs, CheckSingle<S> rhs) {
   return std::any_of(lhs.ptrs.begin(), lhs.ptrs.end(), [&rhs](const T &ptr) {
     return CheckSingle<T>(ptr) == rhs;
   });
 }
 
-template<typename T, typename S>
-bool operator==(const CheckSingle<T>& lhs, CheckVariadic<S> rhs) {
-  return rhs == lhs; 
+template <typename T, typename S>
+bool operator==(const CheckSingle<T> &lhs, CheckVariadic<S> rhs) {
+  return rhs == lhs;
 }
 
-template<typename T>
+template <typename T>
 CheckSingle<T> pset(const T &t) {
   return t;
 }
 
-template<typename T>
+template <typename T>
 CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
   return CheckVariadic<T>(ptrs);
 }
@@ -203,7 +208,10 @@ void parameter_psets(int value,
                      my_pointer *ptr_ptr,
                      const my_pointer *ptr_const_ptr) {}
 void p4(int *a, int *b, int *&c)
-  [[gsl::pre(pset(b) == pset(a))]] {}
+    [[gsl::pre(pset(b) == pset(a))]] {}
+int *p5(int *a, int *b) { return a; }
+int *p6(int *a, int *b)
+    [[gsl::post(pset(Return) == pset(a))]] { return a; }
 // TODO: contracts for function pointers?
 
 void f() {
@@ -244,5 +252,14 @@ void f() {
   // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
   // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
   // expected-warning@-5 {{pset(Post(*c)) = ((*a), (null))}}
+  __lifetime_contracts(p5);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Post(Return)) = ((*a), (*b), (null))}}
+  __lifetime_contracts(p6);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Post(Return)) = ((*a), (null))}}
+  
 }
-}
+} // namespace dump_contracts

@@ -1218,7 +1218,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
           std::string KeyText = Contract + "(";
           for (int I = 0; I < E.first.second; ++I)
             KeyText += "*";
-          KeyText += FD->getParamDecl(E.first.first)->getName();
+          if (E.first.first != LifetimeContractAttr::PointsToLoc::ReturnVal)
+            KeyText += FD->getParamDecl(E.first.first)->getName();
+          else
+            KeyText += "Return";
           KeyText += ")";
           std::string PSetText = PSet(E.second, FD->parameters()).str();
           Reporter.debugPset(Range, KeyText, PSetText);

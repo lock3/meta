@@ -53,7 +53,8 @@ static bool isEmpty(const AttrPointsToSet Set) {
          !Set.HasStatic;
 }
 
-static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
+static AttrPointsToSet collectPSet(const Expr *E,
+                                   const AttrPointsToMap &Lookup) {
   AttrPointsToSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     const auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
@@ -71,14 +72,16 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
       if (!PVD)
         return Result;
       AttrPSetKey Key(PVD->getFunctionScopeIndex(), 0);
-      return Pointers[Key];
+      auto It = Lookup.find(Key);
+      assert(It != Lookup.end());
+      return It->second;
     }
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
-        AttrPointsToSet Elem = collectPSet(ignoreReturnValues(Init), Pointers);
+        AttrPointsToSet Elem = collectPSet(ignoreReturnValues(Init), Lookup);
         if (isEmpty(Elem))
           return Elem;
         Result = merge(Result, Elem);
@@ -86,6 +89,16 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
     }
   }
   return Result;
+}
+
+static unsigned getDeclIndex(const ValueDecl *D) {
+  if (const auto *PVD = dyn_cast<ParmVarDecl>(D))
+    return PVD->getFunctionScopeIndex();
+  else if (const auto *VD = dyn_cast<VarDecl>(D)) {
+    if (VD->getName() == "Return")
+      return LifetimeContractAttr::PointsToLoc::ReturnVal;
+  }
+  llvm_unreachable("Unexpected declaration.");
 }
 
 // This function and the callees are have the sole purpose of matching the
@@ -98,7 +111,14 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
 // contracts is changing.
 // Also, the code might be rewritten a more simple way in the future
 // piggybacking this work: https://reviews.llvm.org/rL365355
-static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
+//
+// When we have a post condition like:
+//     pset(Return) == pset(a)
+// We need to look up the Pset of 'a' in preconditions but we need to
+// record the postcondition in the postconditions. This is why this
+// function takes two AttrPointsToMaps.
+static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
+                                 const AttrPointsToMap &Lookup) {
   const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
   if (!OCE || OCE->getOperator() != OO_EqualEqual)
     return false;
@@ -109,6 +129,7 @@ static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
   const Expr *RHS = getGslPsetArg(OCE->getArg(1));
   if (!RHS)
     return false;
+
   // TODO: setting PSets for deref locs not supported yet.
   //       also allow null/static etc on both sides.
   if (!isa<DeclRefExpr>(LHS))
@@ -116,17 +137,29 @@ static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
   if (!isa<DeclRefExpr>(LHS))
     return false;
 
-  AttrPSetKey VD(cast<ParmVarDecl>(cast<DeclRefExpr>(LHS)->getDecl())
-                     ->getFunctionScopeIndex(),
-                 0);
-  AttrPointsToSet PSet = collectPSet(RHS, Pointers);
+  AttrPSetKey VD(getDeclIndex(cast<DeclRefExpr>(LHS)->getDecl()), 0);
+  AttrPointsToSet PSet = collectPSet(RHS, Lookup);
   if (isEmpty(PSet))
     return false;
-  Pointers[VD] = PSet;
+  Fill[VD] = PSet;
   return true;
 }
 
 namespace {
+static Variable varFromPSetKey(AttrPSetKey K, const FunctionDecl *FD) {
+  // Temporaries cannot occur in contracts, so we use a temporary to represen
+  // contract of return values. A bit cleaner solution in the future might be
+  // extending the PointerUnion inside Var or having a representation of the
+  // contracts that is completely independent of the analysis.
+  if (K.first == AttrPointsToLoc::ReturnVal)
+    return Variable::temporary().deref(K.second);
+  return Variable(FD->getParamDecl(K.first)).deref(K.second);
+}
+
+static AttrPSetKey getReturnKey() {
+  return AttrPSetKey{AttrPointsToLoc::ReturnVal, 0};
+}
+
 class PSetCollector {
 public:
   PSetCollector(const FunctionDecl *FD, const ASTContext &ASTCtxt,
@@ -202,7 +235,8 @@ public:
 
     // Adust preconditions based on annotations.
     for (const Expr *E : ContractAttr->PreExprs) {
-      if (!fillPointersFromExpr(E, ContractAttr->PrePSets))
+      if (!fillPointersFromExpr(E, ContractAttr->PrePSets,
+                                ContractAttr->PrePSets))
         Reporter.warnUnsupportedExpr(E->getSourceRange());
     }
 
@@ -231,9 +265,14 @@ public:
     for (AttrPSetKey O : Locations.Output)
       ContractAttr->PostPSets[O] = computeOutput(getLocationType(O));
 
+    if (classifyTypeCategory(FD->getReturnType()) == TypeCategory::Pointer)
+      ContractAttr->PostPSets[getReturnKey()] =
+          computeOutput(FD->getReturnType());
+
     // Process user defined postconditions.
     for (const Expr *E : ContractAttr->PostExprs) {
-      if (!fillPointersFromExpr(E, ContractAttr->PostPSets))
+      if (!fillPointersFromExpr(E, ContractAttr->PostPSets,
+                                ContractAttr->PrePSets))
         Reporter.warnUnsupportedExpr(E->getSourceRange());
     }
   }
@@ -292,8 +331,7 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
   }
 
   for (const auto &Pair : ContractAttr->PrePSets) {
-    Variable V(FD->getParamDecl(Pair.first.first));
-    V.deref(Pair.first.second);
+    Variable V(varFromPSetKey(Pair.first, FD));
     PSet PS(Pair.second, FD->parameters());
     if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
       if (!V.isField() && !V.isDeref() && PS.containsNull())
@@ -304,11 +342,9 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
     }
     PMap.emplace(V, PS);
   }
-  for (const auto &Pair : ContractAttr->PostPSets) {
-    Variable V(FD->getParamDecl(Pair.first.first));
-    V.deref(Pair.first.second);
-    PMap.emplace(V, PSet(Pair.second, FD->parameters()));
-  }
+  for (const auto &Pair : ContractAttr->PostPSets)
+    PMap.emplace(varFromPSetKey(Pair.first, FD),
+                 PSet(Pair.second, FD->parameters()));
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));
 }
