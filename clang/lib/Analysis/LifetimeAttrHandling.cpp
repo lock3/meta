@@ -50,7 +50,7 @@ static AttrPointsToSet merge(AttrPointsToSet LHS, const AttrPointsToSet &RHS) {
 
 static bool isEmpty(const AttrPointsToSet Set) {
   return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid &&
-         Set.HasStatic;
+         !Set.HasStatic;
 }
 
 static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
@@ -71,7 +71,7 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
       if (!PVD)
         return Result;
       AttrPSetKey Key(PVD->getFunctionScopeIndex(), 0);
-      Result = merge(Result, Pointers[Key]);
+      return Pointers[Key];
     }
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
@@ -79,7 +79,7 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
         AttrPointsToSet Elem = collectPSet(ignoreReturnValues(Init), Pointers);
-        if (Elem.Pointees.empty())
+        if (isEmpty(Elem))
           return Elem;
         Result = merge(Result, Elem);
       }
@@ -90,7 +90,7 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
 
 // This function and the callees are have the sole purpose of matching the
 // AST that describes the contracts. We are only interested in identifier names
-// of function calls and variables. The AST, however, has a lot of other 
+// of function calls and variables. The AST, however, has a lot of other
 // information such as casts, termporary objects and so on. They do not have
 // any semantic meaning for contracts so much of the code is just skipping
 // these unwanted nodes. The rest is collecting the identifiers and their
@@ -120,7 +120,8 @@ static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
                      ->getFunctionScopeIndex(),
                  0);
   AttrPointsToSet PSet = collectPSet(RHS, Pointers);
-  // TODO: diagnose failures for empty PSet.
+  if (isEmpty(PSet))
+    return false;
   Pointers[VD] = PSet;
   return true;
 }
@@ -129,8 +130,9 @@ namespace {
 class PSetCollector {
 public:
   PSetCollector(const FunctionDecl *FD, const ASTContext &ASTCtxt,
-                IsConvertibleTy isConvertible)
-      : FD(FD), ASTCtxt(ASTCtxt), isConvertible(isConvertible) {}
+                IsConvertibleTy isConvertible, LifetimeReporterBase &Reporter)
+      : FD(FD), ASTCtxt(ASTCtxt), isConvertible(isConvertible),
+        Reporter(Reporter) {}
 
   void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
     // Fill default PSets.
@@ -226,11 +228,11 @@ public:
     // Adust PSets based on annotations.
     for (const Expr *E : ContractAttr->PreExprs) {
       if (!fillPointersFromExpr(E, ContractAttr->PrePSets))
-        continue; // TODO: warn
+        Reporter.warnUnsupportedExpr(E->getSourceRange());
     }
     for (const Expr *E : ContractAttr->PostExprs) {
       if (!fillPointersFromExpr(E, ContractAttr->PostPSets))
-        continue; // TODO: warn
+        Reporter.warnUnsupportedExpr(E->getSourceRange());
     }
   }
 
@@ -271,17 +273,19 @@ private:
   const FunctionDecl *FD;
   const ASTContext &ASTCtxt;
   IsConvertibleTy isConvertible;
+  LifetimeReporterBase &Reporter;
 };
 
 } // anonymous namespace
 
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
                           const ASTContext &ASTCtxt,
-                          IsConvertibleTy isConvertible) {
+                          IsConvertibleTy isConvertible,
+                          LifetimeReporterBase &Reporter) {
   auto *ContractAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
 
   if (ContractAttr->PrePSets.empty()) {
-    PSetCollector Collector(FD, ASTCtxt, isConvertible);
+    PSetCollector Collector(FD, ASTCtxt, isConvertible, Reporter);
     Collector.fillPSetsForDecl(ContractAttr);
   }
 

@@ -32,7 +32,8 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
 /// Get the initial PSets for function parameters.
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
                           const ASTContext &ASTCtxt,
-                          IsConvertibleTy isConvertible);
+                          IsConvertibleTy isConvertible,
+                          LifetimeReporterBase &Reporter);
 } // namespace lifetime
 } // namespace clang
 

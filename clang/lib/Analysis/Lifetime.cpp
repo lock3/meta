@@ -169,7 +169,8 @@ void LifetimeContext::TraverseBlocks() {
           continue;
 
         // ExitPSets are the function parameters.
-        getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, IsConvertible);
+        getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, IsConvertible,
+                             Reporter);
         BC.Visited = true;
         continue;
       }
