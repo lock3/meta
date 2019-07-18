@@ -202,6 +202,8 @@ void parameter_psets(int value,
                      my_pointer &ptr_ref,
                      my_pointer *ptr_ptr,
                      const my_pointer *ptr_const_ptr) {}
+void p4(int *a, int *b, int *&c)
+  [[gsl::pre(pset(b) == pset(a))]] {}
 // TODO: contracts for function pointers?
 
 void f() {
@@ -236,5 +238,11 @@ void f() {
   // expected-warning@-18 {{pset(Pre(ptr_by_value)) = ((*ptr_by_value), (null))}}
   // expected-warning@-19 {{pset(Post(*ptr_ref)) = ((*(*owner_ref)), (*(*ptr_const_ref)), (*int_ref), (*ptr_by_value), (null))}}
   // expected-warning@-20 {{pset(Post(*ptr_ptr)) = ((*(*owner_ref)), (*(*ptr_const_ref)), (*int_ref), (*ptr_by_value), (null))}}
+  __lifetime_contracts(p4);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*a), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post(*c)) = ((*a), (null))}}
 }
 }

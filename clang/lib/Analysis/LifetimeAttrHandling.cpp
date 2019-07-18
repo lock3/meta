@@ -135,9 +135,8 @@ public:
         Reporter(Reporter) {}
 
   void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
-    // Fill default PSets.
-    // TODO: inputs to outputs matching needs to be done after
-    //       user defined annotations are processed.
+    // Fill default preconditions and collect data for
+    // computing default postconditions.
     ParamDerivedLocations Locations;
     for (const ParmVarDecl *PVD : FD->parameters()) {
       QualType ParamTy = PVD->getType();
@@ -151,7 +150,7 @@ public:
       ParamDerefLoc.BaseIndex = ParamLoc.first;
       ParamDerefLoc.FDs.push_back(nullptr);
       PS.Pointees.push_back(ParamDerefLoc);
-      // TODO: nullable Owners don't exist in the paper (yet?)
+      // Nullable owners are a future note in the paper.
       if (isNullableType(ParamTy))
         PS.HasNull = true;
       if (TC == TypeCategory::Pointer) {
@@ -201,7 +200,13 @@ public:
       ContractAttr->PrePSets.try_emplace(ParamLoc, PS);
     }
 
-    // Compute default outputs
+    // Adust preconditions based on annotations.
+    for (const Expr *E : ContractAttr->PreExprs) {
+      if (!fillPointersFromExpr(E, ContractAttr->PrePSets))
+        Reporter.warnUnsupportedExpr(E->getSourceRange());
+    }
+
+    // Compute default postconditions.
     auto computeOutput = [&](QualType OutputType) {
       AttrPointsToSet Ret;
       for (AttrPSetKey K : Locations.Input) {
@@ -222,14 +227,11 @@ public:
         Ret.HasStatic = true;
       return Ret;
     };
+
     for (AttrPSetKey O : Locations.Output)
       ContractAttr->PostPSets[O] = computeOutput(getLocationType(O));
 
-    // Adust PSets based on annotations.
-    for (const Expr *E : ContractAttr->PreExprs) {
-      if (!fillPointersFromExpr(E, ContractAttr->PrePSets))
-        Reporter.warnUnsupportedExpr(E->getSourceRange());
-    }
+    // Process user defined postconditions.
     for (const Expr *E : ContractAttr->PostExprs) {
       if (!fillPointersFromExpr(E, ContractAttr->PostPSets))
         Reporter.warnUnsupportedExpr(E->getSourceRange());
