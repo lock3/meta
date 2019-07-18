@@ -2797,6 +2797,7 @@ def LifetimeContract : InheritableParamAttr {
   let AdditionalMembers = [{
 public:
   struct PointsToLoc {
+    // Index of the Parameter on which fields and derefs are applied.
     unsigned BaseIndex;
     llvm::SmallVector<const FieldDecl *, 4> FDs;
   };

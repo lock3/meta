@@ -88,6 +88,16 @@ static AttrPointsToSet collectPSet(const Expr *E, AttrPointsToMap &Pointers) {
   return Result;
 }
 
+// This function and the callees are have the sole purpose of matching the
+// AST that describes the contracts. We are only interested in identifier names
+// of function calls and variables. The AST, however, has a lot of other 
+// information such as casts, termporary objects and so on. They do not have
+// any semantic meaning for contracts so much of the code is just skipping
+// these unwanted nodes. The rest is collecting the identifiers and their
+// hierarchy. This code is subject to change as the language defining the
+// contracts is changing.
+// Also, the code might be rewritten a more simple way in the future
+// piggybacking this work: https://reviews.llvm.org/rL365355
 static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Pointers) {
   const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
   if (!OCE || OCE->getOperator() != OO_EqualEqual)
@@ -278,7 +288,7 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
   for (const auto &Pair : ContractAttr->PrePSets) {
     Variable V(FD->getParamDecl(Pair.first.first));
     V.deref(Pair.first.second);
-    PSet PS(Pair.second, FD);
+    PSet PS(Pair.second, FD->parameters());
     if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
       if (!V.isField() && !V.isDeref() && PS.containsNull())
         PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
@@ -291,7 +301,7 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
   for (const auto &Pair : ContractAttr->PostPSets) {
     Variable V(FD->getParamDecl(Pair.first.first));
     V.deref(Pair.first.second);
-    PMap.emplace(V, PSet(Pair.second, FD));
+    PMap.emplace(V, PSet(Pair.second, FD->parameters()));
   }
   PMap.emplace(Variable::thisPointer(),
                PSet::singleton(Variable::thisPointer()));

@@ -288,11 +288,12 @@ class PSet {
 public:
   // Initializes an unknown pset
   PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
-  PSet(const LifetimeContractAttr::PointsToSet &S, const FunctionDecl *FD)
+  PSet(const LifetimeContractAttr::PointsToSet &S,
+       ArrayRef<const ParmVarDecl *> Params)
       : ContainsNull(S.HasNull), ContainsInvalid(S.HasInvalid),
         ContainsStatic(S.HasStatic) {
     for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
-      Vars.emplace(FD->getParamDecl(L.BaseIndex), L.FDs);
+      Vars.emplace(Params[L.BaseIndex], L.FDs);
     }
   }
 
