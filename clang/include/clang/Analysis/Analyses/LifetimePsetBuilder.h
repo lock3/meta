@@ -33,7 +33,7 @@ void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
                           const ASTContext &ASTCtxt,
                           IsConvertibleTy isConvertible,
-                          LifetimeReporterBase &Reporter);
+                          LifetimeReporterBase &Reporter, bool Pre = true);
 } // namespace lifetime
 } // namespace clang
 

@@ -21,6 +21,27 @@ using AttrPointsToMap = LifetimeContractAttr::PointsToMap;
 using AttrPointsToLoc = LifetimeContractAttr::PointsToLoc;
 using AttrPSetKey = LifetimeContractAttr::PSetKey;
 
+static AttrPointsToSet singleton(AttrPointsToLoc Loc) {
+  AttrPointsToSet Ret;
+  Ret.Pointees.push_back(Loc);
+  return Ret;
+}
+
+static AttrPointsToSet merge(AttrPointsToSet LHS, const AttrPointsToSet &RHS) {
+  LHS.HasNull |= RHS.HasNull;
+  LHS.HasStatic |= RHS.HasStatic;
+  LHS.HasInvalid |= RHS.HasInvalid;
+  for (AttrPointsToLoc Loc : RHS.Pointees)
+    LHS.Pointees.push_back(Loc);
+  return LHS;
+}
+
+static bool isEmpty(const AttrPointsToSet Set) {
+  return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid &&
+         !Set.HasStatic;
+}
+
+
 static const Expr *ignoreReturnValues(const Expr *E) {
   E = E->IgnoreImplicit();
   if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
@@ -37,20 +58,6 @@ static const Expr *getGslPsetArg(const Expr *E) {
     return ignoreReturnValues(CE->getArg(0));
   }
   return nullptr;
-}
-
-static AttrPointsToSet merge(AttrPointsToSet LHS, const AttrPointsToSet &RHS) {
-  LHS.HasNull |= RHS.HasNull;
-  LHS.HasStatic |= RHS.HasStatic;
-  LHS.HasInvalid |= RHS.HasInvalid;
-  for (AttrPointsToLoc Loc : RHS.Pointees)
-    LHS.Pointees.push_back(Loc);
-  return LHS;
-}
-
-static bool isEmpty(const AttrPointsToSet Set) {
-  return Set.Pointees.empty() && !Set.HasNull && !Set.HasInvalid &&
-         !Set.HasStatic;
 }
 
 static AttrPointsToSet collectPSet(const Expr *E,
@@ -95,8 +102,11 @@ static unsigned getDeclIndex(const ValueDecl *D) {
   if (const auto *PVD = dyn_cast<ParmVarDecl>(D))
     return PVD->getFunctionScopeIndex();
   else if (const auto *VD = dyn_cast<VarDecl>(D)) {
-    if (VD->getName() == "Return")
-      return LifetimeContractAttr::PointsToLoc::ReturnVal;
+    StringRef Name = VD->getName();
+    if (Name == "Return")
+      return AttrPointsToLoc::ReturnVal;
+    else if (Name == "This")
+      return AttrPointsToLoc::ThisVal;
   }
   llvm_unreachable("Unexpected declaration.");
 }
@@ -153,11 +163,9 @@ static Variable varFromPSetKey(AttrPSetKey K, const FunctionDecl *FD) {
   // contracts that is completely independent of the analysis.
   if (K.first == AttrPointsToLoc::ReturnVal)
     return Variable::temporary().deref(K.second);
+  else if (K.first == AttrPointsToLoc::ThisVal)
+    return Variable::thisPointer().deref(K.second);
   return Variable(FD->getParamDecl(K.first)).deref(K.second);
-}
-
-static AttrPSetKey getReturnKey() {
-  return AttrPSetKey{AttrPointsToLoc::ReturnVal, 0};
 }
 
 class PSetCollector {
@@ -178,59 +186,74 @@ public:
         continue;
 
       AttrPSetKey ParamLoc(PVD->getFunctionScopeIndex(), 0);
-      AttrPointsToSet PS;
-      AttrPointsToLoc ParamDerefLoc;
-      ParamDerefLoc.BaseIndex = ParamLoc.first;
-      ParamDerefLoc.FDs.push_back(nullptr);
-      PS.Pointees.push_back(ParamDerefLoc);
+      AttrPointsToSet ParamPSet = singleton({ParamLoc.first, {nullptr}});
       // Nullable owners are a future note in the paper.
-      if (isNullableType(ParamTy))
-        PS.HasNull = true;
-      if (TC == TypeCategory::Pointer) {
-        AttrPSetKey P_deref(PVD->getFunctionScopeIndex(), 1);
-        QualType PointeeType = getPointeeType(ParamTy);
-        AttrPointsToSet DerefPS;
-        AttrPointsToLoc ParamDerefDerefLoc = ParamDerefLoc;
-        ParamDerefDerefLoc.FDs.push_back(nullptr);
-        DerefPS.Pointees.push_back(ParamDerefDerefLoc);
-        if (isNullableType(PointeeType))
-          DerefPS.HasNull = true;
-        switch (classifyTypeCategory(PointeeType)) {
-        case TypeCategory::Owner: {
-          ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
-          if (ParamTy->isLValueReferenceType()) {
-            if (PointeeType.isConstQualified()) {
-              Locations.Input_weak.push_back(ParamLoc);
-              Locations.Input_weak.push_back(P_deref);
-            } else {
-              Locations.Input.push_back(ParamLoc);
-              Locations.Input.push_back(P_deref);
-            }
-          }
-          break;
-        }
-        case TypeCategory::Pointer:
-          if (!PointeeType.isConstQualified()) {
-            // Output params are initially invalid.
-            AttrPointsToSet InvalidPS;
-            InvalidPS.HasInvalid = true;
-            ContractAttr->PrePSets.try_emplace(P_deref, InvalidPS);
-            Locations.Output.push_back(P_deref);
+      ParamPSet.HasNull = isNullableType(ParamTy);
+      ContractAttr->PrePSets.try_emplace(ParamLoc, ParamPSet);
+      if (TC != TypeCategory::Pointer)
+        continue;
+
+      AttrPSetKey ParamDerefLoc(ParamLoc.first, 1);
+      QualType PointeeType = getPointeeType(ParamTy);
+      AttrPointsToSet DerefPS = singleton({ParamLoc.first, {nullptr, nullptr}});
+      DerefPS.HasNull = isNullableType(PointeeType);
+      switch (classifyTypeCategory(PointeeType)) {
+      case TypeCategory::Owner: {
+        ContractAttr->PrePSets.try_emplace(ParamDerefLoc, DerefPS);
+        if (ParamTy->isLValueReferenceType()) {
+          if (PointeeType.isConstQualified()) {
+            Locations.Input_weak.push_back(ParamLoc);
+            Locations.Input_weak.push_back(ParamDerefLoc);
           } else {
-            ContractAttr->PrePSets.try_emplace(P_deref, DerefPS);
-            // TODO: In the paper we only add derefs for references and not for
-            // other pointers. Is this intentional?
-            if (ParamTy->isLValueReferenceType())
-              Locations.Input.push_back(P_deref);
-          }
-          LLVM_FALLTHROUGH;
-        default:
-          if (!ParamTy->isRValueReferenceType())
             Locations.Input.push_back(ParamLoc);
-          break;
+            Locations.Input.push_back(ParamDerefLoc);
+          }
         }
+        break;
       }
-      ContractAttr->PrePSets.try_emplace(ParamLoc, PS);
+      case TypeCategory::Pointer:
+        if (!PointeeType.isConstQualified()) {
+          // Output params are initially invalid.
+          AttrPointsToSet InvalidPS;
+          InvalidPS.HasInvalid = true;
+          ContractAttr->PrePSets.try_emplace(ParamDerefLoc, InvalidPS);
+          Locations.Output.push_back(ParamDerefLoc);
+        } else {
+          ContractAttr->PrePSets.try_emplace(ParamDerefLoc, DerefPS);
+          // TODO: In the paper we only add derefs for references and not for
+          // other pointers. Is this intentional?
+          if (ParamTy->isLValueReferenceType())
+            Locations.Input.push_back(ParamDerefLoc);
+        }
+        LLVM_FALLTHROUGH;
+      default:
+        if (!ParamTy->isRValueReferenceType())
+          Locations.Input.push_back(ParamLoc);
+        break;
+      }
+    }
+    // This points to deref this and this considered as input.
+    if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
+      AttrPointsToSet ThisPS = singleton({AttrPointsToLoc::ThisVal, {nullptr}});
+      ContractAttr->PrePSets.try_emplace({AttrPointsToLoc::ThisVal, 0}, ThisPS);
+      Locations.Input.push_back({AttrPointsToLoc::ThisVal, 0});
+      QualType ClassTy = MD->getThisType()->getPointeeType();
+      TypeCategory TC = classifyTypeCategory(ClassTy);
+      if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
+        AttrPointsToSet DerefThisPS =
+            singleton({AttrPointsToLoc::ThisVal, {nullptr, nullptr}});
+        auto OO = MD->getOverloadedOperator();
+        if (OO != OverloadedOperatorKind::OO_Star &&
+            OO != OverloadedOperatorKind::OO_Arrow &&
+            OO != OverloadedOperatorKind::OO_ArrowStar &&
+            OO != OverloadedOperatorKind::OO_Subscript)
+          DerefThisPS.HasNull = isNullableType(ClassTy);
+        if (const auto *Conv = dyn_cast<CXXConversionDecl>(MD))
+          DerefThisPS.HasNull |= Conv->getConversionType()->isBooleanType();
+        ContractAttr->PrePSets.try_emplace({AttrPointsToLoc::ThisVal, 1},
+                                           DerefThisPS);
+        Locations.Input.push_back({AttrPointsToLoc::ThisVal, 1});
+      }
     }
 
     // Adust preconditions based on annotations.
@@ -266,7 +289,7 @@ public:
       ContractAttr->PostPSets[O] = computeOutput(getLocationType(O));
 
     if (classifyTypeCategory(FD->getReturnType()) == TypeCategory::Pointer)
-      ContractAttr->PostPSets[getReturnKey()] =
+      ContractAttr->PostPSets[{AttrPointsToLoc::ReturnVal, 0}] =
           computeOutput(FD->getReturnType());
 
     // Process user defined postconditions.
@@ -292,17 +315,14 @@ private:
   }
 
   QualType getLocationType(AttrPSetKey K) {
-    QualType Result = FD->getParamDecl(K.first)->getType();
+    QualType Result;
+    if (K.first == AttrPointsToLoc::ThisVal)
+      Result = cast<CXXMethodDecl>(FD)->getThisType();
+    else
+      Result = FD->getParamDecl(K.first)->getType();
     for (int I = 0; I < K.second; ++I)
       Result = getPointeeType(Result);
     return Result;
-  }
-
-  AttrPointsToLoc locFromKey(AttrPSetKey K) {
-    AttrPointsToLoc Loc{K.first, {}};
-    for (int I = 0; I < K.second; ++I)
-      Loc.FDs.push_back(nullptr);
-    return Loc;
   }
 
   struct ParamDerivedLocations {
@@ -322,31 +342,35 @@ private:
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
                           const ASTContext &ASTCtxt,
                           IsConvertibleTy isConvertible,
-                          LifetimeReporterBase &Reporter) {
+                          LifetimeReporterBase &Reporter, bool Pre) {
   auto *ContractAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
+  if (!ContractAttr)
+    return;
 
-  if (ContractAttr->PrePSets.empty()) {
+  // TODO: this check is insufficient for functions like int f(int);
+  if (ContractAttr->PrePSets.empty() && ContractAttr->PostPSets.empty()) {
     PSetCollector Collector(FD, ASTCtxt, isConvertible, Reporter);
     Collector.fillPSetsForDecl(ContractAttr);
   }
 
-  for (const auto &Pair : ContractAttr->PrePSets) {
-    Variable V(varFromPSetKey(Pair.first, FD));
-    PSet PS(Pair.second, FD->parameters());
-    if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
-      if (!V.isField() && !V.isDeref() && PS.containsNull())
-        PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
-      if (PS.containsInvalid())
-        PS = PSet::invalid(
-            InvalidationReason::NotInitialized(PVD->getSourceRange()));
+  if (Pre) {
+    for (const auto &Pair : ContractAttr->PrePSets) {
+      Variable V(varFromPSetKey(Pair.first, FD));
+      PSet PS(Pair.second, FD->parameters());
+      if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
+        if (!V.isField() && !V.isDeref() && PS.containsNull())
+          PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
+        if (PS.containsInvalid())
+          PS = PSet::invalid(
+              InvalidationReason::NotInitialized(PVD->getSourceRange()));
+      }
+      PMap.emplace(V, PS);
     }
-    PMap.emplace(V, PS);
+  } else {
+    for (const auto &Pair : ContractAttr->PostPSets)
+      PMap.emplace(varFromPSetKey(Pair.first, FD),
+                   PSet(Pair.second, FD->parameters()));
   }
-  for (const auto &Pair : ContractAttr->PostPSets)
-    PMap.emplace(varFromPSetKey(Pair.first, FD),
-                 PSet(Pair.second, FD->parameters()));
-  PMap.emplace(Variable::thisPointer(),
-               PSet::singleton(Variable::thisPointer()));
 }
 
 } // namespace lifetime

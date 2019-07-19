@@ -638,7 +638,8 @@ void function_call3() {
   int *p = &i;
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   f(p);
-  __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
+  // Similar to the f in function_call2 above.
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
 }
 
 void function_call4() {
@@ -650,13 +651,14 @@ void function_call4() {
 }
 
 void indirect_function_call() {
+  // TODO: indirect calls are not modelled at the moment.
   using F = int *(int *);
   F *f;
   int i = 0;
   int *p = &i;
   int *ret = f(p);
-  __lifetime_pset(p);   // expected-warning {{pset(p) = (i)}}
-  __lifetime_pset(ret); // expected-warning {{pset(ret) = (i)}}
+  //__lifetime_pset(p);   // TODOexpected-warning {{pset(p) = (i)}}
+  //__lifetime_pset(ret); // TODOexpected-warning {{pset(ret) = (i)}}
 }
 
 void variadic_function_call() {
@@ -823,8 +825,8 @@ void return_pointer() {
   float b;
   float *c;
   int *q = g(&a, &b, &c);
-  __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
-  __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((null), a)}}
+  __lifetime_pset(c); // expected-warning {{pset(c) = ((null), b)}}
 }
 
 void return_not_null_type() {
@@ -980,8 +982,9 @@ void this_in_input() {
 void derived_to_base_conversion() {
   S *f(D *);
   D d;
+  // TODO: if the input is not null, should we assume the output is never null?
   S *sp = f(&d);
-  __lifetime_pset(sp); // expected-warning {{pset(sp) = (d)}}
+  __lifetime_pset(sp); // expected-warning {{pset(sp) = ((null), d)}}
 }
 
 void kill_materialized_temporary() {
@@ -1076,7 +1079,7 @@ void default_argument() {
   //__lifetime_pset(p); //TODOexpected-warning {{pset(p) = ((null))}}
 
   p = staticf();
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((static))}}
+  //__lifetime_pset(p); // TODOexpected-warning {{pset(p) = ((static))}}
 }
 
 void pruned_branch(bool cond) {
@@ -1291,8 +1294,8 @@ public:
   int &operator*();
 };
 void b() {
-  a c;   // expected-note {{default-constructed Pointers are assumed to be null}}
-  c = 0; // expected-warning {{passing a null pointer as argument to a non-null parameter}}
+  a c;
+  c = 0;
 }
 } // namespace creduce4
 
@@ -1430,7 +1433,7 @@ public:
 
 class c : public a<int> {};
 
-void fn1(c d) { // expected-note {{potentially null}}
-  d.b();        // expected-warning {{passing a possibly null pointer}}
+void fn1(c d) { 
+  d.b();
 }
 } // namespace creduce14

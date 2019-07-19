@@ -2801,6 +2801,7 @@ public:
     // return value can also be represented if `Baseindex == ReturnVal`.
     unsigned BaseIndex;
     const static unsigned ReturnVal = ~0;
+    const static unsigned ThisVal = ReturnVal - 1;
     llvm::SmallVector<const FieldDecl *, 4> FDs;
   };
   struct PointsToSet {

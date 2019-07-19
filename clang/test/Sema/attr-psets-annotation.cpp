@@ -212,6 +212,10 @@ void p4(int *a, int *b, int *&c)
 int *p5(int *a, int *b) { return a; }
 int *p6(int *a, int *b)
     [[gsl::post(pset(Return) == pset(a))]] { return a; }
+struct S{
+  int *f(int * a, int *b, int *&c) { return a; }
+  S *g(int * a, int *b, int *&c) { return this; }
+};
 // TODO: contracts for function pointers?
 
 void f() {
@@ -260,6 +264,21 @@ void f() {
   // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
   // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
   // expected-warning@-3 {{pset(Post(Return)) = ((*a), (null))}}
-  
+  __lifetime_contracts(&S::f);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Pre(This)) = ((*this))}}
+  // expected-warning@-6 {{pset(Post(*c)) = ((*a), (*b), (null))}}
+  // expected-warning@-7 {{pset(Post(Return)) = ((*a), (*b), (null))}}
+  __lifetime_contracts(&S::g);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Pre(This)) = ((*this))}}
+  // expected-warning@-6 {{pset(Post(*c)) = ((*a), (*b), (null))}}
+  // expected-warning@-7 {{pset(Post(Return)) = ((*this))}}
 }
 } // namespace dump_contracts

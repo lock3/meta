@@ -307,23 +307,6 @@ public:
     }
   }
 
-  void VisitBinAssign(const BinaryOperator *BO) {
-    auto TC = classifyTypeCategory(BO->getType());
-
-    if (TC == TypeCategory::Owner) {
-      // Owners usually are user defined types. We should see a function call.
-      // Do we need to handle raw pointers annotated as owners?
-    } else if (TC == TypeCategory::Pointer) {
-      // This assignment updates a Pointer.
-      SourceRange Range = BO->getRHS()->getSourceRange();
-      PSet LHS = handlePointerAssign(BO->getLHS()->getType(),
-                                     getPSet(BO->getRHS()), Range);
-      setPSet(getPSet(BO->getLHS()), LHS, Range);
-    }
-
-    setPSet(BO, getPSet(BO->getLHS()));
-  }
-
   /// Returns true if all of the following is true
   /// 1) BO is an addition,
   /// 2) LHS is ImplicitCastExpr <ArrayToPointerDecay> of DeclRefExpr of array
@@ -363,7 +346,17 @@ public:
 
   void VisitBinaryOperator(const BinaryOperator *BO) {
     if (BO->getOpcode() == BO_Assign) {
-      VisitBinAssign(BO);
+      // Owners usually are user defined types. We should see a function call.
+      // Do we need to handle raw pointers annotated as owners?
+      if (isPointer(BO)) {
+        // This assignment updates a Pointer.
+        SourceRange Range = BO->getRHS()->getSourceRange();
+        PSet LHS = handlePointerAssign(BO->getLHS()->getType(),
+                                       getPSet(BO->getRHS()), Range);
+        setPSet(getPSet(BO->getLHS()), LHS, Range);
+      }
+
+      setPSet(BO, getPSet(BO->getLHS()));
     } else if (isArrayPlusIndex(BO)) {
       setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->getType()->isPointerType()) {
@@ -513,131 +506,69 @@ public:
       Reporter.warnNonStaticThrow(TE->getSourceRange(), ThrownPSet.str());
   }
 
-  struct CallArgument {
-    CallArgument(SourceRange Range, PSet PS, QualType QType)
-        : Range(Range), PS(std::move(PS)), ParamQType(QType) {}
-    SourceRange Range;
-    PSet PS;
-    QualType ParamQType;
-  };
+  template <typename PC, typename TC>
+  void forEachArgParamPair(const CallExpr *CE, const PC &ParamCallback,
+                           const TC &ThisCallback) {
+    const FunctionDecl *FD = CE->getDirectCallee();
+    assert(FD);
 
-  struct CallArguments {
-    std::vector<CallArgument> Input_weak;
-    std::vector<CallArgument> Oinvalidate;
-    std::vector<CallArgument> Input;
-    // A “function output” means a return value or a parameter passed by
-    // Pointer to non-const (and is not considered to include the top-level
-    // Pointer, because the output is the pointee).
-    std::vector<CallArgument> Output;
-  };
+    ArrayRef<const Expr *> Args =
+        llvm::makeArrayRef(CE->getArgs(), CE->getNumArgs());
 
-  void PushCallArguments(const FunctionDecl *FD, int ArgNum, SourceRange Range,
-                         const Expr *Arg, QualType ParamType, bool IsInputThis,
-                         CallArguments &Args) {
-    // TODO implement aggregates
-    if (classifyTypeCategory(ParamType) != TypeCategory::Pointer)
-      return;
-    QualType Pointee = getPointeeType(ParamType);
-    if (Pointee.isNull())
-      return;
-    auto PointeeCat = classifyTypeCategory(Pointee);
-    bool IsLifetimeConst = isLifetimeConst(FD, Pointee, ArgNum);
+    const Expr *ObjectArg = nullptr;
+    if (isa<CXXOperatorCallExpr>(CE) && FD->isCXXInstanceMember()) {
+      ObjectArg = Args[0];
+      Args = Args.slice(1);
+    } else if (auto *MCE = dyn_cast<CXXMemberCallExpr>(CE))
+      ObjectArg = MCE->getImplicitObjectArgument();
 
-    if (ParamType->isRValueReferenceType() && PointeeCat == TypeCategory::Owner)
-      return;
-
-    if (ParamType->isLValueReferenceType() &&
-        PointeeCat == TypeCategory::Owner && Pointee.isConstQualified()) {
-      // all Owner arguments passed as const Owner&
-      Args.Input_weak.emplace_back(Range, getPSet(Arg), ParamType);
-      // the deref locations of Owners passed by const Owner&
-      Args.Input_weak.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);
-      return;
+    unsigned Pos = 0;
+    for (const Expr *Arg : Args) {
+      if (Pos >= FD->getNumParams())
+        break;
+      const ParmVarDecl *PVD = FD->getParamDecl(Pos);
+      ParamCallback(Variable(PVD), Arg, Pos);
+      ++Pos;
     }
-
-    // At this point we have Pointer arguments except 'Owner&&' and 'const
-    // Owner&'
-    Args.Input.emplace_back(Range, getPSet(Arg), ParamType);
-    diagnoseInput(FD, Args.Input.back(), IsInputThis);
-
-    // Input includes the deref location of all reference arguments except:
-    // - Owner&&
-    // - const Owner&
-    // - Pointer& marked [[gsl::lifetime_out]] (TODO)
-    // Here '*this' is handled as a parameter of type 'Object&'
-    if (ParamType->isLValueReferenceType() &&
-        (PointeeCat == TypeCategory::Owner ||
-         PointeeCat == TypeCategory::Pointer)) {
-      Args.Input.emplace_back(Range, derefPSet(getPSet(Arg)), Pointee);
-      diagnoseInput(FD, Args.Input.back(), IsInputThis);
-    }
-
-    if (PointeeCat == TypeCategory::Pointer && !Pointee.isConstQualified())
-      Args.Output.emplace_back(Range, getPSet(Arg), Pointee);
-    // Add deref this to Output for Pointer ctor?
-
-    if (PointeeCat == TypeCategory::Owner && !IsLifetimeConst)
-      Args.Oinvalidate.emplace_back(Range, getPSet(Arg), Pointee);
-  }
-
-  /// Returns the psets of each expressions in PinArgs,
-  /// plus the psets of dereferencing each pset further.
-  void diagnoseInput(const FunctionDecl *FD, CallArgument &CA,
-                     bool IsInputThis) {
-    bool IsConversionToBool = false;
-    if (const auto *ConvDecl = dyn_cast_or_null<CXXConversionDecl>(FD))
-      IsConversionToBool = ConvDecl->getConversionType()->isPointerType() ||
-                           ConvDecl->getConversionType()->isBooleanType();
-    if (CA.PS.containsInvalid()) {
-      Reporter.warnParameterDangling(CA.Range, /*indirectly=*/false);
-      CA.PS.explainWhyInvalid(Reporter);
-      // suppress further diagnostics, e.g. when this input is returned
-      CA.PS = {};
-    } else if (CA.PS.containsNull() && !IsConversionToBool &&
-               (!isNullableType(CA.ParamQType) || IsInputThis)) {
-      Reporter.warn(WarnType::ParamNull, CA.Range, !CA.PS.isNull());
-      CA.PS.explainWhyNull(Reporter);
+    if (ObjectArg) {
+      const CXXRecordDecl *RD = cast<CXXMethodDecl>(FD)->getParent();
+      ThisCallback(Variable::thisPointer(), RD, ObjectArg);
     }
   }
 
-  /// Checks if the Pointer/Owner From can assign into
-  /// the Pointer To.
-  bool canAssign(QualType From, QualType To) {
-    QualType FromPointee = getPointeeType(From);
-    if (FromPointee.isNull())
-      return false;
-
-    QualType ToPointee = getPointeeType(To);
-    if (ToPointee.isNull())
-      return false;
-
-    return IsConvertible(ASTCtxt.getPointerType(FromPointee),
-                         ASTCtxt.getPointerType(ToPointee));
-  }
-
-  struct CallExprArguments {
-    const Expr *This = nullptr;
-    std::vector<const Expr *> Arguments;
-  };
-
-  CallExprArguments getArguments(const CallExpr *CallE,
-                                 bool IsNonStaticMemberFunction) {
-    CallExprArguments CA;
-    for (unsigned I = 0; I < CallE->getNumArgs(); ++I) {
-      const Expr *Arg = CallE->getArg(I);
-      // For instance calls, getArg(0) is the 'this' pointer.
-      if (IsNonStaticMemberFunction && isa<CXXOperatorCallExpr>(CallE) &&
-          I == 0) {
-        CA.This = Arg;
-        continue;
-      }
-      CA.Arguments.push_back(Arg);
-    }
-
-    if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(CallE))
-      CA.This = MemberCall->getImplicitObjectArgument();
-
-    return CA;
+  // In the contracts every PSets are expressed in terms of the ParmVarDecls.
+  // We need to translate this to the PSets of the arguments so we can check
+  // substitutability.
+  void bindArguments(PSetsMap &Fill, const PSetsMap &Lookup,
+                     const CallExpr *CE) {
+    auto bindTwoDerefLevels = [this, &Lookup](Variable V, const PSet &PS,
+                                              PSetsMap::value_type &Pair) {
+      Pair.second.bind(V, PS);
+      if (!Lookup.count(V))
+        return;
+      V.deref();
+      Pair.second.bind(V, derefPSet(PS));
+    };
+    auto ReturnIt = Fill.find(Variable::temporary());
+    forEachArgParamPair(
+        CE,
+        [&](Variable V, const Expr *Arg, int Pos) {
+          PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
+          if (ArgPS.isUnknown())
+            return;
+          V.deref();
+          for (auto &VarToPSet : Fill)
+            bindTwoDerefLevels(V, ArgPS, VarToPSet);
+          // Do the binding for the return value.
+          if (ReturnIt != Fill.end())
+            bindTwoDerefLevels(V, ArgPS, *ReturnIt);
+        },
+        [&](Variable V, const CXXRecordDecl *, const Expr *ObjExpr) {
+          // Do the binding for this and *this
+          V.deref();
+          for (auto &VarToPSet : Fill)
+            bindTwoDerefLevels(V, getPSet(ObjExpr), VarToPSet);
+        });
   }
 
   /// Evaluates the CallExpr for effects on psets.
@@ -645,26 +576,23 @@ public:
   /// into a function, it's pointee's are invalidated.
   /// Returns true if CallExpr was handled.
   void VisitCallExpr(const CallExpr *CallE) {
-    // Handle call to clang_analyzer_pset, which will print the pset of its
-    // argument
-    if (HandleClangAnalyzerPset(CallE))
+    // Default return value, will be overwritten if it makes sense.
+    setPSet(CallE, PSet::singleton(Variable::temporary()));
+
+    if (isa<CXXPseudoDestructorExpr>(CallE->getCallee()) ||
+        HandleDebugFunctions(CallE))
       return;
 
-    auto *CalleeE = CallE->getCallee();
-    if (isa<CXXPseudoDestructorExpr>(CalleeE))
+    // TODO: function pointers are not handled. We need to get the contracts
+    //       from the declaration of the function pointer somehow.
+    const auto *Callee = CallE->getDirectCallee();
+    if (!Callee)
       return;
-    CallTypes CT = getCallTypes(CalleeE);
+
+    /// Special case for assignment of Pointer into Pointer: copy pset
     if (auto *OC = dyn_cast<CXXOperatorCallExpr>(CallE)) {
-      assert(OC->getDirectCallee());
-      if (OC->getDirectCallee()->isCXXInstanceMember())
-        CT.ClassDecl = OC->getArg(0)->getType()->getAsCXXRecordDecl();
-
-      /// Special case for assignment of Pointer into Pointer: copy pset
       if (OC->getOperator() == OO_Equal && OC->getNumArgs() == 2 &&
-          classifyTypeCategory(OC->getArg(0)->getType()) ==
-              TypeCategory::Pointer &&
-          classifyTypeCategory(OC->getArg(1)->getType()) ==
-              TypeCategory::Pointer) {
+          isPointer(OC->getArg(0)) && isPointer(OC->getArg(1))) {
         SourceRange Range = CallE->getSourceRange();
         PSet RHS = getPSet(getPSet(OC->getArg(1)));
         RHS = handlePointerAssign(OC->getArg(0)->getType(), RHS, Range);
@@ -674,106 +602,103 @@ public:
       }
     }
 
-    auto ParamTypes = CT.FTy->getParamTypes();
-    CallExprArguments CallArgs = getArguments(CallE, CT.ClassDecl != nullptr);
-    CallArguments Args;
-    for (unsigned I = 0; I < CallArgs.Arguments.size(); ++I) {
-      const Expr *Arg = CallArgs.Arguments[I];
-      QualType ParamType = [&] {
-        // For instance calls, getArg(0) is the 'this' pointer.
-        if (I >= ParamTypes.size())
-          return Arg->getType();
-        else
-          return ParamTypes[I];
-      }();
-      PushCallArguments(CallE->getDirectCallee(), I, Arg->getSourceRange(), Arg,
-                        ParamType, /*IsInputThis=*/false, Args);
-    }
+    // Get preconditions.
+    PSetsMap PreConditions;
+    getLifetimeContracts(PreConditions, Callee, ASTCtxt, IsConvertible,
+                         Reporter, /*Pre=*/true);
+    bindArguments(PreConditions, PreConditions, CallE);
 
-    if (CT.ClassDecl) {
-      // A this pointer parameter is treated as if it were declared as a
-      // reference to the current object
-      assert(CallArgs.This);
+    // Check preconditions. We might have them 2 levels deep.
+    forEachArgParamPair(
+        CallE,
+        [&](Variable V, const Expr *Arg, int Pos) {
+          PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
+          if (ArgPS.isUnknown())
+            return;
+          if (PreConditions.count(V))
+            ArgPS.checkSubstitutableFor(PreConditions[V], Arg->getSourceRange(),
+                                        Reporter);
+          V.deref();
+          if (PreConditions.count(V))
+            derefPSet(ArgPS).checkSubstitutableFor(
+                PreConditions[V], Arg->getSourceRange(), Reporter);
+        },
+        [&](Variable V, const RecordDecl *, const Expr *ObjExpr) {
+          PSet ArgPS = getPSet(ObjExpr);
+          if (PreConditions.count(V))
+            ArgPS.checkSubstitutableFor(PreConditions[V],
+                                        ObjExpr->getSourceRange(), Reporter);
+          V.deref();
+          if (PreConditions.count(V))
+            derefPSet(ArgPS).checkSubstitutableFor(
+                PreConditions[V], ObjExpr->getSourceRange(), Reporter);
+        });
 
-      QualType ObjectType = CallArgs.This->getType();
-      if (ObjectType->isPointerType())
-        ObjectType = ObjectType->getPointeeType();
-      ObjectType = ASTCtxt.getLValueReferenceType(ObjectType);
-
-      PushCallArguments(CallE->getDirectCallee(), -1,
-                        CallArgs.This->getSourceRange(), CallArgs.This,
-                        ObjectType,
-                        /*IsInputThis=*/true, Args);
-    }
-
-    // TODO If p is annotated [[gsl::lifetime(x)]], then ensure that pset(p)
-    // == pset(x)
-
-    // Invalidate owners taken by Pointer to non-const.
-    for (const auto &Arg : Args.Oinvalidate) {
-      for (auto Var : Arg.PS.vars()) {
-        invalidateVar(Var, 1, InvalidationReason::Modified(Arg.Range));
-      }
-    }
+    PSetsMap PostConditions;
+    getLifetimeContracts(PostConditions, Callee, ASTCtxt, IsConvertible,
+                         Reporter,
+                         /*Pre=*/false);
+    bindArguments(PostConditions, PreConditions, CallE);
+    // PSets might become empty during the argument binding.
+    // E.g.: when the pset(null) is bind to a non-null pset.
+    for (auto &Pair : PostConditions)
+      if (Pair.second.isUnknown())
+        Pair.second.addStatic();
 
 #if 0
-    llvm::errs() << "==== Call\n";
-    CallE->dump();
-    CT.FTy->dump();
-    for (CallArgument &CA : Args.Input) {
-      llvm::errs() << "Input: " << CA.PS.str() << "\n";
-      CA.ParamQType->dump();
-      llvm::errs() << "\n";
-    }
-    for (CallArgument &CA : Args.Input_weak) {
-      llvm::errs() << "Input_weak: " << CA.PS.str() << "\n";
-      CA.ParamQType->dump();
-      llvm::errs() << "\n";
-    }
-    for (CallArgument &CA : Args.Output) {
-      llvm::errs() << "Output: " << CA.PS.str() << "\n";
-      CA.ParamQType->dump();
-      llvm::errs() << "\n";
-    }
+    for (auto Pair : PreConditions)
+      llvm::errs() << "Pre:" << Pair.first.getName() << " -> "
+                   << Pair.second.str() << "\n";
+    for (auto Pair : PostConditions)
+      llvm::errs() << "Post" << Pair.first.getName() << " -> "
+                   << Pair.second.str() << "\n";
 #endif
 
-    // If p is explicitly lifetime-annotated with x, then each call site
-    // enforces the precondition that argument(p) is a valid Pointer and
-    // pset(argument(p)) == pset(argument(x)), and in the callee on function
-    // entry set pset(p) = pset(x).
+    // Invalidate owners taken by Pointer to non-const.
+    forEachArgParamPair(
+        CallE,
+        [&](Variable Par, const Expr *Arg, int Pos) {
+          QualType Pointee = getPointeeType(Par.getType());
+          if (Pointee.isNull())
+            return;
+          if (classifyTypeCategory(Pointee) != TypeCategory::Owner ||
+              isLifetimeConst(Callee, Pointee, Pos))
+            return;
+          PSet ArgPS = getPSet(Arg);
+          for (Variable V : ArgPS.vars())
+            invalidateVar(V, 1,
+                          InvalidationReason::Modified(Arg->getSourceRange()));
+        },
+        [&](Variable, const RecordDecl *RD, const Expr *ObjExpr) {
+          const auto *RT = RD->getTypeForDecl();
+          if (classifyTypeCategory(RT) != TypeCategory::Owner ||
+              isLifetimeConst(Callee, QualType(RT, 0), -1))
+            return;
+          PSet ArgPS = derefPSet(getPSet(ObjExpr));
+          for (Variable V : ArgPS.vars())
+            invalidateVar(
+                V, 1, InvalidationReason::Modified(ObjExpr->getSourceRange()));
+        });
 
-    // Enforce that pset() of each argument does not refer to a non-const
-    // global Owner
-    auto computeOutput = [&](QualType OutputType) {
-      PSet Ret;
-      for (CallArgument &CA : Args.Input) {
-        if (canAssign(CA.ParamQType, OutputType))
-          Ret.merge(CA.PS);
-      }
-      if (Ret.isUnknown()) {
-        for (CallArgument &CA : Args.Input_weak) {
-          if (canAssign(CA.ParamQType, OutputType))
-            Ret.merge(CA.PS);
-        }
-      }
-      // For not_null types assume that the callee did not set them
-      // to null.
-      if (!isNullableType(OutputType))
-        Ret.removeNull();
-      if (Ret.isUnknown())
-        Ret.addStatic();
-      return Ret;
-    };
-
-    auto TC = classifyTypeCategory(CT.FTy->getReturnType());
+    // Bind Pointer return value.
+    auto TC = classifyTypeCategory(Callee->getReturnType());
     if (TC == TypeCategory::Pointer)
-      setPSet(CallE, computeOutput(CT.FTy->getReturnType()));
-    else
-      setPSet(CallE, PSet::singleton(Variable::temporary()));
+      setPSet(CallE, PostConditions[Variable::temporary()]);
 
-    for (const auto &Arg : Args.Output) {
-      setPSet(Arg.PS, computeOutput(Arg.ParamQType), CallE->getSourceRange());
-    }
+    // Bind output arguments.
+    forEachArgParamPair(
+        CallE,
+        [&](Variable V, const Expr *Arg, int Pos) {
+          V.deref();
+          if (PostConditions.count(V))
+            setPSet(getPSet(Arg), PostConditions[V], Arg->getSourceRange());
+        },
+        [&](Variable V, const RecordDecl *RD, const Expr *ObjExpr) {
+          V.deref();
+          if (PostConditions.count(V))
+            setPSet(getPSet(ObjExpr), PostConditions[V],
+                    ObjExpr->getSourceRange());
+        });
   }
 
   bool CheckPSetValidity(const PSet &PS, SourceRange Range);
@@ -878,7 +803,7 @@ public:
   void setPSet(PSet LHS, PSet RHS, SourceRange Range);
   PSet derefPSet(const PSet &P);
 
-  bool HandleClangAnalyzerPset(const CallExpr *CallE);
+  bool HandleDebugFunctions(const CallExpr *CallE);
 
   PSet handlePointerAssign(QualType LHS, PSet RHS, SourceRange Range,
                            bool AddReason = true) {
@@ -938,8 +863,8 @@ public:
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                 llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                                 SourceRange Range);
-};
-} // anonymous namespace
+}; // namespace
+} // namespace
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
@@ -1143,9 +1068,9 @@ void PSetsBuilder::UpdatePSetsFromCondition(
   }
 } // namespace lifetime
 
-/// Checks if the statement S is a call to clang_analyzer_pset and, if yes,
-/// diags the pset of its argument
-bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
+/// Checks if the statement S is a call to a debug function and dumps the
+/// corresponding part of the state.
+bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
 
   const FunctionDecl *Callee = CallE->getDirectCallee();
   if (!Callee)
@@ -1207,8 +1132,10 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
     return true;
   }
   case 5: {
-    const auto *FD = dyn_cast<FunctionDecl>(
-        cast<DeclRefExpr>(CallE->getArg(0)->IgnoreImpCasts())->getDecl());
+    const Expr *E = CallE->getArg(0)->IgnoreImplicit();
+    if (const auto *UO = dyn_cast<UnaryOperator>(E))
+      E = UO->getSubExpr();
+    const auto *FD = dyn_cast<FunctionDecl>(cast<DeclRefExpr>(E)->getDecl());
     FD = FD->getCanonicalDecl();
     const auto LAttr = FD->getAttr<LifetimeContractAttr>();
     auto printContract =
@@ -1218,10 +1145,12 @@ bool PSetsBuilder::HandleClangAnalyzerPset(const CallExpr *CallE) {
           std::string KeyText = Contract + "(";
           for (int I = 0; I < E.first.second; ++I)
             KeyText += "*";
-          if (E.first.first != LifetimeContractAttr::PointsToLoc::ReturnVal)
-            KeyText += FD->getParamDecl(E.first.first)->getName();
-          else
+          if (E.first.first == LifetimeContractAttr::PointsToLoc::ReturnVal)
             KeyText += "Return";
+          else if (E.first.first == LifetimeContractAttr::PointsToLoc::ThisVal)
+            KeyText += "This";
+          else
+            KeyText += FD->getParamDecl(E.first.first)->getName();
           KeyText += ")";
           std::string PSetText = PSet(E.second, FD->parameters()).str();
           Reporter.debugPset(Range, KeyText, PSetText);

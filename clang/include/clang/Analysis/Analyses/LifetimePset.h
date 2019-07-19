@@ -294,7 +294,10 @@ public:
         ContainsStatic(S.HasStatic) {
     for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
       assert(L.BaseIndex != LifetimeContractAttr::PointsToLoc::ReturnVal);
-      Vars.emplace(Params[L.BaseIndex], L.FDs);
+      if (L.BaseIndex == LifetimeContractAttr::PointsToLoc::ThisVal)
+        Vars.emplace(nullptr, L.FDs);
+      else
+        Vars.emplace(Params[L.BaseIndex], L.FDs);
     }
   }
 
@@ -375,14 +378,25 @@ public:
   }
   const std::vector<NullReason> &nullReasons() const { return NullReasons; }
 
-  bool isSubstitutableFor(const PSet &O) {
+  bool checkSubstitutableFor(const PSet &O, SourceRange Range,
+                             LifetimeReporterBase &Reporter) {
+    // Everything is substitutable for invalid.
+    if (O.ContainsInvalid)
+      return true;
+    
     // If 'this' includes invalid, then 'O' must include invalid.
-    if (ContainsInvalid && !O.ContainsInvalid)
+    if (ContainsInvalid) {
+      Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
+      explainWhyInvalid(Reporter);
       return false;
+    }
 
     // If 'this' includes null, then 'O' must include null.
-    if (ContainsNull && !O.ContainsNull)
+    if (ContainsNull && !O.ContainsNull) {
+      Reporter.warn(WarnType::ParamNull, Range, !isNull());
+      explainWhyNull(Reporter);
       return false;
+    }
 
     // If 'O' includes static and no x or o, then 'this' must include static and
     // no x or o.
@@ -434,6 +448,14 @@ public:
     ContainsStatic |= O.ContainsStatic;
 
     Vars.insert(O.Vars.begin(), O.Vars.end());
+  }
+
+  // This method is used to actualize the PSet of a contract with the arguments
+  // of a call.
+  void bind(Variable ToReplace, const PSet &To) {
+    // Replace valid deref locations.
+    if (Vars.erase(ToReplace))
+      Vars.insert(To.Vars.begin(), To.Vars.end());
   }
 
   PSet operator+(const PSet &O) const {
@@ -509,7 +531,7 @@ private:
 
   std::vector<InvalidationReason> InvReasons;
   std::vector<NullReason> NullReasons;
-};
+}; // namespace lifetime
 
 using PSetsMap = std::map<Variable, PSet>;
 
