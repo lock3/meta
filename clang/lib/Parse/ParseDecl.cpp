@@ -331,19 +331,11 @@ unsigned Parser::ParseAttributeArgsCommon(
     IdentifierInfo *AttrName, SourceLocation AttrNameLoc,
     ParsedAttributes &Attrs, SourceLocation *EndLoc, IdentifierInfo *ScopeName,
     SourceLocation ScopeLoc, ParsedAttr::Syntax Syntax) {
-
-  if (attributeIsTypeArgAttr(*AttrName)) {
-    ParseAttributeWithTypeArg(*AttrName, AttrNameLoc, Attrs, EndLoc, ScopeName,
-                              ScopeLoc, Syntax);
-    // FIXME: when attributeIsTypeArgAttr() is true, assumes that the attribute
-    // takes a single parameter.
-    return 1;
-  }
-
   // Ignore the left paren location for now.
   ConsumeParen();
 
   bool ChangeKWThisToIdent = attributeTreatsKeywordThisAsIdentifier(*AttrName);
+  bool AttributeIsTypeArgAttr = attributeIsTypeArgAttr(*AttrName);
 
   // Interpret "kw_this" as an identifier if the attributed requests it.
   if (ChangeKWThisToIdent && Tok.is(tok::kw_this))
@@ -369,6 +361,7 @@ unsigned Parser::ParseAttributeArgsCommon(
       ArgExprs.push_back(ParseIdentifierLoc());
   }
 
+  ParsedType TheParsedType;
   if (!ArgExprs.empty() ? Tok.is(tok::comma) : Tok.isNot(tok::r_paren)) {
     // Eat the comma.
     if (!ArgExprs.empty())
@@ -381,8 +374,17 @@ unsigned Parser::ParseAttributeArgsCommon(
         Tok.setKind(tok::identifier);
 
       ExprResult ArgExpr;
-      if (Tok.is(tok::identifier) &&
-          attributeHasVariadicIdentifierArg(*AttrName)) {
+      if (AttributeIsTypeArgAttr) {
+        TypeResult T = ParseTypeName();
+        if (T.isInvalid()) {
+          SkipUntil(tok::r_paren, StopAtSemi);
+          return 0;
+        }
+        if (T.isUsable())
+          TheParsedType = T.get();
+        break; // Multiple type arguments are not implemented.
+      } else if (Tok.is(tok::identifier) &&
+                 attributeHasVariadicIdentifierArg(*AttrName)) {
         ArgExprs.push_back(ParseIdentifierLoc());
       } else {
         bool Uneval = attributeParsedArgsUnevaluated(*AttrName);
@@ -406,14 +408,20 @@ unsigned Parser::ParseAttributeArgsCommon(
   SourceLocation RParen = Tok.getLocation();
   if (!ExpectAndConsume(tok::r_paren)) {
     SourceLocation AttrLoc = ScopeLoc.isValid() ? ScopeLoc : AttrNameLoc;
-    Attrs.addNew(AttrName, SourceRange(AttrLoc, RParen), ScopeName, ScopeLoc,
-                 ArgExprs.data(), ArgExprs.size(), Syntax);
+
+    if (AttributeIsTypeArgAttr && !TheParsedType.get().isNull()) {
+      Attrs.addNewTypeAttr(AttrName, SourceRange(AttrNameLoc, RParen),
+                           ScopeName, ScopeLoc, TheParsedType, Syntax);
+    } else {
+      Attrs.addNew(AttrName, SourceRange(AttrLoc, RParen), ScopeName, ScopeLoc,
+                   ArgExprs.data(), ArgExprs.size(), Syntax);
+    }
   }
 
   if (EndLoc)
     *EndLoc = RParen;
 
-  return static_cast<unsigned>(ArgExprs.size());
+  return static_cast<unsigned>(ArgExprs.size() + !TheParsedType.get().isNull());
 }
 
 /// Parse the arguments to a parameterized GNU attribute or

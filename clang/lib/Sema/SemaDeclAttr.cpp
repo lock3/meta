@@ -4544,6 +4544,18 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
           << "'void'" << AL;
       return;
     }
+
+    if (ParmType->isReferenceType()) {
+      S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument)
+          << "A reference type" << AL;
+      return;
+    }
+
+    if (ParmType->isArrayType()) {
+      S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument)
+          << "An array type" << AL;
+      return;
+    }
   }
 
   // To check if earlier decl attributes do not conflict the newly parsed ones
@@ -4561,6 +4573,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
             << AL << OAttr;
         S.Diag(OAttr->getLocation(), diag::note_conflicting_attribute);
       }
+      return;
     }
     D->addAttr(::new (S.Context)
                    OwnerAttr(AL.getRange(), S.Context, DerefTypeLoc,
@@ -4577,6 +4590,7 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
             << AL << PAttr;
         S.Diag(PAttr->getLocation(), diag::note_conflicting_attribute);
       }
+      return;
     }
     D->addAttr(::new (S.Context)
                    PointerAttr(AL.getRange(), S.Context, DerefTypeLoc,

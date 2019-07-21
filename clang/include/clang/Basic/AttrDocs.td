@@ -4159,30 +4159,69 @@ This attribute does not affect optimizations in any way, unlike GCC's
 }
 
 def LifetimeOwnerDocs : Documentation {
-  let Category = DocCatFunction;
+  let Category = DocCatDecl;
   let Content = [{
-When annotating a class ``O`` with ``[[gsl::Owner(T)]]``, then each function
-that returns cv-qualified ``T&`` or ``T*`` is assumed to return a
-pointer/reference to the data owned by ``O``. The owned data is assumed to end
-its lifetime once the owning object's lifetime ends. The argument ``T`` is
-optional.
+.. Note:: This attribute is experimental and its effect on analysis is subject to change in
+  a future version of clang.
 
-This attribute may be used by analysis tools but will not have effect on code
+The attribute ``[[gsl::Owner(T)]]`` applies to structs and classes that own an
+object of type ``T``:
+
+.. code-block:: c++
+
+  class [[gsl::Owner(int)]] IntOwner {
+  private:
+    int value;
+  public:
+    int *getInt() { return &value; }
+  };
+
+The argument ``T`` is optional and currently ignored.
+This attribute may be used by analysis tools and has no effect on code
 generation.
+
+See Pointer_ for an example.
 }];
 }
 
 def LifetimePointerDocs : Documentation {
-  let Category = DocCatFunction;
+  let Category = DocCatDecl;
   let Content = [{
-When annotating a class with ``[[gsl::Pointer(T)]]``, it assumed to be a
-non-owning type whose objects can point to ``T`` type objects or dangle.
-The argument ``T`` is optional.
+.. Note:: This attribute is experimental and its effect on analysis is subject to change in
+  a future version of clang.
 
-This attribute may be used by analysis tools but will not have effect on code
+The attribute ``[[gsl::Pointer(T)]]`` applies to structs and classes that behave
+like pointers to an object of type ``T``:
+
+.. code-block:: c++
+
+  class [[gsl::Pointer(int)]] IntPointer {
+  private:
+    int *valuePointer;
+  public:
+    int *getInt() { return &valuePointer; }
+  };
+
+The argument ``T`` is optional and currently ignored.
+This attribute may be used by analysis tools and has no effect on code
 generation.
 
-For example ``std::vector<int>::iterator`` might be annotated
-``[[gsl::Pointer(int)]]``.
+Example:
+When constructing an instance of a class annotated like this (a Pointer) from
+an instance of a class annotated with ``[[gsl::Owner]]`` (an Owner),
+then the analysis will consider the Pointer to point inside the Owner.
+When the Owner's lifetime ends, it will consider the Pointer to be dangling.
+
+.. code-block:: c++
+
+  int f() {
+    IntPointer P;
+    if (true) {
+      IntOwner O(7);
+      P = IntPointer(O); // P "points into" O
+    } // P is dangling
+    return P.get(); // error: Using a dangling Pointer.
+  }
+
 }];
 }

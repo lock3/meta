@@ -2770,7 +2770,6 @@ def Owner : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Owner">];
   let Subjects = SubjectList<[CXXRecord]>;
   let Args = [TypeArgument<"DerefType", /*opt=*/1>];
-  let MeaningfulToClassTemplateDefinition = 1;
   let Documentation = [LifetimeOwnerDocs];
 }
 
@@ -2778,7 +2777,6 @@ def Pointer : InheritableAttr {
   let Spellings = [CXX11<"gsl", "Pointer">];
   let Subjects = SubjectList<[CXXRecord]>;
   let Args = [TypeArgument<"DerefType", /*opt=*/1>];
-  let MeaningfulToClassTemplateDefinition = 1;
   let Documentation = [LifetimePointerDocs];
 }
 
