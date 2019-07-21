@@ -4176,10 +4176,11 @@ object of type ``T``:
     int *getInt() { return &value; }
   };
 
-The argument ``T`` is optional.
-
+The argument ``T`` is optional and currently ignored.
 This attribute may be used by analysis tools and has no effect on code
 generation.
+
+See Pointer_ for an example.
 }];
 }
 
@@ -4201,9 +4202,26 @@ like pointers to an object of type ``T``:
     int *getInt() { return &valuePointer; }
   };
 
-The argument ``T`` is optional.
-
+The argument ``T`` is optional and currently ignored.
 This attribute may be used by analysis tools and has no effect on code
 generation.
+
+Example:
+When constructing an instance of a class annotated like this (a Pointer) from
+an instance of a class annotated with ``[[gsl::Owner]]`` (an Owner),
+then the analysis will consider the Pointer to point inside the Owner.
+When the Owner's lifetime ends, it will consider the Pointer to be dangling.
+
+.. code-block:: c++
+
+  int f() {
+    IntPointer P;
+    if (true) {
+      IntOwner O(7);
+      P = IntPointer(O); // P "points into" O
+    } // P is dangling
+    return P.get(); // error: Using a dangling Pointer.
+  }
+
 }];
 }
