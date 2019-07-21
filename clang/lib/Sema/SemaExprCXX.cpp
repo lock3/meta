@@ -4381,9 +4381,6 @@ static bool CheckUnaryTypeTraitTypeCompleteness(Sema &S, TypeTrait UTT,
 
   // This type trait always returns false, checking the type is moot.
   case UTT_IsInterfaceClass:
-
-  case UTT_IsGslOwner:
-  case UTT_IsGslPointer:
     return true;
 
   // C++14 [meta.unary.prop]:
@@ -4878,16 +4875,6 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,
     return !T->isIncompleteType();
   case UTT_HasUniqueObjectRepresentations:
     return C.hasUniqueObjectRepresentations(T);
-  case UTT_IsGslOwner:
-    if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
-      return RD->getCanonicalDecl()->hasAttr<OwnerAttr>();
-    return false;
-  case UTT_IsGslPointer:
-    if (T->hasPointerRepresentation())
-      return true;
-    if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
-      return RD->getCanonicalDecl()->hasAttr<PointerAttr>();
-    return false;
   }
 }
 
