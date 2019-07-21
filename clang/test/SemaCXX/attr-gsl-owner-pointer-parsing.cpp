@@ -42,3 +42,9 @@ class [[gsl::Owner(float)]] AddConflictLater2;
 class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
 // expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
 // expected-note@-2 {{conflicting attribute is here}}
+
+class [[gsl::Owner(int &)]] ReferenceType{};
+// expected-error@-1 {{A reference type is an invalid argument to attribute 'Owner'}}
+
+class [[gsl::Pointer(int[])]] ArrayType{};
+// expected-error@-1 {{An array type is an invalid argument to attribute 'Pointer'}}

@@ -4544,6 +4544,18 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
           << "'void'" << AL;
       return;
     }
+
+    if (ParmType->isReferenceType()) {
+      S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument)
+          << "A reference type" << AL;
+      return;
+    }
+
+    if (ParmType->isArrayType()) {
+      S.Diag(AL.getLoc(), diag::err_attribute_invalid_argument)
+          << "An array type" << AL;
+      return;
+    }
   }
 
   // To check if earlier decl attributes do not conflict the newly parsed ones
