@@ -1,5 +1,6 @@
 // RUN: %clang_analyze_cc1 -analyzer-checker=cplusplus.InnerPointer \
-// RUN:   %s -analyzer-output=text -verify
+// RUN:   %s -analyzer-output=text -Wno-dangling -Wno-dangling-field \
+// RUN:   -Wno-return-stack-address -verify
 
 #include "Inputs/system-header-simulator-cxx.h"
 namespace std {

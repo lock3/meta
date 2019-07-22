@@ -6559,6 +6559,22 @@ static bool isRecordWithAttr(QualType Type) {
   return false;
 }
 
+static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
+  if (auto *Conv = dyn_cast_or_null<CXXConversionDecl>(Callee))
+    if (isRecordWithAttr<PointerAttr>(Conv->getConversionType()))
+      return true;
+  if (!Callee->getParent()->isInStdNamespace() || !Callee->getIdentifier())
+    return false;
+  if (!isRecordWithAttr<PointerAttr>(Callee->getReturnType()) &&
+      !Callee->getReturnType()->isPointerType())
+    return false;
+  return llvm::StringSwitch<bool>(Callee->getName())
+      .Cases("begin", "rbegin", "cbegin", "crbegin", true)
+      .Cases("end", "rend", "cend", "crend", true)
+      .Cases("c_str", "data", "get", true)
+      .Default(false);
+}
+
 static void handleGslAnnotatedTypes(IndirectLocalPath &Path, Expr *Call,
                                     LocalVisitor Visit) {
   auto VisitPointerArg = [&](const Decl *D, Expr *Arg) {
@@ -6572,15 +6588,14 @@ static void handleGslAnnotatedTypes(IndirectLocalPath &Path, Expr *Call,
   };
 
   if (auto *MCE = dyn_cast<CXXMemberCallExpr>(Call)) {
-    const FunctionDecl *Callee = MCE->getDirectCallee();
-    if (auto *Conv = dyn_cast_or_null<CXXConversionDecl>(Callee))
-      if (isRecordWithAttr<PointerAttr>(Conv->getConversionType()))
-        VisitPointerArg(Callee, MCE->getImplicitObjectArgument());
+    const auto *MD = cast_or_null<CXXMethodDecl>(MCE->getDirectCallee());
+    if (MD && shouldTrackImplicitObjectArg(MD))
+      VisitPointerArg(MD, MCE->getImplicitObjectArgument());
     return;
   }
 
   if (auto *CCE = dyn_cast<CXXConstructExpr>(Call)) {
-    const auto* Ctor = CCE->getConstructor();
+    const auto *Ctor = CCE->getConstructor();
     const CXXRecordDecl *RD = Ctor->getParent()->getCanonicalDecl();
     if (CCE->getNumArgs() > 0 && RD->hasAttr<PointerAttr>())
       VisitPointerArg(Ctor->getParamDecl(0), CCE->getArgs()[0]);
