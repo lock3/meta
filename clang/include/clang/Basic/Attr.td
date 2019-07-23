@@ -2796,23 +2796,7 @@ def LifetimeContract : InheritableParamAttr {
   let Args = [ExprArgument<"Expr">];
   let AdditionalMembers = [{
 public:
-  struct PointsToLoc {
-    // Index of the Parameter on which fields and derefs are applied. The
-    // return value can also be represented if `Baseindex == ReturnVal`.
-    unsigned BaseIndex;
-    const static unsigned ReturnVal = ~0;
-    const static unsigned ThisVal = ReturnVal - 1;
-    llvm::SmallVector<const FieldDecl *, 4> FDs;
-  };
-  struct PointsToSet {
-    bool HasStatic = false;
-    bool HasNull = false;
-    bool HasInvalid = false;
-    SmallVector<PointsToLoc, 4> Pointees;
-  }; 
-  // TODO: this representation does not support fields.
-  using PSetKey = std::pair<unsigned, char>;
-  using PointsToMap = llvm::DenseMap<PSetKey, PointsToSet>;
+  using PointsToMap = std::map<ContractVariable, ContractPSet>;
   SmallVector<const Expr *, 8> PreExprs;
   SmallVector<const Expr *, 8> PostExprs;
   PointsToMap PrePSets;

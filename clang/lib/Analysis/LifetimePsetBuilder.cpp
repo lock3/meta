@@ -159,7 +159,7 @@ public:
     } else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD, DeclRef->getSourceRange()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
-      Variable V = Variable::thisPointer();
+      Variable V(FD->getParent());
       V.addFieldRef(FD);
       setPSet(DeclRef, varRefersTo(V, DeclRef->getSourceRange()));
     }
@@ -206,7 +206,7 @@ public:
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
-    setPSet(E, PSet::singleton(Variable::thisPointer()));
+    setPSet(E, PSet::singleton(E->getType()->getPointeeCXXRecordDecl()));
   }
 
   void VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
@@ -532,7 +532,7 @@ public:
     }
     if (ObjectArg) {
       const CXXRecordDecl *RD = cast<CXXMethodDecl>(FD)->getParent();
-      ThisCallback(Variable::thisPointer(), RD, ObjectArg);
+      ThisCallback(Variable(RD), RD, ObjectArg);
     }
   }
 
@@ -1143,16 +1143,9 @@ bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
          &Range](LifetimeContractAttr::PointsToMap::iterator::value_type E,
                  const std::string &Contract) {
           std::string KeyText = Contract + "(";
-          for (int I = 0; I < E.first.second; ++I)
-            KeyText += "*";
-          if (E.first.first == LifetimeContractAttr::PointsToLoc::ReturnVal)
-            KeyText += "Return";
-          else if (E.first.first == LifetimeContractAttr::PointsToLoc::ThisVal)
-            KeyText += "This";
-          else
-            KeyText += FD->getParamDecl(E.first.first)->getName();
+          KeyText += Variable(E.first, FD).getName();
           KeyText += ")";
-          std::string PSetText = PSet(E.second, FD->parameters()).str();
+          std::string PSetText = PSet(E.second, FD).str();
           Reporter.debugPset(Range, KeyText, PSetText);
         };
     for (const auto &E : LAttr->PrePSets)

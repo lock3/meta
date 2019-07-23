@@ -12,53 +12,35 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/LifetimeAttrData.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
 #include <set>
-#include <sstream>
-#include <vector>
 
 namespace clang {
 namespace lifetime {
 
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
-/// - the this pointer: Var contains a null VarDecl
+/// - the this pointer: Var contains a RecordDecl
 /// - a life-time extended temporary: Var contains a non-null
 /// MaterializeTemporaryExpr
 /// - a normal temporary: Var contains a null MaterializeTemporaryExpr
 /// plus fields of them (in member FDs).
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
-struct Variable {
-  Variable(const VarDecl *VD, llvm::ArrayRef<const FieldDecl *> FDs = {})
-      : Var(VD), FDs(FDs.begin(), FDs.end()) {}
-  Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
+struct Variable : public ContractVariable {
+  Variable(const VarDecl *VD) : ContractVariable(VD) {}
+  Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {}
+  Variable(const RecordDecl *RD) : ContractVariable(RD) {}
+  Variable(const ContractVariable &CV, const FunctionDecl *FD)
+      : ContractVariable(CV) {
+    if (asParmVarDecl())
+      Var = FD->getParamDecl(asParmVarDecl()->getFunctionScopeIndex());
+  }
 
   static Variable temporary() {
     return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
-  }
-  static Variable thisPointer() {
-    return Variable(static_cast<const VarDecl *>(nullptr));
-  }
-
-  bool operator==(const Variable &O) const {
-    return Var == O.Var && FDs == O.FDs;
-  }
-
-  bool operator!=(const Variable &O) const { return !(*this == O); }
-
-  bool operator<(const Variable &O) const {
-    if (Var != O.Var)
-      return Var < O.Var;
-    if (FDs.size() != O.FDs.size())
-      return FDs.size() < O.FDs.size();
-
-    for (auto I = FDs.begin(), J = O.FDs.begin(); I != FDs.end(); ++I, ++J) {
-      if (*I != *J)
-        return std::less<const FieldDecl *>()(*I, *J);
-    }
-    return false;
   }
 
   // TODO: is this what we want when derefs are involved?
@@ -80,24 +62,17 @@ struct Variable {
 
   bool isField() const { return !FDs.empty() && FDs.back(); }
 
-  bool isThisPointer() const {
-    return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
-  }
+  bool isThisPointer() const { return Var.is<const RecordDecl *>(); }
 
-  bool isTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           !Var.get<const MaterializeTemporaryExpr *>();
-  }
+  bool isTemporary() const { return Var.is<const Expr *>() && !getVarAsMTE(); }
 
   bool isLifetimeExtendedTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           Var.get<const MaterializeTemporaryExpr *>();
+    return Var.is<const Expr *>() && getVarAsMTE();
   }
 
   bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
     return isLifetimeExtendedTemporary() &&
-           Var.get<const MaterializeTemporaryExpr *>()->getExtendingDecl() ==
-               VD;
+           getVarAsMTE()->getExtendingDecl() == VD;
   }
 
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
@@ -121,17 +96,17 @@ struct Variable {
 
   std::string getName() const {
     std::string Ret;
-    if (Var.is<const MaterializeTemporaryExpr *>()) {
-      auto *MD = Var.get<const MaterializeTemporaryExpr *>();
-      if (MD && MD->getExtendingDecl()) {
+    if (Var.is<const Expr *>()) {
+      auto *MTE = getVarAsMTE();
+      if (MTE && MTE->getExtendingDecl())
         Ret = "(lifetime-extended temporary through " +
-              MD->getExtendingDecl()->getName().str() + ")";
-      } else
+              MTE->getExtendingDecl()->getName().str() + ")";
+      else
         Ret = "(temporary)";
-    } else {
-      auto *VD = Var.get<const VarDecl *>();
-      Ret = (VD ? VD->getName() : "this");
-    }
+    } else if (auto *VD = Var.dyn_cast<const VarDecl *>())
+      Ret = VD->getName();
+    else
+      Ret = "this";
 
     for (const auto *FD : FDs) {
       if (FD)
@@ -148,12 +123,13 @@ private:
     QualType Base;
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       Base = VD->getType();
-    else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
+    else if (const auto *MT = getVarAsMTE())
       Base = MT->getType();
-    else if (FDs.empty()) {
-      // TODO: not supported for this and temporary yet.
-      return Base;
-    }
+    else if (const auto *RD = Var.dyn_cast<const RecordDecl *>())
+      Base =
+          RD->getASTContext().getPointerType(QualType(RD->getTypeForDecl(), 0));
+    else if (FDs.empty())
+      return Base; // TODO: not supported for temporaries yet.
 
     if (!Base.isNull() && classifyTypeCategory(Base) == TypeCategory::Owner)
       Order = 0;
@@ -174,13 +150,10 @@ private:
     }
     return Base;
   }
-
-  llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
-
-  /// Possibly empty list of fields and deref operations on the base.
-  /// The First entry is the field on base, next entry is the field inside
-  /// there, etc. Null pointers represent a deref operation.
-  llvm::SmallVector<const FieldDecl *, 4> FDs;
+  const MaterializeTemporaryExpr *getVarAsMTE() const {
+    return dyn_cast_or_null<MaterializeTemporaryExpr>(
+        Var.dyn_cast<const Expr *>());
+  }
 };
 
 /// The reason why a pset became invalid
@@ -288,16 +261,12 @@ class PSet {
 public:
   // Initializes an unknown pset
   PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
-  PSet(const LifetimeContractAttr::PointsToSet &S,
-       ArrayRef<const ParmVarDecl *> Params)
-      : ContainsNull(S.HasNull), ContainsInvalid(S.HasInvalid),
-        ContainsStatic(S.HasStatic) {
-    for (const LifetimeContractAttr::PointsToLoc &L : S.Pointees) {
-      assert(L.BaseIndex != LifetimeContractAttr::PointsToLoc::ReturnVal);
-      if (L.BaseIndex == LifetimeContractAttr::PointsToLoc::ThisVal)
-        Vars.emplace(nullptr, L.FDs);
-      else
-        Vars.emplace(Params[L.BaseIndex], L.FDs);
+  PSet(const ContractPSet &S, const FunctionDecl *FD)
+      : ContainsNull(S.ContainsNull), ContainsInvalid(S.ContainsInvalid),
+        ContainsStatic(S.ContainsStatic) {
+    for (const ContractVariable &CV : S.Vars) {
+      assert(CV != ContractVariable::returnVal());
+      Vars.emplace(CV, FD);
     }
   }
 
@@ -383,7 +352,7 @@ public:
     // Everything is substitutable for invalid.
     if (O.ContainsInvalid)
       return true;
-    
+
     // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid) {
       Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
