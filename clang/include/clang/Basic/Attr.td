@@ -172,17 +172,19 @@ class FunctionArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
                                                                           opt,
                                                                           fake>;
 class NamedArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
-                                                                          opt,
-                                                                          fake>;
+                                                                       opt,
+                                                                       fake>;
 class TypeArgument<string name, bit opt = 0> : Argument<name, opt>;
 class UnsignedArgument<string name, bit opt = 0> : Argument<name, opt>;
-class VariadicUnsignedArgument<string name> : Argument<name, 1>;
+class VariadicUnsignedArgument<string name, bit opt = 1, bit fake = 0> :
+    Argument<name, opt, fake>;
 class VariadicExprArgument<string name> : Argument<name, 1>;
 class VariadicStringArgument<string name> : Argument<name, 1>;
 class VariadicIdentifierArgument<string name> : Argument<name, 1>;
 
 // Like VariadicUnsignedArgument except values are ParamIdx.
-class VariadicParamIdxArgument<string name> : Argument<name, 1>;
+class VariadicParamIdxArgument<string name, bit opt = 1, bit fake = 0> :
+    Argument<name, opt, fake>;
 
 // A list of identifiers matching parameters or ParamIdx indices.
 class VariadicParamOrParamIdxArgument<string name> : Argument<name, 1>;
@@ -2778,6 +2780,32 @@ def Pointer : InheritableAttr {
   let Subjects = SubjectList<[CXXRecord]>;
   let Args = [TypeArgument<"DerefType", /*opt=*/1>];
   let Documentation = [LifetimePointerDocs];
+}
+
+def Lifetimeconst : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[Function, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+  let MeaningfulToClassTemplateDefinition = 1;
+}
+
+def LifetimeContract : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "pre">, CXX11<"gsl", "post">];
+  let Accessors = [Accessor<"isPre", [CXX11<"gsl", "pre">]>,
+                   Accessor<"isPost", [CXX11<"gsl", "post">]>];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"Expr">];
+  let AdditionalMembers = [{
+public:
+  using PointsToMap = std::map<ContractVariable, ContractPSet>;
+  SmallVector<const Expr *, 8> PreExprs;
+  SmallVector<const Expr *, 8> PostExprs;
+  PointsToMap PrePSets;
+  PointsToMap PostPSets;
+
+  // TODO: have a more restrictive public API.
+  }];
+  let Documentation = [Undocumented]; // FIXME
 }
 
 // Microsoft-related attributes

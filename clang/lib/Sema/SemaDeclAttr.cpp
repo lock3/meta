@@ -4598,6 +4598,22 @@ static void handleLifetimeCategoryAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   }
 }
 
+static void handleLifetimeContractAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+  LifetimeContractAttr *PAttr;
+  if (auto *Existing = D->getAttr<LifetimeContractAttr>())
+    PAttr = Existing;
+  else {
+    PAttr = ::new (S.Context)
+        LifetimeContractAttr(AL.getRange(), S.Context, AL.getArgAsExpr(0),
+                             AL.getAttributeSpellingListIndex());
+    D->addAttr(PAttr);
+  }
+  if (PAttr->isPre())
+    PAttr->PreExprs.push_back(AL.getArgAsExpr(0));
+  else
+    PAttr->PostExprs.push_back(AL.getArgAsExpr(0));
+}
+
 bool Sema::CheckCallingConvAttr(const ParsedAttr &Attrs, CallingConv &CC,
                                 const FunctionDecl *FD) {
   if (Attrs.isInvalid())
@@ -7178,6 +7194,12 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case ParsedAttr::AT_Owner:
   case ParsedAttr::AT_Pointer:
     handleLifetimeCategoryAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_Lifetimeconst:
+    handleSimpleAttribute<LifetimeconstAttr>(S, D, AL);
+    break;
+  case ParsedAttr::AT_LifetimeContract:
+    handleLifetimeContractAttr(S, D, AL);
     break;
   case ParsedAttr::AT_OpenCLKernel:
     handleSimpleAttribute<OpenCLKernelAttr>(S, D, AL);
