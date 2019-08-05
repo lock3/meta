@@ -119,6 +119,14 @@ void basic(int *a, int *b) [[gsl::pre(pset(b) == pset(a))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (null))}}
 }
 
+// Proper lifetime preconditions can only be checked with annotations.
+void check_lifetime_preconditions() {
+  int a, b;
+  basic(&a, &a);
+  basic(&b, &b);
+  basic(&a, &b); // expected-warning {{passing a Pointer with points-to set (b) where points-to set ((null), a) is expected}}
+}
+
 void specials(int *a, int *b, int *c)
     [[gsl::pre(pset(a) == pset(Null))]]
     [[gsl::pre(pset(b) == pset(Static))]]

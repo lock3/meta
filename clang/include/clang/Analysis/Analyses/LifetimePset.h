@@ -348,7 +348,8 @@ public:
   const std::vector<NullReason> &nullReasons() const { return NullReasons; }
 
   bool checkSubstitutableFor(const PSet &O, SourceRange Range,
-                             LifetimeReporterBase &Reporter) {
+                             LifetimeReporterBase &Reporter,
+                             bool Return = false) {
     // Everything is substitutable for invalid.
     if (O.ContainsInvalid)
       return true;
@@ -375,8 +376,10 @@ public:
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
     for (auto &V : Vars) {
       auto I = O.Vars.find(V);
-      if (I == O.Vars.end() || I->getOrder() > V.getOrder())
+      if (I == O.Vars.end() || I->getOrder() > V.getOrder()) {
+        Reporter.warnWrongPset(Range, Return, str(), O.str());
         return false;
+      }
     }
 
     // TODO
@@ -433,7 +436,8 @@ public:
       if (Checking)
         Vars.insert(To.Vars.begin(), To.Vars.end());
       else
-        merge(To); // TODO: verify if assigned here note is generated later on during output matching.
+        merge(To); // TODO: verify if assigned here note is generated later on
+                   // during output matching.
     }
   }
 
