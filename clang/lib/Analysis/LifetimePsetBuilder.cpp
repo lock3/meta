@@ -1183,6 +1183,21 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
                               llvm::Optional<PSetsMap> &FalseBranchExitPMap) {
+  if (&B == &B.getParent()->getExit()) {
+    PSetsMap PostConditions;
+    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
+                         Reporter, /*Pre=*/false);
+    for (auto &VarToPSet : PostConditions) {
+      if (VarToPSet.first.isTemporary())
+        continue;
+      auto OutVarIt = PMap.find(VarToPSet.first);
+      assert(OutVarIt != PMap.end());
+      OutVarIt->second.checkSubstitutableFor(
+          VarToPSet.second, AnalyzedFD->getEndLoc(), Reporter, true);
+    }
+    return;
+  }
+
   for (const auto &E : B) {
     switch (E.getKind()) {
     case CFGElement::Statement: {

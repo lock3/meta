@@ -202,7 +202,7 @@ namespace dump_contracts {
 // Need to have bodies to fill the lifetime attr.
 void p(int *a) {}
 void p2(int *a, int &b) {}
-void p3(int *a, int *&b) {}
+void p3(int *a, int *&b) { b = 0; }
 void parameter_psets(int value,
                      char *const *in,
                      int &int_ref,
@@ -212,17 +212,17 @@ void parameter_psets(int value,
                      std::unique_ptr<int> &owner_ref,
                      my_pointer ptr_by_value,
                      const my_pointer &ptr_const_ref,
-                     my_pointer &ptr_ref,
+                     my_pointer &ptr_ref,                // expected-note {{it was never initialized here}}
                      my_pointer *ptr_ptr,
-                     const my_pointer *ptr_const_ptr) {}
+                     const my_pointer *ptr_const_ptr) {} // expected-warning {{returning a dangling Pointer}}
 void p4(int *a, int *b, int *&c)
-    [[gsl::pre(pset(b) == pset(a))]] {}
+    [[gsl::pre(pset(b) == pset(a))]] { c = 0; }
 int *p5(int *a, int *b) { return a; }
 int *p6(int *a, int *b)
     [[gsl::post(pset(Return) == pset(a))]] { return a; }
 struct S{
-  int *f(int * a, int *b, int *&c) { return a; }
-  S *g(int * a, int *b, int *&c) { return this; }
+  int *f(int * a, int *b, int *&c) { c = 0; return a; }
+  S *g(int * a, int *b, int *&c) { c = 0; return this; }
 };
 // TODO: contracts for function pointers?
 

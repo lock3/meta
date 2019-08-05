@@ -1110,7 +1110,7 @@ void parameter_psets(int value,
                      std::unique_ptr<int> &owner_ref,
                      my_pointer ptr_by_value,
                      const my_pointer &ptr_const_ref,
-                     my_pointer &ptr_ref,
+                     my_pointer &ptr_ref, // expected-note {{it was never initialized here}}
                      my_pointer *ptr_ptr,
                      const my_pointer *ptr_const_ptr) {
 
@@ -1144,7 +1144,7 @@ void parameter_psets(int value,
   __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
   assert(ptr_const_ptr);
   __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((*(*ptr_const_ptr)), (null))}}
-}
+} // expected-warning {{returning a dangling Pointer}}
 
 void foreach_arithmetic() {
   int t[] = {1, 2, 3, 4, 5};
@@ -1412,7 +1412,9 @@ class h {
 };
 
 class j {
-  j(h &&k) { b(k); }
+  // TODO: are these false positives?
+  j(h &&k) { b(k); } // expected-warning {{returning a dangling Pointer}}
+                     // expected-note@-1 {{it was never initialized here}}
 };
 } // namespace creduce13
 
