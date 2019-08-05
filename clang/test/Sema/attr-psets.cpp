@@ -825,8 +825,8 @@ void return_pointer() {
   float b;
   float *c;
   int *q = g(&a, &b, &c);
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((null), a)}}
-  __lifetime_pset(c); // expected-warning {{pset(c) = ((null), b)}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
+  __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
 }
 
 void return_not_null_type() {
@@ -984,7 +984,7 @@ void derived_to_base_conversion() {
   D d;
   // TODO: if the input is not null, should we assume the output is never null?
   S *sp = f(&d);
-  __lifetime_pset(sp); // expected-warning {{pset(sp) = ((null), d)}}
+  __lifetime_pset(sp); // expected-warning {{pset(sp) = (d)}}
 }
 
 void kill_materialized_temporary() {

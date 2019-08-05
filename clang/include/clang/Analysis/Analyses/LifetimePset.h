@@ -420,11 +420,21 @@ public:
   }
 
   // This method is used to actualize the PSet of a contract with the arguments
-  // of a call.
-  void bind(Variable ToReplace, const PSet &To) {
+  // of a call. It has two modes:
+  // * Checking: The special elements of the psets are coming from the
+  //   contracts, i.e.: the resulting pset will contain null only if the
+  //   contract had null.
+  // * Non-checking: The resulting pset will contain null if 'To' contains
+  //   null. This is useful so code like 'int *p = f(&x);' will result in a
+  //   non-null pset for 'p'.
+  void bind(Variable ToReplace, const PSet &To, bool Checking = true) {
     // Replace valid deref locations.
-    if (Vars.erase(ToReplace))
-      Vars.insert(To.Vars.begin(), To.Vars.end());
+    if (Vars.erase(ToReplace)) {
+      if (Checking)
+        Vars.insert(To.Vars.begin(), To.Vars.end());
+      else
+        merge(To); // TODO: verify if assigned here note is generated later on during output matching.
+    }
   }
 
   PSet operator+(const PSet &O) const {

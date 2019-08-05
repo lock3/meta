@@ -539,16 +539,23 @@ public:
   // In the contracts every PSets are expressed in terms of the ParmVarDecls.
   // We need to translate this to the PSets of the arguments so we can check
   // substitutability.
-  void bindArguments(PSetsMap &Fill, const PSetsMap &Lookup,
-                     const CallExpr *CE) {
-    auto bindTwoDerefLevels = [this, &Lookup](Variable V, const PSet &PS,
-                                              PSetsMap::value_type &Pair) {
-      Pair.second.bind(V, PS);
+  void bindArguments(PSetsMap &Fill, const PSetsMap &Lookup, const CallExpr *CE,
+                     bool Checking = true) {
+    // The sources of null are the actuals, not the formals.
+    if (!Checking)
+      for (auto &VarToPSet : Fill)
+        VarToPSet.second.removeNull();
+
+    auto bindTwoDerefLevels = [this, &Lookup,
+                               Checking](Variable V, const PSet &PS,
+                                         PSetsMap::value_type &Pair) {
+      Pair.second.bind(V, PS, Checking);
       if (!Lookup.count(V))
         return;
       V.deref();
-      Pair.second.bind(V, derefPSet(PS));
+      Pair.second.bind(V, derefPSet(PS), Checking);
     };
+
     auto ReturnIt = Fill.find(Variable::temporary());
     forEachArgParamPair(
         CE,
@@ -638,12 +645,19 @@ public:
     getLifetimeContracts(PostConditions, Callee, ASTCtxt, IsConvertible,
                          Reporter,
                          /*Pre=*/false);
-    bindArguments(PostConditions, PreConditions, CallE);
+    bindArguments(PostConditions, PreConditions, CallE, /*Checking=*/false);
     // PSets might become empty during the argument binding.
     // E.g.: when the pset(null) is bind to a non-null pset.
-    for (auto &Pair : PostConditions)
+    // Also remove null outputs for non-null types.
+    for (auto &Pair : PostConditions) {
+      // TODO: better representation for return value postconditions?
+      QualType OutputType = Pair.first.isTemporary() ? Callee->getReturnType()
+                                                     : Pair.first.getType();
+      if (!isNullableType(OutputType))
+        Pair.second.removeNull();
       if (Pair.second.isUnknown())
         Pair.second.addStatic();
+    }
 
 #if 0
     for (auto Pair : PreConditions)
