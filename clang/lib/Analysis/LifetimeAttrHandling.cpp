@@ -41,7 +41,9 @@ static const ParmVarDecl *toCanonicalParmVar(const ParmVarDecl *PVD) {
   return FD->getCanonicalDecl()->getParamDecl(PVD->getFunctionScopeIndex());
 }
 
-static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap &Lookup) {
+// This function can either collect the PSets of the symbols based on a lookup
+// table or just the symbols into a pset if the lookup table is nullptr.
+static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap *Lookup) {
   ContractPSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     const auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
@@ -54,13 +56,20 @@ static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap &Lookup) {
       Result.ContainsStatic = true;
     else if (Name == "Invalid")
       Result.ContainsInvalid = true;
-    else {
+    else if (Name == "Return") {
+      Result.Vars.insert(ContractVariable::returnVal());
+    } else {
       const auto *PVD = dyn_cast<ParmVarDecl>(VD);
       if (!PVD)
         return Result;
-      auto It = Lookup.find(toCanonicalParmVar(PVD));
-      assert(It != Lookup.end());
-      return It->second;
+      if (Lookup) {
+        auto It = Lookup->find(toCanonicalParmVar(PVD));
+        assert(It != Lookup->end());
+        return It->second;
+      } else {
+        Result.Vars.insert(toCanonicalParmVar(PVD));
+        return Result;
+      }
     }
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
@@ -73,19 +82,17 @@ static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap &Lookup) {
         Result.merge(Elem);
       }
     }
+  } else if (const auto *CE = dyn_cast<CallExpr>(E)) {
+    const FunctionDecl *FD = CE->getDirectCallee();
+    if (!FD || !FD->getIdentifier() || FD->getName() != "deref")
+      return Result;
+    Result = collectPSet(ignoreReturnValues(CE->getArg(0)), Lookup);
+    auto VarsCopy = Result.Vars;
+    Result.Vars.clear();
+    for (auto Var : VarsCopy)
+      Result.Vars.insert(Var.deref());
   }
   return Result;
-}
-
-static ContractVariable getContractVariable(const ValueDecl *D) {
-  if (const auto *PVD = dyn_cast<ParmVarDecl>(D))
-    return PVD;
-  else if (const auto *VD = dyn_cast<VarDecl>(D)) {
-    StringRef Name = VD->getName();
-    if (Name == "Return")
-      return ContractVariable::returnVal();
-  }
-  llvm_unreachable("Unexpected declaration.");
 }
 
 // This function and the callees are have the sole purpose of matching the
@@ -117,18 +124,16 @@ static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
   if (!RHS)
     return false;
 
-  // TODO: setting PSets for deref locs not supported yet.
-  //       also allow null/static etc on both sides.
-  if (!isa<DeclRefExpr>(LHS))
-    std::swap(LHS, RHS);
-  if (!isa<DeclRefExpr>(LHS))
+  // TODO: do we want to support swapped args?
+  ContractPSet LhsPSet = collectPSet(LHS, nullptr);
+  if (LhsPSet.Vars.size() != 1)
     return false;
 
-  ContractVariable VD(getContractVariable(cast<DeclRefExpr>(LHS)->getDecl()));
-  ContractPSet PSet = collectPSet(RHS, Lookup);
-  if (PSet.isEmpty())
+  ContractVariable VD = *LhsPSet.Vars.begin();
+  ContractPSet RhsPSet = collectPSet(RHS, &Lookup);
+  if (RhsPSet.isEmpty())
     return false;
-  Fill[VD] = PSet;
+  Fill[VD] = RhsPSet;
   return true;
 }
 
@@ -198,26 +203,28 @@ public:
     }
     // This points to deref this and this considered as input.
     if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
-      const auto *RD = dyn_cast<CXXRecordDecl>(MD->getParent());
-      ContractVariable DerefThis = ContractVariable(RD).deref();
-      ContractPSet ThisPSet({DerefThis});
-      ContractAttr->PrePSets.emplace(ContractVariable(RD), ThisPSet);
-      Locations.Input.push_back(ContractVariable(RD));
-      QualType ClassTy = MD->getThisType()->getPointeeType();
-      TypeCategory TC = classifyTypeCategory(ClassTy);
-      if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
-        ContractPSet DerefThisPSet({ContractVariable(RD).deref(2)});
-        auto OO = MD->getOverloadedOperator();
-        if (OO != OverloadedOperatorKind::OO_Star &&
-            OO != OverloadedOperatorKind::OO_Arrow &&
-            OO != OverloadedOperatorKind::OO_ArrowStar &&
-            OO != OverloadedOperatorKind::OO_Subscript)
-          DerefThisPSet.ContainsNull = isNullableType(ClassTy);
-        if (const auto *Conv = dyn_cast<CXXConversionDecl>(MD))
-          DerefThisPSet.ContainsNull |=
-              Conv->getConversionType()->isBooleanType();
-        ContractAttr->PrePSets.emplace(DerefThis, DerefThisPSet);
-        Locations.Input.push_back(DerefThis);
+      if (MD->isInstance()) {
+        const auto *RD = dyn_cast<CXXRecordDecl>(MD->getParent());
+        ContractVariable DerefThis = ContractVariable(RD).deref();
+        ContractPSet ThisPSet({DerefThis});
+        ContractAttr->PrePSets.emplace(ContractVariable(RD), ThisPSet);
+        Locations.Input.push_back(ContractVariable(RD));
+        QualType ClassTy = MD->getThisType()->getPointeeType();
+        TypeCategory TC = classifyTypeCategory(ClassTy);
+        if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
+          ContractPSet DerefThisPSet({ContractVariable(RD).deref(2)});
+          auto OO = MD->getOverloadedOperator();
+          if (OO != OverloadedOperatorKind::OO_Star &&
+              OO != OverloadedOperatorKind::OO_Arrow &&
+              OO != OverloadedOperatorKind::OO_ArrowStar &&
+              OO != OverloadedOperatorKind::OO_Subscript)
+            DerefThisPSet.ContainsNull = isNullableType(ClassTy);
+          if (const auto *Conv = dyn_cast<CXXConversionDecl>(MD))
+            DerefThisPSet.ContainsNull |=
+                Conv->getConversionType()->isBooleanType();
+          ContractAttr->PrePSets.emplace(DerefThis, DerefThisPSet);
+          Locations.Input.push_back(DerefThis);
+        }
       }
     }
 

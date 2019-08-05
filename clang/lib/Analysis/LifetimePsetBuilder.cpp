@@ -1191,6 +1191,9 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       if (VarToPSet.first.isTemporary())
         continue;
       auto OutVarIt = PMap.find(VarToPSet.first);
+      if (OutVarIt == PMap.end()) {
+        llvm::errs() << VarToPSet.first.getName() << " not found. \n";
+      }
       assert(OutVarIt != PMap.end());
       OutVarIt->second.checkSubstitutableFor(
           VarToPSet.second, AnalyzedFD->getEndLoc(), Reporter, true);

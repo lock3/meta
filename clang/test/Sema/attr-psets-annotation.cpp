@@ -56,6 +56,19 @@ struct [[gsl::Owner]] return_t {
 } Return;
 
 template <typename T>
+struct PointerTraits;
+
+template <typename T>
+struct PointerTraits<T *> {
+  static T deref(T t) { return *t; }
+};
+
+template <typename T>
+struct PointerTraits<T &> {
+  static T deref(T t) { return t; }
+};
+
+template <typename T>
 struct CheckSingle {
   CheckSingle(const T &t) : data(t) {}
   const T &data;
@@ -86,16 +99,14 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   return lhs.data == rhs.data;
 }
 
-template <typename T, typename S>
-bool operator==(const CheckVariadic<T> &lhs, CheckSingle<S> rhs) {
-  return std::any_of(lhs.ptrs.begin(), lhs.ptrs.end(), [&rhs](const T &ptr) {
-    return CheckSingle<T>(ptr) == rhs;
-  });
-}
+template <typename T>
+auto deref(T t) { return PointerTraits<T>::deref(t); }
 
 template <typename T, typename S>
-bool operator==(const CheckSingle<T> &lhs, CheckVariadic<S> rhs) {
-  return rhs == lhs;
+bool operator==(const CheckSingle<T> &lhs, const CheckVariadic<S> &rhs) {
+  return std::any_of(rhs.ptrs.begin(), rhs.ptrs.end(), [&lhs](const T &ptr) {
+    return CheckSingle<T>(ptr) == lhs;
+  });
 }
 
 template <typename T>
@@ -141,10 +152,13 @@ void variadic(int *a, int *b, int *c)
   __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
 }
 
+
+/* Not supported, we might not want this to be symmetric.
 void variadic_swapped(int *a, int *b, int *c)
     [[gsl::pre(pset({a, c}) == pset(b))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
+  __lifetime_pset(b); // MIGHTBETODOexpected-warning {{((*a), (*c), (null))}}
 }
+*/
 
 /* For std::initializer_list conversions will not work.
    Maybe use type and no conversions required?
@@ -224,6 +238,8 @@ struct S{
   int *f(int * a, int *b, int *&c) { c = 0; return a; }
   S *g(int * a, int *b, int *&c) { c = 0; return this; }
 };
+void p7(int *a, int *b, int *&c)
+    [[gsl::post(pset(deref<int *&>(c)) == pset(a))]] { c = a; }
 // TODO: contracts for function pointers?
 
 void f() {
@@ -288,5 +304,11 @@ void f() {
   // expected-warning@-5 {{pset(Pre(this)) = ((*this))}}
   // expected-warning@-6 {{pset(Post((*c))) = ((*a), (*b), (null))}}
   // expected-warning@-7 {{pset(Post((temporary))) = ((*this))}}
+  __lifetime_contracts(p7);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
 }
 } // namespace dump_contracts
