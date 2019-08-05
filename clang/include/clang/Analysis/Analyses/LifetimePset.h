@@ -46,11 +46,12 @@ struct Variable : public ContractVariable {
   // TODO: is this what we want when derefs are involved?
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
-  // TODO: is this what we want when derefs are involved?
   bool hasStaticLifetime() const {
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
-    return isThisPointer() && !FDs.empty();
+    return isThisPointer() && !FDs.empty() &&
+           llvm::none_of(FDs,
+                         [](const FieldDecl *FD) { return FD == nullptr; });
   }
 
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
@@ -356,14 +357,18 @@ public:
 
     // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid) {
-      Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
+      if (Return)
+        Reporter.warn(WarnType::ReturnDangling, Range, !isInvalid());
+      else
+        Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
       explainWhyInvalid(Reporter);
       return false;
     }
 
     // If 'this' includes null, then 'O' must include null.
     if (ContainsNull && !O.ContainsNull) {
-      Reporter.warn(WarnType::ParamNull, Range, !isNull());
+      Reporter.warn(Return ? WarnType::ReturnNull : WarnType::ParamNull, Range,
+                    !isNull());
       explainWhyNull(Reporter);
       return false;
     }

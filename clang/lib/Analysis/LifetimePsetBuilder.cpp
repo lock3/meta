@@ -44,6 +44,7 @@ static bool isPointer(const Expr *E) {
 ///  pset(&v) = {v}
 class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
 
+  const FunctionDecl *AnalyzedFD;
   LifetimeReporterBase &Reporter;
   ASTContext &ASTCtxt;
   /// Returns true if the first argument is implicitly convertible
@@ -206,7 +207,9 @@ public:
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
-    setPSet(E, PSet::singleton(E->getType()->getPointeeCXXRecordDecl()));
+    // ThisExpr is an RValue.
+    setPSet(E, PSet::singleton(
+                   Variable(E->getType()->getPointeeCXXRecordDecl()).deref()));
   }
 
   void VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
@@ -402,8 +405,6 @@ public:
       return;
 
     auto RetPSet = getPSet(RetVal);
-    if (RetVal->isLValue())
-      RetPSet = getPSet(RetVal);
 
     // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
     // the ReturnStmt node
@@ -421,13 +422,11 @@ public:
         }
       }
     }
-    if (RetPSet.containsInvalid()) {
-      Reporter.warn(WarnType::ReturnDangling, R->getSourceRange(), false);
-      RetPSet.explainWhyInvalid(Reporter);
-    } /* else if (!RetPSet.isSubstitutableFor(PSetOfAllParams)) {
-       Reporter.warnReturnWrongPset(R->getReturnLoc(), RetPSet.str(),
-                                    PSetOfAllParams.str());
-     }*/
+    PSetsMap PostConditions;
+    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
+                         Reporter, /*Pre=*/false);
+    RetPSet.checkSubstitutableFor(PostConditions[Variable::temporary()],
+                                  R->getSourceRange(), Reporter, true);
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
@@ -643,8 +642,7 @@ public:
 
     PSetsMap PostConditions;
     getLifetimeContracts(PostConditions, Callee, ASTCtxt, IsConvertible,
-                         Reporter,
-                         /*Pre=*/false);
+                         Reporter, /*Pre=*/false);
     bindArguments(PostConditions, PreConditions, CallE, /*Checking=*/false);
     // PSets might become empty during the argument binding.
     // E.g.: when the pset(null) is bind to a non-null pset.
@@ -833,12 +831,14 @@ public:
   }
 
 public:
-  PSetsBuilder(LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
-               PSetsMap &PMap, std::map<const Expr *, PSet> &PSetsOfExpr,
+  PSetsBuilder(const FunctionDecl *FD, LifetimeReporterBase &Reporter,
+               ASTContext &ASTCtxt, PSetsMap &PMap,
+               std::map<const Expr *, PSet> &PSetsOfExpr,
                std::map<const Expr *, PSet> &RefersTo,
                IsConvertibleTy IsConvertible)
-      : Reporter(Reporter), ASTCtxt(ASTCtxt), IsConvertible(IsConvertible),
-        PMap(PMap), PSetsOfExpr(PSetsOfExpr), RefersTo(RefersTo) {}
+      : AnalyzedFD(FD), Reporter(Reporter), ASTCtxt(ASTCtxt),
+        IsConvertible(IsConvertible), PMap(PMap), PSetsOfExpr(PSetsOfExpr),
+        RefersTo(RefersTo) {}
 
   void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -1256,12 +1256,13 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
   }
 } // namespace lifetime
 
-void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
+void VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
+                llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible) {
-  PSetsBuilder Builder(Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
+  PSetsBuilder Builder(FD, Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
                        IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);
 }

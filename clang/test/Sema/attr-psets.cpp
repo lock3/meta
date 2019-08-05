@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wlifetime -Wlifetime-debug -verify %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }
@@ -101,8 +101,8 @@ using nullable = T;
 
 template <typename T>
 struct not_null {
-  constexpr operator T() const { return T(); }
-  constexpr T operator->() const { return T(); }
+  constexpr operator T() const;
+  constexpr T operator->() const;
 };
 } // namespace gsl
 
@@ -115,7 +115,7 @@ struct S {
   static int s;
   void f() {
     int *p = &m;        // pset becomes m, not *this
-    __lifetime_pset(p); // expected-warning {{pset(p) = (this.m)}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((*this).m)}}
     int *ps = &s;
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
     int *ps2 = &this->s;

@@ -1969,7 +1969,7 @@ const int Warnings[] = {
   diag::warn_assign_nullptr,
   diag::warn_parameter_null,
   diag::warn_return_dangling,
-  diag::warn_parameter_null
+  diag::warn_return_null
 };
 const int Notes[] = {
   diag::note_never_initialized,
