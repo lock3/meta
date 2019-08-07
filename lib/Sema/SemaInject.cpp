@@ -2125,8 +2125,7 @@ static void PushInjectedECD(
     T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
   EnumConstantDecls.push_back(MetaDecl);
 
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
-    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
     EnumConstantDecls.push_back(ECD);
   }
 }
@@ -3277,10 +3276,8 @@ static bool InjectStmtFragment(Sema &S,
       }
     }
 
-    unsigned NumInjectedStmts = Ctx->InjectedStmts.size();
-    Stmt **Stmts = new (S.Context) Stmt *[NumInjectedStmts];
-    std::copy(Ctx->InjectedStmts.begin(), Ctx->InjectedStmts.end(), Stmts);
-    MD->setInjectedStmts(Stmts, NumInjectedStmts);
+    MD->getInjectedStmts().append(Ctx->InjectedStmts.begin(),
+                                  Ctx->InjectedStmts.end());
   });
 }
 
@@ -3310,10 +3307,8 @@ static bool InjectDeclFragment(Sema &S,
       }
     }
 
-    unsigned NumInjectedDecls = Ctx->InjectedDecls.size();
-    Decl **Decls = new (S.Context) Decl *[NumInjectedDecls];
-    std::copy(Ctx->InjectedDecls.begin(), Ctx->InjectedDecls.end(), Decls);
-    MD->setInjectedDecls(Decls, NumInjectedDecls);
+    MD->getInjectedDecls().append(Ctx->InjectedDecls.begin(),
+                                  Ctx->InjectedDecls.end());
   });
 }
 

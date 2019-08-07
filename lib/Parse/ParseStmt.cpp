@@ -995,8 +995,7 @@ StmtResult Parser::handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
 
 void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
                       SmallVectorImpl<Stmt *> &Stmts) {
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
-    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
+  for (Stmt *InjectedStmt : MetaDecl->getInjectedStmts()) {
     Stmts.push_back(InjectedStmt);
   }
 }

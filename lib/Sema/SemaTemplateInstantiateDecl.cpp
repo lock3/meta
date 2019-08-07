@@ -1318,8 +1318,7 @@ static void PushInjectedECD(
     T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
   EnumConstantDecls.push_back(MetaDecl);
 
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
-    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
     EnumConstantDecls.push_back(ECD);
   }
 }
