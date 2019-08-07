@@ -159,7 +159,7 @@ void pointer() {
   int i;
   __lifetime_type_category<int *>();                                    // expected-warning {{Pointer}}
   __lifetime_type_category<int &>();                                    // expected-warning {{Pointer}}
-  __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Pointer}}
+  __lifetime_type_category<decltype(std::regex())>();                   // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::reference_wrapper<int>(i))>(); // expected-warning {{Pointer}}
   __lifetime_type_category_arg(std::vector<bool>::reference());         // expected-warning {{Pointer}}
   __lifetime_type_category<decltype(std::vector<bool>::reference())>(); // expected-warning {{Pointer}}

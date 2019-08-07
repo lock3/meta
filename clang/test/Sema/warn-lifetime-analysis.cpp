@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime %s
+// RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime -Wno-dangling %s
 namespace std {
 using size_t = decltype(sizeof(int));
 
@@ -268,7 +268,9 @@ int *f(int *);
 void test() {
   int *p;        // expected-note {{it was never initialized here}}
   int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
-  (void)*q;      // further diagnostics are suppressed here
+  // expected-note@-1 {{assigned here}}
+  // TODO suppressed further diagnostics here:
+  (void)*q;      // expected-warning {{dereferencing a null pointer}}
 }
 } // namespace supress_further_warnings
 
