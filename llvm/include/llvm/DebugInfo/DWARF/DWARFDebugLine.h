@@ -121,9 +121,20 @@ public:
       return LineBase + (int8_t)LineRange - 1;
     }
 
+    /// Get DWARF-version aware access to the file name entry at the provided
+    /// index.
+    const llvm::DWARFDebugLine::FileNameEntry &
+    getFileNameEntry(uint64_t Index) const;
+
+    bool hasFileAtIndex(uint64_t FileIndex) const;
+
+    bool getFileNameByIndex(uint64_t FileIndex, StringRef CompDir,
+                            DILineInfoSpecifier::FileLineInfoKind Kind,
+                            std::string &Result) const;
+
     void clear();
     void dump(raw_ostream &OS, DIDumpOptions DumpOptions) const;
-    Error parse(const DWARFDataExtractor &DebugLineData, uint32_t *OffsetPtr,
+    Error parse(const DWARFDataExtractor &DebugLineData, uint64_t *OffsetPtr,
                 const DWARFContext &Ctx, const DWARFUnit *U = nullptr);
   };
 
@@ -240,16 +251,20 @@ public:
     bool lookupAddressRange(object::SectionedAddress Address, uint64_t Size,
                             std::vector<uint32_t> &Result) const;
 
-    bool hasFileAtIndex(uint64_t FileIndex) const;
+    bool hasFileAtIndex(uint64_t FileIndex) const {
+      return Prologue.hasFileAtIndex(FileIndex);
+    }
 
     /// Extracts filename by its index in filename table in prologue.
     /// In Dwarf 4, the files are 1-indexed and the current compilation file
     /// name is not represented in the list. In DWARF v5, the files are
     /// 0-indexed and the primary source file has the index 0.
     /// Returns true on success.
-    bool getFileNameByIndex(uint64_t FileIndex, const char *CompDir,
+    bool getFileNameByIndex(uint64_t FileIndex, StringRef CompDir,
                             DILineInfoSpecifier::FileLineInfoKind Kind,
-                            std::string &Result) const;
+                            std::string &Result) const {
+      return Prologue.getFileNameByIndex(FileIndex, CompDir, Kind, Result);
+    }
 
     /// Fills the Result argument with the file and line information
     /// corresponding to Address. Returns true on success.
@@ -263,7 +278,7 @@ public:
 
     /// Parse prologue and all rows.
     Error parse(
-        DWARFDataExtractor &DebugLineData, uint32_t *OffsetPtr,
+        DWARFDataExtractor &DebugLineData, uint64_t *OffsetPtr,
         const DWARFContext &Ctx, const DWARFUnit *U,
         std::function<void(Error)> RecoverableErrorCallback,
         raw_ostream *OS = nullptr);
@@ -278,8 +293,6 @@ public:
     SequenceVector Sequences;
 
   private:
-    const llvm::DWARFDebugLine::FileNameEntry &
-    getFileNameEntry(uint64_t Index) const;
     uint32_t findRowInSeq(const DWARFDebugLine::Sequence &Seq,
                           object::SectionedAddress Address) const;
     Optional<StringRef>
@@ -292,9 +305,9 @@ public:
                                 std::vector<uint32_t> &Result) const;
   };
 
-  const LineTable *getLineTable(uint32_t Offset) const;
+  const LineTable *getLineTable(uint64_t Offset) const;
   Expected<const LineTable *> getOrParseLineTable(
-      DWARFDataExtractor &DebugLineData, uint32_t Offset,
+      DWARFDataExtractor &DebugLineData, uint64_t Offset,
       const DWARFContext &Ctx, const DWARFUnit *U,
       std::function<void(Error)> RecoverableErrorCallback);
 
@@ -337,17 +350,17 @@ public:
     bool done() const { return Done; }
 
     /// Get the offset the parser has reached.
-    uint32_t getOffset() const { return Offset; }
+    uint64_t getOffset() const { return Offset; }
 
   private:
-    DWARFUnit *prepareToParse(uint32_t Offset);
-    void moveToNextTable(uint32_t OldOffset, const Prologue &P);
+    DWARFUnit *prepareToParse(uint64_t Offset);
+    void moveToNextTable(uint64_t OldOffset, const Prologue &P);
 
     LineToUnitMap LineToUnit;
 
     DWARFDataExtractor &DebugLineData;
     const DWARFContext &Context;
-    uint32_t Offset = 0;
+    uint64_t Offset = 0;
     bool Done = false;
   };
 
@@ -364,7 +377,7 @@ private:
     struct Sequence Sequence;
   };
 
-  using LineTableMapTy = std::map<uint32_t, LineTable>;
+  using LineTableMapTy = std::map<uint64_t, LineTable>;
   using LineTableIter = LineTableMapTy::iterator;
   using LineTableConstIter = LineTableMapTy::const_iterator;
 

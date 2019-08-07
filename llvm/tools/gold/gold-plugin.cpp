@@ -206,9 +206,10 @@ namespace options {
   static std::string stats_file;
 
   // Optimization remarks filename, accepted passes and hotness options
-  static std::string OptRemarksFilename;
-  static std::string OptRemarksFilter;
-  static bool OptRemarksWithHotness = false;
+  static std::string RemarksFilename;
+  static std::string RemarksPasses;
+  static bool RemarksWithHotness = false;
+  static std::string RemarksFormat;
 
   // Context sensitive PGO options.
   static std::string cs_profile_path;
@@ -285,11 +286,13 @@ namespace options {
     } else if (opt.startswith("dwo_dir=")) {
       dwo_dir = opt.substr(strlen("dwo_dir="));
     } else if (opt.startswith("opt-remarks-filename=")) {
-      OptRemarksFilename = opt.substr(strlen("opt-remarks-filename="));
+      RemarksFilename = opt.substr(strlen("opt-remarks-filename="));
     } else if (opt.startswith("opt-remarks-passes=")) {
-      OptRemarksFilter = opt.substr(strlen("opt-remarks-passes="));
+      RemarksPasses = opt.substr(strlen("opt-remarks-passes="));
     } else if (opt == "opt-remarks-with-hotness") {
-      OptRemarksWithHotness = true;
+      RemarksWithHotness = true;
+    } else if (opt.startswith("opt-remarks-format=")) {
+      RemarksFormat = opt.substr(strlen("opt-remarks-format="));
     } else if (opt.startswith("stats-file=")) {
       stats_file = opt.substr(strlen("stats-file="));
     } else {
@@ -510,8 +513,8 @@ static ld_plugin_status claim_file_hook(const ld_plugin_input_file *file,
       offset = file->offset;
     }
     ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
-        MemoryBuffer::getOpenFileSlice(file->fd, file->name, file->filesize,
-                                       offset);
+        MemoryBuffer::getOpenFileSlice(sys::fs::convertFDToNativeFile(file->fd),
+                                       file->name, file->filesize, offset);
     if (std::error_code EC = BufferOrErr.getError()) {
       message(LDPL_ERROR, EC.message().c_str());
       return LDPS_ERR;
@@ -883,7 +886,7 @@ static std::unique_ptr<LTO> createLTO(IndexWriteCallback OnIndexWrite,
   case options::OT_BC_ONLY:
     Conf.PostInternalizeModuleHook = [](size_t Task, const Module &M) {
       std::error_code EC;
-      raw_fd_ostream OS(output_name, EC, sys::fs::OpenFlags::F_None);
+      raw_fd_ostream OS(output_name, EC, sys::fs::OpenFlags::OF_None);
       if (EC)
         message(LDPL_FATAL, "Failed to write the output file.");
       WriteBitcodeToFile(M, OS, /* ShouldPreserveUseListOrder */ false);
@@ -910,9 +913,10 @@ static std::unique_ptr<LTO> createLTO(IndexWriteCallback OnIndexWrite,
   Conf.DwoDir = options::dwo_dir;
 
   // Set up optimization remarks handling.
-  Conf.RemarksFilename = options::OptRemarksFilename;
-  Conf.RemarksPasses = options::OptRemarksFilter;
-  Conf.RemarksWithHotness = options::OptRemarksWithHotness;
+  Conf.RemarksFilename = options::RemarksFilename;
+  Conf.RemarksPasses = options::RemarksPasses;
+  Conf.RemarksWithHotness = options::RemarksWithHotness;
+  Conf.RemarksFormat = options::RemarksFormat;
 
   // Use new pass manager if set in driver
   Conf.UseNewPM = options::new_pass_manager;
@@ -943,7 +947,7 @@ static void writeEmptyDistributedBuildOutputs(const std::string &ModulePath,
   std::error_code EC;
   {
     raw_fd_ostream OS(NewModulePath + ".thinlto.bc", EC,
-                      sys::fs::OpenFlags::F_None);
+                      sys::fs::OpenFlags::OF_None);
     if (EC)
       message(LDPL_FATAL, "Failed to write '%s': %s",
               (NewModulePath + ".thinlto.bc").c_str(), EC.message().c_str());
@@ -956,7 +960,7 @@ static void writeEmptyDistributedBuildOutputs(const std::string &ModulePath,
   }
   if (options::thinlto_emit_imports_files) {
     raw_fd_ostream OS(NewModulePath + ".imports", EC,
-                      sys::fs::OpenFlags::F_None);
+                      sys::fs::OpenFlags::OF_None);
     if (EC)
       message(LDPL_FATAL, "Failed to write '%s': %s",
               (NewModulePath + ".imports").c_str(), EC.message().c_str());
@@ -971,7 +975,7 @@ static std::unique_ptr<raw_fd_ostream> CreateLinkedObjectsFile() {
   assert(options::thinlto_index_only);
   std::error_code EC;
   auto LinkedObjectsFile = llvm::make_unique<raw_fd_ostream>(
-      options::thinlto_linked_objects_file, EC, sys::fs::OpenFlags::F_None);
+      options::thinlto_linked_objects_file, EC, sys::fs::OpenFlags::OF_None);
   if (EC)
     message(LDPL_FATAL, "Failed to create '%s': %s",
             options::thinlto_linked_objects_file.c_str(), EC.message().c_str());

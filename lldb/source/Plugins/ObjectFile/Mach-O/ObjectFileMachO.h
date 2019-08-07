@@ -63,6 +63,13 @@ public:
   static bool MagicBytesMatch(lldb::DataBufferSP &data_sp, lldb::addr_t offset,
                               lldb::addr_t length);
 
+  // LLVM RTTI support
+  static char ID;
+  bool isA(const void *ClassID) const override {
+    return ClassID == &ID || ObjectFile::isA(ClassID);
+  }
+  static bool classof(const ObjectFile *obj) { return obj->isA(&ID); }
+
   // Member Functions
   bool ParseHeader() override;
 
@@ -72,6 +79,8 @@ public:
   lldb::ByteOrder GetByteOrder() const override;
 
   bool IsExecutable() const override;
+
+  bool IsDynamicLoader() const;
 
   uint32_t GetAddressByteSize() const override;
 
@@ -116,7 +125,7 @@ public:
 
   llvm::VersionTuple GetMinimumOSVersion() override;
 
-  uint32_t GetSDKVersion(uint32_t *versions, uint32_t num_versions) override;
+  llvm::VersionTuple GetSDKVersion() override;
 
   bool GetIsDynamicLinkEditor() override;
 
@@ -198,7 +207,7 @@ protected:
   std::vector<llvm::MachO::segment_command_64> m_mach_segments;
   std::vector<llvm::MachO::section_64> m_mach_sections;
   llvm::Optional<llvm::VersionTuple> m_min_os_version;
-  std::vector<uint32_t> m_sdk_versions;
+  llvm::Optional<llvm::VersionTuple> m_sdk_versions;
   typedef lldb_private::RangeVector<uint32_t, uint32_t> FileRangeArray;
   lldb_private::Address m_entry_point_address;
   FileRangeArray m_thread_context_offsets;

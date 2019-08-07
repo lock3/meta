@@ -653,12 +653,10 @@ public:
   GetSymbolVendor(bool can_create = true,
                   lldb_private::Stream *feedback_strm = nullptr);
 
-  /// Get accessor the type list for this module.
-  ///
-  /// \return
-  ///     A valid type list pointer, or nullptr if there is no valid
-  ///     symbol vendor for this module.
-  TypeList *GetTypeList();
+  SymbolFile *GetSymbolFile(bool can_create = true,
+                            Stream *feedback_strm = nullptr);
+
+  Symtab *GetSymtab();
 
   /// Get a reference to the UUID value contained in this object.
   ///
@@ -819,7 +817,8 @@ public:
 
   bool GetIsDynamicLinkEditor();
 
-  TypeSystem *GetTypeSystemForLanguage(lldb::LanguageType language);
+  llvm::Expected<TypeSystem &>
+  GetTypeSystemForLanguage(lldb::LanguageType language);
 
   // Special error functions that can do printf style formatting that will
   // prepend the message with something appropriate for this module (like the

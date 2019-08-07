@@ -18,7 +18,9 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Lex/Token.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Capacity.h"
@@ -90,29 +92,29 @@ Range diagnosticRange(const clang::Diagnostic &D, const LangOptions &L) {
     if (locationInRange(Loc, R, M))
       return halfOpenToRange(M, R);
   }
-  llvm::Optional<Range> FallbackRange;
   // The range may be given as a fixit hint instead.
   for (const auto &F : D.getFixItHints()) {
     auto R = Lexer::makeFileCharRange(F.RemoveRange, M, L);
     if (locationInRange(Loc, R, M))
       return halfOpenToRange(M, R);
-    // If there's a fixit that performs insertion, it has zero-width. Therefore
-    // it can't contain the location of the diag, but it might be possible that
-    // this should be reported as range. For example missing semicolon.
-    if (R.getBegin() == R.getEnd() && Loc == R.getBegin())
-      FallbackRange = halfOpenToRange(M, R);
   }
-  if (FallbackRange)
-    return *FallbackRange;
-  // If no suitable range is found, just use the token at the location.
-  auto R = Lexer::makeFileCharRange(CharSourceRange::getTokenRange(Loc), M, L);
-  if (!R.isValid()) // Fall back to location only, let the editor deal with it.
-    R = CharSourceRange::getCharRange(Loc);
+  // If the token at the location is not a comment, we use the token.
+  // If we can't get the token at the location, fall back to using the location
+  auto R = CharSourceRange::getCharRange(Loc);
+  Token Tok;
+  if (!Lexer::getRawToken(Loc, Tok, M, L, true) && Tok.isNot(tok::comment)) {
+    R = CharSourceRange::getTokenRange(Tok.getLocation(), Tok.getEndLoc());
+  }
   return halfOpenToRange(M, R);
 }
 
-void adjustDiagFromHeader(Diag &D, const clang::Diagnostic &Info,
+// Returns whether the \p D is modified.
+bool adjustDiagFromHeader(Diag &D, const clang::Diagnostic &Info,
                           const LangOptions &LangOpts) {
+  // We only report diagnostics with at least error severity from headers.
+  if (D.Severity < DiagnosticsEngine::Level::Error)
+    return false;
+
   const SourceLocation &DiagLoc = Info.getLocation();
   const SourceManager &SM = Info.getSourceManager();
   SourceLocation IncludeInMainFile;
@@ -123,13 +125,14 @@ void adjustDiagFromHeader(Diag &D, const clang::Diagnostic &Info,
        IncludeLocation = GetIncludeLoc(IncludeLocation))
     IncludeInMainFile = IncludeLocation;
   if (IncludeInMainFile.isInvalid())
-    return;
+    return false;
 
   // Update diag to point at include inside main file.
   D.File = SM.getFileEntryForID(SM.getMainFileID())->getName().str();
   D.Range.start = sourceLocToPosition(SM, IncludeInMainFile);
   D.Range.end = sourceLocToPosition(
       SM, Lexer::getLocForEndOfToken(IncludeInMainFile, 0, SM, LangOpts));
+  D.InsideMainFile = true;
 
   // Add a note that will point to real diagnostic.
   const auto *FE = SM.getFileEntryForID(SM.getFileID(DiagLoc));
@@ -142,17 +145,14 @@ void adjustDiagFromHeader(Diag &D, const clang::Diagnostic &Info,
 
   // Update message to mention original file.
   D.Message = llvm::Twine("in included file: ", D.Message).str();
-}
-
-bool isInsideMainFile(const SourceLocation Loc, const SourceManager &M) {
-  return Loc.isValid() && M.isWrittenInMainFile(M.getFileLoc(Loc));
+  return true;
 }
 
 bool isInsideMainFile(const clang::Diagnostic &D) {
   if (!D.hasSourceManager())
     return false;
 
-  return isInsideMainFile(D.getLocation(), D.getSourceManager());
+  return clangd::isInsideMainFile(D.getLocation(), D.getSourceManager());
 }
 
 bool isNote(DiagnosticsEngine::Level L) {
@@ -422,10 +422,19 @@ std::vector<Diag> StoreDiags::take(const clang::tidy::ClangTidyContext *Tidy) {
         CleanMessage(Diag.Message);
         for (auto &Note : Diag.Notes)
           CleanMessage(Note.Message);
+        for (auto &Fix : Diag.Fixes)
+          CleanMessage(Fix.Message);
         continue;
       }
     }
   }
+  // Deduplicate clang-tidy diagnostics -- some clang-tidy checks may emit
+  // duplicated messages due to various reasons (e.g. the check doesn't handle
+  // template instantiations well; clang-tidy alias checks).
+  std::set<std::pair<Range, std::string>> SeenDiags;
+  llvm::erase_if(Output, [&](const Diag& D) {
+    return !SeenDiags.emplace(D.Range, D.Message).second;
+  });
   return std::move(Output);
 }
 
@@ -464,6 +473,7 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
   }
 
   bool InsideMainFile = isInsideMainFile(Info);
+  SourceManager &SM = Info.getSourceManager();
 
   auto FillDiagBase = [&](DiagBase &D) {
     D.Range = diagnosticRange(Info, *LangOpts);
@@ -471,8 +481,7 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
     Info.FormatDiagnostic(Message);
     D.Message = Message.str();
     D.InsideMainFile = InsideMainFile;
-    D.File = Info.getSourceManager().getFilename(Info.getLocation());
-    auto &SM = Info.getSourceManager();
+    D.File = SM.getFilename(Info.getLocation());
     D.AbsFile = getCanonicalPath(
         SM.getFileEntryForID(SM.getFileID(Info.getLocation())), SM);
     D.Severity = DiagLevel;
@@ -495,10 +504,9 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
       if (FixIt.RemoveRange.getBegin().isMacroID() ||
           FixIt.RemoveRange.getEnd().isMacroID())
         return false;
-      if (!isInsideMainFile(FixIt.RemoveRange.getBegin(),
-                            Info.getSourceManager()))
+      if (!isInsideMainFile(FixIt.RemoveRange.getBegin(), SM))
         return false;
-      Edits.push_back(toTextEdit(FixIt, Info.getSourceManager(), *LangOpts));
+      Edits.push_back(toTextEdit(FixIt, SM, *LangOpts));
     }
 
     llvm::SmallString<64> Message;
@@ -506,8 +514,8 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
     if (SyntheticMessage && Info.getNumFixItHints() == 1) {
       const auto &FixIt = Info.getFixItHint(0);
       bool Invalid = false;
-      llvm::StringRef Remove = Lexer::getSourceText(
-          FixIt.RemoveRange, Info.getSourceManager(), *LangOpts, &Invalid);
+      llvm::StringRef Remove =
+          Lexer::getSourceText(FixIt.RemoveRange, SM, *LangOpts, &Invalid);
       llvm::StringRef Insert = FixIt.CodeToInsert;
       if (!Invalid) {
         llvm::raw_svector_ostream M(Message);
@@ -552,7 +560,9 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
     LastDiag = Diag();
     LastDiag->ID = Info.getID();
     FillDiagBase(*LastDiag);
-    adjustDiagFromHeader(*LastDiag, Info, *LangOpts);
+    LastDiagWasAdjusted = false;
+    if (!InsideMainFile)
+      LastDiagWasAdjusted = adjustDiagFromHeader(*LastDiag, Info, *LangOpts);
 
     if (!Info.getFixItHints().empty())
       AddFix(true /* try to invent a message instead of repeating the diag */);
@@ -594,10 +604,9 @@ void StoreDiags::HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
 void StoreDiags::flushLastDiag() {
   if (!LastDiag)
     return;
-  // Only keeps diagnostics inside main file or the first one coming from a
-  // header.
-  if (mentionsMainFile(*LastDiag) ||
-      (LastDiag->Severity >= DiagnosticsEngine::Level::Error &&
+  if (mentionsMainFile(*LastDiag) &&
+      (!LastDiagWasAdjusted ||
+       // Only report the first diagnostic coming from each particular header.
        IncludeLinesWithErrors.insert(LastDiag->Range.start.line).second)) {
     Output.push_back(std::move(*LastDiag));
   } else {

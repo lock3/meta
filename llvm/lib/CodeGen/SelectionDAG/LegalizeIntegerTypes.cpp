@@ -590,7 +590,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_MGATHER(MaskedGatherSDNode *N) {
                    N->getIndex(), N->getScale() };
   SDValue Res = DAG.getMaskedGather(DAG.getVTList(NVT, MVT::Other),
                                     N->getMemoryVT(), dl, Ops,
-                                    N->getMemOperand());
+                                    N->getMemOperand(), N->getIndexType());
   // Legalize the chain result - switch anything that used the old chain to
   // use the new one.
   ReplaceValueWith(SDValue(N, 1), Res.getValue(1));
@@ -1454,8 +1454,12 @@ SDValue DAGTypeLegalizer::PromoteIntOp_MGATHER(MaskedGatherSDNode *N,
     EVT DataVT = N->getValueType(0);
     NewOps[OpNo] = PromoteTargetBoolean(N->getOperand(OpNo), DataVT);
   } else if (OpNo == 4) {
-    // Need to sign extend the index since the bits will likely be used.
-    NewOps[OpNo] = SExtPromotedInteger(N->getOperand(OpNo));
+    // The Index
+    if (N->isIndexSigned())
+      // Need to sign extend the index since the bits will likely be used.
+      NewOps[OpNo] = SExtPromotedInteger(N->getOperand(OpNo));
+    else
+      NewOps[OpNo] = ZExtPromotedInteger(N->getOperand(OpNo));
   } else
     NewOps[OpNo] = GetPromotedInteger(N->getOperand(OpNo));
 
@@ -1470,8 +1474,12 @@ SDValue DAGTypeLegalizer::PromoteIntOp_MSCATTER(MaskedScatterSDNode *N,
     EVT DataVT = N->getValue().getValueType();
     NewOps[OpNo] = PromoteTargetBoolean(N->getOperand(OpNo), DataVT);
   } else if (OpNo == 4) {
-    // Need to sign extend the index since the bits will likely be used.
-    NewOps[OpNo] = SExtPromotedInteger(N->getOperand(OpNo));
+    // The Index
+    if (N->isIndexSigned())
+      // Need to sign extend the index since the bits will likely be used.
+      NewOps[OpNo] = SExtPromotedInteger(N->getOperand(OpNo));
+    else
+      NewOps[OpNo] = ZExtPromotedInteger(N->getOperand(OpNo));
   } else
     NewOps[OpNo] = GetPromotedInteger(N->getOperand(OpNo));
   return SDValue(DAG.UpdateNodeOperands(N, NewOps), 0);
@@ -2778,8 +2786,7 @@ void DAGTypeLegalizer::ExpandIntRes_MULFIX(SDNode *N, SDValue &Lo,
   SDValue RHS = N->getOperand(1);
   uint64_t Scale = N->getConstantOperandVal(2);
   bool Saturating = N->getOpcode() == ISD::SMULFIXSAT;
-  EVT BoolVT =
-      TLI.getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), VT);
+  EVT BoolVT = getSetCCResultType(VT);
   SDValue Zero = DAG.getConstant(0, dl, VT);
   if (!Scale) {
     SDValue Result;
@@ -2832,8 +2839,7 @@ void DAGTypeLegalizer::ExpandIntRes_MULFIX(SDNode *N, SDValue &Lo,
   SDValue SatMax, SatMin;
   SDValue NVTZero = DAG.getConstant(0, dl, NVT);
   SDValue NVTNeg1 = DAG.getConstant(-1, dl, NVT);
-  EVT BoolNVT =
-      TLI.getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), NVT);
+  EVT BoolNVT = getSetCCResultType(NVT);
 
   // After getting the multplication result in 4 parts, we need to perform a
   // shift right by the amount of the scale to get the result in that scale.
@@ -2902,8 +2908,8 @@ void DAGTypeLegalizer::ExpandIntRes_MULFIX(SDNode *N, SDValue &Lo,
     Lo = ResultLH;
     Hi = ResultHL;
 
-    // We overflow max if HH > 0 or HH == 0 && HL sign is negative.
-    // We overflow min if HH < -1 or HH == -1 && HL sign is 0.
+    // We overflow max if HH > 0 or HH == 0 && HL sign bit is 1.
+    // We overflow min if HH < -1 or HH == -1 && HL sign bit is 0.
     if (Saturating) {
       SDValue HHPos = DAG.getSetCC(dl, BoolNVT, ResultHH, NVTZero, ISD::SETGT);
       SDValue HHZero = DAG.getSetCC(dl, BoolNVT, ResultHH, NVTZero, ISD::SETEQ);
@@ -2913,7 +2919,7 @@ void DAGTypeLegalizer::ExpandIntRes_MULFIX(SDNode *N, SDValue &Lo,
 
       SDValue HHNeg = DAG.getSetCC(dl, BoolNVT, ResultHH, NVTNeg1, ISD::SETLT);
       SDValue HHNeg1 = DAG.getSetCC(dl, BoolNVT, ResultHH, NVTNeg1, ISD::SETEQ);
-      SDValue HLPos = DAG.getSetCC(dl, BoolNVT, ResultHL, NVTZero, ISD::SETGT);
+      SDValue HLPos = DAG.getSetCC(dl, BoolNVT, ResultHL, NVTZero, ISD::SETGE);
       SatMin = DAG.getNode(ISD::OR, dl, BoolNVT, HHNeg,
                            DAG.getNode(ISD::AND, dl, BoolNVT, HHNeg1, HLPos));
     }

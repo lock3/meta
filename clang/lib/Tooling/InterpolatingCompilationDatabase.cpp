@@ -42,9 +42,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Basic/LangStandard.h"
 #include "clang/Driver/Options.h"
 #include "clang/Driver/Types.h"
-#include "clang/Frontend/LangStandard.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Optional.h"
@@ -150,7 +150,8 @@ struct TransferableCommand {
     // spelling of each argument; re-rendering is lossy for aliased flags.
     // E.g. in CL mode, /W4 maps to -Wall.
     auto OptTable = clang::driver::createDriverOptTable();
-    Cmd.CommandLine.emplace_back(OldArgs.front());
+    if (!OldArgs.empty())
+      Cmd.CommandLine.emplace_back(OldArgs.front());
     for (unsigned Pos = 1; Pos < OldArgs.size();) {
       using namespace driver::options;
 
@@ -243,19 +244,20 @@ private:
     }
 
     // Otherwise just check the clang executable file name.
-    return llvm::sys::path::stem(CmdLine.front()).endswith_lower("cl");
+    return !CmdLine.empty() &&
+           llvm::sys::path::stem(CmdLine.front()).endswith_lower("cl");
   }
 
   // Map the language from the --std flag to that of the -x flag.
-  static types::ID toType(InputKind::Language Lang) {
+  static types::ID toType(Language Lang) {
     switch (Lang) {
-    case InputKind::C:
+    case Language::C:
       return types::TY_C;
-    case InputKind::CXX:
+    case Language::CXX:
       return types::TY_CXX;
-    case InputKind::ObjC:
+    case Language::ObjC:
       return types::TY_ObjC;
-    case InputKind::ObjCXX:
+    case Language::ObjCXX:
       return types::TY_ObjCXX;
     default:
       return types::TY_INVALID;
@@ -295,15 +297,8 @@ private:
   // Try to interpret the argument as '-std='.
   Optional<LangStandard::Kind> tryParseStdArg(const llvm::opt::Arg &Arg) {
     using namespace driver::options;
-    if (Arg.getOption().matches(ClangCLMode ? OPT__SLASH_std : OPT_std_EQ)) {
-      return llvm::StringSwitch<LangStandard::Kind>(Arg.getValue())
-#define LANGSTANDARD(id, name, lang, ...) .Case(name, LangStandard::lang_##id)
-#define LANGSTANDARD_ALIAS(id, alias) .Case(alias, LangStandard::lang_##id)
-#include "clang/Frontend/LangStandards.def"
-#undef LANGSTANDARD_ALIAS
-#undef LANGSTANDARD
-                 .Default(LangStandard::lang_unspecified);
-    }
+    if (Arg.getOption().matches(ClangCLMode ? OPT__SLASH_std : OPT_std_EQ))
+      return LangStandard::getLangKind(Arg.getValue());
     return None;
   }
 };
@@ -476,8 +471,7 @@ private:
                                  ArrayRef<SubstringAndIndex> Idx) const {
     assert(!Idx.empty());
     // Longest substring match will be adjacent to a direct lookup.
-    auto It =
-        std::lower_bound(Idx.begin(), Idx.end(), SubstringAndIndex{Key, 0});
+    auto It = llvm::lower_bound(Idx, SubstringAndIndex{Key, 0});
     if (It == Idx.begin())
       return *It;
     if (It == Idx.end())

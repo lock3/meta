@@ -371,7 +371,7 @@ void PPCDAGToDAGISel::InsertVRSaveCode(MachineFunction &Fn) {
   // by the scheduler.  Detect them now.
   bool HasVectorVReg = false;
   for (unsigned i = 0, e = RegInfo->getNumVirtRegs(); i != e; ++i) {
-    unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
+    unsigned Reg = Register::index2VirtReg(i);
     if (RegInfo->getRegClass(Reg) == &PPC::VRRCRegClass) {
       HasVectorVReg = true;
       break;
@@ -439,7 +439,8 @@ SDNode *PPCDAGToDAGISel::getGlobalBaseReg() {
     if (PPCLowering->getPointerTy(CurDAG->getDataLayout()) == MVT::i32) {
       if (PPCSubTarget->isTargetELF()) {
         GlobalBaseReg = PPC::R30;
-        if (M->getPICLevel() == PICLevel::SmallPIC) {
+        if (!PPCSubTarget->isSecurePlt() &&
+            M->getPICLevel() == PICLevel::SmallPIC) {
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MoveGOTtoLR));
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
           MF->getInfo<PPCFunctionInfo>()->setUsesPICBase(true);
@@ -4395,11 +4396,9 @@ void PPCDAGToDAGISel::Select(SDNode *N) {
     getGlobalBaseReg();
   } break;
   case PPCISD::CALL: {
-    const Module *M = MF->getFunction().getParent();
-
     if (PPCLowering->getPointerTy(CurDAG->getDataLayout()) != MVT::i32 ||
-        (!TM.isPositionIndependent() || !PPCSubTarget->isSecurePlt()) ||
-        !PPCSubTarget->isTargetELF() || M->getPICLevel() == PICLevel::SmallPIC)
+        !TM.isPositionIndependent() || !PPCSubTarget->isSecurePlt() ||
+        !PPCSubTarget->isTargetELF())
       break;
 
     SDValue Op = N->getOperand(1);
@@ -5086,12 +5085,12 @@ void PPCDAGToDAGISel::Select(SDNode *N) {
 
     // The first source operand is a TargetGlobalAddress or a TargetJumpTable.
     // If it must be toc-referenced according to PPCSubTarget, we generate:
-    //   LDtocL(@sym, ADDIStocHA(%x2, @sym))
+    //   LDtocL(@sym, ADDIStocHA8(%x2, @sym))
     // Otherwise we generate:
-    //   ADDItocL(ADDIStocHA(%x2, @sym), @sym)
+    //   ADDItocL(ADDIStocHA8(%x2, @sym), @sym)
     SDValue GA = N->getOperand(0);
     SDValue TOCbase = N->getOperand(1);
-    SDNode *Tmp = CurDAG->getMachineNode(PPC::ADDIStocHA, dl, MVT::i64,
+    SDNode *Tmp = CurDAG->getMachineNode(PPC::ADDIStocHA8, dl, MVT::i64,
                                          TOCbase, GA);
     if (PPCLowering->isAccessedAsGotIndirect(GA)) {
       // If it is access as got-indirect, we need an extra LD to load
@@ -6457,7 +6456,7 @@ void PPCDAGToDAGISel::PeepholePPC64() {
           continue;
 
         if (!HBase.isMachineOpcode() ||
-            HBase.getMachineOpcode() != PPC::ADDIStocHA)
+            HBase.getMachineOpcode() != PPC::ADDIStocHA8)
           continue;
 
         if (!Base.hasOneUse() || !HBase.hasOneUse())

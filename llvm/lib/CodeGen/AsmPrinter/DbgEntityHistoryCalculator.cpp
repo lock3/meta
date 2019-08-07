@@ -38,12 +38,16 @@ using EntryIndex = DbgValueHistoryMap::EntryIndex;
 // If @MI is a DBG_VALUE with debug value described by a
 // defined register, returns the number of this register.
 // In the other case, returns 0.
-static unsigned isDescribedByReg(const MachineInstr &MI) {
+static Register isDescribedByReg(const MachineInstr &MI) {
   assert(MI.isDebugValue());
   assert(MI.getNumOperands() == 4);
+  // If the location of variable is an entry value (DW_OP_entry_value)
+  // do not consider it as a register location.
+  if (MI.getDebugExpression()->isEntryValue())
+    return 0;
   // If location of variable is described using a register (directly or
   // indirectly), this register is always a first operand.
-  return MI.getOperand(0).isReg() ? MI.getOperand(0).getReg() : 0;
+  return MI.getOperand(0).isReg() ? MI.getOperand(0).getReg() : Register();
 }
 
 bool DbgValueHistoryMap::startDbgValue(InlinedEntity Var,
@@ -271,13 +275,16 @@ void llvm::calculateDbgEntityHistory(const MachineFunction *MF,
             continue;
           // If this is a virtual register, only clobber it since it doesn't
           // have aliases.
-          if (TRI->isVirtualRegister(MO.getReg()))
+          if (Register::isVirtualRegister(MO.getReg()))
             clobberRegisterUses(RegVars, MO.getReg(), DbgValues, LiveEntries,
                                 MI);
           // If this is a register def operand, it may end a debug value
-          // range. Ignore defs of the frame register in the prologue.
+          // range. Ignore frame-register defs in the epilogue and prologue,
+          // we expect debuggers to understand that stack-locations are
+          // invalid outside of the function body.
           else if (MO.getReg() != FrameReg ||
-                   !MI.getFlag(MachineInstr::FrameSetup)) {
+                   (!MI.getFlag(MachineInstr::FrameDestroy) &&
+                   !MI.getFlag(MachineInstr::FrameSetup))) {
             for (MCRegAliasIterator AI(MO.getReg(), TRI, true); AI.isValid();
                  ++AI)
               clobberRegisterUses(RegVars, *AI, DbgValues, LiveEntries, MI);
@@ -289,7 +296,7 @@ void llvm::calculateDbgEntityHistory(const MachineFunction *MF,
           // Don't consider SP to be clobbered by register masks.
           for (auto It : RegVars) {
             unsigned int Reg = It.first;
-            if (Reg != SP && TRI->isPhysicalRegister(Reg) &&
+            if (Reg != SP && Register::isPhysicalRegister(Reg) &&
                 MO.clobbersPhysReg(Reg))
               RegsToClobber.push_back(Reg);
           }

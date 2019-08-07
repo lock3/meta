@@ -110,7 +110,7 @@ public:
     if (!Summaries)
       Summaries.reset(new RetainSummaryManager(Ctx,
                                                /*TrackNSCFObjects=*/true,
-                                               /*TrackOSObjects=*/false));
+                                               /*trackOSObjects=*/false));
     return *Summaries;
   }
 
@@ -216,7 +216,7 @@ ObjCMigrateAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
 
 bool ObjCMigrateAction::BeginInvocation(CompilerInstance &CI) {
   Remapper.initFromDisk(MigrateDir, CI.getDiagnostics(),
-                        /*ignoreIfFilesChanges=*/true);
+                        /*ignoreIfFilesChanged=*/true);
   CompInst = &CI;
   CI.getDiagnostics().setIgnoreAllWarnings(true);
   return true;
@@ -1951,7 +1951,7 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
 
  if (IsOutputFile) {
    std::error_code EC;
-   llvm::raw_fd_ostream OS(MigrateDir, EC, llvm::sys::fs::F_None);
+   llvm::raw_fd_ostream OS(MigrateDir, EC, llvm::sys::fs::OF_None);
    if (EC) {
       DiagnosticsEngine &Diags = Ctx.getDiagnostics();
       Diags.Report(Diags.getCustomDiagID(DiagnosticsEngine::Error, "%0"))
@@ -2141,10 +2141,11 @@ private:
       StringRef Val = ValueString->getValue(ValueStorage);
 
       if (Key == "file") {
-        const FileEntry *FE = FileMgr.getFile(Val);
-        if (!FE)
+        auto FE = FileMgr.getFile(Val);
+        if (FE)
+          Entry.File = *FE;
+        else
           Ignore = true;
-        Entry.File = FE;
       } else if (Key == "offset") {
         if (Val.getAsInteger(10, Entry.Offset))
           Ignore = true;

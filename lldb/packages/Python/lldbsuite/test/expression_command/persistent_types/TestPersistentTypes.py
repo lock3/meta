@@ -5,8 +5,6 @@ Test that lldb persistent types works correctly.
 from __future__ import print_function
 
 
-import os
-import time
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -47,6 +45,16 @@ class PersistenttypesTestCase(TestBase):
 
         self.expect(
             "memory read foo -t $foobar",
+            substrs=[
+                '($foobar) 0x',
+                ' = ',
+                "a = 'H'",
+                "b = 'e'",
+                "c = 'l'",
+                "d = 'l'"])  # persistent types are OK to use for memory read
+
+        self.expect(
+            "memory read foo -t $foobar -x c",
             substrs=[
                 '($foobar) 0x',
                 ' = ',

@@ -418,7 +418,7 @@ Value *WebAssemblyLowerEmscriptenEHSjLj::wrapInvoke(CallOrInvoke *CI) {
   Args.append(CI->arg_begin(), CI->arg_end());
   CallInst *NewCall = IRB.CreateCall(getInvokeWrapper(CI), Args);
   NewCall->takeName(CI);
-  NewCall->setCallingConv(CI->getCallingConv());
+  NewCall->setCallingConv(CallingConv::WASM_EmscriptenInvoke);
   NewCall->setDebugLoc(CI->getDebugLoc());
 
   // Because we added the pointer to the callee as first argument, all
@@ -432,9 +432,22 @@ Value *WebAssemblyLowerEmscriptenEHSjLj::wrapInvoke(CallOrInvoke *CI) {
   for (unsigned I = 0, E = CI->getNumArgOperands(); I < E; ++I)
     ArgAttributes.push_back(InvokeAL.getParamAttributes(I));
 
+  AttrBuilder FnAttrs(InvokeAL.getFnAttributes());
+  if (FnAttrs.contains(Attribute::AllocSize)) {
+    // The allocsize attribute (if any) referes to parameters by index and needs
+    // to be adjusted.
+    unsigned SizeArg;
+    Optional<unsigned> NEltArg;
+    std::tie(SizeArg, NEltArg) = FnAttrs.getAllocSizeArgs();
+    SizeArg += 1;
+    if (NEltArg.hasValue())
+      NEltArg = NEltArg.getValue() + 1;
+    FnAttrs.addAllocSizeAttr(SizeArg, NEltArg);
+  }
+
   // Reconstruct the AttributesList based on the vector we constructed.
   AttributeList NewCallAL =
-      AttributeList::get(C, InvokeAL.getFnAttributes(),
+      AttributeList::get(C, AttributeSet::get(C, FnAttrs),
                          InvokeAL.getRetAttributes(), ArgAttributes);
   NewCall->setAttributes(NewCallAL);
 
@@ -484,6 +497,13 @@ bool WebAssemblyLowerEmscriptenEHSjLj::canLongjmp(Module &M,
   if (auto *CalleeF = dyn_cast<Function>(Callee))
     if (CalleeF->isIntrinsic())
       return false;
+
+  // Attempting to transform inline assembly will result in something like:
+  //     call void @__invoke_void(void ()* asm ...)
+  // which is invalid because inline assembly blocks do not have addresses
+  // and can't be passed by pointer. The result is a crash with illegal IR.
+  if (isa<InlineAsm>(Callee))
+    return false;
 
   // The reason we include malloc/free here is to exclude the malloc/free
   // calls generated in setjmp prep / cleanup routines.

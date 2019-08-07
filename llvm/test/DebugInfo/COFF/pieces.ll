@@ -104,18 +104,19 @@
 ; ASM:         #APP
 ; ASM:         #NO_APP
 ; ASM:         movl    [[offset_o_x]](%rsp), %eax          # 4-byte Reload
-; ASM: [[spill_o_x_end:\.Ltmp[0-9]+]]:
 ; ASM:         retq
+; ASM-NEXT: [[spill_o_x_end:\.Ltmp[0-9]+]]:
+; ASM-NEXT: .Lfunc_end4:
 
 
 ; ASM-LABEL:  .short  4423                    # Record kind: S_GPROC32_ID
 ; ASM:        .asciz  "loop_csr"              # Function name
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "o"
-; ASM:        .cv_def_range    [[oy_ox_start]] [[ox_start]], "C\021\030\000\000\000\000\000\000\000"
-; ASM:        .cv_def_range    [[oy_ox_start]] [[oy_start]], "C\021\027\000\000\000\004\000\000\000"
-; ASM:        .cv_def_range    [[ox_start]] [[loopskip_start]], "C\021\030\000\000\000\000\000\000\000"
-; ASM:        .cv_def_range    [[oy_start]] [[loopskip_start]], "C\021\027\000\000\000\004\000\000\000"
+; ASM:        .cv_def_range    [[oy_ox_start]] [[ox_start]], subfield_reg, 24, 0
+; ASM:        .cv_def_range    [[oy_ox_start]] [[oy_start]], subfield_reg, 23, 4
+; ASM:        .cv_def_range    [[ox_start]] [[loopskip_start]], subfield_reg, 24, 0
+; ASM:        .cv_def_range    [[oy_start]] [[loopskip_start]], subfield_reg, 23, 4
 
 
 ; OBJ-LABEL: GlobalProcIdSym {
@@ -146,7 +147,7 @@
 ; ASM:        .asciz  "pad_right"             # Function name
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "o"
-; ASM:        .cv_def_range    [[pad_right_tmp]] [[pad_right_tmp]], "C\021\021\000\000\000\004\000\000\000"
+; ASM:        .cv_def_range    [[pad_right_tmp]] [[pad_right_tmp]], subfield_reg, 17, 4
 
 ; OBJ-LABEL: GlobalProcIdSym {
 ; OBJ:         Kind: S_GPROC32_ID (0x1147)
@@ -169,7 +170,7 @@
 ; ASM:        .asciz  "pad_left"              # Function name
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "o"
-; ASM:        .cv_def_range    [[pad_left_tmp]] [[pad_left_tmp]], "C\021\021\000\000\000\000\000\000\000"
+; ASM:        .cv_def_range    [[pad_left_tmp]] [[pad_left_tmp]], subfield_reg, 17, 0
 
 ; OBJ-LABEL: GlobalProcIdSym {
 ; OBJ:         Kind: S_GPROC32_ID (0x1147)
@@ -192,10 +193,10 @@
 ; ASM:        .asciz  "nested"                # Function name
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "o"
-; ASM:        .cv_def_range    .Lfunc_begin3 .Lfunc_end3, "E\021J\001\000\000\000\000\000\000"
+; ASM:        .cv_def_range    .Lfunc_begin3 .Lfunc_end3, reg_rel, 330, 0, 0
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "p"
-; ASM:        .cv_def_range    [[p_start]] .Lfunc_end3, "C\021\021\000\000\000\004\000\000\000"
+; ASM:        .cv_def_range    [[p_start]] .Lfunc_end3, subfield_reg, 17, 4
 
 ; OBJ-LABEL: GlobalProcIdSym {
 ; OBJ:         Kind: S_GPROC32_ID (0x1147)
@@ -231,7 +232,7 @@
 ; ASM:        .asciz  "bitpiece_spill"        # Function name
 ; ASM:        .short  4414                    # Record kind: S_LOCAL
 ; ASM:        .asciz  "o"
-; ASM:        .cv_def_range    [[spill_o_x_start]] [[spill_o_x_end]], "E\021O\001A\000$\000\000\000"
+; ASM:        .cv_def_range    [[spill_o_x_start]] .Lfunc_end4, reg_rel, 335, 65, 36
 
 ; OBJ-LABEL: GlobalProcIdSym {
 ; OBJ:         Kind: S_GPROC32_ID (0x1147)

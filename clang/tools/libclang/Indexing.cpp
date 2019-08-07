@@ -28,9 +28,8 @@
 #include "clang/Lex/PreprocessorOptions.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/Mutex.h"
-#include "llvm/Support/MutexGuard.h"
 #include <cstdio>
+#include <mutex>
 #include <utility>
 
 using namespace clang;
@@ -122,22 +121,21 @@ namespace llvm {
 namespace {
 
 class SessionSkipBodyData {
-  llvm::sys::Mutex Mux;
+  std::mutex Mux;
   PPRegionSetTy ParsedRegions;
 
 public:
-  SessionSkipBodyData() : Mux(/*recursive=*/false) {}
   ~SessionSkipBodyData() {
     //llvm::errs() << "RegionData: " << Skipped.size() << " - " << Skipped.getMemorySize() << "\n";
   }
 
   void copyTo(PPRegionSetTy &Set) {
-    llvm::MutexGuard MG(Mux);
+    std::lock_guard<std::mutex> MG(Mux);
     Set = ParsedRegions;
   }
 
   void update(ArrayRef<PPRegion> Regions) {
-    llvm::MutexGuard MG(Mux);
+    std::lock_guard<std::mutex> MG(Mux);
     ParsedRegions.insert(Regions.begin(), Regions.end());
   }
 };
@@ -363,8 +361,9 @@ public:
     PreprocessorOptions &PPOpts = CI.getPreprocessorOpts();
 
     if (!PPOpts.ImplicitPCHInclude.empty()) {
-      DataConsumer->importedPCH(
-                        CI.getFileManager().getFile(PPOpts.ImplicitPCHInclude));
+      auto File = CI.getFileManager().getFile(PPOpts.ImplicitPCHInclude);
+      if (File)
+        DataConsumer->importedPCH(*File);
     }
 
     DataConsumer->setASTContext(CI.getASTContext());
@@ -443,10 +442,14 @@ static CXErrorCode clang_indexSourceFile_Impl(
   if (CXXIdx->isOptEnabled(CXGlobalOpt_ThreadBackgroundPriorityForIndexing))
     setThreadBackgroundPriority();
 
-  bool CaptureDiagnostics = !Logger::isLoggingEnabled();
+  CaptureDiagsKind CaptureDiagnostics = CaptureDiagsKind::All;
+  if (TU_options & CXTranslationUnit_IgnoreNonErrorsFromIncludedFiles)
+    CaptureDiagnostics = CaptureDiagsKind::AllWithoutNonErrorsFromIncludes;
+  if (Logger::isLoggingEnabled())
+    CaptureDiagnostics = CaptureDiagsKind::None;
 
   CaptureDiagnosticConsumer *CaptureDiag = nullptr;
-  if (CaptureDiagnostics)
+  if (CaptureDiagnostics != CaptureDiagsKind::None)
     CaptureDiag = new CaptureDiagnosticConsumer();
 
   // Configure the diagnostics.
@@ -673,9 +676,10 @@ static CXErrorCode clang_indexTranslationUnit_Impl(
 
   if (Unit->getOriginalSourceFileName().empty())
     DataConsumer.enteredMainFile(nullptr);
+  else if (auto MainFile = FileMgr.getFile(Unit->getOriginalSourceFileName()))
+    DataConsumer.enteredMainFile(*MainFile);
   else
-    DataConsumer.enteredMainFile(
-        FileMgr.getFile(Unit->getOriginalSourceFileName()));
+    DataConsumer.enteredMainFile(nullptr);
 
   DataConsumer.setASTContext(Unit->getASTContext());
   DataConsumer.startedTranslationUnit();

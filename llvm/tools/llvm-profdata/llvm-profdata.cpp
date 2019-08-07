@@ -317,11 +317,6 @@ static void mergeInstrProfile(const WeightedFileVector &Inputs,
       OutputFormat != PF_Text)
     exitWithError("Unknown format is specified.");
 
-  std::error_code EC;
-  raw_fd_ostream Output(OutputFilename.data(), EC, sys::fs::F_None);
-  if (EC)
-    exitWithErrorCode(EC, OutputFilename);
-
   std::mutex ErrorLock;
   SmallSet<instrprof_error, 4> WriterErrorCodes;
 
@@ -384,6 +379,11 @@ static void mergeInstrProfile(const WeightedFileVector &Inputs,
            WC->ErrWhence);
   }
 
+  std::error_code EC;
+  raw_fd_ostream Output(OutputFilename.data(), EC, sys::fs::OF_None);
+  if (EC)
+    exitWithErrorCode(EC, OutputFilename);
+
   InstrProfWriter &Writer = Contexts[0]->Writer;
   if (OutputFormat == PF_Text) {
     if (Error E = Writer.writeText(Output))
@@ -433,12 +433,6 @@ static void mergeSampleProfile(const WeightedFileVector &Inputs,
                                StringRef OutputFilename,
                                ProfileFormat OutputFormat) {
   using namespace sampleprof;
-  auto WriterOrErr =
-      SampleProfileWriter::create(OutputFilename, FormatMap[OutputFormat]);
-  if (std::error_code EC = WriterOrErr.getError())
-    exitWithErrorCode(EC, OutputFilename);
-
-  auto Writer = std::move(WriterOrErr.get());
   StringMap<FunctionSamples> ProfileMap;
   SmallVector<std::unique_ptr<sampleprof::SampleProfileReader>, 5> Readers;
   LLVMContext Context;
@@ -473,6 +467,12 @@ static void mergeSampleProfile(const WeightedFileVector &Inputs,
       }
     }
   }
+  auto WriterOrErr =
+      SampleProfileWriter::create(OutputFilename, FormatMap[OutputFormat]);
+  if (std::error_code EC = WriterOrErr.getError())
+    exitWithErrorCode(EC, OutputFilename);
+
+  auto Writer = std::move(WriterOrErr.get());
   Writer->write(ProfileMap);
 }
 
@@ -682,7 +682,7 @@ static int overlap_main(int argc, const char *argv[]) {
   cl::ParseCommandLineOptions(argc, argv, "LLVM profile data overlap tool\n");
 
   std::error_code EC;
-  raw_fd_ostream OS(Output.data(), EC, sys::fs::F_Text);
+  raw_fd_ostream OS(Output.data(), EC, sys::fs::OF_Text);
   if (EC)
     exitWithErrorCode(EC, Output);
 
@@ -1020,8 +1020,14 @@ static int show_main(int argc, const char *argv[]) {
   if (OutputFilename.empty())
     OutputFilename = "-";
 
+  if (!Filename.compare(OutputFilename)) {
+    errs() << sys::path::filename(argv[0])
+           << ": Input file name cannot be the same as the output file name!\n";
+    return 1;
+  }
+
   std::error_code EC;
-  raw_fd_ostream OS(OutputFilename.data(), EC, sys::fs::F_Text);
+  raw_fd_ostream OS(OutputFilename.data(), EC, sys::fs::OF_Text);
   if (EC)
     exitWithErrorCode(EC, OutputFilename);
 

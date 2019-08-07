@@ -288,7 +288,7 @@ NativeProcessLinux::NativeProcessLinux(::pid_t pid, int terminal_fd,
                                        NativeDelegate &delegate,
                                        const ArchSpec &arch, MainLoop &mainloop,
                                        llvm::ArrayRef<::pid_t> tids)
-    : NativeProcessProtocol(pid, terminal_fd, delegate), m_arch(arch) {
+    : NativeProcessELF(pid, terminal_fd, delegate), m_arch(arch) {
   if (m_terminal_fd != -1) {
     Status status = EnsureFDFlags(m_terminal_fd, O_NONBLOCK);
     assert(status.Success());
@@ -599,12 +599,9 @@ void NativeProcessLinux::MonitorSIGTRAP(const siginfo_t &info,
     // which only copies the main thread.
     LLDB_LOG(log, "exec received, stop tracking all but main thread");
 
-    for (auto i = m_threads.begin(); i != m_threads.end();) {
-      if ((*i)->GetID() == GetID())
-        i = m_threads.erase(i);
-      else
-        ++i;
-    }
+    llvm::erase_if(m_threads, [&](std::unique_ptr<NativeThreadProtocol> &t) {
+      return t->GetID() != GetID();
+    });
     assert(m_threads.size() == 1);
     auto *main_thread = static_cast<NativeThreadLinux *>(m_threads[0].get());
 
@@ -1387,11 +1384,6 @@ Status NativeProcessLinux::DeallocateMemory(lldb::addr_t addr) {
   // FIXME see comments in AllocateMemory - required lower-level
   // bits not in place yet (ThreadPlans)
   return Status("not implemented");
-}
-
-lldb::addr_t NativeProcessLinux::GetSharedLibraryInfoAddress() {
-  // punt on this for now
-  return LLDB_INVALID_ADDRESS;
 }
 
 size_t NativeProcessLinux::UpdateThreads() {

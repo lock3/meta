@@ -115,7 +115,7 @@ static void CheckForPhysRegDependency(SDNode *Def, SDNode *User, unsigned Op,
     return;
 
   unsigned Reg = cast<RegisterSDNode>(User->getOperand(1))->getReg();
-  if (TargetRegisterInfo::isVirtualRegister(Reg))
+  if (Register::isVirtualRegister(Reg))
     return;
 
   unsigned ResNo = User->getOperand(2).getResNo();
@@ -656,7 +656,7 @@ void ScheduleDAGSDNodes::computeOperandLatency(SDNode *Def, SDNode *Use,
   if (Latency > 1 && Use->getOpcode() == ISD::CopyToReg &&
       !BB->succ_empty()) {
     unsigned Reg = cast<RegisterSDNode>(Use->getOperand(1))->getReg();
-    if (TargetRegisterInfo::isVirtualRegister(Reg))
+    if (Register::isVirtualRegister(Reg))
       // This copy is a liveout value. It is likely coalesced, so reduce the
       // latency so not to penalize the def.
       // FIXME: need target specific adjustment here?
@@ -853,14 +853,20 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (Before == After)
       return nullptr;
 
+    MachineInstr *MI;
     if (Before == BB->end()) {
       // There were no prior instructions; the new ones must start at the
       // beginning of the block.
-      return &Emitter.getBlock()->instr_front();
+      MI = &Emitter.getBlock()->instr_front();
     } else {
       // Return first instruction after the pre-existing instructions.
-      return &*std::next(Before);
+      MI = &*std::next(Before);
     }
+
+    if (MI->isCall() && DAG->getTarget().Options.EnableDebugEntryValues)
+      MF.addCallArgsForwardingRegs(MI, DAG->getSDCallSiteInfo(Node));
+
+    return MI;
   };
 
   // If this is the first BB, emit byval parameter dbg_value's.

@@ -79,6 +79,8 @@ void AArch64Subtarget::initializeProperties() {
     MaxInterleaveFactor = 4;
     PrefFunctionAlignment = 4;
     break;
+  case CortexA65:
+    break;
   case CortexA72:
   case CortexA73:
   case CortexA75:
@@ -121,6 +123,11 @@ void AArch64Subtarget::initializeProperties() {
     MaxPrefetchIterationsAhead = 11;
     // FIXME: remove this to enable 64-bit SLP if performance looks good.
     MinVectorRegisterBitWidth = 128;
+    break;
+  case NeoverseE1:
+    break;
+  case NeoverseN1:
+    PrefFunctionAlignment = 4;
     break;
   case Saphira:
     MaxInterleaveFactor = 4;
@@ -201,7 +208,7 @@ const RegisterBankInfo *AArch64Subtarget::getRegBankInfo() const {
 
 /// Find the target operand flags that describe how a global value should be
 /// referenced for the current subtarget.
-unsigned char
+unsigned
 AArch64Subtarget::ClassifyGlobalReference(const GlobalValue *GV,
                                           const TargetMachine &TM) const {
   // MachO large model always goes via a GOT, simply to get a single 8-byte
@@ -224,10 +231,17 @@ AArch64Subtarget::ClassifyGlobalReference(const GlobalValue *GV,
       GV->hasExternalWeakLinkage())
     return AArch64II::MO_GOT;
 
+  // References to tagged globals are marked with MO_NC | MO_TAGGED to indicate
+  // that their nominal addresses are tagged and outside of the code model. In
+  // AArch64ExpandPseudo::expandMI we emit an additional instruction to set the
+  // tag if necessary based on MO_TAGGED.
+  if (AllowTaggedGlobals && !isa<FunctionType>(GV->getValueType()))
+    return AArch64II::MO_NC | AArch64II::MO_TAGGED;
+
   return AArch64II::MO_NO_FLAG;
 }
 
-unsigned char AArch64Subtarget::classifyGlobalFunctionReference(
+unsigned AArch64Subtarget::classifyGlobalFunctionReference(
     const GlobalValue *GV, const TargetMachine &TM) const {
   // MachO large model always goes via a GOT, because we don't have the
   // relocations available to do anything else..

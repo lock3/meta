@@ -283,6 +283,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "sanitize_address";
   if (hasAttribute(Attribute::SanitizeHWAddress))
     return "sanitize_hwaddress";
+  if (hasAttribute(Attribute::SanitizeMemTag))
+    return "sanitize_memtag";
   if (hasAttribute(Attribute::AlwaysInline))
     return "alwaysinline";
   if (hasAttribute(Attribute::ArgMemOnly))
@@ -321,6 +323,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "nocapture";
   if (hasAttribute(Attribute::NoDuplicate))
     return "noduplicate";
+  if (hasAttribute(Attribute::NoFree))
+    return "nofree";
   if (hasAttribute(Attribute::NoImplicitFloat))
     return "noimplicitfloat";
   if (hasAttribute(Attribute::NoInline))
@@ -333,6 +337,10 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "noredzone";
   if (hasAttribute(Attribute::NoReturn))
     return "noreturn";
+  if (hasAttribute(Attribute::NoSync))
+    return "nosync";
+  if (hasAttribute(Attribute::WillReturn))
+    return "willreturn";
   if (hasAttribute(Attribute::NoCfCheck))
     return "nocf_check";
   if (hasAttribute(Attribute::NoRecurse))
@@ -712,13 +720,18 @@ LLVM_DUMP_METHOD void AttributeSet::dump() const {
 //===----------------------------------------------------------------------===//
 
 AttributeSetNode::AttributeSetNode(ArrayRef<Attribute> Attrs)
-    : AvailableAttrs(0), NumAttrs(Attrs.size()) {
+    : NumAttrs(Attrs.size()) {
   // There's memory after the node where we can store the entries in.
   llvm::copy(Attrs, getTrailingObjects<Attribute>());
 
+  static_assert(Attribute::EndAttrKinds <=
+                    sizeof(AvailableAttrs) * CHAR_BIT,
+                "Too many attributes");
+
   for (const auto I : *this) {
     if (!I.isStringAttribute()) {
-      AvailableAttrs |= ((uint64_t)1) << I.getKindAsEnum();
+      Attribute::AttrKind Kind = I.getKindAsEnum();
+      AvailableAttrs[Kind / 8] |= 1ULL << (Kind % 8);
     }
   }
 }
@@ -890,7 +903,7 @@ static constexpr unsigned attrIdxToArrayIdx(unsigned Index) {
 
 AttributeListImpl::AttributeListImpl(LLVMContext &C,
                                      ArrayRef<AttributeSet> Sets)
-    : AvailableFunctionAttrs(0), Context(C), NumAttrSets(Sets.size()) {
+    : Context(C), NumAttrSets(Sets.size()) {
   assert(!Sets.empty() && "pointless AttributeListImpl");
 
   // There's memory after the node where we can store the entries in.
@@ -903,8 +916,10 @@ AttributeListImpl::AttributeListImpl(LLVMContext &C,
   static_assert(attrIdxToArrayIdx(AttributeList::FunctionIndex) == 0U,
                 "function should be stored in slot 0");
   for (const auto I : Sets[0]) {
-    if (!I.isStringAttribute())
-      AvailableFunctionAttrs |= 1ULL << I.getKindAsEnum();
+    if (!I.isStringAttribute()) {
+      Attribute::AttrKind Kind = I.getKindAsEnum();
+      AvailableFunctionAttrs[Kind / 8] |= 1ULL << (Kind % 8);
+    }
   }
 }
 
@@ -1423,7 +1438,9 @@ AttrBuilder::AttrBuilder(AttributeSet AS) {
 void AttrBuilder::clear() {
   Attrs.reset();
   TargetDepAttrs.clear();
-  Alignment = StackAlignment = DerefBytes = DerefOrNullBytes = 0;
+  Alignment.reset();
+  StackAlignment.reset();
+  DerefBytes = DerefOrNullBytes = 0;
   AllocSizeArgs = 0;
   ByValType = nullptr;
 }
@@ -1447,9 +1464,9 @@ AttrBuilder &AttrBuilder::addAttribute(Attribute Attr) {
   Attrs[Kind] = true;
 
   if (Kind == Attribute::Alignment)
-    Alignment = Attr.getAlignment();
+    Alignment = MaybeAlign(Attr.getAlignment());
   else if (Kind == Attribute::StackAlignment)
-    StackAlignment = Attr.getStackAlignment();
+    StackAlignment = MaybeAlign(Attr.getStackAlignment());
   else if (Kind == Attribute::ByVal)
     ByValType = Attr.getValueAsType();
   else if (Kind == Attribute::Dereferenceable)
@@ -1471,9 +1488,9 @@ AttrBuilder &AttrBuilder::removeAttribute(Attribute::AttrKind Val) {
   Attrs[Val] = false;
 
   if (Val == Attribute::Alignment)
-    Alignment = 0;
+    Alignment.reset();
   else if (Val == Attribute::StackAlignment)
-    StackAlignment = 0;
+    StackAlignment.reset();
   else if (Val == Attribute::ByVal)
     ByValType = nullptr;
   else if (Val == Attribute::Dereferenceable)
@@ -1502,23 +1519,25 @@ std::pair<unsigned, Optional<unsigned>> AttrBuilder::getAllocSizeArgs() const {
   return unpackAllocSizeArgs(AllocSizeArgs);
 }
 
-AttrBuilder &AttrBuilder::addAlignmentAttr(unsigned Align) {
-  if (Align == 0) return *this;
+AttrBuilder &AttrBuilder::addAlignmentAttr(unsigned A) {
+  MaybeAlign Align(A);
+  if (!Align)
+    return *this;
 
-  assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
-  assert(Align <= 0x40000000 && "Alignment too large.");
+  assert(*Align <= 0x40000000 && "Alignment too large.");
 
   Attrs[Attribute::Alignment] = true;
   Alignment = Align;
   return *this;
 }
 
-AttrBuilder &AttrBuilder::addStackAlignmentAttr(unsigned Align) {
+AttrBuilder &AttrBuilder::addStackAlignmentAttr(unsigned A) {
+  MaybeAlign Align(A);
   // Default alignment, allow the target to define how to align it.
-  if (Align == 0) return *this;
+  if (!Align)
+    return *this;
 
-  assert(isPowerOf2_32(Align) && "Alignment must be a power of two.");
-  assert(Align <= 0x100 && "Alignment too large.");
+  assert(*Align <= 0x100 && "Alignment too large.");
 
   Attrs[Attribute::StackAlignment] = true;
   StackAlignment = Align;
@@ -1595,10 +1614,10 @@ AttrBuilder &AttrBuilder::merge(const AttrBuilder &B) {
 AttrBuilder &AttrBuilder::remove(const AttrBuilder &B) {
   // FIXME: What if both have alignments, but they don't match?!
   if (B.Alignment)
-    Alignment = 0;
+    Alignment.reset();
 
   if (B.StackAlignment)
-    StackAlignment = 0;
+    StackAlignment.reset();
 
   if (B.DerefBytes)
     DerefBytes = 0;

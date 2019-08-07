@@ -25,8 +25,24 @@ def kill_at: F<"kill-at">, HelpText<"Remove @n from exported symbols">;
 def l: JoinedOrSeparate<["-"], "l">, MetaVarName<"<libName>">,
   HelpText<"Root name of library to use">;
 def m: JoinedOrSeparate<["-"], "m">, HelpText<"Set target emulation">;
+def major_os_version: Separate<["--"], "major-os-version">,
+    HelpText<"Set the OS and subsystem major version">;
+def major_os_version_eq: Joined<["--"], "major-os-version=">,
+    Alias<major_os_version>;
+def major_subsystem_version: Separate<["--"], "major-subsystem-version">,
+    HelpText<"Set the OS and subsystem major version">;
+def major_subsystem_version_eq: Joined<["--"], "major-subsystem-version=">,
+    Alias<major_subsystem_version>;
 def map: S<"Map">, HelpText<"Output a linker map">;
 def map_eq: J<"Map=">, Alias<map>;
+def minor_os_version: Separate<["--"], "minor-os-version">,
+    HelpText<"Set the OS and subsystem minor version">;
+def minor_os_version_eq: Joined<["--"], "minor-os-version=">,
+    Alias<minor_os_version>;
+def minor_subsystem_version: Separate<["--"], "minor-subsystem-version">,
+    HelpText<"Set the OS and subsystem minor version">;
+def minor_subsystem_version_eq: Joined<["--"], "minor-subsystem-version=">,
+    Alias<minor_subsystem_version>;
 def no_insert_timestamp: F<"no-insert-timestamp">,
     HelpText<"Don't include PE header timestamp">;
 def no_whole_archive: F<"no-whole-archive">,
@@ -41,6 +57,7 @@ def out_implib_eq: Joined<["--"], "out-implib=">, Alias<out_implib>;
 def output_def: S<"output-def">, HelpText<"Output def file">;
 def shared: F<"shared">, HelpText<"Build a shared object">;
 def subs: S<"subsystem">, HelpText<"Specify subsystem">;
+def subs_eq: J<"subsystem=">, Alias<subs>;
 def stack: S<"stack">;
 def strip_all: F<"strip-all">,
     HelpText<"Omit all symbol information from the output binary">;
@@ -63,6 +80,8 @@ def require_defined_eq: J<"require-defined=">, Alias<require_defined>;
 def _HASH_HASH_HASH : Flag<["-"], "###">,
     HelpText<"Print (but do not run) the commands to run for this compilation">;
 def appcontainer: F<"appcontainer">, HelpText<"Set the appcontainer flag in the executable">;
+def delayload: S<"delayload">, HelpText<"DLL to load only on demand">;
+def delayload_eq: J<"delayload=">, Alias<delayload>;
 def mllvm: S<"mllvm">;
 def pdb: S<"pdb">, HelpText<"Output PDB debug info file, chosen implicitly if the argument is empty">;
 def pdb_eq: J<"pdb=">, Alias<pdb>;

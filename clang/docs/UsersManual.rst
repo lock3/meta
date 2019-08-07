@@ -324,13 +324,21 @@ output format of the diagnostics that it generates.
 
 .. _opt_fsave-optimization-record:
 
-**-fsave-optimization-record**
-   Write optimization remarks to a YAML file.
+.. option:: -fsave-optimization-record[=<format>]
+
+   Write optimization remarks to a separate file.
 
    This option, which defaults to off, controls whether Clang writes
-   optimization reports to a YAML file. By recording diagnostics in a file,
-   using a structured YAML format, users can parse or sort the remarks in a
-   convenient way.
+   optimization reports to a separate file. By recording diagnostics in a file,
+   users can parse or sort the remarks in a convenient way.
+
+   By default, the serialization format is YAML.
+
+   The supported serialization formats are:
+
+   -  .. _opt_fsave_optimization_record_yaml:
+
+      ``-fsave-optimization-record=yaml``: A structured YAML format.
 
 .. _opt_foptimization-record-file:
 
@@ -343,7 +351,21 @@ output format of the diagnostics that it generates.
 
    If this option is not used, optimization records are output to a file named
    after the primary file being compiled. If that's "foo.c", for example,
-   optimization records are output to "foo.opt.yaml".
+   optimization records are output to "foo.opt.yaml". If a specific
+   serialization format is specified, the file will be named
+   "foo.opt.<format>".
+
+.. _opt_foptimization-record-passes:
+
+**-foptimization-record-passes**
+   Only include passes which match a specified regular expression.
+
+   When optimization reports are being output (see
+   :ref:`-fsave-optimization-record <opt_fsave-optimization-record>`), this
+   option controls the passes that will be included in the final report.
+
+   If this option is not used, all the passes are included in the optimization
+   record.
 
 .. _opt_fdiagnostics-show-hotness:
 
@@ -970,13 +992,24 @@ is treated as a system header.
 Enabling All Diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-In addition to the traditional ``-W`` flags, one can enable **all**
-diagnostics by passing :option:`-Weverything`. This works as expected
-with
-:option:`-Werror`, and also includes the warnings from :option:`-pedantic`.
+In addition to the traditional ``-W`` flags, one can enable **all** diagnostics
+by passing :option:`-Weverything`. This works as expected with
+:option:`-Werror`, and also includes the warnings from :option:`-pedantic`. Some
+diagnostics contradict each other, therefore, users of :option:`-Weverything`
+often disable many diagnostics such as `-Wno-c++98-compat` and `-Wno-c++-compat`
+because they contradict recent C++ standards.
 
-Note that when combined with :option:`-w` (which disables all warnings), that
-flag wins.
+Since :option:`-Weverything` enables every diagnostic, we generally don't
+recommend using it. `-Wall` `-Wextra` are a better choice for most projects.
+Using :option:`-Weverything` means that updating your compiler is more difficult
+because you're exposed to experimental diagnostics which might be of lower
+quality than the default ones. If you do use :option:`-Weverything` then we
+advise that you address all new compiler diagnostics as they get added to Clang,
+either by fixing everything they find or explicitly disabling that diagnostic
+with its corresponding `Wno-` option.
+
+Note that when combined with :option:`-w` (which disables all warnings),
+disabling all warnings wins.
 
 Controlling Static Analyzer Diagnostics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -2375,7 +2408,8 @@ Compiling to bitcode can be done as follows:
 This will produce a generic test.bc file that can be used in vendor toolchains
 to perform machine code generation.
 
-Clang currently supports OpenCL C language standards up to v2.0.
+Clang currently supports OpenCL C language standards up to v2.0. Starting from Clang9
+C++ mode is available for OpenCL (see :ref:`C++ for OpenCL <opencl_cpp>`).
 
 OpenCL Specific Options
 -----------------------
@@ -2733,6 +2767,45 @@ There are some standard OpenCL functions that are implemented as Clang builtins:
   <https://www.khronos.org/registry/cl/specs/opencl-2.0-openclc.pdf#164>`_ and
   enqueue query functions from `section 6.13.17.5
   <https://www.khronos.org/registry/cl/specs/opencl-2.0-openclc.pdf#171>`_.
+
+.. _opencl_cpp:
+
+C++ for OpenCL
+--------------
+
+Starting from Clang9 kernel code can contain C++17 features: classes, templates,
+function overloading, type deduction, etc. Please note that this is not an
+implementation of `OpenCL C++
+<https://www.khronos.org/registry/OpenCL/specs/2.2/pdf/OpenCL_Cxx.pdf>`_ and
+there is no plan to support it in clang in any new releases in the near future.
+
+There are only a few restrictions on allowed C++ features. For detailed information
+please refer to documentation on Extensions (:doc:`LanguageExtensions`).
+
+Since C++ features are to be used on top of OpenCL C functionality, all existing
+restrictions from OpenCL C v2.0 will inherently apply. All OpenCL C builtin types
+and function libraries are supported and can be used in the new mode.
+
+To enable the new mode pass the following command line option when compiling ``.cl``
+file ``-cl-std=clc++``, ``-cl-std=CLC++``, ``-std=clc++`` or ``-std=CLC++``.
+
+   .. code-block:: c++
+
+     template<class T> T add( T x, T y )
+     {
+       return x + y;
+     }
+
+     __kernel void test( __global float* a, __global float* b)
+     {
+       auto index = get_global_id(0);
+       a[index] = add(b[index], b[index+1]);
+     }
+
+
+   .. code-block:: console
+
+     clang -cl-std=clc++ test.cl
 
 .. _target_features:
 

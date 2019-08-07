@@ -100,7 +100,7 @@ static FILE *getProfileFile() { return ProfileFile; }
 static void setProfileFile(FILE *File) { ProfileFile = File; }
 
 COMPILER_RT_VISIBILITY void __llvm_profile_set_file_object(FILE *File,
-  int EnableMerge) {
+                                                           int EnableMerge) {
   setProfileFile(File);
   setProfileMergeRequested(EnableMerge);
 }
@@ -267,7 +267,7 @@ static FILE *openFileForMerging(const char *ProfileFileName, int *MergeDone) {
   return ProfileFile;
 }
 
-static FILE *GetFileObject(const char *OutputName) {
+static FILE *getFileObject(const char *OutputName) {
   FILE *File;
   File = getProfileFile();
   if (File != NULL) {
@@ -287,7 +287,7 @@ static int writeFile(const char *OutputName) {
   if (doMerging())
     OutputFile = openFileForMerging(OutputName, &MergeDone);
   else
-    OutputFile = GetFileObject(OutputName);
+    OutputFile = getFileObject(OutputName);
 
   if (!OutputFile)
     return -1;
@@ -298,14 +298,14 @@ static int writeFile(const char *OutputName) {
   initFileWriter(&fileWriter, OutputFile);
   RetVal = lprofWriteData(&fileWriter, lprofGetVPDataReader(), MergeDone);
 
-  if (doMerging()) {
-    lprofUnlockFileHandle(OutputFile);
-  }
-
-  if (OutputFile == getProfileFile())
+  if (OutputFile == getProfileFile()) {
     fflush(OutputFile);
-  else
+    if (doMerging()) {
+      lprofUnlockFileHandle(OutputFile);
+    }
+  } else {
     fclose(OutputFile);
+  }
 
   return RetVal;
 }

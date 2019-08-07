@@ -323,6 +323,8 @@ ARMTargetInfo::ARMTargetInfo(const llvm::Triple &Triple,
     this->MCountName = Opts.EABIVersion == llvm::EABI::GNU
                            ? "\01__gnu_mcount_nc"
                            : "\01mcount";
+
+  SoftFloatABI = llvm::is_contained(Opts.FeaturesAsWritten, "+soft-float-abi");
 }
 
 StringRef ARMTargetInfo::getABI() const { return ABI; }
@@ -385,12 +387,21 @@ bool ARMTargetInfo::initFeatureMap(
 
   // Convert user-provided arm and thumb GNU target attributes to
   // [-|+]thumb-mode target features respectively.
-  std::vector<std::string> UpdatedFeaturesVec(FeaturesVec);
-  for (auto &Feature : UpdatedFeaturesVec) {
-    if (Feature.compare("+arm") == 0)
-      Feature = "-thumb-mode";
-    else if (Feature.compare("+thumb") == 0)
-      Feature = "+thumb-mode";
+  std::vector<std::string> UpdatedFeaturesVec;
+  for (const auto &Feature : FeaturesVec) {
+    // Skip soft-float-abi; it's something we only use to initialize a bit of
+    // class state, and is otherwise unrecognized.
+    if (Feature == "+soft-float-abi")
+      continue;
+
+    StringRef FixedFeature;
+    if (Feature == "+arm")
+      FixedFeature = "-thumb-mode";
+    else if (Feature == "+thumb")
+      FixedFeature = "+thumb-mode";
+    else
+      FixedFeature = Feature;
+    UpdatedFeaturesVec.push_back(FixedFeature.str());
   }
 
   return TargetInfo::initFeatureMap(Features, Diags, CPU, UpdatedFeaturesVec);
@@ -405,7 +416,8 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
   Crypto = 0;
   DSP = 0;
   Unaligned = 1;
-  SoftFloat = SoftFloatABI = false;
+  SoftFloat = false;
+  // Note that SoftFloatABI is initialized in our constructor.
   HWDiv = 0;
   DotProd = 0;
   HasFloat16 = true;
@@ -415,8 +427,6 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
   for (const auto &Feature : Features) {
     if (Feature == "+soft-float") {
       SoftFloat = true;
-    } else if (Feature == "+soft-float-abi") {
-      SoftFloatABI = true;
     } else if (Feature == "+vfp2sp" || Feature == "+vfp2d16sp" ||
                Feature == "+vfp2" || Feature == "+vfp2d16") {
       FPU |= VFP2FPU;
@@ -509,11 +519,6 @@ bool ARMTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
     Features.push_back("+neonfp");
   else if (FPMath == FP_VFP)
     Features.push_back("-neonfp");
-
-  // Remove front-end specific options which the backend handles differently.
-  auto Feature = llvm::find(Features, "+soft-float-abi");
-  if (Feature != Features.end())
-    Features.erase(Feature);
 
   return true;
 }
@@ -895,6 +900,17 @@ bool ARMTargetInfo::validateAsmConstraint(
   case 'Q': // A memory address that is a single base register.
     Info.setAllowsMemory();
     return true;
+  case 'T':
+    switch (Name[1]) {
+    default:
+      break;
+    case 'e': // Even general-purpose register
+    case 'o': // Odd general-purpose register
+      Info.setAllowsRegister();
+      Name++;
+      return true;
+    }
+    break;
   case 'U': // a memory reference...
     switch (Name[1]) {
     case 'q': // ...ARMV4 ldrsb
@@ -910,6 +926,7 @@ bool ARMTargetInfo::validateAsmConstraint(
       Name++;
       return true;
     }
+    break;
   }
   return false;
 }
@@ -918,6 +935,7 @@ std::string ARMTargetInfo::convertConstraint(const char *&Constraint) const {
   std::string R;
   switch (*Constraint) {
   case 'U': // Two-character constraint; add "^" hint for later parsing.
+  case 'T':
     R = std::string("^") + std::string(Constraint, 2);
     Constraint++;
     break;
@@ -1012,8 +1030,6 @@ WindowsARMTargetInfo::WindowsARMTargetInfo(const llvm::Triple &Triple,
 
 void WindowsARMTargetInfo::getVisualStudioDefines(const LangOptions &Opts,
                                                   MacroBuilder &Builder) const {
-  WindowsTargetInfo<ARMleTargetInfo>::getVisualStudioDefines(Opts, Builder);
-
   // FIXME: this is invalid for WindowsCE
   Builder.defineMacro("_M_ARM_NT", "1");
   Builder.defineMacro("_M_ARMT", "_M_ARM");

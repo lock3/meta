@@ -44,6 +44,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/IPO/WholeProgramDevirt.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 
@@ -192,8 +193,10 @@ void llvm::computeLTOCacheKey(
       AddUnsigned(VI.isDSOLocal());
       AddUsedCfiGlobal(VI.getGUID());
     }
-    if (auto *GVS = dyn_cast<GlobalVarSummary>(GS))
-      AddUnsigned(GVS->isReadOnly());
+    if (auto *GVS = dyn_cast<GlobalVarSummary>(GS)) {
+      AddUnsigned(GVS->maybeReadOnly());
+      AddUnsigned(GVS->maybeWriteOnly());
+    }
     if (auto *FS = dyn_cast<FunctionSummary>(GS)) {
       for (auto &TT : FS->type_tests())
         UsedTypeIds.insert(TT);
@@ -371,9 +374,9 @@ void llvm::thinLTOResolvePrevailingInIndex(
                                  GUIDPreservedSymbols);
 }
 
-static bool isWeakWriteableObject(GlobalValueSummary *GVS) {
+static bool isWeakObjectWithRWAccess(GlobalValueSummary *GVS) {
   if (auto *VarSummary = dyn_cast<GlobalVarSummary>(GVS->getBaseObject()))
-    return !VarSummary->isReadOnly() &&
+    return !VarSummary->maybeReadOnly() && !VarSummary->maybeWriteOnly() &&
            (VarSummary->linkage() == GlobalValue::WeakODRLinkage ||
             VarSummary->linkage() == GlobalValue::LinkOnceODRLinkage);
   return false;
@@ -394,11 +397,12 @@ static void thinLTOInternalizeAndPromoteGUID(
                // We can't internalize available_externally globals because this
                // can break function pointer equality.
                S->linkage() != GlobalValue::AvailableExternallyLinkage &&
-               // Functions and read-only variables with linkonce_odr and weak_odr 
-               // linkage can be internalized. We can't internalize linkonce_odr
-               // and weak_odr variables which are modified somewhere in the
-               // program because reads and writes will become inconsistent.
-               !isWeakWriteableObject(S.get()))
+               // Functions and read-only variables with linkonce_odr and
+               // weak_odr linkage can be internalized. We can't internalize
+               // linkonce_odr and weak_odr variables which are both modified
+               // and read somewhere in the program because reads and writes
+               // will become inconsistent.
+               !isWeakObjectWithRWAccess(S.get()))
       S->setLinkage(GlobalValue::InternalLinkage);
   }
 }
@@ -1201,7 +1205,7 @@ public:
 
     std::error_code EC;
     raw_fd_ostream OS(NewModulePath + ".thinlto.bc", EC,
-                      sys::fs::OpenFlags::F_None);
+                      sys::fs::OpenFlags::OF_None);
     if (EC)
       return errorCodeToError(EC);
     WriteIndexToFile(CombinedIndex, OS, &ModuleToSummariesForIndex);
@@ -1271,15 +1275,28 @@ Error LTO::runThinLTO(AddStreamFn AddStream, NativeObjectCache Cache,
   if (DumpThinCGSCCs)
     ThinLTO.CombinedIndex.dumpSCCs(outs());
 
+  std::set<GlobalValue::GUID> ExportedGUIDs;
+
+  // Perform index-based WPD. This will return immediately if there are
+  // no index entries in the typeIdMetadata map (e.g. if we are instead
+  // performing IR-based WPD in hybrid regular/thin LTO mode).
+  std::map<ValueInfo, std::vector<VTableSlotSummary>> LocalWPDTargetsMap;
+  runWholeProgramDevirtOnIndex(ThinLTO.CombinedIndex, ExportedGUIDs,
+                               LocalWPDTargetsMap);
+
   if (Conf.OptLevel > 0)
     ComputeCrossModuleImport(ThinLTO.CombinedIndex, ModuleToDefinedGVSummaries,
                              ImportLists, ExportLists);
+
+  // Update local devirtualized targets that were exported by cross-module
+  // importing
+  updateIndexWPDForExports(ThinLTO.CombinedIndex, ExportLists,
+                           LocalWPDTargetsMap);
 
   // Figure out which symbols need to be internalized. This also needs to happen
   // at -O0 because summary-based DCE is implemented using internalization, and
   // we must apply DCE consistently with the full LTO module in order to avoid
   // undefined references during the final link.
-  std::set<GlobalValue::GUID> ExportedGUIDs;
   for (auto &Res : GlobalResolutions) {
     // If the symbol does not have external references or it is not prevailing,
     // then not need to mark it as exported from a ThinLTO partition.
@@ -1338,34 +1355,22 @@ Error LTO::runThinLTO(AddStreamFn AddStream, NativeObjectCache Cache,
 }
 
 Expected<std::unique_ptr<ToolOutputFile>>
-lto::setupOptimizationRemarks(LLVMContext &Context,
-                              StringRef LTORemarksFilename,
-                              StringRef LTORemarksPasses,
-                              bool LTOPassRemarksWithHotness, int Count) {
-  if (LTOPassRemarksWithHotness)
-    Context.setDiagnosticsHotnessRequested(true);
-  if (LTORemarksFilename.empty())
-    return nullptr;
-
-  std::string Filename = LTORemarksFilename;
-  if (Count != -1)
+lto::setupOptimizationRemarks(LLVMContext &Context, StringRef RemarksFilename,
+                              StringRef RemarksPasses, StringRef RemarksFormat,
+                              bool RemarksWithHotness, int Count) {
+  std::string Filename = RemarksFilename;
+  if (!Filename.empty() && Count != -1)
     Filename += ".thin." + llvm::utostr(Count) + ".yaml";
 
-  std::error_code EC;
-  auto DiagnosticFile =
-      llvm::make_unique<ToolOutputFile>(Filename, EC, sys::fs::F_None);
-  if (EC)
-    return errorCodeToError(EC);
-  Context.setRemarkStreamer(llvm::make_unique<RemarkStreamer>(
-      Filename,
-      llvm::make_unique<remarks::YAMLSerializer>(DiagnosticFile->os())));
+  auto ResultOrErr = llvm::setupOptimizationRemarks(
+      Context, Filename, RemarksPasses, RemarksFormat, RemarksWithHotness);
+  if (Error E = ResultOrErr.takeError())
+    return std::move(E);
 
-  if (!LTORemarksPasses.empty())
-    if (Error E = Context.getRemarkStreamer()->setFilter(LTORemarksPasses))
-      return std::move(E);
+  if (*ResultOrErr)
+    (*ResultOrErr)->keep();
 
-  DiagnosticFile->keep();
-  return std::move(DiagnosticFile);
+  return ResultOrErr;
 }
 
 Expected<std::unique_ptr<ToolOutputFile>>
@@ -1377,7 +1382,7 @@ lto::setupStatsFile(StringRef StatsFilename) {
   llvm::EnableStatistics(false);
   std::error_code EC;
   auto StatsFile =
-      llvm::make_unique<ToolOutputFile>(StatsFilename, EC, sys::fs::F_None);
+      llvm::make_unique<ToolOutputFile>(StatsFilename, EC, sys::fs::OF_None);
   if (EC)
     return errorCodeToError(EC);
 

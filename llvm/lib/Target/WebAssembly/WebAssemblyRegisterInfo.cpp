@@ -66,7 +66,7 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
   assert(MFI.getObjectSize(FrameIndex) != 0 &&
          "We assume that variable-sized objects have already been lowered, "
          "and don't use FrameIndex operands.");
-  unsigned FrameRegister = getFrameRegister(MF);
+  Register FrameRegister = getFrameRegister(MF);
 
   // If this is the address operand of a load or store, make it relative to SP
   // and fold the frame offset directly in.
@@ -81,7 +81,7 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
     if (static_cast<uint64_t>(Offset) <= std::numeric_limits<uint32_t>::max()) {
       MI.getOperand(OffsetOperandNum).setImm(Offset);
       MI.getOperand(FIOperandNum)
-          .ChangeToRegister(FrameRegister, /*IsDef=*/false);
+          .ChangeToRegister(FrameRegister, /*isDef=*/false);
       return;
     }
   }
@@ -92,7 +92,7 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
     MachineOperand &OtherMO = MI.getOperand(3 - FIOperandNum);
     if (OtherMO.isReg()) {
       unsigned OtherMOReg = OtherMO.getReg();
-      if (TargetRegisterInfo::isVirtualRegister(OtherMOReg)) {
+      if (Register::isVirtualRegister(OtherMOReg)) {
         MachineInstr *Def = MF.getRegInfo().getUniqueVRegDef(OtherMOReg);
         // TODO: For now we just opportunistically do this in the case where
         // the CONST_I32 happens to have exactly one def and one use. We
@@ -102,7 +102,7 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
           MachineOperand &ImmMO = Def->getOperand(1);
           ImmMO.setImm(ImmMO.getImm() + uint32_t(FrameOffset));
           MI.getOperand(FIOperandNum)
-              .ChangeToRegister(FrameRegister, /*IsDef=*/false);
+              .ChangeToRegister(FrameRegister, /*isDef=*/false);
           return;
         }
       }
@@ -127,10 +127,10 @@ void WebAssemblyRegisterInfo::eliminateFrameIndex(
         .addReg(FrameRegister)
         .addReg(OffsetOp);
   }
-  MI.getOperand(FIOperandNum).ChangeToRegister(FIRegOperand, /*IsDef=*/false);
+  MI.getOperand(FIOperandNum).ChangeToRegister(FIRegOperand, /*isDef=*/false);
 }
 
-unsigned
+Register
 WebAssemblyRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   static const unsigned Regs[2][2] = {
       /*            !isArch64Bit       isArch64Bit      */

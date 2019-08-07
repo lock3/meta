@@ -331,6 +331,16 @@ TEST(DeclarationMatcher, ClassIsDerived) {
   EXPECT_TRUE(notMatches("class Y;", IsDerivedFromX));
   EXPECT_TRUE(notMatches("", IsDerivedFromX));
 
+  DeclarationMatcher IsDirectlyDerivedFromX =
+      cxxRecordDecl(isDirectlyDerivedFrom("X"));
+
+  EXPECT_TRUE(
+      matches("class X {}; class Y : public X {};", IsDirectlyDerivedFromX));
+  EXPECT_TRUE(notMatches("class X {};", IsDirectlyDerivedFromX));
+  EXPECT_TRUE(notMatches("class X;", IsDirectlyDerivedFromX));
+  EXPECT_TRUE(notMatches("class Y;", IsDirectlyDerivedFromX));
+  EXPECT_TRUE(notMatches("", IsDirectlyDerivedFromX));
+
   DeclarationMatcher IsAX = cxxRecordDecl(isSameOrDerivedFrom("X"));
 
   EXPECT_TRUE(matches("class X {}; class Y : public X {};", IsAX));
@@ -341,13 +351,22 @@ TEST(DeclarationMatcher, ClassIsDerived) {
 
   DeclarationMatcher ZIsDerivedFromX =
     cxxRecordDecl(hasName("Z"), isDerivedFrom("X"));
+  DeclarationMatcher ZIsDirectlyDerivedFromX =
+      cxxRecordDecl(hasName("Z"), isDirectlyDerivedFrom("X"));
   EXPECT_TRUE(
     matches("class X {}; class Y : public X {}; class Z : public Y {};",
             ZIsDerivedFromX));
   EXPECT_TRUE(
+      notMatches("class X {}; class Y : public X {}; class Z : public Y {};",
+                 ZIsDirectlyDerivedFromX));
+  EXPECT_TRUE(
     matches("class X {};"
               "template<class T> class Y : public X {};"
               "class Z : public Y<int> {};", ZIsDerivedFromX));
+  EXPECT_TRUE(notMatches("class X {};"
+                         "template<class T> class Y : public X {};"
+                         "class Z : public Y<int> {};",
+                         ZIsDirectlyDerivedFromX));
   EXPECT_TRUE(matches("class X {}; template<class T> class Z : public X {};",
                       ZIsDerivedFromX));
   EXPECT_TRUE(
@@ -411,6 +430,9 @@ TEST(DeclarationMatcher, ClassIsDerived) {
     matches("class X {}; class Y : public X {}; "
               "typedef Y V; typedef V W; class Z : public W {};",
             ZIsDerivedFromX));
+  EXPECT_TRUE(notMatches("class X {}; class Y : public X {}; "
+                         "typedef Y V; typedef V W; class Z : public W {};",
+                         ZIsDirectlyDerivedFromX));
   EXPECT_TRUE(
     matches("template<class T, class U> class X {}; "
               "template<class T> class A { class Z : public X<T, int> {}; };",
@@ -467,6 +489,14 @@ TEST(DeclarationMatcher, ClassIsDerived) {
       "template<> struct X<0> : public A {};"
       "struct B : public X<42> {};",
     cxxRecordDecl(hasName("B"), isDerivedFrom(recordDecl(hasName("A"))))));
+  EXPECT_TRUE(notMatches(
+      "struct A {};"
+      "template<int> struct X;"
+      "template<int i> struct X : public X<i-1> {};"
+      "template<> struct X<0> : public A {};"
+      "struct B : public X<42> {};",
+      cxxRecordDecl(hasName("B"),
+                    isDirectlyDerivedFrom(recordDecl(hasName("A"))))));
 
   // FIXME: Once we have better matchers for template type matching,
   // get rid of the Variable(...) matching and match the right template
@@ -536,6 +566,13 @@ TEST(DeclarationMatcher, ClassIsDerived) {
     cxxRecordDecl(isDerivedFrom(namedDecl(hasName("X"))))));
 }
 
+TEST(DeclarationMatcher, IsDerivedFromEmptyName) {
+  const char *const Code = "class X {}; class Y : public X {};";
+  EXPECT_TRUE(notMatches(Code, cxxRecordDecl(isDerivedFrom(""))));
+  EXPECT_TRUE(notMatches(Code, cxxRecordDecl(isDirectlyDerivedFrom(""))));
+  EXPECT_TRUE(notMatches(Code, cxxRecordDecl(isSameOrDerivedFrom(""))));
+}
+
 TEST(DeclarationMatcher, IsLambda) {
   const auto IsLambda = cxxMethodDecl(ofClass(cxxRecordDecl(isLambda())));
   EXPECT_TRUE(matches("auto x = []{};", IsLambda));
@@ -564,6 +601,74 @@ TEST(Matcher, BindMatchedNodes) {
   EXPECT_TRUE(matchAndVerifyResultTrue("class A { void x() { x(); } };",
                                        MethodX,
                                        llvm::make_unique<VerifyIdIsBoundTo<CXXMemberCallExpr>>("x")));
+}
+
+TEST(Matcher, IgnoresElidableConstructors) {
+  EXPECT_TRUE(
+      matches("struct H {};"
+              "template<typename T> H B(T A);"
+              "void f() {"
+              "  H D1;"
+              "  D1 = B(B(1));"
+              "}",
+              cxxOperatorCallExpr(hasArgument(
+                  1, callExpr(hasArgument(
+                         0, ignoringElidableConstructorCall(callExpr()))))),
+              LanguageMode::Cxx11OrLater));
+  EXPECT_TRUE(
+      matches("struct H {};"
+              "template<typename T> H B(T A);"
+              "void f() {"
+              "  H D1;"
+              "  D1 = B(1);"
+              "}",
+              cxxOperatorCallExpr(hasArgument(
+                  1, callExpr(hasArgument(0, ignoringElidableConstructorCall(
+                                                 integerLiteral()))))),
+              LanguageMode::Cxx11OrLater));
+  EXPECT_TRUE(matches(
+      "struct H {};"
+      "H G();"
+      "void f() {"
+      "  H D = G();"
+      "}",
+      varDecl(hasInitializer(anyOf(
+          ignoringElidableConstructorCall(callExpr()),
+          exprWithCleanups(has(ignoringElidableConstructorCall(callExpr())))))),
+      LanguageMode::Cxx11OrLater));
+}
+
+TEST(Matcher, IgnoresElidableInReturn) {
+  auto matcher = expr(ignoringElidableConstructorCall(declRefExpr()));
+  EXPECT_TRUE(matches("struct H {};"
+                      "H f() {"
+                      "  H g;"
+                      "  return g;"
+                      "}",
+                      matcher, LanguageMode::Cxx11OrLater));
+  EXPECT_TRUE(notMatches("struct H {};"
+                         "H f() {"
+                         "  return H();"
+                         "}",
+                         matcher, LanguageMode::Cxx11OrLater));
+}
+
+TEST(Matcher, IgnoreElidableConstructorDoesNotMatchConstructors) {
+  EXPECT_TRUE(matches("struct H {};"
+                      "void f() {"
+                      "  H D;"
+                      "}",
+                      varDecl(hasInitializer(
+                          ignoringElidableConstructorCall(cxxConstructExpr()))),
+                      LanguageMode::Cxx11OrLater));
+}
+
+TEST(Matcher, IgnoresElidableDoesNotPreventMatches) {
+  EXPECT_TRUE(matches("void f() {"
+                      "  int D = 10;"
+                      "}",
+                      expr(ignoringElidableConstructorCall(integerLiteral())),
+                      LanguageMode::Cxx11OrLater));
 }
 
 TEST(Matcher, BindTheSameNameInAlternatives) {
@@ -810,6 +915,15 @@ TEST(ConversionDeclaration, IsExplicit) {
                       cxxConversionDecl(isExplicit())));
   EXPECT_TRUE(notMatches("struct S { operator int(); };",
                          cxxConversionDecl(isExplicit())));
+  EXPECT_TRUE(matchesConditionally(
+      "template<bool b> struct S { explicit(b) operator int(); };",
+      cxxConversionDecl(isExplicit()), false, "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally(
+      "struct S { explicit(true) operator int(); };",
+      cxxConversionDecl(isExplicit()), true, "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally(
+      "struct S { explicit(false) operator int(); };",
+      cxxConversionDecl(isExplicit()), false, "-std=c++2a"));
 }
 
 TEST(Matcher, ArgumentCount) {
@@ -914,10 +1028,10 @@ TEST(isConstexpr, MatchesConstexprDeclarations) {
                       varDecl(hasName("foo"), isConstexpr())));
   EXPECT_TRUE(matches("constexpr int bar();",
                       functionDecl(hasName("bar"), isConstexpr())));
-  EXPECT_TRUE(matchesConditionally("void baz() { if constexpr(1 > 0) {} }",
-                                   ifStmt(isConstexpr()), true, "-std=c++17"));
-  EXPECT_TRUE(matchesConditionally("void baz() { if (1 > 0) {} }",
-                                   ifStmt(isConstexpr()), false, "-std=c++17"));
+  EXPECT_TRUE(matches("void baz() { if constexpr(1 > 0) {} }",
+                      ifStmt(isConstexpr()), LanguageMode::Cxx17OrLater));
+  EXPECT_TRUE(notMatches("void baz() { if (1 > 0) {} }", ifStmt(isConstexpr()),
+                         LanguageMode::Cxx17OrLater));
 }
 
 TEST(TemplateArgumentCountIs, Matches) {
@@ -1129,6 +1243,38 @@ TEST(ConstructorDeclaration, IsExplicit) {
                       cxxConstructorDecl(isExplicit())));
   EXPECT_TRUE(notMatches("struct S { S(int); };",
                          cxxConstructorDecl(isExplicit())));
+  EXPECT_TRUE(matchesConditionally(
+      "template<bool b> struct S { explicit(b) S(int);};",
+      cxxConstructorDecl(isExplicit()), false, "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally("struct S { explicit(true) S(int);};",
+                                   cxxConstructorDecl(isExplicit()), true,
+                                   "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally("struct S { explicit(false) S(int);};",
+                                   cxxConstructorDecl(isExplicit()), false,
+                                   "-std=c++2a"));
+}
+
+TEST(DeductionGuideDeclaration, IsExplicit) {
+  EXPECT_TRUE(matchesConditionally("template<typename T> struct S { S(int);};"
+                                   "S(int) -> S<int>;",
+                                   cxxDeductionGuideDecl(isExplicit()), false,
+                                   "-std=c++17"));
+  EXPECT_TRUE(matchesConditionally("template<typename T> struct S { S(int);};"
+                                   "explicit S(int) -> S<int>;",
+                                   cxxDeductionGuideDecl(isExplicit()), true,
+                                   "-std=c++17"));
+  EXPECT_TRUE(matchesConditionally("template<typename T> struct S { S(int);};"
+                                   "explicit(true) S(int) -> S<int>;",
+                                   cxxDeductionGuideDecl(isExplicit()), true,
+                                   "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally("template<typename T> struct S { S(int);};"
+                                   "explicit(false) S(int) -> S<int>;",
+                                   cxxDeductionGuideDecl(isExplicit()), false,
+                                   "-std=c++2a"));
+  EXPECT_TRUE(matchesConditionally(
+      "template<typename T> struct S { S(int);};"
+      "template<bool b = true> explicit(b) S(int) -> S<int>;",
+      cxxDeductionGuideDecl(isExplicit()), false, "-std=c++2a"));
 }
 
 TEST(ConstructorDeclaration, Kinds) {

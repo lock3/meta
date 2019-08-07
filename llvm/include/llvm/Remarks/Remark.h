@@ -23,8 +23,8 @@
 namespace llvm {
 namespace remarks {
 
-constexpr uint64_t Version = 0;
-constexpr StringRef Magic("REMARKS", 7);
+/// The current version of the remark entry.
+constexpr uint64_t CurrentRemarkVersion = 0;
 
 /// The debug location used to track a remark back to the source file.
 struct RemarkLocation {
@@ -59,7 +59,8 @@ enum class Type {
   AnalysisFPCommute,
   AnalysisAliasing,
   Failure,
-  LastTypeValue = Failure
+  First = Unknown,
+  Last = Failure
 };
 
 /// A remark type used for both emission and parsing.
@@ -86,10 +87,23 @@ struct Remark {
   Optional<uint64_t> Hotness;
 
   /// Arguments collected via the streaming interface.
-  ArrayRef<Argument> Args;
+  SmallVector<Argument, 5> Args;
+
+  Remark() = default;
+  Remark(Remark &&) = default;
+  Remark &operator=(Remark &&) = default;
 
   /// Return a message composed from the arguments as a string.
   std::string getArgsAsMsg() const;
+
+  /// Clone this remark to explicitly ask for a copy.
+  Remark clone() const { return *this; }
+
+private:
+  /// In order to avoid unwanted copies, "delete" the copy constructor.
+  /// If a copy is needed, it should be done through `Remark::clone()`.
+  Remark(const Remark &) = default;
+  Remark& operator=(const Remark &) = default;
 };
 
 // Create wrappers for C Binding types (see CBindingWrapping.h).

@@ -706,3 +706,48 @@ define void @mul512(<64 x i8>* %a, <64 x i8>* %b, <64 x i8>* %c) "min-legal-vect
   store <64 x i8> %f, <64 x i8>* %c
   ret void
 }
+
+; This threw an assertion at one point.
+define <4 x i32> @mload_v4i32(<4 x i32> %trigger, <4 x i32>* %addr, <4 x i32> %dst) "min-legal-vector-width"="256" {
+; CHECK-LABEL: mload_v4i32:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vptestnmd %xmm0, %xmm0, %k1
+; CHECK-NEXT:    vpblendmd (%rdi), %xmm1, %xmm0 {%k1}
+; CHECK-NEXT:    retq
+  %mask = icmp eq <4 x i32> %trigger, zeroinitializer
+  %res = call <4 x i32> @llvm.masked.load.v4i32.p0v4i32(<4 x i32>* %addr, i32 4, <4 x i1> %mask, <4 x i32> %dst)
+  ret <4 x i32> %res
+}
+declare <4 x i32> @llvm.masked.load.v4i32.p0v4i32(<4 x i32>*, i32, <4 x i1>, <4 x i32>)
+
+define <16 x i8> @trunc_v16i32_v16i8(<16 x i32>* %x) nounwind "min-legal-vector-width"="256" {
+; CHECK-LABEL: trunc_v16i32_v16i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmovdqa (%rdi), %ymm0
+; CHECK-NEXT:    vmovdqa 32(%rdi), %ymm1
+; CHECK-NEXT:    vpmovdw %ymm0, %xmm0
+; CHECK-NEXT:    vpmovdw %ymm1, %xmm1
+; CHECK-NEXT:    vinserti128 $1, %xmm1, %ymm0, %ymm0
+; CHECK-NEXT:    vpmovwb %ymm0, %xmm0
+; CHECK-NEXT:    vzeroupper
+; CHECK-NEXT:    retq
+  %a = load <16 x i32>, <16 x i32>* %x
+  %b = trunc <16 x i32> %a to <16 x i8>
+  ret <16 x i8> %b
+}
+
+define <8 x i16> @trunc_v8i64_v8i16(<8 x i64>* %x) nounwind "min-legal-vector-width"="256" {
+; CHECK-LABEL: trunc_v8i64_v8i16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmovdqa (%rdi), %ymm0
+; CHECK-NEXT:    vmovdqa 32(%rdi), %ymm1
+; CHECK-NEXT:    vpmovqd %ymm0, %xmm0
+; CHECK-NEXT:    vpmovqd %ymm1, %xmm1
+; CHECK-NEXT:    vinserti128 $1, %xmm1, %ymm0, %ymm0
+; CHECK-NEXT:    vpmovdw %ymm0, %xmm0
+; CHECK-NEXT:    vzeroupper
+; CHECK-NEXT:    retq
+  %a = load <8 x i64>, <8 x i64>* %x
+  %b = trunc <8 x i64> %a to <8 x i16>
+  ret <8 x i16> %b
+}

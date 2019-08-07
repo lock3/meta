@@ -108,7 +108,7 @@ public:
            Data == X.Data;
   }
 
-  void dump() const;
+  LLVM_DUMP_METHOD void dump() const;
 };
 } // end anonymous namespace
 
@@ -135,7 +135,9 @@ static inline raw_ostream &operator<<(raw_ostream &Out, BindingKey K) {
 
 } // namespace llvm
 
-LLVM_DUMP_METHOD void BindingKey::dump() const { llvm::errs() << *this; }
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+void BindingKey::dump() const { llvm::errs() << *this; }
+#endif
 
 //===----------------------------------------------------------------------===//
 // Actual Store type.
@@ -210,14 +212,17 @@ public:
   void printJson(raw_ostream &Out, const char *NL = "\n",
                  unsigned int Space = 0, bool IsDot = false) const {
     for (iterator I = begin(); I != end(); ++I) {
+      // TODO: We might need a .printJson for I.getKey() as well.
       Indent(Out, Space, IsDot)
-          << "{ \"cluster\": \"" << I.getKey() << "\", \"items\": [" << NL;
+          << "{ \"cluster\": \"" << I.getKey() << "\", \"pointer\": \""
+          << (const void *)I.getKey() << "\", \"items\": [" << NL;
 
       ++Space;
       const ClusterBindings &CB = I.getData();
       for (ClusterBindings::iterator CI = CB.begin(); CI != CB.end(); ++CI) {
-        Indent(Out, Space, IsDot) << "{ " << CI.getKey() << ", \"value\": \""
-                                  << CI.getData() << "\" }";
+        Indent(Out, Space, IsDot) << "{ " << CI.getKey() << ", \"value\": ";
+        CI.getData().printJson(Out, /*AddQuotes=*/true);
+        Out << " }";
         if (std::next(CI) != CB.end())
           Out << ',';
         Out << NL;
@@ -1250,7 +1255,7 @@ RegionStoreManager::invalidateGlobalRegion(MemRegion::Kind K,
   // Bind the globals memory space to a new symbol that we will use to derive
   // the bindings for all globals.
   const GlobalsSpaceRegion *GS = MRMgr.getGlobalsRegion(K);
-  SVal V = svalBuilder.conjureSymbolVal(/* SymbolTag = */ (const void*) GS, Ex, LCtx,
+  SVal V = svalBuilder.conjureSymbolVal(/* symbolTag = */ (const void*) GS, Ex, LCtx,
                                         /* type does not matter */ Ctx.IntTy,
                                         Count);
 
@@ -2637,7 +2642,7 @@ void RegionStoreManager::printJson(raw_ostream &Out, Store S, const char *NL,
     return;
   }
 
-  Out << '[' << NL;
-  Bindings.printJson(Out, NL, ++Space, IsDot);
-  Indent(Out, --Space, IsDot) << "]," << NL;
+  Out << "{ \"pointer\": \"" << Bindings.asStore() << "\", \"items\": [" << NL;
+  Bindings.printJson(Out, NL, Space + 1, IsDot);
+  Indent(Out, Space, IsDot) << "]}," << NL;
 }

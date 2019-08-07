@@ -306,17 +306,16 @@ std::string IncludeFixerSemaSource::minimizeInclude(
 
   // Get the FileEntry for the include.
   StringRef StrippedInclude = Include.trim("\"<>");
-  const FileEntry *Entry =
-      SourceManager.getFileManager().getFile(StrippedInclude);
+  auto Entry = SourceManager.getFileManager().getFile(StrippedInclude);
 
   // If the file doesn't exist return the path from the database.
   // FIXME: This should never happen.
   if (!Entry)
     return Include;
 
-  bool IsSystem;
+  bool IsSystem = false;
   std::string Suggestion =
-      HeaderSearch.suggestPathToFileForDiagnostics(Entry, &IsSystem);
+      HeaderSearch.suggestPathToFileForDiagnostics(*Entry, "", &IsSystem);
 
   return IsSystem ? '<' + Suggestion + '>' : '"' + Suggestion + '"';
 }

@@ -139,8 +139,7 @@ static bool dominatesAllUsesOf(const MachineInstr *MI, unsigned VReg,
                                MachineDominatorTree *MDT,
                                MachineRegisterInfo *MRI) {
 
-  assert(TargetRegisterInfo::isVirtualRegister(VReg) &&
-         "Expected virtual register!");
+  assert(Register::isVirtualRegister(VReg) && "Expected virtual register!");
 
   for (auto it = MRI->use_nodbg_begin(VReg), end = MRI->use_nodbg_end();
        it != end; ++it) {
@@ -206,8 +205,7 @@ MachineInstr *ARCOptAddrMode::tryToCombine(MachineInstr &Ldst) {
   }
 
   unsigned B = Base.getReg();
-  if (TargetRegisterInfo::isStackSlot(B) ||
-      !TargetRegisterInfo::isVirtualRegister(B)) {
+  if (Register::isStackSlot(B) || !Register::isVirtualRegister(B)) {
     LLVM_DEBUG(dbgs() << "[ABAW] Base is not VReg\n");
     return nullptr;
   }
@@ -424,7 +422,7 @@ bool ARCOptAddrMode::canSinkLoadStoreTo(MachineInstr *Ldst, MachineInstr *To) {
   bool IsStore = Ldst->mayStore();
   bool IsLoad = Ldst->mayLoad();
 
-  unsigned ValReg = IsLoad ? Ldst->getOperand(0).getReg() : 0;
+  Register ValReg = IsLoad ? Ldst->getOperand(0).getReg() : Register();
   for (; MI != ME && MI != End; ++MI) {
     if (MI->isDebugValue())
       continue;

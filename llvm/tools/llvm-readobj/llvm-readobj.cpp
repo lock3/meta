@@ -324,6 +324,11 @@ namespace opts {
   PrintStackMap("stackmap",
                 cl::desc("Display contents of stackmap section"));
 
+  // --stack-sizes
+  cl::opt<bool>
+      PrintStackSizes("stack-sizes",
+                      cl::desc("Display contents of all stack sizes sections"));
+
   // --version-info, -V
   cl::opt<bool>
       VersionInfo("version-info",
@@ -363,17 +368,28 @@ namespace opts {
              cl::values(clEnumVal(LLVM, "LLVM default style"),
                         clEnumVal(GNU, "GNU readelf style")),
              cl::init(LLVM));
+
+  cl::extrahelp
+      HelpResponse("\nPass @FILE as argument to read options from FILE.\n");
 } // namespace opts
 
 namespace llvm {
 
 LLVM_ATTRIBUTE_NORETURN void reportError(Twine Msg) {
+  fouts().flush();
   errs() << "\n";
   WithColor::error(errs()) << Msg << "\n";
   exit(1);
 }
 
+void reportError(StringRef Input, Error Err) {
+  if (Input == "-")
+    Input = "<stdin>";
+  error(createFileError(Input, std::move(Err)));
+}
+
 void reportWarning(Twine Msg) {
+  fouts().flush();
   errs() << "\n";
   WithColor::warning(errs()) << Msg << "\n";
 }
@@ -398,12 +414,6 @@ void error(std::error_code EC) {
 }
 
 } // namespace llvm
-
-static void reportError(StringRef Input, Error Err) {
-  if (Input == "-")
-    Input = "<stdin>";
-  error(createFileError(Input, std::move(Err)));
-}
 
 static void reportError(StringRef Input, std::error_code EC) {
   reportError(Input, errorCodeToError(EC));
@@ -458,20 +468,27 @@ static std::error_code createDumper(const ObjectFile *Obj,
 }
 
 /// Dumps the specified object file.
-static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer) {
+static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer,
+                       const Archive *A = nullptr) {
+  std::string FileStr =
+          A ? Twine(A->getFileName() + "(" + Obj->getFileName() + ")").str()
+            : Obj->getFileName().str();
+
   std::unique_ptr<ObjDumper> Dumper;
   if (std::error_code EC = createDumper(Obj, Writer, Dumper))
-    reportError(Obj->getFileName(), EC);
+    reportError(FileStr, EC);
 
+  Writer.startLine() << "\n";
   if (opts::Output == opts::LLVM) {
-    Writer.startLine() << "\n";
-    Writer.printString("File", Obj->getFileName());
+    Writer.printString("File", FileStr);
     Writer.printString("Format", Obj->getFileFormatName());
     Writer.printString("Arch", Triple::getArchTypeName(
                                    (llvm::Triple::ArchType)Obj->getArch()));
     Writer.printString("AddressSize",
                        formatv("{0}bit", 8 * Obj->getBytesInAddress()));
     Dumper->printLoadName();
+  } else if (opts::Output == opts::GNU && A) {
+    Writer.printString("File", FileStr);
   }
 
   if (opts::FileHeaders)
@@ -495,13 +512,9 @@ static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer) {
   if (opts::ProgramHeaders || opts::SectionMapping == cl::BOU_TRUE)
     Dumper->printProgramHeaders(opts::ProgramHeaders, opts::SectionMapping);
   if (!opts::StringDump.empty())
-    llvm::for_each(opts::StringDump, [&Dumper, Obj](StringRef SectionName) {
-      Dumper->printSectionAsString(Obj, SectionName);
-    });
+    Dumper->printSectionsAsString(Obj, opts::StringDump);
   if (!opts::HexDump.empty())
-    llvm::for_each(opts::HexDump, [&Dumper, Obj](StringRef SectionName) {
-      Dumper->printSectionAsHex(Obj, SectionName);
-    });
+    Dumper->printSectionsAsHex(Obj, opts::HexDump);
   if (opts::HashTable)
     Dumper->printHashTable();
   if (opts::GnuHashTable)
@@ -575,6 +588,8 @@ static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer) {
   }
   if (opts::PrintStackMap)
     Dumper->printStackMap();
+  if (opts::PrintStackSizes)
+    Dumper->printStackSizes();
 }
 
 /// Dumps each object file in \a Arc;
@@ -589,7 +604,7 @@ static void dumpArchive(const Archive *Arc, ScopedPrinter &Writer) {
       continue;
     }
     if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
-      dumpObject(Obj, Writer);
+      dumpObject(Obj, Writer, Arc);
     else if (COFFImportFile *Imp = dyn_cast<COFFImportFile>(&*ChildOrErr.get()))
       dumpCOFFImportFile(Imp, Writer);
     else
@@ -615,8 +630,8 @@ static void dumpMachOUniversalBinary(const MachOUniversalBinary *UBinary,
 }
 
 /// Dumps \a WinRes, Windows Resource (.res) file;
-static void dumpWindowsResourceFile(WindowsResource *WinRes) {
-  ScopedPrinter Printer{outs()};
+static void dumpWindowsResourceFile(WindowsResource *WinRes,
+                                    ScopedPrinter &Printer) {
   WindowsRes::Dumper Dumper(WinRes, Printer);
   if (auto Err = Dumper.printData())
     reportError(WinRes->getFileName(), std::move(Err));
@@ -624,9 +639,7 @@ static void dumpWindowsResourceFile(WindowsResource *WinRes) {
 
 
 /// Opens \a File and dumps it.
-static void dumpInput(StringRef File) {
-  ScopedPrinter Writer(outs());
-
+static void dumpInput(StringRef File, ScopedPrinter &Writer) {
   // Attempt to open the binary.
   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
   if (!BinaryOrErr)
@@ -643,7 +656,7 @@ static void dumpInput(StringRef File) {
   else if (COFFImportFile *Import = dyn_cast<COFFImportFile>(&Binary))
     dumpCOFFImportFile(Import, Writer);
   else if (WindowsResource *WinRes = dyn_cast<WindowsResource>(&Binary))
-    dumpWindowsResourceFile(WinRes);
+    dumpWindowsResourceFile(WinRes, Writer);
   else
     reportError(File, readobj_error::unrecognized_file_format);
 
@@ -721,6 +734,10 @@ int main(int argc, const char *argv[]) {
     opts::UnwindInfo = true;
     opts::SectionGroups = true;
     opts::HashHistogram = true;
+    // FIXME: As soon as we implement LLVM-style printing of the .stack_size
+    // section, we will enable it with --all (only for LLVM-style).
+    if (opts::Output == opts::LLVM)
+      opts::PrintStackSizes = false;
   }
 
   if (opts::Headers) {
@@ -733,15 +750,16 @@ int main(int argc, const char *argv[]) {
   if (opts::InputFilenames.empty())
     opts::InputFilenames.push_back("-");
 
-  llvm::for_each(opts::InputFilenames, dumpInput);
+  ScopedPrinter Writer(fouts());
+  for (const std::string &I : opts::InputFilenames)
+    dumpInput(I, Writer);
 
   if (opts::CodeViewMergedTypes) {
-    ScopedPrinter W(outs());
     if (opts::CodeViewEnableGHash)
-      dumpCodeViewMergedTypes(W, CVTypes.GlobalIDTable.records(),
+      dumpCodeViewMergedTypes(Writer, CVTypes.GlobalIDTable.records(),
                               CVTypes.GlobalTypeTable.records());
     else
-      dumpCodeViewMergedTypes(W, CVTypes.IDTable.records(),
+      dumpCodeViewMergedTypes(Writer, CVTypes.IDTable.records(),
                               CVTypes.TypeTable.records());
   }
 

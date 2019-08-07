@@ -605,29 +605,29 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
   // Collect shared runtimes.
   if (SanArgs.needsSharedRt()) {
-    if (SanArgs.needsAsanRt()) {
+    if (SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
       SharedRuntimes.push_back("asan");
       if (!Args.hasArg(options::OPT_shared) && !TC.getTriple().isAndroid())
         HelperStaticRuntimes.push_back("asan-preinit");
     }
-    if (SanArgs.needsUbsanRt()) {
+    if (SanArgs.needsUbsanRt() && SanArgs.linkRuntimes()) {
       if (SanArgs.requiresMinimalRuntime())
         SharedRuntimes.push_back("ubsan_minimal");
       else
         SharedRuntimes.push_back("ubsan_standalone");
     }
-    if (SanArgs.needsScudoRt()) {
+    if (SanArgs.needsScudoRt() && SanArgs.linkRuntimes()) {
       if (SanArgs.requiresMinimalRuntime())
         SharedRuntimes.push_back("scudo_minimal");
       else
         SharedRuntimes.push_back("scudo");
     }
-    if (SanArgs.needsHwasanRt())
+    if (SanArgs.needsHwasanRt() && SanArgs.linkRuntimes())
       SharedRuntimes.push_back("hwasan");
   }
 
   // The stats_client library is also statically linked into DSOs.
-  if (SanArgs.needsStatsRt())
+  if (SanArgs.needsStatsRt() && SanArgs.linkRuntimes())
     StaticRuntimes.push_back("stats_client");
 
   // Collect static runtimes.
@@ -635,32 +635,32 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
     // Don't link static runtimes into DSOs or if -shared-libasan.
     return;
   }
-  if (SanArgs.needsAsanRt()) {
+  if (SanArgs.needsAsanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("asan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("asan_cxx");
   }
 
-  if (SanArgs.needsHwasanRt()) {
+  if (SanArgs.needsHwasanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("hwasan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("hwasan_cxx");
   }
-  if (SanArgs.needsDfsanRt())
+  if (SanArgs.needsDfsanRt() && SanArgs.linkRuntimes())
     StaticRuntimes.push_back("dfsan");
-  if (SanArgs.needsLsanRt())
+  if (SanArgs.needsLsanRt() && SanArgs.linkRuntimes())
     StaticRuntimes.push_back("lsan");
-  if (SanArgs.needsMsanRt()) {
+  if (SanArgs.needsMsanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("msan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("msan_cxx");
   }
-  if (SanArgs.needsTsanRt()) {
+  if (SanArgs.needsTsanRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("tsan");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("tsan_cxx");
   }
-  if (SanArgs.needsUbsanRt()) {
+  if (SanArgs.needsUbsanRt() && SanArgs.linkRuntimes()) {
     if (SanArgs.requiresMinimalRuntime()) {
       StaticRuntimes.push_back("ubsan_minimal");
     } else {
@@ -669,22 +669,22 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
         StaticRuntimes.push_back("ubsan_standalone_cxx");
     }
   }
-  if (SanArgs.needsSafeStackRt()) {
+  if (SanArgs.needsSafeStackRt() && SanArgs.linkRuntimes()) {
     NonWholeStaticRuntimes.push_back("safestack");
     RequiredSymbols.push_back("__safestack_init");
   }
-  if (SanArgs.needsCfiRt())
+  if (SanArgs.needsCfiRt() && SanArgs.linkRuntimes())
     StaticRuntimes.push_back("cfi");
-  if (SanArgs.needsCfiDiagRt()) {
+  if (SanArgs.needsCfiDiagRt() && SanArgs.linkRuntimes()) {
     StaticRuntimes.push_back("cfi_diag");
     if (SanArgs.linkCXXRuntimes())
       StaticRuntimes.push_back("ubsan_standalone_cxx");
   }
-  if (SanArgs.needsStatsRt()) {
+  if (SanArgs.needsStatsRt() && SanArgs.linkRuntimes()) {
     NonWholeStaticRuntimes.push_back("stats");
     RequiredSymbols.push_back("__sanitizer_stats_register");
   }
-  if (SanArgs.needsScudoRt()) {
+  if (SanArgs.needsScudoRt() && SanArgs.linkRuntimes()) {
     if (SanArgs.requiresMinimalRuntime()) {
       StaticRuntimes.push_back("scudo_minimal");
       if (SanArgs.linkCXXRuntimes())
@@ -707,9 +707,10 @@ bool tools::addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
                            NonWholeStaticRuntimes, HelperStaticRuntimes,
                            RequiredSymbols);
 
+  const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
   // Inject libfuzzer dependencies.
-  if (TC.getSanitizerArgs().needsFuzzer()
-      && !Args.hasArg(options::OPT_shared)) {
+  if (SanArgs.needsFuzzer() && SanArgs.linkRuntimes() &&
+      !Args.hasArg(options::OPT_shared)) {
 
     addSanitizerRuntime(TC, Args, CmdArgs, "fuzzer", false, true);
     if (!Args.hasArg(clang::driver::options::OPT_nostdlibxx))
@@ -738,7 +739,6 @@ bool tools::addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   if (AddExportDynamic)
     CmdArgs.push_back("--export-dynamic");
 
-  const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
   if (SanArgs.hasCrossDsoCfi() && !AddExportDynamic)
     CmdArgs.push_back("-export-dynamic-symbol=__cfi_check");
 
@@ -1135,16 +1135,12 @@ bool tools::isObjCAutoRefCount(const ArgList &Args) {
 
 enum class LibGccType { UnspecifiedLibGcc, StaticLibGcc, SharedLibGcc };
 
-static LibGccType getLibGccType(const ArgList &Args) {
-  bool Static = Args.hasArg(options::OPT_static_libgcc) ||
-                Args.hasArg(options::OPT_static) ||
-                Args.hasArg(options::OPT_static_pie);
-
-  bool Shared = Args.hasArg(options::OPT_shared_libgcc);
-  if (Shared)
-    return LibGccType::SharedLibGcc;
-  if (Static)
+static LibGccType getLibGccType(const Driver &D, const ArgList &Args) {
+  if (Args.hasArg(options::OPT_static_libgcc) ||
+      Args.hasArg(options::OPT_static) || Args.hasArg(options::OPT_static_pie))
     return LibGccType::StaticLibGcc;
+  if (Args.hasArg(options::OPT_shared_libgcc) || D.CCCIsCXX())
+    return LibGccType::SharedLibGcc;
   return LibGccType::UnspecifiedLibGcc;
 }
 
@@ -1170,8 +1166,8 @@ static void AddUnwindLibrary(const ToolChain &TC, const Driver &D,
       UNW == ToolChain::UNW_None)
     return;
 
-  LibGccType LGT = getLibGccType(Args);
-  bool AsNeeded = D.CCCIsCC() && LGT == LibGccType::UnspecifiedLibGcc &&
+  LibGccType LGT = getLibGccType(D, Args);
+  bool AsNeeded = LGT == LibGccType::UnspecifiedLibGcc &&
                   !TC.getTriple().isAndroid() && !TC.getTriple().isOSCygMing();
   if (AsNeeded)
     CmdArgs.push_back("--as-needed");
@@ -1180,11 +1176,11 @@ static void AddUnwindLibrary(const ToolChain &TC, const Driver &D,
   case ToolChain::UNW_None:
     return;
   case ToolChain::UNW_Libgcc: {
-    LibGccType LGT = getLibGccType(Args);
-    if (LGT == LibGccType::UnspecifiedLibGcc || LGT == LibGccType::SharedLibGcc)
-      CmdArgs.push_back("-lgcc_s");
-    else if (LGT == LibGccType::StaticLibGcc)
+    LibGccType LGT = getLibGccType(D, Args);
+    if (LGT == LibGccType::StaticLibGcc)
       CmdArgs.push_back("-lgcc_eh");
+    else
+      CmdArgs.push_back("-lgcc_s");
     break;
   }
   case ToolChain::UNW_CompilerRT:
@@ -1198,17 +1194,11 @@ static void AddUnwindLibrary(const ToolChain &TC, const Driver &D,
 
 static void AddLibgcc(const ToolChain &TC, const Driver &D,
                       ArgStringList &CmdArgs, const ArgList &Args) {
-  bool isAndroid = TC.getTriple().isAndroid();
-
-  LibGccType LGT = getLibGccType(Args);
-  bool LibGccFirst = (D.CCCIsCC() && LGT == LibGccType::UnspecifiedLibGcc) ||
-                     LGT == LibGccType::StaticLibGcc;
-  if (LibGccFirst)
+  LibGccType LGT = getLibGccType(D, Args);
+  if (LGT != LibGccType::SharedLibGcc)
     CmdArgs.push_back("-lgcc");
-
   AddUnwindLibrary(TC, D, CmdArgs, Args);
-
-  if (!LibGccFirst)
+  if (LGT == LibGccType::SharedLibGcc)
     CmdArgs.push_back("-lgcc");
 
   // According to Android ABI, we have to link with libdl if we are
@@ -1216,7 +1206,7 @@ static void AddLibgcc(const ToolChain &TC, const Driver &D,
   //
   // NOTE: This fixes a link error on Android MIPS as well.  The non-static
   // libgcc for MIPS relies on _Unwind_Find_FDE and dl_iterate_phdr from libdl.
-  if (isAndroid && getLibGccType(Args) != LibGccType::StaticLibGcc)
+  if (TC.getTriple().isAndroid() && LGT != LibGccType::StaticLibGcc)
     CmdArgs.push_back("-ldl");
 }
 
@@ -1360,7 +1350,7 @@ void tools::AddOpenMPLinkerScript(const ToolChain &TC, Compilation &C,
 
   // Open script file and write the contents.
   std::error_code EC;
-  llvm::raw_fd_ostream Lksf(LKS, EC, llvm::sys::fs::F_None);
+  llvm::raw_fd_ostream Lksf(LKS, EC, llvm::sys::fs::OF_None);
 
   if (EC) {
     C.getDriver().Diag(clang::diag::err_unable_to_make_temp) << EC.message();
@@ -1468,7 +1458,7 @@ void tools::AddHIPLinkerScript(const ToolChain &TC, Compilation &C,
 
   // Open script file and write the contents.
   std::error_code EC;
-  llvm::raw_fd_ostream Lksf(LKS, EC, llvm::sys::fs::F_None);
+  llvm::raw_fd_ostream Lksf(LKS, EC, llvm::sys::fs::OF_None);
 
   if (EC) {
     C.getDriver().Diag(clang::diag::err_unable_to_make_temp) << EC.message();

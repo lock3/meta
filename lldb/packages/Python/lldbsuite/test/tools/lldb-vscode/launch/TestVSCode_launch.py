@@ -4,7 +4,6 @@ Test lldb-vscode setBreakpoints request
 
 from __future__ import print_function
 
-import pprint
 import unittest2
 import vscode
 from lldbsuite.test.decorators import *
@@ -12,7 +11,6 @@ from lldbsuite.test.lldbtest import *
 from lldbsuite.test import lldbutil
 import lldbvscode_testcase
 import os
-import time
 
 
 class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
@@ -61,7 +59,6 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
 
     @skipIfWindows
     @skipIfDarwin # Skip this test for now until we can figure out why tings aren't working on build bots
-    @expectedFailureNetBSD
     @no_debug_info_test
     def test_cwd(self):
         '''
@@ -69,7 +66,8 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
             directory.
         '''
         program = self.getBuildArtifact("a.out")
-        program_parent_dir = os.path.split(os.path.split(program)[0])[0]
+        program_parent_dir = os.path.realpath(
+            os.path.dirname(os.path.dirname(program)))
         self.build_and_launch(program,
                               cwd=program_parent_dir)
         self.continue_to_exit()
@@ -90,7 +88,6 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
 
     @skipIfWindows
     @skipIfDarwin # Skip this test for now until we can figure out why tings aren't working on build bots
-    @expectedFailureNetBSD
     @no_debug_info_test
     def test_debuggerRoot(self):
         '''
@@ -98,7 +95,8 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
             the lldb-vscode debug adaptor.
         '''
         program = self.getBuildArtifact("a.out")
-        program_parent_dir = os.path.split(os.path.split(program)[0])[0]
+        program_parent_dir = os.path.realpath(
+            os.path.dirname(os.path.dirname(program)))
         commands = ['platform shell echo cwd = $PWD']
         self.build_and_launch(program,
                               debuggerRoot=program_parent_dir,
@@ -126,7 +124,7 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
             Tests the "sourcePath" will set the target.source-map.
         '''
         program = self.getBuildArtifact("a.out")
-        program_dir = os.path.split(program)[0]
+        program_dir = os.path.dirname(program)
         self.build_and_launch(program,
                               sourcePath=program_dir)
         output = self.get_console()
@@ -172,7 +170,7 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
             enabled.
         '''
         program = self.getBuildArtifact("a.out")
-        program_dir = os.path.split(program)[0]
+        program_dir = os.path.dirname(program)
         glob = os.path.join(program_dir, '*.out')
         self.build_and_launch(program, args=[glob], shellExpandArguments=True)
         self.continue_to_exit()
@@ -197,7 +195,7 @@ class TestVSCode_launch(lldbvscode_testcase.VSCodeTestCaseBase):
             disabled.
         '''
         program = self.getBuildArtifact("a.out")
-        program_dir = os.path.split(program)[0]
+        program_dir = os.path.dirname(program)
         glob = os.path.join(program_dir, '*.out')
         self.build_and_launch(program,
                               args=[glob],

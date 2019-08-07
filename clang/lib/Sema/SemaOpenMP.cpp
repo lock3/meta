@@ -139,6 +139,7 @@ private:
     /// clause, false otherwise.
     llvm::Optional<std::pair<const Expr *, OMPOrderedClause *>> OrderedRegion;
     unsigned AssociatedLoops = 1;
+    bool HasMutipleLoops = false;
     const Decl *PossiblyLoopCounter = nullptr;
     bool NowaitRegion = false;
     bool CancelRegion = false;
@@ -678,11 +679,18 @@ public:
   /// Set collapse value for the region.
   void setAssociatedLoops(unsigned Val) {
     getTopOfStack().AssociatedLoops = Val;
+    if (Val > 1)
+      getTopOfStack().HasMutipleLoops = true;
   }
   /// Return collapse value for region.
   unsigned getAssociatedLoops() const {
     const SharingMapTy *Top = getTopOfStackOrNull();
     return Top ? Top->AssociatedLoops : 0;
+  }
+  /// Returns true if the construct is associated with multiple loops.
+  bool hasMutipleLoops() const {
+    const SharingMapTy *Top = getTopOfStackOrNull();
+    return Top ? Top->HasMutipleLoops : false;
   }
 
   /// Marks current target region as one with closely nested teams
@@ -1354,16 +1362,28 @@ const DSAStackTy::DSAVarData DSAStackTy::getTopDSA(ValueDecl *D,
   // in a Construct, C/C++, predetermined, p.7]
   //  Variables with static storage duration that are declared in a scope
   //  inside the construct are shared.
-  auto &&MatchesAlways = [](OpenMPDirectiveKind) { return true; };
   if (VD && VD->isStaticDataMember()) {
-    DSAVarData DVarTemp = hasDSA(D, isOpenMPPrivate, MatchesAlways, FromParent);
-    if (DVarTemp.CKind != OMPC_unknown && DVarTemp.RefExpr)
+    // Check for explicitly specified attributes.
+    const_iterator I = begin();
+    const_iterator EndI = end();
+    if (FromParent && I != EndI)
+      ++I;
+    auto It = I->SharingMap.find(D);
+    if (It != I->SharingMap.end()) {
+      const DSAInfo &Data = It->getSecond();
+      DVar.RefExpr = Data.RefExpr.getPointer();
+      DVar.PrivateCopy = Data.PrivateCopy;
+      DVar.CKind = Data.Attributes;
+      DVar.ImplicitDSALoc = I->DefaultAttrLoc;
+      DVar.DKind = I->Directive;
       return DVar;
+    }
 
     DVar.CKind = OMPC_shared;
     return DVar;
   }
 
+  auto &&MatchesAlways = [](OpenMPDirectiveKind) { return true; };
   // The predetermined shared attribute for const-qualified types having no
   // mutable members was removed after OpenMP 3.1.
   if (SemaRef.LangOpts.OpenMP <= 31) {
@@ -1576,11 +1596,14 @@ void Sema::checkOpenMPDeviceExpr(const Expr *E) {
          "OpenMP device compilation mode is expected.");
   QualType Ty = E->getType();
   if ((Ty->isFloat16Type() && !Context.getTargetInfo().hasFloat16Type()) ||
-      (Ty->isFloat128Type() && !Context.getTargetInfo().hasFloat128Type()) ||
+      ((Ty->isFloat128Type() ||
+        (Ty->isRealFloatingType() && Context.getTypeSize(Ty) == 128)) &&
+       !Context.getTargetInfo().hasFloat128Type()) ||
       (Ty->isIntegerType() && Context.getTypeSize(Ty) == 128 &&
        !Context.getTargetInfo().hasInt128Type()))
-    targetDiag(E->getExprLoc(), diag::err_type_unsupported)
-        << Ty << E->getSourceRange();
+    targetDiag(E->getExprLoc(), diag::err_omp_unsupported_type)
+        << static_cast<unsigned>(Context.getTypeSize(Ty)) << Ty
+        << Context.getTargetInfo().getTriple().str() << E->getSourceRange();
 }
 
 bool Sema::isOpenMPCapturedByRef(const ValueDecl *D, unsigned Level) const {
@@ -1712,12 +1735,10 @@ bool Sema::isOpenMPCapturedByRef(const ValueDecl *D, unsigned Level) const {
 
   if (IsByRef && Ty.getNonReferenceType()->isScalarType()) {
     IsByRef =
-        ((DSAStack->isForceCaptureByReferenceInTargetExecutable() &&
-          !Ty->isAnyPointerType()) ||
-         !DSAStack->hasExplicitDSA(
-             D,
-             [](OpenMPClauseKind K) -> bool { return K == OMPC_firstprivate; },
-             Level, /*NotLastprivate=*/true)) &&
+        !DSAStack->hasExplicitDSA(
+            D,
+            [](OpenMPClauseKind K) -> bool { return K == OMPC_firstprivate; },
+            Level, /*NotLastprivate=*/true) &&
         // If the variable is artificial and must be captured by value - try to
         // capture by value.
         !(isa<OMPCapturedExprDecl>(D) && !D->hasAttr<OMPCaptureNoInitAttr>() &&
@@ -1787,53 +1808,6 @@ VarDecl *Sema::isOpenMPCapturedDecl(ValueDecl *D, bool CheckScopeInfo,
       return VD;
     }
   }
-  // Capture variables captured by reference in lambdas for target-based
-  // directives.
-  // FIXME: Triggering capture from here is completely inappropriate.
-  if (VD && !DSAStack->isClauseParsingMode()) {
-    if (const auto *RD = VD->getType()
-                             .getCanonicalType()
-                             .getNonReferenceType()
-                             ->getAsCXXRecordDecl()) {
-      bool SavedForceCaptureByReferenceInTargetExecutable =
-          DSAStack->isForceCaptureByReferenceInTargetExecutable();
-      DSAStack->setForceCaptureByReferenceInTargetExecutable(/*V=*/true);
-      InParentDirectiveRAII.disable();
-      if (RD->isLambda()) {
-        llvm::DenseMap<const VarDecl *, FieldDecl *> Captures;
-        FieldDecl *ThisCapture;
-        RD->getCaptureFields(Captures, ThisCapture);
-        for (const LambdaCapture &LC : RD->captures()) {
-          if (LC.getCaptureKind() == LCK_ByRef) {
-            VarDecl *VD = LC.getCapturedVar();
-            DeclContext *VDC = VD->getDeclContext();
-            if (!VDC->Encloses(CurContext))
-              continue;
-            DSAStackTy::DSAVarData DVarPrivate =
-                DSAStack->getTopDSA(VD, /*FromParent=*/false);
-            // Do not capture already captured variables.
-            if (!OMPDeclareTargetDeclAttr::isDeclareTargetDeclaration(VD) &&
-                DVarPrivate.CKind == OMPC_unknown &&
-                !DSAStack->checkMappableExprComponentListsForDecl(
-                    D, /*CurrentRegionOnly=*/true,
-                    [](OMPClauseMappableExprCommon::
-                           MappableExprComponentListRef,
-                       OpenMPClauseKind) { return true; }))
-              MarkVariableReferenced(LC.getLocation(), LC.getCapturedVar());
-          } else if (LC.getCaptureKind() == LCK_This) {
-            QualType ThisTy = getCurrentThisType();
-            if (!ThisTy.isNull() &&
-                Context.typesAreCompatible(ThisTy, ThisCapture->getType()))
-              CheckCXXThisCapture(LC.getLocation());
-          }
-        }
-      }
-      if (CheckScopeInfo && DSAStack->isBodyComplete())
-        InParentDirectiveRAII.enable();
-      DSAStack->setForceCaptureByReferenceInTargetExecutable(
-          SavedForceCaptureByReferenceInTargetExecutable);
-    }
-  }
 
   if (CheckScopeInfo) {
     bool OpenMPFound = false;
@@ -1864,11 +1838,14 @@ VarDecl *Sema::isOpenMPCapturedDecl(ValueDecl *D, bool CheckScopeInfo,
         DSAStack->getTopDSA(D, DSAStack->isClauseParsingMode());
     if (DVarPrivate.CKind != OMPC_unknown && isOpenMPPrivate(DVarPrivate.CKind))
       return VD ? VD : cast<VarDecl>(DVarPrivate.PrivateCopy->getDecl());
+    // Threadprivate variables must not be captured.
+    if (isOpenMPThreadPrivate(DVarPrivate.CKind))
+      return nullptr;
+    // The variable is not private or it is the variable in the directive with
+    // default(none) clause and not used in any clause.
     DVarPrivate = DSAStack->hasDSA(D, isOpenMPPrivate,
                                    [](OpenMPDirectiveKind) { return true; },
                                    DSAStack->isClauseParsingMode());
-    // The variable is not private or it is the variable in the directive with
-    // default(none) clause and not used in any clause.
     if (DVarPrivate.CKind != OMPC_unknown ||
         (VD && DSAStack->getDefaultDSA() == DSA_none))
       return VD ? VD : cast<VarDecl>(DVarPrivate.PrivateCopy->getDecl());
@@ -1903,6 +1880,13 @@ bool Sema::isOpenMPPrivateDecl(const ValueDecl *D, unsigned Level) const {
         !DSAStack->hasExplicitDSA(
             D, [](OpenMPClauseKind K) { return K != OMPC_private; }, Level) &&
         !isOpenMPSimdDirective(DSAStack->getCurrentDirective()))
+      return true;
+  }
+  if (const auto *VD = dyn_cast<VarDecl>(D)) {
+    if (DSAStack->isThreadPrivate(const_cast<VarDecl *>(VD)) &&
+        DSAStack->isForceVarCapturing() &&
+        !DSAStack->hasExplicitDSA(
+            D, [](OpenMPClauseKind K) { return K == OMPC_copyin; }, Level))
       return true;
   }
   return DSAStack->hasExplicitDSA(
@@ -2619,24 +2603,7 @@ class DSAAttrChecker final : public StmtVisitor<DSAAttrChecker, void> {
     // Check implicitly captured variables.
     if (!S->hasAssociatedStmt() || !S->getAssociatedStmt())
       return;
-    for (const CapturedStmt::Capture &Cap :
-         S->getInnermostCapturedStmt()->captures()) {
-      if (!Cap.capturesVariable())
-        continue;
-      VarDecl *VD = Cap.getCapturedVar();
-      // Do not try to map the variable if it or its sub-component was mapped
-      // already.
-      if (isOpenMPTargetExecutionDirective(Stack->getCurrentDirective()) &&
-          Stack->checkMappableExprComponentListsForDecl(
-              VD, /*CurrentRegionOnly=*/true,
-              [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
-                 OpenMPClauseKind) { return true; }))
-        continue;
-      DeclRefExpr *DRE = buildDeclRefExpr(
-          SemaRef, VD, VD->getType().getNonLValueExprType(SemaRef.Context),
-          Cap.getLocation(), /*RefersToCapture=*/true);
-      Visit(DRE);
-    }
+    visitSubCaptures(S->getInnermostCapturedStmt());
   }
 
 public:
@@ -2652,7 +2619,10 @@ public:
             Visit(CED->getInit());
             return;
           }
-      }
+      } else if (VD->isImplicit() || isa<OMPCapturedExprDecl>(VD))
+        // Do not analyze internal variables and do not enclose them into
+        // implicit clauses.
+        return;
       VD = VD->getCanonicalDecl();
       // Skip internally declared variables.
       if (VD->hasLocalStorage() && CS && !CS->capturesVariable(VD))
@@ -2667,7 +2637,8 @@ public:
       llvm::Optional<OMPDeclareTargetDeclAttr::MapTypeTy> Res =
           OMPDeclareTargetDeclAttr::isDeclareTargetDeclaration(VD);
       if (VD->hasGlobalStorage() && CS && !CS->capturesVariable(VD) &&
-          (!Res || *Res != OMPDeclareTargetDeclAttr::MT_Link))
+          (Stack->hasRequiresDeclWithClause<OMPUnifiedSharedMemoryClause>() ||
+           !Res || *Res != OMPDeclareTargetDeclAttr::MT_Link))
         return;
 
       SourceLocation ELoc = E->getExprLoc();
@@ -2903,6 +2874,25 @@ public:
     }
   }
 
+  void visitSubCaptures(CapturedStmt *S) {
+    for (const CapturedStmt::Capture &Cap : S->captures()) {
+      if (!Cap.capturesVariable() && !Cap.capturesVariableByCopy())
+        continue;
+      VarDecl *VD = Cap.getCapturedVar();
+      // Do not try to map the variable if it or its sub-component was mapped
+      // already.
+      if (isOpenMPTargetExecutionDirective(Stack->getCurrentDirective()) &&
+          Stack->checkMappableExprComponentListsForDecl(
+              VD, /*CurrentRegionOnly=*/true,
+              [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                 OpenMPClauseKind) { return true; }))
+        continue;
+      DeclRefExpr *DRE = buildDeclRefExpr(
+          SemaRef, VD, VD->getType().getNonLValueExprType(SemaRef.Context),
+          Cap.getLocation(), /*RefersToCapture=*/true);
+      Visit(DRE);
+    }
+  }
   bool isErrorFound() const { return ErrorFound; }
   ArrayRef<Expr *> getImplicitFirstprivate() const {
     return ImplicitFirstprivate;
@@ -3361,6 +3351,46 @@ public:
   }
 };
 } // namespace
+
+void Sema::tryCaptureOpenMPLambdas(ValueDecl *V) {
+  // Capture variables captured by reference in lambdas for target-based
+  // directives.
+  if (!CurContext->isDependentContext() &&
+      (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) ||
+       isOpenMPTargetDataManagementDirective(
+           DSAStack->getCurrentDirective()))) {
+    QualType Type = V->getType();
+    if (const auto *RD = Type.getCanonicalType()
+                             .getNonReferenceType()
+                             ->getAsCXXRecordDecl()) {
+      bool SavedForceCaptureByReferenceInTargetExecutable =
+          DSAStack->isForceCaptureByReferenceInTargetExecutable();
+      DSAStack->setForceCaptureByReferenceInTargetExecutable(
+          /*V=*/true);
+      if (RD->isLambda()) {
+        llvm::DenseMap<const VarDecl *, FieldDecl *> Captures;
+        FieldDecl *ThisCapture;
+        RD->getCaptureFields(Captures, ThisCapture);
+        for (const LambdaCapture &LC : RD->captures()) {
+          if (LC.getCaptureKind() == LCK_ByRef) {
+            VarDecl *VD = LC.getCapturedVar();
+            DeclContext *VDC = VD->getDeclContext();
+            if (!VDC->Encloses(CurContext))
+              continue;
+            MarkVariableReferenced(LC.getLocation(), VD);
+          } else if (LC.getCaptureKind() == LCK_This) {
+            QualType ThisTy = getCurrentThisType();
+            if (!ThisTy.isNull() &&
+                Context.typesAreCompatible(ThisTy, ThisCapture->getType()))
+              CheckCXXThisCapture(LC.getLocation());
+          }
+        }
+      }
+      DSAStack->setForceCaptureByReferenceInTargetExecutable(
+          SavedForceCaptureByReferenceInTargetExecutable);
+    }
+  }
+}
 
 StmtResult Sema::ActOnOpenMPRegionEnd(StmtResult S,
                                       ArrayRef<OMPClause *> Clauses) {
@@ -3984,6 +4014,17 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
     while (--ThisCaptureLevel >= 0)
       S = cast<CapturedStmt>(S)->getCapturedStmt();
     DSAChecker.Visit(S);
+    if (!isOpenMPTargetDataManagementDirective(Kind) &&
+        !isOpenMPTaskingDirective(Kind)) {
+      // Visit subcaptures to generate implicit clauses for captured vars.
+      auto *CS = cast<CapturedStmt>(AStmt);
+      SmallVector<OpenMPDirectiveKind, 4> CaptureRegions;
+      getOpenMPCaptureRegions(CaptureRegions, Kind);
+      // Ignore outer tasking regions for target directives.
+      if (CaptureRegions.size() > 1 && CaptureRegions.front() == OMPD_task)
+        CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      DSAChecker.visitSubCaptures(CS);
+    }
     if (DSAChecker.isErrorFound())
       return StmtError();
     // Generate list of implicitly defined firstprivate variables.
@@ -4366,11 +4407,13 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
       VarsWithInheritedDSA[P.getFirst()] = P.getSecond();
   }
   for (const auto &P : VarsWithInheritedDSA) {
+    if (P.getFirst()->isImplicit() || isa<OMPCapturedExprDecl>(P.getFirst()))
+      continue;
+    ErrorFound = true;
     Diag(P.second->getExprLoc(), diag::err_omp_no_dsa_for_variable)
         << P.first << P.second->getSourceRange();
     Diag(DSAStack->getDefaultDSALocation(), diag::note_omp_default_dsa_none);
   }
-  ErrorFound = !VarsWithInheritedDSA.empty() || ErrorFound;
 
   if (!AllowedNameModifiers.empty())
     ErrorFound = checkIfClauses(*this, Kind, Clauses, AllowedNameModifiers) ||
@@ -4964,7 +5007,8 @@ public:
   bool VisitMemberExpr(const MemberExpr *E) {
     if (isa<CXXThisExpr>(E->getBase()->IgnoreParens())) {
       const ValueDecl *VD = E->getMemberDecl();
-      return checkDecl(E, VD);
+      if (isa<VarDecl>(VD) || isa<FieldDecl>(VD))
+        return checkDecl(E, VD);
     }
     return false;
   }
@@ -5575,13 +5619,14 @@ void Sema::ActOnOpenMPLoopInitialization(SourceLocation ForLoc, Stmt *Init) {
     if (!ISC.checkAndSetInit(Init, /*EmitDiags=*/false)) {
       if (ValueDecl *D = ISC.getLoopDecl()) {
         auto *VD = dyn_cast<VarDecl>(D);
+        DeclRefExpr *PrivateRef = nullptr;
         if (!VD) {
           if (VarDecl *Private = isOpenMPCapturedDecl(D)) {
             VD = Private;
           } else {
-            DeclRefExpr *Ref = buildCapture(*this, D, ISC.getLoopDeclRefExpr(),
-                                            /*WithInit=*/false);
-            VD = cast<VarDecl>(Ref->getDecl());
+            PrivateRef = buildCapture(*this, D, ISC.getLoopDeclRefExpr(),
+                                      /*WithInit=*/false);
+            VD = cast<VarDecl>(PrivateRef->getDecl());
           }
         }
         DSAStack->addLoopControlVariable(D, VD);
@@ -5593,6 +5638,49 @@ void Sema::ActOnOpenMPLoopInitialization(SourceLocation ForLoc, Stmt *Init) {
                 buildDeclRefExpr(*this, const_cast<VarDecl *>(Var),
                                  Var->getType().getNonLValueExprType(Context),
                                  ForLoc, /*RefersToCapture=*/true));
+        }
+        OpenMPDirectiveKind DKind = DSAStack->getCurrentDirective();
+        // OpenMP [2.14.1.1, Data-sharing Attribute Rules for Variables
+        // Referenced in a Construct, C/C++]. The loop iteration variable in the
+        // associated for-loop of a simd construct with just one associated
+        // for-loop may be listed in a linear clause with a constant-linear-step
+        // that is the increment of the associated for-loop. The loop iteration
+        // variable(s) in the associated for-loop(s) of a for or parallel for
+        // construct may be listed in a private or lastprivate clause.
+        DSAStackTy::DSAVarData DVar =
+            DSAStack->getTopDSA(D, /*FromParent=*/false);
+        // If LoopVarRefExpr is nullptr it means the corresponding loop variable
+        // is declared in the loop and it is predetermined as a private.
+        Expr *LoopDeclRefExpr = ISC.getLoopDeclRefExpr();
+        OpenMPClauseKind PredeterminedCKind =
+            isOpenMPSimdDirective(DKind)
+                ? (DSAStack->hasMutipleLoops() ? OMPC_lastprivate : OMPC_linear)
+                : OMPC_private;
+        if (((isOpenMPSimdDirective(DKind) && DVar.CKind != OMPC_unknown &&
+              DVar.CKind != PredeterminedCKind && DVar.RefExpr &&
+              (LangOpts.OpenMP <= 45 || (DVar.CKind != OMPC_lastprivate &&
+                                         DVar.CKind != OMPC_private))) ||
+             ((isOpenMPWorksharingDirective(DKind) || DKind == OMPD_taskloop ||
+               isOpenMPDistributeDirective(DKind)) &&
+              !isOpenMPSimdDirective(DKind) && DVar.CKind != OMPC_unknown &&
+              DVar.CKind != OMPC_private && DVar.CKind != OMPC_lastprivate)) &&
+            (DVar.CKind != OMPC_private || DVar.RefExpr)) {
+          Diag(Init->getBeginLoc(), diag::err_omp_loop_var_dsa)
+              << getOpenMPClauseName(DVar.CKind)
+              << getOpenMPDirectiveName(DKind)
+              << getOpenMPClauseName(PredeterminedCKind);
+          if (DVar.RefExpr == nullptr)
+            DVar.CKind = PredeterminedCKind;
+          reportOriginalDsa(*this, DSAStack, D, DVar,
+                            /*IsLoopIterVar=*/true);
+        } else if (LoopDeclRefExpr) {
+          // Make the loop iteration variable private (for worksharing
+          // constructs), linear (for simd directives with the only one
+          // associated loop) or lastprivate (for simd directives with several
+          // collapsed or ordered loops).
+          if (DVar.CKind == OMPC_unknown)
+            DSAStack->addDSA(D, LoopDeclRefExpr, PredeterminedCKind,
+                             PrivateRef);
         }
       }
     }
@@ -5648,8 +5736,6 @@ static bool checkOpenMPIterationSpace(
 
   // Check loop variable's type.
   if (ValueDecl *LCDecl = ISC.getLoopDecl()) {
-    Expr *LoopDeclRefExpr = ISC.getLoopDeclRefExpr();
-
     // OpenMP [2.6, Canonical Loop Form]
     // Var is one of the following:
     //   A variable of signed or unsigned integer type.
@@ -5674,44 +5760,6 @@ static bool checkOpenMPIterationSpace(
     // Exclude loop var from the list of variables with implicitly defined data
     // sharing attributes.
     VarsWithImplicitDSA.erase(LCDecl);
-
-    // OpenMP [2.14.1.1, Data-sharing Attribute Rules for Variables Referenced
-    // in a Construct, C/C++].
-    // The loop iteration variable in the associated for-loop of a simd
-    // construct with just one associated for-loop may be listed in a linear
-    // clause with a constant-linear-step that is the increment of the
-    // associated for-loop.
-    // The loop iteration variable(s) in the associated for-loop(s) of a for or
-    // parallel for construct may be listed in a private or lastprivate clause.
-    DSAStackTy::DSAVarData DVar = DSA.getTopDSA(LCDecl, false);
-    // If LoopVarRefExpr is nullptr it means the corresponding loop variable is
-    // declared in the loop and it is predetermined as a private.
-    OpenMPClauseKind PredeterminedCKind =
-        isOpenMPSimdDirective(DKind)
-            ? ((NestedLoopCount == 1) ? OMPC_linear : OMPC_lastprivate)
-            : OMPC_private;
-    if (((isOpenMPSimdDirective(DKind) && DVar.CKind != OMPC_unknown &&
-          DVar.CKind != PredeterminedCKind) ||
-         ((isOpenMPWorksharingDirective(DKind) || DKind == OMPD_taskloop ||
-           isOpenMPDistributeDirective(DKind)) &&
-          !isOpenMPSimdDirective(DKind) && DVar.CKind != OMPC_unknown &&
-          DVar.CKind != OMPC_private && DVar.CKind != OMPC_lastprivate)) &&
-        (DVar.CKind != OMPC_private || DVar.RefExpr != nullptr)) {
-      SemaRef.Diag(Init->getBeginLoc(), diag::err_omp_loop_var_dsa)
-          << getOpenMPClauseName(DVar.CKind) << getOpenMPDirectiveName(DKind)
-          << getOpenMPClauseName(PredeterminedCKind);
-      if (DVar.RefExpr == nullptr)
-        DVar.CKind = PredeterminedCKind;
-      reportOriginalDsa(SemaRef, &DSA, LCDecl, DVar, /*IsLoopIterVar=*/true);
-      HasErrors = true;
-    } else if (LoopDeclRefExpr != nullptr) {
-      // Make the loop iteration variable private (for worksharing constructs),
-      // linear (for simd directives with the only one associated loop) or
-      // lastprivate (for simd directives with several collapsed or ordered
-      // loops).
-      if (DVar.CKind == OMPC_unknown)
-        DSA.addDSA(LCDecl, LoopDeclRefExpr, PredeterminedCKind);
-    }
 
     assert(isOpenMPLoopDirective(DKind) && "DSA for non-loop vars");
 
@@ -5970,7 +6018,7 @@ checkOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
         CollapseLoopCountExpr->EvaluateAsInt(Result, SemaRef.getASTContext())) {
       NestedLoopCount = Result.Val.getInt().getLimitedValue();
     } else {
-      Built.clear(/*size=*/1);
+      Built.clear(/*Size=*/1);
       return 1;
     }
   }
@@ -5992,7 +6040,7 @@ checkOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
       }
       OrderedLoopCount = Result.getLimitedValue();
     } else {
-      Built.clear(/*size=*/1);
+      Built.clear(/*Size=*/1);
       return 1;
     }
   }
@@ -12110,10 +12158,14 @@ static bool actOnOMPReductionKindClause(
     if ((OASE && !ConstantLengthOASE) ||
         (!OASE && !ASE &&
          D->getType().getNonReferenceType()->isVariablyModifiedType())) {
-      if (!Context.getTargetInfo().isVLASupported() &&
-          S.shouldDiagnoseTargetSupportFromOpenMP()) {
-        S.Diag(ELoc, diag::err_omp_reduction_vla_unsupported) << !!OASE;
-        S.Diag(ELoc, diag::note_vla_unsupported);
+      if (!Context.getTargetInfo().isVLASupported()) {
+        if (isOpenMPTargetExecutionDirective(Stack->getCurrentDirective())) {
+          S.Diag(ELoc, diag::err_omp_reduction_vla_unsupported) << !!OASE;
+          S.Diag(ELoc, diag::note_vla_unsupported);
+        } else {
+          S.targetDiag(ELoc, diag::err_omp_reduction_vla_unsupported) << !!OASE;
+          S.targetDiag(ELoc, diag::note_vla_unsupported);
+        }
         continue;
       }
       // For arrays/array sections only:

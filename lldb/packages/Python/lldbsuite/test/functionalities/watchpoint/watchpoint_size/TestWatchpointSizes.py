@@ -7,8 +7,6 @@ when they are packed in a 8-byte region.
 
 from __future__ import print_function
 
-import os
-import time
 import lldb
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -36,7 +34,6 @@ class WatchpointSizeTestCase(TestBase):
         bugnumber="llvm.org/pr24446: WINDOWS XFAIL TRIAGE - Watchpoints not supported on Windows")
     # Read-write watchpoints not supported on SystemZ
     @expectedFailureAll(archs=['s390x'])
-    @expectedFailureNetBSD
     def test_byte_size_watchpoints_with_byte_selection(self):
         """Test to selectively watch different bytes in a 8-byte array."""
         self.run_watchpoint_size_test('byteArray', 8, '1')
@@ -46,7 +43,6 @@ class WatchpointSizeTestCase(TestBase):
         bugnumber="llvm.org/pr24446: WINDOWS XFAIL TRIAGE - Watchpoints not supported on Windows")
     # Read-write watchpoints not supported on SystemZ
     @expectedFailureAll(archs=['s390x'])
-    @expectedFailureNetBSD
     def test_two_byte_watchpoints_with_word_selection(self):
         """Test to selectively watch different words in an 8-byte word array."""
         self.run_watchpoint_size_test('wordArray', 4, '2')
@@ -56,7 +52,6 @@ class WatchpointSizeTestCase(TestBase):
         bugnumber="llvm.org/pr24446: WINDOWS XFAIL TRIAGE - Watchpoints not supported on Windows")
     # Read-write watchpoints not supported on SystemZ
     @expectedFailureAll(archs=['s390x'])
-    @expectedFailureNetBSD
     def test_four_byte_watchpoints_with_dword_selection(self):
         """Test to selectively watch two double words in an 8-byte dword array."""
         self.run_watchpoint_size_test('dwordArray', 2, '4')

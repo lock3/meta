@@ -524,6 +524,7 @@ class Configuration(object):
                 maj_v = int(maj_v)
                 if maj_v < 7:
                     possible_stds.remove('c++1z')
+                    possible_stds.remove('c++17')
                 # FIXME: How many C++14 tests actually fail under GCC 5 and 6?
                 # Should we XFAIL them individually instead?
                 if maj_v <= 6:
@@ -579,6 +580,13 @@ class Configuration(object):
         # Add includes for support headers used in the tests.
         support_path = os.path.join(self.libcxx_src_root, 'test/support')
         self.cxx.compile_flags += ['-I' + support_path]
+
+        # Add includes for the PSTL headers
+        pstl_root = self.get_lit_conf('pstl_root')
+        if pstl_root is not None:
+            self.cxx.compile_flags += ['-I' + os.path.join(pstl_root, 'include')]
+            self.cxx.compile_flags += ['-I' + os.path.join(pstl_root, 'test')]
+            self.config.available_features.add('parallel-algorithms')
 
         # FIXME(EricWF): variant_size.pass.cpp requires a slightly larger
         # template depth with older Clang versions.
@@ -656,19 +664,18 @@ class Configuration(object):
         # The __config_site header should be non-empty. Otherwise it should
         # have never been emitted by CMake.
         assert len(feature_macros) > 0
-        # FIXME: This is a hack that should be fixed using module maps (or something)
+        # FIXME: This is a hack that should be fixed using module maps.
         # If modules are enabled then we have to lift all of the definitions
         # in __config_site onto the command line.
-        modules_enabled = self.get_modules_enabled()
+        for m in feature_macros:
+            define = '-D%s' % m
+            if feature_macros[m]:
+                define += '=%s' % (feature_macros[m])
+            self.cxx.modules_flags += [define]
         self.cxx.compile_flags += ['-Wno-macro-redefined']
         # Transform each macro name into the feature name used in the tests.
         # Ex. _LIBCPP_HAS_NO_THREADS -> libcpp-has-no-threads
         for m in feature_macros:
-            if modules_enabled:
-                define = '-D%s' % m
-                if feature_macros[m]:
-                    define += '=%s' % (feature_macros[m])
-                self.cxx.compile_flags += [define]
             if m == '_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS' or \
                m == '_LIBCPP_HIDE_FROM_ABI_PER_TU_BY_DEFAULT':
                 continue
@@ -1013,7 +1020,7 @@ class Configuration(object):
         if os.path.isdir(module_cache):
             shutil.rmtree(module_cache)
         os.makedirs(module_cache)
-        self.cxx.modules_flags = modules_flags + \
+        self.cxx.modules_flags += modules_flags + \
             ['-fmodules-cache-path=' + module_cache]
         if enable_modules:
             self.config.available_features.add('-fmodules')
@@ -1164,10 +1171,10 @@ class Configuration(object):
 
                 self.config.available_features.add('dylib-has-no-bad_any_cast')
                 self.lit_config.note("throwing bad_any_cast is not supported by the deployment target")
-            # Filesystem is not supported on Apple platforms yet
-            if name == 'macosx':
+            # Filesystem is support on Apple platforms starting with macosx10.15.
+            if name == 'macosx' and version in ('10.%s' % v for v in range(7, 15)):
                 self.config.available_features.add('dylib-has-no-filesystem')
-                self.lit_config.note("the deployment target does not support the dylib parts of <filesystem>")
+                self.lit_config.note("the deployment target does not support <filesystem>")
         else:
             self.cxx.flags += ['-D_LIBCPP_DISABLE_AVAILABILITY']
 

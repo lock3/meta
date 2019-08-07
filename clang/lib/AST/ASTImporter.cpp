@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/ASTImporter.h"
-#include "clang/AST/ASTImporterLookupTable.h"
+#include "clang/AST/ASTImporterSharedState.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ASTStructuralEquivalence.h"
@@ -57,6 +57,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
@@ -253,11 +254,10 @@ namespace clang {
     LLVM_NODISCARD bool
     GetImportedOrCreateSpecialDecl(ToDeclT *&ToD, CreateFunT CreateFun,
                                    FromDeclT *FromD, Args &&... args) {
-      // FIXME: This code is needed later.
-      //if (Importer.getImportDeclErrorIfAny(FromD)) {
-      //  ToD = nullptr;
-      //  return true; // Already imported but with error.
-      //}
+      if (Importer.getImportDeclErrorIfAny(FromD)) {
+        ToD = nullptr;
+        return true; // Already imported but with error.
+      }
       ToD = cast_or_null<ToDeclT>(Importer.GetAlreadyImportedOrNull(FromD));
       if (ToD)
         return true; // Already imported.
@@ -1632,16 +1632,84 @@ ASTNodeImporter::ImportDeclContext(DeclContext *FromDC, bool ForceImport) {
     auto ToDCOrErr = Importer.ImportContext(FromDC);
     return ToDCOrErr.takeError();
   }
-  llvm::SmallVector<Decl *, 8> ImportedDecls;
+
+  // We use strict error handling in case of records and enums, but not
+  // with e.g. namespaces.
+  //
+  // FIXME Clients of the ASTImporter should be able to choose an
+  // appropriate error handling strategy for their needs.  For instance,
+  // they may not want to mark an entire namespace as erroneous merely
+  // because there is an ODR error with two typedefs.  As another example,
+  // the client may allow EnumConstantDecls with same names but with
+  // different values in two distinct translation units.
+  bool AccumulateChildErrors = isa<TagDecl>(FromDC);
+
+  Error ChildErrors = Error::success();
   for (auto *From : FromDC->decls()) {
     ExpectedDecl ImportedOrErr = import(From);
-    if (!ImportedOrErr)
-      // Ignore the error, continue with next Decl.
-      // FIXME: Handle this case somehow better.
-      consumeError(ImportedOrErr.takeError());
+    if (!ImportedOrErr) {
+      if (AccumulateChildErrors)
+        ChildErrors =
+            joinErrors(std::move(ChildErrors), ImportedOrErr.takeError());
+      else
+        consumeError(ImportedOrErr.takeError());
+    }
   }
 
-  return Error::success();
+  // We reorder declarations in RecordDecls because they may have another order
+  // in the "to" context than they have in the "from" context. This may happen
+  // e.g when we import a class like this:
+  //    struct declToImport {
+  //        int a = c + b;
+  //        int b = 1;
+  //        int c = 2;
+  //    };
+  // During the import of `a` we import first the dependencies in sequence,
+  // thus the order would be `c`, `b`, `a`. We will get the normal order by
+  // first removing the already imported members and then adding them in the
+  // order as they apper in the "from" context.
+  //
+  // Keeping field order is vital because it determines structure layout.
+  //
+  // Here and below, we cannot call field_begin() method and its callers on
+  // ToDC if it has an external storage. Calling field_begin() will
+  // automatically load all the fields by calling
+  // LoadFieldsFromExternalStorage(). LoadFieldsFromExternalStorage() would
+  // call ASTImporter::Import(). This is because the ExternalASTSource
+  // interface in LLDB is implemented by the means of the ASTImporter. However,
+  // calling an import at this point would result in an uncontrolled import, we
+  // must avoid that.
+  const auto *FromRD = dyn_cast<RecordDecl>(FromDC);
+  if (!FromRD)
+    return ChildErrors;
+
+  auto ToDCOrErr = Importer.ImportContext(FromDC);
+  if (!ToDCOrErr) {
+    consumeError(std::move(ChildErrors));
+    return ToDCOrErr.takeError();
+  }
+
+  DeclContext *ToDC = *ToDCOrErr;
+  // Remove all declarations, which may be in wrong order in the
+  // lexical DeclContext and then add them in the proper order.
+  for (auto *D : FromRD->decls()) {
+    if (isa<FieldDecl>(D) || isa<FriendDecl>(D)) {
+      assert(D && "DC contains a null decl");
+      Decl *ToD = Importer.GetAlreadyImportedOrNull(D);
+      // Remove only the decls which we successfully imported.
+      if (ToD) {
+        assert(ToDC == ToD->getLexicalDeclContext() && ToDC->containsDecl(ToD));
+        // Remove the decl from its wrong place in the linked list.
+        ToDC->removeDecl(ToD);
+        // Add the decl to the end of the linked list.
+        // This time it will be at the proper place because the enclosing for
+        // loop iterates in the original (good) order of the decls.
+        ToDC->addDeclInternal(ToD);
+      }
+    }
+  }
+
+  return ChildErrors;
 }
 
 Error ASTNodeImporter::ImportDeclContext(
@@ -1691,14 +1759,40 @@ static Error setTypedefNameForAnonDecl(TagDecl *From, TagDecl *To,
 
 Error ASTNodeImporter::ImportDefinition(
     RecordDecl *From, RecordDecl *To, ImportDefinitionKind Kind) {
+  auto DefinitionCompleter = [To]() {
+    // There are cases in LLDB when we first import a class without its
+    // members. The class will have DefinitionData, but no members. Then,
+    // importDefinition is called from LLDB, which tries to get the members, so
+    // when we get here, the class already has the DefinitionData set, so we
+    // must unset the CompleteDefinition here to be able to complete again the
+    // definition.
+    To->setCompleteDefinition(false);
+    To->completeDefinition();
+  };
+
   if (To->getDefinition() || To->isBeingDefined()) {
-    if (Kind == IDK_Everything)
-      return ImportDeclContext(From, /*ForceImport=*/true);
+    if (Kind == IDK_Everything ||
+        // In case of lambdas, the class already has a definition ptr set, but
+        // the contained decls are not imported yet. Also, isBeingDefined was
+        // set in CXXRecordDecl::CreateLambda.  We must import the contained
+        // decls here and finish the definition.
+        (To->isLambda() && shouldForceImportDeclContext(Kind))) {
+      Error Result = ImportDeclContext(From, /*ForceImport=*/true);
+      // Finish the definition of the lambda, set isBeingDefined to false.
+      if (To->isLambda())
+        DefinitionCompleter();
+      return Result;
+    }
 
     return Error::success();
   }
 
   To->startDefinition();
+  // Complete the definition even if error is returned.
+  // The RecordDecl may be already part of the AST so it is better to
+  // have it in complete state even if something is wrong with it.
+  auto DefinitionCompleterScopeExit =
+      llvm::make_scope_exit(DefinitionCompleter);
 
   if (Error Err = setTypedefNameForAnonDecl(From, To, Importer))
     return Err;
@@ -1823,7 +1917,6 @@ Error ASTNodeImporter::ImportDefinition(
     if (Error Err = ImportDeclContext(From, /*ForceImport=*/true))
       return Err;
 
-  To->completeDefinition();
   return Error::success();
 }
 
@@ -2256,7 +2349,8 @@ ASTNodeImporter::VisitTypedefNameDecl(TypedefNameDecl *D, bool IsAlias) {
           if (!FromUT->isIncompleteType() && !FoundUT->isIncompleteType())
             return Importer.MapImported(D, FoundTypedef);
         }
-        // FIXME Handle redecl chain.
+        // FIXME Handle redecl chain. When you do that make consistent changes
+        // in ASTImporterLookupTable too.
         break;
       }
 
@@ -2445,6 +2539,8 @@ ExpectedDecl ASTNodeImporter::VisitEnumDecl(EnumDecl *D) {
       }
 
       if (auto *FoundEnum = dyn_cast<EnumDecl>(FoundDecl)) {
+        if (!hasSameVisibilityContext(FoundEnum, D))
+          continue;
         if (IsStructuralMatch(D, FoundEnum))
           return Importer.MapImported(D, FoundEnum);
       }
@@ -3022,9 +3118,19 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   if (FoundByLookup) {
     if (isa<CXXMethodDecl>(FoundByLookup)) {
       if (D->getLexicalDeclContext() == D->getDeclContext()) {
-        if (!D->doesThisDeclarationHaveABody())
+        if (!D->doesThisDeclarationHaveABody()) {
+          if (FunctionTemplateDecl *DescribedD =
+                  D->getDescribedFunctionTemplate()) {
+            // Handle a "templated" function together with its described
+            // template. This avoids need for a similar check at import of the
+            // described template.
+            assert(FoundByLookup->getDescribedFunctionTemplate() &&
+                   "Templated function mapped to non-templated?");
+            Importer.MapImported(DescribedD,
+                                 FoundByLookup->getDescribedFunctionTemplate());
+          }
           return Importer.MapImported(D, FoundByLookup);
-        else {
+        } else {
           // Let's continue and build up the redecl chain in this case.
           // FIXME Merge the functions into one decl.
         }
@@ -3092,7 +3198,7 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
             ExplicitSpecifier(
                 ExplicitExpr,
                 FromConstructor->getExplicitSpecifier().getKind()),
-            D->isInlineSpecified(), D->isImplicit(), D->isConstexpr()))
+            D->isInlineSpecified(), D->isImplicit(), D->getConstexprKind()))
       return ToFunction;
   } else if (CXXDestructorDecl *FromDtor = dyn_cast<CXXDestructorDecl>(D)) {
 
@@ -3130,19 +3236,20 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
             ToInnerLocStart, NameInfo, T, TInfo, D->isInlineSpecified(),
             ExplicitSpecifier(ExplicitExpr,
                               FromConversion->getExplicitSpecifier().getKind()),
-            D->isConstexpr(), SourceLocation()))
+            D->getConstexprKind(), SourceLocation()))
       return ToFunction;
   } else if (auto *Method = dyn_cast<CXXMethodDecl>(D)) {
     if (GetImportedOrCreateDecl<CXXMethodDecl>(
             ToFunction, D, Importer.getToContext(), cast<CXXRecordDecl>(DC),
             ToInnerLocStart, NameInfo, T, TInfo, Method->getStorageClass(),
-            Method->isInlineSpecified(), D->isConstexpr(), SourceLocation()))
+            Method->isInlineSpecified(), D->getConstexprKind(),
+            SourceLocation()))
       return ToFunction;
   } else {
-    if (GetImportedOrCreateDecl(ToFunction, D, Importer.getToContext(), DC,
-                                ToInnerLocStart, NameInfo, T, TInfo,
-                                D->getStorageClass(), D->isInlineSpecified(),
-                                D->hasWrittenPrototype(), D->isConstexpr()))
+    if (GetImportedOrCreateDecl(
+            ToFunction, D, Importer.getToContext(), DC, ToInnerLocStart,
+            NameInfo, T, TInfo, D->getStorageClass(), D->isInlineSpecified(),
+            D->hasWrittenPrototype(), D->getConstexprKind()))
       return ToFunction;
   }
 
@@ -5111,7 +5218,7 @@ ExpectedDecl ASTNodeImporter::VisitClassTemplateSpecializationDecl(
       }
     } else { // ODR violation.
       // FIXME HandleNameConflict
-      return nullptr;
+      return make_error<ImportError>(ImportError::NameConflict);
     }
   }
 
@@ -5553,6 +5660,8 @@ ExpectedStmt ASTNodeImporter::VisitStmt(Stmt *S) {
 
 
 ExpectedStmt ASTNodeImporter::VisitGCCAsmStmt(GCCAsmStmt *S) {
+  if (Importer.returnWithErrorInTest())
+    return make_error<ImportError>(ImportError::UnsupportedConstruct);
   SmallVector<IdentifierInfo *, 4> Names;
   for (unsigned I = 0, E = S->getNumOutputs(); I != E; I++) {
     IdentifierInfo *ToII = Importer.Import(S->getOutputIdentifier(I));
@@ -6188,7 +6297,7 @@ ExpectedStmt ASTNodeImporter::VisitDeclRefExpr(DeclRefExpr *E) {
   auto *ToE = DeclRefExpr::Create(
       Importer.getToContext(), ToQualifierLoc, ToTemplateKeywordLoc, ToDecl,
       E->refersToEnclosingVariableOrCapture(), ToLocation, ToType,
-      E->getValueKind(), ToFoundD, ToResInfo);
+      E->getValueKind(), ToFoundD, ToResInfo, E->isNonOdrUse());
   if (E->hadMultipleCandidates())
     ToE->setHadMultipleCandidates(true);
   return ToE;
@@ -6374,6 +6483,13 @@ ExpectedStmt ASTNodeImporter::VisitConstantExpr(ConstantExpr *E) {
   Expr *ToSubExpr;
   std::tie(ToSubExpr) = *Imp;
 
+  // TODO : Handle APValue::ValueKind that require importing.
+  APValue::ValueKind Kind = E->getResultAPValueKind();
+  if (Kind == APValue::Int || Kind == APValue::Float ||
+      Kind == APValue::FixedPoint || Kind == APValue::ComplexFloat ||
+      Kind == APValue::ComplexInt)
+    return ConstantExpr::Create(Importer.getToContext(), ToSubExpr,
+                                E->getAPValueResult());
   return ConstantExpr::Create(Importer.getToContext(), ToSubExpr);
 }
 
@@ -7112,10 +7228,11 @@ ExpectedStmt ASTNodeImporter::VisitMemberExpr(MemberExpr *E) {
     ResInfo = &ToTAInfo;
   }
 
-  return MemberExpr::Create(
-      Importer.getToContext(), ToBase, E->isArrow(), ToOperatorLoc,
-      ToQualifierLoc, ToTemplateKeywordLoc, ToMemberDecl, ToFoundDecl,
-      ToMemberNameInfo, ResInfo, ToType, E->getValueKind(), E->getObjectKind());
+  return MemberExpr::Create(Importer.getToContext(), ToBase, E->isArrow(),
+                            ToOperatorLoc, ToQualifierLoc, ToTemplateKeywordLoc,
+                            ToMemberDecl, ToFoundDecl, ToMemberNameInfo,
+                            ResInfo, ToType, E->getValueKind(),
+                            E->getObjectKind(), E->isNonOdrUse());
 }
 
 ExpectedStmt
@@ -7390,18 +7507,9 @@ ExpectedStmt ASTNodeImporter::VisitLambdaExpr(LambdaExpr *E) {
     return ToClassOrErr.takeError();
   CXXRecordDecl *ToClass = *ToClassOrErr;
 
-  // NOTE: lambda classes are created with BeingDefined flag set up.
-  // It means that ImportDefinition doesn't work for them and we should fill it
-  // manually.
-  if (ToClass->isBeingDefined())
-    if (Error Err = ImportDeclContext(FromClass, /*ForceImport = */ true))
-      return std::move(Err);
-
   auto ToCallOpOrErr = import(E->getCallOperator());
   if (!ToCallOpOrErr)
     return ToCallOpOrErr.takeError();
-
-  ToClass->completeDefinition();
 
   SmallVector<LambdaCapture, 8> ToCaptures;
   ToCaptures.reserve(E->capture_size());
@@ -7669,10 +7777,15 @@ void ASTNodeImporter::ImportOverrides(CXXMethodDecl *ToMethod,
 ASTImporter::ASTImporter(ASTContext &ToContext, FileManager &ToFileManager,
                          ASTContext &FromContext, FileManager &FromFileManager,
                          bool MinimalImport,
-                         ASTImporterLookupTable *LookupTable)
-    : LookupTable(LookupTable), ToContext(ToContext), FromContext(FromContext),
+                         std::shared_ptr<ASTImporterSharedState> SharedState)
+    : SharedState(SharedState), ToContext(ToContext), FromContext(FromContext),
       ToFileManager(ToFileManager), FromFileManager(FromFileManager),
       Minimal(MinimalImport) {
+
+  // Create a default state without the lookup table: LLDB case.
+  if (!SharedState) {
+    this->SharedState = std::make_shared<ASTImporterSharedState>();
+  }
 
   ImportedDecls[FromContext.getTranslationUnitDecl()] =
       ToContext.getTranslationUnitDecl();
@@ -7712,23 +7825,31 @@ ASTImporter::findDeclsInToCtx(DeclContext *DC, DeclarationName Name) {
   // then the enum constant 'A' and the variable 'A' violates ODR.
   // We can diagnose this only if we search in the redecl context.
   DeclContext *ReDC = DC->getRedeclContext();
-  if (LookupTable) {
+  if (SharedState->getLookupTable()) {
     ASTImporterLookupTable::LookupResult LookupResult =
-        LookupTable->lookup(ReDC, Name);
+        SharedState->getLookupTable()->lookup(ReDC, Name);
     return FoundDeclsTy(LookupResult.begin(), LookupResult.end());
   } else {
-    // FIXME Can we remove this kind of lookup?
-    // Or lldb really needs this C/C++ lookup?
-    FoundDeclsTy Result;
-    ReDC->localUncachedLookup(Name, Result);
+    DeclContext::lookup_result NoloadLookupResult = ReDC->noload_lookup(Name);
+    FoundDeclsTy Result(NoloadLookupResult.begin(), NoloadLookupResult.end());
+    // We must search by the slow case of localUncachedLookup because that is
+    // working even if there is no LookupPtr for the DC. We could use
+    // DC::buildLookup() to create the LookupPtr, but that would load external
+    // decls again, we must avoid that case.
+    // Also, even if we had the LookupPtr, we must find Decls which are not
+    // in the LookupPtr, so we need the slow case.
+    // These cases are handled in ASTImporterLookupTable, but we cannot use
+    // that with LLDB since that traverses through the AST which initiates the
+    // load of external decls again via DC::decls().  And again, we must avoid
+    // loading external decls during the import.
+    if (Result.empty())
+      ReDC->localUncachedLookup(Name, Result);
     return Result;
   }
 }
 
 void ASTImporter::AddToLookupTable(Decl *ToD) {
-  if (LookupTable)
-    if (auto *ToND = dyn_cast<NamedDecl>(ToD))
-      LookupTable->add(ToND);
+  SharedState->addDeclToLookup(ToD);
 }
 
 Expected<Decl *> ASTImporter::ImportImpl(Decl *FromD) {
@@ -7739,7 +7860,6 @@ Expected<Decl *> ASTImporter::ImportImpl(Decl *FromD) {
 
 void ASTImporter::RegisterImportedDecl(Decl *FromD, Decl *ToD) {
   MapImported(FromD, ToD);
-  AddToLookupTable(ToD);
 }
 
 Expected<QualType> ASTImporter::Import(QualType FromT) {
@@ -7811,39 +7931,125 @@ Expected<Decl *> ASTImporter::Import(Decl *FromD) {
   if (!FromD)
     return nullptr;
 
+  // Push FromD to the stack, and remove that when we return.
+  ImportPath.push(FromD);
+  auto ImportPathBuilder =
+      llvm::make_scope_exit([this]() { ImportPath.pop(); });
+
+  // Check whether there was a previous failed import.
+  // If yes return the existing error.
+  if (auto Error = getImportDeclErrorIfAny(FromD))
+    return make_error<ImportError>(*Error);
 
   // Check whether we've already imported this declaration.
   Decl *ToD = GetAlreadyImportedOrNull(FromD);
   if (ToD) {
+    // Already imported (possibly from another TU) and with an error.
+    if (auto Error = SharedState->getImportDeclErrorIfAny(ToD)) {
+      setImportDeclError(FromD, *Error);
+      return make_error<ImportError>(*Error);
+    }
+
     // If FromD has some updated flags after last import, apply it
     updateFlags(FromD, ToD);
+    // If we encounter a cycle during an import then we save the relevant part
+    // of the import path associated to the Decl.
+    if (ImportPath.hasCycleAtBack())
+      SavedImportPaths[FromD].push_back(ImportPath.copyCycleAtBack());
     return ToD;
   }
 
   // Import the declaration.
   ExpectedDecl ToDOrErr = ImportImpl(FromD);
-  if (!ToDOrErr)
-    return ToDOrErr;
+  if (!ToDOrErr) {
+    // Failed to import.
+
+    auto Pos = ImportedDecls.find(FromD);
+    if (Pos != ImportedDecls.end()) {
+      // Import failed after the object was created.
+      // Remove all references to it.
+      auto *ToD = Pos->second;
+      ImportedDecls.erase(Pos);
+
+      // ImportedDecls and ImportedFromDecls are not symmetric.  It may happen
+      // (e.g. with namespaces) that several decls from the 'from' context are
+      // mapped to the same decl in the 'to' context.  If we removed entries
+      // from the LookupTable here then we may end up removing them multiple
+      // times.
+
+      // The Lookuptable contains decls only which are in the 'to' context.
+      // Remove from the Lookuptable only if it is *imported* into the 'to'
+      // context (and do not remove it if it was added during the initial
+      // traverse of the 'to' context).
+      auto PosF = ImportedFromDecls.find(ToD);
+      if (PosF != ImportedFromDecls.end()) {
+        SharedState->removeDeclFromLookup(ToD);
+        ImportedFromDecls.erase(PosF);
+      }
+
+      // FIXME: AST may contain remaining references to the failed object.
+      // However, the ImportDeclErrors in the shared state contains all the
+      // failed objects together with their error.
+    }
+
+    // Error encountered for the first time.
+    // After takeError the error is not usable any more in ToDOrErr.
+    // Get a copy of the error object (any more simple solution for this?).
+    ImportError ErrOut;
+    handleAllErrors(ToDOrErr.takeError(),
+                    [&ErrOut](const ImportError &E) { ErrOut = E; });
+    setImportDeclError(FromD, ErrOut);
+    // Set the error for the mapped to Decl, which is in the "to" context.
+    if (Pos != ImportedDecls.end())
+      SharedState->setImportDeclError(Pos->second, ErrOut);
+
+    // Set the error for all nodes which have been created before we
+    // recognized the error.
+    for (const auto &Path : SavedImportPaths[FromD])
+      for (Decl *FromDi : Path) {
+        setImportDeclError(FromDi, ErrOut);
+        //FIXME Should we remove these Decls from ImportedDecls?
+        // Set the error for the mapped to Decl, which is in the "to" context.
+        auto Ii = ImportedDecls.find(FromDi);
+        if (Ii != ImportedDecls.end())
+          SharedState->setImportDeclError(Ii->second, ErrOut);
+          // FIXME Should we remove these Decls from the LookupTable,
+          // and from ImportedFromDecls?
+      }
+    SavedImportPaths[FromD].clear();
+
+    // Do not return ToDOrErr, error was taken out of it.
+    return make_error<ImportError>(ErrOut);
+  }
+
   ToD = *ToDOrErr;
 
-  // FIXME Use getImportDeclErrorIfAny() here (and return with the error) once
-  // the error handling is finished in GetImportedOrCreateSpecialDecl().
+  // FIXME: Handle the "already imported with error" case. We can get here
+  // nullptr only if GetImportedOrCreateDecl returned nullptr (after a
+  // previously failed create was requested).
+  // Later GetImportedOrCreateDecl can be updated to return the error.
   if (!ToD) {
-    return nullptr;
+    auto Err = getImportDeclErrorIfAny(FromD);
+    assert(Err);
+    return make_error<ImportError>(*Err);
+  }
+
+  // We could import from the current TU without error.  But previously we
+  // already had imported a Decl as `ToD` from another TU (with another
+  // ASTImporter object) and with an error.
+  if (auto Error = SharedState->getImportDeclErrorIfAny(ToD)) {
+    setImportDeclError(FromD, *Error);
+    return make_error<ImportError>(*Error);
   }
 
   // Make sure that ImportImpl registered the imported decl.
   assert(ImportedDecls.count(FromD) != 0 && "Missing call to MapImported?");
 
-  // Once the decl is connected to the existing declarations, i.e. when the
-  // redecl chain is properly set then we populate the lookup again.
-  // This way the primary context will be able to find all decls.
-  AddToLookupTable(ToD);
-
   // Notify subclasses.
   Imported(FromD, ToD);
 
   updateFlags(FromD, ToD);
+  SavedImportPaths[FromD].clear();
   return ToDOrErr;
 }
 
@@ -7952,7 +8158,7 @@ ASTImporter::Import(NestedNameSpecifier *FromNNS) {
   if (!FromNNS)
     return nullptr;
 
-  NestedNameSpecifier *Prefix;
+  NestedNameSpecifier *Prefix = nullptr;
   if (Error Err = importInto(Prefix, FromNNS->getPrefix()))
     return std::move(Err);
 
@@ -8246,13 +8452,13 @@ Expected<FileID> ASTImporter::Import(FileID FromID, bool IsBuiltin) {
         // disk again
         // FIXME: We definitely want to re-use the existing MemoryBuffer, rather
         // than mmap the files several times.
-        const FileEntry *Entry =
+        auto Entry =
             ToFileManager.getFile(Cache->OrigEntry->getName());
         // FIXME: The filename may be a virtual name that does probably not
         // point to a valid file and we get no Entry here. In this case try with
         // the memory buffer below.
         if (Entry)
-          ToID = ToSM.createFileID(Entry, *ToIncludeLoc,
+          ToID = ToSM.createFileID(*Entry, *ToIncludeLoc,
                                    FromSLoc.getFile().getFileCharacteristic());
       }
     }
@@ -8277,6 +8483,10 @@ Expected<FileID> ASTImporter::Import(FileID FromID, bool IsBuiltin) {
   assert(ToID.isValid() && "Unexpected invalid fileID was created.");
 
   ImportedFileIDs[FromID] = ToID;
+
+  if (FileIDImportHandler)
+    FileIDImportHandler(ToID, FromID);
+
   return ToID;
 }
 
@@ -8550,7 +8760,25 @@ Decl *ASTImporter::MapImported(Decl *From, Decl *To) {
   // This mapping should be maintained only in this function. Therefore do not
   // check for additional consistency.
   ImportedFromDecls[To] = From;
+  AddToLookupTable(To);
   return To;
+}
+
+llvm::Optional<ImportError>
+ASTImporter::getImportDeclErrorIfAny(Decl *FromD) const {
+  auto Pos = ImportDeclErrors.find(FromD);
+  if (Pos != ImportDeclErrors.end())
+    return Pos->second;
+  else
+    return Optional<ImportError>();
+}
+
+void ASTImporter::setImportDeclError(Decl *From, ImportError Error) {
+  auto InsertRes = ImportDeclErrors.insert({From, Error});
+  (void)InsertRes;
+  // Either we set the error for the first time, or we already had set one and
+  // now we want to set the same error.
+  assert(InsertRes.second || InsertRes.first->second.Error == Error.Error);
 }
 
 bool ASTImporter::IsStructurallyEquivalent(QualType From, QualType To,

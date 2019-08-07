@@ -360,7 +360,7 @@ def err_typename_invalid_storageclass : Error<
 def err_typename_invalid_functionspec : Error<
   "type name does not allow function specifier to be specified">;
 def err_typename_invalid_constexpr : Error<
-  "type name does not allow constexpr specifier to be specified">;
+  "type name does not allow %select{constexpr|consteval}0 specifier to be specified">;
 def err_typename_identifiers_only : Error<
   "typename is allowed for identifiers only">;
 
@@ -436,8 +436,6 @@ def err_objc_property_requires_field_name : Error<
   "property requires fields to be named">;
 def err_objc_property_bitfield : Error<"property name cannot be a bit-field">;
 def err_objc_expected_property_attr : Error<"unknown property attribute %0">;
-def err_objc_properties_require_objc2 : Error<
-  "properties are an Objective-C 2 feature">;
 def err_objc_unexpected_attr : Error<
   "prefix attribute must be followed by an interface, protocol, or implementation">;
 def err_objc_postfix_attribute : Error <
@@ -684,7 +682,7 @@ def warn_cxx14_compat_template_template_param_typename : Warning<
 def err_template_spec_syntax_non_template : Error<
   "identifier followed by '<' indicates a class template specialization but "
   "%0 %select{does not refer to a template|refers to a function template|"
-  "<unused>|refers to a variable template|<unused>}1">;
+  "<unused>|refers to a variable template|<unused>|refers to a concept}1">;
 def err_id_after_template_in_nested_name_spec : Error<
   "expected template name after 'template' keyword in nested name specifier">;
 def err_unexpected_template_in_unqualified_id : Error<
@@ -875,9 +873,9 @@ def warn_cxx98_compat_lambda : Warning<
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_lambda_missing_parens : Error<
   "lambda requires '()' before %select{'mutable'|return type|"
-  "attribute specifier|'constexpr'}0">;
+  "attribute specifier|'constexpr'|'consteval'}0">;
 def err_lambda_decl_specifier_repeated : Error<
-  "%select{'mutable'|'constexpr'}0 cannot appear multiple times in a lambda declarator">;
+  "%select{'mutable'|'constexpr'|'consteval'}0 cannot appear multiple times in a lambda declarator">;
 def err_lambda_capture_misplaced_ellipsis : Error<
   "ellipsis in pack %select{|init-}0capture must appear %select{after|before}0 "
   "the name of the capture">;
@@ -975,6 +973,8 @@ def warn_pragma_missing_argument : Warning<
   "missing argument to '#pragma %0'%select{|; expected %2}1">, InGroup<IgnoredPragmas>;
 def warn_pragma_invalid_argument : Warning<
   "unexpected argument '%0' to '#pragma %1'%select{|; expected %3}2">, InGroup<IgnoredPragmas>;
+
+def err_pragma_misplaced_in_decl : Error<"this pragma cannot appear in %0 declaration">;
 
 // '#pragma clang section' related errors
 def err_pragma_expected_clang_section_name : Error<
@@ -1154,9 +1154,9 @@ def err_opencl_taking_function_address_parser : Error<
 def err_opencl_logical_exclusive_or : Error<
   "^^ is a reserved operator in OpenCL">;
 
-// OpenCL C++.
+// C++ for OpenCL.
 def err_openclcxx_virtual_function : Error<
-  "virtual functions are not supported in OpenCL C++">;
+  "virtual functions are not supported in C++ for OpenCL">;
 
 // OpenMP support.
 def warn_pragma_omp_ignored : Warning<
@@ -1210,7 +1210,7 @@ def err_pragma_loop_missing_argument : Error<
 def err_pragma_loop_invalid_option : Error<
   "%select{invalid|missing}0 option%select{ %1|}0; expected vectorize, "
   "vectorize_width, interleave, interleave_count, unroll, unroll_count, "
-  "pipeline, pipeline_initiation_interval, or distribute">;
+  "pipeline, pipeline_initiation_interval, vectorize_predicate, or distribute">;
 
 def err_pragma_fp_invalid_option : Error<
   "%select{invalid|missing}0 option%select{ %1|}0; expected contract">;
@@ -1285,6 +1285,14 @@ def note_meant_to_use_typename : Note<
 let CategoryName = "Coroutines Issue" in {
 def err_for_co_await_not_range_for : Error<
   "'co_await' modifier can only be applied to range-based for loop">;
+}
+
+let CategoryName = "Concepts Issue" in {
+def err_concept_definition_not_identifier : Error<
+  "name defined in concept definition must be an identifier">;
+def ext_concept_legacy_bool_keyword : ExtWarn<
+  "ISO C++2a does not permit the 'bool' keyword after 'concept'">,
+  InGroup<DiagGroup<"concepts-ts-compat">>;
 }
 
 } // end of Parser diagnostics

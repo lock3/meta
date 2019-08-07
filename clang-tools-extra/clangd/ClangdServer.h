@@ -18,6 +18,7 @@
 #include "Function.h"
 #include "GlobalCompilationDatabase.h"
 #include "Protocol.h"
+#include "SemanticHighlighting.h"
 #include "TUScheduler.h"
 #include "XRefs.h"
 #include "index/Background.h"
@@ -49,6 +50,14 @@ public:
                                   std::vector<Diag> Diagnostics) = 0;
   /// Called whenever the file status is updated.
   virtual void onFileUpdated(PathRef File, const TUStatus &Status){};
+
+  /// Called by ClangdServer when some \p Highlightings for \p File are ready.
+  /// \p NumLines are the number of lines in the file where the highlightings
+  /// where generated from.
+  virtual void
+  onHighlightingsReady(PathRef File,
+                       std::vector<HighlightingToken> Highlightings,
+                       int NumLines) {}
 };
 
 /// When set, used by ClangdServer to get clang-tidy options for each particular
@@ -88,15 +97,10 @@ public:
     /// opened files and uses the index to augment code completion results.
     bool BuildDynamicSymbolIndex = false;
     /// Use a heavier and faster in-memory index implementation.
-    /// FIXME: we should make this true if it isn't too slow to build!.
-    bool HeavyweightDynamicSymbolIndex = false;
+    bool HeavyweightDynamicSymbolIndex = true;
     /// If true, ClangdServer automatically indexes files in the current project
     /// on background threads. The index is stored in the project root.
     bool BackgroundIndex = false;
-    /// If set to non-zero, the background index rebuilds the symbol index
-    /// periodically every BuildIndexPeriodMs milliseconds; otherwise, the
-    /// symbol index will be updated for each indexed file.
-    size_t BackgroundIndexRebuildPeriodMs = 0;
 
     /// If set, use this index to augment code completion results.
     SymbolIndex *StaticIndex = nullptr;
@@ -124,6 +128,18 @@ public:
         std::chrono::milliseconds(500);
 
     bool SuggestMissingIncludes = false;
+
+    /// Clangd will execute compiler drivers matching one of these globs to
+    /// fetch system include path.
+    std::vector<std::string> QueryDriverGlobs;
+
+    /// Enable semantic highlighting features.
+    bool SemanticHighlighting = false;
+
+    /// Returns true if the tweak should be enabled.
+    std::function<bool(const Tweak &)> TweakFilter = [](const Tweak &T) {
+      return !T.hidden(); // only enable non-hidden tweaks.
+    };
   };
   // Sensible default options for use in tests.
   // Features like indexing must be enabled if desired.
@@ -151,6 +167,9 @@ public:
   /// constructor will receive onDiagnosticsReady callback.
   void addDocument(PathRef File, StringRef Contents,
                    WantDiagnostics WD = WantDiagnostics::Auto);
+
+  /// Get the contents of \p File, which should have been added.
+  llvm::StringRef getDocument(PathRef File) const;
 
   /// Remove \p File from list of tracked files, schedule a request to free
   /// resources associated with it. Pending diagnostics for closed files may not
@@ -194,6 +213,11 @@ public:
                      TypeHierarchyDirection Direction,
                      Callback<llvm::Optional<TypeHierarchyItem>> CB);
 
+  /// Resolve type hierarchy item in the given direction.
+  void resolveTypeHierarchy(TypeHierarchyItem Item, int Resolve,
+                            TypeHierarchyDirection Direction,
+                            Callback<llvm::Optional<TypeHierarchyItem>> CB);
+
   /// Retrieve the top symbols from the workspace matching a query.
   void workspaceSymbols(StringRef Query, int Limit,
                         Callback<std::vector<SymbolInformation>> CB);
@@ -220,14 +244,22 @@ public:
                                                      PathRef File, Position Pos,
                                                      StringRef TriggerText);
 
+  /// Test the validity of a rename operation.
+  void prepareRename(PathRef File, Position Pos,
+                     Callback<llvm::Optional<Range>> CB);
+
   /// Rename all occurrences of the symbol at the \p Pos in \p File to
   /// \p NewName.
+  /// If WantFormat is false, the final TextEdit will be not formatted,
+  /// embedders could use this method to get all occurrences of the symbol (e.g.
+  /// highlighting them in prepare stage).
   void rename(PathRef File, Position Pos, llvm::StringRef NewName,
-              Callback<std::vector<TextEdit>> CB);
+              bool WantFormat, Callback<std::vector<TextEdit>> CB);
 
   struct TweakRef {
     std::string ID;    /// ID to pass for applyTweak.
     std::string Title; /// A single-line message to show in the UI.
+    Tweak::Intent Intent;
   };
   /// Enumerate the code tweaks available to the user at a specified point.
   void enumerateTweaks(PathRef File, Range Sel,
@@ -235,7 +267,7 @@ public:
 
   /// Apply the code tweak with a specified \p ID.
   void applyTweak(PathRef File, Range Sel, StringRef ID,
-                  Callback<tooling::Replacements> CB);
+                  Callback<Tweak::Effect> CB);
 
   /// Only for testing purposes.
   /// Waits until all requests to worker thread are finished and dumps AST for
@@ -292,6 +324,9 @@ private:
   // If this is true, suggest include insertion fixes for diagnostic errors that
   // can be caused by missing includes (e.g. member access in incomplete type).
   bool SuggestMissingIncludes = false;
+  bool EnableHiddenFeatures = false;
+
+  std::function<bool(const Tweak &)> TweakFilter;
 
   // GUARDED_BY(CachedCompletionFuzzyFindRequestMutex)
   llvm::StringMap<llvm::Optional<FuzzyFindRequest>>

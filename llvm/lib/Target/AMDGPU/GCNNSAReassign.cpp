@@ -174,7 +174,7 @@ GCNNSAReassign::CheckNSA(const MachineInstr &MI, bool Fast) const {
   for (unsigned I = 0; I < Info->VAddrDwords; ++I) {
     const MachineOperand &Op = MI.getOperand(VAddr0Idx + I);
     unsigned Reg = Op.getReg();
-    if (TargetRegisterInfo::isPhysicalRegister(Reg) || !VRM->isAssignedReg(Reg))
+    if (Register::isPhysicalRegister(Reg) || !VRM->isAssignedReg(Reg))
       return NSA_Status::FIXED;
 
     unsigned PhysReg = VRM->getPhys(Reg);
@@ -234,7 +234,7 @@ bool GCNNSAReassign::runOnMachineFunction(MachineFunction &MF) {
   const SIMachineFunctionInfo *MFI = MF.getInfo<SIMachineFunctionInfo>();
   MaxNumVGPRs = ST->getMaxNumVGPRs(MF);
   MaxNumVGPRs = std::min(ST->getMaxNumVGPRs(MFI->getOccupancy()), MaxNumVGPRs);
-  CSRegs = TRI->getCalleeSavedRegs(&MF);
+  CSRegs = MRI->getCalleeSavedRegs();
 
   using Candidate = std::pair<const MachineInstr*, bool>;
   SmallVector<Candidate, 32> Candidates;

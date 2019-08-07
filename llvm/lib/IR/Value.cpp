@@ -444,15 +444,11 @@ void Value::replaceUsesOutsideBlock(Value *New, BasicBlock *BB) {
          "replaceUses of value with new value of different type!");
   assert(BB && "Basic block that may contain a use of 'New' must be defined\n");
 
-  use_iterator UI = use_begin(), E = use_end();
-  for (; UI != E;) {
-    Use &U = *UI;
-    ++UI;
-    auto *Usr = dyn_cast<Instruction>(U.getUser());
-    if (Usr && Usr->getParent() == BB)
-      continue;
-    U.set(New);
-  }
+  replaceUsesWithIf(New, [BB](Use &U) {
+    auto *I = dyn_cast<Instruction>(U.getUser());
+    // Don't replace if it's an instruction in the BB basic block.
+    return !I || I->getParent() != BB;
+  });
 }
 
 namespace {
@@ -555,13 +551,13 @@ const Value *Value::stripPointerCastsAndInvariantGroups() const {
 }
 
 const Value *
-Value::stripAndAccumulateInBoundsConstantOffsets(const DataLayout &DL,
-                                                 APInt &Offset) const {
-  if (!getType()->isPointerTy())
+Value::stripAndAccumulateConstantOffsets(const DataLayout &DL, APInt &Offset,
+                                         bool AllowNonInbounds) const {
+  if (!getType()->isPtrOrPtrVectorTy())
     return this;
 
-  assert(Offset.getBitWidth() == DL.getIndexSizeInBits(cast<PointerType>(
-                                     getType())->getAddressSpace()) &&
+  unsigned BitWidth = Offset.getBitWidth();
+  assert(BitWidth == DL.getIndexTypeSizeInBits(getType()) &&
          "The offset bit width does not match the DL specification.");
 
   // Even though we don't look through PHI nodes, we could be called on an
@@ -571,27 +567,39 @@ Value::stripAndAccumulateInBoundsConstantOffsets(const DataLayout &DL,
   const Value *V = this;
   do {
     if (auto *GEP = dyn_cast<GEPOperator>(V)) {
-      if (!GEP->isInBounds())
+      // If in-bounds was requested, we do not strip non-in-bounds GEPs.
+      if (!AllowNonInbounds && !GEP->isInBounds())
         return V;
-      APInt GEPOffset(Offset);
+
+      // If one of the values we have visited is an addrspacecast, then
+      // the pointer type of this GEP may be different from the type
+      // of the Ptr parameter which was passed to this function.  This
+      // means when we construct GEPOffset, we need to use the size
+      // of GEP's pointer type rather than the size of the original
+      // pointer type.
+      APInt GEPOffset(DL.getIndexTypeSizeInBits(V->getType()), 0);
       if (!GEP->accumulateConstantOffset(DL, GEPOffset))
         return V;
-      Offset = GEPOffset;
+
+      // Stop traversal if the pointer offset wouldn't fit in the bit-width
+      // provided by the Offset argument. This can happen due to AddrSpaceCast
+      // stripping.
+      if (GEPOffset.getMinSignedBits() > BitWidth)
+        return V;
+
+      Offset += GEPOffset.sextOrTrunc(BitWidth);
       V = GEP->getPointerOperand();
-    } else if (Operator::getOpcode(V) == Instruction::BitCast) {
+    } else if (Operator::getOpcode(V) == Instruction::BitCast ||
+               Operator::getOpcode(V) == Instruction::AddrSpaceCast) {
       V = cast<Operator>(V)->getOperand(0);
     } else if (auto *GA = dyn_cast<GlobalAlias>(V)) {
-      V = GA->getAliasee();
-    } else {
-      if (const auto *Call = dyn_cast<CallBase>(V))
-        if (const Value *RV = Call->getReturnedArgOperand()) {
+      if (!GA->isInterposable())
+        V = GA->getAliasee();
+    } else if (const auto *Call = dyn_cast<CallBase>(V)) {
+        if (const Value *RV = Call->getReturnedArgOperand())
           V = RV;
-          continue;
-        }
-
-      return V;
     }
-    assert(V->getType()->isPointerTy() && "Unexpected operand type!");
+    assert(V->getType()->isPtrOrPtrVectorTy() && "Unexpected operand type!");
   } while (Visited.insert(V).second);
 
   return V;
@@ -638,6 +646,19 @@ uint64_t Value::getPointerDereferenceableBytes(const DataLayout &DL,
       }
       CanBeNull = true;
     }
+  } else if (auto *IP = dyn_cast<IntToPtrInst>(this)) {
+    if (MDNode *MD = IP->getMetadata(LLVMContext::MD_dereferenceable)) {
+      ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(0));
+      DerefBytes = CI->getLimitedValue();
+    }
+    if (DerefBytes == 0) {
+      if (MDNode *MD =
+              IP->getMetadata(LLVMContext::MD_dereferenceable_or_null)) {
+        ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(0));
+        DerefBytes = CI->getLimitedValue();
+      }
+      CanBeNull = true;
+    }
   } else if (auto *AI = dyn_cast<AllocaInst>(this)) {
     if (!AI->isArrayAllocation()) {
       DerefBytes = DL.getTypeStoreSize(AI->getAllocatedType());
@@ -660,11 +681,13 @@ unsigned Value::getPointerAlignment(const DataLayout &DL) const {
   unsigned Align = 0;
   if (auto *GO = dyn_cast<GlobalObject>(this)) {
     if (isa<Function>(GO)) {
+      MaybeAlign FunctionPtrAlign = DL.getFunctionPtrAlign();
+      unsigned Align = FunctionPtrAlign ? FunctionPtrAlign->value() : 0;
       switch (DL.getFunctionPtrAlignType()) {
       case DataLayout::FunctionPtrAlignType::Independent:
-        return DL.getFunctionPtrAlign();
+        return Align;
       case DataLayout::FunctionPtrAlignType::MultipleOfFunctionAlign:
-        return std::max(DL.getFunctionPtrAlign(), GO->getAlignment());
+        return std::max(Align, GO->getAlignment());
       }
     }
     Align = GO->getAlignment();
@@ -698,9 +721,11 @@ unsigned Value::getPointerAlignment(const DataLayout &DL) const {
       if (AllocatedType->isSized())
         Align = DL.getPrefTypeAlignment(AllocatedType);
     }
-  } else if (const auto *Call = dyn_cast<CallBase>(this))
-    Align = Call->getAttributes().getRetAlignment();
-  else if (const LoadInst *LI = dyn_cast<LoadInst>(this))
+  } else if (const auto *Call = dyn_cast<CallBase>(this)) {
+    Align = Call->getRetAlignment();
+    if (Align == 0 && Call->getCalledFunction())
+      Align = Call->getCalledFunction()->getAttributes().getRetAlignment();
+  } else if (const LoadInst *LI = dyn_cast<LoadInst>(this))
     if (MDNode *MD = LI->getMetadata(LLVMContext::MD_align)) {
       ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(0));
       Align = CI->getLimitedValue();

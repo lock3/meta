@@ -8169,7 +8169,7 @@
 // SPARC:#define __UINT_LEAST8_MAX__ 255
 // SPARC:#define __UINT_LEAST8_TYPE__ unsigned char
 // SPARC:#define __USER_LABEL_PREFIX__
-// SPARC:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// SPARC:#define __VERSION__ "{{.*}}Clang{{.*}}
 // SPARC:#define __WCHAR_MAX__ 2147483647
 // SPARC:#define __WCHAR_TYPE__ int
 // SPARC:#define __WCHAR_WIDTH__ 32
@@ -9041,7 +9041,7 @@
 // X86_64-CLOUDABI:#define __UINT_LEAST8_MAX__ 255
 // X86_64-CLOUDABI:#define __UINT_LEAST8_TYPE__ unsigned char
 // X86_64-CLOUDABI:#define __USER_LABEL_PREFIX__
-// X86_64-CLOUDABI:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// X86_64-CLOUDABI:#define __VERSION__ "{{.*}}Clang{{.*}}
 // X86_64-CLOUDABI:#define __WCHAR_MAX__ 2147483647
 // X86_64-CLOUDABI:#define __WCHAR_TYPE__ int
 // X86_64-CLOUDABI:#define __WCHAR_WIDTH__ 32
@@ -9599,6 +9599,7 @@
 // X86-64-DECLSPEC: #define __declspec{{.*}}
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARCV9 %s
+// SPARCV9:#define __BIGGEST_ALIGNMENT__ 16
 // SPARCV9:#define __INT64_TYPE__ long int
 // SPARCV9:#define __INTMAX_C_SUFFIX__ L
 // SPARCV9:#define __INTMAX_TYPE__ long int

@@ -68,9 +68,7 @@ class EvexToVexInstPass : public MachineFunctionPass {
 public:
   static char ID;
 
-  EvexToVexInstPass() : MachineFunctionPass(ID) {
-    initializeEvexToVexInstPassPass(*PassRegistry::getPassRegistry());
-  }
+  EvexToVexInstPass() : MachineFunctionPass(ID) { }
 
   StringRef getPassName() const override { return EVEX2VEX_DESC; }
 
@@ -254,7 +252,7 @@ bool EvexToVexInstPass::CompressEvexToVexImpl(MachineInstr &MI) const {
     (Desc.TSFlags & X86II::VEX_L) ? makeArrayRef(X86EvexToVex256CompressTable)
                                   : makeArrayRef(X86EvexToVex128CompressTable);
 
-  auto I = std::lower_bound(Table.begin(), Table.end(), MI.getOpcode());
+  auto I = llvm::lower_bound(Table, MI.getOpcode());
   if (I == Table.end() || I->EvexOpcode != MI.getOpcode())
     return false;
 

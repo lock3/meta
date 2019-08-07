@@ -138,7 +138,7 @@ the configuration (without a prefix: ``Auto``).
     <https://llvm.org/docs/CodingStandards.html>`_
   * ``Google``
     A style complying with `Google's C++ style guide
-    <http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml>`_
+    <https://google.github.io/styleguide/cppguide.html>`_
   * ``Chromium``
     A style complying with `Chromium's style guide
     <https://www.chromium.org/developers/coding-style>`_
@@ -191,6 +191,20 @@ the configuration (without a prefix: ``Auto``).
           argument1, argument2);
 
 
+
+**AlignConsecutiveMacros** (``bool``)
+  If ``true``, aligns consecutive C/C++ preprocessor macros.
+
+  This will align the C/C++ preprocessor macros of consecutive lines. This
+  will result in formattings like
+
+  .. code-block:: c++
+
+    #define SHORT_NAME       42
+    #define LONGER_NAME      0x007f
+    #define EVEN_LONGER_NAME (2)
+    #define foo(x)           (x * x)
+    #define bar(y, z)        (y + z)
 
 **AlignConsecutiveAssignments** (``bool``)
   If ``true``, aligns consecutive assignments.

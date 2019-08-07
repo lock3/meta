@@ -15,6 +15,7 @@
 #include "AArch64FrameLowering.h"
 #include "AArch64InstrInfo.h"
 #include "AArch64MachineFunctionInfo.h"
+#include "AArch64StackOffset.h"
 #include "AArch64Subtarget.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
 #include "llvm/ADT/BitVector.h"
@@ -23,10 +24,10 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Function.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
 
 using namespace llvm;
@@ -120,6 +121,8 @@ AArch64RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
                : CSR_AArch64_CXX_TLS_Darwin_RegMask;
   if (CC == CallingConv::AArch64_VectorCall)
     return SCS ? CSR_AArch64_AAVPCS_SCS_RegMask : CSR_AArch64_AAVPCS_RegMask;
+  if (CC == CallingConv::AArch64_SVE_VectorCall)
+    return CSR_AArch64_SVE_AAPCS_RegMask;
   if (MF.getSubtarget<AArch64Subtarget>().getTargetLowering()
           ->supportSwiftError() &&
       MF.getFunction().getAttributes().hasAttrSomewhere(Attribute::SwiftError))
@@ -279,7 +282,7 @@ bool AArch64RegisterInfo::hasBasePointer(const MachineFunction &MF) const {
   return false;
 }
 
-unsigned
+Register
 AArch64RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const AArch64FrameLowering *TFI = getFrameLowering(MF);
   return TFI->hasFP(MF) ? AArch64::FP : AArch64::SP;
@@ -388,7 +391,7 @@ bool AArch64RegisterInfo::isFrameOffsetLegal(const MachineInstr *MI,
                                              int64_t Offset) const {
   assert(Offset <= INT_MAX && "Offset too big to fit in int.");
   assert(MI && "Unable to get the legal offset for nil instruction.");
-  int SaveOffset = Offset;
+  StackOffset SaveOffset(Offset, MVT::i8);
   return isAArch64FrameOffsetLegal(*MI, SaveOffset) & AArch64FrameOffsetIsLegal;
 }
 
@@ -418,7 +421,9 @@ void AArch64RegisterInfo::materializeFrameBaseRegister(MachineBasicBlock *MBB,
 
 void AArch64RegisterInfo::resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
                                             int64_t Offset) const {
-  int Off = Offset; // ARM doesn't need the general 64-bit offsets
+  // ARM doesn't need the general 64-bit offsets
+  StackOffset Off(Offset, MVT::i8);
+
   unsigned i = 0;
 
   while (!MI.getOperand(i).isFI()) {
@@ -447,29 +452,42 @@ void AArch64RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   unsigned FrameReg;
-  int Offset;
 
   // Special handling of dbg_value, stackmap and patchpoint instructions.
   if (MI.isDebugValue() || MI.getOpcode() == TargetOpcode::STACKMAP ||
       MI.getOpcode() == TargetOpcode::PATCHPOINT) {
-    Offset = TFI->resolveFrameIndexReference(MF, FrameIndex, FrameReg,
-                                             /*PreferFP=*/true);
-    Offset += MI.getOperand(FIOperandNum + 1).getImm();
+    StackOffset Offset =
+        TFI->resolveFrameIndexReference(MF, FrameIndex, FrameReg,
+                                        /*PreferFP=*/true,
+                                        /*ForSimm=*/false);
+    Offset += StackOffset(MI.getOperand(FIOperandNum + 1).getImm(), MVT::i8);
     MI.getOperand(FIOperandNum).ChangeToRegister(FrameReg, false /*isDef*/);
-    MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset);
+    MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset.getBytes());
     return;
   }
 
   if (MI.getOpcode() == TargetOpcode::LOCAL_ESCAPE) {
     MachineOperand &FI = MI.getOperand(FIOperandNum);
-    Offset = TFI->getNonLocalFrameIndexReference(MF, FrameIndex);
+    int Offset = TFI->getNonLocalFrameIndexReference(MF, FrameIndex);
     FI.ChangeToImmediate(Offset);
     return;
   }
 
-  // Modify MI as necessary to handle as much of 'Offset' as possible
-  Offset = TFI->getFrameIndexReference(MF, FrameIndex, FrameReg);
+  StackOffset Offset;
+  if (MI.getOpcode() == AArch64::TAGPstack) {
+    // TAGPstack must use the virtual frame register in its 3rd operand.
+    const MachineFrameInfo &MFI = MF.getFrameInfo();
+    const AArch64FunctionInfo *AFI = MF.getInfo<AArch64FunctionInfo>();
+    FrameReg = MI.getOperand(3).getReg();
+    Offset = {MFI.getObjectOffset(FrameIndex) +
+                  AFI->getTaggedBasePointerOffset(),
+              MVT::i8};
+  } else {
+    Offset = TFI->resolveFrameIndexReference(
+        MF, FrameIndex, FrameReg, /*PreferFP=*/false, /*ForSimm=*/true);
+  }
 
+  // Modify MI as necessary to handle as much of 'Offset' as possible
   if (rewriteAArch64FrameIndex(MI, FIOperandNum, FrameReg, Offset, TII))
     return;
 

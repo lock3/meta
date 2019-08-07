@@ -230,7 +230,7 @@ private:
 public:
   Printable printReg(unsigned Reg, unsigned SubReg = 0) const {
     return Printable([Reg, SubReg, this](raw_ostream &OS) {
-      if (TargetRegisterInfo::isPhysicalRegister(Reg)) {
+      if (Register::isPhysicalRegister(Reg)) {
         OS << llvm::printReg(Reg, TRI);
         return;
       }
@@ -275,7 +275,7 @@ char GCNRegBankReassign::ID = 0;
 char &llvm::GCNRegBankReassignID = GCNRegBankReassign::ID;
 
 unsigned GCNRegBankReassign::getPhysRegBank(unsigned Reg) const {
-  assert (TargetRegisterInfo::isPhysicalRegister(Reg));
+  assert(Register::isPhysicalRegister(Reg));
 
   const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
   unsigned Size = TRI->getRegSizeInBits(*RC);
@@ -293,7 +293,7 @@ unsigned GCNRegBankReassign::getPhysRegBank(unsigned Reg) const {
 
 unsigned GCNRegBankReassign::getRegBankMask(unsigned Reg, unsigned SubReg,
                                             int Bank) {
-  if (TargetRegisterInfo::isVirtualRegister(Reg)) {
+  if (Register::isVirtualRegister(Reg)) {
     if (!VRM->isAssignedReg(Reg))
       return 0;
 
@@ -365,6 +365,9 @@ unsigned GCNRegBankReassign::analyzeInst(const MachineInstr& MI,
       continue;
 
     unsigned R = Op.getReg();
+    if (TRI->hasAGPRs(TRI->getRegClassForReg(*MRI, R)))
+      continue;
+
     unsigned ShiftedBank = Bank;
 
     if (Bank != -1 && R == Reg && Op.getSubReg()) {
@@ -417,7 +420,7 @@ unsigned GCNRegBankReassign::getOperandGatherWeight(const MachineInstr& MI,
 }
 
 bool GCNRegBankReassign::isReassignable(unsigned Reg) const {
-  if (TargetRegisterInfo::isPhysicalRegister(Reg) || !VRM->isAssignedReg(Reg))
+  if (Register::isPhysicalRegister(Reg) || !VRM->isAssignedReg(Reg))
     return false;
 
   const MachineInstr *Def = MRI->getUniqueVRegDef(Reg);
@@ -740,7 +743,7 @@ bool GCNRegBankReassign::runOnMachineFunction(MachineFunction &MF) {
   MaxNumVGPRs = std::min(ST->getMaxNumVGPRs(Occupancy), MaxNumVGPRs);
   MaxNumSGPRs = std::min(ST->getMaxNumSGPRs(Occupancy, true), MaxNumSGPRs);
 
-  CSRegs = TRI->getCalleeSavedRegs(&MF);
+  CSRegs = MRI->getCalleeSavedRegs();
 
   RegsUsed.resize(AMDGPU::VGPR_32RegClass.getNumRegs() +
                   TRI->getEncodingValue(AMDGPU::SGPR_NULL) / 2 + 1);

@@ -39,7 +39,7 @@ using namespace llvm;
 #define DEBUG_TYPE "inline"
 
 static cl::opt<int>
-ArgAllocaCost("amdgpu-inline-arg-alloca-cost", cl::Hidden, cl::init(2200),
+ArgAllocaCost("amdgpu-inline-arg-alloca-cost", cl::Hidden, cl::init(1500),
               cl::desc("Cost of alloca argument"));
 
 // If the amount of scratch memory to eliminate exceeds our ability to allocate
@@ -218,7 +218,7 @@ InlineCost AMDGPUInliner::getInlineCost(CallSite CS) {
                              LocalParams, TTI, GetAssumptionCache, None, PSI,
                              RemarksEnabled ? &ORE : nullptr);
 
-  if (IC && !IC.isAlways()) {
+  if (IC && !IC.isAlways() && !Callee->hasFnAttribute(Attribute::InlineHint)) {
     // Single BB does not increase total BB amount, thus subtract 1
     size_t Size = Caller->size() + Callee->size() - 1;
     if (MaxBB && Size > MaxBB)

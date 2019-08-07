@@ -1,6 +1,8 @@
 FileCheck - Flexible pattern matching file verifier
 ===================================================
 
+.. program:: FileCheck
+
 SYNOPSIS
 --------
 
@@ -105,10 +107,12 @@ and from the command line.
   Sets a filecheck pattern variable ``VAR`` with value ``VALUE`` that can be
   used in ``CHECK:`` lines.
 
-.. option:: -D#<NUMVAR>=<VALUE>
+.. option:: -D#<NUMVAR>=<NUMERIC EXPRESSION>
 
-  Sets a filecheck numeric variable ``NUMVAR`` to ``<VALUE>`` that can be used
-  in ``CHECK:`` lines.
+  Sets a filecheck numeric variable ``NUMVAR`` to the result of evaluating
+  ``<NUMERIC EXPRESSION>`` that can be used in ``CHECK:`` lines. See section
+  ``FileCheck Numeric Variables and Expressions`` for details on supported
+  numeric expressions.
 
 .. option:: -version
 
@@ -523,7 +527,10 @@ Because regular expressions are enclosed with double braces, they are
 visually distinct, and you don't need to use escape characters within the double
 braces like you would in C.  In the rare case that you want to match double
 braces explicitly from the input, you can use something ugly like
-``{{[{][{]}}`` as your pattern.
+``{{[}][}]}}`` as your pattern.  Or if you are using the repetition count
+syntax, for example ``[[:xdigit:]]{8}`` to match exactly 8 hex digits, you
+would need to add parentheses like this ``{{([[:xdigit:]]{8})}}`` to avoid
+confusion with FileCheck's closing double-brace.
 
 FileCheck String Substitution Blocks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -588,18 +595,15 @@ For example:
 
 would match ``mov r5, 42`` and set ``REG`` to the value ``5``.
 
-The syntax of a numeric substitution is ``[[#<NUMVAR><op><offset>]]`` where:
+The syntax of a numeric substitution is ``[[#<expr>]]`` where ``<expr>`` is an
+expression. An expression is recursively defined as:
 
-* ``<NUMVAR>`` is the name of a defined numeric variable.
+* a numeric operand, or
+* an expression followed by an operator and a numeric operand.
 
-* ``<op>`` is an optional numeric operation to perform on the value of
-  ``<NUMVAR>``. Currently supported numeric operations are ``+`` and ``-``.
-
-* ``<offset>`` is the immediate value that constitutes the second operand of
-  the numeric operation <op>. It must be present if ``<op>`` is present,
-  absent otherwise.
-
-Spaces are accepted before, after and between any of these elements.
+A numeric operand is a previously defined numeric variable, or an integer
+literal. The supported operators are ``+`` and ``-``. Spaces are accepted
+before, after and between any of these elements.
 
 For example:
 
@@ -624,11 +628,27 @@ but would not match the text:
 
 due to ``7`` being unequal to ``5 + 1``.
 
+The syntax also supports an empty expression, equivalent to writing {{[0-9]+}},
+for cases where the input must contain a numeric value but the value itself
+does not matter:
+
+.. code-block:: gas
+
+    ; CHECK-NOT: mov r0, r[[#]]
+
+to check that a value is synthesized rather than moved around.
+
+A numeric variable can also be defined to the result of a numeric expression,
+in which case the numeric expression is checked and if verified the variable is
+assigned to the value. The unified syntax for both defining numeric variables
+and checking a numeric expression is thus ``[[#<NUMVAR>: <expr>]]`` with each
+element as described previously.
+
 The ``--enable-var-scope`` option has the same effect on numeric variables as
 on string variables.
 
-Important note: In its current implementation, a numeric expression cannot use
-a numeric variable defined on the same line.
+Important note: In its current implementation, an expression cannot use a
+numeric variable with a non-empty expression defined on the same line.
 
 FileCheck Pseudo Numeric Variables
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -639,9 +659,9 @@ fragility of the match file structure, as "``CHECK:``" lines contain absolute
 line numbers in the same file, which have to be updated whenever line numbers
 change due to text addition or deletion.
 
-To support this case, FileCheck numeric expressions understand the ``@LINE``
-pseudo numeric variable which evaluates to the line number of the CHECK pattern
-where it is found.
+To support this case, FileCheck expressions understand the ``@LINE`` pseudo
+numeric variable which evaluates to the line number of the CHECK pattern where
+it is found.
 
 This way match patterns can be put near the relevant test lines and include
 relative line number references, for example:

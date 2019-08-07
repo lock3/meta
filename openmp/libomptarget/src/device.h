@@ -96,7 +96,9 @@ struct DeviceTy {
 
   std::mutex DataMapMtx, PendingGlobalsMtx, ShadowMtx;
 
-  uint64_t loopTripCnt;
+  // NOTE: Once libomp gains full target-task support, this state should be
+  // moved into the target task in libomp.
+  std::map<int32_t, uint64_t> LoopTripCnt;
 
   int64_t RTLRequiresFlags;
 
@@ -104,7 +106,7 @@ struct DeviceTy {
       : DeviceID(-1), RTL(RTL), RTLDeviceID(-1), IsInit(false), InitFlag(),
         HasPendingGlobals(false), HostDataToTargetMap(),
         PendingCtorsDtors(), ShadowPtrMap(), DataMapMtx(), PendingGlobalsMtx(),
-        ShadowMtx(), loopTripCnt(0), RTLRequiresFlags(0) {}
+        ShadowMtx(), RTLRequiresFlags(0) {}
 
   // The existence of mutexes makes DeviceTy non-copyable. We need to
   // provide a copy constructor and an assignment operator explicitly.
@@ -114,7 +116,7 @@ struct DeviceTy {
         HostDataToTargetMap(d.HostDataToTargetMap),
         PendingCtorsDtors(d.PendingCtorsDtors), ShadowPtrMap(d.ShadowPtrMap),
         DataMapMtx(), PendingGlobalsMtx(),
-        ShadowMtx(), loopTripCnt(d.loopTripCnt),
+        ShadowMtx(), LoopTripCnt(d.LoopTripCnt),
         RTLRequiresFlags(d.RTLRequiresFlags) {}
 
   DeviceTy& operator=(const DeviceTy &d) {
@@ -126,7 +128,7 @@ struct DeviceTy {
     HostDataToTargetMap = d.HostDataToTargetMap;
     PendingCtorsDtors = d.PendingCtorsDtors;
     ShadowPtrMap = d.ShadowPtrMap;
-    loopTripCnt = d.loopTripCnt;
+    LoopTripCnt = d.LoopTripCnt;
     RTLRequiresFlags = d.RTLRequiresFlags;
 
     return *this;
@@ -135,10 +137,10 @@ struct DeviceTy {
   long getMapEntryRefCnt(void *HstPtrBegin);
   LookupResult lookupMapping(void *HstPtrBegin, int64_t Size);
   void *getOrAllocTgtPtr(void *HstPtrBegin, void *HstPtrBase, int64_t Size,
-      bool &IsNew, bool IsImplicit, bool UpdateRefCount = true);
+      bool &IsNew, bool &IsHostPtr, bool IsImplicit, bool UpdateRefCount = true);
   void *getTgtPtrBegin(void *HstPtrBegin, int64_t Size);
   void *getTgtPtrBegin(void *HstPtrBegin, int64_t Size, bool &IsLast,
-      bool UpdateRefCount);
+      bool UpdateRefCount, bool &IsHostPtr);
   int deallocTgtPtr(void *TgtPtrBegin, int64_t Size, bool ForceDelete);
   int associatePtr(void *HstPtrBegin, void *TgtPtrBegin, int64_t Size);
   int disassociatePtr(void *HstPtrBegin);

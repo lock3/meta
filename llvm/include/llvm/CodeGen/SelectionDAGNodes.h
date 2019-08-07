@@ -548,10 +548,15 @@ BEGIN_TWO_BYTE_PACK()
 
   class LSBaseSDNodeBitfields {
     friend class LSBaseSDNode;
+    friend class MaskedGatherScatterSDNode;
 
     uint16_t : NumMemSDNodeBits;
 
-    uint16_t AddressingMode : 3; // enum ISD::MemIndexedMode
+    // This storage is shared between disparate class hierarchies to hold an
+    // enumeration specific to the class hierarchy in use.
+    //   LSBaseSDNode => enum ISD::MemIndexedMode
+    //   MaskedGatherScatterSDNode => enum ISD::MemIndexType
+    uint16_t AddressingMode : 3;
   };
   enum { NumLSBaseSDNodeBits = NumMemSDNodeBits + 3 };
 
@@ -1702,16 +1707,16 @@ class GlobalAddressSDNode : public SDNode {
 
   const GlobalValue *TheGlobal;
   int64_t Offset;
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
 
   GlobalAddressSDNode(unsigned Opc, unsigned Order, const DebugLoc &DL,
                       const GlobalValue *GA, EVT VT, int64_t o,
-                      unsigned char TF);
+                      unsigned TF);
 
 public:
   const GlobalValue *getGlobal() const { return TheGlobal; }
   int64_t getOffset() const { return Offset; }
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
   // Return the address space this GlobalAddress belongs to.
   unsigned getAddressSpace() const;
 
@@ -1778,16 +1783,16 @@ class JumpTableSDNode : public SDNode {
   friend class SelectionDAG;
 
   int JTI;
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
 
-  JumpTableSDNode(int jti, EVT VT, bool isTarg, unsigned char TF)
+  JumpTableSDNode(int jti, EVT VT, bool isTarg, unsigned TF)
     : SDNode(isTarg ? ISD::TargetJumpTable : ISD::JumpTable,
       0, DebugLoc(), getSDVTList(VT)), JTI(jti), TargetFlags(TF) {
   }
 
 public:
   int getIndex() const { return JTI; }
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
 
   static bool classof(const SDNode *N) {
     return N->getOpcode() == ISD::JumpTable ||
@@ -1804,10 +1809,10 @@ class ConstantPoolSDNode : public SDNode {
   } Val;
   int Offset;  // It's a MachineConstantPoolValue if top bit is set.
   unsigned Alignment;  // Minimum alignment requirement of CP (not log2 value).
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
 
   ConstantPoolSDNode(bool isTarget, const Constant *c, EVT VT, int o,
-                     unsigned Align, unsigned char TF)
+                     unsigned Align, unsigned TF)
     : SDNode(isTarget ? ISD::TargetConstantPool : ISD::ConstantPool, 0,
              DebugLoc(), getSDVTList(VT)), Offset(o), Alignment(Align),
              TargetFlags(TF) {
@@ -1816,7 +1821,7 @@ class ConstantPoolSDNode : public SDNode {
   }
 
   ConstantPoolSDNode(bool isTarget, MachineConstantPoolValue *v,
-                     EVT VT, int o, unsigned Align, unsigned char TF)
+                     EVT VT, int o, unsigned Align, unsigned TF)
     : SDNode(isTarget ? ISD::TargetConstantPool : ISD::ConstantPool, 0,
              DebugLoc(), getSDVTList(VT)), Offset(o), Alignment(Align),
              TargetFlags(TF) {
@@ -1847,7 +1852,7 @@ public:
   // Return the alignment of this constant pool object, which is either 0 (for
   // default alignment) or the desired value.
   unsigned getAlignment() const { return Alignment; }
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
 
   Type *getType() const;
 
@@ -1861,16 +1866,16 @@ public:
 class TargetIndexSDNode : public SDNode {
   friend class SelectionDAG;
 
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
   int Index;
   int64_t Offset;
 
 public:
-  TargetIndexSDNode(int Idx, EVT VT, int64_t Ofs, unsigned char TF)
-    : SDNode(ISD::TargetIndex, 0, DebugLoc(), getSDVTList(VT)),
-      TargetFlags(TF), Index(Idx), Offset(Ofs) {}
+  TargetIndexSDNode(int Idx, EVT VT, int64_t Ofs, unsigned TF)
+      : SDNode(ISD::TargetIndex, 0, DebugLoc(), getSDVTList(VT)),
+        TargetFlags(TF), Index(Idx), Offset(Ofs) {}
 
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
   int getIndex() const { return Index; }
   int64_t getOffset() const { return Offset; }
 
@@ -2063,17 +2068,17 @@ class BlockAddressSDNode : public SDNode {
 
   const BlockAddress *BA;
   int64_t Offset;
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
 
   BlockAddressSDNode(unsigned NodeTy, EVT VT, const BlockAddress *ba,
-                     int64_t o, unsigned char Flags)
+                     int64_t o, unsigned Flags)
     : SDNode(NodeTy, 0, DebugLoc(), getSDVTList(VT)),
              BA(ba), Offset(o), TargetFlags(Flags) {}
 
 public:
   const BlockAddress *getBlockAddress() const { return BA; }
   int64_t getOffset() const { return Offset; }
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
 
   static bool classof(const SDNode *N) {
     return N->getOpcode() == ISD::BlockAddress ||
@@ -2104,15 +2109,16 @@ class ExternalSymbolSDNode : public SDNode {
   friend class SelectionDAG;
 
   const char *Symbol;
-  unsigned char TargetFlags;
+  unsigned TargetFlags;
 
-  ExternalSymbolSDNode(bool isTarget, const char *Sym, unsigned char TF, EVT VT)
-    : SDNode(isTarget ? ISD::TargetExternalSymbol : ISD::ExternalSymbol,
-             0, DebugLoc(), getSDVTList(VT)), Symbol(Sym), TargetFlags(TF) {}
+  ExternalSymbolSDNode(bool isTarget, const char *Sym, unsigned TF, EVT VT)
+      : SDNode(isTarget ? ISD::TargetExternalSymbol : ISD::ExternalSymbol, 0,
+               DebugLoc(), getSDVTList(VT)),
+        Symbol(Sym), TargetFlags(TF) {}
 
 public:
   const char *getSymbol() const { return Symbol; }
-  unsigned char getTargetFlags() const { return TargetFlags; }
+  unsigned getTargetFlags() const { return TargetFlags; }
 
   static bool classof(const SDNode *N) {
     return N->getOpcode() == ISD::ExternalSymbol ||
@@ -2362,8 +2368,24 @@ public:
 
   MaskedGatherScatterSDNode(ISD::NodeType NodeTy, unsigned Order,
                             const DebugLoc &dl, SDVTList VTs, EVT MemVT,
-                            MachineMemOperand *MMO)
-      : MemSDNode(NodeTy, Order, dl, VTs, MemVT, MMO) {}
+                            MachineMemOperand *MMO, ISD::MemIndexType IndexType)
+      : MemSDNode(NodeTy, Order, dl, VTs, MemVT, MMO) {
+    LSBaseSDNodeBits.AddressingMode = IndexType;
+    assert(getIndexType() == IndexType && "Value truncated");
+  }
+
+  /// How is Index applied to BasePtr when computing addresses.
+  ISD::MemIndexType getIndexType() const {
+    return static_cast<ISD::MemIndexType>(LSBaseSDNodeBits.AddressingMode);
+  }
+  bool isIndexScaled() const {
+    return (getIndexType() == ISD::SIGNED_SCALED) ||
+           (getIndexType() == ISD::UNSIGNED_SCALED);
+  }
+  bool isIndexSigned() const {
+    return (getIndexType() == ISD::SIGNED_SCALED) ||
+           (getIndexType() == ISD::SIGNED_UNSCALED);
+  }
 
   // In the both nodes address is Op1, mask is Op2:
   // MaskedGatherSDNode  (Chain, passthru, mask, base, index, scale)
@@ -2387,8 +2409,10 @@ public:
   friend class SelectionDAG;
 
   MaskedGatherSDNode(unsigned Order, const DebugLoc &dl, SDVTList VTs,
-                     EVT MemVT, MachineMemOperand *MMO)
-      : MaskedGatherScatterSDNode(ISD::MGATHER, Order, dl, VTs, MemVT, MMO) {}
+                     EVT MemVT, MachineMemOperand *MMO,
+                     ISD::MemIndexType IndexType)
+      : MaskedGatherScatterSDNode(ISD::MGATHER, Order, dl, VTs, MemVT, MMO,
+                                  IndexType) {}
 
   const SDValue &getPassThru() const { return getOperand(1); }
 
@@ -2404,8 +2428,10 @@ public:
   friend class SelectionDAG;
 
   MaskedScatterSDNode(unsigned Order, const DebugLoc &dl, SDVTList VTs,
-                      EVT MemVT, MachineMemOperand *MMO)
-      : MaskedGatherScatterSDNode(ISD::MSCATTER, Order, dl, VTs, MemVT, MMO) {}
+                      EVT MemVT, MachineMemOperand *MMO,
+                      ISD::MemIndexType IndexType)
+      : MaskedGatherScatterSDNode(ISD::MSCATTER, Order, dl, VTs, MemVT, MMO,
+                                  IndexType) {}
 
   const SDValue &getValue() const { return getOperand(1); }
 
@@ -2617,10 +2643,11 @@ namespace ISD {
   /// Attempt to match a binary predicate against a pair of scalar/splat
   /// constants or every element of a pair of constant BUILD_VECTORs.
   /// If AllowUndef is true, then UNDEF elements will pass nullptr to Match.
+  /// If AllowTypeMismatch is true then RetType + ArgTypes don't need to match.
   bool matchBinaryPredicate(
       SDValue LHS, SDValue RHS,
       std::function<bool(ConstantSDNode *, ConstantSDNode *)> Match,
-      bool AllowUndefs = false);
+      bool AllowUndefs = false, bool AllowTypeMismatch = false);
 } // end namespace ISD
 
 } // end namespace llvm

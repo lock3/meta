@@ -7,7 +7,7 @@ struct [[gsl::Owner(int)]] MyIntOwner {
 struct [[gsl::Pointer(int)]] MyIntPointer {
   MyIntPointer(int *p = nullptr);
   // Conversion operator and constructor conversion will result in two
-  // different ASTs. The former is tested with another owner and 
+  // different ASTs. The former is tested with another owner and
   // pointer type.
   MyIntPointer(const MyIntOwner &);
   int &operator*();

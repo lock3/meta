@@ -1160,8 +1160,8 @@ private:
 
 /// Create formatted StringError object.
 template <typename... Ts>
-Error createStringError(std::error_code EC, char const *Fmt,
-                        const Ts &... Vals) {
+inline Error createStringError(std::error_code EC, char const *Fmt,
+                               const Ts &... Vals) {
   std::string Buffer;
   raw_string_ostream Stream(Buffer);
   Stream << format(Fmt, Vals...);
@@ -1169,6 +1169,16 @@ Error createStringError(std::error_code EC, char const *Fmt,
 }
 
 Error createStringError(std::error_code EC, char const *Msg);
+
+inline Error createStringError(std::error_code EC, const Twine &S) {
+  return createStringError(EC, S.str().c_str());
+}
+
+template <typename... Ts>
+inline Error createStringError(std::errc EC, char const *Fmt,
+                               const Ts &... Vals) {
+  return createStringError(std::make_error_code(EC), Fmt, Vals...);
+}
 
 /// This class wraps a filename and another Error.
 ///

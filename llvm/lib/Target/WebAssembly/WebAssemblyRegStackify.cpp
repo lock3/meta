@@ -252,7 +252,7 @@ static void query(const MachineInstr &MI, AliasAnalysis &AA, bool &Read,
 
   // Analyze calls.
   if (MI.isCall()) {
-    unsigned CalleeOpNo = WebAssembly::getCalleeOpNo(MI);
+    unsigned CalleeOpNo = WebAssembly::getCalleeOpNo(MI.getOpcode());
     queryCallee(MI, CalleeOpNo, Read, Write, Effects, StackPointer);
   }
 }
@@ -341,7 +341,7 @@ static bool isSafeToMove(const MachineInstr *Def, const MachineInstr *Insert,
         !Insert->readsRegister(Reg))
       continue;
 
-    if (TargetRegisterInfo::isPhysicalRegister(Reg)) {
+    if (Register::isPhysicalRegister(Reg)) {
       // Ignore ARGUMENTS; it's just used to keep the ARGUMENT_* instructions
       // from moving down, and we've already checked for that.
       if (Reg == WebAssembly::ARGUMENTS)
@@ -437,7 +437,7 @@ static bool oneUseDominatesOtherUses(unsigned Reg, const MachineOperand &OneUse,
         if (!MO.isReg())
           return false;
         unsigned DefReg = MO.getReg();
-        if (!TargetRegisterInfo::isVirtualRegister(DefReg) ||
+        if (!Register::isVirtualRegister(DefReg) ||
             !MFI.isVRegStackified(DefReg))
           return false;
         assert(MRI.hasOneNonDBGUse(DefReg));
@@ -811,7 +811,7 @@ bool WebAssemblyRegStackify::runOnMachineFunction(MachineFunction &MF) {
         assert(Op.isUse() && "explicit_uses() should only iterate over uses");
         assert(!Op.isImplicit() &&
                "explicit_uses() should only iterate over explicit operands");
-        if (TargetRegisterInfo::isPhysicalRegister(Reg))
+        if (Register::isPhysicalRegister(Reg))
           continue;
 
         // Identify the definition for this register at this point.
@@ -826,7 +826,7 @@ bool WebAssemblyRegStackify::runOnMachineFunction(MachineFunction &MF) {
 
         // Argument instructions represent live-in registers and not real
         // instructions.
-        if (WebAssembly::isArgument(*Def))
+        if (WebAssembly::isArgument(Def->getOpcode()))
           continue;
 
         // Currently catch's return value register cannot be stackified, because
@@ -834,9 +834,9 @@ bool WebAssemblyRegStackify::runOnMachineFunction(MachineFunction &MF) {
         // entering blocks, which is a part of multi-value proposal.
         //
         // Once we support live-in values of wasm blocks, this can be:
-        // catch                           ; push except_ref value onto stack
-        // block except_ref -> i32
-        // br_on_exn $__cpp_exception      ; pop the except_ref value
+        // catch                           ; push exnref value onto stack
+        // block exnref -> i32
+        // br_on_exn $__cpp_exception      ; pop the exnref value
         // end_block
         //
         // But because we don't support it yet, the catch instruction's dst

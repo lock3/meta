@@ -49,7 +49,7 @@ static cl::opt<bool> SwitchInstProfUpdateWrapperStrict(
     "switch-inst-prof-update-wrapper-strict", cl::Hidden,
     cl::desc("Assert that prof branch_weights metadata is valid when creating "
              "an instance of SwitchInstProfUpdateWrapper"),
-    cl::init(false));
+    cl::init(true));
 
 //===----------------------------------------------------------------------===//
 //                            AllocaInst Class
@@ -3913,9 +3913,8 @@ void SwitchInstProfUpdateWrapper::init() {
   if (ProfileData->getNumOperands() != SI.getNumSuccessors() + 1) {
     State = Invalid;
     if (SwitchInstProfUpdateWrapperStrict)
-      assert(false &&
-             "number of prof branch_weights metadata operands corresponds to"
-             " number of succesors");
+      llvm_unreachable("number of prof branch_weights metadata operands does "
+                       "not correspond to number of succesors");
     return;
   }
 

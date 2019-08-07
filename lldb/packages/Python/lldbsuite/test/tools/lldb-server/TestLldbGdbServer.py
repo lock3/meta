@@ -16,8 +16,6 @@ from __future__ import division, print_function
 import unittest2
 import gdbremote_testcase
 import lldbgdbserverutils
-import platform
-import signal
 from lldbsuite.support import seven
 from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
@@ -1279,7 +1277,6 @@ class LldbGdbServerTestCase(gdbremote_testcase.GdbRemoteTestCaseBase, DwarfOpcod
 
     @llgs_test
     @skipUnlessPlatform(oslist=['linux'])
-    @expectedFailureAndroid
     @skipIf(archs=no_match(['arm', 'aarch64']))
     def test_hardware_breakpoint_set_and_remove_work_llgs(self):
         self.init_llgs_test()

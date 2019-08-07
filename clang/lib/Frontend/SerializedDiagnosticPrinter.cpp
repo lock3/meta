@@ -20,6 +20,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Bitstream/BitCodes.h"
+#include "llvm/Bitstream/BitstreamReader.h"
 #include "llvm/Support/raw_ostream.h"
 #include <utility>
 
@@ -779,7 +781,7 @@ void SDiagsWriter::finish() {
 
   std::error_code EC;
   auto OS = llvm::make_unique<llvm::raw_fd_ostream>(State->OutputFile.c_str(),
-                                                    EC, llvm::sys::fs::F_None);
+                                                    EC, llvm::sys::fs::OF_None);
   if (EC) {
     getMetaDiags()->Report(diag::warn_fe_serialized_diag_failure)
         << State->OutputFile << EC.message();

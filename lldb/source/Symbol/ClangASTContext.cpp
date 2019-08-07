@@ -47,11 +47,11 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemOptions.h"
+#include "clang/Basic/LangStandard.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Frontend/FrontendOptions.h"
-#include "clang/Frontend/LangStandard.h"
 #include "clang/Sema/Sema.h"
 
 #ifdef LLDB_DEFINED_NDEBUG_FOR_CLANG
@@ -86,7 +86,6 @@
 #include "lldb/Symbol/VerifyDecl.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Language.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataExtractor.h"
@@ -95,6 +94,7 @@
 #include "lldb/Utility/RegularExpression.h"
 #include "lldb/Utility/Scalar.h"
 
+#include "Plugins/LanguageRuntime/ObjC/ObjCLanguageRuntime.h"
 #include "Plugins/SymbolFile/DWARF/DWARFASTParserClang.h"
 #include "Plugins/SymbolFile/PDB/PDBASTParser.h"
 
@@ -111,10 +111,10 @@ namespace {
 static inline bool
 ClangASTContextSupportsLanguage(lldb::LanguageType language) {
   return language == eLanguageTypeUnknown || // Clang is the default type system
-         Language::LanguageIsC(language) ||
-         Language::LanguageIsCPlusPlus(language) ||
-         Language::LanguageIsObjC(language) ||
-         Language::LanguageIsPascal(language) ||
+         lldb_private::Language::LanguageIsC(language) ||
+         lldb_private::Language::LanguageIsCPlusPlus(language) ||
+         lldb_private::Language::LanguageIsObjC(language) ||
+         lldb_private::Language::LanguageIsPascal(language) ||
          // Use Clang for Rust until there is a proper language plugin for it
          language == eLanguageTypeRust ||
          language == eLanguageTypeExtRenderScript ||
@@ -571,7 +571,7 @@ static void ParseLangArgs(LangOptions &Opts, InputKind IK, const char *triple) {
   // Set some properties which depend solely on the input kind; it would be
   // nice to move these to the language standard, and have the driver resolve
   // the input kind + language standard.
-  if (IK.getLanguage() == InputKind::Asm) {
+  if (IK.getLanguage() == clang::Language::Asm) {
     Opts.AsmPreprocessor = 1;
   } else if (IK.isObjectiveC()) {
     Opts.ObjC = 1;
@@ -582,26 +582,26 @@ static void ParseLangArgs(LangOptions &Opts, InputKind IK, const char *triple) {
   if (LangStd == LangStandard::lang_unspecified) {
     // Based on the base language, pick one.
     switch (IK.getLanguage()) {
-    case InputKind::Unknown:
-    case InputKind::LLVM_IR:
-    case InputKind::RenderScript:
+    case clang::Language::Unknown:
+    case clang::Language::LLVM_IR:
+    case clang::Language::RenderScript:
       llvm_unreachable("Invalid input kind!");
-    case InputKind::OpenCL:
+    case clang::Language::OpenCL:
       LangStd = LangStandard::lang_opencl10;
       break;
-    case InputKind::CUDA:
+    case clang::Language::CUDA:
       LangStd = LangStandard::lang_cuda;
       break;
-    case InputKind::Asm:
-    case InputKind::C:
-    case InputKind::ObjC:
+    case clang::Language::Asm:
+    case clang::Language::C:
+    case clang::Language::ObjC:
       LangStd = LangStandard::lang_gnu99;
       break;
-    case InputKind::CXX:
-    case InputKind::ObjCXX:
+    case clang::Language::CXX:
+    case clang::Language::ObjCXX:
       LangStd = LangStandard::lang_gnucxx98;
       break;
-    case InputKind::HIP:
+    case clang::Language::HIP:
       LangStd = LangStandard::lang_hip;
       break;
     }
@@ -901,8 +901,9 @@ IdentifierTable *ClangASTContext::getIdentifierTable() {
 LangOptions *ClangASTContext::getLanguageOptions() {
   if (m_language_options_up == nullptr) {
     m_language_options_up.reset(new LangOptions());
-    ParseLangArgs(*m_language_options_up, InputKind::ObjCXX, GetTargetTriple());
-    //        InitializeLangOptions(*m_language_options_up, InputKind::ObjCXX);
+    ParseLangArgs(*m_language_options_up, clang::Language::ObjCXX,
+                  GetTargetTriple());
+    //        InitializeLangOptions(*m_language_options_up, Language::ObjCXX);
   }
   return m_language_options_up.get();
 }
@@ -956,7 +957,7 @@ public:
       llvm::SmallVector<char, 32> diag_str(10);
       info.FormatDiagnostic(diag_str);
       diag_str.push_back('\0');
-      m_log->Printf("Compiler diagnostic: %s\n", diag_str.data());
+      LLDB_LOGF(m_log, "Compiler diagnostic: %s\n", diag_str.data());
     }
   }
 
@@ -1615,10 +1616,11 @@ clang::FunctionTemplateDecl *ClangASTContext::CreateFunctionTemplateDecl(
 void ClangASTContext::CreateFunctionTemplateSpecializationInfo(
     FunctionDecl *func_decl, clang::FunctionTemplateDecl *func_tmpl_decl,
     const TemplateParameterInfos &infos) {
-  TemplateArgumentList template_args(TemplateArgumentList::OnStack, infos.args);
+  TemplateArgumentList *template_args_ptr =
+      TemplateArgumentList::CreateCopy(func_decl->getASTContext(), infos.args);
 
-  func_decl->setFunctionTemplateSpecialization(func_tmpl_decl, &template_args,
-                                               nullptr);
+  func_decl->setFunctionTemplateSpecialization(func_tmpl_decl,
+                                               template_args_ptr, nullptr);
 }
 
 ClassTemplateDecl *ClangASTContext::CreateClassTemplateDecl(
@@ -1954,7 +1956,8 @@ NamespaceDecl *ClangASTContext::GetUniqueNamespaceDeclaration(
         assert(namespace_decl ==
                parent_namespace_decl->getAnonymousNamespace());
       } else {
-        // BAD!!!
+        assert(false && "GetUniqueNamespaceDeclaration called with no name and "
+                        "no namespace as decl_ctx");
       }
     }
   }
@@ -2170,7 +2173,7 @@ FunctionDecl *ClangASTContext::CreateFunctionDeclaration(
       *ast, decl_ctx, SourceLocation(), SourceLocation(), declarationName,
       ClangUtil::GetQualType(function_clang_type), nullptr,
       (clang::StorageClass)storage, is_inline, hasWrittenPrototype,
-      isConstexprSpecified);
+      isConstexprSpecified ? CSK_constexpr : CSK_unspecified);
   if (func_decl)
     decl_ctx->addDecl(func_decl);
 
@@ -2225,7 +2228,7 @@ CompilerType ClangASTContext::CreateFunctionType(
 
 ParmVarDecl *ClangASTContext::CreateParameterDeclaration(
     clang::DeclContext *decl_ctx, const char *name,
-    const CompilerType &param_type, int storage) {
+    const CompilerType &param_type, int storage, bool add_decl) {
   ASTContext *ast = getASTContext();
   assert(ast != nullptr);
   auto *decl =
@@ -2233,7 +2236,9 @@ ParmVarDecl *ClangASTContext::CreateParameterDeclaration(
                           name && name[0] ? &ast->Idents.get(name) : nullptr,
                           ClangUtil::GetQualType(param_type), nullptr,
                           (clang::StorageClass)storage, nullptr);
-  decl_ctx->addDecl(decl);
+  if (add_decl)
+    decl_ctx->addDecl(decl);
+
   return decl;
 }
 
@@ -5035,7 +5040,7 @@ ClangASTContext::GetBitSize(lldb::opaque_compiler_type_t type,
       ExecutionContext exe_ctx(exe_scope);
       Process *process = exe_ctx.GetProcessPtr();
       if (process) {
-        ObjCLanguageRuntime *objc_runtime = process->GetObjCLanguageRuntime();
+        ObjCLanguageRuntime *objc_runtime = ObjCLanguageRuntime::Get(*process);
         if (objc_runtime) {
           uint64_t bit_size = 0;
           if (objc_runtime->GetTypeBitSize(
@@ -6842,7 +6847,7 @@ CompilerType ClangASTContext::GetChildCompilerTypeAtIndex(
                   process = exe_ctx->GetProcessPtr();
                 if (process) {
                   ObjCLanguageRuntime *objc_runtime =
-                      process->GetObjCLanguageRuntime();
+                      ObjCLanguageRuntime::Get(*process);
                   if (objc_runtime != nullptr) {
                     CompilerType parent_ast_type(getASTContext(),
                                                  parent_qual_type);
@@ -8210,7 +8215,7 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
             clang::SourceLocation()),
         method_qual_type,
         nullptr, // TypeSourceInfo *
-        explicit_spec, is_inline, is_artificial, false /*is_constexpr*/);
+        explicit_spec, is_inline, is_artificial, CSK_unspecified);
     cxx_method_decl = cxx_ctor_decl;
   } else {
     clang::StorageClass SC = is_static ? clang::SC_Static : clang::SC_None;
@@ -8233,7 +8238,7 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
                 clang::SourceLocation()),
             method_qual_type,
             nullptr, // TypeSourceInfo *
-            SC, is_inline, false /*is_constexpr*/, clang::SourceLocation());
+            SC, is_inline, CSK_unspecified, clang::SourceLocation());
       } else if (num_params == 0) {
         // Conversion operators don't take params...
         cxx_method_decl = clang::CXXConversionDecl::Create(
@@ -8245,7 +8250,7 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
                 clang::SourceLocation()),
             method_qual_type,
             nullptr, // TypeSourceInfo *
-            is_inline, explicit_spec, false /*is_constexpr*/,
+            is_inline, explicit_spec, CSK_unspecified,
             clang::SourceLocation());
       }
     }
@@ -8256,7 +8261,7 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
           clang::DeclarationNameInfo(decl_name, clang::SourceLocation()),
           method_qual_type,
           nullptr, // TypeSourceInfo *
-          SC, is_inline, false /*is_constexpr*/, clang::SourceLocation());
+          SC, is_inline, CSK_unspecified, clang::SourceLocation());
     }
   }
 
@@ -8325,24 +8330,6 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
   VerifyDecl(cxx_method_decl);
 #endif
 
-  //    printf ("decl->isPolymorphic()             = %i\n",
-  //    cxx_record_decl->isPolymorphic());
-  //    printf ("decl->isAggregate()               = %i\n",
-  //    cxx_record_decl->isAggregate());
-  //    printf ("decl->isPOD()                     = %i\n",
-  //    cxx_record_decl->isPOD());
-  //    printf ("decl->isEmpty()                   = %i\n",
-  //    cxx_record_decl->isEmpty());
-  //    printf ("decl->isAbstract()                = %i\n",
-  //    cxx_record_decl->isAbstract());
-  //    printf ("decl->hasTrivialConstructor()     = %i\n",
-  //    cxx_record_decl->hasTrivialConstructor());
-  //    printf ("decl->hasTrivialCopyConstructor() = %i\n",
-  //    cxx_record_decl->hasTrivialCopyConstructor());
-  //    printf ("decl->hasTrivialCopyAssignment()  = %i\n",
-  //    cxx_record_decl->hasTrivialCopyAssignment());
-  //    printf ("decl->hasTrivialDestructor()      = %i\n",
-  //    cxx_record_decl->hasTrivialDestructor());
   return cxx_method_decl;
 }
 
@@ -9060,39 +9047,6 @@ ClangASTContext::CreateMemberPointerType(const CompilerType &type,
                             ClangUtil::GetQualType(type).getTypePtr()));
   }
   return CompilerType();
-}
-
-size_t
-ClangASTContext::ConvertStringToFloatValue(lldb::opaque_compiler_type_t type,
-                                           const char *s, uint8_t *dst,
-                                           size_t dst_size) {
-  if (type) {
-    clang::QualType qual_type(GetCanonicalQualType(type));
-    uint32_t count = 0;
-    bool is_complex = false;
-    if (IsFloatingPointType(type, count, is_complex)) {
-      // TODO: handle complex and vector types
-      if (count != 1)
-        return false;
-
-      llvm::StringRef s_sref(s);
-      llvm::APFloat ap_float(getASTContext()->getFloatTypeSemantics(qual_type),
-                             s_sref);
-
-      const uint64_t bit_size = getASTContext()->getTypeSize(qual_type);
-      const uint64_t byte_size = bit_size / 8;
-      if (dst_size >= byte_size) {
-        Scalar scalar = ap_float.bitcastToAPInt().zextOrTrunc(
-            llvm::NextPowerOf2(byte_size) * 8);
-        lldb_private::Status get_data_error;
-        if (scalar.GetAsMemoryData(dst, byte_size,
-                                   lldb_private::endian::InlHostByteOrder(),
-                                   get_data_error))
-          return byte_size;
-      }
-    }
-  }
-  return 0;
 }
 
 // Dumping types

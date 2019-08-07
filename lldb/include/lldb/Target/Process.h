@@ -670,8 +670,8 @@ public:
   // The default action is to return an empty data buffer.
   //
   // \return
-  //    A data buffer containing the contents of the AUXV data.
-  virtual const lldb::DataBufferSP GetAuxvData();
+  //    A data extractor containing the contents of the AUXV data.
+  virtual DataExtractor GetAuxvData();
 
   /// Sometimes processes know how to retrieve and load shared libraries. This
   /// is normally done by DynamicLoader plug-ins, but sometimes the connection
@@ -680,10 +680,19 @@ public:
   /// shared library load state.
   ///
   /// \return
-  ///    The number of shared libraries that were loaded
-  virtual size_t LoadModules() { return 0; }
+  ///    A status object indicating if the operation was sucessful or not.
+  virtual llvm::Error LoadModules() {
+    return llvm::make_error<llvm::StringError>("Not implemented.",
+                                               llvm::inconvertibleErrorCode());
+  }
 
-  virtual size_t LoadModules(LoadedModuleInfoList &) { return 0; }
+  /// Query remote GDBServer for a detailed loaded library list
+  /// \return
+  ///    The list of modules currently loaded by the process, or an error.
+  virtual llvm::Expected<LoadedModuleInfoList> GetLoadedModuleList() {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "Not implemented");
+  }
 
 protected:
   virtual JITLoaderList &GetJITLoaders();
@@ -2183,8 +2192,6 @@ public:
 
   LanguageRuntime *GetLanguageRuntime(lldb::LanguageType language,
                                       bool retry_if_null = true);
-
-  ObjCLanguageRuntime *GetObjCLanguageRuntime(bool retry_if_null = true);
 
   bool IsPossibleDynamicValue(ValueObject &in_value);
 

@@ -194,6 +194,15 @@ namespace llvm {
       /// Direct move of 2 consecutive GPR to a VSX register.
       BUILD_FP128,
 
+      /// BUILD_SPE64 and EXTRACT_SPE are analogous to BUILD_PAIR and
+      /// EXTRACT_ELEMENT but take f64 arguments instead of i64, as i64 is
+      /// unsupported for this target.
+      /// Merge 2 GPRs to a single SPE register.
+      BUILD_SPE64,
+
+      /// Extract SPE register component, second argument is high or low.
+      EXTRACT_SPE,
+
       /// Extract a subvector from signed integer vector and convert to FP.
       /// It is primarily used to convert a (widened) illegal integer vector
       /// type to a legal floating point vector type.
@@ -447,6 +456,11 @@ namespace llvm {
       /// an xxswapd.
       LXVD2X,
 
+      /// VSRC, CHAIN = LOAD_VEC_BE CHAIN, Ptr - Occurs only for little endian.
+      /// Maps directly to one of lxvd2x/lxvw4x/lxvh8x/lxvb16x depending on
+      /// the vector type to load vector in big-endian element order.
+      LOAD_VEC_BE,
+
       /// VSRC, CHAIN = LD_VSX_LH CHAIN, Ptr - This is a floating-point load of a
       /// v2f32 value into the lower half of a VSR register.
       LD_VSX_LH,
@@ -455,6 +469,11 @@ namespace llvm {
       /// Maps directly to an stxvd2x instruction that will be preceded by
       /// an xxswapd.
       STXVD2X,
+
+      /// CHAIN = STORE_VEC_BE CHAIN, VSRC, Ptr - Occurs only for little endian.
+      /// Maps directly to one of stxvd2x/stxvw4x/stxvh8x/stxvb16x depending on
+      /// the vector type to store vector in big-endian element order.
+      STORE_VEC_BE,
 
       /// Store scalar integers from VSR.
       ST_VSR_SCAL_INT,
@@ -625,6 +644,8 @@ namespace llvm {
       return true;
     }
 
+    bool preferIncOfAddToSubOfNot(EVT VT) const override;
+
     bool convertSetCCLogicToBitwiseLogic(EVT VT) const override {
       return VT.isScalarInteger();
     }
@@ -657,6 +678,11 @@ namespace llvm {
                                    SDValue &Offset,
                                    ISD::MemIndexedMode &AM,
                                    SelectionDAG &DAG) const override;
+
+    /// SelectAddressEVXRegReg - Given the specified addressed, check to see if
+    /// it can be more efficiently represented as [r+imm].
+    bool SelectAddressEVXRegReg(SDValue N, SDValue &Base, SDValue &Index,
+                                SelectionDAG &DAG) const;
 
     /// SelectAddressRegReg - Given the specified addressed, check to see if it
     /// can be more efficiently represented as [r+imm]. If \p EncodingAlignment
@@ -818,6 +844,18 @@ namespace llvm {
       return true;
     }
 
+    bool isDesirableToTransformToIntegerOp(unsigned Opc,
+                                           EVT VT) const override {
+      // Only handle float load/store pair because float(fpr) load/store
+      // instruction has more cycles than integer(gpr) load/store in PPC.
+      if (Opc != ISD::LOAD && Opc != ISD::STORE)
+        return false;
+      if (VT != MVT::f32 && VT != MVT::f64)
+        return false;
+
+      return true; 
+    }
+
     // Returns true if the address of the global is stored in TOC entry.
     bool isAccessedAsGotIndirect(SDValue N) const;
 
@@ -846,10 +884,10 @@ namespace llvm {
 
     /// Is unaligned memory access allowed for the given type, and is it fast
     /// relative to software emulation.
-    bool allowsMisalignedMemoryAccesses(EVT VT,
-                                        unsigned AddrSpace,
-                                        unsigned Align = 1,
-                                        bool *Fast = nullptr) const override;
+    bool allowsMisalignedMemoryAccesses(
+        EVT VT, unsigned AddrSpace, unsigned Align = 1,
+        MachineMemOperand::Flags Flags = MachineMemOperand::MONone,
+        bool *Fast = nullptr) const override;
 
     /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
     /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
@@ -907,14 +945,6 @@ namespace llvm {
     const MCExpr *getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
                                                unsigned JTI,
                                                MCContext &Ctx) const override;
-
-    unsigned getNumRegistersForCallingConv(LLVMContext &Context,
-                                           CallingConv:: ID CC,
-                                           EVT VT) const override;
-
-    MVT getRegisterTypeForCallingConv(LLVMContext &Context,
-                                      CallingConv:: ID CC,
-                                      EVT VT) const override;
 
   private:
     struct ReuseLoadInfo {
@@ -1147,6 +1177,8 @@ namespace llvm {
     SDValue combineSetCC(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineABS(SDNode *N, DAGCombinerInfo &DCI) const;
     SDValue combineVSelect(SDNode *N, DAGCombinerInfo &DCI) const;
+    SDValue combineVReverseMemOP(ShuffleVectorSDNode *SVN, LSBaseSDNode *LSBase,
+                                 DAGCombinerInfo &DCI) const;
 
     /// ConvertSETCCToSubtract - looks at SETCC that compares ints. It replaces
     /// SETCC with integer subtraction when (1) there is a legal way of doing it

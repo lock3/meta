@@ -335,12 +335,23 @@ SDValue VectorLegalizer::LegalizeOp(SDValue Op) {
   case ISD::STRICT_FTRUNC:
   case ISD::STRICT_FP_ROUND:
   case ISD::STRICT_FP_EXTEND:
-    // These pseudo-ops get legalized as if they were their non-strict
-    // equivalent.  For instance, if ISD::FSQRT is legal then ISD::STRICT_FSQRT
-    // is also legal, but if ISD::FSQRT requires expansion then so does
-    // ISD::STRICT_FSQRT.
-    Action = TLI.getStrictFPOperationAction(Node->getOpcode(),
-                                            Node->getValueType(0));
+    Action = TLI.getOperationAction(Node->getOpcode(), Node->getValueType(0));
+    // If we're asked to expand a strict vector floating-point operation,
+    // by default we're going to simply unroll it.  That is usually the
+    // best approach, except in the case where the resulting strict (scalar)
+    // operations would themselves use the fallback mutation to non-strict.
+    // In that specific case, just do the fallback on the vector op.
+    if (Action == TargetLowering::Expand &&
+        TLI.getStrictFPOperationAction(Node->getOpcode(),
+                                       Node->getValueType(0))
+        == TargetLowering::Legal) {
+      EVT EltVT = Node->getValueType(0).getVectorElementType();
+      if (TLI.getOperationAction(Node->getOpcode(), EltVT)
+          == TargetLowering::Expand &&
+          TLI.getStrictFPOperationAction(Node->getOpcode(), EltVT)
+          == TargetLowering::Legal)
+        Action = TargetLowering::Legal;
+    }
     break;
   case ISD::ADD:
   case ISD::SUB:
@@ -949,6 +960,19 @@ SDValue VectorLegalizer::ExpandANY_EXTEND_VECTOR_INREG(SDValue Op) {
   EVT SrcVT = Src.getValueType();
   int NumSrcElements = SrcVT.getVectorNumElements();
 
+  // *_EXTEND_VECTOR_INREG SrcVT can be smaller than VT - so insert the vector
+  // into a larger vector type.
+  if (SrcVT.bitsLE(VT)) {
+    assert((VT.getSizeInBits() % SrcVT.getScalarSizeInBits()) == 0 &&
+           "ANY_EXTEND_VECTOR_INREG vector size mismatch");
+    NumSrcElements = VT.getSizeInBits() / SrcVT.getScalarSizeInBits();
+    SrcVT = EVT::getVectorVT(*DAG.getContext(), SrcVT.getScalarType(),
+                             NumSrcElements);
+    Src = DAG.getNode(
+        ISD::INSERT_SUBVECTOR, DL, SrcVT, DAG.getUNDEF(SrcVT), Src,
+        DAG.getConstant(0, DL, TLI.getVectorIdxTy(DAG.getDataLayout())));
+  }
+
   // Build a base mask of undef shuffles.
   SmallVector<int, 16> ShuffleMask;
   ShuffleMask.resize(NumSrcElements, -1);
@@ -995,6 +1019,19 @@ SDValue VectorLegalizer::ExpandZERO_EXTEND_VECTOR_INREG(SDValue Op) {
   SDValue Src = Op.getOperand(0);
   EVT SrcVT = Src.getValueType();
   int NumSrcElements = SrcVT.getVectorNumElements();
+
+  // *_EXTEND_VECTOR_INREG SrcVT can be smaller than VT - so insert the vector
+  // into a larger vector type.
+  if (SrcVT.bitsLE(VT)) {
+    assert((VT.getSizeInBits() % SrcVT.getScalarSizeInBits()) == 0 &&
+           "ZERO_EXTEND_VECTOR_INREG vector size mismatch");
+    NumSrcElements = VT.getSizeInBits() / SrcVT.getScalarSizeInBits();
+    SrcVT = EVT::getVectorVT(*DAG.getContext(), SrcVT.getScalarType(),
+                             NumSrcElements);
+    Src = DAG.getNode(
+        ISD::INSERT_SUBVECTOR, DL, SrcVT, DAG.getUNDEF(SrcVT), Src,
+        DAG.getConstant(0, DL, TLI.getVectorIdxTy(DAG.getDataLayout())));
+  }
 
   // Build up a zero vector to blend into this one.
   SDValue Zero = DAG.getConstant(0, DL, SrcVT);

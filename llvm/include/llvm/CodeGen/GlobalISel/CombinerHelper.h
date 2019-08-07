@@ -18,6 +18,7 @@
 #define LLVM_CODEGEN_GLOBALISEL_COMBINER_HELPER_H
 
 #include "llvm/CodeGen/LowLevelType.h"
+#include "llvm/CodeGen/Register.h"
 
 namespace llvm {
 
@@ -26,6 +27,7 @@ class MachineIRBuilder;
 class MachineRegisterInfo;
 class MachineInstr;
 class MachineOperand;
+class GISelKnownBits;
 
 struct PreferredTuple {
   LLT Ty;                // The result type of the extend.
@@ -37,17 +39,19 @@ class CombinerHelper {
   MachineIRBuilder &Builder;
   MachineRegisterInfo &MRI;
   GISelChangeObserver &Observer;
+  GISelKnownBits *KB;
 
 public:
-  CombinerHelper(GISelChangeObserver &Observer, MachineIRBuilder &B);
+  CombinerHelper(GISelChangeObserver &Observer, MachineIRBuilder &B,
+                 GISelKnownBits *KB = nullptr);
 
   /// MachineRegisterInfo::replaceRegWith() and inform the observer of the changes
-  void replaceRegWith(MachineRegisterInfo &MRI, unsigned FromReg, unsigned ToReg) const;
+  void replaceRegWith(MachineRegisterInfo &MRI, Register FromReg, Register ToReg) const;
 
   /// Replace a single register operand with a new register and inform the
   /// observer of the changes.
   void replaceRegOpWith(MachineRegisterInfo &MRI, MachineOperand &FromRegOp,
-                        unsigned ToReg) const;
+                        Register ToReg) const;
 
   /// If \p MI is COPY, try to combine it.
   /// Returns true if MI changed.
@@ -61,9 +65,27 @@ public:
   bool matchCombineExtendingLoads(MachineInstr &MI, PreferredTuple &MatchInfo);
   void applyCombineExtendingLoads(MachineInstr &MI, PreferredTuple &MatchInfo);
 
+  bool matchCombineBr(MachineInstr &MI);
+  bool tryCombineBr(MachineInstr &MI);
+
+  /// Optimize memcpy intrinsics et al, e.g. constant len calls.
+  /// /p MaxLen if non-zero specifies the max length of a mem libcall to inline.
+  bool tryCombineMemCpyFamily(MachineInstr &MI, unsigned MaxLen = 0);
+
   /// Try to transform \p MI by using all of the above
   /// combine functions. Returns true if changed.
   bool tryCombine(MachineInstr &MI);
+
+private:
+  // Memcpy family optimization helpers.
+  bool optimizeMemcpy(MachineInstr &MI, Register Dst, Register Src,
+                      unsigned KnownLen, unsigned DstAlign, unsigned SrcAlign,
+                      bool IsVolatile);
+  bool optimizeMemmove(MachineInstr &MI, Register Dst, Register Src,
+                      unsigned KnownLen, unsigned DstAlign, unsigned SrcAlign,
+                      bool IsVolatile);
+  bool optimizeMemset(MachineInstr &MI, Register Dst, Register Val,
+                      unsigned KnownLen, unsigned DstAlign, bool IsVolatile);
 };
 } // namespace llvm
 

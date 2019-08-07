@@ -85,7 +85,8 @@ AppleObjCRuntimeV1::CreateInstance(Process *process,
 void AppleObjCRuntimeV1::Initialize() {
   PluginManager::RegisterPlugin(
       GetPluginNameStatic(), "Apple Objective-C Language Runtime - Version 1",
-      CreateInstance);
+      CreateInstance,
+      /*command_callback = */ nullptr, GetBreakpointExceptionPrecondition);
 }
 
 void AppleObjCRuntimeV1::Terminate() {
@@ -394,10 +395,11 @@ void AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded() {
                         new ClassDescriptorV1(isa, process_sp));
 
                     if (log && log->GetVerbose())
-                      log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64
-                                  " from _objc_debug_class_hash to "
-                                  "isa->descriptor cache",
-                                  isa);
+                      LLDB_LOGF(log,
+                                "AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64
+                                " from _objc_debug_class_hash to "
+                                "isa->descriptor cache",
+                                isa);
 
                     AddClass(isa, descriptor_sp);
                   }
@@ -416,7 +418,8 @@ void AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded() {
                           new ClassDescriptorV1(isa, process_sp));
 
                       if (log && log->GetVerbose())
-                        log->Printf(
+                        LLDB_LOGF(
+                            log,
                             "AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64
                             " from _objc_debug_class_hash to isa->descriptor "
                             "cache",

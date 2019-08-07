@@ -1,5 +1,5 @@
 // -*- C++ -*-
-//===-- parallel_backend_utils.h ------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,9 +15,12 @@
 #include <cassert>
 #include "utils.h"
 
+#include "pstl_config.h"
+
 namespace __pstl
 {
-namespace __par_backend
+
+namespace __utils
 {
 
 //! Destroy sequence [xs,xe)
@@ -79,8 +82,8 @@ struct __serial_move_merge
                         }
                         else if (__n == 0)
                         {
-                            const auto __i = __zs - __zs_beg;
-                            if (__same_move_seq || __i < __nx)
+                            const auto __j = __zs - __zs_beg;
+                            if (__same_move_seq || __j < __nx)
                                 __zs = __move_sequence_x(__ys, __ye, __zs);
                             else
                                 __zs = __move_sequence_y(__ys, __ye, __zs);
@@ -97,8 +100,8 @@ struct __serial_move_merge
                         ++__zs, --__n;
                         if (++__xs == __xe)
                         {
-                            const auto __i = __zs - __zs_beg;
-                            if (__same_move_seq || __i < __nx)
+                            const auto __j = __zs - __zs_beg;
+                            if (__same_move_seq || __j < __nx)
                                 __move_sequence_x(__ys, __ye, __zs);
                             else
                                 __move_sequence_y(__ys, __ye, __zs);
@@ -106,8 +109,8 @@ struct __serial_move_merge
                         }
                         else if (__n == 0)
                         {
-                            const auto i = __zs - __zs_beg;
-                            if (__same_move_seq || __i < __nx)
+                            const auto __j = __zs - __zs_beg;
+                            if (__same_move_seq || __j < __nx)
                             {
                                 __zs = __move_sequence_x(__xs, __xe, __zs);
                                 __move_sequence_x(__ys, __ye, __zs);
@@ -133,91 +136,7 @@ struct __serial_move_merge
     }
 };
 
-template <typename _RandomAccessIterator1, typename _OutputIterator>
-void
-__init_buf(_RandomAccessIterator1 __xs, _RandomAccessIterator1 __xe, _OutputIterator __zs, bool __bMove)
-{
-    const _OutputIterator __ze = __zs + (__xe - __xs);
-    typedef typename std::iterator_traits<_OutputIterator>::value_type _ValueType;
-    if (__bMove)
-    {
-        // Initialize the temporary buffer and move keys to it.
-        for (; __zs != __ze; ++__xs, ++__zs)
-            new (&*__zs) _ValueType(std::move(*__xs));
-    }
-    else
-    {
-        // Initialize the temporary buffer
-        for (; __zs != __ze; ++__zs)
-            new (&*__zs) _ValueType;
-    }
-}
-
-// TODO is this actually used anywhere?
-template <typename _Buf>
-class __stack
-{
-    typedef typename std::iterator_traits<decltype(_Buf(0).get())>::value_type _ValueType;
-    typedef typename std::iterator_traits<_ValueType*>::difference_type _DifferenceType;
-
-    _Buf _M_buf;
-    _ValueType* _M_ptr;
-    _DifferenceType _M_maxsize;
-
-    __stack(const __stack&) = delete;
-    void
-    operator=(const __stack&) = delete;
-
-  public:
-    __stack(_DifferenceType __max_size) : _M_buf(__max_size), _M_maxsize(__max_size) { _M_ptr = _M_buf.get(); }
-
-    ~__stack()
-    {
-        assert(size() <= _M_maxsize);
-        while (!empty())
-            pop();
-    }
-
-    const _Buf&
-    buffer() const
-    {
-        return _M_buf;
-    }
-    size_t
-    size() const
-    {
-        assert(_M_ptr - _M_buf.get() <= _M_maxsize);
-        assert(_M_ptr - _M_buf.get() >= 0);
-        return _M_ptr - _M_buf.get();
-    }
-    bool
-    empty() const
-    {
-        assert(_M_ptr >= _M_buf.get());
-        return _M_ptr == _M_buf.get();
-    }
-    void
-    push(const _ValueType& __v)
-    {
-        assert(size() < _M_maxsize);
-        new (_M_ptr) _ValueType(__v);
-        ++_M_ptr;
-    }
-    const _ValueType&
-    top() const
-    {
-        return *(_M_ptr - 1);
-    }
-    void
-    pop()
-    {
-        assert(_M_ptr > _M_buf.get());
-        --_M_ptr;
-        (*_M_ptr).~_ValueType();
-    }
-};
-
-} // namespace __par_backend
+} // namespace __utils
 } // namespace __pstl
 
 #endif /* _PSTL_PARALLEL_BACKEND_UTILS_H */

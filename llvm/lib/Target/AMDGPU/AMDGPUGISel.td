@@ -12,10 +12,6 @@
 
 include "AMDGPU.td"
 
-def p0 : PtrValueType<i64, 0>;
-def p1 : PtrValueType<i64, 1>;
-def p4 : PtrValueType<i64, 4>;
-
 def sd_vsrc0 : ComplexPattern<i32, 1, "">;
 def gi_vsrc0 :
     GIComplexOperandMatcher<s32, "selectVSRC0">,
@@ -49,6 +45,46 @@ def gi_smrd_imm32 :
 def gi_smrd_sgpr :
     GIComplexOperandMatcher<s64, "selectSmrdSgpr">,
     GIComplexPatternEquiv<SMRDSgpr>;
+
+def gi_flat_offset :
+    GIComplexOperandMatcher<s64, "selectFlatOffset">,
+    GIComplexPatternEquiv<FLATOffset>;
+def gi_flat_offset_signed :
+    GIComplexOperandMatcher<s64, "selectFlatOffsetSigned">,
+    GIComplexPatternEquiv<FLATOffsetSigned>;
+
+def gi_mubuf_scratch_offset :
+    GIComplexOperandMatcher<s32, "selectMUBUFScratchOffset">,
+    GIComplexPatternEquiv<MUBUFScratchOffset>;
+def gi_mubuf_scratch_offen :
+    GIComplexOperandMatcher<s32, "selectMUBUFScratchOffen">,
+    GIComplexPatternEquiv<MUBUFScratchOffen>;
+
+def gi_ds_1addr_1offset :
+    GIComplexOperandMatcher<s32, "selectDS1Addr1Offset">,
+    GIComplexPatternEquiv<DS1Addr1Offset>;
+
+
+// Separate load nodes are defined to glue m0 initialization in
+// SelectionDAG. The GISel selector can just insert m0 initialization
+// directly before before selecting a glue-less load, so hide this
+// distinction.
+def : GINodeEquiv<G_LOAD, AMDGPUld_glue>;
+def : GINodeEquiv<G_STORE, AMDGPUst_glue>;
+
+def : GINodeEquiv<G_ATOMIC_CMPXCHG, atomic_cmp_swap_glue>;
+def : GINodeEquiv<G_ATOMICRMW_XCHG, atomic_swap_glue>;
+def : GINodeEquiv<G_ATOMICRMW_ADD, atomic_load_add_glue>;
+def : GINodeEquiv<G_ATOMICRMW_SUB, atomic_load_sub_glue>;
+def : GINodeEquiv<G_ATOMICRMW_AND, atomic_load_and_glue>;
+def : GINodeEquiv<G_ATOMICRMW_OR, atomic_load_or_glue>;
+def : GINodeEquiv<G_ATOMICRMW_XOR, atomic_load_xor_glue>;
+def : GINodeEquiv<G_ATOMICRMW_MIN, atomic_load_min_glue>;
+def : GINodeEquiv<G_ATOMICRMW_MAX, atomic_load_max_glue>;
+def : GINodeEquiv<G_ATOMICRMW_UMIN, atomic_load_umin_glue>;
+def : GINodeEquiv<G_ATOMICRMW_UMAX, atomic_load_umax_glue>;
+def : GINodeEquiv<G_ATOMICRMW_FADD, atomic_load_fadd_glue>;
+
 
 class GISelSop2Pat <
   SDPatternOperator node,
@@ -127,15 +163,6 @@ multiclass GISelVop2IntrPat <
 
 def : GISelSop2Pat <or, S_OR_B32, i32>;
 def : GISelVop2Pat <or, V_OR_B32_e32, i32>;
-
-def : GISelSop2Pat <sra, S_ASHR_I32, i32>;
-let AddedComplexity = 100 in {
-let SubtargetPredicate = isGFX6GFX7 in {
-def : GISelVop2Pat <sra, V_ASHR_I32_e32, i32>;
-}
-def : GISelVop2CommutePat <sra, V_ASHRREV_I32_e32, i32>;
-}
-def : GISelVop3Pat2CommutePat <sra, V_ASHRREV_I32_e64, i32>;
 
 // FIXME: We can't re-use SelectionDAG patterns here because they match
 // against a custom SDNode and we would need to create a generic machine

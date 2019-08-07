@@ -196,11 +196,12 @@ protected:
 public:
   /// \name Scalar TTI Implementations
   /// @{
-  bool allowsMisalignedMemoryAccesses(LLVMContext &Context,
-                                      unsigned BitWidth, unsigned AddressSpace,
-                                      unsigned Alignment, bool *Fast) const {
+  bool allowsMisalignedMemoryAccesses(LLVMContext &Context, unsigned BitWidth,
+                                      unsigned AddressSpace, unsigned Alignment,
+                                      bool *Fast) const {
     EVT E = EVT::getIntegerVT(Context, BitWidth);
-    return getTLI()->allowsMisalignedMemoryAccesses(E, AddressSpace, Alignment, Fast);
+    return getTLI()->allowsMisalignedMemoryAccesses(
+        E, AddressSpace, Alignment, MachineMemOperand::MONone, Fast);
   }
 
   bool hasBranchDivergence() { return false; }
@@ -426,6 +427,8 @@ public:
 
   unsigned getInliningThresholdMultiplier() { return 1; }
 
+  int getInlinerVectorBonusPercent() { return 150; }
+
   void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                TTI::UnrollingPreferences &UP) {
     // This unrolling functionality is target independent, but to provide some
@@ -494,7 +497,7 @@ public:
   bool isHardwareLoopProfitable(Loop *L, ScalarEvolution &SE,
                                 AssumptionCache &AC,
                                 TargetLibraryInfo *LibInfo,
-                                TTI::HardwareLoopInfo &HWLoopInfo) {
+                                HardwareLoopInfo &HWLoopInfo) {
     return BaseT::isHardwareLoopProfitable(L, SE, AC, LibInfo, HWLoopInfo);
   }
 
@@ -1070,8 +1073,8 @@ public:
     case Intrinsic::experimental_vector_reduce_and:
     case Intrinsic::experimental_vector_reduce_or:
     case Intrinsic::experimental_vector_reduce_xor:
-    case Intrinsic::experimental_vector_reduce_fadd:
-    case Intrinsic::experimental_vector_reduce_fmul:
+    case Intrinsic::experimental_vector_reduce_v2_fadd:
+    case Intrinsic::experimental_vector_reduce_v2_fmul:
     case Intrinsic::experimental_vector_reduce_smax:
     case Intrinsic::experimental_vector_reduce_smin:
     case Intrinsic::experimental_vector_reduce_fmax:
@@ -1261,24 +1264,28 @@ public:
     case Intrinsic::experimental_vector_reduce_xor:
       return ConcreteTTI->getArithmeticReductionCost(Instruction::Xor, Tys[0],
                                                      /*IsPairwiseForm=*/false);
-    case Intrinsic::experimental_vector_reduce_fadd:
-      return ConcreteTTI->getArithmeticReductionCost(Instruction::FAdd, Tys[0],
-                                                     /*IsPairwiseForm=*/false);
-    case Intrinsic::experimental_vector_reduce_fmul:
-      return ConcreteTTI->getArithmeticReductionCost(Instruction::FMul, Tys[0],
-                                                     /*IsPairwiseForm=*/false);
+    case Intrinsic::experimental_vector_reduce_v2_fadd:
+      return ConcreteTTI->getArithmeticReductionCost(
+          Instruction::FAdd, Tys[0],
+          /*IsPairwiseForm=*/false); // FIXME: Add new flag for cost of strict
+                                     // reductions.
+    case Intrinsic::experimental_vector_reduce_v2_fmul:
+      return ConcreteTTI->getArithmeticReductionCost(
+          Instruction::FMul, Tys[0],
+          /*IsPairwiseForm=*/false); // FIXME: Add new flag for cost of strict
+                                     // reductions.
     case Intrinsic::experimental_vector_reduce_smax:
     case Intrinsic::experimental_vector_reduce_smin:
     case Intrinsic::experimental_vector_reduce_fmax:
     case Intrinsic::experimental_vector_reduce_fmin:
       return ConcreteTTI->getMinMaxReductionCost(
           Tys[0], CmpInst::makeCmpResultType(Tys[0]), /*IsPairwiseForm=*/false,
-          /*IsSigned=*/true);
+          /*IsUnsigned=*/true);
     case Intrinsic::experimental_vector_reduce_umax:
     case Intrinsic::experimental_vector_reduce_umin:
       return ConcreteTTI->getMinMaxReductionCost(
           Tys[0], CmpInst::makeCmpResultType(Tys[0]), /*IsPairwiseForm=*/false,
-          /*IsSigned=*/false);
+          /*IsUnsigned=*/false);
     case Intrinsic::sadd_sat:
     case Intrinsic::ssub_sat: {
       Type *CondTy = Type::getInt1Ty(RetTy->getContext());

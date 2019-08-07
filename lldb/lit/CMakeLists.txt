@@ -52,6 +52,7 @@ list(APPEND LLDB_TEST_DEPS
   lldb-test
   lli
   llvm-config
+  llvm-dwarfdump
   llvm-mc
   llvm-objcopy
   llvm-readobj
@@ -80,6 +81,10 @@ configure_lit_site_cfg(
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/Suite/lit.site.cfg.in
   ${CMAKE_CURRENT_BINARY_DIR}/Suite/lit.site.cfg)
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/lit-lldb-init.in
+  ${CMAKE_CURRENT_BINARY_DIR}/lit-lldb-init)
 
 if(NOT LLDB_BUILT_STANDALONE)
   list(APPEND LLDB_TEST_DEPS

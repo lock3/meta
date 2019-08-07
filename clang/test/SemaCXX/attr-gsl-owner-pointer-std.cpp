@@ -32,6 +32,7 @@ static_assert(sizeof(vector<int>::iterator), ""); // Force instantiation.
 template <typename T>
 class __set_iterator {};
 // CHECK: ClassTemplateDecl {{.*}} __set_iterator
+// CHECK: PointerAttr
 // CHECK: ClassTemplateSpecializationDecl {{.*}} __set_iterator
 // CHECK: TemplateArgument type 'int'
 // CHECK: PointerAttr
@@ -52,6 +53,7 @@ static_assert(sizeof(set<int>::iterator), ""); // Force instantiation.
 template <typename T>
 class __map_iterator {};
 // CHECK: ClassTemplateDecl {{.*}} __map_iterator
+// CHECK: PointerAttr
 // CHECK: ClassTemplateSpecializationDecl {{.*}} __map_iterator
 // CHECK: TemplateArgument type 'int'
 // CHECK: PointerAttr
@@ -73,6 +75,7 @@ inline namespace inlinens {
 template <typename T>
 class __unordered_map_iterator {};
 // CHECK: ClassTemplateDecl {{.*}} __unordered_map_iterator
+// CHECK: PointerAttr
 // CHECK: ClassTemplateSpecializationDecl {{.*}} __unordered_map_iterator
 // CHECK: TemplateArgument type 'int'
 // CHECK: PointerAttr

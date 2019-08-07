@@ -411,7 +411,7 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
       if (LangOpts.OpenCLCPlusPlusVersion == 100)
         Builder.defineMacro("__OPENCL_CPP_VERSION__", "100");
       else
-        llvm_unreachable("Unsupported OpenCL C++ version");
+        llvm_unreachable("Unsupported C++ version for OpenCL");
       Builder.defineMacro("__CL_CPP_VERSION_1_0__", "100");
     } else {
       // OpenCL v1.0 and v1.1 do not have a predefined macro to indicate the
@@ -604,10 +604,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // Support for #pragma redefine_extname (Sun compatibility)
   Builder.defineMacro("__PRAGMA_REDEFINE_EXTNAME", "1");
 
-  // As sad as it is, enough software depends on the __VERSION__ for version
-  // checks that it is necessary to report 4.2.1 (the base GCC version we claim
-  // compatibility with) first.
-  Builder.defineMacro("__VERSION__", "\"4.2.1 Compatible " +
+  // Previously this macro was set to a string aiming to achieve compatibility
+  // with GCC 4.2.1. Now, just return the full Clang version
+  Builder.defineMacro("__VERSION__", "\"" +
                       Twine(getClangFullCPPVersion()) + "\"");
 
   // Initialize language-specific preprocessor defines.
@@ -1033,15 +1032,18 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     switch (LangOpts.OpenMP) {
     case 0:
       break;
+    case 31:
+      Builder.defineMacro("_OPENMP", "201107");
+      break;
     case 40:
       Builder.defineMacro("_OPENMP", "201307");
       break;
-    case 45:
-      Builder.defineMacro("_OPENMP", "201511");
+    case 50:
+      Builder.defineMacro("_OPENMP", "201811");
       break;
     default:
-      // Default version is OpenMP 3.1
-      Builder.defineMacro("_OPENMP", "201107");
+      // Default version is OpenMP 4.5
+      Builder.defineMacro("_OPENMP", "201511");
       break;
     }
   }

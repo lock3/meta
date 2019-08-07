@@ -168,11 +168,13 @@ void SystemZInstrInfo::expandRIEPseudo(MachineInstr &MI, unsigned LowOpcode,
   if (!DestIsHigh && !SrcIsHigh)
     MI.setDesc(get(LowOpcodeK));
   else {
-    emitGRX32Move(*MI.getParent(), MI, MI.getDebugLoc(), DestReg, SrcReg,
-                  SystemZ::LR, 32, MI.getOperand(1).isKill(),
-                  MI.getOperand(1).isUndef());
+    if (DestReg != SrcReg) {
+      emitGRX32Move(*MI.getParent(), MI, MI.getDebugLoc(), DestReg, SrcReg,
+                    SystemZ::LR, 32, MI.getOperand(1).isKill(),
+                    MI.getOperand(1).isUndef());
+      MI.getOperand(1).setReg(DestReg);
+    }
     MI.setDesc(get(DestIsHigh ? HighOpcode : LowOpcode));
-    MI.getOperand(1).setReg(DestReg);
     MI.tieOperands(0, 1);
   }
 }
@@ -214,6 +216,65 @@ void SystemZInstrInfo::expandLOCRPseudo(MachineInstr &MI, unsigned LowOpcode,
     MI.setDesc(get(HighOpcode));
   else
     LOCRMuxJumps++;
+
+  // If we were unable to implement the pseudo with a single instruction, we
+  // need to convert it back into a branch sequence.  This cannot be done here
+  // since the caller of expandPostRAPseudo does not handle changes to the CFG
+  // correctly.  This change is defered to the SystemZExpandPseudo pass.
+}
+
+// MI is a select pseudo instruction.  Replace it with LowOpcode if source
+// and destination are all low GR32s and HighOpcode if source and destination
+// are all high GR32s.  Otherwise, use the two-operand MixedOpcode.
+void SystemZInstrInfo::expandSELRPseudo(MachineInstr &MI, unsigned LowOpcode,
+                                        unsigned HighOpcode,
+                                        unsigned MixedOpcode) const {
+  unsigned DestReg = MI.getOperand(0).getReg();
+  unsigned Src1Reg = MI.getOperand(1).getReg();
+  unsigned Src2Reg = MI.getOperand(2).getReg();
+  bool DestIsHigh = isHighReg(DestReg);
+  bool Src1IsHigh = isHighReg(Src1Reg);
+  bool Src2IsHigh = isHighReg(Src2Reg);
+
+  // If sources and destination aren't all high or all low, we may be able to
+  // simplify the operation by moving one of the sources to the destination
+  // first.  But only if this doesn't clobber the other source.
+  if (DestReg != Src1Reg && DestReg != Src2Reg) {
+    if (DestIsHigh != Src1IsHigh) {
+      emitGRX32Move(*MI.getParent(), MI, MI.getDebugLoc(), DestReg, Src1Reg,
+                    SystemZ::LR, 32, MI.getOperand(1).isKill(),
+                    MI.getOperand(1).isUndef());
+      MI.getOperand(1).setReg(DestReg);
+      Src1Reg = DestReg;
+      Src1IsHigh = DestIsHigh;
+    } else if (DestIsHigh != Src2IsHigh) {
+      emitGRX32Move(*MI.getParent(), MI, MI.getDebugLoc(), DestReg, Src2Reg,
+                    SystemZ::LR, 32, MI.getOperand(2).isKill(),
+                    MI.getOperand(2).isUndef());
+      MI.getOperand(2).setReg(DestReg);
+      Src2Reg = DestReg;
+      Src2IsHigh = DestIsHigh;
+    }
+  }
+
+  // If the destination (now) matches one source, prefer this to be first.
+  if (DestReg != Src1Reg && DestReg == Src2Reg) {
+    commuteInstruction(MI, false, 1, 2);
+    std::swap(Src1Reg, Src2Reg);
+    std::swap(Src1IsHigh, Src2IsHigh);
+  }
+
+  if (!DestIsHigh && !Src1IsHigh && !Src2IsHigh)
+    MI.setDesc(get(LowOpcode));
+  else if (DestIsHigh && Src1IsHigh && Src2IsHigh)
+    MI.setDesc(get(HighOpcode));
+  else {
+    // Given the simplifcation above, we must already have a two-operand case.
+    assert (DestReg == Src1Reg);
+    MI.setDesc(get(MixedOpcode));
+    MI.tieOperands(0, 1);
+    LOCRMuxJumps++;
+  }
 
   // If we were unable to implement the pseudo with a single instruction, we
   // need to convert it back into a branch sequence.  This cannot be done here
@@ -310,6 +371,10 @@ MachineInstr *SystemZInstrInfo::commuteInstructionImpl(MachineInstr &MI,
   };
 
   switch (MI.getOpcode()) {
+  case SystemZ::SELRMux:
+  case SystemZ::SELFHR:
+  case SystemZ::SELR:
+  case SystemZ::SELGR:
   case SystemZ::LOCRMux:
   case SystemZ::LOCFHR:
   case SystemZ::LOCR:
@@ -604,7 +669,9 @@ void SystemZInstrInfo::insertSelect(MachineBasicBlock &MBB,
 
   unsigned Opc;
   if (SystemZ::GRX32BitRegClass.hasSubClassEq(RC)) {
-    if (STI.hasLoadStoreOnCond2())
+    if (STI.hasMiscellaneousExtensions3())
+      Opc = SystemZ::SELRMux;
+    else if (STI.hasLoadStoreOnCond2())
       Opc = SystemZ::LOCRMux;
     else {
       Opc = SystemZ::LOCR;
@@ -616,9 +683,12 @@ void SystemZInstrInfo::insertSelect(MachineBasicBlock &MBB,
       TrueReg = TReg;
       FalseReg = FReg;
     }
-  } else if (SystemZ::GR64BitRegClass.hasSubClassEq(RC))
-    Opc = SystemZ::LOCGR;
-  else
+  } else if (SystemZ::GR64BitRegClass.hasSubClassEq(RC)) {
+    if (STI.hasMiscellaneousExtensions3())
+      Opc = SystemZ::SELGR;
+    else
+      Opc = SystemZ::LOCGR;
+  } else
     llvm_unreachable("Invalid register class");
 
   BuildMI(MBB, I, DL, get(Opc), DstReg)
@@ -641,7 +711,11 @@ bool SystemZInstrInfo::FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
   unsigned NewUseOpc;
   unsigned UseIdx;
   int CommuteIdx = -1;
+  bool TieOps = false;
   switch (UseOpc) {
+  case SystemZ::SELRMux:
+    TieOps = true;
+    LLVM_FALLTHROUGH;
   case SystemZ::LOCRMux:
     if (!STI.hasLoadStoreOnCond2())
       return false;
@@ -653,6 +727,9 @@ bool SystemZInstrInfo::FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
     else
       return false;
     break;
+  case SystemZ::SELGR:
+    TieOps = true;
+    LLVM_FALLTHROUGH;
   case SystemZ::LOCGR:
     if (!STI.hasLoadStoreOnCond2())
       return false;
@@ -674,6 +751,8 @@ bool SystemZInstrInfo::FoldImmediate(MachineInstr &UseMI, MachineInstr &DefMI,
 
   bool DeleteDef = MRI->hasOneNonDBGUse(Reg);
   UseMI.setDesc(get(NewUseOpc));
+  if (TieOps)
+    UseMI.tieOperands(0, 1);
   UseMI.getOperand(UseIdx).ChangeToImmediate(ImmVal);
   if (DeleteDef)
     DefMI.eraseFromParent();
@@ -1177,15 +1256,16 @@ MachineInstr *SystemZInstrInfo::foldMemoryOperandImpl(
       MemOpcode = -1;
     else {
       assert(NumOps == 3 && "Expected two source registers.");
-      unsigned DstReg = MI.getOperand(0).getReg();
-      unsigned DstPhys =
-        (TRI->isVirtualRegister(DstReg) ? VRM->getPhys(DstReg) : DstReg);
-      unsigned SrcReg = (OpNum == 2 ? MI.getOperand(1).getReg()
+      Register DstReg = MI.getOperand(0).getReg();
+      Register DstPhys =
+          (Register::isVirtualRegister(DstReg) ? VRM->getPhys(DstReg) : DstReg);
+      Register SrcReg = (OpNum == 2 ? MI.getOperand(1).getReg()
                                     : ((OpNum == 1 && MI.isCommutable())
                                            ? MI.getOperand(2).getReg()
-                                           : 0));
+                                         : Register()));
       if (DstPhys && !SystemZ::GRH32BitRegClass.contains(DstPhys) && SrcReg &&
-          TRI->isVirtualRegister(SrcReg) && DstPhys == VRM->getPhys(SrcReg))
+          Register::isVirtualRegister(SrcReg) &&
+          DstPhys == VRM->getPhys(SrcReg))
         NeedsCommute = (OpNum == 1);
       else
         MemOpcode = -1;
@@ -1281,6 +1361,11 @@ bool SystemZInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
 
   case SystemZ::LOCRMux:
     expandLOCRPseudo(MI, SystemZ::LOCR, SystemZ::LOCFHR);
+    return true;
+
+  case SystemZ::SELRMux:
+    expandSELRPseudo(MI, SystemZ::SELR, SystemZ::SELFHR,
+                         SystemZ::LOCRMux);
     return true;
 
   case SystemZ::STCMux:

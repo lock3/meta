@@ -387,10 +387,21 @@ struct ClientCapabilities {
   /// textDocument.completion.completionItem.snippetSupport
   bool CompletionSnippets = false;
 
+  /// Client supports completions with additionalTextEdit near the cursor.
+  /// This is a clangd extension. (LSP says this is for unrelated text only).
+  /// textDocument.completion.editsNearCursor
+  bool CompletionFixes = false;
+
   /// Client supports hierarchical document symbols.
+  /// textDocument.documentSymbol.hierarchicalDocumentSymbolSupport
   bool HierarchicalDocumentSymbol = false;
 
+  /// Client supports signature help.
+  /// textDocument.signatureHelp
+  bool HasSignatureHelp = false;
+
   /// Client supports processing label offsets instead of a simple label string.
+  /// textDocument.signatureHelp.signatureInformation.parameterInformation.labelOffsetSupport
   bool OffsetsInSignatureHelp = false;
 
   /// The supported set of CompletionItemKinds for textDocument/completion.
@@ -401,11 +412,20 @@ struct ClientCapabilities {
   /// textDocument.codeAction.codeActionLiteralSupport.
   bool CodeActionStructure = false;
 
+  /// Client supports semantic highlighting.
+  /// textDocument.semanticHighlightingCapabilities.semanticHighlighting
+  bool SemanticHighlighting = false;
+
   /// Supported encodings for LSP character offsets. (clangd extension).
   llvm::Optional<std::vector<OffsetEncoding>> offsetEncoding;
 
   /// The content format that should be used for Hover requests.
+  /// textDocument.hover.contentEncoding
   MarkupKind HoverContentFormat = MarkupKind::PlainText;
+
+  /// The client supports testing for validity of rename operations
+  /// before execution.
+  bool RenamePrepareSupport = false;
 };
 bool fromJSON(const llvm::json::Value &, ClientCapabilities &);
 
@@ -477,6 +497,28 @@ struct InitializeParams {
   InitializationOptions initializationOptions;
 };
 bool fromJSON(const llvm::json::Value &, InitializeParams &);
+
+enum class MessageType {
+  /// An error message.
+  Error = 1,
+  /// A warning message.
+  Warning = 2,
+  /// An information message.
+  Info = 3,
+  /// A log message.
+  Log = 4,
+};
+llvm::json::Value toJSON(const MessageType &);
+
+/// The show message notification is sent from a server to a client to ask the
+/// client to display a particular message in the user interface.
+struct ShowMessageParams {
+  /// The message type.
+  MessageType type = MessageType::Info;
+  /// The actual message.
+  std::string message;
+};
+llvm::json::Value toJSON(const ShowMessageParams &);
 
 struct DidOpenTextDocumentParams {
   /// The document that was opened.
@@ -588,7 +630,6 @@ struct DocumentSymbolParams {
   TextDocumentIdentifier textDocument;
 };
 bool fromJSON(const llvm::json::Value &, DocumentSymbolParams &);
-
 
 /// Represents a related message and source code location for a diagnostic.
 /// This should be used to point to code locations that cause or related to a
@@ -735,6 +776,7 @@ struct CodeAction {
   llvm::Optional<std::string> kind;
   const static llvm::StringLiteral QUICKFIX_KIND;
   const static llvm::StringLiteral REFACTOR_KIND;
+  const static llvm::StringLiteral INFO_KIND;
 
   /// The diagnostics that this code action resolves.
   llvm::Optional<std::vector<Diagnostic>> diagnostics;
@@ -830,6 +872,12 @@ struct ApplyWorkspaceEditParams {
   WorkspaceEdit edit;
 };
 llvm::json::Value toJSON(const ApplyWorkspaceEditParams &);
+
+struct ApplyWorkspaceEditResponse {
+  bool applied = true;
+  llvm::Optional<std::string> failureReason;
+};
+bool fromJSON(const llvm::json::Value &, ApplyWorkspaceEditResponse &);
 
 struct TextDocumentPositionParams {
   /// The text document.
@@ -1089,7 +1137,7 @@ struct TypeHierarchyItem {
   SymbolKind kind;
 
   /// `true` if the hierarchy item is deprecated. Otherwise, `false`.
-  bool deprecated;
+  bool deprecated = false;
 
   /// The URI of the text document where this type hierarchy item belongs to.
   URIForFile uri;
@@ -1115,13 +1163,26 @@ struct TypeHierarchyItem {
   /// descendants. If not defined, the children have not been resolved.
   llvm::Optional<std::vector<TypeHierarchyItem>> children;
 
-  /// The protocol has a slot here for an optional 'data' filed, which can
-  /// be used to identify a type hierarchy item in a resolve request. We don't
-  /// need this (the item itself is sufficient to identify what to resolve)
-  /// so don't declare it.
+  /// An optional 'data' filed, which can be used to identify a type hierarchy
+  /// item in a resolve request.
+  llvm::Optional<std::string> data;
 };
 llvm::json::Value toJSON(const TypeHierarchyItem &);
 llvm::raw_ostream &operator<<(llvm::raw_ostream &, const TypeHierarchyItem &);
+bool fromJSON(const llvm::json::Value &, TypeHierarchyItem &);
+
+/// Parameters for the `typeHierarchy/resolve` request.
+struct ResolveTypeHierarchyItemParams {
+  /// The item to resolve.
+  TypeHierarchyItem item;
+
+  /// The hierarchy levels to resolve. `0` indicates no level.
+  int resolve;
+
+  /// The direction of the hierarchy levels to resolve.
+  TypeHierarchyDirection direction;
+};
+bool fromJSON(const llvm::json::Value &, ResolveTypeHierarchyItemParams &);
 
 struct ReferenceParams : public TextDocumentPositionParams {
   // For now, no options like context.includeDeclaration are supported.
@@ -1139,6 +1200,27 @@ struct FileStatus {
   // FIXME: add detail messages.
 };
 llvm::json::Value toJSON(const FileStatus &FStatus);
+
+/// Represents a semantic highlighting information that has to be applied on a
+/// specific line of the text document.
+struct SemanticHighlightingInformation {
+  /// The line these highlightings belong to.
+  int Line;
+  /// The base64 encoded string of highlighting tokens.
+  std::string Tokens;
+};
+bool operator==(const SemanticHighlightingInformation &Lhs,
+                const SemanticHighlightingInformation &Rhs);
+llvm::json::Value toJSON(const SemanticHighlightingInformation &Highlighting);
+
+/// Parameters for the semantic highlighting (server-side) push notification.
+struct SemanticHighlightingParams {
+  /// The textdocument these highlightings belong to.
+  TextDocumentIdentifier TextDocument;
+  /// The lines of highlightings that should be sent.
+  std::vector<SemanticHighlightingInformation> Lines;
+};
+llvm::json::Value toJSON(const SemanticHighlightingParams &Highlighting);
 
 } // namespace clangd
 } // namespace clang

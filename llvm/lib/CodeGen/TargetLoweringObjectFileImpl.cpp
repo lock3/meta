@@ -43,6 +43,7 @@
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionWasm.h"
+#include "llvm/MC/MCSectionXCOFF.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCSymbolELF.h"
@@ -218,6 +219,16 @@ void TargetLoweringObjectFileELF::Initialize(MCContext &Ctx,
       PersonalityEncoding = dwarf::DW_EH_PE_absptr;
       TTypeEncoding = dwarf::DW_EH_PE_absptr;
     }
+    CallSiteEncoding = dwarf::DW_EH_PE_udata4;
+    break;
+  case Triple::riscv32:
+  case Triple::riscv64:
+    LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
+    PersonalityEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+                          dwarf::DW_EH_PE_sdata4;
+    TTypeEncoding = dwarf::DW_EH_PE_indirect | dwarf::DW_EH_PE_pcrel |
+                    dwarf::DW_EH_PE_sdata4;
+    CallSiteEncoding = dwarf::DW_EH_PE_udata4;
     break;
   case Triple::sparcv9:
     LSDAEncoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
@@ -514,8 +525,8 @@ static const MCSymbolELF *getAssociatedSymbol(const GlobalObject *GO,
   if (!VM)
     report_fatal_error("MD_associated operand is not ValueAsMetadata");
 
-  GlobalObject *OtherGO = dyn_cast<GlobalObject>(VM->getValue());
-  return OtherGO ? dyn_cast<MCSymbolELF>(TM.getSymbol(OtherGO)) : nullptr;
+  auto *OtherGV = dyn_cast<GlobalValue>(VM->getValue());
+  return OtherGV ? dyn_cast<MCSymbolELF>(TM.getSymbol(OtherGV)) : nullptr;
 }
 
 static unsigned getEntrySizeForKind(SectionKind Kind) {
@@ -575,14 +586,29 @@ MCSection *TargetLoweringObjectFileELF::getExplicitSectionGlobal(
     Flags |= ELF::SHF_GROUP;
   }
 
+  bool EmitUniqueSection = false;
+
+  // If we have -ffunction-sections or -fdata-sections then we should emit the
+  // global value to a uniqued section of the same name.
+  if (!(Flags & ELF::SHF_MERGE) && !Kind.isCommon()) {
+    if (Kind.isText())
+      EmitUniqueSection = TM.getFunctionSections();
+    else
+      EmitUniqueSection = TM.getDataSections();
+  }
+  EmitUniqueSection |= GO->hasComdat();
+
   // A section can have at most one associated section. Put each global with
   // MD_associated in a unique section.
-  unsigned UniqueID = MCContext::GenericSectionID;
   const MCSymbolELF *AssociatedSymbol = getAssociatedSymbol(GO, TM);
   if (AssociatedSymbol) {
-    UniqueID = NextUniqueID++;
+    EmitUniqueSection = true;
     Flags |= ELF::SHF_LINK_ORDER;
   }
+
+  unsigned UniqueID = MCContext::GenericSectionID;
+  if (EmitUniqueSection)
+    UniqueID = NextUniqueID++;
 
   MCSectionELF *Section = getContext().getELFSection(
       SectionName, getELFSectionType(SectionName, Kind), Flags,
@@ -1470,7 +1496,7 @@ void TargetLoweringObjectFileCOFF::Initialize(MCContext &Ctx,
                                               const TargetMachine &TM) {
   TargetLoweringObjectFile::Initialize(Ctx, TM);
   const Triple &T = TM.getTargetTriple();
-  if (T.isKnownWindowsMSVCEnvironment() || T.isWindowsItaniumEnvironment()) {
+  if (T.isWindowsMSVCEnvironment() || T.isWindowsItaniumEnvironment()) {
     StaticCtorSection =
         Ctx.getCOFFSection(".CRT$XCU", COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
                                            COFF::IMAGE_SCN_MEM_READ,
@@ -1496,7 +1522,7 @@ static MCSectionCOFF *getCOFFStaticStructorSection(MCContext &Ctx,
                                                    unsigned Priority,
                                                    const MCSymbol *KeySym,
                                                    MCSectionCOFF *Default) {
-  if (T.isKnownWindowsMSVCEnvironment() || T.isWindowsItaniumEnvironment()) {
+  if (T.isWindowsMSVCEnvironment() || T.isWindowsItaniumEnvironment()) {
     // If the priority is the default, use .CRT$XCU, possibly associative.
     if (Priority == 65535)
       return Ctx.getAssociativeCOFFSection(Default, KeySym, 0);
@@ -1556,9 +1582,7 @@ const MCExpr *TargetLoweringObjectFileCOFF::lowerRelativeReference(
     const GlobalValue *LHS, const GlobalValue *RHS,
     const TargetMachine &TM) const {
   const Triple &T = TM.getTargetTriple();
-  if (!T.isKnownWindowsMSVCEnvironment() &&
-      !T.isWindowsItaniumEnvironment() &&
-      !T.isWindowsCoreCLREnvironment())
+  if (T.isOSCygMing())
     return nullptr;
 
   // Our symbols should exist in address space zero, cowardly no-op if
@@ -1810,4 +1834,61 @@ MCSection *TargetLoweringObjectFileWasm::getStaticDtorSection(
     unsigned Priority, const MCSymbol *KeySym) const {
   llvm_unreachable("@llvm.global_dtors should have been lowered already");
   return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+//                                  XCOFF
+//===----------------------------------------------------------------------===//
+MCSection *TargetLoweringObjectFileXCOFF::getExplicitSectionGlobal(
+    const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
+  report_fatal_error("XCOFF explicit sections not yet implemented.");
+}
+
+MCSection *TargetLoweringObjectFileXCOFF::SelectSectionForGlobal(
+    const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
+  assert(!TM.getFunctionSections() && !TM.getDataSections() &&
+         "XCOFF unique sections not yet implemented.");
+
+  // Common symbols go into a csect with matching name which will get mapped
+  // into the .bss section.
+  if (Kind.isCommon()) {
+    SmallString<128> Name;
+    getNameWithPrefix(Name, GO, TM);
+    return getContext().getXCOFFSection(Name, XCOFF::XMC_RW, XCOFF::XTY_CM,
+                                        Kind, /* BeginSymbolName */ nullptr);
+  }
+
+  if (Kind.isText())
+    return TextSection;
+
+  report_fatal_error("XCOFF other section types not yet implemented.");
+}
+
+bool TargetLoweringObjectFileXCOFF::shouldPutJumpTableInFunctionSection(
+    bool UsesLabelDifference, const Function &F) const {
+  report_fatal_error("TLOF XCOFF not yet implemented.");
+}
+
+void TargetLoweringObjectFileXCOFF::Initialize(MCContext &Ctx,
+                                               const TargetMachine &TgtM) {
+  TargetLoweringObjectFile::Initialize(Ctx, TgtM);
+  TTypeEncoding = 0;
+  PersonalityEncoding = 0;
+  LSDAEncoding = 0;
+}
+
+MCSection *TargetLoweringObjectFileXCOFF::getStaticCtorSection(
+    unsigned Priority, const MCSymbol *KeySym) const {
+  report_fatal_error("XCOFF ctor section not yet implemented.");
+}
+
+MCSection *TargetLoweringObjectFileXCOFF::getStaticDtorSection(
+    unsigned Priority, const MCSymbol *KeySym) const {
+  report_fatal_error("XCOFF dtor section not yet implemented.");
+}
+
+const MCExpr *TargetLoweringObjectFileXCOFF::lowerRelativeReference(
+    const GlobalValue *LHS, const GlobalValue *RHS,
+    const TargetMachine &TM) const {
+  report_fatal_error("XCOFF not yet implemented.");
 }

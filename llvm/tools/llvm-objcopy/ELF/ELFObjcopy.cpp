@@ -154,12 +154,14 @@ static std::unique_ptr<Writer> createELFWriter(const CopyConfig &Config,
 static std::unique_ptr<Writer> createWriter(const CopyConfig &Config,
                                             Object &Obj, Buffer &Buf,
                                             ElfType OutputElfType) {
-  using Functor = std::function<std::unique_ptr<Writer>()>;
-  return StringSwitch<Functor>(Config.OutputFormat)
-      .Case("binary", [&] { return llvm::make_unique<BinaryWriter>(Obj, Buf); })
-      .Case("ihex", [&] { return llvm::make_unique<IHexWriter>(Obj, Buf); })
-      .Default(
-          [&] { return createELFWriter(Config, Obj, Buf, OutputElfType); })();
+  switch (Config.OutputFormat) {
+  case FileFormat::Binary:
+    return llvm::make_unique<BinaryWriter>(Obj, Buf);
+  case FileFormat::IHex:
+    return llvm::make_unique<IHexWriter>(Obj, Buf);
+  default:
+    return createELFWriter(Config, Obj, Buf, OutputElfType);
+  }
 }
 
 template <class ELFT>
@@ -421,7 +423,7 @@ static Error updateAndRemoveSymbols(const CopyConfig &Config, Object &Obj) {
 
     if ((Config.StripUnneeded ||
          is_contained(Config.UnneededSymbolsToRemove, Sym.Name)) &&
-        isUnneededSymbol(Sym))
+        (!Obj.isRelocatable() || isUnneededSymbol(Sym)))
       return true;
 
     // We want to remove undefined symbols if all references have been stripped.
@@ -739,6 +741,17 @@ static Error writeOutput(const CopyConfig &Config, Object &Obj, Buffer &Out,
   if (Error E = Writer->finalize())
     return E;
   return Writer->write();
+}
+
+Error executeObjcopyOnIHex(const CopyConfig &Config, MemoryBuffer &In,
+                           Buffer &Out) {
+  IHexReader Reader(&In);
+  std::unique_ptr<Object> Obj = Reader.create();
+  const ElfType OutputElfType =
+      getOutputElfType(Config.OutputArch.getValueOr(Config.BinaryArch));
+  if (Error E = handleArgs(Config, *Obj, Reader, OutputElfType))
+    return E;
+  return writeOutput(Config, *Obj, Out, OutputElfType);
 }
 
 Error executeObjcopyOnRawBinary(const CopyConfig &Config, MemoryBuffer &In,

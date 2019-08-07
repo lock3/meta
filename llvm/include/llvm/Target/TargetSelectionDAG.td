@@ -580,9 +580,9 @@ def atomic_load      : SDNode<"ISD::ATOMIC_LOAD", SDTAtomicLoad,
 def atomic_store     : SDNode<"ISD::ATOMIC_STORE", SDTAtomicStore,
                     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
 
-def masked_store : SDNode<"ISD::MSTORE",  SDTMaskedStore,
+def masked_st    : SDNode<"ISD::MSTORE",  SDTMaskedStore,
                        [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
-def masked_load  : SDNode<"ISD::MLOAD",  SDTMaskedLoad,
+def masked_ld    : SDNode<"ISD::MLOAD",  SDTMaskedLoad,
                        [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 
 // Do not use ld, st directly. Use load, extload, sextload, zextload, store,
@@ -736,6 +736,14 @@ class PatFrags<dag ops, list<dag> frags, code pred = [{}],
   // !cast<StoreSDNode>(N)->isTruncatingStore();
   // cast<StoreSDNode>(N)->isTruncatingStore();
   bit IsTruncStore = ?;
+
+  // cast<MemSDNode>(N)->getAddressSpace() ==
+  // If this empty, accept any address space.
+  list<int> AddressSpaces = ?;
+
+  // cast<MemSDNode>(N)->getAlignment() >=
+  // If this is empty, accept any alignment.
+  int MinAlignment = ?;
 
   // cast<AtomicSDNode>(N)->getOrdering() == AtomicOrdering::Monotonic
   bit IsAtomicOrderingMonotonic = ?;
@@ -1224,6 +1232,13 @@ def setle  : PatFrag<(ops node:$lhs, node:$rhs),
 def setne  : PatFrag<(ops node:$lhs, node:$rhs),
                      (setcc node:$lhs, node:$rhs, SETNE)>;
 
+// We don't have strict FP extended loads as single DAG nodes, but we can
+// still provide convenience fragments to match those operations.
+def strict_extloadf32 : PatFrag<(ops node:$ptr),
+                                (strict_fpextend (f32 (load node:$ptr)))>;
+def strict_extloadf64 : PatFrag<(ops node:$ptr),
+                                (strict_fpextend (f64 (load node:$ptr)))>;
+
 // Convenience fragments to match both strict and non-strict fp operations
 def any_fadd       : PatFrags<(ops node:$lhs, node:$rhs),
                               [(strict_fadd node:$lhs, node:$rhs),
@@ -1291,6 +1306,12 @@ def any_fpround    : PatFrags<(ops node:$src),
 def any_fpextend   : PatFrags<(ops node:$src),
                               [(strict_fpextend node:$src),
                                (fpextend node:$src)]>;
+def any_extloadf32 : PatFrags<(ops node:$ptr),
+                              [(strict_extloadf32 node:$ptr),
+                               (extloadf32 node:$ptr)]>;
+def any_extloadf64 : PatFrags<(ops node:$ptr),
+                              [(strict_extloadf64 node:$ptr),
+                               (extloadf64 node:$ptr)]>;
 
 multiclass binary_atomic_op_ord<SDNode atomic_op> {
   def #NAME#_monotonic : PatFrag<(ops node:$ptr, node:$val),
@@ -1348,26 +1369,26 @@ multiclass ternary_atomic_op_ord<SDNode atomic_op> {
   }
 }
 
-multiclass binary_atomic_op<SDNode atomic_op> {
+multiclass binary_atomic_op<SDNode atomic_op, bit IsInt = 1> {
   def _8 : PatFrag<(ops node:$ptr, node:$val),
                    (atomic_op  node:$ptr, node:$val)> {
     let IsAtomic = 1;
-    let MemoryVT = i8;
+    let MemoryVT = !if(IsInt, i8, ?);
   }
   def _16 : PatFrag<(ops node:$ptr, node:$val),
                     (atomic_op node:$ptr, node:$val)> {
     let IsAtomic = 1;
-    let MemoryVT = i16;
+    let MemoryVT = !if(IsInt, i16, f16);
   }
   def _32 : PatFrag<(ops node:$ptr, node:$val),
                     (atomic_op node:$ptr, node:$val)> {
     let IsAtomic = 1;
-    let MemoryVT = i32;
+    let MemoryVT = !if(IsInt, i32, f32);
   }
   def _64 : PatFrag<(ops node:$ptr, node:$val),
                     (atomic_op node:$ptr, node:$val)> {
     let IsAtomic = 1;
-    let MemoryVT = i64;
+    let MemoryVT = !if(IsInt, i64, f64);
   }
 
   defm NAME#_8  : binary_atomic_op_ord<atomic_op>;

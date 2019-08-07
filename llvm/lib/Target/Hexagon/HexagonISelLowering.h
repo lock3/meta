@@ -127,6 +127,8 @@ namespace HexagonISD {
     bool isCheapToSpeculateCtlz() const override { return true; }
     bool isCtlzFast() const override { return true; }
 
+    bool hasBitTest(SDValue X, SDValue Y) const override;
+
     bool allowTruncateForTailCall(Type *Ty1, Type *Ty2) const override;
 
     /// Return true if an FMA operation is faster than a pair of mul and add
@@ -167,6 +169,7 @@ namespace HexagonISD {
     SDValue LowerLoad(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerStore(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUnalignedLoad(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerUAddSubO(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerAddSubCarry(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
@@ -298,7 +301,7 @@ namespace HexagonISD {
         const AttributeList &FuncAttributes) const override;
 
     bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AddrSpace,
-        unsigned Align, bool *Fast) const override;
+        unsigned Align, MachineMemOperand::Flags Flags, bool *Fast) const override;
 
     /// Returns relocation base for the given PIC jumptable.
     SDValue getPICJumpTableRelocBase(SDValue Table, SelectionDAG &DAG)

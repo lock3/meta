@@ -169,7 +169,7 @@ struct CompletionCandidate {
   // Returns a token identifying the overload set this is part of.
   // 0 indicates it's not part of any overload set.
   size_t overloadSet(const CodeCompleteOptions &Opts) const {
-    if (!Opts.BundleOverloads)
+    if (!Opts.BundleOverloads.getValueOr(false))
       return 0;
     llvm::SmallString<256> Scratch;
     if (IndexResult) {
@@ -327,8 +327,12 @@ struct CodeCompletionBuilder {
       auto ResolvedInserted = toHeaderFile(Header, FileName);
       if (!ResolvedInserted)
         return ResolvedInserted.takeError();
+      auto Spelled = Includes.calculateIncludePath(*ResolvedInserted, FileName);
+      if (!Spelled)
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "Header not on include path");
       return std::make_pair(
-          Includes.calculateIncludePath(*ResolvedInserted),
+          std::move(*Spelled),
           Includes.shouldInsertInclude(*ResolvedDeclaring, *ResolvedInserted));
     };
     bool ShouldInsert = C.headerToInsertIfAllowed(Opts).hasValue();
@@ -342,8 +346,9 @@ struct CodeCompletionBuilder {
         Completion.Includes.push_back(std::move(Include));
       } else
         log("Failed to generate include insertion edits for adding header "
-            "(FileURI='{0}', IncludeHeader='{1}') into {2}",
-            C.IndexResult->CanonicalDeclaration.FileURI, Inc, FileName);
+            "(FileURI='{0}', IncludeHeader='{1}') into {2}: {3}",
+            C.IndexResult->CanonicalDeclaration.FileURI, Inc, FileName,
+            ToInclude.takeError());
     }
     // Prefer includes that do not need edits (i.e. already exist).
     std::stable_partition(Completion.Includes.begin(),
@@ -1105,8 +1110,9 @@ bool semaCodeComplete(std::unique_ptr<CodeCompleteConsumer> Consumer,
   if (Includes)
     Clang->getPreprocessor().addPPCallbacks(
         collectIncludeStructureCallback(Clang->getSourceManager(), Includes));
-  if (!Action.Execute()) {
-    log("Execute() failed when running codeComplete for {0}", Input.FileName);
+  if (llvm::Error Err = Action.Execute()) {
+    log("Execute() failed when running codeComplete for {0}: {1}",
+        Input.FileName, toString(std::move(Err)));
     return false;
   }
   Action.EndSourceFile();
@@ -1385,12 +1391,12 @@ private:
     unsigned RangeEnd = HeuristicPrefix.Qualifier.begin() - Content.data(),
              RangeBegin = RangeEnd;
     for (size_t I = 0; I < 3 && RangeBegin > 0; ++I) {
-      auto PrevNL = Content.rfind('\n', RangeBegin - 1);
+      auto PrevNL = Content.rfind('\n', RangeBegin);
       if (PrevNL == StringRef::npos) {
         RangeBegin = 0;
         break;
       }
-      RangeBegin = PrevNL + 1;
+      RangeBegin = PrevNL;
     }
 
     ContextWords = collectWords(Content.slice(RangeBegin, RangeEnd));

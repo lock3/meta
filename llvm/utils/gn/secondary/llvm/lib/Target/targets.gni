@@ -21,12 +21,16 @@ if (llvm_targets_to_build == "host") {
   # FIXME: Port the remaining targets.
   llvm_targets_to_build = [
     "AArch64",
+    "AMDGPU",
     "ARM",
     "BPF",
     "Hexagon",
     "Lanai",
+    "Mips",
+    "NVPTX",
     "PowerPC",
     "Sparc",
+    "SystemZ",
     "WebAssembly",
     "X86",
   ]
@@ -43,6 +47,8 @@ llvm_build_X86 = false
 foreach(target, llvm_targets_to_build) {
   if (target == "AArch64") {
     llvm_build_AArch64 = true
+  } else if (target == "AMDGPU") {
+    # Nothing to do.
   } else if (target == "ARM") {
     llvm_build_ARM = true
   } else if (target == "BPF") {
@@ -51,9 +57,17 @@ foreach(target, llvm_targets_to_build) {
     # Nothing to do.
   } else if (target == "Lanai") {
     # Nothing to do.
+  } else if (target == "Mips") {
+    # Nothing to do.
+  } else if (target == "NVPTX") {
+    # Nothing to do.
   } else if (target == "PowerPC") {
     llvm_build_PowerPC = true
+  } else if (target == "RISCV") {
+    # Nothing to do.
   } else if (target == "Sparc") {
+    # Nothing to do.
+  } else if (target == "SystemZ") {
     # Nothing to do.
   } else if (target == "WebAssembly") {
     llvm_build_WebAssembly = true

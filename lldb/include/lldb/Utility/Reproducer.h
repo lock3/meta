@@ -9,11 +9,11 @@
 #ifndef LLDB_UTILITY_REPRODUCER_H
 #define LLDB_UTILITY_REPRODUCER_H
 
-#include "lldb/Utility/FileCollector.h"
 #include "lldb/Utility/FileSpec.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileCollector.h"
 #include "llvm/Support/YAMLTraits.h"
 
 #include <mutex>
@@ -75,47 +75,69 @@ public:
 
   const void *DynamicClassID() const override { return &ThisProviderT::ID; }
 
-  llvm::StringRef GetName() const override { return ThisProviderT::info::name; }
-  llvm::StringRef GetFile() const override { return ThisProviderT::info::file; }
+  llvm::StringRef GetName() const override { return ThisProviderT::Info::name; }
+  llvm::StringRef GetFile() const override { return ThisProviderT::Info::file; }
 
 protected:
   using ProviderBase::ProviderBase; // Inherit constructor.
 };
 
-struct FileInfo {
-  static const char *name;
-  static const char *file;
-};
-
 class FileProvider : public Provider<FileProvider> {
 public:
-  typedef FileInfo info;
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
 
   FileProvider(const FileSpec &directory)
       : Provider(directory),
-        m_collector(directory.CopyByAppendingPathComponent("root")) {}
+        m_collector(std::make_shared<llvm::FileCollector>(
+            directory.CopyByAppendingPathComponent("root").GetPath(),
+            directory.GetPath())) {}
 
-  FileCollector &GetFileCollector() { return m_collector; }
+  std::shared_ptr<llvm::FileCollector> GetFileCollector() {
+    return m_collector;
+  }
 
   void Keep() override {
-    auto mapping = GetRoot().CopyByAppendingPathComponent(info::file);
+    auto mapping = GetRoot().CopyByAppendingPathComponent(Info::file);
     // Temporary files that are removed during execution can cause copy errors.
-    if (auto ec = m_collector.CopyFiles(/*stop_on_error=*/false))
+    if (auto ec = m_collector->copyFiles(/*stop_on_error=*/false))
       return;
-    m_collector.WriteMapping(mapping);
+    m_collector->writeMapping(mapping.GetPath());
   }
 
   static char ID;
 
 private:
-  FileCollector m_collector;
+  std::shared_ptr<llvm::FileCollector> m_collector;
+};
+
+/// Provider for the LLDB version number.
+///
+/// When the reproducer is kept, it writes the lldb version to a file named
+/// version.txt in the reproducer root.
+class VersionProvider : public Provider<VersionProvider> {
+public:
+  VersionProvider(const FileSpec &directory) : Provider(directory) {}
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
+  void SetVersion(std::string version) {
+    assert(m_version.empty());
+    m_version = std::move(version);
+  }
+  void Keep() override;
+  std::string m_version;
+  static char ID;
 };
 
 class DataRecorder {
 public:
   DataRecorder(const FileSpec &filename, std::error_code &ec)
-      : m_filename(std::move(filename)),
-        m_os(m_filename.GetPath(), ec, llvm::sys::fs::F_Text), m_record(true) {}
+      : m_filename(filename.GetFilename().GetStringRef()),
+        m_os(filename.GetPath(), ec, llvm::sys::fs::OF_Text), m_record(true) {}
 
   static llvm::Expected<std::unique_ptr<DataRecorder>>
   Create(const FileSpec &filename);
@@ -142,14 +164,12 @@ private:
   bool m_record;
 };
 
-struct CommandInfo {
-  static const char *name;
-  static const char *file;
-};
-
 class CommandProvider : public Provider<CommandProvider> {
 public:
-  typedef CommandInfo info;
+  struct Info {
+    static const char *name;
+    static const char *file;
+  };
 
   CommandProvider(const FileSpec &directory) : Provider(directory) {}
 

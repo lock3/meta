@@ -88,6 +88,20 @@ inline class_match<UndefValue> m_Undef() { return class_match<UndefValue>(); }
 /// Match an arbitrary Constant and ignore it.
 inline class_match<Constant> m_Constant() { return class_match<Constant>(); }
 
+/// Inverting matcher
+template <typename Ty> struct match_unless {
+  Ty M;
+
+  match_unless(const Ty &Matcher) : M(Matcher) {}
+
+  template <typename ITy> bool match(ITy *V) { return !M.match(V); }
+};
+
+/// Match if the inner matcher does *NOT* match.
+template <typename Ty> inline match_unless<Ty> m_Unless(const Ty &M) {
+  return match_unless<Ty>(M);
+}
+
 /// Matching combinators
 template <typename LTy, typename RTy> struct match_combine_or {
   LTy L;
@@ -300,6 +314,15 @@ template <typename Predicate> struct cstfp_pred_ty : public Predicate {
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+struct is_any_apint {
+  bool isValue(const APInt &C) { return true; }
+};
+/// Match an integer or vector with any integral constant.
+/// For vectors, this includes constants with undefined elements.
+inline cst_pred_ty<is_any_apint> m_AnyIntegralConstant() {
+  return cst_pred_ty<is_any_apint>();
+}
+
 struct is_all_ones {
   bool isValue(const APInt &C) { return C.isAllOnesValue(); }
 };
@@ -388,6 +411,18 @@ inline api_pred_ty<is_power2> m_Power2(const APInt *&V) {
   return V;
 }
 
+struct is_negated_power2 {
+  bool isValue(const APInt &C) { return (-C).isPowerOf2(); }
+};
+/// Match a integer or vector negated power-of-2.
+/// For vectors, this includes constants with undefined elements.
+inline cst_pred_ty<is_negated_power2> m_NegatedPower2() {
+  return cst_pred_ty<is_negated_power2>();
+}
+inline api_pred_ty<is_negated_power2> m_NegatedPower2(const APInt *&V) {
+  return V;
+}
+
 struct is_power2_or_zero {
   bool isValue(const APInt &C) { return !C || C.isPowerOf2(); }
 };
@@ -416,6 +451,46 @@ struct is_lowbit_mask {
 /// For vectors, this includes constants with undefined elements.
 inline cst_pred_ty<is_lowbit_mask> m_LowBitMask() {
   return cst_pred_ty<is_lowbit_mask>();
+}
+
+struct icmp_pred_with_threshold {
+  ICmpInst::Predicate Pred;
+  const APInt *Thr;
+  bool isValue(const APInt &C) {
+    switch (Pred) {
+    case ICmpInst::Predicate::ICMP_EQ:
+      return C.eq(*Thr);
+    case ICmpInst::Predicate::ICMP_NE:
+      return C.ne(*Thr);
+    case ICmpInst::Predicate::ICMP_UGT:
+      return C.ugt(*Thr);
+    case ICmpInst::Predicate::ICMP_UGE:
+      return C.uge(*Thr);
+    case ICmpInst::Predicate::ICMP_ULT:
+      return C.ult(*Thr);
+    case ICmpInst::Predicate::ICMP_ULE:
+      return C.ule(*Thr);
+    case ICmpInst::Predicate::ICMP_SGT:
+      return C.sgt(*Thr);
+    case ICmpInst::Predicate::ICMP_SGE:
+      return C.sge(*Thr);
+    case ICmpInst::Predicate::ICMP_SLT:
+      return C.slt(*Thr);
+    case ICmpInst::Predicate::ICMP_SLE:
+      return C.sle(*Thr);
+    default:
+      llvm_unreachable("Unhandled ICmp predicate");
+    }
+  }
+};
+/// Match an integer or vector with every element comparing 'pred' (eg/ne/...)
+/// to Threshold. For vectors, this includes constants with undefined elements.
+inline cst_pred_ty<icmp_pred_with_threshold>
+m_SpecificInt_ICMP(ICmpInst::Predicate Predicate, const APInt &Threshold) {
+  cst_pred_ty<icmp_pred_with_threshold> P;
+  P.Pred = Predicate;
+  P.Thr = &Threshold;
+  return P;
 }
 
 struct is_nan {
@@ -928,6 +1003,12 @@ struct is_idiv_op {
   }
 };
 
+struct is_irem_op {
+  bool isOpType(unsigned Opcode) {
+    return Opcode == Instruction::SRem || Opcode == Instruction::URem;
+  }
+};
+
 /// Matches shift operations.
 template <typename LHS, typename RHS>
 inline BinOpPred_match<LHS, RHS, is_shift_op> m_Shift(const LHS &L,
@@ -961,6 +1042,13 @@ template <typename LHS, typename RHS>
 inline BinOpPred_match<LHS, RHS, is_idiv_op> m_IDiv(const LHS &L,
                                                     const RHS &R) {
   return BinOpPred_match<LHS, RHS, is_idiv_op>(L, R);
+}
+
+/// Matches integer remainder operations.
+template <typename LHS, typename RHS>
+inline BinOpPred_match<LHS, RHS, is_irem_op> m_IRem(const LHS &L,
+                                                    const RHS &R) {
+  return BinOpPred_match<LHS, RHS, is_irem_op>(L, R);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1180,6 +1268,12 @@ inline CastClass_match<OpTy, Instruction::SExt> m_SExt(const OpTy &Op) {
 template <typename OpTy>
 inline CastClass_match<OpTy, Instruction::ZExt> m_ZExt(const OpTy &Op) {
   return CastClass_match<OpTy, Instruction::ZExt>(Op);
+}
+
+template <typename OpTy>
+inline match_combine_or<CastClass_match<OpTy, Instruction::ZExt>, OpTy>
+m_ZExtOrSelf(const OpTy &Op) {
+  return m_CombineOr(m_ZExt(Op), Op);
 }
 
 template <typename OpTy>

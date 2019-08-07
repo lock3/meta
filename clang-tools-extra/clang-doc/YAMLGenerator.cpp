@@ -113,6 +113,7 @@ static void FieldTypeInfoMapping(IO &IO, FieldTypeInfo &I) {
 static void InfoMapping(IO &IO, Info &I) {
   IO.mapRequired("USR", I.USR);
   IO.mapOptional("Name", I.Name, SmallString<16>());
+  IO.mapOptional("Path", I.Path, SmallString<128>());
   IO.mapOptional("Namespace", I.Namespace, llvm::SmallVector<Reference, 4>());
   IO.mapOptional("Description", I.Description);
 }
@@ -154,6 +155,8 @@ template <> struct MappingTraits<Reference> {
     IO.mapOptional("Type", Ref.RefType, InfoType::IT_default);
     IO.mapOptional("Name", Ref.Name, SmallString<16>());
     IO.mapOptional("USR", Ref.USR, SymbolID());
+    IO.mapOptional("Path", Ref.Path, SmallString<128>());
+    IO.mapOptional("IsInGlobalNamespace", Ref.IsInGlobalNamespace, false);
   }
 };
 
@@ -241,12 +244,14 @@ class YAMLGenerator : public Generator {
 public:
   static const char *Format;
 
-  llvm::Error generateDocForInfo(Info *I, llvm::raw_ostream &OS) override;
+  llvm::Error generateDocForInfo(Info *I, llvm::raw_ostream &OS,
+                                 const ClangDocContext &CDCtx) override;
 };
 
 const char *YAMLGenerator::Format = "yaml";
 
-llvm::Error YAMLGenerator::generateDocForInfo(Info *I, llvm::raw_ostream &OS) {
+llvm::Error YAMLGenerator::generateDocForInfo(Info *I, llvm::raw_ostream &OS,
+                                              const ClangDocContext &CDCtx) {
   llvm::yaml::Output InfoYAML(OS);
   switch (I->IT) {
   case InfoType::IT_namespace:

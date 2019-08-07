@@ -385,7 +385,7 @@ void TailDuplicator::duplicateInstruction(
       if (!MO.isReg())
         continue;
       unsigned Reg = MO.getReg();
-      if (!TargetRegisterInfo::isVirtualRegister(Reg))
+      if (!Register::isVirtualRegister(Reg))
         continue;
       if (MO.isDef()) {
         const TargetRegisterClass *RC = MRI->getRegClass(Reg);
@@ -434,7 +434,7 @@ void TailDuplicator::duplicateInstruction(
             if (NewRC == nullptr)
               NewRC = OrigRC;
             unsigned NewReg = MRI->createVirtualRegister(NewRC);
-            BuildMI(*PredBB, MI, MI->getDebugLoc(),
+            BuildMI(*PredBB, NewMI, NewMI.getDebugLoc(),
                     TII->get(TargetOpcode::COPY), NewReg)
                 .addReg(VI->second.Reg, 0, VI->second.SubReg);
             LocalVRMap.erase(VI);

@@ -44,16 +44,15 @@
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/DeclVendor.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Symbol/TypeSystem.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/Language.h"
 #include "lldb/Target/LanguageRuntime.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
@@ -1847,36 +1846,23 @@ lldb::SBType SBTarget::FindFirstType(const char *typename_cstr) {
       }
     }
 
-    // Didn't find the type in the symbols; try the Objective-C runtime if one
-    // is installed
-
-    ProcessSP process_sp(target_sp->GetProcessSP());
-
-    if (process_sp) {
-      ObjCLanguageRuntime *objc_language_runtime =
-          process_sp->GetObjCLanguageRuntime();
-
-      if (objc_language_runtime) {
-        DeclVendor *objc_decl_vendor = objc_language_runtime->GetDeclVendor();
-
-        if (objc_decl_vendor) {
-          std::vector<clang::NamedDecl *> decls;
-
-          if (objc_decl_vendor->FindDecls(const_typename, true, 1, decls) > 0) {
-            if (CompilerType type = ClangASTContext::GetTypeForDecl(decls[0])) {
-              return LLDB_RECORD_RESULT(SBType(type));
-            }
-          }
+    // Didn't find the type in the symbols; Try the loaded language runtimes
+    if (auto process_sp = target_sp->GetProcessSP()) {
+      for (auto *runtime : process_sp->GetLanguageRuntimes()) {
+        if (auto vendor = runtime->GetDeclVendor()) {
+          auto types = vendor->FindTypes(const_typename, /*max_matches*/ 1);
+          if (!types.empty())
+            return LLDB_RECORD_RESULT(SBType(types.front()));
         }
       }
     }
 
     // No matches, search for basic typename matches
-    ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
-    if (clang_ast)
-      return LLDB_RECORD_RESULT(SBType(ClangASTContext::GetBasicType(
-          clang_ast->getASTContext(), const_typename)));
+    for (auto *type_system : target_sp->GetScratchTypeSystems())
+      if (auto type = type_system->GetBuiltinTypeByName(const_typename))
+        return LLDB_RECORD_RESULT(SBType(type));
   }
+
   return LLDB_RECORD_RESULT(SBType());
 }
 
@@ -1886,10 +1872,9 @@ SBType SBTarget::GetBasicType(lldb::BasicType type) {
 
   TargetSP target_sp(GetSP());
   if (target_sp) {
-    ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
-    if (clang_ast)
-      return LLDB_RECORD_RESULT(SBType(
-          ClangASTContext::GetBasicType(clang_ast->getASTContext(), type)));
+    for (auto *type_system : target_sp->GetScratchTypeSystems())
+      if (auto compiler_type = type_system->GetBasicTypeFromAST(type))
+        return LLDB_RECORD_RESULT(SBType(compiler_type));
   }
   return LLDB_RECORD_RESULT(SBType());
 }
@@ -1918,37 +1903,24 @@ lldb::SBTypeList SBTarget::FindTypes(const char *typename_cstr) {
       }
     }
 
-    // Try the Objective-C runtime if one is installed
-
-    ProcessSP process_sp(target_sp->GetProcessSP());
-
-    if (process_sp) {
-      ObjCLanguageRuntime *objc_language_runtime =
-          process_sp->GetObjCLanguageRuntime();
-
-      if (objc_language_runtime) {
-        DeclVendor *objc_decl_vendor = objc_language_runtime->GetDeclVendor();
-
-        if (objc_decl_vendor) {
-          std::vector<clang::NamedDecl *> decls;
-
-          if (objc_decl_vendor->FindDecls(const_typename, true, 1, decls) > 0) {
-            for (clang::NamedDecl *decl : decls) {
-              if (CompilerType type = ClangASTContext::GetTypeForDecl(decl)) {
-                sb_type_list.Append(SBType(type));
-              }
-            }
-          }
+    // Try the loaded language runtimes
+    if (auto process_sp = target_sp->GetProcessSP()) {
+      for (auto *runtime : process_sp->GetLanguageRuntimes()) {
+        if (auto *vendor = runtime->GetDeclVendor()) {
+          auto types =
+              vendor->FindTypes(const_typename, /*max_matches*/ UINT32_MAX);
+          for (auto type : types)
+            sb_type_list.Append(SBType(type));
         }
       }
     }
 
     if (sb_type_list.GetSize() == 0) {
       // No matches, search for basic typename matches
-      ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
-      if (clang_ast)
-        sb_type_list.Append(SBType(ClangASTContext::GetBasicType(
-            clang_ast->getASTContext(), const_typename)));
+      for (auto *type_system : target_sp->GetScratchTypeSystems())
+        if (auto compiler_type =
+                type_system->GetBuiltinTypeByName(const_typename))
+          sb_type_list.Append(SBType(compiler_type));
     }
   }
   return LLDB_RECORD_RESULT(sb_type_list);
@@ -2382,10 +2354,10 @@ lldb::SBValue SBTarget::EvaluateExpression(const char *expr,
       expr_result.SetSP(expr_value_sp, options.GetFetchDynamicValue());
     }
   }
-  if (expr_log)
-    expr_log->Printf("** [SBTarget::EvaluateExpression] Expression result is "
-                     "%s, summary %s **",
-                     expr_result.GetValue(), expr_result.GetSummary());
+  LLDB_LOGF(expr_log,
+            "** [SBTarget::EvaluateExpression] Expression result is "
+            "%s, summary %s **",
+            expr_result.GetValue(), expr_result.GetSummary());
   return LLDB_RECORD_RESULT(expr_result);
 }
 

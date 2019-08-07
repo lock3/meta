@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/TargetCallingConv.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/Support/Alignment.h"
 
 namespace llvm {
 
@@ -145,7 +146,7 @@ public:
 
   bool needsCustom() const { return isCustom; }
 
-  unsigned getLocReg() const { assert(isRegLoc()); return Loc; }
+  Register getLocReg() const { assert(isRegLoc()); return Loc; }
   unsigned getLocMemOffset() const { assert(isMemLoc()); return Loc; }
   unsigned getExtraInfo() const { return Loc; }
   MVT getLocVT() const { return LocVT; }
@@ -197,7 +198,7 @@ private:
   LLVMContext &Context;
 
   unsigned StackOffset;
-  unsigned MaxStackArgAlign;
+  Align MaxStackArgAlign;
   SmallVector<uint32_t, 16> UsedRegs;
   SmallVector<CCValAssign, 4> PendingLocs;
   SmallVector<ISD::ArgFlagsTy, 4> PendingArgFlags;
@@ -421,8 +422,8 @@ public:
 
   /// AllocateStack - Allocate a chunk of stack space with the specified size
   /// and alignment.
-  unsigned AllocateStack(unsigned Size, unsigned Align) {
-    assert(Align && ((Align - 1) & Align) == 0); // Align is power of 2.
+  unsigned AllocateStack(unsigned Size, unsigned Alignment) {
+    const llvm::Align Align(Alignment);
     StackOffset = alignTo(StackOffset, Align);
     unsigned Result = StackOffset;
     StackOffset += Size;
@@ -431,9 +432,9 @@ public:
     return Result;
   }
 
-  void ensureMaxAlignment(unsigned Align) {
+  void ensureMaxAlignment(llvm::Align Align) {
     if (!AnalyzingMustTailForwardedRegs)
-      MF.getFrameInfo().ensureMaxAlignment(Align);
+      MF.getFrameInfo().ensureMaxAlignment(Align.value());
   }
 
   /// Version of AllocateStack with extra register to be shadowed.

@@ -37,7 +37,8 @@ public:
 
   void setColor(llvm::raw_ostream::Colors Color) {
     if (ShowColors)
-      out << llvm::sys::Process::OutputColor(Color, false, false);
+      out << llvm::sys::Process::OutputColor(static_cast<char>(Color), false,
+                                             false);
   }
 
   void resetColor() {
@@ -102,9 +103,7 @@ public:
       return 1;
     }
 
-    const GroupRecord *Found =
-        std::lower_bound(AllGroups.begin(), AllGroups.end(), RootGroup);
-
+    const GroupRecord *Found = llvm::lower_bound(AllGroups, RootGroup);
     if (Found == AllGroups.end() || Found->getName() != RootGroup) {
       llvm::errs() << "No such diagnostic group exists\n";
       return 1;

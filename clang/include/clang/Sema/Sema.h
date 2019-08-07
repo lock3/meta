@@ -797,6 +797,15 @@ public:
     }
   };
 
+  /// Used to change context to isConstantEvaluated without pushing a heavy
+  /// ExpressionEvaluationContextRecord object.
+  bool isConstantEvaluatedOverride;
+
+  bool isConstantEvaluated() {
+    return ExprEvalContexts.back().isConstantEvaluated() ||
+           isConstantEvaluatedOverride;
+  }
+
   /// RAII object to handle the state changes required to synthesize
   /// a function body.
   class SynthesizedFunctionScope {
@@ -1964,6 +1973,7 @@ public:
     VarTemplate,
     AliasTemplate,
     TemplateTemplateParam,
+    Concept,
     DependentTemplate
   };
   TemplateNameKindForDiagnostics
@@ -2066,8 +2076,16 @@ public:
                                      bool &AddToScope);
   bool AddOverriddenMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
 
-  bool CheckConstexprFunctionDecl(const FunctionDecl *FD);
-  bool CheckConstexprFunctionBody(const FunctionDecl *FD, Stmt *Body);
+  enum class CheckConstexprKind {
+    /// Diagnose issues that are non-constant or that are extensions.
+    Diagnose,
+    /// Identify whether this function satisfies the formal rules for constexpr
+    /// functions in the current lanugage mode (with no extensions).
+    CheckValid
+  };
+
+  bool CheckConstexprFunctionDefinition(const FunctionDecl *FD,
+                                        CheckConstexprKind Kind);
 
   void DiagnoseHiddenVirtualMethods(CXXMethodDecl *MD);
   void FindHiddenVirtualMethods(CXXMethodDecl *MD,
@@ -2083,7 +2101,9 @@ public:
                                       QualType NewT, QualType OldT);
   void CheckMain(FunctionDecl *FD, const DeclSpec &D);
   void CheckMSVCRTEntryPoint(FunctionDecl *FD);
-  Attr *getImplicitCodeSegOrSectionAttrForFunction(const FunctionDecl *FD, bool IsDefinition);
+  Attr *getImplicitCodeSegOrSectionAttrForFunction(const FunctionDecl *FD,
+                                                   bool IsDefinition);
+  void CheckFunctionOrTemplateParamDeclarator(Scope *S, Declarator &D);
   Decl *ActOnParamDeclarator(Scope *S, Declarator &D);
   ParmVarDecl *BuildParmVarDeclForTypedef(DeclContext *DC,
                                           SourceLocation Loc,
@@ -4185,7 +4205,7 @@ public:
   void MarkCaptureUsedInEnclosingContext(VarDecl *Capture, SourceLocation Loc,
                                          unsigned CapturingScopeIndex);
 
-  void UpdateMarkingForLValueToRValue(Expr *E);
+  ExprResult CheckLValueToRValueConversionOperand(Expr *E);
   void CleanupVarDeclMarking();
 
   enum TryCaptureKind {
@@ -4304,6 +4324,10 @@ public:
                                         const DeclarationNameInfo &NameInfo,
                                         bool isAddressOfOperand,
                                 const TemplateArgumentListInfo *TemplateArgs);
+
+  /// If \p D cannot be odr-used in the current expression evaluation context,
+  /// return a reason explaining why. Otherwise, return NOUR_None.
+  NonOdrUseReason getNonOdrUseReasonInCurrentContext(ValueDecl *D);
 
   DeclRefExpr *BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
                                 SourceLocation Loc,
@@ -5221,6 +5245,13 @@ public:
                                SourceRange AngleBrackets,
                                SourceRange Parens);
 
+  ExprResult ActOnBuiltinBitCastExpr(SourceLocation KWLoc, Declarator &Dcl,
+                                     ExprResult Operand,
+                                     SourceLocation RParenLoc);
+
+  ExprResult BuildBuiltinBitCastExpr(SourceLocation KWLoc, TypeSourceInfo *TSI,
+                                     Expr *Operand, SourceLocation RParenLoc);
+
   ExprResult BuildCXXTypeId(QualType TypeInfoType,
                             SourceLocation TypeidLoc,
                             TypeSourceInfo *Operand,
@@ -5742,7 +5773,7 @@ public:
   startLambdaDefinition(CXXRecordDecl *Class, SourceRange IntroducerRange,
                         TypeSourceInfo *MethodType, SourceLocation EndLoc,
                         ArrayRef<ParmVarDecl *> Params,
-                        bool IsConstexprSpecified,
+                        ConstexprSpecKind ConstexprKind,
                         Optional<std::pair<unsigned, Decl *>> Mangling = None);
 
   /// Endow the lambda scope info with the relevant properties.
@@ -6088,14 +6119,13 @@ public:
   /// Add gsl::Pointer attribute to std::container::iterator
   /// \param ND The declaration that introduces the name
   /// std::container::iterator. \param UnderlyingRecord The record named by ND.
-  void addDefaultGslPointerAttribute(NamedDecl *ND,
-                                     CXXRecordDecl *UnderlyingRecord);
+  void inferGslPointerAttribute(NamedDecl *ND, CXXRecordDecl *UnderlyingRecord);
 
   /// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
-  void addDefaultGslOwnerPointerAttribute(CXXRecordDecl *Record);
+  void inferGslOwnerPointerAttribute(CXXRecordDecl *Record);
 
-  /// Add [[gsl::Owner]] and [[gsl::Pointer]] attributes for std:: types.
-  void addDefaultGslPointerAttribute(TypedefNameDecl *TD);
+  /// Add [[gsl::Pointer]] attributes for std:: types.
+  void inferGslPointerAttribute(TypedefNameDecl *TD);
 
   void CheckCompletedCXXClass(CXXRecordDecl *Record);
 
@@ -6541,6 +6571,13 @@ public:
                                 SourceLocation TemplateLoc,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
+  ExprResult
+  CheckConceptTemplateId(const CXXScopeSpec &SS,
+                         const DeclarationNameInfo &NameInfo,
+                         ConceptDecl *Template,
+                         SourceLocation TemplateLoc,
+                         const TemplateArgumentListInfo *TemplateArgs);
+
   void diagnoseMissingTemplateArguments(TemplateName Name, SourceLocation Loc);
 
   ExprResult BuildTemplateIdExpr(const CXXScopeSpec &SS,
@@ -6807,6 +6844,11 @@ public:
   getTemplateArgumentBindingsText(const TemplateParameterList *Params,
                                   const TemplateArgument *Args,
                                   unsigned NumArgs);
+
+  // Concepts
+  Decl *ActOnConceptDefinition(
+      Scope *S, MultiTemplateParamsArg TemplateParameterLists,
+      IdentifierInfo *Name, SourceLocation NameLoc, Expr *ConstraintExpr);
 
   //===--------------------------------------------------------------------===//
   // C++ Variadic Templates (C++0x [temp.variadic])
@@ -8160,6 +8202,11 @@ public:
                              LocalInstantiationScope *StartingScope,
                              bool InstantiatingVarTemplate = false,
                              VarTemplateSpecializationDecl *PrevVTSD = nullptr);
+
+  VarDecl *getVarTemplateSpecialization(
+      VarTemplateDecl *VarTempl, const TemplateArgumentListInfo *TemplateArgs,
+      const DeclarationNameInfo &MemberNameInfo, SourceLocation TemplateKWLoc);
+
   void InstantiateVariableInitializer(
       VarDecl *Var, VarDecl *OldVar,
       const MultiLevelTemplateArgumentList &TemplateArgs);
@@ -8966,6 +9013,10 @@ private:
                                      SourceRange SrcRange = SourceRange());
 
 public:
+  /// Function tries to capture lambda's captured variables in the OpenMP region
+  /// before the original lambda is captured.
+  void tryCaptureOpenMPLambdas(ValueDecl *V);
+
   /// Return true if the provided declaration \a VD should be captured by
   /// reference.
   /// \param Level Relative level of nested OpenMP construct for that the check
@@ -9105,12 +9156,6 @@ public:
   }
   /// Return true inside OpenMP target region.
   bool isInOpenMPTargetExecutionDirective() const;
-  /// Return true if (un)supported features for the current target should be
-  /// diagnosed if OpenMP (offloading) is enabled.
-  bool shouldDiagnoseTargetSupportFromOpenMP() const {
-    return !getLangOpts().OpenMPIsDevice || isInOpenMPDeclareTargetContext() ||
-      isInOpenMPTargetExecutionDirective();
-  }
 
   /// Return the number of captured regions created for an OpenMP directive.
   static int getOpenMPCaptureLevels(OpenMPDirectiveKind Kind);
@@ -9988,6 +10033,7 @@ public:
   QualType CheckShiftOperands( // C99 6.5.7
     ExprResult &LHS, ExprResult &RHS, SourceLocation Loc,
     BinaryOperatorKind Opc, bool IsCompAssign = false);
+  void CheckPtrComparisonWithNullChar(ExprResult &E, ExprResult &NullE);
   QualType CheckCompareOperands( // C99 6.5.8/9
       ExprResult &LHS, ExprResult &RHS, SourceLocation Loc,
       BinaryOperatorKind Opc);
@@ -11102,6 +11148,7 @@ public:
   // Emitting members of dllexported classes is delayed until the class
   // (including field initializers) is fully parsed.
   SmallVector<CXXRecordDecl*, 4> DelayedDllExportClasses;
+  SmallVector<CXXMethodDecl*, 4> DelayedDllExportMemberFunctions;
 
 private:
   class SavePendingParsedClassStateRAII {

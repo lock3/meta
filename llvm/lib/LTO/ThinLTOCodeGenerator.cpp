@@ -29,6 +29,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/PassTimingInfo.h"
+#include "llvm/IR/RemarkStreamer.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/LTO/LTO.h"
@@ -69,9 +70,10 @@ using namespace llvm;
 namespace llvm {
 // Flags -discard-value-names, defined in LTOCodeGenerator.cpp
 extern cl::opt<bool> LTODiscardValueNames;
-extern cl::opt<std::string> LTORemarksFilename;
-extern cl::opt<std::string> LTORemarksPasses;
-extern cl::opt<bool> LTOPassRemarksWithHotness;
+extern cl::opt<std::string> RemarksFilename;
+extern cl::opt<std::string> RemarksPasses;
+extern cl::opt<bool> RemarksWithHotness;
+extern cl::opt<std::string> RemarksFormat;
 }
 
 namespace {
@@ -87,7 +89,7 @@ static void saveTempBitcode(const Module &TheModule, StringRef TempDir,
   // User asked to save temps, let dump the bitcode file after import.
   std::string SaveTempPath = (TempDir + llvm::Twine(count) + Suffix).str();
   std::error_code EC;
-  raw_fd_ostream OS(SaveTempPath, EC, sys::fs::F_None);
+  raw_fd_ostream OS(SaveTempPath, EC, sys::fs::OF_None);
   if (EC)
     report_fatal_error(Twine("Failed to open ") + SaveTempPath +
                        " to save optimized bitcode\n");
@@ -347,17 +349,14 @@ public:
   ErrorOr<std::unique_ptr<MemoryBuffer>> tryLoadingBuffer() {
     if (EntryPath.empty())
       return std::error_code();
-    int FD;
     SmallString<64> ResultPath;
-    std::error_code EC = sys::fs::openFileForRead(
-        Twine(EntryPath), FD, sys::fs::OF_UpdateAtime, &ResultPath);
-    if (EC)
-      return EC;
-    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr =
-        MemoryBuffer::getOpenFile(FD, EntryPath,
-                                  /*FileSize*/ -1,
-                                  /*RequiresNullTerminator*/ false);
-    close(FD);
+    Expected<sys::fs::file_t> FDOrErr = sys::fs::openNativeFileForRead(
+        Twine(EntryPath), sys::fs::OF_UpdateAtime, &ResultPath);
+    if (!FDOrErr)
+      return errorToErrorCode(FDOrErr.takeError());
+    ErrorOr<std::unique_ptr<MemoryBuffer>> MBOrErr = MemoryBuffer::getOpenFile(
+        *FDOrErr, EntryPath, /*FileSize=*/-1, /*RequiresNullTerminator=*/false);
+    sys::fs::closeFile(*FDOrErr);
     return MBOrErr;
   }
 
@@ -846,7 +845,7 @@ ThinLTOCodeGenerator::writeGeneratedObject(int count, StringRef CacheEntryPath,
   }
   // No cache entry, just write out the buffer.
   std::error_code Err;
-  raw_fd_ostream OS(OutputPath, Err, sys::fs::F_None);
+  raw_fd_ostream OS(OutputPath, Err, sys::fs::OF_None);
   if (Err)
     report_fatal_error("Can't open output '" + OutputPath + "'\n");
   OS << OutputBuffer.getBuffer();
@@ -901,7 +900,7 @@ void ThinLTOCodeGenerator::run() {
   if (!SaveTempsDir.empty()) {
     auto SaveTempPath = SaveTempsDir + "index.bc";
     std::error_code EC;
-    raw_fd_ostream OS(SaveTempPath, EC, sys::fs::F_None);
+    raw_fd_ostream OS(SaveTempPath, EC, sys::fs::OF_None);
     if (EC)
       report_fatal_error(Twine("Failed to open ") + SaveTempPath +
                          " to save optimized bitcode\n");
@@ -1019,8 +1018,8 @@ void ThinLTOCodeGenerator::run() {
         Context.setDiscardValueNames(LTODiscardValueNames);
         Context.enableDebugTypeODRUniquing();
         auto DiagFileOrErr = lto::setupOptimizationRemarks(
-            Context, LTORemarksFilename, LTORemarksPasses,
-            LTOPassRemarksWithHotness, count);
+            Context, RemarksFilename, RemarksPasses, RemarksFormat,
+            RemarksWithHotness, count);
         if (!DiagFileOrErr) {
           errs() << "Error: " << toString(DiagFileOrErr.takeError()) << "\n";
           report_fatal_error("ThinLTO: Can't get an output file for the "

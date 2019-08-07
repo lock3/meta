@@ -169,10 +169,11 @@ uses the package and provides other details.
 =========================================================== ============ ==========================================
 Package                                                     Version      Notes
 =========================================================== ============ ==========================================
-`GNU Make <http://savannah.gnu.org/projects/make>`_         3.79, 3.79.1 Makefile/build processor
+`CMake <http://cmake.org/>`_                                >=3.4.3      Makefile/workspace generator
 `GCC <http://gcc.gnu.org/>`_                                >=5.1.0      C/C++ compiler\ :sup:`1`
 `python <http://www.python.org/>`_                          >=2.7        Automated test suite\ :sup:`2`
 `zlib <http://zlib.net>`_                                   >=1.2.3.4    Compression library\ :sup:`3`
+`GNU Make <http://savannah.gnu.org/projects/make>`_         3.79, 3.79.1 Makefile/build processor\ :sup:`4`
 =========================================================== ============ ==========================================
 
 .. note::
@@ -184,6 +185,7 @@ Package                                                     Version      Notes
       ``llvm/test`` directory.
    #. Optional, adds compression / uncompression capabilities to selected LLVM
       tools.
+   #. Optional, you can use any other build tool supported by CMake.
 
 Additionally, your compilation host is expected to have the usual plethora of
 Unix utilities. Specifically:
@@ -240,7 +242,7 @@ with the following compilers, though this will change in the near future:
 * Clang 3.1
 * Apple Clang 3.1
 * GCC 4.8
-* Visual Studio 2015 (Update 3)
+* Visual Studio 2017
 
 Anything older than these toolchains *may* work, but will require forcing the
 build system with a special option and is not really a supported host platform.
@@ -275,7 +277,7 @@ Getting a Modern Host C++ Toolchain
 This section mostly applies to Linux and older BSDs. On macOS, you should
 have a sufficiently modern Xcode, or you will likely need to upgrade until you
 do. Windows does not have a "system compiler", so you must install either Visual
-Studio 2015 or a recent version of mingw64. FreeBSD 10.0 and newer have a modern
+Studio 2017 or a recent version of mingw64. FreeBSD 10.0 and newer have a modern
 Clang as the system compiler.
 
 However, some Linux distributions and some other or older BSDs sometimes have
@@ -597,6 +599,11 @@ used by people developing LLVM.
 +-------------------------+----------------------------------------------------+
 | CMAKE_INSTALL_PREFIX    | Specifies the install directory to target when     |
 |                         | running the install action of the build files.     |
++-------------------------+----------------------------------------------------+
+| PYTHON_EXECUTABLE       | Forces CMake to use a specific Python version by   |
+|                         | passing a path to a Python interpreter. By default |
+|                         | the Python version of the interpreter in your PATH |
+|                         | is used.                                           |
 +-------------------------+----------------------------------------------------+
 | LLVM_TARGETS_TO_BUILD   | A semicolon delimited list controlling which       |
 |                         | targets will be built and linked into llvm.        |

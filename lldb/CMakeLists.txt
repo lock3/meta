@@ -11,7 +11,13 @@ set(CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules"
   )
 
-include(LLDBStandalone)
+# If we are not building as part of LLVM, build LLDB as a standalone project,
+# using LLVM as an external library.
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(lldb)
+  include(LLDBStandalone)
+endif()
+
 include(LLDBConfig)
 include(AddLLDB)
 
@@ -33,6 +39,23 @@ endif()
 if (NOT LLDB_DISABLE_PYTHON)
   add_subdirectory(scripts)
 endif ()
+
+if(CMAKE_CROSSCOMPILING AND LLDB_BUILT_STANDALONE)
+  set(LLVM_USE_HOST_TOOLS ON)
+  include(CrossCompile)
+  if (NOT NATIVE_LLVM_DIR OR NOT NATIVE_Clang_DIR)
+    message(FATAL_ERROR
+      "Crosscompiling standalone requires the variables NATIVE_{CLANG,LLVM}_DIR
+      for building the native lldb-tblgen used during the build process.")
+  endif()
+  llvm_create_cross_target(lldb NATIVE "" Release
+    -DLLVM_DIR=${NATIVE_LLVM_DIR}
+    -DClang_DIR=${NATIVE_Clang_DIR})
+endif()
+
+# TableGen
+add_subdirectory(utils/TableGen)
+
 add_subdirectory(source)
 add_subdirectory(tools)
 add_subdirectory(docs)
@@ -84,14 +107,6 @@ if(LLDB_INCLUDE_TESTS)
 
   if(TARGET lldb-server)
     list(APPEND LLDB_TEST_DEPS lldb-server)
-  endif()
-
-  if(TARGET debugserver)
-    list(APPEND LLDB_TEST_DEPS debugserver)
-  endif()
-
-  if(TARGET lldb-mi)
-    list(APPEND LLDB_TEST_DEPS lldb-mi)
   endif()
 
   if(TARGET lldb-vscode)
@@ -194,18 +209,11 @@ if (NOT LLDB_DISABLE_PYTHON)
         DEPENDS ${lldb_scripts_dir}/lldb.py
         COMMENT "Python script sym-linking LLDB Python API")
 
-    if (TARGET readline)
-      set(readline_dep readline)
-    endif()
-    add_dependencies(finish_swig swig_wrapper liblldb lldb-argdumper ${readline_dep})
+    add_dependencies(finish_swig swig_wrapper liblldb lldb-argdumper)
     set_target_properties(finish_swig swig_wrapper PROPERTIES FOLDER "lldb misc")
 
     # Ensure we do the python post-build step when building lldb.
     add_dependencies(lldb finish_swig)
-
-    if(LLDB_BUILD_FRAMEWORK)
-      add_dependencies(lldb-framework finish_swig)
-    endif()
 
     # Add a Post-Build Event to copy the custom Python DLL to the lldb binaries dir so that Windows can find it when launching
     # lldb.exe or any other executables that were linked with liblldb.
@@ -220,3 +228,7 @@ if (NOT LLDB_DISABLE_PYTHON)
             COMMENT "Copying Python DLL to LLDB binaries directory.")
     endif ()
 endif ()
+
+if(LLDB_BUILT_STANDALONE AND NOT LLVM_ENABLE_IDE)
+  llvm_distribution_add_targets()
+endif()

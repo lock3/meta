@@ -87,11 +87,20 @@ public:
   /// Return true if the specified register is included in this register class.
   /// This does not include virtual registers.
   bool contains(unsigned Reg) const {
+    /// FIXME: Historically this function has returned false when given vregs
+    ///        but it should probably only receive physical registers
+    if (!Register::isPhysicalRegister(Reg))
+      return false;
     return MC->contains(Reg);
   }
 
   /// Return true if both registers are in this class.
   bool contains(unsigned Reg1, unsigned Reg2) const {
+    /// FIXME: Historically this function has returned false when given a vregs
+    ///        but it should probably only receive physical registers
+    if (!Register::isPhysicalRegister(Reg1) ||
+        !Register::isPhysicalRegister(Reg2))
+      return false;
     return MC->contains(Reg1, Reg2);
   }
 
@@ -258,57 +267,6 @@ public:
   // Further sentinels can be allocated from the small negative integers.
   // DenseMapInfo<unsigned> uses -1u and -2u.
 
-  /// isStackSlot - Sometimes it is useful the be able to store a non-negative
-  /// frame index in a variable that normally holds a register. isStackSlot()
-  /// returns true if Reg is in the range used for stack slots.
-  ///
-  /// Note that isVirtualRegister() and isPhysicalRegister() cannot handle stack
-  /// slots, so if a variable may contains a stack slot, always check
-  /// isStackSlot() first.
-  ///
-  static bool isStackSlot(unsigned Reg) {
-    return int(Reg) >= (1 << 30);
-  }
-
-  /// Compute the frame index from a register value representing a stack slot.
-  static int stackSlot2Index(unsigned Reg) {
-    assert(isStackSlot(Reg) && "Not a stack slot");
-    return int(Reg - (1u << 30));
-  }
-
-  /// Convert a non-negative frame index to a stack slot register value.
-  static unsigned index2StackSlot(int FI) {
-    assert(FI >= 0 && "Cannot hold a negative frame index.");
-    return FI + (1u << 30);
-  }
-
-  /// Return true if the specified register number is in
-  /// the physical register namespace.
-  static bool isPhysicalRegister(unsigned Reg) {
-    assert(!isStackSlot(Reg) && "Not a register! Check isStackSlot() first.");
-    return int(Reg) > 0;
-  }
-
-  /// Return true if the specified register number is in
-  /// the virtual register namespace.
-  static bool isVirtualRegister(unsigned Reg) {
-    assert(!isStackSlot(Reg) && "Not a register! Check isStackSlot() first.");
-    return int(Reg) < 0;
-  }
-
-  /// Convert a virtual register number to a 0-based index.
-  /// The first virtual register in a function will get the index 0.
-  static unsigned virtReg2Index(unsigned Reg) {
-    assert(isVirtualRegister(Reg) && "Not a virtual register");
-    return Reg & ~(1u << 31);
-  }
-
-  /// Convert a 0-based index to a virtual register number.
-  /// This is the inverse operation of VirtReg2IndexFunctor below.
-  static unsigned index2VirtReg(unsigned Index) {
-    return Index | (1u << 31);
-  }
-
   /// Return the size in bits of a register from class RC.
   unsigned getRegSizeInBits(const TargetRegisterClass &RC) const {
     return getRegClassInfo(RC).RegSize;
@@ -421,7 +379,7 @@ public:
   /// The registers may be virtual registers.
   bool regsOverlap(unsigned regA, unsigned regB) const {
     if (regA == regB) return true;
-    if (isVirtualRegister(regA) || isVirtualRegister(regB))
+    if (Register::isVirtualRegister(regA) || Register::isVirtualRegister(regB))
       return false;
 
     // Regunits are numerically ordered. Find a common unit.
@@ -489,6 +447,14 @@ public:
     llvm_unreachable("target does not provide no preserved mask");
   }
 
+  /// Return a list of all of the registers which are clobbered "inside" a call
+  /// to the given function. For example, these might be needed for PLT
+  /// sequences of long-branch veneers.
+  virtual ArrayRef<MCPhysReg>
+  getIntraCallClobberedRegs(const MachineFunction *MF) const {
+    return {};
+  }
+
   /// Return true if all bits that are set in mask \p mask0 are also set in
   /// \p mask1.
   bool regmaskSubsetEqual(const uint32_t *mask0, const uint32_t *mask1) const;
@@ -534,6 +500,11 @@ public:
                                         const MachineFunction &MF) const {
     return false;
   }
+
+  /// This is a wrapper around getCallPreservedMask().
+  /// Return true if the register is preserved after the call.
+  virtual bool isCalleeSavedPhysReg(unsigned PhysReg,
+                                    const MachineFunction &MF) const;
 
   /// Prior to adding the live-out mask to a stackmap or patchpoint
   /// instruction, provide the target the opportunity to adjust it (mainly to
@@ -990,7 +961,7 @@ public:
 
   /// getFrameRegister - This method should return the register used as a base
   /// for values allocated in the current stack frame.
-  virtual unsigned getFrameRegister(const MachineFunction &MF) const = 0;
+  virtual Register getFrameRegister(const MachineFunction &MF) const = 0;
 
   /// Mark a register and all its aliases as reserved in the given set.
   void markSuperRegs(BitVector &RegisterSet, unsigned Reg) const;
@@ -1004,6 +975,13 @@ public:
   getConstrainedRegClassForOperand(const MachineOperand &MO,
                                    const MachineRegisterInfo &MRI) const {
     return nullptr;
+  }
+
+  /// Returns the physical register number of sub-register "Index"
+  /// for physical register RegNo. Return zero if the sub-register does not
+  /// exist.
+  inline Register getSubReg(MCRegister Reg, unsigned Idx) const {
+    return static_cast<const MCRegisterInfo *>(this)->getSubReg(Reg, Idx);
   }
 };
 
@@ -1156,7 +1134,7 @@ public:
 struct VirtReg2IndexFunctor {
   using argument_type = unsigned;
   unsigned operator()(unsigned Reg) const {
-    return TargetRegisterInfo::virtReg2Index(Reg);
+    return Register::virtReg2Index(Reg);
   }
 };
 

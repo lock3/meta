@@ -97,8 +97,8 @@ static void addGslOwnerPointerAttributeIfNotExisting(ASTContext &Context,
                                                /*Spelling=*/0));
 }
 
-void Sema::addDefaultGslPointerAttribute(NamedDecl *ND,
-                                         CXXRecordDecl *UnderlyingRecord) {
+void Sema::inferGslPointerAttribute(NamedDecl *ND,
+                                    CXXRecordDecl *UnderlyingRecord) {
   if (!UnderlyingRecord)
     return;
 
@@ -136,12 +136,24 @@ void Sema::addDefaultGslPointerAttribute(NamedDecl *ND,
                                                           UnderlyingRecord);
 }
 
-void Sema::addDefaultGslPointerAttribute(TypedefNameDecl *TD) {
-  addDefaultGslPointerAttribute(
-      TD, TD->getUnderlyingType().getCanonicalType()->getAsCXXRecordDecl());
+void Sema::inferGslPointerAttribute(TypedefNameDecl *TD) {
+
+  QualType Canonical = TD->getUnderlyingType().getCanonicalType();
+
+  CXXRecordDecl *RD = Canonical->getAsCXXRecordDecl();
+  if (!RD) {
+    if (auto *TST =
+            dyn_cast<TemplateSpecializationType>(Canonical.getTypePtr())) {
+
+      RD = dyn_cast_or_null<CXXRecordDecl>(
+          TST->getTemplateName().getAsTemplateDecl()->getTemplatedDecl());
+    }
+  }
+
+  inferGslPointerAttribute(TD, RD);
 }
 
-void Sema::addDefaultGslOwnerPointerAttribute(CXXRecordDecl *Record) {
+void Sema::inferGslOwnerPointerAttribute(CXXRecordDecl *Record) {
   static llvm::StringSet<> StdOwners{
       "any",
       "array",
@@ -190,7 +202,7 @@ void Sema::addDefaultGslOwnerPointerAttribute(CXXRecordDecl *Record) {
   }
 
   // Handle nested classes that could be a gsl::Pointer.
-  addDefaultGslPointerAttribute(Record, Record);
+  inferGslPointerAttribute(Record, Record);
 }
 
 void Sema::ActOnPragmaOptionsAlign(PragmaOptionsAlignKind Kind,
@@ -511,9 +523,15 @@ void Sema::ActOnPragmaMSSeg(SourceLocation PragmaLocation,
   if (Action & PSK_Pop && Stack->Stack.empty())
     Diag(PragmaLocation, diag::warn_pragma_pop_failed) << PragmaName
         << "stack empty";
-  if (SegmentName &&
-      !checkSectionName(SegmentName->getBeginLoc(), SegmentName->getString()))
-    return;
+  if (SegmentName) {
+    if (!checkSectionName(SegmentName->getBeginLoc(), SegmentName->getString()))
+      return;
+
+    if (SegmentName->getString() == ".drectve" &&
+        Context.getTargetInfo().getCXXABI().isMicrosoft())
+      Diag(PragmaLocation, diag::warn_attribute_section_drectve) << PragmaName;
+  }
+
   Stack->Act(PragmaLocation, Action, StackSlotLabel, SegmentName);
 }
 

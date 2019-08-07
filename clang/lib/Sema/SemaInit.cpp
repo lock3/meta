@@ -1289,7 +1289,16 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     // FIXME: Better EqualLoc?
     InitializationKind Kind =
         InitializationKind::CreateCopy(expr->getBeginLoc(), SourceLocation());
-    InitializationSequence Seq(SemaRef, Entity, Kind, expr,
+
+    // Vector elements can be initialized from other vectors in which case
+    // we need initialization entity with a type of a vector (and not a vector
+    // element!) initializing multiple vector elements.
+    auto TmpEntity =
+        (ElemType->isExtVectorType() && !Entity.getType()->isExtVectorType())
+            ? InitializedEntity::InitializeTemporary(ElemType)
+            : Entity;
+
+    InitializationSequence Seq(SemaRef, TmpEntity, Kind, expr,
                                /*TopLevelOfInitList*/ true);
 
     // C++14 [dcl.init.aggr]p13:
@@ -1300,8 +1309,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     // assignment-expression.
     if (Seq || isa<InitListExpr>(expr)) {
       if (!VerifyOnly) {
-        ExprResult Result =
-          Seq.Perform(SemaRef, Entity, Kind, expr);
+        ExprResult Result = Seq.Perform(SemaRef, TmpEntity, Kind, expr);
         if (Result.isInvalid())
           hadError = true;
 
@@ -3282,7 +3290,6 @@ void InitializationSequence::Step::Destroy() {
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionLValue:
   case SK_AtomicConversion:
-  case SK_LValueToRValue:
   case SK_ListInitialization:
   case SK_UnwrapInitList:
   case SK_RewrapInitList:
@@ -3462,15 +3469,6 @@ void InitializationSequence::AddQualificationConversionStep(QualType Ty,
 void InitializationSequence::AddAtomicConversionStep(QualType Ty) {
   Step S;
   S.Kind = SK_AtomicConversion;
-  S.Type = Ty;
-  Steps.push_back(S);
-}
-
-void InitializationSequence::AddLValueToRValueStep(QualType Ty) {
-  assert(!Ty.hasQualifiers() && "rvalues may not have qualifiers");
-
-  Step S;
-  S.Kind = SK_LValueToRValue;
   S.Type = Ty;
   Steps.push_back(S);
 }
@@ -3743,6 +3741,7 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
                            bool OnlyListConstructors, bool IsListInit,
                            bool SecondStepOfCopyInit = false) {
   CandidateSet.clear(OverloadCandidateSet::CSK_InitByConstructor);
+  CandidateSet.setDestAS(DestType.getQualifiers().getAddressSpace());
 
   for (NamedDecl *D : Ctors) {
     auto Info = getConstructorInfo(D);
@@ -3940,7 +3939,7 @@ static void TryConstructorInitialization(Sema &S,
       Result = ResolveConstructorOverload(S, Kind.getLocation(), Args,
                                           CandidateSet, DestType, Ctors, Best,
                                           CopyInitialization, AllowExplicit,
-                                          /*OnlyListConstructor=*/true,
+                                          /*OnlyListConstructors=*/true,
                                           IsListInit);
   }
 
@@ -4127,7 +4126,7 @@ static void TryReferenceListInitialization(Sema &S,
   if (Sequence) {
     if (DestType->isRValueReferenceType() ||
         (T1Quals.hasConst() && !T1Quals.hasVolatile()))
-      Sequence.AddReferenceBindingStep(cv1T1, /*bindingTemporary=*/true);
+      Sequence.AddReferenceBindingStep(cv1T1, /*BindingTemporary=*/true);
     else
       Sequence.SetFailed(
           InitializationSequence::FK_NonConstLValueReferenceBindingToTemporary);
@@ -4640,7 +4639,10 @@ static void TryReferenceInitializationCore(Sema &S,
   //     - Otherwise, the reference shall be an lvalue reference to a
   //       non-volatile const type (i.e., cv1 shall be const), or the reference
   //       shall be an rvalue reference.
-  if (isLValueRef && !(T1Quals.hasConst() && !T1Quals.hasVolatile())) {
+  //       For address spaces, we interpret this to mean that an addr space
+  //       of a reference "cv1 T1" is a superset of addr space of "cv2 T2".
+  if (isLValueRef && !(T1Quals.hasConst() && !T1Quals.hasVolatile() &&
+                       T1Quals.isAddressSpaceSupersetOf(T2Quals))) {
     if (S.Context.getCanonicalType(T2) == S.Context.OverloadTy)
       Sequence.SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
     else if (ConvOvlResult && !Sequence.getFailedCandidateSet().empty())
@@ -4649,7 +4651,10 @@ static void TryReferenceInitializationCore(Sema &S,
                                   ConvOvlResult);
     else if (!InitCategory.isLValue())
       Sequence.SetFailed(
-          InitializationSequence::FK_NonConstLValueReferenceBindingToTemporary);
+          T1Quals.isAddressSpaceSupersetOf(T2Quals)
+              ? InitializationSequence::
+                    FK_NonConstLValueReferenceBindingToTemporary
+              : InitializationSequence::FK_ReferenceInitDropsQualifiers);
     else {
       InitializationSequence::FailureKind FK;
       switch (RefRelationship) {
@@ -4836,7 +4841,7 @@ static void TryReferenceInitializationCore(Sema &S,
     return;
   }
 
-  Sequence.AddReferenceBindingStep(cv1T1IgnoreAS, /*bindingTemporary=*/true);
+  Sequence.AddReferenceBindingStep(cv1T1IgnoreAS, /*BindingTemporary=*/true);
 
   if (T1Quals.hasAddressSpace()) {
     if (!Qualifiers::isAddressSpaceSupersetOf(T1Quals.getAddressSpace(),
@@ -4995,6 +5000,7 @@ static void TryUserDefinedConversion(Sema &S,
   // structure, so that it will persist if we fail.
   OverloadCandidateSet &CandidateSet = Sequence.getFailedCandidateSet();
   CandidateSet.clear(OverloadCandidateSet::CSK_InitByUserDefinedConversion);
+  CandidateSet.setDestAS(DestType.getQualifiers().getAddressSpace());
 
   // Determine whether we are allowed to call explicit constructors or
   // explicit conversion operators.
@@ -5642,6 +5648,9 @@ void InitializationSequence::InitializeFrom(Sema &S,
   bool allowObjCWritebackConversion = S.getLangOpts().ObjCAutoRefCount &&
          Entity.isParameterKind();
 
+  if (TryOCLSamplerInitialization(S, *this, DestType, Initializer))
+    return;
+
   // We're at the end of the line for C: it's either a write-back conversion
   // or it's a C assignment. There's no need to check anything else.
   if (!S.getLangOpts().CPlusPlus) {
@@ -5650,9 +5659,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
         tryObjCWritebackConversion(S, *this, Entity, Initializer)) {
       return;
     }
-
-    if (TryOCLSamplerInitialization(S, *this, DestType, Initializer))
-      return;
 
     if (TryOCLZeroOpaqueTypeInitialization(S, *this, DestType, Initializer))
       return;
@@ -6933,6 +6939,9 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
                                               RK_ReferenceBinding, Visit);
       else {
         unsigned Index = 0;
+        for (; Index < RD->getNumBases() && Index < ILE->getNumInits(); ++Index)
+          visitLocalsRetainedByInitializer(Path, ILE->getInit(Index), Visit,
+                                           RevisitSubinits);
         for (const auto *I : RD->fields()) {
           if (Index >= ILE->getNumInits())
             break;
@@ -7628,7 +7637,6 @@ ExprResult InitializationSequence::Perform(Sema &S,
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionRValue:
   case SK_AtomicConversion:
-  case SK_LValueToRValue:
   case SK_ConversionSequence:
   case SK_ConversionSequenceNoNarrowing:
   case SK_ListInitialization:
@@ -7897,14 +7905,6 @@ ExprResult InitializationSequence::Perform(Sema &S,
       assert(CurInit.get()->isRValue() && "cannot convert glvalue to atomic");
       CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type,
                                     CK_NonAtomicToAtomic, VK_RValue);
-      break;
-    }
-
-    case SK_LValueToRValue: {
-      assert(CurInit.get()->isGLValue() && "cannot load from a prvalue");
-      CurInit = ImplicitCastExpr::Create(S.Context, Step->Type,
-                                         CK_LValueToRValue, CurInit.get(),
-                                         /*BasePath=*/nullptr, VK_RValue);
       break;
     }
 
@@ -8661,11 +8661,16 @@ bool InitializationSequence::Diagnose(Sema &S,
     Qualifiers DroppedQualifiers =
         SourceType.getQualifiers() - NonRefType.getQualifiers();
 
-    S.Diag(Kind.getLocation(), diag::err_reference_bind_drops_quals)
-      << SourceType
-      << NonRefType
-      << DroppedQualifiers.getCVRQualifiers()
-      << Args[0]->getSourceRange();
+    if (!NonRefType.getQualifiers().isAddressSpaceSupersetOf(
+            SourceType.getQualifiers()))
+      S.Diag(Kind.getLocation(), diag::err_reference_bind_drops_quals)
+          << NonRefType << SourceType << 1 /*addr space*/
+          << Args[0]->getSourceRange();
+    else
+      S.Diag(Kind.getLocation(), diag::err_reference_bind_drops_quals)
+          << NonRefType << SourceType << 0 /*cv quals*/
+          << Qualifiers::fromCVRMask(DroppedQualifiers.getCVRQualifiers())
+          << DroppedQualifiers.getCVRQualifiers() << Args[0]->getSourceRange();
     break;
   }
 
@@ -9127,10 +9132,6 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_AtomicConversion:
       OS << "non-atomic-to-atomic conversion";
-      break;
-
-    case SK_LValueToRValue:
-      OS << "load (lvalue to rvalue)";
       break;
 
     case SK_ConversionSequence:

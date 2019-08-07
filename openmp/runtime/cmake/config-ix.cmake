@@ -48,7 +48,6 @@ endfunction()
 # Checking C, CXX, Linker Flags
 check_cxx_compiler_flag(-fno-exceptions LIBOMP_HAVE_FNO_EXCEPTIONS_FLAG)
 check_cxx_compiler_flag(-fno-rtti LIBOMP_HAVE_FNO_RTTI_FLAG)
-check_c_compiler_flag("-x c++" LIBOMP_HAVE_X_CPP_FLAG)
 check_cxx_compiler_flag(-Wcast-qual LIBOMP_HAVE_WCAST_QUAL_FLAG)
 check_c_compiler_flag(-Wunused-function LIBOMP_HAVE_WNO_UNUSED_FUNCTION_FLAG)
 check_c_compiler_flag(-Wunused-local-typedef LIBOMP_HAVE_WNO_UNUSED_LOCAL_TYPEDEF_FLAG)
@@ -74,7 +73,6 @@ libomp_check_architecture_flag(-m32 LIBOMP_HAVE_M32_FLAG)
 if(WIN32)
   if(MSVC)
     # Check Windows MSVC style flags.
-    check_c_compiler_flag(/TP LIBOMP_HAVE_TP_FLAG)
     check_cxx_compiler_flag(/EHsc LIBOMP_HAVE_EHSC_FLAG)
     check_cxx_compiler_flag(/GS LIBOMP_HAVE_GS_FLAG)
     check_cxx_compiler_flag(/Oy- LIBOMP_HAVE_Oy__FLAG)
@@ -246,7 +244,8 @@ else()
 #      (LIBOMP_ARCH STREQUAL arm) OR
       (LIBOMP_ARCH STREQUAL aarch64) OR
       (LIBOMP_ARCH STREQUAL ppc64le) OR
-      (LIBOMP_ARCH STREQUAL ppc64))
+      (LIBOMP_ARCH STREQUAL ppc64) OR
+      (LIBOMP_ARCH STREQUAL riscv64))
      AND # OS supported?
      ((WIN32 AND LIBOMP_HAVE_PSAPI) OR APPLE OR (NOT WIN32 AND LIBOMP_HAVE_WEAK_ATTRIBUTE)))
     set(LIBOMP_HAVE_OMPT_SUPPORT TRUE)

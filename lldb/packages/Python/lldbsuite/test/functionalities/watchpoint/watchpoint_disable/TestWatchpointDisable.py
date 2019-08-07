@@ -2,7 +2,6 @@
 Test that the SBWatchpoint::SetEnable API works.
 """
 
-import os
 import lldb
 from lldbsuite.test.lldbtest import *
 from lldbsuite.test.decorators import *
@@ -27,7 +26,6 @@ class TestWatchpointSetEnable(TestBase):
     @expectedFailureAll(
         oslist=["windows"],
         bugnumber="llvm.org/pr24446: WINDOWS XFAIL TRIAGE - Watchpoints not supported on Windows")
-    @expectedFailureNetBSD
     def test_disable_enable_works (self):
         """Set a watchpoint, disable it, and make sure it doesn't get hit."""
         self.build()

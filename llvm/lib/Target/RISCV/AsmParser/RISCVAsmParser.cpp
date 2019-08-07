@@ -127,6 +127,7 @@ class RISCVAsmParser : public MCTargetAsmParser {
   OperandMatchResultTy parseRegister(OperandVector &Operands,
                                      bool AllowParens = false);
   OperandMatchResultTy parseMemOpBaseReg(OperandVector &Operands);
+  OperandMatchResultTy parseAtomicMemOp(OperandVector &Operands);
   OperandMatchResultTy parseOperandWithModifier(OperandVector &Operands);
   OperandMatchResultTy parseBareSymbol(OperandVector &Operands);
   OperandMatchResultTy parseCallSymbol(OperandVector &Operands);
@@ -276,7 +277,7 @@ public:
   // modifiers and isShiftedInt<N-1, 1>(Op).
   template <int N> bool isBareSimmNLsb0() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
@@ -292,7 +293,7 @@ public:
 
   bool isBareSymbol() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     // Must be of 'immediate' type but not a constant.
     if (!isImm() || evaluateConstantImm(getImm(), Imm, VK))
       return false;
@@ -302,7 +303,7 @@ public:
 
   bool isCallSymbol() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     // Must be of 'immediate' type but not a constant.
     if (!isImm() || evaluateConstantImm(getImm(), Imm, VK))
       return false;
@@ -313,7 +314,7 @@ public:
 
   bool isTPRelAddSymbol() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     // Must be of 'immediate' type but not a constant.
     if (!isImm() || evaluateConstantImm(getImm(), Imm, VK))
       return false;
@@ -364,7 +365,7 @@ public:
 
   bool isImmXLenLI() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
@@ -378,7 +379,7 @@ public:
 
   bool isUImmLog2XLen() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     if (!evaluateConstantImm(getImm(), Imm, VK) ||
@@ -389,7 +390,7 @@ public:
 
   bool isUImmLog2XLenNonZero() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     if (!evaluateConstantImm(getImm(), Imm, VK) ||
@@ -402,7 +403,7 @@ public:
 
   bool isUImm5() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
@@ -411,7 +412,7 @@ public:
 
   bool isUImm5NonZero() const {
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     if (!isImm())
       return false;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
@@ -422,7 +423,7 @@ public:
   bool isSImm6() const {
     if (!isImm())
       return false;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     int64_t Imm;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isInt<6>(Imm) &&
@@ -432,7 +433,7 @@ public:
   bool isSImm6NonZero() const {
     if (!isImm())
       return false;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     int64_t Imm;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isInt<6>(Imm) && (Imm != 0) &&
@@ -443,7 +444,7 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && (Imm != 0) &&
            (isUInt<5>(Imm) || (Imm >= 0xfffe0 && Imm <= 0xfffff)) &&
@@ -454,7 +455,7 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isShiftedUInt<5, 2>(Imm) &&
            VK == RISCVMCExpr::VK_RISCV_None;
@@ -464,7 +465,7 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isShiftedUInt<6, 2>(Imm) &&
            VK == RISCVMCExpr::VK_RISCV_None;
@@ -474,7 +475,7 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isShiftedUInt<5, 3>(Imm) &&
            VK == RISCVMCExpr::VK_RISCV_None;
@@ -486,7 +487,7 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isShiftedUInt<6, 3>(Imm) &&
            VK == RISCVMCExpr::VK_RISCV_None;
@@ -496,14 +497,14 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && isShiftedUInt<8, 2>(Imm) && (Imm != 0) &&
            VK == RISCVMCExpr::VK_RISCV_None;
   }
 
   bool isSImm12() const {
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     int64_t Imm;
     bool IsValid;
     if (!isImm())
@@ -527,14 +528,14 @@ public:
     if (!isImm())
       return false;
     int64_t Imm;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
     return IsConstantImm && (Imm != 0) && isShiftedInt<6, 4>(Imm) &&
            VK == RISCVMCExpr::VK_RISCV_None;
   }
 
   bool isUImm20LUI() const {
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     int64_t Imm;
     bool IsValid;
     if (!isImm())
@@ -552,7 +553,7 @@ public:
   }
 
   bool isUImm20AUIPC() const {
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     int64_t Imm;
     bool IsValid;
     if (!isImm())
@@ -574,6 +575,15 @@ public:
   }
 
   bool isSImm21Lsb0JAL() const { return isBareSimmNLsb0<21>(); }
+
+  bool isImmZero() const {
+    if (!isImm())
+      return false;
+    int64_t Imm;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
+    bool IsConstantImm = evaluateConstantImm(getImm(), Imm, VK);
+    return IsConstantImm && (Imm == 0) && VK == RISCVMCExpr::VK_RISCV_None;
+  }
 
   /// getStartLoc - Gets location of the first token of this operand
   SMLoc getStartLoc() const override { return StartLoc; }
@@ -664,7 +674,7 @@ public:
   void addExpr(MCInst &Inst, const MCExpr *Expr) const {
     assert(Expr && "Expr shouldn't be null!");
     int64_t Imm = 0;
-    RISCVMCExpr::VariantKind VK;
+    RISCVMCExpr::VariantKind VK = RISCVMCExpr::VK_RISCV_None;
     bool IsConstant = evaluateConstantImm(Expr, Imm, VK);
 
     if (IsConstant)
@@ -997,19 +1007,24 @@ OperandMatchResultTy RISCVAsmParser::parseRegister(OperandVector &Operands,
                                                    bool AllowParens) {
   SMLoc FirstS = getLoc();
   bool HadParens = false;
-  AsmToken Buf[2];
+  AsmToken LParen;
 
-  // If this a parenthesised register name is allowed, parse it atomically
+  // If this is an LParen and a parenthesised register name is allowed, parse it
+  // atomically.
   if (AllowParens && getLexer().is(AsmToken::LParen)) {
+    AsmToken Buf[2];
     size_t ReadCount = getLexer().peekTokens(Buf);
     if (ReadCount == 2 && Buf[1].getKind() == AsmToken::RParen) {
       HadParens = true;
+      LParen = getParser().getTok();
       getParser().Lex(); // Eat '('
     }
   }
 
   switch (getLexer().getKind()) {
   default:
+    if (HadParens)
+      getLexer().UnLex(LParen);
     return MatchOperand_NoMatch;
   case AsmToken::Identifier:
     StringRef Name = getLexer().getTok().getIdentifier();
@@ -1018,7 +1033,7 @@ OperandMatchResultTy RISCVAsmParser::parseRegister(OperandVector &Operands,
 
     if (RegNo == 0) {
       if (HadParens)
-        getLexer().UnLex(Buf[0]);
+        getLexer().UnLex(LParen);
       return MatchOperand_NoMatch;
     }
     if (HadParens)
@@ -1048,6 +1063,8 @@ RISCVAsmParser::parseCSRSystemRegister(OperandVector &Operands) {
   case AsmToken::LParen:
   case AsmToken::Minus:
   case AsmToken::Plus:
+  case AsmToken::Exclaim:
+  case AsmToken::Tilde:
   case AsmToken::Integer:
   case AsmToken::String: {
     if (getParser().parseExpression(Res))
@@ -1112,8 +1129,11 @@ OperandMatchResultTy RISCVAsmParser::parseImmediate(OperandVector &Operands) {
   default:
     return MatchOperand_NoMatch;
   case AsmToken::LParen:
+  case AsmToken::Dot:
   case AsmToken::Minus:
   case AsmToken::Plus:
+  case AsmToken::Exclaim:
+  case AsmToken::Tilde:
   case AsmToken::Integer:
   case AsmToken::String:
   case AsmToken::Identifier:
@@ -1210,6 +1230,10 @@ OperandMatchResultTy RISCVAsmParser::parseCallSymbol(OperandVector &Operands) {
   if (getLexer().getKind() != AsmToken::Identifier)
     return MatchOperand_NoMatch;
 
+  // Avoid parsing the register in `call rd, foo` as a call symbol.
+  if (getLexer().peekTok().getKind() != AsmToken::EndOfStatement)
+    return MatchOperand_NoMatch;
+
   StringRef Identifier;
   if (getParser().parseIdentifier(Identifier))
     return MatchOperand_ParseFail;
@@ -1264,6 +1288,73 @@ RISCVAsmParser::parseMemOpBaseReg(OperandVector &Operands) {
 
   getParser().Lex(); // Eat ')'
   Operands.push_back(RISCVOperand::createToken(")", getLoc(), isRV64()));
+
+  return MatchOperand_Success;
+}
+
+OperandMatchResultTy RISCVAsmParser::parseAtomicMemOp(OperandVector &Operands) {
+  // Atomic operations such as lr.w, sc.w, and amo*.w accept a "memory operand"
+  // as one of their register operands, such as `(a0)`. This just denotes that
+  // the register (in this case `a0`) contains a memory address.
+  //
+  // Normally, we would be able to parse these by putting the parens into the
+  // instruction string. However, GNU as also accepts a zero-offset memory
+  // operand (such as `0(a0)`), and ignores the 0. Normally this would be parsed
+  // with parseImmediate followed by parseMemOpBaseReg, but these instructions
+  // do not accept an immediate operand, and we do not want to add a "dummy"
+  // operand that is silently dropped.
+  //
+  // Instead, we use this custom parser. This will: allow (and discard) an
+  // offset if it is zero; require (and discard) parentheses; and add only the
+  // parsed register operand to `Operands`.
+  //
+  // These operands are printed with RISCVInstPrinter::printAtomicMemOp, which
+  // will only print the register surrounded by parentheses (which GNU as also
+  // uses as its canonical representation for these operands).
+  std::unique_ptr<RISCVOperand> OptionalImmOp;
+
+  if (getLexer().isNot(AsmToken::LParen)) {
+    // Parse an Integer token. We do not accept arbritrary constant expressions
+    // in the offset field (because they may include parens, which complicates
+    // parsing a lot).
+    int64_t ImmVal;
+    SMLoc ImmStart = getLoc();
+    if (getParser().parseIntToken(ImmVal,
+                                  "expected '(' or optional integer offset"))
+      return MatchOperand_ParseFail;
+
+    // Create a RISCVOperand for checking later (so the error messages are
+    // nicer), but we don't add it to Operands.
+    SMLoc ImmEnd = getLoc();
+    OptionalImmOp =
+        RISCVOperand::createImm(MCConstantExpr::create(ImmVal, getContext()),
+                                ImmStart, ImmEnd, isRV64());
+  }
+
+  if (getLexer().isNot(AsmToken::LParen)) {
+    Error(getLoc(), OptionalImmOp ? "expected '(' after optional integer offset"
+                                  : "expected '(' or optional integer offset");
+    return MatchOperand_ParseFail;
+  }
+  getParser().Lex(); // Eat '('
+
+  if (parseRegister(Operands) != MatchOperand_Success) {
+    Error(getLoc(), "expected register");
+    return MatchOperand_ParseFail;
+  }
+
+  if (getLexer().isNot(AsmToken::RParen)) {
+    Error(getLoc(), "expected ')'");
+    return MatchOperand_ParseFail;
+  }
+  getParser().Lex(); // Eat ')'
+
+  // Deferred Handling of non-zero offsets. This makes the error messages nicer.
+  if (OptionalImmOp && !OptionalImmOp->isImmZero()) {
+    Error(OptionalImmOp->getStartLoc(), "optional integer offset must be 0",
+          SMRange(OptionalImmOp->getStartLoc(), OptionalImmOp->getEndLoc()));
+    return MatchOperand_ParseFail;
+  }
 
   return MatchOperand_Success;
 }
@@ -1748,6 +1839,7 @@ bool RISCVAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
   case RISCV::PseudoAddTPRel:
     if (checkPseudoAddTPRel(Inst, Operands))
       return true;
+    break;
   }
 
   emitToStreamer(Out, Inst);

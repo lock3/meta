@@ -267,17 +267,14 @@ void MemorySSAUpdater::insertDef(MemoryDef *MD, bool RenameUses) {
   // before.
   // We now define that def's memorydefs and memoryphis
   if (DefBeforeSameBlock) {
-    for (auto UI = DefBefore->use_begin(), UE = DefBefore->use_end();
-         UI != UE;) {
-      Use &U = *UI++;
+    DefBefore->replaceUsesWithIf(MD, [MD](Use &U) {
       // Leave the MemoryUses alone.
       // Also make sure we skip ourselves to avoid self references.
-      if (isa<MemoryUse>(U.getUser()) || U.getUser() == MD)
-        continue;
+      User *Usr = U.getUser();
+      return !isa<MemoryUse>(Usr) && Usr != MD;
       // Defs are automatically unoptimized when the user is set to MD below,
       // because the isOptimized() call will fail to find the same ID.
-      U.set(MD);
-    }
+    });
   }
 
   // and that def is now our defining access.
@@ -480,28 +477,47 @@ void MemorySSAUpdater::removeDuplicatePhiEdgesBetween(const BasicBlock *From,
   }
 }
 
+static MemoryAccess *getNewDefiningAccessForClone(MemoryAccess *MA,
+                                                  const ValueToValueMapTy &VMap,
+                                                  PhiToDefMap &MPhiMap,
+                                                  bool CloneWasSimplified,
+                                                  MemorySSA *MSSA) {
+  MemoryAccess *InsnDefining = MA;
+  if (MemoryDef *DefMUD = dyn_cast<MemoryDef>(InsnDefining)) {
+    if (!MSSA->isLiveOnEntryDef(DefMUD)) {
+      Instruction *DefMUDI = DefMUD->getMemoryInst();
+      assert(DefMUDI && "Found MemoryUseOrDef with no Instruction.");
+      if (Instruction *NewDefMUDI =
+              cast_or_null<Instruction>(VMap.lookup(DefMUDI))) {
+        InsnDefining = MSSA->getMemoryAccess(NewDefMUDI);
+        if (!CloneWasSimplified)
+          assert(InsnDefining && "Defining instruction cannot be nullptr.");
+        else if (!InsnDefining || isa<MemoryUse>(InsnDefining)) {
+          // The clone was simplified, it's no longer a MemoryDef, look up.
+          auto DefIt = DefMUD->getDefsIterator();
+          // Since simplified clones only occur in single block cloning, a
+          // previous definition must exist, otherwise NewDefMUDI would not
+          // have been found in VMap.
+          assert(DefIt != MSSA->getBlockDefs(DefMUD->getBlock())->begin() &&
+                 "Previous def must exist");
+          InsnDefining = getNewDefiningAccessForClone(
+              &*(--DefIt), VMap, MPhiMap, CloneWasSimplified, MSSA);
+        }
+      }
+    }
+  } else {
+    MemoryPhi *DefPhi = cast<MemoryPhi>(InsnDefining);
+    if (MemoryAccess *NewDefPhi = MPhiMap.lookup(DefPhi))
+      InsnDefining = NewDefPhi;
+  }
+  assert(InsnDefining && "Defining instruction cannot be nullptr.");
+  return InsnDefining;
+}
+
 void MemorySSAUpdater::cloneUsesAndDefs(BasicBlock *BB, BasicBlock *NewBB,
                                         const ValueToValueMapTy &VMap,
-                                        PhiToDefMap &MPhiMap) {
-  auto GetNewDefiningAccess = [&](MemoryAccess *MA) -> MemoryAccess * {
-    MemoryAccess *InsnDefining = MA;
-    if (MemoryUseOrDef *DefMUD = dyn_cast<MemoryUseOrDef>(InsnDefining)) {
-      if (!MSSA->isLiveOnEntryDef(DefMUD)) {
-        Instruction *DefMUDI = DefMUD->getMemoryInst();
-        assert(DefMUDI && "Found MemoryUseOrDef with no Instruction.");
-        if (Instruction *NewDefMUDI =
-                cast_or_null<Instruction>(VMap.lookup(DefMUDI)))
-          InsnDefining = MSSA->getMemoryAccess(NewDefMUDI);
-      }
-    } else {
-      MemoryPhi *DefPhi = cast<MemoryPhi>(InsnDefining);
-      if (MemoryAccess *NewDefPhi = MPhiMap.lookup(DefPhi))
-        InsnDefining = NewDefPhi;
-    }
-    assert(InsnDefining && "Defining instruction cannot be nullptr.");
-    return InsnDefining;
-  };
-
+                                        PhiToDefMap &MPhiMap,
+                                        bool CloneWasSimplified) {
   const MemorySSA::AccessList *Acc = MSSA->getBlockAccesses(BB);
   if (!Acc)
     return;
@@ -512,11 +528,19 @@ void MemorySSAUpdater::cloneUsesAndDefs(BasicBlock *BB, BasicBlock *NewBB,
       // instructions. This occurs in LoopRotate when cloning instructions
       // from the old header to the old preheader. The cloned instruction may
       // also be a simplified Value, not an Instruction (see LoopRotate).
+      // Also in LoopRotate, even when it's an instruction, due to it being
+      // simplified, it may be a Use rather than a Def, so we cannot use MUD as
+      // template. Calls coming from updateForClonedBlockIntoPred, ensure this.
       if (Instruction *NewInsn =
               dyn_cast_or_null<Instruction>(VMap.lookup(Insn))) {
         MemoryAccess *NewUseOrDef = MSSA->createDefinedAccess(
-            NewInsn, GetNewDefiningAccess(MUD->getDefiningAccess()), MUD);
-        MSSA->insertIntoListsForBlock(NewUseOrDef, NewBB, MemorySSA::End);
+            NewInsn,
+            getNewDefiningAccessForClone(MUD->getDefiningAccess(), VMap,
+                                         MPhiMap, CloneWasSimplified, MSSA),
+            /*Template=*/CloneWasSimplified ? nullptr : MUD,
+            /*CreationMustSucceed=*/CloneWasSimplified ? false : true);
+        if (NewUseOrDef)
+          MSSA->insertIntoListsForBlock(NewUseOrDef, NewBB, MemorySSA::End);
       }
     }
   }
@@ -645,10 +669,13 @@ void MemorySSAUpdater::updateForClonedBlockIntoPred(
   // Defs from BB being used in BB will be replaced with the cloned defs from
   // VM. The uses of BB's Phi (if it exists) in BB will be replaced by the
   // incoming def into the Phi from P1.
+  // Instructions cloned into the predecessor are in practice sometimes
+  // simplified, so disable the use of the template, and create an access from
+  // scratch.
   PhiToDefMap MPhiMap;
   if (MemoryPhi *MPhi = MSSA->getMemoryAccess(BB))
     MPhiMap[MPhi] = MPhi->getIncomingValueForBlock(P1);
-  cloneUsesAndDefs(BB, P1, VM, MPhiMap);
+  cloneUsesAndDefs(BB, P1, VM, MPhiMap, /*CloneWasSimplified=*/true);
 }
 
 template <typename Iter>
@@ -858,15 +885,15 @@ void MemorySSAUpdater::applyInsertUpdates(ArrayRef<CFGUpdate> Updates,
   for (auto *BB : NewBlocks)
     PredMap.erase(BB);
 
-  SmallVector<BasicBlock *, 8> BlocksToProcess;
   SmallVector<BasicBlock *, 16> BlocksWithDefsToReplace;
+  SmallVector<WeakVH, 8> InsertedPhis;
 
   // First create MemoryPhis in all blocks that don't have one. Create in the
   // order found in Updates, not in PredMap, to get deterministic numbering.
   for (auto &Edge : Updates) {
     BasicBlock *BB = Edge.getTo();
     if (PredMap.count(BB) && !MSSA->getMemoryAccess(BB))
-      MSSA->createMemoryPhi(BB);
+      InsertedPhis.push_back(MSSA->createMemoryPhi(BB));
   }
 
   // Now we'll fill in the MemoryPhis with the right incoming values.
@@ -933,10 +960,6 @@ void MemorySSAUpdater::applyInsertUpdates(ArrayRef<CFGUpdate> Updates,
       for (auto *Pred : PrevBlockSet)
         for (int I = 0, E = EdgeCountMap[{Pred, BB}]; I < E; ++I)
           NewPhi->addIncoming(DefP1, Pred);
-
-      // Insert BB in the set of blocks that now have definition. We'll use this
-      // to compute IDF and add Phis there next.
-      BlocksToProcess.push_back(BB);
     }
 
     // Get all blocks that used to dominate BB and no longer do after adding
@@ -951,22 +974,41 @@ void MemorySSAUpdater::applyInsertUpdates(ArrayRef<CFGUpdate> Updates,
     GetNoLongerDomBlocks(PrevIDom, NewIDom, BlocksWithDefsToReplace);
   }
 
+  tryRemoveTrivialPhis(InsertedPhis);
+  // Create the set of blocks that now have a definition. We'll use this to
+  // compute IDF and add Phis there next.
+  SmallVector<BasicBlock *, 8> BlocksToProcess;
+  for (auto &VH : InsertedPhis)
+    if (auto *MPhi = cast_or_null<MemoryPhi>(VH))
+      BlocksToProcess.push_back(MPhi->getBlock());
+
   // Compute IDF and add Phis in all IDF blocks that do not have one.
   SmallVector<BasicBlock *, 32> IDFBlocks;
   if (!BlocksToProcess.empty()) {
-    ForwardIDFCalculator IDFs(DT);
+    ForwardIDFCalculator IDFs(DT, GD);
     SmallPtrSet<BasicBlock *, 16> DefiningBlocks(BlocksToProcess.begin(),
                                                  BlocksToProcess.end());
     IDFs.setDefiningBlocks(DefiningBlocks);
     IDFs.calculate(IDFBlocks);
+
+    SmallSetVector<MemoryPhi *, 4> PhisToFill;
+    // First create all needed Phis.
+    for (auto *BBIDF : IDFBlocks)
+      if (!MSSA->getMemoryAccess(BBIDF)) {
+        auto *IDFPhi = MSSA->createMemoryPhi(BBIDF);
+        InsertedPhis.push_back(IDFPhi);
+        PhisToFill.insert(IDFPhi);
+      }
+    // Then update or insert their correct incoming values.
     for (auto *BBIDF : IDFBlocks) {
-      if (auto *IDFPhi = MSSA->getMemoryAccess(BBIDF)) {
+      auto *IDFPhi = MSSA->getMemoryAccess(BBIDF);
+      assert(IDFPhi && "Phi must exist");
+      if (!PhisToFill.count(IDFPhi)) {
         // Update existing Phi.
         // FIXME: some updates may be redundant, try to optimize and skip some.
         for (unsigned I = 0, E = IDFPhi->getNumIncomingValues(); I < E; ++I)
           IDFPhi->setIncomingValue(I, GetLastDef(IDFPhi->getIncomingBlock(I)));
       } else {
-        IDFPhi = MSSA->createMemoryPhi(BBIDF);
         for (auto &Pair : children<GraphDiffInvBBPair>({GD, BBIDF})) {
           BasicBlock *Pi = Pair.second;
           IDFPhi->addIncoming(GetLastDef(Pi), Pi);
@@ -1009,6 +1051,7 @@ void MemorySSAUpdater::applyInsertUpdates(ArrayRef<CFGUpdate> Updates,
       }
     }
   }
+  tryRemoveTrivialPhis(InsertedPhis);
 }
 
 // Move What before Where in the MemorySSA IR.
@@ -1028,7 +1071,7 @@ void MemorySSAUpdater::moveTo(MemoryUseOrDef *What, BasicBlock *BB,
 
   // Now reinsert it into the IR and do whatever fixups needed.
   if (auto *MD = dyn_cast<MemoryDef>(What))
-    insertDef(MD);
+    insertDef(MD, true);
   else
     insertUse(cast<MemoryUse>(What));
 
@@ -1223,7 +1266,7 @@ void MemorySSAUpdater::removeMemoryAccess(MemoryAccess *MA, bool OptimizePhis) {
 }
 
 void MemorySSAUpdater::removeBlocks(
-    const SmallPtrSetImpl<BasicBlock *> &DeadBlocks) {
+    const SmallSetVector<BasicBlock *, 8> &DeadBlocks) {
   // First delete all uses of BB in MemoryPhis.
   for (BasicBlock *BB : DeadBlocks) {
     Instruction *TI = BB->getTerminator();

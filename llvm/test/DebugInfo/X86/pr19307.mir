@@ -1,11 +1,5 @@
 # RUN: llc -o - %s -start-after=patchable-function -O0 | FileCheck %s
 
-# XFAIL: *
-# Marked XFail due to the removal of "ChangingRegs" from
-# DbgEntityHistoryCalculator, shortening the checked range to not reach the
-# end of the function. Fixed by an about-to-land patch using the FrameDestroy
-# flag to identify the end of functions.
-
 # Generated from the source file pr19307.cc:
 # #include <string>
 # void parse_range(unsigned long long &offset, unsigned long long &limit,
@@ -164,16 +158,16 @@ frameInfo:
   hasCalls:        true
   maxCallFrameSize: 0
 fixedStack:      
-  - { id: 0, type: spill-slot, offset: -16, size: 8, alignment: 16, stack-id: 0 }
+  - { id: 0, type: spill-slot, offset: -16, size: 8, alignment: 16, stack-id: default }
 stack:           
-  - { id: 0, name: offset.addr, offset: -24, size: 8, alignment: 8, stack-id: 0, 
+  - { id: 0, name: offset.addr, offset: -24, size: 8, alignment: 8, stack-id: default,
       debug-info-variable: '!41', debug-info-expression: '!DIExpression()', 
       debug-info-location: '!42' }
-  - { id: 1, name: limit.addr, offset: -32, size: 8, alignment: 8, stack-id: 0, 
+  - { id: 1, name: limit.addr, offset: -32, size: 8, alignment: 8, stack-id: default,
       debug-info-variable: '!43', debug-info-expression: '!DIExpression()', 
       debug-info-location: '!42' }
-  - { id: 2, type: spill-slot, offset: -40, size: 8, alignment: 8, stack-id: 0 }
-  - { id: 3, type: spill-slot, offset: -48, size: 8, alignment: 8, stack-id: 0 }
+  - { id: 2, type: spill-slot, offset: -40, size: 8, alignment: 8, stack-id: default }
+  - { id: 3, type: spill-slot, offset: -48, size: 8, alignment: 8, stack-id: default }
 body:             |
   bb.0.entry:
     liveins: $rdi, $rsi, $rdx

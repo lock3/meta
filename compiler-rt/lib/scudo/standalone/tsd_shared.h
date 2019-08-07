@@ -47,6 +47,11 @@ template <class Allocator, u32 MaxTSDCount> struct TSDRegistrySharedT {
     initLinkerInitialized(Instance);
   }
 
+  void unmapTestOnly() {
+    unmap(reinterpret_cast<void *>(TSDs),
+          sizeof(TSD<Allocator>) * NumberOfTSDs);
+  }
+
   ALWAYS_INLINE void initThreadMaybe(Allocator *Instance,
                                      UNUSED bool MinimalInit) {
     if (LIKELY(getCurrentTSD()))
@@ -89,8 +94,8 @@ private:
   }
 
   void initOnceMaybe(Allocator *Instance) {
-    SpinMutexLock L(&Mutex);
-    if (Initialized)
+    ScopedLock L(Mutex);
+    if (LIKELY(Initialized))
       return;
     initLinkerInitialized(Instance); // Sets Initialized.
   }
@@ -107,8 +112,7 @@ private:
       // Use the Precedence of the current TSD as our random seed. Since we are
       // in the slow path, it means that tryLock failed, and as a result it's
       // very likely that said Precedence is non-zero.
-      u32 RandState = static_cast<u32>(CurrentTSD->getPrecedence());
-      const u32 R = getRandomU32(&RandState);
+      const u32 R = static_cast<u32>(CurrentTSD->getPrecedence());
       const u32 Inc = CoPrimes[R % NumberOfCoPrimes];
       u32 Index = R % NumberOfTSDs;
       uptr LowestPrecedence = UINTPTR_MAX;
@@ -121,9 +125,7 @@ private:
         }
         const uptr Precedence = TSDs[Index].getPrecedence();
         // A 0 precedence here means another thread just locked this TSD.
-        if (UNLIKELY(Precedence == 0))
-          continue;
-        if (Precedence < LowestPrecedence) {
+        if (Precedence && Precedence < LowestPrecedence) {
           CandidateTSD = &TSDs[Index];
           LowestPrecedence = Precedence;
         }
@@ -149,7 +151,7 @@ private:
   u32 NumberOfCoPrimes;
   u32 CoPrimes[MaxTSDCount];
   bool Initialized;
-  StaticSpinMutex Mutex;
+  HybridMutex Mutex;
 #if SCUDO_LINUX && !SCUDO_ANDROID
   static THREADLOCAL TSD<Allocator> *ThreadTSD;
 #endif

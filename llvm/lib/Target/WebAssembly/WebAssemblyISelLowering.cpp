@@ -530,7 +530,8 @@ bool WebAssemblyTargetLowering::isLegalAddressingMode(const DataLayout &DL,
 }
 
 bool WebAssemblyTargetLowering::allowsMisalignedMemoryAccesses(
-    EVT /*VT*/, unsigned /*AddrSpace*/, unsigned /*Align*/, bool *Fast) const {
+    EVT /*VT*/, unsigned /*AddrSpace*/, unsigned /*Align*/,
+    MachineMemOperand::Flags /*Flags*/, bool *Fast) const {
   // WebAssembly supports unaligned accesses, though it should be declared
   // with the p2align attribute on loads and stores which do so, and there
   // may be a performance impact. We tell LLVM they're "fast" because
@@ -568,7 +569,7 @@ bool WebAssemblyTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.memVT = MVT::i32;
     Info.ptrVal = I.getArgOperand(0);
     Info.offset = 0;
-    Info.align = 4;
+    Info.align = Align(4);
     // atomic.notify instruction does not really load the memory specified with
     // this argument, but MachineMemOperand should either be load or store, so
     // we set this to a load.
@@ -582,7 +583,7 @@ bool WebAssemblyTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.memVT = MVT::i32;
     Info.ptrVal = I.getArgOperand(0);
     Info.offset = 0;
-    Info.align = 4;
+    Info.align = Align(4);
     Info.flags = MachineMemOperand::MOVolatile | MachineMemOperand::MOLoad;
     return true;
   case Intrinsic::wasm_atomic_wait_i64:
@@ -590,7 +591,7 @@ bool WebAssemblyTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     Info.memVT = MVT::i64;
     Info.ptrVal = I.getArgOperand(0);
     Info.offset = 0;
-    Info.align = 8;
+    Info.align = Align(8);
     Info.flags = MachineMemOperand::MOVolatile | MachineMemOperand::MOLoad;
     return true;
   default:
@@ -622,7 +623,8 @@ static bool callingConvSupported(CallingConv::ID CallConv) {
          CallConv == CallingConv::Cold ||
          CallConv == CallingConv::PreserveMost ||
          CallConv == CallingConv::PreserveAll ||
-         CallConv == CallingConv::CXX_FAST_TLS;
+         CallConv == CallingConv::CXX_FAST_TLS ||
+         CallConv == CallingConv::WASM_EmscriptenInvoke;
 }
 
 SDValue
@@ -643,13 +645,37 @@ WebAssemblyTargetLowering::LowerCall(CallLoweringInfo &CLI,
   if (CLI.IsPatchPoint)
     fail(DL, DAG, "WebAssembly doesn't support patch point yet");
 
-  // WebAssembly doesn't currently support explicit tail calls. If they are
-  // required, fail. Otherwise, just disable them.
-  if ((CallConv == CallingConv::Fast && CLI.IsTailCall &&
-       MF.getTarget().Options.GuaranteedTailCallOpt) ||
-      (CLI.CS && CLI.CS.isMustTailCall()))
-    fail(DL, DAG, "WebAssembly doesn't support tail call yet");
-  CLI.IsTailCall = false;
+  if (CLI.IsTailCall) {
+    bool MustTail = CLI.CS && CLI.CS.isMustTailCall();
+    if (Subtarget->hasTailCall() && !CLI.IsVarArg) {
+      // Do not tail call unless caller and callee return types match
+      const Function &F = MF.getFunction();
+      const TargetMachine &TM = getTargetMachine();
+      Type *RetTy = F.getReturnType();
+      SmallVector<MVT, 4> CallerRetTys;
+      SmallVector<MVT, 4> CalleeRetTys;
+      computeLegalValueVTs(F, TM, RetTy, CallerRetTys);
+      computeLegalValueVTs(F, TM, CLI.RetTy, CalleeRetTys);
+      bool TypesMatch = CallerRetTys.size() == CalleeRetTys.size() &&
+                        std::equal(CallerRetTys.begin(), CallerRetTys.end(),
+                                   CalleeRetTys.begin());
+      if (!TypesMatch) {
+        // musttail in this case would be an LLVM IR validation failure
+        assert(!MustTail);
+        CLI.IsTailCall = false;
+      }
+    } else {
+      CLI.IsTailCall = false;
+      if (MustTail) {
+        if (CLI.IsVarArg) {
+          // The return would pop the argument buffer
+          fail(DL, DAG, "WebAssembly does not support varargs tail calls");
+        } else {
+          fail(DL, DAG, "WebAssembly 'tail-call' feature not enabled");
+        }
+      }
+    }
+  }
 
   SmallVectorImpl<ISD::InputArg> &Ins = CLI.Ins;
   if (Ins.size() > 1)
@@ -657,6 +683,16 @@ WebAssemblyTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   SmallVectorImpl<ISD::OutputArg> &Outs = CLI.Outs;
   SmallVectorImpl<SDValue> &OutVals = CLI.OutVals;
+
+  // The generic code may have added an sret argument. If we're lowering an
+  // invoke function, the ABI requires that the function pointer be the first
+  // argument, so we may have to swap the arguments.
+  if (CallConv == CallingConv::WASM_EmscriptenInvoke && Outs.size() >= 2 &&
+      Outs[0].Flags.isSRet()) {
+    std::swap(Outs[0], Outs[1]);
+    std::swap(OutVals[0], OutVals[1]);
+  }
+
   unsigned NumFixedArgs = 0;
   for (unsigned I = 0; I < Outs.size(); ++I) {
     const ISD::OutputArg &Out = Outs[I];
@@ -782,6 +818,13 @@ WebAssemblyTargetLowering::LowerCall(CallLoweringInfo &CLI,
     // registers.
     InTys.push_back(In.VT);
   }
+
+  if (CLI.IsTailCall) {
+    // ret_calls do not return values to the current frame
+    SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
+    return DAG.getNode(WebAssemblyISD::RET_CALL, DL, NodeTys, Ops);
+  }
+
   InTys.push_back(MVT::Other);
   SDVTList InTyList = DAG.getVTList(InTys);
   SDValue Res =

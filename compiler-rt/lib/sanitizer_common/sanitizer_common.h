@@ -131,7 +131,7 @@ void ReleaseMemoryPagesToOS(uptr beg, uptr end);
 void IncreaseTotalMmap(uptr size);
 void DecreaseTotalMmap(uptr size);
 uptr GetRSS();
-bool NoHugePagesInRegion(uptr addr, uptr length);
+void SetShadowRegionHugePageMode(uptr addr, uptr length);
 bool DontDumpShadowMemory(uptr addr, uptr length);
 // Check if the built VMA size matches the runtime one.
 void CheckVMASize();
@@ -669,7 +669,7 @@ bool ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
                       error_t *errno_p = nullptr);
 
 // When adding a new architecture, don't forget to also update
-// script/asan_symbolize.py and sanitizer_symbolizer_libcdep.cc.
+// script/asan_symbolize.py and sanitizer_symbolizer_libcdep.cpp.
 inline const char *ModuleArchToString(ModuleArch arch) {
   switch (arch) {
     case kModuleArchUnknown:

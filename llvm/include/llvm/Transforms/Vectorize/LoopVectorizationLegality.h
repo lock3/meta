@@ -33,18 +33,6 @@
 
 namespace llvm {
 
-/// Create an analysis remark that explains why vectorization failed
-///
-/// \p PassName is the name of the pass (e.g. can be AlwaysPrint).  \p
-/// RemarkName is the identifier for the remark.  If \p I is passed it is an
-/// instruction that prevents vectorization.  Otherwise \p TheLoop is used for
-/// the location of the remark.  \return the remark object that can be
-/// streamed to.
-OptimizationRemarkAnalysis createLVMissedAnalysis(const char *PassName,
-                                                  StringRef RemarkName,
-                                                  Loop *TheLoop,
-                                                  Instruction *I = nullptr);
-
 /// Utility class for getting and setting loop vectorizer hints in the form
 /// of loop metadata.
 /// This class keeps a number of loop annotations locally (as member variables)
@@ -55,7 +43,8 @@ OptimizationRemarkAnalysis createLVMissedAnalysis(const char *PassName,
 /// for example 'force', means a decision has been made. So, we need to be
 /// careful NOT to add them if the user hasn't specifically asked so.
 class LoopVectorizeHints {
-  enum HintKind { HK_WIDTH, HK_UNROLL, HK_FORCE, HK_ISVECTORIZED };
+  enum HintKind { HK_WIDTH, HK_UNROLL, HK_FORCE, HK_ISVECTORIZED,
+                  HK_PREDICATE };
 
   /// Hint - associates name and validation with the hint value.
   struct Hint {
@@ -80,6 +69,9 @@ class LoopVectorizeHints {
 
   /// Already Vectorized
   Hint IsVectorized;
+
+  /// Vector Predicate
+  Hint Predicate;
 
   /// Return the loop metadata prefix.
   static StringRef Prefix() { return "llvm.loop."; }
@@ -109,6 +101,7 @@ public:
   unsigned getWidth() const { return Width.Value; }
   unsigned getInterleave() const { return Interleave.Value; }
   unsigned getIsVectorized() const { return IsVectorized.Value; }
+  unsigned getPredicate() const { return Predicate.Value; }
   enum ForceKind getForce() const {
     if ((ForceKind)Force.Value == FK_Undefined &&
         hasDisableAllTransformsHint(TheLoop))
@@ -205,12 +198,13 @@ class LoopVectorizationLegality {
 public:
   LoopVectorizationLegality(
       Loop *L, PredicatedScalarEvolution &PSE, DominatorTree *DT,
-      TargetLibraryInfo *TLI, AliasAnalysis *AA, Function *F,
-      std::function<const LoopAccessInfo &(Loop &)> *GetLAA, LoopInfo *LI,
-      OptimizationRemarkEmitter *ORE, LoopVectorizationRequirements *R,
-      LoopVectorizeHints *H, DemandedBits *DB, AssumptionCache *AC)
-      : TheLoop(L), LI(LI), PSE(PSE), TLI(TLI), DT(DT), GetLAA(GetLAA),
-        ORE(ORE), Requirements(R), Hints(H), DB(DB), AC(AC) {}
+      TargetTransformInfo *TTI, TargetLibraryInfo *TLI, AliasAnalysis *AA,
+      Function *F, std::function<const LoopAccessInfo &(Loop &)> *GetLAA,
+      LoopInfo *LI, OptimizationRemarkEmitter *ORE,
+      LoopVectorizationRequirements *R, LoopVectorizeHints *H, DemandedBits *DB,
+      AssumptionCache *AC)
+      : TheLoop(L), LI(LI), PSE(PSE), TTI(TTI), TLI(TLI), DT(DT),
+        GetLAA(GetLAA), ORE(ORE), Requirements(R), Hints(H), DB(DB), AC(AC) {}
 
   /// ReductionList contains the reduction descriptors for all
   /// of the reductions that were found in the loop.
@@ -381,14 +375,6 @@ private:
     return LAI ? &LAI->getSymbolicStrides() : nullptr;
   }
 
-  /// Reports a vectorization illegality: print \p DebugMsg for debugging
-  /// purposes along with the corresponding optimization remark \p RemarkName.
-  /// If \p I is passed it is an instruction that prevents vectorization.
-  /// Otherwise the loop is used for the location of the remark.
-  void reportVectorizationFailure(const StringRef DebugMsg,
-      const StringRef OREMsg, const StringRef ORETag,
-      Instruction *I = nullptr) const;
-
   /// The loop that we evaluate.
   Loop *TheLoop;
 
@@ -401,6 +387,9 @@ private:
   /// of new predicates if this is required to enable vectorization and
   /// unrolling.
   PredicatedScalarEvolution &PSE;
+
+  /// Target Transform Info.
+  TargetTransformInfo *TTI;
 
   /// Target Library Info.
   TargetLibraryInfo *TLI;

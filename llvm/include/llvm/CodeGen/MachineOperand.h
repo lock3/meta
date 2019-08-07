@@ -14,6 +14,7 @@
 #define LLVM_CODEGEN_MACHINEOPERAND_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/CodeGen/Register.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/LowLevelTypeImpl.h"
@@ -345,9 +346,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// getReg - Returns the register number.
-  unsigned getReg() const {
+  Register getReg() const {
     assert(isReg() && "This is not a register operand!");
-    return SmallContents.RegNo;
+    return Register(SmallContents.RegNo);
   }
 
   unsigned getSubReg() const {
@@ -454,7 +455,7 @@ public:
 
   /// Change the register this operand corresponds to.
   ///
-  void setReg(unsigned Reg);
+  void setReg(Register Reg);
 
   void setSubReg(unsigned subReg) {
     assert(isReg() && "Wrong MachineOperand mutator");
@@ -467,13 +468,13 @@ public:
   /// using TargetRegisterInfo to compose the subreg indices if necessary.
   /// Reg must be a virtual register, SubIdx can be 0.
   ///
-  void substVirtReg(unsigned Reg, unsigned SubIdx, const TargetRegisterInfo&);
+  void substVirtReg(Register Reg, unsigned SubIdx, const TargetRegisterInfo&);
 
   /// substPhysReg - Substitute the current register with the physical register
   /// Reg, taking any existing SubReg into account. For instance,
   /// substPhysReg(%eax) will change %reg1024:sub_8bit to %al.
   ///
-  void substPhysReg(unsigned Reg, const TargetRegisterInfo&);
+  void substPhysReg(MCRegister Reg, const TargetRegisterInfo&);
 
   void setIsUse(bool Val = true) { setIsDef(!Val); }
 
@@ -683,6 +684,11 @@ public:
     Contents.RegMask = RegMaskPtr;
   }
 
+  void setPredicate(unsigned Predicate) {
+    assert(isPredicate() && "Wrong MachineOperand mutator");
+    Contents.Pred = Predicate;
+  }
+
   //===--------------------------------------------------------------------===//
   // Other methods.
   //===--------------------------------------------------------------------===//
@@ -711,11 +717,11 @@ public:
   void ChangeToFPImmediate(const ConstantFP *FPImm);
 
   /// ChangeToES - Replace this operand with a new external symbol operand.
-  void ChangeToES(const char *SymName, unsigned char TargetFlags = 0);
+  void ChangeToES(const char *SymName, unsigned TargetFlags = 0);
 
   /// ChangeToGA - Replace this operand with a new global address operand.
   void ChangeToGA(const GlobalValue *GV, int64_t Offset,
-                  unsigned char TargetFlags = 0);
+                  unsigned TargetFlags = 0);
 
   /// ChangeToMCSymbol - Replace this operand with a new MC symbol operand.
   void ChangeToMCSymbol(MCSymbol *Sym);
@@ -725,12 +731,12 @@ public:
 
   /// Replace this operand with a target index.
   void ChangeToTargetIndex(unsigned Idx, int64_t Offset,
-                           unsigned char TargetFlags = 0);
+                           unsigned TargetFlags = 0);
 
   /// ChangeToRegister - Replace this operand with a new register operand of
   /// the specified value.  If an operand is known to be an register already,
   /// the setReg method should be used.
-  void ChangeToRegister(unsigned Reg, bool isDef, bool isImp = false,
+  void ChangeToRegister(Register Reg, bool isDef, bool isImp = false,
                         bool isKill = false, bool isDead = false,
                         bool isUndef = false, bool isDebug = false);
 
@@ -756,7 +762,7 @@ public:
     return Op;
   }
 
-  static MachineOperand CreateReg(unsigned Reg, bool isDef, bool isImp = false,
+  static MachineOperand CreateReg(Register Reg, bool isDef, bool isImp = false,
                                   bool isKill = false, bool isDead = false,
                                   bool isUndef = false,
                                   bool isEarlyClobber = false,
@@ -782,7 +788,7 @@ public:
     return Op;
   }
   static MachineOperand CreateMBB(MachineBasicBlock *MBB,
-                                  unsigned char TargetFlags = 0) {
+                                  unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_MachineBasicBlock);
     Op.setMBB(MBB);
     Op.setTargetFlags(TargetFlags);
@@ -794,7 +800,7 @@ public:
     return Op;
   }
   static MachineOperand CreateCPI(unsigned Idx, int Offset,
-                                  unsigned char TargetFlags = 0) {
+                                  unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_ConstantPoolIndex);
     Op.setIndex(Idx);
     Op.setOffset(Offset);
@@ -802,21 +808,21 @@ public:
     return Op;
   }
   static MachineOperand CreateTargetIndex(unsigned Idx, int64_t Offset,
-                                          unsigned char TargetFlags = 0) {
+                                          unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_TargetIndex);
     Op.setIndex(Idx);
     Op.setOffset(Offset);
     Op.setTargetFlags(TargetFlags);
     return Op;
   }
-  static MachineOperand CreateJTI(unsigned Idx, unsigned char TargetFlags = 0) {
+  static MachineOperand CreateJTI(unsigned Idx, unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_JumpTableIndex);
     Op.setIndex(Idx);
     Op.setTargetFlags(TargetFlags);
     return Op;
   }
   static MachineOperand CreateGA(const GlobalValue *GV, int64_t Offset,
-                                 unsigned char TargetFlags = 0) {
+                                 unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_GlobalAddress);
     Op.Contents.OffsetedInfo.Val.GV = GV;
     Op.setOffset(Offset);
@@ -824,7 +830,7 @@ public:
     return Op;
   }
   static MachineOperand CreateES(const char *SymName,
-                                 unsigned char TargetFlags = 0) {
+                                 unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_ExternalSymbol);
     Op.Contents.OffsetedInfo.Val.SymbolName = SymName;
     Op.setOffset(0); // Offset is always 0.
@@ -832,7 +838,7 @@ public:
     return Op;
   }
   static MachineOperand CreateBA(const BlockAddress *BA, int64_t Offset,
-                                 unsigned char TargetFlags = 0) {
+                                 unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_BlockAddress);
     Op.Contents.OffsetedInfo.Val.BA = BA;
     Op.setOffset(Offset);
@@ -870,7 +876,7 @@ public:
   }
 
   static MachineOperand CreateMCSymbol(MCSymbol *Sym,
-                                       unsigned char TargetFlags = 0) {
+                                       unsigned TargetFlags = 0) {
     MachineOperand Op(MachineOperand::MO_MCSymbol);
     Op.Contents.Sym = Sym;
     Op.setOffset(0);

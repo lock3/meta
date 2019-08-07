@@ -192,6 +192,8 @@ StringRef sys::detail::getHostCPUNameForARM(StringRef ProcCpuinfoContent) {
             .Case("0xd07", "cortex-a57")
             .Case("0xd08", "cortex-a72")
             .Case("0xd09", "cortex-a73")
+            .Case("0xd0a", "cortex-a75")
+            .Case("0xd0b", "cortex-a76")
             .Default("generic");
   }
 
@@ -235,6 +237,10 @@ StringRef sys::detail::getHostCPUNameForARM(StringRef ProcCpuinfoContent) {
             .Case("0x211", "kryo")
             .Case("0x800", "cortex-a73")
             .Case("0x801", "cortex-a73")
+            .Case("0x802", "cortex-a73")
+            .Case("0x803", "cortex-a73")
+            .Case("0x804", "cortex-a73")
+            .Case("0x805", "cortex-a73")
             .Case("0xc00", "falkor")
             .Case("0xc01", "saphira")
             .Default("generic");
@@ -309,6 +315,8 @@ StringRef sys::detail::getHostCPUNameForS390x(StringRef ProcCpuinfoContent) {
         Pos += sizeof("machine = ") - 1;
         unsigned int Id;
         if (!Lines[I].drop_front(Pos).getAsInteger(10, Id)) {
+          if (Id >= 8561 && HaveVectorSupport)
+            return "arch13";
           if (Id >= 3906 && HaveVectorSupport)
             return "z14";
           if (Id >= 2964 && HaveVectorSupport)
@@ -1026,7 +1034,7 @@ static void getAvailableFeatures(unsigned ECX, unsigned EDX, unsigned MaxLeaf,
     setFeature(X86::FEATURE_BMI);
   if (HasLeaf7 && ((EBX >> 5) & 1) && HasAVX)
     setFeature(X86::FEATURE_AVX2);
-  if (HasLeaf7 && ((EBX >> 9) & 1))
+  if (HasLeaf7 && ((EBX >> 8) & 1))
     setFeature(X86::FEATURE_BMI2);
   if (HasLeaf7 && ((EBX >> 16) & 1) && HasAVX512Save)
     setFeature(X86::FEATURE_AVX512F);

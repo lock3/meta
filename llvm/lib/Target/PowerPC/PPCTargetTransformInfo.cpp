@@ -492,7 +492,7 @@ bool PPCTTIImpl::mightUseCTR(BasicBlock *BB,
 bool PPCTTIImpl::isHardwareLoopProfitable(Loop *L, ScalarEvolution &SE,
                                           AssumptionCache &AC,
                                           TargetLibraryInfo *LibInfo,
-                                          TTI::HardwareLoopInfo &HWLoopInfo) {
+                                          HardwareLoopInfo &HWLoopInfo) {
   const PPCTargetMachine &TM = ST->getTargetMachine();
   TargetSchedModel SchedModel;
   SchedModel.init(ST);
@@ -582,17 +582,12 @@ bool PPCTTIImpl::enableAggressiveInterleaving(bool LoopHasReductions) {
   return LoopHasReductions;
 }
 
-const PPCTTIImpl::TTI::MemCmpExpansionOptions *
-PPCTTIImpl::enableMemCmpExpansion(bool IsZeroCmp) const {
-  static const auto Options = []() {
-    TTI::MemCmpExpansionOptions Options;
-    Options.LoadSizes.push_back(8);
-    Options.LoadSizes.push_back(4);
-    Options.LoadSizes.push_back(2);
-    Options.LoadSizes.push_back(1);
-    return Options;
-  }();
-  return &Options;
+PPCTTIImpl::TTI::MemCmpExpansionOptions
+PPCTTIImpl::enableMemCmpExpansion(bool OptSize, bool IsZeroCmp) const {
+  TTI::MemCmpExpansionOptions Options;
+  Options.LoadSizes = {8, 4, 2, 1};
+  Options.MaxNumLoads = TLI->getMaxExpandSizeMemcmp(OptSize);
+  return Options;
 }
 
 bool PPCTTIImpl::enableInterleavedAccessVectorization() {
@@ -880,3 +875,25 @@ int PPCTTIImpl::getInterleavedMemoryOpCost(unsigned Opcode, Type *VecTy,
   return Cost;
 }
 
+bool PPCTTIImpl::canSaveCmp(Loop *L, BranchInst **BI, ScalarEvolution *SE,
+                            LoopInfo *LI, DominatorTree *DT,
+                            AssumptionCache *AC, TargetLibraryInfo *LibInfo) {
+  // Process nested loops first.
+  for (Loop::iterator I = L->begin(), E = L->end(); I != E; ++I)
+    if (canSaveCmp(*I, BI, SE, LI, DT, AC, LibInfo))
+      return false; // Stop search.
+
+  HardwareLoopInfo HWLoopInfo(L);
+
+  if (!HWLoopInfo.canAnalyze(*LI))
+    return false;
+
+  if (!isHardwareLoopProfitable(L, *SE, *AC, LibInfo, HWLoopInfo))
+    return false;
+
+  if (!HWLoopInfo.isHardwareLoopCandidate(*SE, *LI, *DT))
+    return false;
+
+  *BI = HWLoopInfo.ExitBranch;
+  return true;
+}

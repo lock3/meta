@@ -101,9 +101,7 @@ namespace {
 /// Converts X86 cmov instructions into branches when profitable.
 class X86CmovConverterPass : public MachineFunctionPass {
 public:
-  X86CmovConverterPass() : MachineFunctionPass(ID) {
-    initializeX86CmovConverterPassPass(*PassRegistry::getPassRegistry());
-  }
+  X86CmovConverterPass() : MachineFunctionPass(ID) { }
 
   StringRef getPassName() const override { return "X86 cmov Conversion"; }
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -439,7 +437,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
           if (!MO.isReg() || !MO.isUse())
             continue;
           unsigned Reg = MO.getReg();
-          auto &RDM = RegDefMaps[TargetRegisterInfo::isVirtualRegister(Reg)];
+          auto &RDM = RegDefMaps[Register::isVirtualRegister(Reg)];
           if (MachineInstr *DefMI = RDM.lookup(Reg)) {
             OperandToDefMap[&MO] = DefMI;
             DepthInfo Info = DepthMap.lookup(DefMI);
@@ -459,7 +457,7 @@ bool X86CmovConverterPass::checkForProfitableCmovCandidates(
           if (!MO.isReg() || !MO.isDef())
             continue;
           unsigned Reg = MO.getReg();
-          RegDefMaps[TargetRegisterInfo::isVirtualRegister(Reg)][Reg] = &MI;
+          RegDefMaps[Register::isVirtualRegister(Reg)][Reg] = &MI;
         }
 
         unsigned Latency = TSchedModel.computeInstrLatency(&MI);

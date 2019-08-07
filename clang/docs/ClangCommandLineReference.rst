@@ -346,6 +346,8 @@ Disable builtin #include directories
 
 .. option:: -noprebind
 
+.. option:: -noprofilelib
+
 .. option:: -noseglinkedit
 
 .. option:: -nostartfiles
@@ -609,6 +611,10 @@ C++ standard library to use
 .. option:: --target=<arg>, -target <arg>
 
 Generate code for the given target
+
+.. option:: --print-supported-cpus
+
+Print supported cpu models for the given target
 
 .. option:: -time
 
@@ -1938,6 +1944,14 @@ Perform ThinLTO importing using provided function summary index
 
 .. option:: -ftime-report
 
+.. option:: -ftime-trace
+
+Turn on time profiler
+
+.. option:: -ftime-trace-granularity=<arg>
+
+Minimum time granularity (in microseconds) traced by time profiler
+
 .. option:: -ftls-model=<arg>
 
 .. option:: -ftrap-function=<arg>
@@ -2164,6 +2178,8 @@ Link stack frames through backchain on System Z
 
 .. option:: -mcpu=<arg>, -mv5 (equivalent to -mcpu=hexagonv5), -mv55 (equivalent to -mcpu=hexagonv55), -mv60 (equivalent to -mcpu=hexagonv60), -mv62 (equivalent to -mcpu=hexagonv62), -mv65 (equivalent to -mcpu=hexagonv65)
 
+Use -mcpu=? to see a list of supported cpu models.
+
 .. option:: -mcrc, -mno-crc
 
 Allow use of CRC instructions (ARM/Mips only)
@@ -2298,6 +2314,8 @@ The thread model to use, e.g. posix, single (posix by default)
 
 .. option:: -mtune=<arg>
 
+Use -mtune=? to see a list of supported cpu models.
+
 .. option:: -mtvos-version-min=<arg>, -mappletvos-version-min=<arg>
 
 .. option:: -municode<arg>
@@ -2400,6 +2418,10 @@ AMDGPU
 
 CU wavefront execution mode is used if enabled and WGP wavefront execution mode
 is used if disabled (AMDGPU only)
+
+.. option:: -mwavefrontsize64, -mno-wavefrontsize64
+
+Wavefront size 64 is used if enabled and wavefront size 32 if disabled (AMDGPU only)
 
 .. option:: -mxnack, -mno-xnack
 

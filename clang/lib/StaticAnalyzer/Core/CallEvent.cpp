@@ -191,7 +191,8 @@ AnalysisDeclContext *CallEvent::getCalleeAnalysisDeclContext() const {
   return ADC;
 }
 
-const StackFrameContext *CallEvent::getCalleeStackFrame() const {
+const StackFrameContext *
+CallEvent::getCalleeStackFrame(unsigned BlockCount) const {
   AnalysisDeclContext *ADC = getCalleeAnalysisDeclContext();
   if (!ADC)
     return nullptr;
@@ -217,11 +218,12 @@ const StackFrameContext *CallEvent::getCalleeStackFrame() const {
         break;
   assert(Idx < Sz);
 
-  return ADC->getManager()->getStackFrame(ADC, LCtx, E, B, Idx);
+  return ADC->getManager()->getStackFrame(ADC, LCtx, E, B, BlockCount, Idx);
 }
 
-const VarRegion *CallEvent::getParameterLocation(unsigned Index) const {
-  const StackFrameContext *SFC = getCalleeStackFrame();
+const VarRegion *CallEvent::getParameterLocation(unsigned Index,
+                                                 unsigned BlockCount) const {
+  const StackFrameContext *SFC = getCalleeStackFrame(BlockCount);
   // We cannot construct a VarRegion without a stack frame.
   if (!SFC)
     return nullptr;
@@ -322,7 +324,7 @@ ProgramStateRef CallEvent::invalidateRegions(unsigned BlockCount,
     if (getKind() != CE_CXXAllocator)
       if (isArgumentConstructedDirectly(Idx))
         if (auto AdjIdx = getAdjustedParameterIndex(Idx))
-          if (const VarRegion *VR = getParameterLocation(*AdjIdx))
+          if (const VarRegion *VR = getParameterLocation(*AdjIdx, BlockCount))
             ValuesToInvalidate.push_back(loc::MemRegionVal(VR));
   }
 
@@ -356,20 +358,32 @@ bool CallEvent::isCalled(const CallDescription &CD) const {
   // FIXME: Add ObjC Message support.
   if (getKind() == CE_ObjCMessage)
     return false;
+
+  const IdentifierInfo *II = getCalleeIdentifier();
+  if (!II)
+    return false;
+  const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(getDecl());
+  if (!FD)
+    return false;
+
+  if (CD.Flags & CDF_MaybeBuiltin) {
+    return CheckerContext::isCLibraryFunction(FD, CD.getFunctionName()) &&
+           (!CD.RequiredArgs || CD.RequiredArgs <= getNumArgs());
+  }
+
   if (!CD.IsLookupDone) {
     CD.IsLookupDone = true;
     CD.II = &getState()->getStateManager().getContext().Idents.get(
         CD.getFunctionName());
   }
-  const IdentifierInfo *II = getCalleeIdentifier();
-  if (!II || II != CD.II)
+
+  if (II != CD.II)
     return false;
 
-  const Decl *D = getDecl();
   // If CallDescription provides prefix names, use them to improve matching
   // accuracy.
-  if (CD.QualifiedName.size() > 1 && D) {
-    const DeclContext *Ctx = D->getDeclContext();
+  if (CD.QualifiedName.size() > 1 && FD) {
+    const DeclContext *Ctx = FD->getDeclContext();
     // See if we'll be able to match them all.
     size_t NumUnmatched = CD.QualifiedName.size() - 1;
     for (; Ctx && isa<NamedDecl>(Ctx); Ctx = Ctx->getParent()) {
@@ -393,8 +407,7 @@ bool CallEvent::isCalled(const CallDescription &CD) const {
       return false;
   }
 
-  return (CD.RequiredArgs == CallDescription::NoArgRequirement ||
-          CD.RequiredArgs == getNumArgs());
+  return (!CD.RequiredArgs || CD.RequiredArgs == getNumArgs());
 }
 
 SVal CallEvent::getArgSVal(unsigned Index) const {
@@ -755,8 +768,11 @@ RuntimeDefinition CXXInstanceCall::getRuntimeDefinition() const {
 
   // Does the decl that we found have an implementation?
   const FunctionDecl *Definition;
-  if (!Result->hasBody(Definition))
+  if (!Result->hasBody(Definition)) {
+    if (!DynType.canBeASubClass())
+      return AnyFunctionCall::getRuntimeDefinition();
     return {};
+  }
 
   // We found a definition. If we're not sure that this devirtualization is
   // actually what will happen at runtime, make sure to provide the region so

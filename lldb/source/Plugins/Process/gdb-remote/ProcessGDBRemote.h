@@ -200,9 +200,9 @@ public:
 
   llvm::VersionTuple GetHostOSVersion() override;
 
-  size_t LoadModules(LoadedModuleInfoList &module_list) override;
+  llvm::Error LoadModules() override;
 
-  size_t LoadModules() override;
+  llvm::Expected<LoadedModuleInfoList> GetLoadedModuleList() override;
 
   Status GetFileLoadAddress(const FileSpec &file, bool &is_loaded,
                             lldb::addr_t &load_addr) override;
@@ -324,7 +324,7 @@ protected:
 
   bool ParsePythonTargetDefinition(const FileSpec &target_definition_fspec);
 
-  const lldb::DataBufferSP GetAuxvData() override;
+  DataExtractor GetAuxvData() override;
 
   StructuredData::ObjectSP GetExtendedInfoForThread(lldb::tid_t tid);
 
@@ -383,11 +383,13 @@ protected:
 
   DynamicLoader *GetDynamicLoader() override;
 
+  bool GetGDBServerRegisterInfoXMLAndProcess(ArchSpec &arch_to_use,
+                                             std::string xml_filename, 
+                                             uint32_t &cur_reg_num,
+                                             uint32_t &reg_offset);
+
   // Query remote GDBServer for register information
   bool GetGDBServerRegisterInfo(ArchSpec &arch);
-
-  // Query remote GDBServer for a detailed loaded library list
-  Status GetLoadedModuleList(LoadedModuleInfoList &);
 
   lldb::ModuleSP LoadModuleAtAddress(const FileSpec &file,
                                      lldb::addr_t link_map,

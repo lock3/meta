@@ -1,5 +1,4 @@
 ; RUN: opt -functionattrs -attributor -attributor-disable=false -S < %s | FileCheck %s
-; RUN: opt -functionattrs -attributor -attributor-disable=false -attributor-verify=true -S < %s | FileCheck %s
 ;
 ; Test cases specifically designed for the "no-capture" argument attribute.
 ; We use FIXME's to indicate problems and missing attributes.
@@ -87,11 +86,12 @@ entry:
 ;
 ; Other arguments are possible here due to the no-return behavior.
 ;
-; FIXME: no-return missing
-; CHECK: define noalias nonnull i32* @srec16(i32* nocapture readnone %a)
+; CHECK: define noalias nonnull align 536870912 dereferenceable(4294967295) i32* @srec16(i32* nocapture readnone %a)
 define i32* @srec16(i32* %a) #0 {
 entry:
   %call = call i32* @srec16(i32* %a)
+; CHECK:      %call = call i32* @srec16(i32* %a)
+; CHECK-NEXT: unreachable
   %call1 = call i32* @srec16(i32* %call)
   %call2 = call i32* @srec16(i32* %call1)
   %call3 = call i32* @srec16(i32* %call2)
@@ -112,18 +112,15 @@ entry:
 
 ; TEST SCC with various calls, casts, and comparisons agains NULL
 ;
-; FIXME: returned missing for %a
 ; FIXME: no-capture missing for %a
-; CHECK: define float* @scc_A(i32* readnone %a)
+; CHECK: define float* @scc_A(i32* readnone returned %a)
 ;
-; FIXME: returned missing for %a
 ; FIXME: no-capture missing for %a
-; CHECK: define i64* @scc_B(double* readnone %a)
+; CHECK: define i64* @scc_B(double* readnone returned %a)
 ;
-; FIXME: returned missing for %a
 ; FIXME: readnone missing for %s
 ; FIXME: no-capture missing for %a
-; CHECK: define i8* @scc_C(i16* %a)
+; CHECK: define i8* @scc_C(i16* returned %a)
 ;
 ; float *scc_A(int *a) {
 ;   return (float*)(a ? (int*)scc_A((int*)scc_B((double*)scc_C((short*)a))) : a);
@@ -134,7 +131,7 @@ entry:
 ; }
 ;
 ; void *scc_C(short *a) {
-;   return scc_A((int*)(scc_C(a) ? scc_B((double*)a) : scc_C(a)));
+;   return scc_A((int*)(scc_A(a) ? scc_B((double*)a) : scc_C(a)));
 ; }
 define float* @scc_A(i32* %a) {
 entry:
@@ -186,8 +183,10 @@ cond.end:                                         ; preds = %cond.false, %cond.t
 
 define i8* @scc_C(i16* %a) {
 entry:
-  %call = call i8* @scc_C(i16* %a)
-  %tobool = icmp ne i8* %call, null
+  %bc = bitcast i16* %a to i32*
+  %call = call float* @scc_A(i32* %bc)
+  %bc2 = bitcast float* %call to i8*
+  %tobool = icmp ne i8* %bc2, null
   br i1 %tobool, label %cond.true, label %cond.false
 
 cond.true:                                        ; preds = %entry

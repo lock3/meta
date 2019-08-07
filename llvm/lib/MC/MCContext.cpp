@@ -26,6 +26,7 @@
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionWasm.h"
+#include "llvm/MC/MCSectionXCOFF.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCSymbolCOFF.h"
@@ -86,6 +87,7 @@ void MCContext::reset() {
   COFFAllocator.DestroyAll();
   ELFAllocator.DestroyAll();
   MachOAllocator.DestroyAll();
+  XCOFFAllocator.DestroyAll();
 
   MCSubtargetAllocator.DestroyAll();
   UsedNames.clear();
@@ -107,6 +109,7 @@ void MCContext::reset() {
   ELFUniquingMap.clear();
   COFFUniquingMap.clear();
   WasmUniquingMap.clear();
+  XCOFFUniquingMap.clear();
 
   NextID.clear();
   AllowTemporaryLabels = true;
@@ -462,14 +465,6 @@ MCSectionCOFF *MCContext::getCOFFSection(StringRef Section,
                         BeginSymName);
 }
 
-MCSectionCOFF *MCContext::getCOFFSection(StringRef Section) {
-  COFFSectionKey T{Section, "", 0, GenericSectionID};
-  auto Iter = COFFUniquingMap.find(T);
-  if (Iter == COFFUniquingMap.end())
-    return nullptr;
-  return Iter->second;
-}
-
 MCSectionCOFF *MCContext::getAssociativeCOFFSection(MCSectionCOFF *Sec,
                                                     const MCSymbol *KeySym,
                                                     unsigned UniqueID) {
@@ -530,6 +525,39 @@ MCSectionWasm *MCContext::getWasmSection(const Twine &Section, SectionKind Kind,
   Result->getFragmentList().insert(Result->begin(), F);
   F->setParent(Result);
   Begin->setFragment(F);
+
+  return Result;
+}
+
+MCSectionXCOFF *MCContext::getXCOFFSection(StringRef Section,
+                                           XCOFF::StorageMappingClass SMC,
+                                           XCOFF::SymbolType Type,
+                                           SectionKind Kind,
+                                           const char *BeginSymName) {
+  // Do the lookup. If we have a hit, return it.
+  auto IterBool = XCOFFUniquingMap.insert(
+      std::make_pair(XCOFFSectionKey{Section.str(), SMC}, nullptr));
+  auto &Entry = *IterBool.first;
+  if (!IterBool.second)
+    return Entry.second;
+
+  // Otherwise, return a new section.
+  StringRef CachedName = Entry.first.SectionName;
+
+  MCSymbol *Begin = nullptr;
+  if (BeginSymName)
+    Begin = createTempSymbol(BeginSymName, false);
+
+  MCSectionXCOFF *Result = new (XCOFFAllocator.Allocate())
+      MCSectionXCOFF(CachedName, SMC, Type, Kind, Begin);
+  Entry.second = Result;
+
+  auto *F = new MCDataFragment();
+  Result->getFragmentList().insert(Result->begin(), F);
+  F->setParent(Result);
+
+  if (Begin)
+    Begin->setFragment(F);
 
   return Result;
 }

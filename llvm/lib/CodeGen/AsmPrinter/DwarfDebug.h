@@ -52,6 +52,7 @@ class ByteStreamer;
 class DebugLocEntry;
 class DIE;
 class DwarfCompileUnit;
+class DwarfExpression;
 class DwarfTypeUnit;
 class DwarfUnit;
 class LexicalScope;
@@ -118,7 +119,7 @@ class DbgVariable : public DbgEntity {
   /// Offset in DebugLocs.
   unsigned DebugLocListIndex = ~0u;
   /// Single value location description.
-  std::unique_ptr<DebugLocEntry::Value> ValueLoc = nullptr;
+  std::unique_ptr<DbgValueLoc> ValueLoc = nullptr;
 
   struct FrameIndexExpr {
     int FI;
@@ -147,12 +148,12 @@ public:
   }
 
   // Initialize variable's location.
-  void initializeDbgValue(DebugLocEntry::Value Value) {
+  void initializeDbgValue(DbgValueLoc Value) {
     assert(FrameIndexExprs.empty() && "Already initialized?");
     assert(!ValueLoc && "Already initialized?");
     assert(!Value.getExpression()->isFragment() && "Fragments not supported.");
 
-    ValueLoc = llvm::make_unique<DebugLocEntry::Value>(Value);
+    ValueLoc = llvm::make_unique<DbgValueLoc>(Value);
     if (auto *E = ValueLoc->getExpression())
       if (E->getNumElements())
         FrameIndexExprs.push_back({0, E});
@@ -174,7 +175,7 @@ public:
   void setDebugLocListIndex(unsigned O) { DebugLocListIndex = O; }
   unsigned getDebugLocListIndex() const { return DebugLocListIndex; }
   StringRef getName() const { return getVariable()->getName(); }
-  const DebugLocEntry::Value *getValueLoc() const { return ValueLoc.get(); }
+  const DbgValueLoc *getValueLoc() const { return ValueLoc.get(); }
   /// Get the FI entries, sorted by fragment offset.
   ArrayRef<FrameIndexExpr> getFrameIndexExprs() const;
   bool hasFrameIndexExprs() const { return !FrameIndexExprs.empty(); }
@@ -252,6 +253,25 @@ public:
     return N->getDbgEntityID() == DbgLabelKind;
   }
 };
+
+/// Used for tracking debug info about call site parameters.
+class DbgCallSiteParam {
+private:
+  unsigned Register; ///< Parameter register at the callee entry point.
+  DbgValueLoc Value; ///< Corresponding location for the parameter value at
+                     ///< the call site.
+public:
+  DbgCallSiteParam(unsigned Reg, DbgValueLoc Val)
+      : Register(Reg), Value(Val) {
+    assert(Reg && "Parameter register cannot be undef");
+  }
+
+  unsigned getRegister() const { return Register; }
+  DbgValueLoc getValue() const { return Value; }
+};
+
+/// Collection used for storing debug call site parameters.
+using ParamSet = SmallVector<DbgCallSiteParam, 4>;
 
 /// Helper used to pair up a symbol and its DWARF compile unit.
 struct SymbolCU {
@@ -735,6 +755,10 @@ public:
 
   void addSectionLabel(const MCSymbol *Sym);
   const MCSymbol *getSectionLabel(const MCSection *S);
+
+  static void emitDebugLocValue(const AsmPrinter &AP, const DIBasicType *BT,
+                                const DbgValueLoc &Value,
+                                DwarfExpression &DwarfExpr);
 };
 
 } // end namespace llvm

@@ -421,7 +421,7 @@ added in the future:
 
     This calling convention aims to minimize overhead in the caller by
     preserving as many registers as possible (all the registers that are
-    perserved on the fast path, composed of the entry and exit blocks).
+    preserved on the fast path, composed of the entry and exit blocks).
 
     This calling convention behaves identical to the `C` calling convention on
     how arguments and return values are passed, but it uses a different set of
@@ -674,6 +674,9 @@ an optional list of attached :ref:`metadata <metadata>`.
 
 Variables and aliases can have a
 :ref:`Thread Local Storage Model <tls_model>`.
+
+:ref:`Scalable vectors <t_vector>` cannot be global variables or members of
+structs or arrays because their size is unknown at compile time.
 
 Syntax::
 
@@ -1450,6 +1453,14 @@ example:
     duplicated by inlining. That implies that the function has
     internal linkage and only has one call site, so the original
     call is dead after inlining.
+``nofree``
+    This function attribute indicates that the function does not, directly or
+    indirectly, call a memory-deallocation function (free, for example). As a
+    result, uncaptured pointers that are known to be dereferenceable prior to a
+    call to a function with the ``nofree`` attribute are still known to be
+    dereferenceable after the call (the capturing condition is necessary in
+    environments where the function might communicate the pointer to another thread
+    which then deallocates the memory).
 ``noimplicitfloat``
     This attributes disables implicit floating-point instructions.
 ``noinline``
@@ -1469,12 +1480,30 @@ example:
     target-specific ABI normally permits it.
 ``noreturn``
     This function attribute indicates that the function never returns
-    normally. This produces undefined behavior at runtime if the
-    function ever does dynamically return.
+    normally, hence through a return instruction. This produces undefined
+    behavior at runtime if the function ever does dynamically return. Annotated
+    functions may still raise an exception, i.a., ``nounwind`` is not implied.
 ``norecurse``
     This function attribute indicates that the function does not call itself
     either directly or indirectly down any possible call path. This produces
     undefined behavior at runtime if the function ever does recurse.
+``willreturn``
+    This function attribute indicates that a call of this function will
+    either exhibit undefined behavior or comes back and continues execution
+    at a point in the existing call stack that includes the current invocation.
+    Annotated functions may still raise an exception, i.a., ``nounwind`` is not implied.
+    If an invocation of an annotated function does not return control back
+    to a point in the call stack, the behavior is undefined.
+``nosync``
+    This function attribute indicates that the function does not communicate
+    (synchronize) with another thread through memory or other well-defined means.
+    Synchronization is considered possible in the presence of `atomic` accesses
+    that enforce an order, thus not "unordered" and "monotonic", `volatile` accesses,
+    as well as `convergent` function calls. Note that through `convergent` function calls
+    non-memory communication, e.g., cross-lane operations, are possible and are also
+    considered synchronization. However `convergent` does not contradict `nosync`.
+    If an annotated function does ever synchronize with another thread,
+    the behavior is undefined.
 ``nounwind``
     This function attribute indicates that the function never raises an
     exception. If the function does raise an exception, its runtime
@@ -1652,6 +1681,10 @@ example:
 ``sanitize_hwaddress``
     This attribute indicates that HWAddressSanitizer checks
     (dynamic address safety analysis based on tagged pointers) are enabled for
+    this function.
+``sanitize_memtag``
+    This attribute indicates that MemTagSanitizer checks
+    (dynamic address safety analysis based on Armv8 MTE) are enabled for
     this function.
 ``speculative_load_hardening``
     This attribute indicates that
@@ -2153,6 +2186,8 @@ to the following rules:
    address range of the allocated storage.
 -  A null pointer in the default address-space is associated with no
    address.
+-  An :ref:`undef value <undefvalues>` in *any* address-space is
+   associated with no address.
 -  An integer constant other than zero or a pointer value returned from
    a function not defined within LLVM may be associated with address
    ranges allocated through mechanisms other than those provided by
@@ -2733,30 +2768,40 @@ Vector Type
 A vector type is a simple derived type that represents a vector of
 elements. Vector types are used when multiple primitive data are
 operated in parallel using a single instruction (SIMD). A vector type
-requires a size (number of elements) and an underlying primitive data
-type. Vector types are considered :ref:`first class <t_firstclass>`.
+requires a size (number of elements), an underlying primitive data type,
+and a scalable property to represent vectors where the exact hardware
+vector length is unknown at compile time. Vector types are considered
+:ref:`first class <t_firstclass>`.
 
 :Syntax:
 
 ::
 
-      < <# elements> x <elementtype> >
+      < <# elements> x <elementtype> >          ; Fixed-length vector
+      < vscale x <# elements> x <elementtype> > ; Scalable vector
 
 The number of elements is a constant integer value larger than 0;
 elementtype may be any integer, floating-point or pointer type. Vectors
-of size zero are not allowed.
+of size zero are not allowed. For scalable vectors, the total number of
+elements is a constant multiple (called vscale) of the specified number
+of elements; vscale is a positive integer that is unknown at compile time
+and the same hardware-dependent constant for all scalable vectors at run
+time. The size of a specific scalable vector type is thus constant within
+IR, even if the exact size in bytes cannot be determined until run time.
 
 :Examples:
 
-+-------------------+--------------------------------------------------+
-| ``<4 x i32>``     | Vector of 4 32-bit integer values.               |
-+-------------------+--------------------------------------------------+
-| ``<8 x float>``   | Vector of 8 32-bit floating-point values.        |
-+-------------------+--------------------------------------------------+
-| ``<2 x i64>``     | Vector of 2 64-bit integer values.               |
-+-------------------+--------------------------------------------------+
-| ``<4 x i64*>``    | Vector of 4 pointers to 64-bit integer values.   |
-+-------------------+--------------------------------------------------+
++------------------------+----------------------------------------------------+
+| ``<4 x i32>``          | Vector of 4 32-bit integer values.                 |
++------------------------+----------------------------------------------------+
+| ``<8 x float>``        | Vector of 8 32-bit floating-point values.          |
++------------------------+----------------------------------------------------+
+| ``<2 x i64>``          | Vector of 2 64-bit integer values.                 |
++------------------------+----------------------------------------------------+
+| ``<4 x i64*>``         | Vector of 4 pointers to 64-bit integer values.     |
++------------------------+----------------------------------------------------+
+| ``<vscale x 4 x i32>`` | Vector with a multiple of 4 32-bit integer values. |
++------------------------+----------------------------------------------------+
 
 .. _t_label:
 
@@ -3205,10 +3250,9 @@ behavior.
 Poison Values
 -------------
 
-Poison values are similar to :ref:`undef values <undefvalues>`, however
-they also represent the fact that an instruction or constant expression
-that cannot evoke side effects has nevertheless detected a condition
-that results in undefined behavior.
+In order to facilitate speculative execution, many instructions do not
+invoke immediate undefined behavior when provided with illegal operands,
+and return a poison value instead.
 
 There is currently no way of representing a poison value in the IR; they
 only exist when produced by operations such as :ref:`add <i_add>` with
@@ -3245,9 +3289,22 @@ Poison value behavior is defined in terms of value *dependence*:
    successor.
 -  Dependence is transitive.
 
-Poison values have the same behavior as :ref:`undef values <undefvalues>`,
-with the additional effect that any instruction that has a *dependence*
-on a poison value has undefined behavior.
+An instruction that *depends* on a poison value, produces a poison value
+itself. A poison value may be relaxed into an
+:ref:`undef value <undefvalues>`, which takes an arbitrary bit-pattern.
+
+This means that immediate undefined behavior occurs if a poison value is
+used as an instruction operand that has any values that trigger undefined
+behavior. Notably this includes (but is not limited to):
+
+-  The pointer operand of a :ref:`load <i_load>`, :ref:`store <i_store>` or
+   any other pointer dereferencing instruction (independent of address
+   space).
+-  The divisor operand of a ``udiv``, ``sdiv``, ``urem`` or ``srem``
+   instruction.
+
+Additionally, undefined behavior occurs if a side effect *depends* on poison.
+This includes side effects that are control dependent on a poisoned branch.
 
 Here are some examples:
 
@@ -3257,12 +3314,11 @@ Here are some examples:
       %poison = sub nuw i32 0, 1           ; Results in a poison value.
       %still_poison = and i32 %poison, 0   ; 0, but also poison.
       %poison_yet_again = getelementptr i32, i32* @h, i32 %still_poison
-      store i32 0, i32* %poison_yet_again  ; memory at @h[0] is poisoned
+      store i32 0, i32* %poison_yet_again  ; Undefined behavior due to
+                                           ; store to poison.
 
       store i32 %poison, i32* @g           ; Poison value stored to memory.
       %poison2 = load i32, i32* @g         ; Poison value loaded back from memory.
-
-      store volatile i32 %poison, i32* @g  ; External observation; undefined behavior.
 
       %narrowaddr = bitcast i32* @g to i16*
       %wideaddr = bitcast i32* @g to i64*
@@ -3769,6 +3825,8 @@ All ARM modes:
 
 - ``Q``, ``Um``, ``Un``, ``Uq``, ``Us``, ``Ut``, ``Uv``, ``Uy``: Memory address
   operand. Treated the same as operand ``m``, at the moment.
+- ``Te``: An even general-purpose 32-bit integer register: ``r0,r2,...,r12,r14``
+- ``To``: An odd general-purpose 32-bit integer register: ``r1,r3,...,r11``
 
 ARM and ARM's Thumb2 mode:
 
@@ -3893,6 +3951,17 @@ PowerPC:
   register set (overlapping both the floating-point and vector register files).
 - ``ws``: A 32 or 64-bit floating-point register, from the full VSX register
   set.
+
+RISC-V:
+
+- ``A``: An address operand (using a general-purpose register, without an
+  offset).
+- ``I``: A 12-bit signed integer immediate operand.
+- ``J``: A zero integer immediate operand.
+- ``K``: A 5-bit unsigned integer immediate operand.
+- ``f``: A 32- or 64-bit floating-point register (requires F or D extension).
+- ``r``: A 32- or 64-bit general-purpose register (depending on the platform
+  ``XLEN``).
 
 Sparc:
 
@@ -4569,10 +4638,12 @@ DISubprogram
 """"""""""""
 
 ``DISubprogram`` nodes represent functions from the source language. A
-``DISubprogram`` may be attached to a function definition using ``!dbg``
-metadata. The ``variables:`` field points at :ref:`variables <DILocalVariable>`
-that must be retained, even if their IR counterparts are optimized out of
-the IR. The ``type:`` field must point at an :ref:`DISubroutineType`.
+distinct ``DISubprogram`` may be attached to a function definition using
+``!dbg`` metadata. A unique ``DISubprogram`` may be attached to a function
+declaration used for call site debug info. The ``variables:`` field points at
+:ref:`variables <DILocalVariable>` that must be retained, even if their IR
+counterparts are optimized out of the IR. The ``type:`` field must point at an
+:ref:`DISubroutineType`.
 
 .. _DISubprogramDeclaration:
 
@@ -4691,11 +4762,29 @@ The current supported opcode vocabulary is limited:
   (``16`` and ``DW_ATE_signed`` here, respectively) to which the top of the
   expression stack is to be converted. Maps into a ``DW_OP_convert`` operation
   that references a base type constructed from the supplied values.
+- ``DW_OP_LLVM_tag_offset, tag_offset`` specifies that a memory tag should be
+  optionally applied to the pointer. The memory tag is derived from the
+  given tag offset in an implementation-defined manner.
 - ``DW_OP_swap`` swaps top two stack entries.
 - ``DW_OP_xderef`` provides extended dereference mechanism. The entry at the top
   of the stack is treated as an address. The second stack entry is treated as an
   address space identifier.
 - ``DW_OP_stack_value`` marks a constant value.
+- If an expression is marked with ``DW_OP_entry_value`` all register and
+  memory read operations refer to the respective value at the function entry.
+  The first operand of ``DW_OP_entry_value`` is the size of following
+  DWARF expression.
+  ``DW_OP_entry_value`` may appear after the ``LiveDebugValues`` pass.
+  LLVM only supports entry values for function parameters
+  that are unmodified throughout a function and that are described as
+  simple register location descriptions.
+  ``DW_OP_entry_value`` may also appear after the ``AsmPrinter`` pass when
+  a call site parameter value (``DW_AT_call_site_parameter_value``)
+  is represented as entry value of the parameter.
+- ``DW_OP_breg`` (or ``DW_OP_bregx``) represents a content on the provided
+  signed offset of the specified register. The opcode is only generated by the
+  ``AsmPrinter`` pass to describe call site parameter value which requires an
+  expression over two registers.
 
 DWARF specifies three kinds of simple location descriptions: Register, memory,
 and implicit location descriptions.  Note that a location description is
@@ -4732,6 +4821,18 @@ valid debug intrinsic.
     !3 = !DIExpression(DW_OP_deref, DW_OP_constu, 3, DW_OP_plus, DW_OP_LLVM_fragment, 3, 7)
     !4 = !DIExpression(DW_OP_constu, 2, DW_OP_swap, DW_OP_xderef)
     !5 = !DIExpression(DW_OP_constu, 42, DW_OP_stack_value)
+
+DIFlags
+"""""""""""""""
+
+These flags encode various properties of DINodes.
+
+The `ArgumentNotModified` flag marks a function argument whose value
+is not modified throughout of a function. This flag is used to decide
+whether a DW_OP_entry_value can be used in a location description
+after the function prologue. The language frontend is expected to compute
+this property for each DILocalVariable. The flag should be used
+only in optimized code.
 
 DIObjCProperty
 """"""""""""""
@@ -5218,6 +5319,29 @@ optimizations related to compare and branch instructions. The metadata
 is treated as a boolean value; if it exists, it signals that the branch
 or switch that it is attached to is completely unpredictable.
 
+.. _md_dereferenceable:
+
+'``dereferenceable``' Metadata
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The existence of the ``!dereferenceable`` metadata on the instruction
+tells the optimizer that the value loaded is known to be dereferenceable.
+The number of bytes known to be dereferenceable is specified by the integer
+value in the metadata node. This is analogous to the ''dereferenceable''
+attribute on parameters and return values.
+
+.. _md_dereferenceable_or_null:
+
+'``dereferenceable_or_null``' Metadata
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The existence of the ``!dereferenceable_or_null`` metadata on the
+instruction tells the optimizer that the value loaded is known to be either
+dereferenceable or null.
+The number of bytes known to be dereferenceable is specified by the integer
+value in the metadata node. This is analogous to the ''dereferenceable_or_null''
+attribute on parameters and return values.
+
 .. _llvm.loop:
 
 '``llvm.loop``'
@@ -5314,6 +5438,21 @@ is a bit. If the bit operand value is 1 vectorization is enabled. A value of
 
    !0 = !{!"llvm.loop.vectorize.enable", i1 0}
    !1 = !{!"llvm.loop.vectorize.enable", i1 1}
+
+'``llvm.loop.vectorize.predicate.enable``' Metadata
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This metadata selectively enables or disables creating predicated instructions
+for the loop, which can enable folding of the scalar epilogue loop into the
+main loop. The first operand is the string
+``llvm.loop.vectorize.predicate.enable`` and the second operand is a bit. If
+the bit operand value is 1 vectorization is enabled. A value of 0 disables
+vectorization:
+
+.. code-block:: llvm
+
+   !0 = !{!"llvm.loop.vectorize.predicate.enable", i1 0}
+   !1 = !{!"llvm.loop.vectorize.predicate.enable", i1 1}
 
 '``llvm.loop.vectorize.width``' Metadata
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -5721,6 +5860,8 @@ the irreducible loop) of 100:
     !0 = !{"loop_header_weight", i64 100}
 
 Irreducible loop header weights are typically based on profile data.
+
+.. _md_invariant.group:
 
 '``invariant.group``' Metadata
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -8138,6 +8279,7 @@ Syntax:
 ::
 
       <result> = extractelement <n x <ty>> <val>, <ty2> <idx>  ; yields <ty>
+      <result> = extractelement <vscale x n x <ty>> <val>, <ty2> <idx> ; yields <ty>
 
 Overview:
 """""""""
@@ -8158,7 +8300,9 @@ Semantics:
 
 The result is a scalar of the same type as the element type of ``val``.
 Its value is the value at position ``idx`` of ``val``. If ``idx``
-exceeds the length of ``val``, the result is a
+exceeds the length of ``val`` for a fixed-length vector, the result is a
+:ref:`poison value <poisonvalues>`. For a scalable vector, if the value
+of ``idx`` exceeds the runtime length of the vector, the result is a
 :ref:`poison value <poisonvalues>`.
 
 Example:
@@ -8179,6 +8323,7 @@ Syntax:
 ::
 
       <result> = insertelement <n x <ty>> <val>, <ty> <elt>, <ty2> <idx>    ; yields <n x <ty>>
+      <result> = insertelement <vscale x n x <ty>> <val>, <ty> <elt>, <ty2> <idx> ; yields <vscale x n x <ty>>
 
 Overview:
 """""""""
@@ -8200,7 +8345,9 @@ Semantics:
 
 The result is a vector of the same type as ``val``. Its element values
 are those of ``val`` except at position ``idx``, where it gets the value
-``elt``. If ``idx`` exceeds the length of ``val``, the result
+``elt``. If ``idx`` exceeds the length of ``val`` for a fixed-length vector,
+the result is a :ref:`poison value <poisonvalues>`. For a scalable vector,
+if the value of ``idx`` exceeds the runtime length of the vector, the result
 is a :ref:`poison value <poisonvalues>`.
 
 Example:
@@ -8221,6 +8368,7 @@ Syntax:
 ::
 
       <result> = shufflevector <n x <ty>> <v1>, <n x <ty>> <v2>, <m x i32> <mask>    ; yields <m x <ty>>
+      <result> = shufflevector <vscale x n x <ty>> <v1>, <vscale x n x <ty>> v2, <vscale x m x i32> <mask>  ; yields <vscale x m x <ty>>
 
 Overview:
 """""""""
@@ -8251,6 +8399,10 @@ result element gets. If the shuffle mask is undef, the result vector is
 undef. If any element of the mask operand is undef, that element of the
 result is undef. If the shuffle mask selects an undef element from one
 of the input vectors, the resulting element is undef.
+
+For scalable vectors, the only valid mask values at present are
+``zeroinitializer`` and ``undef``, since we cannot write all indices as
+literals for a vector with a length unknown at compile time.
 
 Example:
 """"""""
@@ -8506,7 +8658,7 @@ otherwise, the behavior is undefined.
 
 The optional ``!invariant.group`` metadata must reference a single metadata name
  ``<index>`` corresponding to a metadata node with no entries.
- See ``invariant.group`` metadata.
+ See ``invariant.group`` metadata :ref:`invariant.group <md_invariant.group>`
 
 The optional ``!nonnull`` metadata must reference a single
 metadata name ``<index>`` corresponding to a metadata node with no
@@ -8518,22 +8670,14 @@ values. This metadata can only be applied to loads of a pointer type.
 
 The optional ``!dereferenceable`` metadata must reference a single metadata
 name ``<deref_bytes_node>`` corresponding to a metadata node with one ``i64``
-entry. The existence of the ``!dereferenceable`` metadata on the instruction
-tells the optimizer that the value loaded is known to be dereferenceable.
-The number of bytes known to be dereferenceable is specified by the integer
-value in the metadata node. This is analogous to the ''dereferenceable''
-attribute on parameters and return values. This metadata can only be applied
-to loads of a pointer type.
+entry.
+See ``dereferenceable`` metadata :ref:`dereferenceable <md_dereferenceable>`
 
 The optional ``!dereferenceable_or_null`` metadata must reference a single
 metadata name ``<deref_bytes_node>`` corresponding to a metadata node with one
-``i64`` entry. The existence of the ``!dereferenceable_or_null`` metadata on the
-instruction tells the optimizer that the value loaded is known to be either
-dereferenceable or null.
-The number of bytes known to be dereferenceable is specified by the integer
-value in the metadata node. This is analogous to the ''dereferenceable_or_null''
-attribute on parameters and return values. This metadata can only be applied
-to loads of a pointer type.
+``i64`` entry.
+See ``dereferenceable_or_null`` metadata :ref:`dereferenceable_or_null
+<md_dereferenceable_or_null>`
 
 The optional ``!align`` metadata must reference a single metadata name
 ``<align_node>`` corresponding to a metadata node with one ``i64`` entry.
@@ -9530,7 +9674,7 @@ Syntax:
 
 ::
 
-      <result> = inttoptr <ty> <value> to <ty2>             ; yields ty2
+      <result> = inttoptr <ty> <value> to <ty2>[, !dereferenceable !<deref_bytes_node>][, !dereferenceable_or_null !<deref_bytes_node]             ; yields ty2
 
 Overview:
 """""""""
@@ -9544,6 +9688,16 @@ Arguments:
 The '``inttoptr``' instruction takes an :ref:`integer <t_integer>` value to
 cast, and a type to cast it to, which must be a :ref:`pointer <t_pointer>`
 type.
+
+The optional ``!dereferenceable`` metadata must reference a single metadata
+name ``<deref_bytes_node>`` corresponding to a metadata node with one ``i64``
+entry.
+See ``dereferenceable`` metadata.
+
+The optional ``!dereferenceable_or_null`` metadata must reference a single
+metadata name ``<deref_bytes_node>`` corresponding to a metadata node with one
+``i64`` entry.
+See ``dereferenceable_or_null`` metadata.
 
 Semantics:
 """"""""""
@@ -10429,6 +10583,16 @@ functions such as ``i8 @llvm.ctpop.i8(i8 %val)`` and
 overloaded, and only one type suffix is required. Because the argument's
 type is matched against the return type, it does not require its own
 name suffix.
+
+For target developers who are defining intrinsics for back-end code
+generation, any intrinsic overloads based solely the distinction between
+integer or floating point types should not be relied upon for correct
+code generation. In such cases, the recommended approach for target
+maintainers when defining intrinsics is to create separate integer and
+FP intrinsics rather than rely on overloading. For example, if different
+codegen is required for ``llvm.target.foo(<4 x i32>)`` and
+``llvm.target.foo(<4 x float>)`` then these should be split into
+different intrinsics.
 
 To learn how to add an intrinsic function, please see the `Extending
 LLVM Guide <ExtendingLLVM.html>`_.
@@ -13719,8 +13883,8 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.add.i32.v4i32(<4 x i32> %a)
-      declare i64 @llvm.experimental.vector.reduce.add.i64.v2i64(<2 x i64> %a)
+      declare i32 @llvm.experimental.vector.reduce.add.v4i32(<4 x i32> %a)
+      declare i64 @llvm.experimental.vector.reduce.add.v2i64(<2 x i64> %a)
 
 Overview:
 """""""""
@@ -13733,46 +13897,43 @@ Arguments:
 """"""""""
 The argument to this intrinsic must be a vector of integer values.
 
-'``llvm.experimental.vector.reduce.fadd.*``' Intrinsic
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+'``llvm.experimental.vector.reduce.v2.fadd.*``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""
 
 ::
 
-      declare float @llvm.experimental.vector.reduce.fadd.f32.v4f32(float %acc, <4 x float> %a)
-      declare double @llvm.experimental.vector.reduce.fadd.f64.v2f64(double %acc, <2 x double> %a)
+      declare float @llvm.experimental.vector.reduce.v2.fadd.f32.v4f32(float %start_value, <4 x float> %a)
+      declare double @llvm.experimental.vector.reduce.v2.fadd.f64.v2f64(double %start_value, <2 x double> %a)
 
 Overview:
 """""""""
 
-The '``llvm.experimental.vector.reduce.fadd.*``' intrinsics do a floating-point
+The '``llvm.experimental.vector.reduce.v2.fadd.*``' intrinsics do a floating-point
 ``ADD`` reduction of a vector, returning the result as a scalar. The return type
 matches the element-type of the vector input.
 
-If the intrinsic call has fast-math flags, then the reduction will not preserve
-the associativity of an equivalent scalarized counterpart. If it does not have
-fast-math flags, then the reduction will be *ordered*, implying that the
-operation respects the associativity of a scalarized reduction.
+If the intrinsic call has the 'reassoc' or 'fast' flags set, then the
+reduction will not preserve the associativity of an equivalent scalarized
+counterpart. Otherwise the reduction will be *ordered*, thus implying that
+the operation respects the associativity of a scalarized reduction.
 
 
 Arguments:
 """"""""""
-The first argument to this intrinsic is a scalar accumulator value, which is
-only used when there are no fast-math flags attached. This argument may be undef
-when fast-math flags are used. The type of the accumulator matches the
-element-type of the vector input.
-
+The first argument to this intrinsic is a scalar start value for the reduction.
+The type of the start value matches the element-type of the vector input.
 The second argument must be a vector of floating-point values.
 
 Examples:
 """""""""
 
-.. code-block:: llvm
+::
 
-      %fast = call fast float @llvm.experimental.vector.reduce.fadd.f32.v4f32(float undef, <4 x float> %input) ; fast reduction
-      %ord = call float @llvm.experimental.vector.reduce.fadd.f32.v4f32(float %acc, <4 x float> %input) ; ordered reduction
+      %unord = call reassoc float @llvm.experimental.vector.reduce.v2.fadd.f32.v4f32(float 0.0, <4 x float> %input) ; unordered reduction
+      %ord = call float @llvm.experimental.vector.reduce.v2.fadd.f32.v4f32(float %start_value, <4 x float> %input) ; ordered reduction
 
 
 '``llvm.experimental.vector.reduce.mul.*``' Intrinsic
@@ -13783,8 +13944,8 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.mul.i32.v4i32(<4 x i32> %a)
-      declare i64 @llvm.experimental.vector.reduce.mul.i64.v2i64(<2 x i64> %a)
+      declare i32 @llvm.experimental.vector.reduce.mul.v4i32(<4 x i32> %a)
+      declare i64 @llvm.experimental.vector.reduce.mul.v2i64(<2 x i64> %a)
 
 Overview:
 """""""""
@@ -13797,46 +13958,43 @@ Arguments:
 """"""""""
 The argument to this intrinsic must be a vector of integer values.
 
-'``llvm.experimental.vector.reduce.fmul.*``' Intrinsic
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+'``llvm.experimental.vector.reduce.v2.fmul.*``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Syntax:
 """""""
 
 ::
 
-      declare float @llvm.experimental.vector.reduce.fmul.f32.v4f32(float %acc, <4 x float> %a)
-      declare double @llvm.experimental.vector.reduce.fmul.f64.v2f64(double %acc, <2 x double> %a)
+      declare float @llvm.experimental.vector.reduce.v2.fmul.f32.v4f32(float %start_value, <4 x float> %a)
+      declare double @llvm.experimental.vector.reduce.v2.fmul.f64.v2f64(double %start_value, <2 x double> %a)
 
 Overview:
 """""""""
 
-The '``llvm.experimental.vector.reduce.fmul.*``' intrinsics do a floating-point
+The '``llvm.experimental.vector.reduce.v2.fmul.*``' intrinsics do a floating-point
 ``MUL`` reduction of a vector, returning the result as a scalar. The return type
 matches the element-type of the vector input.
 
-If the intrinsic call has fast-math flags, then the reduction will not preserve
-the associativity of an equivalent scalarized counterpart. If it does not have
-fast-math flags, then the reduction will be *ordered*, implying that the
-operation respects the associativity of a scalarized reduction.
+If the intrinsic call has the 'reassoc' or 'fast' flags set, then the
+reduction will not preserve the associativity of an equivalent scalarized
+counterpart. Otherwise the reduction will be *ordered*, thus implying that
+the operation respects the associativity of a scalarized reduction.
 
 
 Arguments:
 """"""""""
-The first argument to this intrinsic is a scalar accumulator value, which is
-only used when there are no fast-math flags attached. This argument may be undef
-when fast-math flags are used. The type of the accumulator matches the
-element-type of the vector input.
-
+The first argument to this intrinsic is a scalar start value for the reduction.
+The type of the start value matches the element-type of the vector input.
 The second argument must be a vector of floating-point values.
 
 Examples:
 """""""""
 
-.. code-block:: llvm
+::
 
-      %fast = call fast float @llvm.experimental.vector.reduce.fmul.f32.v4f32(float undef, <4 x float> %input) ; fast reduction
-      %ord = call float @llvm.experimental.vector.reduce.fmul.f32.v4f32(float %acc, <4 x float> %input) ; ordered reduction
+      %unord = call reassoc float @llvm.experimental.vector.reduce.v2.fmul.f32.v4f32(float 1.0, <4 x float> %input) ; unordered reduction
+      %ord = call float @llvm.experimental.vector.reduce.v2.fmul.f32.v4f32(float %start_value, <4 x float> %input) ; ordered reduction
 
 '``llvm.experimental.vector.reduce.and.*``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -13846,7 +14004,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.and.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.and.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13867,7 +14025,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.or.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.or.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13888,7 +14046,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.xor.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.xor.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13909,7 +14067,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.smax.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.smax.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13930,7 +14088,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.smin.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.smin.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13951,7 +14109,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.umax.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.umax.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13972,7 +14130,7 @@ Syntax:
 
 ::
 
-      declare i32 @llvm.experimental.vector.reduce.umin.i32.v4i32(<4 x i32> %a)
+      declare i32 @llvm.experimental.vector.reduce.umin.v4i32(<4 x i32> %a)
 
 Overview:
 """""""""
@@ -13993,8 +14151,8 @@ Syntax:
 
 ::
 
-      declare float @llvm.experimental.vector.reduce.fmax.f32.v4f32(<4 x float> %a)
-      declare double @llvm.experimental.vector.reduce.fmax.f64.v2f64(<2 x double> %a)
+      declare float @llvm.experimental.vector.reduce.fmax.v4f32(<4 x float> %a)
+      declare double @llvm.experimental.vector.reduce.fmax.v2f64(<2 x double> %a)
 
 Overview:
 """""""""
@@ -14018,8 +14176,8 @@ Syntax:
 
 ::
 
-      declare float @llvm.experimental.vector.reduce.fmin.f32.v4f32(<4 x float> %a)
-      declare double @llvm.experimental.vector.reduce.fmin.f64.v2f64(<2 x double> %a)
+      declare float @llvm.experimental.vector.reduce.fmin.v4f32(<4 x float> %a)
+      declare double @llvm.experimental.vector.reduce.fmin.v2f64(<2 x double> %a)
 
 Overview:
 """""""""
@@ -17218,3 +17376,116 @@ Lowering:
 """""""""
 
 Lowers to a call to `objc_storeWeak <https://clang.llvm.org/docs/AutomaticReferenceCounting.html#arc-runtime-objc-storeweak>`_.
+
+Preserving Debug Information Intrinsics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+These intrinsics are used to carry certain debuginfo together with
+IR-level operations. For example, it may be desirable to
+know the structure/union name and the original user-level field
+indices. Such information got lost in IR GetElementPtr instruction
+since the IR types are different from debugInfo types and unions
+are converted to structs in IR.
+
+'``llvm.preserve.array.access.index``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+::
+
+      declare <ret_type>
+      @llvm.preserve.array.access.index.p0s_union.anons.p0a10s_union.anons(<type> base,
+                                                                           i32 dim,
+                                                                           i32 index)
+
+Overview:
+"""""""""
+
+The '``llvm.preserve.array.access.index``' intrinsic returns the getelementptr address
+based on array base ``base``, array dimension ``dim`` and the last access index ``index``
+into the array. The return type ``ret_type`` is a pointer type to the array element.
+The array ``dim`` and ``index`` are preserved which is more robust than
+getelementptr instruction which may be subject to compiler transformation.
+The ``llvm.preserve.access.index`` type of metadata is attached to this call instruction
+to provide array or pointer debuginfo type.
+The metadata is a ``DICompositeType`` or ``DIDerivedType`` representing the
+debuginfo version of ``type``.
+
+Arguments:
+""""""""""
+
+The ``base`` is the array base address.  The ``dim`` is the array dimension.
+The ``base`` is a pointer if ``dim`` equals 0.
+The ``index`` is the last access index into the array or pointer.
+
+Semantics:
+""""""""""
+
+The '``llvm.preserve.array.access.index``' intrinsic produces the same result
+as a getelementptr with base ``base`` and access operands ``{dim's 0's, index}``.
+
+'``llvm.preserve.union.access.index``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+::
+
+      declare <type>
+      @llvm.preserve.union.access.index.p0s_union.anons.p0s_union.anons(<type> base,
+                                                                        i32 di_index)
+
+Overview:
+"""""""""
+
+The '``llvm.preserve.union.access.index``' intrinsic carries the debuginfo field index
+``di_index`` and returns the ``base`` address.
+The ``llvm.preserve.access.index`` type of metadata is attached to this call instruction
+to provide union debuginfo type.
+The metadata is a ``DICompositeType`` representing the debuginfo version of ``type``.
+The return type ``type`` is the same as the ``base`` type.
+
+Arguments:
+""""""""""
+
+The ``base`` is the union base address. The ``di_index`` is the field index in debuginfo.
+
+Semantics:
+""""""""""
+
+The '``llvm.preserve.union.access.index``' intrinsic returns the ``base`` address.
+
+'``llvm.preserve.struct.access.index``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+::
+
+      declare <ret_type>
+      @llvm.preserve.struct.access.index.p0i8.p0s_struct.anon.0s(<type> base,
+                                                                 i32 gep_index,
+                                                                 i32 di_index)
+
+Overview:
+"""""""""
+
+The '``llvm.preserve.struct.access.index``' intrinsic returns the getelementptr address
+based on struct base ``base`` and IR struct member index ``gep_index``.
+The ``llvm.preserve.access.index`` type of metadata is attached to this call instruction
+to provide struct debuginfo type.
+The metadata is a ``DICompositeType`` representing the debuginfo version of ``type``.
+The return type ``ret_type`` is a pointer type to the structure member.
+
+Arguments:
+""""""""""
+
+The ``base`` is the structure base address. The ``gep_index`` is the struct member index
+based on IR structures. The ``di_index`` is the struct member index based on debuginfo.
+
+Semantics:
+""""""""""
+
+The '``llvm.preserve.struct.access.index``' intrinsic produces the same result
+as a getelementptr with base ``base`` and access operands ``{0, gep_index}``.

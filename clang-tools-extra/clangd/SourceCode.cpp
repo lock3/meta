@@ -12,10 +12,13 @@
 #include "Logger.h"
 #include "Protocol.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/Basic/LangOptions.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TokenKinds.h"
 #include "clang/Format/Format.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
@@ -24,6 +27,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/xxhash.h"
 #include <algorithm>
 
 namespace clang {
@@ -196,6 +200,35 @@ Position sourceLocToPosition(const SourceManager &SM, SourceLocation Loc) {
   return P;
 }
 
+bool isSpelledInSource(SourceLocation Loc, const SourceManager &SM) {
+  if (Loc.isMacroID()) {
+    std::string PrintLoc = SM.getSpellingLoc(Loc).printToString(SM);
+    if (llvm::StringRef(PrintLoc).startswith("<scratch") ||
+        llvm::StringRef(PrintLoc).startswith("<command line>"))
+      return false;
+  }
+  return true;
+}
+
+SourceLocation spellingLocIfSpelled(SourceLocation Loc,
+                                    const SourceManager &SM) {
+  if (!isSpelledInSource(Loc, SM))
+    // Use the expansion location as spelling location is not interesting.
+    return SM.getExpansionRange(Loc).getBegin();
+  return SM.getSpellingLoc(Loc);
+}
+
+llvm::Optional<Range> getTokenRange(const SourceManager &SM,
+                                    const LangOptions &LangOpts,
+                                    SourceLocation TokLoc) {
+  if (!TokLoc.isValid())
+    return llvm::None;
+  SourceLocation End = Lexer::getLocForEndOfToken(TokLoc, 0, SM, LangOpts);
+  if (!End.isValid())
+    return llvm::None;
+  return halfOpenToRange(SM, CharSourceRange::getCharRange(TokLoc, End));
+}
+
 bool isValidFileRange(const SourceManager &Mgr, SourceRange R) {
   if (!R.getBegin().isValid() || !R.getEnd().isValid())
     return false;
@@ -231,20 +264,151 @@ bool halfOpenRangeTouches(const SourceManager &Mgr, SourceRange R,
   return L == R.getEnd() || halfOpenRangeContains(Mgr, R, L);
 }
 
-llvm::Optional<SourceRange> toHalfOpenFileRange(const SourceManager &Mgr,
+static unsigned getTokenLengthAtLoc(SourceLocation Loc, const SourceManager &SM,
+                                    const LangOptions &LangOpts) {
+  Token TheTok;
+  if (Lexer::getRawToken(Loc, TheTok, SM, LangOpts))
+    return 0;
+  // FIXME: Here we check whether the token at the location is a greatergreater
+  // (>>) token and consider it as a single greater (>). This is to get it
+  // working for templates but it isn't correct for the right shift operator. We
+  // can avoid this by using half open char ranges in getFileRange() but getting
+  // token ending is not well supported in macroIDs.
+  if (TheTok.is(tok::greatergreater))
+    return 1;
+  return TheTok.getLength();
+}
+
+// Returns location of the last character of the token at a given loc
+static SourceLocation getLocForTokenEnd(SourceLocation BeginLoc,
+                                        const SourceManager &SM,
+                                        const LangOptions &LangOpts) {
+  unsigned Len = getTokenLengthAtLoc(BeginLoc, SM, LangOpts);
+  return BeginLoc.getLocWithOffset(Len ? Len - 1 : 0);
+}
+
+// Returns location of the starting of the token at a given EndLoc
+static SourceLocation getLocForTokenBegin(SourceLocation EndLoc,
+                                          const SourceManager &SM,
+                                          const LangOptions &LangOpts) {
+  return EndLoc.getLocWithOffset(
+      -(signed)getTokenLengthAtLoc(EndLoc, SM, LangOpts));
+}
+
+// Converts a char source range to a token range.
+static SourceRange toTokenRange(CharSourceRange Range, const SourceManager &SM,
+                                const LangOptions &LangOpts) {
+  if (!Range.isTokenRange())
+    Range.setEnd(getLocForTokenBegin(Range.getEnd(), SM, LangOpts));
+  return Range.getAsRange();
+}
+// Returns the union of two token ranges.
+// To find the maximum of the Ends of the ranges, we compare the location of the
+// last character of the token.
+static SourceRange unionTokenRange(SourceRange R1, SourceRange R2,
+                                   const SourceManager &SM,
+                                   const LangOptions &LangOpts) {
+  SourceLocation E1 = getLocForTokenEnd(R1.getEnd(), SM, LangOpts);
+  SourceLocation E2 = getLocForTokenEnd(R2.getEnd(), SM, LangOpts);
+  return SourceRange(std::min(R1.getBegin(), R2.getBegin()),
+                     E1 < E2 ? R2.getEnd() : R1.getEnd());
+}
+
+// Check if two locations have the same file id.
+static bool inSameFile(SourceLocation Loc1, SourceLocation Loc2,
+                       const SourceManager &SM) {
+  return SM.getFileID(Loc1) == SM.getFileID(Loc2);
+}
+
+// Find an expansion range (not necessarily immediate) the ends of which are in
+// the same file id.
+static SourceRange
+getExpansionTokenRangeInSameFile(SourceLocation Loc, const SourceManager &SM,
+                                 const LangOptions &LangOpts) {
+  SourceRange ExpansionRange =
+      toTokenRange(SM.getImmediateExpansionRange(Loc), SM, LangOpts);
+  // Fast path for most common cases.
+  if (inSameFile(ExpansionRange.getBegin(), ExpansionRange.getEnd(), SM))
+    return ExpansionRange;
+  // Record the stack of expansion locations for the beginning, keyed by FileID.
+  llvm::DenseMap<FileID, SourceLocation> BeginExpansions;
+  for (SourceLocation Begin = ExpansionRange.getBegin(); Begin.isValid();
+       Begin = Begin.isFileID()
+                   ? SourceLocation()
+                   : SM.getImmediateExpansionRange(Begin).getBegin()) {
+    BeginExpansions[SM.getFileID(Begin)] = Begin;
+  }
+  // Move up the stack of expansion locations for the end until we find the
+  // location in BeginExpansions with that has the same file id.
+  for (SourceLocation End = ExpansionRange.getEnd(); End.isValid();
+       End = End.isFileID() ? SourceLocation()
+                            : toTokenRange(SM.getImmediateExpansionRange(End),
+                                           SM, LangOpts)
+                                  .getEnd()) {
+    auto It = BeginExpansions.find(SM.getFileID(End));
+    if (It != BeginExpansions.end())
+      return {It->second, End};
+  }
+  llvm_unreachable(
+      "We should able to find a common ancestor in the expansion tree.");
+}
+// Returns the file range for a given Location as a Token Range
+// This is quite similar to getFileLoc in SourceManager as both use
+// getImmediateExpansionRange and getImmediateSpellingLoc (for macro IDs).
+// However:
+// - We want to maintain the full range information as we move from one file to
+//   the next. getFileLoc only uses the BeginLoc of getImmediateExpansionRange.
+// - We want to split '>>' tokens as the lexer parses the '>>' in nested
+//   template instantiations as a '>>' instead of two '>'s.
+// There is also getExpansionRange but it simply calls
+// getImmediateExpansionRange on the begin and ends separately which is wrong.
+static SourceRange getTokenFileRange(SourceLocation Loc,
+                                     const SourceManager &SM,
+                                     const LangOptions &LangOpts) {
+  SourceRange FileRange = Loc;
+  while (!FileRange.getBegin().isFileID()) {
+    if (SM.isMacroArgExpansion(FileRange.getBegin())) {
+      FileRange = unionTokenRange(
+          SM.getImmediateSpellingLoc(FileRange.getBegin()),
+          SM.getImmediateSpellingLoc(FileRange.getEnd()), SM, LangOpts);
+      assert(inSameFile(FileRange.getBegin(), FileRange.getEnd(), SM));
+    } else {
+      SourceRange ExpansionRangeForBegin =
+          getExpansionTokenRangeInSameFile(FileRange.getBegin(), SM, LangOpts);
+      SourceRange ExpansionRangeForEnd =
+          getExpansionTokenRangeInSameFile(FileRange.getEnd(), SM, LangOpts);
+      assert(inSameFile(ExpansionRangeForBegin.getBegin(),
+                        ExpansionRangeForEnd.getBegin(), SM) &&
+             "Both Expansion ranges should be in same file.");
+      FileRange = unionTokenRange(ExpansionRangeForBegin, ExpansionRangeForEnd,
+                                  SM, LangOpts);
+    }
+  }
+  return FileRange;
+}
+
+bool isInsideMainFile(SourceLocation Loc, const SourceManager &SM) {
+  return Loc.isValid() && SM.isWrittenInMainFile(SM.getExpansionLoc(Loc));
+}
+
+llvm::Optional<SourceRange> toHalfOpenFileRange(const SourceManager &SM,
                                                 const LangOptions &LangOpts,
                                                 SourceRange R) {
-  auto Begin = Mgr.getFileLoc(R.getBegin());
-  if (Begin.isInvalid())
+  SourceRange R1 = getTokenFileRange(R.getBegin(), SM, LangOpts);
+  if (!isValidFileRange(SM, R1))
     return llvm::None;
-  auto End = Mgr.getFileLoc(R.getEnd());
-  if (End.isInvalid())
-    return llvm::None;
-  End = Lexer::getLocForEndOfToken(End, 0, Mgr, LangOpts);
 
-  SourceRange Result(Begin, End);
-  if (!isValidFileRange(Mgr, Result))
+  SourceRange R2 = getTokenFileRange(R.getEnd(), SM, LangOpts);
+  if (!isValidFileRange(SM, R2))
     return llvm::None;
+
+  SourceRange Result = unionTokenRange(R1, R2, SM, LangOpts);
+  unsigned TokLen = getTokenLengthAtLoc(Result.getEnd(), SM, LangOpts);
+  // Convert from closed token range to half-open (char) range
+  Result.setEnd(Result.getEnd().getLocWithOffset(TokLen));
+  if (!isValidFileRange(SM, Result))
+    return llvm::None;
+
   return Result;
 }
 
@@ -337,10 +501,10 @@ llvm::Optional<std::string> getCanonicalPath(const FileEntry *F,
   //
   //  The file path of Symbol is "/project/src/foo.h" instead of
   //  "/tmp/build/foo.h"
-  if (const DirectoryEntry *Dir = SourceMgr.getFileManager().getDirectory(
+  if (auto Dir = SourceMgr.getFileManager().getDirectory(
           llvm::sys::path::parent_path(FilePath))) {
     llvm::SmallString<128> RealPath;
-    llvm::StringRef DirName = SourceMgr.getFileManager().getCanonicalName(Dir);
+    llvm::StringRef DirName = SourceMgr.getFileManager().getCanonicalName(*Dir);
     llvm::sys::path::append(RealPath, DirName,
                             llvm::sys::path::filename(FilePath));
     return RealPath.str().str();
@@ -364,7 +528,13 @@ bool isRangeConsecutive(const Range &Left, const Range &Right) {
 }
 
 FileDigest digest(llvm::StringRef Content) {
-  return llvm::SHA1::hash({(const uint8_t *)Content.data(), Content.size()});
+  uint64_t Hash{llvm::xxHash64(Content)};
+  FileDigest Result;
+  for (unsigned I = 0; I < Result.size(); ++I) {
+    Result[I] = uint8_t(Hash);
+    Hash >>= 8;
+  }
+  return Result;
 }
 
 llvm::Optional<FileDigest> digestFile(const SourceManager &SM, FileID FID) {
@@ -592,7 +762,6 @@ std::vector<std::string> visibleNamespaces(llvm::StringRef Code,
         Found.push_back(Used.getKey());
   }
 
-
   llvm::sort(Found, [&](const std::string &LHS, const std::string &RHS) {
     if (Current == RHS)
       return false;
@@ -640,6 +809,32 @@ llvm::StringSet<> collectWords(llvm::StringRef Content) {
   Flush();
 
   return Result;
+}
+
+llvm::Optional<DefinedMacro> locateMacroAt(SourceLocation Loc,
+                                           Preprocessor &PP) {
+  const auto &SM = PP.getSourceManager();
+  const auto &LangOpts = PP.getLangOpts();
+  Token Result;
+  if (Lexer::getRawToken(SM.getSpellingLoc(Loc), Result, SM, LangOpts, false))
+    return None;
+  if (Result.is(tok::raw_identifier))
+    PP.LookUpIdentifierInfo(Result);
+  IdentifierInfo *IdentifierInfo = Result.getIdentifierInfo();
+  if (!IdentifierInfo || !IdentifierInfo->hadMacroDefinition())
+    return None;
+
+  std::pair<FileID, unsigned int> DecLoc = SM.getDecomposedExpansionLoc(Loc);
+  // Get the definition just before the searched location so that a macro
+  // referenced in a '#undef MACRO' can still be found.
+  SourceLocation BeforeSearchedLocation =
+      SM.getMacroArgExpandedLocation(SM.getLocForStartOfFile(DecLoc.first)
+                                         .getLocWithOffset(DecLoc.second - 1));
+  MacroDefinition MacroDef =
+      PP.getMacroDefinitionAtLoc(IdentifierInfo, BeforeSearchedLocation);
+  if (auto *MI = MacroDef.getMacroInfo())
+    return DefinedMacro{IdentifierInfo->getName(), MI};
+  return None;
 }
 
 } // namespace clangd

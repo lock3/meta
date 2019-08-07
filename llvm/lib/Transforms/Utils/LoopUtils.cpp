@@ -191,6 +191,53 @@ void llvm::initializeLoopPassPass(PassRegistry &Registry) {
   INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass)
 }
 
+/// Create MDNode for input string.
+static MDNode *createStringMetadata(Loop *TheLoop, StringRef Name, unsigned V) {
+  LLVMContext &Context = TheLoop->getHeader()->getContext();
+  Metadata *MDs[] = {
+      MDString::get(Context, Name),
+      ConstantAsMetadata::get(ConstantInt::get(Type::getInt32Ty(Context), V))};
+  return MDNode::get(Context, MDs);
+}
+
+/// Set input string into loop metadata by keeping other values intact.
+/// If the string is already in loop metadata update value if it is
+/// different.
+void llvm::addStringMetadataToLoop(Loop *TheLoop, const char *StringMD,
+                                   unsigned V) {
+  SmallVector<Metadata *, 4> MDs(1);
+  // If the loop already has metadata, retain it.
+  MDNode *LoopID = TheLoop->getLoopID();
+  if (LoopID) {
+    for (unsigned i = 1, ie = LoopID->getNumOperands(); i < ie; ++i) {
+      MDNode *Node = cast<MDNode>(LoopID->getOperand(i));
+      // If it is of form key = value, try to parse it.
+      if (Node->getNumOperands() == 2) {
+        MDString *S = dyn_cast<MDString>(Node->getOperand(0));
+        if (S && S->getString().equals(StringMD)) {
+          ConstantInt *IntMD =
+              mdconst::extract_or_null<ConstantInt>(Node->getOperand(1));
+          if (IntMD && IntMD->getSExtValue() == V)
+            // It is already in place. Do nothing.
+            return;
+          // We need to update the value, so just skip it here and it will
+          // be added after copying other existed nodes.
+          continue;
+        }
+      }
+      MDs.push_back(Node);
+    }
+  }
+  // Add new metadata.
+  MDs.push_back(createStringMetadata(TheLoop, StringMD, V));
+  // Replace current metadata node with new one.
+  LLVMContext &Context = TheLoop->getHeader()->getContext();
+  MDNode *NewLoopID = MDNode::get(Context, MDs);
+  // Set operand 0 to refer to the loop id itself.
+  NewLoopID->replaceOperandWith(0, NewLoopID);
+  TheLoop->setLoopID(NewLoopID);
+}
+
 /// Find string metadata for loop
 ///
 /// If it has a value (e.g. {"llvm.distribute", 1} return the value as an
@@ -621,19 +668,27 @@ void llvm::deleteDeadLoop(Loop *L, DominatorTree *DT = nullptr,
 }
 
 Optional<unsigned> llvm::getLoopEstimatedTripCount(Loop *L) {
-  // Only support loops with a unique exiting block, and a latch.
-  if (!L->getExitingBlock())
-    return None;
+  // Support loops with an exiting latch and other existing exists only
+  // deoptimize.
 
   // Get the branch weights for the loop's backedge.
-  BranchInst *LatchBR =
-      dyn_cast<BranchInst>(L->getLoopLatch()->getTerminator());
-  if (!LatchBR || LatchBR->getNumSuccessors() != 2)
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return None;
+  BranchInst *LatchBR = dyn_cast<BranchInst>(Latch->getTerminator());
+  if (!LatchBR || LatchBR->getNumSuccessors() != 2 || !L->isLoopExiting(Latch))
     return None;
 
   assert((LatchBR->getSuccessor(0) == L->getHeader() ||
           LatchBR->getSuccessor(1) == L->getHeader()) &&
          "At least one edge out of the latch must go to the header");
+
+  SmallVector<BasicBlock *, 4> ExitBlocks;
+  L->getUniqueNonLatchExitBlocks(ExitBlocks);
+  if (any_of(ExitBlocks, [](const BasicBlock *EB) {
+        return !EB->getTerminatingDeoptimizeCall();
+      }))
+    return None;
 
   // To estimate the number of times the loop body was executed, we want to
   // know the number of times the backedge was taken, vs. the number of times
@@ -801,13 +856,9 @@ Value *llvm::createSimpleTargetReduction(
     ArrayRef<Value *> RedOps) {
   assert(isa<VectorType>(Src->getType()) && "Type must be a vector");
 
-  Value *ScalarUdf = UndefValue::get(Src->getType()->getVectorElementType());
   std::function<Value *()> BuildFunc;
   using RD = RecurrenceDescriptor;
   RD::MinMaxRecurrenceKind MinMaxKind = RD::MRK_Invalid;
-  // TODO: Support creating ordered reductions.
-  FastMathFlags FMFFast;
-  FMFFast.setFast();
 
   switch (Opcode) {
   case Instruction::Add:
@@ -827,15 +878,15 @@ Value *llvm::createSimpleTargetReduction(
     break;
   case Instruction::FAdd:
     BuildFunc = [&]() {
-      auto Rdx = Builder.CreateFAddReduce(ScalarUdf, Src);
-      cast<CallInst>(Rdx)->setFastMathFlags(FMFFast);
+      auto Rdx = Builder.CreateFAddReduce(
+          Constant::getNullValue(Src->getType()->getVectorElementType()), Src);
       return Rdx;
     };
     break;
   case Instruction::FMul:
     BuildFunc = [&]() {
-      auto Rdx = Builder.CreateFMulReduce(ScalarUdf, Src);
-      cast<CallInst>(Rdx)->setFastMathFlags(FMFFast);
+      Type *Ty = Src->getType()->getVectorElementType();
+      auto Rdx = Builder.CreateFMulReduce(ConstantFP::get(Ty, 1.0), Src);
       return Rdx;
     };
     break;

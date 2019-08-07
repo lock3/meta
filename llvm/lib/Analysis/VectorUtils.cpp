@@ -37,8 +37,9 @@ static cl::opt<unsigned> MaxInterleaveGroupFactor(
     cl::init(8));
 
 /// Return true if all of the intrinsic's arguments and return type are scalars
-/// for the scalar form of the intrinsic and vectors for the vector form of the
-/// intrinsic.
+/// for the scalar form of the intrinsic, and vectors for the vector form of the
+/// intrinsic (except operands that are marked as always being scalar by
+/// hasVectorInstrinsicScalarOpd).
 bool llvm::isTriviallyVectorizable(Intrinsic::ID ID) {
   switch (ID) {
   case Intrinsic::bswap: // Begin integer bit-manipulation.
@@ -53,6 +54,7 @@ bool llvm::isTriviallyVectorizable(Intrinsic::ID ID) {
   case Intrinsic::uadd_sat:
   case Intrinsic::usub_sat:
   case Intrinsic::smul_fix:
+  case Intrinsic::smul_fix_sat:
   case Intrinsic::umul_fix:
   case Intrinsic::sqrt: // Begin floating-point.
   case Intrinsic::sin:
@@ -85,8 +87,7 @@ bool llvm::isTriviallyVectorizable(Intrinsic::ID ID) {
   }
 }
 
-/// Identifies if the intrinsic has a scalar operand. It check for
-/// ctlz,cttz and powi special intrinsics whose argument is scalar.
+/// Identifies if the vector form of the intrinsic has a scalar operand.
 bool llvm::hasVectorInstrinsicScalarOpd(Intrinsic::ID ID,
                                         unsigned ScalarOpdIdx) {
   switch (ID) {
@@ -95,6 +96,7 @@ bool llvm::hasVectorInstrinsicScalarOpd(Intrinsic::ID ID,
   case Intrinsic::powi:
     return (ScalarOpdIdx == 1);
   case Intrinsic::smul_fix:
+  case Intrinsic::smul_fix_sat:
   case Intrinsic::umul_fix:
     return (ScalarOpdIdx == 2);
   default:
@@ -319,6 +321,45 @@ const llvm::Value *llvm::getSplatValue(const Value *V) {
     return Splat;
 
   return nullptr;
+}
+
+// This setting is based on its counterpart in value tracking, but it could be
+// adjusted if needed.
+const unsigned MaxDepth = 6;
+
+bool llvm::isSplatValue(const Value *V, unsigned Depth) {
+  assert(Depth <= MaxDepth && "Limit Search Depth");
+
+  if (isa<VectorType>(V->getType())) {
+    if (isa<UndefValue>(V))
+      return true;
+    // FIXME: Constant splat analysis does not allow undef elements.
+    if (auto *C = dyn_cast<Constant>(V))
+      return C->getSplatValue() != nullptr;
+  }
+
+  // FIXME: Constant splat analysis does not allow undef elements.
+  Constant *Mask;
+  if (match(V, m_ShuffleVector(m_Value(), m_Value(), m_Constant(Mask))))
+    return Mask->getSplatValue() != nullptr;
+
+  // The remaining tests are all recursive, so bail out if we hit the limit.
+  if (Depth++ == MaxDepth)
+    return false;
+
+  // If both operands of a binop are splats, the result is a splat.
+  Value *X, *Y, *Z;
+  if (match(V, m_BinOp(m_Value(X), m_Value(Y))))
+    return isSplatValue(X, Depth) && isSplatValue(Y, Depth);
+
+  // If all operands of a select are splats, the result is a splat.
+  if (match(V, m_Select(m_Value(X), m_Value(Y), m_Value(Z))))
+    return isSplatValue(X, Depth) && isSplatValue(Y, Depth) &&
+           isSplatValue(Z, Depth);
+
+  // TODO: Add support for unary ops (fneg), casts, intrinsics (overflow ops).
+
+  return false;
 }
 
 MapVector<Instruction *, uint64_t>
@@ -923,6 +964,10 @@ void InterleavedAccessInfo::analyzeInterleaving(
         // instructions that precede it.
         if (isInterleaved(A)) {
           InterleaveGroup<Instruction> *StoreGroup = getInterleaveGroup(A);
+
+          LLVM_DEBUG(dbgs() << "LV: Invalidated store group due to "
+                               "dependence between " << *A << " and "<< *B << '\n');
+
           StoreGroups.remove(StoreGroup);
           releaseGroup(StoreGroup);
         }

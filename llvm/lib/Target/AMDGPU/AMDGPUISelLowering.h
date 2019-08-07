@@ -182,7 +182,8 @@ public:
                              ISD::LoadExtType ExtType,
                              EVT ExtVT) const override;
 
-  bool isLoadBitCastBeneficial(EVT, EVT) const final;
+  bool isLoadBitCastBeneficial(EVT, EVT, const SelectionDAG &DAG,
+                               const MachineMemOperand &MMO) const final;
 
   bool storeOfVectorConstantIsCheap(EVT MemVT,
                                     unsigned NumElem,
@@ -368,6 +369,9 @@ enum NodeType : unsigned {
   // result bit per item in the wavefront.
   SETCC,
   SETREG,
+
+  DENORM_MODE,
+
   // FP ops with input and output chain.
   FMA_W_CHAIN,
   FMUL_W_CHAIN,
@@ -485,6 +489,7 @@ enum NodeType : unsigned {
   INTERP_P1LV_F16,
   INTERP_P2_F16,
   PC_ADD_REL_OFFSET,
+  LDS,
   KILL,
   DUMMY_CHAIN,
   FIRST_MEM_OPCODE_NUMBER = ISD::FIRST_TARGET_MEMORY_OPCODE,
@@ -530,7 +535,13 @@ enum NodeType : unsigned {
   BUFFER_ATOMIC_AND,
   BUFFER_ATOMIC_OR,
   BUFFER_ATOMIC_XOR,
+  BUFFER_ATOMIC_INC,
+  BUFFER_ATOMIC_DEC,
   BUFFER_ATOMIC_CMPSWAP,
+  BUFFER_ATOMIC_FADD,
+  BUFFER_ATOMIC_PK_FADD,
+  ATOMIC_FADD,
+  ATOMIC_PK_FADD,
 
   LAST_AMDGPU_ISD_NUMBER
 };

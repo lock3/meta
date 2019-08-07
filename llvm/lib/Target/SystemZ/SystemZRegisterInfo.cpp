@@ -96,17 +96,21 @@ SystemZRegisterInfo::getRegAllocationHints(unsigned VirtReg,
       if (!DoneRegs.insert(Reg).second)
         continue;
 
-      for (auto &Use : MRI->use_instructions(Reg)) {
+      for (auto &Use : MRI->reg_instructions(Reg)) {
         // For LOCRMux, see if the other operand is already a high or low
-        // register, and in that case give the correpsonding hints for
+        // register, and in that case give the corresponding hints for
         // VirtReg. LOCR instructions need both operands in either high or
-        // low parts.
-        if (Use.getOpcode() == SystemZ::LOCRMux) {
+        // low parts. Same handling for SELRMux.
+        if (Use.getOpcode() == SystemZ::LOCRMux ||
+            Use.getOpcode() == SystemZ::SELRMux) {
           MachineOperand &TrueMO = Use.getOperand(1);
           MachineOperand &FalseMO = Use.getOperand(2);
           const TargetRegisterClass *RC =
             TRI->getCommonSubClass(getRC32(FalseMO, VRM, MRI),
                                    getRC32(TrueMO, VRM, MRI));
+          if (Use.getOpcode() == SystemZ::SELRMux)
+            RC = TRI->getCommonSubClass(RC,
+                                        getRC32(Use.getOperand(0), VRM, MRI));
           if (RC && RC != &SystemZ::GRX32BitRegClass) {
             addHints(Order, Hints, RC, MRI);
             // Return true to make these hints the only regs available to
@@ -164,8 +168,9 @@ SystemZRegisterInfo::getRegAllocationHints(unsigned VirtReg,
         continue;
 
       auto tryAddHint = [&](const MachineOperand *MO) -> void {
-        unsigned Reg = MO->getReg();
-        unsigned PhysReg = isPhysicalRegister(Reg) ? Reg : VRM->getPhys(Reg);
+        Register Reg = MO->getReg();
+        Register PhysReg =
+            Register::isPhysicalRegister(Reg) ? Reg : VRM->getPhys(Reg);
         if (PhysReg) {
           if (MO->getSubReg())
             PhysReg = getSubReg(PhysReg, MO->getSubReg());
@@ -381,7 +386,7 @@ bool SystemZRegisterInfo::shouldCoalesce(MachineInstr *MI,
   MEE++;
   for (; MII != MEE; ++MII) {
     for (const MachineOperand &MO : MII->operands())
-      if (MO.isReg() && isPhysicalRegister(MO.getReg())) {
+      if (MO.isReg() && Register::isPhysicalRegister(MO.getReg())) {
         for (MCSuperRegIterator SI(MO.getReg(), this, true/*IncludeSelf*/);
              SI.isValid(); ++SI)
           if (NewRC->contains(*SI)) {
@@ -399,7 +404,7 @@ bool SystemZRegisterInfo::shouldCoalesce(MachineInstr *MI,
   return true;
 }
 
-unsigned
+Register
 SystemZRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const SystemZFrameLowering *TFI = getFrameLowering(MF);
   return TFI->hasFP(MF) ? SystemZ::R11D : SystemZ::R15D;

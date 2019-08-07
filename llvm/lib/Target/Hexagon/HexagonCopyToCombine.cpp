@@ -226,7 +226,7 @@ static bool areCombinableOperations(const TargetRegisterInfo *TRI,
 }
 
 static bool isEvenReg(unsigned Reg) {
-  assert(TargetRegisterInfo::isPhysicalRegister(Reg));
+  assert(Register::isPhysicalRegister(Reg));
   if (Hexagon::IntRegsRegClass.contains(Reg))
     return (Reg - Hexagon::R0) % 2 == 0;
   if (Hexagon::HvxVRRegClass.contains(Reg))
@@ -254,8 +254,8 @@ static bool isUnsafeToMoveAcross(MachineInstr &MI, unsigned UseReg,
          MI.isMetaInstruction();
 }
 
-static unsigned UseReg(const MachineOperand& MO) {
-  return MO.isReg() ? MO.getReg() : 0;
+static Register UseReg(const MachineOperand& MO) {
+  return MO.isReg() ? MO.getReg() : Register();
 }
 
 /// isSafeToMoveTogether - Returns true if it is safe to move I1 next to I2 such

@@ -8,6 +8,7 @@ set(LIBCXX_SOURCES
   charconv.cpp
   chrono.cpp
   condition_variable.cpp
+  condition_variable_destructor.cpp
   debug.cpp
   exception.cpp
   functional.cpp
@@ -22,6 +23,7 @@ set(LIBCXX_SOURCES
   locale.cpp
   memory.cpp
   mutex.cpp
+  mutex_destructor.cpp
   new.cpp
   optional.cpp
   random.cpp
@@ -194,6 +196,10 @@ function(cxx_link_system_libraries target)
   endif()
 endfunction()
 
+if (LIBCXX_ENABLE_PARALLEL_ALGORITHMS AND NOT TARGET pstl::ParallelSTL)
+  message(FATAL_ERROR "Could not find ParallelSTL")
+endif()
+
 function(cxx_set_common_defines name)
   if(LIBCXX_CXX_ABI_HEADER_TARGET)
     add_dependencies(${name} ${LIBCXX_CXX_ABI_HEADER_TARGET})
@@ -219,6 +225,10 @@ function(cxx_set_common_defines name)
                                  # Use the ISO conforming behaviour for conversion
                                  # in printf, scanf.
                                  _CRT_STDIO_ISO_WIDE_SPECIFIERS)
+  endif()
+
+  if (LIBCXX_ENABLE_PARALLEL_ALGORITHMS)
+    target_link_libraries(${name} PUBLIC pstl::ParallelSTL)
   endif()
 endfunction()
 
@@ -321,9 +331,6 @@ if (LIBCXX_ENABLE_SHARED)
   endif()
 
   list(APPEND LIBCXX_BUILD_TARGETS "cxx_shared")
-  if (LIBCXX_INSTALL_SHARED_LIBRARY)
-    list(APPEND LIBCXX_INSTALL_TARGETS "cxx_shared")
-  endif()
   if(WIN32 AND NOT MINGW AND NOT "${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows")
     # Since we most likely do not have a mt.exe replacement, disable the
     # manifest bundling.  This allows a normal cmake invocation to pass which
@@ -360,9 +367,6 @@ if (LIBCXX_ENABLE_STATIC)
   endif()
 
   list(APPEND LIBCXX_BUILD_TARGETS "cxx_static")
-  if (LIBCXX_INSTALL_STATIC_LIBRARY)
-    list(APPEND LIBCXX_INSTALL_TARGETS "cxx_static")
-  endif()
   # Attempt to merge the libc++.a archive and the ABI library archive into one.
   if (LIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY)
     set(MERGE_ARCHIVES_SEARCH_PATHS "")
@@ -437,13 +441,27 @@ if (LIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY)
 endif()
 
 if (LIBCXX_INSTALL_LIBRARY)
-  if (LIBCXX_INSTALL_EXPERIMENTAL_LIBRARY)
-    set(experimental_lib cxx_experimental)
+  if (LIBCXX_INSTALL_SHARED_LIBRARY)
+    install(TARGETS cxx_shared
+      ARCHIVE DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      LIBRARY DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      RUNTIME DESTINATION ${LIBCXX_INSTALL_PREFIX}bin COMPONENT cxx)
   endif()
-  install(TARGETS ${LIBCXX_INSTALL_TARGETS} ${experimental_lib}
-    LIBRARY DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
-    ARCHIVE DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
-    )
+
+  if (LIBCXX_INSTALL_STATIC_LIBRARY)
+    install(TARGETS cxx_static
+      ARCHIVE DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      LIBRARY DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      RUNTIME DESTINATION ${LIBCXX_INSTALL_PREFIX}bin COMPONENT cxx)
+  endif()
+
+  if(LIBCXX_INSTALL_EXPERIMENTAL_LIBRARY)
+    install(TARGETS ${LIBCXX_INSTALL_TARGETS} ${experimental_lib}
+      LIBRARY DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      ARCHIVE DESTINATION ${LIBCXX_INSTALL_PREFIX}${LIBCXX_INSTALL_LIBRARY_DIR} COMPONENT cxx
+      RUNTIME DESTINATION ${LIBCXX_INSTALL_PREFIX}bin COMPONENT cxx)
+  endif()
+
   # NOTE: This install command must go after the cxx install command otherwise
   # it will not be executed after the library symlinks are installed.
   if (LIBCXX_ENABLE_SHARED AND LIBCXX_ENABLE_ABI_LINKER_SCRIPT)

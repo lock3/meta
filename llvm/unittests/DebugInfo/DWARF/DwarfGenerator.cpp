@@ -262,7 +262,7 @@ MCSymbol *dwarfgen::LineTable::writeDefaultPrologue(AsmPrinter &Asm) const {
   MCSymbol *UnitStart = Asm.createTempSymbol("line_unit_start");
   MCSymbol *UnitEnd = Asm.createTempSymbol("line_unit_end");
   if (Format == DwarfFormat::DWARF64) {
-    Asm.emitInt32(0xffffffff);
+    Asm.emitInt32((int)dwarf::DW_LENGTH_DWARF64);
     Asm.EmitLabelDifference(UnitEnd, UnitStart, 8);
   } else {
     Asm.EmitLabelDifference(UnitEnd, UnitStart, 4);
@@ -288,7 +288,7 @@ MCSymbol *dwarfgen::LineTable::writeDefaultPrologue(AsmPrinter &Asm) const {
 
 void dwarfgen::LineTable::writePrologue(AsmPrinter &Asm) const {
   if (Format == DwarfFormat::DWARF64) {
-    Asm.emitInt32(0xffffffff);
+    Asm.emitInt32((int)dwarf::DW_LENGTH_DWARF64);
     Asm.emitInt64(Prologue->TotalLength);
   } else {
     Asm.emitInt32(Prologue->TotalLength);
@@ -531,7 +531,7 @@ bool dwarfgen::Generator::saveFile(StringRef Path) {
   if (FileBytes.empty())
     return false;
   std::error_code EC;
-  raw_fd_ostream Strm(Path, EC, sys::fs::F_None);
+  raw_fd_ostream Strm(Path, EC, sys::fs::OF_None);
   if (EC)
     return false;
   Strm.write(FileBytes.data(), FileBytes.size());

@@ -39,80 +39,6 @@
 #include "llvm/Support/KnownBits.h"
 using namespace llvm;
 
-static bool allocateCCRegs(unsigned ValNo, MVT ValVT, MVT LocVT,
-                           CCValAssign::LocInfo LocInfo,
-                           ISD::ArgFlagsTy ArgFlags, CCState &State,
-                           const TargetRegisterClass *RC,
-                           unsigned NumRegs) {
-  ArrayRef<MCPhysReg> RegList = makeArrayRef(RC->begin(), NumRegs);
-  unsigned RegResult = State.AllocateReg(RegList);
-  if (RegResult == AMDGPU::NoRegister)
-    return false;
-
-  State.addLoc(CCValAssign::getReg(ValNo, ValVT, RegResult, LocVT, LocInfo));
-  return true;
-}
-
-static bool allocateSGPRTuple(unsigned ValNo, MVT ValVT, MVT LocVT,
-                              CCValAssign::LocInfo LocInfo,
-                              ISD::ArgFlagsTy ArgFlags, CCState &State) {
-  switch (LocVT.SimpleTy) {
-  case MVT::i64:
-  case MVT::f64:
-  case MVT::v2i32:
-  case MVT::v2f32:
-  case MVT::v4i16:
-  case MVT::v4f16: {
-    // Up to SGPR0-SGPR105
-    return allocateCCRegs(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State,
-                          &AMDGPU::SGPR_64RegClass, 53);
-  }
-  default:
-    return false;
-  }
-}
-
-// Allocate up to VGPR31.
-//
-// TODO: Since there are no VGPR alignent requirements would it be better to
-// split into individual scalar registers?
-static bool allocateVGPRTuple(unsigned ValNo, MVT ValVT, MVT LocVT,
-                              CCValAssign::LocInfo LocInfo,
-                              ISD::ArgFlagsTy ArgFlags, CCState &State) {
-  switch (LocVT.SimpleTy) {
-  case MVT::i64:
-  case MVT::f64:
-  case MVT::v2i32:
-  case MVT::v2f32:
-  case MVT::v4i16:
-  case MVT::v4f16: {
-    return allocateCCRegs(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State,
-                          &AMDGPU::VReg_64RegClass, 31);
-  }
-  case MVT::v4i32:
-  case MVT::v4f32:
-  case MVT::v2i64:
-  case MVT::v2f64: {
-    return allocateCCRegs(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State,
-                          &AMDGPU::VReg_128RegClass, 29);
-  }
-  case MVT::v8i32:
-  case MVT::v8f32: {
-    return allocateCCRegs(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State,
-                          &AMDGPU::VReg_256RegClass, 25);
-
-  }
-  case MVT::v16i32:
-  case MVT::v16f32: {
-    return allocateCCRegs(ValNo, ValVT, LocVT, LocInfo, ArgFlags, State,
-                          &AMDGPU::VReg_512RegClass, 17);
-
-  }
-  default:
-    return false;
-  }
-}
-
 #include "AMDGPUGenCallingConv.inc"
 
 // Find a larger type to do a load / store of a vector with.
@@ -164,6 +90,9 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::LOAD, MVT::v16f32, Promote);
   AddPromotedToType(ISD::LOAD, MVT::v16f32, MVT::v16i32);
+
+  setOperationAction(ISD::LOAD, MVT::v32f32, Promote);
+  AddPromotedToType(ISD::LOAD, MVT::v32f32, MVT::v32i32);
 
   setOperationAction(ISD::LOAD, MVT::i64, Promote);
   AddPromotedToType(ISD::LOAD, MVT::i64, MVT::v2i32);
@@ -255,6 +184,9 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::STORE, MVT::v16f32, Promote);
   AddPromotedToType(ISD::STORE, MVT::v16f32, MVT::v16i32);
+
+  setOperationAction(ISD::STORE, MVT::v32f32, Promote);
+  AddPromotedToType(ISD::STORE, MVT::v32f32, MVT::v32i32);
 
   setOperationAction(ISD::STORE, MVT::i64, Promote);
   AddPromotedToType(ISD::STORE, MVT::i64, MVT::v2i32);
@@ -355,6 +287,10 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v5i32, Custom);
   setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v8f32, Custom);
   setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v8i32, Custom);
+  setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v16f32, Custom);
+  setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v16i32, Custom);
+  setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v32f32, Custom);
+  setOperationAction(ISD::EXTRACT_SUBVECTOR, MVT::v32i32, Custom);
 
   setOperationAction(ISD::FP16_TO_FP, MVT::f64, Expand);
   setOperationAction(ISD::FP_TO_FP16, MVT::f64, Custom);
@@ -522,6 +458,9 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
   // will be uniform and we always use vector compares. Assume we are using
   // vector compares until that is fixed.
   setHasMultipleConditionRegisters(true);
+
+  setMinCmpXchgSizeInBits(32);
+  setSupportsUnalignedAtomics(false);
 
   PredictableSelectIsExpensive = false;
 
@@ -716,8 +655,9 @@ bool AMDGPUTargetLowering::shouldReduceLoadWidth(SDNode *N,
   return (OldSize < 32);
 }
 
-bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy,
-                                                   EVT CastTy) const {
+bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy, EVT CastTy,
+                                                   const SelectionDAG &DAG,
+                                                   const MachineMemOperand &MMO) const {
 
   assert(LoadTy.getSizeInBits() == CastTy.getSizeInBits());
 
@@ -727,8 +667,12 @@ bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy,
   unsigned LScalarSize = LoadTy.getScalarSizeInBits();
   unsigned CastScalarSize = CastTy.getScalarSizeInBits();
 
-  return (LScalarSize < CastScalarSize) ||
-         (CastScalarSize >= 32);
+  if ((LScalarSize >= CastScalarSize) && (CastScalarSize < 32))
+    return false;
+
+  bool Fast = false;
+  return allowsMemoryAccess(*DAG.getContext(), DAG.getDataLayout(), CastTy,
+                            MMO, &Fast) && Fast;
 }
 
 // SI+ has instructions for cttz / ctlz for 32-bit values. This is probably also
@@ -2919,18 +2863,11 @@ bool AMDGPUTargetLowering::SelectFlatOffset(bool IsSigned,
     SDValue N1 = Addr.getOperand(1);
     int64_t COffsetVal = cast<ConstantSDNode>(N1)->getSExtValue();
 
-    if (ST.getGeneration() >= AMDGPUSubtarget::GFX10) {
-      if ((IsSigned && isInt<12>(COffsetVal)) ||
-          (!IsSigned && isUInt<11>(COffsetVal))) {
-        Addr = N0;
-        OffsetVal = COffsetVal;
-      }
-    } else {
-      if ((IsSigned && isInt<13>(COffsetVal)) ||
-          (!IsSigned && isUInt<12>(COffsetVal))) {
-        Addr = N0;
-        OffsetVal = COffsetVal;
-      }
+    const SIInstrInfo *TII = ST.getInstrInfo();
+    if (TII->isLegalFLATOffset(COffsetVal, findMemSDNode(N)->getAddressSpace(),
+                               IsSigned)) {
+      Addr = N0;
+      OffsetVal = COffsetVal;
     }
   }
 
@@ -2965,7 +2902,8 @@ SDValue AMDGPUTargetLowering::performLoadCombine(SDNode *N,
     // Expand unaligned loads earlier than legalization. Due to visitation order
     // problems during legalization, the emitted instructions to pack and unpack
     // the bytes again are not eliminated in the case of an unaligned copy.
-    if (!allowsMisalignedMemoryAccesses(VT, AS, Align, &IsFast)) {
+    if (!allowsMisalignedMemoryAccesses(
+            VT, AS, Align, LN->getMemOperand()->getFlags(), &IsFast)) {
       if (VT.isVector())
         return scalarizeVectorLoad(LN, DAG);
 
@@ -3017,7 +2955,8 @@ SDValue AMDGPUTargetLowering::performStoreCombine(SDNode *N,
     // order problems during legalization, the emitted instructions to pack and
     // unpack the bytes again are not eliminated in the case of an unaligned
     // copy.
-    if (!allowsMisalignedMemoryAccesses(VT, AS, Align, &IsFast)) {
+    if (!allowsMisalignedMemoryAccesses(
+            VT, AS, Align, SN->getMemOperand()->getFlags(), &IsFast)) {
       if (VT.isVector())
         return scalarizeVectorStore(SN, DAG);
 
@@ -3645,13 +3584,11 @@ SDValue AMDGPUTargetLowering::performSelectCombine(SDNode *N,
 
   if (Cond.hasOneUse()) { // TODO: Look for multiple select uses.
     SelectionDAG &DAG = DCI.DAG;
-    if ((DAG.isConstantValueOfAnyType(True) ||
-         DAG.isConstantValueOfAnyType(True)) &&
-        (!DAG.isConstantValueOfAnyType(False) &&
-         !DAG.isConstantValueOfAnyType(False))) {
+    if (DAG.isConstantValueOfAnyType(True) &&
+        !DAG.isConstantValueOfAnyType(False)) {
       // Swap cmp + select pair to move constant to false input.
       // This will allow using VOPC cndmasks more often.
-      // select (setcc x, y), k, x -> select (setcc y, x) x, x
+      // select (setcc x, y), k, x -> select (setccinv x, y), x, k
 
       SDLoc SL(N);
       ISD::CondCode NewCC = getSetCCInverse(cast<CondCodeSDNode>(CC)->get(),
@@ -4228,9 +4165,19 @@ SDValue AMDGPUTargetLowering::loadInputValue(SelectionDAG &DAG,
                                              const ArgDescriptor &Arg) const {
   assert(Arg && "Attempting to load missing argument");
 
-  if (Arg.isRegister())
-    return CreateLiveInRegister(DAG, RC, Arg.getRegister(), VT, SL);
-  return loadStackInputValue(DAG, VT, SL, Arg.getStackOffset());
+  SDValue V = Arg.isRegister() ?
+    CreateLiveInRegister(DAG, RC, Arg.getRegister(), VT, SL) :
+    loadStackInputValue(DAG, VT, SL, Arg.getStackOffset());
+
+  if (!Arg.isMasked())
+    return V;
+
+  unsigned Mask = Arg.getMask();
+  unsigned Shift = countTrailingZeros<unsigned>(Mask);
+  V = DAG.getNode(ISD::SRL, SL, VT, V,
+                  DAG.getShiftAmountConstant(Shift, VT, SL));
+  return DAG.getNode(ISD::AND, SL, VT, V,
+                     DAG.getConstant(Mask >> Shift, SL, VT));
 }
 
 uint32_t AMDGPUTargetLowering::getImplicitParameterOffset(
@@ -4274,6 +4221,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(FRACT)
   NODE_NAME_CASE(SETCC)
   NODE_NAME_CASE(SETREG)
+  NODE_NAME_CASE(DENORM_MODE)
   NODE_NAME_CASE(FMA_W_CHAIN)
   NODE_NAME_CASE(FMUL_W_CHAIN)
   NODE_NAME_CASE(CLAMP)
@@ -4352,6 +4300,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(BUILD_VERTICAL_VECTOR)
   NODE_NAME_CASE(CONST_DATA_PTR)
   NODE_NAME_CASE(PC_ADD_REL_OFFSET)
+  NODE_NAME_CASE(LDS)
   NODE_NAME_CASE(KILL)
   NODE_NAME_CASE(DUMMY_CHAIN)
   case AMDGPUISD::FIRST_MEM_OPCODE_NUMBER: break;
@@ -4406,7 +4355,13 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(BUFFER_ATOMIC_AND)
   NODE_NAME_CASE(BUFFER_ATOMIC_OR)
   NODE_NAME_CASE(BUFFER_ATOMIC_XOR)
+  NODE_NAME_CASE(BUFFER_ATOMIC_INC)
+  NODE_NAME_CASE(BUFFER_ATOMIC_DEC)
   NODE_NAME_CASE(BUFFER_ATOMIC_CMPSWAP)
+  NODE_NAME_CASE(BUFFER_ATOMIC_FADD)
+  NODE_NAME_CASE(BUFFER_ATOMIC_PK_FADD)
+  NODE_NAME_CASE(ATOMIC_FADD)
+  NODE_NAME_CASE(ATOMIC_PK_FADD)
 
   case AMDGPUISD::LAST_AMDGPU_ISD_NUMBER: break;
   }
@@ -4550,9 +4505,9 @@ void AMDGPUTargetLowering::computeKnownBitsForTargetNode(
         Known.One |= ((LHSKnown.One.getZExtValue() >> SelBits) & 0xff) << I;
         Known.Zero |= ((LHSKnown.Zero.getZExtValue() >> SelBits) & 0xff) << I;
       } else if (SelBits == 0x0c) {
-        Known.Zero |= 0xff << I;
+        Known.Zero |= 0xFFull << I;
       } else if (SelBits > 0x0c) {
-        Known.One |= 0xff << I;
+        Known.One |= 0xFFull << I;
       }
       Sel >>= 8;
     }
@@ -4564,6 +4519,15 @@ void AMDGPUTargetLowering::computeKnownBitsForTargetNode(
   }
   case AMDGPUISD::BUFFER_LOAD_USHORT: {
     Known.Zero.setHighBits(16);
+    break;
+  }
+  case AMDGPUISD::LDS: {
+    auto GA = cast<GlobalAddressSDNode>(Op.getOperand(0).getNode());
+    unsigned Align = GA->getGlobal()->getAlignment();
+
+    Known.Zero.setHighBits(16);
+    if (Align)
+      Known.Zero.setLowBits(Log2_32(Align));
     break;
   }
   case ISD::INTRINSIC_WO_CHAIN: {

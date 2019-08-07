@@ -578,25 +578,25 @@ inline bool DWARFDebugLine::Prologue::IsValid() const {
 void DWARFDebugLine::Prologue::Dump(Log *log) {
   uint32_t i;
 
-  log->Printf("Line table prologue:");
-  log->Printf("   total_length: 0x%8.8x", total_length);
-  log->Printf("        version: %u", version);
-  log->Printf("prologue_length: 0x%8.8x", prologue_length);
-  log->Printf("min_inst_length: %u", min_inst_length);
-  log->Printf("default_is_stmt: %u", default_is_stmt);
-  log->Printf("      line_base: %i", line_base);
-  log->Printf("     line_range: %u", line_range);
-  log->Printf("    opcode_base: %u", opcode_base);
+  LLDB_LOGF(log, "Line table prologue:");
+  LLDB_LOGF(log, "   total_length: 0x%8.8x", total_length);
+  LLDB_LOGF(log, "        version: %u", version);
+  LLDB_LOGF(log, "prologue_length: 0x%8.8x", prologue_length);
+  LLDB_LOGF(log, "min_inst_length: %u", min_inst_length);
+  LLDB_LOGF(log, "default_is_stmt: %u", default_is_stmt);
+  LLDB_LOGF(log, "      line_base: %i", line_base);
+  LLDB_LOGF(log, "     line_range: %u", line_range);
+  LLDB_LOGF(log, "    opcode_base: %u", opcode_base);
 
   for (i = 0; i < standard_opcode_lengths.size(); ++i) {
-    log->Printf("standard_opcode_lengths[%s] = %u", DW_LNS_value_to_name(i + 1),
-                standard_opcode_lengths[i]);
+    LLDB_LOGF(log, "standard_opcode_lengths[%s] = %u",
+              DW_LNS_value_to_name(i + 1), standard_opcode_lengths[i]);
   }
 
   if (!include_directories.empty()) {
     for (i = 0; i < include_directories.size(); ++i) {
-      log->Printf("include_directories[%3u] = '%s'", i + 1,
-                  include_directories[i]);
+      LLDB_LOGF(log, "include_directories[%3u] = '%s'", i + 1,
+                include_directories[i]);
     }
   }
 
@@ -606,9 +606,9 @@ void DWARFDebugLine::Prologue::Dump(Log *log) {
                     "---------------------------");
     for (i = 0; i < file_names.size(); ++i) {
       const FileNameEntry &fileEntry = file_names[i];
-      log->Printf("file_names[%3u] %4u 0x%8.8x 0x%8.8x %s", i + 1,
-                  fileEntry.dir_idx, fileEntry.mod_time, fileEntry.length,
-                  fileEntry.name);
+      LLDB_LOGF(log, "file_names[%3u] %4u 0x%8.8x 0x%8.8x %s", i + 1,
+                fileEntry.dir_idx, fileEntry.mod_time, fileEntry.length,
+                fileEntry.name);
     }
   }
 }
@@ -745,12 +745,12 @@ void DWARFDebugLine::Row::Reset(bool default_is_stmt) {
 }
 // DWARFDebugLine::Row::Dump
 void DWARFDebugLine::Row::Dump(Log *log) const {
-  log->Printf("0x%16.16" PRIx64 " %6u %6u %6u %3u %s%s%s%s%s", address, line,
-              column, file, isa, is_stmt ? " is_stmt" : "",
-              basic_block ? " basic_block" : "",
-              prologue_end ? " prologue_end" : "",
-              epilogue_begin ? " epilogue_begin" : "",
-              end_sequence ? " end_sequence" : "");
+  LLDB_LOGF(log, "0x%16.16" PRIx64 " %6u %6u %6u %3u %s%s%s%s%s", address, line,
+            column, file, isa, is_stmt ? " is_stmt" : "",
+            basic_block ? " basic_block" : "",
+            prologue_end ? " prologue_end" : "",
+            epilogue_begin ? " epilogue_begin" : "",
+            end_sequence ? " end_sequence" : "");
 }
 
 // Compare function LineTable structures
@@ -835,204 +835,3 @@ void DWARFDebugLine::State::Finalize(dw_offset_t offset) {
     callback(offset, *this, callbackUserData);
 }
 
-// void
-// DWARFDebugLine::AppendLineTableData
-//(
-//  const DWARFDebugLine::Prologue* prologue,
-//  const DWARFDebugLine::Row::collection& state_coll,
-//  const uint32_t addr_size,
-//  BinaryStreamBuf &debug_line_data
-//)
-//{
-//  if (state_coll.empty())
-//  {
-//      // We have no entries, just make an empty line table
-//      debug_line_data.Append8(0);
-//      debug_line_data.Append8(1);
-//      debug_line_data.Append8(DW_LNE_end_sequence);
-//  }
-//  else
-//  {
-//      DWARFDebugLine::Row::const_iterator pos;
-//      Row::const_iterator end = state_coll.end();
-//      bool default_is_stmt = prologue->default_is_stmt;
-//      const DWARFDebugLine::Row reset_state(default_is_stmt);
-//      const DWARFDebugLine::Row* prev_state = &reset_state;
-//      const int32_t max_line_increment_for_special_opcode =
-//      prologue->MaxLineIncrementForSpecialOpcode();
-//      for (pos = state_coll.begin(); pos != end; ++pos)
-//      {
-//          const DWARFDebugLine::Row& curr_state = *pos;
-//          int32_t line_increment  = 0;
-//          dw_addr_t addr_offset   = curr_state.address - prev_state->address;
-//          dw_addr_t addr_advance  = (addr_offset) / prologue->min_inst_length;
-//          line_increment = (int32_t)(curr_state.line - prev_state->line);
-//
-//          // If our previous state was the reset state, then let's emit the
-//          // address to keep GDB's DWARF parser happy. If we don't start each
-//          // sequence with a DW_LNE_set_address opcode, the line table won't
-//          // get slid properly in GDB.
-//
-//          if (prev_state == &reset_state)
-//          {
-//              debug_line_data.Append8(0); // Extended opcode
-//              debug_line_data.Append32_as_ULEB128(addr_size + 1); // Length of
-//              opcode bytes
-//              debug_line_data.Append8(DW_LNE_set_address);
-//              debug_line_data.AppendMax64(curr_state.address, addr_size);
-//              addr_advance = 0;
-//          }
-//
-//          if (prev_state->file != curr_state.file)
-//          {
-//              debug_line_data.Append8(DW_LNS_set_file);
-//              debug_line_data.Append32_as_ULEB128(curr_state.file);
-//          }
-//
-//          if (prev_state->column != curr_state.column)
-//          {
-//              debug_line_data.Append8(DW_LNS_set_column);
-//              debug_line_data.Append32_as_ULEB128(curr_state.column);
-//          }
-//
-//          // Don't do anything fancy if we are at the end of a sequence
-//          // as we don't want to push any extra rows since the
-//          DW_LNE_end_sequence
-//          // will push a row itself!
-//          if (curr_state.end_sequence)
-//          {
-//              if (line_increment != 0)
-//              {
-//                  debug_line_data.Append8(DW_LNS_advance_line);
-//                  debug_line_data.Append32_as_SLEB128(line_increment);
-//              }
-//
-//              if (addr_advance > 0)
-//              {
-//                  debug_line_data.Append8(DW_LNS_advance_pc);
-//                  debug_line_data.Append32_as_ULEB128(addr_advance);
-//              }
-//
-//              // Now push the end sequence on!
-//              debug_line_data.Append8(0);
-//              debug_line_data.Append8(1);
-//              debug_line_data.Append8(DW_LNE_end_sequence);
-//
-//              prev_state = &reset_state;
-//          }
-//          else
-//          {
-//              if (line_increment || addr_advance)
-//              {
-//                  if (line_increment > max_line_increment_for_special_opcode)
-//                  {
-//                      debug_line_data.Append8(DW_LNS_advance_line);
-//                      debug_line_data.Append32_as_SLEB128(line_increment);
-//                      line_increment = 0;
-//                  }
-//
-//                  uint32_t special_opcode = (line_increment >=
-//                  prologue->line_base) ? ((line_increment -
-//                  prologue->line_base) + (prologue->line_range * addr_advance)
-//                  + prologue->opcode_base) : 256;
-//                  if (special_opcode > 255)
-//                  {
-//                      // Both the address and line won't fit in one special
-//                      opcode
-//                      // check to see if just the line advance will?
-//                      uint32_t special_opcode_line = ((line_increment >=
-//                      prologue->line_base) && (line_increment != 0)) ?
-//                              ((line_increment - prologue->line_base) +
-//                              prologue->opcode_base) : 256;
-//
-//
-//                      if (special_opcode_line > 255)
-//                      {
-//                          // Nope, the line advance won't fit by itself, check
-//                          the address increment by itself
-//                          uint32_t special_opcode_addr = addr_advance ?
-//                              ((0 - prologue->line_base) +
-//                              (prologue->line_range * addr_advance) +
-//                              prologue->opcode_base) : 256;
-//
-//                          if (special_opcode_addr > 255)
-//                          {
-//                              // Neither the address nor the line will fit in
-//                              a
-//                              // special opcode, we must manually enter both
-//                              then
-//                              // do a DW_LNS_copy to push a row (special
-//                              opcode
-//                              // automatically imply a new row is pushed)
-//                              if (line_increment != 0)
-//                              {
-//                                  debug_line_data.Append8(DW_LNS_advance_line);
-//                                  debug_line_data.Append32_as_SLEB128(line_increment);
-//                              }
-//
-//                              if (addr_advance > 0)
-//                              {
-//                                  debug_line_data.Append8(DW_LNS_advance_pc);
-//                                  debug_line_data.Append32_as_ULEB128(addr_advance);
-//                              }
-//
-//                              // Now push a row onto the line table manually
-//                              debug_line_data.Append8(DW_LNS_copy);
-//
-//                          }
-//                          else
-//                          {
-//                              // The address increment alone will fit into a
-//                              special opcode
-//                              // so modify our line change, then issue a
-//                              special opcode
-//                              // for the address increment and it will push a
-//                              row into the
-//                              // line table
-//                              if (line_increment != 0)
-//                              {
-//                                  debug_line_data.Append8(DW_LNS_advance_line);
-//                                  debug_line_data.Append32_as_SLEB128(line_increment);
-//                              }
-//
-//                              // Advance of line and address will fit into a
-//                              single byte special opcode
-//                              // and this will also push a row onto the line
-//                              table
-//                              debug_line_data.Append8(special_opcode_addr);
-//                          }
-//                      }
-//                      else
-//                      {
-//                          // The line change alone will fit into a special
-//                          opcode
-//                          // so modify our address increment first, then issue
-//                          a
-//                          // special opcode for the line change and it will
-//                          push
-//                          // a row into the line table
-//                          if (addr_advance > 0)
-//                          {
-//                              debug_line_data.Append8(DW_LNS_advance_pc);
-//                              debug_line_data.Append32_as_ULEB128(addr_advance);
-//                          }
-//
-//                          // Advance of line and address will fit into a
-//                          single byte special opcode
-//                          // and this will also push a row onto the line table
-//                          debug_line_data.Append8(special_opcode_line);
-//                      }
-//                  }
-//                  else
-//                  {
-//                      // Advance of line and address will fit into a single
-//                      byte special opcode
-//                      // and this will also push a row onto the line table
-//                      debug_line_data.Append8(special_opcode);
-//                  }
-//              }
-//              prev_state = &curr_state;
-//          }
-//      }
-//  }
-//}

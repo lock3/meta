@@ -91,15 +91,22 @@ else(LLVM_ENABLE_PER_TARGET_RUNTIME_DIR)
 endif()
 
 if(APPLE)
-  # On Darwin if /usr/include doesn't exist, the user probably has Xcode but not
-  # the command line tools. If this is the case, we need to find the OS X
-  # sysroot to pass to clang.
-  if(NOT EXISTS /usr/include)
-    execute_process(COMMAND xcodebuild -version -sdk macosx Path
+  # On Darwin if /usr/include/c++ doesn't exist, the user probably has Xcode but
+  # not the command line tools (or is using macOS 10.14 or newer). If this is
+  # the case, we need to find the OS X sysroot to pass to clang.
+  if(NOT EXISTS /usr/include/c++)
+    execute_process(COMMAND xcrun -sdk macosx --show-sdk-path
        OUTPUT_VARIABLE OSX_SYSROOT
        ERROR_QUIET
        OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set(OSX_SYSROOT_FLAG "-isysroot${OSX_SYSROOT}")
+    if (NOT OSX_SYSROOT OR NOT EXISTS ${OSX_SYSROOT})
+      message(WARNING "Detected OSX_SYSROOT ${OSX_SYSROOT} does not exist")
+    else()
+      message(STATUS "Found OSX_SYSROOT: ${OSX_SYSROOT}")
+      set(OSX_SYSROOT_FLAG "-isysroot${OSX_SYSROOT}")
+    endif()
+  else()
+    set(OSX_SYSROOT_FLAG "")
   endif()
 
   option(COMPILER_RT_ENABLE_IOS "Enable building for iOS" On)
@@ -185,6 +192,9 @@ macro(test_targets)
       endif()
     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "s390x")
       test_target_arch(s390x "" "")
+    elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "sparc")
+      test_target_arch(sparc "" "-m32")
+      test_target_arch(sparcv9 "" "-m64")
     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "mipsel|mips64el")
       # Gcc doesn't accept -m32/-m64 so we do the next best thing and use
       # -mips32r2/-mips64r2. We don't use -mips1/-mips3 because we want to match

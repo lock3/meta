@@ -426,13 +426,25 @@ TEST_F(FormatTest, FormatIfWithoutCompoundStatement) {
   verifyFormat("if (a)\n  if (b) {\n    f();\n  }\ng();");
   verifyFormat("if constexpr (true)\n"
                "  f();\ng();");
+  verifyFormat("if CONSTEXPR (true)\n"
+               "  f();\ng();");
   verifyFormat("if constexpr (a)\n"
                "  if constexpr (b)\n"
                "    if constexpr (c)\n"
                "      g();\n"
                "h();");
+  verifyFormat("if CONSTEXPR (a)\n"
+               "  if CONSTEXPR (b)\n"
+               "    if CONSTEXPR (c)\n"
+               "      g();\n"
+               "h();");
   verifyFormat("if constexpr (a)\n"
                "  if constexpr (b) {\n"
+               "    f();\n"
+               "  }\n"
+               "g();");
+  verifyFormat("if CONSTEXPR (a)\n"
+               "  if CONSTEXPR (b) {\n"
                "    f();\n"
                "  }\n"
                "g();");
@@ -561,10 +573,12 @@ TEST_F(FormatTest, FormatShortBracedStatements) {
 
   verifyFormat("if (true) {}", AllowSimpleBracedStatements);
   verifyFormat("if constexpr (true) {}", AllowSimpleBracedStatements);
+  verifyFormat("if CONSTEXPR (true) {}", AllowSimpleBracedStatements);
   verifyFormat("while (true) {}", AllowSimpleBracedStatements);
   verifyFormat("for (;;) {}", AllowSimpleBracedStatements);
   verifyFormat("if (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("if constexpr (true) { f(); }", AllowSimpleBracedStatements);
+  verifyFormat("if CONSTEXPR (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("while (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("for (;;) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("if (true) {\n"
@@ -633,10 +647,12 @@ TEST_F(FormatTest, FormatShortBracedStatements) {
 
   verifyFormat("if (true) {}", AllowSimpleBracedStatements);
   verifyFormat("if constexpr (true) {}", AllowSimpleBracedStatements);
+  verifyFormat("if CONSTEXPR (true) {}", AllowSimpleBracedStatements);
   verifyFormat("while (true) {}", AllowSimpleBracedStatements);
   verifyFormat("for (;;) {}", AllowSimpleBracedStatements);
   verifyFormat("if (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("if constexpr (true) { f(); }", AllowSimpleBracedStatements);
+  verifyFormat("if CONSTEXPR (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("while (true) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("for (;;) { f(); }", AllowSimpleBracedStatements);
   verifyFormat("if (true)\n"
@@ -750,6 +766,19 @@ TEST_F(FormatTest, ParseIfElse) {
                "else {\n"
                "  i();\n"
                "}");
+  verifyFormat("if (true)\n"
+               "  if CONSTEXPR (true)\n"
+               "    if (true) {\n"
+               "      if CONSTEXPR (true)\n"
+               "        f();\n"
+               "    } else {\n"
+               "      g();\n"
+               "    }\n"
+               "  else\n"
+               "    h();\n"
+               "else {\n"
+               "  i();\n"
+               "}");
   verifyFormat("void f() {\n"
                "  if (a) {\n"
                "  } else {\n"
@@ -771,6 +800,12 @@ TEST_F(FormatTest, ElseIf) {
                "  g();\n"
                "else\n"
                "  h();");
+  verifyFormat("if CONSTEXPR (a)\n"
+               "  f();\n"
+               "else if CONSTEXPR (b)\n"
+               "  g();\n"
+               "else\n"
+               "  h();");
   verifyFormat("if (a) {\n"
                "  f();\n"
                "}\n"
@@ -784,12 +819,25 @@ TEST_F(FormatTest, ElseIf) {
                "               aaaaaaaaaaaaaaaaaaaaaaaaaaaa)) {\n"
                "}");
   verifyFormat("if (a) {\n"
+               "} else if constexpr (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "                         aaaaaaaaaaaaaaaaaaaaaaaaaaaa)) {\n"
+               "}");
+  verifyFormat("if (a) {\n"
+               "} else if CONSTEXPR (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "                         aaaaaaaaaaaaaaaaaaaaaaaaaaaa)) {\n"
+               "}");
+  verifyFormat("if (a) {\n"
                "} else if (\n"
                "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
                "}",
                getLLVMStyleWithColumns(62));
   verifyFormat("if (a) {\n"
                "} else if constexpr (\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+               "}",
+               getLLVMStyleWithColumns(62));
+  verifyFormat("if (a) {\n"
+               "} else if CONSTEXPR (\n"
                "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
                "}",
                getLLVMStyleWithColumns(62));
@@ -1716,7 +1764,17 @@ TEST_F(FormatTest, FormatsTypedefEnum) {
 
 TEST_F(FormatTest, FormatsNSEnums) {
   verifyGoogleFormat("typedef NS_ENUM(NSInteger, SomeName) { AAA, BBB }");
+  verifyGoogleFormat(
+      "typedef NS_CLOSED_ENUM(NSInteger, SomeName) { AAA, BBB }");
   verifyGoogleFormat("typedef NS_ENUM(NSInteger, MyType) {\n"
+                     "  // Information about someDecentlyLongValue.\n"
+                     "  someDecentlyLongValue,\n"
+                     "  // Information about anotherDecentlyLongValue.\n"
+                     "  anotherDecentlyLongValue,\n"
+                     "  // Information about aThirdDecentlyLongValue.\n"
+                     "  aThirdDecentlyLongValue\n"
+                     "};");
+  verifyGoogleFormat("typedef NS_CLOSED_ENUM(NSInteger, MyType) {\n"
                      "  // Information about someDecentlyLongValue.\n"
                      "  someDecentlyLongValue,\n"
                      "  // Information about anotherDecentlyLongValue.\n"
@@ -1730,6 +1788,11 @@ TEST_F(FormatTest, FormatsNSEnums) {
                      "  c = 3,\n"
                      "};");
   verifyGoogleFormat("typedef CF_ENUM(NSInteger, MyType) {\n"
+                     "  a = 1,\n"
+                     "  b = 2,\n"
+                     "  c = 3,\n"
+                     "};");
+  verifyGoogleFormat("typedef CF_CLOSED_ENUM(NSInteger, MyType) {\n"
                      "  a = 1,\n"
                      "  b = 2,\n"
                      "  c = 3,\n"
@@ -1763,6 +1826,21 @@ TEST_F(FormatTest, FormatsNamespaces) {
   LLVMWithNoNamespaceFix.FixNamespaceComments = false;
 
   verifyFormat("namespace some_namespace {\n"
+               "class A {};\n"
+               "void f() { f(); }\n"
+               "}",
+               LLVMWithNoNamespaceFix);
+  verifyFormat("namespace N::inline D {\n"
+               "class A {};\n"
+               "void f() { f(); }\n"
+               "}",
+               LLVMWithNoNamespaceFix);
+  verifyFormat("namespace N::inline D::E {\n"
+               "class A {};\n"
+               "void f() { f(); }\n"
+               "}",
+               LLVMWithNoNamespaceFix);
+  verifyFormat("namespace [[deprecated(\"foo[bar\")]] some_namespace {\n"
                "class A {};\n"
                "void f() { f(); }\n"
                "}",
@@ -3695,6 +3773,9 @@ TEST_F(FormatTest, LineBreakingInBinaryExpressions) {
   verifyFormat("if constexpr ((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ||\n"
                "               bbbbbbbbbbbbbbbbbb) && // aaaaaaaaaaa\n"
                "              cccccc) {\n}");
+  verifyFormat("if CONSTEXPR ((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ||\n"
+               "               bbbbbbbbbbbbbbbbbb) && // aaaaaaaaaaa\n"
+               "              cccccc) {\n}");
   verifyFormat("b = a &&\n"
                "    // Comment\n"
                "    b.c && d;");
@@ -3781,6 +3862,14 @@ TEST_F(FormatTest, ExpressionIndentation) {
   verifyFormat("if () {\n"
                "} else if (aaaaa && bbbbb > // break\n"
                "                        ccccc) {\n"
+               "}");
+  verifyFormat("if () {\n"
+               "} else if constexpr (aaaaa && bbbbb > // break\n"
+               "                                  ccccc) {\n"
+               "}");
+  verifyFormat("if () {\n"
+               "} else if CONSTEXPR (aaaaa && bbbbb > // break\n"
+               "                                  ccccc) {\n"
                "}");
   verifyFormat("if () {\n"
                "} else if (aaaaa &&\n"
@@ -6883,10 +6972,16 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyIndependentOfContext("if (int *a = &b)");
   verifyIndependentOfContext("if (int &a = *b)");
   verifyIndependentOfContext("if (a & b[i])");
+  verifyIndependentOfContext("if constexpr (a & b[i])");
+  verifyIndependentOfContext("if CONSTEXPR (a & b[i])");
+  verifyIndependentOfContext("if (a * (b * c))");
+  verifyIndependentOfContext("if constexpr (a * (b * c))");
+  verifyIndependentOfContext("if CONSTEXPR (a * (b * c))");
   verifyIndependentOfContext("if (a::b::c::d & b[i])");
   verifyIndependentOfContext("if (*b[i])");
   verifyIndependentOfContext("if (int *a = (&b))");
   verifyIndependentOfContext("while (int *a = &b)");
+  verifyIndependentOfContext("while (a * (b * c))");
   verifyIndependentOfContext("size = sizeof *a;");
   verifyIndependentOfContext("if (a && (b = c))");
   verifyFormat("void f() {\n"
@@ -7026,6 +7121,12 @@ TEST_F(FormatTest, UnderstandsSquareAttributes) {
 
   // On the other hand, we still need to correctly find array subscripts.
   verifyFormat("int a = std::vector<int>{1, 2, 3}[0];");
+
+  // Make sure that we do not mistake Objective-C method inside array literals
+  // as attributes, even if those method names are also keywords.
+  verifyFormat("@[ [foo bar] ];");
+  verifyFormat("@[ [NSArray class] ];");
+  verifyFormat("@[ [foo enum] ];");
 
   // Make sure we do not parse attributes as lambda introducers.
   FormatStyle MultiLineFunctions = getLLVMStyle();
@@ -8564,6 +8665,9 @@ TEST_F(FormatTest, MergeHandlingInTheFaceOfPreprocessorDirectives) {
   verifyFormat("#define A \\\n"
                "  if constexpr (true) return 42;",
                ShortMergedIf);
+  verifyFormat("#define A \\\n"
+               "  if CONSTEXPR (true) return 42;",
+               ShortMergedIf);
   ShortMergedIf.ColumnLimit = 29;
   verifyFormat("#define A                   \\\n"
                "  if (aaaaaaaaaa) return 1; \\\n"
@@ -8577,6 +8681,11 @@ TEST_F(FormatTest, MergeHandlingInTheFaceOfPreprocessorDirectives) {
                ShortMergedIf);
   verifyFormat("#define A                \\\n"
                "  if constexpr (aaaaaaa) \\\n"
+               "    return 1;            \\\n"
+               "  return 2;",
+               ShortMergedIf);
+  verifyFormat("#define A                \\\n"
+               "  if CONSTEXPR (aaaaaaa) \\\n"
                "    return 1;            \\\n"
                "  return 2;",
                ShortMergedIf);
@@ -10165,8 +10274,104 @@ TEST_F(FormatTest, ConfigurableSpaceBeforeColon) {
                NoSpaceStyle);
 }
 
+TEST_F(FormatTest, AlignConsecutiveMacros) {
+  FormatStyle Style = getLLVMStyle();
+  Style.AlignConsecutiveAssignments = true;
+  Style.AlignConsecutiveDeclarations = true;
+  Style.AlignConsecutiveMacros = false;
+
+  verifyFormat("#define a 3\n"
+               "#define bbbb 4\n"
+               "#define ccc (5)",
+               Style);
+
+  verifyFormat("#define f(x) (x * x)\n"
+               "#define fff(x, y, z) (x * y + z)\n"
+               "#define ffff(x, y) (x - y)",
+               Style);
+
+  verifyFormat("#define foo(x, y) (x + y)\n"
+               "#define bar (5, 6)(2 + 2)",
+               Style);
+
+  verifyFormat("#define a 3\n"
+               "#define bbbb 4\n"
+               "#define ccc (5)\n"
+               "#define f(x) (x * x)\n"
+               "#define fff(x, y, z) (x * y + z)\n"
+               "#define ffff(x, y) (x - y)",
+               Style);
+
+  Style.AlignConsecutiveMacros = true;
+  verifyFormat("#define a    3\n"
+               "#define bbbb 4\n"
+               "#define ccc  (5)",
+               Style);
+
+  verifyFormat("#define f(x)         (x * x)\n"
+               "#define fff(x, y, z) (x * y + z)\n"
+               "#define ffff(x, y)   (x - y)",
+               Style);
+
+  verifyFormat("#define foo(x, y) (x + y)\n"
+               "#define bar       (5, 6)(2 + 2)",
+               Style);
+
+  verifyFormat("#define a            3\n"
+               "#define bbbb         4\n"
+               "#define ccc          (5)\n"
+               "#define f(x)         (x * x)\n"
+               "#define fff(x, y, z) (x * y + z)\n"
+               "#define ffff(x, y)   (x - y)",
+               Style);
+
+  verifyFormat("#define a         5\n"
+               "#define foo(x, y) (x + y)\n"
+               "#define CCC       (6)\n"
+               "auto lambda = []() {\n"
+               "  auto  ii = 0;\n"
+               "  float j  = 0;\n"
+               "  return 0;\n"
+               "};\n"
+               "int   i  = 0;\n"
+               "float i2 = 0;\n"
+               "auto  v  = type{\n"
+               "    i = 1,   //\n"
+               "    (i = 2), //\n"
+               "    i = 3    //\n"
+               "};",
+               Style);
+
+  Style.AlignConsecutiveMacros = false;
+  Style.ColumnLimit = 20;
+
+  verifyFormat("#define a          \\\n"
+               "  \"aabbbbbbbbbbbb\"\n"
+               "#define D          \\\n"
+               "  \"aabbbbbbbbbbbb\" \\\n"
+               "  \"ccddeeeeeeeee\"\n"
+               "#define B          \\\n"
+               "  \"QQQQQQQQQQQQQ\"  \\\n"
+               "  \"FFFFFFFFFFFFF\"  \\\n"
+               "  \"LLLLLLLL\"\n",
+               Style);
+
+  Style.AlignConsecutiveMacros = true;
+  verifyFormat("#define a          \\\n"
+               "  \"aabbbbbbbbbbbb\"\n"
+               "#define D          \\\n"
+               "  \"aabbbbbbbbbbbb\" \\\n"
+               "  \"ccddeeeeeeeee\"\n"
+               "#define B          \\\n"
+               "  \"QQQQQQQQQQQQQ\"  \\\n"
+               "  \"FFFFFFFFFFFFF\"  \\\n"
+               "  \"LLLLLLLL\"\n",
+               Style);
+}
+
 TEST_F(FormatTest, AlignConsecutiveAssignments) {
   FormatStyle Alignment = getLLVMStyle();
+  Alignment.AlignConsecutiveMacros = true;
   Alignment.AlignConsecutiveAssignments = false;
   verifyFormat("int a = 5;\n"
                "int oneTwoThree = 123;",
@@ -10356,6 +10561,7 @@ TEST_F(FormatTest, AlignConsecutiveAssignments) {
 
 TEST_F(FormatTest, AlignConsecutiveDeclarations) {
   FormatStyle Alignment = getLLVMStyle();
+  Alignment.AlignConsecutiveMacros = true;
   Alignment.AlignConsecutiveDeclarations = false;
   verifyFormat("float const a = 5;\n"
                "int oneTwoThree = 123;",
@@ -10880,6 +11086,9 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                "{\n"
                "  int x;\n"
                "};\n"
+               "union C\n"
+               "{\n"
+               "};\n"
                "} // namespace a",
                AllmanBraceStyle);
 
@@ -11048,12 +11257,25 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                BreakBeforeBraceShortIfs);
   verifyFormat("void f(bool b)\n"
                "{\n"
+               "  if CONSTEXPR (b)\n"
+               "  {\n"
+               "    return;\n"
+               "  }\n"
+               "}\n",
+               BreakBeforeBraceShortIfs);
+  verifyFormat("void f(bool b)\n"
+               "{\n"
                "  if (b) return;\n"
                "}\n",
                BreakBeforeBraceShortIfs);
   verifyFormat("void f(bool b)\n"
                "{\n"
                "  if constexpr (b) return;\n"
+               "}\n",
+               BreakBeforeBraceShortIfs);
+  verifyFormat("void f(bool b)\n"
+               "{\n"
+               "  if CONSTEXPR (b) return;\n"
                "}\n",
                BreakBeforeBraceShortIfs);
   verifyFormat("void f(bool b)\n"
@@ -11505,6 +11727,7 @@ TEST_F(FormatTest, ParsesConfigurationBools) {
   CHECK_PARSE_BOOL(AlignTrailingComments);
   CHECK_PARSE_BOOL(AlignConsecutiveAssignments);
   CHECK_PARSE_BOOL(AlignConsecutiveDeclarations);
+  CHECK_PARSE_BOOL(AlignConsecutiveMacros);
   CHECK_PARSE_BOOL(AllowAllArgumentsOnNextLine);
   CHECK_PARSE_BOOL(AllowAllConstructorInitializersOnNextLine);
   CHECK_PARSE_BOOL(AllowAllParametersOfDeclarationOnNextLine);
@@ -12718,6 +12941,11 @@ TEST_F(FormatTest, FormatsLambdas) {
                "    })) {\n"
                "}");
   verifyFormat("if constexpr (blah_blah(whatever, whatever, [] {\n"
+               "                doo_dah();\n"
+               "                doo_dah();\n"
+               "              })) {\n"
+               "}");
+  verifyFormat("if CONSTEXPR (blah_blah(whatever, whatever, [] {\n"
                "                doo_dah();\n"
                "                doo_dah();\n"
                "              })) {\n"

@@ -28,12 +28,9 @@ entry:
 define float @caller(i8* %error_ref) {
 ; CHECK-LABEL: caller:
 ; CHECK: mov [[ID:x[0-9]+]], x0
-; CHECK: mov [[ZERO:x[0-9]+]], #0
-; CHECK: mov x21, #0
 ; CHECK: bl {{.*}}foo
 ; CHECK: mov x0, x21
-; CHECK: cmp x21, [[ZERO]]
-; CHECK: b.ne
+; CHECK: cbnz x21
 ; Access part of the error object and save it to error_ref
 ; CHECK: ldrb [[CODE:w[0-9]+]], [x0, #8]
 ; CHECK: strb [[CODE]], [{{.*}}[[ID]]]
@@ -61,12 +58,10 @@ handler:
 define float @caller2(i8* %error_ref) {
 ; CHECK-LABEL: caller2:
 ; CHECK: mov [[ID:x[0-9]+]], x0
-; CHECK: mov [[ZERO:x[0-9]+]], #0
 ; CHECK: fmov [[CMP:s[0-9]+]], #1.0
-; CHECK: mov x21, #0
+; CHECK: mov x21, xzr
 ; CHECK: bl {{.*}}foo
-; CHECK: cmp x21, [[ZERO]]
-; CHECK: b.ne
+; CHECK: cbnz x21
 ; CHECK: fcmp s0, [[CMP]]
 ; CHECK: b.le
 ; Access part of the error object and save it to error_ref
@@ -192,12 +187,10 @@ entry:
 define float @caller3(i8* %error_ref) {
 ; CHECK-LABEL: caller3:
 ; CHECK: mov [[ID:x[0-9]+]], x0
-; CHECK: mov [[ZERO:x[0-9]+]], #0
-; CHECK: mov x21, #0
+; CHECK: mov [[ZERO:x[0-9]+]], xzr
 ; CHECK: bl {{.*}}foo_sret
 ; CHECK: mov x0, x21
-; CHECK: cmp x21, [[ZERO]]
-; CHECK: b.ne
+; CHECK: cbnz x21
 ; Access part of the error object and save it to error_ref
 ; CHECK: ldrb [[CODE:w[0-9]+]], [x0, #8]
 ; CHECK: strb [[CODE]], [{{.*}}[[ID]]]
@@ -233,14 +226,11 @@ define float @foo_vararg(%swift_error** swifterror %error_ptr_ref, ...) {
 ; CHECK-DAG: strb [[ID]], [x0, #8]
 
 ; First vararg
-; CHECK: ldr {{w[0-9]+}}, [x[[ARG1:[0-9]+]]]
+; CHECK: ldr {{w[0-9]+}}, [x[[ARG1:[0-9]+]]], #8
 ; Second vararg
-; CHECK: mov [[EIGHT:x[0-9]+]], #8
-; CHECK: add x[[ARG2:[0-9]+]], x[[ARG1]], [[EIGHT]]
-; CHECK: ldr {{w[0-9]+}}, [x[[ARG2]]]
+; CHECK: ldr {{w[0-9]+}}, [x[[ARG1]]], #8
 ; Third vararg
-; CHECK: add x[[ARG3:[0-9]+]], x[[ARG2]], [[EIGHT]]
-; CHECK: ldr {{w[0-9]+}}, [x[[ARG3]]]
+; CHECK: ldr {{w[0-9]+}}, [x[[ARG1]]], #8
 
 ; CHECK: mov x21, x0
 ; CHECK-NOT: x21
@@ -272,15 +262,13 @@ define float @caller4(i8* %error_ref) {
 ; CHECK-LABEL: caller4:
 
 ; CHECK: mov [[ID:x[0-9]+]], x0
-; CHECK: mov [[ZERO:x[0-9]+]], #0
 ; CHECK: stp {{x[0-9]+}}, {{x[0-9]+}}, [sp]
-; CHECK: mov x21, #0
 ; CHECK: str {{x[0-9]+}}, [sp, #16]
+; CHECK: mov x21, xzr
 
 ; CHECK: bl {{.*}}foo_vararg
 ; CHECK: mov x0, x21
-; CHECK: cmp x21, [[ZERO]]
-; CHECK: b.ne
+; CHECK: cbnz x21
 ; Access part of the error object and save it to error_ref
 ; CHECK: ldrb [[CODE:w[0-9]+]], [x0, #8]
 ; CHECK: strb [[CODE]], [{{.*}}[[ID]]]
@@ -345,7 +333,6 @@ entry:
 ; CHECK:  mov      x27, x7
 ; CHECK:  mov      x28, x21
 ; Setup call.
-; CHECK:  mov     x8, #0
 ; CHECK:  mov     x0, #1
 ; CHECK:  mov     x1, #2
 ; CHECK:  mov     x2, #3
@@ -354,7 +341,8 @@ entry:
 ; CHECK:  mov     x5, #6
 ; CHECK:  mov     x6, #7
 ; CHECK:  mov     x7, #8
-; CHECK:  mov      x21, #0
+; CHECK:  str     xzr, [sp]
+; CHECK:  mov      x21, xzr
 ; CHECK:  bl      _params_in_reg2
 ; Restore original arguments for next call.
 ; CHECK:  ldr      x0, [sp
@@ -418,7 +406,7 @@ declare swiftcc void @params_in_reg2(i64, i64, i64, i64, i64, i64, i64, i64, i8*
 ; CHECK:  mov     x5, #6
 ; CHECK:  mov     x6, #7
 ; CHECK:  mov     x7, #8
-; CHECK:  mov      x21, #0
+; CHECK:  mov      x21, xzr
 ; CHECK:  bl      _params_in_reg2
 ; Store swifterror %error_ptr_ref.
 ; CHECK:  stp     {{x[0-9]+}}, x21, [sp]
@@ -501,7 +489,7 @@ entry:
 
 declare swiftcc void @foo2(%swift_error** swifterror)
 ; CHECK-LABEL: testAssign
-; CHECK: mov      x21, #0
+; CHECK: mov      x21, xzr
 ; CHECK: bl      _foo2
 ; CHECK: mov      x0, x21
 

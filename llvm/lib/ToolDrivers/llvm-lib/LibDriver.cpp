@@ -18,6 +18,7 @@
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Object/ArchiveWriter.h"
 #include "llvm/Object/COFF.h"
+#include "llvm/Object/WindowsMachineFlag.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
@@ -140,21 +141,6 @@ static void doList(opt::InputArgList& Args) {
   fatalOpenError(std::move(Err), B->getBufferIdentifier());
 }
 
-static StringRef machineToStr(COFF::MachineTypes MT) {
-  switch (MT) {
-  case COFF::IMAGE_FILE_MACHINE_ARMNT:
-    return "arm";
-  case COFF::IMAGE_FILE_MACHINE_ARM64:
-    return "arm64";
-  case COFF::IMAGE_FILE_MACHINE_AMD64:
-    return "x64";
-  case COFF::IMAGE_FILE_MACHINE_I386:
-    return "x86";
-  default:
-    llvm_unreachable("unknown machine type");
-  }
-}
-
 int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
   BumpPtrAllocator Alloc;
   StringSaver Saver(Alloc);
@@ -177,7 +163,8 @@ int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
     return 1;
   }
   for (auto *Arg : Args.filtered(OPT_UNKNOWN))
-    llvm::errs() << "ignoring unknown argument: " << Arg->getSpelling() << "\n";
+    llvm::errs() << "ignoring unknown argument: " << Arg->getAsString(Args)
+                 << "\n";
 
   // Handle /help
   if (Args.hasArg(OPT_help)) {
@@ -196,9 +183,20 @@ int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
 
   std::vector<StringRef> SearchPaths = getSearchPaths(&Args, Saver);
 
+  COFF::MachineTypes LibMachine = COFF::IMAGE_FILE_MACHINE_UNKNOWN;
+  std::string LibMachineSource;
+  if (auto *Arg = Args.getLastArg(OPT_machine)) {
+    LibMachine = getMachineType(Arg->getValue());
+    if (LibMachine == COFF::IMAGE_FILE_MACHINE_UNKNOWN) {
+      llvm::errs() << "unknown /machine: arg " << Arg->getValue() << '\n';
+      return 1;
+    }
+    LibMachineSource =
+        std::string(" (from '/machine:") + Arg->getValue() + "' flag)";
+  }
+
   // Create a NewArchiveMember for each input file.
   std::vector<NewArchiveMember> Members;
-  COFF::MachineTypes LibMachine = COFF::IMAGE_FILE_MACHINE_UNKNOWN;
   for (auto *Arg : Args.filtered(OPT_INPUT)) {
     std::string Path = findInputFile(Arg->getValue(), SearchPaths);
     if (Path.empty()) {
@@ -276,14 +274,20 @@ int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
       }
     }
 
+    // FIXME: Once lld-link rejects multiple resource .obj files:
+    // Call convertResToCOFF() on .res files and add the resulting
+    // COFF file to the .lib output instead of adding the .res file, and remove
+    // this check. See PR42180.
     if (FileMachine != COFF::IMAGE_FILE_MACHINE_UNKNOWN) {
-      if (LibMachine == COFF::IMAGE_FILE_MACHINE_UNKNOWN)
+      if (LibMachine == COFF::IMAGE_FILE_MACHINE_UNKNOWN) {
         LibMachine = FileMachine;
-      else if (LibMachine != FileMachine) {
+        LibMachineSource = std::string(" (inferred from earlier file '") +
+                           Arg->getValue() + "')";
+      } else if (LibMachine != FileMachine) {
         llvm::errs() << Arg->getValue() << ": file machine type "
                      << machineToStr(FileMachine)
                      << " conflicts with library machine type "
-                     << machineToStr(LibMachine) << '\n';
+                     << machineToStr(LibMachine) << LibMachineSource << '\n';
         return 1;
       }
     }
