@@ -212,6 +212,12 @@ void runAnalysis(
 
   if (!Func->doesThisDeclarationHaveABody())
     return;
+  if (Func->isInStdNamespace())
+    return;
+  if (const auto *DC = Func->getEnclosingNamespaceContext())
+    if (const auto *NS = dyn_cast<NamespaceDecl>(DC))
+      if (NS->getIdentifier() && NS->getName() == "gsl")
+        return;
   if (!Func->getCanonicalDecl()->hasAttr<LifetimeContractAttr>())
     return;
 
