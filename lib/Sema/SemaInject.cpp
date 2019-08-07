@@ -1785,35 +1785,48 @@ static bool isRequiresDecl(DeclStmt *DS) {
   return isRequiresDecl(DS->getSingleDecl());
 }
 
-static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
-  Sema &SemaRef = Ctx.getSema();
-
+static Decl *InjectDeclStmtDecl(InjectionContext &Ctx, Decl *OldDecl) {
   Decl *D = Ctx.InjectDecl(OldDecl);
   if (!D || D->isInvalidDecl())
     return nullptr;
 
-  if (isRequiresDecl(D))
-    return nullptr;
+  return D;
+}
+
+static void PushDeclStmtDecl(InjectionContext &Ctx, Decl *NewDecl) {
+  Sema &SemaRef = Ctx.getSema();
 
   // Add the declaration to scope, we don't need to add it to the context,
   // as this should have been handled by the injection of the decl.
   Scope *FunctionScope =
     SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
-  SemaRef.PushOnScopeChains(cast<NamedDecl>(D), FunctionScope,
+  SemaRef.PushOnScopeChains(cast<NamedDecl>(NewDecl), FunctionScope,
                             /*AddToContext=*/false);
+}
 
-  return D;
+static bool InjectDeclStmtDecls(InjectionContext &Ctx, DeclStmt *S,
+                                llvm::SmallVectorImpl<Decl *> &Decls) {
+  for (Decl *D : S->decls()) {
+    if (Decl *NewDecl = InjectDeclStmtDecl(Ctx, D)) {
+      Decls.push_back(NewDecl);
+
+      if (isRequiresDecl(NewDecl))
+        continue;
+
+      PushDeclStmtDecl(Ctx, NewDecl);
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   llvm::SmallVector<Decl *, 4> Decls;
-
-  for (Decl *D : S->decls()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D))
-      Decls.push_back(NewDecl);
-    else
-      return nullptr;
-  }
+  if (InjectDeclStmtDecls(*this, S, Decls))
+    return nullptr;
 
   StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
   if (Res.isInvalid())
