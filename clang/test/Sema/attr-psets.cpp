@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wlifetime -Wlifetime-debug -verify %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }
@@ -101,8 +101,8 @@ using nullable = T;
 
 template <typename T>
 struct not_null {
-  constexpr operator T() const { return T(); }
-  constexpr T operator->() const { return T(); }
+  constexpr operator T() const;
+  constexpr T operator->() const;
 };
 } // namespace gsl
 
@@ -115,7 +115,7 @@ struct S {
   static int s;
   void f() {
     int *p = &m;        // pset becomes m, not *this
-    __lifetime_pset(p); // expected-warning {{pset(p) = (this.m)}}
+    __lifetime_pset(p); // expected-warning {{pset(p) = ((*this).m)}}
     int *ps = &s;
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
     int *ps2 = &this->s;
@@ -825,8 +825,8 @@ void return_pointer() {
   float b;
   float *c;
   int *q = g(&a, &b, &c);
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((null), a)}}
-  __lifetime_pset(c); // expected-warning {{pset(c) = ((null), b)}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = (a)}}
+  __lifetime_pset(c); // expected-warning {{pset(c) = (b)}}
 }
 
 void return_not_null_type() {
@@ -984,7 +984,7 @@ void derived_to_base_conversion() {
   D d;
   // TODO: if the input is not null, should we assume the output is never null?
   S *sp = f(&d);
-  __lifetime_pset(sp); // expected-warning {{pset(sp) = ((null), d)}}
+  __lifetime_pset(sp); // expected-warning {{pset(sp) = (d)}}
 }
 
 void kill_materialized_temporary() {
@@ -1110,7 +1110,7 @@ void parameter_psets(int value,
                      std::unique_ptr<int> &owner_ref,
                      my_pointer ptr_by_value,
                      const my_pointer &ptr_const_ref,
-                     my_pointer &ptr_ref,
+                     my_pointer &ptr_ref, // expected-note {{it was never initialized here}}
                      my_pointer *ptr_ptr,
                      const my_pointer *ptr_const_ptr) {
 
@@ -1144,7 +1144,7 @@ void parameter_psets(int value,
   __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
   assert(ptr_const_ptr);
   __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((*(*ptr_const_ptr)), (null))}}
-}
+} // expected-warning {{returning a dangling Pointer}}
 
 void foreach_arithmetic() {
   int t[] = {1, 2, 3, 4, 5};
@@ -1412,7 +1412,9 @@ class h {
 };
 
 class j {
-  j(h &&k) { b(k); }
+  // TODO: are these false positives?
+  j(h &&k) { b(k); } // expected-warning {{returning a dangling Pointer}}
+                     // expected-note@-1 {{it was never initialized here}}
 };
 } // namespace creduce13
 

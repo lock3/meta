@@ -3215,7 +3215,7 @@ def warn_return_dangling : Warning<"returning a%select{| possibly}0 dangling Poi
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_return_null : Warning<"returning a%select{| possibly}0 null Pointer where a non-null Pointer is expected">,
   InGroup<LifetimeNull>, DefaultIgnore;
-def warn_return_wrong_pset : Warning<"returning a Pointer with points-to set %0 where points-to set %1 is expected">,
+def warn_wrong_pset : Warning<"%select{passing|returning}0 a Pointer with points-to set %1 where points-to set %2 is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;

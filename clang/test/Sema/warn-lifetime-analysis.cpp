@@ -69,7 +69,7 @@ struct vector {
   vector(size_t);
   vector(std::initializer_list<T> init,
          const Allocator &alloc = Allocator());
-  T &operator[](size_t);
+  const T &operator[](size_t) const;
   iterator begin();
   iterator end();
   ~vector();
@@ -237,6 +237,15 @@ const int *return_wrong_ptr(const int *p) {
     return p;
   return q; // expected-warning {{returning a dangling Pointer}}
   // expected-note@-1 {{pointee 'i' left the scope here}}
+}
+
+const int &return_wrong_ptr2(std::vector<int> &v,
+                             const std::vector<int> &v2) {
+  return v2[0]; // expected-warning {{returning a Pointer with points-to set ((*(*v2))) where points-to set ((*(*v))) is expected}}
+}
+
+gsl::not_null<int *> return_null_ptr() {
+  return nullptr; // expected-warning {{returning a null Pointer where a non-null Pointer is expected}}
 }
 
 void null_notes(int *p) {

@@ -175,9 +175,6 @@ void LifetimeContext::TraverseBlocks() {
         continue;
       }
 
-      if (B == &ControlFlowGraph->getExit())
-        continue;
-
       // Compute entry psets of this block by merging exit psets of all
       // reachable predecessors.
       PSetsMap EntryPMap;
@@ -193,8 +190,8 @@ void LifetimeContext::TraverseBlocks() {
 
       BC.EntryPMap = EntryPMap;
       BC.ExitPMap = BC.EntryPMap;
-      VisitBlock(BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr, RefersTo, *B,
-                 Reporter, ASTCtxt, IsConvertible);
+      VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr,
+                 RefersTo, *B, Reporter, ASTCtxt, IsConvertible);
       BC.Visited = true;
       Updated = true;
     }

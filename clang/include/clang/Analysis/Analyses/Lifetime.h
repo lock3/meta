@@ -74,8 +74,8 @@ public:
                                 std::string ActualPset) = 0;
   virtual void warn(WarnType T, SourceRange Range, bool Possibly) = 0;
   virtual void warnParameterDangling(SourceRange Range, bool Indirectly) = 0;
-  virtual void warnReturnWrongPset(SourceRange Range, StringRef RetPset,
-                                   StringRef ExpectedPset) = 0;
+  virtual void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
+                             StringRef ExpectedPset) = 0;
   virtual void warnPointerArithmetic(SourceRange Range) = 0;
   virtual void warnUnsupportedExpr(SourceRange Range) = 0;
   virtual void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) = 0;

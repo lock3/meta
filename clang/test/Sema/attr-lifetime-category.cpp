@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -fsyntax-only -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -std=c++1z -fsyntax-only -Wno-undefined-inline -Wno-undefined-internal -Wlifetime -Wlifetime-debug -verify %s
 
 // TODO: regression tests should not include the standard libary,
 //       but we should have a way to test against real implementations.
@@ -96,10 +96,10 @@ struct shared_ptr {
 } // namespace std
 
 template <typename T>
-void __lifetime_type_category() {}
+void __lifetime_type_category();
 
 template <typename T>
-void __lifetime_type_category_arg(T arg) {}
+void __lifetime_type_category_arg(T arg);
 
 class [[gsl::Owner]] my_owner {
   int &operator*();

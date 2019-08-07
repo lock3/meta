@@ -46,11 +46,12 @@ struct Variable : public ContractVariable {
   // TODO: is this what we want when derefs are involved?
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
-  // TODO: is this what we want when derefs are involved?
   bool hasStaticLifetime() const {
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
-    return isThisPointer() && !FDs.empty();
+    return isThisPointer() && !FDs.empty() &&
+           llvm::none_of(FDs,
+                         [](const FieldDecl *FD) { return FD == nullptr; });
   }
 
   /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
@@ -348,21 +349,26 @@ public:
   const std::vector<NullReason> &nullReasons() const { return NullReasons; }
 
   bool checkSubstitutableFor(const PSet &O, SourceRange Range,
-                             LifetimeReporterBase &Reporter) {
+                             LifetimeReporterBase &Reporter,
+                             bool Return = false) {
     // Everything is substitutable for invalid.
     if (O.ContainsInvalid)
       return true;
 
     // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid) {
-      Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
+      if (Return)
+        Reporter.warn(WarnType::ReturnDangling, Range, !isInvalid());
+      else
+        Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
       explainWhyInvalid(Reporter);
       return false;
     }
 
     // If 'this' includes null, then 'O' must include null.
     if (ContainsNull && !O.ContainsNull) {
-      Reporter.warn(WarnType::ParamNull, Range, !isNull());
+      Reporter.warn(Return ? WarnType::ReturnNull : WarnType::ParamNull, Range,
+                    !isNull());
       explainWhyNull(Reporter);
       return false;
     }
@@ -375,8 +381,10 @@ public:
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
     for (auto &V : Vars) {
       auto I = O.Vars.find(V);
-      if (I == O.Vars.end() || I->getOrder() > V.getOrder())
+      if (I == O.Vars.end() || I->getOrder() > V.getOrder()) {
+        Reporter.warnWrongPset(Range, Return, str(), O.str());
         return false;
+      }
     }
 
     // TODO
@@ -420,11 +428,22 @@ public:
   }
 
   // This method is used to actualize the PSet of a contract with the arguments
-  // of a call.
-  void bind(Variable ToReplace, const PSet &To) {
+  // of a call. It has two modes:
+  // * Checking: The special elements of the psets are coming from the
+  //   contracts, i.e.: the resulting pset will contain null only if the
+  //   contract had null.
+  // * Non-checking: The resulting pset will contain null if 'To' contains
+  //   null. This is useful so code like 'int *p = f(&x);' will result in a
+  //   non-null pset for 'p'.
+  void bind(Variable ToReplace, const PSet &To, bool Checking = true) {
     // Replace valid deref locations.
-    if (Vars.erase(ToReplace))
-      Vars.insert(To.Vars.begin(), To.Vars.end());
+    if (Vars.erase(ToReplace)) {
+      if (Checking)
+        Vars.insert(To.Vars.begin(), To.Vars.end());
+      else
+        merge(To); // TODO: verify if assigned here note is generated later on
+                   // during output matching.
+    }
   }
 
   PSet operator+(const PSet &O) const {

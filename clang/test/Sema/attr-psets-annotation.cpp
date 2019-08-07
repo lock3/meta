@@ -56,6 +56,19 @@ struct [[gsl::Owner]] return_t {
 } Return;
 
 template <typename T>
+struct PointerTraits;
+
+template <typename T>
+struct PointerTraits<T *> {
+  static T deref(T t) { return *t; }
+};
+
+template <typename T>
+struct PointerTraits<T &> {
+  static T deref(T t) { return t; }
+};
+
+template <typename T>
 struct CheckSingle {
   CheckSingle(const T &t) : data(t) {}
   const T &data;
@@ -86,16 +99,14 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   return lhs.data == rhs.data;
 }
 
-template <typename T, typename S>
-bool operator==(const CheckVariadic<T> &lhs, CheckSingle<S> rhs) {
-  return std::any_of(lhs.ptrs.begin(), lhs.ptrs.end(), [&rhs](const T &ptr) {
-    return CheckSingle<T>(ptr) == rhs;
-  });
-}
+template <typename T>
+auto deref(T t) { return PointerTraits<T>::deref(t); }
 
 template <typename T, typename S>
-bool operator==(const CheckSingle<T> &lhs, CheckVariadic<S> rhs) {
-  return rhs == lhs;
+bool operator==(const CheckSingle<T> &lhs, const CheckVariadic<S> &rhs) {
+  return std::any_of(rhs.ptrs.begin(), rhs.ptrs.end(), [&lhs](const T &ptr) {
+    return CheckSingle<T>(ptr) == lhs;
+  });
 }
 
 template <typename T>
@@ -119,6 +130,14 @@ void basic(int *a, int *b) [[gsl::pre(pset(b) == pset(a))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (null))}}
 }
 
+// Proper lifetime preconditions can only be checked with annotations.
+void check_lifetime_preconditions() {
+  int a, b;
+  basic(&a, &a);
+  basic(&b, &b);
+  basic(&a, &b); // expected-warning {{passing a Pointer with points-to set (b) where points-to set ((null), a) is expected}}
+}
+
 void specials(int *a, int *b, int *c)
     [[gsl::pre(pset(a) == pset(Null))]]
     [[gsl::pre(pset(b) == pset(Static))]]
@@ -133,10 +152,13 @@ void variadic(int *a, int *b, int *c)
   __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
 }
 
+
+/* Not supported, we might not want this to be symmetric.
 void variadic_swapped(int *a, int *b, int *c)
     [[gsl::pre(pset({a, c}) == pset(b))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
+  __lifetime_pset(b); // MIGHTBETODOexpected-warning {{((*a), (*c), (null))}}
 }
+*/
 
 /* For std::initializer_list conversions will not work.
    Maybe use type and no conversions required?
@@ -194,7 +216,7 @@ namespace dump_contracts {
 // Need to have bodies to fill the lifetime attr.
 void p(int *a) {}
 void p2(int *a, int &b) {}
-void p3(int *a, int *&b) {}
+void p3(int *a, int *&b) { b = 0; }
 void parameter_psets(int value,
                      char *const *in,
                      int &int_ref,
@@ -204,18 +226,20 @@ void parameter_psets(int value,
                      std::unique_ptr<int> &owner_ref,
                      my_pointer ptr_by_value,
                      const my_pointer &ptr_const_ref,
-                     my_pointer &ptr_ref,
+                     my_pointer &ptr_ref,                // expected-note {{it was never initialized here}}
                      my_pointer *ptr_ptr,
-                     const my_pointer *ptr_const_ptr) {}
+                     const my_pointer *ptr_const_ptr) {} // expected-warning {{returning a dangling Pointer}}
 void p4(int *a, int *b, int *&c)
-    [[gsl::pre(pset(b) == pset(a))]] {}
+    [[gsl::pre(pset(b) == pset(a))]] { c = 0; }
 int *p5(int *a, int *b) { return a; }
 int *p6(int *a, int *b)
     [[gsl::post(pset(Return) == pset(a))]] { return a; }
 struct S{
-  int *f(int * a, int *b, int *&c) { return a; }
-  S *g(int * a, int *b, int *&c) { return this; }
+  int *f(int * a, int *b, int *&c) { c = 0; return a; }
+  S *g(int * a, int *b, int *&c) { c = 0; return this; }
 };
+void p7(int *a, int *b, int *&c)
+    [[gsl::post(pset(deref<int *&>(c)) == pset(a))]] { c = a; }
 // TODO: contracts for function pointers?
 
 void f() {
@@ -280,5 +304,11 @@ void f() {
   // expected-warning@-5 {{pset(Pre(this)) = ((*this))}}
   // expected-warning@-6 {{pset(Post((*c))) = ((*a), (*b), (null))}}
   // expected-warning@-7 {{pset(Post((temporary))) = ((*this))}}
+  __lifetime_contracts(p7);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
 }
 } // namespace dump_contracts

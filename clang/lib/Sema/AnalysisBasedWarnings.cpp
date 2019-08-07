@@ -1969,7 +1969,7 @@ const int Warnings[] = {
   diag::warn_assign_nullptr,
   diag::warn_parameter_null,
   diag::warn_return_dangling,
-  diag::warn_parameter_null
+  diag::warn_return_null
 };
 const int Notes[] = {
   diag::note_never_initialized,
@@ -2020,11 +2020,11 @@ public:
       S.Diag(Range.getBegin(), diag::warn_non_static_throw) << ThrownPset
         << Range;
   }
-  void warnReturnWrongPset(SourceRange Range, StringRef RetPset,
-                           StringRef ExpectedPset) final {
-    if(enableIfNew(Range))
-      S.Diag(Range.getBegin(), diag::warn_return_wrong_pset) << RetPset
-        << ExpectedPset << Range;
+  void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
+                     StringRef ExpectedPset) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_wrong_pset)
+          << Return << RetPset << ExpectedPset << Range;
   }
   void warnPointerArithmetic(SourceRange Range) final {
     if(enableIfNew(Range))
