@@ -621,9 +621,10 @@ public:
           PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
           if (ArgPS.isUnknown())
             return;
-          if (PreConditions.count(V))
-            ArgPS.checkSubstitutableFor(PreConditions[V], Arg->getSourceRange(),
-                                        Reporter);
+          if (PreConditions.count(V) &&
+              !ArgPS.checkSubstitutableFor(PreConditions[V],
+                                           Arg->getSourceRange(), Reporter))
+            setPSet(Arg, PSet()); // Suppress further warnings.
           V.deref();
           if (PreConditions.count(V))
             derefPSet(ArgPS).checkSubstitutableFor(
@@ -631,9 +632,10 @@ public:
         },
         [&](Variable V, const RecordDecl *, const Expr *ObjExpr) {
           PSet ArgPS = getPSet(ObjExpr);
-          if (PreConditions.count(V))
-            ArgPS.checkSubstitutableFor(PreConditions[V],
-                                        ObjExpr->getSourceRange(), Reporter);
+          if (PreConditions.count(V) &&
+              !ArgPS.checkSubstitutableFor(PreConditions[V],
+                                           ObjExpr->getSourceRange(), Reporter))
+            setPSet(ObjExpr, PSet()); // Suppress further warnings.
           V.deref();
           if (PreConditions.count(V))
             derefPSet(ArgPS).checkSubstitutableFor(
