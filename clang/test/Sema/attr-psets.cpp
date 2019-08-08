@@ -1144,7 +1144,7 @@ void parameter_psets(int value,
   __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
   assert(ptr_const_ptr);
   __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((*(*ptr_const_ptr)), (null))}}
-} // expected-warning {{returning a dangling Pointer}}
+} // expected-warning@-1 {{returning a dangling Pointer}}
 
 void foreach_arithmetic() {
   int t[] = {1, 2, 3, 4, 5};

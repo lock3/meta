@@ -224,9 +224,9 @@ void parameter_psets(int value,
                      std::unique_ptr<int> &owner_ref,
                      my_pointer ptr_by_value,
                      const my_pointer &ptr_const_ref,
-                     my_pointer &ptr_ref,                // expected-note {{it was never initialized here}}
+                     my_pointer &ptr_ref,
                      my_pointer *ptr_ptr,
-                     const my_pointer *ptr_const_ptr) {} // expected-warning {{returning a dangling Pointer}}
+                     const my_pointer *ptr_const_ptr) {}
 void p4(int *a, int *b, int *&c)
     [[gsl::pre(pset(b) == pset(a))]] { c = 0; }
 int *p5(int *a, int *b) { return a; }

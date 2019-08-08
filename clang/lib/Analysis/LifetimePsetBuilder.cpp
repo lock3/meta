@@ -621,9 +621,10 @@ public:
           PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
           if (ArgPS.isUnknown())
             return;
-          if (PreConditions.count(V))
-            ArgPS.checkSubstitutableFor(PreConditions[V], Arg->getSourceRange(),
-                                        Reporter);
+          if (PreConditions.count(V) &&
+              !ArgPS.checkSubstitutableFor(PreConditions[V],
+                                           Arg->getSourceRange(), Reporter))
+            setPSet(Arg, PSet()); // Suppress further warnings.
           V.deref();
           if (PreConditions.count(V))
             derefPSet(ArgPS).checkSubstitutableFor(
@@ -631,9 +632,10 @@ public:
         },
         [&](Variable V, const RecordDecl *, const Expr *ObjExpr) {
           PSet ArgPS = getPSet(ObjExpr);
-          if (PreConditions.count(V))
-            ArgPS.checkSubstitutableFor(PreConditions[V],
-                                        ObjExpr->getSourceRange(), Reporter);
+          if (PreConditions.count(V) &&
+              !ArgPS.checkSubstitutableFor(PreConditions[V],
+                                           ObjExpr->getSourceRange(), Reporter))
+            setPSet(ObjExpr, PSet()); // Suppress further warnings.
           V.deref();
           if (PreConditions.count(V))
             derefPSet(ArgPS).checkSubstitutableFor(
@@ -1065,18 +1067,26 @@ void PSetsBuilder::UpdatePSetsFromCondition(
       return;
 
     Variable V = *Ref.vars().begin();
+    Variable DerefV = V;
+    DerefV.deref();
     PSet PS = getPSet(V);
     PSet PSElseBranch = PS;
+    FalseBranchExitPMap = PMap;
     if (Positive) {
       // The variable is non-null in the if-branch and null in the then-branch.
       PSElseBranch.removeEverythingButNull();
       PS.removeNull();
+      auto It = FalseBranchExitPMap->find(DerefV);
+      if (It != FalseBranchExitPMap->end())
+        It->second = PSet();
     } else {
       // The variable is null in the if-branch and non-null in the then-branch.
       PS.removeEverythingButNull();
       PSElseBranch.removeNull();
+      auto It = PMap.find(DerefV);
+      if (It != PMap.end())
+        It->second = PSet();
     }
-    FalseBranchExitPMap = PMap;
     (*FalseBranchExitPMap)[V] = PSElseBranch;
     setPSet(PSet::singleton(V), PS, Range);
   }
@@ -1180,27 +1190,17 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
   return B.rbegin()->castAs<CFGStmt>().getStmt();
 }
 
+static SourceRange getSourceRange(const CFGElement &E) {
+  if (llvm::Optional<CFGStmt> S = E.getAs<CFGStmt>())
+    return S->getStmt()->getSourceRange();
+  else if (llvm::Optional<CFGLifetimeEnds> S = E.getAs<CFGLifetimeEnds>())
+    return S->getTriggerStmt()->getSourceRange();
+  return {};
+}
+
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
                               llvm::Optional<PSetsMap> &FalseBranchExitPMap) {
-  if (&B == &B.getParent()->getExit()) {
-    PSetsMap PostConditions;
-    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
-                         Reporter, /*Pre=*/false);
-    for (auto &VarToPSet : PostConditions) {
-      if (VarToPSet.first.isTemporary())
-        continue;
-      auto OutVarIt = PMap.find(VarToPSet.first);
-      if (OutVarIt == PMap.end()) {
-        llvm::errs() << VarToPSet.first.getName() << " not found. \n";
-      }
-      assert(OutVarIt != PMap.end());
-      OutVarIt->second.checkSubstitutableFor(
-          VarToPSet.second, AnalyzedFD->getEndLoc(), Reporter, true);
-    }
-    return;
-  }
-
   for (const auto &E : B) {
     switch (E.getKind()) {
     case CFGElement::Statement: {
@@ -1271,6 +1271,21 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
   if (auto *Terminator = getRealTerminator(B)) {
     UpdatePSetsFromCondition(Terminator, /*Positive=*/true, FalseBranchExitPMap,
                              Terminator->getEndLoc());
+  }
+  if (B.hasNoReturnElement())
+    return;
+  if (B.succ_size() == 1 && *B.succ_begin() == &B.getParent()->getExit()) {
+    PSetsMap PostConditions;
+    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
+                         Reporter, /*Pre=*/false);
+    for (auto &VarToPSet : PostConditions) {
+      if (VarToPSet.first.isTemporary())
+        continue;
+      auto OutVarIt = PMap.find(VarToPSet.first);
+      assert(OutVarIt != PMap.end());
+      OutVarIt->second.checkSubstitutableFor(
+          VarToPSet.second, getSourceRange(B.back()), Reporter, true);
+    }
   }
 } // namespace lifetime
 

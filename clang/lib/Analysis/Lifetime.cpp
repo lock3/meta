@@ -175,6 +175,9 @@ void LifetimeContext::TraverseBlocks() {
         continue;
       }
 
+      if (B == &ControlFlowGraph->getExit())
+        continue;
+
       // Compute entry psets of this block by merging exit psets of all
       // reachable predecessors.
       PSetsMap EntryPMap;

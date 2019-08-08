@@ -105,6 +105,7 @@ struct Owner {
 };
 
 struct [[gsl::Pointer]] my_pointer {
+  my_pointer &operator=(int *);
   int &operator*();
   operator bool() const;
 };
@@ -148,6 +149,18 @@ void ignore_access_on_non_ref_ptr() {
   Owner s;
   s.m = 3;
   s.f();
+}
+
+int global;
+void optional_output_argument(my_pointer *out) {
+  if (out)
+    *out = &global;
+}
+
+void optional_output_argument2(my_pointer *out) {
+  if (!out)
+    return;
+  *out = &global;
 }
 
 // Note: the messages below are for the template instantiation in 'instantiate_ref_leaves_scope_template'.
