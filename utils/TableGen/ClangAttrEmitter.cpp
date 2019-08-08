@@ -500,12 +500,13 @@ namespace {
       OS << "unsigned " << getAttrName() << "Attr::get" << getUpperName()
          << "(ASTContext &Ctx) const {\n";
       OS << "  assert(!is" << getUpperName() << "Dependent());\n";
-      OS << "  if (is" << getLowerName() << "Expr)\n";
+      OS << "  if (is" << getLowerName() << "Expr) {\n";
+      OS << "    Expr::EvalContext EvalCtx(Ctx, nullptr);\n";
       OS << "    return " << getLowerName() << "Expr ? " << getLowerName()
-         << "Expr->EvaluateKnownConstInt(Ctx).getZExtValue()"
+         << "Expr->EvaluateKnownConstInt(EvalCtx).getZExtValue()"
          << " * Ctx.getCharWidth() : "
          << "Ctx.getTargetDefaultAlignForAttributeAligned();\n";
-      OS << "  else\n";
+      OS << "  } else\n";
       OS << "    return 0; // FIXME\n";
       OS << "}\n";
     }

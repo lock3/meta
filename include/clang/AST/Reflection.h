@@ -257,174 +257,31 @@ public:
   }
 };
 
-enum ReflectionQuery {
-  RQ_unknown,
-
-  RQ_is_invalid,
-  RQ_is_entity,
-  RQ_is_unnamed,
-
-  // Declarations
-  RQ_is_variable,
-  RQ_is_function,
-  RQ_is_class,
-  RQ_is_union,
-  RQ_is_unscoped_enum,
-  RQ_is_scoped_enum,
-  RQ_is_enumerator,
-  RQ_is_bitfield,
-  RQ_is_static_data_member,
-  RQ_is_nonstatic_data_member,
-  RQ_is_static_member_function,
-  RQ_is_nonstatic_member_function,
-  RQ_is_copy_assignment_operator,
-  RQ_is_move_assignment_operator,
-  RQ_is_constructor,
-  RQ_is_default_constructor,
-  RQ_is_copy_constructor,
-  RQ_is_move_constructor,
-  RQ_is_destructor,
-
-  // Types
-  RQ_is_type,
-  RQ_is_function_type,
-  RQ_is_class_type,
-  RQ_is_union_type,
-  RQ_is_enum_type,
-  RQ_is_scoped_enum_type,
-  RQ_is_void_type,
-  RQ_is_null_pointer_type,
-  RQ_is_integral_type,
-  RQ_is_floating_point_type,
-  RQ_is_array_type,
-  RQ_is_pointer_type,
-  RQ_is_lvalue_reference_type,
-  RQ_is_rvalue_reference_type,
-  RQ_is_member_object_pointer_type,
-  RQ_is_member_function_pointer_type,
-  RQ_is_closure_type,
-
-  // Namespaces and aliases
-  RQ_is_namespace,
-  RQ_is_namespace_alias,
-  RQ_is_type_alias,
-
-  // Templates and specializations
-  RQ_is_template,
-  RQ_is_class_template,
-  RQ_is_alias_template,
-  RQ_is_function_template,
-  RQ_is_variable_template,
-  RQ_is_static_member_function_template,
-  RQ_is_nonstatic_member_function_template,
-  RQ_is_constructor_template,
-  RQ_is_destructor_template,
-  RQ_is_concept,
-  RQ_is_specialization,
-  RQ_is_partial_specialization,
-  RQ_is_explicit_specialization,
-  RQ_is_implicit_instantiation,
-  RQ_is_explicit_instantiation,
-
-  // Base class specifiers
-  RQ_is_direct_base,
-  RQ_is_virtual_base,
-
-  // Parameters
-  RQ_is_function_parameter,
-  RQ_is_template_parameter,
-  RQ_is_type_template_parameter,
-  RQ_is_nontype_template_parameter,
-  RQ_is_template_template_parameter,
-
-  // Expressions
-  RQ_is_expression,
-  RQ_is_lvalue,
-  RQ_is_xvalue,
-  RQ_is_rvalue,
-  RQ_is_value,
-
-  // Scope
-  RQ_is_local,
-  RQ_is_class_member,
-
-  // Access queries
-  RQ_has_default_access,
-
-  // Traits
-  RQ_get_decl_traits,
-  RQ_get_linkage_traits,
-  RQ_get_access_traits,
-  RQ_get_type_traits,
-
-  // Associated reflections
-  RQ_get_entity,
-  RQ_get_parent,
-  RQ_get_type,
-  RQ_get_return_type,
-  RQ_get_this_ref_type,
-  RQ_get_definition,
-
-  // Traversal
-  RQ_get_begin,
-  RQ_get_next,
-
-  // Name
-  RQ_get_name,
-  RQ_get_display_name,
-
-  // Modifier updates
-  RQ_set_access,
-  RQ_set_storage,
-  RQ_set_add_constexpr,
-  RQ_set_add_virtual,
-  RQ_set_add_pure_virtual,
-  RQ_set_new_name,
-
-  // Labels for kinds of queries. These need to be updated when new
-  // queries are added.
-
-  // Predicates -- these return bool.
-  RQ_first_predicate = RQ_is_invalid,
-  RQ_last_predicate = RQ_has_default_access,
-  // Traits -- these return unsigned.
-  RQ_first_trait = RQ_get_decl_traits,
-  RQ_last_trait = RQ_get_type_traits,
-  // Associated reflections -- these return meta::info.
-  RQ_first_assoc = RQ_get_entity,
-  RQ_last_assoc = RQ_get_next,
-  // Names -- these return const char*
-  RQ_first_name = RQ_get_name,
-  RQ_last_name = RQ_get_display_name,
-  // Modifier updates -- these return meta::info.
-  RQ_first_modifier_update = RQ_set_access,
-  RQ_last_modifier_update = RQ_set_new_name
+struct ReflectionCallback {
+  virtual ~ReflectionCallback() { }
+  virtual bool EvalTypeTrait(TypeTrait Kind,
+                             ArrayRef<TypeSourceInfo *> Args) = 0;
 };
 
-/// True if Q is a predicate.
-inline bool isPredicateQuery(ReflectionQuery Q) {
-  return RQ_first_predicate <= Q && Q <= RQ_last_predicate;
-}
+enum ReflectionQuery : unsigned;
 
-/// True if Q returns trait information.
-inline bool isTraitQuery(ReflectionQuery Q) {
-  return RQ_first_trait <= Q && Q <= RQ_last_trait;
-}
+/// Returns the ReflectionQuery value representing an unknown reflection query.
+ReflectionQuery getUnknownReflectionQuery();
+
+unsigned getMinNumQueryArguments(ReflectionQuery Q);
+unsigned getMaxNumQueryArguments(ReflectionQuery Q);
+
+/// True if Q is a predicate.
+bool isPredicateQuery(ReflectionQuery Q);
 
 /// True if Q returns an associated reflection.
-inline bool isAssociatedReflectionQuery(ReflectionQuery Q) {
-  return RQ_first_assoc <= Q && Q <= RQ_last_assoc;
-}
+bool isAssociatedReflectionQuery(ReflectionQuery Q);
 
 /// True if Q returns a name.
-inline bool isNameQuery(ReflectionQuery Q) {
-  return RQ_first_name <= Q && Q <= RQ_last_name;
-}
+bool isNameQuery(ReflectionQuery Q);
 
 /// True if Q updates modifiers.
-inline bool isModifierUpdateQuery(ReflectionQuery Q) {
-  return RQ_first_modifier_update <= Q && Q <= RQ_last_modifier_update;
-}
+bool isModifierUpdateQuery(ReflectionQuery Q);
 
 enum class AccessModifier : unsigned {
   NotModified,
@@ -554,6 +411,9 @@ public:
   }
 
   /// Construct a reflection that will be used to evaluate a query.
+  ///
+  /// DEPRECATED: Avoid using this class for evaluation state,
+  /// instead it should be used as a useful wrapper around APValue reflections.
   Reflection(ASTContext &C, const APValue &R, const Expr *Query,
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
     : Ctx(&C), Ref(R), Query(Query), Diag(D) {
@@ -644,12 +504,6 @@ public:
     return Ref.getReflectionModifiers();
   }
 
-  /// Evaluates the predicate designated by Q.
-  bool EvaluatePredicate(ReflectionQuery Q, APValue &Result);
-
-  /// Returns the traits designated by Q.
-  bool GetTraits(ReflectionQuery Q, APValue &Result);
-
   /// Returns the reflected construct designated by Q.
   bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 
@@ -666,9 +520,59 @@ public:
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
 };
 
-  bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
+class ReflectionQueryEvaluator {
+  /// The AST context is needed for global information.
+  ASTContext *Ctx;
 
-  void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
+  /// Optional callbacks to Sema functionality.
+  ReflectionCallback *CB;
+
+  /// The query to evaluate.
+  ReflectionQuery Query;
+
+  /// The expression defining the query.
+  const Expr *QueryExpr;
+
+  /// Points to a vector of diagnostics, to be populated during query
+  /// evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *Diag;
+public:
+  ReflectionQueryEvaluator(ASTContext &C, ReflectionCallback *CB,
+                           ReflectionQuery Q, const Expr *E,
+                           SmallVectorImpl<PartialDiagnosticAt> *D)
+    : Ctx(&C), CB(CB), Query(Q), QueryExpr(E), Diag(D) {
+  }
+
+  /// Returns the ASTContext for this evaluation.
+  ASTContext &getContext() const {
+    return *Ctx;
+  }
+
+  ReflectionCallback *getCallbacks() const {
+    return CB;
+  }
+
+  ReflectionQuery getQuery() const {
+    return Query;
+  }
+
+  /// Returns the related query for this evaluation, if present.
+  const Expr *getQueryExpr() const {
+    return QueryExpr;
+  }
+
+  /// Returns the vector holding diagnostics for query evaluation.
+  SmallVectorImpl<PartialDiagnosticAt> *getDiag() const {
+    return Diag;
+  }
+
+  /// Evaluates the predicate designated by Q.
+  bool EvaluatePredicate(SmallVectorImpl<APValue> &Args, APValue &Result);
+};
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
+
+void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
 
 } // namespace clang
 

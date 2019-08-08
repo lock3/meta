@@ -1318,8 +1318,7 @@ static void PushInjectedECD(
     T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
   EnumConstantDecls.push_back(MetaDecl);
 
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
-    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
     EnumConstantDecls.push_back(ECD);
   }
 }
@@ -1963,8 +1962,8 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     Function->setRangeEnd(D->getSourceRange().getEnd());
   }
 
-  if (D->isImmediate())
-    Function->setImmediate(true);
+  if (D->isConsteval())
+    Function->setConsteval(true);
 
   if (D->isInlined())
     Function->setImplicitlyInline();
@@ -2286,8 +2285,8 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                    D->isConstexpr(), D->getEndLoc());
   }
 
-  if (D->isImmediate())
-    Method->setImmediate(true);
+  if (D->isConsteval())
+    Method->setConsteval(true);
 
   if (D->isInlined())
     Method->setImplicitlyInline();

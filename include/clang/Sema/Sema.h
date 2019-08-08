@@ -3995,6 +3995,12 @@ public:
                                    SourceLocation ColonLoc, Stmt *RangeVar, 
                                    SourceLocation RParenLoc,
                                    BuildForRangeKind Kind, bool IsConstexpr);
+  /// Build a CXXExpansionStmt over a pack.
+  StmtResult BuildCXXExpansionStmt(SourceLocation ForLoc,
+                                   SourceLocation EllipsisLoc, Stmt *LoopVar,
+                                   SourceLocation ColonLoc, Expr *RangeExpr,
+                                   SourceLocation RParenLoc,
+                                   BuildForRangeKind Kind, bool IsConstexpr);
 
   StmtResult ActOnCXXExpansionStmtError(Stmt *S);
   
@@ -6224,6 +6230,22 @@ public:
                             MutableArrayRef<CXXBaseSpecifier *> Bases);
   void ActOnBaseSpecifiers(Decl *ClassDecl,
                            MutableArrayRef<CXXBaseSpecifier *> Bases);
+
+  /// Find the base class to decompose in a built-in decomposition of a class
+  /// type. This base class search is, unfortunately, not quite like any other
+  /// that we perform anywhere else in C++.
+  DeclAccessPair FindDecomposableBaseClass(SourceLocation Loc,
+                                           const CXXRecordDecl *RD,
+                                           CXXCastPath &BasePath);
+  ExprResult ActOnCXXSelectMemberExpr(CXXRecordDecl *OrigRD,
+                                      VarDecl *Base, Expr *Index,
+                                      SourceLocation KWLoc = SourceLocation(),
+                                      SourceLocation BaseLoc = SourceLocation(),
+                                      SourceLocation IdxLoc = SourceLocation());
+  ExprResult ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
+                                    SourceLocation KWLoc = SourceLocation(),
+                                    SourceLocation BaseLoc = SourceLocation(),
+                                    SourceLocation IdxLoc = SourceLocation());
 
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base);
   bool IsDerivedFrom(SourceLocation Loc, QualType Derived, QualType Base,
@@ -8897,8 +8919,23 @@ public:
 private:
   bool ReflectionScope = false;
 
+  struct ReflectionCallbackImpl : public ReflectionCallback {
+    Sema &SemaRef;
+
+    ReflectionCallbackImpl(Sema &SemaRef) : SemaRef(SemaRef) { }
+
+    virtual bool EvalTypeTrait(TypeTrait Kind,
+                               ArrayRef<TypeSourceInfo *> Args) override;
+  };
+
+  ReflectionCallbackImpl ReflectionCallbackObj;
+
 public:
   EnumConstantDecl *LastEnumConstDecl = nullptr;
+
+  ReflectionCallback *GetReflectionCallbackObj() {
+    return &ReflectionCallbackObj;
+  }
 
   bool isReflecting() const {
     return ReflectionScope;
@@ -8958,10 +8995,12 @@ public:
                                          SmallVectorImpl<Expr *> &Args,
                                          SourceLocation LParenLoc,
                                          SourceLocation RparenLoc);
+
   ExprResult ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
                                           SmallVectorImpl<Expr *> &Args,
                                           SourceLocation LParenLoc,
                                           SourceLocation RparenLoc);
+
   ExprResult ActOnCXXReflectPrintLiteral(SourceLocation KWLoc,
                                          SmallVectorImpl<Expr *> &Args,
                                          SourceLocation LParenLoc,
@@ -10579,7 +10618,9 @@ public:
           HasKnownValue(IsConstexpr && Condition.get() &&
                         !Condition.get()->isValueDependent()),
           KnownValue(HasKnownValue &&
-                     !!Condition.get()->EvaluateKnownConstInt(S.Context)) {}
+                     !!Condition.get()->EvaluateKnownConstInt(
+                          Expr::EvalContext(
+                              S.Context, S.GetReflectionCallbackObj()))) {}
     explicit ConditionResult(bool Invalid)
         : ConditionVar(nullptr), Condition(nullptr), Invalid(Invalid),
           HasKnownValue(false), KnownValue(false) {}

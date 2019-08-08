@@ -1785,35 +1785,48 @@ static bool isRequiresDecl(DeclStmt *DS) {
   return isRequiresDecl(DS->getSingleDecl());
 }
 
-static Decl *AddDeclToInjecteeScope(InjectionContext &Ctx, Decl *OldDecl) {
-  Sema &SemaRef = Ctx.getSema();
-
+static Decl *InjectDeclStmtDecl(InjectionContext &Ctx, Decl *OldDecl) {
   Decl *D = Ctx.InjectDecl(OldDecl);
   if (!D || D->isInvalidDecl())
     return nullptr;
 
-  if (isRequiresDecl(D))
-    return nullptr;
+  return D;
+}
+
+static void PushDeclStmtDecl(InjectionContext &Ctx, Decl *NewDecl) {
+  Sema &SemaRef = Ctx.getSema();
 
   // Add the declaration to scope, we don't need to add it to the context,
   // as this should have been handled by the injection of the decl.
   Scope *FunctionScope =
     SemaRef.getScopeForContext(Decl::castToDeclContext(Ctx.Injectee));
-  SemaRef.PushOnScopeChains(cast<NamedDecl>(D), FunctionScope,
+  SemaRef.PushOnScopeChains(cast<NamedDecl>(NewDecl), FunctionScope,
                             /*AddToContext=*/false);
+}
 
-  return D;
+static bool InjectDeclStmtDecls(InjectionContext &Ctx, DeclStmt *S,
+                                llvm::SmallVectorImpl<Decl *> &Decls) {
+  for (Decl *D : S->decls()) {
+    if (Decl *NewDecl = InjectDeclStmtDecl(Ctx, D)) {
+      Decls.push_back(NewDecl);
+
+      if (isRequiresDecl(NewDecl))
+        continue;
+
+      PushDeclStmtDecl(Ctx, NewDecl);
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 Stmt *InjectionContext::InjectDeclStmt(DeclStmt *S) {
   llvm::SmallVector<Decl *, 4> Decls;
-
-  for (Decl *D : S->decls()) {
-    if (Decl *NewDecl = AddDeclToInjecteeScope(*this, D))
-      Decls.push_back(NewDecl);
-    else
-      return nullptr;
-  }
+  if (InjectDeclStmtDecls(*this, S, Decls))
+    return nullptr;
 
   StmtResult Res = RebuildDeclStmt(Decls, S->getBeginLoc(), S->getEndLoc());
   if (Res.isInvalid())
@@ -2112,8 +2125,7 @@ static void PushInjectedECD(
     T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
   EnumConstantDecls.push_back(MetaDecl);
 
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
-    Decl *ECD = MetaDecl->getInjectedDecls()[I];
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
     EnumConstantDecls.push_back(ECD);
   }
 }
@@ -3264,10 +3276,8 @@ static bool InjectStmtFragment(Sema &S,
       }
     }
 
-    unsigned NumInjectedStmts = Ctx->InjectedStmts.size();
-    Stmt **Stmts = new (S.Context) Stmt *[NumInjectedStmts];
-    std::copy(Ctx->InjectedStmts.begin(), Ctx->InjectedStmts.end(), Stmts);
-    MD->setInjectedStmts(Stmts, NumInjectedStmts);
+    MD->getInjectedStmts().append(Ctx->InjectedStmts.begin(),
+                                  Ctx->InjectedStmts.end());
   });
 }
 
@@ -3297,10 +3307,8 @@ static bool InjectDeclFragment(Sema &S,
       }
     }
 
-    unsigned NumInjectedDecls = Ctx->InjectedDecls.size();
-    Decl **Decls = new (S.Context) Decl *[NumInjectedDecls];
-    std::copy(Ctx->InjectedDecls.begin(), Ctx->InjectedDecls.end(), Decls);
-    MD->setInjectedDecls(Decls, NumInjectedDecls);
+    MD->getInjectedDecls().append(Ctx->InjectedDecls.begin(),
+                                  Ctx->InjectedDecls.end());
   });
 }
 
@@ -3926,7 +3934,8 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
   Result.Diag = &Notes;
   Result.InjectionEffects = &Effects;
 
-  bool Folded = Call->EvaluateAsRValue(Result, Context);
+  Expr::EvalContext EvalCtx(Context, Sema.GetReflectionCallbackObj());
+  bool Folded = Call->EvaluateAsRValue(Result, EvalCtx);
   if (!Folded) {
     // If the only error is that we didn't initialize a (void) value, that's
     // actually okay. APValue doesn't know how to do this anyway.

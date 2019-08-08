@@ -563,6 +563,8 @@ public:
   }
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);
+  Value *VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E);
+  Value *VisitCXXSelectPackExpr(CXXSelectPackExpr *E);
   Value *VisitShuffleVectorExpr(ShuffleVectorExpr *E);
   Value *VisitConvertVectorExpr(ConvertVectorExpr *E);
   Value *VisitMemberExpr(MemberExpr *E);
@@ -1690,8 +1692,9 @@ Value *ScalarExprEmitter::VisitShuffleVectorExpr(ShuffleVectorExpr *E) {
   Value* V2 = CGF.EmitScalarExpr(E->getExpr(1));
 
   SmallVector<llvm::Constant*, 32> indices;
+  Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
   for (unsigned i = 2; i < E->getNumSubExprs(); ++i) {
-    llvm::APSInt Idx = E->getShuffleMaskIdx(CGF.getContext(), i-2);
+    llvm::APSInt Idx = E->getShuffleMaskIdx(EvalCtx, i-2);
     // Check for -1 and output it as undef in the IR.
     if (Idx.isSigned() && Idx.isAllOnesValue())
       indices.push_back(llvm::UndefValue::get(CGF.Int32Ty));
@@ -1783,7 +1786,8 @@ Value *ScalarExprEmitter::VisitMemberExpr(MemberExpr *E) {
     return CGF.emitScalarConstant(Constant, E);
   } else {
     Expr::EvalResult Result;
-    if (E->EvaluateAsInt(Result, CGF.getContext(), Expr::SE_AllowSideEffects)) {
+    Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+    if (E->EvaluateAsInt(Result, EvalCtx, Expr::SE_AllowSideEffects)) {
       llvm::APSInt Value = Result.Val.getInt();
       CGF.EmitIgnoredExpr(E->getBase());
       return Builder.getInt(Value);
@@ -1813,6 +1817,14 @@ Value *ScalarExprEmitter::VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
     CGF.EmitBoundsCheck(E, E->getBase(), Idx, IdxTy, /*Accessed*/true);
 
   return Builder.CreateExtractElement(Base, Idx, "vecext");
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  return EmitLoadOfLValue(E);
+}
+
+Value *ScalarExprEmitter::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  return EmitLoadOfLValue(E);
 }
 
 static llvm::Constant *getMaskElt(llvm::ShuffleVectorInst *SVI, unsigned Idx,
@@ -2082,7 +2094,8 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
   }
   case CK_AddressSpaceConversion: {
     Expr::EvalResult Result;
-    if (E->EvaluateAsRValue(Result, CGF.getContext()) &&
+    Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+    if (E->EvaluateAsRValue(Result, EvalCtx) &&
         Result.Val.isNullPointer()) {
       // If E has side effect, it is emitted even if its final result is a
       // null pointer. In that case, a DCE pass should be able to
@@ -2682,7 +2695,8 @@ Value *ScalarExprEmitter::VisitUnaryLNot(const UnaryOperator *E) {
 Value *ScalarExprEmitter::VisitOffsetOfExpr(OffsetOfExpr *E) {
   // Try folding the offsetof to a constant.
   Expr::EvalResult EVResult;
-  if (E->EvaluateAsInt(EVResult, CGF.getContext())) {
+  Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+  if (E->EvaluateAsInt(EVResult, EvalCtx)) {
     llvm::APSInt Value = EVResult.Val.getInt();
     return Builder.getInt(Value);
   }
@@ -2809,7 +2823,8 @@ ScalarExprEmitter::VisitUnaryExprOrTypeTraitExpr(
 
   // If this isn't sizeof(vla), the result must be constant; use the constant
   // folding logic so we don't have to duplicate it here.
-  return Builder.getInt(E->EvaluateKnownConstInt(CGF.getContext()));
+  Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+  return Builder.getInt(E->EvaluateKnownConstInt(EvalCtx));
 }
 
 Value *ScalarExprEmitter::VisitUnaryReal(const UnaryOperator *E) {
@@ -4184,7 +4199,8 @@ Value *ScalarExprEmitter::VisitBinComma(const BinaryOperator *E) {
 static bool isCheapEnoughToEvaluateUnconditionally(const Expr *E,
                                                    CodeGenFunction &CGF) {
   // Anything that is an integer or floating point constant is fine.
-  return E->IgnoreParens()->isEvaluatable(CGF.getContext());
+  Expr::EvalContext EvalCtx(CGF.getContext(), nullptr);
+  return E->IgnoreParens()->isEvaluatable(EvalCtx);
 
   // Even non-volatile automatic variables can't be evaluated unconditionally.
   // Referencing a thread_local may cause non-trivial initialization work to

@@ -1,30 +1,54 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang -freflection -std=c++1z %s
 
 #include "reflection_query.h"
 #include "reflection_mod.h"
 
-struct Existing {
-  int field_1;
-};
+namespace make_static_test {
+  struct Existing {
+    int field_1;
+  };
 
-struct New {
-  consteval {
-    auto refl = reflexpr(Existing);
+  struct New {
+    consteval {
+      auto refl = reflexpr(Existing);
+
+      // Fields
+      auto field_1 = __reflect(query_get_begin, refl);
+      __reflect_mod(query_set_storage, field_1, StorageModifier::Static);
+
+      -> field_1;
+    }
+  };
+
+  // Fields
+  int New::field_1 = 0;
+}
+
+namespace make_static_aborted_test {
+  struct Existing {
+    int field_1;
+  };
+
+  struct New {
+    consteval {
+      auto refl = reflexpr(Existing);
+
+      // Fields
+      auto field_1 = __reflect(query_get_begin, refl);
+      __reflect_mod(query_set_storage, field_1, StorageModifier::NotModified);
+
+      -> field_1;
+    }
+  };
+
+  void foo() {
+    New n;
 
     // Fields
-    auto field_1 = __reflect(query_get_begin, refl);
-    __reflect_mod(query_set_storage, field_1, StorageModifier::Static);
-
-    -> field_1;
+    n.field_1 = 0;
   }
-
-public:
-  constexpr New() { }
-};
+}
 
 int main() {
-  // Fields
-  New::field_1 = 0;
-
   return 0;
 }

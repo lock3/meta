@@ -241,8 +241,9 @@ static bool checkUInt32Argument(Sema &S, const AttrInfo &AI, const Expr *Expr,
                                 uint32_t &Val, unsigned Idx = UINT_MAX,
                                 bool StrictlyUnsigned = false) {
   llvm::APSInt I(32);
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (Expr->isTypeDependent() || Expr->isValueDependent() ||
-      !Expr->isIntegerConstantExpr(I, S.Context)) {
+      !Expr->isIntegerConstantExpr(I, EvalCtx)) {
     if (Idx != UINT_MAX)
       S.Diag(getAttrLoc(AI), diag::err_attribute_argument_n_type)
           << &AI << Idx << AANT_ArgumentIntegerConstant
@@ -333,8 +334,9 @@ static bool checkFunctionOrMethodParameterIndex(
       (HP ? getFunctionOrMethodNumParams(D) : 0) + HasImplicitThisParam;
 
   llvm::APSInt IdxInt;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent() ||
-      !IdxExpr->isIntegerConstantExpr(IdxInt, S.Context)) {
+      !IdxExpr->isIntegerConstantExpr(IdxInt, EvalCtx)) {
     S.Diag(getAttrLoc(AI), diag::err_attribute_argument_n_type)
         << &AI << AttrArgNum << AANT_ArgumentIntegerConstant
         << IdxExpr->getSourceRange();
@@ -1619,9 +1621,11 @@ void Sema::AddAssumeAlignedAttr(SourceRange AttrRange, Decl *D, Expr *E,
     return;
   }
 
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+
   if (!E->isValueDependent()) {
     llvm::APSInt I(64);
-    if (!E->isIntegerConstantExpr(I, Context)) {
+    if (!E->isIntegerConstantExpr(I, EvalCtx)) {
       if (OE)
         Diag(AttrLoc, diag::err_attribute_argument_n_type)
           << &TmpAttr << 1 << AANT_ArgumentIntegerConstant
@@ -1643,7 +1647,7 @@ void Sema::AddAssumeAlignedAttr(SourceRange AttrRange, Decl *D, Expr *E,
   if (OE) {
     if (!OE->isValueDependent()) {
       llvm::APSInt I(64);
-      if (!OE->isIntegerConstantExpr(I, Context)) {
+      if (!OE->isIntegerConstantExpr(I, EvalCtx)) {
         Diag(AttrLoc, diag::err_attribute_argument_n_type)
           << &TmpAttr << 2 << AANT_ArgumentIntegerConstant
           << OE->getSourceRange();
@@ -2745,8 +2749,9 @@ static void handleSentinelAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (AL.getNumArgs() > 0) {
     Expr *E = AL.getArgAsExpr(0);
     llvm::APSInt Idx(32);
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
     if (E->isTypeDependent() || E->isValueDependent() ||
-        !E->isIntegerConstantExpr(Idx, S.Context)) {
+        !E->isIntegerConstantExpr(Idx, EvalCtx)) {
       S.Diag(AL.getLoc(), diag::err_attribute_argument_n_type)
           << AL << 1 << AANT_ArgumentIntegerConstant << E->getSourceRange();
       return;
@@ -2765,8 +2770,9 @@ static void handleSentinelAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (AL.getNumArgs() > 1) {
     Expr *E = AL.getArgAsExpr(1);
     llvm::APSInt Idx(32);
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
     if (E->isTypeDependent() || E->isValueDependent() ||
-        !E->isIntegerConstantExpr(Idx, S.Context)) {
+        !E->isIntegerConstantExpr(Idx, EvalCtx)) {
       S.Diag(AL.getLoc(), diag::err_attribute_argument_n_type)
           << AL << 2 << AANT_ArgumentIntegerConstant << E->getSourceRange();
       return;
@@ -4811,7 +4817,8 @@ static Expr *makeLaunchBoundsArgExpr(Sema &S, Expr *E,
     return E;
 
   llvm::APSInt I(64);
-  if (!E->isIntegerConstantExpr(I, S.Context)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->isIntegerConstantExpr(I, EvalCtx)) {
     S.Diag(E->getExprLoc(), diag::err_attribute_argument_n_type)
         << &AL << Idx << AANT_ArgumentIntegerConstant << E->getSourceRange();
     return nullptr;
@@ -5587,7 +5594,8 @@ static void handleMSP430InterruptAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
   Expr *NumParamsExpr = static_cast<Expr *>(AL.getArgAsExpr(0));
   llvm::APSInt NumParams(32);
-  if (!NumParamsExpr->isIntegerConstantExpr(NumParams, S.Context)) {
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!NumParamsExpr->isIntegerConstantExpr(NumParams, EvalCtx)) {
     S.Diag(AL.getLoc(), diag::err_attribute_argument_type)
         << AL << AANT_ArgumentIntegerConstant
         << NumParamsExpr->getSourceRange();

@@ -2639,7 +2639,8 @@ llvm::DIType *CGDebugInfo::CreateType(const ArrayType *Ty, llvm::DIFile *Unit) {
     else if (const auto *VAT = dyn_cast<VariableArrayType>(Ty)) {
       if (Expr *Size = VAT->getSizeExpr()) {
         Expr::EvalResult Result;
-        if (Size->EvaluateAsInt(Result, CGM.getContext()))
+        Expr::EvalContext EvalCtx(CGM.getContext(), nullptr);
+        if (Size->EvaluateAsInt(Result, EvalCtx))
           Count = Result.Val.getInt().getExtValue();
       }
     }

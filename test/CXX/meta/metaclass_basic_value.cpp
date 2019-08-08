@@ -1,7 +1,6 @@
 // RUN: %clang_cc1 -freflection -verify -std=c++1z %s
 
 #include "reflection_iterator.h"
-#include "reflection_traits.h"
 #include "reflection_mod.h"
 
 using namespace meta;
@@ -23,15 +22,15 @@ consteval void make_private(info& x) {
 }
 
 consteval bool is_public(info x) {
-  return access_traits(__reflect(query_get_access_traits, x)).kind == access_kind::public_access;
+  return __reflect(query_is_public, x);
 }
 
 consteval bool is_protected(info x) {
-  return access_traits(__reflect(query_get_access_traits, x)).kind == access_kind::protected_access;
+  return __reflect(query_is_protected, x);
 }
 
 consteval bool is_virtual(info x) {
-  return method_traits(__reflect(query_get_decl_traits, x)).is_virtual;
+  return __reflect(query_is_virtual, x);
 }
 
 consteval bool is_copy_assignment_operator(info x) {

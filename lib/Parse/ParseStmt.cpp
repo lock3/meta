@@ -995,8 +995,7 @@ StmtResult Parser::handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
 
 void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
                       SmallVectorImpl<Stmt *> &Stmts) {
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedStmts(); ++I) {
-    Stmt *InjectedStmt = MetaDecl->getInjectedStmts()[I];
+  for (Stmt *InjectedStmt : MetaDecl->getInjectedStmts()) {
     Stmts.push_back(InjectedStmt);
   }
 }
@@ -1620,7 +1619,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
-  // Parse 'for...', 'for constexpr', or 'for co_await'.
+  // Parse 'for...' or 'for co_await'.
   SourceLocation EllipsisLoc;
   SourceLocation ConstexprLoc;
   SourceLocation CoawaitLoc;
@@ -1728,10 +1727,8 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
 
     // If reflection is enabled, this might be an expansion
     // over a constexpr range.
-    if (getLangOpts().Reflection && EllipsisLoc.isValid()) {
-      if (Tok.is(tok::kw_constexpr))
-        ConstexprLoc = Tok.getLocation();
-    }
+    if (getLangOpts().Reflection && EllipsisLoc.isValid())
+      TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
     DeclGroupPtrTy DG = ParseSimpleDeclaration(

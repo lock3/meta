@@ -2501,6 +2501,10 @@ def note_required_candidate : Note<
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
+def err_select_index_not_constant : Error<
+  "Index of a __select expression must be a constant expression.">;
+def err_select_index_exceeds_bounds : Error<
+  "A member may not be selected at an out-of-bounds index.">;
 
 // Reflection
 def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;
@@ -2516,7 +2520,7 @@ def err_reflection_query_not_constant : Error<
 def err_reflection_query_invalid : Error<
   "invalid query selector">;
 def err_reflection_wrong_arity : Error<
-  "expected %0 arguments, %1 given">;
+  "expected between %0 and %1 arguments, %2 given">;
 
 def err_expression_not_reflection : Error<
   "expression is not a reflection">;

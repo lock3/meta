@@ -6424,7 +6424,8 @@ void NVPTXTargetCodeGenInfo::setTargetAttributes(
     if (CUDALaunchBoundsAttr *Attr = FD->getAttr<CUDALaunchBoundsAttr>()) {
       // Create !{<func-ref>, metadata !"maxntidx", i32 <val>} node
       llvm::APSInt MaxThreads(32);
-      MaxThreads = Attr->getMaxThreads()->EvaluateKnownConstInt(M.getContext());
+      Expr::EvalContext EvalCtx(M.getContext(), nullptr);
+      MaxThreads = Attr->getMaxThreads()->EvaluateKnownConstInt(EvalCtx);
       if (MaxThreads > 0)
         addNVVMMetadata(F, "maxntidx", MaxThreads.getExtValue());
 
@@ -6433,7 +6434,7 @@ void NVPTXTargetCodeGenInfo::setTargetAttributes(
       // we don't have to add a PTX directive.
       if (Attr->getMinBlocks()) {
         llvm::APSInt MinBlocks(32);
-        MinBlocks = Attr->getMinBlocks()->EvaluateKnownConstInt(M.getContext());
+        MinBlocks = Attr->getMinBlocks()->EvaluateKnownConstInt(EvalCtx);
         if (MinBlocks > 0)
           // Create !{<func-ref>, metadata !"minctasm", i32 <val>} node
           addNVVMMetadata(F, "minctasm", MinBlocks.getExtValue());
@@ -7878,12 +7879,9 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
     unsigned Min = 0;
     unsigned Max = 0;
     if (FlatWGS) {
-      Min = FlatWGS->getMin()
-                ->EvaluateKnownConstInt(M.getContext())
-                .getExtValue();
-      Max = FlatWGS->getMax()
-                ->EvaluateKnownConstInt(M.getContext())
-                .getExtValue();
+      Expr::EvalContext EvalCtx(M.getContext(), nullptr);
+      Min = FlatWGS->getMin()->EvaluateKnownConstInt(EvalCtx).getExtValue();
+      Max = FlatWGS->getMax()->EvaluateKnownConstInt(EvalCtx).getExtValue();
     }
     if (ReqdWGS && Min == 0 && Max == 0)
       Min = Max = ReqdWGS->getXDim() * ReqdWGS->getYDim() * ReqdWGS->getZDim();
@@ -7898,10 +7896,11 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
   }
 
   if (const auto *Attr = FD->getAttr<AMDGPUWavesPerEUAttr>()) {
+    Expr::EvalContext EvalCtx(M.getContext(), nullptr);
     unsigned Min =
-        Attr->getMin()->EvaluateKnownConstInt(M.getContext()).getExtValue();
+        Attr->getMin()->EvaluateKnownConstInt(EvalCtx).getExtValue();
     unsigned Max = Attr->getMax() ? Attr->getMax()
-                                        ->EvaluateKnownConstInt(M.getContext())
+                                        ->EvaluateKnownConstInt(EvalCtx)
                                         .getExtValue()
                                   : 0;
 

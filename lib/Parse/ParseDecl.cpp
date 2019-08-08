@@ -4529,11 +4529,10 @@ static void PushInjectedECD(
 
   EnumConstantDecls.push_back(MetaDecl);
 
-  for (unsigned I = 0; I < MetaDecl->getNumInjectedDecls(); ++I) {
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
     EnumAvailabilityDiags.emplace_back(P);
     EnumAvailabilityDiags.back().done();
 
-    Decl *ECD = MetaDecl->getInjectedDecls()[I];
     EnumConstantDecls.push_back(ECD);
   }
 }

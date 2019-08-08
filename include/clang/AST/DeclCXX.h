@@ -3998,14 +3998,10 @@ class CXXInjectorDecl : public Decl {
   CallExpr *Call = nullptr;
 
   /// A placeholder for injected statements.
-  Stmt **InjectedStmts;
-
-  unsigned NumInjectedStmts = 0;
+  llvm::SmallVector<Stmt *, 0> InjectedStmts;
 
   /// A placeholder for injected declarations.
-  Decl **InjectedDecls;
-
-  unsigned NumInjectedDecls = 0;
+  llvm::SmallVector<Decl *, 0> InjectedDecls;
 
 protected:
   CXXInjectorDecl(Kind DK, DeclContext *DC, SourceLocation L)
@@ -4039,22 +4035,20 @@ public:
   /// Sets the expression that evaluates the metaprogram-declaration.
   void setCallExpr(CallExpr *E) { Call = E; }
 
-  Stmt **getInjectedStmts() const { return InjectedStmts; }
-
-  unsigned getNumInjectedStmts() const { return NumInjectedStmts; }
-
-  void setInjectedStmts(Stmt **InjectedStmts, unsigned NumInjectedStmts) {
-    this->InjectedStmts = InjectedStmts;
-    this->NumInjectedStmts = NumInjectedStmts;
+  llvm::SmallVectorImpl<Stmt *> &getInjectedStmts() {
+    return InjectedStmts;
   }
 
-  Decl **getInjectedDecls() const { return InjectedDecls; }
+  const llvm::SmallVectorImpl<Stmt *> &getInjectedStmts() const {
+    return InjectedStmts;
+  }
 
-  unsigned getNumInjectedDecls() const { return NumInjectedDecls; }
+  llvm::SmallVectorImpl<Decl *> &getInjectedDecls() {
+    return InjectedDecls;
+  }
 
-  void setInjectedDecls(Decl **InjectedDecls, unsigned NumInjectedDecls) {
-    this->InjectedDecls = InjectedDecls;
-    this->NumInjectedDecls = NumInjectedDecls;
+  const llvm::SmallVectorImpl<Decl *> &getInjectedDecls() const {
+    return InjectedDecls;
   }
 
   // Implement isa/cast/dyncast/etc.

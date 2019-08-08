@@ -1837,7 +1837,6 @@ static bool AnyInstantiationDependentExprs(ArrayRef<Expr *> Args) {
   return AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); });
 }
 
-
 CXXReflectionReadQueryExpr::CXXReflectionReadQueryExpr(ASTContext &C, QualType T,
                                                        ReflectionQuery Q,
                                                        ArrayRef<Expr *> Args,

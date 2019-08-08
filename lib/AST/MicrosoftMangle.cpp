@@ -1322,7 +1322,8 @@ void MicrosoftCXXNameMangler::mangleIntegerLiteral(const llvm::APSInt &Value,
 void MicrosoftCXXNameMangler::mangleExpression(const Expr *E) {
   // See if this is a constant expression.
   llvm::APSInt Value;
-  if (E->isIntegerConstantExpr(Value, Context.getASTContext())) {
+  Expr::EvalContext EvalCtx(Context.getASTContext(), nullptr);
+  if (E->isIntegerConstantExpr(Value, EvalCtx)) {
     mangleIntegerLiteral(Value, E->getType()->isBooleanType());
     return;
   }

@@ -3596,7 +3596,6 @@ recurse:
   case Expr::CXXValueOfExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
-  case Expr::PackSelectionExprClass:
   case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 
@@ -3970,7 +3969,8 @@ recurse:
       QualType T = (ImplicitlyConvertedToType.isNull() ||
                     !ImplicitlyConvertedToType->isIntegerType())? SAE->getType()
                                                     : ImplicitlyConvertedToType;
-      llvm::APSInt V = SAE->EvaluateKnownConstInt(Context.getASTContext());
+      Expr::EvalContext EvalCtx(Context.getASTContext(), nullptr);
+      llvm::APSInt V = SAE->EvaluateKnownConstInt(EvalCtx);
       mangleIntegerLiteral(T, V);
       break;
     }
@@ -4061,6 +4061,17 @@ recurse:
     Out << "ix";
     mangleExpression(AE->getLHS());
     mangleExpression(AE->getRHS());
+    break;
+  }
+
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass: {
+    const CXXSelectionExpr *SME = cast<CXXSelectMemberExpr>(E);
+
+    // Treated as a binary operator, see: ArraySubscriptExpr
+    Out << "ix";
+    mangleExpression(SME->getBase());
+    mangleExpression(SME->getSelector());
     break;
   }
 

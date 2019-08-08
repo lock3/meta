@@ -795,6 +795,19 @@ void ASTStmtReader::VisitOMPArraySectionExpr(OMPArraySectionExpr *E) {
   E->setRBracketLoc(ReadSourceLocation());
 }
 
+void ASTStmtReader::VisitCXXSelectionExpr(CXXSelectionExpr *E) {
+  // FIXME: Implement me.
+  assert(false);
+}
+
+void ASTStmtReader::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *E) {
+  VisitExpr(E);
+}
+
+void ASTStmtReader::VisitCXXSelectPackExpr(CXXSelectPackExpr *E) {
+  VisitExpr(E);
+}
+
 void ASTStmtReader::VisitCallExpr(CallExpr *E) {
   VisitExpr(E);
   unsigned NumArgs = Record.readInt();
@@ -1404,7 +1417,13 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
-void ASTStmtReader::VisitCXXExpansionStmt(CXXExpansionStmt *S) {
+void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXCompositeExpansionStmt(
+                                                 CXXCompositeExpansionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
 }
@@ -1827,11 +1846,6 @@ void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
   E->EllipsisLoc = ReadSourceLocation();
   E->NumExpansions = Record.readInt();
   E->Pattern = Record.readSubExpr();
-}
-
-void ASTStmtReader::VisitPackSelectionExpr(PackSelectionExpr *E) {
-  // FIXME: Implement me.
-  assert(false);
 }
 
 void ASTStmtReader::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
@@ -2901,8 +2915,12 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CXXForRangeStmt(Empty);
       break;
 
-    case STMT_CXX_EXPANSION:
-      S = new (Context) CXXExpansionStmt(Empty);
+    case STMT_CXX_PACK_EXPANSION:
+      S = new (Context) CXXPackExpansionStmt(Empty);
+      break;
+
+    case STMT_CXX_COMP_EXPANSION:
+      S = new (Context) CXXCompositeExpansionStmt(Empty);
       break;
 
     case STMT_CXX_INJECTION:
