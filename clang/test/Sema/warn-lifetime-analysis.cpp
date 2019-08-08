@@ -288,10 +288,10 @@ void null_notes_copy2(int *p) {
 namespace supress_further_warnings {
 int *f(int *);
 void test() {
-  int *p;        // expected-note 2 {{it was never initialized here}}
+  int *p;        // expected-note {{it was never initialized here}}
   int *q = f(p); // expected-warning {{passing a dangling pointer as argument}}
-  // TODO suppressed further diagnostics here:
-  (void)*q;      // expected-warning {{dereferencing a dangling pointer}}
+  // suppressed further diagnostics here:
+  (void)*q;
 }
 } // namespace supress_further_warnings
 
