@@ -30,26 +30,22 @@ struct not_null {
 } // namespace gsl
 
 namespace gsl {
-// These classes are marked Owner so the lifetime analysis will not look into
-// the bodies of these methods. Maybe we need an annotation that will not mark
-// classes owner but still tell the analyzer to skip these classes?
-// Or whouls we use gsl::suppress for that (even on classes)?
-struct [[gsl::Owner]] null_t {
+struct null_t {
   int operator*() const;
   template <typename T>
   operator T() const { return T(nullptr); }
 } Null;
-struct [[gsl::Owner]] static_t {
+struct static_t {
   int operator*() const;
   template <typename T>
   operator T() const { return (T)(void *)this; }
 } Static;
-struct [[gsl::Owner]] invalid_t {
+struct invalid_t {
   int operator*() const;
   template <typename T>
   operator T() const { return (T)(void *)this; }
 } Invalid;
-struct [[gsl::Owner]] return_t {
+struct return_t {
   int operator*() const;
   template <typename T>
   operator T() const { return (T)(void *)this; }
@@ -60,12 +56,12 @@ struct PointerTraits;
 
 template <typename T>
 struct PointerTraits<T *> {
-  static T deref(T t) { return *t; }
+  static const T &deref(const T *t) { return *t; }
 };
 
 template <typename T>
 struct PointerTraits<T &> {
-  static T deref(T t) { return t; }
+  static const T &deref(const T &t) { return t; }
 };
 
 template <typename T>
@@ -99,9 +95,6 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   return lhs.data == rhs.data;
 }
 
-template <typename T>
-auto deref(T t) { return PointerTraits<T>::deref(t); }
-
 template <typename T, typename S>
 bool operator==(const CheckSingle<T> &lhs, const CheckVariadic<S> &rhs) {
   return std::any_of(rhs.ptrs.begin(), rhs.ptrs.end(), [&lhs](const T &ptr) {
@@ -119,7 +112,11 @@ CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
   return CheckVariadic<T>(ptrs);
 }
 
-// TODO: support deref
+template <typename T>
+auto deref(const T &vava) {
+  return PointerTraits<T>::deref(vava);
+}
+
 // TODO: support member selection (change in Attr representation)
 // TODO: handle references (auto deref and address of?)
 } // namespace gsl
@@ -135,7 +132,8 @@ void check_lifetime_preconditions() {
   int a, b;
   basic(&a, &a);
   basic(&b, &b);
-  basic(&a, &b); // expected-warning {{passing a Pointer with points-to set (b) where points-to set ((null), a) is expected}}
+  basic(&a,
+        &b); // expected-warning {{passing a Pointer with points-to set (b) where points-to set ((null), a) is expected}}
 }
 
 void specials(int *a, int *b, int *c)
