@@ -26,7 +26,7 @@ void example_1_1_1() {
   }					    // expected-note {{pointee 'x' left the scope here}}
                         // C: x destroyed => replace “x” with “invalid” in all psets
 					    //                => set pset(p) = {invalid}
-  cout << *p;			// D: error – because pset(p) contains {invalid} 
+  cout << *p;			// D: error – because pset(p) contains {invalid}
   // expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 
@@ -90,9 +90,9 @@ void example_1_1_3_c() {
 
   cout << *ranges::begin(view); // ok
 
-  ints.push_back(6);            // A: invalidates view expected-note {{modified here}}
+  ints.push_back(6);            // A: invalidates view TODOexpected-note {{modified here}}
 
-  cout << *ranges::begin(view); // expected-warning {{passing a dangling pointer as argument}}
+  cout << *ranges::begin(view); // TODOexpected-warning {{passing a dangling pointer as argument}}
 }
 
 // https://godbolt.org/z/1iOvAO
@@ -347,9 +347,9 @@ void example_2_4_7_3() {
 void example_2_4_8_1() {
     int* p = nullptr;			// A: pset(p) = {null} expected-note {{assigned here}}
     int i = 0;
-    if(cond) { 
+    if(cond) {
         p = &i;				    // pset(p) = {i}
-    } 
+    }
     // merge: pset(p) = {null,i}
     *p = 42;					// ERROR, p could be null from line A expected-warning {{dereferencing a possibly null pointer}}
     if(p) {					    // remove null in this branch => pset(p) = {i}
@@ -456,7 +456,7 @@ struct A {};
 void use(A) {}
 unique_ptr<A> myFun();
 void example_2_6_1() {
-    const A& rA = *myFun();		// A: ERROR, rA is unusable, initialized invalid 
+    const A& rA = *myFun();		// A: ERROR, rA is unusable, initialized invalid
 	        					// reference (invalidated by destruction of the
 			        			// temporary unique_ptr returned from myFun)
     // expected-note@-3 {{temporary was destroyed at the end of the full expression}}
