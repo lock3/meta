@@ -92,6 +92,7 @@ public:
 static_assert(sizeof(unordered_map<int>::iterator), ""); // Force instantiation.
 } // namespace inlinens
 
+// The iterator typedef is a DependentNameType.
 template <typename T>
 class __unordered_multimap_iterator {};
 // CHECK: ClassTemplateDecl {{.*}} __unordered_multimap_iterator
@@ -117,6 +118,7 @@ public:
 };
 static_assert(sizeof(unordered_multimap<int>::iterator), ""); // Force instantiation.
 
+// The canonical declaration of the iterator template is not its definition.
 template <typename T>
 class __unordered_multiset_iterator;
 // CHECK: ClassTemplateDecl {{.*}} __unordered_multiset_iterator
@@ -125,11 +127,10 @@ class __unordered_multiset_iterator;
 // CHECK: TemplateArgument type 'int'
 // CHECK: PointerAttr
 
-// Force instantiation of forward-declared template.
-__unordered_multiset_iterator<int> f();
-
 template <typename T>
 class __unordered_multiset_iterator {
+  // CHECK: ClassTemplateDecl {{.*}} prev {{.*}} __unordered_multiset_iterator
+  // CHECK: PointerAttr
 };
 
 template <typename T>
@@ -139,7 +140,7 @@ class unordered_multiset {
   // CHECK: ClassTemplateSpecializationDecl {{.*}} unordered_multiset
   // CHECK: OwnerAttr {{.*}}
 public:
-  typedef __unordered_multiset_iterator<T> iterator;
+  using iterator = __unordered_multiset_iterator<T>;
 };
 
 static_assert(sizeof(unordered_multiset<int>::iterator), ""); // Force instantiation.
