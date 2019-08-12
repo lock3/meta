@@ -357,18 +357,15 @@ public:
 
     // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid) {
-      if (Return)
-        Reporter.warn(WarnType::ReturnDangling, Range, !isInvalid());
-      else
-        Reporter.warnParameterDangling(Range, /*Indirectly=*/false);
+      Reporter.warnNullDangling(WarnType::Dangling, Range, Return,
+                                !isInvalid());
       explainWhyInvalid(Reporter);
       return false;
     }
 
     // If 'this' includes null, then 'O' must include null.
     if (ContainsNull && !O.ContainsNull) {
-      Reporter.warn(Return ? WarnType::ReturnNull : WarnType::ParamNull, Range,
-                    !isNull());
+      Reporter.warnNullDangling(WarnType::Null, Range, Return, !isNull());
       explainWhyNull(Reporter);
       return false;
     }

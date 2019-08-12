@@ -1967,9 +1967,8 @@ const int Warnings[] = {
   diag::warn_deref_dangling,
   diag::warn_deref_nullptr,
   diag::warn_assign_nullptr,
-  diag::warn_parameter_null,
-  diag::warn_return_dangling,
-  diag::warn_return_null
+  diag::warn_null,
+  diag::warn_dangling,
 };
 const int Notes[] = {
   diag::note_never_initialized,
@@ -2005,15 +2004,17 @@ public:
           << VariableName << ActualPset << Range;
   }
 
-  void warn(WarnType T, SourceRange Range, bool Possibly) final {
-    assert((unsigned)T < sizeof(Warnings)/sizeof(Warnings[0]));
-    if(enableIfNew(Range))
-      S.Diag(Range.getBegin(), Warnings[(int)T]) << Possibly << Range;
+  void warnNullDangling(WarnType T, SourceRange Range, bool Return,
+                        bool Possibly) final {
+    assert(T == WarnType::Dangling || T == WarnType::Null);
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), Warnings[(int)T]) << Return << Possibly << Range;
   }
-  void warnParameterDangling(SourceRange Range, bool Indirectly) final {
-    if(enableIfNew(Range))
-      S.Diag(Range.getBegin(), diag::warn_parameter_dangling) << Indirectly
-        << Range;
+  void warn(WarnType T, SourceRange Range, bool Possibly) final {
+    assert((unsigned)T < sizeof(Warnings) / sizeof(Warnings[0]));
+    assert(T != WarnType::Dangling && T != WarnType::Null);
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), Warnings[(int)T]) << Possibly << Range;
   }
   void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) final {
     if(enableIfNew(Range))

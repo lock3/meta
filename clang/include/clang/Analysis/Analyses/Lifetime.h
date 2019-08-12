@@ -47,9 +47,8 @@ enum class WarnType {
   DerefDangling,
   DerefNull,
   AssignNull,
-  ParamNull,
-  ReturnDangling,
-  ReturnNull,
+  Null,
+  Dangling
 };
 
 enum class NoteType {
@@ -72,8 +71,8 @@ public:
   virtual ~LifetimeReporterBase() = default;
   virtual void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                                 std::string ActualPset) = 0;
+  virtual void warnNullDangling(WarnType T, SourceRange Range, bool Return, bool Possibly) = 0;
   virtual void warn(WarnType T, SourceRange Range, bool Possibly) = 0;
-  virtual void warnParameterDangling(SourceRange Range, bool Indirectly) = 0;
   virtual void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
                              StringRef ExpectedPset) = 0;
   virtual void warnPointerArithmetic(SourceRange Range) = 0;

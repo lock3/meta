@@ -113,8 +113,8 @@ struct [[gsl::Pointer]] my_pointer {
 void deref_uninitialized() {
   int *p;        // expected-note {{it was never initialized here}}
   *p = 3;        // expected-warning {{dereferencing a dangling pointer}}
-  my_pointer p2; // expected-note {{default-constructed Pointers are assumed to be null}}
-  *p2;           // expected-warning {{passing a null pointer as argument to a non-null parameter}}
+  my_pointer p2; // expected-note {{default-constructed pointers are assumed to be null}}
+  *p2;           // expected-warning {{passing a null pointer as argument where a non-null pointer is expected}}
 }
 
 void deref_nullptr() {
@@ -248,17 +248,17 @@ const int *return_wrong_ptr(const int *p) {
   int *q = &i;
   if (p)
     return p;
-  return q; // expected-warning {{returning a dangling Pointer}}
+  return q; // expected-warning {{returning a dangling pointer}}
   // expected-note@-1 {{pointee 'i' left the scope here}}
 }
 
 const int &return_wrong_ptr2(std::vector<int> &v,
                              const std::vector<int> &v2) {
-  return v2[0]; // expected-warning {{returning a Pointer with points-to set ((*(*v2))) where points-to set ((*(*v))) is expected}}
+  return v2[0]; // expected-warning {{returning a pointer with points-to set ((*(*v2))) where points-to set ((*(*v))) is expected}}
 }
 
 gsl::not_null<int *> return_null_ptr() {
-  return nullptr; // expected-warning {{returning a null Pointer where a non-null Pointer is expected}}
+  return nullptr; // expected-warning {{returning a null pointer where a non-null pointer is expected}}
 }
 
 void null_notes(int *p) {
@@ -362,7 +362,7 @@ std::string operator+(std::string_view sv1, std::string_view sv2) {
 template <typename T>
 T concat(const T &x, const T &y) {
   // TODO: Elide the deref for references?
-  return x + y; // expected-warning {{returning a dangling Pointer}}
+  return x + y; // expected-warning {{returning a dangling pointer}}
   // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
 }
 

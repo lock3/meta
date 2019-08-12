@@ -1063,7 +1063,7 @@ auto lambda_capture(const int *param, const int *param2) {
     return *param + *ptr;
   };
   __lifetime_pset(b); // TODOexpected-warning {{pset(b) = ((*param), (null), i)}}
-  return b;           // TODOexpected-warning {{returning a Pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
+  return b;           // TODOexpected-warning {{returning a pointer with points-to set ((*param), (null), i) where points-to set ((*param), (*param2), (null)) is expected}}
 }
 
 typedef int T;
@@ -1144,7 +1144,7 @@ void parameter_psets(int value,
   __lifetime_pset(ptr_const_ptr); // expected-warning {{((*ptr_const_ptr), (null))}}
   assert(ptr_const_ptr);
   __lifetime_pset(*ptr_const_ptr); // in: expected-warning {{((*(*ptr_const_ptr)), (null))}}
-} // expected-warning@-1 {{returning a dangling Pointer}}
+} // expected-warning@-1 {{returning a dangling pointer}}
 
 void foreach_arithmetic() {
   int t[] = {1, 2, 3, 4, 5};
@@ -1413,7 +1413,7 @@ class h {
 
 class j {
   // TODO: are these false positives?
-  j(h &&k) { b(k); } // expected-warning {{returning a dangling Pointer}}
+  j(h &&k) { b(k); } // expected-warning {{returning a dangling pointer}}
                      // expected-note@-1 {{it was never initialized here}}
 };
 } // namespace creduce13

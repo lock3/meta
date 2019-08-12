@@ -133,7 +133,7 @@ void check_lifetime_preconditions() {
   basic(&a, &a);
   basic(&b, &b);
   basic(&a,
-        &b); // expected-warning {{passing a Pointer with points-to set (b) where points-to set ((null), a) is expected}}
+        &b); // expected-warning {{passing a pointer with points-to set (b) where points-to set ((null), a) is expected}}
 }
 
 void specials(int *a, int *b, int *c)
