@@ -92,6 +92,31 @@ public:
 static_assert(sizeof(unordered_map<int>::iterator), ""); // Force instantiation.
 } // namespace inlinens
 
+template <typename T>
+class __unordered_multimap_iterator {};
+// CHECK: ClassTemplateDecl {{.*}} __unordered_multimap_iterator
+// CHECK: ClassTemplateSpecializationDecl {{.*}} __unordered_multimap_iterator
+// CHECK: TemplateArgument type 'int'
+// CHECK: PointerAttr
+
+template <typename T>
+class __unordered_multimap_base {
+public:
+  using iterator = __unordered_multimap_iterator<T>;
+};
+
+template <typename T>
+class unordered_multimap {
+  // CHECK: ClassTemplateDecl {{.*}} unordered_multimap
+  // CHECK: OwnerAttr {{.*}}
+  // CHECK: ClassTemplateSpecializationDecl {{.*}} unordered_multimap
+  // CHECK: OwnerAttr {{.*}}
+public:
+  using _Mybase = __unordered_multimap_base<T>;
+  using iterator = typename _Mybase::iterator;
+};
+static_assert(sizeof(unordered_multimap<int>::iterator), ""); // Force instantiation.
+
 // std::list has an implicit gsl::Owner attribute,
 // but explicit attributes take precedence.
 template <typename T>

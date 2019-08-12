@@ -711,6 +711,9 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
 
   SemaRef.InstantiateAttrs(TemplateArgs, D, Typedef);
 
+  if (D->getUnderlyingType()->getAs<DependentNameType>())
+    SemaRef.inferGslPointerAttribute(Typedef);
+
   Typedef->setAccess(D->getAccess());
 
   return Typedef;
