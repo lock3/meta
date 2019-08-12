@@ -95,6 +95,12 @@ static void addGslOwnerPointerAttributeIfNotExisting(ASTContext &Context,
   Canonical->addAttr(::new (Context) Attribute(SourceRange{}, Context,
                                                /*DerefType*/ nullptr,
                                                /*Spelling=*/0));
+
+  if (auto *Templ = dyn_cast_or_null<ClassTemplateDecl>(
+          Canonical->getDescribedTemplate())) {
+    for (ClassTemplateSpecializationDecl *S : Templ->specializations())
+      addGslOwnerPointerAttributeIfNotExisting<Attribute>(Context, S);
+  }
 }
 
 void Sema::inferGslPointerAttribute(NamedDecl *ND,

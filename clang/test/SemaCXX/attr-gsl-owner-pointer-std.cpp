@@ -117,6 +117,33 @@ public:
 };
 static_assert(sizeof(unordered_multimap<int>::iterator), ""); // Force instantiation.
 
+template <typename T>
+class __unordered_multiset_iterator;
+// CHECK: ClassTemplateDecl {{.*}} __unordered_multiset_iterator
+// CHECK: PointerAttr
+// CHECK: ClassTemplateSpecializationDecl {{.*}} __unordered_multiset_iterator
+// CHECK: TemplateArgument type 'int'
+// CHECK: PointerAttr
+
+// Force instantiation of forward-declared template.
+__unordered_multiset_iterator<int> f();
+
+template <typename T>
+class __unordered_multiset_iterator {
+};
+
+template <typename T>
+class unordered_multiset {
+  // CHECK: ClassTemplateDecl {{.*}} unordered_multiset
+  // CHECK: OwnerAttr {{.*}}
+  // CHECK: ClassTemplateSpecializationDecl {{.*}} unordered_multiset
+  // CHECK: OwnerAttr {{.*}}
+public:
+  typedef __unordered_multiset_iterator<T> iterator;
+};
+
+static_assert(sizeof(unordered_multiset<int>::iterator), ""); // Force instantiation.
+
 // std::list has an implicit gsl::Owner attribute,
 // but explicit attributes take precedence.
 template <typename T>
