@@ -88,13 +88,21 @@ void Sema::AddMsStructLayoutForRecord(RecordDecl *RD) {
 template <typename Attribute>
 static void addGslOwnerPointerAttributeIfNotExisting(ASTContext &Context,
                                                      CXXRecordDecl *Record) {
-  CXXRecordDecl *Canonical = Record->getCanonicalDecl();
-  if (Canonical->hasAttr<OwnerAttr>() || Canonical->hasAttr<PointerAttr>())
+  if (Record->hasAttr<OwnerAttr>() || Record->hasAttr<PointerAttr>())
     return;
 
-  Canonical->addAttr(::new (Context) Attribute(SourceRange{}, Context,
-                                               /*DerefType*/ nullptr,
-                                               /*Spelling=*/0));
+  Record->addAttr(::new (Context) Attribute(SourceRange{}, Context,
+                                            /*DerefType*/ nullptr,
+                                            /*Spelling=*/0));
+
+  if (auto *Templ =
+          dyn_cast_or_null<ClassTemplateDecl>(Record->getDescribedTemplate())) {
+    if (auto *Def = Record->getDefinition())
+      addGslOwnerPointerAttributeIfNotExisting<Attribute>(Context, Def);
+
+    for (ClassTemplateSpecializationDecl *S : Templ->specializations())
+      addGslOwnerPointerAttributeIfNotExisting<Attribute>(Context, S);
+  }
 }
 
 void Sema::inferGslPointerAttribute(NamedDecl *ND,
@@ -132,8 +140,8 @@ void Sema::inferGslPointerAttribute(NamedDecl *ND,
 
   if (Parent->isInStdNamespace() && Iterators.count(ND->getName()) &&
       Containers.count(Parent->getName()))
-    addGslOwnerPointerAttributeIfNotExisting<PointerAttr>(Context,
-                                                          UnderlyingRecord);
+    addGslOwnerPointerAttributeIfNotExisting<PointerAttr>(
+        Context, UnderlyingRecord->getCanonicalDecl());
 }
 
 void Sema::inferGslPointerAttribute(TypedefNameDecl *TD) {
@@ -194,9 +202,9 @@ void Sema::inferGslOwnerPointerAttribute(CXXRecordDecl *Record) {
       return;
 
     if (StdOwners.count(Record->getName()))
-      addGslOwnerPointerAttributeIfNotExisting<OwnerAttr>(Context, Record);
+      addGslOwnerPointerAttributeIfNotExisting<OwnerAttr>(Context, Canonical);
     else if (StdPointers.count(Record->getName()))
-      addGslOwnerPointerAttributeIfNotExisting<PointerAttr>(Context, Record);
+      addGslOwnerPointerAttributeIfNotExisting<PointerAttr>(Context, Canonical);
 
     return;
   }
