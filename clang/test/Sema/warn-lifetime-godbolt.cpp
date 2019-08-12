@@ -26,7 +26,7 @@ void example_1_1_1() {
   }					    // expected-note {{pointee 'x' left the scope here}}
                         // C: x destroyed => replace “x” with “invalid” in all psets
 					    //                => set pset(p) = {invalid}
-  cout << *p;			// D: error – because pset(p) contains {invalid} 
+  cout << *p;			// D: error – because pset(p) contains {invalid}
   // expected-warning@-1 {{dereferencing a dangling pointer}}
 }
 
@@ -90,9 +90,9 @@ void example_1_1_3_c() {
 
   cout << *ranges::begin(view); // ok
 
-  ints.push_back(6);            // A: invalidates view expected-note {{modified here}}
+  ints.push_back(6);            // A: invalidates view TODOexpected-note {{modified here}}
 
-  cout << *ranges::begin(view); // expected-warning {{passing a dangling pointer as argument}}
+  cout << *ranges::begin(view); // TODOexpected-warning {{passing a dangling pointer as argument}}
 }
 
 // https://godbolt.org/z/1iOvAO
