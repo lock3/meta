@@ -249,7 +249,7 @@ TEST(TweaksTest, ExtractVariable) {
         a = [[2]];
       // while
       while(a < [[1]])
-        [[a++]];
+        a = [[1]];
       // do while
       do
         a = [[1]];
@@ -293,11 +293,14 @@ TEST(TweaksTest, ExtractVariable) {
       // lambda
       auto lamb = [&[[a]], &[[b]]](int r = [[1]]) {return 1;}
       // assigment
-      [[a = 5]];
-      [[a >>= 5]];
-      [[a *= 5]];
+      xyz([[a = 5]]);
+      xyz([[a *= 5]]);
       // Variable DeclRefExpr
       a = [[b]];
+      // statement expression
+      [[xyz()]];
+      while (a)
+        [[++a]];
       // label statement
       goto label;
       label:
@@ -340,7 +343,7 @@ TEST(TweaksTest, ExtractVariable) {
           // Macros
           {R"cpp(#define PLUS(x) x++
                  void f(int a) {
-                   PLUS([[1+a]]);
+                   int y = PLUS([[1+a]]);
                  })cpp",
           /*FIXME: It should be extracted like this.
            R"cpp(#define PLUS(x) x++
@@ -349,7 +352,7 @@ TEST(TweaksTest, ExtractVariable) {
                  })cpp"},*/
            R"cpp(#define PLUS(x) x++
                  void f(int a) {
-                   auto dummy = PLUS(1+a); dummy;
+                   auto dummy = PLUS(1+a); int y = dummy;
                  })cpp"},
           // ensure InsertionPoint isn't inside a macro
           {R"cpp(#define LOOP(x) while (1) {a = x;}
@@ -488,7 +491,7 @@ TEST(TweaksTest, AnnotateHighlightings) {
   checkAvailable(ID, "^vo^id^ ^f(^) {^}^"); // available everywhere.
   checkAvailable(ID, "[[int a; int b;]]");
   const char *Input = "void ^f() {}";
-  const char *Output = "void /* entity.name.function.cpp */f() {}";
+  const char *Output = "/* storage.type.primitive.cpp */void /* entity.name.function.cpp */f() {}";
   checkTransform(ID, Input, Output);
 
   checkTransform(ID,
@@ -497,8 +500,8 @@ TEST(TweaksTest, AnnotateHighlightings) {
 void f2();]]
 )cpp",
   R"cpp(
-void /* entity.name.function.cpp */f1();
-void /* entity.name.function.cpp */f2();
+/* storage.type.primitive.cpp */void /* entity.name.function.cpp */f1();
+/* storage.type.primitive.cpp */void /* entity.name.function.cpp */f2();
 )cpp");
 
    checkTransform(ID,
@@ -509,7 +512,7 @@ void f2() {^};
 
   R"cpp(
 void f1();
-void /* entity.name.function.cpp */f2() {};
+/* storage.type.primitive.cpp */void /* entity.name.function.cpp */f2() {};
 )cpp");
 }
 

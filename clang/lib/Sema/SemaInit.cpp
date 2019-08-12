@@ -6571,6 +6571,9 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
       return true;
   if (!Callee->getParent()->isInStdNamespace())
     return false;
+  if (!isRecordWithAttr<PointerAttr>(Callee->getThisObjectType()) &&
+      !isRecordWithAttr<OwnerAttr>(Callee->getThisObjectType()))
+    return false;
   if (Callee->getReturnType()->isPointerType() ||
       isRecordWithAttr<PointerAttr>(Callee->getReturnType())) {
     if (!Callee->getIdentifier())
@@ -7080,14 +7083,12 @@ static SourceRange nextPathEntryRange(const IndirectLocalPath &Path, unsigned I,
 }
 
 static bool pathOnlyInitializesGslPointer(IndirectLocalPath &Path) {
-  int GslPointerInits = 0;
   for (auto It = Path.rbegin(), End = Path.rend(); It != End; ++It) {
-    if (It->Kind == IndirectLocalPathEntry::GslPointerInit)
-      ++GslPointerInits;
-    else
-      break;
+    if (It->Kind == IndirectLocalPathEntry::VarInit)
+      continue;
+    return It->Kind == IndirectLocalPathEntry::GslPointerInit;
   }
-  return GslPointerInits;
+  return false;
 }
 
 void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
@@ -7107,7 +7108,8 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
     SourceLocation DiagLoc = DiagRange.getBegin();
 
     auto *MTE = dyn_cast<MaterializeTemporaryExpr>(L);
-    bool IsTempGslOwner = MTE && isRecordWithAttr<OwnerAttr>(MTE->getType());
+    bool IsTempGslOwner = MTE && !MTE->getExtendingDecl() &&
+                          isRecordWithAttr<OwnerAttr>(MTE->getType());
     bool IsLocalGslOwner =
         isa<DeclRefExpr>(L) && isRecordWithAttr<OwnerAttr>(L->getType());
 
@@ -7116,8 +7118,8 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
     // a local or temporary owner or the address of a local variable/param. We
     // do not want to follow the references when returning a pointer originating
     // from a local owner to avoid the following false positive:
-    //   int &p = *localOwner;
-    //   someContainer.add(std::move(localOWner));
+    //   int &p = *localUniquePtr;
+    //   someContainer.add(std::move(localUniquePtr));
     //   return p;
     if (!IsTempGslOwner && pathOnlyInitializesGslPointer(Path) &&
         !(IsLocalGslOwner && !pathContainsInit(Path)))
@@ -7222,6 +7224,11 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         // (there's no other way that a default initializer can refer to a
         // local). Don't produce a bogus warning on those cases.
         if (pathContainsInit(Path))
+          return false;
+
+        // Suppress false positives for code like the one below:
+        //   Ctor(unique_ptr<T> up) : member(*up), member2(move(up)) {}
+        if (IsLocalGslOwner && pathOnlyInitializesGslPointer(Path))
           return false;
 
         auto *DRE = dyn_cast<DeclRefExpr>(L);
@@ -7350,27 +7357,34 @@ static void CheckMoveOnConstruction(Sema &S, const Expr *InitExpr,
   if (!DestType->isRecordType())
     return;
 
-  unsigned DiagID = 0;
-  if (IsReturnStmt) {
-    const CXXConstructExpr *CCE =
-        dyn_cast<CXXConstructExpr>(InitExpr->IgnoreParens());
-    if (!CCE || CCE->getNumArgs() != 1)
-      return;
+  const CXXConstructExpr *CCE =
+      dyn_cast<CXXConstructExpr>(InitExpr->IgnoreParens());
+  if (!CCE || CCE->getNumArgs() != 1)
+    return;
 
-    if (!CCE->getConstructor()->isCopyOrMoveConstructor())
-      return;
+  if (!CCE->getConstructor()->isCopyOrMoveConstructor())
+    return;
 
-    InitExpr = CCE->getArg(0)->IgnoreImpCasts();
-  }
+  InitExpr = CCE->getArg(0)->IgnoreImpCasts();
 
   // Find the std::move call and get the argument.
   const CallExpr *CE = dyn_cast<CallExpr>(InitExpr->IgnoreParens());
   if (!CE || !CE->isCallToStdMove())
     return;
 
-  const Expr *Arg = CE->getArg(0)->IgnoreImplicit();
+  const Expr *Arg = CE->getArg(0);
 
-  if (IsReturnStmt) {
+  unsigned DiagID = 0;
+
+  if (!IsReturnStmt && !isa<MaterializeTemporaryExpr>(Arg))
+    return;
+
+  if (isa<MaterializeTemporaryExpr>(Arg)) {
+    DiagID = diag::warn_pessimizing_move_on_initialization;
+    const Expr *ArgStripped = Arg->IgnoreImplicit()->IgnoreParens();
+    if (!ArgStripped->isRValue() || !ArgStripped->getType()->isRecordType())
+      return;
+  } else { // IsReturnStmt
     const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg->IgnoreParenImpCasts());
     if (!DRE || DRE->refersToEnclosingVariableOrCapture())
       return;
@@ -7397,24 +7411,18 @@ static void CheckMoveOnConstruction(Sema &S, const Expr *InitExpr,
       DiagID = diag::warn_redundant_move_on_return;
     else
       DiagID = diag::warn_pessimizing_move_on_return;
-  } else {
-    DiagID = diag::warn_pessimizing_move_on_initialization;
-    const Expr *ArgStripped = Arg->IgnoreImplicit()->IgnoreParens();
-    if (!ArgStripped->isRValue() || !ArgStripped->getType()->isRecordType())
-      return;
   }
 
   S.Diag(CE->getBeginLoc(), DiagID);
 
   // Get all the locations for a fix-it.  Don't emit the fix-it if any location
   // is within a macro.
-  SourceLocation CallBegin = CE->getCallee()->getBeginLoc();
-  if (CallBegin.isMacroID())
+  SourceLocation BeginLoc = CCE->getBeginLoc();
+  if (BeginLoc.isMacroID())
     return;
   SourceLocation RParen = CE->getRParenLoc();
   if (RParen.isMacroID())
     return;
-  SourceLocation LParen;
   SourceLocation ArgLoc = Arg->getBeginLoc();
 
   // Special testing for the argument location.  Since the fix-it needs the
@@ -7425,14 +7433,16 @@ static void CheckMoveOnConstruction(Sema &S, const Expr *InitExpr,
     ArgLoc = S.getSourceManager().getImmediateExpansionRange(ArgLoc).getBegin();
   }
 
+  SourceLocation LParen = ArgLoc.getLocWithOffset(-1);
   if (LParen.isMacroID())
     return;
-
-  LParen = ArgLoc.getLocWithOffset(-1);
+  SourceLocation EndLoc = CCE->getEndLoc();
+  if (EndLoc.isMacroID())
+    return;
 
   S.Diag(CE->getBeginLoc(), diag::note_remove_move)
-      << FixItHint::CreateRemoval(SourceRange(CallBegin, LParen))
-      << FixItHint::CreateRemoval(SourceRange(RParen, RParen));
+      << FixItHint::CreateRemoval(SourceRange(BeginLoc, LParen))
+      << FixItHint::CreateRemoval(SourceRange(RParen, EndLoc));
 }
 
 static void CheckForNullPointerDereference(Sema &S, const Expr *E) {
@@ -8242,7 +8252,7 @@ ExprResult InitializationSequence::Perform(Sema &S,
       // argument passing.
       assert(Step->Type->isSamplerT() &&
              "Sampler initialization on non-sampler type.");
-      Expr *Init = CurInit.get();
+      Expr *Init = CurInit.get()->IgnoreParens();
       QualType SourceType = Init->getType();
       // Case 1
       if (Entity.isParameterKind()) {

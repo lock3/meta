@@ -95,7 +95,8 @@ def Feature3DNowA  : SubtargetFeature<"3dnowa", "X863DNowLevel", "ThreeDNowA",
 def Feature64Bit   : SubtargetFeature<"64bit", "HasX86_64", "true",
                                       "Support 64-bit instructions">;
 def FeatureCMPXCHG16B : SubtargetFeature<"cx16", "HasCmpxchg16b", "true",
-                                      "64-bit with cmpxchg16b">;
+                                      "64-bit with cmpxchg16b",
+                                      [FeatureCMPXCHG8B]>;
 def FeatureSlowSHLD : SubtargetFeature<"slow-shld", "IsSHLDSlow", "true",
                                        "SHLD instruction is slow">;
 def FeatureSlowPMULLD : SubtargetFeature<"slow-pmulld", "IsPMULLDSlow", "true",
@@ -665,6 +666,17 @@ def ProcessorFeatures {
   list<SubtargetFeature> ICXFeatures =
     !listconcat(ICLInheritableFeatures, ICXSpecificFeatures);
 
+  //Tigerlake
+  list<SubtargetFeature> TGLAdditionalFeatures = [FeatureVP2INTERSECT,
+                                                  FeatureMOVDIRI,
+                                                  FeatureMOVDIR64B,
+                                                  FeatureSHSTK];
+  list<SubtargetFeature> TGLSpecificFeatures = [FeatureHasFastGather];
+  list<SubtargetFeature> TGLInheritableFeatures =
+    !listconcat(TGLAdditionalFeatures ,TGLSpecificFeatures);
+  list<SubtargetFeature> TGLFeatures =
+    !listconcat(ICLFeatures, TGLInheritableFeatures );
+
   // Atom
   list<SubtargetFeature> AtomInheritableFeatures = [FeatureX87,
                                                     FeatureCMPXCHG8B,
@@ -1109,6 +1121,8 @@ def : ProcessorModel<"icelake-client", SkylakeServerModel,
                      ProcessorFeatures.ICLFeatures>;
 def : ProcessorModel<"icelake-server", SkylakeServerModel,
                      ProcessorFeatures.ICXFeatures>;
+def : ProcessorModel<"tigerlake", SkylakeServerModel,
+                     ProcessorFeatures.TGLFeatures>;
 
 // AMD CPUs.
 

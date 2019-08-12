@@ -28,6 +28,7 @@
 #include "clang/ASTMatchers/ASTMatchersInternal.h"
 #include "clang/Driver/Options.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Tooling/AllTUsExecution.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Execution.h"
 #include "clang/Tooling/Tooling.h"
@@ -35,10 +36,13 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Mutex.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/raw_ostream.h"
+#include <atomic>
 #include <string>
 
 using namespace clang::ast_matchers;
@@ -71,6 +75,18 @@ static llvm::cl::list<std::string> UserStylesheets(
     "stylesheets", llvm::cl::CommaSeparated,
     llvm::cl::desc("CSS stylesheets to extend the default styles."),
     llvm::cl::cat(ClangDocCategory));
+
+static llvm::cl::opt<std::string> SourceRoot("source-root", llvm::cl::desc(R"(
+Directory where processed files are stored.
+Links to definition locations will only be
+generated if the file is in this dir.)"),
+                                             llvm::cl::cat(ClangDocCategory));
+
+static llvm::cl::opt<std::string>
+    RepositoryUrl("repository", llvm::cl::desc(R"(
+URL of repository that hosts code.
+Used for links to definition locations.)"),
+                  llvm::cl::cat(ClangDocCategory));
 
 enum OutputFormatTy {
   md,
@@ -138,7 +154,7 @@ bool CreateDirectory(const Twine &DirName, bool ClearDirectory = false) {
 // <root>/A/B/C.<ext>
 //
 // namespace A {
-// namesapce B {
+// namespace B {
 //
 // class C {};
 //
@@ -156,30 +172,6 @@ llvm::Expected<llvm::SmallString<128>> getInfoOutputFile(StringRef Root,
                                                llvm::inconvertibleErrorCode());
   llvm::sys::path::append(Path, Name + Ext);
   return Path;
-}
-
-// Iterate through tool results and build string map of info vectors from the
-// encoded bitstreams.
-bool bitcodeResultsToInfos(
-    tooling::ToolResults &Results,
-    llvm::StringMap<std::vector<std::unique_ptr<doc::Info>>> &Output) {
-  bool Err = false;
-  Results.forEachResult([&](StringRef Key, StringRef Value) {
-    llvm::BitstreamCursor Stream(Value);
-    doc::ClangDocBitcodeReader Reader(Stream);
-    auto Infos = Reader.readBitcode();
-    if (!Infos) {
-      llvm::errs() << toString(Infos.takeError()) << "\n";
-      Err = true;
-      return;
-    }
-    for (auto &I : Infos.get()) {
-      auto R =
-          Output.try_emplace(Key, std::vector<std::unique_ptr<doc::Info>>());
-      R.first->second.emplace_back(std::move(I));
-    }
-  });
-  return Err;
 }
 
 int main(int argc, const char **argv) {
@@ -211,10 +203,18 @@ int main(int argc, const char **argv) {
                                   tooling::ArgumentInsertPosition::END),
         ArgAdjuster);
 
+  llvm::SmallString<128> SourceRootDir;
+  // Check if the --source-root flag has a value
+  if (SourceRoot.empty())
+    // If it's empty the current path is used as the default
+    llvm::sys::fs::current_path(SourceRootDir);
+
   clang::doc::ClangDocContext CDCtx = {
       Exec->get()->getExecutionContext(),
       PublicOnly,
       OutDirectory,
+      SourceRootDir.str(),
+      RepositoryUrl,
       {UserStylesheets.begin(), UserStylesheets.end()},
       {"index.js", "index_json.js"}};
 
@@ -256,40 +256,75 @@ int main(int argc, const char **argv) {
   // In ToolResults, the Key is the hashed USR and the value is the
   // bitcode-encoded representation of the Info object.
   llvm::outs() << "Collecting infos...\n";
-  llvm::StringMap<std::vector<std::unique_ptr<doc::Info>>> USRToInfos;
-  if (bitcodeResultsToInfos(*Exec->get()->getToolResults(), USRToInfos))
-    return 1;
+  llvm::StringMap<std::vector<StringRef>> USRToBitcode;
+  Exec->get()->getToolResults()->forEachResult(
+      [&](StringRef Key, StringRef Value) {
+        auto R = USRToBitcode.try_emplace(Key, std::vector<StringRef>());
+        R.first->second.emplace_back(Value);
+      });
 
   // First reducing phase (reduce all decls into one info per decl).
-  llvm::outs() << "Reducing " << USRToInfos.size() << " infos...\n";
-  for (auto &Group : USRToInfos) {
-    auto Reduced = doc::mergeInfos(Group.getValue());
-    if (!Reduced) {
-      llvm::errs() << llvm::toString(Reduced.takeError());
-      continue;
-    }
+  llvm::outs() << "Reducing " << USRToBitcode.size() << " infos...\n";
+  std::atomic<bool> Error;
+  Error = false;
+  llvm::sys::Mutex IndexMutex;
+  // ExecutorConcurrency is a flag exposed by AllTUsExecution.h
+  llvm::ThreadPool Pool(ExecutorConcurrency == 0 ? llvm::hardware_concurrency()
+                                                 : ExecutorConcurrency);
+  for (auto &Group : USRToBitcode) {
+    Pool.async([&]() {
+      std::vector<std::unique_ptr<doc::Info>> Infos;
 
-    doc::Info *I = Reduced.get().get();
-    auto InfoPath = getInfoOutputFile(OutDirectory, I->Path, I->extractName(),
-                                      "." + Format);
-    if (!InfoPath) {
-      llvm::errs() << toString(InfoPath.takeError()) << "\n";
-      return 1;
-    }
-    std::error_code FileErr;
-    llvm::raw_fd_ostream InfoOS(InfoPath.get(), FileErr,
-                                llvm::sys::fs::OF_None);
-    if (FileErr != OK) {
-      llvm::errs() << "Error opening info file: " << FileErr.message() << "\n";
-      continue;
-    }
+      for (auto &Bitcode : Group.getValue()) {
+        llvm::BitstreamCursor Stream(Bitcode);
+        doc::ClangDocBitcodeReader Reader(Stream);
+        auto ReadInfos = Reader.readBitcode();
+        if (!ReadInfos) {
+          llvm::errs() << toString(ReadInfos.takeError()) << "\n";
+          Error = true;
+          return;
+        }
+        std::move(ReadInfos->begin(), ReadInfos->end(),
+                  std::back_inserter(Infos));
+      }
 
-    // Add a reference to this Info in the Index
-    clang::doc::Generator::addInfoToIndex(CDCtx.Idx, I);
+      auto Reduced = doc::mergeInfos(Infos);
+      if (!Reduced) {
+        llvm::errs() << llvm::toString(Reduced.takeError());
+        return;
+      }
 
-    if (auto Err = G->get()->generateDocForInfo(I, InfoOS, CDCtx))
-      llvm::errs() << toString(std::move(Err)) << "\n";
+      doc::Info *I = Reduced.get().get();
+      auto InfoPath = getInfoOutputFile(OutDirectory, I->Path, I->extractName(),
+                                        "." + Format);
+      if (!InfoPath) {
+        llvm::errs() << toString(InfoPath.takeError()) << "\n";
+        Error = true;
+        return;
+      }
+      std::error_code FileErr;
+      llvm::raw_fd_ostream InfoOS(InfoPath.get(), FileErr,
+                                  llvm::sys::fs::F_None);
+      if (FileErr != OK) {
+        llvm::errs() << "Error opening info file: " << FileErr.message()
+                     << "\n";
+        return;
+      }
+
+      IndexMutex.lock();
+      // Add a reference to this Info in the Index
+      clang::doc::Generator::addInfoToIndex(CDCtx.Idx, I);
+      IndexMutex.unlock();
+
+      if (auto Err = G->get()->generateDocForInfo(I, InfoOS, CDCtx))
+        llvm::errs() << toString(std::move(Err)) << "\n";
+    });
   }
+
+  Pool.wait();
+
+  if (Error)
+    return 1;
 
   llvm::outs() << "Generating assets for docs...\n";
   if (!G->get()->createResources(CDCtx))

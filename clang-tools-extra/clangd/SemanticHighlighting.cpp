@@ -11,6 +11,7 @@
 #include "Protocol.h"
 #include "SourceCode.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/DeclCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include <algorithm>
 
@@ -52,6 +53,10 @@ public:
       // When calling the destructor manually like: AAA::~A(); The ~ is a
       // MemberExpr. Other methods should still be highlighted though.
       return true;
+    if (isa<CXXConversionDecl>(MD))
+      // The MemberLoc is invalid for C++ conversion operators. We do not
+      // attempt to add tokens with invalid locations.
+      return true;
     addToken(ME->getMemberLoc(), MD);
     return true;
   }
@@ -92,8 +97,8 @@ public:
   }
 
   bool VisitTypedefNameDecl(TypedefNameDecl *TD) {
-    if(const auto *TSI = TD->getTypeSourceInfo())
-      addTypeLoc(TD->getLocation(), TSI->getTypeLoc());
+    if (const auto *TSI = TD->getTypeSourceInfo())
+      addType(TD->getLocation(), TSI->getTypeLoc().getTypePtr());
     return true;
   }
 
@@ -115,10 +120,8 @@ public:
     // structs. It also makes us not highlight certain namespace qualifiers
     // twice. For elaborated types the actual type is highlighted as an inner
     // TypeLoc.
-    if (TL.getTypeLocClass() == TypeLoc::TypeLocClass::Elaborated)
-      return true;
-
-    addTypeLoc(TL.getBeginLoc(), TL);
+    if (TL.getTypeLocClass() != TypeLoc::TypeLocClass::Elaborated)
+      addType(TL.getBeginLoc(), TL.getTypePtr());
     return true;
   }
 
@@ -132,11 +135,34 @@ public:
         HighlightingTokenCollector>::TraverseNestedNameSpecifierLoc(NNSLoc);
   }
 
+  bool TraverseConstructorInitializer(CXXCtorInitializer *CI) {
+    if (const FieldDecl *FD = CI->getMember())
+      addToken(CI->getSourceLocation(), FD);
+    return RecursiveASTVisitor<
+        HighlightingTokenCollector>::TraverseConstructorInitializer(CI);
+  }
+
+  bool VisitDeclaratorDecl(DeclaratorDecl *D) {
+    if ((!D->getTypeSourceInfo()))
+      return true;
+
+    if (auto *AT = D->getType()->getContainedAutoType()) {
+      const auto Deduced = AT->getDeducedType();
+      if (!Deduced.isNull())
+        addType(D->getTypeSpecStartLoc(), Deduced.getTypePtr());
+    }
+    return true;
+  }
+
 private:
-  void addTypeLoc(SourceLocation Loc, const TypeLoc &TL) {
-    if (const Type *TP = TL.getTypePtr())
-      if (const TagDecl *TD = TP->getAsTagDecl())
-        addToken(Loc, TD);
+  void addType(SourceLocation Loc, const Type *TP) {
+    if (!TP)
+      return;
+    if (TP->isBuiltinType())
+      // Builtins must be special cased as they do not have a TagDecl.
+      addToken(Loc, HighlightingKind::Primitive);
+    if (const TagDecl *TD = TP->getAsTagDecl())
+      addToken(Loc, TD);
   }
 
   void addToken(SourceLocation Loc, const NamedDecl *D) {
@@ -203,6 +229,12 @@ private:
   void addToken(SourceLocation Loc, HighlightingKind Kind) {
     if (Loc.isMacroID())
       // FIXME: skip tokens inside macros for now.
+      return;
+
+    // Non top level decls that are included from a header are not filtered by
+    // topLevelDecls. (example: method declarations being included from another
+    // file for a class from another file)
+    if (!isInsideMainFile(Loc, SM))
       return;
 
     auto R = getTokenRange(SM, Ctx.getLangOpts(), Loc);
@@ -382,6 +414,8 @@ llvm::StringRef toTextMateScope(HighlightingKind Kind) {
     return "entity.name.namespace.cpp";
   case HighlightingKind::TemplateParameter:
     return "entity.name.type.template.cpp";
+  case HighlightingKind::Primitive:
+    return "storage.type.primitive.cpp";
   case HighlightingKind::NumKinds:
     llvm_unreachable("must not pass NumKinds to the function");
   }

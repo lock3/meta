@@ -394,6 +394,12 @@ void reportWarning(Twine Msg) {
   WithColor::warning(errs()) << Msg << "\n";
 }
 
+void reportWarning(StringRef Input, Error Err) {
+  if (Input == "-")
+    Input = "<stdin>";
+  warn(createFileError(Input, std::move(Err)));
+}
+
 void warn(Error Err) {
   handleAllErrors(std::move(Err), [&](const ErrorInfoBase &EI) {
     reportWarning(EI.message());
@@ -478,17 +484,17 @@ static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer,
   if (std::error_code EC = createDumper(Obj, Writer, Dumper))
     reportError(FileStr, EC);
 
-  Writer.startLine() << "\n";
-  if (opts::Output == opts::LLVM) {
+  if (opts::Output == opts::LLVM || opts::InputFilenames.size() > 1 || A) {
+    Writer.startLine() << "\n";
     Writer.printString("File", FileStr);
+  }
+  if (opts::Output == opts::LLVM) {
     Writer.printString("Format", Obj->getFileFormatName());
     Writer.printString("Arch", Triple::getArchTypeName(
                                    (llvm::Triple::ArchType)Obj->getArch()));
     Writer.printString("AddressSize",
                        formatv("{0}bit", 8 * Obj->getBytesInAddress()));
     Dumper->printLoadName();
-  } else if (opts::Output == opts::GNU && A) {
-    Writer.printString("File", FileStr);
   }
 
   if (opts::FileHeaders)

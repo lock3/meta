@@ -32,11 +32,17 @@
 #include "Views/SchedulerStatistics.h"
 #include "Views/SummaryView.h"
 #include "Views/TimelineView.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCTargetOptionsCommandFlags.inc"
+#include "llvm/MCA/CodeEmitter.h"
 #include "llvm/MCA/Context.h"
+#include "llvm/MCA/InstrBuilder.h"
 #include "llvm/MCA/Pipeline.h"
 #include "llvm/MCA/Stages/EntryStage.h"
 #include "llvm/MCA/Stages/InstructionTables.h"
@@ -197,6 +203,11 @@ static cl::opt<bool> EnableBottleneckAnalysis(
     cl::desc("Enable bottleneck analysis (disabled by default)"),
     cl::cat(ViewOptions), cl::init(false));
 
+static cl::opt<bool> ShowEncoding(
+    "show-encoding",
+    cl::desc("Print encoding information in the instruction info view"),
+    cl::cat(ViewOptions), cl::init(false));
+
 namespace {
 
 const Target *getTarget(const char *ProgName) {
@@ -307,28 +318,6 @@ int main(int argc, char **argv) {
   // Apply overrides to llvm-mca specific options.
   processViewOptions();
 
-  SourceMgr SrcMgr;
-
-  // Tell SrcMgr about this buffer, which is what the parser will pick up.
-  SrcMgr.AddNewSourceBuffer(std::move(*BufferPtr), SMLoc());
-
-  std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
-  assert(MRI && "Unable to create target register info!");
-
-  std::unique_ptr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(*MRI, TripleName));
-  assert(MAI && "Unable to create target asm info!");
-
-  MCObjectFileInfo MOFI;
-  MCContext Ctx(MAI.get(), MRI.get(), &MOFI, &SrcMgr);
-  MOFI.InitMCObjectFileInfo(TheTriple, /* PIC= */ false, Ctx);
-
-  std::unique_ptr<buffer_ostream> BOS;
-
-  std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
-
-  std::unique_ptr<MCInstrAnalysis> MCIA(
-      TheTarget->createMCInstrAnalysis(MCII.get()));
-
   if (!MCPU.compare("native"))
     MCPU = llvm::sys::getHostCPUName();
 
@@ -355,6 +344,29 @@ int main(int argc, char **argv) {
           << "instruction itineraries are currently unsupported.\n";
     return 1;
   }
+
+  std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
+  assert(MRI && "Unable to create target register info!");
+
+  std::unique_ptr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(*MRI, TripleName));
+  assert(MAI && "Unable to create target asm info!");
+
+  MCObjectFileInfo MOFI;
+  SourceMgr SrcMgr;
+
+  // Tell SrcMgr about this buffer, which is what the parser will pick up.
+  SrcMgr.AddNewSourceBuffer(std::move(*BufferPtr), SMLoc());
+
+  MCContext Ctx(MAI.get(), MRI.get(), &MOFI, &SrcMgr);
+
+  MOFI.InitMCObjectFileInfo(TheTriple, /* PIC= */ false, Ctx);
+
+  std::unique_ptr<buffer_ostream> BOS;
+
+  std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
+
+  std::unique_ptr<MCInstrAnalysis> MCIA(
+      TheTarget->createMCInstrAnalysis(MCII.get()));
 
   // Parse the input and create CodeRegions that llvm-mca can analyze.
   mca::AsmCodeRegionGenerator CRG(*TheTarget, SrcMgr, Ctx, *MAI, *STI, *MCII);
@@ -420,6 +432,12 @@ int main(int argc, char **argv) {
   // Number each region in the sequence.
   unsigned RegionIdx = 0;
 
+  std::unique_ptr<MCCodeEmitter> MCE(
+      TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx));
+
+  std::unique_ptr<MCAsmBackend> MAB(TheTarget->createMCAsmBackend(
+      *STI, *MRI, InitMCTargetOptionsFromFlags()));
+
   for (const std::unique_ptr<mca::CodeRegion> &Region : Regions) {
     // Skip empty code regions.
     if (Region->empty())
@@ -437,6 +455,7 @@ int main(int argc, char **argv) {
 
     // Lower the MCInst sequence into an mca::Instruction sequence.
     ArrayRef<MCInst> Insts = Region->getInstructions();
+    mca::CodeEmitter CE(*STI, *MAB, *MCE, Insts);
     std::vector<std::unique_ptr<mca::Instruction>> LoweredSequence;
     for (const MCInst &MCI : Insts) {
       Expected<std::unique_ptr<mca::Instruction>> Inst =
@@ -474,7 +493,7 @@ int main(int argc, char **argv) {
       // Create the views for this pipeline, execute, and emit a report.
       if (PrintInstructionInfoView) {
         Printer.addView(llvm::make_unique<mca::InstructionInfoView>(
-            *STI, *MCII, Insts, *IP));
+            *STI, *MCII, CE, ShowEncoding, Insts, *IP));
       }
       Printer.addView(
           llvm::make_unique<mca::ResourcePressureView>(*STI, *IP, Insts));
@@ -487,7 +506,7 @@ int main(int argc, char **argv) {
     }
 
     // Create a basic pipeline simulating an out-of-order backend.
-    auto P = MCA.createDefaultPipeline(PO, IB, S);
+    auto P = MCA.createDefaultPipeline(PO, S);
     mca::PipelinePrinter Printer(*P);
 
     if (PrintSummaryView)
@@ -500,8 +519,8 @@ int main(int argc, char **argv) {
     }
 
     if (PrintInstructionInfoView)
-      Printer.addView(
-          llvm::make_unique<mca::InstructionInfoView>(*STI, *MCII, Insts, *IP));
+      Printer.addView(llvm::make_unique<mca::InstructionInfoView>(
+          *STI, *MCII, CE, ShowEncoding, Insts, *IP));
 
     if (PrintDispatchStats)
       Printer.addView(llvm::make_unique<mca::DispatchStatistics>());

@@ -63,6 +63,9 @@ MipsLegalizerInfo::MipsLegalizerInfo(const MipsSubtarget &ST) {
       .legalFor({s32})
       .minScalar(0, s32);
 
+  getActionDefinitionsBuilder(G_BRJT)
+      .legalFor({{p0, s32}});
+
   getActionDefinitionsBuilder(G_PHI)
       .legalFor({p0, s32, s64})
       .minScalar(0, s32);
@@ -98,7 +101,7 @@ MipsLegalizerInfo::MipsLegalizerInfo(const MipsSubtarget &ST) {
   getActionDefinitionsBuilder(G_FRAME_INDEX)
       .legalFor({p0});
 
-  getActionDefinitionsBuilder(G_GLOBAL_VALUE)
+  getActionDefinitionsBuilder({G_GLOBAL_VALUE, G_JUMP_TABLE})
       .legalFor({p0});
 
   // FP instructions
@@ -140,6 +143,8 @@ MipsLegalizerInfo::MipsLegalizerInfo(const MipsSubtarget &ST) {
   getActionDefinitionsBuilder(G_UITOFP)
       .libcallForCartesianProduct({s64, s32}, {s64})
       .minScalar(1, s32);
+
+  getActionDefinitionsBuilder(G_SEXT_INREG).lower();
 
   computeTables();
   verify(*ST.getInstrInfo());
