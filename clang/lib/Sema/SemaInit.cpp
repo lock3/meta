@@ -6599,7 +6599,7 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
     return llvm::StringSwitch<bool>(Callee->getName())
         .Cases("begin", "rbegin", "cbegin", "crbegin", true)
         .Cases("end", "rend", "cend", "crend", true)
-        .Cases("c_str", "data", "get", "value", true)
+        .Cases("c_str", "data", "get", true)
         // Map and set types.
         .Cases("find", "equal_range", "lower_bound", "upper_bound", true)
         .Default(false);
@@ -6610,7 +6610,7 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
              OO == OverloadedOperatorKind::OO_Star;
     }
     return llvm::StringSwitch<bool>(Callee->getName())
-        .Cases("front", "back", "at", "top", true)
+        .Cases("front", "back", "at", "top", "value", true)
         .Default(false);
   }
   return false;

@@ -171,7 +171,7 @@ struct optional {
   optional();
   optional(const T&);
   T &operator*();
-  T &value();
+  T &value() &;
 };
 
 template<typename T>
@@ -194,6 +194,11 @@ const char *danglingRawPtrFromLocal() {
   return s.c_str(); // expected-warning {{address of stack memory associated with local variable 's' returned}}
 }
 
+int &danglingRawPtrFromLocal2() {
+  std::optional<int> o;
+  return o.value(); // expected-warning {{reference to stack memory associated with local variable 'o' returned}}
+}
+
 const char *danglingRawPtrFromTemp() {
   return std::basic_string<char>().c_str(); // expected-warning {{returning address of local temporary object}}
 }
@@ -212,8 +217,7 @@ void danglingReferenceFromTempOwner() {
   int &r = *std::optional<int>(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
   int &r2 = *std::optional<int>(5); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
   int &r3 = std::vector<int>().at(3); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
-  int &r4 = std::optional<int>(5).value(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
-  int &r5 = std::stack<int>().top(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &r4 = std::stack<int>().top();  // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
 }
 
 std::vector<int> getTempVec();
