@@ -95,13 +95,12 @@ static void addGslOwnerPointerAttributeIfNotExisting(ASTContext &Context,
                                             /*DerefType*/ nullptr,
                                             /*Spelling=*/0));
 
+  // Put the attribute on the definition of a class template, so it is used
+  // during instantiation.
   if (auto *Templ =
           dyn_cast_or_null<ClassTemplateDecl>(Record->getDescribedTemplate())) {
     if (auto *Def = Record->getDefinition())
       addGslOwnerPointerAttributeIfNotExisting<Attribute>(Context, Def);
-
-    for (ClassTemplateSpecializationDecl *S : Templ->specializations())
-      addGslOwnerPointerAttributeIfNotExisting<Attribute>(Context, S);
   }
 }
 
