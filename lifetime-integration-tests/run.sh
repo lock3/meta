@@ -91,7 +91,7 @@ function get_range_v3() {
 
 get_range_v3
 get_libcpp 7 1 0 https://github.com/llvm/llvm-project/releases/download/llvmorg-7.1.0/libcxx-7.1.0.src.tar.xz
-get_libcpp 8 0 1rc2 https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1-rc2/libcxx-8.0.1rc2.src.tar.xz
+get_libcpp 8 0 1 https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/libcxx-8.0.1.src.tar.xz
 
 
 test_msvc 14.21.27702 lifetime-attr-test.cpp
@@ -104,26 +104,16 @@ test_msvc VC_14 lifetime-attr-test.cpp
 test_libcpp 7 1 0 lifetime-attr-test.cpp
 test_libcpp 8 0 1rc2 lifetime-attr-test.cpp
 
-
-# Incompatible with clang, see https://bugzilla.redhat.com/show_bug.cgi?id=1129899
-#test_libstdcpp 4 4 7
-
-#archive does not include libstdc++
-#test_libstdcpp 4 5 2
-test_libstdcpp 4 6 4 lifetime-attr-test.cpp
-
-# Fails building due to missing bits/gthr-default.h
-#test_libstdcpp 4 7 3
-
 test_libstdcpp 4 8 5 lifetime-attr-test.cpp
 test_libstdcpp 4 9 4 lifetime-attr-test.cpp
 test_libstdcpp 5 4 0 lifetime-attr-test.cpp
 test_libstdcpp 6 5 0 lifetime-attr-test.cpp
 test_libstdcpp 7 3 0 lifetime-attr-test.cpp
 test_libstdcpp 8 3 0 lifetime-attr-test.cpp
-test_libstdcpp 9 1 0 lifetime-attr-test.cpp
+# libstdc++ 9.1.0 is incompatible with clang, see https://bugzilla.redhat.com/show_bug.cgi?id=1719103
+test_libstdcpp 9 2 0 lifetime-attr-test.cpp
 
 # Crashes, see https://github.com/mgehre/llvm-project/issues/31
 # test_msvc 14.21.27702 warn-lifetime-godbolt.cpp /EHa /I range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
-test_libcpp 8 0 1rc2  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
-test_libstdcpp 9 1 0  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
+test_libcpp 8 0 1  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
+test_libstdcpp 9 2 0  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
