@@ -62,7 +62,7 @@ auto f9() {
 
 #include <queue>
 const float& f10() {
-   return std::priority_queue<float>{}.top(); // TODOexpected-warning {{returning address of local temporary}}
+   return std::priority_queue<float>{}.top(); // expected-warning {{returning reference to local temporary object}}
 }
 
 float& f11() {
@@ -71,7 +71,7 @@ float& f11() {
 
 #include <stack>
 bool& f12() {
-   return std::stack<bool>{}.top(); // TODOexpected-warning {{returning reference to local temporary object}}
+   return std::stack<bool>{}.top(); // expected-warning {{returning reference to local temporary object}}
 }
 
 #include <unordered_map>
@@ -102,14 +102,14 @@ std::reference_wrapper<int> f_reference_wrapper() {
 auto f_regex_iterator() {
     static const std::string s = "Quick brown fox.";
     static std::regex words_regex("[^\\s]+");
-    return std::sregex_iterator(s.begin(), s.end(), words_regex);
+    return std::sregex_iterator(s.begin(), s.end(), words_regex); // TODO
 }
 
 #if __has_include(<optional>)
 #include <optional>
 int& f_optional() {
     std::optional<int> o;
-    return o.value();
+    return o.value(); // expected-warning {{reference to stack memory associated with local variable 'o' returned}}
 }
 
 int& f_optional2() {
