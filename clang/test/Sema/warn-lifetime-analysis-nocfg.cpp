@@ -171,6 +171,12 @@ struct optional {
   optional();
   optional(const T&);
   T &operator*();
+  T &value();
+};
+
+template<typename T>
+struct stack {
+  T &top();
 };
 }
 
@@ -206,6 +212,8 @@ void danglingReferenceFromTempOwner() {
   int &r = *std::optional<int>(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
   int &r2 = *std::optional<int>(5); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
   int &r3 = std::vector<int>().at(3); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &r4 = std::optional<int>(5).value(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &r5 = std::stack<int>().top(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
 }
 
 std::vector<int> getTempVec();
