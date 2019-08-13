@@ -173,6 +173,7 @@ struct optional {
   T &operator*() &;
   T &&operator*() &&;
   T &value() &;
+  T &&value() &&;
 };
 
 template<typename T>
@@ -220,8 +221,10 @@ int *danglingUniquePtrFromTemp2() {
 }
 
 void danglingReferenceFromTempOwner() {
-  int &r1 = std::vector<int>().at(3); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
-  int &r2 = std::stack<int>().top();  // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &&r = *std::optional<int>();          // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &&r2 = *std::optional<int>(5);        // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &&r3 = std::optional<int>(5).value(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  int &r4 = std::vector<int>().at(3);       // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
 }
 
 std::vector<int> getTempVec();
