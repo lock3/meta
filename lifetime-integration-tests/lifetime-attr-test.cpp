@@ -128,7 +128,7 @@ int* f_unique_ptr() {
 #include <any>
 int& f_any() {
     std::any a = 1;
-    return std::any_cast<int&>(a); // TODO
+    return std::any_cast<int&>(a); // expected-warning {{reference to stack memory associated with local variable 'a' returned}}
 }
 #endif
 
@@ -136,7 +136,7 @@ int& f_any() {
 #include <variant>
 int& f_variant() {
     std::variant<int, float> v = 12;
-    return std::get<int>(v); // TODO
+    return std::get<int>(v); // expected-warning {{reference to stack memory associated with local variable 'v' returned}}
 }
 #endif
 
