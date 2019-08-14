@@ -108,7 +108,7 @@ test_msvc VC_14 lifetime-attr-test.cpp
 #test_libcpp 6 0 1 https://github.com/llvm/llvm-project/archive/llvmorg-6.0.1.tar.gz
 #test_libcpp 7 0 1
 test_libcpp 7 1 0 lifetime-attr-test.cpp
-test_libcpp 8 0 1rc2 lifetime-attr-test.cpp
+test_libcpp 8 0 1 lifetime-attr-test.cpp
 
 test_libstdcpp 4 8 5 lifetime-attr-test.cpp
 test_libstdcpp 4 9 4 lifetime-attr-test.cpp
