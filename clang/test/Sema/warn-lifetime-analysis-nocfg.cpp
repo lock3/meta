@@ -155,6 +155,8 @@ struct basic_string_view {
 
 template<typename T>
 struct basic_string {
+  basic_string();
+  basic_string(const T *);
   const T *c_str() const;
   operator basic_string_view<T> () const;
 };
@@ -273,4 +275,9 @@ const int &handleGslPtrInitsThroughReference() {
 void handleGslPtrInitsThroughReference2() {
   const std::vector<int> &v = getVec();
   const int *val = v.data(); // Ok, it is lifetime extended.
+}
+
+void f(bool cond) {
+    std::basic_string<char> def;
+    std::basic_string_view<char> v = cond ? def : ""; // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
 }
