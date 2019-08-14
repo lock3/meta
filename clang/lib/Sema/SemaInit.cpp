@@ -16,6 +16,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Sema/Designator.h"
 #include "clang/Sema/Initialization.h"
@@ -6576,7 +6577,7 @@ static bool isInStlNamespace(const Decl *D) {
     if (const IdentifierInfo *II = ND->getIdentifier()) {
       StringRef Name = II->getName();
       if (Name.size() >= 2 && Name.front() == '_' &&
-          (Name[1] == '_' || llvm::toUpper(Name[1]) == Name[1]))
+          (Name[1] == '_' || isUppercase(Name[1])))
         return true;
     }
 

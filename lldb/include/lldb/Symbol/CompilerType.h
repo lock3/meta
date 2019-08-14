@@ -13,7 +13,6 @@
 #include <string>
 #include <vector>
 
-#include "lldb/Core/ClangForward.h"
 #include "lldb/lldb-private.h"
 #include "llvm/ADT/APSInt.h"
 
@@ -32,7 +31,6 @@ class CompilerType {
 public:
   // Constructors and Destructors
   CompilerType(TypeSystem *type_system, lldb::opaque_compiler_type_t type);
-  CompilerType(clang::ASTContext *ast_context, clang::QualType qual_type);
 
   CompilerType(const CompilerType &rhs)
       : m_type(rhs.m_type), m_type_system(rhs.m_type_system) {}
@@ -169,8 +167,6 @@ public:
   void SetCompilerType(TypeSystem *type_system,
                        lldb::opaque_compiler_type_t type);
 
-  void SetCompilerType(clang::ASTContext *ast, clang::QualType qual_type);
-
   unsigned GetTypeQualifiers() const;
 
   // Creating related types
@@ -257,7 +253,7 @@ public:
 
   lldb::Format GetFormat() const;
 
-  llvm::Optional<size_t> GetTypeBitAlign() const;
+  llvm::Optional<size_t> GetTypeBitAlign(ExecutionContextScope *exe_scope) const;
 
   uint32_t GetNumChildren(bool omit_empty_base_classes,
                           const ExecutionContext *exe_ctx) const;

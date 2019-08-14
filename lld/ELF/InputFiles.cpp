@@ -252,7 +252,7 @@ std::string InputFile::getSrcMsg(const Symbol &sym, InputSectionBase &sec,
 }
 
 template <class ELFT> void ObjFile<ELFT>::initializeDwarf() {
-  dwarf = llvm::make_unique<DWARFContext>(make_unique<LLDDwarfObj<ELFT>>(this));
+  dwarf = std::make_unique<DWARFContext>(std::make_unique<LLDDwarfObj<ELFT>>(this));
   for (std::unique_ptr<DWARFUnit> &cu : dwarf->compile_units()) {
     auto report = [](Error err) {
       handleAllErrors(std::move(err),
@@ -1475,10 +1475,10 @@ static Symbol *createBitcodeSymbol(const std::vector<bool> &keptComdats,
 
   int c = objSym.getComdatIndex();
   if (objSym.isUndefined() || (c != -1 && !keptComdats[c])) {
-    Undefined New(&f, name, binding, visibility, type);
+    Undefined newSym(&f, name, binding, visibility, type);
     if (canOmitFromDynSym)
-      New.exportDynamic = false;
-    return symtab->addSymbol(New);
+      newSym.exportDynamic = false;
+    return symtab->addSymbol(newSym);
   }
 
   if (objSym.isCommon())
@@ -1486,10 +1486,10 @@ static Symbol *createBitcodeSymbol(const std::vector<bool> &keptComdats,
         CommonSymbol{&f, name, binding, visibility, STT_OBJECT,
                      objSym.getCommonAlignment(), objSym.getCommonSize()});
 
-  Defined New(&f, name, binding, visibility, type, 0, 0, nullptr);
+  Defined newSym(&f, name, binding, visibility, type, 0, 0, nullptr);
   if (canOmitFromDynSym)
-    New.exportDynamic = false;
-  return symtab->addSymbol(New);
+    newSym.exportDynamic = false;
+  return symtab->addSymbol(newSym);
 }
 
 template <class ELFT> void BitcodeFile::parse() {

@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SourceExtraction.h"
+#include "clang/Tooling/Refactoring/Extract/SourceExtraction.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
@@ -45,6 +45,7 @@ bool isSemicolonRequiredAfter(const Stmt *S) {
   if(const auto *Case = dyn_cast<SwitchCase>(S))
     return isSemicolonRequiredAfter(Case->getSubStmt());
   switch (S->getStmtClass()) {
+  case Stmt::DeclStmtClass:
   case Stmt::CXXTryStmtClass:
   case Stmt::ObjCAtSynchronizedStmtClass:
   case Stmt::ObjCAutoreleasePoolStmtClass:

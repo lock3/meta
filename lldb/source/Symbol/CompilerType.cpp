@@ -10,8 +10,6 @@
 
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/StreamFile.h"
-#include "lldb/Symbol/ClangASTContext.h"
-#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -31,13 +29,6 @@ using namespace lldb_private;
 CompilerType::CompilerType(TypeSystem *type_system,
                            lldb::opaque_compiler_type_t type)
     : m_type(type), m_type_system(type_system) {}
-
-CompilerType::CompilerType(clang::ASTContext *ast, clang::QualType qual_type)
-    : m_type(qual_type.getAsOpaquePtr()),
-      m_type_system(ClangASTContext::GetASTContext(ast)) {
-  if (m_type)
-    assert(m_type_system != nullptr);
-}
 
 CompilerType::~CompilerType() {}
 
@@ -333,12 +324,6 @@ void CompilerType::SetCompilerType(TypeSystem *type_system,
   m_type = type;
 }
 
-void CompilerType::SetCompilerType(clang::ASTContext *ast,
-                                   clang::QualType qual_type) {
-  m_type_system = ClangASTContext::GetASTContext(ast);
-  m_type = qual_type.getAsOpaquePtr();
-}
-
 unsigned CompilerType::GetTypeQualifiers() const {
   if (IsValid())
     return m_type_system->GetTypeQualifiers(m_type);
@@ -503,9 +488,9 @@ CompilerType::GetByteSize(ExecutionContextScope *exe_scope) const {
   return {};
 }
 
-llvm::Optional<size_t> CompilerType::GetTypeBitAlign() const {
+llvm::Optional<size_t> CompilerType::GetTypeBitAlign(ExecutionContextScope *exe_scope) const {
   if (IsValid())
-    return m_type_system->GetTypeBitAlign(m_type);
+    return m_type_system->GetTypeBitAlign(m_type, exe_scope);
   return {};
 }
 
