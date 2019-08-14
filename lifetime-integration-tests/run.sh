@@ -12,6 +12,8 @@ if [[ ! -f lifetime-attr-test.cpp ]]; then
   exit 1
 fi
 
+FAILED=0
+
 CLANG=$1
 FLAGS="-Xclang -verify -fsyntax-only"
 
@@ -34,6 +36,7 @@ function test_libstdcpp() {
   shift; shift; shift;
   echo "  with $@"
   $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include || {
+    FAILED=1
     echo $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include
   }
 }
@@ -61,8 +64,9 @@ function test_libcpp() {
   echo "Testing libc++ $1.$2.$3"
   shift; shift; shift;
   echo "  with $@"
-  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include || true
- # -Xclang -ast-dump
+  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include || {
+    FAILED=1
+  }
 }
 
 function test_msvc() {
@@ -76,11 +80,13 @@ function test_msvc() {
   INSTALL_DIR="$1"
   shift
   echo "  with $@"
-  $CLANG-cl /std:c++latest $FLAGS "$@" -imsvc $INSTALL_DIR/include/ -imsvc ucrt || true
+  $CLANG-cl /std:c++latest $FLAGS "$@" -imsvc $INSTALL_DIR/include/ -imsvc ucrt || {
+    FAILED=1
+  }
 }
 
 function get_range_v3() {
-  if [ -d range-v3 ]; then 
+  if [ -d range-v3 ]; then
     return
   fi
   git clone https://github.com/ericniebler/range-v3.git
@@ -117,3 +123,7 @@ test_libstdcpp 9 2 0 lifetime-attr-test.cpp
 # test_msvc 14.21.27702 warn-lifetime-godbolt.cpp /EHa /I range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
 test_libcpp 8 0 1  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
 test_libstdcpp 9 2 0  warn-lifetime-godbolt.cpp -isystem range-v3/include -Wno-return-stack-address -Wno-dangling -Wlifetime
+
+if [[ "$FAILED" == "1" ]]; then
+  exit 1
+fi
