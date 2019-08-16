@@ -19,21 +19,20 @@ namespace lifetime {
 using AttrPointsToMap = LifetimeContractAttr::PointsToMap;
 
 static const Expr *ignoreReturnValues(const Expr *E) {
-  E = E->IgnoreImplicit();
-  if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
-    return CE->getArg(0)->IgnoreImplicit();
+  const Expr *Original;
+  do {
+    Original = E;
+    E = E->IgnoreImplicit();
+    if (const auto *CE = dyn_cast<CXXConstructExpr>(E))
+      E = CE->getArg(0);
+    if (const auto *MCE = dyn_cast<CXXMemberCallExpr>(E)) {
+      const auto *CD =
+          dyn_cast_or_null<CXXConversionDecl>(MCE->getDirectCallee());
+      if (CD)
+        E = MCE->getImplicitObjectArgument();
+    }
+  } while (E != Original);
   return E;
-}
-
-static const Expr *getGslPsetArg(const Expr *E) {
-  E = ignoreReturnValues(E);
-  if (const auto *CE = dyn_cast<CallExpr>(E)) {
-    const FunctionDecl *FD = CE->getDirectCallee();
-    if (!FD || FD->getName() != "pset")
-      return nullptr;
-    return ignoreReturnValues(CE->getArg(0));
-  }
-  return nullptr;
 }
 
 static const ParmVarDecl *toCanonicalParmVar(const ParmVarDecl *PVD) {
@@ -111,30 +110,32 @@ static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap *Lookup) {
 // We need to look up the Pset of 'a' in preconditions but we need to
 // record the postcondition in the postconditions. This is why this
 // function takes two AttrPointsToMaps.
-static bool fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
-                                 const AttrPointsToMap &Lookup) {
-  const auto *OCE = dyn_cast<CXXOperatorCallExpr>(E);
-  if (!OCE || OCE->getOperator() != OO_EqualEqual)
-    return false;
+static SourceRange fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
+                                        const AttrPointsToMap &Lookup) {
+  const auto *CE = dyn_cast<CallExpr>(E);
+  if (!CE)
+    return E->getSourceRange();
+  const FunctionDecl *FD = CE->getDirectCallee();
+  if (!FD || !FD->getIdentifier() || FD->getName() != "lifetime")
+    return E->getSourceRange();
 
-  const Expr *LHS = getGslPsetArg(OCE->getArg(0));
+  const Expr *LHS = ignoreReturnValues(CE->getArg(0));
   if (!LHS)
-    return false;
-  const Expr *RHS = getGslPsetArg(OCE->getArg(1));
+    return CE->getArg(0)->getSourceRange();
+  const Expr *RHS = ignoreReturnValues(CE->getArg(1));
   if (!RHS)
-    return false;
+    return CE->getArg(1)->getSourceRange();
 
-  // TODO: do we want to support swapped args?
   ContractPSet LhsPSet = collectPSet(LHS, nullptr);
   if (LhsPSet.Vars.size() != 1)
-    return false;
+    return LHS->getSourceRange();
 
   ContractVariable VD = *LhsPSet.Vars.begin();
   ContractPSet RhsPSet = collectPSet(RHS, &Lookup);
   if (RhsPSet.isEmpty())
-    return false;
+    return RHS->getSourceRange();
   Fill[VD] = RhsPSet;
-  return true;
+  return SourceRange();
 }
 
 namespace {
@@ -230,9 +231,10 @@ public:
 
     // Adust preconditions based on annotations.
     for (const Expr *E : ContractAttr->PreExprs) {
-      if (!fillPointersFromExpr(E, ContractAttr->PrePSets,
-                                ContractAttr->PrePSets))
-        Reporter.warnUnsupportedExpr(E->getSourceRange());
+      SourceRange Range = fillPointersFromExpr(E, ContractAttr->PrePSets,
+                                               ContractAttr->PrePSets);
+      if (Range.isValid())
+        Reporter.warnUnsupportedExpr(Range);
     }
 
     // Compute default postconditions.
@@ -264,9 +266,10 @@ public:
 
     // Process user defined postconditions.
     for (const Expr *E : ContractAttr->PostExprs) {
-      if (!fillPointersFromExpr(E, ContractAttr->PostPSets,
-                                ContractAttr->PrePSets))
-        Reporter.warnUnsupportedExpr(E->getSourceRange());
+      SourceRange Range = fillPointersFromExpr(E, ContractAttr->PostPSets,
+                                               ContractAttr->PrePSets);
+      if (Range.isValid())
+        Reporter.warnUnsupportedExpr(Range);
     }
   }
 

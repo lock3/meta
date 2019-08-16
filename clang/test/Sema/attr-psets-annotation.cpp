@@ -49,19 +49,29 @@ struct return_t {
   int operator*() const;
   template <typename T>
   operator T() const { return (T)(void *)this; }
+  // TODO: eliminate the methods below.
+  template <typename T>
+  return_t(const T&) {}
+  return_t() {}
+  bool operator==(return_t) const { return true; }
 } Return;
 
 template <typename T>
-struct PointerTraits;
+struct PointerTraits {
+  static const T &deref(const T *t) { return *t; }
+  static const bool checked = false;
+};
 
 template <typename T>
 struct PointerTraits<T *> {
   static const T &deref(const T *t) { return *t; }
+  static const bool checked = true;
 };
 
 template <typename T>
 struct PointerTraits<T &> {
   static const T &deref(const T &t) { return t; }
+  static const bool checked = true;
 };
 
 template <typename T>
@@ -81,6 +91,8 @@ struct CheckVariadic {
 
 template <typename T, typename S>
 bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
+  if (!PointerTraits<decltype(lhs.data)>::checked || !PointerTraits<decltype(rhs.data)>::checked)
+    return true;
   // TODO: these cannot be checked right?
   if ((void *)lhs.data == (void *)&Static || (void *)lhs.data == (void *)&Invalid || (void *)lhs.data == (void *)&Return ||
       (void *)rhs.data == (void *)&Static || (void *)rhs.data == (void *)&Invalid || (void *)rhs.data == (void *)&Return)
@@ -95,21 +107,12 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   return lhs.data == rhs.data;
 }
 
-template <typename T, typename S>
-bool operator==(const CheckSingle<T> &lhs, const CheckVariadic<S> &rhs) {
-  return std::any_of(rhs.ptrs.begin(), rhs.ptrs.end(), [&lhs](const T &ptr) {
-    return CheckSingle<T>(ptr) == lhs;
+template <typename T>
+bool lifetime(const T &lhs, const CheckVariadic<T> &rhs) {
+  CheckSingle<T> lhsToCheck(lhs);
+  return std::any_of(rhs.ptrs.begin(), rhs.ptrs.end(), [&lhsToCheck](const T &ptr) {
+    return CheckSingle<T>(ptr) == lhsToCheck;
   });
-}
-
-template <typename T>
-CheckSingle<T> pset(const T &t) {
-  return t;
-}
-
-template <typename T>
-CheckVariadic<T> pset(std::initializer_list<T> ptrs) {
-  return CheckVariadic<T>(ptrs);
 }
 
 template <typename T>
@@ -123,7 +126,7 @@ auto deref(const T &vava) {
 
 using namespace gsl;
 
-void basic(int *a, int *b) [[gsl::pre(pset(b) == pset(a))]] {
+void basic(int *a, int *b) [[gsl::pre(lifetime(b, {a}))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (null))}}
 }
 
@@ -137,71 +140,41 @@ void check_lifetime_preconditions() {
 }
 
 void specials(int *a, int *b, int *c)
-    [[gsl::pre(pset(a) == pset(Null))]]
-    [[gsl::pre(pset(b) == pset(Static))]]
-    [[gsl::pre(pset(c) == pset(Invalid))]] {
+    [[gsl::pre(lifetime(a, {Null}))]]
+    [[gsl::pre(lifetime(b, {Static}))]]
+    [[gsl::pre(lifetime(c, {Invalid}))]] {
   __lifetime_pset(a); // expected-warning {{((null))}}
   __lifetime_pset(b); // expected-warning {{((static))}}
   __lifetime_pset(c); // expected-warning {{((invalid))}}
 }
 
 void variadic(int *a, int *b, int *c)
-    [[gsl::pre(pset(b) == pset({a, c}))]] {
+    [[gsl::pre(lifetime(b, {a, c}))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
 }
 
 
-/* Not supported, we might not want this to be symmetric.
-void variadic_swapped(int *a, int *b, int *c)
-    [[gsl::pre(pset({a, c}) == pset(b))]] {
-  __lifetime_pset(b); // MIGHTBETODOexpected-warning {{((*a), (*c), (null))}}
-}
-*/
-
-/* For std::initializer_list conversions will not work.
-   Maybe use type and no conversions required?
 void variadic_special(int *a, int *b, int *c)
-    [[gsl::pre(pset(b) == pset({a, Null}))]] {
-  __lifetime_pset(b); // TODOexpected-warning {{((*a), (null))}}
+    [[gsl::pre(lifetime(b, {a, Null}))]] {
+  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
 }
-*/
-
-/* Will not compile! What should this mean for the state of the analysis?
-   The source of the problem is that the following constraint can 
-   be satisfied multiple ways:
-   pset(a, b) == pset(c, d)
-   Possible solution #1:
-    pset(a) == {*a}
-    pset(b) == {*a, b}
-    pset(c) == {*a}
-    pset(d) == {*b}
-   Possible solution #2:
-    pset(a) == {*a}
-    pset(b) == {*a}
-    pset(c) == {*a}
-    pset(d) == {*a}
-   And so on...
-void double_variadic(int *a, int *b, int *c)
-    [[gsl::pre(pset({a, b}) == pset({b, c}))]] {
-}
-*/
 
 void multiple_annotations(int *a, int *b, int *c)
-    [[gsl::pre(pset(b) == pset(a))]]
-    [[gsl::pre(pset(c) == pset(a))]] {
+    [[gsl::pre(lifetime(b, {a}))]]
+    [[gsl::pre(lifetime(c, {a}))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (null))}}
   __lifetime_pset(c); // expected-warning {{((*a), (null))}}
 }
 
 void multiple_annotations_chained(int *a, int *b, int *c)
-    [[gsl::pre(pset(b) == pset(a))]]
-    [[gsl::pre(pset(c) == pset(b))]] {
+    [[gsl::pre(lifetime(b, {a}))]]
+    [[gsl::pre(lifetime(c, {b}))]] {
   __lifetime_pset(b); // expected-warning {{((*a), (null))}}
   __lifetime_pset(c); // expected-warning {{((*a), (null))}}
 }
 
 void annotate_forward_decl(int *a, int *b)
-    [[gsl::pre(pset(b) == pset(a))]];
+    [[gsl::pre(lifetime(b, {a}))]];
 
 void annotate_forward_decl(int *c, int *d) {
   __lifetime_pset(d); // expected-warning {{((*c), (null))}}
@@ -228,16 +201,16 @@ void parameter_psets(int value,
                      my_pointer *ptr_ptr,
                      const my_pointer *ptr_const_ptr) {}
 void p4(int *a, int *b, int *&c)
-    [[gsl::pre(pset(b) == pset(a))]] { c = 0; }
+    [[gsl::pre(lifetime(b, {a}))]] { c = 0; }
 int *p5(int *a, int *b) { return a; }
 int *p6(int *a, int *b)
-    [[gsl::post(pset(Return) == pset(a))]] { return a; }
+    [[gsl::post(lifetime(Return, {a}))]] { return a; }
 struct S{
   int *f(int * a, int *b, int *&c) { c = 0; return a; }
   S *g(int * a, int *b, int *&c) { c = 0; return this; }
 };
 void p7(int *a, int *b, int *&c)
-    [[gsl::post(pset(deref<int *&>(c)) == pset(a))]] { c = a; }
+    [[gsl::post(lifetime(deref<int *&>(c), {a}))]] { c = a; }
 // TODO: contracts for function pointers?
 
 void f() {
