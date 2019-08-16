@@ -110,9 +110,9 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
     return PointerTraits<decltype(rhs.data)>::isNull(rhs.data);
   if (PointerTraits<decltype(rhs.data)>::isNull(rhs.data))
     return false;
-  // User defined pointers might not have operator ==, convert them to raw pointers before checking.
+  // TODO: User defined pointers might not have operator ==, convert them to raw pointers before checking.
   // TODO: does this work well with references?
-  return &deref(lhs.data) == &deref(rhs.data);
+  return lhs.data == rhs.data;
 }
 
 // TODO: requiring both arguments to be the same type is too restrictive, probable a variadic tuple might work better.
