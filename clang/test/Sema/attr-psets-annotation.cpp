@@ -116,12 +116,14 @@ bool lifetime(const T &lhs, const CheckVariadic<T> &rhs) {
 }
 
 template <typename T>
-auto deref(const T &vava) {
-  return PointerTraits<T>::deref(vava);
+auto deref(const T &t) {
+  return PointerTraits<T>::deref(t);
 }
 
+// Hack to deduce reference types correclty.
+#define deref(arg) deref<decltype(arg)>(arg)
+
 // TODO: support member selection (change in Attr representation)
-// TODO: handle references (auto deref and address of?)
 } // namespace gsl
 
 using namespace gsl;
@@ -210,7 +212,9 @@ struct S{
   S *g(int * a, int *b, int *&c) { c = 0; return this; }
 };
 void p7(int *a, int *b, int *&c)
-    [[gsl::post(lifetime(deref<int *&>(c), {a}))]] { c = a; }
+    [[gsl::post(lifetime(deref(c), {a}))]] { c = a; }
+void p8(int *a, int *b, int **c)
+    [[gsl::post(lifetime(deref(c), {a}))]] { if (c) *c = a; }
 // TODO: contracts for function pointers?
 
 void f() {
@@ -279,6 +283,12 @@ void f() {
   // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
   // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
   // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
+  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
+  __lifetime_contracts(p8);
+  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((*c), (null))}}
   // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
   // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
 }
