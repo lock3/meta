@@ -27,9 +27,7 @@ struct not_null {
   constexpr operator T() const { return T(); }
   constexpr T operator->() const { return T(); }
 };
-} // namespace gsl
 
-namespace gsl {
 struct null_t {
   int operator*() const;
   template <typename T>
@@ -58,26 +56,29 @@ struct return_t {
 
 template <typename T>
 struct PointerTraits {
-  static const T &deref(const T *t) { return *t; }
+  static auto deref(const T &t) -> decltype(*t) { return *t; }
+  static const bool isNull(const T &t) { return false; }
   static const bool checked = false;
 };
 
 template <typename T>
 struct PointerTraits<T *> {
   static const T &deref(const T *t) { return *t; }
+  static const bool isNull(const T *t) { return !t; }
   static const bool checked = true;
 };
 
 template <typename T>
 struct PointerTraits<T &> {
   static const T &deref(const T &t) { return t; }
+  static const bool isNull(const T &t) { return false; }
   static const bool checked = true;
 };
 
 template <typename T>
 struct CheckSingle {
   CheckSingle(const T &t) : data(t) {}
-  const T &data;
+  T data;
   template <typename S>
   operator CheckSingle<S>() { return CheckSingle<S>(S(data)); }
 };
@@ -89,6 +90,14 @@ struct CheckVariadic {
   std::initializer_list<T> ptrs;
 };
 
+template <typename T>
+auto deref(const T &t) -> decltype(PointerTraits<T>::deref(t)) {
+  return PointerTraits<T>::deref(t);
+}
+
+// Hack to deduce reference types correclty.
+#define deref(arg) deref<decltype(arg)>(arg)
+
 template <typename T, typename S>
 bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   if (!PointerTraits<decltype(lhs.data)>::checked || !PointerTraits<decltype(rhs.data)>::checked)
@@ -97,16 +106,16 @@ bool operator==(CheckSingle<T> lhs, CheckSingle<S> rhs) {
   if ((void *)lhs.data == (void *)&Static || (void *)lhs.data == (void *)&Invalid || (void *)lhs.data == (void *)&Return ||
       (void *)rhs.data == (void *)&Static || (void *)rhs.data == (void *)&Invalid || (void *)rhs.data == (void *)&Return)
     return true;
-  // TODO: maybe make this a customization point?
-  //       user defined gsl::Pointers might not have operator==.
-  //       Alternative: fall back to &deref(UserPtr).
-  //       Also for an array and a Ptr pointing into the array
-  //       this should yield true. This is not the case now.
-  //       Also, checking if two iterators are pointing to the same
-  //       object is not possible.
-  return lhs.data == rhs.data;
+  if (PointerTraits<decltype(lhs.data)>::isNull(lhs.data))
+    return PointerTraits<decltype(rhs.data)>::isNull(rhs.data);
+  if (PointerTraits<decltype(rhs.data)>::isNull(rhs.data))
+    return false;
+  // User defined pointers might not have operator ==, convert them to raw pointers before checking.
+  // TODO: does this work well with references?
+  return &deref(lhs.data) == &deref(rhs.data);
 }
 
+// TODO: requiring both arguments to be the same type is too restrictive, probable a variadic tuple might work better.
 template <typename T>
 bool lifetime(const T &lhs, const CheckVariadic<T> &rhs) {
   CheckSingle<T> lhsToCheck(lhs);
@@ -114,14 +123,6 @@ bool lifetime(const T &lhs, const CheckVariadic<T> &rhs) {
     return CheckSingle<T>(ptr) == lhsToCheck;
   });
 }
-
-template <typename T>
-auto deref(const T &t) {
-  return PointerTraits<T>::deref(t);
-}
-
-// Hack to deduce reference types correclty.
-#define deref(arg) deref<decltype(arg)>(arg)
 
 // TODO: support member selection (change in Attr representation)
 } // namespace gsl
