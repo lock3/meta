@@ -6562,7 +6562,7 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
 template<typename T>
 static bool isRecordWithAttr(QualType Type) {
   if (auto *RD = Type->getAsCXXRecordDecl())
-    return RD->getCanonicalDecl()->hasAttr<T>();
+    return RD->hasAttr<T>();
   return false;
 }
 

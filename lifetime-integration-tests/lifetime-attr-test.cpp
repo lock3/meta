@@ -44,17 +44,13 @@ float& f6() {
 }
 
 #include <map>
-#ifndef _LIBCPP_VERSION //TODO
 auto f7() {
     return std::map<float, std::string>{}.begin(); // expected-warning {{returning address of local temporary}}
 }
-#endif
 
-#ifndef _LIBCPP_VERSION //TODO
 auto f8() {
    return std::multimap<float, std::string>{}.begin(); // expected-warning {{returning address of local temporary}}
 }
-#endif
 
 auto f9() {
    return std::multiset<std::string>{}.begin(); // expected-warning {{returning address of local temporary}}
