@@ -91,7 +91,7 @@ auto f16() {
 #include <functional>
 std::reference_wrapper<int> f_reference_wrapper() {
     int i;
-    return {i}; // TODOexpected-warning {{returning address of local temporary}}
+    return {i}; // expected-warning {{returning address of local temporary}}
 }
 
 #include <regex>
