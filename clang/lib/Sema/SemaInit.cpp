@@ -6773,7 +6773,6 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
     // temporary inside them.
     // We are not interested in the temporary base objects of gsl Pointers:
     //   Temp().ptr; // Here ptr might not dangle.
-    //   &Temp().ptr; // but here the created raw ptr will... TODO check.
     if (!pathOnlyInitializesGslPointer(Path))
       Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
