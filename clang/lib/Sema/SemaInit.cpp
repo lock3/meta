@@ -6551,6 +6551,15 @@ static bool pathContainsInit(IndirectLocalPath &Path) {
   });
 }
 
+static bool pathOnlyInitializesGslPointer(IndirectLocalPath &Path) {
+  for (auto It = Path.rbegin(), End = Path.rend(); It != End; ++It) {
+    if (It->Kind == IndirectLocalPathEntry::VarInit)
+      continue;
+    return It->Kind == IndirectLocalPathEntry::GslPointerInit;
+  }
+  return false;
+}
+
 static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
                                              Expr *Init, LocalVisitor Visit,
                                              bool RevisitSubinits);
@@ -6620,17 +6629,14 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
 static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
   if (!FD->getIdentifier())
     return false;
-  const auto *RD = FD->getParamDecl(0)->getType()->getPointeeCXXRecordDecl();
-  if (!FD->isInStdNamespace() || !RD || !RD->isInStdNamespace())
-    return false;
-  if (!isRecordWithAttr<PointerAttr>(QualType(RD->getTypeForDecl(), 0)) &&
-      !isRecordWithAttr<OwnerAttr>(QualType(RD->getTypeForDecl(), 0)))
+  if (!FD->isInStdNamespace())
     return false;
   if (FD->getReturnType()->isPointerType() ||
       isRecordWithAttr<PointerAttr>(FD->getReturnType())) {
     return llvm::StringSwitch<bool>(FD->getName())
         .Cases("begin", "rbegin", "cbegin", "crbegin", true)
         .Cases("end", "rend", "cend", "crend", true)
+        .Cases("cref", "ref", true)
         .Case("data", true)
         .Default(false);
   } else if (FD->getReturnType()->isReferenceType()) {
@@ -6674,7 +6680,7 @@ static void handleGslAnnotatedTypes(IndirectLocalPath &Path, Expr *Call,
 
   if (auto *CCE = dyn_cast<CXXConstructExpr>(Call)) {
     const auto *Ctor = CCE->getConstructor();
-    const CXXRecordDecl *RD = Ctor->getParent()->getCanonicalDecl();
+    const CXXRecordDecl *RD = Ctor->getParent();
     if (CCE->getNumArgs() > 0 && RD->hasAttr<PointerAttr>())
       VisitPointerArg(Ctor->getParamDecl(0), CCE->getArgs()[0]);
   }
@@ -6765,7 +6771,11 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
 
     // Step over any subobject adjustments; we may have a materialized
     // temporary inside them.
-    Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
+    // We are not interested in the temporary base objects of gsl Pointers:
+    //   Temp().ptr; // Here ptr might not dangle.
+    //   &Temp().ptr; // but here the created raw ptr will... TODO check.
+    if (!pathOnlyInitializesGslPointer(Path))
+      Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     // Per current approach for DR1376, look through casts to reference type
     // when performing lifetime extension.
@@ -6884,7 +6894,8 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
       Init = FE->getSubExpr();
 
     // Dig out the expression which constructs the extended temporary.
-    Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
+    if (!pathOnlyInitializesGslPointer(Path))
+      Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     if (CXXBindTemporaryExpr *BTE = dyn_cast<CXXBindTemporaryExpr>(Init))
       Init = BTE->getSubExpr();
@@ -7131,15 +7142,6 @@ static SourceRange nextPathEntryRange(const IndirectLocalPath &Path, unsigned I,
   return E->getSourceRange();
 }
 
-static bool pathOnlyInitializesGslPointer(IndirectLocalPath &Path) {
-  for (auto It = Path.rbegin(), End = Path.rend(); It != End; ++It) {
-    if (It->Kind == IndirectLocalPathEntry::VarInit)
-      continue;
-    return It->Kind == IndirectLocalPathEntry::GslPointerInit;
-  }
-  return false;
-}
-
 void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
                                     Expr *Init) {
   LifetimeResult LR = getEntityLifetime(&Entity);
@@ -7168,7 +7170,9 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         //   someContainer.add(std::move(localUniquePtr));
         //   return p;
         IsLocalGslOwner = isRecordWithAttr<OwnerAttr>(L->getType());
-        if (pathContainsInit(Path) || !IsLocalGslOwner)
+        if (pathContainsInit(Path) && IsLocalGslOwner)
+          return false;
+        if (isRecordWithAttr<PointerAttr>(L->getType()))
           return false;
       } else {
         IsGslPtrInitWithGslTempOwner = MTE && !MTE->getExtendingDecl() &&

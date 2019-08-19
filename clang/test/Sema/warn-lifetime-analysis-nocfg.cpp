@@ -141,6 +141,9 @@ typename remove_reference<T>::type &&move(T &&t) noexcept;
 template <typename C>
 auto data(const C &c) -> decltype(c.data());
 
+template<typename T, int N>
+T *begin(T (&array)[N]);
+
 template <typename T>
 struct vector {
   typedef __gnu_cxx::basic_iterator<T> iterator;
@@ -190,6 +193,14 @@ struct any {};
 
 template<typename T>
 T any_cast(const any& operand);
+
+template<typename T>
+struct reference_wrapper {
+  reference_wrapper(T &&);
+};
+
+template<typename T>
+reference_wrapper<T> ref(T& t) noexcept;
 }
 
 void modelIterators() {
@@ -301,7 +312,49 @@ void handleGslPtrInitsThroughReference2() {
   const int *val = v.data(); // Ok, it is lifetime extended.
 }
 
-void f(bool cond) {
+void handleTernaryOperator(bool cond) {
     std::basic_string<char> def;
     std::basic_string_view<char> v = cond ? def : ""; // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+}
+
+std::reference_wrapper<int> danglingPtrFromNonOwnerLocal() {
+  int i = 5;
+  return i; // expected-warning {{address of stack memory associated with local variable 'i' returned}}
+}
+
+std::reference_wrapper<int> danglingPtrFromNonOwnerLocal2() {
+  int i = 5;
+  return std::ref(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
+}
+
+int * returnPtrToLocalArray() {
+  int a[5];
+  return std::begin(a); // expected-warning {{address of stack memory associated with local variable 'a' returned}}
+}
+
+struct ptr_wrapper {
+  std::vector<int>::iterator member;
+};
+
+ptr_wrapper getPtrWrapper();
+
+std::vector<int>::iterator returnPtrFromWrapper() {
+  ptr_wrapper local = getPtrWrapper();
+  return local.member;
+}
+
+std::vector<int>::iterator returnPtrFromWrapperThroughRef() {
+  ptr_wrapper local = getPtrWrapper();
+  ptr_wrapper &local2 = local;
+  return local2.member;
+}
+
+std::vector<int>::iterator returnPtrFromWrapperThroughRef2() {
+  ptr_wrapper local = getPtrWrapper();
+  std::vector<int>::iterator &local2 = local.member;
+  return local2;
+}
+
+void checkPtrMemberFromAggregate() {
+  std::vector<int>::iterator local = getPtrWrapper().member; // OK.
 }
