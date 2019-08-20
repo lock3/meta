@@ -21,11 +21,15 @@ static QualType getPointeeType(const Type *T);
 
 static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
                                     OverloadedOperatorKind Op) {
+  if (!GlobalLookupOperator)
+    return nullptr;
   return GlobalLookupOperator(R, Op);
 }
 
 static FunctionDecl *lookupMemberFunction(const CXXRecordDecl *R,
                                           StringRef Name) {
+  if (!GlobalLookupMemberFunction)
+    return nullptr;
   return GlobalLookupMemberFunction(R, Name);
 }
 
@@ -89,7 +93,17 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 }
 
 static bool hasDerefOperations(const CXXRecordDecl *R) {
-  return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
+  // return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
+  // TODO: check base classes.
+  for (auto *M : R->methods()) {
+    auto O = M->getDeclName().getCXXOverloadedOperator();
+    if (O == OO_Arrow)
+      return true;
+
+    if (O == OO_Star && M->param_empty())
+      return true;
+  }
+  return false;
 }
 
 /// Determines if D is std::vector<bool>::reference
@@ -189,8 +203,10 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
   }
 
   if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
-      GlobalDefineClassTemplateSpecialization(CDS);
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      if (GlobalDefineClassTemplateSpecialization)
+        GlobalDefineClassTemplateSpecialization(CDS);
+    }
   }
 
   if (!R->hasDefinition())
@@ -217,16 +233,10 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 #endif
 
   if (R->hasAttr<OwnerAttr>()) {
-    if (Pointee.isNull())
-      return TypeCategory::Value; // TODO diagnose
-    else
       return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
-    if (Pointee.isNull())
-      return TypeCategory::Value; // TODO diagnose
-    else
       return {TypeCategory::Pointer, Pointee};
   }
 
@@ -234,26 +244,26 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
     return {*Cat, Pointee};
 
   // Every type that satisfies the standard Container requirements.
-  if (!Pointee.isNull() && satisfiesContainerRequirements(R))
+  if (satisfiesContainerRequirements(R))
     return {TypeCategory::Owner, Pointee};
 
   // Every type that provides unary * or -> and has a user-provided destructor.
   // (Example: unique_ptr.)
-  if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
+  if (hasDerefOperations(R) && !R->hasTrivialDestructor())
     return {TypeCategory::Owner, Pointee};
 
   //  Every type that satisfies the Ranges TS Range concept.
-  if (!Pointee.isNull() && satisfiesRangeConcept(R))
+  if (satisfiesRangeConcept(R))
     return {TypeCategory::Pointer, Pointee};
 
   // Every type that satisfies the standard Iterator requirements. (Example:
   // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
+  if (satisfiesIteratorRequirements(R))
     return {TypeCategory::Pointer, Pointee};
 
   // Every type that provides unary * or -> and does not have a user-provided
   // destructor. (Example: span.)
-  if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
+  if (hasDerefOperations(R) && R->hasTrivialDestructor())
     return {TypeCategory::Pointer, Pointee};
 
   // Every closure type of a lambda that captures by reference.
@@ -377,8 +387,10 @@ static QualType getPointeeTypeImpl(const Type *T) {
     return QualType(T, 0);
 
   if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
-      GlobalDefineClassTemplateSpecialization(CDS);
+    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
+      if (GlobalDefineClassTemplateSpecialization)
+        GlobalDefineClassTemplateSpecialization(CDS);
+    }
   }
 
   assert(R->hasDefinition());

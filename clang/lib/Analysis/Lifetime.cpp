@@ -21,9 +21,10 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
-LookupOperatorTy GlobalLookupOperator;
-LookupMemberFunctionTy GlobalLookupMemberFunction;
-DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization;
+LookupOperatorTy GlobalLookupOperator = nullptr;
+LookupMemberFunctionTy GlobalLookupMemberFunction = nullptr;
+DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization =
+    nullptr;
 
 class LifetimeContext {
   /// Additional information for each CFGBlock.

@@ -26,9 +26,6 @@ struct TypeClassification {
 
   TypeClassification(TypeCategory TC, QualType PointeeType)
       : TC(TC), PointeeType(PointeeType) {
-    assert(!PointeeType.isNull());
-    assert(!PointeeType->isVoidType());
-    assert(TC == TypeCategory::Pointer || TC == TypeCategory::Owner);
   }
 
   std::string str() const {
