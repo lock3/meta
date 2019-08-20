@@ -92,11 +92,8 @@ static void addGslOwnerPointerAttributeIfNotExisting(ASTContext &Context,
   if (Record->hasAttr<OwnerAttr>() || Record->hasAttr<PointerAttr>())
     return;
 
-  for (Decl *Redecl : Record->redecls()) {
-    Redecl->addAttr(::new (Context) Attribute(SourceRange{}, Context,
-                                              /*DerefType*/ nullptr,
-                                              /*Spelling=*/0));
-  }
+  for (Decl *Redecl : Record->redecls())
+    Redecl->addAttr(Attribute::CreateImplicit(Context, /*DerefType=*/nullptr));
 }
 
 void Sema::inferGslPointerAttribute(NamedDecl *ND,
