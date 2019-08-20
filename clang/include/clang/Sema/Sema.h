@@ -6127,6 +6127,8 @@ public:
   /// Add [[gsl::Pointer]] attributes for std:: types.
   void inferGslPointerAttribute(TypedefNameDecl *TD);
 
+  void suggestLifetimeAttribute(CXXRecordDecl *Record);
+
   void CheckCompletedCXXClass(CXXRecordDecl *Record);
 
   /// Check that the C++ class annoated with "trivial_abi" satisfies all the
