@@ -21,16 +21,27 @@ static QualType getPointeeType(const Type *T);
 
 static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
                                     OverloadedOperatorKind Op) {
-  if (!GlobalLookupOperator)
-    return nullptr;
-  return GlobalLookupOperator(R, Op);
+
+  // TODO: Check base classes and free functions
+  for (auto *M : R->methods()) {
+    auto O = M->getDeclName().getCXXOverloadedOperator();
+    if (O == Op)
+      return M;
+  }
+
+  return nullptr;
 }
 
 static FunctionDecl *lookupMemberFunction(const CXXRecordDecl *R,
                                           StringRef Name) {
-  if (!GlobalLookupMemberFunction)
-    return nullptr;
-  return GlobalLookupMemberFunction(R, Name);
+
+  // TODO: Check base classes
+  for (auto *M : R->methods()) {
+    if (M->getDeclName().isIdentifier() && R->getName() == Name)
+      return M;
+  }
+
+  return nullptr;
 }
 
 template <typename T>
@@ -93,7 +104,6 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 }
 
 static bool hasDerefOperations(const CXXRecordDecl *R) {
-  // return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
   // TODO: check base classes.
   for (auto *M : R->methods()) {
     auto O = M->getDeclName().getCXXOverloadedOperator();
@@ -200,13 +210,6 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
       return {TypeCategory::Pointer, getPointeeType(T)};
 
     return TypeCategory::Value;
-  }
-
-  if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
-      if (GlobalDefineClassTemplateSpecialization)
-        GlobalDefineClassTemplateSpecialization(CDS);
-    }
   }
 
   if (!R->hasDefinition())
@@ -386,14 +389,8 @@ static QualType getPointeeTypeImpl(const Type *T) {
   if (IsVectorBoolReference(R))
     return QualType(T, 0);
 
-  if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R)) {
-      if (GlobalDefineClassTemplateSpecialization)
-        GlobalDefineClassTemplateSpecialization(CDS);
-    }
-  }
-
-  assert(R->hasDefinition());
+  if (!R->hasDefinition())
+    return {};
 
   auto PointeeType = getPointeeType(R);
   if (!PointeeType.isNull())

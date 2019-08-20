@@ -503,11 +503,15 @@ struct X { int a, b; };
 
 int&  example_2_6_2_4(X& x) { return x.a; }		// ok, pset(ret) == pset(x)
 
-// https://godbolt.org/z/AqXDYp
+#if 0
+// The link in the paper (https://godbolt.org/z/AqXDYp) does not work with flow-sensitive analysis because we cannot deduce
+// the DerefType of std::string,
+// but statement-local analysis successfully diagnoses it (https://godbolt.org/z/ZRwQma).
 void example_2_6_2_5() {
-    char& c = std::string{"hello my pretty long string"}[0]; // expected-note {{temporary was destroyed at the end of the full expression}}
-    cout << c;              // ERROR expected-warning {{dereferencing a dangling pointer}}
+    char& c = std::string{"hello my pretty long string"}[0];
+    cout << c;
 }
+#endif
 
 // https://godbolt.org/z/BvP4w6
 using K = string;

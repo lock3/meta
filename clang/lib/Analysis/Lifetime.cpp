@@ -21,11 +21,6 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
-LookupOperatorTy GlobalLookupOperator = nullptr;
-LookupMemberFunctionTy GlobalLookupMemberFunction = nullptr;
-DefineClassTemplateSpecializationTy GlobalDefineClassTemplateSpecialization =
-    nullptr;
-
 class LifetimeContext {
   /// Additional information for each CFGBlock.
   struct BlockContext {
@@ -207,12 +202,9 @@ void LifetimeContext::TraverseBlocks() {
 }
 
 /// Check that the function adheres to the lifetime profile.
-void runAnalysis(
-    const FunctionDecl *Func, ASTContext &Context,
-    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
-    LookupOperatorTy LookupOperator,
-    LookupMemberFunctionTy LookupMemberFunction,
-    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization) {
+void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
+                 LifetimeReporterBase &Reporter,
+                 IsConvertibleTy IsConvertible) {
 
   if (!Func->doesThisDeclarationHaveABody())
     return;
@@ -224,10 +216,6 @@ void runAnalysis(
         return;
   if (!Func->getCanonicalDecl()->hasAttr<LifetimeContractAttr>())
     return;
-
-  GlobalLookupOperator = LookupOperator;
-  GlobalLookupMemberFunction = LookupMemberFunction;
-  GlobalDefineClassTemplateSpecialization = DefineClassTemplateSpecialization;
 
   if (auto *M = dyn_cast<CXXMethodDecl>(Func)) {
     // Do not check the bodies of methods on Owners.

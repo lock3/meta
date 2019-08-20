@@ -233,12 +233,10 @@ struct vector {
 };
 
 void f() {
-  // Clang would create an ClassTemplateSpecializationDecl for
-  // iterator<0, int>, but create no definition, i.e. we could not see
-  // iterator<0, int>::operator*(), unless that operator is explicitly called
-  // by the program. The lifetime checker now forces and definition of
-  // iterator<0, int> to be able to deduce the DerefType(iterator<0, int>).
-  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Owner with pointee int}}
+  // Clang creates an ClassTemplateSpecializationDecl for
+  // iterator<0, int>, but creates no instantiation of begin() unless
+  // it is used. Thus we are unable to deduce the DerefType.
+  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Owner with pointee NULL TYPE}}
 }
 } // namespace classTemplateInstantiation
 

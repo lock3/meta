@@ -28,19 +28,6 @@ class FunctionDecl;
 namespace lifetime {
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
 
-using LookupOperatorTy = llvm::function_ref<FunctionDecl *(
-    const CXXRecordDecl *R, OverloadedOperatorKind Op)>;
-extern LookupOperatorTy GlobalLookupOperator;
-
-using LookupMemberFunctionTy =
-    llvm::function_ref<FunctionDecl *(const CXXRecordDecl *R, StringRef Name)>;
-extern LookupMemberFunctionTy GlobalLookupMemberFunction;
-
-using DefineClassTemplateSpecializationTy =
-    llvm::function_ref<void(ClassTemplateSpecializationDecl *Specialization)>;
-extern DefineClassTemplateSpecializationTy
-    GlobalDefineClassTemplateSpecialization;
-
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
 enum class WarnType {
@@ -86,12 +73,8 @@ public:
                                  StringRef Pointee = "") = 0;
 };
 
-void runAnalysis(
-    const FunctionDecl *Func, ASTContext &Context,
-    LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible,
-    LookupOperatorTy LookupOperator,
-    LookupMemberFunctionTy LookupMemberFunction,
-    DefineClassTemplateSpecializationTy DefineClassTemplateSpecialization);
+void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
+                 LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible);
 } // namespace lifetime
 } // namespace clang
 
