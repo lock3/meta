@@ -88,6 +88,9 @@ struct unique_ptr {
   ~unique_ptr();
 };
 
+template< class T, class... Args >
+unique_ptr<T> make_unique( Args&&... args );
+
 template <typename T>
 struct optional {
   T &value();
@@ -1165,6 +1168,14 @@ void iterator_conversion() {
   std::vector<int> v;
   std::vector<int>::const_iterator it = v.begin();
   __lifetime_pset(it); // expected-warning {{((*v))}}
+}
+
+void treatForwardingRefAsLifetimeConst() {
+  int x;
+  int *p = &x;
+  __lifetime_pset(p); // expected-warning {{(x)}}
+  std::unique_ptr<int *> up = std::make_unique<int *>(p);
+  __lifetime_pset(p); // expected-warning {{(x)}}
 }
 
 namespace CXXScalarValueInitExpr {

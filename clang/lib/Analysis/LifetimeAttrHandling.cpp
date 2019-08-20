@@ -187,7 +187,8 @@ public:
           ContractPSet InvalidPS;
           InvalidPS.ContainsInvalid = true;
           ContractAttr->PrePSets.emplace(ParamDerefLoc, InvalidPS);
-          Locations.Output.push_back(ParamDerefLoc);
+          if (!isLifetimeConst(FD, PointeeType, PVD->getFunctionScopeIndex()))
+            Locations.Output.push_back(ParamDerefLoc);
         } else {
           ContractAttr->PrePSets.emplace(ParamDerefLoc, ParamDerefPSet);
           // TODO: In the paper we only add derefs for references and not for
