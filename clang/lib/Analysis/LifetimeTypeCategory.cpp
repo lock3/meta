@@ -227,31 +227,37 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
       return {TypeCategory::Pointer, Pointee};
   }
 
-  if (auto Cat = classifyStd(T))
-    return {*Cat, Pointee};
+  // Do not attempt to infer implicit Pointer/Owner if we cannot deduce
+  // the DerefType.
+  if (!Pointee.isNull()) {
 
-  // Every type that satisfies the standard Container requirements.
-  if (satisfiesContainerRequirements(R))
-    return {TypeCategory::Owner, Pointee};
+    if (auto Cat = classifyStd(T))
+      return {*Cat, Pointee};
 
-  // Every type that provides unary * or -> and has a user-provided destructor.
-  // (Example: unique_ptr.)
-  if (hasDerefOperations(R) && !R->hasTrivialDestructor())
-    return {TypeCategory::Owner, Pointee};
+    // Every type that satisfies the standard Container requirements.
+    if (satisfiesContainerRequirements(R))
+      return {TypeCategory::Owner, Pointee};
 
-  //  Every type that satisfies the Ranges TS Range concept.
-  if (satisfiesRangeConcept(R))
-    return {TypeCategory::Pointer, Pointee};
+    // Every type that provides unary * or -> and has a user-provided
+    // destructor. (Example: unique_ptr.)
+    if (hasDerefOperations(R) && !R->hasTrivialDestructor())
+      return {TypeCategory::Owner, Pointee};
 
-  // Every type that satisfies the standard Iterator requirements. (Example:
-  // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (satisfiesIteratorRequirements(R))
-    return {TypeCategory::Pointer, Pointee};
+    //  Every type that satisfies the Ranges TS Range concept.
+    if (satisfiesRangeConcept(R))
+      return {TypeCategory::Pointer, Pointee};
 
-  // Every type that provides unary * or -> and does not have a user-provided
-  // destructor. (Example: span.)
-  if (hasDerefOperations(R) && R->hasTrivialDestructor())
-    return {TypeCategory::Pointer, Pointee};
+    // Every type that satisfies the standard Iterator requirements. (Example:
+    // regex_iterator.), see
+    // https://en.cppreference.com/w/cpp/named_req/Iterator
+    if (satisfiesIteratorRequirements(R))
+      return {TypeCategory::Pointer, Pointee};
+
+    // Every type that provides unary * or -> and does not have a user-provided
+    // destructor. (Example: span.)
+    if (hasDerefOperations(R) && R->hasTrivialDestructor())
+      return {TypeCategory::Pointer, Pointee};
+  }
 
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda()) {
