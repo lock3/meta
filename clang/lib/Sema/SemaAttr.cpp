@@ -158,7 +158,7 @@ void Sema::suggestLifetimeAttribute(CXXRecordDecl *Record) {
   if (Record->hasAttr<OwnerAttr>() || Record->hasAttr<PointerAttr>())
     return;
 
-  if (Record->isInStdNamespace())
+  if (SourceMgr.isInSystemHeader(Record->getBeginLoc()))
     return;
 
   lifetime::TypeClassification TC =
