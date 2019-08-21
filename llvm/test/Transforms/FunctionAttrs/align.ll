@@ -1,4 +1,4 @@
-; RUN: opt -attributor -attributor-disable=false -S < %s | FileCheck %s --check-prefix=ATTRIBUTOR
+; RUN: opt -attributor -attributor-disable=false -attributor-max-iterations=17 -S < %s | FileCheck %s --check-prefix=ATTRIBUTOR
 
 target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
@@ -83,12 +83,12 @@ define i32* @test6_2() #0 {
 
 ; Function Attrs: nounwind readnone ssp uwtable
 define internal i8* @f1(i8* readnone %0) local_unnamed_addr #0 {
-; ATTRIBUTOR: define internal nonnull align 8 i8* @f1(i8* nonnull readnone align 8 %0)
+; ATTRIBUTOR: define internal nonnull align 8 dereferenceable(1) i8* @f1(i8* nonnull readnone align 8 dereferenceable(1) %0)
   %2 = icmp eq i8* %0, null
   br i1 %2, label %3, label %5
 
 ; <label>:3:                                      ; preds = %1
-; ATTRIBUTOR: %4 = tail call i8* @f2(i8* nonnull align 8 @a1)
+; ATTRIBUTOR: %4 = tail call i8* @f2(i8* nonnull align 8 dereferenceable(1) @a1)
   %4 = tail call i8* @f2(i8* nonnull @a1)
   br label %5
 
@@ -99,18 +99,18 @@ define internal i8* @f1(i8* readnone %0) local_unnamed_addr #0 {
 
 ; Function Attrs: nounwind readnone ssp uwtable
 define internal i8* @f2(i8* readnone %0) local_unnamed_addr #0 {
-; ATTRIBUTOR: define internal nonnull align 8 i8* @f2(i8* nonnull readnone align 8 %0)
+; ATTRIBUTOR: define internal nonnull align 8 dereferenceable(1) i8* @f2(i8* nonnull readnone align 8 dereferenceable(1) %0)
   %2 = icmp eq i8* %0, null
   br i1 %2, label %5, label %3
 
 ; <label>:3:                                      ; preds = %1
 
-; ATTRIBUTOR: %4 = tail call i8* @f1(i8* nonnull align 8 %0)
+; ATTRIBUTOR: %4 = tail call i8* @f1(i8* nonnull align 8 dereferenceable(1) %0)
   %4 = tail call i8* @f1(i8* nonnull %0)
   br label %7
 
 ; <label>:5:                                      ; preds = %1
-; ATTRIBUTOR: %6 = tail call i8* @f3(i8* nonnull align 16 @a2)
+; ATTRIBUTOR: %6 = tail call i8* @f3(i8* nonnull align 16 dereferenceable(1) @a2)
   %6 = tail call i8* @f3(i8* nonnull @a2)
   br label %7
 
@@ -121,12 +121,12 @@ define internal i8* @f2(i8* readnone %0) local_unnamed_addr #0 {
 
 ; Function Attrs: nounwind readnone ssp uwtable
 define internal i8* @f3(i8* readnone %0) local_unnamed_addr #0 {
-; ATTRIBUTOR: define internal nonnull align 8 i8* @f3(i8* nonnull readnone align 16 %0)
+; ATTRIBUTOR: define internal nonnull align 8 dereferenceable(1) i8* @f3(i8* nonnull readnone align 16 dereferenceable(1) %0)
   %2 = icmp eq i8* %0, null
   br i1 %2, label %3, label %5
 
 ; <label>:3:                                      ; preds = %1
-; ATTRIBUTOR: %4 = tail call i8* @f1(i8* nonnull align 16 @a2)
+; ATTRIBUTOR: %4 = tail call i8* @f1(i8* nonnull align 16 dereferenceable(1) @a2)
   %4 = tail call i8* @f1(i8* nonnull @a2)
   br label %5
 
@@ -139,6 +139,7 @@ define internal i8* @f3(i8* readnone %0) local_unnamed_addr #0 {
 ; Better than IR information
 ; ATTRIBUTOR: define align 32 i32* @test7(i32* returned align 32 %p)
 define align 4 i32* @test7(i32* align 32 %p) #0 {
+  tail call i8* @f1(i8* align 8 dereferenceable(1) @a1)
   ret i32* %p
 }
 
@@ -160,6 +161,13 @@ define void @test8_helper() {
 
 define internal void @test8(i32* %a, i32* %b, i32* %c) {
 ; ATTRIBUTOR: define internal void @test8(i32* align 4 %a, i32* align 4 %b, i32* %c)
+  ret void
+}
+
+declare void @test9_helper(i32* %A)
+define void @test9_traversal(i1 %c, i32* align 4 %B, i32* align 8 %C) {
+  %sel = select i1 %c, i32* %B, i32* %C
+  call void @test9_helper(i32* %sel)
   ret void
 }
 

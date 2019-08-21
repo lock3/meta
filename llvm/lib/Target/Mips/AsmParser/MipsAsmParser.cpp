@@ -512,11 +512,11 @@ public:
 
     // Remember the initial assembler options. The user can not modify these.
     AssemblerOptions.push_back(
-        llvm::make_unique<MipsAssemblerOptions>(getSTI().getFeatureBits()));
+        std::make_unique<MipsAssemblerOptions>(getSTI().getFeatureBits()));
 
     // Create an assembler options environment for the user to modify.
     AssemblerOptions.push_back(
-        llvm::make_unique<MipsAssemblerOptions>(getSTI().getFeatureBits()));
+        std::make_unique<MipsAssemblerOptions>(getSTI().getFeatureBits()));
 
     getTargetStreamer().updateABIInfo(*this);
 
@@ -844,7 +844,7 @@ private:
                                                 const MCRegisterInfo *RegInfo,
                                                 SMLoc S, SMLoc E,
                                                 MipsAsmParser &Parser) {
-    auto Op = llvm::make_unique<MipsOperand>(k_RegisterIndex, Parser);
+    auto Op = std::make_unique<MipsOperand>(k_RegisterIndex, Parser);
     Op->RegIdx.Index = Index;
     Op->RegIdx.RegInfo = RegInfo;
     Op->RegIdx.Kind = RegKind;
@@ -1446,7 +1446,7 @@ public:
 
   static std::unique_ptr<MipsOperand> CreateToken(StringRef Str, SMLoc S,
                                                   MipsAsmParser &Parser) {
-    auto Op = llvm::make_unique<MipsOperand>(k_Token, Parser);
+    auto Op = std::make_unique<MipsOperand>(k_Token, Parser);
     Op->Tok.Data = Str.data();
     Op->Tok.Length = Str.size();
     Op->StartLoc = S;
@@ -1521,7 +1521,7 @@ public:
 
   static std::unique_ptr<MipsOperand>
   CreateImm(const MCExpr *Val, SMLoc S, SMLoc E, MipsAsmParser &Parser) {
-    auto Op = llvm::make_unique<MipsOperand>(k_Immediate, Parser);
+    auto Op = std::make_unique<MipsOperand>(k_Immediate, Parser);
     Op->Imm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
@@ -1531,7 +1531,7 @@ public:
   static std::unique_ptr<MipsOperand>
   CreateMem(std::unique_ptr<MipsOperand> Base, const MCExpr *Off, SMLoc S,
             SMLoc E, MipsAsmParser &Parser) {
-    auto Op = llvm::make_unique<MipsOperand>(k_Memory, Parser);
+    auto Op = std::make_unique<MipsOperand>(k_Memory, Parser);
     Op->Mem.Base = Base.release();
     Op->Mem.Off = Off;
     Op->StartLoc = S;
@@ -1544,7 +1544,7 @@ public:
                 MipsAsmParser &Parser) {
     assert(Regs.size() > 0 && "Empty list not allowed");
 
-    auto Op = llvm::make_unique<MipsOperand>(k_RegList, Parser);
+    auto Op = std::make_unique<MipsOperand>(k_RegList, Parser);
     Op->RegList.List = new SmallVector<unsigned, 10>(Regs.begin(), Regs.end());
     Op->StartLoc = StartLoc;
     Op->EndLoc = EndLoc;
@@ -3659,8 +3659,8 @@ void MipsAsmParser::expandMemInst(MCInst &Inst, SMLoc IDLoc, MCStreamer &Out,
       // d) Use R_MIPS_GOT_PAGE/R_MIPS_GOT_OFST relocations instead
       //    of R_MIPS_GOT_DISP in appropriate cases to reduce number
       //    of GOT entries.
-      expandLoadAddress(TmpReg, Mips::NoRegister, OffsetOp, !ABI.ArePtrs64bit(),
-                        IDLoc, Out, STI);
+      loadAndAddSymbolAddress(OffsetOp.getExpr(), TmpReg, Mips::NoRegister,
+                              !ABI.ArePtrs64bit(), IDLoc, Out, STI);
       TOut.emitRRI(Inst.getOpcode(), DstReg, TmpReg, 0, IDLoc, STI);
     } else {
       const MCExpr *ExprOffset = OffsetOp.getExpr();
@@ -7016,7 +7016,7 @@ bool MipsAsmParser::parseSetPushDirective() {
 
   // Create a copy of the current assembler options environment and push it.
   AssemblerOptions.push_back(
-        llvm::make_unique<MipsAssemblerOptions>(AssemblerOptions.back().get()));
+        std::make_unique<MipsAssemblerOptions>(AssemblerOptions.back().get()));
 
   getTargetStreamer().emitDirectiveSetPush();
   return false;

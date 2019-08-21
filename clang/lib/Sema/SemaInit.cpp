@@ -2236,7 +2236,7 @@ class FieldInitializerValidatorCCC final : public CorrectionCandidateCallback {
   }
 
   std::unique_ptr<CorrectionCandidateCallback> clone() override {
-    return llvm::make_unique<FieldInitializerValidatorCCC>(*this);
+    return std::make_unique<FieldInitializerValidatorCCC>(*this);
   }
 
  private:
@@ -6672,8 +6672,7 @@ static void handleGslAnnotatedTypes(IndirectLocalPath &Path, Expr *Call,
     return;
   } else if (auto *CE = dyn_cast<CallExpr>(Call)) {
     FunctionDecl *Callee = CE->getDirectCallee();
-    if (Callee && Callee->getNumParams() == 1 &&
-        shouldTrackFirstArgument(Callee))
+    if (Callee && shouldTrackFirstArgument(Callee))
       VisitPointerArg(Callee, CE->getArg(0));
     return;
   }

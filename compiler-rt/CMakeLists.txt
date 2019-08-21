@@ -254,7 +254,7 @@ if(COMPILER_RT_ENABLE_WERROR)
   append_string_if(COMPILER_RT_HAS_WX_FLAG /WX CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
 endif()
 
-append_string_if(COMPILER_RT_HAS_STD_CXX11_FLAG -std=c++11 CMAKE_CXX_FLAGS)
+append_string_if(COMPILER_RT_HAS_STD_CXX14_FLAG -std=c++14 CMAKE_CXX_FLAGS)
 
 # Emulate C99 and C++11's __func__ for MSVC prior to 2013 CTP.
 if(NOT COMPILER_RT_HAS_FUNC_SYMBOL)
@@ -335,12 +335,12 @@ if (NOT MSVC)
 endif()
 
 # Determine if we should restrict stack frame sizes.
-# Stack frames on PowerPC and Mips and in debug biuld can be much larger than
+# Stack frames on PowerPC, Mips, SystemZ and in debug build can be much larger than
 # anticipated.
 # FIXME: Fix all sanitizers and add -Wframe-larger-than to
 # SANITIZER_COMMON_FLAGS
 if(COMPILER_RT_HAS_WFRAME_LARGER_THAN_FLAG AND NOT COMPILER_RT_DEBUG
-   AND NOT ${COMPILER_RT_DEFAULT_TARGET_ARCH} MATCHES "powerpc|mips")
+   AND NOT ${COMPILER_RT_DEFAULT_TARGET_ARCH} MATCHES "powerpc|mips|s390x")
   set(SANITIZER_LIMIT_FRAME_SIZE TRUE)
 else()
   set(SANITIZER_LIMIT_FRAME_SIZE FALSE)

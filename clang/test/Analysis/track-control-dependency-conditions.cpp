@@ -29,24 +29,24 @@ int flag;
 bool coin();
 
 void foo() {
-  flag = coin(); // tracking-note{{Value assigned to 'flag'}}
+  flag = coin(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
 }
 
 void test() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
   flag = 1;
 
   foo(); // TODO: Add nodes here about flag's value being invalidated.
-  if (flag) // expected-note   {{Assuming 'flag' is 0}}
-            // expected-note@-1{{Taking false branch}}
+  if (flag) // expected-note-re   {{{{^}}Assuming 'flag' is 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     x = new int;
 
-  foo(); // tracking-note{{Calling 'foo'}}
-         // tracking-note@-1{{Returning from 'foo'}}
+  foo(); // tracking-note-re{{{{^}}Calling 'foo'{{$}}}}
+         // tracking-note-re@-1{{{{^}}Returning from 'foo'{{$}}}}
 
-  if (flag) // expected-note   {{Assuming 'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re   {{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
 
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
@@ -58,7 +58,7 @@ int flag;
 bool coin();
 
 void foo() {
-  flag = coin(); // tracking-note{{Value assigned to 'flag'}}
+  flag = coin(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
 }
 
 void test() {
@@ -66,18 +66,18 @@ void test() {
   flag = 1;
 
   foo();
-  if (flag) // expected-note   {{Assuming 'flag' is 0}}
-            // expected-note@-1{{Taking false branch}}
+  if (flag) // expected-note-re   {{{{^}}Assuming 'flag' is 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     x = new int;
 
-  x = 0; // expected-note{{Null pointer value stored to 'x'}}
+  x = 0; // expected-note-re{{{{^}}Null pointer value stored to 'x'{{$}}}}
 
-  foo(); // tracking-note{{Calling 'foo'}}
-         // tracking-note@-1{{Returning from 'foo'}}
+  foo(); // tracking-note-re{{{{^}}Calling 'foo'{{$}}}}
+         // tracking-note-re@-1{{{{^}}Returning from 'foo'{{$}}}}
 
-  if (flag) // expected-note   {{Assuming 'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re   {{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
 
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
@@ -90,25 +90,25 @@ bool coin();
 
 void foo() {
   // coin() could write bar, do it's invalidated.
-  flag = coin(); // tracking-note{{Value assigned to 'flag'}}
-                 // tracking-note@-1{{Value assigned to 'bar'}}
+  flag = coin(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
+                 // tracking-note-re@-1{{{{^}}Value assigned to 'bar', which participates in a condition later{{$}}}}
 }
 
 int bar;
 
 void test() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
   flag = 1;
 
-  foo(); // tracking-note{{Calling 'foo'}}
-         // tracking-note@-1{{Returning from 'foo'}}
+  foo(); // tracking-note-re{{{{^}}Calling 'foo'{{$}}}}
+         // tracking-note-re@-1{{{{^}}Returning from 'foo'{{$}}}}
 
-  if (bar) // expected-note   {{Assuming 'bar' is not equal to 0}}
-           // expected-note@-1{{Taking true branch}}
-           // debug-note@-2{{Tracking condition 'bar'}}
-    if (flag) // expected-note   {{Assuming 'flag' is not equal to 0}}
-              // expected-note@-1{{Taking true branch}}
-              // debug-note@-2{{Tracking condition 'flag'}}
+  if (bar) // expected-note-re   {{{{^}}Assuming 'bar' is not equal to 0{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+           // debug-note-re@-2{{{{^}}Tracking condition 'bar'{{$}}}}
+    if (flag) // expected-note-re   {{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+              // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+              // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
 
       *x = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
@@ -125,11 +125,11 @@ bool foo() {
 int bar;
 
 void test() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
-  if (int flag = foo()) // debug-note{{Tracking condition 'flag'}}
-                        // expected-note@-1{{Assuming 'flag' is not equal to 0}}
-                        // expected-note@-2{{Taking true branch}}
+  if (int flag = foo()) // debug-note-re{{{{^}}Tracking condition 'flag'{{$}}}}
+                        // expected-note-re@-1{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+                        // expected-note-re@-2{{{{^}}Taking true branch{{$}}}}
 
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
@@ -144,12 +144,12 @@ struct ConvertsToBool {
 };
 
 void test() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   if (ConvertsToBool())
-    // debug-note@-1{{Tracking condition 'ConvertsToBool()'}}
-    // expected-note@-2{{Assuming the condition is true}}
-    // expected-note@-3{{Taking true branch}}
+    // debug-note-re@-1{{{{^}}Tracking condition 'ConvertsToBool()'{{$}}}}
+    // expected-note-re@-2{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-3{{{{^}}Taking true branch{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -159,9 +159,9 @@ void test() {
 namespace note_from_different_but_not_nested_stackframe {
 
 void nullptrDeref(int *ptr, bool True) {
-  if (True) // expected-note{{'True' is true}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'True}}
+  if (True) // expected-note-re{{{{^}}'True' is true{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'True'{{$}}}}
     *ptr = 5;
   // expected-note@-1{{Dereference of null pointer (loaded from variable 'ptr')}}
   // expected-warning@-2{{Dereference of null pointer (loaded from variable 'ptr')}}
@@ -169,11 +169,11 @@ void nullptrDeref(int *ptr, bool True) {
 
 void f() {
   int *ptr = nullptr;
-  // expected-note@-1{{'ptr' initialized to a null pointer value}}
+  // expected-note-re@-1{{{{^}}'ptr' initialized to a null pointer value{{$}}}}
   bool True = true;
   nullptrDeref(ptr, True);
-  // expected-note@-1{{Passing null pointer value via 1st parameter 'ptr'}}
-  // expected-note@-2{{Calling 'nullptrDeref'}}
+  // expected-note-re@-1{{{{^}}Passing null pointer value via 1st parameter 'ptr'{{$}}}}
+  // expected-note-re@-2{{{{^}}Calling 'nullptrDeref'{{$}}}}
 }
 
 } // end of namespace note_from_different_but_not_nested_stackframe
@@ -184,26 +184,26 @@ bool coin();
 int *getIntPtr();
 
 void storeValue(int **i) {
-  *i = getIntPtr(); // tracking-note{{Value assigned to 'i'}}
+  *i = getIntPtr(); // tracking-note-re{{{{^}}Value assigned to 'i', which participates in a condition later{{$}}}}
 }
 
 int *conjurePointer() {
   int *i;
-  storeValue(&i); // tracking-note{{Calling 'storeValue'}}
-                  // tracking-note@-1{{Returning from 'storeValue'}}
-  return i;       // tracking-note{{Returning pointer (loaded from 'i')}}
+  storeValue(&i); // tracking-note-re{{{{^}}Calling 'storeValue'{{$}}}}
+                  // tracking-note-re@-1{{{{^}}Returning from 'storeValue'{{$}}}}
+  return i; // tracking-note-re{{{{^}}Returning pointer (loaded from 'i'), which participates in a condition later{{$}}}}
 }
 
 void f(int *ptr) {
-  if (ptr) // expected-note{{Assuming 'ptr' is null}}
-           // expected-note@-1{{Taking false branch}}
+  if (ptr) // expected-note-re{{{{^}}Assuming 'ptr' is null{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     ;
   if (!conjurePointer())
-    // tracking-note@-1{{Calling 'conjurePointer'}}
-    // tracking-note@-2{{Returning from 'conjurePointer'}}
-    // debug-note@-3{{Tracking condition '!conjurePointer()'}}
-    // expected-note@-4{{Assuming the condition is true}}
-    // expected-note@-5{{Taking true branch}}
+    // tracking-note-re@-1{{{{^}}Calling 'conjurePointer'{{$}}}}
+    // tracking-note-re@-2{{{{^}}Returning from 'conjurePointer'{{$}}}}
+    // debug-note-re@-3{{{{^}}Tracking condition '!conjurePointer()'{{$}}}}
+    // expected-note-re@-4{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-5{{{{^}}Taking true branch{{$}}}}
     *ptr = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
 }
@@ -220,13 +220,13 @@ int *conjurePointer() {
 }
 
 void f(int *ptr) {
-  if (ptr) // expected-note{{Assuming 'ptr' is null}}
-           // expected-note@-1{{Taking false branch}}
+  if (ptr) // expected-note-re{{{{^}}Assuming 'ptr' is null{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     ;
   if (!conjurePointer())
-    // debug-note@-1{{Tracking condition '!conjurePointer()'}}
-    // expected-note@-2{{Assuming the condition is true}}
-    // expected-note@-3{{Taking true branch}}
+    // debug-note-re@-1{{{{^}}Tracking condition '!conjurePointer()'{{$}}}}
+    // expected-note-re@-2{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-3{{{{^}}Taking true branch{{$}}}}
     *ptr = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
 }
@@ -241,12 +241,12 @@ int *cast(void *P) {
 }
 
 void f() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   if (cast(conjure()))
-    // debug-note@-1{{Tracking condition 'cast(conjure())'}}
-    // expected-note@-2{{Assuming the condition is false}}
-    // expected-note@-3{{Taking false branch}}
+    // debug-note-re@-1{{{{^}}Tracking condition 'cast(conjure())'{{$}}}}
+    // expected-note-re@-2{{{{^}}Assuming the condition is false{{$}}}}
+    // expected-note-re@-3{{{{^}}Taking false branch{{$}}}}
     return;
   *x = 5; // expected-warning{{Dereference of null pointer}}
           // expected-note@-1{{Dereference of null pointer}}
@@ -260,13 +260,13 @@ bool coin();
 bool flipCoin() { return coin(); }
 
 void i(int *ptr) {
-  if (ptr) // expected-note{{Assuming 'ptr' is null}}
-           // expected-note@-1{{Taking false branch}}
+  if (ptr) // expected-note-re{{{{^}}Assuming 'ptr' is null{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     ;
   if (!flipCoin())
-    // debug-note@-1{{Tracking condition '!flipCoin()'}}
-    // expected-note@-2{{Assuming the condition is true}}
-    // expected-note@-3{{Taking true branch}}
+    // debug-note-re@-1{{{{^}}Tracking condition '!flipCoin()'{{$}}}}
+    // expected-note-re@-2{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-3{{{{^}}Taking true branch{{$}}}}
     *ptr = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
 }
@@ -276,23 +276,23 @@ namespace important_returning_value_note {
 bool coin();
 
 bool flipCoin() {
-  if (coin()) // tracking-note{{Assuming the condition is false}}
-              // tracking-note@-1{{Taking false branch}}
-              // debug-note@-2{{Tracking condition 'coin()'}}
+  if (coin()) // tracking-note-re{{{{^}}Assuming the condition is false{{$}}}}
+              // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
+              // debug-note-re@-2{{{{^}}Tracking condition 'coin()'{{$}}}}
     return true;
-  return coin(); // tracking-note{{Returning value}}
+  return coin(); // tracking-note-re{{{{^}}Returning value, which participates in a condition later{{$}}}}
 }
 
 void i(int *ptr) {
-  if (ptr) // expected-note{{Assuming 'ptr' is null}}
-           // expected-note@-1{{Taking false branch}}
+  if (ptr) // expected-note-re{{{{^}}Assuming 'ptr' is null{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     ;
   if (!flipCoin())
-    // tracking-note@-1{{Calling 'flipCoin'}}
-    // tracking-note@-2{{Returning from 'flipCoin'}}
-    // debug-note@-3{{Tracking condition '!flipCoin()'}}
-    // expected-note@-4{{Assuming the condition is true}}
-    // expected-note@-5{{Taking true branch}}
+    // tracking-note-re@-1{{{{^}}Calling 'flipCoin'{{$}}}}
+    // tracking-note-re@-2{{{{^}}Returning from 'flipCoin'{{$}}}}
+    // debug-note-re@-3{{{{^}}Tracking condition '!flipCoin()'{{$}}}}
+    // expected-note-re@-4{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-5{{{{^}}Taking true branch{{$}}}}
     *ptr = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
 }
@@ -307,22 +307,22 @@ struct super_complicated_template_hackery {
 
 bool flipCoin() {
   if (super_complicated_template_hackery::value)
-    // tracking-note@-1{{'value' is false}}
-    // tracking-note@-2{{Taking false branch}}
+    // tracking-note-re@-1{{{{^}}'value' is false{{$}}}}
+    // tracking-note-re@-2{{{{^}}Taking false branch{{$}}}}
     return true;
-  return coin(); // tracking-note{{Returning value}}
+  return coin(); // tracking-note-re{{{{^}}Returning value, which participates in a condition later{{$}}}}
 }
 
 void i(int *ptr) {
-  if (ptr) // expected-note{{Assuming 'ptr' is null}}
-           // expected-note@-1{{Taking false branch}}
+  if (ptr) // expected-note-re{{{{^}}Assuming 'ptr' is null{{$}}}}
+           // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
     ;
   if (!flipCoin())
-    // tracking-note@-1{{Calling 'flipCoin'}}
-    // tracking-note@-2{{Returning from 'flipCoin'}}
-    // debug-note@-3{{Tracking condition '!flipCoin()'}}
-    // expected-note@-4{{Assuming the condition is true}}
-    // expected-note@-5{{Taking true branch}}
+    // tracking-note-re@-1{{{{^}}Calling 'flipCoin'{{$}}}}
+    // tracking-note-re@-2{{{{^}}Returning from 'flipCoin'{{$}}}}
+    // debug-note-re@-3{{{{^}}Tracking condition '!flipCoin()'{{$}}}}
+    // expected-note-re@-4{{{{^}}Assuming the condition is true{{$}}}}
+    // expected-note-re@-5{{{{^}}Taking true branch{{$}}}}
     *ptr = 5; // expected-warning{{Dereference of null pointer}}
               // expected-note@-1{{Dereference of null pointer}}
 }
@@ -333,10 +333,10 @@ int getInt();
 
 void f() {
   int flag = getInt();
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
-  if (flag) // expected-note{{Assuming 'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -350,10 +350,10 @@ void f(int y) {
   y = 1;
   flag = y;
 
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
-  if (flag) // expected-note{{'flag' is 1}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+  if (flag) // expected-note-re{{{{^}}'flag' is 1{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -366,18 +366,18 @@ int getInt();
 void foo() {
   int y;
   y = 1;
-  flag = y; // tracking-note{{The value 1 is assigned to 'flag'}}
+  flag = y; // tracking-note-re{{{{^}}The value 1 is assigned to 'flag', which participates in a condition later{{$}}}}
 }
 
 void f(int y) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
-  foo(); // tracking-note{{Calling 'foo'}}
-         // tracking-note@-1{{Returning from 'foo'}}
+  foo(); // tracking-note-re{{{{^}}Calling 'foo'{{$}}}}
+         // tracking-note-re@-1{{{{^}}Returning from 'foo'{{$}}}}
 
-  if (flag) // expected-note{{'flag' is 1}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}'flag' is 1{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -388,44 +388,129 @@ int flag = 0;
 int getInt();
 
 void foo() {
-  flag = getInt(); // tracking-note{{Value assigned to 'flag'}}
+  flag = getInt(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
 }
 
 void f() {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
   int y = 0;
 
-  foo(); // tracking-note{{Calling 'foo'}}
-         // tracking-note@-1{{Returning from 'foo'}}
+  foo(); // tracking-note-re{{{{^}}Calling 'foo'{{$}}}}
+         // tracking-note-re@-1{{{{^}}Returning from 'foo'{{$}}}}
   y = flag;
 
-  if (y)    // expected-note{{Assuming 'y' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'y'}}
+  if (y)    // expected-note-re{{{{^}}Assuming 'y' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'y'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
 } // end of namespace condition_written_in_nested_stackframe_before_assignment
+
+namespace condition_lambda_capture_by_reference_last_write {
+int getInt();
+
+[[noreturn]] void halt();
+
+void f(int flag) {
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+
+  auto lambda = [&flag]() {
+    flag = getInt(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
+  };
+
+  lambda(); // tracking-note-re{{{{^}}Calling 'operator()'{{$}}}}
+            // tracking-note-re@-1{{{{^}}Returning from 'operator()'{{$}}}}
+
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
+    *x = 5; // expected-warning{{Dereference of null pointer}}
+            // expected-note@-1{{Dereference of null pointer}}
+}
+} // end of namespace condition_lambda_capture_by_reference_last_write
+
+namespace condition_lambda_capture_by_value_assumption {
+int getInt();
+
+[[noreturn]] void halt();
+
+void bar(int &flag) {
+  flag = getInt(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
+}
+
+void f(int flag) {
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+
+  auto lambda = [flag]() {
+    if (!flag) // tracking-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+               // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
+      halt();
+  };
+
+  bar(flag); // tracking-note-re{{{{^}}Calling 'bar'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'bar'{{$}}}}
+  lambda();  // tracking-note-re{{{{^}}Calling 'operator()'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'operator()'{{$}}}}
+
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
+    *x = 5; // expected-warning{{Dereference of null pointer}}
+            // expected-note@-1{{Dereference of null pointer}}
+}
+} // end of namespace condition_lambda_capture_by_value_assumption
+
+namespace condition_lambda_capture_by_reference_assumption {
+int getInt();
+
+[[noreturn]] void halt();
+
+void bar(int &flag) {
+  flag = getInt(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
+}
+
+void f(int flag) {
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+
+  auto lambda = [&flag]() {
+    if (!flag) // tracking-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+               // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
+      halt();
+  };
+
+  bar(flag); // tracking-note-re{{{{^}}Calling 'bar'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'bar'{{$}}}}
+  lambda();  // tracking-note-re{{{{^}}Calling 'operator()'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'operator()'{{$}}}}
+
+  if (flag) // expected-note-re{{{{^}}'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'}}
+    *x = 5; // expected-warning{{Dereference of null pointer}}
+            // expected-note@-1{{Dereference of null pointer}}
+}
+} // end of namespace condition_lambda_capture_by_reference_assumption
 
 namespace collapse_point_not_in_condition {
 
 [[noreturn]] void halt();
 
 void assert(int b) {
-  if (!b) // tracking-note{{Assuming 'b' is not equal to 0}}
-          // tracking-note@-1{{Taking false branch}}
+  if (!b) // tracking-note-re{{{{^}}Assuming 'b' is not equal to 0{{$}}}}
+          // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
     halt();
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
-  assert(flag); // tracking-note{{Calling 'assert'}}
-                // tracking-note@-1{{Returning from 'assert'}}
+  assert(flag); // tracking-note-re{{{{^}}Calling 'assert'{{$}}}}
+                // tracking-note-re@-1{{{{^}}Returning from 'assert'{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -437,27 +522,68 @@ namespace unimportant_write_before_collapse_point {
 [[noreturn]] void halt();
 
 void assert(int b) {
-  if (!b) // tracking-note{{Assuming 'b' is not equal to 0}}
-          // tracking-note@-1{{Taking false branch}}
+  if (!b) // tracking-note-re{{{{^}}Assuming 'b' is not equal to 0{{$}}}}
+          // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
     halt();
 }
 int getInt();
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
-  assert(flag); // tracking-note{{Calling 'assert'}}
-                // tracking-note@-1{{Returning from 'assert'}}
+  assert(flag); // tracking-note-re{{{{^}}Calling 'assert'{{$}}}}
+                // tracking-note-re@-1{{{{^}}Returning from 'assert'{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
 
 } // end of namespace unimportant_write_before_collapse_point
+
+namespace dont_crash_on_nonlogical_binary_operator {
+
+void f6(int x) {
+  int a[20];
+  if (x == 25) {} // expected-note{{Assuming 'x' is equal to 25}}
+                  // expected-note@-1{{Taking true branch}}
+  if (a[x] == 123) {} // expected-warning{{The left operand of '==' is a garbage value due to array index out of bounds}}
+                      // expected-note@-1{{The left operand of '==' is a garbage value due to array index out of bounds}}
+}
+
+} // end of namespace dont_crash_on_nonlogical_binary_operator
+
+namespace collapse_point_not_in_condition_as_field {
+
+[[noreturn]] void halt();
+struct IntWrapper {
+  int b;
+  IntWrapper();
+
+  void check() {
+    if (!b) // tracking-note-re{{{{^}}Assuming field 'b' is not equal to 0{{$}}}}
+            // tracking-note-re@-1{{{{^}}Taking false branch{{$}}}}
+      halt();
+    return;
+  }
+};
+
+void f(IntWrapper i) {
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
+
+  i.check(); // tracking-note-re{{{{^}}Calling 'IntWrapper::check'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'IntWrapper::check'{{$}}}}
+  if (i.b)   // expected-note-re{{{{^}}Field 'b' is not equal to 0{{$}}}}
+             // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+             // debug-note-re@-2{{{{^}}Tracking condition 'i.b'{{$}}}}
+    *x = 5;  // expected-warning{{Dereference of null pointer}}
+             // expected-note@-1{{Dereference of null pointer}}
+}
+
+} // end of namespace collapse_point_not_in_condition_as_field
 
 namespace dont_track_assertlike_conditions {
 
@@ -476,17 +602,17 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
-  assert(cond1); // expected-note{{Assuming 'cond1' is not equal to 0}}
-                 // expected-note@-1{{'?' condition is true}}
+  assert(cond1); // expected-note-re{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+                 // expected-note-re@-1{{{{^}}'?' condition is true{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -513,26 +639,25 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
   assert(cond1 && cond2);
-  // expected-note@-1{{Assuming 'cond1' is not equal to 0}}
-  // expected-note@-2{{Assuming 'cond2' is not equal to 0}}
-  // expected-note@-3{{'?' condition is true}}
-  // expected-note@-4{{Left side of '&&' is true}}
+  // expected-note-re@-1{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+  // expected-note-re@-2{{{{^}}Assuming 'cond2' is not equal to 0{{$}}}}
+  // expected-note-re@-3{{{{^}}'?' condition is true{{$}}}}
+  // expected-note-re@-4{{{{^}}Left side of '&&' is true{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
 
 #undef assert
-
 } // end of namespace dont_track_assertlike_and_conditions
 
 namespace dont_track_assertlike_or_conditions {
@@ -554,18 +679,18 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
   assert(cond1 || cond2);
-  // expected-note@-1{{Assuming 'cond1' is not equal to 0}}
-  // expected-note@-2{{Left side of '||' is true}}
+  // expected-note-re@-1{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+  // expected-note-re@-2{{{{^}}Left side of '||' is true{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -593,18 +718,18 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
-  assert(cond1); // expected-note{{Assuming 'cond1' is not equal to 0}}
-                 // expected-note@-1{{Taking false branch}}
-                 // expected-note@-2{{Loop condition is false.  Exiting loop}}
+  assert(cond1); // expected-note-re{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+                 // expected-note-re@-1{{{{^}}Taking false branch{{$}}}}
+                 // expected-note-re@-2{{{{^}}Loop condition is false.  Exiting loop{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -634,21 +759,21 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
   assert(cond1 && cond2);
-  // expected-note@-1{{Assuming 'cond1' is not equal to 0}}
-  // expected-note@-2{{Left side of '&&' is true}}
-  // expected-note@-3{{Assuming the condition is false}}
-  // expected-note@-4{{Taking false branch}}
-  // expected-note@-5{{Loop condition is false.  Exiting loop}}
+  // expected-note-re@-1{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+  // expected-note-re@-2{{{{^}}Left side of '&&' is true{{$}}}}
+  // expected-note-re@-3{{{{^}}Assuming the condition is false{{$}}}}
+  // expected-note-re@-4{{{{^}}Taking false branch{{$}}}}
+  // expected-note-re@-5{{{{^}}Loop condition is false.  Exiting loop{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -678,20 +803,20 @@ void bar() {
 }
 
 void f(int flag) {
-  int *x = 0; // expected-note{{'x' initialized to a null pointer value}}
+  int *x = 0; // expected-note-re{{{{^}}'x' initialized to a null pointer value{{$}}}}
 
   flag = getInt();
 
   bar();
   assert(cond1 || cond2);
-  // expected-note@-1{{Assuming 'cond1' is not equal to 0}}
-  // expected-note@-2{{Left side of '||' is true}}
-  // expected-note@-3{{Taking false branch}}
-  // expected-note@-4{{Loop condition is false.  Exiting loop}}
+  // expected-note-re@-1{{{{^}}Assuming 'cond1' is not equal to 0{{$}}}}
+  // expected-note-re@-2{{{{^}}Left side of '||' is true{{$}}}}
+  // expected-note-re@-3{{{{^}}Taking false branch{{$}}}}
+  // expected-note-re@-4{{{{^}}Loop condition is false.  Exiting loop{{$}}}}
 
-  if (flag) // expected-note{{'flag' is not equal to 0}}
-            // expected-note@-1{{Taking true branch}}
-            // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag) // expected-note-re{{{{^}}Assuming 'flag' is not equal to 0{{$}}}}
+            // expected-note-re@-1{{{{^}}Taking true branch{{$}}}}
+            // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     *x = 5; // expected-warning{{Dereference of null pointer}}
             // expected-note@-1{{Dereference of null pointer}}
 }
@@ -704,7 +829,7 @@ namespace only_track_the_evaluated_condition {
 bool coin();
 
 void bar(int &flag) {
-  flag = coin(); // tracking-note{{Value assigned to 'flag'}}
+  flag = coin(); // tracking-note-re{{{{^}}Value assigned to 'flag', which participates in a condition later{{$}}}}
 }
 
 void bar2(int &flag2) {
@@ -712,19 +837,19 @@ void bar2(int &flag2) {
 }
 
 void f(int *x) {
-  if (x) // expected-note{{Assuming 'x' is null}}
-         // debug-note@-1{{Tracking condition 'x'}}
-         // expected-note@-2{{Taking false branch}}
+  if (x) // expected-note-re{{{{^}}Assuming 'x' is null{{$}}}}
+         // debug-note-re@-1{{{{^}}Tracking condition 'x'{{$}}}}
+         // expected-note-re@-2{{{{^}}Taking false branch{{$}}}}
     return;
 
   int flag, flag2;
-  bar(flag); // tracking-note{{Calling 'bar'}}
-             // tracking-note@-1{{Returning from 'bar'}}
+  bar(flag); // tracking-note-re{{{{^}}Calling 'bar'{{$}}}}
+             // tracking-note-re@-1{{{{^}}Returning from 'bar'{{$}}}}
   bar2(flag2);
 
-  if (flag && flag2) // expected-note   {{Assuming 'flag' is 0}}
-                     // expected-note@-1{{Left side of '&&' is false}}
-                     // debug-note@-2{{Tracking condition 'flag'}}
+  if (flag && flag2) // expected-note-re   {{{{^}}Assuming 'flag' is 0{{$}}}}
+                     // expected-note-re@-1{{{{^}}Left side of '&&' is false{{$}}}}
+                     // debug-note-re@-2{{{{^}}Tracking condition 'flag'{{$}}}}
     return;
 
   *x = 5; // expected-warning{{Dereference of null pointer}}

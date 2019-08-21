@@ -180,21 +180,44 @@ static bool hasVisibleUpdate(const ExplodedNode *LeftNode, SVal LeftVal,
     RLCV->getStore() == RightNode->getState()->getStore();
 }
 
-static Optional<const llvm::APSInt *>
-getConcreteIntegerValue(const Expr *CondVarExpr, const ExplodedNode *N) {
+static Optional<SVal> getSValForVar(const Expr *CondVarExpr,
+                                    const ExplodedNode *N) {
   ProgramStateRef State = N->getState();
   const LocationContext *LCtx = N->getLocationContext();
 
-  // The declaration of the value may rely on a pointer so take its l-value.
-  if (const auto *DRE = dyn_cast_or_null<DeclRefExpr>(CondVarExpr)) {
-    if (const auto *VD = dyn_cast_or_null<VarDecl>(DRE->getDecl())) {
-      SVal DeclSVal = State->getSVal(State->getLValue(VD, LCtx));
-      if (auto DeclCI = DeclSVal.getAs<nonloc::ConcreteInt>())
-        return &DeclCI->getValue();
-    }
-  }
+  assert(CondVarExpr);
+  CondVarExpr = CondVarExpr->IgnoreImpCasts();
 
-  return {};
+  // The declaration of the value may rely on a pointer so take its l-value.
+  // FIXME: As seen in VisitCommonDeclRefExpr, sometimes DeclRefExpr may
+  // evaluate to a FieldRegion when it refers to a declaration of a lambda
+  // capture variable. We most likely need to duplicate that logic here.
+  if (const auto *DRE = dyn_cast<DeclRefExpr>(CondVarExpr))
+    if (const auto *VD = dyn_cast<VarDecl>(DRE->getDecl()))
+      return State->getSVal(State->getLValue(VD, LCtx));
+
+  if (const auto *ME = dyn_cast<MemberExpr>(CondVarExpr))
+    if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl()))
+      if (auto FieldL = State->getSVal(ME, LCtx).getAs<Loc>())
+        return State->getRawSVal(*FieldL, FD->getType());
+
+  return None;
+}
+
+static Optional<const llvm::APSInt *>
+getConcreteIntegerValue(const Expr *CondVarExpr, const ExplodedNode *N) {
+
+  if (Optional<SVal> V = getSValForVar(CondVarExpr, N))
+    if (auto CI = V->getAs<nonloc::ConcreteInt>())
+      return &CI->getValue();
+  return None;
+}
+
+static bool isInterestingExpr(const Expr *E, const ExplodedNode *N,
+                              const BugReport *B) {
+  if (Optional<SVal> V = getSValForVar(E, N))
+    return B->getInterestingnessKind(*V).hasValue();
+  return false;
 }
 
 /// \return name of the macro inside the location \p Loc.
@@ -298,6 +321,7 @@ class NoStoreFuncVisitor final : public BugReporterVisitor {
   MemRegionManager &MmrMgr;
   const SourceManager &SM;
   const PrintingPolicy &PP;
+  bugreporter::TrackingKind TKind;
 
   /// Recursion limit for dereferencing fields when looking for the
   /// region of interest.
@@ -318,10 +342,10 @@ class NoStoreFuncVisitor final : public BugReporterVisitor {
   using RegionVector = SmallVector<const MemRegion *, 5>;
 
 public:
-  NoStoreFuncVisitor(const SubRegion *R)
+  NoStoreFuncVisitor(const SubRegion *R, bugreporter::TrackingKind TKind)
       : RegionOfInterest(R), MmrMgr(*R->getMemRegionManager()),
         SM(MmrMgr.getContext().getSourceManager()),
-        PP(MmrMgr.getContext().getPrintingPolicy()) {}
+        PP(MmrMgr.getContext().getPrintingPolicy()), TKind(TKind) {}
 
   void Profile(llvm::FoldingSetNodeID &ID) const override {
     static int Tag = 0;
@@ -612,6 +636,9 @@ void NoStoreFuncVisitor::findModifyingFrames(const ExplodedNode *N) {
   } while (N);
 }
 
+static llvm::StringLiteral WillBeUsedForACondition =
+    ", which participates in a condition later";
+
 PathDiagnosticPieceRef NoStoreFuncVisitor::maybeEmitNote(
     BugReport &R, const CallEvent &Call, const ExplodedNode *N,
     const RegionVector &FieldChain, const MemRegion *MatchedRegion,
@@ -658,6 +685,8 @@ PathDiagnosticPieceRef NoStoreFuncVisitor::maybeEmitNote(
     return nullptr;
 
   os << "'";
+  if (TKind == bugreporter::TrackingKind::Condition)
+    os << WillBeUsedForACondition;
   return std::make_shared<PathDiagnosticEventPiece>(L, os.str());
 }
 
@@ -789,7 +818,7 @@ public:
     AnalyzerOptions &Options = N->getState()->getAnalysisManager().options;
     if (EnableNullFPSuppression &&
         Options.ShouldSuppressNullReturnPaths && V.getAs<Loc>())
-      BR.addVisitor(llvm::make_unique<MacroNullReturnSuppressionVisitor>(
+      BR.addVisitor(std::make_unique<MacroNullReturnSuppressionVisitor>(
               R->getAs<SubRegion>(), V));
   }
 
@@ -951,7 +980,7 @@ public:
       if (Optional<Loc> RetLoc = RetVal.getAs<Loc>())
         EnableNullFPSuppression = State->isNull(*RetLoc).isConstrainedTrue();
 
-    BR.addVisitor(llvm::make_unique<ReturnVisitor>(CalleeContext,
+    BR.addVisitor(std::make_unique<ReturnVisitor>(CalleeContext,
                                                    EnableNullFPSuppression,
                                                    Options, TKind));
   }
@@ -1068,6 +1097,9 @@ public:
     if (!L.isValid() || !L.asLocation().isValid())
       return nullptr;
 
+    if (TKind == bugreporter::TrackingKind::Condition)
+      Out << WillBeUsedForACondition;
+
     auto EventPiece = std::make_shared<PathDiagnosticEventPiece>(L, Out.str());
 
     // If we determined that the note is meaningless, make it prunable, and
@@ -1164,41 +1196,6 @@ void FindLastStoreBRVisitor::Profile(llvm::FoldingSetNodeID &ID) const {
   ID.Add(V);
   ID.AddInteger(static_cast<int>(TKind));
   ID.AddBoolean(EnableNullFPSuppression);
-}
-
-void FindLastStoreBRVisitor::registerStatementVarDecls(
-    BugReport &BR, const Stmt *S, bool EnableNullFPSuppression,
-    TrackingKind TKind) {
-
-  const ExplodedNode *N = BR.getErrorNode();
-  std::deque<const Stmt *> WorkList;
-  WorkList.push_back(S);
-
-  while (!WorkList.empty()) {
-    const Stmt *Head = WorkList.front();
-    WorkList.pop_front();
-
-    ProgramStateManager &StateMgr = N->getState()->getStateManager();
-
-    if (const auto *DR = dyn_cast<DeclRefExpr>(Head)) {
-      if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
-        const VarRegion *R =
-        StateMgr.getRegionManager().getVarRegion(VD, N->getLocationContext());
-
-        // What did we load?
-        SVal V = N->getSVal(S);
-
-        if (V.getAs<loc::ConcreteInt>() || V.getAs<nonloc::ConcreteInt>()) {
-          // Register a new visitor with the BugReport.
-          BR.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
-              V.castAs<KnownSVal>(), R, EnableNullFPSuppression, TKind));
-        }
-      }
-    }
-
-    for (const Stmt *SubStmt : Head->children())
-      WorkList.push_back(SubStmt);
-  }
 }
 
 /// Returns true if \p N represents the DeclStmt declaring and initializing
@@ -1468,7 +1465,7 @@ FindLastStoreBRVisitor::VisitNode(const ExplodedNode *Succ,
               dyn_cast_or_null<BlockDataRegion>(V.getAsRegion())) {
           if (const VarRegion *OriginalR = BDR->getOriginalRegion(VR)) {
             if (auto KV = State->getSVal(OriginalR).getAs<KnownSVal>())
-              BR.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+              BR.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
                   *KV, OriginalR, EnableNullFPSuppression, TKind, OriginSFC));
           }
         }
@@ -1484,6 +1481,9 @@ FindLastStoreBRVisitor::VisitNode(const ExplodedNode *Succ,
 
   if (os.str().empty())
     showBRDefaultDiagnostics(os, R, V);
+
+  if (TKind == bugreporter::TrackingKind::Condition)
+    os << WillBeUsedForACondition;
 
   // Construct a new PathDiagnosticPiece.
   ProgramPoint P = StoreSite->getLocation();
@@ -1755,10 +1755,9 @@ static bool isAssertlikeBlock(const CFGBlock *B, ASTContext &Context) {
   // B1, 'A && B' for B2, and 'A && B || C' for B3. Let's check whether we
   // reached the end of the condition!
   if (const Stmt *ElseCond = Else->getTerminatorCondition())
-    if (isa<BinaryOperator>(ElseCond)) {
-      assert(cast<BinaryOperator>(ElseCond)->isLogicalOp());
-      return isAssertlikeBlock(Else, Context);
-    }
+    if (const auto *BinOp = dyn_cast<BinaryOperator>(ElseCond))
+      if (BinOp->isLogicalOp())
+        return isAssertlikeBlock(Else, Context);
 
   return false;
 }
@@ -1926,7 +1925,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
   // TODO: Shouldn't we track control dependencies of every bug location, rather
   // than only tracked expressions?
   if (LVState->getAnalysisManager().getAnalyzerOptions().ShouldTrackConditions)
-    report.addVisitor(llvm::make_unique<TrackControlDependencyCondBRVisitor>(
+    report.addVisitor(std::make_unique<TrackControlDependencyCondBRVisitor>(
           InputNode));
 
   // The message send could be nil due to the receiver being nil.
@@ -1954,7 +1953,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
     // got initialized.
     if (RR && !LVIsNull)
       if (auto KV = LVal.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, RR, EnableNullFPSuppression, TKind, SFC));
 
     // In case of C++ references, we want to differentiate between a null
@@ -1969,17 +1968,17 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
       // Mark both the variable region and its contents as interesting.
       SVal V = LVState->getRawSVal(loc::MemRegionVal(R));
       report.addVisitor(
-          llvm::make_unique<NoStoreFuncVisitor>(cast<SubRegion>(R)));
+          std::make_unique<NoStoreFuncVisitor>(cast<SubRegion>(R), TKind));
 
       MacroNullReturnSuppressionVisitor::addMacroVisitorIfNecessary(
           LVNode, R, EnableNullFPSuppression, report, V);
 
-      report.markInteresting(V);
-      report.addVisitor(llvm::make_unique<UndefOrNullArgVisitor>(R));
+      report.markInteresting(V, TKind);
+      report.addVisitor(std::make_unique<UndefOrNullArgVisitor>(R));
 
       // If the contents are symbolic, find out when they became null.
       if (V.getAsLocSymbol(/*IncludeBaseRegions*/ true))
-        report.addVisitor(llvm::make_unique<TrackConstraintBRVisitor>(
+        report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
               V.castAs<DefinedSVal>(), false));
 
       // Add visitor, which will suppress inline defensive checks.
@@ -1987,11 +1986,11 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
         if (!DV->isZeroConstant() && LVState->isNull(*DV).isConstrainedTrue() &&
             EnableNullFPSuppression)
           report.addVisitor(
-              llvm::make_unique<SuppressInlineDefensiveChecksVisitor>(*DV,
+              std::make_unique<SuppressInlineDefensiveChecksVisitor>(*DV,
                                                                       LVNode));
 
       if (auto KV = V.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, R, EnableNullFPSuppression, TKind, SFC));
       return true;
     }
@@ -2006,7 +2005,7 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
 
   // Is it a symbolic value?
   if (auto L = V.getAs<loc::MemRegionVal>()) {
-    report.addVisitor(llvm::make_unique<UndefOrNullArgVisitor>(L->getRegion()));
+    report.addVisitor(std::make_unique<UndefOrNullArgVisitor>(L->getRegion()));
 
     // FIXME: this is a hack for fixing a later crash when attempting to
     // dereference a void* pointer.
@@ -2030,13 +2029,13 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
 
     if (CanDereference)
       if (auto KV = RVal.getAs<KnownSVal>())
-        report.addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+        report.addVisitor(std::make_unique<FindLastStoreBRVisitor>(
             *KV, L->getRegion(), EnableNullFPSuppression, TKind, SFC));
 
     const MemRegion *RegionRVal = RVal.getAsRegion();
     if (RegionRVal && isa<SymbolicRegion>(RegionRVal)) {
-      report.markInteresting(RegionRVal);
-      report.addVisitor(llvm::make_unique<TrackConstraintBRVisitor>(
+      report.markInteresting(RegionRVal, TKind);
+      report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
             loc::MemRegionVal(RegionRVal), /*assumption=*/false));
     }
   }
@@ -2499,17 +2498,11 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitConditionVariable(
 
   const LocationContext *LCtx = N->getLocationContext();
   PathDiagnosticLocation Loc(CondVarExpr, BRC.getSourceManager(), LCtx);
+
   auto event = std::make_shared<PathDiagnosticEventPiece>(Loc, Out.str());
 
-  if (const auto *DR = dyn_cast<DeclRefExpr>(CondVarExpr)) {
-    if (const auto *VD = dyn_cast<VarDecl>(DR->getDecl())) {
-      const ProgramState *state = N->getState().get();
-      if (const MemRegion *R = state->getLValue(VD, LCtx).getAsRegion()) {
-        if (report.isInteresting(R))
-          event->setPrunable(false);
-      }
-    }
-  }
+  if (isInterestingExpr(CondVarExpr, N, &report))
+    event->setPrunable(false);
 
   return event;
 }
@@ -2539,16 +2532,10 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitTrueTest(
 
   PathDiagnosticLocation Loc(Cond, BRC.getSourceManager(), LCtx);
   auto event = std::make_shared<PathDiagnosticEventPiece>(Loc, Out.str());
-  const ProgramState *state = N->getState().get();
-  if (const MemRegion *R = state->getLValue(VD, LCtx).getAsRegion()) {
-    if (report.isInteresting(R))
-      event->setPrunable(false);
-    else {
-      SVal V = state->getSVal(R);
-      if (report.isInteresting(V))
-        event->setPrunable(false);
-    }
-  }
+
+  if (isInterestingExpr(DRE, N, &report))
+    event->setPrunable(false);
+
   return std::move(event);
 }
 
@@ -2579,7 +2566,10 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitTrueTest(
   if (!IsAssuming)
     return std::make_shared<PathDiagnosticPopUpPiece>(Loc, Out.str());
 
-  return std::make_shared<PathDiagnosticEventPiece>(Loc, Out.str());
+  auto event = std::make_shared<PathDiagnosticEventPiece>(Loc, Out.str());
+  if (isInterestingExpr(ME, N, &report))
+    event->setPrunable(false);
+  return event;
 }
 
 bool ConditionBRVisitor::printValue(const Expr *CondVarExpr, raw_ostream &Out,
@@ -2619,10 +2609,8 @@ bool ConditionBRVisitor::printValue(const Expr *CondVarExpr, raw_ostream &Out,
   return true;
 }
 
-const char *const ConditionBRVisitor::GenericTrueMessage =
-    "Assuming the condition is true";
-const char *const ConditionBRVisitor::GenericFalseMessage =
-    "Assuming the condition is false";
+constexpr llvm::StringLiteral ConditionBRVisitor::GenericTrueMessage;
+constexpr llvm::StringLiteral ConditionBRVisitor::GenericFalseMessage;
 
 bool ConditionBRVisitor::isPieceMessageGeneric(
     const PathDiagnosticPiece *Piece) {

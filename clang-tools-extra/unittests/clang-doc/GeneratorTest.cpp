@@ -17,21 +17,21 @@ namespace doc {
 
 TEST(GeneratorTest, emitIndex) {
   Index Idx;
-  auto InfoA = llvm::make_unique<Info>();
+  auto InfoA = std::make_unique<Info>();
   InfoA->Name = "A";
   InfoA->USR = serialize::hashUSR("1");
   Generator::addInfoToIndex(Idx, InfoA.get());
-  auto InfoC = llvm::make_unique<Info>();
+  auto InfoC = std::make_unique<Info>();
   InfoC->Name = "C";
   InfoC->USR = serialize::hashUSR("3");
   Reference RefB = Reference("B");
   RefB.USR = serialize::hashUSR("2");
   InfoC->Namespace = {std::move(RefB)};
   Generator::addInfoToIndex(Idx, InfoC.get());
-  auto InfoD = llvm::make_unique<Info>();
+  auto InfoD = std::make_unique<Info>();
   InfoD->Name = "D";
   InfoD->USR = serialize::hashUSR("4");
-  auto InfoF = llvm::make_unique<Info>();
+  auto InfoF = std::make_unique<Info>();
   InfoF->Name = "F";
   InfoF->USR = serialize::hashUSR("6");
   Reference RefD = Reference("D");
@@ -40,7 +40,7 @@ TEST(GeneratorTest, emitIndex) {
   RefE.USR = serialize::hashUSR("5");
   InfoF->Namespace = {std::move(RefE), std::move(RefD)};
   Generator::addInfoToIndex(Idx, InfoF.get());
-  auto InfoG = llvm::make_unique<Info>(InfoType::IT_namespace);
+  auto InfoG = std::make_unique<Info>(InfoType::IT_namespace);
   Generator::addInfoToIndex(Idx, InfoG.get());
 
   Index ExpectedIdx;
@@ -66,6 +66,25 @@ TEST(GeneratorTest, emitIndex) {
   IndexG.Name = "GlobalNamespace";
   IndexG.RefType = InfoType::IT_namespace;
   ExpectedIdx.Children.emplace_back(std::move(IndexG));
+
+  CheckIndex(ExpectedIdx, Idx);
+}
+
+TEST(GeneratorTest, sortIndex) {
+  Index Idx;
+  Idx.Children.emplace_back("b");
+  Idx.Children.emplace_back("aA");
+  Idx.Children.emplace_back("aa");
+  Idx.Children.emplace_back("A");
+  Idx.Children.emplace_back("a");
+  Idx.sort();
+
+  Index ExpectedIdx;
+  ExpectedIdx.Children.emplace_back("a");
+  ExpectedIdx.Children.emplace_back("A");
+  ExpectedIdx.Children.emplace_back("aa");
+  ExpectedIdx.Children.emplace_back("aA");
+  ExpectedIdx.Children.emplace_back("b");
 
   CheckIndex(ExpectedIdx, Idx);
 }

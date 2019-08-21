@@ -24,7 +24,6 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -380,6 +379,7 @@ namespace {
     SDValue visitSUBE(SDNode *N);
     SDValue visitSUBCARRY(SDNode *N);
     SDValue visitMUL(SDNode *N);
+    SDValue visitMULFIX(SDNode *N);
     SDValue useDivRem(SDNode *N);
     SDValue visitSDIV(SDNode *N);
     SDValue visitSDIVLike(SDValue N0, SDValue N1, SDNode *N);
@@ -1148,7 +1148,6 @@ SDValue DAGCombiner::reassociateOpsCommutative(unsigned Opc, const SDLoc &DL,
       SDValue OpNode = DAG.getNode(Opc, SDLoc(N0), VT, N0.getOperand(0), N1);
       if (!OpNode.getNode())
         return SDValue();
-      AddToWorklist(OpNode.getNode());
       return DAG.getNode(Opc, DL, VT, OpNode, N0.getOperand(1));
     }
   }
@@ -1462,7 +1461,6 @@ SDValue DAGCombiner::PromoteIntShiftOp(SDValue Op) {
     SDValue RV =
         DAG.getNode(ISD::TRUNCATE, DL, VT, DAG.getNode(Opc, DL, PVT, N0, N1));
 
-    AddToWorklist(N0.getNode());
     if (Replace)
       ReplaceLoadWithPromotedLoad(Op.getOperand(0).getNode(), N0.getNode());
 
@@ -1697,6 +1695,9 @@ SDValue DAGCombiner::visit(SDNode *N) {
   case ISD::ADDCARRY:           return visitADDCARRY(N);
   case ISD::SUBE:               return visitSUBE(N);
   case ISD::SUBCARRY:           return visitSUBCARRY(N);
+  case ISD::SMULFIX:
+  case ISD::SMULFIXSAT:
+  case ISD::UMULFIX:            return visitMULFIX(N);
   case ISD::MUL:                return visitMUL(N);
   case ISD::SDIV:               return visitSDIV(N);
   case ISD::UDIV:               return visitUDIV(N);
@@ -3466,6 +3467,29 @@ SDValue DAGCombiner::visitSUBCARRY(SDNode *N) {
   return SDValue();
 }
 
+// Notice that "mulfix" can be any of SMULFIX, SMULFIXSAT and UMULFIX here.
+SDValue DAGCombiner::visitMULFIX(SDNode *N) {
+  SDValue N0 = N->getOperand(0);
+  SDValue N1 = N->getOperand(1);
+  SDValue Scale = N->getOperand(2);
+  EVT VT = N0.getValueType();
+
+  // fold (mulfix x, undef, scale) -> 0
+  if (N0.isUndef() || N1.isUndef())
+    return DAG.getConstant(0, SDLoc(N), VT);
+
+  // Canonicalize constant to RHS (vector doesn't have to splat)
+  if (DAG.isConstantIntBuildVectorOrConstantInt(N0) &&
+     !DAG.isConstantIntBuildVectorOrConstantInt(N1))
+    return DAG.getNode(N->getOpcode(), SDLoc(N), VT, N1, N0, Scale);
+
+  // fold (mulfix x, 0, scale) -> 0
+  if (isNullConstant(N1))
+    return DAG.getConstant(0, SDLoc(N), VT);
+
+  return SDValue();
+}
+
 SDValue DAGCombiner::visitMUL(SDNode *N) {
   SDValue N0 = N->getOperand(0);
   SDValue N1 = N->getOperand(1);
@@ -5187,6 +5211,7 @@ SDValue DAGCombiner::visitAND(SDNode *N) {
       return SDValue(N, 0);   // Return N so it doesn't get rechecked!
     }
   }
+
   // similarly fold (and (X (load ([non_ext|any_ext|zero_ext] V))), c) ->
   // (X (load ([non_ext|zero_ext] V))) if 'and' only clears top bits which must
   // already be zero by virtue of the width of the base type of the load.
@@ -12392,9 +12417,8 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
     // If this FDIV is part of a reciprocal square root, it may be folded
     // into a target-specific square root estimate instruction.
     if (N1.getOpcode() == ISD::FSQRT) {
-      if (SDValue RV = buildRsqrtEstimate(N1.getOperand(0), Flags)) {
+      if (SDValue RV = buildRsqrtEstimate(N1.getOperand(0), Flags))
         return DAG.getNode(ISD::FMUL, DL, VT, N0, RV, Flags);
-      }
     } else if (N1.getOpcode() == ISD::FP_EXTEND &&
                N1.getOperand(0).getOpcode() == ISD::FSQRT) {
       if (SDValue RV = buildRsqrtEstimate(N1.getOperand(0).getOperand(0),
@@ -15396,7 +15420,7 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode *St) {
 
   bool RV = false;
   while (StoreNodes.size() > 1) {
-    unsigned StartIdx = 0;
+    size_t StartIdx = 0;
     while ((StartIdx + 1 < StoreNodes.size()) &&
            StoreNodes[StartIdx].OffsetFromBase + ElementSizeBytes !=
                StoreNodes[StartIdx + 1].OffsetFromBase)
@@ -16050,9 +16074,8 @@ SDValue DAGCombiner::visitSTORE(SDNode *N) {
     // See if we can simplify the input to this truncstore with knowledge that
     // only the low bits are being used.  For example:
     // "truncstore (or (shl x, 8), y), i8"  -> "truncstore y, i8"
-    SDValue Shorter = DAG.GetDemandedBits(Value, TruncDemandedBits);
     AddToWorklist(Value.getNode());
-    if (Shorter)
+    if (SDValue Shorter = DAG.GetDemandedBits(Value, TruncDemandedBits))
       return DAG.getTruncStore(Chain, SDLoc(N), Shorter, Ptr, ST->getMemoryVT(),
                                ST->getMemOperand());
 
@@ -17660,6 +17683,15 @@ SDValue DAGCombiner::visitCONCAT_VECTORS(SDNode *N) {
       })) {
     SDValue In = N->getOperand(0);
     assert(In.getValueType().isVector() && "Must concat vectors");
+
+    // If the input is a concat_vectors, just make a larger concat by padding
+    // with smaller undefs.
+    if (In.getOpcode() == ISD::CONCAT_VECTORS && In.hasOneUse()) {
+      unsigned NumOps = N->getNumOperands() * In.getNumOperands();
+      SmallVector<SDValue, 4> Ops(In->op_begin(), In->op_end());
+      Ops.resize(NumOps, DAG.getUNDEF(Ops[0].getValueType()));
+      return DAG.getNode(ISD::CONCAT_VECTORS, SDLoc(N), VT, Ops);
+    }
 
     SDValue Scalar = peekThroughOneUseBitcasts(In);
 

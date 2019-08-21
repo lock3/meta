@@ -405,6 +405,12 @@ public:
   /// Source location for newly created implicit MSInheritanceAttrs
   SourceLocation ImplicitMSInheritanceAttrLoc;
 
+  /// Holds TypoExprs that are created from `createDelayedTypo`. This is used by
+  /// `TransformTypos` in order to keep track of any TypoExprs that are created
+  /// recursively during typo correction and wipe them away if the correction
+  /// fails.
+  llvm::SmallVector<TypoExpr *, 2> TypoExprs;
+
   /// pragma clang section kind
   enum PragmaClangSectionKind {
     PCSK_Invalid      = 0,
@@ -1621,7 +1627,7 @@ public:
 
     template <std::size_t... Is>
     void emit(const SemaDiagnosticBuilder &DB,
-              llvm::index_sequence<Is...>) const {
+              std::index_sequence<Is...>) const {
       // Apply all tuple elements to the builder in order.
       bool Dummy[] = {false, (DB << getPrintable(std::get<Is>(Args)))...};
       (void)Dummy;
@@ -1635,7 +1641,7 @@ public:
 
     void diagnose(Sema &S, SourceLocation Loc, QualType T) override {
       const SemaDiagnosticBuilder &DB = S.Diag(Loc, DiagID);
-      emit(DB, llvm::index_sequence_for<Ts...>());
+      emit(DB, std::index_sequence_for<Ts...>());
       DB << T;
     }
   };
@@ -8993,7 +8999,8 @@ private:
   void popOpenMPFunctionRegion(const sema::FunctionScopeInfo *OldFSI);
 
   /// Check whether we're allowed to call Callee from the current function.
-  void checkOpenMPDeviceFunction(SourceLocation Loc, FunctionDecl *Callee);
+  void checkOpenMPDeviceFunction(SourceLocation Loc, FunctionDecl *Callee,
+                                 bool CheckForDelayedContext = true);
 
   /// Check if the expression is allowed to be used in expressions for the
   /// OpenMP devices.

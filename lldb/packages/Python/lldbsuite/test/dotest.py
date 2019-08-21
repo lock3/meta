@@ -343,8 +343,13 @@ def parseOptionsAndInitTestdirs():
             args.skipCategories, False)
 
     if args.E:
-        cflags_extras = args.E
-        os.environ['CFLAGS_EXTRAS'] = cflags_extras
+        os.environ['CFLAGS_EXTRAS'] = args.E
+
+    if args.dwarf_version:
+        configuration.dwarf_version = args.dwarf_version
+        # We cannot modify CFLAGS_EXTRAS because they're used in test cases
+        # that explicitly require no debug info.
+        os.environ['CFLAGS'] = '-gdwarf-{}'.format(configuration.dwarf_version)
 
     if args.d:
         sys.stdout.write(

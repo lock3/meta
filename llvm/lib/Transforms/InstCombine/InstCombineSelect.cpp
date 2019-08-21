@@ -1457,6 +1457,16 @@ Instruction *InstCombiner::foldSPFofSPF(Instruction *Inner,
     }
   }
 
+  // max(max(A, B), min(A, B)) --> max(A, B)
+  // min(min(A, B), max(A, B)) --> min(A, B)
+  // TODO: This could be done in instsimplify.
+  if (SPF1 == SPF2 &&
+      ((SPF1 == SPF_UMIN && match(C, m_c_UMax(m_Specific(A), m_Specific(B)))) ||
+       (SPF1 == SPF_SMIN && match(C, m_c_SMax(m_Specific(A), m_Specific(B)))) ||
+       (SPF1 == SPF_UMAX && match(C, m_c_UMin(m_Specific(A), m_Specific(B)))) ||
+       (SPF1 == SPF_SMAX && match(C, m_c_SMin(m_Specific(A), m_Specific(B))))))
+    return replaceInstUsesWith(Outer, Inner);
+
   // ABS(ABS(X)) -> ABS(X)
   // NABS(NABS(X)) -> NABS(X)
   // TODO: This could be done in instsimplify.
@@ -1694,6 +1704,30 @@ static Instruction *canonicalizeSelectToShuffle(SelectInst &SI) {
 
   return new ShuffleVectorInst(SI.getTrueValue(), SI.getFalseValue(),
                                ConstantVector::get(Mask));
+}
+
+/// If we have a select of vectors with a scalar condition, try to convert that
+/// to a vector select by splatting the condition. A splat may get folded with
+/// other operations in IR and having all operands of a select be vector types
+/// is likely better for vector codegen.
+static Instruction *canonicalizeScalarSelectOfVecs(
+    SelectInst &Sel, InstCombiner::BuilderTy &Builder) {
+  Type *Ty = Sel.getType();
+  if (!Ty->isVectorTy())
+    return nullptr;
+
+  // We can replace a single-use extract with constant index.
+  Value *Cond = Sel.getCondition();
+  if (!match(Cond, m_OneUse(m_ExtractElement(m_Value(), m_ConstantInt()))))
+    return nullptr;
+
+  // select (extelt V, Index), T, F --> select (splat V, Index), T, F
+  // Splatting the extracted condition reduces code (we could directly create a
+  // splat shuffle of the source vector to eliminate the intermediate step).
+  unsigned NumElts = Ty->getVectorNumElements();
+  Value *SplatCond = Builder.CreateVectorSplat(NumElts, Cond);
+  Sel.setCondition(SplatCond);
+  return &Sel;
 }
 
 /// Reuse bitcasted operands between a compare and select:
@@ -1990,6 +2024,9 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
     return replaceInstUsesWith(SI, V);
 
   if (Instruction *I = canonicalizeSelectToShuffle(SI))
+    return I;
+
+  if (Instruction *I = canonicalizeScalarSelectOfVecs(SI, Builder))
     return I;
 
   // Canonicalize a one-use integer compare with a non-canonical predicate by

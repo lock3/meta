@@ -180,6 +180,29 @@ llvm::Error parseRecord(Record R, unsigned ID, llvm::StringRef Blob,
 }
 
 llvm::Error parseRecord(Record R, unsigned ID, llvm::StringRef Blob,
+                        BaseRecordInfo *I) {
+  switch (ID) {
+  case BASE_RECORD_USR:
+    return decodeRecord(R, I->USR, Blob);
+  case BASE_RECORD_NAME:
+    return decodeRecord(R, I->Name, Blob);
+  case BASE_RECORD_PATH:
+    return decodeRecord(R, I->Path, Blob);
+  case BASE_RECORD_TAG_TYPE:
+    return decodeRecord(R, I->TagType, Blob);
+  case BASE_RECORD_IS_VIRTUAL:
+    return decodeRecord(R, I->IsVirtual, Blob);
+  case BASE_RECORD_ACCESS:
+    return decodeRecord(R, I->Access, Blob);
+  case BASE_RECORD_IS_PARENT:
+    return decodeRecord(R, I->IsParent, Blob);
+  default:
+    return llvm::make_error<llvm::StringError>(
+        "Invalid field for BaseRecordInfo.\n", llvm::inconvertibleErrorCode());
+  }
+}
+
+llvm::Error parseRecord(Record R, unsigned ID, llvm::StringRef Blob,
                         EnumInfo *I) {
   switch (ID) {
   case ENUM_USR:
@@ -329,7 +352,7 @@ template <> llvm::Expected<CommentInfo *> getCommentInfo(EnumInfo *I) {
 }
 
 template <> llvm::Expected<CommentInfo *> getCommentInfo(CommentInfo *I) {
-  I->Children.emplace_back(llvm::make_unique<CommentInfo>());
+  I->Children.emplace_back(std::make_unique<CommentInfo>());
   return I->Children.back().get();
 }
 
@@ -346,6 +369,11 @@ llvm::Error addTypeInfo(T I, TTypeInfo &&TI) {
 }
 
 template <> llvm::Error addTypeInfo(RecordInfo *I, MemberTypeInfo &&T) {
+  I->Members.emplace_back(std::move(T));
+  return llvm::Error::success();
+}
+
+template <> llvm::Error addTypeInfo(BaseRecordInfo *I, MemberTypeInfo &&T) {
   I->Members.emplace_back(std::move(T));
   return llvm::Error::success();
 }
@@ -494,6 +522,14 @@ template <> void addChild(RecordInfo *I, EnumInfo &&R) {
   I->ChildEnums.emplace_back(std::move(R));
 }
 
+template <> void addChild(RecordInfo *I, BaseRecordInfo &&R) {
+  I->Bases.emplace_back(std::move(R));
+}
+
+template <> void addChild(BaseRecordInfo *I, FunctionInfo &&R) {
+  I->ChildFunctions.emplace_back(std::move(R));
+}
+
 // Read records from bitcode into a given info.
 template <typename T>
 llvm::Error ClangDocBitcodeReader::readRecord(unsigned ID, T I) {
@@ -598,6 +634,13 @@ llvm::Error ClangDocBitcodeReader::readSubBlock(unsigned ID, T I) {
     addChild(I, std::move(F));
     return llvm::Error::success();
   }
+  case BI_BASE_RECORD_BLOCK_ID: {
+    BaseRecordInfo BR;
+    if (auto Err = readBlock(ID, &BR))
+      return Err;
+    addChild(I, std::move(BR));
+    return llvm::Error::success();
+  }
   case BI_ENUM_BLOCK_ID: {
     EnumInfo E;
     if (auto Err = readBlock(ID, &E))
@@ -690,7 +733,7 @@ llvm::Error ClangDocBitcodeReader::readBlockInfoBlock() {
 template <typename T>
 llvm::Expected<std::unique_ptr<Info>>
 ClangDocBitcodeReader::createInfo(unsigned ID) {
-  std::unique_ptr<Info> I = llvm::make_unique<T>();
+  std::unique_ptr<Info> I = std::make_unique<T>();
   if (auto Err = readBlock(ID, static_cast<T *>(I.get())))
     return std::move(Err);
   return std::unique_ptr<Info>{std::move(I)};

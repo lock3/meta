@@ -1475,6 +1475,7 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
       getOldNewOptions(args, OPT_thinlto_prefix_replace);
   config->thinLTOObjectSuffixReplace =
       getOldNewOptions(args, OPT_thinlto_object_suffix_replace);
+  config->ltoObjPath = args.getLastArgValue(OPT_lto_obj_path);
   // Handle miscellaneous boolean flags.
   config->allowBind = args.hasFlag(OPT_allowbind, OPT_allowbind_no, true);
   config->allowIsolation =
@@ -1817,6 +1818,7 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   if (errorCount())
     return;
 
+  config->hadExplicitExports = !config->exports.empty();
   if (config->mingw) {
     // In MinGW, all symbols are automatically exported if no symbols
     // are chosen to be exported.
@@ -1840,10 +1842,12 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   }
 
   // Windows specific -- when we are creating a .dll file, we also
-  // need to create a .lib file.
+  // need to create a .lib file. In MinGW mode, we only do that when the
+  // -implib option is given explicitly, for compatibility with GNU ld.
   if (!config->exports.empty() || config->dll) {
     fixupExports();
-    createImportLibrary(/*asLib=*/false);
+    if (!config->mingw || !config->implib.empty())
+      createImportLibrary(/*asLib=*/false);
     assignExportOrdinals();
   }
 
