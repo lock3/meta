@@ -140,7 +140,7 @@ void owner() {
   // because it's not used and thus not instantiated.
   // Also, shared_ptr is not a "normal" Owner, because of the shared ownership.
   // The data it owns can still be alive after one Owner is destroyed.
-  __lifetime_type_category<decltype(std::shared_ptr<int>())>();     // expected-warning {{Aggregate}}
+  __lifetime_type_category<decltype(std::shared_ptr<int>())>();     // expected-warning {{Owner with pointee int}}
   __lifetime_type_category<decltype(std::stack<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::queue<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::priority_queue<int>())>(); // expected-warning {{Owner}}
@@ -236,7 +236,7 @@ void f() {
   // Clang creates an ClassTemplateSpecializationDecl for
   // iterator<0, int>, but creates no instantiation of begin() unless
   // it is used. Thus we are unable to deduce the DerefType.
-  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Owner with pointee NULL TYPE}}
+  __lifetime_type_category<decltype(vector<0, int>())>(); // expected-warning {{Aggregate}}
 }
 } // namespace classTemplateInstantiation
 
