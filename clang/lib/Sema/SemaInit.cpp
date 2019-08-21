@@ -6568,8 +6568,7 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
                                                   Expr *Init, ReferenceKind RK,
                                                   LocalVisitor Visit);
 
-template<typename T>
-static bool isRecordWithAttr(QualType Type) {
+template <typename T> static bool isRecordWithAttr(QualType Type) {
   if (auto *RD = Type->getAsCXXRecordDecl())
     return RD->hasAttr<T>();
   return false;

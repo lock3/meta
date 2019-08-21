@@ -53,9 +53,7 @@ struct ContractVariable {
     return false;
   }
 
-  bool isThisPointer() const {
-    return Var.is<const RecordDecl *>();
-  }
+  bool isThisPointer() const { return Var.is<const RecordDecl *>(); }
 
   const ParmVarDecl *asParmVarDecl() const {
     return dyn_cast_or_null<ParmVarDecl>(Var.dyn_cast<const VarDecl *>());

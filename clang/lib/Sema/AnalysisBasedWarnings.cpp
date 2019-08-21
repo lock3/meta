@@ -1958,24 +1958,20 @@ public:
 namespace clang {
 namespace lifetime {
 const int Warnings[] = {
-  diag::warn_deref_dangling,
-  diag::warn_deref_nullptr,
-  diag::warn_assign_nullptr,
-  diag::warn_null,
-  diag::warn_dangling,
+    diag::warn_deref_dangling, diag::warn_deref_nullptr,
+    diag::warn_assign_nullptr, diag::warn_null,
+    diag::warn_dangling,
 };
-const int Notes[] = {
-  diag::note_never_initialized,
-  diag::note_temporary_destroyed,
-  diag::note_dereferenced,
-  diag::note_forbidden_cast,
-  diag::note_modified,
-  diag::note_deleted,
-  diag::note_assigned,
-  diag::note_null_reason_parameter,
-  diag::note_null_reason_default_construct,
-  diag::note_null_reason_compared_to_null
-};
+const int Notes[] = {diag::note_never_initialized,
+                     diag::note_temporary_destroyed,
+                     diag::note_dereferenced,
+                     diag::note_forbidden_cast,
+                     diag::note_modified,
+                     diag::note_deleted,
+                     diag::note_assigned,
+                     diag::note_null_reason_parameter,
+                     diag::note_null_reason_default_construct,
+                     diag::note_null_reason_compared_to_null};
 
 class Reporter : public LifetimeReporterBase {
   Sema &S;
@@ -2011,9 +2007,9 @@ public:
       S.Diag(Range.getBegin(), Warnings[(int)T]) << Possibly << Range;
   }
   void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) final {
-    if(enableIfNew(Range))
-      S.Diag(Range.getBegin(), diag::warn_non_static_throw) << ThrownPset
-        << Range;
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_non_static_throw)
+          << ThrownPset << Range;
   }
   void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
                      StringRef ExpectedPset) final {
@@ -2022,20 +2018,20 @@ public:
           << Return << RetPset << ExpectedPset << Range;
   }
   void warnPointerArithmetic(SourceRange Range) final {
-    if(enableIfNew(Range))
+    if (enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_lifetime_pointer_arithmetic);
   }
   void warnUnsupportedExpr(SourceRange Range) final {
-    if(enableIfNew(Range))
+    if (enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_unsupported_expression);
   }
   void notePointeeLeftScope(SourceRange Range, std::string Name) final {
-    if(!IgnoreCurrentWarning)
+    if (!IgnoreCurrentWarning)
       S.Diag(Range.getBegin(), diag::note_pointee_left_scope) << Name << Range;
   }
   void note(NoteType T, SourceRange Range) final {
-    assert((unsigned)T < sizeof(Notes)/sizeof(Notes[0]));
-    if(!IgnoreCurrentWarning)
+    assert((unsigned)T < sizeof(Notes) / sizeof(Notes[0]));
+    if (!IgnoreCurrentWarning)
       S.Diag(Range.getBegin(), Notes[(int)T]) << Range;
   }
   void debugPset(SourceRange Range, StringRef Variable,
@@ -2043,10 +2039,10 @@ public:
     S.Diag(Range.getBegin(), diag::warn_pset) << Variable << Pset << Range;
   }
 
-  void debugTypeCategory(SourceRange Range,
-                         TypeCategory Category, StringRef Pointee) final {
-    S.Diag(Range.getBegin(), diag::warn_lifetime_type_category) << (int)Category
-      << !Pointee.empty() << Pointee;
+  void debugTypeCategory(SourceRange Range, TypeCategory Category,
+                         StringRef Pointee) final {
+    S.Diag(Range.getBegin(), diag::warn_lifetime_type_category)
+        << (int)Category << !Pointee.empty() << Pointee;
   }
 };
 } // namespace lifetime
@@ -2277,9 +2273,9 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     auto isConvertible = [this, D](QualType From, QualType To) {
       OpaqueValueExpr Expr(D->getBeginLoc(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
-        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
-        /*InOverloadResolution=*/false, /*CStyle=*/false,
-        /*AllowObjCWritebackConversion=*/false);
+          &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+          /*InOverloadResolution=*/false, /*CStyle=*/false,
+          /*AllowObjCWritebackConversion=*/false);
       return !ICS.isFailure();
     };
 

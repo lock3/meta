@@ -25,8 +25,7 @@ struct TypeClassification {
   }
 
   TypeClassification(TypeCategory TC, QualType PointeeType)
-      : TC(TC), PointeeType(PointeeType) {
-  }
+      : TC(TC), PointeeType(PointeeType) {}
 
   std::string str() const {
     switch (TC) {

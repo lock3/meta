@@ -211,11 +211,11 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 #endif
 
   if (R->hasAttr<OwnerAttr>()) {
-      return {TypeCategory::Owner, Pointee};
+    return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
-      return {TypeCategory::Pointer, Pointee};
+    return {TypeCategory::Pointer, Pointee};
   }
 
   // Do not attempt to infer implicit Pointer/Owner if we cannot deduce
