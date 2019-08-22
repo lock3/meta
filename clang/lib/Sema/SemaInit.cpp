@@ -6555,6 +6555,8 @@ static bool pathOnlyInitializesGslPointer(IndirectLocalPath &Path) {
   for (auto It = Path.rbegin(), End = Path.rend(); It != End; ++It) {
     if (It->Kind == IndirectLocalPathEntry::VarInit)
       continue;
+    if (It->Kind == IndirectLocalPathEntry::AddressOf)
+      continue;
     return It->Kind == IndirectLocalPathEntry::GslPointerInit;
   }
   return false;
@@ -6771,7 +6773,8 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
     // temporary inside them.
     // We are not interested in the temporary base objects of gsl Pointers:
     //   Temp().ptr; // Here ptr might not dangle.
-    if (!pathOnlyInitializesGslPointer(Path))
+    if (!pathOnlyInitializesGslPointer(Path) ||
+        !isRecordWithAttr<PointerAttr>(Init->getType()))
       Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     // Per current approach for DR1376, look through casts to reference type
@@ -6891,7 +6894,8 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
       Init = FE->getSubExpr();
 
     // Dig out the expression which constructs the extended temporary.
-    if (!pathOnlyInitializesGslPointer(Path))
+    if (!pathOnlyInitializesGslPointer(Path) ||
+        !isRecordWithAttr<PointerAttr>(Init->getType()))
       Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     if (CXXBindTemporaryExpr *BTE = dyn_cast<CXXBindTemporaryExpr>(Init))
@@ -7157,7 +7161,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
 
     auto *MTE = dyn_cast<MaterializeTemporaryExpr>(L);
 
-    bool IsGslPtrInitWithGslTempOwner = false;
+    bool IsGslPtrInitWithTemporary = false;
     bool IsLocalGslOwner = false;
     if (pathOnlyInitializesGslPointer(Path)) {
       if (isa<DeclRefExpr>(L)) {
@@ -7172,12 +7176,13 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         if (isRecordWithAttr<PointerAttr>(L->getType()))
           return false;
       } else {
-        IsGslPtrInitWithGslTempOwner = MTE && !MTE->getExtendingDecl() &&
-                            isRecordWithAttr<OwnerAttr>(MTE->getType());
+        IsGslPtrInitWithTemporary =
+            MTE && !MTE->getExtendingDecl() &&
+            !isRecordWithAttr<PointerAttr>(MTE->getType());
         // Skipping a chain of initializing gsl::Pointer annotated objects.
         // We are looking only for the final source to find out if it was
         // a local or temporary owner or the address of a local variable/param.
-        if (!IsGslPtrInitWithGslTempOwner)
+        if (!IsGslPtrInitWithTemporary)
           return true;
       }
     }
@@ -7196,7 +7201,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         return false;
       }
 
-      if (IsGslPtrInitWithGslTempOwner && DiagLoc.isValid()) {
+      if (IsGslPtrInitWithTemporary && DiagLoc.isValid()) {
         Diag(DiagLoc, diag::warn_dangling_lifetime_pointer) << DiagRange;
         return false;
       }
@@ -7242,7 +7247,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         // temporary, the program is ill-formed.
         if (auto *ExtendingDecl =
                 ExtendingEntity ? ExtendingEntity->getDecl() : nullptr) {
-          if (IsGslPtrInitWithGslTempOwner) {
+          if (IsGslPtrInitWithTemporary) {
             Diag(DiagLoc, diag::warn_dangling_lifetime_pointer_member)
                 << ExtendingDecl << DiagRange;
             Diag(ExtendingDecl->getLocation(),
@@ -7309,7 +7314,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
 
     case LK_New:
       if (isa<MaterializeTemporaryExpr>(L)) {
-        if (IsGslPtrInitWithGslTempOwner)
+        if (IsGslPtrInitWithTemporary)
           Diag(DiagLoc, diag::warn_dangling_lifetime_pointer) << DiagRange;
         else
           Diag(DiagLoc, RK == RK_ReferenceBinding

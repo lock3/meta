@@ -14,6 +14,9 @@ struct [[gsl::Pointer(int)]] MyIntPointer {
   MyIntOwner toOwner();
 };
 
+struct MySpecialIntPointer : MyIntPointer {
+};
+
 struct [[gsl::Pointer(long)]] MyLongPointerFromConversion {
   MyLongPointerFromConversion(long *p = nullptr);
   long &operator*();
@@ -56,7 +59,7 @@ struct Y {
 };
 
 void dangligGslPtrFromTemporary() {
-  MyIntPointer p = Y{}.a; // expected-warning {{temporary whose address is used as value of local variable 'p' will be destroyed at the end of the full-expression}}
+  MyIntPointer p = Y{}.a; // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
   (void)p;
 }
 
@@ -357,4 +360,8 @@ std::vector<int>::iterator returnPtrFromWrapperThroughRef2() {
 
 void checkPtrMemberFromAggregate() {
   std::vector<int>::iterator local = getPtrWrapper().member; // OK.
+}
+
+std::vector<int>::iterator avoidFalsePositive(std::vector<int>::iterator value) {
+  return *&value;
 }
