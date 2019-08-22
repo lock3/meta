@@ -46,7 +46,7 @@ class LifetimeContext {
   std::map<const Expr *, PSet> PSetsOfExpr;
   std::map<const Expr *, PSet> RefersTo;
 
-  bool computeEntryPSets(const CFGBlock &B, PSetsMap &EntryPMap);
+  bool computeEntryPSets(const CFGBlock &B);
 
   BlockContext &getBlockContext(const CFGBlock *B) {
     return BlockContexts[B->getBlockID()];
@@ -61,8 +61,6 @@ class LifetimeContext {
     }
     B.dump(ControlFlowGraph, ASTCtxt.getLangOpts(), true);
   }
-
-  void dumpCFG() const { ControlFlowGraph->dump(ASTCtxt.getLangOpts(), true); }
 
   /// Approximate the SourceLocation of a Block for attaching pset debug
   /// diagnostics.
@@ -106,14 +104,40 @@ public:
   }
 
   void TraverseBlocks();
+
+  void dumpCFG() const { ControlFlowGraph->dump(ASTCtxt.getLangOpts(), true); }
 };
+
+static void mergePMaps(PSetsMap &From, PSetsMap &To) {
+  for (auto &I : From) {
+    auto &Var = I.first;
+    auto &PS = I.second;
+    auto J = To.find(Var);
+    if (J == To.end())
+      To.insert(I);
+    else
+      J->second.merge(PS);
+  }
+}
 
 /// Computes entry psets of this block by merging exit psets
 /// of all reachable predecessors.
 /// Returns true if this block is reachable, i.e. one of it predecessors has
 /// been visited.
-bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
-                                        PSetsMap &EntryPMap) {
+bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
+  // Some special blocks has no real instructions but they merge the PMaps
+  // prematurely at some emrge points. Try to keep the false/true PMaps
+  // separate at those merge points to retain as much infromation as possible.
+  auto &BC = getBlockContext(&B);
+  bool PropagateFalseSet = false;
+  if (B.succ_size() == 2 && isNoopBlock(B) &&
+      llvm::all_of(B.preds(), [this](const CFGBlock::AdjacentBlock &Pred) {
+        return Pred && getBlockContext(Pred).FalseBranchExitPMap;
+      })) {
+    PropagateFalseSet = true;
+    BC.FalseBranchExitPMap = PSetsMap();
+  }
+
   // If no predecessors have been visited by now, this block is not reachable.
   bool IsReachable = false;
   for (auto &PredBlock : B.preds()) {
@@ -125,24 +149,30 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B,
       continue; // Skip this back edge.
 
     IsReachable = true;
-    // Is this a true or a false branch from the predecessor? We have might
-    // have different state for both.
-    auto PredPSets =
-        (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B &&
-         PredBC.FalseBranchExitPMap)
-            ? *PredBC.FalseBranchExitPMap
-            : PredBC.ExitPMap;
-    // Merge PSets with pred's PSets; TODO: make this efficient
-    for (auto &I : PredPSets) {
-      auto &Var = I.first;
-      auto &PS = I.second;
-      auto J = EntryPMap.find(Var);
-      if (J == EntryPMap.end())
-        EntryPMap.insert(I);
-      else
-        J->second.merge(PS);
+    if (PropagateFalseSet) {
+      // Predecessor have different PSets for true and false branches.
+      // Figure out which PSets should be propated.
+      if (PredBlock->succ_size() == 2) {
+        // Is this a true or a false edge?
+        if (*PredBlock->succ_rbegin() == &B) {
+          mergePMaps(*PredBC.FalseBranchExitPMap, *BC.FalseBranchExitPMap);
+        } else
+          mergePMaps(PredBC.ExitPMap, BC.EntryPMap);
+      } else if (PredBlock->succ_size() == 1) {
+        // We only have one edge. Propagate both sets.
+        mergePMaps(*PredBC.FalseBranchExitPMap, *BC.FalseBranchExitPMap);
+        mergePMaps(PredBC.ExitPMap, BC.EntryPMap);
+      }
+    } else {
+      auto &PredPMap =
+          (PredBlock->succ_size() == 2 && *PredBlock->succ_rbegin() == &B &&
+           PredBC.FalseBranchExitPMap)
+              ? *PredBC.FalseBranchExitPMap
+              : PredBC.ExitPMap;
+      mergePMaps(PredPMap, BC.EntryPMap);
     }
   }
+
   return IsReachable;
 }
 
@@ -176,18 +206,17 @@ void LifetimeContext::TraverseBlocks() {
 
       // Compute entry psets of this block by merging exit psets of all
       // reachable predecessors.
-      PSetsMap EntryPMap;
-      bool isReachable = computeEntryPSets(*B, EntryPMap);
-      if (!isReachable)
+      auto OrigEntryPMap = BC.EntryPMap;
+      bool isReachableAndChanged = computeEntryPSets(*B);
+      if (!isReachableAndChanged)
         continue;
 
-      if (BC.Visited && EntryPMap == BC.EntryPMap) {
+      if (BC.Visited && OrigEntryPMap == BC.EntryPMap) {
         // Has been computed at least once and nothing changed; no need to
         // recompute.
         continue;
       }
 
-      BC.EntryPMap = EntryPMap;
       BC.ExitPMap = BC.EntryPMap;
       VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr,
                  RefersTo, *B, Reporter, ASTCtxt, IsConvertible);
@@ -199,6 +228,29 @@ void LifetimeContext::TraverseBlocks() {
 
   if (IterationCount > MaxIterations)
     MaxIterations = IterationCount;
+}
+
+bool isNoopBlock(const CFGBlock &B) {
+  for (const auto &E : B) {
+    switch (E.getKind()) {
+    case CFGElement::Statement: {
+      const Stmt *S = E.castAs<CFGStmt>().getStmt();
+      if (const auto *E = dyn_cast<Expr>(S)) {
+        if (!E->getType()->isBooleanType())
+          return false;
+        if (isa<CastExpr>(E))
+          continue;
+        if (const auto *BO = dyn_cast<BinaryOperator>(E))
+          if (BO->isLogicalOp())
+            continue;
+      }
+      break;
+    }
+    default:
+      return false;
+    }
+  }
+  return true;
 }
 
 /// Check that the function adheres to the lifetime profile.

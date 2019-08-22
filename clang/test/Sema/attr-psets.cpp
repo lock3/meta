@@ -569,10 +569,55 @@ void __assert_fail() __attribute__((__noreturn__));
        ? static_cast<void>(0) \
        : __assert_fail())
 
+// A more realistic version of assert which has an explicit cast. This explicit
+// cast can result in additional basic blocks which makes it harder to handle.
+#define assert_explicit(expr) \
+  ((static_cast<bool>(expr))  \
+       ? static_cast<void>(0) \
+       : __assert_fail())
+
 void asserting(const int *p) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
   assert(p);
   __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
+}
+
+void asserting2(const int *p, const int *q) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
+  assert(p && q);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q))}}
+}
+
+void asserting3(const int *p, const int *q) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
+  assert(p || q);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
+}
+
+void asserting4(const int *p) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  assert_explicit(p);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
+}
+
+void asserting5(const int *p, const int *q) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
+  assert_explicit(p && q);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q))}}
+}
+
+void asserting6(const int *p, const int *q) {
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
+  assert_explicit(p || q);
+  __lifetime_pset(p); // expected-warning {{pset(p) = ((*p), (null))}}
+  __lifetime_pset(q); // expected-warning {{pset(q) = ((*q), (null))}}
 }
 
 const int *global_p1 = nullptr;

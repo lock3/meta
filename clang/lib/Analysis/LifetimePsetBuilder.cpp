@@ -1183,10 +1183,20 @@ bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
   }
 } // namespace lifetime
 
+// For expressions like (bool)(p && q), q will only have one successor,
+// the cast operation. But we still want to compute two sets for q so
+// we can propagate this information through the cast.
 static const Stmt *getRealTerminator(const CFGBlock &B) {
-  if (B.succ_size() == 1 ||
+  if (B.succ_size() > 2 || B.succ_size() == 0 ||
       B.rbegin()->getKind() != CFGElement::Kind::Statement)
     return nullptr;
+
+  if (B.succ_size() == 1) {
+    auto Succ = B.succ_begin()->getReachableBlock();
+    if (!Succ || !isNoopBlock(*Succ) || Succ->succ_size() != 2)
+      return nullptr;
+  }
+
   return B.rbegin()->castAs<CFGStmt>().getStmt();
 }
 

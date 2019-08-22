@@ -24,6 +24,7 @@ class QualType;
 class ClassTemplateSpecializationDecl;
 class CXXRecordDecl;
 class FunctionDecl;
+class CFGBlock;
 
 namespace lifetime {
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
@@ -67,6 +68,8 @@ public:
   virtual void debugTypeCategory(SourceRange Range, TypeCategory Category,
                                  StringRef Pointee = "") = 0;
 };
+
+bool isNoopBlock(const CFGBlock &B);
 
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
                  LifetimeReporterBase &Reporter, IsConvertibleTy IsConvertible);
