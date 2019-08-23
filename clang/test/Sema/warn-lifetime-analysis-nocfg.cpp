@@ -59,7 +59,7 @@ struct Y {
 };
 
 void dangligGslPtrFromTemporary() {
-  MyIntPointer p = Y{}.a; // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
+  MyIntPointer p = Y{}.a; // TODO
   (void)p;
 }
 
@@ -127,6 +127,7 @@ template <typename T>
 struct basic_iterator {
   basic_iterator operator++();
   T& operator*() const;
+  T* operator->() const;
 };
 
 template<typename T>
@@ -143,6 +144,9 @@ typename remove_reference<T>::type &&move(T &&t) noexcept;
 
 template <typename C>
 auto data(const C &c) -> decltype(c.data());
+
+template <typename C>
+auto begin(C &c) -> decltype(c.begin());
 
 template<typename T, int N>
 T *begin(T (&array)[N]);
@@ -205,6 +209,11 @@ struct reference_wrapper {
 template<typename T>
 reference_wrapper<T> ref(T& t) noexcept;
 }
+
+struct Unannotated {
+  typedef std::vector<int>::iterator iterator;
+  iterator begin();
+};
 
 void modelIterators() {
   std::vector<int>::iterator it = std::vector<int>().begin(); // expected-warning {{object backing the pointer will be destroyed at the end of the full-expression}}
@@ -362,6 +371,47 @@ void checkPtrMemberFromAggregate() {
   std::vector<int>::iterator local = getPtrWrapper().member; // OK.
 }
 
-std::vector<int>::iterator avoidFalsePositive(std::vector<int>::iterator value) {
-  return *&value;
+std::vector<int>::iterator doNotInterferWithUnannotated() {
+  Unannotated value;
+  // Conservative choice for now. Probably not ok, but we do not warn.
+  return std::begin(value);
+}
+
+std::vector<int>::iterator supportDerefAddrofChain(int a, std::vector<int>::iterator value) {
+  switch (a)  {
+    default:
+      return value;
+    case 1:
+      return *&value;
+    case 2:
+      return *&*&value;
+    case 3:
+      return *&*&*&value;
+  }
+}
+
+int &supportDerefAddrofChain2(int a, std::vector<int>::iterator value) {
+  switch (a)  {
+    default:
+      return *value;
+    case 1:
+      return **&value;
+    case 2:
+      return **&*&value;
+    case 3:
+      return **&*&*&value;
+  }
+}
+
+int *supportDerefAddrofChain3(int a, std::vector<int>::iterator value) {
+  switch (a)  {
+    default:
+      return &*value;
+    case 1:
+      return &*&*value;
+    case 2:
+      return &*&**&value;
+    case 3:
+      return &*&**&*&value;
+  }
 }

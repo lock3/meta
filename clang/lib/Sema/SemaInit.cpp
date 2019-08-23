@@ -6628,9 +6628,15 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
 }
 
 static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
-  if (!FD->getIdentifier())
+  if (!FD->getIdentifier() || !FD->isInStdNamespace())
     return false;
-  if (!FD->isInStdNamespace())
+  QualType ParmType = FD->getParamDecl(0)->getType();
+  if (const auto *RD = ParmType->getPointeeCXXRecordDecl()) {
+    if (!isRecordWithAttr<PointerAttr>(QualType(RD->getTypeForDecl(), 0)) &&
+        !isRecordWithAttr<OwnerAttr>(QualType(RD->getTypeForDecl(), 0)))
+      return false;
+  } else if (!ParmType->isReferenceType() &&
+             !ParmType->getPointeeType()->isArrayType())
     return false;
   if (FD->getReturnType()->isPointerType() ||
       isRecordWithAttr<PointerAttr>(FD->getReturnType())) {
@@ -7161,7 +7167,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
 
     auto *MTE = dyn_cast<MaterializeTemporaryExpr>(L);
 
-    bool IsGslPtrInitWithTemporary = false;
+    bool IsGslPtrInitWithGslTempOwner = false;
     bool IsLocalGslOwner = false;
     if (pathOnlyInitializesGslPointer(Path)) {
       if (isa<DeclRefExpr>(L)) {
@@ -7176,13 +7182,13 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         if (isRecordWithAttr<PointerAttr>(L->getType()))
           return false;
       } else {
-        IsGslPtrInitWithTemporary =
+        IsGslPtrInitWithGslTempOwner =
             MTE && !MTE->getExtendingDecl() &&
-            !isRecordWithAttr<PointerAttr>(MTE->getType());
+            isRecordWithAttr<OwnerAttr>(MTE->getType());
         // Skipping a chain of initializing gsl::Pointer annotated objects.
         // We are looking only for the final source to find out if it was
         // a local or temporary owner or the address of a local variable/param.
-        if (!IsGslPtrInitWithTemporary)
+        if (!IsGslPtrInitWithGslTempOwner)
           return true;
       }
     }
@@ -7201,7 +7207,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         return false;
       }
 
-      if (IsGslPtrInitWithTemporary && DiagLoc.isValid()) {
+      if (IsGslPtrInitWithGslTempOwner && DiagLoc.isValid()) {
         Diag(DiagLoc, diag::warn_dangling_lifetime_pointer) << DiagRange;
         return false;
       }
@@ -7247,7 +7253,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         // temporary, the program is ill-formed.
         if (auto *ExtendingDecl =
                 ExtendingEntity ? ExtendingEntity->getDecl() : nullptr) {
-          if (IsGslPtrInitWithTemporary) {
+          if (IsGslPtrInitWithGslTempOwner) {
             Diag(DiagLoc, diag::warn_dangling_lifetime_pointer_member)
                 << ExtendingDecl << DiagRange;
             Diag(ExtendingDecl->getLocation(),
@@ -7314,7 +7320,7 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
 
     case LK_New:
       if (isa<MaterializeTemporaryExpr>(L)) {
-        if (IsGslPtrInitWithTemporary)
+        if (IsGslPtrInitWithGslTempOwner)
           Diag(DiagLoc, diag::warn_dangling_lifetime_pointer) << DiagRange;
         else
           Diag(DiagLoc, RK == RK_ReferenceBinding
