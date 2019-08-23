@@ -6628,14 +6628,15 @@ static bool shouldTrackImplicitObjectArg(const CXXMethodDecl *Callee) {
 }
 
 static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
-  if (!FD->getIdentifier() || !FD->isInStdNamespace())
+  if (!FD->getIdentifier() || !FD->isInStdNamespace() ||
+      FD->getNumParams() != 1)
     return false;
   QualType ParmType = FD->getParamDecl(0)->getType();
   if (const auto *RD = ParmType->getPointeeCXXRecordDecl()) {
     if (!isRecordWithAttr<PointerAttr>(QualType(RD->getTypeForDecl(), 0)) &&
         !isRecordWithAttr<OwnerAttr>(QualType(RD->getTypeForDecl(), 0)))
       return false;
-  } else if (!ParmType->isReferenceType() &&
+  } else if (!ParmType->isReferenceType() ||
              !ParmType->getPointeeType()->isArrayType())
     return false;
   if (FD->getReturnType()->isPointerType() ||
