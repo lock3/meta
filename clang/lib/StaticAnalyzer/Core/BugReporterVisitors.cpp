@@ -213,6 +213,22 @@ getConcreteIntegerValue(const Expr *CondVarExpr, const ExplodedNode *N) {
   return None;
 }
 
+static bool isVarAnInterestingCondition(const Expr *CondVarExpr,
+                                        const ExplodedNode *N,
+                                        const BugReport *B) {
+  // Even if this condition is marked as interesting, it isn't *that*
+  // interesting if it didn't happen in a nested stackframe, the user could just
+  // follow the arrows.
+  if (!B->getErrorNode()->getStackFrame()->isParentOf(N->getStackFrame()))
+    return false;
+
+  if (Optional<SVal> V = getSValForVar(CondVarExpr, N))
+    if (Optional<bugreporter::TrackingKind> K = B->getInterestingnessKind(*V))
+      return *K == bugreporter::TrackingKind::Condition;
+
+  return false;
+}
+
 static bool isInterestingExpr(const Expr *E, const ExplodedNode *N,
                               const BugReport *B) {
   if (Optional<SVal> V = getSValForVar(E, N))
@@ -1784,6 +1800,11 @@ PathDiagnosticPieceRef TrackControlDependencyCondBRVisitor::VisitNode(
     return nullptr;
 
   if (ControlDeps.isControlDependent(OriginB, NB)) {
+    // We don't really want to explain for range loops. Evidence suggests that
+    // the only thing that leads to is the addition of calls to operator!=.
+    if (isa<CXXForRangeStmt>(NB->getTerminator()))
+      return nullptr;
+
     if (const Expr *Condition = NB->getLastCondition()) {
       // Keeping track of the already tracked conditions on a visitor level
       // isn't sufficient, because a new visitor is created for each tracked
@@ -1976,9 +1997,10 @@ bool bugreporter::trackExpressionValue(const ExplodedNode *InputNode,
       report.markInteresting(V, TKind);
       report.addVisitor(std::make_unique<UndefOrNullArgVisitor>(R));
 
-      // If the contents are symbolic, find out when they became null.
-      if (V.getAsLocSymbol(/*IncludeBaseRegions*/ true))
-        report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
+      // If the contents are symbolic and null, find out when they became null.
+      if (V.getAsLocSymbol(/*IncludeBaseRegions=*/true))
+        if (LVState->isNull(V).isConstrainedTrue())
+          report.addVisitor(std::make_unique<TrackConstraintBRVisitor>(
               V.castAs<DefinedSVal>(), false));
 
       // Add visitor, which will suppress inline defensive checks.
@@ -2454,6 +2476,10 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitTrueTest(
   const LocationContext *LCtx = N->getLocationContext();
   const SourceManager &SM = BRC.getSourceManager();
 
+  if (isVarAnInterestingCondition(BExpr->getLHS(), N, &R) ||
+      isVarAnInterestingCondition(BExpr->getRHS(), N, &R))
+    Out << WillBeUsedForACondition;
+
   // Convert 'field ...' to 'Field ...' if it is a MemberExpr.
   std::string Message = Out.str();
   Message[0] = toupper(Message[0]);
@@ -2499,6 +2525,9 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitConditionVariable(
   const LocationContext *LCtx = N->getLocationContext();
   PathDiagnosticLocation Loc(CondVarExpr, BRC.getSourceManager(), LCtx);
 
+  if (isVarAnInterestingCondition(CondVarExpr, N, &report))
+    Out << WillBeUsedForACondition;
+
   auto event = std::make_shared<PathDiagnosticEventPiece>(Loc, Out.str());
 
   if (isInterestingExpr(CondVarExpr, N, &report))
@@ -2523,6 +2552,9 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitTrueTest(
     return nullptr;
 
   const LocationContext *LCtx = N->getLocationContext();
+
+  if (isVarAnInterestingCondition(DRE, N, &report))
+    Out << WillBeUsedForACondition;
 
   // If we know the value create a pop-up note to the 'DRE'.
   if (!IsAssuming) {
@@ -2563,6 +2595,10 @@ PathDiagnosticPieceRef ConditionBRVisitor::VisitTrueTest(
   if (!Loc.isValid() || !Loc.asLocation().isValid())
     return nullptr;
 
+  if (isVarAnInterestingCondition(ME, N, &report))
+    Out << WillBeUsedForACondition;
+
+  // If we know the value create a pop-up note.
   if (!IsAssuming)
     return std::make_shared<PathDiagnosticPopUpPiece>(Loc, Out.str());
 
