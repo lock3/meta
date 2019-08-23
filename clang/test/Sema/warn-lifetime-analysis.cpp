@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -Wlifetime -Wno-dangling %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -verify -Wlifetime -Wno-dangling %s
 namespace std {
 using size_t = decltype(sizeof(int));
 
@@ -161,6 +161,12 @@ void optional_output_argument2(my_pointer *out) {
   if (!out)
     return;
   *out = &global;
+}
+
+void do_not_validate_output_on_exceptions(bool b, my_pointer &out) {
+  if (b)
+    throw 5;
+  out = &global;
 }
 
 // Note: the messages below are for the template instantiation in 'instantiate_ref_leaves_scope_template'.

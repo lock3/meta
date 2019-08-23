@@ -1200,6 +1200,13 @@ static const Stmt *getRealTerminator(const CFGBlock &B) {
   return B.rbegin()->castAs<CFGStmt>().getStmt();
 }
 
+static bool isThrowingBlock(const CFGBlock &B) {
+  return llvm::any_of(B, [](const CFGElement &E) {
+    return E.getKind() == CFGElement::Statement &&
+           isa<CXXThrowExpr>(E.getAs<CFGStmt>()->getStmt());
+  });
+}
+
 static SourceRange getSourceRange(const CFGElement &E) {
   if (llvm::Optional<CFGStmt> S = E.getAs<CFGStmt>())
     return S->getStmt()->getSourceRange();
@@ -1282,7 +1289,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     UpdatePSetsFromCondition(Terminator, /*Positive=*/true, FalseBranchExitPMap,
                              Terminator->getEndLoc());
   }
-  if (B.hasNoReturnElement())
+  if (B.hasNoReturnElement() || isThrowingBlock(B))
     return;
   if (B.succ_size() == 1 && *B.succ_begin() == &B.getParent()->getExit()) {
     PSetsMap PostConditions;
