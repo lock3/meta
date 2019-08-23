@@ -336,7 +336,7 @@ std::reference_wrapper<int> danglingPtrFromNonOwnerLocal() {
 
 std::reference_wrapper<int> danglingPtrFromNonOwnerLocal2() {
   int i = 5;
-  return std::ref(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
+  return std::ref(i); // TODOexpected-warning {{address of stack memory associated with local variable 'i' returned}}
 }
 
 int * returnPtrToLocalArray() {
