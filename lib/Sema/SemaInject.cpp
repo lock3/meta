@@ -457,6 +457,19 @@ public:
     return QualType();
   }
 
+  ParmVarDecl *TransformFunctionTypeParam(
+      ParmVarDecl *OldParm, int indexAdjustment,
+      Optional<unsigned> NumExpansions, bool ExpectParameterPack) {
+    ParmVarDecl *NewParm =
+        TreeTransform<InjectionContext>::TransformFunctionTypeParam(
+            OldParm, indexAdjustment, NumExpansions, ExpectParameterPack);
+
+    if (NewParm)
+      AddDeclSubstitution(OldParm, NewParm);
+
+    return NewParm;
+  }
+
   bool ExpandInjectedParameter(const CXXInjectedParmsInfo &Injected,
                                SmallVectorImpl<ParmVarDecl *> &Parms);
 
@@ -793,11 +806,17 @@ void InjectionContext::UpdateFunctionParms(FunctionDecl* Old,
           ParmVarDecl *NewParm = NewParms[NewIndex++];
           UpdateFunctionParm(*this, New, OldParm, NewParm);
         }
+
+        // This should not be replaced, as there's no 1-to-1 mapping.
+        assert(GetDeclReplacement(OldParm) == nullptr);
       } else {
         ParmVarDecl *NewParm = NewParms[NewIndex++];
         UpdateFunctionParm(*this, New, OldParm, NewParm);
 
-        AddDeclSubstitution(OldParm, NewParm);
+        // This should always be invalid,
+        // or match the replacement by TransformFunctionTypeParam.
+        assert(OldParm->InjectedParmsInfo ||
+               GetDeclReplacement(OldParm) == NewParm);
       }
     } while (OldIndex < OldParms.size() && NewIndex < NewParms.size());
   } else {
