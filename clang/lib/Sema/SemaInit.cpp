@@ -6631,6 +6631,9 @@ static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
   if (!FD->getIdentifier() || !FD->isInStdNamespace() ||
       FD->getNumParams() != 1)
     return false;
+  if (isRecordWithAttr<PointerAttr>(FD->getReturnType()) &&
+      (FD->getName() == "ref" || FD->getName() == "cref"))
+    return true;
   QualType ParmType = FD->getParamDecl(0)->getType();
   if (const auto *RD = ParmType->getPointeeCXXRecordDecl()) {
     if (!isRecordWithAttr<PointerAttr>(QualType(RD->getTypeForDecl(), 0)) &&
@@ -6644,7 +6647,6 @@ static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
     return llvm::StringSwitch<bool>(FD->getName())
         .Cases("begin", "rbegin", "cbegin", "crbegin", true)
         .Cases("end", "rend", "cend", "crend", true)
-        .Cases("cref", "ref", true)
         .Case("data", true)
         .Default(false);
   } else if (FD->getReturnType()->isReferenceType()) {
@@ -7177,10 +7179,10 @@ void Sema::checkInitializerLifetime(const InitializedEntity &Entity,
         //   int &p = *localUniquePtr;
         //   someContainer.add(std::move(localUniquePtr));
         //   return p;
-        IsLocalGslOwner = isRecordWithAttr<OwnerAttr>(L->getType());
-        if (pathContainsInit(Path) && IsLocalGslOwner)
-          return false;
-        if (isRecordWithAttr<PointerAttr>(L->getType()))
+        QualType LocalType = L->getType();
+        IsLocalGslOwner = isRecordWithAttr<OwnerAttr>(LocalType);
+        if (!LocalType->isBuiltinType() && !LocalType->isArrayType() &&
+          (pathContainsInit(Path) || !IsLocalGslOwner))
           return false;
       } else {
         IsGslPtrInitWithGslTempOwner =

@@ -17,6 +17,11 @@ struct [[gsl::Pointer(int)]] MyIntPointer {
 struct MySpecialIntPointer : MyIntPointer {
 };
 
+// We did see examples in the wild when a derived class changes
+// the ownership model. So we have a test for it.
+struct [[gsl::Owner(int)]] MyOwnerIntPointer : MyIntPointer {
+};
+
 struct [[gsl::Pointer(long)]] MyLongPointerFromConversion {
   MyLongPointerFromConversion(long *p = nullptr);
   long &operator*();
@@ -203,7 +208,8 @@ T any_cast(const any& operand);
 
 template<typename T>
 struct reference_wrapper {
-  reference_wrapper(T &&);
+  template<typename U>
+  reference_wrapper(U &&);
 };
 
 template<typename T>
@@ -213,6 +219,7 @@ reference_wrapper<T> ref(T& t) noexcept;
 struct Unannotated {
   typedef std::vector<int>::iterator iterator;
   iterator begin();
+  operator iterator() const;
 };
 
 void modelIterators() {
@@ -336,10 +343,25 @@ std::reference_wrapper<int> danglingPtrFromNonOwnerLocal() {
 
 std::reference_wrapper<int> danglingPtrFromNonOwnerLocal2() {
   int i = 5;
+  return std::ref(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
+}
+
+std::reference_wrapper<int> danglingPtrFromNonOwnerLocal3() {
+  int i = 5;
+  return std::reference_wrapper<int>(i); // expected-warning {{address of stack memory associated with local variable 'i' returned}}
+}
+
+std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal4() {
+  Unannotated i;
+  return std::reference_wrapper<Unannotated>(i); // TODOexpected-warning {{address of stack memory associated with local variable 'i' returned}}
+}
+
+std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal5() {
+  Unannotated i;
   return std::ref(i); // TODOexpected-warning {{address of stack memory associated with local variable 'i' returned}}
 }
 
-int * returnPtrToLocalArray() {
+int *returnPtrToLocalArray() {
   int a[5];
   return std::begin(a); // expected-warning {{address of stack memory associated with local variable 'a' returned}}
 }
@@ -375,6 +397,11 @@ std::vector<int>::iterator doNotInterferWithUnannotated() {
   Unannotated value;
   // Conservative choice for now. Probably not ok, but we do not warn.
   return std::begin(value);
+}
+
+std::vector<int>::iterator doNotInterferWithUnannotated2() {
+  Unannotated value;
+  return value;
 }
 
 std::vector<int>::iterator supportDerefAddrofChain(int a, std::vector<int>::iterator value) {
@@ -414,4 +441,12 @@ int *supportDerefAddrofChain3(int a, std::vector<int>::iterator value) {
     case 3:
       return &*&**&*&value;
   }
+}
+
+MyIntPointer handleDerivedToBaseCast1(MySpecialIntPointer ptr) {
+  return ptr;
+}
+
+MyIntPointer handleDerivedToBaseCast2(MyOwnerIntPointer ptr) {
+  return ptr; // expected-warning {{address of stack memory associated with parameter 'ptr' returned}}
 }
