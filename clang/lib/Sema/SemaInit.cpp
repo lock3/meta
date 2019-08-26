@@ -6660,6 +6660,10 @@ static bool shouldTrackFirstArgument(const FunctionDecl *FD) {
 static void handleGslAnnotatedTypes(IndirectLocalPath &Path, Expr *Call,
                                     LocalVisitor Visit) {
   auto VisitPointerArg = [&](const Decl *D, Expr *Arg) {
+    // We are not interested in the temporary base objects of gsl Pointers:
+    //   Temp().ptr; // Here ptr might not dangle.
+    if (isa<MemberExpr>(Arg->IgnoreImpCasts()))
+      return;
     Path.push_back({IndirectLocalPathEntry::GslPointerInit, Arg, D});
     if (Arg->isGLValue())
       visitLocalsRetainedByReferenceBinding(Path, Arg, RK_ReferenceBinding,
@@ -6780,11 +6784,7 @@ static void visitLocalsRetainedByReferenceBinding(IndirectLocalPath &Path,
 
     // Step over any subobject adjustments; we may have a materialized
     // temporary inside them.
-    // We are not interested in the temporary base objects of gsl Pointers:
-    //   Temp().ptr; // Here ptr might not dangle.
-    if (!pathOnlyInitializesGslPointer(Path) ||
-        !isRecordWithAttr<PointerAttr>(Init->getType()))
-      Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
+    Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     // Per current approach for DR1376, look through casts to reference type
     // when performing lifetime extension.
@@ -6903,9 +6903,7 @@ static void visitLocalsRetainedByInitializer(IndirectLocalPath &Path,
       Init = FE->getSubExpr();
 
     // Dig out the expression which constructs the extended temporary.
-    if (!pathOnlyInitializesGslPointer(Path) ||
-        !isRecordWithAttr<PointerAttr>(Init->getType()))
-      Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
+    Init = const_cast<Expr *>(Init->skipRValueSubobjectAdjustments());
 
     if (CXXBindTemporaryExpr *BTE = dyn_cast<CXXBindTemporaryExpr>(Init))
       Init = BTE->getSubExpr();
