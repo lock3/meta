@@ -59,6 +59,8 @@ public:
   virtual void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
                              StringRef ExpectedPset) = 0;
   virtual void warnPointerArithmetic(SourceRange Range) = 0;
+  virtual void warnUnsafeCast(SourceRange Range) = 0;
+
   virtual void warnUnsupportedExpr(SourceRange Range) = 0;
   virtual void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) = 0;
   virtual void notePointeeLeftScope(SourceRange Range, std::string Name) = 0;

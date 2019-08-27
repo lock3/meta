@@ -2021,6 +2021,11 @@ public:
     if (enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_lifetime_pointer_arithmetic);
   }
+  void warnUnsafeCast(SourceRange Range) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_lifetime_unsafe_cast);
+  }
+
   void warnUnsupportedExpr(SourceRange Range) final {
     if (enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_unsupported_expression);

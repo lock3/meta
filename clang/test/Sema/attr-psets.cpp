@@ -524,9 +524,9 @@ l1:
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   (void)&&l1;
 
-  void *vptr = &i;
-  p = (int *)vptr;
-  __lifetime_pset(p); // expected-warning {{((invalid))}}
+  void *vptr = &i;    // expected-warning {{unsafe cast disables lifetime analysis}}
+  p = (int *)vptr;    // expected-warning {{unsafe cast}}
+  __lifetime_pset(p); // expected-warning {{((unknown))}}
 }
 
 void goto_skipping_decl(bool b) {
@@ -952,8 +952,8 @@ void ambiguous_pointers(bool cond) {
 }
 
 void cast(int *p) {
-  float *q = reinterpret_cast<float *>(p);
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((invalid))}}
+  float *q = reinterpret_cast<float *>(p); // expected-warning {{unsafe cast}}
+  __lifetime_pset(q);                      // expected-warning {{pset(q) = ((unknown))}}
 }
 
 // Support CXXOperatorCallExpr on non-member function
@@ -1206,7 +1206,7 @@ void enum_casts() {
     TEST,
   };
   EN E1, E2;
-  ((int &)E1) |= ((int)E2);
+  ((int &)E1) |= ((int)E2); // expected-warning {{unsafe cast}}
 }
 
 void iterator_conversion() {
@@ -1491,7 +1491,7 @@ public:
 
 class c : public a<int> {};
 
-void fn1(c d) { 
+void fn1(c d) {
   d.b();
 }
 } // namespace creduce14

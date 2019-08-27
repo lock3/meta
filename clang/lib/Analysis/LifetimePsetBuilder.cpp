@@ -286,8 +286,8 @@ public:
     case CK_LValueBitCast:
     case CK_IntegralToPointer:
       // Those casts are forbidden by the type profile
-      setPSet(E, PSet::invalid(
-                     InvalidationReason::ForbiddenCast(E->getSourceRange())));
+      Reporter.warnUnsafeCast(E->getSourceRange());
+      setPSet(E, {});
       return;
     case CK_ArrayToPointerDecay:
       // Decaying an array into a pointer is like taking the address of the
