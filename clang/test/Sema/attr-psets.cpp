@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wlifetime -Wlifetime-debug -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wlifetime -Wlifetime-disabled -Wlifetime-debug -verify %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }

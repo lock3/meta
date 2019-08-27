@@ -3220,7 +3220,7 @@ def warn_wrong_pset : Warning<"%select{passing|returning}0 a pointer with points
 def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_lifetime_pointer_arithmetic : Warning<"pointer arithmetic disables lifetime analysis">,
-  InGroup<LifetimePointerArithmetic>, DefaultIgnore;
+  InGroup<LifetimeDisabled>, DefaultIgnore;
 def warn_unsupported_expression : Warning<"this pre/postcondition is not supported">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 

@@ -850,8 +850,8 @@ def ThreadSafetyBeta : DiagGroup<"thread-safety-beta">;
 def Consumed       : DiagGroup<"consumed">;
 
 def LifetimeNull     : DiagGroup<"lifetime-null">;
-def LifetimePointerArithmetic     : DiagGroup<"lifetime-pointer-arithmetic">;
-def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull, LifetimePointerArithmetic]>;
+def LifetimeDisabled     : DiagGroup<"lifetime-disabled">;
+def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull]>;
 def LifetimeDebug    : DiagGroup<"lifetime-debug">;
 def LifetimeCategory : DiagGroup<"suggest-lifetime-category">;
 
