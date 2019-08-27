@@ -1189,7 +1189,7 @@ bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
 // the cast operation. But we still want to compute two sets for q so
 // we can propagate this information through the cast.
 static const Stmt *getRealTerminator(const CFGBlock &B) {
-  if (B.succ_size() > 2 || B.succ_size() == 0 ||
+  if (B.succ_size() > 2 || B.succ_size() == 0 || B.empty() ||
       B.rbegin()->getKind() != CFGElement::Kind::Statement)
     return nullptr;
 
