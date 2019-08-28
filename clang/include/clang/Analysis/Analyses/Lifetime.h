@@ -48,15 +48,19 @@ enum class NoteType {
   PointeeLeftScope
 };
 
+enum class ValueSource { Param, Return, OutputParam };
+
 class LifetimeReporterBase {
 public:
   virtual ~LifetimeReporterBase() = default;
   virtual void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                                 std::string ActualPset) = 0;
-  virtual void warnNullDangling(WarnType T, SourceRange Range, bool Return,
+  virtual void warnNullDangling(WarnType T, SourceRange Range,
+                                ValueSource Source, StringRef SourceName,
                                 bool Possibly) = 0;
   virtual void warn(WarnType T, SourceRange Range, bool Possibly) = 0;
-  virtual void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
+  virtual void warnWrongPset(SourceRange Range, ValueSource Source,
+                             StringRef ValueName, StringRef RetPset,
                              StringRef ExpectedPset) = 0;
   virtual void warnPointerArithmetic(SourceRange Range) = 0;
   virtual void warnUnsafeCast(SourceRange Range) = 0;

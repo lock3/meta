@@ -3211,11 +3211,11 @@ def warn_assign_nullptr : Warning<"assigning a%select{| possibly}0 null pointer 
   InGroup<LifetimeNull>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_dangling : Warning<"%select{passing|returning}0 a%select{| possibly}1 dangling pointer%select{ as argument|}0">,
+def warn_dangling : Warning<"%select{passing|returning|returning}0 a%select{| possibly}2 dangling pointer%select{ as argument|| as output value '%1'}0">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_null : Warning<"%select{passing|returning}0 a%select{| possibly}1 null pointer%select{ as argument|}0 where a non-null pointer is expected">,
+def warn_null : Warning<"%select{passing|returning|returning}0 a%select{| possibly}2 null pointer%select{ as argument|| as output value '%1'}0 where a non-null pointer is expected">,
   InGroup<LifetimeNull>, DefaultIgnore;
-def warn_wrong_pset : Warning<"%select{passing|returning}0 a pointer with points-to set %1 where points-to set %2 is expected">,
+def warn_wrong_pset : Warning<"%select{passing|returning|returning}0 a pointer%select{ as argument|| as output value '%1'}0 with points-to set %2 where points-to set %3 is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;

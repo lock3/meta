@@ -1993,12 +1993,12 @@ public:
       S.Diag(Range.getBegin(), diag::warn_pset_of_global)
           << VariableName << ActualPset << Range;
   }
-
-  void warnNullDangling(WarnType T, SourceRange Range, bool Return,
-                        bool Possibly) final {
+  void warnNullDangling(WarnType T, SourceRange Range, ValueSource Source,
+                        StringRef ValueName, bool Possibly) final {
     assert(T == WarnType::Dangling || T == WarnType::Null);
     if (enableIfNew(Range))
-      S.Diag(Range.getBegin(), Warnings[(int)T]) << Return << Possibly << Range;
+      S.Diag(Range.getBegin(), Warnings[(int)T])
+          << (int)Source << ValueName << Possibly << Range;
   }
   void warn(WarnType T, SourceRange Range, bool Possibly) final {
     assert((unsigned)T < sizeof(Warnings) / sizeof(Warnings[0]));
@@ -2011,11 +2011,11 @@ public:
       S.Diag(Range.getBegin(), diag::warn_non_static_throw)
           << ThrownPset << Range;
   }
-  void warnWrongPset(SourceRange Range, bool Return, StringRef RetPset,
-                     StringRef ExpectedPset) final {
+  void warnWrongPset(SourceRange Range, ValueSource Source, StringRef ValueName,
+                     StringRef RetPset, StringRef ExpectedPset) final {
     if (enableIfNew(Range))
       S.Diag(Range.getBegin(), diag::warn_wrong_pset)
-          << Return << RetPset << ExpectedPset << Range;
+          << (int)Source << ValueName << RetPset << ExpectedPset << Range;
   }
   void warnPointerArithmetic(SourceRange Range) final {
     if (enableIfNew(Range))

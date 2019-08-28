@@ -426,7 +426,8 @@ public:
     getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
                          Reporter, /*Pre=*/false);
     RetPSet.checkSubstitutableFor(PostConditions[Variable::temporary()],
-                                  R->getSourceRange(), Reporter, true);
+                                  R->getSourceRange(), Reporter,
+                                  ValueSource::Return);
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
@@ -1301,7 +1302,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       auto OutVarIt = PMap.find(VarToPSet.first);
       assert(OutVarIt != PMap.end());
       OutVarIt->second.checkSubstitutableFor(
-          VarToPSet.second, getSourceRange(B.back()), Reporter, true);
+          VarToPSet.second, getSourceRange(B.back()), Reporter,
+          ValueSource::OutputParam, VarToPSet.first.getName());
     }
   }
 } // namespace lifetime

@@ -320,6 +320,10 @@ int &hello() {
   return f(x); // expected-warning {{dangling}} expected-note {{pointee 'x' left}}
 }
 
+bool uninitialized_output_param(int **p) { // expected-note {{it was never initialized here}}
+  return true; // expected-warning {{returning a dangling pointer as output value '(*p)'}}
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>

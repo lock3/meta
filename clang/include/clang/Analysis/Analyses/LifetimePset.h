@@ -350,14 +350,15 @@ public:
 
   bool checkSubstitutableFor(const PSet &O, SourceRange Range,
                              LifetimeReporterBase &Reporter,
-                             bool Return = false) {
+                             ValueSource Source = ValueSource::Param,
+                             StringRef SourceName = "") {
     // Everything is substitutable for invalid.
     if (O.ContainsInvalid)
       return true;
 
     // If 'this' includes invalid, then 'O' must include invalid.
     if (ContainsInvalid) {
-      Reporter.warnNullDangling(WarnType::Dangling, Range, Return,
+      Reporter.warnNullDangling(WarnType::Dangling, Range, Source, SourceName,
                                 !isInvalid());
       explainWhyInvalid(Reporter);
       return false;
@@ -365,7 +366,8 @@ public:
 
     // If 'this' includes null, then 'O' must include null.
     if (ContainsNull && !O.ContainsNull) {
-      Reporter.warnNullDangling(WarnType::Null, Range, Return, !isNull());
+      Reporter.warnNullDangling(WarnType::Null, Range, Source, SourceName,
+                                !isNull());
       explainWhyNull(Reporter);
       return false;
     }
@@ -379,7 +381,7 @@ public:
     for (auto &V : Vars) {
       auto I = O.Vars.find(V);
       if (I == O.Vars.end() || I->getOrder() > V.getOrder()) {
-        Reporter.warnWrongPset(Range, Return, str(), O.str());
+        Reporter.warnWrongPset(Range, Source, SourceName, str(), O.str());
         return false;
       }
     }
