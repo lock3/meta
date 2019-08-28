@@ -71,6 +71,12 @@ struct basic_string_view {
 
 using string_view = basic_string_view<char>;
 
+template <typename T>
+struct basic_string {
+    basic_string(const char*);
+    basic_string &operator +=(const basic_string& other);
+};
+
 template <class T>
 struct remove_reference { typedef T type; };
 template <class T>
@@ -954,6 +960,13 @@ void ambiguous_pointers(bool cond) {
 void cast(int *p) {
   float *q = reinterpret_cast<float *>(p); // expected-warning {{unsafe cast}}
   __lifetime_pset(q);                      // expected-warning {{pset(q) = ((unknown))}}
+}
+
+void doNotInvalidateReference(std::vector<std::basic_string<char>> v) {
+   std::basic_string<char> &r = v[0];
+   __lifetime_pset_ref(r); // expected-warning {{(*v)}}
+   r += "aa";
+   __lifetime_pset_ref(r); // expected-warning {{(*v)}}
 }
 
 // Support CXXOperatorCallExpr on non-member function

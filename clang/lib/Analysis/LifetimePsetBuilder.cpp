@@ -692,7 +692,8 @@ public:
           PSet ArgPS = derefPSet(getPSet(ObjExpr));
           for (Variable V : ArgPS.vars())
             invalidateVar(
-                V, 1, InvalidationReason::Modified(ObjExpr->getSourceRange()));
+                V, V.getOrder(),
+                InvalidationReason::Modified(ObjExpr->getSourceRange()));
         });
 
     // Bind Pointer return value.
