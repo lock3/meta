@@ -130,7 +130,7 @@ bool lifetime(const T &lhs, const CheckVariadic<T> &rhs) {
 using namespace gsl;
 
 void basic(int *a, int *b) [[gsl::pre(lifetime(b, {a}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(b); // expected-warning {{((null), *a)}}
 }
 
 // Proper lifetime preconditions can only be checked with annotations.
@@ -153,34 +153,34 @@ void specials(int *a, int *b, int *c)
 
 void variadic(int *a, int *b, int *c)
     [[gsl::pre(lifetime(b, {a, c}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (*c), (null))}}
+  __lifetime_pset(b); // expected-warning {{((null), *a, *c}}
 }
 
 
 void variadic_special(int *a, int *b, int *c)
     [[gsl::pre(lifetime(b, {a, Null}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(b); // expected-warning {{((null), *a}}
 }
 
 void multiple_annotations(int *a, int *b, int *c)
     [[gsl::pre(lifetime(b, {a}))]]
     [[gsl::pre(lifetime(c, {a}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
-  __lifetime_pset(c); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(b); // expected-warning {{((null), *a)}}
+  __lifetime_pset(c); // expected-warning {{((null), *a)}}
 }
 
 void multiple_annotations_chained(int *a, int *b, int *c)
     [[gsl::pre(lifetime(b, {a}))]]
     [[gsl::pre(lifetime(c, {b}))]] {
-  __lifetime_pset(b); // expected-warning {{((*a), (null))}}
-  __lifetime_pset(c); // expected-warning {{((*a), (null))}}
+  __lifetime_pset(b); // expected-warning {{((null), *a)}}
+  __lifetime_pset(c); // expected-warning {{((null), *a)}}
 }
 
 void annotate_forward_decl(int *a, int *b)
     [[gsl::pre(lifetime(b, {a}))]];
 
 void annotate_forward_decl(int *c, int *d) {
-  __lifetime_pset(d); // expected-warning {{((*c), (null))}}
+  __lifetime_pset(d); // expected-warning {{((null), *c)}}
 }
 
 // Repeated annotations on redeclarations are not checked as
@@ -220,77 +220,77 @@ void p8(int *a, int *b, int **c)
 
 void f() {
   __lifetime_contracts(p);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   __lifetime_contracts(p2);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = (*b)}}
   __lifetime_contracts(p3);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b))}}
-  // expected-warning@-3 {{pset(Pre((*b))) = ((invalid))}}
-  // expected-warning@-4 {{pset(Post((*b))) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = (*b)}}
+  // expected-warning@-3 {{pset(Pre(*b)) = ((invalid))}}
+  // expected-warning@-4 {{pset(Post(*b)) = ((null), *a)}}
   __lifetime_contracts(parameter_psets);
-  // expected-warning@-1 {{pset(Pre(owner_by_value)) = ((*owner_by_value))}}
-  // expected-warning@-2 {{pset(Pre(owner_ref)) = ((*owner_ref))}}
-  // expected-warning@-3 {{pset(Pre((*owner_ref))) = ((*(*owner_ref)))}}
-  // expected-warning@-4 {{pset(Pre(ptr_ref)) = ((*ptr_ref))}}
-  // expected-warning@-5 {{pset(Pre((*ptr_ref))) = ((invalid))}}
-  // expected-warning@-6 {{pset(Pre(ptr_const_ref)) = ((*ptr_const_ref))}}
-  // expected-warning@-7 {{pset(Pre((*ptr_const_ref))) = ((*(*ptr_const_ref)), (null))}}
-  // expected-warning@-8 {{pset(Pre(ptr_const_ptr)) = ((*ptr_const_ptr), (null))}}
-  // expected-warning@-9 {{pset(Pre((*ptr_const_ptr))) = ((*(*ptr_const_ptr)), (null))}}
-  // expected-warning@-10 {{pset(Pre(in)) = ((*in), (null))}}
-  // expected-warning@-11 {{pset(Pre((*in))) = ((*(*in)), (null))}}
-  // expected-warning@-12 {{pset(Pre(owner_const_ref)) = ((*owner_const_ref))}}
-  // expected-warning@-13 {{pset(Pre((*owner_const_ref))) = ((*(*owner_const_ref)))}}
-  // expected-warning@-14 {{pset(Pre(int_ref)) = ((*int_ref))}}
-  // expected-warning@-15 {{pset(Pre(const_int_ref)) = ((*const_int_ref))}}
-  // expected-warning@-16 {{pset(Pre(ptr_ptr)) = ((*ptr_ptr), (null))}}
-  // expected-warning@-17 {{pset(Pre((*ptr_ptr))) = ((invalid))}}
-  // expected-warning@-18 {{pset(Pre(ptr_by_value)) = ((*ptr_by_value), (null))}}
-  // expected-warning@-19 {{pset(Post((*ptr_ref))) = ((*(*owner_ref)), (*(*ptr_const_ref)), (*int_ref), (*ptr_by_value), (null))}}
-  // expected-warning@-20 {{pset(Post((*ptr_ptr))) = ((*(*owner_ref)), (*(*ptr_const_ref)), (*int_ref), (*ptr_by_value), (null))}}
+  // expected-warning@-1 {{pset(Pre(owner_by_value)) = (*owner_by_value)}}
+  // expected-warning@-2 {{pset(Pre(owner_ref)) = (*owner_ref)}}
+  // expected-warning@-3 {{pset(Pre(*owner_ref)) = (**owner_ref)}}
+  // expected-warning@-4 {{pset(Pre(ptr_ref)) = (*ptr_ref)}}
+  // expected-warning@-5 {{pset(Pre(*ptr_ref)) = ((invalid))}}
+  // expected-warning@-6 {{pset(Pre(ptr_const_ref)) = (*ptr_const_ref)}}
+  // expected-warning@-7 {{pset(Pre(*ptr_const_ref)) = ((null), **ptr_const_ref)}}
+  // expected-warning@-8 {{pset(Pre(ptr_const_ptr)) = ((null), *ptr_const_ptr)}}
+  // expected-warning@-9 {{pset(Pre(*ptr_const_ptr)) = ((null), **ptr_const_ptr)}}
+  // expected-warning@-10 {{pset(Pre(in)) = ((null), *in)}}
+  // expected-warning@-11 {{pset(Pre(*in)) = ((null), **in)}}
+  // expected-warning@-12 {{pset(Pre(owner_const_ref)) = (*owner_const_ref)}}
+  // expected-warning@-13 {{pset(Pre(*owner_const_ref)) = (**owner_const_ref)}}
+  // expected-warning@-14 {{pset(Pre(int_ref)) = (*int_ref)}}
+  // expected-warning@-15 {{pset(Pre(const_int_ref)) = (*const_int_ref)}}
+  // expected-warning@-16 {{pset(Pre(ptr_ptr)) = ((null), *ptr_ptr)}}
+  // expected-warning@-17 {{pset(Pre(*ptr_ptr)) = ((invalid))}}
+  // expected-warning@-18 {{pset(Pre(ptr_by_value)) = ((null), *ptr_by_value)}}
+  // expected-warning@-19 {{pset(Post(*ptr_ref)) = ((null), **owner_ref, **ptr_const_ref, *int_ref, *ptr_by_value)}}
+  // expected-warning@-20 {{pset(Post(*ptr_ptr)) = ((null), **owner_ref, **ptr_const_ref, *int_ref, *ptr_by_value)}}
   __lifetime_contracts(p4);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*a), (null))}}
-  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
-  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
-  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *a)}}
+  // expected-warning@-3 {{pset(Pre(c)) = (*c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post(*c)) = ((null), *a)}}
   __lifetime_contracts(p5);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Post((temporary))) = ((*a), (*b), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Post((temporary))) = ((null), *a, *b)}}
   __lifetime_contracts(p6);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Post((temporary))) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Post((temporary))) = ((null), *a)}}
   __lifetime_contracts(&S::f);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
-  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
-  // expected-warning@-5 {{pset(Pre(this)) = ((*this))}}
-  // expected-warning@-6 {{pset(Post((*c))) = ((*a), (*b), (null))}}
-  // expected-warning@-7 {{pset(Post((temporary))) = ((*a), (*b), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Pre(c)) = (*c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Pre(this)) = (*this)}}
+  // expected-warning@-6 {{pset(Post(*c)) = ((null), *a, *b)}}
+  // expected-warning@-7 {{pset(Post((temporary))) = ((null), *a, *b)}}
   __lifetime_contracts(&S::g);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
-  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
-  // expected-warning@-5 {{pset(Pre(this)) = ((*this))}}
-  // expected-warning@-6 {{pset(Post((*c))) = ((*a), (*b), (null))}}
-  // expected-warning@-7 {{pset(Post((temporary))) = ((*this))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Pre(c)) = (*c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Pre(this)) = (*this)}}
+  // expected-warning@-6 {{pset(Post(*c)) = ((null), *a, *b)}}
+  // expected-warning@-7 {{pset(Post((temporary))) = (*this)}}
   __lifetime_contracts(p7);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Pre(c)) = ((*c))}}
-  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
-  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Pre(c)) = (*c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post(*c)) = ((null), *a)}}
   __lifetime_contracts(p8);
-  // expected-warning@-1 {{pset(Pre(a)) = ((*a), (null))}}
-  // expected-warning@-2 {{pset(Pre(b)) = ((*b), (null))}}
-  // expected-warning@-3 {{pset(Pre(c)) = ((*c), (null))}}
-  // expected-warning@-4 {{pset(Pre((*c))) = ((invalid))}}
-  // expected-warning@-5 {{pset(Post((*c))) = ((*a), (null))}}
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Pre(c)) = ((null), *c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
+  // expected-warning@-5 {{pset(Post(*c)) = ((null), *a)}}
 }
 } // namespace dump_contracts

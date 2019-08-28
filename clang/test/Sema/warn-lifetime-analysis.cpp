@@ -260,7 +260,7 @@ const int *return_wrong_ptr(const int *p) {
 
 const int &return_wrong_ptr2(std::vector<int> &v,
                              const std::vector<int> &v2) {
-  return v2[0]; // expected-warning {{returning a pointer with points-to set ((*(*v2))) where points-to set ((*(*v))) is expected}}
+  return v2[0]; // expected-warning {{returning a pointer with points-to set (**v2) where points-to set (**v) is expected}}
 }
 
 gsl::not_null<int *> return_null_ptr() {
@@ -321,7 +321,7 @@ int &hello() {
 }
 
 bool uninitialized_output_param(int **p) { // expected-note {{it was never initialized here}}
-  return true; // expected-warning {{returning a dangling pointer as output value '(*p)'}}
+  return true; // expected-warning {{returning a dangling pointer as output value '*p'}}
 }
 
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis

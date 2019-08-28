@@ -109,11 +109,13 @@ struct Variable : public ContractVariable {
     else
       Ret = "this";
 
-    for (const auto *FD : FDs) {
-      if (FD)
-        Ret += "." + std::string(FD->getName());
-      else
-        Ret = "(*" + Ret + ")";
+    for (unsigned I = 0; I < FDs.size(); ++I) {
+      if (FDs[I]) {
+        if (I > 0 && !FDs[I - 1])
+          Ret = "(" + Ret + ")";
+        Ret += "." + std::string(FDs[I]->getName());
+      } else
+        Ret.insert(0, 1, '*');
     }
     return Ret;
   }
