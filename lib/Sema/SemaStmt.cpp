@@ -3095,7 +3095,10 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  RangeType = SemaRef.Context.getAutoRRefDeductType();
+  // We want to create a copy of the range variable if this is a constexpr
+  // expansion statement, but otherwise we'll just use an rvalue reference.
+  RangeType = IsConstexpr ? SemaRef.Context.getAutoDeductType() :
+    SemaRef.Context.getAutoRRefDeductType();
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
@@ -3113,6 +3116,9 @@ ExpansionStatementBuilder::BuildRangeVar()
 
   // Update the range's expression type.
   RangeType = RangeVar->getType().getNonReferenceType();
+  if (SemaRef.RequireCompleteType(RangeLoc, RangeType,
+                                  diag::err_for_range_incomplete_type))
+    return false;
 
   /// Build the expression __range for various uses.
   ExprResult RangeDRE =
@@ -3364,6 +3370,8 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // is defined.
   // Get the name information for 'NNS::get'.
   CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
   NestedNameSpecifierLoc NNS =
       GetQualifiedNameForDecl(SemaRef.Context, RangeClass, ColonLoc);
   IdentifierInfo *Name = &SemaRef.Context.Idents.get("get");
@@ -3633,9 +3641,12 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+  auto Ret = new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
     AnnotationLoc, ColonLoc, RParenLoc);
+  Ret->setBeginStmt(BeginDecl.get());
+  Ret->setEndStmt(EndDecl.get());
+  return Ret;
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3662,6 +3673,10 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
+  CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
+
   ExprResult Projection =
     SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
                                      RangeVar, InductionRef);
@@ -3698,6 +3713,8 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                        SourceLocation RParenLoc,
                                        BuildForRangeKind Kind,
                                        bool IsConstexpr) {
+  if (!Range || !LoopVar)
+    return StmtError();
   ExpansionStatementBuilder Builder(*this, S, Kind, LoopVar, Range,
                                     IsConstexpr);
   Builder.ForLoc = ForLoc;

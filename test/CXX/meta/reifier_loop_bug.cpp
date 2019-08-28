@@ -21,7 +21,7 @@ constexpr void do_thing() {
 int main() {
   do_thing<reflexpr(n::f)>();
   static constexpr auto r = meta::range(reflexpr(n));
-  for... (constexpr auto member : r) {
+  template for (constexpr auto member : r) {
     do_thing<member>();
   }
 }

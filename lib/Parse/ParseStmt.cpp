@@ -148,6 +148,31 @@ private:
 };
 }
 
+/// The default case of the switch statement in
+/// ParseStatementOrDeclaraionAfterAttributes(). Due to the introduction of
+/// `template for` statements, there is more than one path in which this code
+/// may be called.
+StmtResult
+Parser::StmtOrDeclAfterAttributesDefault(ParsedStmtContext StmtCtx,
+                                         ParsedAttributesWithRange &Attrs) {
+  if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
+       (StmtCtx & ParsedStmtContext::AllowDeclarationsInC) !=
+       ParsedStmtContext()) &&
+      isDeclarationStatement()) {
+    SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
+    DeclGroupPtrTy Decl = ParseDeclaration(DeclaratorContext::BlockContext,
+                                           DeclEnd, Attrs);
+    return Actions.ActOnDeclStmt(Decl, DeclStart, DeclEnd);
+  }
+
+  if (Tok.is(tok::r_brace)) {
+    Diag(Tok, diag::err_expected_statement);
+    return StmtError();
+  }
+
+  return ParseExprStatement(StmtCtx);
+}
+
 StmtResult Parser::ParseStatementOrDeclarationAfterAttributes(
     StmtVector &Stmts, ParsedStmtContext StmtCtx,
     SourceLocation *TrailingElseLoc, ParsedAttributesWithRange &Attrs) {
@@ -204,24 +229,8 @@ Retry:
     LLVM_FALLTHROUGH;
   }
 
-  default: {
-    if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
-         (StmtCtx & ParsedStmtContext::AllowDeclarationsInC) !=
-             ParsedStmtContext()) &&
-        isDeclarationStatement()) {
-      SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
-      DeclGroupPtrTy Decl = ParseDeclaration(DeclaratorContext::BlockContext,
-                                             DeclEnd, Attrs);
-      return Actions.ActOnDeclStmt(Decl, DeclStart, DeclEnd);
-    }
-
-    if (Tok.is(tok::r_brace)) {
-      Diag(Tok, diag::err_expected_statement);
-      return StmtError();
-    }
-
-    return ParseExprStatement(StmtCtx);
-  }
+  default:
+    return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs);
 
   case tok::kw_case:                // C99 6.8.1: labeled-statement
     return ParseCaseStatement(StmtCtx);
@@ -248,6 +257,10 @@ Retry:
     break;
   case tok::kw_for:                 // C99 6.8.5.3: for-statement
     return ParseForStatement(TrailingElseLoc);
+  case tok::kw_template:
+    if (NextToken().is(tok::kw_for))
+      return ParseForStatement(TrailingElseLoc);
+    return StmtOrDeclAfterAttributesDefault(StmtCtx, Attrs);
 
   case tok::kw_goto:                // C99 6.8.6.1: goto-statement
     Res = ParseGotoStatement();
@@ -1616,16 +1629,18 @@ bool Parser::isForRangeIdentifier() {
 /// [C++0x]   expression
 /// [C++0x]   braced-init-list            [TODO]
 StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
-  assert(Tok.is(tok::kw_for) && "Not a for stmt!");
+  assert((Tok.is(tok::kw_for) ||
+          (getLangOpts().Reflection && Tok.is(tok::kw_template)))
+         && "Not a for stmt!");
+  SourceLocation TemplateLoc;
+  if (getLangOpts().Reflection && Tok.is(tok::kw_template))
+    TemplateLoc = ConsumeToken();
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
   // Parse 'for...' or 'for co_await'.
-  SourceLocation EllipsisLoc;
   SourceLocation ConstexprLoc;
   SourceLocation CoawaitLoc;
-  if (getLangOpts().Reflection && Tok.is(tok::ellipsis))
-    EllipsisLoc = ConsumeToken();
-  else if (Tok.is(tok::kw_co_await))
+  if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
 
   if (Tok.isNot(tok::l_paren)) {
@@ -1727,7 +1742,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
 
     // If reflection is enabled, this might be an expansion
     // over a constexpr range.
-    if (getLangOpts().Reflection && EllipsisLoc.isValid())
+    if (getLangOpts().Reflection && TemplateLoc.isValid())
       TryConsumeToken(tok::kw_constexpr, ConstexprLoc);
 
     SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
@@ -1894,16 +1909,14 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInfo.RangeExpr.get());
 
-    if (EllipsisLoc.isInvalid() && ConstexprLoc.isInvalid()) {
+    if (TemplateLoc.isInvalid()) {
       ForRangeStmt = Actions.ActOnCXXForRangeStmt(
         getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
         ForRangeInfo.LoopVar.get(), ForRangeInfo.ColonLoc, CorrectedRange.get(),
         T.getCloseLocation(), Sema::BFRK_Build);
     } else {
-      SourceLocation ModifierLoc =
-          EllipsisLoc.isValid() ? EllipsisLoc : ConstexprLoc;
       ForRangeStmt = Actions.ActOnCXXExpansionStmt(
-          getCurScope(), ForLoc, ModifierLoc, ForRangeInfo.LoopVar.get(),
+          getCurScope(), ForLoc, TemplateLoc, ForRangeInfo.LoopVar.get(),
           ForRangeInfo.ColonLoc, CorrectedRange.get(),
           T.getCloseLocation(), Sema::BFRK_Build,
           ConstexprLoc.isValid());
@@ -1955,8 +1968,6 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   ForScope.Exit();
 
   if (Body.isInvalid()) {
-    if (!EllipsisLoc.isInvalid())
-      return Actions.ActOnCXXExpansionStmtError(ForEachStmt.get());
     return StmtError();
   }
 
@@ -1965,7 +1976,7 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
                                               Body.get());
 
   if (ForRangeInfo.ParsedForRangeDecl()) {
-    if (EllipsisLoc.isInvalid() && ConstexprLoc.isInvalid()) {
+    if (TemplateLoc.isInvalid() && ConstexprLoc.isInvalid()) {
       return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
     }
     return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
