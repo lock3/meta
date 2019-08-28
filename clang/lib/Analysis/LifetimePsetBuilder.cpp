@@ -332,19 +332,28 @@ public:
         DeclRef->getType()->getAsArrayTypeUnsafe());
     if (!ArrayType)
       return false;
-    auto ArrayBound = ArrayType->getSize();
+    llvm::APInt ArrayBound = ArrayType->getSize();
 
     auto *Integer = dyn_cast<IntegerLiteral>(BO->getRHS());
     if (!Integer)
       return false;
+
+    llvm::APInt Offset = Integer->getValue();
+    if (Offset.isNegative())
+      return false;
+
+    // ule() comparison requires both APInt to have the same bit width.
+    if (ArrayBound.getBitWidth() > Offset.getBitWidth())
+      Offset = Offset.zext(ArrayBound.getBitWidth());
+    else if (ArrayBound.getBitWidth() < Offset.getBitWidth())
+      ArrayBound = ArrayBound.zext(Offset.getBitWidth());
 
     // We explicitly allow to form the pointer one element after the array
     // to support the compiler-generated code for the end iterator in a
     // for-range loop.
     // TODO: this allows to form an invalid pointer, where we would not detect
     // dereferencing.
-    return Integer->getValue().isNonNegative() &&
-           Integer->getValue().ule(ArrayBound);
+    return Offset.ule(ArrayBound);
   }
 
   void VisitBinaryOperator(const BinaryOperator *BO) {
