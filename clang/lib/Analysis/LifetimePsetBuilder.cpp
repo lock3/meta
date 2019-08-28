@@ -434,7 +434,7 @@ public:
     PSetsMap PostConditions;
     getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
                          Reporter, /*Pre=*/false);
-    RetPSet.checkSubstitutableFor(PostConditions[Variable::temporary()],
+    RetPSet.checkSubstitutableFor(PostConditions[Variable::returnVal()],
                                   R->getSourceRange(), Reporter,
                                   ValueSource::Return);
   }
@@ -565,7 +565,7 @@ public:
       Pair.second.bind(V, derefPSet(PS), Checking);
     };
 
-    auto ReturnIt = Fill.find(Variable::temporary());
+    auto ReturnIt = Fill.find(Variable::returnVal());
     forEachArgParamPair(
         CE,
         [&](Variable V, const Expr *Arg, int Pos) {
@@ -708,7 +708,7 @@ public:
     // Bind Pointer return value.
     auto TC = classifyTypeCategory(Callee->getReturnType());
     if (TC == TypeCategory::Pointer)
-      setPSet(CallE, PostConditions[Variable::temporary()]);
+      setPSet(CallE, PostConditions[Variable::returnVal()]);
 
     // Bind output arguments.
     forEachArgParamPair(

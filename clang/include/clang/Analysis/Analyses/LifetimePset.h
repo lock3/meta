@@ -43,6 +43,11 @@ struct Variable : public ContractVariable {
     return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
   }
 
+  /// A variable that represent the return value of the current function.
+  static Variable returnVal() {
+    return Variable(ContractVariable::returnVal(), nullptr);
+  }
+
   // TODO: is this what we want when derefs are involved?
   bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
 
