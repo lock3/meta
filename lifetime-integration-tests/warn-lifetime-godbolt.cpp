@@ -233,7 +233,7 @@ void example_2_4_6_2() {
 						        //                   -----   -----   -----
 						        //             IN:   sv      sv'     sv''
 
-    vec->	    				// same as “(*vec).” => pset(*vec) == {sv''} expected-note 2 {{modified here}}
+    vec->	    				// same as “(*vec).” => pset(*vec) == {sv''} expected-note {{modified here}}
          push_back(1);			// KILL(sv'') because non-const operation
 		        				//            OUT:   sv      sv'     invalid
 
@@ -243,7 +243,7 @@ void example_2_4_6_2() {
 
     *ptr = 4;					// ok
 	        					//             IN:   sv      sv'     sv''
-    (*sv2).		    			// pset(*sv2) == {sv'} expected-note {{modified here}}
+    (*sv2).		    			// pset(*sv2) == {sv'} expected-note 2 {{modified here}}
        reset();		    		// KILL(sv') because non-const operation
 						        //            OUT:   sv      invalid invalid
     vec->push_back(1);			// expected-warning {{passing a dangling pointer as argument}}
