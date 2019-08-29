@@ -8872,6 +8872,7 @@ public:
     return ReflectionScope;
   }
 
+  ExprResult BuildImmediateInvocation(Expr *E);
   ExprResult BuildConstantExpression(Expr *E);
 
   ParsedReflectionOperand ActOnReflectedType(TypeResult T);
