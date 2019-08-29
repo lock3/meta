@@ -7956,36 +7956,33 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
 }
 
-/// Try to evaluate an immediate function.
-static ExprResult
-EvaluateImmediateFunction(Sema &SemaRef, Expr *E)
-{
+/// Try to evaluate an immediate function producing a CXXConstantExpr
+/// if the expression was successfully evaluated as an immediate
+/// invocation.
+ExprResult Sema::BuildImmediateInvocation(Expr *E) {
   SmallVector<PartialDiagnosticAt, 4> Diags;
   Expr::EvalResult Result;
   Result.Diag = &Diags;
-  Expr::EvalContext EvalCtx(
-      SemaRef.Context, SemaRef.GetReflectionCallbackObj());
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   bool Ok = E->EvaluateAsConstantExpr(Result, Expr::EvaluateForCodeGen,
                                       EvalCtx);
   if (Ok)
-    return new (SemaRef.Context) CXXConstantExpr(E, std::move(Result.Val));
+    return new (Context) CXXConstantExpr(E, std::move(Result.Val));
 
   bool IsMember = isa<CXXMemberCallExpr>(E);
-  SemaRef.Diag(E->getBeginLoc(), diag::err_cannot_evaluate_immedate)
+  Diag(E->getBeginLoc(), diag::err_cannot_evaluate_immedate)
       << IsMember << E->getSourceRange();
   for (PartialDiagnosticAt PD : Diags)
-    SemaRef.Diag(PD.first, PD.second);
+    Diag(PD.first, PD.second);
 
   return ExprError();
 }
 
 /// Evaluates the expression E and returns a CXXConstantExpr that wraps
 /// the both E and the computed value.
-ExprResult
-Sema::BuildConstantExpression(Expr *E)
-{
+ExprResult Sema::BuildConstantExpression(Expr *E) {
   // FIXME: Generate an error if we can't build the constant expression? We
-  // probably want more context when we do this so that we can generate 
+  // probably want more context when we do this so that we can generate
   // appropriate diagnostics. Right now, we only build these when folding
   // calls to immediate functions.
   bool OK;
@@ -8032,7 +8029,7 @@ Sema::FinishCallExpr(Expr *E)
   if (CXXMemberCallExpr *MemCall = dyn_cast<CXXMemberCallExpr>(E)) {
     CXXMethodDecl *Method = MemCall->getMethodDecl();
     if (Method && Method->isConsteval()) {
-      ExprResult Value = EvaluateImmediateFunction(*this, MemCall);
+      ExprResult Value = BuildImmediateInvocation(MemCall);
       if (Value.isInvalid())
         return ExprError();
       E = Value.get();
@@ -8040,7 +8037,7 @@ Sema::FinishCallExpr(Expr *E)
   } else if (CallExpr *Call = dyn_cast<CallExpr>(E)) {
     if (FunctionDecl *Callee = Call->getDirectCallee()) {
       if (Callee && Callee->isConsteval()) {
-        ExprResult Value = EvaluateImmediateFunction(*this, Call);
+        ExprResult Value = BuildImmediateInvocation(Call);
         if (Value.isInvalid())
           return ExprError();
         E = Value.get();
