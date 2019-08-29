@@ -23,8 +23,8 @@ namespace lifetime {
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
 /// - the this pointer: Var contains a non-null RecordDecl
-/// - a life-time extended temporary: Var contains a non-null Expr
-/// - a normal temporary: Var contains a null VarDecl and non-null QualType
+/// - a lifetime extended temporary: Var contains a non-null Expr
+/// - a non-lifetime extended temporary: Var contains a null VarDecl and non-null QualType
 /// - the return value of the current function: Var contains a null Expr
 /// plus fields of them (in member FDs).
 /// TODO: What is the difference between a normal temporary and a
