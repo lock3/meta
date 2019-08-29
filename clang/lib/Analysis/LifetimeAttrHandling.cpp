@@ -157,6 +157,22 @@ static SourceRange fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
   return SourceRange();
 }
 
+static SourceRange
+fillIOVarsFromExpr(const Expr *E,
+                   llvm::SmallVectorImpl<ContractVariable> &ToFill) {
+  SourceRange ErrorRange;
+  // TODO: This is not restrictive enought. E.g. we should reject
+  // lifetime_out(Null).
+  ContractPSet PS = collectPSet(E, nullptr, &ErrorRange);
+  if (PS.Vars.size() != 1)
+    return E->getSourceRange();
+  if (ErrorRange.isValid())
+    return ErrorRange;
+
+  ToFill.push_back(*PS.Vars.begin());
+  return SourceRange();
+}
+
 namespace {
 class PSetCollector {
 public:
@@ -166,9 +182,28 @@ public:
         isConvertible(isConvertible), Reporter(Reporter) {}
 
   void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
+    // Fill the lifetime_in/lifetime_out annotations.
+    ParamDerivedLocations Locations;
+    auto *IOAttr = FD->getAttr<LifetimeIOAttr>();
+    if (IOAttr && IOAttr->InVars.empty() && IOAttr->OutVars.empty()) {
+      for (const Expr *E : IOAttr->InLocExprs) {
+        SourceRange Range = fillIOVarsFromExpr(E, IOAttr->InVars);
+        if (Range.isValid())
+          Reporter.warnUnsupportedExpr(Range);
+      }
+      for (const Expr *E : IOAttr->OutLocExprs) {
+        SourceRange Range = fillIOVarsFromExpr(E, IOAttr->OutVars);
+        if (Range.isValid())
+          Reporter.warnUnsupportedExpr(Range);
+      }
+      for (ContractVariable Var : IOAttr->InVars)
+        Locations.Input.push_back(Var);
+      for (ContractVariable Var : IOAttr->OutVars)
+        Locations.Output.push_back(Var);
+    }
+
     // Fill default preconditions and collect data for
     // computing default postconditions.
-    ParamDerivedLocations Locations;
     for (const ParmVarDecl *PVD : FD->parameters()) {
       QualType ParamType = PVD->getType();
       TypeCategory TC = classifyTypeCategory(ParamType);
@@ -191,34 +226,34 @@ public:
         ContractAttr->PrePSets.emplace(ParamDerefLoc, ParamDerefPSet);
         if (ParamType->isLValueReferenceType()) {
           if (PointeeType.isConstQualified()) {
-            Locations.Input_weak.push_back(ParamLoc);
-            Locations.Input_weak.push_back(ParamDerefLoc);
+            addUnannotated(Locations.Input_weak, IOAttr, ParamLoc);
+            addUnannotated(Locations.Input_weak, IOAttr, ParamDerefLoc);
           } else {
-            Locations.Input.push_back(ParamLoc);
-            Locations.Input.push_back(ParamDerefLoc);
+            addUnannotated(Locations.Input, IOAttr, ParamLoc);
+            addUnannotated(Locations.Input, IOAttr, ParamDerefLoc);
           }
         }
         break;
       }
       case TypeCategory::Pointer:
-        if (!PointeeType.isConstQualified()) {
+        if (!isLifetimeConst(FD, PointeeType, PVD->getFunctionScopeIndex()) &&
+            !isInputAnnotated(IOAttr, ParamDerefLoc)) {
           // Output params are initially invalid.
           ContractPSet InvalidPS;
           InvalidPS.ContainsInvalid = true;
           ContractAttr->PrePSets.emplace(ParamDerefLoc, InvalidPS);
-          if (!isLifetimeConst(FD, PointeeType, PVD->getFunctionScopeIndex()))
-            Locations.Output.push_back(ParamDerefLoc);
+          addUnannotated(Locations.Output, IOAttr, ParamDerefLoc);
         } else {
           ContractAttr->PrePSets.emplace(ParamDerefLoc, ParamDerefPSet);
           // TODO: In the paper we only add derefs for references and not for
           // other pointers. Is this intentional?
           if (ParamType->isLValueReferenceType())
-            Locations.Input.push_back(ParamDerefLoc);
+            addUnannotated(Locations.Input, IOAttr, ParamDerefLoc);
         }
         LLVM_FALLTHROUGH;
       default:
         if (!ParamType->isRValueReferenceType())
-          Locations.Input.push_back(ParamLoc);
+          addUnannotated(Locations.Input, IOAttr, ParamLoc);
         break;
       }
     }
@@ -229,7 +264,7 @@ public:
         ContractVariable DerefThis = ContractVariable(RD).deref();
         ContractPSet ThisPSet({DerefThis});
         ContractAttr->PrePSets.emplace(ContractVariable(RD), ThisPSet);
-        Locations.Input.push_back(ContractVariable(RD));
+        addUnannotated(Locations.Input, IOAttr, ContractVariable(RD));
         QualType ClassTy = MD->getThisType()->getPointeeType();
         TypeCategory TC = classifyTypeCategory(ClassTy);
         if (TC == TypeCategory::Pointer || TC == TypeCategory::Owner) {
@@ -244,7 +279,7 @@ public:
             DerefThisPSet.ContainsNull |=
                 Conv->getConversionType()->isBooleanType();
           ContractAttr->PrePSets.emplace(DerefThis, DerefThisPSet);
-          Locations.Input.push_back(DerefThis);
+          addUnannotated(Locations.Input, IOAttr, DerefThis);
         }
       }
     }
@@ -318,6 +353,30 @@ private:
     std::vector<ContractVariable> Input;
     std::vector<ContractVariable> Output;
   };
+
+  static bool isInputAnnotated(const LifetimeIOAttr *Attr, ContractVariable Var) {
+    if (Attr)
+      for (const auto AttrVar : Attr->InVars)
+        if (Var == AttrVar)
+          return true;
+
+    return false;
+  }
+
+  static void addUnannotated(std::vector<ContractVariable> &To,
+                             const LifetimeIOAttr *Attr, ContractVariable Var) {
+    if (Attr) {
+      for (const auto AttrVar : Attr->InVars)
+        if (Var == AttrVar)
+          return;
+
+      for (const auto AttrVar : Attr->OutVars)
+        if (Var == AttrVar)
+          return;
+    }
+
+    To.push_back(Var);
+  }
 
   const FunctionDecl *FD;
   const ASTContext &ASTCtxt;

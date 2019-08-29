@@ -1469,7 +1469,7 @@ template <typename a>
 a b(a &&);
 
 template <typename c>
-struct d : c {};
+struct d {};
 
 class e {
   d<int> operator*();

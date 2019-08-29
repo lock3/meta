@@ -216,6 +216,8 @@ void p7(int *a, int *b, int *&c)
     [[gsl::post(lifetime(deref(c), {a}))]] { c = a; }
 void p8(int *a, int *b, int **c)
     [[gsl::post(lifetime(deref(c), {a}))]] { if (c) *c = a; }
+void p9(int *a, int *b, int *&c)
+    [[gsl::lifetime_in(deref(c))]] {}
 // TODO: contracts for function pointers?
 
 void f() {
@@ -292,5 +294,10 @@ void f() {
   // expected-warning@-3 {{pset(Pre(c)) = ((null), *c)}}
   // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
   // expected-warning@-5 {{pset(Post(*c)) = ((null), *a)}}
+  __lifetime_contracts(p9);
+  // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
+  // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
+  // expected-warning@-3 {{pset(Pre(c)) = (*c)}}
+  // expected-warning@-4 {{pset(Pre(*c)) = ((null), **c)}}
 }
 } // namespace dump_contracts

@@ -7618,6 +7618,7 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
 
     // Move function type attribute to the declarator.
     case ParsedAttr::AT_LifetimeContract:
+    case ParsedAttr::AT_LifetimeIO:
       moveAttrFromListToList(attr, state.getCurrentAttributes(),
                              state.getDeclarator().getAttributes());
       break;

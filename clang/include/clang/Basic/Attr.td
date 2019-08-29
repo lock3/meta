@@ -2825,7 +2825,7 @@ def Lifetimeconst : InheritableParamAttr {
   let MeaningfulToClassTemplateDefinition = 1;
 }
 
-def LifetimeContract : InheritableParamAttr {
+def LifetimeContract : InheritableAttr {
   let Spellings = [CXX11<"gsl", "pre">, CXX11<"gsl", "post">];
   let Accessors = [Accessor<"isPre", [CXX11<"gsl", "pre">]>,
                    Accessor<"isPost", [CXX11<"gsl", "post">]>];
@@ -2838,6 +2838,24 @@ public:
   SmallVector<const Expr *, 8> PostExprs;
   PointsToMap PrePSets;
   PointsToMap PostPSets;
+
+  // TODO: have a more restrictive public API.
+  }];
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def LifetimeIO : InheritableAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_in">, CXX11<"gsl", "lifetime_out">];
+  let Accessors = [Accessor<"isIn", [CXX11<"gsl", "lifetime_in">]>,
+                   Accessor<"isOut", [CXX11<"gsl", "lifetime_out">]>];
+  let Subjects = SubjectList<[Function]>; // TODO: HasFunctionProto?
+  let Args = [ExprArgument<"Expr">];
+  let AdditionalMembers = [{
+public:
+  SmallVector<const Expr *, 8> InLocExprs;
+  SmallVector<const Expr *, 8> OutLocExprs;
+  SmallVector<ContractVariable, 8> InVars;
+  SmallVector<ContractVariable, 8> OutVars;
 
   // TODO: have a more restrictive public API.
   }];
