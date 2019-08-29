@@ -324,6 +324,11 @@ bool uninitialized_output_param(int **p) { // expected-note {{it was never initi
   return true; // expected-warning {{returning a dangling pointer as output value '*p'}}
 }
 
+std::initializer_list<int> dangling_initializer_list() {
+  return {1, 2, 3}; // expected-warning {{returning a dangling pointer}}
+  // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>

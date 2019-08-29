@@ -200,6 +200,7 @@ void Sema::inferGslOwnerPointerAttribute(CXXRecordDecl *Record) {
   };
   static llvm::StringSet<> StdPointers{
       "basic_string_view",
+      "initializer_list",
       "reference_wrapper",
       "regex_iterator",
   };
