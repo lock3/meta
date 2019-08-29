@@ -61,7 +61,8 @@ struct Variable : public ContractVariable {
                          [](const FieldDecl *FD) { return FD == nullptr; });
   }
 
-  /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
+  /// Returns QualType of Variable.
+  /// \pre !isReturnVal()
   /// TODO: Should we cache the type instead of calculating?
   QualType getType() const {
     int Order;

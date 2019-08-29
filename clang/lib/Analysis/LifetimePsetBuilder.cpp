@@ -662,8 +662,9 @@ public:
     // E.g.: when the pset(null) is bind to a non-null pset.
     // Also remove null outputs for non-null types.
     for (auto &Pair : PostConditions) {
-      // TODO: better representation for return value postconditions?
-      QualType OutputType = Pair.first.isTemporary() ? Callee->getReturnType()
+      // TODO: Currently getType() fails when isReturnVal() is true because the
+      // Variable does not store the type of the ReturnVal.
+      QualType OutputType = Pair.first.isReturnVal() ? Callee->getReturnType()
                                                      : Pair.first.getType();
       if (!isNullableType(OutputType))
         Pair.second.removeNull();
@@ -1326,7 +1327,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
                          Reporter, /*Pre=*/false);
     for (auto &VarToPSet : PostConditions) {
-      if (VarToPSet.first.isTemporary())
+      if (VarToPSet.first.isReturnVal())
         continue;
       auto OutVarIt = PMap.find(VarToPSet.first);
       assert(OutVarIt != PMap.end());

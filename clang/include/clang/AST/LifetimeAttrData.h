@@ -40,6 +40,8 @@ struct ContractVariable {
   }
 
   bool operator==(const ContractVariable &O) const {
+    // We consider all non-lifetime-extended temporaries to be equal,
+    // so we don't check QType.
     return Var == O.Var && FDs == O.FDs;
   }
 
