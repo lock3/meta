@@ -71,13 +71,12 @@ struct Variable : public ContractVariable {
 
   bool isField() const { return !FDs.empty() && FDs.back(); }
 
-  bool isThisPointer() const { return Var.is<const RecordDecl *>(); }
+  bool isThisPointer() const { return asThis(); }
 
-  bool isTemporary() const { return Var.is<const Expr *>() && !getVarAsMTE(); }
+  /// Returns true if this is a non-lifetime-extended temporary
+  bool isTemporary() const { return !asTemporary().isNull(); }
 
-  bool isLifetimeExtendedTemporary() const {
-    return Var.is<const Expr *>() && getVarAsMTE();
-  }
+  bool isLifetimeExtendedTemporary() const { return getVarAsMTE(); }
 
   bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
     return isLifetimeExtendedTemporary() &&
