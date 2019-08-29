@@ -42,25 +42,34 @@ static const ParmVarDecl *toCanonicalParmVar(const ParmVarDecl *PVD) {
 
 // This function can either collect the PSets of the symbols based on a lookup
 // table or just the symbols into a pset if the lookup table is nullptr.
-static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap *Lookup) {
+static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap *Lookup,
+                                SourceRange *FailRange) {
   ContractPSet Result;
   if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
     const auto *VD = dyn_cast<VarDecl>(DRE->getDecl());
-    if (!VD)
+    if (!VD) {
+      *FailRange = DRE->getSourceRange();
       return Result;
+    }
     StringRef Name = VD->getName();
-    if (Name == "Null")
+    if (Name == "Null") {
       Result.ContainsNull = true;
-    else if (Name == "Static")
+      return Result;
+    } else if (Name == "Static") {
       Result.ContainsStatic = true;
-    else if (Name == "Invalid")
+      return Result;
+    } else if (Name == "Invalid") {
       Result.ContainsInvalid = true;
-    else if (Name == "Return") {
+      return Result;
+    } else if (Name == "Return") {
       Result.Vars.insert(ContractVariable::returnVal());
+      return Result;
     } else {
       const auto *PVD = dyn_cast<ParmVarDecl>(VD);
-      if (!PVD)
+      if (!PVD) {
+        *FailRange = DRE->getSourceRange();
         return Result;
+      }
       if (Lookup) {
         auto It = Lookup->find(toCanonicalParmVar(PVD));
         assert(It != Lookup->end());
@@ -70,27 +79,34 @@ static ContractPSet collectPSet(const Expr *E, const AttrPointsToMap *Lookup) {
         return Result;
       }
     }
+    *FailRange = DRE->getSourceRange();
     return Result;
   } else if (const auto *StdInit = dyn_cast<CXXStdInitializerListExpr>(E)) {
     E = StdInit->getSubExpr()->IgnoreImplicit();
     if (const auto *InitList = dyn_cast<InitListExpr>(E)) {
       for (const auto *Init : InitList->inits()) {
-        ContractPSet Elem = collectPSet(ignoreReturnValues(Init), Lookup);
+        ContractPSet Elem =
+            collectPSet(ignoreReturnValues(Init), Lookup, FailRange);
         if (Elem.isEmpty())
           return Elem;
         Result.merge(Elem);
       }
     }
+    return Result;
   } else if (const auto *CE = dyn_cast<CallExpr>(E)) {
     const FunctionDecl *FD = CE->getDirectCallee();
-    if (!FD || !FD->getIdentifier() || FD->getName() != "deref")
+    if (!FD || !FD->getIdentifier() || FD->getName() != "deref") {
+      *FailRange = CE->getSourceRange();
       return Result;
-    Result = collectPSet(ignoreReturnValues(CE->getArg(0)), Lookup);
+    }
+    Result = collectPSet(ignoreReturnValues(CE->getArg(0)), Lookup, FailRange);
     auto VarsCopy = Result.Vars;
     Result.Vars.clear();
     for (auto Var : VarsCopy)
       Result.Vars.insert(Var.deref());
+    return Result;
   }
+  *FailRange = E->getSourceRange();
   return Result;
 }
 
@@ -126,14 +142,17 @@ static SourceRange fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
   if (!RHS)
     return CE->getArg(1)->getSourceRange();
 
-  ContractPSet LhsPSet = collectPSet(LHS, nullptr);
+  SourceRange ErrorRange;
+  ContractPSet LhsPSet = collectPSet(LHS, nullptr, &ErrorRange);
   if (LhsPSet.Vars.size() != 1)
     return LHS->getSourceRange();
+  if (ErrorRange.isValid())
+    return ErrorRange;
 
   ContractVariable VD = *LhsPSet.Vars.begin();
-  ContractPSet RhsPSet = collectPSet(RHS, &Lookup);
-  if (RhsPSet.isEmpty())
-    return RHS->getSourceRange();
+  ContractPSet RhsPSet = collectPSet(RHS, &Lookup, &ErrorRange);
+  if (ErrorRange.isValid())
+    return ErrorRange;
   Fill[VD] = RhsPSet;
   return SourceRange();
 }

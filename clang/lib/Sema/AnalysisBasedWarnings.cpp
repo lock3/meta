@@ -2028,7 +2028,7 @@ public:
 
   void warnUnsupportedExpr(SourceRange Range) final {
     if (enableIfNew(Range))
-      S.Diag(Range.getBegin(), diag::warn_unsupported_expression);
+      S.Diag(Range.getBegin(), diag::warn_unsupported_expression) << Range;
   }
   void notePointeeLeftScope(SourceRange Range, std::string Name) final {
     if (!IgnoreCurrentWarning)
