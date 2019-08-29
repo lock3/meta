@@ -420,7 +420,7 @@ public:
     // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
     // the ReturnStmt node
     for (auto &Var : RetPSet.vars()) {
-      if (Var.isLifetimeExtendedTemporary()) {
+      if (Var.isTemporary()) {
         RetPSet = PSet::invalid(
             InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
         break;
@@ -765,14 +765,14 @@ public:
     // variable (or a lifetime extended temporary without an extending
     // declaration) and do the invalidation.
     for (auto I = PMap.begin(); I != PMap.end();) {
-      if (I->first.isLifetimeExtendedTemporaryBy(VD)) {
+      if (I->first.isTemporaryExtendedBy(VD)) {
         I = PMap.erase(I);
       } else {
         auto &Var = I->first;
         auto &Pset = I->second;
         bool PsetContainsTemporary =
             llvm::any_of(Pset.vars(), [VD](const Variable &V) {
-              return V.isLifetimeExtendedTemporaryBy(VD);
+              return V.isTemporaryExtendedBy(VD);
             });
         if (PsetContainsTemporary)
           setPSet(PSet::singleton(Var), PSet::invalid(Reason),

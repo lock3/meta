@@ -70,14 +70,13 @@ struct Variable : public ContractVariable {
 
   bool isThisPointer() const { return asThis(); }
 
-  bool isLifetimeExtendedTemporary() const { return getVarAsMTE(); }
+  bool isTemporary() const { return asTemporary(); }
 
   /// When VD is non-null, returns true if the Variable represents a
   /// lifetime-extended temporary that is extended by VD. When VD is null,
   /// returns true if the the Variable is a non-lifetime-extended temporary.
-  bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
-    return isLifetimeExtendedTemporary() &&
-           getVarAsMTE()->getExtendingDecl() == VD;
+  bool isTemporaryExtendedBy(const ValueDecl *VD) const {
+    return asTemporary() && asTemporary()->getExtendingDecl() == VD;
   }
 
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
@@ -115,7 +114,7 @@ struct Variable : public ContractVariable {
 
   std::string getName() const {
     std::string Ret;
-    if (auto *MTE = getVarAsMTE()) {
+    if (const MaterializeTemporaryExpr *MTE = asTemporary()) {
       if (MTE->getExtendingDecl())
         Ret = "(lifetime-extended temporary through " +
               MTE->getExtendingDecl()->getName().str() + ")";
@@ -153,7 +152,7 @@ private:
     assert(!isReturnVal() && "We don't store types of return values here");
     if (const auto *VD = asVarDecl())
       return VD->getType();
-    else if (const auto *MT = getVarAsMTE())
+    else if (const MaterializeTemporaryExpr *MT = asTemporary())
       return MT->getType();
     else if (const auto *RD = asThis())
       return RD->getASTContext().getPointerType(
@@ -184,7 +183,7 @@ private:
     return Base;
   }
 
-  const MaterializeTemporaryExpr *getVarAsMTE() const {
+  const MaterializeTemporaryExpr *asTemporary() const {
     return dyn_cast_or_null<MaterializeTemporaryExpr>(
         Var.dyn_cast<const Expr *>());
   }
