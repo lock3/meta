@@ -185,8 +185,8 @@ void aggregate() {
 }
 
 void value() {
-  __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Owner with pointee NULL TYPE}}
-  __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Owner with pointee NULL TYPE}}
+  __lifetime_type_category<decltype(std::variant<int, char *>())>(); // expected-warning {{Owner with pointee void}}
+  __lifetime_type_category<decltype(std::any())>();                  // expected-warning {{Owner with pointee void}}
 
   // no public data members
   class C1 {

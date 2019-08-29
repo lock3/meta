@@ -25,7 +25,9 @@ struct TypeClassification {
   }
 
   TypeClassification(TypeCategory TC, QualType PointeeType)
-      : TC(TC), PointeeType(PointeeType) {}
+      : TC(TC), PointeeType(PointeeType) {
+    assert(!PointeeType.isNull());
+  }
 
   std::string str() const {
     switch (TC) {

@@ -211,10 +211,14 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 #endif
 
   if (R->hasAttr<OwnerAttr>()) {
+    if (Pointee.isNull())
+      Pointee = R->getASTContext().VoidTy;
     return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
+    if (Pointee.isNull())
+      Pointee = R->getASTContext().VoidTy;
     return {TypeCategory::Pointer, Pointee};
   }
 
