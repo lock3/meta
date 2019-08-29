@@ -23,17 +23,16 @@ namespace lifetime {
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
 /// - the this pointer: Var contains a non-null RecordDecl
-/// - a lifetime extended temporary: Var contains a non-null Expr
-/// - a non-lifetime extended temporary: Var contains a null VarDecl and non-null QualType
+/// - temporary: Var contains a non-null MaterializeTemporaryExpr
 /// - the return value of the current function: Var contains a null Expr
 /// plus fields of them (in member FDs).
-/// TODO: What is the difference between a normal temporary and a
-/// MaterializeTemporaryExpr where getExtendingDecl() is nullptr?
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
 struct Variable : public ContractVariable {
   Variable(const VarDecl *VD) : ContractVariable(VD) {}
-  Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {}
+  Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {
+    assert(MT);
+  }
 
   Variable(const ContractVariable &CV, const FunctionDecl *FD)
       : ContractVariable(CV) {
@@ -42,8 +41,6 @@ struct Variable : public ContractVariable {
   }
 
   static Variable thisPointer(const RecordDecl *RD) { return Variable(RD); }
-
-  static Variable temporary(QualType QT) { return Variable(QT); }
 
   /// A variable that represent the return value of the current function.
   static Variable returnVal() {
@@ -73,11 +70,11 @@ struct Variable : public ContractVariable {
 
   bool isThisPointer() const { return asThis(); }
 
-  /// Returns true if this is a non-lifetime-extended temporary
-  bool isTemporary() const { return !asTemporary().isNull(); }
-
   bool isLifetimeExtendedTemporary() const { return getVarAsMTE(); }
 
+  /// When VD is non-null, returns true if the Variable represents a
+  /// lifetime-extended temporary that is extended by VD. When VD is null,
+  /// returns true if the the Variable is a non-lifetime-extended temporary.
   bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
     return isLifetimeExtendedTemporary() &&
            getVarAsMTE()->getExtendingDecl() == VD;
@@ -124,12 +121,11 @@ struct Variable : public ContractVariable {
               MTE->getExtendingDecl()->getName().str() + ")";
       else
         Ret = "(temporary)";
+
     } else if (auto *VD = asVarDecl())
       Ret = VD->getName();
-    else if (asThis())
+    else if (isThisPointer())
       Ret = "this";
-    else if (!asTemporary().isNull())
-      Ret = "(temporary)";
     else if (isReturnVal())
       Ret = "(return value)";
     else
@@ -147,9 +143,6 @@ struct Variable : public ContractVariable {
   }
 
 private:
-  // A non-lifetime extended temporary
-  Variable(QualType QT) : ContractVariable(QT) {}
-
   // The this pointer
   Variable(const RecordDecl *RD) : ContractVariable(RD) {}
 
@@ -165,11 +158,8 @@ private:
     else if (const auto *RD = asThis())
       return RD->getASTContext().getPointerType(
           RD->getASTContext().getRecordType(RD));
-    else {
-      QualType QT = asTemporary();
-      assert(!QT.isNull());
-      return QT;
-    }
+    else
+      llvm_unreachable("invalid state");
   }
 
   QualType getTypeAndOrder(int &Order) const {

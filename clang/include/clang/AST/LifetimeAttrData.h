@@ -30,18 +30,12 @@ struct ContractVariable {
   }
   ContractVariable(const Expr *E) : Var(E) {}
   ContractVariable(const RecordDecl *RD) : Var(RD) { assert(RD); }
-  ContractVariable(QualType QT)
-      : Var(static_cast<const VarDecl *>(nullptr)), QType(QT) {
-    assert(!QT.isNull());
-  }
 
   static ContractVariable returnVal() {
     return ContractVariable(static_cast<const Expr *>(nullptr));
   }
 
   bool operator==(const ContractVariable &O) const {
-    // We consider all non-lifetime-extended temporaries to be equal,
-    // so we don't check QType.
     return Var == O.Var && FDs == O.FDs;
   }
 
@@ -70,16 +64,6 @@ struct ContractVariable {
     return Var.dyn_cast<const RecordDecl *>();
   }
 
-  /// Returns non-null QualType when this Variable is a non-lifetime-extended
-  /// temporary. Otherwise returns null.
-  QualType asTemporary() const {
-    if (!Var.is<const VarDecl *>())
-      return {};
-    if (Var.get<const VarDecl *>())
-      return {}; // this is a local variable, not a temporary.
-    return QType;
-  }
-
   bool isReturnVal() const {
     return Var.is<const Expr *>() && Var.get<const Expr *>() == nullptr;
   }
@@ -95,7 +79,6 @@ struct ContractVariable {
 
 protected:
   llvm::PointerUnion<const VarDecl *, const Expr *, const RecordDecl *> Var;
-  QualType QType; // Only set when Var is a null VarDecl
 
   /// Possibly empty list of fields and deref operations on the base.
   /// The First entry is the field on base, next entry is the field inside

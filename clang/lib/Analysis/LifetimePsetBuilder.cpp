@@ -269,7 +269,7 @@ public:
         return;
       }
     }
-    setPSet(I, PSet::singleton(Variable::temporary(I->getType())));
+    setPSet(I, {});
   }
 
   void VisitCXXScalarValueInitExpr(const CXXScalarValueInitExpr *E) {
@@ -420,7 +420,7 @@ public:
     // TODO: Would be nicer if the LifetimeEnds CFG nodes would appear before
     // the ReturnStmt node
     for (auto &Var : RetPSet.vars()) {
-      if (Var.isTemporary() || Var.isLifetimeExtendedTemporary()) {
+      if (Var.isLifetimeExtendedTemporary()) {
         RetPSet = PSet::invalid(
             InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
         break;
@@ -465,7 +465,7 @@ public:
                        E->getSourceRange())));
     } else {
       // Constructing a temporary owner/value
-      setPSet(E, PSet::singleton(Variable::temporary(E->getType())));
+      setPSet(E, {});
     }
   }
 
@@ -595,7 +595,7 @@ public:
   /// Returns true if CallExpr was handled.
   void VisitCallExpr(const CallExpr *CallE) {
     // Default return value, will be overwritten if it makes sense.
-    setPSet(CallE, PSet::singleton(Variable::temporary(CallE->getType())));
+    setPSet(CallE, {});
 
     if (isa<CXXPseudoDestructorExpr>(CallE->getCallee()) ||
         HandleDebugFunctions(CallE))
@@ -900,10 +900,6 @@ public:
 
 // Manages lifetime information for the CFG of a FunctionDecl
 PSet PSetsBuilder::getPSet(Variable P) {
-  // We do not explicitly record pset(tmp) = {tmp'}.
-  if (P.isTemporary())
-    return PSet::singleton(P, 1);
-
   // Assumption: global Pointers have a pset of {static}
   if (P.hasStaticLifetime())
     return PSet::staticVar(false);
