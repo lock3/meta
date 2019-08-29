@@ -339,11 +339,6 @@ public:
     return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
   }
 
-  /// Returns true if the pset contains a non-lifetime-extended temporary.
-  bool containsTemporary() const {
-    return llvm::any_of(Vars,
-                        [](const Variable &Var) { return Var.isTemporary(); });
-  }
 
   /// Returns true if we look for S and we have S.field in the set.
   bool containsBase(Variable Var, unsigned Order = 0) const {

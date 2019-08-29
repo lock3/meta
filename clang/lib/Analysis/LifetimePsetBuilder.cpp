@@ -732,22 +732,6 @@ public:
   bool CheckPSetValidity(const PSet &PS, SourceRange Range);
 
   /// Invalidates all psets that point to V or something owned by V
-  void invalidateAllTemporaries(SourceRange Range) {
-    for (auto &I : PMap) {
-      const auto &Pointer = I.first;
-      PSet &PS = I.second;
-      if (PS.containsInvalid())
-        continue; // Nothing to invalidate
-
-      if (PS.containsTemporary()) {
-        setPSet(PSet::singleton(Pointer),
-                PSet::invalid(InvalidationReason::TemporaryLeftScope(Range)),
-                Range);
-      }
-    }
-  }
-
-  /// Invalidates all psets that point to V or something owned by V
   void invalidateVar(Variable V, unsigned Order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
@@ -1277,7 +1261,6 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 
       // Kill all temporaries that vanish at the end of the full expression
       if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S)) {
-        invalidateAllTemporaries(S->getEndLoc());
         // Remove all materialized temporaries that are not extended.
         eraseVariable(nullptr, S->getEndLoc());
         // Clean up PSets for subexpressions. We should never reference
