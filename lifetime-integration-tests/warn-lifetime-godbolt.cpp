@@ -215,8 +215,6 @@ void example_2_4_6_1() {
 }
 
 // https://godbolt.org/z/UE-Mb0
-#ifdef _LIBCPP_VERSION
-// Broken on libstdc++, see https://github.com/mgehre/llvm-project/issues/44
 void example_2_4_6_2() {
     auto s = make_shared<int>(0);
     int* pi3 = s.get();			// pset(pi3) = {s'} [more on this later]
@@ -249,7 +247,6 @@ void example_2_4_6_2() {
     vec->push_back(1);			// expected-warning {{passing a dangling pointer as argument}}
     *ptr = 3;					// expected-warning {{dereferencing a dangling pointer}}
 }
-#endif
 
 // https://godbolt.org/z/cAEqzJ
 void example_2_4_6_3() {
@@ -400,8 +397,6 @@ void example_2_4_10_2() {
     throw &gi;				// OK
 }
 
-#ifdef _LIBCPP_VERSION
-// Broken on libstdc++, see https://github.com/mgehre/llvm-project/issues/44
 // https://godbolt.org/z/1xAGOH
 void example_2_5_6_2() {
     auto sp = make_shared<int>(0);
@@ -410,7 +405,6 @@ void example_2_5_6_2() {
     sp = make_shared<int>(1);	// KILL(sp') => pset(p) = {invalid} expected-note {{modified here}}
     *p = 42;					// ERROR expected-warning {{dereferencing a dangling pointer}}
 }
-#endif
 
 // https://godbolt.org/z/1C4t8m
 void example_2_5_6_4() {
