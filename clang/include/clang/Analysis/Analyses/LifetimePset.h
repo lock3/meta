@@ -154,7 +154,7 @@ private:
       return VD->getType();
     else if (const MaterializeTemporaryExpr *MT = asTemporary())
       return MT->getType();
-    else if (const auto *RD = asThis())
+    else if (const RecordDecl *RD = asThis())
       return RD->getASTContext().getPointerType(
           RD->getASTContext().getRecordType(RD));
     else
