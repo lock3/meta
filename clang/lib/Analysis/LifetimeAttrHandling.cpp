@@ -157,6 +157,8 @@ static SourceRange fillPointersFromExpr(const Expr *E, AttrPointsToMap &Fill,
   return SourceRange();
 }
 
+/// Interpret the expression argument of gsl::lifetime_in/out attributes
+/// to create the ContractVariable representation.
 static SourceRange
 fillIOVarsFromExpr(const Expr *E,
                    llvm::SmallVectorImpl<ContractVariable> &ToFill) {
@@ -181,6 +183,11 @@ public:
       : FD(FD->getCanonicalDecl()), ASTCtxt(ASTCtxt),
         isConvertible(isConvertible), Reporter(Reporter) {}
 
+  /// Fill the default annotations for a function and interpret the
+  /// user-provided expressions to create the ContractVariable based
+  /// representation of lifetime contracts. Both the expressions and the
+  /// ContractVariables are stored in the annotation. The former is only read to
+  /// build the latter.
   void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
     // Fill the lifetime_in/lifetime_out annotations.
     ParamDerivedLocations Locations;
@@ -354,26 +361,16 @@ private:
     std::vector<ContractVariable> Output;
   };
 
-  static bool isInputAnnotated(const LifetimeIOAttr *Attr, ContractVariable Var) {
-    if (Attr)
-      for (const auto AttrVar : Attr->InVars)
-        if (Var == AttrVar)
-          return true;
-
-    return false;
+  static bool isInputAnnotated(const LifetimeIOAttr *Attr,
+                               ContractVariable Var) {
+    return Attr && llvm::is_contained(Attr->InVars, Var);
   }
 
   static void addUnannotated(std::vector<ContractVariable> &To,
                              const LifetimeIOAttr *Attr, ContractVariable Var) {
-    if (Attr) {
-      for (const auto AttrVar : Attr->InVars)
-        if (Var == AttrVar)
-          return;
-
-      for (const auto AttrVar : Attr->OutVars)
-        if (Var == AttrVar)
-          return;
-    }
+    if (Attr && (llvm::is_contained(Attr->InVars, Var) ||
+                 llvm::is_contained(Attr->OutVars, Var)))
+      return;
 
     To.push_back(Var);
   }
