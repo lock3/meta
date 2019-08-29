@@ -86,7 +86,21 @@ struct Variable : public ContractVariable {
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
-  void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
+  void addFieldRef(const FieldDecl *FD) {
+    assert(FD);
+
+#ifndef NDEBUG
+    // We can only add fields that are part of the current record.
+    QualType QT = getType();
+    // Fields can only be added if the current type is a record
+    assert(!QT.isNull());
+    const CXXRecordDecl *RD = QT->getAsCXXRecordDecl();
+    assert(RD);
+    assert(FD->getParent() == RD ||
+           RD->isDerivedFrom(dyn_cast<CXXRecordDecl>(FD->getParent())));
+#endif
+    FDs.push_back(FD);
+  }
 
   Variable &deref(int Num = 1) {
     while (Num--)
@@ -167,10 +181,6 @@ private:
 
     for (auto It = FDs.begin(); It != FDs.end(); ++It) {
       if (*It) {
-        assert(isThisPointer() || isTemporary() ||
-               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
-               Base->getAsCXXRecordDecl()->isDerivedFrom(
-                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
         Base = (*It)->getType();
         if (Order == -1 && classifyTypeCategory(Base) == TypeCategory::Owner)
           Order = 0;
@@ -337,10 +347,9 @@ public:
 
   /// Returns true if we look for S and we have S.field in the set.
   bool containsBase(Variable Var, unsigned Order = 0) const {
-    auto I = llvm::find_if(Vars, [Var, Order](const Variable &Other) {
+    return llvm::any_of(Vars, [Var, Order](const Variable &Other) {
       return Var.isBaseEqual(Other) && Order <= Other.getOrder();
     });
-    return I != Vars.end();
   }
 
   bool containsNull() const { return ContainsNull; }

@@ -161,7 +161,8 @@ public:
       setPSet(DeclRef, varRefersTo(VD, DeclRef->getSourceRange()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer(FD->getParent());
-      V.addFieldRef(FD);
+      V.deref();         // *this
+      V.addFieldRef(FD); // this->field
       setPSet(DeclRef, varRefersTo(V, DeclRef->getSourceRange()));
     }
   }
@@ -784,8 +785,8 @@ public:
       } else {
         auto &Var = I->first;
         auto &Pset = I->second;
-        bool PsetContainsTemporary = std::any_of(
-            Pset.vars().begin(), Pset.vars().end(), [VD](const Variable &V) {
+        bool PsetContainsTemporary =
+            llvm::any_of(Pset.vars(), [VD](const Variable &V) {
               return V.isLifetimeExtendedTemporaryBy(VD);
             });
         if (PsetContainsTemporary)
@@ -807,8 +808,8 @@ public:
       if (AllowNonExisting)
         return {};
 #ifndef NDEBUG
-      E->dump();
-      llvm_unreachable("Expression has no entry in RefersTo");
+        // E->dump();
+        // llvm_unreachable("Expression has no entry in RefersTo");
 #endif
       return {};
     } else {
@@ -818,8 +819,8 @@ public:
       if (AllowNonExisting)
         return {};
 #ifndef NDEBUG
-      E->dump();
-      llvm_unreachable("Expression has no entry in PSetsOfExpr");
+        // E->dump();
+        // llvm_unreachable("Expression has no entry in PSetsOfExpr");
 #endif
       return {};
     }
@@ -954,9 +955,9 @@ PSet PSetsBuilder::getPSet(Variable P) {
   }
 
 #ifndef NDEBUG
-  llvm::errs() << "PSetsBuilder::getPSet: did not find pset for '"
-               << P.getName() << "'\n";
-  llvm_unreachable("Missing pset for Pointer");
+  // llvm::errs() << "PSetsBuilder::getPSet: did not find pset for '"
+  //             << P.getName() << "'\n";
+  // llvm_unreachable("Missing pset for Pointer");
 #endif
   return {};
 }
