@@ -3428,7 +3428,11 @@ Decl *Sema::SubstDecl(Decl *D, DeclContext *Owner,
   if (D->isInvalidDecl())
     return nullptr;
 
-  return Instantiator.Visit(D);
+  Decl *SubstD;
+  runWithSufficientStackSpace(D->getLocation(), [&] {
+    SubstD = Instantiator.Visit(D);
+  });
+  return SubstD;
 }
 
 /// Instantiates a nested template parameter list in the current

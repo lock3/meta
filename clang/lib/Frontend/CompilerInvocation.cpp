@@ -464,6 +464,35 @@ static void parseAnalyzerConfigs(AnalyzerOptions &AnOpts,
 
   // At this point, AnalyzerOptions is configured. Let's validate some options.
 
+  // FIXME: Here we try to validate the silenced checkers or packages are valid.
+  // The current approach only validates the registered checkers which does not
+  // contain the runtime enabled checkers and optimally we would validate both.
+  if (!AnOpts.RawSilencedCheckersAndPackages.empty()) {
+    std::vector<StringRef> Checkers =
+        AnOpts.getRegisteredCheckers(/*IncludeExperimental=*/true);
+    std::vector<StringRef> Packages =
+        AnOpts.getRegisteredPackages(/*IncludeExperimental=*/true);
+
+    SmallVector<StringRef, 16> CheckersAndPackages;
+    AnOpts.RawSilencedCheckersAndPackages.split(CheckersAndPackages, ";");
+
+    for (const StringRef CheckerOrPackage : CheckersAndPackages) {
+      if (Diags) {
+        bool IsChecker = CheckerOrPackage.contains('.');
+        bool IsValidName =
+            IsChecker
+                ? llvm::find(Checkers, CheckerOrPackage) != Checkers.end()
+                : llvm::find(Packages, CheckerOrPackage) != Packages.end();
+
+        if (!IsValidName)
+          Diags->Report(diag::err_unknown_analyzer_checker_or_package)
+              << CheckerOrPackage;
+      }
+
+      AnOpts.SilencedCheckersAndPackages.emplace_back(CheckerOrPackage);
+    }
+  }
+
   if (!Diags)
     return;
 
@@ -479,32 +508,6 @@ static void parseAnalyzerConfigs(AnalyzerOptions &AnOpts,
       !llvm::sys::fs::is_directory(AnOpts.ModelPath))
     Diags->Report(diag::err_analyzer_config_invalid_input) << "model-path"
                                                            << "a filename";
-
-  // FIXME: Here we try to validate the silenced checkers or packages are valid.
-  // The current approach only validates the registered checkers which does not
-  // contain the runtime enabled checkers and optimally we would validate both.
-  if (!AnOpts.RawSilencedCheckersAndPackages.empty()) {
-    std::vector<StringRef> Checkers =
-        AnOpts.getRegisteredCheckers(/*IncludeExperimental=*/true);
-    std::vector<StringRef> Packages =
-        AnOpts.getRegisteredPackages(/*IncludeExperimental=*/true);
-
-    SmallVector<StringRef, 16> CheckersAndPackages;
-    AnOpts.RawSilencedCheckersAndPackages.split(CheckersAndPackages, ";");
-
-    for (const StringRef CheckerOrPackage : CheckersAndPackages) {
-      bool IsChecker = CheckerOrPackage.contains('.');
-      bool IsValidName =
-          IsChecker ? llvm::find(Checkers, CheckerOrPackage) != Checkers.end()
-                    : llvm::find(Packages, CheckerOrPackage) != Packages.end();
-
-      if (!IsValidName)
-        Diags->Report(diag::err_unknown_analyzer_checker_or_package)
-            << CheckerOrPackage;
-
-      AnOpts.SilencedCheckersAndPackages.emplace_back(CheckerOrPackage);
-    }
-  }
 }
 
 static bool ParseMigratorArgs(MigratorOptions &Opts, ArgList &Args) {
@@ -3367,8 +3370,7 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args,
 }
 
 bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
-                                        const char *const *ArgBegin,
-                                        const char *const *ArgEnd,
+                                        ArrayRef<const char *> CommandLineArgs,
                                         DiagnosticsEngine &Diags) {
   bool Success = true;
 
@@ -3376,9 +3378,8 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   std::unique_ptr<OptTable> Opts = createDriverOptTable();
   const unsigned IncludedFlagsBitmask = options::CC1Option;
   unsigned MissingArgIndex, MissingArgCount;
-  InputArgList Args =
-      Opts->ParseArgs(llvm::makeArrayRef(ArgBegin, ArgEnd), MissingArgIndex,
-                      MissingArgCount, IncludedFlagsBitmask);
+  InputArgList Args = Opts->ParseArgs(CommandLineArgs, MissingArgIndex,
+                                      MissingArgCount, IncludedFlagsBitmask);
   LangOptions &LangOpts = *Res.getLangOpts();
 
   // Check for missing argument error.

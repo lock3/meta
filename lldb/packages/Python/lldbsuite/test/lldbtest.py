@@ -560,18 +560,6 @@ class Base(unittest2.TestCase):
             print("Restore dir to:", cls.oldcwd, file=sys.stderr)
         os.chdir(cls.oldcwd)
 
-    @classmethod
-    def skipLongRunningTest(cls):
-        """
-        By default, we skip long running test case.
-        This can be overridden by passing '-l' to the test driver (dotest.py).
-        """
-        if "LLDB_SKIP_LONG_RUNNING_TEST" in os.environ and "NO" == os.environ[
-                "LLDB_SKIP_LONG_RUNNING_TEST"]:
-            return False
-        else:
-            return True
-
     def enableLogChannelsForCurrentTest(self):
         if len(lldbtest_config.channels) == 0:
             return
@@ -1299,6 +1287,7 @@ class Base(unittest2.TestCase):
                 driver_output = check_output(
                     [self.getCompiler()] + '-g -c -x c - -o - -###'.split(),
                     stderr=STDOUT)
+                driver_output = driver_output.decode("utf-8")
                 for line in driver_output.split(os.linesep):
                     m = re.search('dwarf-version=([0-9])', line)
                     if m:
@@ -1863,9 +1852,9 @@ class TestBase(Base):
         Base.setUp(self)
 
         # Set the clang modules cache path used by LLDB.
-        mod_cache = os.path.join(os.environ["LLDB_BUILD"], "module-cache-lldb")
-        self.runCmd('settings set symbols.clang-modules-cache-path "%s"'
-                    % mod_cache)
+        self.runCmd(
+            'settings set symbols.clang-modules-cache-path "{}"'.format(
+                configuration.module_cache_dir))
 
         for s in self.setUpCommands():
             self.runCmd(s)
@@ -2069,13 +2058,13 @@ class TestBase(Base):
         if check:
             output = ""
             if self.res.GetOutput():
-              output += "\nCommand output:\n" + self.res.GetOutput()
+                output += "\nCommand output:\n" + self.res.GetOutput()
             if self.res.GetError():
-              output += "\nError output:\n" + self.res.GetError()
+                output += "\nError output:\n" + self.res.GetError()
             if msg:
-              msg += output
+                msg += output
             if cmd:
-              cmd += output
+                cmd += output
             self.assertTrue(self.res.Succeeded(),
                             msg if (msg) else CMD_MSG(cmd))
 
@@ -2204,6 +2193,16 @@ class TestBase(Base):
                 self.expect(
                     compare_string, msg=COMPLETION_MSG(
                         str_input, p, match_strings), exe=False, patterns=[p])
+
+    def completions_match(self, command, completions):
+        """Checks that the completions for the given command are equal to the
+        given list of completions"""
+        interp = self.dbg.GetCommandInterpreter()
+        match_strings = lldb.SBStringList()
+        interp.HandleCompletion(command, len(command), 0, -1, match_strings)
+        # match_strings is a 1-indexed list, so we have to slice...
+        self.assertItemsEqual(completions, list(match_strings)[1:],
+                              "List of returned completion is wrong")
 
     def filecheck(
             self,

@@ -164,11 +164,12 @@ static cl::opt<bool>
 static cl::opt<bool>
     ClInstrumentLandingPads("hwasan-instrument-landing-pads",
                             cl::desc("instrument landing pads"), cl::Hidden,
-                            cl::init(false));
+                            cl::init(false), cl::ZeroOrMore);
 
 static cl::opt<bool> ClInstrumentPersonalityFunctions(
     "hwasan-instrument-personality-functions",
-    cl::desc("instrument personality functions"), cl::Hidden, cl::init(false));
+    cl::desc("instrument personality functions"), cl::Hidden, cl::init(false),
+    cl::ZeroOrMore);
 
 static cl::opt<bool> ClInlineAllChecks("hwasan-inline-all-checks",
                                        cl::desc("inline all checks"),
@@ -369,6 +370,18 @@ void HWAddressSanitizer::initializeModule() {
   Int32Ty = IRB.getInt32Ty();
 
   HwasanCtorFunction = nullptr;
+
+  // Older versions of Android do not have the required runtime support for
+  // global or personality function instrumentation. On other platforms we
+  // currently require using the latest version of the runtime.
+  bool NewRuntime =
+      !TargetTriple.isAndroid() || !TargetTriple.isAndroidVersionLT(30);
+
+  // If we don't have personality function support, fall back to landing pads.
+  InstrumentLandingPads = ClInstrumentLandingPads.getNumOccurrences()
+                              ? ClInstrumentLandingPads
+                              : !NewRuntime;
+
   if (!CompileKernel) {
     std::tie(HwasanCtorFunction, std::ignore) =
         getOrCreateSanitizerCtorAndInitFunctions(
@@ -383,21 +396,10 @@ void HWAddressSanitizer::initializeModule() {
               appendToGlobalCtors(M, Ctor, 0, Ctor);
             });
 
-    // Older versions of Android do not have the required runtime support for
-    // global or personality function instrumentation. On other platforms we
-    // currently require using the latest version of the runtime.
-    bool NewRuntime =
-        !TargetTriple.isAndroid() || !TargetTriple.isAndroidVersionLT(30);
-
     bool InstrumentGlobals =
         ClGlobals.getNumOccurrences() ? ClGlobals : NewRuntime;
     if (InstrumentGlobals)
       instrumentGlobals();
-
-    // If we don't have personality function support, fall back to landing pads.
-    InstrumentLandingPads = ClInstrumentLandingPads.getNumOccurrences()
-                                ? ClInstrumentLandingPads
-                                : !NewRuntime;
 
     bool InstrumentPersonalityFunctions =
         ClInstrumentPersonalityFunctions.getNumOccurrences()
