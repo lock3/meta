@@ -261,11 +261,11 @@ void f() {
   __lifetime_contracts(p5);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
-  // expected-warning@-3 {{pset(Post((temporary))) = ((null), *a, *b)}}
+  // expected-warning@-3 {{pset(Post((return value))) = ((null), *a, *b)}}
   __lifetime_contracts(p6);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
-  // expected-warning@-3 {{pset(Post((temporary))) = ((null), *a)}}
+  // expected-warning@-3 {{pset(Post((return value))) = ((null), *a)}}
   __lifetime_contracts(&S::f);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
@@ -273,7 +273,7 @@ void f() {
   // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
   // expected-warning@-5 {{pset(Pre(this)) = (*this)}}
   // expected-warning@-6 {{pset(Post(*c)) = ((null), *a, *b)}}
-  // expected-warning@-7 {{pset(Post((temporary))) = ((null), *a, *b)}}
+  // expected-warning@-7 {{pset(Post((return value))) = ((null), *a, *b)}}
   __lifetime_contracts(&S::g);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
@@ -281,7 +281,7 @@ void f() {
   // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
   // expected-warning@-5 {{pset(Pre(this)) = (*this)}}
   // expected-warning@-6 {{pset(Post(*c)) = ((null), *a, *b)}}
-  // expected-warning@-7 {{pset(Post((temporary))) = (*this)}}
+  // expected-warning@-7 {{pset(Post((return value))) = (*this)}}
   __lifetime_contracts(p7);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}

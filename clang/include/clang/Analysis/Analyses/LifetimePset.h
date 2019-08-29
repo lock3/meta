@@ -22,26 +22,28 @@ namespace lifetime {
 
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
-/// - the this pointer: Var contains a RecordDecl
-/// - a life-time extended temporary: Var contains a non-null
-/// MaterializeTemporaryExpr
-/// - a normal temporary: Var contains a null MaterializeTemporaryExpr
+/// - the this pointer: Var contains a non-null RecordDecl
+/// - a life-time extended temporary: Var contains a non-null Expr
+/// - a normal temporary: Var contains a null VarDecl and non-null QualType
+/// - the return value of the current function: Var contains a null Expr
 /// plus fields of them (in member FDs).
+/// TODO: What is the difference between a normal temporary and a
+/// MaterializeTemporaryExpr where getExtendingDecl() is nullptr?
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
 struct Variable : public ContractVariable {
   Variable(const VarDecl *VD) : ContractVariable(VD) {}
   Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {}
-  Variable(const RecordDecl *RD) : ContractVariable(RD) {}
+
   Variable(const ContractVariable &CV, const FunctionDecl *FD)
       : ContractVariable(CV) {
     if (asParmVarDecl())
       Var = FD->getParamDecl(asParmVarDecl()->getFunctionScopeIndex());
   }
 
-  static Variable temporary() {
-    return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
-  }
+  static Variable thisPointer(const RecordDecl *RD) { return Variable(RD); }
+
+  static Variable temporary(QualType QT) { return Variable(QT); }
 
   /// A variable that represent the return value of the current function.
   static Variable returnVal() {
@@ -102,17 +104,22 @@ struct Variable : public ContractVariable {
 
   std::string getName() const {
     std::string Ret;
-    if (Var.is<const Expr *>()) {
-      auto *MTE = getVarAsMTE();
-      if (MTE && MTE->getExtendingDecl())
+    if (auto *MTE = getVarAsMTE()) {
+      if (MTE->getExtendingDecl())
         Ret = "(lifetime-extended temporary through " +
               MTE->getExtendingDecl()->getName().str() + ")";
       else
         Ret = "(temporary)";
-    } else if (auto *VD = Var.dyn_cast<const VarDecl *>())
+    } else if (auto *VD = asVarDecl())
       Ret = VD->getName();
-    else
+    else if (asThis())
       Ret = "this";
+    else if (!asTemporary().isNull())
+      Ret = "(temporary)";
+    else if (isReturnVal())
+      Ret = "(return value)";
+    else
+      llvm_unreachable("Invalid state");
 
     for (unsigned I = 0; I < FDs.size(); ++I) {
       if (FDs[I]) {
@@ -126,21 +133,38 @@ struct Variable : public ContractVariable {
   }
 
 private:
+  // A non-lifetime extended temporary
+  Variable(QualType QT) : ContractVariable(QT) {}
+
+  // The this pointer
+  Variable(const RecordDecl *RD) : ContractVariable(RD) {}
+
+  // Return the type of the base object of this variable, ignoring all
+  // fields and derefs.
+  // \post never returns a null QualType
+  QualType getBaseType() const {
+    assert(!isReturnVal() && "We don't store types of return values here");
+    if (const auto *VD = asVarDecl())
+      return VD->getType();
+    else if (const auto *MT = getVarAsMTE())
+      return MT->getType();
+    else if (const auto *RD = asThis())
+      return RD->getASTContext().getPointerType(
+          RD->getASTContext().getRecordType(RD));
+    else {
+      QualType QT = asTemporary();
+      assert(!QT.isNull());
+      return QT;
+    }
+  }
+
   QualType getTypeAndOrder(int &Order) const {
     Order = -1;
-    QualType Base;
-    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
-      Base = VD->getType();
-    else if (const auto *MT = getVarAsMTE())
-      Base = MT->getType();
-    else if (const auto *RD = Var.dyn_cast<const RecordDecl *>())
-      Base =
-          RD->getASTContext().getPointerType(QualType(RD->getTypeForDecl(), 0));
-    else if (FDs.empty())
-      return Base; // TODO: not supported for temporaries yet.
+    QualType Base = getBaseType();
 
-    if (!Base.isNull() && classifyTypeCategory(Base) == TypeCategory::Owner)
+    if (classifyTypeCategory(Base) == TypeCategory::Owner)
       Order = 0;
+
     for (auto It = FDs.begin(); It != FDs.end(); ++It) {
       if (*It) {
         assert(isThisPointer() || isTemporary() ||
@@ -151,6 +175,7 @@ private:
         if (Order == -1 && classifyTypeCategory(Base) == TypeCategory::Owner)
           Order = 0;
       } else {
+        // Dereference the current pointer/owner
         Base = getPointeeType(Base);
         if (Order >= 0)
           ++Order;
@@ -158,6 +183,7 @@ private:
     }
     return Base;
   }
+
   const MaterializeTemporaryExpr *getVarAsMTE() const {
     return dyn_cast_or_null<MaterializeTemporaryExpr>(
         Var.dyn_cast<const Expr *>());
@@ -301,6 +327,12 @@ public:
 
   bool isUnknown() const {
     return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
+  }
+
+  /// Returns true if the pset contains a non-lifetime-extended temporary.
+  bool containsTemporary() const {
+    return llvm::any_of(Vars,
+                        [](const Variable &Var) { return Var.isTemporary(); });
   }
 
   /// Returns true if we look for S and we have S.field in the set.

@@ -160,7 +160,7 @@ public:
     } else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD, DeclRef->getSourceRange()));
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
-      Variable V(FD->getParent());
+      Variable V = Variable::thisPointer(FD->getParent());
       V.addFieldRef(FD);
       setPSet(DeclRef, varRefersTo(V, DeclRef->getSourceRange()));
     }
@@ -208,8 +208,9 @@ public:
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
     // ThisExpr is an RValue.
-    setPSet(E, PSet::singleton(
-                   Variable(E->getType()->getPointeeCXXRecordDecl()).deref()));
+    setPSet(E, PSet::singleton(Variable::thisPointer(
+                                   E->getType()->getPointeeCXXRecordDecl())
+                                   .deref()));
   }
 
   void VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
@@ -267,7 +268,7 @@ public:
         return;
       }
     }
-    setPSet(I, PSet::singleton(Variable::temporary()));
+    setPSet(I, PSet::singleton(Variable::temporary(I->getType())));
   }
 
   void VisitCXXScalarValueInitExpr(const CXXScalarValueInitExpr *E) {
@@ -463,7 +464,7 @@ public:
                        E->getSourceRange())));
     } else {
       // Constructing a temporary owner/value
-      setPSet(E, PSet::singleton(Variable::temporary()));
+      setPSet(E, PSet::singleton(Variable::temporary(E->getType())));
     }
   }
 
@@ -541,7 +542,7 @@ public:
     }
     if (ObjectArg) {
       const CXXRecordDecl *RD = cast<CXXMethodDecl>(FD)->getParent();
-      ThisCallback(Variable(RD), RD, ObjectArg);
+      ThisCallback(Variable::thisPointer(RD), RD, ObjectArg);
     }
   }
 
@@ -593,7 +594,7 @@ public:
   /// Returns true if CallExpr was handled.
   void VisitCallExpr(const CallExpr *CallE) {
     // Default return value, will be overwritten if it makes sense.
-    setPSet(CallE, PSet::singleton(Variable::temporary()));
+    setPSet(CallE, PSet::singleton(Variable::temporary(CallE->getType())));
 
     if (isa<CXXPseudoDestructorExpr>(CallE->getCallee()) ||
         HandleDebugFunctions(CallE))
@@ -729,6 +730,22 @@ public:
   bool CheckPSetValidity(const PSet &PS, SourceRange Range);
 
   /// Invalidates all psets that point to V or something owned by V
+  void invalidateAllTemporaries(SourceRange Range) {
+    for (auto &I : PMap) {
+      const auto &Pointer = I.first;
+      PSet &PS = I.second;
+      if (PS.containsInvalid())
+        continue; // Nothing to invalidate
+
+      if (PS.containsTemporary()) {
+        setPSet(PSet::singleton(Pointer),
+                PSet::invalid(InvalidationReason::TemporaryLeftScope(Range)),
+                Range);
+      }
+    }
+  }
+
+  /// Invalidates all psets that point to V or something owned by V
   void invalidateVar(Variable V, unsigned Order, InvalidationReason Reason) {
     for (auto &I : PMap) {
       const auto &Pointer = I.first;
@@ -748,6 +765,8 @@ public:
   // Remove the variable from the pset together with the materialized
   // temporaries extended by that variable. It also invalidates the pointers
   // pointing to these.
+  // If VD is nullptr, invalidates all psets that contain
+  // MaterializeTemporaryExpr without extending decl.
   void eraseVariable(const VarDecl *VD, SourceRange Range) {
     InvalidationReason Reason =
         VD ? InvalidationReason::PointeeLeftScope(Range, VD)
@@ -1256,8 +1275,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
 
       // Kill all temporaries that vanish at the end of the full expression
       if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S)) {
-        invalidateVar(Variable::temporary(), 0,
-                      InvalidationReason::TemporaryLeftScope(S->getEndLoc()));
+        invalidateAllTemporaries(S->getEndLoc());
         // Remove all materialized temporaries that are not extended.
         eraseVariable(nullptr, S->getEndLoc());
         // Clean up PSets for subexpressions. We should never reference

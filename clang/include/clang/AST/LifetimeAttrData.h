@@ -25,10 +25,15 @@ class MaterializeTemporaryExpr;
 /// contract representation.
 struct ContractVariable {
   ContractVariable(const VarDecl *PVD, int Deref = 0) : Var(PVD) {
+    assert(PVD);
     deref(Deref);
   }
   ContractVariable(const Expr *E) : Var(E) {}
-  ContractVariable(const RecordDecl *RD) : Var(RD) {}
+  ContractVariable(const RecordDecl *RD) : Var(RD) { assert(RD); }
+  ContractVariable(QualType QT)
+      : Var(static_cast<const VarDecl *>(nullptr)), QType(QT) {
+    assert(!QT.isNull());
+  }
 
   static ContractVariable returnVal() {
     return ContractVariable(static_cast<const Expr *>(nullptr));
@@ -59,6 +64,24 @@ struct ContractVariable {
     return dyn_cast_or_null<ParmVarDecl>(Var.dyn_cast<const VarDecl *>());
   }
 
+  const RecordDecl *asThis() const {
+    return Var.dyn_cast<const RecordDecl *>();
+  }
+
+  /// Returns non-null QualType when this Variable is a non-lifetime-extended
+  /// temporary. Otherwise returns null.
+  QualType asTemporary() const {
+    if (!Var.is<const VarDecl *>())
+      return {};
+    if (Var.get<const VarDecl *>())
+      return {}; // this is a local variable, not a temporary.
+    return QType;
+  }
+
+  bool isReturnVal() const {
+    return Var.is<const Expr *>() && Var.get<const Expr *>() == nullptr;
+  }
+
   // Chain of field accesses starting from VD. Types must match.
   void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
 
@@ -70,6 +93,7 @@ struct ContractVariable {
 
 protected:
   llvm::PointerUnion<const VarDecl *, const Expr *, const RecordDecl *> Var;
+  QualType QType; // Only set when Var is a null VarDecl
 
   /// Possibly empty list of fields and deref operations on the base.
   /// The First entry is the field on base, next entry is the field inside
