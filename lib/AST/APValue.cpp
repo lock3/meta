@@ -166,11 +166,20 @@ APValue::UnionData::~UnionData () {
 
 APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
                                         const void *ReflEntity,
-                                     const ReflectionModifiers &ReflModifiers) :
+                                        const ReflectionModifiers &ReflModifiers,
+                                        unsigned Offset,
+                                        const APValue *Parent) :
   ReflKind(ReflKind), ReflEntity(ReflEntity),
-  ReflModifiers(new ReflectionModifiers(ReflModifiers)) { }
+  ReflModifiers(new ReflectionModifiers(ReflModifiers)),
+  Offset(Offset), Parent(nullptr) {
+  if (Parent)
+    this->Parent = new APValue(*Parent);
+}
+
 APValue::ReflectionData::~ReflectionData() {
   delete ReflModifiers;
+  if (Parent)
+    delete Parent;
 }
 
 APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
@@ -239,10 +248,14 @@ APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
     MakeAddrLabelDiff();
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
-  case Reflection:
+  case Reflection: {
+    const APValue *ParentRefl = RHS.hasParentReflection()
+                              ? &RHS.getParentReflection() : nullptr;
     MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue(),
-                   RHS.getReflectionModifiers());
+                   RHS.getReflectionModifiers(),
+                   RHS.getReflectionOffset(), ParentRefl);
     break;
+  }
   }
 }
 
@@ -253,9 +266,14 @@ APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity)
 APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
                  const ReflectionModifiers &ReflModifiers)
     : Kind(Uninitialized) {
-  MakeReflection(ReflKind, ReflEntity, ReflModifiers);
+  MakeReflection(ReflKind, ReflEntity, ReflModifiers, 0, nullptr);
 }
 
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
+                 unsigned Offset, const APValue &Parent)
+    : Kind(Uninitialized) {
+  MakeReflection(ReflKind, ReflEntity, ReflectionModifiers(), Offset, &Parent);
+}
 
 void APValue::DestroyDataAndMakeUninit() {
   if (Kind == Int)

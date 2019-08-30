@@ -36,6 +36,17 @@ static_assert(function_decl_refl != reflexpr(int));
 constexpr meta::info function_decl_return_type_refl = __reflect(query_get_return_type, function_decl_refl);
 static_assert(function_decl_return_type_refl == reflexpr(int));
 
+using function_type = int (*)(float);
+
+constexpr meta::info function_pointer_type_refl = reflexpr(function_type);
+static_assert(function_pointer_type_refl != reflexpr(int));
+
+constexpr meta::info function_type_refl = __reflect(query_remove_pointer, function_pointer_type_refl);
+static_assert(function_type_refl != reflexpr(int));
+
+constexpr meta::info function_type_return_type_refl = __reflect(query_get_return_type, function_type_refl);
+static_assert(function_type_return_type_refl == reflexpr(int));
+
 struct clazz {
   void method() { }
 

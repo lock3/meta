@@ -13255,12 +13255,21 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
   if (getLangOpts().CUDA && !CheckCUDACall(ConstructLoc, Constructor))
     return ExprError();
 
-  return CXXConstructExpr::Create(
+  Expr *Call = CXXConstructExpr::Create(
       Context, DeclInitType, ConstructLoc, Constructor, Elidable,
       ExprArgs, HadMultipleCandidates, IsListInitialization,
       IsStdInitListInitialization, RequiresZeroInit,
       static_cast<CXXConstructExpr::ConstructionKind>(ConstructKind),
       ParenRange);
+
+  if (Constructor->isConsteval()) {
+    ExprResult Value = BuildImmediateInvocation(Call);
+    if (Value.isInvalid())
+      return ExprError();
+    Call = Value.get();
+  }
+
+  return Call;
 }
 
 ExprResult Sema::BuildCXXDefaultInitExpr(SourceLocation Loc, FieldDecl *Field) {

@@ -1,5 +1,4 @@
 // RUN: %clang_cc1 -std=c++1z -freflection -verify %s
-// expected-no-diagnostics
 
 /// Tuple stuff
 
@@ -105,58 +104,95 @@ struct Struct {
 
 void test_array() {
   int arr[] = { 1, 2, 3 };
-  for... (int a : arr)
+  template for (int a : arr)
     ;
 }
 
 void test_constexpr_array() {
   static constexpr int arr[] = { 1, 2, 3, 4 };
-  for... (constexpr int a : arr)
+  template for (constexpr int a : arr)
     ;
+  template for (constexpr int a : arr) {
+    template for (constexpr int b : arr)
+      ;
+  }
 }
 
 constexpr int global_arr[] = { 0, 1 };
 void test_constexpr_array_2() {
-  for... (constexpr int a : global_arr)
+  template for (constexpr int a : global_arr)
     ;
 }
 
 void test_tuple() {
   tuple tup;
-  for... (auto x : tup)
+  template for (auto x : tup)
     ;
+  template for (auto x : tup) {
+    template for (auto x : tup)
+      ;
+  }
 }
 
 void test_constexpr_tuple() {
   static constexpr tuple tup;
-  for... (constexpr auto x : tup)
+  template for (constexpr auto x : tup)
+    ;
+}
+
+void test_nonstatic_constexpr_tuple() {
+  constexpr tuple tup;
+  template for (constexpr auto x : tup)
     ;
 }
 
 void test_constexpr_range() {
   static constexpr range<7> ints;
-  for... (constexpr int n : ints)
+  template for (constexpr int n : ints)
     ;
+  template for (constexpr int n : ints) {
+    template for (constexpr int n : ints)
+      ;
+  }
+}
+
+void test_nonstatic_constexpr_range() {
+  constexpr range<7> ints;
+  template for (constexpr int n : ints)
+    ;
+  template for (constexpr int n : ints) {
+    template for (constexpr int n : ints)
+      ;
+  }
+}
+
+void test_invalid_constexpr_range() {
+  template for (constexpr auto n : ints) { // expected-error {{use of undeclared identifier 'ints'}}
+    consteval {
+      (void)__reflect_dump(reflexpr(n));
+    }
+  }
 }
 
 void test_struct() {
   Struct<double, char> s;
-  for... (auto x : s)
+  template for (auto x : s)
     ;
 }
 
 template<typename... Targs>
 void test_pack(Targs... args) {
-  for... (auto x : args)
+  template for (auto x : args)
     ;
 }
 
 int main() {
   test_array();
-  test_constexpr_tuple();
   test_constexpr_array();
+  test_constexpr_tuple();
+  test_nonstatic_constexpr_tuple();
   test_constexpr_range();
+  test_nonstatic_constexpr_range();
   test_struct();
   test_pack();
 }
-

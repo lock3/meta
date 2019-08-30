@@ -2910,6 +2910,9 @@ struct ExpansionStatementBuilder
   Expr *EndCallRef;
 
   SizeOfPackExpr *PackSize;
+
+  /// If this is a range that failed to find an acceptable count call.
+  bool CountCallFailure = false;
 };
 
 ExpansionStatementBuilder::
@@ -3076,6 +3079,10 @@ ExpansionStatementBuilder::Build()
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
 
+  // This is a constexpr range, but there was no way to compute the size.
+  if (CountCallFailure)
+    return StmtError();
+
   // If that doesn't succeed, try with a destructurable class.
   ForStmt = BuildExpansionOverClass();
   if (!ForStmt.isInvalid())
@@ -3095,7 +3102,10 @@ ExpansionStatementBuilder::Build()
 bool
 ExpansionStatementBuilder::BuildRangeVar()
 {
-  RangeType = SemaRef.Context.getAutoRRefDeductType();
+  // We want to create a copy of the range variable if this is a constexpr
+  // expansion statement, but otherwise we'll just use an rvalue reference.
+  RangeType = IsConstexpr ? SemaRef.Context.getAutoDeductType() :
+    SemaRef.Context.getAutoRRefDeductType();
 
   SourceLocation RangeLoc = RangeExpr->getBeginLoc();
   RangeVar = BuildForRangeVarDecl(SemaRef, RangeLoc, RangeType, "__range");
@@ -3113,6 +3123,9 @@ ExpansionStatementBuilder::BuildRangeVar()
 
   // Update the range's expression type.
   RangeType = RangeVar->getType().getNonReferenceType();
+  if (SemaRef.RequireCompleteType(RangeLoc, RangeType,
+                                  diag::err_for_range_incomplete_type))
+    return false;
 
   /// Build the expression __range for various uses.
   ExprResult RangeDRE =
@@ -3364,6 +3377,8 @@ ExpansionStatementBuilder::BuildExpansionOverTuple()
   // is defined.
   // Get the name information for 'NNS::get'.
   CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
   NestedNameSpecifierLoc NNS =
       GetQualifiedNameForDecl(SemaRef.Context, RangeClass, ColonLoc);
   IdentifierInfo *Name = &SemaRef.Context.Idents.get("get");
@@ -3619,8 +3634,10 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   }
 
   // We couldn't find a way of computing the range.
-  if (!CountCall)
+  if (!CountCall) {
+    CountCallFailure = true;
     return StmtError();
+  }
 
   // Note the constant evaluation of the expression.
   EnterExpressionEvaluationContext EvalContext(SemaRef,
@@ -3633,9 +3650,12 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
     return StmtError();
 
   llvm::APSInt Count = Result.Val.getInt();
-  return new (SemaRef.Context) CXXCompositeExpansionStmt(
+  auto Ret = new (SemaRef.Context) CXXCompositeExpansionStmt(
     LoopDeclStmt, RangeDeclStmt, TemplateParms, Count.getExtValue(), ForLoc,
     AnnotationLoc, ColonLoc, RParenLoc);
+  Ret->setBeginStmt(BeginDecl.get());
+  Ret->setEndStmt(EndDecl.get());
+  return Ret;
 }
 
 /// When range-expr denotes an array, expand over the elements of the array.
@@ -3662,6 +3682,10 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
 StmtResult
 ExpansionStatementBuilder::BuildExpansionOverClass()
 {
+  CXXRecordDecl *RangeClass = RangeType->getAsCXXRecordDecl();
+  if (!RangeClass)
+    return StmtError();
+
   ExprResult Projection =
     SemaRef.ActOnCXXSelectMemberExpr(RangeType->getAsCXXRecordDecl(),
                                      RangeVar, InductionRef);
@@ -3698,6 +3722,8 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
                                        SourceLocation RParenLoc,
                                        BuildForRangeKind Kind,
                                        bool IsConstexpr) {
+  if (!Range || !LoopVar)
+    return StmtError();
   ExpansionStatementBuilder Builder(*this, S, Kind, LoopVar, Range,
                                     IsConstexpr);
   Builder.ForLoc = ForLoc;
@@ -3705,6 +3731,13 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVar))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVar)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 
@@ -3723,6 +3756,13 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVarDS))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVarDS)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 
@@ -3740,6 +3780,13 @@ Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVarDS))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVarDS)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 

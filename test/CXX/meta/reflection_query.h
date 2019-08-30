@@ -23,7 +23,7 @@ enum reflection_query {
 
   // Functions
   query_is_function,
-  query_is_noexcept,
+  query_is_nothrow,
   // query_has_ellipsis,
 
   // Classes
