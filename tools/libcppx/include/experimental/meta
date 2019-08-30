@@ -1160,17 +1160,6 @@ constexpr struct is_namespace_fn
   }
 } is_namespace;
 
-
-  // True if reflection is the global namespace.
-constexpr struct is_global_namespace_fn
-{
-  consteval bool operator()(info reflection) const
-  {
-    return reflection == reflexpr(::);
-  }
-} is_global_namespace;
-
-
 // -------------------------------------------------------------------------- //
 // Aliases
 
