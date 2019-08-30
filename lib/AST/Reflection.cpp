@@ -2210,6 +2210,16 @@ static bool makeReflection(QualType T, APValue &Result) {
   return true;
 }
 
+/// Set Result to a reflection of T, at the given offset,
+/// for a parent reflection P.
+static bool makeReflection(QualType T, unsigned Offset, const APValue &P,
+                           APValue &Result) {
+  if (T.isNull())
+    return makeReflection(Result);
+  Result = APValue(RK_type, T.getAsOpaquePtr(), Offset, P);
+  return true;
+}
+
 /// Set Result to a reflection of T.
 static bool makeReflection(const Type *T, APValue &Result) {
   assert(T);
@@ -2339,6 +2349,30 @@ static const ParmVarDecl *getFirstFunctionParameter(const FunctionDecl *FD) {
   return nullptr;
 }
 
+static const QualType getFunctionParameter(const FunctionType *FT, unsigned Index) {
+  if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FT)) {
+    if (Index < FPT->getNumParams())
+      return *(FPT->param_type_begin() + Index);
+  }
+
+  return QualType();
+}
+
+static bool getFunctionParameter(const Reflection &R, unsigned Index, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    if (const FunctionType *FT = dyn_cast<FunctionType>(T.getTypePtr())) {
+      APValue ParentRefl;
+      if (!makeReflection(T, ParentRefl))
+        llvm_unreachable("function type reflection creation failed");
+
+      QualType Param = getFunctionParameter(FT, Index);
+      return makeReflection(Param, Index + 1, ParentRefl, Result);
+    }
+  }
+
+  return Error(R);
+}
+
 /// Returns the first reflectable member.
 static const Decl *legacyGetFirstMember(const DeclContext *DC) {
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(DC))
@@ -2458,7 +2492,7 @@ static bool getBeginParam(const Reflection &R, APValue &Result) {
     return makeReflection(getFirstFunctionParameter(FD), Result);
   }
 
-  return Error(R);
+  return getFunctionParameter(R, 0, Result);
 }
 
 /// Returns the next parameter of a function, if there is one.
@@ -2466,6 +2500,14 @@ static bool getNextParam(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R)) {
     if (const ParmVarDecl *PVD = cast<ParmVarDecl>(D))
       return makeReflection(getNextFunctionParameter(PVD), Result);
+  }
+
+  if (R.isType() && R.hasParent()) {
+    Reflection Parent = R.getParent();
+
+    // Note the offset stored is starts at 1, the offset used starts at 0
+    // so no addition is required here.
+    return getFunctionParameter(Parent, R.getOffsetInParent(), Result);
   }
 
   return Error(R);
@@ -2808,7 +2850,7 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
   case query_get_entity:
     return getEntity(*this, Result);
   case query_get_parent:
-    return getParent(*this, Result);
+    return ::getParent(*this, Result);
   case query_get_definition:
     return getDefinition(*this, Result);
 

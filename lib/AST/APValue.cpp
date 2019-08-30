@@ -164,8 +164,19 @@ APValue::UnionData::~UnionData () {
 }
 
 APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
-                                        const void *ReflEntity) :
-  ReflKind(ReflKind), ReflEntity(ReflEntity) { }
+                                        const void *ReflEntity,
+                                        unsigned Offset,
+                                        const APValue *Parent) :
+  ReflKind(ReflKind), ReflEntity(ReflEntity),
+  Offset(Offset), Parent(nullptr) {
+  if (Parent)
+    this->Parent = new APValue(*Parent);
+}
+
+APValue::ReflectionData::~ReflectionData() {
+  if (Parent)
+    delete Parent;
+}
 
 APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
   switch (RHS.getKind()) {
@@ -233,9 +244,13 @@ APValue::APValue(const APValue &RHS) : Kind(Uninitialized) {
     MakeAddrLabelDiff();
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
-  case Reflection:
-    MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue());
+  case Reflection: {
+    const APValue *ParentRefl = RHS.hasParentReflection()
+                              ? &RHS.getParentReflection() : nullptr;
+    MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue(),
+                   RHS.getReflectionOffset(), ParentRefl);
     break;
+  }
   }
 }
 

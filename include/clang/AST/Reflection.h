@@ -389,6 +389,18 @@ public:
     return Ref.getReflectedBaseSpecifier();
   }
 
+  unsigned getOffsetInParent() const {
+    return Ref.getReflectionOffset();
+  }
+
+  bool hasParent() const {
+    return Ref.hasParentReflection();
+  }
+
+  Reflection getParent() const {
+    return { *Ctx, Ref.getParentReflection() };
+  }
+
   /// Returns the reflected construct designated by Q.
   bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 

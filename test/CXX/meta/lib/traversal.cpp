@@ -186,3 +186,23 @@ constexpr void templ_fn_range_test() {
     static_assert(is_invalid(end));
   }
 }
+
+namespace fn_type {
+  using fn_type = int (*)(int, float);
+}
+
+constexpr void fn_type_test() {
+  constexpr meta::info fn_pointer_type_decl_refl = __reflect(query_get_begin_member, reflexpr(fn_type));
+  constexpr meta::info fn_pointer_type_refl = __reflect(query_get_type, fn_pointer_type_decl_refl);
+  constexpr meta::info fn_type_refl = __reflect(query_remove_pointer, fn_pointer_type_refl);
+  {
+    constexpr meta::info first_param_refl = __reflect(query_get_begin_param, fn_type_refl);
+    static_assert(string_eq(name_of(first_param_refl), "int"));
+
+    constexpr meta::info second_param_refl = __reflect(query_get_next_param, first_param_refl);
+    static_assert(string_eq(name_of(second_param_refl), "float"));
+
+    constexpr meta::info end = __reflect(query_get_next_param, second_param_refl);
+    static_assert(is_invalid(end));
+  }
+}

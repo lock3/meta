@@ -189,7 +189,12 @@ private:
   struct ReflectionData {
     ReflectionKind ReflKind;
     const void *ReflEntity;
-    ReflectionData(ReflectionKind ReflKind, const void *Ptr);
+    unsigned Offset;
+    const APValue *Parent;
+
+    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
+                   unsigned Offset, const APValue *Parent);
+    ~ReflectionData();
   };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
@@ -252,7 +257,12 @@ public:
   }
   APValue(ReflectionKind ReflKind, const void *ReflEntity)
     : Kind(Uninitialized) {
-    MakeReflection(ReflKind, ReflEntity);
+    MakeReflection(ReflKind, ReflEntity, 0, nullptr);
+  }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+          unsigned Offset, const APValue &Parent)
+    : Kind(Uninitialized) {
+    MakeReflection(ReflKind, ReflEntity, Offset, &Parent);
   }
 
   ~APValue() {
@@ -484,6 +494,26 @@ public:
   /// Returns the reflected base class specifier.
   const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
 
+  /// Returns the offset into the parent which if
+  /// reflected, results in this reflection.
+  ///
+  /// If 0, there is no parent information available.
+  unsigned getReflectionOffset() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->Offset;
+  }
+
+  bool hasParentReflection() const {
+    return getReflectionOffset();
+  }
+
+  /// Returns the parent reflection, if present.
+  const APValue &getParentReflection() const {
+    assert(isReflection() && "Invalid accessor");
+    assert(hasParentReflection() && "No parent reflection");
+    return *((const ReflectionData*)(const char*)Data.buffer)->Parent;
+  }
+
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt *)(char *)Data.buffer = std::move(I);
@@ -594,9 +624,19 @@ private:
     new ((void*)(char*)Data.buffer) AddrLabelDiffData();
     Kind = AddrLabelDiff;
   }
-  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity) {
+  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
+                      unsigned Offset, const APValue *Parent) {
     assert(isUninit() && "Bad state change");
-    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity);
+
+#ifndef NDEBUG
+    if (Offset)
+      assert(Parent && "Parent missing");
+    else
+      assert(!Parent && "Parent provided with no offset");
+#endif
+
+    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
+                                                   Offset, Parent);
     Kind = Reflection;
   }
 };
