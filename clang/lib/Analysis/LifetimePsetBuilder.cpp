@@ -208,7 +208,7 @@ public:
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
-    // ThisExpr is an RValue.
+    // ThisExpr is an RValue. It points to *this.
     setPSet(E, PSet::singleton(Variable::thisPointer(
                                    E->getType()->getPointeeCXXRecordDecl())
                                    .deref()));
