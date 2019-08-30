@@ -816,18 +816,6 @@ constexpr struct is_pure_virtual_fn
 } is_pure_virtual;
 
 // -------------------------------------------------------------------------- //
-// Members, in general
-
-constexpr struct is_static_member
-{
-  consteval bool operator()(info member) const
-  {
-    // requires is_class_member(member)
-    return is_static_data_member(member) || is_static_member_function(member);
-  }
-} is_static_member;
-
-// -------------------------------------------------------------------------- //
 // Special members
 
 // Returns true if the reflected entity is any kind of constructor.
@@ -1171,6 +1159,17 @@ constexpr struct is_namespace_fn
     return __reflect(detail::query_is_namespace, reflection);
   }
 } is_namespace;
+
+
+  // True if reflection is the global namespace.
+constexpr struct is_global_namespace_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return reflection == reflexpr(::);
+  }
+} is_global_namespace;
+
 
 // -------------------------------------------------------------------------- //
 // Aliases
@@ -3162,6 +3161,11 @@ constexpr auto members_of(info reflection, Ps... preds)
 template<typename P>
 constexpr auto members_of(info reflection) {
   return members_of(reflection, detail::always_true);
+}
+
+constexpr auto parameters_of(info reflection)
+{
+  return param_range(reflection);
 }
 
 // Returns the first sub-object of reflection. Objects behave
