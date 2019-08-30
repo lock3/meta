@@ -20,6 +20,13 @@ namespace lifetime {
 
 namespace {
 
+#define VERBOSE_DEBUG 0
+#if VERBOSE_DEBUG
+#define DBG(x) llvm::errs() << x
+#else
+#define DBG(x)
+#endif
+
 static bool hasPSet(const Expr *E) {
   auto TC = classifyTypeCategory(E->getType());
   return TC == TypeCategory::Pointer || TC == TypeCategory::Owner;
@@ -817,10 +824,15 @@ public:
   }
 
   void setPSet(const Expr *E, const PSet &PS) {
-    if (E->isLValue())
+    if (E->isLValue()) {
+      DBG("Set RefersTo[" << E->getStmtClassName() << "] = " << PS.str()
+                          << "\n");
       RefersTo[E] = PS;
-    else
+    } else {
+      DBG("Set PSetsOfExpr[" << E->getStmtClassName() << "] = " << PS.str()
+                             << "\n");
       PSetsOfExpr[E] = PS;
+    }
   }
   void setPSet(PSet LHS, PSet RHS, SourceRange Range);
   PSet derefPSet(const PSet &P);
