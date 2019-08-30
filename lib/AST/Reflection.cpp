@@ -496,6 +496,8 @@ struct MaybeType {
     return Ty;
   }
 
+  const Type *getTypePtr() const { return Ty.getTypePtr(); }
+
   const Type* operator->() const { return Ty.getTypePtr(); }
 
   QualType operator*() const { return Ty; }
@@ -616,6 +618,8 @@ static bool hasAutomaticLocalStorage(const Reflection &R, APValue &Result) {
 static bool isFunction(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
     return SuccessBool(R, Result, isa<FunctionDecl>(D));
+  if (MaybeType T = getCanonicalType(R))
+    return SuccessBool(R, Result, isa<FunctionType>(T.getTypePtr()));
   return SuccessFalse(R, Result);
 }
 
@@ -2246,6 +2250,10 @@ static bool getType(const Reflection &R, APValue &Result) {
 }
 
 static bool getReturnType(const Reflection &R, APValue &Result) {
+  if (MaybeType T = getCanonicalType(R)) {
+    if (const FunctionType *FT = dyn_cast<FunctionType>(T.getTypePtr()))
+      return makeReflection(FT->getReturnType(), Result);
+  }
   if (const Decl *D = getReachableDecl(R)) {
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
       return makeReflection(FD->getReturnType(), Result);
