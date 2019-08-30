@@ -46,7 +46,7 @@ enum reflection_query : unsigned {
 
   // Functions
   query_is_function,
-  query_is_noexcept,
+  query_is_nothrow,
   // query_has_ellipsis,
 
   // Classes
@@ -500,10 +500,19 @@ consteval bool is_function(info reflection) {
 
 // Requires: is_function(function)
 //
-// Returns true if the reflected entity is a noexcept function.
-consteval bool is_noexcept(info function) {
+// Returns true if the reflected entity is a function which does not throw.
+consteval bool is_nothrow(info function) {
   detail::require_function(function);
-  return __reflect(detail::query_is_noexcept, function);
+  return __reflect(detail::query_is_nothrow, function);
+}
+
+// Requires: is_function(function)
+//
+// Returns true if the reflected entity is a function which does not throw.
+//
+// Deprecated in favor of is_no_throw.
+[[deprecated]] consteval bool is_noexcept(info function) {
+  return is_nothrow(function);
 }
 
 // -------------------------------------------------------------------------- //

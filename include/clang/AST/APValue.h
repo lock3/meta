@@ -191,9 +191,12 @@ private:
     const ReflectionKind ReflKind;
     const void *ReflEntity;
     const ReflectionModifiers *ReflModifiers;
+    unsigned Offset;
+    const APValue *Parent;
 
     ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
-                   const ReflectionModifiers &ReflModifiers);
+                   const ReflectionModifiers &ReflModifiers,
+                   unsigned Offset, const APValue *Parent);
     ~ReflectionData();
   };
 
@@ -255,9 +258,12 @@ public:
       : Kind(Uninitialized) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
+
   APValue(ReflectionKind ReflKind, const void *ReflEntity);
   APValue(ReflectionKind ReflKind, const void *ReflEntity,
           const ReflectionModifiers &ReflModifiers);
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+          unsigned Offset, const APValue &Parent);
 
   ~APValue() {
     MakeUninit();
@@ -491,6 +497,26 @@ public:
   // Returns the modifiers to be applied to the reflection, upon injection.
   const ReflectionModifiers &getReflectionModifiers() const;
 
+  /// Returns the offset into the parent which if
+  /// reflected, results in this reflection.
+  ///
+  /// If 0, there is no parent information available.
+  unsigned getReflectionOffset() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->Offset;
+  }
+
+  bool hasParentReflection() const {
+    return getReflectionOffset();
+  }
+
+  /// Returns the parent reflection, if present.
+  const APValue &getParentReflection() const {
+    assert(isReflection() && "Invalid accessor");
+    assert(hasParentReflection() && "No parent reflection");
+    return *((const ReflectionData*)(const char*)Data.buffer)->Parent;
+  }
+
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt *)(char *)Data.buffer = std::move(I);
@@ -602,10 +628,20 @@ private:
     Kind = AddrLabelDiff;
   }
   void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
-                      const ReflectionModifiers &ReflModifiers) {
+                      const ReflectionModifiers &ReflModifiers,
+                      unsigned Offset, const APValue *Parent) {
     assert(isUninit() && "Bad state change");
+
+#ifndef NDEBUG
+    if (Offset)
+      assert(Parent && "Parent missing");
+    else
+      assert(!Parent && "Parent provided with no offset");
+#endif
+
     new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
-                                                   ReflModifiers);
+                                                   ReflModifiers,
+                                                   Offset, Parent);
     Kind = Reflection;
   }
 };
