@@ -290,7 +290,7 @@ void forbidden() {
 void array() {
   int a[4];
   int *p1 = &a[0];
-  __lifetime_pset(p1); // expected-warning {{(a)}}
+  __lifetime_pset(p1); // expected-warning {{(*a)}}
 
   int *p2 = a;
   __lifetime_pset(p2); // expected-warning {{(a)}}
@@ -302,7 +302,7 @@ void array() {
 void pointer_in_array() {
   int *p[4];
   int *k = p[1];
-  __lifetime_pset(k); // expected-warning {{pset(k) = ((unknown))}}
+  __lifetime_pset(k); // expected-warning {{pset(k) = (**p)}}
 }
 
 int global_var;
@@ -770,12 +770,12 @@ void Example1_1() {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
   int x[100];
   p2 = &x[10];
-  __lifetime_pset(p2); // expected-warning {{pset(p2) = (x)}}
+  __lifetime_pset(p2); // expected-warning {{pset(p2) = (*x)}}
   *p2 = 1;             // ok
   p2 = p;              // D: pset(p2) = pset(p) which is {null}
   __lifetime_pset(p2); // expected-warning {{pset(p2) = ((null))}}
   p2 = &x[10];
-  __lifetime_pset(p2); // expected-warning {{pset(p2) = (x)}}
+  __lifetime_pset(p2); // expected-warning {{pset(p2) = (*x)}}
   *p2 = 1;             // ok
   int **pp = &p2;
   __lifetime_pset(pp); // expected-warning {{pset(pp) = (p2)}}

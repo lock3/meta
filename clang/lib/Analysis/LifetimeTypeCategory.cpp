@@ -178,7 +178,7 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
       return TypeCategory::Value;
 
     if (T->isArrayType())
-      return TypeCategory::Value;
+      return {TypeCategory::Owner, getPointeeType(T)};
 
     // raw pointers and references
     if (T->isPointerType() || T->isReferenceType())

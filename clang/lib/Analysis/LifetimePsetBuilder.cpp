@@ -188,23 +188,15 @@ public:
 
   void VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
     // By the bounds profile, ArraySubscriptExpr is only allowed on arrays
-    // (not on pointers), thus the base needs to be a DeclRefExpr.
-    const auto *DeclRef =
-        dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts());
+    // (not on pointers).
 
-    PSet Ref;
-    if (DeclRef) {
-      const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl());
-      assert(VD);
-      if (VD->getType().getCanonicalType()->isArrayType())
-        Ref = PSet::singleton(VD);
+    if (!E->getBase()->IgnoreParenImpCasts()->getType()->isArrayType()) {
+      Reporter.warnPointerArithmetic(E->getSourceRange());
+      setPSet(E, {});
+      return;
     }
 
-    // Unless we have seen the actual array, we assume it is pointer arithmetic.
-    if (Ref.isUnknown())
-      Reporter.warnPointerArithmetic(E->getSourceRange());
-
-    setPSet(E, Ref);
+    setPSet(E, derefPSet(getPSet(E->getBase())));
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
