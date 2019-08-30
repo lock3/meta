@@ -134,6 +134,9 @@ public:
 
     /// This is the scope of a C++ catch statement.
     CatchScope = 0x1000000,
+
+    /// \brief We are in the scope of a source code literal/fragment.
+    FragmentScope = 0x2000000
   };
 
 private:
@@ -335,6 +338,18 @@ public:
 
   /// isFunctionScope() - Return true if this scope is a function scope.
   bool isFunctionScope() const { return (getFlags() & Scope::FnScope); }
+
+  /// isMetaFunctionScope() - Return true if this scope is a function scope
+  /// for a meta function.
+  bool isMetaFunctionScope() const {
+    if (!isFunctionScope())
+      return false;
+
+    if (auto *FnDecl = dyn_cast<FunctionDecl>(Entity))
+      return FnDecl->isMetaprogram();
+
+    return false;
+  }
 
   /// isClassScope - Return true if this scope is a class/struct/union scope.
   bool isClassScope() const {

@@ -20,6 +20,15 @@ inline namespace v1 {
       (void) __reflect_print("");
   }
 
+  consteval void compiler_error(const char* message) {
+    __compiler_error(message);
+  }
+
+  consteval void compiler_require(bool condition, const char* message) {
+    if (!condition)
+      compiler_error(message);
+  }
+
 } // inline namespace v1
 } // namespace meta
 } // namespace cppx

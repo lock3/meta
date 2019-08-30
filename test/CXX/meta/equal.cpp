@@ -2,8 +2,6 @@
 
 #include "reflection_query.h"
 
-#define assert(E) if (!(E)) __builtin_abort();
-
 namespace meta {
 
 using info = decltype(reflexpr(void));
@@ -34,10 +32,13 @@ consteval info next(info x) {
 
 struct S {
   int a, b, c;
+
+  constexpr S(int a, int b, int c)
+    : a(a), b(b), c(c) { }
 };
 
 template<meta::info X, typename T>
-bool compare(const T& a, const T& b) {
+constexpr bool compare(const T& a, const T& b) {
   if constexpr (!meta::is_invalid(X)) {
     if constexpr (meta::is_data_member(X)) {
       auto p = valueof(X);
@@ -50,13 +51,13 @@ bool compare(const T& a, const T& b) {
 }
 
 template<typename T>
-bool equal(const T& a, const T& b) {
+constexpr bool equal(const T& a, const T& b) {
   return compare<meta::front(reflexpr(T))>(a, b);
 }
 
 int main() {
-  S s1 { 0, 0, 0 };
-  S s2 { 0, 0, 1 };
-  assert(equal(s1, s1));
-  assert(!equal(s1, s2));
+  constexpr S s1 { 0, 0, 0 };
+  constexpr S s2 { 0, 0, 1 };
+  static_assert(equal(s1, s1));
+  static_assert(!equal(s1, s2));
 }

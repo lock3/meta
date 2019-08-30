@@ -3171,6 +3171,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXReflectExprClass:
   case CXXInvalidReflectionExprClass:
   case CXXReflectionReadQueryExprClass:
+  case CXXReflectionWriteQueryExprClass:
   case CXXReflectPrintLiteralExprClass:
   case CXXReflectPrintReflectionExprClass:
   case CXXReflectDumpReflectionExprClass:
@@ -3180,6 +3181,7 @@ bool Expr::HasSideEffects(const EvalContext &Ctx,
   case CXXReflectedIdExprClass:
   case CXXConcatenateExprClass:
   case CXXDependentVariadicReifierExprClass:
+  case CXXFragmentExprClass:
   case CXXSelectMemberExprClass:
   case CXXSelectPackExprClass:
     // These never have a side-effect.

@@ -1300,11 +1300,12 @@ static void SetNestedNameSpecifier(Sema &S, TagDecl *T,
 }
 
 DeclResult Sema::CheckClassTemplate(
-    Scope *S, unsigned TagSpec, TagUseKind TUK, SourceLocation KWLoc,
-    CXXScopeSpec &SS, IdentifierInfo *Name, SourceLocation NameLoc,
-    const ParsedAttributesView &Attr, TemplateParameterList *TemplateParams,
-    AccessSpecifier AS, SourceLocation ModulePrivateLoc,
-    SourceLocation FriendLoc, unsigned NumOuterTemplateParamLists,
+    Scope *S, unsigned TagSpec, Expr *Metafunction, TagUseKind TUK,
+    SourceLocation KWLoc, CXXScopeSpec &SS, IdentifierInfo *Name,
+    SourceLocation NameLoc, const ParsedAttributesView &Attr,
+    TemplateParameterList *TemplateParams, AccessSpecifier AS,
+    SourceLocation ModulePrivateLoc, SourceLocation FriendLoc,
+    unsigned NumOuterTemplateParamLists,
     TemplateParameterList **OuterTemplateParamLists, SkipBodyInfo *SkipBody) {
   assert(TemplateParams && TemplateParams->size() > 0 &&
          "No template parameters");
@@ -1593,6 +1594,8 @@ DeclResult Sema::CheckClassTemplate(
                           PrevClassTemplate && ShouldAddRedecl ?
                             PrevClassTemplate->getTemplatedDecl() : nullptr,
                           /*DelayTypeCreation=*/true);
+
+  NewClass->setMetafunction(Metafunction);
   SetNestedNameSpecifier(*this, NewClass, SS);
   if (NumOuterTemplateParamLists > 0)
     NewClass->setTemplateParameterListsInfo(
@@ -5478,6 +5481,11 @@ bool UnnamedLocalNoLinkageFinder::VisitUnresolvedUsingType(
   return false;
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitCXXRequiredTypeType(
+                                                 const CXXRequiredTypeType *T) {
+  return false;
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitTypeOfExprType(const TypeOfExprType*) {
   return false;
 }
@@ -7708,11 +7716,9 @@ DeclResult Sema::ActOnClassTemplateSpecialization(
       Diag(TemplateNameLoc, diag::err_partial_spec_args_match_primary_template)
         << /*class template*/0 << (TUK == TUK_Definition)
         << FixItHint::CreateRemoval(SourceRange(LAngleLoc, RAngleLoc));
-      return CheckClassTemplate(S, TagSpec, TUK, KWLoc, SS,
-                                ClassTemplate->getIdentifier(),
-                                TemplateNameLoc,
-                                Attr,
-                                TemplateParams,
+      return CheckClassTemplate(S, TagSpec, /*Metafunction=*/nullptr, TUK,
+                                KWLoc, SS, ClassTemplate->getIdentifier(),
+                                TemplateNameLoc, Attr, TemplateParams,
                                 AS_none, /*ModulePrivateLoc=*/SourceLocation(),
                                 /*FriendLoc*/SourceLocation(),
                                 TemplateParameterLists.size() - 1,
@@ -9051,9 +9057,9 @@ Sema::ActOnExplicitInstantiation(Scope *S, SourceLocation ExternLoc,
 
   bool Owned = false;
   bool IsDependent = false;
-  Decl *TagD = ActOnTag(S, TagSpec, Sema::TUK_Reference,
-                        KWLoc, SS, Name, NameLoc, Attr, AS_none,
-                        /*ModulePrivateLoc=*/SourceLocation(),
+  Decl *TagD = ActOnTag(S, TagSpec, /*Metafunction=*/nullptr,
+                        Sema::TUK_Reference, KWLoc, SS, Name, NameLoc, Attr,
+                        AS_none, /*ModulePrivateLoc=*/SourceLocation(),
                         MultiTemplateParamsArg(), Owned, IsDependent,
                         SourceLocation(), false, TypeResult(),
                         /*IsTypeSpecifier*/false,
@@ -9797,6 +9803,12 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   Decl *Referenced = nullptr;
   switch (Result.getResultKind()) {
   case LookupResult::NotFound: {
+    if (isa<CXXFragmentDecl>(Ctx->getParent()))
+      // If the nested-name-specifier refers to an unspecified member of
+      // a fragment, then the type name will be resolved during injection
+      return Context.getDependentNameType(
+          Keyword, QualifierLoc.getNestedNameSpecifier(), &II);
+
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
     SourceRange CondRange;

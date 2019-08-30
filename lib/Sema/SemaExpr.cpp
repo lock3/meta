@@ -2990,7 +2990,8 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &T, ValueDecl *VD,
       break;
 
     // Non-type template parameters are either l-values or r-values
-    // depending on the type.
+    // depending on the type. Required declarators act similarly.
+    case Decl::CXXRequiredDeclarator:
     case Decl::NonTypeTemplateParm: {
       if (const ReferenceType *reftype = T->getAs<ReferenceType>()) {
         T = reftype->getPointeeType();
@@ -14791,7 +14792,12 @@ static bool isEvaluatableContext(Sema &SemaRef) {
 static bool isOdrUseContext(Sema &SemaRef, bool SkipDependentUses = true) {
   // An expression in a template is not really an expression until it's been
   // instantiated, so it doesn't trigger odr-use.
-  if (SkipDependentUses && SemaRef.CurContext->isDependentContext())
+  //
+  // Similarly, an expression in a fragment is not really an expression
+  // until it's been injected, so it doesn't trigger odr-use.
+  DeclContext *CurContext = SemaRef.CurContext;
+  if (SkipDependentUses && (CurContext->isDependentContext()
+                            || CurContext->isFragmentContext()))
     return false;
 
   // Similarly to above... If we're anywhere inside an expansion loop body for

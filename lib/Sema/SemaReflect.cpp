@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/Decl.h"
@@ -24,8 +25,10 @@
 #include "clang/Sema/ParsedReflection.h"
 #include "clang/Sema/ParserLookupSetup.h"
 #include "clang/Sema/Scope.h"
+#include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "TypeLocBuilder.h"
+
 using namespace clang;
 using namespace sema;
 
@@ -376,7 +379,7 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
     return ExprError();
 
   // Convert the remaining operands to rvalues.
-  for (std::size_t I = 1; I < Args.size(); ++I) {
+  for (std::size_t I = 0; I < Args.size(); ++I) {
     ExprResult Arg = DefaultLvalueConversion(Args[I]);
     if (Arg.isInvalid())
       return ExprError();
@@ -385,6 +388,63 @@ ExprResult Sema::ActOnCXXReflectionReadQuery(SourceLocation KWLoc,
 
   return new (Context) CXXReflectionReadQueryExpr(Context, Ty, Query, Args,
                                                   KWLoc, LParenLoc, RParenLoc);
+}
+
+// Gets the type and query from Arg for a query write operation.
+// Returns false on error.
+static bool GetTypeAndQueryForWrite(Sema &SemaRef, SmallVectorImpl<Expr *> &Args,
+                                    QualType &ResultTy,
+                                    ReflectionQuery &Query) {
+  SetQueryAndTypeUnresolved(SemaRef, ResultTy, Query);
+
+  Expr *QueryArg = Args[0];
+  if (QueryArg->isTypeDependent() || QueryArg->isValueDependent())
+    return false;
+
+  if (CheckQueryType(SemaRef, QueryArg))
+    return true;
+
+  // Resolve the query.
+  if (SetQuery(SemaRef, QueryArg, Query))
+    return true;
+
+  // Resolve the type.
+  if (isModifierUpdateQuery(Query))
+    return SetType(ResultTy, SemaRef.Context.VoidTy);
+
+  SemaRef.Diag(QueryArg->getExprLoc(), diag::err_reflection_query_invalid);
+  return true;
+}
+
+ExprResult Sema::ActOnCXXReflectionWriteQuery(SourceLocation KWLoc,
+                                              SmallVectorImpl<Expr *> &Args,
+                                              SourceLocation LParenLoc,
+                                              SourceLocation RParenLoc) {
+  if (CheckArgumentsPresent(*this, KWLoc, Args))
+    return ExprError();
+
+  // Get the type of the query. Note that this will convert Args[0].
+  QualType Ty;
+  ReflectionQuery Query;
+  if (GetTypeAndQueryForWrite(*this, Args, Ty, Query))
+    return ExprError();
+
+  if (CheckQueryArgs(*this, KWLoc, Query, Args))
+    return ExprError();
+
+  // Convert the remaining operands to rvalues.
+  for (std::size_t I = 0; I < Args.size(); ++I) {
+    if (I == 1)
+      continue;
+
+    ExprResult Arg = DefaultFunctionArrayLvalueConversion(Args[I]);
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[I] = Arg.get();
+  }
+
+  return new (Context) CXXReflectionWriteQueryExpr(Context, Ty, Query, Args,
+                                                   KWLoc, LParenLoc, RParenLoc);
 }
 
 static bool HasDependentParts(SmallVectorImpl<Expr *>& Parts) {
@@ -504,42 +564,6 @@ ExprResult Sema::BuildCXXCompilerErrorExpr(Expr *MessageExpr,
                                       BuiltinLoc, RParenLoc);
 }
 
-static bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
-  SmallVector<PartialDiagnosticAt, 4> Diags;
-  Expr::EvalResult Result;
-  Result.Diag = &Diags;
-  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
-  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
-    S.Diag(E->getExprLoc(), diag::reflection_not_constant_expression);
-    for (PartialDiagnosticAt PD : Diags)
-      S.Diag(PD.first, PD.second);
-    return true;
-  }
-
-  R = Reflection(S.Context, Result.Val);
-  return false;
-}
-
-static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
-                                      const Reflection &R) {
-  SemaRef.Diag(Refl->getExprLoc(), diag::err_reify_invalid_reflection);
-
-  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
-  if (!InvalidRefl)
-    return;
-
-  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
-  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
-
-  // Evaluate the message so that we can transform it into a string.
-  SmallString<256> Buf;
-  llvm::raw_svector_ostream OS(Buf);
-  Message->outputString(OS);
-  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
-
-  SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
-}
-
 static DeclRefExpr *DeclReflectionToDeclRefExpr(Sema &S, const Reflection &R,
                                          SourceLocation SL) {
   assert(R.isDeclaration());
@@ -649,53 +673,8 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
   return CompleteReflectionToValueExpr(S, EvalExpr);
 }
 
-enum RangeKind {
-  RK_Array,
-  RK_Range,
-  RK_Tuple,
-  RK_Struct,
-  RK_Unknown,
-};
-
-/// A facility used to determine the begin and end of a constexpr range
-/// or array.
-struct ExpansionContextBuilder {
-  ExpansionContextBuilder(Sema &S, Scope *CS, Expr *Range)
-    : SemaRef(S), CurScope(CS), Range(Range)
-    {}
-
-  /// Construct calls to std::begin(Range) and std::end(Range)
-  /// Returns true on error.
-  bool BuildCalls();
-
-  Expr *getRangeBeginCall() const { return RangeBegin; }
-  Expr *getRangeEndCall() const { return RangeEnd; }
-
-  Expr *getRange() const { return Range; }
-
-  RangeKind getKind() const { return Kind; }
-private:
-  bool BuildArrayCalls();
-  bool BuildRangeCalls();
-
-private:
-  Sema &SemaRef;
-
-  /// The scope in which analysis will be performed.
-  Scope *CurScope;
-
-  /// Calls to std::begin(range) and std::end(range), respectively.
-  Expr *RangeBegin = nullptr;
-  Expr *RangeEnd = nullptr;
-
-  /// The Range that we are constructing an expansion context from.
-  Expr *Range;
-
-  RangeKind Kind;
-};
-
 bool
-ExpansionContextBuilder::BuildCalls()
+Sema::ExpansionContextBuilder::BuildCalls()
 {
   SourceLocation Loc;
 
@@ -763,7 +742,7 @@ ExpansionContextBuilder::BuildCalls()
 }
 
 bool
-ExpansionContextBuilder::BuildArrayCalls()
+Sema::ExpansionContextBuilder::BuildArrayCalls()
 {
   // For an array arr, RangeBegin is arr[0]
   IntegerLiteral *ZeroIndex =
@@ -790,43 +769,6 @@ ExpansionContextBuilder::BuildArrayCalls()
   RangeEnd = LastIndex;
   return false;
 }
-
-/// Traverse a C++ Constexpr Range
-struct RangeTraverser {
-  RangeTraverser(Sema &SemaRef, RangeKind Kind, Expr *RangeBegin,
-                 Expr *RangeEnd)
-    : SemaRef(SemaRef), Current(RangeBegin), RangeEnd(RangeEnd),
-    Kind(Kind), I()
-    {}
-
-  /// Current == RangeEnd
-  explicit operator bool();
-
-  /// Dereference and evaluate the current value as a constant expression.
-  Expr *operator*();
-
-  /// Call std::next(Current, 1) if this is a constexpr range,
-  /// Increment the array subscript if it is an array.
-  RangeTraverser &operator++();
-
-  /// Get the range kind.
-  RangeKind getKind() const { return Kind; }
-
-private:
-  Sema &SemaRef;
-
-  /// The current element in the traversal
-  Expr *Current;
-
-  /// One-past-the-end iterator (std::end) of the range we are traversing.
-  Expr *RangeEnd = nullptr;
-
-  /// The kind of product type we are traversing.
-  RangeKind Kind;
-
-  /// An integer Index that keeps track of the current element.
-  std::size_t I;
-};
 
 static ExprResult
 BuildSubscriptAccess(Sema &SemaRef, Expr *Current, std::size_t Index)
@@ -896,7 +838,7 @@ BuildDeref(Sema &SemaRef, Expr *NextCall)
 // Checks to see if the traversal is complete.
 //
 // Returns true when traversal is complete.
-RangeTraverser::operator bool()
+Sema::RangeTraverser::operator bool()
 {
   switch (Kind) {
   case RK_Array:
@@ -933,7 +875,7 @@ RangeTraverser::operator bool()
 }
 
 Expr *
-RangeTraverser::operator*()
+Sema::RangeTraverser::operator*()
 {
   Expr *Deref = nullptr;
   switch (Kind) {
@@ -953,8 +895,8 @@ RangeTraverser::operator*()
   return RvalueDeref.get();
 }
 
-RangeTraverser &
-RangeTraverser::operator++()
+Sema::RangeTraverser &
+Sema::RangeTraverser::operator++()
 {
   IntegerLiteral *Index =
   IntegerLiteral::Create(SemaRef.Context, llvm::APSInt::getUnsigned(1),
@@ -1051,7 +993,7 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
                            Expr *Range, SourceLocation LParenLoc,
                            SourceLocation EllipsisLoc, SourceLocation RParenLoc)
 {
-  ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
+  Sema::ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
   if (CtxBldr.BuildCalls())
     ; // TODO: Diag << failed to build calls
 
@@ -1066,10 +1008,10 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
     return false;
   }
   // Traverse the range now and add the exprs to the vector
-  RangeTraverser Traverser(*this,
-                           CtxBldr.getKind(),
-                           CtxBldr.getRangeBeginCall(),
-                           CtxBldr.getRangeEndCall());
+  Sema::RangeTraverser Traverser(*this,
+                                 CtxBldr.getKind(),
+                                 CtxBldr.getRangeBeginCall(),
+                                 CtxBldr.getRangeEndCall());
 
   while (!Traverser) {
     switch (KW->getTokenID()) {
@@ -1109,7 +1051,7 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
                            SourceLocation LParenLoc, SourceLocation EllipsisLoc,
                            SourceLocation RParenLoc)
 {
-  ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
+  Sema::ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
   CtxBldr.BuildCalls();
 
   if (CtxBldr.getKind() == RK_Unknown) {
@@ -1174,7 +1116,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Result.Diag = &Diags;
   Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (!Eval->EvaluateAsAnyValue(Result, EvalCtx)) {
-    Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
+    Diag(Eval->getExprLoc(), diag::err_reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
     return ExprError();

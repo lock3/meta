@@ -17,6 +17,8 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
+#include "clang/Sema/Sema.h"
+#include "clang/Sema/SemaDiagnostic.h"
 
 namespace clang {
   enum ReflectionQuery : unsigned {
@@ -254,6 +256,14 @@ namespace clang {
     query_get_name,
     query_get_display_name,
 
+    // Modifier updates
+    query_set_access,
+    query_set_storage,
+    query_set_add_constexpr,
+    query_set_add_virtual,
+    query_set_add_pure_virtual,
+    query_set_new_name,
+
     // Labels for kinds of queries. These need to be updated when new
     // queries are added.
 
@@ -266,6 +276,9 @@ namespace clang {
     // Names -- these return const char*
     query_first_name = query_get_name,
     query_last_name = query_get_display_name,
+    // Modifier updates -- these return meta::info.
+    query_first_modifier_update = query_set_access,
+    query_last_modifier_update = query_set_new_name,
 
     // Type operations -- these require callbacks to be present.
     query_first_type_operation = query_is_constructible,
@@ -292,6 +305,10 @@ namespace clang {
       }
     }
 
+    if (isModifierUpdateQuery(Q)) {
+      return 2;
+    }
+
     return 1;
   }
 
@@ -311,6 +328,10 @@ namespace clang {
       }
     }
 
+    if (isModifierUpdateQuery(Q)) {
+      return 2;
+    }
+
     return 1;
   }
 
@@ -324,6 +345,10 @@ namespace clang {
 
   bool isNameQuery(ReflectionQuery Q) {
     return query_first_name <= Q && Q <= query_last_name;
+  }
+
+  bool isModifierUpdateQuery(ReflectionQuery Q) {
+    return query_first_modifier_update <= Q && Q <= query_last_modifier_update;
   }
 }
 
@@ -522,6 +547,10 @@ static const Expr *getExpr(const Reflection &R) {
   if (R.isExpression())
     return R.getAsExpression();
   return nullptr;
+}
+
+const Decl *Reflection::getAsReachableDeclaration() const {
+  return getReachableAliasDecl(*this);
 }
 
 /// Returns true if R is an invalid reflection.
@@ -882,7 +911,7 @@ static bool isExplicit(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-static AccessSpecifier getAccess(const Reflection &R) {
+static AccessSpecifier getAccessUnmodified(const Reflection &R) {
   if (const Decl *D = getReachableAliasDecl(R))
     return D->getAccess();
 
@@ -894,8 +923,31 @@ static AccessSpecifier getAccess(const Reflection &R) {
 
 /// Returns true if R has specified access.
 static bool hasAccess(const Reflection &R, APValue &Result) {
-  AccessSpecifier AS = getAccess(R);
+  AccessSpecifier AS = getAccessUnmodified(R);
   return SuccessBool(R, Result, AS != AS_none);
+}
+
+static AccessSpecifier getAccess(const Reflection &R) {
+  switch (R.getModifiers().getAccessModifier()) {
+  case AccessModifier::NotModified: {
+    return getAccessUnmodified(R);
+  }
+  case AccessModifier::Default: {
+    if (const Decl *D = getReachableAliasDecl(R)) {
+      const TagDecl *TD = cast<TagDecl>(D->getDeclContext());
+      return TD->getDefaultAccessSpecifier();
+    }
+    if (const CXXBaseSpecifier *B = getReachableBase(R))
+      return AS_private;
+    return AS_none;
+  }
+  case AccessModifier::Public:
+    return AS_public;
+  case AccessModifier::Protected:
+    return AS_protected;
+  case AccessModifier::Private:
+    return AS_private;
+  }
 }
 
 /// Returns true if R has public access.
@@ -2224,6 +2276,13 @@ static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
   return true;
 }
 
+/// Set Result to a copy of R with modifiers M applied.
+static bool makeReflection(const Reflection &R,
+                           const ReflectionModifiers &M, APValue &Result) {
+  Result = APValue(R.getKind(), R.getOpaqueValue(), M);
+  return true;
+}
+
 static bool getType(const Reflection &R, APValue &Result) {
   if (R.isType())
     return makeReflection(R.getAsType(), Result);
@@ -2311,6 +2370,8 @@ static bool getDefinition(const Reflection &R, APValue &Result) {
 static bool isReflectableDecl(const Decl *D) {
   assert(D && "null declaration");
   if (isa<AccessSpecDecl>(D))
+    return false;
+  if (isa<CXXInjectorDecl>(D) && !D->getDeclContext()->isDependentContext())
     return false;
   if (const CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(D))
     if (Class->isInjectedClassName())
@@ -2879,6 +2940,16 @@ MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
 bool getName(const Reflection R, APValue &Result) {
   ASTContext &Ctx = R.getContext();
 
+  if (const Expr *NewNameExpr = R.getModifiers().getNewName()) {
+    Expr::EvalResult Eval;
+    Expr::EvalContext EvalCtx(Ctx, nullptr);
+    if (!NewNameExpr->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen,
+                                             EvalCtx))
+      return false;
+    Result = Eval.Val;
+    return true;
+  }
+
   if (R.isType()) {
     QualType T = getQualType(R);
 
@@ -2935,6 +3006,160 @@ bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
   llvm_unreachable("invalid name selector");
 }
 
+using OptionalAPValue = llvm::Optional<APValue>;
+using OptionalAPSInt  = llvm::Optional<llvm::APSInt>;
+using OptionalUInt    = llvm::Optional<std::uint64_t>;
+using OptionalBool    = llvm::Optional<bool>;
+using OptionalExpr    = llvm::Optional<const Expr *>;
+
+static OptionalAPValue getArgAtIndex(const ArrayRef<APValue> &Args,
+                                     std::size_t I) {
+  if (I < Args.size())
+    return Args[I];
+  return { };
+}
+
+static OptionalAPSInt
+getArgAsAPSInt(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPValue V = getArgAtIndex(Args, I))
+    if (V->isInt())
+      return V->getInt();
+  return { };
+}
+
+static OptionalUInt
+getArgAsUInt(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
+    if (V->isUnsigned())
+      return V->getZExtValue();
+  return { };
+}
+
+static OptionalBool
+getArgAsBool(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
+    return V->getExtValue();
+  return { };
+}
+
+static OptionalExpr
+getArgAsExpr(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPValue V = getArgAtIndex(Args, I))
+    if (V->isLValue())
+      return V->getLValueBase().get<const Expr *>();
+  return { };
+}
+
+static ReflectionModifiers withAccess(const Reflection &R, std::uint64_t Val) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAccessModifier(static_cast<AccessModifier>(Val));
+  return M;
+}
+
+static bool
+setAccessMod(const Reflection &R, const ArrayRef<APValue> &Args,
+             APValue &Result) {
+  if (OptionalUInt V = getArgAsUInt(Args, 0))
+    return makeReflection(R, withAccess(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withStorage(const Reflection &R, std::uint64_t Val) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setStorageModifier(static_cast<StorageModifier>(Val));
+  return M;
+}
+
+static bool
+setStorageMod(const Reflection &R, const ArrayRef<APValue> &Args,
+              APValue &Result) {
+  if (OptionalUInt V = getArgAsUInt(Args, 0))
+    return makeReflection(R, withStorage(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withConstexpr(const Reflection &R, bool AddConstexpr) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddConstexpr(AddConstexpr);
+  return M;
+}
+
+static bool
+setAddConstexprMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                   APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withConstexpr(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withVirtual(const Reflection &R, bool AddVirtual) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddVirtual(AddVirtual);
+  return M;
+}
+
+static bool
+setAddVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                 APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withVirtual(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withPureVirtual(const Reflection &R,
+                                           bool AddPureVirtual) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddPureVirtual(AddPureVirtual);
+  return M;
+}
+
+static bool
+setAddPureVirtualMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                     APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withPureVirtual(R, *V), Result);
+  return Error(R);
+}
+
+static ReflectionModifiers withNewName(const Reflection &R, const Expr *NewName) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setNewName(NewName);
+  return M;
+}
+
+static bool
+setNewNameMod(const Reflection &R, const ArrayRef<APValue> &Args,
+              APValue &Result) {
+  if (OptionalExpr V = getArgAsExpr(Args, 0))
+    return makeReflection(R, withNewName(R, *V), Result);
+  return Error(R);
+}
+
+bool Reflection::UpdateModifier(ReflectionQuery Q,
+                                const ArrayRef<APValue> &ContextualArgs,
+                                APValue &Result) {
+  assert(isModifierUpdateQuery(Q) && "invalid query");
+
+  switch(Q) {
+  case query_set_access:
+    return setAccessMod(*this, ContextualArgs, Result);
+  case query_set_storage:
+    return setStorageMod(*this, ContextualArgs, Result);
+  case query_set_add_constexpr:
+    return setAddConstexprMod(*this, ContextualArgs, Result);
+  case query_set_add_virtual:
+    return setAddVirtualMod(*this, ContextualArgs, Result);
+  case query_set_add_pure_virtual:
+    return setAddPureVirtualMod(*this, ContextualArgs, Result);
+  case query_set_new_name:
+    return setNewNameMod(*this, ContextualArgs, Result);
+  default:
+    break;
+  }
+
+  llvm_unreachable("invalid modifier update query");
+}
+
 /// Returns true if canonical types are equal.
 static bool EqualTypes(ASTContext &Ctx, QualType A, QualType B) {
   CanQualType CanA = Ctx.getCanonicalType(A);
@@ -2968,4 +3193,43 @@ bool Reflection::Equal(ASTContext &Ctx, APValue const& A, APValue const& B) {
   default:
     return false;
   }
+}
+
+namespace clang {
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R) {
+  SmallVector<PartialDiagnosticAt, 4> Diags;
+  Expr::EvalResult Result;
+  Result.Diag = &Diags;
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+  if (!E->EvaluateAsRValue(Result, EvalCtx)) {
+    S.Diag(E->getExprLoc(), diag::err_reflection_not_constant_expression);
+    for (PartialDiagnosticAt PD : Diags)
+      S.Diag(PD.first, PD.second);
+    return true;
+  }
+
+  R = Reflection(S.Context, Result.Val);
+  return false;
+}
+
+void DiagnoseInvalidReflection(Sema &SemaRef, Expr *E, const Reflection &R) {
+  SemaRef.Diag(E->getExprLoc(), diag::err_reify_invalid_reflection);
+
+  const InvalidReflection *InvalidRefl = R.getAsInvalidReflection();
+  if (!InvalidRefl)
+    return;
+
+  const Expr *ErrorMessage = InvalidRefl->ErrorMessage;
+  const StringLiteral *Message = cast<StringLiteral>(ErrorMessage);
+
+  // Evaluate the message so that we can transform it into a string.
+  SmallString<256> Buf;
+  llvm::raw_svector_ostream OS(Buf);
+  Message->outputString(OS);
+  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+
+  SemaRef.Diag(E->getExprLoc(), diag::note_user_defined_note) << NonQuote;
+}
+
 }

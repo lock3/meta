@@ -495,6 +495,11 @@ void ASTStmtReader::VisitCXXReflectionReadQueryExpr(
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtReader::VisitCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtReader::VisitCXXReflectPrintLiteralExpr(
                                                 CXXReflectPrintLiteralExpr *E) {
   llvm_unreachable("unimplemented");
@@ -533,6 +538,10 @@ void ASTStmtReader::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
 
 void ASTStmtReader::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
   llvm_unreachable("unimplemented");
+}
+
+void ASTStmtReader::VisitCXXFragmentExpr(CXXFragmentExpr *E) {
+  llvm_unreachable("not implemented");
 }
 
 void ASTStmtReader::VisitDependentCoawaitExpr(DependentCoawaitExpr *E) {
@@ -1415,6 +1424,16 @@ void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
 
 void ASTStmtReader::VisitCXXCompositeExpansionStmt(
                                                  CXXCompositeExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
   VisitStmt(S);
   // FIXME: Implement me.
 }
@@ -2902,6 +2921,14 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_CXX_COMP_EXPANSION:
       S = new (Context) CXXCompositeExpansionStmt(Empty);
+      break;
+
+    case STMT_CXX_INJECTION:
+      S = new (Context) CXXInjectionStmt(Empty);
+      break;
+
+    case STMT_CXX_BASE_INJECTION:
+      S = CXXBaseInjectionStmt::CreateEmpty(Context);
       break;
 
     case STMT_MS_DEPENDENT_EXISTS:

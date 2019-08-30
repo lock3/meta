@@ -17,6 +17,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/CXXInjectionContextSpecifier.h"
 #include "clang/AST/Stmt.h"
 #include "llvm/Support/Compiler.h"
 
@@ -733,6 +734,127 @@ public:
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CoreturnStmtClass;
   }
+};
+
+/// Represents a C++ injection statement.
+///
+/// An injection statement, when evaluated, queues a source code modification,
+/// usually the injection of a fragment into the metaprogram evaluation
+/// context.
+///
+/// Example:
+///
+///     -> <<class: int a; >>
+///
+class CXXInjectionStmt : public Stmt {
+  SourceLocation IntroLoc;
+
+  /// The context to inject into.
+  CXXInjectionContextSpecifier InjectionContext;
+
+  /// The reflection or fragment being injected.
+  Stmt *Operand;
+public:
+  CXXInjectionStmt(SourceLocation IntroLoc,
+                   CXXInjectionContextSpecifier InjectionContext, Expr *Operand)
+    : Stmt(CXXInjectionStmtClass), IntroLoc(IntroLoc),
+      InjectionContext(InjectionContext), Operand(Operand) {}
+
+  explicit CXXInjectionStmt(EmptyShell Empty)
+      : Stmt(CXXInjectionStmtClass, Empty), IntroLoc(), Operand() {}
+
+  /// Retrieve the destination context information.
+  CXXInjectionContextSpecifier getContextSpecifier() const {
+    return InjectionContext;
+  }
+
+  /// Retrieve the operand of the injection statement.
+  Expr *getOperand() const { return reinterpret_cast<Expr *>(Operand); }
+
+  /// The location of introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return IntroLoc;
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return Operand->getEndLoc();
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInjectionStmtClass;
+  }
+
+  child_range children() {
+    return child_range(&Operand, &Operand + 1);
+  }
+
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+};
+
+/// Represents a C++ base injection statement.
+///
+/// A base injection statement, when evaluated, queues a source
+/// code modification to add additional base classes.
+///
+/// Example:
+///
+///     __inject_base(public Foo, private Bar)
+///
+class CXXBaseInjectionStmt : public Stmt {
+  SourceLocation IntroLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+  // The base specifiers being injected.
+  CXXBaseSpecifier **Bases;
+  unsigned NumBaseSpecifiers;
+
+  CXXBaseInjectionStmt(SourceLocation IntroLoc, SourceLocation LParenLoc,
+                       CXXBaseSpecifier **BaseSpecifiers,
+                       unsigned NumBaseSpecifiers, SourceLocation RParenLoc);
+
+  explicit CXXBaseInjectionStmt(EmptyShell Empty);
+
+public:
+  static CXXBaseInjectionStmt *
+  Create(ASTContext &C, SourceLocation IntroLoc, SourceLocation LParenLoc,
+         ArrayRef<CXXBaseSpecifier *> BaseSpecifiers, SourceLocation RParenLoc);
+
+  static CXXBaseInjectionStmt *CreateEmpty(ASTContext &C);
+
+  /// Returns the base specifiers to be injected.
+  ArrayRef<CXXBaseSpecifier *> getBaseSpecifiers() const {
+    return llvm::makeArrayRef(Bases, NumBaseSpecifiers);
+  }
+
+  /// The location of introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  /// The location of the left paren.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// The location of the right paren.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return IntroLoc;
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return RParenLoc;
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXBaseInjectionStmtClass;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
 };
 
 }  // end namespace clang

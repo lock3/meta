@@ -33,6 +33,7 @@ namespace clang {
   class CXXRecordDecl;
   class CXXBaseSpecifier;
   class QualType;
+  class ReflectionModifiers;
   struct InvalidReflection;
 
 /// \brief The kind of construct reflected.
@@ -187,9 +188,13 @@ private:
   };
   struct MemberPointerData;
   struct ReflectionData {
-    ReflectionKind ReflKind;
+    const ReflectionKind ReflKind;
     const void *ReflEntity;
-    ReflectionData(ReflectionKind ReflKind, const void *Ptr);
+    const ReflectionModifiers *ReflModifiers;
+
+    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
+                   const ReflectionModifiers &ReflModifiers);
+    ~ReflectionData();
   };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
@@ -250,10 +255,9 @@ public:
       : Kind(Uninitialized) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
-  APValue(ReflectionKind ReflKind, const void *ReflEntity)
-    : Kind(Uninitialized) {
-    MakeReflection(ReflKind, ReflEntity);
-  }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity);
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+          const ReflectionModifiers &ReflModifiers);
 
   ~APValue() {
     MakeUninit();
@@ -484,6 +488,9 @@ public:
   /// Returns the reflected base class specifier.
   const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
 
+  // Returns the modifiers to be applied to the reflection, upon injection.
+  const ReflectionModifiers &getReflectionModifiers() const;
+
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt *)(char *)Data.buffer = std::move(I);
@@ -594,9 +601,11 @@ private:
     new ((void*)(char*)Data.buffer) AddrLabelDiffData();
     Kind = AddrLabelDiff;
   }
-  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity) {
+  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
+                      const ReflectionModifiers &ReflModifiers) {
     assert(isUninit() && "Bad state change");
-    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity);
+    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
+                                                   ReflModifiers);
     Kind = Reflection;
   }
 };

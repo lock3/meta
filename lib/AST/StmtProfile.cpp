@@ -350,6 +350,14 @@ void StmtProfiler::VisitCXXCompositeExpansionStmt(
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitCXXInjectionStmt(const CXXInjectionStmt *S) {
+  VisitStmt(S);
+}
+
+void StmtProfiler::VisitCXXBaseInjectionStmt(const CXXBaseInjectionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
   VisitStmt(S);
   ID.AddBoolean(S->isIfExists());
@@ -1920,6 +1928,11 @@ void StmtProfiler::VisitCXXReflectionReadQueryExpr(
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXReflectionWriteQueryExpr(
+                                         const CXXReflectionWriteQueryExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitCXXReflectPrintLiteralExpr(
                                           const CXXReflectPrintLiteralExpr *E) {
   VisitExpr(E);
@@ -1956,7 +1969,11 @@ void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
 }
 
 void StmtProfiler::VisitCXXDependentVariadicReifierExpr(
-  const CXXDependentVariadicReifierExpr *E) {
+    const CXXDependentVariadicReifierExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
   VisitExpr(E);
 }
 

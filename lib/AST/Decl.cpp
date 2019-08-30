@@ -2610,12 +2610,20 @@ ParmVarDecl::ParmVarDecl(ASTContext &C, DeclContext *DC,
                          SourceLocation StartLoc, SourceLocation NameLoc,
                          const DeclarationName &Name, QualType T,
                          TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
-    : VarDecl(ParmVar, C, DC, StartLoc, NameLoc, Name, T, TInfo, S) {
+    : VarDecl(ParmVar, C, DC, StartLoc, NameLoc, Name, T, TInfo, S),
+      InjectedParmsInfo(nullptr) {
   assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
   assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
   assert(ParmVarDeclBits.IsKNRPromoted == false);
   assert(ParmVarDeclBits.IsObjCMethodParam == false);
   setDefaultArg(DefArg);
+}
+
+ParmVarDecl::ParmVarDecl(ASTContext &C, DeclContext *DC, const CXXInjectedParmsInfo &IPI)
+    : VarDecl(ParmVar, C, DC, SourceLocation(), SourceLocation(),
+              DeclarationName(), C.DependentTy, nullptr, SC_None),
+      InjectedParmsInfo(new (C) CXXInjectedParmsInfo(IPI)) {
+  setDefaultArg(nullptr);
 }
 
 ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
@@ -2626,6 +2634,12 @@ ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                                  StorageClass S, Expr *DefArg) {
   return new (C, DC) ParmVarDecl(C, DC, StartLoc, NameLoc, Name, T, TInfo,
                                  S, DefArg);
+}
+
+ParmVarDecl *ParmVarDecl::Create(ASTContext &C,
+                                const CXXInjectedParmsInfo &InjectedParmsInfo) {
+  DeclContext *DC = C.getTranslationUnitDecl();
+  return new (C, DC) ParmVarDecl(C, DC, InjectedParmsInfo);
 }
 
 QualType ParmVarDecl::getOriginalType() const {
@@ -2768,6 +2782,7 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
 
   setConstexprSpecified(false);
   setConsteval(false);
+  setMetaprogram(false);
 }
 
 void FunctionDecl::getNameForDiagnostic(
@@ -2828,6 +2843,22 @@ Stmt *FunctionDecl::getBody(const FunctionDecl *&Definition) const {
     return Definition->Body.get(getASTContext().getExternalSource());
 
   return nullptr;
+}
+
+bool FunctionDecl::doesThisDeclarationHaveAUserDefinedBody() const {
+  if (!doesThisDeclarationHaveABody())
+    return false;
+
+  if (isPure())
+    return false;
+
+  if (isDefaulted())
+    return false;
+
+  if (isDeleted())
+    return false;
+
+  return true;
 }
 
 void FunctionDecl::setBody(Stmt *B) {
@@ -3969,6 +4000,20 @@ SourceRange TagDecl::getSourceRange() const {
 
 TagDecl *TagDecl::getCanonicalDecl() { return getFirstDecl(); }
 
+AccessSpecifier TagDecl::getDefaultAccessSpecifier() const {
+  switch (getTagKind()) {
+  case TTK_Struct:
+  case TTK_Union:
+  case TTK_Enum:
+    return AS_public;
+  case TTK_Class:
+    return AS_private;
+  case TTK_Interface:
+    break;
+  }
+  llvm_unreachable("Invalid tag kind");
+}
+
 void TagDecl::setTypedefNameForAnonDecl(TypedefNameDecl *TDD) {
   TypedefNameDeclOrQualifier = TDD;
   if (const Type *T = getTypeForDecl()) {
@@ -4494,6 +4539,59 @@ void LabelDecl::setMSAsmLabel(StringRef Name) {
   MSAsmName = Buffer;
 }
 
+NamespaceDecl::NamespaceDecl(ASTContext &C, DeclContext *DC, bool Inline,
+                             SourceLocation StartLoc, SourceLocation IdLoc,
+                             IdentifierInfo *Id, NamespaceDecl *PrevDecl)
+    : NamedDecl(Namespace, DC, IdLoc, Id), DeclContext(Namespace),
+      redeclarable_base(C), LocStart(StartLoc),
+      AnonOrFirstNamespaceAndInline(nullptr, Inline) {
+  setPreviousDecl(PrevDecl);
+
+  if (PrevDecl)
+    AnonOrFirstNamespaceAndInline.setPointer(PrevDecl->getOriginalNamespace());
+}
+
+NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
+                                     bool Inline, SourceLocation StartLoc,
+                                     SourceLocation IdLoc, IdentifierInfo *Id,
+                                     NamespaceDecl *PrevDecl) {
+  return new (C, DC) NamespaceDecl(C, DC, Inline, StartLoc, IdLoc, Id,
+                                   PrevDecl);
+}
+
+NamespaceDecl *NamespaceDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) NamespaceDecl(C, nullptr, false, SourceLocation(),
+                                   SourceLocation(), nullptr, nullptr);
+}
+
+NamespaceDecl *NamespaceDecl::getOriginalNamespace() {
+  if (isFirstDecl())
+    return this;
+
+  return AnonOrFirstNamespaceAndInline.getPointer();
+}
+
+const NamespaceDecl *NamespaceDecl::getOriginalNamespace() const {
+  if (isFirstDecl())
+    return this;
+
+  return AnonOrFirstNamespaceAndInline.getPointer();
+}
+
+bool NamespaceDecl::isOriginalNamespace() const { return isFirstDecl(); }
+
+NamespaceDecl *NamespaceDecl::getNextRedeclarationImpl() {
+  return getNextRedeclaration();
+}
+
+NamespaceDecl *NamespaceDecl::getPreviousDeclImpl() {
+  return getPreviousDecl();
+}
+
+NamespaceDecl *NamespaceDecl::getMostRecentDeclImpl() {
+  return getMostRecentDecl();
+}
+
 void ValueDecl::anchor() {}
 
 bool ValueDecl::isWeak() const {
@@ -4575,16 +4673,18 @@ bool CapturedDecl::isNothrow() const { return BodyAndNothrow.getInt(); }
 void CapturedDecl::setNothrow(bool Nothrow) { BodyAndNothrow.setInt(Nothrow); }
 
 EnumConstantDecl *EnumConstantDecl::Create(ASTContext &C, EnumDecl *CD,
-                                           SourceLocation L,
-                                           IdentifierInfo *Id, QualType T,
-                                           Expr *E, const llvm::APSInt &V) {
-  return new (C, CD) EnumConstantDecl(CD, L, Id, T, E, V);
+                                           SourceLocation NameLoc,
+                                           const DeclarationName &Name,
+                                           QualType T, Expr *E,
+                                           const llvm::APSInt &V) {
+  return new (C, CD) EnumConstantDecl(CD, NameLoc, Name, T, E, V);
 }
 
 EnumConstantDecl *
 EnumConstantDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(), nullptr,
-                                      QualType(), nullptr, llvm::APSInt());
+  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(),
+                                      DeclarationName(), QualType(),
+                                      nullptr, llvm::APSInt());
 }
 
 void IndirectFieldDecl::anchor() {}

@@ -1554,16 +1554,28 @@ public:
   static bool classofKind(Kind K) { return K == ImplicitParam; }
 };
 
+/// This is a hack to allow parameters to be injected.
+struct CXXInjectedParmsInfo {
+  SourceLocation ArrowLoc;
+  Expr *Operand;
+
+  CXXInjectedParmsInfo(const SourceLocation &ArrowLoc, Expr *Operand)
+      : ArrowLoc(ArrowLoc), Operand(Operand) { }
+};
+
 /// Represents a parameter to a function.
 class ParmVarDecl : public VarDecl {
 public:
   enum { MaxFunctionScopeDepth = 255 };
   enum { MaxFunctionScopeIndex = 255 };
 
+  const CXXInjectedParmsInfo *InjectedParmsInfo;
 protected:
   ParmVarDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
               SourceLocation NameLoc, const DeclarationName &Name, QualType T,
               TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg);
+
+  ParmVarDecl(ASTContext &C, DeclContext *DC, const CXXInjectedParmsInfo &IPI);
 
 public:
   static ParmVarDecl *Create(ASTContext &C, DeclContext *DC,
@@ -1571,6 +1583,9 @@ public:
                              const DeclarationName &Name,
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, Expr *DefArg);
+
+  static ParmVarDecl *Create(ASTContext &C,
+                             const CXXInjectedParmsInfo& InjectedParmsInfo);
 
   static ParmVarDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
@@ -1766,6 +1781,19 @@ private:
 
   /// Whether this function is 'consteval'.
   bool IsConsteval;
+
+  /// Indicates that the function is a metaprogram (constexpr block). In
+  /// certain contexts, we can have namespace-scoped declarations find local
+  /// variables in a metaprogram. For example:
+  ///
+  ///   constexpr {
+  ///     auto x = ...;
+  ///     -> <<namespace N: typename(x) n; >>;
+  ///   }
+  ///
+  /// The lookup of x should succeed only when x is a local of a constexpr
+  /// declaration and technically, the origin context should be a fragment.
+  unsigned IsMetaprogram : 1;
 
   /// End part of this FunctionDecl's source range.
   ///
@@ -1996,6 +2024,16 @@ public:
   bool doesThisDeclarationHaveABody() const {
     return Body || isLateTemplateParsed();
   }
+
+  /// Returns whether this specific declaration of the function has
+  /// an non-trivial body.
+  bool doesThisDeclarationHaveANonTrivialBody() const {
+    return (Body || isLateTemplateParsed()) && !isTrivial();
+  }
+
+  /// Returns whether this specific declaration has a user provided
+  /// body.
+  bool doesThisDeclarationHaveAUserDefinedBody() const;
 
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }
@@ -2240,6 +2278,10 @@ public:
   /// True if this function will eventually have a body, once it's fully parsed.
   bool willHaveBody() const { return FunctionDeclBits.WillHaveBody; }
   void setWillHaveBody(bool V = true) { FunctionDeclBits.WillHaveBody = V; }
+
+  /// True if this function is a metaprogram.
+  bool isMetaprogram() const { return IsMetaprogram; }
+  void setMetaprogram(bool V = true) { IsMetaprogram = V; }
 
   /// True if this function is considered a multiversioned function.
   bool isMultiVersion() const {
@@ -2808,16 +2850,17 @@ class EnumConstantDecl : public ValueDecl, public Mergeable<EnumConstantDecl> {
   llvm::APSInt Val; // The value.
 
 protected:
-  EnumConstantDecl(DeclContext *DC, SourceLocation L,
-                   IdentifierInfo *Id, QualType T, Expr *E,
+  EnumConstantDecl(DeclContext *DC, SourceLocation NameLoc,
+                   const DeclarationName &Name, QualType T, Expr *E,
                    const llvm::APSInt &V)
-    : ValueDecl(EnumConstant, DC, L, Id, T), Init((Stmt*)E), Val(V) {}
+    : ValueDecl(EnumConstant, DC, NameLoc, Name, T), Init((Stmt*)E), Val(V) {}
 
 public:
   friend class StmtIteratorBase;
 
   static EnumConstantDecl *Create(ASTContext &C, EnumDecl *DC,
-                                  SourceLocation L, IdentifierInfo *Id,
+                                  SourceLocation NameLoc,
+                                  const DeclarationName &Name,
                                   QualType T, Expr *E,
                                   const llvm::APSInt &V);
   static EnumConstantDecl *CreateDeserialized(ASTContext &C, unsigned ID);
@@ -3272,6 +3315,12 @@ public:
   bool isUnion()  const { return getTagKind() == TTK_Union; }
   bool isEnum()   const { return getTagKind() == TTK_Enum; }
 
+  // Returns the default access specifier for the given decl context.
+  // This should be used with the destination decl context, not the
+  // original decl context, as we want to make sure we don't pick up
+  // the default access specifier of the source.
+  AccessSpecifier getDefaultAccessSpecifier() const;
+
   /// Is this tag type named, either directly or via being defined in
   /// a typedef of this type?
   ///
@@ -3446,6 +3495,10 @@ public:
 
   EnumDecl *getDefinition() const {
     return cast_or_null<EnumDecl>(TagDecl::getDefinition());
+  }
+
+  bool hasDefinition() const {
+    return getDefinition();
   }
 
   static EnumDecl *Create(ASTContext &C, DeclContext *DC,

@@ -1029,6 +1029,7 @@ DEF_TRAVERSE_TYPE(FunctionProtoType, {
 })
 
 DEF_TRAVERSE_TYPE(UnresolvedUsingType, {})
+DEF_TRAVERSE_TYPE(CXXRequiredTypeType, {})
 DEF_TRAVERSE_TYPE(TypedefType, {})
 
 DEF_TRAVERSE_TYPE(TypeOfExprType,
@@ -1039,7 +1040,7 @@ DEF_TRAVERSE_TYPE(TypeOfType, { TRY_TO(TraverseType(T->getUnderlyingType())); })
 DEF_TRAVERSE_TYPE(DecltypeType,
                   { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
 
-DEF_TRAVERSE_TYPE(ReflectedType, 
+DEF_TRAVERSE_TYPE(ReflectedType,
                   { TRY_TO(TraverseStmt(T->getReflection())); })
 
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
@@ -1270,6 +1271,7 @@ DEF_TRAVERSE_TYPELOC(FunctionProtoType, {
 })
 
 DEF_TRAVERSE_TYPELOC(UnresolvedUsingType, {})
+DEF_TRAVERSE_TYPELOC(CXXRequiredTypeType, {})
 DEF_TRAVERSE_TYPELOC(TypedefType, {})
 
 DEF_TRAVERSE_TYPELOC(TypeOfExprType,
@@ -1963,6 +1965,26 @@ DEF_TRAVERSE_DECL(BindingDecl, {
 
 DEF_TRAVERSE_DECL(MSPropertyDecl, { TRY_TO(TraverseDeclaratorHelper(D)); })
 
+
+DEF_TRAVERSE_DECL(CXXMetaprogramDecl, {
+  // FIXME: Not sure if we can do anything useful here.
+})
+
+DEF_TRAVERSE_DECL(CXXInjectionDecl, {
+  // FIXME: Not sure if we can do anything useful here.
+})
+
+DEF_TRAVERSE_DECL(CXXFragmentDecl, {
+  TRY_TO(TraverseDecl(D->getContent()));
+})
+
+DEF_TRAVERSE_DECL(CXXStmtFragmentDecl, {
+    TRY_TO(TraverseStmt(D->getBody()));
+})
+
+DEF_TRAVERSE_DECL(CXXRequiredTypeDecl, {})
+DEF_TRAVERSE_DECL(CXXRequiredDeclaratorDecl, {})
+
 DEF_TRAVERSE_DECL(FieldDecl, {
   TRY_TO(TraverseDeclaratorHelper(D));
   if (D->isBitField())
@@ -2239,6 +2261,9 @@ DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
     ShouldVisitChildren = false;
   }
 })
+
+DEF_TRAVERSE_STMT(CXXInjectionStmt, {})
+DEF_TRAVERSE_STMT(CXXBaseInjectionStmt, {})
 
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
@@ -2626,6 +2651,7 @@ DEF_TRAVERSE_STMT(CXXConstantExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectExpr, {})
 DEF_TRAVERSE_STMT(CXXInvalidReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectionReadQueryExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectionWriteQueryExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintLiteralExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectPrintReflectionExpr, {})
 DEF_TRAVERSE_STMT(CXXReflectDumpReflectionExpr, {})
@@ -2635,6 +2661,7 @@ DEF_TRAVERSE_STMT(CXXReflectedIdExpr, {})
 DEF_TRAVERSE_STMT(CXXValueOfExpr, {})
 DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
 DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
+DEF_TRAVERSE_STMT(CXXFragmentExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

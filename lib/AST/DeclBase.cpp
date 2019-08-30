@@ -357,6 +357,10 @@ bool Decl::isInStdNamespace() const {
   return getDeclContext()->isStdNamespace();
 }
 
+bool Decl::isInFragment() const {
+  return getDeclContext()->isFragmentContext();
+}
+
 TranslationUnitDecl *Decl::getTranslationUnitDecl() {
   if (auto *TUD = dyn_cast<TranslationUnitDecl>(this))
     return TUD;
@@ -709,6 +713,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Binding:
     case NonTypeTemplateParm:
     case VarTemplate:
+    case CXXRequiredDeclarator:
       // These (C++-only) declarations are found by redeclaration lookup for
       // tag types, so we include them in the tag namespace.
       return IDNS_Ordinary | IDNS_Tag;
@@ -721,6 +726,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case TypeAlias:
     case TemplateTypeParm:
     case ObjCTypeParam:
+    case CXXRequiredType:
       return IDNS_Ordinary | IDNS_Type;
 
     case UnresolvedUsingTypename:
@@ -800,6 +806,10 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPRequires:
     case OMPCapturedExpr:
     case Empty:
+    case CXXFragment:
+    case CXXMetaprogram:
+    case CXXInjection:
+    case CXXStmtFragment:
       // Never looked up by name.
       return 0;
   }
@@ -1053,9 +1063,18 @@ const BlockDecl *DeclContext::getInnermostBlockDecl() const {
   return nullptr;
 }
 
-bool DeclContext::isInlineNamespace() const {
-  return isNamespace() &&
-         cast<NamespaceDecl>(this)->isInline();
+bool DeclContext::isFragmentContext() const {
+  const DeclContext *DC = this;
+  do {
+    if (DC->isFragment())
+      return true;
+    if (auto *RD = dyn_cast<CXXRecordDecl>(DC)) {
+      if (RD->isPrototypeClass())
+        return true;
+    }
+    DC = DC->getParent();
+  } while (DC);
+  return false;
 }
 
 bool DeclContext::isStdNamespace() const {
@@ -1074,7 +1093,17 @@ bool DeclContext::isStdNamespace() const {
   return II && II->isStr("std");
 }
 
+bool DeclContext::isInlineNamespace() const {
+  return isNamespace() &&
+         cast<NamespaceDecl>(this)->isInline();
+}
+
 bool DeclContext::isDependentContext() const {
+  // We need to check this first, as it can contain
+  // other contexts, that would cause it to not get triggered.
+  if (getParent() && isa<CXXFragmentDecl>(getParent()))
+    return true;
+
   if (isFileContext())
     return false;
 
@@ -1086,6 +1115,9 @@ bool DeclContext::isDependentContext() const {
       return true;
 
     if (Record->isDependentLambda())
+      return true;
+
+    if (Record->isPrototypeClass())
       return true;
   }
 
@@ -1174,6 +1206,8 @@ DeclContext *DeclContext::getPrimaryContext() {
   case Decl::Captured:
   case Decl::OMPDeclareReduction:
   case Decl::OMPDeclareMapper:
+  case Decl::CXXFragment:
+  case Decl::CXXStmtFragment:
     // There is only one DeclContext for these entities.
     return this;
 

@@ -381,6 +381,8 @@ def warn_cxx14_compat_static_assert_no_message : Warning<
   DefaultIgnore, InGroup<CXXPre17Compat>;
 def err_function_definition_not_allowed : Error<
   "function definition is not allowed here">;
+def err_expected_enumerator_identifier : Error<
+  "expected an enumerator identifier">;
 def err_expected_end_of_enumerator : Error<
   "expected '= constant-expression' or end of enumerator definition">;
 def err_expected_coloncolon_after_super : Error<
@@ -882,6 +884,9 @@ def warn_cxx14_compat_constexpr_on_lambda : Warning<
   InGroup<CXXPre17Compat>, DefaultIgnore;
 def ext_constexpr_on_lambda_cxx17 : ExtWarn<
   "'constexpr' on lambda expressions is a C++17 extension">, InGroup<CXX17>;
+
+// C++ code fragments
+def err_expected_fragment : Error<"expected fragment">;
 
 // Availability attribute
 def err_expected_version : Error<
