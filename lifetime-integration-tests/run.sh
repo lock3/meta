@@ -35,9 +35,9 @@ function test_libstdcpp() {
   echo "Testing libstdc++ $1.$2.$3"
   shift; shift; shift;
   echo "  with $@"
-  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include || {
+  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include -I/usr/include/x86_64-linux-gnu/ || {
     FAILED=1
-    echo $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include
+    echo $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include -I/usr/include/x86_64-linux-gnu/
   }
 }
 
@@ -64,8 +64,9 @@ function test_libcpp() {
   echo "Testing libc++ $1.$2.$3"
   shift; shift; shift;
   echo "  with $@"
-  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include || {
+  $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include -I/usr/include/x86_64-linux-gnu/ || {
     FAILED=1
+    echo $CLANG -std=c++17 $FLAGS "$@" -nostdlibinc -I$INSTALL_DIR -I/usr/include -I/usr/include/x86_64-linux-gnu/
   }
 }
 
@@ -82,6 +83,7 @@ function test_msvc() {
   echo "  with $@"
   $CLANG-cl /std:c++latest $FLAGS "$@" -imsvc $INSTALL_DIR/include/ -imsvc ucrt || {
     FAILED=1
+    echo $CLANG-cl /std:c++latest $FLAGS "$@" -imsvc $INSTALL_DIR/include/ -imsvc ucrt
   }
 }
 
