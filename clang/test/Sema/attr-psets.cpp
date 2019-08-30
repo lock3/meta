@@ -289,6 +289,10 @@ void forbidden() {
 
 void array() {
   int a[4];
+
+  int (&ra)[4] = a; // pset(ra) = {a}
+  __lifetime_pset_ref(ra); // expected-warning {{(a)}}
+
   int *p1 = &a[0];
   __lifetime_pset(p1); // expected-warning {{(*a)}}
 
