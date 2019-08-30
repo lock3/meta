@@ -37,7 +37,7 @@ namespace clang {
 
     // Functions
     query_is_function,
-    query_is_noexcept,
+    query_is_nothrow,
     // query_has_ellipsis,
 
     // Classes
@@ -623,14 +623,22 @@ static bool isFunction(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
-/// Returns true if R designates a function
-/// with the noexcept exception specifier.
-static bool isNoexcept(const Reflection &R, APValue &Result) {
-  if (const Decl *D = getReachableDecl(R))
-    if(isa<FunctionDecl>(D))
-      if (const FunctionProtoType *Proto =
-          cast<FunctionDecl>(D)->getType()->getAs<FunctionProtoType>())
-        return SuccessBool(R, Result, Proto->hasNoexceptExceptionSpec());
+static bool isNothrow(const Reflection &R, const QualType T, APValue &Result) {
+  if (const FunctionProtoType *Proto = T->getAs<FunctionProtoType>())
+    return SuccessBool(R, Result, Proto->hasNoexceptExceptionSpec());
+  return SuccessFalse(R, Result);
+}
+
+/// Returns true if R designates a function which does not throw.
+static bool isNothrow(const Reflection &R, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+      return isNothrow(R, FD->getType(), Result);
+  }
+
+  if (MaybeType T = getCanonicalType(R))
+    return isNothrow(R, T, Result);
+
   return SuccessFalse(R, Result);
 }
 
@@ -1863,8 +1871,8 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
   // Functions
   case query_is_function:
     return isFunction(makeReflection(*this, Args[1]), Result);
-  case query_is_noexcept:
-    return isNoexcept(makeReflection(*this, Args[1]), Result);
+  case query_is_nothrow:
+    return isNothrow(makeReflection(*this, Args[1]), Result);
 
   // Classes
   case query_is_class:
