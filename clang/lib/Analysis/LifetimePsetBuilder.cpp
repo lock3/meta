@@ -121,7 +121,7 @@ public:
   static bool mustSetPset(const Expr *E) { return hasPSet(E) || E->isLValue(); }
 
   PSet varRefersTo(Variable V, SourceRange Range) {
-    if (V.getType()->isLValueReferenceType()) {
+    if (V.getType()->isReferenceType()) {
       auto P = getPSet(V);
       if (CheckPSetValidity(P, Range))
         return P;

@@ -235,6 +235,10 @@ void ref_exprs() {
   __lifetime_pset(it); // expected-warning {{pset(it) = (*(lifetime-extended temporary through v))}}
 }
 
+void rvalue_ref(int &&rref1) {
+  __lifetime_pset_ref(rref1); // expected-warning {{pset(rref1) = (*rref1)}}
+}
+
 void addr_and_dref() {
   int i;
   int *p = &i;
@@ -1485,9 +1489,12 @@ class h {
 };
 
 class j {
-  // TODO: are these false positives?
-  j(h &&k) { b(k); } // expected-warning {{returning a dangling pointer}}
-                     // expected-note@-1 {{it was never initialized here}}
+  // k is an output paramter (because h is a Pointer)
+  j(h &&k) { // expected-note 2 {{it was never initialized here}}
+     __lifetime_pset_ref(k); // expected-warning {{pset(k) = (*k)}}
+    b(k); // expected-warning {{passing a dangling pointer as argument}}
+    return;  // expected-warning {{returning a dangling pointer as output value '*k'}}
+  }
 };
 } // namespace creduce13
 
