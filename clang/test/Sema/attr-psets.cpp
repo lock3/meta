@@ -129,7 +129,7 @@ struct S {
     __lifetime_pset(ps); // expected-warning {{pset(ps) = ((static))}}
     int *ps2 = &this->s;
     __lifetime_pset(ps2); // expected-warning {{pset(ps2) = ((static))}}
-    __lifetime_pset(mp);  // expected-warning {{pset(mp) = ((static))}}
+    __lifetime_pset(mp);  // expected-warning {{pset(mp) = (*(*this).mp)}}
   }
   int *get();
   bool operator==(S s) {
@@ -1243,6 +1243,19 @@ void treatForwardingRefAsLifetimeConst() {
   std::unique_ptr<int *> up = std::make_unique<int *>(p);
   __lifetime_pset(p); // expected-warning {{(x)}}
 }
+
+namespace PointerMembers {
+class C {
+  C();
+  int *p;
+  int &r;
+  void f() {
+    __lifetime_pset_ref(p); // expected-warning {{(*this).p}}
+    __lifetime_pset(p); // expected-warning {{(*(*this).p)}}
+    __lifetime_pset_ref(r); // expected-warning {{(*(*this).r)}}
+  }
+};
+} // namespace PointerMembers
 
 namespace CXXScalarValueInitExpr {
 template <typename a>

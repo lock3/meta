@@ -176,6 +176,35 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
   return IsReachable;
 }
 
+/// Initialize psets for all members of *this that are Owner or Pointers.
+/// Assume that all Pointers are valid.
+void createEntryPsetsForMembers(const CXXMethodDecl *Method, PSetsMap &PMap) {
+
+  const CXXRecordDecl *RD = Method->getParent();
+  auto CallBack = [&PMap, RD](const CXXRecordDecl *Base) {
+    for (const FieldDecl *Field : Base->fields()) {
+      switch (classifyTypeCategory(Field->getType())) {
+      case TypeCategory::Pointer:
+      case TypeCategory::Owner: {
+        // Each Owner/Pointer points to deref of itself.
+        Variable V = Variable::thisPointer(RD).deref();
+        V.addFieldRef(Field);
+        Variable DerefV = V;
+        DerefV.deref();
+        PMap[V] = PSet::singleton(DerefV);
+        break;
+      }
+      default:
+        break;
+      }
+    }
+    return true;
+  };
+
+  CallBack(RD);
+  RD->forallBases(CallBack);
+}
+
 /// Traverse all blocks of the CFG.
 /// The traversal is repeated until the psets come to a steady state.
 void LifetimeContext::TraverseBlocks() {
@@ -197,6 +226,9 @@ void LifetimeContext::TraverseBlocks() {
         // ExitPSets are the function parameters.
         getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, IsConvertible,
                              Reporter);
+        if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
+          createEntryPsetsForMembers(Method, BC.ExitPMap);
+
         BC.Visited = true;
         continue;
       }

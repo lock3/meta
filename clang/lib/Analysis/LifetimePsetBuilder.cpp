@@ -186,6 +186,12 @@ public:
     if (auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl())) {
       PSet Ret = BaseRefersTo;
       Ret.addFieldRef(FD);
+      if (FD->getType()->isReferenceType()) {
+        // The field has reference type, apply the deref.
+        Ret = derefPSet(Ret);
+        if (!CheckPSetValidity(Ret, ME->getSourceRange()))
+          Ret = {};
+      }
       setPSet(ME, Ret);
     } else if (isa<VarDecl>(ME->getMemberDecl())) {
       // A static data member of this class
