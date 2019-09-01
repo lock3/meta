@@ -301,7 +301,7 @@ void array() {
   __lifetime_pset(p1); // expected-warning {{(*a)}}
 
   int *p2 = a;
-  __lifetime_pset(p2); // expected-warning {{(a)}}
+  __lifetime_pset(p2); // expected-warning {{(*a)}}
 
   auto p3 = &a;
   __lifetime_pset(p3); // expected-warning {{(a)}}
@@ -1251,6 +1251,14 @@ void fieldOnUpCast() {
   };
   Base b;
   static_cast<Derived *>(&b)->m = 0;
+}
+
+void arrayToPointerDecay() {
+  struct {
+    int c;
+  } e[1];
+  int &r = (*e).c;
+  __lifetime_pset_ref(r); // expected-warning {{(*e).c}}
 }
 
 namespace PointerMembers {

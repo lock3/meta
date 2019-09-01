@@ -209,7 +209,7 @@ public:
       return;
     }
 
-    setPSet(E, derefPSet(getPSet(E->getBase())));
+    setPSet(E, getPSet(E->getBase()));
   }
 
   void VisitCXXThisExpr(const CXXThisExpr *E) {
@@ -298,8 +298,9 @@ public:
       return;
     case CK_ArrayToPointerDecay:
       // Decaying an array into a pointer is like taking the address of the
-      // first array member. The result is a pointer to the array.
-      setPSet(E, getPSet(E->getSubExpr()));
+      // first array member. The result is a pointer to the array elements,
+      // which are '*array'.
+      setPSet(E, derefPSet(getPSet(E->getSubExpr())));
       return;
     case CK_NullToPointer:
       setPSet(E, PSet::null(NullReason::nullptrConstant(E->getSourceRange())));
