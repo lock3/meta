@@ -1244,6 +1244,15 @@ void treatForwardingRefAsLifetimeConst() {
   __lifetime_pset(p); // expected-warning {{(x)}}
 }
 
+void fieldOnUpCast() {
+  struct Base {};
+  struct Derived : public Base {
+    int m;
+  };
+  Base b;
+  static_cast<Derived *>(&b)->m = 0;
+}
+
 namespace PointerMembers {
 class C {
   C();

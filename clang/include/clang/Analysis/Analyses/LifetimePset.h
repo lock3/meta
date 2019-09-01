@@ -92,8 +92,12 @@ struct Variable : public ContractVariable {
     assert(!QT.isNull());
     const CXXRecordDecl *RD = QT->getAsCXXRecordDecl();
     assert(RD);
+
+    // Either the fields is a field of this class, or of a base class
+    // or of a derived class (in case of static up-cast).
     assert(FD->getParent() == RD ||
-           RD->isDerivedFrom(dyn_cast<CXXRecordDecl>(FD->getParent())));
+           RD->isDerivedFrom(dyn_cast<CXXRecordDecl>(FD->getParent())) ||
+           dyn_cast<CXXRecordDecl>(FD->getParent())->isDerivedFrom(RD));
 #endif
     FDs.push_back(FD);
   }
