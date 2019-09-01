@@ -850,7 +850,8 @@ def ThreadSafetyBeta : DiagGroup<"thread-safety-beta">;
 def Consumed       : DiagGroup<"consumed">;
 
 def LifetimeNull     : DiagGroup<"lifetime-null">;
-def LifetimeDisabled     : DiagGroup<"lifetime-disabled">;
+def LifetimeDisabled : DiagGroup<"lifetime-disabled">;
+def LifetimeGlobal   : DiagGroup<"lifetime-global">;
 def LifetimeAnalysis : DiagGroup<"lifetime", [LifetimeNull]>;
 def LifetimeDebug    : DiagGroup<"lifetime-debug">;
 def LifetimeCategory : DiagGroup<"suggest-lifetime-category">;

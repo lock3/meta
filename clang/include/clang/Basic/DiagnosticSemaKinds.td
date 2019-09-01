@@ -3203,7 +3203,7 @@ def warn_param_typestate_mismatch : Warning<
 
 // LifetimeAnalysis
 def warn_pset_of_global : Warning<"the pset of '%0' must be a subset of {(static), (null)}, but is {%1}">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
+  InGroup<LifetimeGlobal>, DefaultIgnore;
 def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null pointer">,
   InGroup<LifetimeNull>, DefaultIgnore;
 def warn_assign_nullptr : Warning<"assigning a%select{| possibly}0 null pointer to a non-null object">,
