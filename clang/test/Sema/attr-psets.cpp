@@ -1067,6 +1067,14 @@ void kill_materialized_temporary() {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((invalid))}}
 }
 
+void delete_pointee(int *p) {
+  int *q = p;
+  __lifetime_pset(q); // expected-warning {{((null), *p)}}
+  delete q;
+  __lifetime_pset(q); // expected-warning {{((invalid))}}
+  __lifetime_pset(p); // expected-warning {{((invalid))}}
+}
+
 int throw_local() {
   int i;
   // TODO: better error message
