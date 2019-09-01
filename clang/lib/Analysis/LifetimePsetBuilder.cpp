@@ -991,6 +991,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
     Reporter.warnPsetOfGlobal(Range, SourceText, RHS.str());
   }
 
+  DBG("PMap[" << LHS.str() << "] = " << RHS.str() << "\n");
   if (LHS.isSingleton()) {
     Variable Var = *LHS.vars().begin();
     auto I = PMap.find(Var);
