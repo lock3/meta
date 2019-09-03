@@ -19,7 +19,7 @@ enum reflection_query {
   query_is_variable,
   query_has_static_storage,
   query_has_thread_local_storage,
-  query_has_automatic_local_storage,
+  query_has_automatic_storage,
 
   // Functions
   query_is_function,
