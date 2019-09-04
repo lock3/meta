@@ -21,8 +21,13 @@ consteval bool is_invalid(meta::info reflection) {
   return __reflect(query_is_invalid, reflection);
 }
 
+namespace class_helper {
+  class clazz_a {};
+  class clazz_b {};
+}
+
 namespace class_mem {
-  class clazz {
+  class clazz : public class_helper::clazz_a, class_helper::clazz_b {
     int a = 0;
     void b() {
     }
@@ -49,6 +54,16 @@ consteval void member_range_test() {
     constexpr meta::info end = __reflect(query_get_next_member, fourth_member_refl);
     static_assert(is_invalid(end));
   }
+  {
+    constexpr meta::info first_base_refl = __reflect(query_get_begin_base_spec, class_refl);
+    static_assert(string_eq(name_of(first_base_refl), "clazz_a"));
+
+    constexpr meta::info second_base_refl = __reflect(query_get_next_base_spec, first_base_refl);
+    static_assert(string_eq(name_of(second_base_refl), "clazz_b"));
+
+    constexpr meta::info end = __reflect(query_get_next_base_spec, second_base_refl);
+    static_assert(is_invalid(end));
+  }
 
   // Legacy
   {
@@ -71,7 +86,7 @@ consteval void member_range_test() {
 
 namespace templ_class_mem {
   template<typename templ_param_a, typename templ_param_b>
-  class clazz {
+  class clazz : public class_helper::clazz_a, class_helper::clazz_b {
     int a = 0;
     void b() {
     }
@@ -98,6 +113,16 @@ consteval void templ_member_range_test() {
     static_assert(string_eq(name_of(second_templ_param_refl), "templ_param_b"));
 
     constexpr meta::info end = __reflect(query_get_next_template_param, second_templ_param_refl);
+    static_assert(is_invalid(end));
+  }
+  {
+    constexpr meta::info first_base_refl = __reflect(query_get_begin_base_spec, templ_class_refl);
+    static_assert(string_eq(name_of(first_base_refl), "clazz_a"));
+
+    constexpr meta::info second_base_refl = __reflect(query_get_next_base_spec, first_base_refl);
+    static_assert(string_eq(name_of(second_base_refl), "clazz_b"));
+
+    constexpr meta::info end = __reflect(query_get_next_base_spec, second_base_refl);
     static_assert(is_invalid(end));
   }
 

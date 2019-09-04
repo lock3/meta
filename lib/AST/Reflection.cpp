@@ -235,6 +235,8 @@ namespace clang {
     query_get_next_param,
     query_get_begin_member,
     query_get_next_member,
+    query_get_begin_base_spec,
+    query_get_next_base_spec,
 
     // Type transformations
     query_remove_const,
@@ -422,20 +424,26 @@ static bool ErrorUnimplemented(const Reflection &R) {
   });
 }
 
+/// Returns the TypeDecl for a qualified type, if any.
+static const TypeDecl *getAsTypeAliasDecl(QualType QT) {
+  const Type *T = QT.getTypePtr();
+
+  if (const ElaboratedType *ET = dyn_cast<ElaboratedType>(T))
+    T = &(*ET->desugar());
+
+  if (const TypedefType *TDT = dyn_cast<TypedefType>(T))
+    return TDT->getDecl();
+
+  if (const TagDecl *TD = T->getAsTagDecl())
+    return TD;
+
+  return nullptr;
+}
+
 /// Returns the TypeDecl for a reflected Type, if any.
 static const TypeDecl *getAsTypeAliasDecl(const Reflection &R) {
-  if (R.isType()) {
-    const Type *T = &(*getQualType(R));
-
-    if (const ElaboratedType *ET = dyn_cast<ElaboratedType>(T))
-      T = &(*ET->desugar());
-
-    if (const TypedefType *TDT = dyn_cast<TypedefType>(T))
-      return TDT->getDecl();
-
-    if (const TagDecl *TD = T->getAsTagDecl())
-      return TD;
-  }
+  if (R.isType())
+    return getAsTypeAliasDecl(getQualType(R));
   return nullptr;
 }
 
@@ -457,6 +465,8 @@ static const Decl *getReachableAliasDecl(const Reflection &R) {
     return R.getAsDeclaration();
   if (R.isExpression())
     return getEntityDecl(R.getAsExpression());
+  if (R.isBase())
+    return getAsTypeAliasDecl(R.getAsBase()->getType());
   return nullptr;
 }
 
@@ -558,12 +568,23 @@ static bool isEntity(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+// Returns a named declaration which is not required to
+// be the canonical declaration of the named entity.
+//
+// If there is no named reachable named declaration, returns null.
+static const NamedDecl *getReachableNamedAliasDecl(const Reflection &R) {
+  if (const Decl *D = getReachableAliasDecl(R))
+    return dyn_cast<NamedDecl>(D);
+
+  return nullptr;
+}
+
 /// Returns true if R is named.
 static bool isNamed(const Reflection &R, APValue &Result) {
   if (R.isType())
     return SuccessTrue(R, Result);
 
-  if (const NamedDecl *ND = dyn_cast<NamedDecl>(getReachableDecl(R)))
+  if (const NamedDecl *ND = getReachableNamedAliasDecl(R))
     return SuccessBool(R, Result, ND->getIdentifier() != nullptr);
 
   return SuccessFalse(R, Result);
@@ -2246,6 +2267,18 @@ static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
   return true;
 }
 
+/// Set Result to a reflection of B, at the given offset,
+/// for a parent reflection P.
+static bool makeReflection(const CXXBaseSpecifier *B, unsigned Offset,
+                           const APValue &P, APValue &Result) {
+  if (B) {
+    Result = APValue(RK_base_specifier, B, Offset, P);
+    return true;
+  }
+
+  return makeReflection(Result);
+}
+
 static bool getType(const Reflection &R, APValue &Result) {
   if (R.isType())
     return makeReflection(R.getAsType(), Result);
@@ -2357,7 +2390,8 @@ static const ParmVarDecl *getFirstFunctionParameter(const FunctionDecl *FD) {
   return nullptr;
 }
 
-static const QualType getFunctionParameter(const FunctionType *FT, unsigned Index) {
+static const QualType
+getFunctionParameter(const FunctionType *FT, unsigned Index) {
   if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FT)) {
     if (Index < FPT->getNumParams())
       return *(FPT->param_type_begin() + Index);
@@ -2366,7 +2400,8 @@ static const QualType getFunctionParameter(const FunctionType *FT, unsigned Inde
   return QualType();
 }
 
-static bool getFunctionParameter(const Reflection &R, unsigned Index, APValue &Result) {
+static bool
+getFunctionParameter(const Reflection &R, unsigned Index, APValue &Result) {
   if (MaybeType T = getCanonicalType(R)) {
     if (const FunctionType *FT = dyn_cast<FunctionType>(T.getTypePtr())) {
       APValue ParentRefl;
@@ -2541,6 +2576,50 @@ static bool getNextMember(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
+static const CXXBaseSpecifier *
+getBaseSpecifier(const CXXRecordDecl *RD, unsigned Index) {
+  if (Index < RD->getNumBases())
+    return (RD->bases_begin() + Index);
+
+  return nullptr;
+}
+
+static bool
+getBaseSpecifier(const Reflection &R, unsigned Index, APValue &Result) {
+  if (const Decl *D = getReachableDecl(R)) {
+    if (const ClassTemplateDecl *CTD = dyn_cast<ClassTemplateDecl>(D))
+      D = CTD->getTemplatedDecl();
+
+    if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
+      APValue ParentRefl;
+      if (!makeReflection(D, ParentRefl))
+        llvm_unreachable("function type reflection creation failed");
+
+      const CXXBaseSpecifier *Base = getBaseSpecifier(RD, Index);
+      return makeReflection(Base, Index + 1, ParentRefl, Result);
+    }
+  }
+
+  return Error(R);
+}
+
+// Returns the first base specifier of a class.
+static bool getBeginBaseSpec(const Reflection &R, APValue &Result) {
+  return getBaseSpecifier(R, 0, Result);
+}
+
+// Returns the next member in a class.
+static bool getNextBaseSpec(const Reflection &R, APValue &Result) {
+  if (R.isBase() && R.hasParent()) {
+    Reflection Parent = R.getParent();
+
+    // Note the offset stored is starts at 1, the offset used starts at 0
+    // so no addition is required here.
+    return getBaseSpecifier(Parent, R.getOffsetInParent(), Result);
+  }
+
+  return Error(R);
+}
 
 // [meta.trans.cv]p1:
 // The member typedef type names the same type as T except that any top-level
@@ -2879,6 +2958,10 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
     return getBeginMember(*this, Result);
   case query_get_next_member:
     return getNextMember(*this, Result);
+  case query_get_begin_base_spec:
+    return getBeginBaseSpec(*this, Result);
+  case query_get_next_base_spec:
+    return getNextBaseSpec(*this, Result);
 
   // Type transformation
   case query_remove_const:
@@ -2934,7 +3017,7 @@ MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
                                   /*BasePath=*/nullptr, VK_RValue);
 }
 
-bool getName(const Reflection R, APValue &Result) {
+static bool getName(const Reflection R, APValue &Result) {
   ASTContext &Ctx = R.getContext();
 
   if (R.isType()) {
@@ -2954,7 +3037,7 @@ bool getName(const Reflection R, APValue &Result) {
     return true;
   }
 
-  if (const NamedDecl *ND = dyn_cast<NamedDecl>(getReachableAliasDecl(R))) {
+  if (const NamedDecl *ND = getReachableNamedAliasDecl(R)) {
     if (IdentifierInfo *II = ND->getIdentifier()) {
       // Get the identifier of the declaration.
       Expr *Str = MakeConstCharPointer(Ctx, II->getName(),
