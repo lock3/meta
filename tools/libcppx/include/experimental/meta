@@ -243,6 +243,8 @@ enum reflection_query : unsigned {
   query_get_next_param,
   query_get_begin_member,
   query_get_next_member,
+  query_get_begin_base_spec,
+  query_get_next_base_spec,
 
   // Type transformations
   query_remove_const,
@@ -3064,6 +3066,17 @@ constexpr info next_template_param(info reflection) {
   return __reflect(detail::query_get_next_template_param, reflection);
 }
 
+// Returns the first base specifier of the reflected entity.
+constexpr info front_base_spec(info reflection) {
+  return __reflect(detail::query_get_begin_base_spec, reflection);
+}
+
+// Returns the next base specifier in the sequence of base
+// specifiers of which the reflected entity is a member of.
+constexpr info next_base_spec(info reflection) {
+  return __reflect(detail::query_get_next_base_spec, reflection);
+}
+
 // Deprecated in favor of more specific iterator classes.
 class [[deprecated]] iterator {
   meta::info m_info;
@@ -3137,6 +3150,9 @@ using param_range = detail::range<param_iterator>;
 
 using template_param_iterator = detail::iterator<front_template_param, next_template_param>;
 using template_param_range = detail::range<template_param_iterator>;
+
+using base_spec_iterator = detail::iterator<front_base_spec, next_base_spec>;
+using base_spec_range = detail::range<base_spec_iterator>;
 
 // Ranges
 

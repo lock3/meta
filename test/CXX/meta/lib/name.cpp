@@ -56,14 +56,28 @@ namespace container {
 
   template<typename T>
   using alias_templ_name = base_templ_name<T>;
+
+  class child_class : base_templ_name<int> {
+  };
 }
 
 constexpr meta::info base_templ_refl = __reflect(query_get_begin_member, reflexpr(container));
 
-static_assert(is_named(reflexpr(base_templ_refl)));
+static_assert(is_named(base_templ_refl));
 static_assert(string_eq(name_of(base_templ_refl), "base_templ_name"));
 
 constexpr meta::info alias_templ_refl = __reflect(query_get_next_member, base_templ_refl);
 
-static_assert(is_named(reflexpr(alias_templ_refl)));
+static_assert(is_named(alias_templ_refl));
 static_assert(string_eq(name_of(alias_templ_refl), "alias_templ_name"));
+
+constexpr meta::info child_class_refl = __reflect(query_get_next_member, alias_templ_refl);
+
+static_assert(is_named(child_class_refl));
+static_assert(string_eq(name_of(child_class_refl), "child_class"));
+
+constexpr meta::info parent_base_refl = __reflect(query_get_begin_base_spec, child_class_refl);
+
+static_assert(is_named(parent_base_refl));
+static_assert(string_eq(name_of(parent_base_refl), "base_templ_name"));
+
