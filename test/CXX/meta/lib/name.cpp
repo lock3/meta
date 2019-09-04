@@ -60,10 +60,10 @@ namespace container {
 
 constexpr meta::info base_templ_refl = __reflect(query_get_begin_member, reflexpr(container));
 
-static_assert(is_named(reflexpr(base_templ_refl)));
+static_assert(is_named(base_templ_refl));
 static_assert(string_eq(name_of(base_templ_refl), "base_templ_name"));
 
 constexpr meta::info alias_templ_refl = __reflect(query_get_next_member, base_templ_refl);
 
-static_assert(is_named(reflexpr(alias_templ_refl)));
+static_assert(is_named(alias_templ_refl));
 static_assert(string_eq(name_of(alias_templ_refl), "alias_templ_name"));
