@@ -26,7 +26,15 @@ struct unique_ptr {
 };
 
 template <typename T>
-struct optional {};
+struct optional {
+  typedef int value_type;
+  const T *operator->() const;
+  T *operator->();
+  const T &operator*() const &;
+  T &operator*() &;
+  const T &&operator*() const &&;
+  T &&operator*() &&;
+};
 
 template <typename T>
 struct vector {
@@ -144,7 +152,7 @@ void owner() {
   __lifetime_type_category<decltype(std::stack<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::queue<int>())>();          // expected-warning {{Owner}}
   __lifetime_type_category<decltype(std::priority_queue<int>())>(); // expected-warning {{Owner}}
-  __lifetime_type_category<decltype(std::optional<int>())>();       // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(std::optional<int>())>();       // expected-warning {{Owner with pointee int}}
   __lifetime_type_category<decltype(std::array<int>())>();       // expected-warning {{Owner}}
   using IntVector = std::vector<int>;
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}

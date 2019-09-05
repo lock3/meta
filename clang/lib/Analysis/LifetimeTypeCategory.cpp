@@ -327,6 +327,13 @@ bool isNullableType(QualType QT) {
 static QualType getPointeeType(const CXXRecordDecl *R) {
   assert(R);
 
+  for (auto D : R->decls()) {
+    if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
+      if (TypeDef->getName() == "value_type")
+        return TypeDef->getUnderlyingType().getCanonicalType();
+    }
+  }
+
   // TODO operator* might be defined as a free function.
   std::pair<OverloadedOperatorKind, int> Ops[] = {
       {OO_Star, 0}, {OO_Arrow, 0}, {OO_Subscript, -1}};
@@ -337,13 +344,6 @@ static QualType getPointeeType(const CXXRecordDecl *R) {
       if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
         PointeeType = PointeeType->getPointeeType();
       return PointeeType.getCanonicalType();
-    }
-  }
-
-  for (auto D : R->decls()) {
-    if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
-      if (TypeDef->getName() == "value_type")
-        return TypeDef->getUnderlyingType().getCanonicalType();
     }
   }
 
