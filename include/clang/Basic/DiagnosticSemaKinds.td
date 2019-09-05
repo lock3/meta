@@ -2483,8 +2483,10 @@ def err_immediate_redecl_mismatch : Error<
   "%select{non-consteval declaration of %0 follows consteval declaration"
   "|consteval declaration of %0 follows non-consteval declaration}1">;
 def err_invalid_immediate : Error<
-  "%select{function parameter|function pointer}0 "
-  "cannot be consteval">;
+  "function parameter cannot be consteval">;
+def err_invalid_immeidate_fp_conversion : Error<
+  "immediate functions can only be converted to function pointers inside "
+  "of an immediate function context or, as part of an immediate invocation">;
 
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<

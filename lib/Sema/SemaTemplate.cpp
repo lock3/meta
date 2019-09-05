@@ -1803,7 +1803,8 @@ struct ConvertConstructorToDeductionGuideTransform {
       return nullptr;
     TypeSourceInfo *NewTInfo = TLB.getTypeSourceInfo(SemaRef.Context, NewType);
 
-    return buildDeductionGuide(TemplateParams, CD->isExplicit(), NewTInfo,
+    return buildDeductionGuide(TemplateParams, CD->isExplicit(),
+                               CD->isConsteval(), NewTInfo,
                                CD->getBeginLoc(), CD->getLocation(),
                                CD->getEndLoc());
   }
@@ -1834,8 +1835,8 @@ struct ConvertConstructorToDeductionGuideTransform {
       Params.push_back(NewParam);
     }
 
-    return buildDeductionGuide(Template->getTemplateParameters(), false, TSI,
-                               Loc, Loc, Loc);
+    return buildDeductionGuide(Template->getTemplateParameters(), false, false,
+                               TSI, Loc, Loc, Loc);
   }
 
 private:
@@ -1985,7 +1986,8 @@ private:
   }
 
   NamedDecl *buildDeductionGuide(TemplateParameterList *TemplateParams,
-                                 bool Explicit, TypeSourceInfo *TInfo,
+                                 bool Explicit, bool Consteval,
+                                 TypeSourceInfo *TInfo,
                                  SourceLocation LocStart, SourceLocation Loc,
                                  SourceLocation LocEnd) {
     DeclarationNameInfo Name(DeductionGuideName, Loc);
@@ -1998,6 +2000,7 @@ private:
                                       Name, TInfo->getType(), TInfo, LocEnd);
     Guide->setImplicit();
     Guide->setParams(Params);
+    Guide->setConsteval(Consteval);
 
     for (auto *Param : Params)
       Param->setDeclContext(Guide);

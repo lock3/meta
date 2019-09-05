@@ -8026,15 +8026,7 @@ Sema::FinishCallExpr(Expr *E)
     return MaybeBindToTemporary(E);
 
   // Actually evaluate the immediate function.
-  if (CXXMemberCallExpr *MemCall = dyn_cast<CXXMemberCallExpr>(E)) {
-    CXXMethodDecl *Method = MemCall->getMethodDecl();
-    if (Method && Method->isConsteval()) {
-      ExprResult Value = BuildImmediateInvocation(MemCall);
-      if (Value.isInvalid())
-        return ExprError();
-      E = Value.get();
-    }
-  } else if (CallExpr *Call = dyn_cast<CallExpr>(E)) {
+  if (CallExpr *Call = dyn_cast<CallExpr>(E)) {
     if (FunctionDecl *Callee = Call->getDirectCallee()) {
       if (Callee && Callee->isConsteval()) {
         ExprResult Value = BuildImmediateInvocation(Call);
