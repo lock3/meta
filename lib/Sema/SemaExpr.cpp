@@ -5130,6 +5130,39 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   return false;
 }
 
+namespace {
+  class ImmediateCallVerifier : public StmtVisitor<ImmediateCallVerifier> {
+    Sema &SemaRef;
+
+    bool referencesImmediateFunction(Expr *E) {
+      if (auto *DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenCasts()))
+        if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl()))
+          return FD->isConsteval();
+
+      return false;
+    }
+
+  public:
+    ImmediateCallVerifier(Sema &S) : SemaRef(S) { }
+
+    void VisitUnaryAddrOf(UnaryOperator *E) {
+      Expr *SubExpr = E->getSubExpr();
+
+      if (referencesImmediateFunction(SubExpr)) {
+        if (!SemaRef.isImmediateAddressable())
+          SemaRef.Diag(E->getOperatorLoc(), diag::err_invalid_immeidate_fp_conversion);
+        return;
+      }
+
+      Visit(SubExpr);
+    }
+
+    static void VerifyArgument(Sema &S, Expr *E) {
+      ImmediateCallVerifier(S).Visit(E);
+    }
+  };
+}
+
 bool Sema::GatherArgumentsForCall(SourceLocation CallLoc, FunctionDecl *FDecl,
                                   const FunctionProtoType *Proto,
                                   unsigned FirstParam, ArrayRef<Expr *> Args,
@@ -5176,6 +5209,15 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc, FunctionDecl *FDecl,
       // Remember that parameter belongs to a CF audited API.
       if (CFAudited)
         Entity.setParameterCFAudited();
+
+      // We need to verify the use of any immediate function pointer
+      // is inside of an immediate invocation, or immediate function context.
+      //
+      // We have to do this here, as we do not know while parsing, if we're
+      // in an immediate function call, so we optimistically allow
+      // the address of immediate functions to be taken while parsing
+      // any postfix-expressions that look like they might be call expressions.
+      ImmediateCallVerifier::VerifyArgument(*this, Arg);
 
       ExprResult ArgE = PerformCopyInitialization(
           Entity, SourceLocation(), Arg, IsListInitialization, AllowExplicit);
@@ -5645,6 +5687,7 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
       if (Expr::hasAnyTypeDependentArguments(ArgExprs))
         return CallExpr::Create(Context, Fn, ArgExprs, Context.DependentTy,
                                 VK_RValue, RParenLoc);
+
       OverloadExpr *ovl = find.Expression;
       if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(ovl))
         return BuildOverloadedCallExpr(
@@ -5751,6 +5794,8 @@ ExprResult Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
                                        ArrayRef<Expr *> Args,
                                        SourceLocation RParenLoc, Expr *Config,
                                        bool IsExecConfig, ADLCallKind UsesADL) {
+  Sema::ImmediateInvocationRAII InvocationRAII(*this, Fn);
+
   FunctionDecl *FDecl = dyn_cast_or_null<FunctionDecl>(NDecl);
   unsigned BuiltinID = (FDecl ? FDecl->getBuiltinID() : 0);
 

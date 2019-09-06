@@ -8930,6 +8930,8 @@ private:
 
   ReflectionCallbackImpl ReflectionCallbackObj;
 
+  bool ParsingOverloads = false;
+  bool ImmediateInvocation = false;
 public:
   EnumConstantDecl *LastEnumConstDecl = nullptr;
 
@@ -8940,6 +8942,60 @@ public:
   bool isReflecting() const {
     return ReflectionScope;
   }
+
+  bool isParsingOverloads() const {
+    return ParsingOverloads;
+  }
+
+  class OverloadParseRAII {
+    Sema &S;
+    bool PreviouslyParsingOverloads;
+  public:
+    OverloadParseRAII(Sema &S)
+      : S(S), PreviouslyParsingOverloads(S.ParsingOverloads) {
+      S.ParsingOverloads = true;
+    }
+    ~OverloadParseRAII() {
+      S.ParsingOverloads = PreviouslyParsingOverloads;
+    }
+  };
+
+  bool isImmediateInvocation() const {
+    return ImmediateInvocation;
+  }
+
+  bool isInImmediateFunctionContext() const {
+    if (FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(CurContext))
+      return FD->isConsteval();
+
+    return false;
+  }
+
+  bool isImmediateAddressable() const {
+    return isParsingOverloads() ||
+           isImmediateInvocation() ||
+           isInImmediateFunctionContext();
+  }
+
+  class ImmediateInvocationRAII {
+    Sema &S;
+    bool PreviouslyImmediateInvocation;
+
+  public:
+    ImmediateInvocationRAII(Sema &S, FunctionDecl *FD)
+      : S(S), PreviouslyImmediateInvocation(S.ImmediateInvocation) {
+      S.ImmediateInvocation |= FD->isConsteval();
+    }
+    ImmediateInvocationRAII(Sema &S, Expr *E)
+      : S(S), PreviouslyImmediateInvocation(S.ImmediateInvocation) {
+      if (auto *DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenCasts()))
+        if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl()))
+          S.ImmediateInvocation |= FD->isConsteval();
+    }
+    ~ImmediateInvocationRAII() {
+      S.ImmediateInvocation = PreviouslyImmediateInvocation;
+    }
+  };
 
   ExprResult BuildImmediateInvocation(Expr *E);
   ExprResult BuildConstantExpression(Expr *E);
