@@ -5994,6 +5994,8 @@ void Sema::AddOverloadCandidate(FunctionDecl *Function,
                                 bool PartialOverloading, bool AllowExplicit,
                                 ADLCallKind IsADLCandidate,
                                 ConversionSequenceList EarlyConversions) {
+  Sema::ImmediateInvocationRAII InvocationRAII(*this, Function);
+
   const FunctionProtoType *Proto
     = dyn_cast<FunctionProtoType>(Function->getType()->getAs<FunctionType>());
   assert(Proto && "Functions without a prototype cannot be overloaded");
@@ -9583,10 +9585,9 @@ static bool checkAddressOfFunctionIsAvailable(Sema &S, const FunctionDecl *FD,
     return false;
   }
 
-  if (FD->isConsteval()) {
-    // This is not bounded by Complain since there is no case
-    // where one can take the address of an immediate function.
-    S.Diag(Loc, diag::err_invalid_immediate) << 1;
+  if (FD->isConsteval() && !S.isImmediateAddressable()) {
+    if (Complain)
+      S.Diag(Loc, diag::err_invalid_immeidate_fp_conversion);
     return false;
   }
 
@@ -13392,7 +13393,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   if (CheckFunctionCall(Method, TheCall, Proto))
     return true;
 
-  return MaybeBindToTemporary(TheCall);
+  return FinishCallExpr(TheCall);
 }
 
 /// BuildOverloadedArrowExpr - Build a call to an overloaded @c operator->

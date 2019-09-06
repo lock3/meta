@@ -1733,6 +1733,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       };
       if (OpKind == tok::l_paren || !LHS.isInvalid()) {
         if (Tok.isNot(tok::r_paren)) {
+          Sema::OverloadParseRAII ParsingOverloads(Actions);
           if (ParseExpressionList(ArgExprs, CommaLocs, [&] {
                 PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                     RunSignatureHelp);

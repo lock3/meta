@@ -13388,6 +13388,8 @@ Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
                               SmallVectorImpl<Expr*> &ConvertedArgs,
                               bool AllowExplicit,
                               bool IsListInitialization) {
+  Sema::ImmediateInvocationRAII InvocationRAII(*this, Constructor);
+
   // FIXME: This duplicates a lot of code from Sema::ConvertArgumentsForCall.
   unsigned NumArgs = ArgsPtr.size();
   Expr **Args = ArgsPtr.data();

@@ -1702,6 +1702,7 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
     };
 
     if (Tok.isNot(tok::r_paren)) {
+      Sema::OverloadParseRAII ParsingOverloads(Actions);
       if (ParseExpressionList(Exprs, CommaLocs, [&] {
             PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                 RunSignatureHelp);
