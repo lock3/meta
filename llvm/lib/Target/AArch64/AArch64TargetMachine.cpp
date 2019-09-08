@@ -180,6 +180,7 @@ extern "C" void LLVMInitializeAArch64Target() {
   initializeLDTLSCleanupPass(*PR);
   initializeAArch64SpeculationHardeningPass(*PR);
   initializeAArch64StackTaggingPass(*PR);
+  initializeAArch64StackTaggingPreRAPass(*PR);
 }
 
 //===----------------------------------------------------------------------===//
@@ -517,9 +518,7 @@ bool AArch64PassConfig::addRegBankSelect() {
 }
 
 void AArch64PassConfig::addPreGlobalInstructionSelect() {
-  // Workaround the deficiency of the fast register allocator.
-  if (TM->getOptLevel() == CodeGenOpt::None)
-    addPass(new Localizer());
+  addPass(new Localizer());
 }
 
 bool AArch64PassConfig::addGlobalInstructionSelect() {
@@ -541,6 +540,8 @@ bool AArch64PassConfig::addILPOpts() {
   if (EnableStPairSuppress)
     addPass(createAArch64StorePairSuppressPass());
   addPass(createAArch64SIMDInstrOptPass());
+  if (TM->getOptLevel() != CodeGenOpt::None)
+    addPass(createAArch64StackTaggingPreRAPass());
   return true;
 }
 

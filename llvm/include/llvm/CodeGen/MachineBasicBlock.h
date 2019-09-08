@@ -105,7 +105,7 @@ private:
 
   /// Alignment of the basic block. Zero if the basic block does not need to be
   /// aligned. The alignment is specified as log2(bytes).
-  unsigned Alignment = 0;
+  unsigned LogAlignment = 0;
 
   /// Indicate that this basic block is entered via an exception handler.
   bool IsEHPad = false;
@@ -374,11 +374,11 @@ public:
 
   /// Return alignment of the basic block. The alignment is specified as
   /// log2(bytes).
-  unsigned getAlignment() const { return Alignment; }
+  unsigned getLogAlignment() const { return LogAlignment; }
 
   /// Set alignment of the basic block. The alignment is specified as
   /// log2(bytes).
-  void setAlignment(unsigned Align) { Alignment = Align; }
+  void setLogAlignment(unsigned A) { LogAlignment = A; }
 
   /// Returns true if the block is a landing pad. That is this basic block is
   /// entered via an exception handler.
@@ -636,6 +636,18 @@ public:
     return Insts.insertAfter(I.getInstrIterator(), MI);
   }
 
+  /// If I is bundled then insert MI into the instruction list after the end of
+  /// the bundle, otherwise insert MI immediately after I.
+  instr_iterator insertAfterBundle(instr_iterator I, MachineInstr *MI) {
+    assert((I == instr_end() || I->getParent() == this) &&
+           "iterator points outside of basic block");
+    assert(!MI->isBundledWithPred() && !MI->isBundledWithSucc() &&
+           "Cannot insert instruction with bundle flags");
+    while (I->isBundledWithSucc())
+      ++I;
+    return Insts.insertAfter(I, MI);
+  }
+
   /// Remove an instruction from the instruction list and delete it.
   ///
   /// If the instruction is part of a bundle, the other instructions in the
@@ -722,6 +734,10 @@ public:
   /// Given a machine basic block that branched to 'Old', change the code and
   /// CFG so that it branches to 'New' instead.
   void ReplaceUsesOfBlockWith(MachineBasicBlock *Old, MachineBasicBlock *New);
+
+  /// Update all phi nodes in this basic block to refer to basic block \p New
+  /// instead of basic block \p Old.
+  void replacePhiUsesWith(MachineBasicBlock *Old, MachineBasicBlock *New);
 
   /// Various pieces of code can cause excess edges in the CFG to be inserted.
   /// If we have proven that MBB can only branch to DestA and DestB, remove any

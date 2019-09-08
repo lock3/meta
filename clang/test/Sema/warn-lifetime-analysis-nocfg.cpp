@@ -353,12 +353,12 @@ std::reference_wrapper<int> danglingPtrFromNonOwnerLocal3() {
 
 std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal4() {
   Unannotated i;
-  return std::reference_wrapper<Unannotated>(i); // TODOexpected-warning {{address of stack memory associated with local variable 'i' returned}}
+  return std::reference_wrapper<Unannotated>(i); // TODO
 }
 
 std::reference_wrapper<Unannotated> danglingPtrFromNonOwnerLocal5() {
   Unannotated i;
-  return std::ref(i); // TODOexpected-warning {{address of stack memory associated with local variable 'i' returned}}
+  return std::ref(i); // TODO
 }
 
 int *returnPtrToLocalArray() {

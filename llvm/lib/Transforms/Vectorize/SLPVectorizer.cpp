@@ -1346,12 +1346,12 @@ private:
       if (ReuseShuffleIndices.empty())
         dbgs() << "Emtpy";
       else
-        for (unsigned Idx : ReuseShuffleIndices)
-          dbgs() << Idx << ", ";
+        for (unsigned ReuseIdx : ReuseShuffleIndices)
+          dbgs() << ReuseIdx << ", ";
       dbgs() << "\n";
       dbgs() << "ReorderIndices: ";
-      for (unsigned Idx : ReorderIndices)
-        dbgs() << Idx << ", ";
+      for (unsigned ReorderIdx : ReorderIndices)
+        dbgs() << ReorderIdx << ", ";
       dbgs() << "\n";
       dbgs() << "UserTreeIndices: ";
       for (const auto &EInfo : UserTreeIndices)
@@ -2621,7 +2621,7 @@ void BoUpSLP::buildTree_rec(ArrayRef<Value *> VL, unsigned Depth,
       return;
     }
     case Instruction::Store: {
-      // Check if the stores are consecutive or of we need to swizzle them.
+      // Check if the stores are consecutive or if we need to swizzle them.
       for (unsigned i = 0, e = VL.size() - 1; i < e; ++i)
         if (!isConsecutiveAccess(VL[i], VL[i + 1], *DL, *SE)) {
           BS.cancelScheduling(VL, VL0);
@@ -5128,7 +5128,7 @@ struct SLPVectorizer : public FunctionPass {
     auto *SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
     auto *TTI = &getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
     auto *TLIP = getAnalysisIfAvailable<TargetLibraryInfoWrapperPass>();
-    auto *TLI = TLIP ? &TLIP->getTLI() : nullptr;
+    auto *TLI = TLIP ? &TLIP->getTLI(F) : nullptr;
     auto *AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
     auto *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     auto *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
@@ -6579,10 +6579,9 @@ static bool findBuildVector(InsertElementInst *LastInsertElem,
 /// \return true if it matches.
 static bool findBuildAggregate(InsertValueInst *IV,
                                SmallVectorImpl<Value *> &BuildVectorOpds) {
-  Value *V;
   do {
     BuildVectorOpds.push_back(IV->getInsertedValueOperand());
-    V = IV->getAggregateOperand();
+    Value *V = IV->getAggregateOperand();
     if (isa<UndefValue>(V))
       break;
     IV = dyn_cast<InsertValueInst>(V);

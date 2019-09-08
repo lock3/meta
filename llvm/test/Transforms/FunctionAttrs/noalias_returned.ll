@@ -1,4 +1,4 @@
-; RUN: opt -S -attributor -attributor-disable=false -attributor-max-iterations-verify -attributor-max-iterations=8 < %s | FileCheck %s
+; RUN: opt -S -attributor -attributor-disable=false -attributor-max-iterations-verify -attributor-max-iterations=5 < %s | FileCheck %s
 
 ; TEST 1 - negative.
 
@@ -26,6 +26,17 @@ declare noalias i8* @malloc(i64)
 ; CHECK: define noalias i8* @return_noalias()
 define i8* @return_noalias(){
   %1 = tail call noalias i8* @malloc(i64 4)
+  ret i8* %1
+}
+
+define void @nocapture(i8* %a){
+  ret void
+}
+
+; CHECK: define noalias i8* @return_noalias_looks_like_capture()
+define i8* @return_noalias_looks_like_capture(){
+  %1 = tail call noalias i8* @malloc(i64 4)
+  call void @nocapture(i8* %1)
   ret i8* %1
 }
 
@@ -142,8 +153,7 @@ define i8* @test8(i32* %0) nounwind uwtable {
 ; TEST 9
 ; Simple Argument Test
 define internal void @test9(i8* %a, i8* %b) {
-; FIXME: missing noalias
-; CHECK: define internal void @test9(i8* %a, i8* %b)
+; CHECK: define internal void @test9(i8* noalias nocapture %a, i8* nocapture %b)
   ret void
 }
 define void @test9_helper(i8* %a, i8* %b) {
@@ -156,12 +166,18 @@ define void @test9_helper(i8* %a, i8* %b) {
 ; TEST 10
 ; Simple CallSite Test
 
-declare void @test10_helper(i8* %a)
+declare void @test10_helper_1(i8* %a)
+define void @test10_helper_2(i8* noalias %a) {
+  ret void
+}
 define void @test10(i8* noalias %a) {
 ; CHECK: define void @test10(i8* noalias %a)
 ; FIXME: missing noalias
-; CHECK-NEXT:   tail call void @test10_helper(i8* %a)
-  tail call void @test10_helper(i8* %a)
+; CHECK-NEXT:   tail call void @test10_helper_1(i8* %a)
+  tail call void @test10_helper_1(i8* %a)
+
+; CHECK-NEXT:   tail call void @test10_helper_2(i8* noalias %a)
+  tail call void @test10_helper_2(i8* %a)
   ret void
 }
 

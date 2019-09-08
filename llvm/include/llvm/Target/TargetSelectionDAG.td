@@ -396,6 +396,7 @@ def usubsat    : SDNode<"ISD::USUBSAT"   , SDTIntBinOp>;
 def smulfix    : SDNode<"ISD::SMULFIX"   , SDTIntScaledBinOp, [SDNPCommutative]>;
 def smulfixsat : SDNode<"ISD::SMULFIXSAT", SDTIntScaledBinOp, [SDNPCommutative]>;
 def umulfix    : SDNode<"ISD::UMULFIX"   , SDTIntScaledBinOp, [SDNPCommutative]>;
+def umulfixsat : SDNode<"ISD::UMULFIXSAT", SDTIntScaledBinOp, [SDNPCommutative]>;
 
 def sext_inreg : SDNode<"ISD::SIGN_EXTEND_INREG", SDTExtInreg>;
 def sext_invec : SDNode<"ISD::SIGN_EXTEND_VECTOR_INREG", SDTExtInvec>;
@@ -518,6 +519,10 @@ def strict_fpround    : SDNode<"ISD::STRICT_FP_ROUND",
                                SDTFPRoundOp, [SDNPHasChain]>;
 def strict_fpextend   : SDNode<"ISD::STRICT_FP_EXTEND",
                                SDTFPExtendOp, [SDNPHasChain]>;
+def strict_fp_to_sint : SDNode<"ISD::STRICT_FP_TO_SINT",
+                               SDTFPToIntOp, [SDNPHasChain]>;
+def strict_fp_to_uint : SDNode<"ISD::STRICT_FP_TO_UINT",
+                               SDTFPToIntOp, [SDNPHasChain]>;
 
 def setcc      : SDNode<"ISD::SETCC"      , SDTSetCC>;
 def select     : SDNode<"ISD::SELECT"     , SDTSelect>;
@@ -1353,6 +1358,12 @@ def any_extloadf32 : PatFrags<(ops node:$ptr),
 def any_extloadf64 : PatFrags<(ops node:$ptr),
                               [(strict_extloadf64 node:$ptr),
                                (extloadf64 node:$ptr)]>;
+def any_fp_to_sint : PatFrags<(ops node:$src),
+                              [(strict_fp_to_sint node:$src),
+                               (fp_to_sint node:$src)]>;
+def any_fp_to_uint : PatFrags<(ops node:$src),
+                              [(strict_fp_to_uint node:$src),
+                               (fp_to_uint node:$src)]>;
 
 multiclass binary_atomic_op_ord<SDNode atomic_op> {
   def #NAME#_monotonic : PatFrag<(ops node:$ptr, node:$val),

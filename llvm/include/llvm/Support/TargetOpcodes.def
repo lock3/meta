@@ -439,6 +439,9 @@ HANDLE_TARGET_OPCODE(G_FMUL)
 /// Generic FMA multiplication. Behaves like llvm fma intrinsic
 HANDLE_TARGET_OPCODE(G_FMA)
 
+/// Generic FP multiply and add. Behaves as separate fmul and fadd.
+HANDLE_TARGET_OPCODE(G_FMAD)
+
 /// Generic FP division.
 HANDLE_TARGET_OPCODE(G_FDIV)
 
@@ -559,6 +562,9 @@ HANDLE_TARGET_OPCODE(G_CTPOP)
 
 /// Generic byte swap.
 HANDLE_TARGET_OPCODE(G_BSWAP)
+
+/// Generic bit reverse.
+HANDLE_TARGET_OPCODE(G_BITREVERSE)
 
 /// Floating point ceil.
 HANDLE_TARGET_OPCODE(G_FCEIL)

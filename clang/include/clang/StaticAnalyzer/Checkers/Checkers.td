@@ -564,6 +564,11 @@ def VirtualCallChecker : Checker<"VirtualCall">,
   HelpText<"Check virtual function calls during construction/destruction">,
   CheckerOptions<[
     CmdLineOption<Boolean,
+                  "ShowFixIts",
+                  "Enable fix-it hints for this checker",
+                  "false",
+                  InAlpha>,
+    CmdLineOption<Boolean,
                   "PureOnly",
                   "Disables the checker. Keeps cplusplus.PureVirtualCall "
                   "enabled. This option is only provided for backwards "
@@ -648,6 +653,19 @@ let ParentPackage = DeadCode in {
 def DeadStoresChecker : Checker<"DeadStores">,
   HelpText<"Check for values stored to variables that are never read "
            "afterwards">,
+  CheckerOptions<[
+    CmdLineOption<Boolean,
+                  "WarnForDeadNestedAssignments",
+                  "Warns for deadstores in nested assignments."
+                  "E.g.: if ((P = f())) where P is unused.",
+                  "true",
+                  Released>,
+    CmdLineOption<Boolean,
+                  "ShowFixIts",
+                  "Enable fix-it hints for this checker",
+                  "false",
+                  InAlpha>
+  ]>,
   Documentation<HasDocumentation>;
 
 } // end DeadCode

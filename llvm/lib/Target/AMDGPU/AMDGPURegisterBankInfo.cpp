@@ -303,16 +303,17 @@ AMDGPURegisterBankInfo::getInstrAlternativeMappingsIntrinsicWSideEffects(
   }
   case Intrinsic::amdgcn_s_sendmsg:
   case Intrinsic::amdgcn_s_sendmsghalt: {
-    static const OpRegBankEntry<1> Table[2] = {
+    // FIXME: Should have no register for immediate
+    static const OpRegBankEntry<2> Table[2] = {
       // Perfectly legal.
-      { { AMDGPU::SGPRRegBankID }, 1 },
+      { { AMDGPU::SGPRRegBankID, AMDGPU::SGPRRegBankID }, 1 },
 
       // Need readlane
-      { { AMDGPU::VGPRRegBankID }, 3 }
+      { { AMDGPU::SGPRRegBankID, AMDGPU::VGPRRegBankID }, 3 }
     };
 
-    const std::array<unsigned, 1> RegSrcOpIdx = { { 2 } };
-    return addMappingFromTable<1>(MI, MRI, RegSrcOpIdx, makeArrayRef(Table));
+    const std::array<unsigned, 2> RegSrcOpIdx = { { 1, 2 } };
+    return addMappingFromTable<2>(MI, MRI, RegSrcOpIdx, makeArrayRef(Table));
   }
   default:
     return RegisterBankInfo::getInstrAlternativeMappings(MI);
@@ -1775,6 +1776,7 @@ AMDGPURegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   case AMDGPU::G_CTTZ_ZERO_UNDEF:
   case AMDGPU::G_CTPOP:
   case AMDGPU::G_BSWAP:
+  case AMDGPU::G_BITREVERSE:
   case AMDGPU::G_FABS:
   case AMDGPU::G_FNEG: {
     unsigned Size = MRI.getType(MI.getOperand(0).getReg()).getSizeInBits();
@@ -2178,6 +2180,7 @@ AMDGPURegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
       // This must be an SGPR, but accept a VGPR.
       unsigned Bank = getRegBankID(MI.getOperand(2).getReg(), MRI, *TRI,
                                    AMDGPU::SGPRRegBankID);
+      OpdsMapping[1] = AMDGPU::getValueMapping(Bank, 32);
       OpdsMapping[2] = AMDGPU::getValueMapping(Bank, 32);
       break;
     }

@@ -5030,11 +5030,8 @@ buildPCRelGlobalAddress(SelectionDAG &DAG, const GlobalValue *GV,
   // of the s_add_u32 instruction, we end up with an offset that is 4 bytes too
   // small. This requires us to add 4 to the global variable offset in order to
   // compute the correct address.
-  unsigned LoFlags = GAFlags;
-  if (LoFlags == SIInstrInfo::MO_NONE)
-    LoFlags = SIInstrInfo::MO_REL32;
   SDValue PtrLo =
-      DAG.getTargetGlobalAddress(GV, DL, MVT::i32, Offset + 4, LoFlags);
+      DAG.getTargetGlobalAddress(GV, DL, MVT::i32, Offset + 4, GAFlags);
   SDValue PtrHi;
   if (GAFlags == SIInstrInfo::MO_NONE) {
     PtrHi = DAG.getTargetConstant(0, DL, MVT::i32);
@@ -6061,6 +6058,19 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     SDValue GA = DAG.getTargetGlobalAddress(GV, DL, MVT::i32, 0,
                                             SIInstrInfo::MO_ABS32_LO);
     return {DAG.getMachineNode(AMDGPU::S_MOV_B32, DL, MVT::i32, GA), 0};
+  }
+  case Intrinsic::amdgcn_is_shared:
+  case Intrinsic::amdgcn_is_private: {
+    SDLoc SL(Op);
+    unsigned AS = (IntrinsicID == Intrinsic::amdgcn_is_shared) ?
+      AMDGPUAS::LOCAL_ADDRESS : AMDGPUAS::PRIVATE_ADDRESS;
+    SDValue Aperture = getSegmentAperture(AS, SL, DAG);
+    SDValue SrcVec = DAG.getNode(ISD::BITCAST, DL, MVT::v2i32,
+                                 Op.getOperand(1));
+
+    SDValue SrcHi = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SL, MVT::i32, SrcVec,
+                                DAG.getConstant(1, SL, MVT::i32));
+    return DAG.getSetCC(SL, MVT::i1, SrcHi, Aperture, ISD::SETEQ);
   }
   default:
     if (const AMDGPU::ImageDimIntrinsicInfo *ImageDimIntr =
@@ -10671,15 +10681,15 @@ void SITargetLowering::computeKnownBitsForFrameIndex(const SDValue Op,
   Known.Zero.setHighBits(getSubtarget()->getKnownHighZeroBitsForFrameIndex());
 }
 
-unsigned SITargetLowering::getPrefLoopAlignment(MachineLoop *ML) const {
-  const unsigned PrefAlign = TargetLowering::getPrefLoopAlignment(ML);
-  const unsigned CacheLineAlign = 6; // log2(64)
+unsigned SITargetLowering::getPrefLoopLogAlignment(MachineLoop *ML) const {
+  const unsigned PrefLogAlign = TargetLowering::getPrefLoopLogAlignment(ML);
+  const unsigned CacheLineLogAlign = 6; // log2(64)
 
   // Pre-GFX10 target did not benefit from loop alignment
   if (!ML || DisableLoopAlignment ||
       (getSubtarget()->getGeneration() < AMDGPUSubtarget::GFX10) ||
       getSubtarget()->hasInstFwdPrefetchBug())
-    return PrefAlign;
+    return PrefLogAlign;
 
   // On GFX10 I$ is 4 x 64 bytes cache lines.
   // By default prefetcher keeps one cache line behind and reads two ahead.
@@ -10693,28 +10703,28 @@ unsigned SITargetLowering::getPrefLoopAlignment(MachineLoop *ML) const {
 
   const SIInstrInfo *TII = getSubtarget()->getInstrInfo();
   const MachineBasicBlock *Header = ML->getHeader();
-  if (Header->getAlignment() != PrefAlign)
-    return Header->getAlignment(); // Already processed.
+  if (Header->getLogAlignment() != PrefLogAlign)
+    return Header->getLogAlignment(); // Already processed.
 
   unsigned LoopSize = 0;
   for (const MachineBasicBlock *MBB : ML->blocks()) {
     // If inner loop block is aligned assume in average half of the alignment
     // size to be added as nops.
     if (MBB != Header)
-      LoopSize += (1 << MBB->getAlignment()) / 2;
+      LoopSize += (1 << MBB->getLogAlignment()) / 2;
 
     for (const MachineInstr &MI : *MBB) {
       LoopSize += TII->getInstSizeInBytes(MI);
       if (LoopSize > 192)
-        return PrefAlign;
+        return PrefLogAlign;
     }
   }
 
   if (LoopSize <= 64)
-    return PrefAlign;
+    return PrefLogAlign;
 
   if (LoopSize <= 128)
-    return CacheLineAlign;
+    return CacheLineLogAlign;
 
   // If any of parent loops is surrounded by prefetch instructions do not
   // insert new for inner loop, which would reset parent's settings.
@@ -10722,7 +10732,7 @@ unsigned SITargetLowering::getPrefLoopAlignment(MachineLoop *ML) const {
     if (MachineBasicBlock *Exit = P->getExitBlock()) {
       auto I = Exit->getFirstNonDebugInstr();
       if (I != Exit->end() && I->getOpcode() == AMDGPU::S_INST_PREFETCH)
-        return CacheLineAlign;
+        return CacheLineLogAlign;
     }
   }
 
@@ -10739,7 +10749,7 @@ unsigned SITargetLowering::getPrefLoopAlignment(MachineLoop *ML) const {
       .addImm(2); // prefetch 1 line behind PC
   }
 
-  return CacheLineAlign;
+  return CacheLineLogAlign;
 }
 
 LLVM_ATTRIBUTE_UNUSED

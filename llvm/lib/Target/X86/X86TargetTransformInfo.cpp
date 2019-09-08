@@ -1396,6 +1396,8 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
     { ISD::UINT_TO_FP,  MVT::v8f64,  MVT::v8i64,  5 },
 
     { ISD::UINT_TO_FP,  MVT::f64,    MVT::i64,    1 },
+    { ISD::FP_TO_UINT,  MVT::i64,    MVT::f32,    1 },
+    { ISD::FP_TO_UINT,  MVT::i64,    MVT::f64,    1 },
 
     { ISD::FP_TO_UINT,  MVT::v2i32,  MVT::v2f32,  1 },
     { ISD::FP_TO_UINT,  MVT::v4i32,  MVT::v4f32,  1 },
@@ -1598,6 +1600,8 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
     { ISD::FP_TO_SINT,  MVT::v2i32,  MVT::v2f64,  3 },
 
     { ISD::UINT_TO_FP,  MVT::f64,    MVT::i64,    6 },
+    { ISD::FP_TO_UINT,  MVT::i64,    MVT::f32,    4 },
+    { ISD::FP_TO_UINT,  MVT::i64,    MVT::f64,    4 },
 
     { ISD::ZERO_EXTEND, MVT::v4i16,  MVT::v4i8,   1 },
     { ISD::SIGN_EXTEND, MVT::v4i16,  MVT::v4i8,   6 },
@@ -3271,7 +3275,7 @@ bool X86TTIImpl::isLegalMaskedStore(Type *DataType) {
   return isLegalMaskedLoad(DataType);
 }
 
-bool X86TTIImpl::isLegalNTLoad(Type *DataType, unsigned Alignment) {
+bool X86TTIImpl::isLegalNTLoad(Type *DataType, llvm::Align Alignment) {
   unsigned DataSize = DL.getTypeStoreSize(DataType);
   // The only supported nontemporal loads are for aligned vectors of 16 or 32
   // bytes.  Note that 32-byte nontemporal vector loads are supported by AVX2
@@ -3282,7 +3286,7 @@ bool X86TTIImpl::isLegalNTLoad(Type *DataType, unsigned Alignment) {
   return false;
 }
 
-bool X86TTIImpl::isLegalNTStore(Type *DataType, unsigned Alignment) {
+bool X86TTIImpl::isLegalNTStore(Type *DataType, llvm::Align Alignment) {
   unsigned DataSize = DL.getTypeStoreSize(DataType);
 
   // SSE4A supports nontemporal stores of float and double at arbitrary

@@ -923,6 +923,7 @@ public:
     case ISD::SMULFIX:
     case ISD::SMULFIXSAT:
     case ISD::UMULFIX:
+    case ISD::UMULFIXSAT:
       Supported = isSupportedFixedPointOperation(Op, VT, Scale);
       break;
     }
@@ -1578,22 +1579,22 @@ public:
 
   /// Return the minimum stack alignment of an argument.
   unsigned getMinStackArgumentAlignment() const {
-    return MinStackArgumentAlignment;
+    return MinStackArgumentAlignment.value();
   }
 
   /// Return the minimum function alignment.
-  unsigned getMinFunctionAlignment() const {
-    return MinFunctionAlignment;
+  unsigned getMinFunctionLogAlignment() const {
+    return Log2(MinFunctionAlignment);
   }
 
   /// Return the preferred function alignment.
-  unsigned getPrefFunctionAlignment() const {
-    return PrefFunctionAlignment;
+  unsigned getPrefFunctionLogAlignment() const {
+    return Log2(PrefFunctionAlignment);
   }
 
   /// Return the preferred loop alignment.
-  virtual unsigned getPrefLoopAlignment(MachineLoop *ML = nullptr) const {
-    return PrefLoopAlignment;
+  virtual unsigned getPrefLoopLogAlignment(MachineLoop *ML = nullptr) const {
+    return Log2(PrefLoopAlignment);
   }
 
   /// Should loops be aligned even when the function is marked OptSize (but not
@@ -2104,29 +2105,25 @@ protected:
     TargetDAGCombineArray[NT >> 3] |= 1 << (NT&7);
   }
 
-  /// Set the target's minimum function alignment (in log2(bytes))
-  void setMinFunctionAlignment(unsigned Align) {
+  /// Set the target's minimum function alignment.
+  void setMinFunctionAlignment(llvm::Align Align) {
     MinFunctionAlignment = Align;
   }
 
   /// Set the target's preferred function alignment.  This should be set if
-  /// there is a performance benefit to higher-than-minimum alignment (in
-  /// log2(bytes))
-  void setPrefFunctionAlignment(unsigned Align) {
+  /// there is a performance benefit to higher-than-minimum alignment
+  void setPrefFunctionAlignment(llvm::Align Align) {
     PrefFunctionAlignment = Align;
   }
 
-  /// Set the target's preferred loop alignment. Default alignment is zero, it
-  /// means the target does not care about loop alignment.  The alignment is
-  /// specified in log2(bytes). The target may also override
-  /// getPrefLoopAlignment to provide per-loop values.
-  void setPrefLoopAlignment(unsigned Align) {
-    PrefLoopAlignment = Align;
-  }
+  /// Set the target's preferred loop alignment. Default alignment is one, it
+  /// means the target does not care about loop alignment. The target may also
+  /// override getPrefLoopAlignment to provide per-loop values.
+  void setPrefLoopAlignment(llvm::Align Align) { PrefLoopAlignment = Align; }
 
-  /// Set the minimum stack alignment of an argument (in log2(bytes)).
+  /// Set the minimum stack alignment of an argument.
   void setMinStackArgumentAlignment(unsigned Align) {
-    MinStackArgumentAlignment = Align;
+    MinStackArgumentAlignment = llvm::Align(Align);
   }
 
   /// Set the maximum atomic operation size supported by the
@@ -2688,18 +2685,18 @@ private:
   Sched::Preference SchedPreferenceInfo;
 
   /// The minimum alignment that any argument on the stack needs to have.
-  unsigned MinStackArgumentAlignment;
+  llvm::Align MinStackArgumentAlignment;
 
   /// The minimum function alignment (used when optimizing for size, and to
   /// prevent explicitly provided alignment from leading to incorrect code).
-  unsigned MinFunctionAlignment;
+  llvm::Align MinFunctionAlignment;
 
   /// The preferred function alignment (used when alignment unspecified and
   /// optimizing for speed).
-  unsigned PrefFunctionAlignment;
+  llvm::Align PrefFunctionAlignment;
 
-  /// The preferred loop alignment.
-  unsigned PrefLoopAlignment;
+  /// The preferred loop alignment (in log2 bot in bytes).
+  llvm::Align PrefLoopAlignment;
 
   /// Size in bits of the maximum atomics size the backend supports.
   /// Accesses larger than this will be expanded by AtomicExpandPass.
@@ -3539,19 +3536,19 @@ public:
 
   /// This structure is used to pass arguments to makeLibCall function.
   struct MakeLibCallOptions {
-    // By passing the node before soften to makeLibCall, the target hook
+    // By passing type list before soften to makeLibCall, the target hook
     // shouldExtendTypeInLibCall can get the original type before soften.
-    // It could be generalized by passing orignal type lists if necessary
-    // in the future.
-    SDNode *NodeBeforeSoften = nullptr;
+    ArrayRef<EVT> OpsVTBeforeSoften;
+    EVT RetVTBeforeSoften;
     bool IsSExt : 1;
     bool DoesNotReturn : 1;
     bool IsReturnValueUsed : 1;
     bool IsPostTypeLegalization : 1;
+    bool IsSoften : 1;
 
     MakeLibCallOptions()
         : IsSExt(false), DoesNotReturn(false), IsReturnValueUsed(true),
-          IsPostTypeLegalization(false) {}
+          IsPostTypeLegalization(false), IsSoften(false) {}
 
     MakeLibCallOptions &setSExt(bool Value = true) {
       IsSExt = Value;
@@ -3573,8 +3570,11 @@ public:
       return *this;
     }
 
-    MakeLibCallOptions &setNodeBeforeSoften(SDNode *N) {
-      NodeBeforeSoften = N;
+    MakeLibCallOptions &setTypeListBeforeSoften(ArrayRef<EVT> OpsVT, EVT RetVT,
+                                                bool Value = true) {
+      OpsVTBeforeSoften = OpsVT;
+      RetVTBeforeSoften = RetVT;
+      IsSoften = Value;
       return *this;
     }
   };
@@ -4098,8 +4098,8 @@ public:
   /// method accepts integers as its arguments.
   SDValue expandAddSubSat(SDNode *Node, SelectionDAG &DAG) const;
 
-  /// Method for building the DAG expansion of ISD::SMULFIX. This method accepts
-  /// integers as its arguments.
+  /// Method for building the DAG expansion of ISD::[U|S]MULFIX[SAT]. This
+  /// method accepts integers as its arguments.
   SDValue expandFixedPointMul(SDNode *Node, SelectionDAG &DAG) const;
 
   /// Method for building the DAG expansion of ISD::U(ADD|SUB)O. Expansion

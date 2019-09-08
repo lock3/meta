@@ -154,7 +154,7 @@ def err_variably_modified_new_type : Error<
 
 // C99 Designated Initializers
 def ext_designated_init : Extension<
-  "designated initializers are a C99 feature">, InGroup<C99>;
+  "designated initializers are a C99 feature">, InGroup<C99Designator>;
 def err_array_designator_negative : Error<
   "array designator value '%0' is negative">;
 def err_array_designator_empty_range : Error<
@@ -173,21 +173,45 @@ def err_field_designator_nonfield : Error<
 def note_field_designator_found : Note<"field designator refers here">;
 def err_designator_for_scalar_init : Error<
   "designator in initializer for scalar type %0">;
-def warn_subobject_initializer_overrides : Warning<
-  "subobject initialization overrides initialization of other fields "
-  "within its enclosing subobject">, InGroup<InitializerOverrides>;
 def warn_initializer_overrides : Warning<
-  "initializer overrides prior initialization of this subobject">,
-  InGroup<InitializerOverrides>;
+  "initializer %select{partially |}0overrides prior initialization of "
+  "this subobject">, InGroup<InitializerOverrides>;
+def ext_initializer_overrides : ExtWarn<warn_initializer_overrides.Text>,
+  InGroup<InitializerOverrides>, SFINAEFailure;
+def err_initializer_overrides_destructed : Error<
+  "initializer would partially override prior initialization of object of "
+  "type %1 with non-trivial destruction">;
 def note_previous_initializer : Note<
   "previous initialization %select{|with side effects }0is here"
-  "%select{| (side effects may not occur at run time)}0">;
+  "%select{| (side effects will not occur at run time)}0">;
 def err_designator_into_flexible_array_member : Error<
   "designator into flexible array member subobject">;
 def note_flexible_array_member : Note<
   "initialized flexible array member %0 is here">;
 def ext_flexible_array_init : Extension<
   "flexible array initialization is a GNU extension">, InGroup<GNUFlexibleArrayInitializer>;
+
+// C++20 designated initializers
+def ext_cxx_designated_init : Extension<
+  "designated initializers are a C++20 extension">, InGroup<CXX2aDesignator>;
+def warn_cxx17_compat_designated_init : Warning<
+  "designated initializers are incompatible with C++ standards before C++20">,
+  InGroup<CXXPre2aCompatPedantic>, DefaultIgnore;
+def ext_designated_init_mixed : ExtWarn<
+  "mixture of designated and non-designated initializers in the same "
+  "initializer list is a C99 extension">, InGroup<C99Designator>;
+def note_designated_init_mixed : Note<
+  "first non-designated initializer is here">;
+def ext_designated_init_array : ExtWarn<
+  "array designators are a C99 extension">, InGroup<C99Designator>;
+def ext_designated_init_nested : ExtWarn<
+  "nested designators are a C99 extension">, InGroup<C99Designator>;
+def ext_designated_init_reordered : ExtWarn<
+  "ISO C++ requires field designators to be specified in declaration order; "
+  "field %1 will be initialized after field %0">, InGroup<ReorderInitList>,
+  SFINAEFailure;
+def note_previous_field_init : Note<
+  "previous initialization for field %0 is here">;
 
 // Declarations.
 def ext_plain_complex : ExtWarn<
@@ -623,8 +647,23 @@ def warn_cstruct_memaccess : Warning<
   InGroup<NonTrivialMemaccess>;
 def note_nontrivial_field : Note<
   "field is non-trivial to %select{copy|default-initialize}0">;
-def err_nontrivial_primitive_type_in_union : Error<
-  "non-trivial C types are disallowed in union">;
+def err_non_trivial_c_union_in_invalid_context : Error<
+  "cannot %select{"
+  "use type %1 for a function/method parameter|"
+  "use type %1 for function/method return|"
+  "default-initialize an object of type %1|"
+  "declare an automatic variable of type %1|"
+  "copy-initialize an object of type %1|"
+  "assign to a variable of type %1|"
+  "construct an automatic compound literal of type %1|"
+  "capture a variable of type %1|"
+  "cannot use volatile type %1 where it causes an lvalue-to-rvalue conversion"
+  "}3 "
+  "since it %select{contains|is}2 a union that is non-trivial to "
+  "%select{default-initialize|destruct|copy}0">;
+def note_non_trivial_c_union : Note<
+  "%select{%2 has subobjects that are|%3 has type %2 that is}0 "
+  "non-trivial to %select{default-initialize|destruct|copy}1">;
 def warn_dyn_class_memaccess : Warning<
   "%select{destination for|source of|first operand of|second operand of}0 this "
   "%1 call is a pointer to %select{|class containing a }2dynamic class %3; "
@@ -2200,6 +2239,11 @@ def err_class_marked_final_used_as_base : Error<
   "base %0 is marked '%select{final|sealed}1'">;
 def warn_abstract_final_class : Warning<
   "abstract class is marked '%select{final|sealed}0'">, InGroup<AbstractFinalClass>;
+def warn_final_dtor_non_final_class : Warning<
+  "class with destructor marked '%select{final|sealed}0' cannot be inherited from">,
+  InGroup<FinalDtorNonFinalClass>;
+def note_final_dtor_non_final_class_silence : Note<
+  "mark %0 as '%select{final|sealed}1' to silence this warning">;
 
 // C++11 attributes
 def err_repeat_attribute : Error<"%0 attribute cannot be repeated">;
@@ -2314,18 +2358,18 @@ def warn_cxx14_compat_constexpr_not_const : Warning<
   "in C++14; add 'const' to avoid a change in behavior">,
   InGroup<DiagGroup<"constexpr-not-const">>;
 def err_invalid_constexpr : Error<
-  "%select{function parameter|typedef|non-static data member}0 "
-  "cannot be %select{constexpr|consteval}1">;
+  "%select{function parameter|typedef}0 "
+  "cannot be %sub{select_constexpr_spec_kind}1">;
 def err_invalid_constexpr_member : Error<"non-static data member cannot be "
   "constexpr%select{; did you intend to make it %select{const|static}0?|}1">;
 def err_constexpr_tag : Error<
   "%select{class|struct|interface|union|enum}0 "
-  "cannot be marked %select{constexpr|consteval}1">;
+  "cannot be marked %sub{select_constexpr_spec_kind}1">;
 def err_constexpr_dtor : Error<
-  "destructor cannot be marked %select{constexpr|consteval}0">;
+  "destructor cannot be marked %sub{select_constexpr_spec_kind}0">;
 def err_constexpr_wrong_decl_kind : Error<
-  "%select{constexpr|consteval}0 can only be used "
-  "in %select{variable and |}0function declarations">;
+  "%sub{select_constexpr_spec_kind}0 can only be used "
+  "in %select{|variable and function|function|variable}0 declarations">;
 def err_invalid_constexpr_var_decl : Error<
   "constexpr variable declaration must be a definition">;
 def err_constexpr_static_mem_var_requires_init : Error<
@@ -3375,6 +3419,9 @@ def warn_address_of_reference_bool_conversion : Warning<
   "code; pointer may be assumed to always convert to true">,
   InGroup<UndefinedBoolConversion>;
 
+def warn_xor_used_as_pow : Warning<
+  "result of '%0' is %1; did you mean an exponentiation?">,
+  InGroup<XorUsedAsPow>;
 def warn_xor_used_as_pow_base_extra : Warning<
   "result of '%0' is %1; did you mean '%2' (%3)?">,
   InGroup<XorUsedAsPow>;
@@ -3382,7 +3429,7 @@ def warn_xor_used_as_pow_base : Warning<
   "result of '%0' is %1; did you mean '%2'?">,
   InGroup<XorUsedAsPow>;
 def note_xor_used_as_pow_silence : Note<
-  "replace expression with '%0' to silence this warning">;
+  "replace expression with '%0' %select{|or use 'xor' instead of '^' }1to silence this warning">;
 
 def warn_null_pointer_compare : Warning<
     "comparison of %select{address of|function|array}0 '%1' %select{not |}2"
@@ -7535,10 +7582,30 @@ def note_inequality_comparison_to_or_assign : Note<
 def err_incomplete_type_used_in_type_trait_expr : Error<
   "incomplete type %0 used in type trait expression">;
 
+// C++20 constinit and require_constant_initialization attribute
+def warn_cxx20_compat_constinit : Warning<
+  "'constinit' specifier is incompatible with C++ standards before C++20">,
+  InGroup<CXX2aCompat>, DefaultIgnore;
+def err_constinit_local_variable : Error<
+  "local variable cannot be declared 'constinit'">;
 def err_require_constant_init_failed : Error<
   "variable does not have a constant initializer">;
 def note_declared_required_constant_init_here : Note<
-  "required by 'require_constant_initialization' attribute here">;
+  "required by %select{'require_constant_initialization' attribute|"
+  "'constinit' specifier}0 here">;
+def ext_constinit_missing : ExtWarn<
+  "'constinit' specifier missing on initializing declaration of %0">,
+  InGroup<DiagGroup<"missing-constinit">>;
+def note_constinit_specified_here : Note<"variable declared constinit here">;
+def err_constinit_added_too_late : Error<
+  "'constinit' specifier added after initialization of variable">;
+def warn_require_const_init_added_too_late : Warning<
+  "'require_constant_initialization' attribute added after initialization "
+  "of variable">, InGroup<IgnoredAttributes>;
+def note_constinit_missing_here : Note<
+  "add the "
+  "%select{'require_constant_initialization' attribute|'constinit' specifier}0 "
+  "to the initializing declaration here">;
 
 def err_dimension_expr_not_constant_integer : Error<
   "dimension expression does not evaluate to a constant unsigned int">;
@@ -7665,7 +7732,7 @@ def err_mem_init_not_member_or_class : Error<
 def warn_initializer_out_of_order : Warning<
   "%select{field|base class}0 %1 will be initialized after "
   "%select{field|base}2 %3">,
-  InGroup<Reorder>, DefaultIgnore;
+  InGroup<ReorderCtor>, DefaultIgnore;
 def warn_abstract_vbase_init_ignored : Warning<
   "initializer for virtual base class %0 of abstract class %1 "
   "will never be used">,
@@ -8001,7 +8068,7 @@ def warn_array_index_precedes_bounds : Warning<
 def warn_array_index_exceeds_bounds : Warning<
   "array index %0 is past the end of the array (which contains %1 "
   "element%s2)">, InGroup<ArrayBounds>;
-def note_array_index_out_of_bounds : Note<
+def note_array_declared_here : Note<
   "array %0 declared here">;
 
 def warn_printf_insufficient_data_args : Warning<

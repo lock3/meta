@@ -640,10 +640,11 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   EnableExtLdPromotion = true;
 
   // Set required alignment.
-  setMinFunctionAlignment(2);
+  setMinFunctionAlignment(llvm::Align(4));
   // Set preferred alignments.
-  setPrefFunctionAlignment(STI.getPrefFunctionAlignment());
-  setPrefLoopAlignment(STI.getPrefLoopAlignment());
+  setPrefLoopAlignment(llvm::Align(1ULL << STI.getPrefLoopLogAlignment()));
+  setPrefFunctionAlignment(
+      llvm::Align(1ULL << STI.getPrefFunctionLogAlignment()));
 
   // Only change the limit for entries in a jump table if specified by
   // the sub target, but not at the command line.
@@ -5748,6 +5749,7 @@ AArch64TargetLowering::getConstraintType(StringRef Constraint) const {
       break;
     case 'x':
     case 'w':
+    case 'y':
       return C_RegisterClass;
     // An address with a single base register. Due to the way we
     // currently handle addresses it is the same as 'r'.
@@ -5790,6 +5792,7 @@ AArch64TargetLowering::getSingleConstraintMatchWeight(
     break;
   case 'x':
   case 'w':
+  case 'y':
     if (type->isFloatingPointTy() || type->isVectorTy())
       weight = CW_Register;
     break;
@@ -5812,6 +5815,8 @@ AArch64TargetLowering::getRegForInlineAsmConstraint(
     case 'w':
       if (!Subtarget->hasFPARMv8())
         break;
+      if (VT.isScalableVector())
+        return std::make_pair(0U, &AArch64::ZPRRegClass);
       if (VT.getSizeInBits() == 16)
         return std::make_pair(0U, &AArch64::FPR16RegClass);
       if (VT.getSizeInBits() == 32)
@@ -5826,8 +5831,16 @@ AArch64TargetLowering::getRegForInlineAsmConstraint(
     case 'x':
       if (!Subtarget->hasFPARMv8())
         break;
+      if (VT.isScalableVector())
+        return std::make_pair(0U, &AArch64::ZPR_4bRegClass);
       if (VT.getSizeInBits() == 128)
         return std::make_pair(0U, &AArch64::FPR128_loRegClass);
+      break;
+    case 'y':
+      if (!Subtarget->hasFPARMv8())
+        break;
+      if (VT.isScalableVector())
+        return std::make_pair(0U, &AArch64::ZPR_3bRegClass);
       break;
     }
   }
