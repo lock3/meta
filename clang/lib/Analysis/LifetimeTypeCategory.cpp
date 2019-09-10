@@ -327,10 +327,14 @@ bool isNullableType(QualType QT) {
 static QualType getPointeeType(const CXXRecordDecl *R) {
   assert(R);
 
-  for (auto D : R->decls()) {
-    if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
-      if (TypeDef->getName() == "value_type")
-        return TypeDef->getUnderlyingType().getCanonicalType();
+  // Workaround for vector<bool> that has bool as value_type.
+  // TODO: remove this check once vector<bool> correctly annotated.
+  if (!R->isInStdNamespace() || R->getName() != "vector") {
+    for (auto D : R->decls()) {
+      if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
+        if (TypeDef->getName() == "value_type")
+          return TypeDef->getUnderlyingType().getCanonicalType();
+      }
     }
   }
 
