@@ -146,6 +146,9 @@ namespace clang {
     query_is_template_template_parameter,
     query_has_default_argument,
 
+    // Attributes
+    query_has_attribute,
+
     // Types
     query_is_type,
     query_is_fundamental_type,
@@ -298,6 +301,7 @@ namespace clang {
       case query_is_trivially_constructible:
       case query_is_nothrow_constructible:
         return 0;
+      case query_has_attribute:
       case query_is_assignable:
       case query_is_trivially_assignable:
       case query_is_nothrow_assignable:
@@ -321,6 +325,7 @@ namespace clang {
       case query_is_trivially_constructible:
       case query_is_nothrow_constructible:
         return UINT_MAX - 1;
+      case query_has_attribute:
       case query_is_assignable:
       case query_is_trivially_assignable:
       case query_is_nothrow_assignable:
@@ -1467,6 +1472,80 @@ static bool hasDefaultArgument(const Reflection &R, APValue &Result) {
   return SuccessFalse(R, Result);
 }
 
+using OptionalAPValue = llvm::Optional<APValue>;
+using OptionalAPSInt  = llvm::Optional<llvm::APSInt>;
+using OptionalUInt    = llvm::Optional<std::uint64_t>;
+using OptionalBool    = llvm::Optional<bool>;
+using OptionalExpr    = llvm::Optional<const Expr *>;
+using OptionalString  = llvm::Optional<std::string>;
+
+static OptionalAPValue getArgAtIndex(const ArrayRef<APValue> &Args,
+                                     std::size_t I) {
+  if (I < Args.size())
+    return Args[I];
+  return { };
+}
+
+static OptionalAPSInt
+getArgAsAPSInt(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPValue V = getArgAtIndex(Args, I))
+    if (V->isInt())
+      return V->getInt();
+  return { };
+}
+
+static OptionalUInt
+getArgAsUInt(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
+    if (V->isUnsigned())
+      return V->getZExtValue();
+  return { };
+}
+
+static OptionalBool
+getArgAsBool(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
+    return V->getExtValue();
+  return { };
+}
+
+static OptionalExpr
+getArgAsExpr(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalAPValue V = getArgAtIndex(Args, I))
+    if (V->isLValue())
+      return V->getLValueBase().get<const Expr *>();
+  return { };
+}
+
+static OptionalString
+getArgAsString(const ArrayRef<APValue> &Args, std::size_t I) {
+  if (OptionalExpr E = getArgAsExpr(Args, I))
+    if (const StringLiteral *SL = dyn_cast<StringLiteral>(*E))
+      return { SL->getString() };
+  return { };
+}
+
+/// Returns true if Args[1] has an attribute with a name
+/// equivalent to Args[2].
+static bool hasAttribute(ReflectionQueryEvaluator &Eval,
+                         SmallVectorImpl<APValue> &Args,
+                         APValue &Result) {
+  Reflection R(Eval.getContext(), Args[1]);
+
+  OptionalString OptAttributeToFind = getArgAsString(Args, 2);
+  if (!OptAttributeToFind)
+    return SuccessFalse(Eval, Result);
+
+  if (const Decl *D = getReachableDecl(R)) {
+    for (Attr *A : D->getAttrs()) {
+      if (A->getSpelling() == *OptAttributeToFind)
+        return SuccessTrue(Eval, Result);
+    }
+  }
+
+  return SuccessFalse(Eval, Result);
+}
+
 /// Returns true if R designates a type.
 static bool isType(const Reflection &R, APValue &Result) {
   return SuccessBool(R, Result, R.isType());
@@ -2122,6 +2201,10 @@ bool ReflectionQueryEvaluator::EvaluatePredicate(SmallVectorImpl<APValue> &Args,
     return isTemplateTemplateParameter(makeReflection(*this, Args[1]), Result);
   case query_has_default_argument:
     return hasDefaultArgument(makeReflection(*this, Args[1]), Result);
+
+  // Attributes
+  case query_has_attribute:
+    return hasAttribute(*this, Args, Result);
 
   // Types
   case query_is_type:
@@ -3145,50 +3228,6 @@ bool Reflection::GetName(ReflectionQuery Q, APValue &Result) {
   }
 
   llvm_unreachable("invalid name selector");
-}
-
-using OptionalAPValue = llvm::Optional<APValue>;
-using OptionalAPSInt  = llvm::Optional<llvm::APSInt>;
-using OptionalUInt    = llvm::Optional<std::uint64_t>;
-using OptionalBool    = llvm::Optional<bool>;
-using OptionalExpr    = llvm::Optional<const Expr *>;
-
-static OptionalAPValue getArgAtIndex(const ArrayRef<APValue> &Args,
-                                     std::size_t I) {
-  if (I < Args.size())
-    return Args[I];
-  return { };
-}
-
-static OptionalAPSInt
-getArgAsAPSInt(const ArrayRef<APValue> &Args, std::size_t I) {
-  if (OptionalAPValue V = getArgAtIndex(Args, I))
-    if (V->isInt())
-      return V->getInt();
-  return { };
-}
-
-static OptionalUInt
-getArgAsUInt(const ArrayRef<APValue> &Args, std::size_t I) {
-  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
-    if (V->isUnsigned())
-      return V->getZExtValue();
-  return { };
-}
-
-static OptionalBool
-getArgAsBool(const ArrayRef<APValue> &Args, std::size_t I) {
-  if (OptionalAPSInt V = getArgAsAPSInt(Args, I))
-    return V->getExtValue();
-  return { };
-}
-
-static OptionalExpr
-getArgAsExpr(const ArrayRef<APValue> &Args, std::size_t I) {
-  if (OptionalAPValue V = getArgAtIndex(Args, I))
-    if (V->isLValue())
-      return V->getLValueBase().get<const Expr *>();
-  return { };
 }
 
 static ReflectionModifiers withAccess(const Reflection &R, std::uint64_t Val) {
