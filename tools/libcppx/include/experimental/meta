@@ -152,6 +152,9 @@ enum reflection_query : unsigned {
   query_is_template_template_parameter,
   query_has_default_argument,
 
+  // Attributes
+  query_has_attribute,
+
   // Types
   query_is_type,
   query_is_fundamental_type,
@@ -1471,6 +1474,14 @@ constexpr struct has_default_argument_fn
   }
 } has_default_argument;
 
+
+// -------------------------------------------------------------------------- //
+// Attributes
+
+// Returns true if the reflected entity has an attribute with the given name.
+consteval bool has_attribute(info reflection, string_type attribute_name) {
+  return __reflect(detail::query_has_attribute, reflection, attribute_name);
+}
 
 // -------------------------------------------------------------------------- //
 // Types
