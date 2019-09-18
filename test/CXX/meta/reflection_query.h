@@ -130,6 +130,9 @@ enum reflection_query {
   query_is_template_template_parameter,
   query_has_default_argument,
 
+  // Attributes
+  query_has_attribute,
+
   // Types
   query_is_type,
   query_is_fundamental_type,
