@@ -1,3 +1,4 @@
 Extensions to the Clang C++ compiler.
 
-llvm HEAD: https://github.com/llvm-mirror/llvm/commit/8b6f52ae8e821a586988550aeafb87da3c0d017c
+See [upstream tracking](https://gitlab.com/lock3/clang/wikis/Upstream-Tracking)
+for a list of stable HEADs to build this project against.
