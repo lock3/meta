@@ -81,3 +81,24 @@ constexpr meta::info parent_base_refl = __reflect(query_get_begin_base_spec, chi
 static_assert(is_named(parent_base_refl));
 static_assert(string_eq(name_of(parent_base_refl), "base_templ_name"));
 
+struct class_with_named_special_members {
+  class_with_named_special_members();
+  ~class_with_named_special_members();
+
+  int operator++();
+};
+
+constexpr meta::info constructor_refl = __reflect(query_get_begin_member, reflexpr(class_with_named_special_members));
+
+static_assert(is_named(constructor_refl));
+static_assert(string_eq(name_of(constructor_refl), "class_with_named_special_members"));
+
+constexpr meta::info destructor_refl = __reflect(query_get_next_member, constructor_refl);
+
+static_assert(is_named(destructor_refl));
+static_assert(string_eq(name_of(destructor_refl), "~class_with_named_special_members"));
+
+constexpr meta::info operator_refl = __reflect(query_get_next_member, destructor_refl);
+
+static_assert(is_named(operator_refl));
+static_assert(string_eq(name_of(operator_refl), "operator++"));
