@@ -590,7 +590,7 @@ static bool isNamed(const Reflection &R, APValue &Result) {
     return SuccessTrue(R, Result);
 
   if (const NamedDecl *ND = getReachableNamedAliasDecl(R))
-    return SuccessBool(R, Result, ND->getIdentifier() != nullptr);
+    return SuccessTrue(R, Result);
 
   return SuccessFalse(R, Result);
 }
@@ -3057,7 +3057,7 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
 // This is morally equivalent to creating a global string.
 // During codegen, that's exactly how this is interpreted.
 static Expr *
-MakeConstCharPointer(ASTContext& Ctx, StringRef Str, SourceLocation Loc) {
+MakeConstCharPointer(ASTContext& Ctx, const std::string &Str, SourceLocation Loc) {
   QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
                                             llvm::APInt(32, Str.size() + 1),
                                             ArrayType::Normal, 0);
@@ -3095,19 +3095,17 @@ static bool getName(const Reflection R, APValue &Result) {
   }
 
   if (const NamedDecl *ND = getReachableNamedAliasDecl(R)) {
-    if (IdentifierInfo *II = ND->getIdentifier()) {
-      // Get the identifier of the declaration.
-      Expr *Str = MakeConstCharPointer(Ctx, II->getName(),
-                                       SourceLocation());
+    // Get the identifier of the declaration.
+    Expr *Str = MakeConstCharPointer(Ctx, ND->getDeclName().getAsString(),
+                                     SourceLocation());
 
-      // Generate the result value.
-      Expr::EvalResult Eval;
-      Expr::EvalContext EvalCtx(Ctx, nullptr);
-      if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
-        return false;
-      Result = Eval.Val;
-      return true;
-    }
+    // Generate the result value.
+    Expr::EvalResult Eval;
+    Expr::EvalContext EvalCtx(Ctx, nullptr);
+    if (!Str->EvaluateAsConstantExpr(Eval, Expr::EvaluateForCodeGen, EvalCtx))
+      return false;
+    Result = Eval.Val;
+    return true;
   }
 
   return Error(R);
