@@ -755,6 +755,57 @@ bool InjectionContext::InjectMemberDeclarator(DeclaratorDecl *D,
   return Invalid;
 }
 
+static AccessSpecifier Transform(AccessModifier Modifier) {
+  switch(Modifier) {
+  case AccessModifier::Public:
+    return AS_public;
+  case AccessModifier::Protected:
+    return AS_protected;
+  case AccessModifier::Private:
+    return AS_private;
+  default:
+    llvm_unreachable("Invalid access modifier transformation");
+  }
+}
+
+template<typename NewType, typename OldType>
+static void ApplyAccess(ReflectionModifiers Modifiers,
+                        NewType* Decl, OldType* OriginalDecl) {
+  if (Modifiers.modifyAccess()) {
+    AccessModifier Modifier = Modifiers.getAccessModifier();
+
+    if (Modifier == AccessModifier::Default) {
+      TagDecl *TD = cast<TagDecl>(Decl->getDeclContext());
+      Decl->setAccess(TD->getDefaultAccessSpecifier());
+      return;
+    }
+
+    Decl->setAccess(Transform(Modifier));
+    return;
+  }
+
+  Decl->setAccess(OriginalDecl->getAccess());
+}
+
+template<>
+void ApplyAccess<CXXBaseSpecifier, CXXBaseSpecifier>(
+    ReflectionModifiers Modifiers,
+    CXXBaseSpecifier* Base, CXXBaseSpecifier* OriginalBase) {
+  if (Modifiers.modifyAccess()) {
+    AccessModifier Modifier = Modifiers.getAccessModifier();
+
+    if (Modifier == AccessModifier::Default) {
+      Base->setAccessSpecifier(AS_none);
+      return;
+    }
+
+    Base->setAccessSpecifier(Transform(Modifier));
+    return;
+  }
+
+  Base->setAccessSpecifier(OriginalBase->getAccessSpecifier());
+}
+
 bool InjectionContext::InjectBaseSpecifier(CXXBaseSpecifier *BS) {
   CXXRecordDecl *Owner = cast<CXXRecordDecl>(getSema().CurContext);
 
@@ -768,6 +819,7 @@ bool InjectionContext::InjectBaseSpecifier(CXXBaseSpecifier *BS) {
   if (!NewBase)
     return true;
 
+  ApplyAccess(GetModifiers(), NewBase, BS);
   Bases.push_back(NewBase);
 
   if (getSema().AttachBaseSpecifiers(Owner, Bases))
@@ -857,38 +909,6 @@ Decl* InjectionContext::InjectNamespaceDecl(NamespaceDecl *D) {
   }
 
   return Ns;
-}
-
-static AccessSpecifier Transform(AccessModifier Modifier) {
-  switch(Modifier) {
-  case AccessModifier::Public:
-    return AS_public;
-  case AccessModifier::Protected:
-    return AS_protected;
-  case AccessModifier::Private:
-    return AS_private;
-  default:
-    llvm_unreachable("Invalid access modifier transformation");
-  }
-}
-
-template<typename NewType, typename OldType>
-static void ApplyAccess(ReflectionModifiers Modifiers,
-                        NewType* Decl, OldType* OriginalDecl) {
-  if (Modifiers.modifyAccess()) {
-    AccessModifier Modifier = Modifiers.getAccessModifier();
-
-    if (Modifier == AccessModifier::Default) {
-      TagDecl *TD = cast<TagDecl>(Decl->getDeclContext());
-      Decl->setAccess(TD->getDefaultAccessSpecifier());
-      return;
-    }
-
-    Decl->setAccess(Transform(Modifier));
-    return;
-  }
-
-  Decl->setAccess(OriginalDecl->getAccess());
 }
 
 Decl* InjectionContext::InjectTypedefNameDecl(TypedefNameDecl *D) {
@@ -3357,7 +3377,9 @@ static bool InjectFragment(Sema &S,
 
 // Inject a reflected base specifier into the current context.
 static bool AddBase(Sema &S, CXXInjectorDecl *MD,
-                    CXXBaseSpecifier *Injection, Decl *Injectee) {
+                    CXXBaseSpecifier *Injection,
+                    const ReflectionModifiers &Modifiers,
+                    Decl *Injectee) {
   // SourceLocation POI = MD->getSourceRange().getEnd();
   // DeclContext *InjectionDC = Injection->getDeclContext();
   // Decl *InjectionOwner = Decl::castFromDeclContext(InjectionDC);
@@ -3371,6 +3393,8 @@ static bool AddBase(Sema &S, CXXInjectorDecl *MD,
   Sema::ContextRAII Switch(S, InjecteeAsDC, isa<CXXRecordDecl>(Injectee));
 
   return BootstrapInjection(S, Injectee, Injection, [&](InjectionContext *Ctx) {
+    Ctx->SetModifiers(Modifiers);
+
     // Inject the base specifier.
     if (Ctx->InjectBaseSpecifier(Injection))
       Injectee->setInvalidDecl(true);
@@ -3550,12 +3574,18 @@ GetInjectionBase(const Reflection &Refl) {
   return const_cast<CXXBaseSpecifier *>(ReachableBase);
 }
 
+static const ReflectionModifiers &
+GetModifiers(const Reflection &Refl) {
+  return Refl.getModifiers();
+}
+
 static bool
 ApplyReflectionBaseInjection(Sema &S, CXXInjectorDecl *MD,
                              const Reflection &Refl, Decl *Injectee) {
   CXXBaseSpecifier *Injection = GetInjectionBase(Refl);
+  ReflectionModifiers Modifiers = GetModifiers(Refl);
 
-  return AddBase(S, MD, Injection, Injectee);
+  return AddBase(S, MD, Injection, Modifiers, Injectee);
 }
 
 static Decl *
@@ -3565,11 +3595,6 @@ GetInjectionDecl(const Reflection &Refl) {
   // Verify that our reflection contains a reachable declaration.
   assert(ReachableDecl);
   return const_cast<Decl *>(ReachableDecl);
-}
-
-static const ReflectionModifiers &
-GetModifiers(const Reflection &Refl) {
-  return Refl.getModifiers();
 }
 
 static bool

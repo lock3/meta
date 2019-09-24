@@ -11,6 +11,10 @@ constexpr meta::info next_member(meta::info reflection) {
   return __reflect(query_get_next_member, reflection);
 }
 
+constexpr meta::info front_base(meta::info reflection) {
+  return __reflect(query_get_begin_base_spec, reflection);
+}
+
 consteval bool is_public(meta::info base_or_mem) {
   return __reflect(query_is_public, base_or_mem);
 }
@@ -44,7 +48,9 @@ consteval void clear_access_modifier(meta::info& base_or_mem) {
 }
 
 namespace make_default_class_test {
-  struct Existing {
+  struct Base { };
+
+  struct Existing : public Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -73,11 +79,19 @@ namespace make_default_class_test {
       make_default(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_default(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_private(field_1));
 
   // Methods
@@ -87,10 +101,16 @@ namespace make_default_class_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_private(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_private(base_1));
 }
 
 namespace make_default_class_aborted_test {
-  struct Existing {
+  struct Base { };
+
+  struct Existing : public Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -122,11 +142,20 @@ namespace make_default_class_aborted_test {
       clear_access_modifier(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_default(base_1);
+      clear_access_modifier(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_public(field_1));
 
   // Methods
@@ -136,10 +165,16 @@ namespace make_default_class_aborted_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_public(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_public(base_1));
 }
 
 namespace make_default_struct_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -168,11 +203,19 @@ namespace make_default_struct_test {
       make_default(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_default(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_public(field_1));
 
   // Methods
@@ -182,10 +225,16 @@ namespace make_default_struct_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_public(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = next_member(method_1);
+  static_assert(is_public(base_1));
 }
 
 namespace make_default_struct_aborted_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -217,11 +266,20 @@ namespace make_default_struct_aborted_test {
       clear_access_modifier(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_default(base_1);
+      clear_access_modifier(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_private(field_1));
 
   // Methods
@@ -231,10 +289,16 @@ namespace make_default_struct_aborted_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_private(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_private(base_1));
 }
 
 namespace make_public_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -263,11 +327,19 @@ namespace make_public_test {
       make_public(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_public(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_public(field_1));
 
   // Methods
@@ -277,10 +349,16 @@ namespace make_public_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_public(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_public(base_1));
 }
 
 namespace make_public_aborted_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -312,11 +390,20 @@ namespace make_public_aborted_test {
       clear_access_modifier(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_public(base_1);
+      clear_access_modifier(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_private(field_1));
 
   // Methods
@@ -326,10 +413,16 @@ namespace make_public_aborted_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_private(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_private(base_1));
 }
 
 namespace make_protected_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -358,8 +451,16 @@ namespace make_protected_test {
       make_protected(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_protected(base_1);
+
+      -> base_1;
     }
   };
+
+  constexpr meta::info refl = reflexpr(New);
 
   // Fields
   constexpr meta::info field_1 = front_member(reflexpr(New));
@@ -372,10 +473,16 @@ namespace make_protected_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_protected(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_protected(base_1));
 }
 
 namespace make_protected_aborted_test {
-  class Existing {
+  struct Base { };
+
+  class Existing : private Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -407,8 +514,17 @@ namespace make_protected_aborted_test {
       clear_access_modifier(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_protected(base_1);
+      clear_access_modifier(base_1);
+
+      -> base_1;
     }
   };
+
+  constexpr meta::info refl = reflexpr(New);
 
   // Fields
   constexpr meta::info field_1 = front_member(reflexpr(New));
@@ -421,10 +537,16 @@ namespace make_protected_aborted_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_private(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_private(base_1));
 }
 
 namespace make_private_test {
-  struct Existing {
+  struct Base { };
+
+  struct Existing : public Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -453,8 +575,16 @@ namespace make_private_test {
       make_private(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_private(base_1);
+
+      -> base_1;
     }
   };
+
+  constexpr meta::info refl = reflexpr(New);
 
   // Fields
   constexpr meta::info field_1 = front_member(reflexpr(New));
@@ -467,10 +597,16 @@ namespace make_private_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_private(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_private(base_1));
 }
 
 namespace make_private_aborted_test {
-  struct Existing {
+  struct Base { };
+
+  struct Existing : public Base {
     int field_1;
 
     int method_1() { return 0; }
@@ -502,11 +638,20 @@ namespace make_private_aborted_test {
       clear_access_modifier(type_alias_1);
 
       -> type_alias_1;
+
+      // Bases
+      meta::info base_1 = front_base(refl);
+      make_default(base_1);
+      clear_access_modifier(base_1);
+
+      -> base_1;
     }
   };
 
+  constexpr meta::info refl = reflexpr(New);
+
   // Fields
-  constexpr meta::info field_1 = front_member(reflexpr(New));
+  constexpr meta::info field_1 = front_member(refl);
   static_assert(is_public(field_1));
 
   // Methods
@@ -516,6 +661,11 @@ namespace make_private_aborted_test {
   // Type aliases
   constexpr meta::info type_alias_1 = next_member(method_1);
   static_assert(is_public(type_alias_1));
+
+  // Bases
+  constexpr meta::info base_1 = front_base(refl);
+  static_assert(is_public(base_1));
+
 }
 
 int main() {
