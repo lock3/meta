@@ -277,6 +277,14 @@ public:
       return (AccessSpecifier)Access;
   }
 
+  /// Sets the access specifier for this base specifier.
+  ///
+  /// This is used by injection, and will change the specifiers
+  /// as written state.
+  void setAccessSpecifier(AccessSpecifier AS) {
+    this->Access = AS;
+  }
+
   /// Retrieves the access specifier as written in the source code
   /// (which may mean that no access specifier was explicitly written).
   ///

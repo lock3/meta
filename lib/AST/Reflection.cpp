@@ -950,11 +950,11 @@ static bool isExplicit(const Reflection &R, APValue &Result) {
 }
 
 static AccessSpecifier getAccessUnmodified(const Reflection &R) {
-  if (const Decl *D = getReachableAliasDecl(R))
-    return D->getAccess();
-
   if (const CXXBaseSpecifier *B = getReachableBase(R))
     return B->getAccessSpecifier();
+
+  if (const Decl *D = getReachableAliasDecl(R))
+    return D->getAccess();
 
   return AS_none;
 }
@@ -1005,6 +1005,9 @@ static bool isPrivate(const Reflection &R, APValue &Result) {
 
 /// Returns true if R has default access.
 static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
+  if (const CXXBaseSpecifier *BS = getReachableBase(R))
+    return SuccessBool(R, Result, BS->getAccessSpecifierAsWritten() == AS_none);
+
   if (const Decl *D = getReachableAliasDecl(R)) {
     if (const RecordDecl *RD = dyn_cast<RecordDecl>(D->getDeclContext())) {
       for (const Decl *CurDecl : dyn_cast<DeclContext>(RD)->decls()) {
@@ -1015,6 +1018,7 @@ static bool hasDefaultAccess(const Reflection &R, APValue &Result) {
       }
     }
   }
+
   return SuccessFalse(R, Result);
 }
 
