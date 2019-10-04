@@ -18,4 +18,4 @@ jobs:
     - name: ninja check-clang
       run: ninja -C build check-clang
     - name: integration tests
-      run: cd lifetime-integration-tests && ./run.sh ../../build/bin/clang
+      run: cd lifetime-integration-tests && ./run.sh ../build/bin/clang
