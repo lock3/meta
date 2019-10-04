@@ -420,7 +420,8 @@ Decl *Parser::ParseCXXMetaprogramDeclaration() {
   // Parse the body of the metaprogram declaration.
   StmtResult Body(ParseCompoundStatementBody());
   if (!Body.isInvalid())
-    Actions.ActOnFinishCXXMetaprogramDecl(D, Body.get(), OriginalDC, true);
+    Actions.ActOnFinishCXXMetaprogramDecl(D, Body.get(),
+                                          OriginalDC, /*FromParser=*/true);
   else
     Actions.ActOnCXXMetaprogramDeclError(D, OriginalDC);
 
@@ -446,7 +447,8 @@ Decl *Parser::ParseCXXInjectionDeclaration(bool IncludeTerminator) {
   // Parse the injection statement of the metaprogram declaration.
   StmtResult InjectionStmt = ParseCXXInjectionStatement();
   if (!InjectionStmt.isInvalid())
-    Actions.ActOnFinishCXXInjectionDecl(D, InjectionStmt.get(), OriginalDC, true);
+    Actions.ActOnFinishCXXInjectionDecl(D, InjectionStmt.get(),
+                                        OriginalDC, /*FromParser=*/true);
   else
     Actions.ActOnCXXInjectionDeclError(D, OriginalDC);
 
