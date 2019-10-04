@@ -9324,14 +9324,17 @@ public:
     }
   };
 
+  bool EvaluatingMetaDeclFromParser = false;
+
   Decl *ActOnCXXMetaprogramDecl(SourceLocation ConstexprLoc);
   Decl *ActOnCXXInjectionDecl(SourceLocation ConstexprLoc);
   void ActOnStartCXXMetaprogramDecl(Decl *D, DeclContext *&OriginalDC);
   void ActOnStartCXXInjectionDecl(Decl *D, DeclContext *&OriginalDC);
-  void ActOnFinishCXXMetaprogramDecl(Decl *D, Stmt *Body,
-                                     DeclContext *OriginalDC);
-  void ActOnFinishCXXInjectionDecl(Decl *D, Stmt *InjectionStmt,
-                                   DeclContext *OriginalDC);
+  void ActOnFinishCXXMetaprogramDecl(
+      Decl *D, Stmt *Body, DeclContext *OriginalDC, bool FromParser = false);
+  void ActOnFinishCXXInjectionDecl(
+      Decl *D, Stmt *InjectionStmt, DeclContext *OriginalDC,
+      bool FromParser = false);
   void ActOnCXXMetaprogramDeclError(Decl *D, DeclContext *OriginalDC);
   void ActOnCXXInjectionDeclError(Decl *D, DeclContext *OriginalDC);
 
