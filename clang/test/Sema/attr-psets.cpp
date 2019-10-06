@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wno-unused-value -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }
@@ -266,30 +266,30 @@ void addr_and_dref() {
   __lifetime_pset(c); // expected-warning {{pset(c) = (i)}}
 }
 
-void forbidden() {
-  int i;
-  int *p = &i;
-  p++;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
+namespace forbidden {
+int i;
+int *p = &i;
 
-  p = &i;
-  p--;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
-
-  p = &i;
-  ++p;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
-
-  p = &i;
-  --p;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
-
-  p = &i + 3;         // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p); // expected-warning {{pset(p) = ((unknown))}}
-
-  int *q = &p[3];     // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(q); // expected-warning {{pset(q) = ((unknown))}}
+void plus() {
+  p++; // expected-warning {{pointer arithmetic disables lifetime analysis}}
 }
+
+void pre_plus() {
+  ++p;                // expected-warning {{pointer arithmetic disables lifetime analysis}}
+}
+
+void minus() {
+  p--; // expected-warning {{pointer arithmetic disables lifetime analysis}}
+}
+
+void pre_minus() {
+  --p; // expected-warning {{pointer arithmetic disables lifetime analysis}}
+}
+
+void array_subscript() {
+  p[3]; // expected-warning {{pointer arithmetic disables lifetime analysis}}
+}
+} // namespace forbidden
 
 void array() {
   int a[4];
@@ -537,10 +537,15 @@ l1:
 
   __lifetime_pset(p); // expected-warning {{pset(p) = (i)}}
   (void)&&l1;
+}
 
+void cast_to_void() {
+  int i;
   void *vptr = &i;    // expected-warning {{unsafe cast disables lifetime analysis}}
-  p = (int *)vptr;    // expected-warning {{unsafe cast}}
-  __lifetime_pset(p); // expected-warning {{((unknown))}}
+}
+
+void cast_from_void(void *vptr) {
+  (int *)vptr; // expected-warning {{unsafe cast}}
 }
 
 void goto_skipping_decl(bool b) {
@@ -967,7 +972,6 @@ void ambiguous_pointers(bool cond) {
 
 void cast(int *p) {
   float *q = reinterpret_cast<float *>(p); // expected-warning {{unsafe cast}}
-  __lifetime_pset(q);                      // expected-warning {{pset(q) = ((unknown))}}
 }
 
 void doNotInvalidateReference(std::vector<std::basic_string<char>> v) {
@@ -1117,14 +1121,8 @@ void string_view_ctors(const char *c) {
   ///__lifetime_pset(sv5); //TODOexpected-warning {{pset(sv5) = (local)}}
 }
 
-void unary_operator(const char *p) {
-  const char *q = --p; // expected-warning {{pointer arithmetic disables lifetime analysis}}
-  __lifetime_pset(p);  // expected-warning {{pset(p) = ((unknown))}}
-  __lifetime_pset(q);  // expected-warning {{pset(q) = ((unknown))}}
-}
-
 void funcptrs() {
-  auto fptr = unary_operator;
+  auto fptr = string_view_ctors;
   __lifetime_pset(fptr); // expected-warning {{pset(fptr) = ((static))}}
 }
 

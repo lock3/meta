@@ -299,6 +299,14 @@ void test() {
   // suppressed further diagnostics here:
   (void)*q;
 }
+
+void f(const char **values) {
+  // Array subscription into poiter 'values' is not allowed and disables
+  // the analysis. In particular, we should not see
+  //     warning: returning a dangling pointer as output value '*values'.
+  values[0] = "hello";
+}
+
 } // namespace supress_further_warnings
 
 namespace do_not_check_Owner_methods {

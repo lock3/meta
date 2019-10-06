@@ -65,7 +65,15 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
   std::map<const Expr *, PSet> &PSetsOfExpr;
   std::map<const Expr *, PSet> &RefersTo;
 
+  /// Certain constructs that violate the type and bounds profile of the
+  /// C++ core guidelines (such as reinterpret_cast) disable lifetime analysis.
+  /// We disable it for the whole function because those constructs make it
+  /// hard to asses which Pointers are tainted by them.
+  bool AnalysisDisabled = false;
+
 public:
+  bool isAnalysisDisabled() const { return AnalysisDisabled; }
+
   /// Ignore parentheses and most implicit casts.
   /// Does not go through implicit cast that convert a literal into a pointer,
   /// because there the type category changes.
@@ -205,6 +213,7 @@ public:
 
     if (!E->getBase()->IgnoreParenImpCasts()->getType()->isArrayType()) {
       Reporter.warnPointerArithmetic(E->getSourceRange());
+      AnalysisDisabled = true;
       setPSet(E, {});
       return;
     }
@@ -294,6 +303,7 @@ public:
     case CK_IntegralToPointer:
       // Those casts are forbidden by the type profile
       Reporter.warnUnsafeCast(E->getSourceRange());
+      AnalysisDisabled = true;
       setPSet(E, {});
       return;
     case CK_ArrayToPointerDecay:
@@ -381,6 +391,7 @@ public:
       setPSet(BO, getPSet(BO->getLHS()));
     } else if (BO->getType()->isPointerType()) {
       Reporter.warnPointerArithmetic(BO->getOperatorLoc());
+      AnalysisDisabled = true;
       setPSet(BO, {});
     } else if (BO->isLValue() && BO->isCompoundAssignmentOp()) {
       setPSet(BO, getPSet(BO->getLHS()));
@@ -405,6 +416,7 @@ public:
       // Workaround: detecting compiler generated AST node.
       if (hasPSet(UO) && UO->getBeginLoc() != UO->getEndLoc()) {
         Reporter.warnPointerArithmetic(UO->getOperatorLoc());
+        AnalysisDisabled = true;
         setPSet(getPSet(UO->getSubExpr()), {}, UO->getSourceRange());
       }
     }
@@ -1248,6 +1260,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       const Stmt *S = E.castAs<CFGStmt>().getStmt();
       if (!IsIgnoredStmt(S)) {
         Visit(S);
+        if (isAnalysisDisabled())
+          return;
 #ifndef NDEBUG
         if (auto *Ex = dyn_cast<Expr>(S)) {
           if (Ex->isLValue() && !Ex->getType()->isFunctionType() &&
@@ -1329,7 +1343,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
   }
 } // namespace lifetime
 
-void VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
+bool VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
                 llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
@@ -1338,6 +1352,7 @@ void VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
   PSetsBuilder Builder(FD, Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
                        IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);
+  return !Builder.isAnalysisDisabled();
 }
 } // namespace lifetime
 } // namespace clang

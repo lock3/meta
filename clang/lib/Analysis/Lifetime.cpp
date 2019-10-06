@@ -250,8 +250,13 @@ void LifetimeContext::TraverseBlocks() {
       }
 
       BC.ExitPMap = BC.EntryPMap;
-      VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr,
-                 RefersTo, *B, Reporter, ASTCtxt, IsConvertible);
+      if (!VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap,
+                      PSetsOfExpr, RefersTo, *B, Reporter, ASTCtxt,
+                      IsConvertible)) {
+        // An unsupported AST node (such as reinterpret_cast) disabled
+        // the analysis.
+        return;
+      }
       BC.Visited = true;
       Updated = true;
     }
