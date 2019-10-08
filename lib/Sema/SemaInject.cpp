@@ -1578,6 +1578,13 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
     Method->setConstexpr(D->isConstexpr());
   }
 
+  // Update the explicit specifier.
+  if (GetModifiers().addExplicit()) {
+    Method->setExplicitSpecified(true);
+  } else {
+    Method->setExplicitSpecified(D->isExplicitSpecified());
+  }
+
   // Propagate virtual flags.
   Method->setVirtualAsWritten(D->isVirtualAsWritten());
   if (D->isPure())
