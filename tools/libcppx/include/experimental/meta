@@ -271,6 +271,7 @@ enum reflection_query : unsigned {
   query_set_access,
   query_set_storage,
   query_set_add_constexpr,
+  query_set_add_explicit,
   query_set_add_virtual,
   query_set_add_pure_virtual,
   query_set_new_name
@@ -291,6 +292,8 @@ consteval static void require_spec_mem_function(info reflection,
                                                 const char *custom_err = nullptr);
 consteval static void require_function(info reflection,
                                        const char *custom_err = nullptr);
+consteval static void require_ctor_or_conv(info reflection,
+                                           const char *custom_err = nullptr);
 consteval static void require_base_or_mem(info reflection,
                                           const char *custom_err = nullptr);
 consteval static void require_type(info reflection,
@@ -3313,6 +3316,19 @@ consteval void make_constexpr(info& reflection, bool mark_constexpr = true) {
   __reflect_mod(detail::query_set_add_constexpr, reflection, mark_constexpr);
 }
 
+// Explicit
+
+// Requires: is_constructor(ctor_or_conv) or is_conversion(ctor_or_conv)
+//
+// Updates the value of reflection adding an explicit modifier if true,
+// removing any explicit modifier if false.
+// When injected via declaration cloning, an explicit modifier will result
+// in the injected declaration being explicit.
+consteval void make_explicit(info& ctor_or_conv, bool mark_explicit = true) {
+  detail::require_ctor_or_conv(ctor_or_conv);
+  __reflect_mod(detail::query_set_add_explicit, ctor_or_conv, mark_explicit);
+}
+
 // Virtual
 
 // Requires: is_member_function(mem_function)
@@ -3432,6 +3448,15 @@ detail::require_function(info reflection, const char *custom_err) {
   if(custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a function.");
+}
+
+consteval void
+detail::require_ctor_or_conv(info reflection, const char *custom_err) {
+  if (is_constructor(reflection) || is_conversion(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a constructor or a type conversion function.");
 }
 
 consteval void

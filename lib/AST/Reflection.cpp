@@ -265,6 +265,7 @@ namespace clang {
     query_set_access,
     query_set_storage,
     query_set_add_constexpr,
+    query_set_add_explicit,
     query_set_add_virtual,
     query_set_add_pure_virtual,
     query_set_new_name,
@@ -3274,6 +3275,20 @@ setAddConstexprMod(const Reflection &R, const ArrayRef<APValue> &Args,
   return Error(R);
 }
 
+static ReflectionModifiers withExplicit(const Reflection &R, bool AddExplicit) {
+  ReflectionModifiers M = R.getModifiers();
+  M.setAddExplicit(AddExplicit);
+  return M;
+}
+
+static bool
+setAddExplicitMod(const Reflection &R, const ArrayRef<APValue> &Args,
+                   APValue &Result) {
+  if (OptionalBool V = getArgAsBool(Args, 0))
+    return makeReflection(R, withExplicit(R, *V), Result);
+  return Error(R);
+}
+
 static ReflectionModifiers withVirtual(const Reflection &R, bool AddVirtual) {
   ReflectionModifiers M = R.getModifiers();
   M.setAddVirtual(AddVirtual);
@@ -3329,6 +3344,8 @@ bool Reflection::UpdateModifier(ReflectionQuery Q,
     return setStorageMod(*this, ContextualArgs, Result);
   case query_set_add_constexpr:
     return setAddConstexprMod(*this, ContextualArgs, Result);
+  case query_set_add_explicit:
+    return setAddExplicitMod(*this, ContextualArgs, Result);
   case query_set_add_virtual:
     return setAddVirtualMod(*this, ContextualArgs, Result);
   case query_set_add_pure_virtual:
