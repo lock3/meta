@@ -1997,6 +1997,16 @@ public:
     return Body || isLateTemplateParsed();
   }
 
+  bool doesThisDeclarationHaveAPrintableBody() const {
+    if (doesThisDeclarationHaveABody())
+      return true;
+
+    if (FunctionDecl *Pattern = getInstantiatedFromMemberFunction())
+      return Pattern->doesThisDeclarationHaveABody();
+
+    return false;
+  }
+
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }
 

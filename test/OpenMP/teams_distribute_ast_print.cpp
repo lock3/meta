@@ -66,6 +66,10 @@ public:
 // CHECK-NEXT: #pragma omp teams distribute default(none) private(b) firstprivate(argv) shared(d) reduction(+: c) reduction(max: e) num_teams(f) thread_limit(d)
 // CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams distribute private(this->a) private(this->a) private(this->S::a)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute private(this->a) private(this->a)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute default(none) private(b) firstprivate(argv) shared(d) reduction(+: c) reduction(max: e) num_teams(f) thread_limit(d)
 
 class S8 : public S7<S> {
   S8() {}
