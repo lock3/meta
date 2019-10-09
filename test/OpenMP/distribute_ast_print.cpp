@@ -52,6 +52,9 @@ public:
 // CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams
 // CHECK-NEXT: #pragma omp distribute private(this->a) private(this->a) private(this->S::a) allocate(this->a)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams
+// CHECK-NEXT: #pragma omp distribute allocate(this->a) private(this->a) private(this->a)
 
 class S8 : public S7<S> {
   S8() {}

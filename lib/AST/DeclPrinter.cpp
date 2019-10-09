@@ -48,6 +48,7 @@ namespace {
 
     void PrintObjCTypeParams(ObjCTypeParamList *Params);
 
+    void PrintFunctionBody(FunctionDecl *D, PrintingPolicy &SubPolicy);
   public:
     DeclPrinter(raw_ostream &Out, const PrintingPolicy &Policy,
                 const ASTContext &Context, unsigned Indentation = 0,
@@ -479,12 +480,12 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
     else if (isa<ObjCMethodDecl>(*D) && cast<ObjCMethodDecl>(*D)->hasBody())
       Terminator = nullptr;
     else if (auto FD = dyn_cast<FunctionDecl>(*D)) {
-      if (FD->doesThisDeclarationHaveAUserDefinedBody())
+      if (FD->doesThisDeclarationHaveAPrintableBody())
         Terminator = nullptr;
       else
         Terminator = ";";
     } else if (auto TD = dyn_cast<FunctionTemplateDecl>(*D)) {
-      if (TD->getTemplatedDecl()->doesThisDeclarationHaveAUserDefinedBody())
+      if (TD->getTemplatedDecl()->isThisDeclarationADefinition())
         Terminator = nullptr;
       else
         Terminator = ";";
@@ -507,9 +508,9 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
       Out << Terminator;
     if (!Policy.TerseOutput &&
         ((isa<FunctionDecl>(*D) &&
-          cast<FunctionDecl>(*D)->doesThisDeclarationHaveAUserDefinedBody()) ||
+          cast<FunctionDecl>(*D)->doesThisDeclarationHaveAPrintableBody()) ||
          (isa<FunctionTemplateDecl>(*D) &&
-          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveAUserDefinedBody())))
+          cast<FunctionTemplateDecl>(*D)->getTemplatedDecl()->doesThisDeclarationHaveABody())))
       ; // StmtPrinter already added '\n' after CompoundStmt.
     else
       Out << "\n";
@@ -732,20 +733,22 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
         }
       Proto += ")";
     } else if (FT && isNoexceptExceptionSpec(FT->getExceptionSpecType())) {
-      Proto += " noexcept";
-      if (isComputedNoexcept(FT->getExceptionSpecType())) {
-        Proto += "(";
-        llvm::raw_string_ostream EOut(Proto);
-        FT->getNoexceptExpr()->printPretty(EOut, nullptr, SubPolicy,
-                                           Indentation);
-        EOut.flush();
-        Proto += EOut.str();
-        Proto += ")";
+      if (!D->isExplicitlyDefaulted()) {
+        Proto += " noexcept";
+        if (isComputedNoexcept(FT->getExceptionSpecType())) {
+          Proto += "(";
+          llvm::raw_string_ostream EOut(Proto);
+          FT->getNoexceptExpr()->printPretty(EOut, nullptr, SubPolicy,
+                                             Indentation);
+          EOut.flush();
+          Proto += EOut.str();
+          Proto += ")";
+        }
       }
     }
 
     if (CDecl) {
-      if (!Policy.TerseOutput)
+      if (!Policy.TerseOutput && !D->isExplicitlyDefaulted())
         PrintConstructorInitializers(CDecl, Proto);
     } else if (!ConversionDecl && !isa<CXXDestructorDecl>(D)) {
       if (FT && FT->hasTrailingReturn()) {
@@ -770,28 +773,12 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     Out << " = delete";
   else if (D->isExplicitlyDefaulted())
     Out << " = default";
-  else if (D->doesThisDeclarationHaveANonTrivialBody()) {
-    if (!Policy.TerseOutput) {
-      if (!D->hasPrototype() && D->getNumParams()) {
-        // This is a K&R function definition, so we need to print the
-        // parameters.
-        Out << '\n';
-        DeclPrinter ParamPrinter(Out, SubPolicy, Context, Indentation);
-        Indentation += Policy.Indentation;
-        for (unsigned i = 0, e = D->getNumParams(); i != e; ++i) {
-          Indent();
-          ParamPrinter.VisitParmVarDecl(D->getParamDecl(i));
-          Out << ";\n";
-        }
-        Indentation -= Policy.Indentation;
-      } else
-        Out << ' ';
-
-      if (D->getBody())
-        D->getBody()->printPretty(Out, nullptr, SubPolicy, Indentation);
-    } else {
-      if (!Policy.TerseOutput && isa<CXXConstructorDecl>(*D))
-        Out << " {}";
+  else if (D->doesThisDeclarationHaveAPrintableBody()) {
+    // Figure out how exactly it's printable
+    if (D->doesThisDeclarationHaveABody())
+      PrintFunctionBody(D, SubPolicy);
+    else if (FunctionDecl *Pattern = D->getInstantiatedFromMemberFunction()) {
+      PrintFunctionBody(Pattern, SubPolicy);
     }
   }
 }
@@ -1276,6 +1263,33 @@ void DeclPrinter::PrintObjCTypeParams(ObjCTypeParamList *Params) {
     }
   }
   Out << ">";
+}
+
+void DeclPrinter::PrintFunctionBody(FunctionDecl *D, PrintingPolicy &SubPolicy) {
+  assert(D->doesThisDeclarationHaveABody());
+
+  if (!Policy.TerseOutput) {
+    if (!D->hasPrototype() && D->getNumParams()) {
+      // This is a K&R function definition, so we need to print the
+      // parameters.
+      Out << '\n';
+      DeclPrinter ParamPrinter(Out, SubPolicy, Context, Indentation);
+      Indentation += Policy.Indentation;
+      for (unsigned i = 0, e = D->getNumParams(); i != e; ++i) {
+        Indent();
+        ParamPrinter.VisitParmVarDecl(D->getParamDecl(i));
+        Out << ";\n";
+      }
+      Indentation -= Policy.Indentation;
+    } else
+      Out << ' ';
+
+    if (D->getBody())
+      D->getBody()->printPretty(Out, nullptr, SubPolicy, Indentation);
+  } else {
+    if (!Policy.TerseOutput && isa<CXXConstructorDecl>(*D))
+      Out << " {}";
+  }
 }
 
 void DeclPrinter::VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
