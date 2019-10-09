@@ -1542,7 +1542,7 @@ static bool hasAttribute(ReflectionQueryEvaluator &Eval,
     return SuccessFalse(Eval, Result);
 
   if (const Decl *D = getReachableDecl(R)) {
-    for (Attr *A : D->getAttrs()) {
+    for (Attr *A : D->attrs()) {
       if (A->getSpelling() == *OptAttributeToFind)
         return SuccessTrue(Eval, Result);
     }

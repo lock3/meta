@@ -2025,15 +2025,7 @@ public:
     return Body || isLateTemplateParsed();
   }
 
-  /// Returns whether this specific declaration of the function has
-  /// an non-trivial body.
-  bool doesThisDeclarationHaveANonTrivialBody() const {
-    return (Body || isLateTemplateParsed()) && !isTrivial();
-  }
-
-  /// Returns whether this specific declaration has a user provided
-  /// body.
-  bool doesThisDeclarationHaveAUserDefinedBody() const;
+  bool doesThisDeclarationHaveAPrintableBody() const;
 
   void setBody(Stmt *B);
   void setLazyBody(uint64_t Offset) { Body = Offset; }

@@ -2845,20 +2845,19 @@ Stmt *FunctionDecl::getBody(const FunctionDecl *&Definition) const {
   return nullptr;
 }
 
-bool FunctionDecl::doesThisDeclarationHaveAUserDefinedBody() const {
-  if (!doesThisDeclarationHaveABody())
+bool FunctionDecl::doesThisDeclarationHaveAPrintableBody() const {
+  // This function may have a body, however, that body is generated
+  // and should not be printed.
+  if (isExplicitlyDefaulted())
     return false;
 
-  if (isPure())
-    return false;
+  if (doesThisDeclarationHaveABody())
+    return true;
 
-  if (isDefaulted())
-    return false;
+  if (FunctionDecl *Pattern = getInstantiatedFromMemberFunction())
+    return Pattern->doesThisDeclarationHaveABody();
 
-  if (isDeleted())
-    return false;
-
-  return true;
+  return false;
 }
 
 void FunctionDecl::setBody(Stmt *B) {
