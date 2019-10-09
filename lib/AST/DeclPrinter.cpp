@@ -685,20 +685,22 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
         }
       Proto += ")";
     } else if (FT && isNoexceptExceptionSpec(FT->getExceptionSpecType())) {
-      Proto += " noexcept";
-      if (isComputedNoexcept(FT->getExceptionSpecType())) {
-        Proto += "(";
-        llvm::raw_string_ostream EOut(Proto);
-        FT->getNoexceptExpr()->printPretty(EOut, nullptr, SubPolicy,
-                                           Indentation);
-        EOut.flush();
-        Proto += EOut.str();
-        Proto += ")";
+      if (!D->isExplicitlyDefaulted()) {
+        Proto += " noexcept";
+        if (isComputedNoexcept(FT->getExceptionSpecType())) {
+          Proto += "(";
+          llvm::raw_string_ostream EOut(Proto);
+          FT->getNoexceptExpr()->printPretty(EOut, nullptr, SubPolicy,
+                                             Indentation);
+          EOut.flush();
+          Proto += EOut.str();
+          Proto += ")";
+        }
       }
     }
 
     if (CDecl) {
-      if (!Policy.TerseOutput)
+      if (!Policy.TerseOutput && !D->isExplicitlyDefaulted())
         PrintConstructorInitializers(CDecl, Proto);
     } else if (!ConversionDecl && !isa<CXXDestructorDecl>(D)) {
       if (FT && FT->hasTrailingReturn()) {
