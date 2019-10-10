@@ -38,3 +38,13 @@ You can either try it on [Compiler Explorer](https://godbolt.org/z/z-x3Jj), or b
 [CppCon 2018 Keynote, by Herb Sutter](https://www.youtube.com/watch?v=80BZxujhY38&t=914s)
  
 [CppCon 2015 Keynote, by Herb Sutter, first introduction](https://youtu.be/hEx5DNLWGgA?t=1471)
+
+## Development
+Tests:
+* [clang/test/Sema/warn-lifetime-analysis-nocfg.cpp](clang/test/Sema/warn-lifetime-analysis-nocfg.cpp) Test statement-local analysis
+* [clang/test/Sema/warn-lifetime-analysis.cpp](clang/test/Sema/warn-lifetime-analysis.cpp): Test all diagnostics emitted by `-Wlifetime`
+* [clang/test/Sema/attr-psets.cpp](clang/test/Sema/attr-psets.cpp): The main tests of the flow-sensitive analysis. They verify how psets are propagated through all types of C++ expressions.
+* [clang/test/Sema/warn-lifetime-analysis-nonull.cpp](clang/test/Sema/warn-lifetime-analysis-nonull.cpp): Test `-Wno-lifetime-null`
+* [clang/test/Sema/attr-psets-annotation.cpp](clang/test/Sema/attr-psets-annotation.cpp): Test for the function attributes to give pre- and post-conditions to the psets of parameters and the return value
+* [clang/test/Sema/warn-lifetime-analysis-nocfg-disabled.cpp](clang/test/Sema/warn-lifetime-analysis-nocfg-disabled.cpp) Test disabling the statement-local analysis (because it's enabled by default)
+* [lifetime-integration-tests/](lifetime-integration-tests/): Integration tests that verify the analysis against various standard libraries and versions
