@@ -31,7 +31,7 @@ You can either try it on [Compiler Explorer](https://godbolt.org/z/z-x3Jj), or b
  
 [CppCon 2019 Talk, focusing on statement local analysis](https://www.youtube.com/watch?v=d67kfSnhbpA)
  
-[EuroLLVM 2019 Talk, focusing on flow-sensitive analysis]https://www.youtube.com/watch?v=VynWyOIb6Bk)
+[EuroLLVM 2019 Talk, focusing on flow-sensitive analysis](https://www.youtube.com/watch?v=VynWyOIb6Bk)
  
 [CppCon 2018 Talk, focusing on flow-sensitive analysis](https://www.youtube.com/watch?v=sjnp3P9x5jA)
  
