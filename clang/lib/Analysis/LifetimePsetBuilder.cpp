@@ -958,11 +958,6 @@ PSet PSetsBuilder::getPSet(Variable P) {
           InvalidationReason::NotInitialized(VD->getLocation()));
   }
 
-#ifndef NDEBUG
-  llvm::errs() << "PSetsBuilder::getPSet: did not find pset for '"
-               << P.getName() << "'\n";
-  llvm_unreachable("Missing pset for Pointer");
-#endif
   return {};
 }
 
