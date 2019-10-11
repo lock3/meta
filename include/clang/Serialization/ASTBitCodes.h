@@ -23,7 +23,7 @@
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMapInfo.h"
-#include "llvm/Bitcode/BitCodes.h"
+#include "llvm/Bitstream/BitCodes.h"
 #include <cassert>
 #include <cstdint>
 
@@ -41,7 +41,7 @@ namespace serialization {
     /// Version 4 of AST files also requires that the version control branch and
     /// revision match exactly, since there is no backward compatibility of
     /// AST files at this time.
-    const unsigned VERSION_MAJOR = 7;
+    const unsigned VERSION_MAJOR = 8;
 
     /// AST file minor version number supported by this version of
     /// Clang.
@@ -1021,6 +1021,9 @@ namespace serialization {
 #define EXT_OPAQUE_TYPE(ExtType, Id, Ext) \
       PREDEF_TYPE_##Id##_ID,
 #include "clang/Basic/OpenCLExtensionTypes.def"
+      // \brief SVE types with auto numeration
+#define SVE_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
+#include "clang/Basic/AArch64SVEACLETypes.def"
     };
 
     /// The number of predefined type IDs that are reserved for
@@ -1178,11 +1181,14 @@ namespace serialization {
       /// A dependentSizedVectorType record.
       TYPE_DEPENDENT_SIZED_VECTOR = 48,
 
+      /// A type defined in a macro.
+      TYPE_MACRO_QUALIFIED = 49,
+
       /// A ReflectedType record.
-      TYPE_REFLECTED  = 49,
+      TYPE_REFLECTED  = 50,
 
       /// A CXXDependentVariadicReifier record.
-      TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 50,
+      TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 51,
     };
 
     /// The type IDs for special types constructed by semantic
@@ -1447,9 +1453,6 @@ namespace serialization {
       /// A CXXConstructorDecl record.
       DECL_CXX_CONSTRUCTOR,
 
-      /// A CXXConstructorDecl record for an inherited constructor.
-      DECL_CXX_INHERITED_CONSTRUCTOR,
-
       /// A CXXDestructorDecl record.
       DECL_CXX_DESTRUCTOR,
 
@@ -1498,7 +1501,10 @@ namespace serialization {
       /// A TypeAliasTemplateDecl record.
       DECL_TYPE_ALIAS_TEMPLATE,
 
-      /// A StaticAssertDecl record.
+      /// \brief A ConceptDecl record.
+      DECL_CONCEPT,
+
+      /// \brief A StaticAssertDecl record.
       DECL_STATIC_ASSERT,
 
       /// A record containing CXXBaseSpecifiers.
@@ -1740,6 +1746,9 @@ namespace serialization {
 
       /// A GNUNullExpr record.
       EXPR_GNU_NULL,
+
+      /// A SourceLocExpr record.
+      EXPR_SOURCE_LOC,
 
       /// A ShuffleVectorExpr record.
       EXPR_SHUFFLE_VECTOR,

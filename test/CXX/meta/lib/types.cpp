@@ -105,7 +105,7 @@ static_assert(!__reflect(query_is_null_pointer_type, nullptr_expr_refl));
 
 constexpr meta::info nullptr_type_refl = __reflect(query_get_type, nullptr_expr_refl);
 static_assert(__reflect(query_is_type, nullptr_type_refl));
-static_assert(!__reflect(query_is_fundamental_type, nullptr_type_refl));
+static_assert(__reflect(query_is_fundamental_type, nullptr_type_refl));
 static_assert(!__reflect(query_is_arithmetic_type, nullptr_type_refl));
 static_assert(__reflect(query_is_scalar_type, nullptr_type_refl));
 static_assert(__reflect(query_is_object_type, nullptr_type_refl));

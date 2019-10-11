@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -verify -std=c++1z %s
+// RUN: %clang_cc1 -freflection -verify -std=c++2a %s
 
 consteval void report_error() {
   __compiler_error("Error reported!"); // expected-error {{Error reported!}}

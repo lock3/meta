@@ -15,6 +15,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclVisitor.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
@@ -106,7 +107,8 @@ namespace {
     void VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D);
     void VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D);
 
-    void printTemplateParameters(const TemplateParameterList *Params);
+    void printTemplateParameters(const TemplateParameterList *Params,
+                                 bool OmitTemplateKW = false);
     void printTemplateArguments(const TemplateArgumentList &Args,
                                 const TemplateParameterList *Params = nullptr);
     void prettyPrintAttributes(Decl *D);
@@ -125,6 +127,18 @@ void Decl::print(raw_ostream &Out, const PrintingPolicy &Policy,
   DeclPrinter Printer(Out, Policy, getASTContext(), Indentation,
                       PrintInstantiation);
   Printer.Visit(const_cast<Decl*>(this));
+}
+
+void TemplateParameterList::print(raw_ostream &Out, const ASTContext &Context,
+                                  bool OmitTemplateKW) const {
+  print(Out, Context, Context.getPrintingPolicy(), OmitTemplateKW);
+}
+
+void TemplateParameterList::print(raw_ostream &Out, const ASTContext &Context,
+                                  const PrintingPolicy &Policy,
+                                  bool OmitTemplateKW) const {
+  DeclPrinter Printer(Out, Policy, Context);
+  Printer.printTemplateParameters(this, OmitTemplateKW);
 }
 
 static QualType GetBaseType(QualType T) {
@@ -553,6 +567,21 @@ void DeclPrinter::VisitEnumConstantDecl(EnumConstantDecl *D) {
   }
 }
 
+static void printExplicitSpecifier(ExplicitSpecifier ES, llvm::raw_ostream &Out,
+                                   PrintingPolicy &Policy,
+                                   unsigned Indentation) {
+  std::string Proto = "explicit";
+  llvm::raw_string_ostream EOut(Proto);
+  if (ES.getExpr()) {
+    EOut << "(";
+    ES.getExpr()->printPretty(EOut, nullptr, Policy, Indentation);
+    EOut << ")";
+  }
+  EOut << " ";
+  EOut.flush();
+  Out << EOut.str();
+}
+
 void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
   if (!D->getDescribedFunctionTemplate() &&
       !D->isFunctionTemplateSpecialization())
@@ -582,16 +611,12 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
     if (D->isInlineSpecified())  Out << "inline ";
     if (D->isVirtualAsWritten()) Out << "virtual ";
     if (D->isModulePrivate())    Out << "__module_private__ ";
-    if (D->isConstexpr() && !D->isExplicitlyDefaulted()) {
-      if (D->isConsteval())
-        Out << "consteval ";
-      else
-        Out << "constexpr ";
-    }
-    if ((CDecl && CDecl->isExplicitSpecified()) ||
-        (ConversionDecl && ConversionDecl->isExplicitSpecified()) ||
-        (GuideDecl && GuideDecl->isExplicitSpecified()))
-      Out << "explicit ";
+    if (D->isConstexprSpecified() && !D->isExplicitlyDefaulted())
+      Out << "constexpr ";
+    if (D->isConsteval())        Out << "consteval ";
+    ExplicitSpecifier ExplicitSpec = ExplicitSpecifier::getFromDecl(D);
+    if (ExplicitSpec.isSpecified())
+      printExplicitSpecifier(ExplicitSpec, Out, Policy, Indentation);
   }
 
   PrintingPolicy SubPolicy(Policy);
@@ -963,12 +988,19 @@ void DeclPrinter::VisitCXXRecordDecl(CXXRecordDecl *D) {
 
 void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
   const char *l;
-  if (D->getLanguage() == LinkageSpecDecl::lang_c)
+  switch (D->getLanguage()) {
+  case LinkageSpecDecl::lang_c:
     l = "C";
-  else {
-    assert(D->getLanguage() == LinkageSpecDecl::lang_cxx &&
-           "unknown language in linkage specification");
+    break;
+  case LinkageSpecDecl::lang_cxx_14:
+    l = "C++14";
+    break;
+  case LinkageSpecDecl::lang_cxx_11:
+    l = "C++11";
+    break;
+  case LinkageSpecDecl::lang_cxx:
     l = "C++";
+    break;
   }
 
   Out << "extern \"" << l << "\" ";
@@ -980,25 +1012,35 @@ void DeclPrinter::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
     Visit(*D->decls_begin());
 }
 
-void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params) {
+void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params,
+                                          bool OmitTemplateKW) {
   assert(Params);
 
-  Out << "template <";
+  if (!OmitTemplateKW)
+    Out << "template ";
+  Out << '<';
 
-  for (unsigned i = 0, e = Params->size(); i != e; ++i) {
-    if (i != 0)
+  bool NeedComma = false;
+  for (const Decl *Param : *Params) {
+    if (Param->isImplicit())
+      continue;
+
+    if (NeedComma)
       Out << ", ";
+    else
+      NeedComma = true;
 
-    const Decl *Param = Params->getParam(i);
     if (auto TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
 
       if (TTP->wasDeclaredWithTypename())
-        Out << "typename ";
+        Out << "typename";
       else
-        Out << "class ";
+        Out << "class";
 
       if (TTP->isParameterPack())
-        Out << "...";
+        Out << " ...";
+      else if (!TTP->getName().empty())
+        Out << ' ';
 
       Out << *TTP;
 
@@ -1023,7 +1065,9 @@ void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params) {
     }
   }
 
-  Out << "> ";
+  Out << '>';
+  if (!OmitTemplateKW)
+    Out << ' ';
 }
 
 void DeclPrinter::printTemplateArguments(const TemplateArgumentList &Args,
@@ -1073,8 +1117,13 @@ void DeclPrinter::VisitTemplateDecl(const TemplateDecl *D) {
     if (TTP->isParameterPack())
       Out << "...";
     Out << D->getName();
-  } else {
-    Visit(D->getTemplatedDecl());
+  } else if (auto *TD = D->getTemplatedDecl())
+    Visit(TD);
+  else if (const auto *Concept = dyn_cast<ConceptDecl>(D)) {
+    Out << "concept " << Concept->getName() << " = " ;
+    Concept->getConstraintExpr()->printPretty(Out, nullptr, Policy,
+                                              Indentation);
+    Out << ";";
   }
 }
 
@@ -1617,14 +1666,8 @@ void DeclPrinter::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
   if (!D->isInvalidDecl()) {
     Out << "#pragma omp declare reduction (";
     if (D->getDeclName().getNameKind() == DeclarationName::CXXOperatorName) {
-      static const char *const OperatorNames[NUM_OVERLOADED_OPERATORS] = {
-          nullptr,
-#define OVERLOADED_OPERATOR(Name, Spelling, Token, Unary, Binary, MemberOnly)  \
-          Spelling,
-#include "clang/Basic/OperatorKinds.def"
-      };
       const char *OpName =
-          OperatorNames[D->getDeclName().getCXXOverloadedOperator()];
+          getOperatorSpelling(D->getDeclName().getCXXOverloadedOperator());
       assert(OpName && "not an overloaded operator");
       Out << OpName;
     } else {

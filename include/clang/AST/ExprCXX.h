@@ -186,15 +186,20 @@ public:
   static CXXMemberCallExpr *CreateEmpty(const ASTContext &Ctx, unsigned NumArgs,
                                         EmptyShell Empty);
 
-  /// Retrieves the implicit object argument for the member call.
+  /// Retrieve the implicit object argument for the member call.
   ///
   /// For example, in "x.f(5)", this returns the sub-expression "x".
   Expr *getImplicitObjectArgument() const;
 
-  /// Retrieves the declaration of the called method.
+  /// Retrieve the type of the object argument.
+  ///
+  /// Note that this always returns a non-pointer type.
+  QualType getObjectType() const;
+
+  /// Retrieve the declaration of the called method.
   CXXMethodDecl *getMethodDecl() const;
 
-  /// Retrieves the CXXRecordDecl for the underlying type of
+  /// Retrieve the CXXRecordDecl for the underlying type of
   /// the implicit object argument.
   ///
   /// Note that this is may not be the same declaration as that of the class
@@ -217,6 +222,8 @@ public:
 
 /// Represents a call to a CUDA kernel function.
 class CUDAKernelCallExpr final : public CallExpr {
+  friend class ASTStmtReader;
+
   enum { CONFIG, END_PREARG };
 
   // CUDAKernelCallExpr has some trailing objects belonging
@@ -241,20 +248,6 @@ public:
     return cast_or_null<CallExpr>(getPreArg(CONFIG));
   }
   CallExpr *getConfig() { return cast_or_null<CallExpr>(getPreArg(CONFIG)); }
-
-  /// Sets the kernel configuration expression.
-  ///
-  /// Note that this method cannot be called if config has already been set to a
-  /// non-null value.
-  void setConfig(CallExpr *E) {
-    assert(!getConfig() &&
-           "Cannot call setConfig if config is not null");
-    setPreArg(CONFIG, E);
-    setInstantiationDependent(isInstantiationDependent() ||
-                              E->isInstantiationDependent());
-    setContainsUnexpandedParameterPack(containsUnexpandedParameterPack() ||
-                                       E->containsUnexpandedParameterPack());
-  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CUDAKernelCallExprClass;
@@ -1122,7 +1115,11 @@ class CXXDefaultArgExpr final : public Expr {
   /// The parameter whose default is being used.
   ParmVarDecl *Param;
 
-  CXXDefaultArgExpr(StmtClass SC, SourceLocation Loc, ParmVarDecl *Param)
+  /// The context where the default argument expression was used.
+  DeclContext *UsedContext;
+
+  CXXDefaultArgExpr(StmtClass SC, SourceLocation Loc, ParmVarDecl *Param,
+      DeclContext *UsedContext)
       : Expr(SC,
              Param->hasUnparsedDefaultArg()
                  ? Param->getType().getNonReferenceType()
@@ -1130,7 +1127,7 @@ class CXXDefaultArgExpr final : public Expr {
              Param->getDefaultArg()->getValueKind(),
              Param->getDefaultArg()->getObjectKind(), false, false, false,
              false),
-        Param(Param) {
+        Param(Param), UsedContext(UsedContext) {
     CXXDefaultArgExprBits.Loc = Loc;
   }
 
@@ -1140,8 +1137,10 @@ public:
   // \p Param is the parameter whose default argument is used by this
   // expression.
   static CXXDefaultArgExpr *Create(const ASTContext &C, SourceLocation Loc,
-                                   ParmVarDecl *Param) {
-    return new (C) CXXDefaultArgExpr(CXXDefaultArgExprClass, Loc, Param);
+                                   ParmVarDecl *Param,
+                                   DeclContext *UsedContext) {
+    return new (C)
+        CXXDefaultArgExpr(CXXDefaultArgExprClass, Loc, Param, UsedContext);
   }
 
   // Retrieve the parameter that the argument was created from.
@@ -1151,6 +1150,9 @@ public:
   // Retrieve the actual argument to the function call.
   const Expr *getExpr() const { return getParam()->getDefaultArg(); }
   Expr *getExpr() { return getParam()->getDefaultArg(); }
+
+  const DeclContext *getUsedContext() const { return UsedContext; }
+  DeclContext *getUsedContext() { return UsedContext; }
 
   /// Retrieve the location where this default argument was actually used.
   SourceLocation getUsedLocation() const { return CXXDefaultArgExprBits.Loc; }
@@ -1191,8 +1193,11 @@ class CXXDefaultInitExpr : public Expr {
   /// The field whose default is being used.
   FieldDecl *Field;
 
+  /// The context where the default initializer expression was used.
+  DeclContext *UsedContext;
+
   CXXDefaultInitExpr(const ASTContext &Ctx, SourceLocation Loc,
-                     FieldDecl *Field, QualType Ty);
+                     FieldDecl *Field, QualType Ty, DeclContext *UsedContext);
 
   CXXDefaultInitExpr(EmptyShell Empty) : Expr(CXXDefaultInitExprClass, Empty) {}
 
@@ -1200,8 +1205,8 @@ public:
   /// \p Field is the non-static data member whose default initializer is used
   /// by this expression.
   static CXXDefaultInitExpr *Create(const ASTContext &Ctx, SourceLocation Loc,
-                                    FieldDecl *Field) {
-    return new (Ctx) CXXDefaultInitExpr(Ctx, Loc, Field, Field->getType());
+                                    FieldDecl *Field, DeclContext *UsedContext) {
+    return new (Ctx) CXXDefaultInitExpr(Ctx, Loc, Field, Field->getType(), UsedContext);
   }
 
   /// Get the field whose initializer will be used.
@@ -1217,6 +1222,13 @@ public:
     assert(Field->getInClassInitializer() && "initializer hasn't been parsed");
     return Field->getInClassInitializer();
   }
+
+  const DeclContext *getUsedContext() const { return UsedContext; }
+  DeclContext *getUsedContext() { return UsedContext; }
+
+  /// Retrieve the location where this default initializer expression was
+  /// actually used.
+  SourceLocation getUsedLocation() const { return getBeginLoc(); }
 
   SourceLocation getBeginLoc() const { return CXXDefaultInitExprBits.Loc; }
   SourceLocation getEndLoc() const { return CXXDefaultInitExprBits.Loc; }
@@ -1896,9 +1908,17 @@ public:
   /// lambda expression.
   CXXMethodDecl *getCallOperator() const;
 
+  /// Retrieve the function template call operator associated with this
+  /// lambda expression.
+  FunctionTemplateDecl *getDependentCallOperator() const;
+
   /// If this is a generic lambda expression, retrieve the template
   /// parameter list associated with it, or else return null.
   TemplateParameterList *getTemplateParameterList() const;
+
+  /// Get the template parameters were explicitly specified (as opposed to being
+  /// invented by use of an auto parameter).
+  ArrayRef<NamedDecl *> getExplicitTemplateParameters() const;
 
   /// Whether this is a generic lambda.
   bool isGenericLambda() const { return getTemplateParameterList(); }
@@ -2055,7 +2075,7 @@ private:
   CXXNewExpr(bool IsGlobalNew, FunctionDecl *OperatorNew,
              FunctionDecl *OperatorDelete, bool ShouldPassAlignment,
              bool UsualArrayDeleteWantsSize, ArrayRef<Expr *> PlacementArgs,
-             SourceRange TypeIdParens, Expr *ArraySize,
+             SourceRange TypeIdParens, Optional<Expr *> ArraySize,
              InitializationStyle InitializationStyle, Expr *Initializer,
              QualType Ty, TypeSourceInfo *AllocatedTypeInfo, SourceRange Range,
              SourceRange DirectInitRange);
@@ -2070,7 +2090,7 @@ public:
   Create(const ASTContext &Ctx, bool IsGlobalNew, FunctionDecl *OperatorNew,
          FunctionDecl *OperatorDelete, bool ShouldPassAlignment,
          bool UsualArrayDeleteWantsSize, ArrayRef<Expr *> PlacementArgs,
-         SourceRange TypeIdParens, Expr *ArraySize,
+         SourceRange TypeIdParens, Optional<Expr *> ArraySize,
          InitializationStyle InitializationStyle, Expr *Initializer,
          QualType Ty, TypeSourceInfo *AllocatedTypeInfo, SourceRange Range,
          SourceRange DirectInitRange);
@@ -2081,8 +2101,7 @@ public:
                                  bool IsParenTypeId);
 
   QualType getAllocatedType() const {
-    assert(getType()->isPointerType());
-    return getType()->getAs<PointerType>()->getPointeeType();
+    return getType()->castAs<PointerType>()->getPointeeType();
   }
 
   TypeSourceInfo *getAllocatedTypeSourceInfo() const {
@@ -2113,15 +2132,15 @@ public:
 
   bool isArray() const { return CXXNewExprBits.IsArray; }
 
-  Expr *getArraySize() {
-    return isArray()
-               ? cast<Expr>(getTrailingObjects<Stmt *>()[arraySizeOffset()])
-               : nullptr;
+  Optional<Expr *> getArraySize() {
+    if (!isArray())
+      return None;
+    return cast_or_null<Expr>(getTrailingObjects<Stmt *>()[arraySizeOffset()]);
   }
-  const Expr *getArraySize() const {
-    return isArray()
-               ? cast<Expr>(getTrailingObjects<Stmt *>()[arraySizeOffset()])
-               : nullptr;
+  Optional<const Expr *> getArraySize() const {
+    if (!isArray())
+      return None;
+    return cast_or_null<Expr>(getTrailingObjects<Stmt *>()[arraySizeOffset()]);
   }
 
   unsigned getNumPlacementArgs() const {
@@ -2260,8 +2279,8 @@ public:
   CXXDeleteExpr(QualType Ty, bool GlobalDelete, bool ArrayForm,
                 bool ArrayFormAsWritten, bool UsualArrayDeleteWantsSize,
                 FunctionDecl *OperatorDelete, Expr *Arg, SourceLocation Loc)
-      : Expr(CXXDeleteExprClass, Ty, VK_RValue, OK_Ordinary, false, false,
-             Arg->isInstantiationDependent(),
+      : Expr(CXXDeleteExprClass, Ty, VK_RValue, OK_Ordinary, false,
+             Arg->isValueDependent(), Arg->isInstantiationDependent(),
              Arg->containsUnexpandedParameterPack()),
         OperatorDelete(OperatorDelete), Argument(Arg) {
     CXXDeleteExprBits.GlobalDelete = GlobalDelete;
@@ -4228,8 +4247,8 @@ public:
   }
 };
 
-/// Represents a reference to a function parameter pack that has been
-/// substituted but not yet expanded.
+/// Represents a reference to a function parameter pack or init-capture pack
+/// that has been substituted but not yet expanded.
 ///
 /// When a pack expansion contains multiple parameter packs at different levels,
 /// this node is used to represent a function parameter pack at an outer level
@@ -4244,13 +4263,13 @@ public:
 /// \endcode
 class FunctionParmPackExpr final
     : public Expr,
-      private llvm::TrailingObjects<FunctionParmPackExpr, ParmVarDecl *> {
+      private llvm::TrailingObjects<FunctionParmPackExpr, VarDecl *> {
   friend class ASTReader;
   friend class ASTStmtReader;
   friend TrailingObjects;
 
   /// The function parameter pack which was referenced.
-  ParmVarDecl *ParamPack;
+  VarDecl *ParamPack;
 
   /// The location of the function parameter pack reference.
   SourceLocation NameLoc;
@@ -4258,35 +4277,35 @@ class FunctionParmPackExpr final
   /// The number of expansions of this pack.
   unsigned NumParameters;
 
-  FunctionParmPackExpr(QualType T, ParmVarDecl *ParamPack,
+  FunctionParmPackExpr(QualType T, VarDecl *ParamPack,
                        SourceLocation NameLoc, unsigned NumParams,
-                       ParmVarDecl *const *Params);
+                       VarDecl *const *Params);
 
 public:
   static FunctionParmPackExpr *Create(const ASTContext &Context, QualType T,
-                                      ParmVarDecl *ParamPack,
+                                      VarDecl *ParamPack,
                                       SourceLocation NameLoc,
-                                      ArrayRef<ParmVarDecl *> Params);
+                                      ArrayRef<VarDecl *> Params);
   static FunctionParmPackExpr *CreateEmpty(const ASTContext &Context,
                                            unsigned NumParams);
 
   /// Get the parameter pack which this expression refers to.
-  ParmVarDecl *getParameterPack() const { return ParamPack; }
+  VarDecl *getParameterPack() const { return ParamPack; }
 
   /// Get the location of the parameter pack.
   SourceLocation getParameterPackLocation() const { return NameLoc; }
 
   /// Iterators over the parameters which the parameter pack expanded
   /// into.
-  using iterator = ParmVarDecl * const *;
-  iterator begin() const { return getTrailingObjects<ParmVarDecl *>(); }
+  using iterator = VarDecl * const *;
+  iterator begin() const { return getTrailingObjects<VarDecl *>(); }
   iterator end() const { return begin() + NumParameters; }
 
   /// Get the number of parameters in this parameter pack.
   unsigned getNumExpansions() const { return NumParameters; }
 
   /// Get an expansion of the parameter pack by index.
-  ParmVarDecl *getExpansion(unsigned I) const { return begin()[I]; }
+  VarDecl *getExpansion(unsigned I) const { return begin()[I]; }
 
   SourceLocation getBeginLoc() const LLVM_READONLY { return NameLoc; }
   SourceLocation getEndLoc() const LLVM_READONLY { return NameLoc; }
@@ -4341,9 +4360,6 @@ private:
     unsigned ManglingNumber;
   };
   llvm::PointerUnion<Stmt *, ExtraState *> State;
-
-  void initializeExtraState(const ValueDecl *ExtendedBy,
-                            unsigned ManglingNumber);
 
 public:
   MaterializeTemporaryExpr(QualType T, Expr *Temporary,
@@ -4450,18 +4466,21 @@ class CXXFoldExpr : public Expr {
   SourceLocation LParenLoc;
   SourceLocation EllipsisLoc;
   SourceLocation RParenLoc;
+  // When 0, the number of expansions is not known. Otherwise, this is one more
+  // than the number of expansions.
+  unsigned NumExpansions;
   Stmt *SubExprs[2];
   BinaryOperatorKind Opcode;
 
 public:
   CXXFoldExpr(QualType T, SourceLocation LParenLoc, Expr *LHS,
               BinaryOperatorKind Opcode, SourceLocation EllipsisLoc, Expr *RHS,
-              SourceLocation RParenLoc)
+              SourceLocation RParenLoc, Optional<unsigned> NumExpansions)
       : Expr(CXXFoldExprClass, T, VK_RValue, OK_Ordinary,
              /*Dependent*/ true, true, true,
              /*ContainsUnexpandedParameterPack*/ false),
         LParenLoc(LParenLoc), EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc),
-        Opcode(Opcode) {
+        NumExpansions(NumExpansions ? *NumExpansions + 1 : 0), Opcode(Opcode) {
     SubExprs[0] = LHS;
     SubExprs[1] = RHS;
   }
@@ -4487,6 +4506,12 @@ public:
 
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
   BinaryOperatorKind getOperator() const { return Opcode; }
+
+  Optional<unsigned> getNumExpansions() const {
+    if (NumExpansions)
+      return NumExpansions - 1;
+    return None;
+  }
 
   SourceLocation getBeginLoc() const LLVM_READONLY { return LParenLoc; }
 
@@ -4714,6 +4739,35 @@ public:
   }
 };
 
+/// Represents a C++2a __builtin_bit_cast(T, v) expression. Used to implement
+/// std::bit_cast. These can sometimes be evaluated as part of a constant
+/// expression, but otherwise CodeGen to a simple memcpy in general.
+class BuiltinBitCastExpr final
+    : public ExplicitCastExpr,
+      private llvm::TrailingObjects<BuiltinBitCastExpr, CXXBaseSpecifier *> {
+  friend class ASTStmtReader;
+  friend class CastExpr;
+  friend class TrailingObjects;
+
+  SourceLocation KWLoc;
+  SourceLocation RParenLoc;
+
+public:
+  BuiltinBitCastExpr(QualType T, ExprValueKind VK, CastKind CK, Expr *SrcExpr,
+                     TypeSourceInfo *DstType, SourceLocation KWLoc,
+                     SourceLocation RParenLoc)
+      : ExplicitCastExpr(BuiltinBitCastExprClass, T, VK, CK, SrcExpr, 0,
+                         DstType),
+        KWLoc(KWLoc), RParenLoc(RParenLoc) {}
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return KWLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == BuiltinBitCastExprClass;
+  }
+};
+
 /// \brief Represents a compile-time value that was computed by a constant
 //// expression.
 class CXXConstantExpr : public Expr {
@@ -4721,12 +4775,14 @@ class CXXConstantExpr : public Expr {
   Stmt *Source;
 
   /// \brief The computed value of the source expression.
-  APValue Value;
+  APValue *Value;
 public:
   CXXConstantExpr(Expr *E, APValue&& V)
     : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(), 
            E->getObjectKind(), false, false, false, false), Source(E),
-      Value(std::move(V)) { }
+      Value(new APValue(V)) { }
+  // FIXME: This allocation is an explicit memory leak to get around
+  // APValues not being trivially destructible.
 
   CXXConstantExpr(EmptyShell Empty)
     : Expr(CXXConstantExprClass, Empty) { }
@@ -4735,7 +4791,7 @@ public:
   Expr *getExpression() const { return cast<Expr>(Source); }
 
   /// \brief Returns the computed value.
-  const APValue& getValue() const { return Value; }
+  const APValue& getValue() const { return *Value; }
 
   SourceLocation getBeginLoc() const LLVM_READONLY { 
     return Source->getBeginLoc(); 
@@ -5460,7 +5516,7 @@ class CXXReflectedIdExpr final
 
   DeclarationNameInfo NameInfo;
 
-  const CXXScopeSpec SS;
+  const CXXScopeSpec *SS;
   /// The nested-name-specifier that qualifies this reflected id.
   NestedNameSpecifierLoc QualifierLoc;
 
@@ -5498,7 +5554,7 @@ public:
   /// Returns the evaluated expression.
   DeclarationNameInfo getNameInfo() const { return NameInfo; }
 
-  CXXScopeSpec getScopeSpecifier() const { return SS; }
+  CXXScopeSpec getScopeSpecifier() const { return *SS; }
 
   /// Retrieve the nested-name-specifier that qualifies the
   /// name, with source location information.

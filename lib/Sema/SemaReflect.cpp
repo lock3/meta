@@ -549,7 +549,7 @@ static DeclRefExpr *DeclReflectionToDeclRefExpr(Sema &S, const Reflection &R,
     QualType T = VD->getType();
     ValueDecl *NCVD = const_cast<ValueDecl *>(VD);
     ExprValueKind VK = S.getValueKindForDeclReference(T, NCVD, SL);
-    return cast<DeclRefExpr>(S.BuildDeclRefExpr(NCVD, T, VK, SL).get());
+    return S.BuildDeclRefExpr(NCVD, T, VK, SL);
   }
 
   return nullptr;
@@ -646,7 +646,14 @@ static Expr *ReflectionToValueExpr(Sema &S, const Reflection &R,
 
   // Modify the initial expression to be properly
   // evaluable during constexpr eval.
-  return CompleteReflectionToValueExpr(S, EvalExpr);
+  EvalExpr = CompleteReflectionToValueExpr(S, EvalExpr);
+
+  // Ensure the expression results in an rvalue.
+  ExprResult Res = S.DefaultFunctionArrayLvalueConversion(EvalExpr);
+  if (Res.isInvalid())
+    return nullptr;
+
+  return Res.get();
 }
 
 enum RangeKind {
@@ -1173,7 +1180,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
   Expr::EvalResult Result;
   Result.Diag = &Diags;
   Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
-  if (!Eval->EvaluateAsAnyValue(Result, EvalCtx)) {
+  if (!Eval->EvaluateAsRValue(Result, EvalCtx)) {
     Diag(Eval->getExprLoc(), diag::reflection_reflects_non_constant_expression);
     for (PartialDiagnosticAt PD : Diags)
       Diag(PD.first, PD.second);
@@ -1469,7 +1476,7 @@ bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
     }
 
     Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
-  } else if (TNK) {
+  } else if (TNK != TNK_Non_template && TNK != TNK_Undeclared_template) {
     TemplateIdAnnotation *TemplateIdAnnotation = TemplateIdAnnotation::Create(
           SS, TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
           Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
@@ -1657,7 +1664,8 @@ static MemberExpr *BuildMemberExpr(
   MemberExpr *E = MemberExpr::Create(
       C, Base, isArrow, OpLoc, /*QualifierLoc=*/NestedNameSpecifierLoc(),
       /*TemplateKWLoc=*/SourceLocation(), ModMember, DeclAccessPair,
-      DeclNameInfo, /*TemplateArgs=*/nullptr, Ty, VK, OK);
+      DeclNameInfo, /*TemplateArgs=*/nullptr, Ty, VK, OK,
+      SemaRef.getNonOdrUseReasonInCurrentContext(ModMember));
   SemaRef.MarkMemberReferenced(E);
   return E;
 }
@@ -1726,8 +1734,8 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
         MemberType = Context.getQualifiedType(MemberType, Combined);
     }
 
-    return BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
-                           FD, MemberType, VK, OK);
+    return ::BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
+                             FD, MemberType, VK, OK);
   }
 
   if (const CXXMethodDecl *MemberFn = dyn_cast<CXXMethodDecl>(D)) {
@@ -1741,8 +1749,8 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
       VK = VK_LValue;
     }
 
-    return BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
-                           MemberFn, MemberTy, VK, OK_Ordinary);
+    return ::BuildMemberExpr(*this, Context, BaseExpr, IsArrow, OpLoc,
+                             MemberFn, MemberTy, VK, OK_Ordinary);
   }
 
   llvm_unreachable("Unsupported decl type");

@@ -78,18 +78,15 @@ public:
     QualifiedNamespace
   };
 
-  explicit NamespaceName(ReflectedNamespace NS)
-    : Storage(StorageType::getFromOpaqueValue(NS.getOpaqueValue())) {
-    // Ensure the translation from ReflectedNamespace to StorageType
-    // is working correctly since these are two different pointer unions.
-    //
-    // The transition should be one of the following:
-    // - a Namespace to a Namespace
-    // - a TranslationUnit to a TranslationUnit.
-    assert(Storage.is<TranslationUnitDecl *>() || Storage.is<NamespaceDecl *>());
-    assert(NS.is<NamespaceDecl *>() == Storage.is<NamespaceDecl *>());
-    assert(
-         NS.is<TranslationUnitDecl *>() == Storage.is<TranslationUnitDecl *>());
+  explicit NamespaceName(ReflectedNamespace NS) {
+    if (NS.is<NamespaceDecl *>()) {
+      Storage = NS.get<NamespaceDecl *>();
+    } else if (NS.is<TranslationUnitDecl *>()) {
+      Storage = NS.get<TranslationUnitDecl *>();
+    }
+
+    // Storage must always be set.
+    assert(!Storage.isNull());
   }
 
   explicit NamespaceName(QualifiedNamespaceName *Q) : Storage(Q) {

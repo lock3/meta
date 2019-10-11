@@ -10,6 +10,7 @@
 #include "InputInfo.h"
 #include "ToolChains/Arch/ARM.h"
 #include "ToolChains/Clang.h"
+#include "ToolChains/InterfaceStubs.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Sanitizers.h"
 #include "clang/Config/config.h"
@@ -73,17 +74,13 @@ ToolChain::ToolChain(const Driver &D, const llvm::Triple &T,
                      const ArgList &Args)
     : D(D), Triple(T), Args(Args), CachedRTTIArg(GetRTTIArgument(Args)),
       CachedRTTIMode(CalculateRTTIMode(Args, Triple, CachedRTTIArg)) {
-  SmallString<128> P;
+  if (D.CCCIsCXX()) {
+    if (auto CXXStdlibPath = getCXXStdlibPath())
+      getFilePaths().push_back(*CXXStdlibPath);
+  }
 
-  P.assign(D.ResourceDir);
-  llvm::sys::path::append(P, D.getTargetTriple(), "lib");
-  if (getVFS().exists(P))
-    getLibraryPaths().push_back(P.str());
-
-  P.assign(D.ResourceDir);
-  llvm::sys::path::append(P, Triple.str(), "lib");
-  if (getVFS().exists(P))
-    getLibraryPaths().push_back(P.str());
+  if (auto RuntimePath = getRuntimePath())
+    getLibraryPaths().push_back(*RuntimePath);
 
   std::string CandidateLibPath = getArchSpecificLibPath();
   if (getVFS().exists(CandidateLibPath))
@@ -283,16 +280,31 @@ Tool *ToolChain::getLink() const {
   return Link.get();
 }
 
+Tool *ToolChain::getIfsMerge() const {
+  if (!IfsMerge)
+    IfsMerge.reset(new tools::ifstool::Merger(*this));
+  return IfsMerge.get();
+}
+
 Tool *ToolChain::getOffloadBundler() const {
   if (!OffloadBundler)
     OffloadBundler.reset(new tools::OffloadBundler(*this));
   return OffloadBundler.get();
 }
 
+Tool *ToolChain::getOffloadWrapper() const {
+  if (!OffloadWrapper)
+    OffloadWrapper.reset(new tools::OffloadWrapper(*this));
+  return OffloadWrapper.get();
+}
+
 Tool *ToolChain::getTool(Action::ActionClass AC) const {
   switch (AC) {
   case Action::AssembleJobClass:
     return getAssemble();
+
+  case Action::IfsMergeJobClass:
+    return getIfsMerge();
 
   case Action::LinkJobClass:
     return getLink();
@@ -318,6 +330,9 @@ Tool *ToolChain::getTool(Action::ActionClass AC) const {
   case Action::OffloadBundlingJobClass:
   case Action::OffloadUnbundlingJobClass:
     return getOffloadBundler();
+
+  case Action::OffloadWrapperJobClass:
+    return getOffloadWrapper();
   }
 
   llvm_unreachable("Invalid tool kind.");
@@ -409,6 +424,43 @@ const char *ToolChain::getCompilerRTArgString(const llvm::opt::ArgList &Args,
   return Args.MakeArgString(getCompilerRT(Args, Component, Type));
 }
 
+
+Optional<std::string> ToolChain::getRuntimePath() const {
+  SmallString<128> P;
+
+  // First try the triple passed to driver as --target=<triple>.
+  P.assign(D.ResourceDir);
+  llvm::sys::path::append(P, "lib", D.getTargetTriple());
+  if (getVFS().exists(P))
+    return llvm::Optional<std::string>(P.str());
+
+  // Second try the normalized triple.
+  P.assign(D.ResourceDir);
+  llvm::sys::path::append(P, "lib", Triple.str());
+  if (getVFS().exists(P))
+    return llvm::Optional<std::string>(P.str());
+
+  return None;
+}
+
+Optional<std::string> ToolChain::getCXXStdlibPath() const {
+  SmallString<128> P;
+
+  // First try the triple passed to driver as --target=<triple>.
+  P.assign(D.Dir);
+  llvm::sys::path::append(P, "..", "lib", D.getTargetTriple(), "c++");
+  if (getVFS().exists(P))
+    return llvm::Optional<std::string>(P.str());
+
+  // Second try the normalized triple.
+  P.assign(D.Dir);
+  llvm::sys::path::append(P, "..", "lib", Triple.str(), "c++");
+  if (getVFS().exists(P))
+    return llvm::Optional<std::string>(P.str());
+
+  return None;
+}
+
 std::string ToolChain::getArchSpecificLibPath() const {
   SmallString<128> Path(getDriver().ResourceDir);
   llvm::sys::path::append(Path, "lib", getOSLibName(),
@@ -417,6 +469,9 @@ std::string ToolChain::getArchSpecificLibPath() const {
 }
 
 bool ToolChain::needsProfileRT(const ArgList &Args) {
+  if (Args.hasArg(options::OPT_noprofilelib))
+    return false;
+
   if (needsGCovInstrumentation(Args) ||
       Args.hasArg(options::OPT_fprofile_generate) ||
       Args.hasArg(options::OPT_fprofile_generate_EQ) ||
@@ -425,7 +480,7 @@ bool ToolChain::needsProfileRT(const ArgList &Args) {
       Args.hasArg(options::OPT_fprofile_instr_generate) ||
       Args.hasArg(options::OPT_fprofile_instr_generate_EQ) ||
       Args.hasArg(options::OPT_fcreate_profile) ||
-      Args.hasArg(options::OPT_forder_file_instrumentation)) 
+      Args.hasArg(options::OPT_forder_file_instrumentation))
     return true;
 
   return false;
@@ -796,6 +851,16 @@ void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
   DriverArgs.AddAllArgs(CC1Args, options::OPT_stdlib_EQ);
 }
 
+void ToolChain::AddClangCXXStdlibIsystemArgs(
+    const llvm::opt::ArgList &DriverArgs,
+    llvm::opt::ArgStringList &CC1Args) const {
+  DriverArgs.ClaimAllArgs(options::OPT_stdlibxx_isystem);
+  if (!DriverArgs.hasArg(options::OPT_nostdincxx))
+    for (const auto &P :
+         DriverArgs.getAllArgValues(options::OPT_stdlibxx_isystem))
+      addSystemInclude(DriverArgs, CC1Args, P);
+}
+
 bool ToolChain::ShouldLinkCXXStdlib(const llvm::opt::ArgList &Args) const {
   return getDriver().CCCIsCXX() &&
          !Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs,
@@ -821,10 +886,6 @@ void ToolChain::AddCXXStdlibLibArgs(const ArgList &Args,
 
 void ToolChain::AddFilePathLibArgs(const ArgList &Args,
                                    ArgStringList &CmdArgs) const {
-  for (const auto &LibPath : getLibraryPaths())
-    if(LibPath.length() > 0)
-      CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + LibPath));
-
   for (const auto &LibPath : getFilePaths())
     if(LibPath.length() > 0)
       CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + LibPath));
@@ -867,6 +928,7 @@ SanitizerMask ToolChain::getSupportedSanitizers() const {
                        ~SanitizerKind::Function) |
                       (SanitizerKind::CFI & ~SanitizerKind::CFIICall) |
                       SanitizerKind::CFICastStrict |
+                      SanitizerKind::FloatDivideByZero |
                       SanitizerKind::UnsignedIntegerOverflow |
                       SanitizerKind::ImplicitConversion |
                       SanitizerKind::Nullability | SanitizerKind::LocalBounds;
@@ -880,6 +942,9 @@ SanitizerMask ToolChain::getSupportedSanitizers() const {
   if (getTriple().getArch() == llvm::Triple::x86_64 ||
       getTriple().getArch() == llvm::Triple::aarch64)
     Res |= SanitizerKind::ShadowCallStack;
+  if (getTriple().getArch() == llvm::Triple::aarch64 ||
+      getTriple().getArch() == llvm::Triple::aarch64_be)
+    Res |= SanitizerKind::MemTag;
   return Res;
 }
 

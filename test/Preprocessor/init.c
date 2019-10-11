@@ -310,10 +310,10 @@
 // AARCH64:#define __FLT16_HAS_QUIET_NAN__ 1
 // AARCH64:#define __FLT16_MANT_DIG__ 11
 // AARCH64:#define __FLT16_MAX_10_EXP__ 4
-// AARCH64:#define __FLT16_MAX_EXP__ 15
+// AARCH64:#define __FLT16_MAX_EXP__ 16
 // AARCH64:#define __FLT16_MAX__ 6.5504e+4F16
-// AARCH64:#define __FLT16_MIN_10_EXP__ (-13)
-// AARCH64:#define __FLT16_MIN_EXP__ (-14)
+// AARCH64:#define __FLT16_MIN_10_EXP__ (-4)
+// AARCH64:#define __FLT16_MIN_EXP__ (-13)
 // AARCH64:#define __FLT16_MIN__ 6.103515625e-5F16
 // AARCH64:#define __FLT_DENORM_MIN__ 1.40129846e-45F
 // AARCH64:#define __FLT_DIG__ 6
@@ -7243,6 +7243,129 @@
 // PPC-AIX:#define __powerpc__ 1
 // PPC-AIX:#define __ppc__ 1
 //
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix7.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX72 %s
+//
+// PPC-AIX72:#define _AIX32 1
+// PPC-AIX72:#define _AIX41 1
+// PPC-AIX72:#define _AIX43 1
+// PPC-AIX72:#define _AIX50 1
+// PPC-AIX72:#define _AIX51 1
+// PPC-AIX72:#define _AIX52 1
+// PPC-AIX72:#define _AIX53 1
+// PPC-AIX72:#define _AIX61 1
+// PPC-AIX72:#define _AIX71 1
+// PPC-AIX72:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix7.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX71 %s
+//
+// PPC-AIX71:#define _AIX32 1
+// PPC-AIX71:#define _AIX41 1
+// PPC-AIX71:#define _AIX43 1
+// PPC-AIX71:#define _AIX50 1
+// PPC-AIX71:#define _AIX51 1
+// PPC-AIX71:#define _AIX52 1
+// PPC-AIX71:#define _AIX53 1
+// PPC-AIX71:#define _AIX61 1
+// PPC-AIX71:#define _AIX71 1
+// PPC-AIX71-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix6.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX61 %s
+//
+// PPC-AIX61:#define _AIX32 1
+// PPC-AIX61:#define _AIX41 1
+// PPC-AIX61:#define _AIX43 1
+// PPC-AIX61:#define _AIX50 1
+// PPC-AIX61:#define _AIX51 1
+// PPC-AIX61:#define _AIX52 1
+// PPC-AIX61:#define _AIX53 1
+// PPC-AIX61:#define _AIX61 1
+// PPC-AIX61-NOT:#define _AIX71 1
+// PPC-AIX61-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.3.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX53 %s
+// PPC-AIX53:#define _AIX32 1
+// PPC-AIX53:#define _AIX41 1
+// PPC-AIX53:#define _AIX43 1
+// PPC-AIX53:#define _AIX50 1
+// PPC-AIX53:#define _AIX51 1
+// PPC-AIX53:#define _AIX52 1
+// PPC-AIX53:#define _AIX53 1
+// PPC-AIX53-NOT:#define _AIX61 1
+// PPC-AIX53-NOT:#define _AIX71 1
+// PPC-AIX53-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX52 %s
+// PPC-AIX52:#define _AIX32 1
+// PPC-AIX52:#define _AIX41 1
+// PPC-AIX52:#define _AIX43 1
+// PPC-AIX52:#define _AIX50 1
+// PPC-AIX52:#define _AIX51 1
+// PPC-AIX52:#define _AIX52 1
+// PPC-AIX52-NOT:#define _AIX53 1
+// PPC-AIX52-NOT:#define _AIX61 1
+// PPC-AIX52-NOT:#define _AIX71 1
+// PPC-AIX52-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX51 %s
+// PPC-AIX51:#define _AIX32 1
+// PPC-AIX51:#define _AIX41 1
+// PPC-AIX51:#define _AIX43 1
+// PPC-AIX51:#define _AIX50 1
+// PPC-AIX51:#define _AIX51 1
+// PPC-AIX51-NOT:#define _AIX52 1
+// PPC-AIX51-NOT:#define _AIX53 1
+// PPC-AIX51-NOT:#define _AIX61 1
+// PPC-AIX51-NOT:#define _AIX71 1
+// PPC-AIX51-NOT:#define _AIX72 1
+//
+//RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.0.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX50 %s
+// PPC-AIX50:#define _AIX32 1
+// PPC-AIX50:#define _AIX41 1
+// PPC-AIX50:#define _AIX43 1
+// PPC-AIX50:#define _AIX50 1
+// PPC-AIX50-NOT:#define _AIX51 1
+// PPC-AIX50-NOT:#define _AIX52 1
+// PPC-AIX50-NOT:#define _AIX53 1
+// PPC-AIX50-NOT:#define _AIX61 1
+// PPC-AIX50-NOT:#define _AIX71 1
+// PPC-AIX50-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix4.3.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX43 %s
+// PPC-AIX43:#define _AIX32 1
+// PPC-AIX43:#define _AIX41 1
+// PPC-AIX43:#define _AIX43 1
+// PPC-AIX43-NOT:#define _AIX50 1
+// PPC-AIX43-NOT:#define _AIX51 1
+// PPC-AIX43-NOT:#define _AIX52 1
+// PPC-AIX43-NOT:#define _AIX53 1
+// PPC-AIX43-NOT:#define _AIX61 1
+// PPC-AIX43-NOT:#define _AIX71 1
+// PPC-AIX43-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix4.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX41 %s
+// PPC-AIX41:#define _AIX32 1
+// PPC-AIX41:#define _AIX41 1
+// PPC-AIX41-NOT:#define _AIX43 1
+// PPC-AIX41-NOT:#define _AIX50 1
+// PPC-AIX41-NOT:#define _AIX51 1
+// PPC-AIX41-NOT:#define _AIX52 1
+// PPC-AIX41-NOT:#define _AIX53 1
+// PPC-AIX41-NOT:#define _AIX61 1
+// PPC-AIX41-NOT:#define _AIX71 1
+// PPC-AIX41-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix3.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX32 %s
+// PPC-AIX32:#define _AIX32 1
+// PPC-AIX32-NOT:#define _AIX41 1
+// PPC-AIX32-NOT:#define _AIX43 1
+// PPC-AIX32-NOT:#define _AIX50 1
+// PPC-AIX32-NOT:#define _AIX51 1
+// PPC-AIX32-NOT:#define _AIX52 1
+// PPC-AIX32-NOT:#define _AIX53 1
+// PPC-AIX32-NOT:#define _AIX61 1
+// PPC-AIX32-NOT:#define _AIX71 1
+// PPC-AIX32-NOT:#define _AIX72 1
+//
 // RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=powerpc-ibm-aix7.1.0.0 -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX-CXX %s
 //
 // PPC-AIX-CXX:#define _WCHAR_T 1
@@ -7456,6 +7579,11 @@
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-unknown-linux-gnu -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPC32-LINUX %s
 //
 // PPC32-LINUX-NOT: _CALL_LINUX
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-unknown-linux-gnu -target-feature +spe < /dev/null | FileCheck -match-full-lines -check-prefix PPC32-SPE %s
+//
+// PPC32-SPE:#define __NO_FPRS__ 1
+// PPC32-SPE:#define __SPE__ 1
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-apple-darwin8 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-DARWIN %s
 //
@@ -8046,7 +8174,7 @@
 // SPARC:#define __UINT_LEAST8_MAX__ 255
 // SPARC:#define __UINT_LEAST8_TYPE__ unsigned char
 // SPARC:#define __USER_LABEL_PREFIX__
-// SPARC:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// SPARC:#define __VERSION__ "{{.*}}Clang{{.*}}
 // SPARC:#define __WCHAR_MAX__ 2147483647
 // SPARC:#define __WCHAR_TYPE__ int
 // SPARC:#define __WCHAR_WIDTH__ 32
@@ -8918,7 +9046,7 @@
 // X86_64-CLOUDABI:#define __UINT_LEAST8_MAX__ 255
 // X86_64-CLOUDABI:#define __UINT_LEAST8_TYPE__ unsigned char
 // X86_64-CLOUDABI:#define __USER_LABEL_PREFIX__
-// X86_64-CLOUDABI:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// X86_64-CLOUDABI:#define __VERSION__ "{{.*}}Clang{{.*}}
 // X86_64-CLOUDABI:#define __WCHAR_MAX__ 2147483647
 // X86_64-CLOUDABI:#define __WCHAR_TYPE__ int
 // X86_64-CLOUDABI:#define __WCHAR_WIDTH__ 32
@@ -9476,6 +9604,7 @@
 // X86-64-DECLSPEC: #define __declspec{{.*}}
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARCV9 %s
+// SPARCV9:#define __BIGGEST_ALIGNMENT__ 16
 // SPARCV9:#define __INT64_TYPE__ long int
 // SPARCV9:#define __INTMAX_C_SUFFIX__ L
 // SPARCV9:#define __INTMAX_TYPE__ long int
