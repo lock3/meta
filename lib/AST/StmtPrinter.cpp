@@ -853,6 +853,12 @@ void StmtPrinter::VisitOMPTaskLoopSimdDirective(
   PrintOMPExecutableDirective(Node);
 }
 
+void StmtPrinter::VisitOMPMasterTaskLoopDirective(
+    OMPMasterTaskLoopDirective *Node) {
+  Indent() << "#pragma omp master taskloop";
+  PrintOMPExecutableDirective(Node);
+}
+
 void StmtPrinter::VisitOMPDistributeDirective(OMPDistributeDirective *Node) {
   Indent() << "#pragma omp distribute";
   PrintOMPExecutableDirective(Node);

@@ -12976,32 +12976,9 @@ void Sema::CheckFunctionOrTemplateParamDeclarator(Scope *S, Declarator &D) {
   }
 }
 
-static bool
-NameHasPairedIdentifierInfo(UnqualifiedId &UnqualifiedName) {
-  switch (UnqualifiedName.getKind()) {
-  case UnqualifiedIdKind::IK_Identifier:
-    return UnqualifiedName.Identifier;
-  case UnqualifiedIdKind::IK_ReflectedId:
-    return UnqualifiedName.ReflectedIdentifier;
-  default:
-    return false;
-  }
-}
-
 static DeclarationNameInfo
 FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
-  // Ensure we have a valid name
-  if (!D.hasName())
-    return { { }, D.getIdentifierLoc() };
-
   UnqualifiedId &UnqualifiedName = D.getName();
-  if (!NameHasPairedIdentifierInfo(UnqualifiedName)) {
-    SemaRef.Diag(D.getIdentifierLoc(), diag::err_bad_parameter_name)
-        << SemaRef.GetNameForDeclarator(D).getName();
-    D.setInvalidType(true);
-    return { { }, D.getIdentifierLoc() };
-  }
-
   DeclarationNameInfo DNI = SemaRef.GetNameFromUnqualifiedId(UnqualifiedName);
   // Check for redeclaration of parameters, e.g. int foo(int x, int x);
   LookupResult R(SemaRef, DNI, Sema::LookupOrdinaryName,

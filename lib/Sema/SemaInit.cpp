@@ -9765,6 +9765,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
       if (!GD)
         continue;
 
+      Sema::ImmediateInvocationRAII InvocationRAII(*this, GD);
+
       if (!GD->isImplicit())
         HasAnyDeductionGuide = true;
 
