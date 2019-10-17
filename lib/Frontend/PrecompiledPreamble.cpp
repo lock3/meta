@@ -12,6 +12,7 @@
 
 #include "clang/Frontend/PrecompiledPreamble.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/Basic/LangStandard.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -26,11 +27,10 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Mutex.h"
-#include "llvm/Support/MutexGuard.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <limits>
+#include <mutex>
 #include <utility>
 
 using namespace clang;
@@ -95,7 +95,7 @@ public:
   void removeFile(StringRef File);
 
 private:
-  llvm::sys::SmartMutex<false> Mutex;
+  std::mutex Mutex;
   llvm::StringSet<> Files;
 };
 
@@ -105,20 +105,20 @@ TemporaryFiles &TemporaryFiles::getInstance() {
 }
 
 TemporaryFiles::~TemporaryFiles() {
-  llvm::MutexGuard Guard(Mutex);
+  std::lock_guard<std::mutex> Guard(Mutex);
   for (const auto &File : Files)
     llvm::sys::fs::remove(File.getKey());
 }
 
 void TemporaryFiles::addFile(StringRef File) {
-  llvm::MutexGuard Guard(Mutex);
+  std::lock_guard<std::mutex> Guard(Mutex);
   auto IsInserted = Files.insert(File).second;
   (void)IsInserted;
   assert(IsInserted && "File has already been added");
 }
 
 void TemporaryFiles::removeFile(StringRef File) {
-  llvm::MutexGuard Guard(Mutex);
+  std::lock_guard<std::mutex> Guard(Mutex);
   auto WasPresent = Files.erase(File);
   (void)WasPresent;
   assert(WasPresent && "File was not tracked");
@@ -202,7 +202,7 @@ PrecompilePreambleAction::CreateASTConsumer(CompilerInstance &CI,
 
   std::unique_ptr<llvm::raw_ostream> OS;
   if (InMemStorage) {
-    OS = llvm::make_unique<llvm::raw_string_ostream>(*InMemStorage);
+    OS = std::make_unique<llvm::raw_string_ostream>(*InMemStorage);
   } else {
     std::string OutputFile;
     OS = GeneratePCHAction::CreateOutputFile(CI, InFile, OutputFile);
@@ -213,7 +213,7 @@ PrecompilePreambleAction::CreateASTConsumer(CompilerInstance &CI,
   if (!CI.getFrontendOpts().RelocatablePCH)
     Sysroot.clear();
 
-  return llvm::make_unique<PrecompilePreambleConsumer>(
+  return std::make_unique<PrecompilePreambleConsumer>(
       *this, CI.getPreprocessor(), CI.getModuleCache(), Sysroot, std::move(OS));
 }
 
@@ -299,14 +299,13 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
   // created. This complexity should be lifted elsewhere.
   Clang->getTarget().adjust(Clang->getLangOpts());
 
-  assert(Clang->getFrontendOpts().Inputs.size() == 1 &&
-         "Invocation must have exactly one source file!");
-  assert(Clang->getFrontendOpts().Inputs[0].getKind().getFormat() ==
-             InputKind::Source &&
-         "FIXME: AST inputs not yet supported here!");
-  assert(Clang->getFrontendOpts().Inputs[0].getKind().getLanguage() !=
-             InputKind::LLVM_IR &&
-         "IR inputs not support here!");
+  if (Clang->getFrontendOpts().Inputs.size() != 1 ||
+      Clang->getFrontendOpts().Inputs[0].getKind().getFormat() !=
+          InputKind::Source ||
+      Clang->getFrontendOpts().Inputs[0].getKind().getLanguage() ==
+          Language::LLVM_IR) {
+    return BuildPreambleError::BadInputs;
+  }
 
   // Clear out old caches and data.
   Diagnostics.Reset();
@@ -353,7 +352,8 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
   if (auto CommentHandler = Callbacks.getCommentHandler())
     Clang->getPreprocessor().addCommentHandler(CommentHandler);
 
-  Act->Execute();
+  if (llvm::Error Err = Act->Execute())
+    return errorToErrorCode(std::move(Err));
 
   // Run the callbacks.
   Callbacks.AfterExecute(*Clang);
@@ -369,9 +369,11 @@ llvm::ErrorOr<PrecompiledPreamble> PrecompiledPreamble::Build(
 
   SourceManager &SourceMgr = Clang->getSourceManager();
   for (auto &Filename : PreambleDepCollector->getDependencies()) {
-    const FileEntry *File = Clang->getFileManager().getFile(Filename);
-    if (!File || File == SourceMgr.getFileEntryForID(SourceMgr.getMainFileID()))
+    auto FileOrErr = Clang->getFileManager().getFile(Filename);
+    if (!FileOrErr ||
+        *FileOrErr == SourceMgr.getFileEntryForID(SourceMgr.getMainFileID()))
       continue;
+    auto File = *FileOrErr;
     if (time_t ModTime = File->getModificationTime()) {
       FilesInPreamble[File->getName()] =
           PrecompiledPreamble::PreambleFileHash::createForFile(File->getSize(),
@@ -454,20 +456,33 @@ bool PrecompiledPreamble::CanReuse(const CompilerInvocation &Invocation,
         Status.getSize(), llvm::sys::toTimeT(Status.getLastModificationTime()));
   }
 
+  // OverridenFileBuffers tracks only the files not found in VFS.
+  llvm::StringMap<PreambleFileHash> OverridenFileBuffers;
   for (const auto &RB : PreprocessorOpts.RemappedFileBuffers) {
-    llvm::vfs::Status Status;
-    if (!moveOnNoError(VFS->status(RB.first), Status))
-      return false;
-
-    OverriddenFiles[Status.getUniqueID()] =
+    const PrecompiledPreamble::PreambleFileHash PreambleHash =
         PreambleFileHash::createForMemoryBuffer(RB.second);
+    llvm::vfs::Status Status;
+    if (moveOnNoError(VFS->status(RB.first), Status))
+      OverriddenFiles[Status.getUniqueID()] = PreambleHash;
+    else
+      OverridenFileBuffers[RB.first] = PreambleHash;
   }
 
   // Check whether anything has changed.
   for (const auto &F : FilesInPreamble) {
+    auto OverridenFileBuffer = OverridenFileBuffers.find(F.first());
+    if (OverridenFileBuffer != OverridenFileBuffers.end()) {
+      // The file's buffer was remapped and the file was not found in VFS.
+      // Check whether it matches up with the previous mapping.
+      if (OverridenFileBuffer->second != F.second)
+        return false;
+      continue;
+    }
+
     llvm::vfs::Status Status;
     if (!moveOnNoError(VFS->status(F.first()), Status)) {
-      // If we can't stat the file, assume that something horrible happened.
+      // If the file's buffer is not remapped and we can't stat it,
+      // assume that something horrible happened.
       return false;
     }
 
@@ -481,7 +496,8 @@ bool PrecompiledPreamble::CanReuse(const CompilerInvocation &Invocation,
       continue;
     }
 
-    // The file was not remapped; check whether it has changed on disk.
+    // Neither the file's buffer nor the file itself was remapped;
+    // check whether it has changed on disk.
     if (Status.getSize() != uint64_t(F.second.Size) ||
         llvm::sys::toTimeT(Status.getLastModificationTime()) !=
             F.second.ModTime)
@@ -770,6 +786,8 @@ std::string BuildPreambleErrorCategory::message(int condition) const {
     return "BeginSourceFile() return an error";
   case BuildPreambleError::CouldntEmitPCH:
     return "Could not emit PCH";
+  case BuildPreambleError::BadInputs:
+    return "Command line arguments must contain exactly one source file";
   }
   llvm_unreachable("unexpected BuildPreambleError");
 }

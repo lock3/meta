@@ -19,6 +19,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/Stack.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
@@ -133,9 +134,8 @@ Sema::getTemplateInstantiationArgs(NamedDecl *D,
     // Add template arguments from a function template specialization.
     else if (FunctionDecl *Function = dyn_cast<FunctionDecl>(Ctx)) {
       if (!RelativeToPrimary &&
-          (Function->getTemplateSpecializationKind() ==
-                                                  TSK_ExplicitSpecialization &&
-           !Function->getClassScopeSpecializationPattern()))
+          Function->getTemplateSpecializationKindForInstantiation() ==
+              TSK_ExplicitSpecialization)
         break;
 
       if (const TemplateArgumentList *TemplateArgs
@@ -387,6 +387,11 @@ void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
 
   if (!Ctx.isInstantiationRecord())
     ++NonInstantiationEntries;
+
+  // Check to see if we're low on stack space. We can't do anything about this
+  // from here, but we can at least warn the user.
+  if (isStackNearlyExhausted())
+    warnStackExhausted(Ctx.PointOfInstantiation);
 }
 
 void Sema::popCodeSynthesisContext() {
@@ -849,7 +854,19 @@ namespace {
       SemaRef.InstantiateAttrs(TemplateArgs, Old, New);
     }
 
-    void transformedLocalDecl(Decl *Old, Decl *New) {
+    void transformedLocalDecl(Decl *Old, ArrayRef<Decl *> NewDecls) {
+      if (Old->isParameterPack()) {
+        SemaRef.CurrentInstantiationScope->MakeInstantiatedLocalArgPack(Old);
+        for (auto *New : NewDecls)
+          SemaRef.CurrentInstantiationScope->InstantiatedLocalPackArg(
+              Old, cast<VarDecl>(New));
+        return;
+      }
+
+      assert(NewDecls.size() == 1 &&
+             "should only have multiple expansions for a pack");
+      Decl *New = NewDecls.front();
+
       // If we've instantiated the call operator of a lambda or the call
       // operator template of a generic lambda, update the "instantiation of"
       // information.
@@ -918,12 +935,11 @@ namespace {
     ExprResult TransformSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
 
-    /// Rebuild a DeclRefExpr for a ParmVarDecl reference.
-    ExprResult RebuildParmVarDeclRefExpr(ParmVarDecl *PD, SourceLocation Loc);
+    /// Rebuild a DeclRefExpr for a VarDecl reference.
+    ExprResult RebuildVarDeclRefExpr(VarDecl *PD, SourceLocation Loc);
 
-    /// Transform a reference to a function parameter pack.
-    ExprResult TransformFunctionParmPackRefExpr(DeclRefExpr *E,
-                                                ParmVarDecl *PD);
+    /// Transform a reference to a function or init-capture parameter pack.
+    ExprResult TransformFunctionParmPackRefExpr(DeclRefExpr *E, VarDecl *PD);
 
     /// Transform a FunctionParmPackExpr which was built when we couldn't
     /// expand a function parameter pack reference which refers to an expanded
@@ -1278,9 +1294,8 @@ TemplateInstantiator::TransformLoopHintAttr(const LoopHintAttr *LH) {
 
   // Create new LoopHintValueAttr with integral expression in place of the
   // non-type template parameter.
-  return LoopHintAttr::CreateImplicit(
-      getSema().Context, LH->getSemanticSpelling(), LH->getOption(),
-      LH->getState(), TransformedExpr, LH->getRange());
+  return LoopHintAttr::CreateImplicit(getSema().Context, LH->getOption(),
+                                      LH->getState(), TransformedExpr, *LH);
 }
 
 ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
@@ -1363,9 +1378,8 @@ TemplateInstantiator::TransformSubstNonTypeTemplateParmPackExpr(
                                          Arg);
 }
 
-ExprResult
-TemplateInstantiator::RebuildParmVarDeclRefExpr(ParmVarDecl *PD,
-                                                SourceLocation Loc) {
+ExprResult TemplateInstantiator::RebuildVarDeclRefExpr(VarDecl *PD,
+                                                       SourceLocation Loc) {
   DeclarationNameInfo NameInfo(PD->getDeclName(), Loc);
   return getSema().BuildDeclarationNameExpr(CXXScopeSpec(), NameInfo, PD);
 }
@@ -1374,11 +1388,11 @@ ExprResult
 TemplateInstantiator::TransformFunctionParmPackExpr(FunctionParmPackExpr *E) {
   if (getSema().ArgumentPackSubstitutionIndex != -1) {
     // We can expand this parameter pack now.
-    ParmVarDecl *D = E->getExpansion(getSema().ArgumentPackSubstitutionIndex);
-    ValueDecl *VD = cast_or_null<ValueDecl>(TransformDecl(E->getExprLoc(), D));
+    VarDecl *D = E->getExpansion(getSema().ArgumentPackSubstitutionIndex);
+    VarDecl *VD = cast_or_null<VarDecl>(TransformDecl(E->getExprLoc(), D));
     if (!VD)
       return ExprError();
-    return RebuildParmVarDeclRefExpr(cast<ParmVarDecl>(VD), E->getExprLoc());
+    return RebuildVarDeclRefExpr(VD, E->getExprLoc());
   }
 
   QualType T = TransformType(E->getType());
@@ -1387,25 +1401,26 @@ TemplateInstantiator::TransformFunctionParmPackExpr(FunctionParmPackExpr *E) {
 
   // Transform each of the parameter expansions into the corresponding
   // parameters in the instantiation of the function decl.
-  SmallVector<ParmVarDecl *, 8> Parms;
-  Parms.reserve(E->getNumExpansions());
+  SmallVector<VarDecl *, 8> Vars;
+  Vars.reserve(E->getNumExpansions());
   for (FunctionParmPackExpr::iterator I = E->begin(), End = E->end();
        I != End; ++I) {
-    ParmVarDecl *D =
-        cast_or_null<ParmVarDecl>(TransformDecl(E->getExprLoc(), *I));
+    VarDecl *D = cast_or_null<VarDecl>(TransformDecl(E->getExprLoc(), *I));
     if (!D)
       return ExprError();
-    Parms.push_back(D);
+    Vars.push_back(D);
   }
 
-  return FunctionParmPackExpr::Create(getSema().Context, T,
-                                      E->getParameterPack(),
-                                      E->getParameterPackLocation(), Parms);
+  auto *PackExpr =
+      FunctionParmPackExpr::Create(getSema().Context, T, E->getParameterPack(),
+                                   E->getParameterPackLocation(), Vars);
+  getSema().MarkFunctionParmPackReferenced(PackExpr);
+  return PackExpr;
 }
 
 ExprResult
 TemplateInstantiator::TransformFunctionParmPackRefExpr(DeclRefExpr *E,
-                                                       ParmVarDecl *PD) {
+                                                       VarDecl *PD) {
   typedef LocalInstantiationScope::DeclArgumentPack DeclArgumentPack;
   llvm::PointerUnion<Decl *, DeclArgumentPack *> *Found
     = getSema().CurrentInstantiationScope->findInstantiationOf(PD);
@@ -1419,8 +1434,10 @@ TemplateInstantiator::TransformFunctionParmPackRefExpr(DeclRefExpr *E,
       QualType T = TransformType(E->getType());
       if (T.isNull())
         return ExprError();
-      return FunctionParmPackExpr::Create(getSema().Context, T, PD,
-                                          E->getExprLoc(), *Pack);
+      auto *PackExpr = FunctionParmPackExpr::Create(getSema().Context, T, PD,
+                                                    E->getExprLoc(), *Pack);
+      getSema().MarkFunctionParmPackReferenced(PackExpr);
+      return PackExpr;
     }
 
     TransformedDecl = (*Pack)[getSema().ArgumentPackSubstitutionIndex];
@@ -1429,8 +1446,7 @@ TemplateInstantiator::TransformFunctionParmPackRefExpr(DeclRefExpr *E,
   }
 
   // We have either an unexpanded pack or a specific expansion.
-  return RebuildParmVarDeclRefExpr(cast<ParmVarDecl>(TransformedDecl),
-                                   E->getExprLoc());
+  return RebuildVarDeclRefExpr(cast<VarDecl>(TransformedDecl), E->getExprLoc());
 }
 
 ExprResult
@@ -1448,7 +1464,7 @@ TemplateInstantiator::TransformDeclRefExpr(DeclRefExpr *E) {
   }
 
   // Handle references to function parameter packs.
-  if (ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D))
+  if (VarDecl *PD = dyn_cast<VarDecl>(D))
     if (PD->isParameterPack())
       return TransformFunctionParmPackRefExpr(E, PD);
 
@@ -2085,7 +2101,11 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     return true;
 
   llvm::TimeTraceScope TimeScope("InstantiateClass", [&]() {
-    return Instantiation->getQualifiedNameAsString();
+    std::string Name;
+    llvm::raw_string_ostream OS(Name);
+    Instantiation->getNameForDiagnostic(OS, getPrintingPolicy(),
+                                        /*Qualified=*/true);
+    return Name;
   });
 
   Pattern = PatternDef;
@@ -2156,6 +2176,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   LateInstantiatedAttrVec LateAttrs;
   Instantiator.enableLateAttributeInstantiation(&LateAttrs);
 
+  bool MightHaveConstexprVirtualFunctions = false;
   for (auto *Member : Pattern->decls()) {
     // Don't instantiate members not belonging in this semantic context.
     // e.g. for:
@@ -2202,6 +2223,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
           Instantiation->setInvalidDecl();
           break;
         }
+      } else if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(NewMember)) {
+        if (MD->isConstexpr() && !MD->getFriendObjectKind() &&
+            (MD->isVirtualAsWritten() || Instantiation->getNumBases()))
+          MightHaveConstexprVirtualFunctions = true;
       }
 
       if (NewMember->isInvalidDecl())
@@ -2298,9 +2323,14 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     Consumer.HandleTagDeclDefinition(Instantiation);
 
     // Always emit the vtable for an explicit instantiation definition
-    // of a polymorphic class template specialization.
+    // of a polymorphic class template specialization. Otherwise, eagerly
+    // instantiate only constexpr virtual functions in preparation for their use
+    // in constant evaluation.
     if (TSK == TSK_ExplicitInstantiationDefinition)
       MarkVTableUsed(PointOfInstantiation, Instantiation, true);
+    else if (MightHaveConstexprVirtualFunctions)
+      MarkVirtualMembersReferenced(PointOfInstantiation, Instantiation,
+                                   /*ConstexprOnly*/ true);
   }
 
   return Instantiation->isInvalidDecl();
@@ -3070,14 +3100,14 @@ void LocalInstantiationScope::InstantiatedLocal(const Decl *D, Decl *Inst) {
 #endif
     Stored = Inst;
   } else if (DeclArgumentPack *Pack = Stored.dyn_cast<DeclArgumentPack *>()) {
-    Pack->push_back(cast<ParmVarDecl>(Inst));
+    Pack->push_back(cast<VarDecl>(Inst));
   } else {
     assert(Stored.get<Decl *>() == Inst && "Already instantiated this local");
   }
 }
 
 void LocalInstantiationScope::InstantiatedLocalPackArg(const Decl *D,
-                                                       ParmVarDecl *Inst) {
+                                                       VarDecl *Inst) {
   D = getCanonicalParmVarDecl(D);
   DeclArgumentPack *Pack = LocalDecls[D].get<DeclArgumentPack *>();
   Pack->push_back(Inst);

@@ -314,6 +314,14 @@ public:
   void printQualifiedName(raw_ostream &OS) const;
   void printQualifiedName(raw_ostream &OS, const PrintingPolicy &Policy) const;
 
+  /// Print only the nested name specifier part of a fully-qualified name,
+  /// including the '::' at the end. E.g.
+  ///    when `printQualifiedName(D)` prints "A::B::i",
+  ///    this function prints "A::B::".
+  void printNestedNameSpecifier(raw_ostream &OS) const;
+  void printNestedNameSpecifier(raw_ostream &OS,
+                                const PrintingPolicy &Policy) const;
+
   // FIXME: Remove string version.
   std::string getQualifiedNameAsString() const;
 
@@ -809,12 +817,19 @@ struct EvaluatedStmt {
   /// valid if CheckedICE is true.
   bool IsICE : 1;
 
+  /// Whether this variable is known to have constant destruction. That is,
+  /// whether running the destructor on the initial value is a side-effect
+  /// (and doesn't inspect any state that might have changed during program
+  /// execution). This is currently only computed if the destructor is
+  /// non-trivial.
+  bool HasConstantDestruction : 1;
+
   Stmt *Value;
   APValue Evaluated;
 
-  EvaluatedStmt() : WasEvaluated(false), IsEvaluating(false), CheckedICE(false),
-                    CheckingICE(false), IsICE(false) {}
-
+  EvaluatedStmt()
+      : WasEvaluated(false), IsEvaluating(false), CheckedICE(false),
+        CheckingICE(false), IsICE(false), HasConstantDestruction(false) {}
 };
 
 /// Represents a variable declaration or definition.
@@ -1235,10 +1250,23 @@ public:
 
   void setInit(Expr *I);
 
-  /// Determine whether this variable's value can be used in a
+  /// Get the initializing declaration of this variable, if any. This is
+  /// usually the definition, except that for a static data member it can be
+  /// the in-class declaration.
+  VarDecl *getInitializingDeclaration();
+  const VarDecl *getInitializingDeclaration() const {
+    return const_cast<VarDecl *>(this)->getInitializingDeclaration();
+  }
+
+  /// Determine whether this variable's value might be usable in a
   /// constant expression, according to the relevant language standard.
   /// This only checks properties of the declaration, and does not check
   /// whether the initializer is in fact a constant expression.
+  bool mightBeUsableInConstantExpressions(ASTContext &C) const;
+
+  /// Determine whether this variable's value can be used in a
+  /// constant expression, according to the relevant language standard,
+  /// including checking whether it was initialized by a constant expression.
   bool isUsableInConstantExpressions(ASTContext &C) const;
 
   EvaluatedStmt *ensureEvaluatedStmt() const;
@@ -1254,6 +1282,14 @@ public:
   /// initializer, or NULL if the value is not yet known. Returns pointer
   /// to untyped APValue if the value could not be evaluated.
   APValue *getEvaluatedValue() const;
+
+  /// Evaluate the destruction of this variable to determine if it constitutes
+  /// constant destruction.
+  ///
+  /// \pre isInitICE()
+  /// \return \c true if this variable has constant destruction, \c false if
+  ///         not.
+  bool evaluateDestruction(SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 
   /// Determines whether it is already known whether the
   /// initializer is an integral constant expression or not.
@@ -1404,6 +1440,10 @@ public:
     NonParmVarDeclBits.IsInitCapture = IC;
   }
 
+  /// Determine whether this variable is actually a function parameter pack or
+  /// init-capture pack.
+  bool isParameterPack() const;
+
   /// Whether this local extern variable declaration's previous declaration
   /// was declared in the same block scope. Only correct in C++.
   bool isPreviousDeclInSameBlockScope() const {
@@ -1442,6 +1482,12 @@ public:
   /// static data member of a class template, determine what kind of
   /// template specialization or instantiation this is.
   TemplateSpecializationKind getTemplateSpecializationKind() const;
+
+  /// Get the template specialization kind of this variable for the purposes of
+  /// template instantiation. This differs from getTemplateSpecializationKind()
+  /// for an instantiation of a class-scope explicit specialization.
+  TemplateSpecializationKind
+  getTemplateSpecializationKindForInstantiation() const;
 
   /// If this variable is an instantiation of a variable template or a
   /// static data member of a class template, determine its point of
@@ -1483,8 +1529,13 @@ public:
   // has no definition within this source file.
   bool isKnownToBeDefined() const;
 
-  /// Do we need to emit an exit-time destructor for this variable?
+  /// Is destruction of this variable entirely suppressed? If so, the variable
+  /// need not have a usable destructor at all.
   bool isNoDestroy(const ASTContext &) const;
+
+  /// Do we need to emit an exit-time destructor for this variable, and if so,
+  /// what kind?
+  QualType::DestructionKind needsDestruction(const ASTContext &Ctx) const;
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -1699,10 +1750,6 @@ public:
 
   QualType getOriginalType() const;
 
-  /// Determine whether this parameter is actually a function
-  /// parameter pack.
-  bool isParameterPack() const;
-
   /// Sets the function declaration that owns this
   /// ParmVarDecl. Since ParmVarDecls are often created before the
   /// FunctionDecls that own them, this routine is required to update
@@ -1759,10 +1806,19 @@ class FunctionDecl : public DeclaratorDecl,
 public:
   /// The kind of templated function a FunctionDecl can be.
   enum TemplatedKind {
+    // Not templated.
     TK_NonTemplate,
+    // The pattern in a function template declaration.
     TK_FunctionTemplate,
+    // A non-template function that is an instantiation or explicit
+    // specialization of a member of a templated class.
     TK_MemberSpecialization,
+    // An instantiation or explicit specialization of a function template.
+    // Note: this might have been instantiated from a templated class if it
+    // is a class-scope explicit specialization.
     TK_FunctionTemplateSpecialization,
+    // A function template specialization that hasn't yet been resolved to a
+    // particular specialized function template.
     TK_DependentFunctionTemplateSpecialization
   };
 
@@ -1775,12 +1831,6 @@ private:
   LazyDeclStmtPtr Body;
 
   unsigned ODRHash;
-
-  /// Wether this function has 'constexpr' implicitly specified.
-  bool IsConstexprSpecified;
-
-  /// Whether this function is 'consteval'.
-  bool IsConsteval;
 
   /// Indicates that the function is a metaprogram (constexpr block). In
   /// certain contexts, we can have namespace-scoped declarations find local
@@ -1877,7 +1927,7 @@ protected:
   FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
                const DeclarationNameInfo &NameInfo, QualType T,
                TypeSourceInfo *TInfo, StorageClass S, bool isInlineSpecified,
-               bool isConstexprSpecified);
+               ConstexprSpecKind ConstexprKind);
 
   using redeclarable_base = Redeclarable<FunctionDecl>;
 
@@ -1907,29 +1957,24 @@ public:
   using redeclarable_base::getMostRecentDecl;
   using redeclarable_base::isFirstDecl;
 
-  static FunctionDecl *Create(ASTContext &C, DeclContext *DC,
-                              SourceLocation StartLoc, SourceLocation NLoc,
-                              DeclarationName N, QualType T,
-                              TypeSourceInfo *TInfo,
-                              StorageClass SC,
-                              bool isInlineSpecified = false,
-                              bool hasWrittenPrototype = true,
-                              bool isConstexprSpecified = false) {
+  static FunctionDecl *
+  Create(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
+         SourceLocation NLoc, DeclarationName N, QualType T,
+         TypeSourceInfo *TInfo, StorageClass SC, bool isInlineSpecified = false,
+         bool hasWrittenPrototype = true,
+         ConstexprSpecKind ConstexprKind = CSK_unspecified) {
     DeclarationNameInfo NameInfo(N, NLoc);
-    return FunctionDecl::Create(C, DC, StartLoc, NameInfo, T, TInfo,
-                                SC,
+    return FunctionDecl::Create(C, DC, StartLoc, NameInfo, T, TInfo, SC,
                                 isInlineSpecified, hasWrittenPrototype,
-                                isConstexprSpecified);
+                                ConstexprKind);
   }
 
   static FunctionDecl *Create(ASTContext &C, DeclContext *DC,
                               SourceLocation StartLoc,
-                              const DeclarationNameInfo &NameInfo,
-                              QualType T, TypeSourceInfo *TInfo,
-                              StorageClass SC,
-                              bool isInlineSpecified,
-                              bool hasWrittenPrototype,
-                              bool isConstexprSpecified = false);
+                              const DeclarationNameInfo &NameInfo, QualType T,
+                              TypeSourceInfo *TInfo, StorageClass SC,
+                              bool isInlineSpecified, bool hasWrittenPrototype,
+                              ConstexprSpecKind ConstexprKind);
 
   static FunctionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
@@ -2128,8 +2173,21 @@ public:
   }
 
   /// Whether this is a (C++11) constexpr function or constexpr constructor.
-  bool isConstexpr() const { return FunctionDeclBits.IsConstexpr; }
-  void setConstexpr(bool IC) { FunctionDeclBits.IsConstexpr = IC; }
+  bool isConstexpr() const {
+    return FunctionDeclBits.ConstexprKind != CSK_unspecified;
+  }
+  void setConstexprKind(ConstexprSpecKind CSK) {
+    FunctionDeclBits.ConstexprKind = CSK;
+  }
+  ConstexprSpecKind getConstexprKind() const {
+    return static_cast<ConstexprSpecKind>(FunctionDeclBits.ConstexprKind);
+  }
+  bool isConstexprSpecified() const {
+    return FunctionDeclBits.ConstexprKind == CSK_constexpr;
+  }
+  bool isConsteval() const {
+    return FunctionDeclBits.ConstexprKind == CSK_consteval;
+  }
 
   /// Whether the instantiation of this function is pending.
   /// This bit is set when the decision to instantiate this function is made
@@ -2145,19 +2203,6 @@ public:
   /// (see instantiationIsPending)
   void setInstantiationIsPending(bool IC) {
     FunctionDeclBits.InstantiationIsPending = IC;
-  }
-
-  /// Whether this is a consteval function.
-  bool isConsteval() const { return IsConsteval; }
-  void setConsteval(bool II) { IsConsteval = II; }
-
-  /// \brief Whether the constexpr specifier was written explicitly or derived
-  /// from a consteval specifier.
-  bool isConstexprSpecified() const {
-    return IsConstexprSpecified;
-  }
-  void setConstexprSpecified(bool II) {
-    IsConstexprSpecified = II;
   }
 
   /// Indicates the function uses __try.
@@ -2370,6 +2415,14 @@ public:
     return T->castAs<FunctionType>()->getReturnType();
   }
 
+  /// Gets the ExceptionSpecificationType as declared.
+  ExceptionSpecificationType getExceptionSpecType() const {
+    auto *TSI = getTypeSourceInfo();
+    QualType T = TSI ? TSI->getType() : getType();
+    const auto *FPT = T->getAs<FunctionProtoType>();
+    return FPT ? FPT->getExceptionSpecType() : EST_None;
+  }
+
   /// Attempt to compute an informative source range covering the
   /// function exception specification, if any.
   SourceRange getExceptionSpecSourceRange() const;
@@ -2409,21 +2462,13 @@ public:
   /// that was defined in the class body.
   bool isInlined() const { return FunctionDeclBits.IsInline; }
 
-  /// Whether this function is marked as explicit explicitly.
-  bool isExplicitSpecified() const {
-    return FunctionDeclBits.IsExplicitSpecified;
-  }
-
-  /// State that this function is marked as explicit explicitly.
-  void setExplicitSpecified(bool ExpSpec = true) {
-    FunctionDeclBits.IsExplicitSpecified = ExpSpec;
-  }
-
   bool isInlineDefinitionExternallyVisible() const;
 
   bool isMSExternInline() const;
 
   bool doesDeclarationForceExternallyVisibleDefinition() const;
+
+  bool isStatic() const { return getStorageClass() == SC_Static; }
 
   /// Whether this function declaration represents an C++ overloaded
   /// operator, e.g., "operator+".
@@ -2494,10 +2539,6 @@ public:
   bool isFunctionTemplateSpecialization() const {
     return getPrimaryTemplate() != nullptr;
   }
-
-  /// Retrieve the class scope template pattern that this function
-  ///  template specialization is instantiated from.
-  FunctionDecl *getClassScopeSpecializationPattern() const;
 
   /// If this function is actually a function template specialization,
   /// retrieve information about this function template specialization.
@@ -2584,6 +2625,11 @@ public:
   /// Determine what kind of template instantiation this function
   /// represents.
   TemplateSpecializationKind getTemplateSpecializationKind() const;
+
+  /// Determine the kind of template specialization this function represents
+  /// for the purpose of template instantiation.
+  TemplateSpecializationKind
+  getTemplateSpecializationKindForInstantiation() const;
 
   /// Determine what kind of template instantiation this function
   /// represents.
@@ -2756,6 +2802,11 @@ public:
   /// at all and instead act as a separator between contiguous runs of other
   /// bit-fields.
   bool isZeroLengthBitField(const ASTContext &Ctx) const;
+
+  /// Determine if this field is a subobject of zero size, that is, either a
+  /// zero-length bit-field or a field of empty class type with the
+  /// [[no_unique_address]] attribute.
+  bool isZeroSize(const ASTContext &Ctx) const;
 
   /// Get the kind of (C++11) default member initializer that this field has.
   InClassInitStyle getInClassInitStyle() const {
@@ -3778,6 +3829,30 @@ public:
     RecordDeclBits.NonTrivialToPrimitiveDestroy = V;
   }
 
+  bool hasNonTrivialToPrimitiveDefaultInitializeCUnion() const {
+    return RecordDeclBits.HasNonTrivialToPrimitiveDefaultInitializeCUnion;
+  }
+
+  void setHasNonTrivialToPrimitiveDefaultInitializeCUnion(bool V) {
+    RecordDeclBits.HasNonTrivialToPrimitiveDefaultInitializeCUnion = V;
+  }
+
+  bool hasNonTrivialToPrimitiveDestructCUnion() const {
+    return RecordDeclBits.HasNonTrivialToPrimitiveDestructCUnion;
+  }
+
+  void setHasNonTrivialToPrimitiveDestructCUnion(bool V) {
+    RecordDeclBits.HasNonTrivialToPrimitiveDestructCUnion = V;
+  }
+
+  bool hasNonTrivialToPrimitiveCopyCUnion() const {
+    return RecordDeclBits.HasNonTrivialToPrimitiveCopyCUnion;
+  }
+
+  void setHasNonTrivialToPrimitiveCopyCUnion(bool V) {
+    RecordDeclBits.HasNonTrivialToPrimitiveCopyCUnion = V;
+  }
+
   /// Determine whether this class can be passed in registers. In C++ mode,
   /// it must have at least one trivial, non-deleted copy or move constructor.
   /// FIXME: This should be set as part of completeDefinition.
@@ -4086,13 +4161,9 @@ public:
   void setCaptures(ASTContext &Context, ArrayRef<Capture> Captures,
                    bool CapturesCXXThis);
 
-   unsigned getBlockManglingNumber() const {
-     return ManglingNumber;
-   }
+  unsigned getBlockManglingNumber() const { return ManglingNumber; }
 
-   Decl *getBlockManglingContextDecl() const {
-     return ManglingContextDecl;
-   }
+  Decl *getBlockManglingContextDecl() const { return ManglingContextDecl; }
 
   void setBlockMangling(unsigned Number, Decl *Ctx) {
     ManglingNumber = Number;

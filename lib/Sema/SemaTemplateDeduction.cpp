@@ -1493,7 +1493,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
 #define NON_CANONICAL_TYPE(Class, Base) \
   case Type::Class: llvm_unreachable("deducing non-canonical type: " #Class);
 #define TYPE(Class, Base)
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
 
     case Type::TemplateTypeParm:
     case Type::SubstTemplateTypeParmPack:
@@ -2890,7 +2890,7 @@ Sema::DeduceTemplateArguments(ClassTemplatePartialSpecializationDecl *Partial,
     return Sema::TDK_SubstitutionFailure;
 
   return ::FinishTemplateArgumentDeduction(
-      *this, Partial, /*PartialOrdering=*/false, TemplateArgs, Deduced, Info);
+      *this, Partial, /*IsPartialOrdering=*/false, TemplateArgs, Deduced, Info);
 }
 
 /// Perform template argument deduction to determine whether
@@ -2931,7 +2931,7 @@ Sema::DeduceTemplateArguments(VarTemplatePartialSpecializationDecl *Partial,
     return Sema::TDK_SubstitutionFailure;
 
   return ::FinishTemplateArgumentDeduction(
-      *this, Partial, /*PartialOrdering=*/false, TemplateArgs, Deduced, Info);
+      *this, Partial, /*IsPartialOrdering=*/false, TemplateArgs, Deduced, Info);
 }
 
 /// Determine whether the given type T is a simple-template-id type.
@@ -3111,6 +3111,13 @@ Sema::SubstituteExplicitTemplateArguments(
                   Function->getTypeSpecStartLoc(), Function->getDeclName());
     if (ResultType.isNull() || Trap.hasErrorOccurred())
       return TDK_SubstitutionFailure;
+    // CUDA: Kernel function must have 'void' return type.
+    if (getLangOpts().CUDA)
+      if (Function->hasAttr<CUDAGlobalAttr>() && !ResultType->isVoidType()) {
+        Diag(Function->getLocation(), diag::err_kern_type_not_void_return)
+            << Function->getType() << Function->getSourceRange();
+        return TDK_SubstitutionFailure;
+      }
   }
 
   // Instantiate the types of each of the function parameters given the
@@ -3720,6 +3727,12 @@ static Sema::TemplateDeductionResult DeduceFromInitializerList(
     return Sema::TDK_Success;
   }
 
+  // Resolving a core issue: a braced-init-list containing any designators is
+  // a non-deduced context.
+  for (Expr *E : ILE->inits())
+    if (isa<DesignatedInitExpr>(E))
+      return Sema::TDK_Success;
+
   // Deduction only needs to be done for dependent types.
   if (ElTy->isDependentType()) {
     for (Expr *E : ILE->inits()) {
@@ -4298,19 +4311,26 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
 }
 
 namespace {
+  struct DependentAuto { bool IsPack; };
 
   /// Substitute the 'auto' specifier or deduced template specialization type
   /// specifier within a type for a given replacement type.
   class SubstituteDeducedTypeTransform :
       public TreeTransform<SubstituteDeducedTypeTransform> {
     QualType Replacement;
+    bool ReplacementIsPack;
     bool UseTypeSugar;
 
   public:
+    SubstituteDeducedTypeTransform(Sema &SemaRef, DependentAuto DA)
+        : TreeTransform<SubstituteDeducedTypeTransform>(SemaRef), Replacement(),
+          ReplacementIsPack(DA.IsPack), UseTypeSugar(true) {}
+
     SubstituteDeducedTypeTransform(Sema &SemaRef, QualType Replacement,
-                            bool UseTypeSugar = true)
+                                   bool UseTypeSugar = true)
         : TreeTransform<SubstituteDeducedTypeTransform>(SemaRef),
-          Replacement(Replacement), UseTypeSugar(UseTypeSugar) {}
+          Replacement(Replacement), ReplacementIsPack(false),
+          UseTypeSugar(UseTypeSugar) {}
 
     QualType TransformDesugared(TypeLocBuilder &TLB, DeducedTypeLoc TL) {
       assert(isa<TemplateTypeParmType>(Replacement) &&
@@ -4335,7 +4355,8 @@ namespace {
         return TransformDesugared(TLB, TL);
 
       QualType Result = SemaRef.Context.getAutoType(
-          Replacement, TL.getTypePtr()->getKeyword(), Replacement.isNull());
+          Replacement, TL.getTypePtr()->getKeyword(), Replacement.isNull(),
+          ReplacementIsPack);
       auto NewTL = TLB.push<AutoTypeLoc>(Result);
       NewTL.setNameLoc(TL.getNameLoc());
       return Result;
@@ -4426,9 +4447,12 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
     Init = NonPlaceholder.get();
   }
 
+  DependentAuto DependentResult = {
+      /*.IsPack = */ (bool)Type.getAs<PackExpansionTypeLoc>()};
+
   if (!DependentDeductionDepth &&
       (Type.getType()->isDependentType() || Init->isTypeDependent())) {
-    Result = SubstituteDeducedTypeTransform(*this, QualType()).Apply(Type);
+    Result = SubstituteDeducedTypeTransform(*this, DependentResult).Apply(Type);
     assert(!Result.isNull() && "substituting DependentTy can't fail");
     return DAR_Succeeded;
   }
@@ -4496,7 +4520,8 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
   auto DeductionFailed = [&](TemplateDeductionResult TDK,
                              ArrayRef<SourceRange> Ranges) -> DeduceAutoResult {
     if (Init->isTypeDependent()) {
-      Result = SubstituteDeducedTypeTransform(*this, QualType()).Apply(Type);
+      Result =
+          SubstituteDeducedTypeTransform(*this, DependentResult).Apply(Type);
       assert(!Result.isNull() && "substituting DependentTy can't fail");
       return DAR_Succeeded;
     }
@@ -4514,6 +4539,12 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
     // references results in std::initializer_list<T>.
     if (!Type.getType().getNonReferenceType()->getAs<AutoType>())
       return DAR_Failed;
+
+    // Resolving a core issue: a braced-init-list containing any designators is
+    // a non-deduced context.
+    for (Expr *E : InitList->inits())
+      if (isa<DesignatedInitExpr>(E))
+        return DAR_Failed;
 
     SourceRange DeducedFromInitRange;
     for (unsigned i = 0, e = InitList->getNumInits(); i < e; ++i) {
@@ -4577,7 +4608,10 @@ Sema::DeduceAutoType(TypeLoc Type, Expr *&Init, QualType &Result,
 QualType Sema::SubstAutoType(QualType TypeWithAuto,
                              QualType TypeToReplaceAuto) {
   if (TypeToReplaceAuto->isDependentType())
-    TypeToReplaceAuto = QualType();
+    return SubstituteDeducedTypeTransform(
+               *this, DependentAuto{
+                          TypeToReplaceAuto->containsUnexpandedParameterPack()})
+        .TransformType(TypeWithAuto);
   return SubstituteDeducedTypeTransform(*this, TypeToReplaceAuto)
       .TransformType(TypeWithAuto);
 }
@@ -4585,7 +4619,11 @@ QualType Sema::SubstAutoType(QualType TypeWithAuto,
 TypeSourceInfo *Sema::SubstAutoTypeSourceInfo(TypeSourceInfo *TypeWithAuto,
                                               QualType TypeToReplaceAuto) {
   if (TypeToReplaceAuto->isDependentType())
-    TypeToReplaceAuto = QualType();
+    return SubstituteDeducedTypeTransform(
+               *this,
+               DependentAuto{
+                   TypeToReplaceAuto->containsUnexpandedParameterPack()})
+        .TransformType(TypeWithAuto);
   return SubstituteDeducedTypeTransform(*this, TypeToReplaceAuto)
       .TransformType(TypeWithAuto);
 }
@@ -4631,8 +4669,11 @@ bool Sema::DeduceReturnType(FunctionDecl *FD, SourceLocation Loc,
 
       // We might need to deduce the return type by instantiating the definition
       // of the operator() function.
-      if (CallOp->getReturnType()->isUndeducedType())
-        InstantiateFunctionDefinition(Loc, CallOp);
+      if (CallOp->getReturnType()->isUndeducedType()) {
+        runWithSufficientStackSpace(Loc, [&] {
+          InstantiateFunctionDefinition(Loc, CallOp);
+        });
+      }
     }
 
     if (CallOp->isInvalidDecl())
@@ -4653,8 +4694,11 @@ bool Sema::DeduceReturnType(FunctionDecl *FD, SourceLocation Loc,
     return false;
   }
 
-  if (FD->getTemplateInstantiationPattern())
-    InstantiateFunctionDefinition(Loc, FD);
+  if (FD->getTemplateInstantiationPattern()) {
+    runWithSufficientStackSpace(Loc, [&] {
+      InstantiateFunctionDefinition(Loc, FD);
+    });
+  }
 
   bool StillUndeduced = FD->getReturnType()->isUndeducedType();
   if (StillUndeduced && Diagnose && !FD->isInvalidDecl()) {
@@ -5066,7 +5110,7 @@ static bool isAtLeastAsSpecializedAs(Sema &S, QualType T1, QualType T2,
                                    Info);
   auto *TST1 = T1->castAs<TemplateSpecializationType>();
   if (FinishTemplateArgumentDeduction(
-          S, P2, /*PartialOrdering=*/true,
+          S, P2, /*IsPartialOrdering=*/true,
           TemplateArgumentList(TemplateArgumentList::OnStack,
                                TST1->template_arguments()),
           Deduced, Info))
@@ -5598,7 +5642,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
     break;
   }
 }

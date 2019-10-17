@@ -400,7 +400,7 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   auto TemplateArgKind = getKind();
   switch (TemplateArgKind) {
   case Type:
-    return getAsType()->getAs<PackExpansionType>()->getPattern();
+    return getAsType()->castAs<PackExpansionType>()->getPattern();
 
   case Reflected:
   case Expression:

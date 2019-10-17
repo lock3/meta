@@ -9,18 +9,18 @@
 // BLOCKS:#define __block __attribute__((__blocks__(byref)))
 //
 //
-// RUN: %clang_cc1 -x c++ -std=c++2a -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX2A %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++2a -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX2A %s
 //
-// CXX2A:#define __GNUG__ {{.*}}
+// CXX2A:#define __GNUG__ 4
 // CXX2A:#define __GXX_EXPERIMENTAL_CXX0X__ 1
 // CXX2A:#define __GXX_RTTI 1
 // CXX2A:#define __GXX_WEAK__ 1
 // CXX2A:#define __cplusplus 201707L
 // CXX2A:#define __private_extern__ extern
 //
-// RUN: %clang_cc1 -x c++ -std=c++1z -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX1Z %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++1z -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX1Z %s
 //
-// CXX1Z:#define __GNUG__ {{.*}}
+// CXX1Z:#define __GNUG__ 4
 // CXX1Z:#define __GXX_EXPERIMENTAL_CXX0X__ 1
 // CXX1Z:#define __GXX_RTTI 1
 // CXX1Z:#define __GXX_WEAK__ 1
@@ -28,9 +28,9 @@
 // CXX1Z:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=c++1y -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX1Y %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++1y -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX1Y %s
 //
-// CXX1Y:#define __GNUG__ {{.*}}
+// CXX1Y:#define __GNUG__ 4
 // CXX1Y:#define __GXX_EXPERIMENTAL_CXX0X__ 1
 // CXX1Y:#define __GXX_RTTI 1
 // CXX1Y:#define __GXX_WEAK__ 1
@@ -38,9 +38,9 @@
 // CXX1Y:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=c++11 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX11 %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++11 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX11 %s
 //
-// CXX11:#define __GNUG__ {{.*}}
+// CXX11:#define __GNUG__ 4
 // CXX11:#define __GXX_EXPERIMENTAL_CXX0X__ 1
 // CXX11:#define __GXX_RTTI 1
 // CXX11:#define __GXX_WEAK__ 1
@@ -48,9 +48,9 @@
 // CXX11:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=c++98 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX98 %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++98 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix CXX98 %s
 //
-// CXX98:#define __GNUG__ {{.*}}
+// CXX98:#define __GNUG__ 4
 // CXX98:#define __GXX_RTTI 1
 // CXX98:#define __GXX_WEAK__ 1
 // CXX98:#define __cplusplus 199711L
@@ -87,7 +87,7 @@
 // C11-NOT: __cplusplus
 //
 //
-// RUN: %clang_cc1 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix COMMON %s
+// RUN: %clang_cc1 -fgnuc-version=4.2.1 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix COMMON %s
 //
 // COMMON:#define __CONSTANT_CFSTRINGS__ 1
 // COMMON:#define __FINITE_MATH_ONLY__ 0
@@ -119,41 +119,41 @@
 // RUN: %clang_cc1 -ffreestanding -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix FREESTANDING %s
 // FREESTANDING:#define __STDC_HOSTED__ 0
 //
-// RUN: %clang_cc1 -x c++ -std=gnu++2a -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX2A %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++2a -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX2A %s
 //
-// GXX2A:#define __GNUG__ {{.*}}
+// GXX2A:#define __GNUG__ 4
 // GXX2A:#define __GXX_WEAK__ 1
 // GXX2A:#define __cplusplus 201707L
 // GXX2A:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=gnu++1z -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX1Z %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++1z -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX1Z %s
 //
-// GXX1Z:#define __GNUG__ {{.*}}
+// GXX1Z:#define __GNUG__ 4
 // GXX1Z:#define __GXX_WEAK__ 1
 // GXX1Z:#define __cplusplus 201703L
 // GXX1Z:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=gnu++1y -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX1Y %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++1y -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX1Y %s
 //
-// GXX1Y:#define __GNUG__ {{.*}}
+// GXX1Y:#define __GNUG__ 4
 // GXX1Y:#define __GXX_WEAK__ 1
 // GXX1Y:#define __cplusplus 201402L
 // GXX1Y:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=gnu++11 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX11 %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++11 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX11 %s
 //
-// GXX11:#define __GNUG__ {{.*}}
+// GXX11:#define __GNUG__ 4
 // GXX11:#define __GXX_WEAK__ 1
 // GXX11:#define __cplusplus 201103L
 // GXX11:#define __private_extern__ extern
 //
 //
-// RUN: %clang_cc1 -x c++ -std=gnu++98 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX98 %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=gnu++98 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GXX98 %s
 //
-// GXX98:#define __GNUG__ {{.*}}
+// GXX98:#define __GNUG__ 4
 // GXX98:#define __GXX_WEAK__ 1
 // GXX98:#define __cplusplus 199711L
 // GXX98:#define __private_extern__ extern
@@ -310,10 +310,10 @@
 // AARCH64:#define __FLT16_HAS_QUIET_NAN__ 1
 // AARCH64:#define __FLT16_MANT_DIG__ 11
 // AARCH64:#define __FLT16_MAX_10_EXP__ 4
-// AARCH64:#define __FLT16_MAX_EXP__ 15
+// AARCH64:#define __FLT16_MAX_EXP__ 16
 // AARCH64:#define __FLT16_MAX__ 6.5504e+4F16
-// AARCH64:#define __FLT16_MIN_10_EXP__ (-13)
-// AARCH64:#define __FLT16_MIN_EXP__ (-14)
+// AARCH64:#define __FLT16_MIN_10_EXP__ (-4)
+// AARCH64:#define __FLT16_MIN_EXP__ (-13)
 // AARCH64:#define __FLT16_MIN__ 6.103515625e-5F16
 // AARCH64:#define __FLT_DENORM_MIN__ 1.40129846e-45F
 // AARCH64:#define __FLT_DIG__ 6
@@ -2845,9 +2845,9 @@
 // I386:#define __i386__ 1
 // I386:#define i386 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=i386-pc-linux-gnu -target-cpu pentium4 < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-ALIGN32 %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=i386-pc-linux-gnu -target-cpu pentium4 < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-CXX -check-prefix I386-LINUX-ALIGN32 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=i386-pc-linux-gnu -target-cpu pentium4 -malign-double < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-ALIGN64 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-pc-linux-gnu -target-cpu pentium4 < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-ALIGN32 %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-pc-linux-gnu -target-cpu pentium4 < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-CXX -check-prefix I386-LINUX-ALIGN32 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-pc-linux-gnu -target-cpu pentium4 -malign-double < /dev/null | FileCheck -match-full-lines -check-prefix I386-LINUX -check-prefix I386-LINUX-ALIGN64 %s
 //
 // I386-LINUX-NOT:#define _LP64
 // I386-LINUX:#define __BIGGEST_ALIGNMENT__ 16
@@ -3047,9 +3047,9 @@
 // I386-LINUX:#define __i386__ 1
 // I386-LINUX:#define i386 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=i386-netbsd -target-cpu i486 < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=i386-netbsd -target-cpu i486 < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD -check-prefix I386-NETBSD-CXX %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=i386-netbsd -target-cpu i486 -malign-double < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-netbsd -target-cpu i486 < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-netbsd -target-cpu i486 < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD -check-prefix I386-NETBSD-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=i386-netbsd -target-cpu i486 -malign-double < /dev/null | FileCheck -match-full-lines -check-prefix I386-NETBSD %s
 //
 //
 // I386-NETBSD-NOT:#define _LP64
@@ -3263,8 +3263,8 @@
 // I386-DECLSPEC: #define __declspec{{.*}}
 
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=mips-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS32BE -check-prefix MIPS32BE-C %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=mips-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS32BE -check-prefix MIPS32BE-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=mips-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS32BE -check-prefix MIPS32BE-C %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=mips-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS32BE -check-prefix MIPS32BE-CXX %s
 //
 // MIPS32BE:#define MIPSEB 1
 // MIPS32BE:#define _ABIO32 1
@@ -3682,10 +3682,10 @@
 // MIPS32EL:#define _mips 1
 // MIPS32EL:#define mips 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 \
 // RUN:            -triple=mips64-none-none -target-abi n32 < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPSN32BE -check-prefix MIPSN32BE-C %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding \
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 \
 // RUN:            -triple=mips64-none-none -target-abi n32 < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPSN32BE -check-prefix MIPSN32BE-CXX %s
 //
@@ -3993,7 +3993,7 @@
 // MIPSN32BE: #define _mips 1
 // MIPSN32BE: #define mips 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 \
 // RUN:            -triple=mips64el-none-none -target-abi n32 < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPSN32EL %s
 //
@@ -4300,8 +4300,8 @@
 // MIPSN32EL: #define _mips 1
 // MIPSN32EL: #define mips 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=mips64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS64BE %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=mips64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS64BE -check-prefix MIPS64BE-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=mips64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS64BE %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=mips64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix MIPS64BE -check-prefix MIPS64BE-CXX %s
 //
 // MIPS64BE:#define MIPSEB 1
 // MIPS64BE:#define _ABI64 3
@@ -6838,13 +6838,13 @@
 // PPC64-LINUX:#define __ppc64__ 1
 // PPC64-LINUX:#define __ppc__ 1
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu -target-abi elfv1 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu -target-abi elfv1-qpx < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64-unknown-linux-gnu -target-abi elfv2 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64le-unknown-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64le-unknown-linux-gnu -target-abi elfv1 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc64le-unknown-linux-gnu -target-abi elfv2 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64-unknown-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64-unknown-linux-gnu -target-abi elfv1 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64-unknown-linux-gnu -target-abi elfv1-qpx < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64-unknown-linux-gnu -target-abi elfv2 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64le-unknown-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64le-unknown-linux-gnu -target-abi elfv1 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv1 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=powerpc64le-unknown-linux-gnu -target-abi elfv2 < /dev/null | FileCheck -match-full-lines -check-prefix PPC64-ELFv2 %s
 // PPC64-ELFv1:#define _CALL_ELF 1
 // PPC64-ELFv2:#define _CALL_ELF 2
 //
@@ -7243,6 +7243,129 @@
 // PPC-AIX:#define __powerpc__ 1
 // PPC-AIX:#define __ppc__ 1
 //
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix7.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX72 %s
+//
+// PPC-AIX72:#define _AIX32 1
+// PPC-AIX72:#define _AIX41 1
+// PPC-AIX72:#define _AIX43 1
+// PPC-AIX72:#define _AIX50 1
+// PPC-AIX72:#define _AIX51 1
+// PPC-AIX72:#define _AIX52 1
+// PPC-AIX72:#define _AIX53 1
+// PPC-AIX72:#define _AIX61 1
+// PPC-AIX72:#define _AIX71 1
+// PPC-AIX72:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix7.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX71 %s
+//
+// PPC-AIX71:#define _AIX32 1
+// PPC-AIX71:#define _AIX41 1
+// PPC-AIX71:#define _AIX43 1
+// PPC-AIX71:#define _AIX50 1
+// PPC-AIX71:#define _AIX51 1
+// PPC-AIX71:#define _AIX52 1
+// PPC-AIX71:#define _AIX53 1
+// PPC-AIX71:#define _AIX61 1
+// PPC-AIX71:#define _AIX71 1
+// PPC-AIX71-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix6.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX61 %s
+//
+// PPC-AIX61:#define _AIX32 1
+// PPC-AIX61:#define _AIX41 1
+// PPC-AIX61:#define _AIX43 1
+// PPC-AIX61:#define _AIX50 1
+// PPC-AIX61:#define _AIX51 1
+// PPC-AIX61:#define _AIX52 1
+// PPC-AIX61:#define _AIX53 1
+// PPC-AIX61:#define _AIX61 1
+// PPC-AIX61-NOT:#define _AIX71 1
+// PPC-AIX61-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.3.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX53 %s
+// PPC-AIX53:#define _AIX32 1
+// PPC-AIX53:#define _AIX41 1
+// PPC-AIX53:#define _AIX43 1
+// PPC-AIX53:#define _AIX50 1
+// PPC-AIX53:#define _AIX51 1
+// PPC-AIX53:#define _AIX52 1
+// PPC-AIX53:#define _AIX53 1
+// PPC-AIX53-NOT:#define _AIX61 1
+// PPC-AIX53-NOT:#define _AIX71 1
+// PPC-AIX53-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX52 %s
+// PPC-AIX52:#define _AIX32 1
+// PPC-AIX52:#define _AIX41 1
+// PPC-AIX52:#define _AIX43 1
+// PPC-AIX52:#define _AIX50 1
+// PPC-AIX52:#define _AIX51 1
+// PPC-AIX52:#define _AIX52 1
+// PPC-AIX52-NOT:#define _AIX53 1
+// PPC-AIX52-NOT:#define _AIX61 1
+// PPC-AIX52-NOT:#define _AIX71 1
+// PPC-AIX52-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX51 %s
+// PPC-AIX51:#define _AIX32 1
+// PPC-AIX51:#define _AIX41 1
+// PPC-AIX51:#define _AIX43 1
+// PPC-AIX51:#define _AIX50 1
+// PPC-AIX51:#define _AIX51 1
+// PPC-AIX51-NOT:#define _AIX52 1
+// PPC-AIX51-NOT:#define _AIX53 1
+// PPC-AIX51-NOT:#define _AIX61 1
+// PPC-AIX51-NOT:#define _AIX71 1
+// PPC-AIX51-NOT:#define _AIX72 1
+//
+//RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix5.0.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX50 %s
+// PPC-AIX50:#define _AIX32 1
+// PPC-AIX50:#define _AIX41 1
+// PPC-AIX50:#define _AIX43 1
+// PPC-AIX50:#define _AIX50 1
+// PPC-AIX50-NOT:#define _AIX51 1
+// PPC-AIX50-NOT:#define _AIX52 1
+// PPC-AIX50-NOT:#define _AIX53 1
+// PPC-AIX50-NOT:#define _AIX61 1
+// PPC-AIX50-NOT:#define _AIX71 1
+// PPC-AIX50-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix4.3.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX43 %s
+// PPC-AIX43:#define _AIX32 1
+// PPC-AIX43:#define _AIX41 1
+// PPC-AIX43:#define _AIX43 1
+// PPC-AIX43-NOT:#define _AIX50 1
+// PPC-AIX43-NOT:#define _AIX51 1
+// PPC-AIX43-NOT:#define _AIX52 1
+// PPC-AIX43-NOT:#define _AIX53 1
+// PPC-AIX43-NOT:#define _AIX61 1
+// PPC-AIX43-NOT:#define _AIX71 1
+// PPC-AIX43-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix4.1.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX41 %s
+// PPC-AIX41:#define _AIX32 1
+// PPC-AIX41:#define _AIX41 1
+// PPC-AIX41-NOT:#define _AIX43 1
+// PPC-AIX41-NOT:#define _AIX50 1
+// PPC-AIX41-NOT:#define _AIX51 1
+// PPC-AIX41-NOT:#define _AIX52 1
+// PPC-AIX41-NOT:#define _AIX53 1
+// PPC-AIX41-NOT:#define _AIX61 1
+// PPC-AIX41-NOT:#define _AIX71 1
+// PPC-AIX41-NOT:#define _AIX72 1
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-ibm-aix3.2.0.0 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX32 %s
+// PPC-AIX32:#define _AIX32 1
+// PPC-AIX32-NOT:#define _AIX41 1
+// PPC-AIX32-NOT:#define _AIX43 1
+// PPC-AIX32-NOT:#define _AIX50 1
+// PPC-AIX32-NOT:#define _AIX51 1
+// PPC-AIX32-NOT:#define _AIX52 1
+// PPC-AIX32-NOT:#define _AIX53 1
+// PPC-AIX32-NOT:#define _AIX61 1
+// PPC-AIX32-NOT:#define _AIX71 1
+// PPC-AIX32-NOT:#define _AIX72 1
+//
 // RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=powerpc-ibm-aix7.1.0.0 -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPC-AIX-CXX %s
 //
 // PPC-AIX-CXX:#define _WCHAR_T 1
@@ -7456,6 +7579,11 @@
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-unknown-linux-gnu -fno-signed-char < /dev/null | FileCheck -match-full-lines -check-prefix PPC32-LINUX %s
 //
 // PPC32-LINUX-NOT: _CALL_LINUX
+//
+// RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-unknown-linux-gnu -target-feature +spe < /dev/null | FileCheck -match-full-lines -check-prefix PPC32-SPE %s
+//
+// PPC32-SPE:#define __NO_FPRS__ 1
+// PPC32-SPE:#define __SPE__ 1
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=powerpc-apple-darwin8 < /dev/null | FileCheck -match-full-lines -check-prefix PPC-DARWIN %s
 //
@@ -7852,12 +7980,12 @@
 // S390X:#define __s390__ 1
 // S390X:#define __s390x__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc-rtems-elf < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc-none-netbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc-none-openbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=sparc-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT -check-prefix SPARC-DEFAULT-CXX %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=sparc-none-openbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD -check-prefix SPARC-NETOPENBSD-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-rtems-elf < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-none-netbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-none-openbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-DEFAULT -check-prefix SPARC-DEFAULT-CXX %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=sparc-none-openbsd < /dev/null | FileCheck -match-full-lines -check-prefix SPARC -check-prefix SPARC-NETOPENBSD -check-prefix SPARC-NETOPENBSD-CXX %s
 //
 // SPARC-NOT:#define _LP64
 // SPARC:#define __BIGGEST_ALIGNMENT__ 8
@@ -8046,7 +8174,7 @@
 // SPARC:#define __UINT_LEAST8_MAX__ 255
 // SPARC:#define __UINT_LEAST8_TYPE__ unsigned char
 // SPARC:#define __USER_LABEL_PREFIX__
-// SPARC:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// SPARC:#define __VERSION__ "{{.*}}Clang{{.*}}
 // SPARC:#define __WCHAR_MAX__ 2147483647
 // SPARC:#define __WCHAR_TYPE__ int
 // SPARC:#define __WCHAR_WIDTH__ 32
@@ -8057,8 +8185,8 @@
 // SPARC:#define __sparcv8 1
 // SPARC:#define sparc 1
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=tce-none-none < /dev/null | FileCheck -match-full-lines -check-prefix TCE %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=tce-none-none < /dev/null | FileCheck -match-full-lines -check-prefix TCE -check-prefix TCE-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=tce-none-none < /dev/null | FileCheck -match-full-lines -check-prefix TCE %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=tce-none-none < /dev/null | FileCheck -match-full-lines -check-prefix TCE -check-prefix TCE-CXX %s
 //
 // TCE-NOT:#define _LP64
 // TCE:#define __BIGGEST_ALIGNMENT__ 4
@@ -8226,8 +8354,8 @@
 // TCE:#define __tce__ 1
 // TCE:#define tce 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix X86_64 %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=x86_64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix X86_64 -check-prefix X86_64-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix X86_64 %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix X86_64 -check-prefix X86_64-CXX %s
 //
 // X86_64:#define _LP64 1
 // X86_64-NOT:#define _LP32 1
@@ -8434,8 +8562,8 @@
 // RUN: %clang -xc - -E -dM -mcmodel=medium --target=i386-unknown-linux < /dev/null | FileCheck -match-full-lines -check-prefix X86_MEDIUM %s
 // X86_MEDIUM:#define __code_model_medium_ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-none-none-gnux32 < /dev/null | FileCheck -match-full-lines -check-prefix X32 %s
-// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -triple=x86_64-none-none-gnux32 < /dev/null | FileCheck -match-full-lines -check-prefix X32 -check-prefix X32-CXX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-none-none-gnux32 < /dev/null | FileCheck -match-full-lines -check-prefix X32 %s
+// RUN: %clang_cc1 -x c++ -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-none-none-gnux32 < /dev/null | FileCheck -match-full-lines -check-prefix X32 -check-prefix X32-CXX %s
 //
 // X32:#define _ILP32 1
 // X32-NOT:#define _LP64 1
@@ -8631,7 +8759,7 @@
 // X32:#define __x86_64 1
 // X32:#define __x86_64__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-unknown-cloudabi < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-CLOUDABI %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-unknown-cloudabi < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-CLOUDABI %s
 //
 // X86_64-CLOUDABI:#define _LP64 1
 // X86_64-CLOUDABI:#define __ATOMIC_ACQUIRE 2
@@ -8918,7 +9046,7 @@
 // X86_64-CLOUDABI:#define __UINT_LEAST8_MAX__ 255
 // X86_64-CLOUDABI:#define __UINT_LEAST8_TYPE__ unsigned char
 // X86_64-CLOUDABI:#define __USER_LABEL_PREFIX__
-// X86_64-CLOUDABI:#define __VERSION__ "4.2.1 Compatible{{.*}}
+// X86_64-CLOUDABI:#define __VERSION__ "{{.*}}Clang{{.*}}
 // X86_64-CLOUDABI:#define __WCHAR_MAX__ 2147483647
 // X86_64-CLOUDABI:#define __WCHAR_TYPE__ int
 // X86_64-CLOUDABI:#define __WCHAR_WIDTH__ 32
@@ -8936,7 +9064,7 @@
 // X86_64-CLOUDABI:#define __x86_64 1
 // X86_64-CLOUDABI:#define __x86_64__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-pc-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-LINUX %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-pc-linux-gnu < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-LINUX %s
 //
 // X86_64-LINUX:#define _LP64 1
 // X86_64-LINUX:#define __BIGGEST_ALIGNMENT__ 16
@@ -9149,7 +9277,7 @@
 // X86_64-FREEBSD:#define __LDBL_DECIMAL_DIG__ 21
 // X86_64-FREEBSD:#define __STDC_MB_MIGHT_NEQ_WC__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-netbsd < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-NETBSD %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-netbsd < /dev/null | FileCheck -match-full-lines -check-prefix X86_64-NETBSD %s
 //
 // X86_64-NETBSD:#define _LP64 1
 // X86_64-NETBSD:#define __BIGGEST_ALIGNMENT__ 16
@@ -9353,7 +9481,7 @@
 // X86_64-NETBSD:#define __x86_64 1
 // X86_64-NETBSD:#define __x86_64__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=x86_64-scei-ps4 < /dev/null | FileCheck -match-full-lines -check-prefix PS4 %s
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=x86_64-scei-ps4 < /dev/null | FileCheck -match-full-lines -check-prefix PS4 %s
 //
 // PS4:#define _LP64 1
 // PS4:#define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
@@ -9476,6 +9604,7 @@
 // X86-64-DECLSPEC: #define __declspec{{.*}}
 //
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple=sparc64-none-none < /dev/null | FileCheck -match-full-lines -check-prefix SPARCV9 %s
+// SPARCV9:#define __BIGGEST_ALIGNMENT__ 16
 // SPARCV9:#define __INT64_TYPE__ long int
 // SPARCV9:#define __INTMAX_C_SUFFIX__ L
 // SPARCV9:#define __INTMAX_TYPE__ long int
@@ -9512,7 +9641,7 @@
 // RUN: %clang_cc1 -x objective-c -triple i386-unknown-freebsd -fobjc-runtime=gnustep-2.5 -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix GNUSTEP2 %s
 // GNUSTEP2:#define __OBJC_GNUSTEP_RUNTIME_ABI__ 20
 //
-// RUN: %clang_cc1 -x c++ -std=c++98 -fno-rtti -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix NORTTI %s
+// RUN: %clang_cc1 -x c++ -fgnuc-version=4.2.1 -std=c++98 -fno-rtti -E -dM < /dev/null | FileCheck -match-full-lines -check-prefix NORTTI %s
 // NORTTI: #define __GXX_ABI_VERSION {{.*}}
 // NORTTI-NOT:#define __GXX_RTTI
 // NORTTI:#define __STDC__ 1
@@ -9571,16 +9700,16 @@
 // XCORE:#define __LITTLE_ENDIAN__ 1
 // XCORE:#define __XS1B__ 1
 //
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=wasm32-unknown-unknown \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=wasm32-unknown-unknown \
 // RUN:   < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=WEBASSEMBLY,WEBASSEMBLY32 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=wasm64-unknown-unknown \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=wasm64-unknown-unknown \
 // RUN:   < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=WEBASSEMBLY,WEBASSEMBLY64 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=wasm32-wasi \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=wasm32-wasi \
 // RUN:   < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=WEBASSEMBLY,WEBASSEMBLY32,WEBASSEMBLY-WASI %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=wasm64-wasi \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=wasm64-wasi \
 // RUN:   < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=WEBASSEMBLY,WEBASSEMBLY64,WEBASSEMBLY-WASI %s
 //
@@ -9958,7 +10087,7 @@
 // RUN: %clang_cc1 -E -dM -ffreestanding -triple x86_64-windows-cygnus < /dev/null | FileCheck -match-full-lines -check-prefix CYGWIN-X64 %s
 // CYGWIN-X64: #define __USER_LABEL_PREFIX__
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=avr \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=avr \
 // RUN:   < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix=AVR %s
 //
@@ -10166,10 +10295,10 @@
 // MSVC-X64:#define __STDCPP_DEFAULT_NEW_ALIGNMENT__ 16ULL
 
 // RUN: %clang_cc1 -E -dM -ffreestanding                \
-// RUN:   -triple=aarch64-apple-ios9 < /dev/null        \
+// RUN:  -fgnuc-version=4.2.1  -triple=aarch64-apple-ios9 < /dev/null        \
 // RUN: | FileCheck -check-prefix=DARWIN %s
 // RUN: %clang_cc1 -E -dM -ffreestanding                \
-// RUN:   -triple=aarch64-apple-macosx10.12 < /dev/null \
+// RUN:   -fgnuc-version=4.2.1 -triple=aarch64-apple-macosx10.12 < /dev/null \
 // RUN: | FileCheck -check-prefix=DARWIN %s
 
 // DARWIN:#define __STDC_NO_THREADS__ 1
@@ -10235,11 +10364,11 @@
 // ARM-DARWIN-BAREMETAL-64: #define __PTRDIFF_TYPE__ long int
 // ARM-DARWIN-BAREMETAL-64: #define __SIZE_TYPE__ long unsigned int
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=riscv32 < /dev/null \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=riscv32 < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix=RISCV32 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=riscv32-unknown-linux < /dev/null \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=riscv32-unknown-linux < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=RISCV32,RISCV32-LINUX %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=riscv32 \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=riscv32 \
 // RUN: -fforce-enable-int128 < /dev/null | FileCheck -match-full-lines \
 // RUN: -check-prefixes=RISCV32,RISCV32-INT128 %s
 // RISCV32: #define _ILP32 1
@@ -10446,9 +10575,9 @@
 // RISCV32-LINUX: #define linux 1
 // RISCV32-LINUX: #define unix 1
 
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=riscv64 < /dev/null \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=riscv64 < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix=RISCV64 %s
-// RUN: %clang_cc1 -E -dM -ffreestanding -triple=riscv64-unknown-linux < /dev/null \
+// RUN: %clang_cc1 -E -dM -ffreestanding -fgnuc-version=4.2.1 -triple=riscv64-unknown-linux < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefixes=RISCV64,RISCV64-LINUX %s
 // RISCV64: #define _LP64 1
 // RISCV64: #define __ATOMIC_ACQUIRE 2

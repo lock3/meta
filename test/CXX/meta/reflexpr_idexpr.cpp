@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection %s
 
 namespace meta {
   using info = decltype(reflexpr(void));

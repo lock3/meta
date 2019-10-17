@@ -1,31 +1,31 @@
-// RUN: %clang_cc1 -std=c++1z -freflection -fsyntax-only -verify %s
+// RUN: %clang_cc1 -std=c++2a -freflection -fsyntax-only -verify %s
 
-consteval class C1 {}; // expected-error {{class cannot be marked 'consteval'}}
-consteval struct S1 {}; // expected-error {{struct cannot be marked 'consteval'}}
-consteval union U1 {}; // expected-error {{union cannot be marked 'consteval'}}
-consteval enum E1 {}; // expected-error {{enum cannot be marked 'consteval'}}
+consteval class C1 {}; // expected-error {{class cannot be marked consteval}}
+consteval struct S1 {}; // expected-error {{struct cannot be marked consteval}}
+consteval union U1 {}; // expected-error {{union cannot be marked consteval}}
+consteval enum E1 {}; // expected-error {{enum cannot be marked consteval}}
 
-template <typename T> consteval class TC1 {}; // expected-error {{class cannot be marked 'consteval'}}
-template <typename T> consteval struct TS1 {}; // expected-error {{struct cannot be marked 'consteval'}}
-template <typename T> consteval union TU1 {}; // expected-error {{union cannot be marked 'consteval'}}
+template <typename T> consteval class TC1 {}; // expected-error {{class cannot be marked consteval}}
+template <typename T> consteval struct TS1 {}; // expected-error {{struct cannot be marked consteval}}
+template <typename T> consteval union TU1 {}; // expected-error {{union cannot be marked consteval}}
 
-consteval class C2; // expected-error {{class cannot be marked 'consteval'}}
-consteval struct S2; // expected-error {{struct cannot be marked 'consteval'}}
-consteval union U2; // expected-error {{union cannot be marked 'consteval'}}
+consteval class C2; // expected-error {{class cannot be marked consteval}}
+consteval struct S2; // expected-error {{struct cannot be marked consteval}}
+consteval union U2; // expected-error {{union cannot be marked consteval}}
 
-template <typename T> consteval class TC2; // expected-error {{class cannot be marked 'consteval'}}
-template <typename T> consteval struct TS2; // expected-error {{struct cannot be marked 'consteval'}}
-template <typename T> consteval union TU2; // expected-error {{union cannot be marked 'consteval'}}
+template <typename T> consteval class TC2; // expected-error {{class cannot be marked consteval}}
+template <typename T> consteval struct TS2; // expected-error {{struct cannot be marked consteval}}
+template <typename T> consteval union TU2; // expected-error {{union cannot be marked consteval}}
 
-class C2 {} consteval; // expected-error {{class cannot be marked 'consteval'}}
-struct S2 {} consteval; // expected-error {{struct cannot be marked 'consteval'}}
-union U2 {} consteval; // expected-error {{union cannot be marked 'consteval'}}
-enum E2 {} consteval; // expected-error {{enum cannot be marked 'consteval'}}
+class C2 {} consteval; // expected-error {{class cannot be marked consteval}}
+struct S2 {} consteval; // expected-error {{struct cannot be marked consteval}}
+union U2 {} consteval; // expected-error {{union cannot be marked consteval}}
+enum E2 {} consteval; // expected-error {{enum cannot be marked consteval}}
 
-consteval int x = 0; // expected-error {{variable cannot be marked 'consteval'}}
+consteval int x = 0; // expected-error {{consteval can only be used in function declarations}}
 
 struct S3 {
-  consteval ~S3() { } // expected-error {{destructor cannot be marked 'consteval'}}
+  consteval ~S3() { }
 };
 
 consteval int f1() { return 0; }

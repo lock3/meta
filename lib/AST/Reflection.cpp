@@ -815,6 +815,11 @@ static const CXXConstructorDecl *getReachableConstructor(const Reflection &R) {
   return dyn_cast_or_null<CXXConstructorDecl>(getReachableDecl(R));
 }
 
+/// Returns the reflected conversion operator.
+static const CXXConversionDecl *getReachableConversion(const Reflection &R) {
+  return dyn_cast_or_null<CXXConversionDecl>(getReachableDecl(R));
+}
+
 /// Returns true if R designates a static member function.
 static bool isStaticMemberFunction(const Reflection &R, APValue &Result) {
   if (const CXXMethodDecl *M = getAsMemberFunction(R))
@@ -930,10 +935,7 @@ static bool isConversion(ReflectionQueryEvaluator &Eval,
                          SmallVectorImpl<APValue> &Args,
                          APValue &Result) {
   Reflection R(Eval.getContext(), Args[1]);
-  if (const Decl *D = getReachableDecl(R)) {
-    return SuccessBool(Eval, Result, isa<CXXConversionDecl>(D));
-  }
-  return SuccessFalse(Eval, Result);
+  return SuccessBool(Eval, Result, getReachableConversion(R));
 }
 
 /// Returns true if R designates a defaulted member function.
@@ -945,8 +947,10 @@ static bool isDefaulted(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a explicit member function.
 static bool isExplicit(const Reflection &R, APValue &Result) {
-  if (const CXXMethodDecl *M = getAsMemberFunction(R))
-    return SuccessBool(R, Result, M->isExplicitSpecified());
+  if (const CXXConstructorDecl *CD = getReachableConstructor(R))
+    return SuccessBool(R, Result, CD->isExplicit());
+  if (const CXXConversionDecl *CD = getReachableConversion(R))
+    return SuccessBool(R, Result, CD->isExplicit());
   return SuccessFalse(R, Result);
 }
 
@@ -3151,8 +3155,8 @@ bool Reflection::GetAssociatedReflection(ReflectionQuery Q, APValue &Result) {
 static Expr *
 MakeConstCharPointer(ASTContext& Ctx, const std::string &Str, SourceLocation Loc) {
   QualType StrLitTy = Ctx.getConstantArrayType(Ctx.CharTy.withConst(),
-                                            llvm::APInt(32, Str.size() + 1),
-                                            ArrayType::Normal, 0);
+                                               llvm::APInt(32, Str.size() + 1),
+                                               nullptr, ArrayType::Normal, 0);
 
   // Create a string literal of type const char [L] where L
   // is the number of characters in the StringRef.

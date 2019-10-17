@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection -verify %s
+// RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
 template<typename T> // expected-note {{template parameter is declared here}}
 struct container {

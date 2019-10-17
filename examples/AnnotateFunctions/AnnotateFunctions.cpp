@@ -41,7 +41,7 @@ class AnnotateFunctionsAction : public PluginASTAction {
 public:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  llvm::StringRef) override {
-    return llvm::make_unique<AnnotateFunctionsConsumer>();
+    return std::make_unique<AnnotateFunctionsConsumer>();
   }
 
   bool ParseArgs(const CompilerInstance &CI,
@@ -58,7 +58,7 @@ class PragmaAnnotateHandler : public PragmaHandler {
 public:
   PragmaAnnotateHandler() : PragmaHandler("enable_annotate") { }
 
-  void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
+  void HandlePragma(Preprocessor &PP, PragmaIntroducer Introducer,
                     Token &PragmaTok) override {
 
     Token Tok;

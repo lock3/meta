@@ -98,15 +98,34 @@ public:
     StringRef OptionName;
     StringRef DefaultValStr;
     StringRef Description;
+    StringRef DevelopmentStatus;
+    bool IsHidden;
 
     CmdLineOption(StringRef OptionType, StringRef OptionName,
-                  StringRef DefaultValStr, StringRef Description)
+                  StringRef DefaultValStr, StringRef Description,
+                  StringRef DevelopmentStatus, bool IsHidden)
         : OptionType(OptionType), OptionName(OptionName),
-          DefaultValStr(DefaultValStr), Description(Description) {
+          DefaultValStr(DefaultValStr), Description(Description),
+          DevelopmentStatus(DevelopmentStatus), IsHidden(IsHidden) {
 
       assert((OptionType == "bool" || OptionType == "string" ||
               OptionType == "int") &&
              "Unknown command line option type!");
+
+      assert((OptionType != "bool" ||
+              (DefaultValStr == "true" || DefaultValStr == "false")) &&
+             "Invalid value for boolean command line option! Maybe incorrect "
+             "parameters to the addCheckerOption or addPackageOption method?");
+
+      int Tmp;
+      assert((OptionType != "int" || !DefaultValStr.getAsInteger(0, Tmp)) &&
+             "Invalid value for integer command line option! Maybe incorrect "
+             "parameters to the addCheckerOption or addPackageOption method?");
+      (void)Tmp;
+
+      assert((DevelopmentStatus == "alpha" || DevelopmentStatus == "beta" ||
+              DevelopmentStatus == "released") &&
+             "Invalid development status!");
     }
   };
 
@@ -137,6 +156,7 @@ public:
     StringRef Desc;
     StringRef DocumentationUri;
     CmdLineOptionList CmdLineOptions;
+    bool IsHidden = false;
     StateFromCmdLine State = StateFromCmdLine::State_Unspecified;
 
     ConstCheckerInfoList Dependencies;
@@ -149,10 +169,17 @@ public:
       return State == StateFromCmdLine::State_Disabled && ShouldRegister(LO);
     }
 
+    // Since each checker must have a different full name, we can identify
+    // CheckerInfo objects by them.
+    bool operator==(const CheckerInfo &Rhs) const {
+      return FullName == Rhs.FullName;
+    }
+
     CheckerInfo(InitializationFunction Fn, ShouldRegisterFunction sfn,
-                StringRef Name, StringRef Desc, StringRef DocsUri)
+                StringRef Name, StringRef Desc, StringRef DocsUri,
+                bool IsHidden)
         : Initialize(Fn), ShouldRegister(sfn), FullName(Name), Desc(Desc),
-          DocumentationUri(DocsUri) {}
+          DocumentationUri(DocsUri), IsHidden(IsHidden) {}
 
     // Used for lower_bound.
     explicit CheckerInfo(StringRef FullName) : FullName(FullName) {}
@@ -190,16 +217,19 @@ public:
   /// Adds a checker to the registry. Use this non-templated overload when your
   /// checker requires custom initialization.
   void addChecker(InitializationFunction Fn, ShouldRegisterFunction sfn,
-                  StringRef FullName, StringRef Desc, StringRef DocsUri);
+                  StringRef FullName, StringRef Desc, StringRef DocsUri,
+                  bool IsHidden);
 
   /// Adds a checker to the registry. Use this templated overload when your
   /// checker does not require any custom initialization.
   template <class T>
-  void addChecker(StringRef FullName, StringRef Desc, StringRef DocsUri) {
+  void addChecker(StringRef FullName, StringRef Desc, StringRef DocsUri,
+                  bool IsHidden = false) {
     // Avoid MSVC's Compiler Error C2276:
     // http://msdn.microsoft.com/en-us/library/850cstw1(v=VS.80).aspx
     addChecker(&CheckerRegistry::initializeManager<T>,
-               &CheckerRegistry::returnTrue<T>, FullName, Desc, DocsUri);
+               &CheckerRegistry::returnTrue<T>, FullName, Desc, DocsUri,
+               IsHidden);
   }
 
   /// Makes the checker with the full name \p fullName depends on the checker
@@ -217,7 +247,8 @@ public:
   /// non-compatibility mode.
   void addCheckerOption(StringRef OptionType, StringRef CheckerFullName,
                         StringRef OptionName, StringRef DefaultValStr,
-                        StringRef Description);
+                        StringRef Description, StringRef DevelopmentStatus,
+                        bool IsHidden = false);
 
   /// Adds a package to the registry.
   void addPackage(StringRef FullName);
@@ -233,7 +264,8 @@ public:
   /// non-compatibility mode.
   void addPackageOption(StringRef OptionType, StringRef PackageFullName,
                         StringRef OptionName, StringRef DefaultValStr,
-                        StringRef Description);
+                        StringRef Description, StringRef DevelopmentStatus,
+                         bool IsHidden = false);
 
   // FIXME: This *really* should be added to the frontend flag descriptions.
   /// Initializes a CheckerManager by calling the initialization functions for
@@ -250,6 +282,7 @@ public:
   void printCheckerWithDescList(raw_ostream &Out,
                                 size_t MaxNameChars = 30) const;
   void printEnabledCheckerList(raw_ostream &Out) const;
+  void printCheckerOptionList(raw_ostream &Out) const;
 
 private:
   /// Collect all enabled checkers. The returned container preserves the order

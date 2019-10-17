@@ -305,6 +305,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ParenListExprClass:
   case Stmt::PredefinedExprClass:
   case Stmt::ShuffleVectorExprClass:
+  case Stmt::SourceLocExprClass:
   case Stmt::ConvertVectorExprClass:
   case Stmt::VAArgExprClass:
   case Stmt::ObjCArrayLiteralClass:
@@ -695,6 +696,9 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPTaskLoopSimdDirectiveClass:
     K = CXCursor_OMPTaskLoopSimdDirective;
     break;
+  case Stmt::OMPMasterTaskLoopDirectiveClass:
+    K = CXCursor_OMPMasterTaskLoopDirective;
+    break;
   case Stmt::OMPDistributeDirectiveClass:
     K = CXCursor_OMPDistributeDirective;
     break;
@@ -740,6 +744,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
     K = CXCursor_OMPTargetTeamsDistributeSimdDirective;
     break;
+  case Stmt::BuiltinBitCastExprClass:
+    K = CXCursor_BuiltinBitCastExpr;
   }
 
   CXCursor C = { K, 0, { Parent, S, TU } };

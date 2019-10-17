@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z -fsyntax-only -verify %s -Wmissing-noreturn
+// RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s -Wmissing-noreturn
 
 consteval int f1() {
   consteval {
@@ -8,7 +8,7 @@ consteval int f1() {
   };
 }
 
-consteval int f2() { // expected-error {{no return statement in constexpr function}}
+consteval int f2() { // expected-error {{no return statement in consteval function}}
   consteval {
     -> __fragment {
       int x = 10;

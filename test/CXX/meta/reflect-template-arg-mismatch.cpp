@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -verify -std=c++1z %s
+// RUN: %clang_cc1 -freflection -verify -std=c++2a %s
 
 template<int a> // expected-note {{template parameter is declared here}}
 class template_a {

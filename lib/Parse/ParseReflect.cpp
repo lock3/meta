@@ -427,7 +427,10 @@ bool Parser::ParseCXXReflectedId(CXXScopeSpec &SS,
   //
   // Prioritize template parsing, represents whether we should treat the next
   // '<' token as introducing a template argument list, or a less than operator.
-  bool PrioritizeTemplateParsing = TNK || !TemplateKWLoc.isInvalid();
+  bool PrioritizeTemplateParsing =
+      (TNK != TNK_Non_template && TNK != TNK_Undeclared_template)
+      || !TemplateKWLoc.isInvalid();
+
   if (Tok.is(tok::less) && PrioritizeTemplateParsing) {
     SourceLocation LAngleLoc;
     TemplateArgList TemplateArgs;
@@ -610,3 +613,53 @@ bool Parser::ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types) {
   return Actions.ActOnVariadicReifier(Types, KWLoc, ReflRange.get(),
                                       LPLoc, EllipsisLoc, RPLoc);
 }
+
+/// Parse a non-type variadic reifier (valueof, unqualid, idexpr)
+/// Returns true on error.
+bool Parser::ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
+  llvm::SmallVector<Expr *, 4> Exprs;
+
+  if (ParseVariadicReifier(Exprs))
+    return true;
+
+  // Check each argument and add it to the argument list.n
+  for (auto ConstantValue : Exprs) {
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::NonType, ConstantValue, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
+/// Parse a type variadic reifier (typename)
+/// Returns true on error.
+bool Parser::ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc) {
+  llvm::SmallVector<QualType, 4> Types;
+
+  if (ParseVariadicReifier(Types))
+    return true;
+
+  for (auto ReflectedType : Types) {
+    const Type *T = ReflectedType.getTypePtr();
+    void *OpaqueT = reinterpret_cast<void*>(const_cast<Type *>(T));
+    ParsedTemplateArgument Arg
+      (ParsedTemplateArgument::Type, OpaqueT, KWLoc);
+
+    if (Arg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+      return true;
+    }
+
+    Args.push_back(Arg);
+  }
+
+  return false;
+}
+
