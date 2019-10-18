@@ -400,7 +400,8 @@ static ControlFlowKind CheckFallThrough(AnalysisDeclContext &AC) {
     for (const auto *B : *cfg) {
       if (!live[B->getBlockID()]) {
         if (B->pred_begin() == B->pred_end()) {
-          if (B->getTerminator() && isa<CXXTryStmt>(B->getTerminator()))
+          const Stmt *Term = B->getTerminatorStmt();
+          if (Term && isa<CXXTryStmt>(Term))
             // When not adding EH edges from calls, catch clauses
             // can otherwise seem dead.  Avoid noting them as dead.
             count += reachable_code::ScanReachableFromBlock(B, live);
@@ -448,7 +449,8 @@ static ControlFlowKind CheckFallThrough(AnalysisDeclContext &AC) {
 
     // No more CFGElements in the block?
     if (ri == re) {
-      if (B.getTerminator() && isa<CXXTryStmt>(B.getTerminator())) {
+      const Stmt *Term = B.getTerminatorStmt();
+      if (Term && isa<CXXTryStmt>(Term)) {
         HasAbnormalEdge = true;
         continue;
       }
@@ -620,7 +622,7 @@ struct CheckFallThroughDiagnostics {
 /// of a noreturn function.  We assume that functions and blocks not marked
 /// noreturn will return.
 static void CheckFallThroughForBody(Sema &S, const Decl *D, const Stmt *Body,
-                                    const BlockExpr *blkExpr,
+                                    QualType BlockType,
                                     const CheckFallThroughDiagnostics &CD,
                                     AnalysisDeclContext &AC,
                                     sema::FunctionScopeInfo *FSI) {
@@ -641,9 +643,8 @@ static void CheckFallThroughForBody(Sema &S, const Decl *D, const Stmt *Body,
     HasNoReturn = MD->hasAttr<NoReturnAttr>();
   }
   else if (isa<BlockDecl>(D)) {
-    QualType BlockTy = blkExpr->getType();
     if (const FunctionType *FT =
-          BlockTy->getPointeeType()->getAs<FunctionType>()) {
+          BlockType->getPointeeType()->getAs<FunctionType>()) {
       if (FT->getReturnType()->isVoidType())
         ReturnsVoid = true;
       if (FT->getNoReturnAttr())
@@ -1080,7 +1081,7 @@ namespace {
         BlockQueue.pop_front();
         if (!P) continue;
 
-        const Stmt *Term = P->getTerminator();
+        const Stmt *Term = P->getTerminatorStmt();
         if (Term && isa<SwitchStmt>(Term))
           continue; // Switch statement, good.
 
@@ -1178,7 +1179,7 @@ namespace {
     }
 
     static const Stmt *getLastStmt(const CFGBlock &B) {
-      if (const Stmt *Term = B.getTerminator())
+      if (const Stmt *Term = B.getTerminatorStmt())
         return Term;
       for (CFGBlock::const_reverse_iterator ElemIt = B.rbegin(),
                                             ElemEnd = B.rend();
@@ -1217,7 +1218,7 @@ static StringRef getFallthroughAttrSpelling(Preprocessor &PP,
     tok::r_square, tok::r_square
   };
 
-  bool PreferClangAttr = !PP.getLangOpts().CPlusPlus17;
+  bool PreferClangAttr = !PP.getLangOpts().CPlusPlus17 && !PP.getLangOpts().C2x;
 
   StringRef MacroName;
   if (PreferClangAttr)
@@ -1226,24 +1227,19 @@ static StringRef getFallthroughAttrSpelling(Preprocessor &PP,
     MacroName = PP.getLastMacroWithSpelling(Loc, FallthroughTokens);
   if (MacroName.empty() && !PreferClangAttr)
     MacroName = PP.getLastMacroWithSpelling(Loc, ClangFallthroughTokens);
-  if (MacroName.empty())
-    MacroName = PreferClangAttr ? "[[clang::fallthrough]]" : "[[fallthrough]]";
+  if (MacroName.empty()) {
+    if (!PreferClangAttr)
+      MacroName = "[[fallthrough]]";
+    else if (PP.getLangOpts().CPlusPlus)
+      MacroName = "[[clang::fallthrough]]";
+    else
+      MacroName = "__attribute__((fallthrough))";
+  }
   return MacroName;
 }
 
 static void DiagnoseSwitchLabelsFallthrough(Sema &S, AnalysisDeclContext &AC,
                                             bool PerFunction) {
-  // Only perform this analysis when using [[]] attributes. There is no good
-  // workflow for this warning when not using C++11. There is no good way to
-  // silence the warning (no attribute is available) unless we are using
-  // [[]] attributes. One could use pragmas to silence the warning, but as a
-  // general solution that is gross and not in the spirit of this warning.
-  //
-  // NOTE: This an intermediate solution. There are on-going discussions on
-  // how to properly support this warning outside of C++11 with an annotation.
-  if (!AC.getASTContext().getLangOpts().DoubleSquareBracketAttributes)
-    return;
-
   FallthroughMapper FM(S);
   FM.TraverseStmt(AC.getBody());
 
@@ -1283,25 +1279,24 @@ static void DiagnoseSwitchLabelsFallthrough(Sema &S, AnalysisDeclContext &AC,
       SourceLocation L = Label->getBeginLoc();
       if (L.isMacroID())
         continue;
-      if (S.getLangOpts().CPlusPlus11) {
-        const Stmt *Term = B->getTerminator();
-        // Skip empty cases.
-        while (B->empty() && !Term && B->succ_size() == 1) {
-          B = *B->succ_begin();
-          Term = B->getTerminator();
-        }
-        if (!(B->empty() && Term && isa<BreakStmt>(Term))) {
-          Preprocessor &PP = S.getPreprocessor();
-          StringRef AnnotationSpelling = getFallthroughAttrSpelling(PP, L);
-          SmallString<64> TextToInsert(AnnotationSpelling);
-          TextToInsert += "; ";
-          S.Diag(L, diag::note_insert_fallthrough_fixit) <<
-              AnnotationSpelling <<
-              FixItHint::CreateInsertion(L, TextToInsert);
-        }
+
+      const Stmt *Term = B->getTerminatorStmt();
+      // Skip empty cases.
+      while (B->empty() && !Term && B->succ_size() == 1) {
+        B = *B->succ_begin();
+        Term = B->getTerminatorStmt();
       }
-      S.Diag(L, diag::note_insert_break_fixit) <<
-        FixItHint::CreateInsertion(L, "break; ");
+      if (!(B->empty() && Term && isa<BreakStmt>(Term))) {
+        Preprocessor &PP = S.getPreprocessor();
+        StringRef AnnotationSpelling = getFallthroughAttrSpelling(PP, L);
+        SmallString<64> TextToInsert(AnnotationSpelling);
+        TextToInsert += "; ";
+        S.Diag(L, diag::note_insert_fallthrough_fixit)
+            << AnnotationSpelling
+            << FixItHint::CreateInsertion(L, TextToInsert);
+      }
+      S.Diag(L, diag::note_insert_break_fixit)
+          << FixItHint::CreateInsertion(L, "break; ");
     }
   }
 
@@ -2135,7 +2130,7 @@ static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
 void clang::sema::
 AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
                                      sema::FunctionScopeInfo *fscope,
-                                     const Decl *D, const BlockExpr *blkExpr) {
+                                     const Decl *D, QualType BlockType) {
 
   // We avoid doing analysis-based warnings when there are errors for
   // two reasons:
@@ -2215,16 +2210,16 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
     // Register the expressions with the CFGBuilder.
     for (const auto &D : fscope->PossiblyUnreachableDiags) {
-      if (D.stmt)
-        AC.registerForcedBlockExpression(D.stmt);
+      for (const Stmt *S : D.Stmts)
+        AC.registerForcedBlockExpression(S);
     }
 
     if (AC.getCFG()) {
       analyzed = true;
       for (const auto &D : fscope->PossiblyUnreachableDiags) {
-        bool processed = false;
-        if (D.stmt) {
-          const CFGBlock *block = AC.getBlockForRegisteredExpression(D.stmt);
+        bool AllReachable = true;
+        for (const Stmt *S : D.Stmts) {
+          const CFGBlock *block = AC.getBlockForRegisteredExpression(S);
           CFGReverseBlockReachabilityAnalysis *cra =
               AC.getCFGReachablityAnalysis();
           // FIXME: We should be able to assert that block is non-null, but
@@ -2232,15 +2227,17 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
           // edge cases; see test/Sema/vla-2.c.
           if (block && cra) {
             // Can this block be reached from the entrance?
-            if (cra->isReachable(&AC.getCFG()->getEntry(), block))
-              S.Diag(D.Loc, D.PD);
-            processed = true;
+            if (!cra->isReachable(&AC.getCFG()->getEntry(), block)) {
+              AllReachable = false;
+              break;
+            }
           }
+          // If we cannot map to a basic block, assume the statement is
+          // reachable.
         }
-        if (!processed) {
-          // Emit the warning anyway if we cannot map to a basic block.
+
+        if (AllReachable)
           S.Diag(D.Loc, D.PD);
-        }
       }
     }
 
@@ -2260,7 +2257,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
                    : (fscope->isCoroutine()
                           ? CheckFallThroughDiagnostics::MakeForCoroutine(D)
                           : CheckFallThroughDiagnostics::MakeForFunction(D)));
-    CheckFallThroughForBody(S, D, Body, blkExpr, CD, AC, fscope);
+    CheckFallThroughForBody(S, D, Body, BlockType, CD, AC, fscope);
   }
 
   // Warning: check for unreachable code

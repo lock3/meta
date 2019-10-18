@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z -fsyntax-only -verify %s
+// RUN: %clang_cc1 -freflection -std=c++2a -fsyntax-only -verify %s
 
 #include "reflection_query.h"
 #include "reflection_iterator.h"

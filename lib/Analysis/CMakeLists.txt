@@ -21,6 +21,7 @@ add_clang_library(clangAnalysis
   LifetimePsetBuilder.cpp
   LiveVariables.cpp
   ObjCNoReturn.cpp
+  PathDiagnostic.cpp
   PostOrderCFGView.cpp
   ProgramPoint.cpp
   ReachableCode.cpp
@@ -37,3 +38,5 @@ add_clang_library(clangAnalysis
   clangBasic
   clangLex
   )
+
+add_subdirectory(plugins)

@@ -234,9 +234,11 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   // used to target i386.
   // FIXME: This seems unlikely to be Linux-specific.
   ToolChain::path_list &PPaths = getProgramPaths();
-  PPaths.push_back(Twine(GCCInstallation.getParentLibPath() + "/../" +
-                         GCCInstallation.getTriple().str() + "/bin")
-                       .str());
+  if (GCCInstallation.isValid()) {
+    PPaths.push_back(Twine(GCCInstallation.getParentLibPath() + "/../" +
+                           GCCInstallation.getTriple().str() + "/bin")
+                         .str());
+  }
 
   Distro Distro(D.getVFS());
 
@@ -274,8 +276,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   const bool IsAndroid = Triple.isAndroid();
   const bool IsMips = Triple.isMIPS();
   const bool IsHexagon = Arch == llvm::Triple::hexagon;
-  const bool IsRISCV =
-      Arch == llvm::Triple::riscv32 || Arch == llvm::Triple::riscv64;
+  const bool IsRISCV = Triple.isRISCV();
 
   if (IsMips && !SysRoot.empty())
     ExtraOpts.push_back("--sysroot=" + SysRoot);
@@ -298,9 +299,6 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
         (IsAndroid && Triple.isAndroidVersionLT(23)))
       ExtraOpts.push_back("--hash-style=both");
   }
-
-  if (Distro.IsRedhat() && Distro != Distro::RHEL5 && Distro != Distro::RHEL6)
-    ExtraOpts.push_back("--no-add-needed");
 
 #ifdef ENABLE_LINKER_BUILD_ID
   ExtraOpts.push_back("--build-id");
@@ -660,11 +658,11 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   if (!DriverArgs.hasArg(options::OPT_nostdlibinc))
     addSystemInclude(DriverArgs, CC1Args, SysRoot + "/usr/local/include");
 
-  if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
-    SmallString<128> P(D.ResourceDir);
-    llvm::sys::path::append(P, "include");
-    addSystemInclude(DriverArgs, CC1Args, P);
-  }
+  SmallString<128> ResourceDirInclude(D.ResourceDir);
+  llvm::sys::path::append(ResourceDirInclude, "include");
+  if (!DriverArgs.hasArg(options::OPT_nobuiltininc) &&
+      (!getTriple().isMusl() || DriverArgs.hasArg(options::OPT_nostdlibinc)))
+    addSystemInclude(DriverArgs, CC1Args, ResourceDirInclude);
 
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
@@ -862,14 +860,18 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   addExternCSystemInclude(DriverArgs, CC1Args, SysRoot + "/include");
 
   addExternCSystemInclude(DriverArgs, CC1Args, SysRoot + "/usr/include");
+
+  if (!DriverArgs.hasArg(options::OPT_nobuiltininc) && getTriple().isMusl())
+    addSystemInclude(DriverArgs, CC1Args, ResourceDirInclude);
 }
 
-static std::string DetectLibcxxIncludePath(StringRef base) {
+static std::string DetectLibcxxIncludePath(llvm::vfs::FileSystem &vfs,
+                                           StringRef base) {
   std::error_code EC;
   int MaxVersion = 0;
   std::string MaxVersionString = "";
-  for (llvm::sys::fs::directory_iterator LI(base, EC), LE; !EC && LI != LE;
-       LI = LI.increment(EC)) {
+  for (llvm::vfs::directory_iterator LI = vfs.dir_begin(base, EC), LE;
+       !EC && LI != LE; LI = LI.increment(EC)) {
     StringRef VersionText = llvm::sys::path::filename(LI->path());
     int Version;
     if (VersionText[0] == 'v' &&
@@ -887,13 +889,12 @@ void Linux::addLibCxxIncludePaths(const llvm::opt::ArgList &DriverArgs,
                                   llvm::opt::ArgStringList &CC1Args) const {
   const std::string& SysRoot = computeSysRoot();
   const std::string LibCXXIncludePathCandidates[] = {
-      DetectLibcxxIncludePath(getDriver().ResourceDir + "/include/c++"),
-      DetectLibcxxIncludePath(getDriver().Dir + "/../include/c++"),
+      DetectLibcxxIncludePath(getVFS(), getDriver().Dir + "/../include/c++"),
       // If this is a development, non-installed, clang, libcxx will
       // not be found at ../include/c++ but it likely to be found at
       // one of the following two locations:
-      DetectLibcxxIncludePath(SysRoot + "/usr/local/include/c++"),
-      DetectLibcxxIncludePath(SysRoot + "/usr/include/c++") };
+      DetectLibcxxIncludePath(getVFS(), SysRoot + "/usr/local/include/c++"),
+      DetectLibcxxIncludePath(getVFS(), SysRoot + "/usr/include/c++") };
   for (const auto &IncludePath : LibCXXIncludePathCandidates) {
     if (IncludePath.empty() || !getVFS().exists(IncludePath))
       continue;

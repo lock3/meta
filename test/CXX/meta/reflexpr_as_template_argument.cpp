@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection %s
 
 template<auto T, auto V>
 constexpr typename(T) test() {

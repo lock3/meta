@@ -246,8 +246,8 @@ ArrayRef<const FileEntry *> Module::getTopHeaders(FileManager &FileMgr) {
   if (!TopHeaderNames.empty()) {
     for (std::vector<std::string>::iterator
            I = TopHeaderNames.begin(), E = TopHeaderNames.end(); I != E; ++I) {
-      if (const FileEntry *FE = FileMgr.getFile(*I))
-        TopHeaders.insert(FE);
+      if (auto FE = FileMgr.getFile(*I))
+        TopHeaders.insert(*FE);
     }
     TopHeaderNames.clear();
   }
@@ -319,6 +319,21 @@ Module *Module::findSubmodule(StringRef Name) const {
     return nullptr;
 
   return SubModules[Pos->getValue()];
+}
+
+Module *Module::findOrInferSubmodule(StringRef Name) {
+  llvm::StringMap<unsigned>::const_iterator Pos = SubModuleIndex.find(Name);
+  if (Pos != SubModuleIndex.end())
+    return SubModules[Pos->getValue()];
+  if (!InferSubmodules)
+    return nullptr;
+  Module *Result = new Module(Name, SourceLocation(), this, false, InferExplicitSubmodules, 0);
+  Result->InferExplicitSubmodules = InferExplicitSubmodules;
+  Result->InferSubmodules = InferSubmodules;
+  Result->InferExportWildcard = InferExportWildcard;
+  if (Result->InferExportWildcard)
+    Result->Exports.push_back(Module::ExportDecl(nullptr, true));
+  return Result;
 }
 
 void Module::getExportedModules(SmallVectorImpl<Module *> &Exported) const {

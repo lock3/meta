@@ -133,6 +133,37 @@ public:
   /// attribute on declarations that can be dynamically replaced.
   bool hasProtectedVisibility() const override { return false; }
 
+  unsigned getExnObjectAlignment() const override {
+    // Older versions of libc++abi guarantee an alignment of only 8-bytes for
+    // exception objects because of a bug in __cxa_exception that was
+    // eventually fixed in r319123.
+    llvm::VersionTuple MinVersion;
+    const llvm::Triple &T = this->getTriple();
+
+    // Compute the earliest OS versions that have the fix to libc++abi.
+    switch (T.getOS()) {
+    case llvm::Triple::Darwin:
+    case llvm::Triple::MacOSX: // Earliest supporting version is 10.14.
+      MinVersion = llvm::VersionTuple(10U, 14U);
+      break;
+    case llvm::Triple::IOS:
+    case llvm::Triple::TvOS: // Earliest supporting version is 12.0.0.
+      MinVersion = llvm::VersionTuple(12U);
+      break;
+    case llvm::Triple::WatchOS: // Earliest supporting version is 5.0.0.
+      MinVersion = llvm::VersionTuple(5U);
+      break;
+    default:
+      llvm_unreachable("Unexpected OS");
+    }
+
+    unsigned Major, Minor, Micro;
+    T.getOSVersion(Major, Minor, Micro);
+    if (llvm::VersionTuple(Major, Minor, Micro) < MinVersion)
+      return 64;
+    return OSTargetInfo<Target>::getExnObjectAlignment();
+  }
+
   TargetInfo::IntType getLeastIntTypeByWidth(unsigned BitWidth,
                                              bool IsSigned) const final {
     // Darwin uses `long long` for `int_least64_t` and `int_fast64_t`.
@@ -530,6 +561,10 @@ public:
       break;
     }
   }
+  TargetInfo::CallingConvCheckResult
+  checkCallingConvention(CallingConv CC) const override {
+    return (CC == CC_C) ? TargetInfo::CCCR_OK : TargetInfo::CCCR_Error;
+  }
 };
 
 // RTEMS Target
@@ -587,8 +622,11 @@ protected:
       Builder.defineMacro("_XOPEN_SOURCE", "600");
     else
       Builder.defineMacro("_XOPEN_SOURCE", "500");
-    if (Opts.CPlusPlus)
+    if (Opts.CPlusPlus) {
       Builder.defineMacro("__C99FEATURES__");
+      Builder.defineMacro("_FILE_OFFSET_BITS", "64");
+    }
+    // GCC restricts the next two to C++.
     Builder.defineMacro("_LARGEFILE_SOURCE");
     Builder.defineMacro("_LARGEFILE64_SOURCE");
     Builder.defineMacro("__EXTENSIONS__");
@@ -601,7 +639,11 @@ protected:
 public:
   SolarisTargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)
       : OSTargetInfo<Target>(Triple, Opts) {
-    // FIXME: WIntType should be SignedLong
+    if (this->PointerWidth == 64) {
+      this->WCharType = this->WIntType = this->SignedInt;
+    } else {
+      this->WCharType = this->WIntType = this->SignedLong;
+    }
     switch (Triple.getArch()) {
     default:
       break;
@@ -623,8 +665,24 @@ protected:
     Builder.defineMacro("_IBMR2");
     Builder.defineMacro("_POWER");
 
-    // FIXME: Define AIX OS-Version Macros.
     Builder.defineMacro("_AIX");
+
+    unsigned Major, Minor, Micro;
+    Triple.getOSVersion(Major, Minor, Micro);
+
+    // Define AIX OS-Version Macros.
+    // Includes logic for legacy versions of AIX; no specific intent to support.
+    std::pair<int, int> OsVersion = {Major, Minor};
+    if (OsVersion >= std::make_pair(3, 2)) Builder.defineMacro("_AIX32");
+    if (OsVersion >= std::make_pair(4, 1)) Builder.defineMacro("_AIX41");
+    if (OsVersion >= std::make_pair(4, 3)) Builder.defineMacro("_AIX43");
+    if (OsVersion >= std::make_pair(5, 0)) Builder.defineMacro("_AIX50");
+    if (OsVersion >= std::make_pair(5, 1)) Builder.defineMacro("_AIX51");
+    if (OsVersion >= std::make_pair(5, 2)) Builder.defineMacro("_AIX52");
+    if (OsVersion >= std::make_pair(5, 3)) Builder.defineMacro("_AIX53");
+    if (OsVersion >= std::make_pair(6, 1)) Builder.defineMacro("_AIX61");
+    if (OsVersion >= std::make_pair(7, 1)) Builder.defineMacro("_AIX71");
+    if (OsVersion >= std::make_pair(7, 2)) Builder.defineMacro("_AIX72");
 
     // FIXME: Do not define _LONG_LONG when -fno-long-long is specified.
     Builder.defineMacro("_LONG_LONG");
@@ -660,71 +718,16 @@ public:
   bool hasInt128Type() const override { return false; }
 };
 
+void addWindowsDefines(const llvm::Triple &Triple, const LangOptions &Opts,
+                       MacroBuilder &Builder);
+
 // Windows target
 template <typename Target>
 class LLVM_LIBRARY_VISIBILITY WindowsTargetInfo : public OSTargetInfo<Target> {
 protected:
   void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
                     MacroBuilder &Builder) const override {
-    Builder.defineMacro("_WIN32");
-    if (Triple.isArch64Bit())
-      Builder.defineMacro("_WIN64");
-    if (Triple.isWindowsGNUEnvironment())
-      addMinGWDefines(Triple, Opts, Builder);
-
-  }
-  void getVisualStudioDefines(const LangOptions &Opts,
-                              MacroBuilder &Builder) const {
-    if (Opts.CPlusPlus) {
-      if (Opts.RTTIData)
-        Builder.defineMacro("_CPPRTTI");
-
-      if (Opts.CXXExceptions)
-        Builder.defineMacro("_CPPUNWIND");
-    }
-
-    if (Opts.Bool)
-      Builder.defineMacro("__BOOL_DEFINED");
-
-    if (!Opts.CharIsSigned)
-      Builder.defineMacro("_CHAR_UNSIGNED");
-
-    // FIXME: POSIXThreads isn't exactly the option this should be defined for,
-    //        but it works for now.
-    if (Opts.POSIXThreads)
-      Builder.defineMacro("_MT");
-
-    if (Opts.MSCompatibilityVersion) {
-      Builder.defineMacro("_MSC_VER",
-                          Twine(Opts.MSCompatibilityVersion / 100000));
-      Builder.defineMacro("_MSC_FULL_VER", Twine(Opts.MSCompatibilityVersion));
-      // FIXME We cannot encode the revision information into 32-bits
-      Builder.defineMacro("_MSC_BUILD", Twine(1));
-
-      if (Opts.CPlusPlus11 && Opts.isCompatibleWithMSVC(LangOptions::MSVC2015))
-        Builder.defineMacro("_HAS_CHAR16_T_LANGUAGE_SUPPORT", Twine(1));
-
-      if (Opts.isCompatibleWithMSVC(LangOptions::MSVC2015)) {
-        if (Opts.CPlusPlus2a)
-          Builder.defineMacro("_MSVC_LANG", "201704L");
-        else if (Opts.CPlusPlus17)
-          Builder.defineMacro("_MSVC_LANG", "201703L");
-        else if (Opts.CPlusPlus14)
-          Builder.defineMacro("_MSVC_LANG", "201402L");
-      }
-    }
-
-    if (Opts.MicrosoftExt) {
-      Builder.defineMacro("_MSC_EXTENSIONS");
-
-      if (Opts.CPlusPlus11) {
-        Builder.defineMacro("_RVALUE_REFERENCES_V2_SUPPORTED");
-        Builder.defineMacro("_RVALUE_REFERENCES_SUPPORTED");
-        Builder.defineMacro("_NATIVE_NULLPTR_SUPPORTED");
-      }
-    }
-
-    Builder.defineMacro("_INTEGRAL_MAX_BITS", "64");
+    addWindowsDefines(Triple, Opts, Builder);
   }
 
 public:
@@ -772,9 +775,11 @@ public:
     if (Triple.getArch() == llvm::Triple::arm) {
       // Handled in ARM's setABI().
     } else if (Triple.getArch() == llvm::Triple::x86) {
-      this->resetDataLayout("e-m:e-p:32:32-i64:64-n8:16:32-S128");
+      this->resetDataLayout("e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
+                            "i64:64-n8:16:32-S128");
     } else if (Triple.getArch() == llvm::Triple::x86_64) {
-      this->resetDataLayout("e-m:e-p:32:32-i64:64-n8:16:32:64-S128");
+      this->resetDataLayout("e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
+                            "i64:64-n8:16:32:64-S128");
     } else if (Triple.getArch() == llvm::Triple::mipsel) {
       // Handled on mips' setDataLayout.
     } else {

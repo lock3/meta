@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection -verify %s
+// RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
 namespace bar {
   namespace fin {

@@ -98,19 +98,6 @@ void addCygMingDefines(const LangOptions &Opts, MacroBuilder &Builder) {
   }
 }
 
-void addMinGWDefines(const llvm::Triple &Triple, const LangOptions &Opts,
-                     MacroBuilder &Builder) {
-  DefineStd(Builder, "WIN32", Opts);
-  DefineStd(Builder, "WINNT", Opts);
-  if (Triple.isArch64Bit()) {
-    DefineStd(Builder, "WIN64", Opts);
-    Builder.defineMacro("__MINGW64__");
-  }
-  Builder.defineMacro("__MSVCRT__");
-  Builder.defineMacro("__MINGW32__");
-  addCygMingDefines(Opts, Builder);
-}
-
 //===----------------------------------------------------------------------===//
 // Driver code
 //===----------------------------------------------------------------------===//
@@ -376,15 +363,26 @@ TargetInfo *AllocateTarget(const llvm::Triple &Triple,
     return new AMDGPUTargetInfo(Triple, Opts);
 
   case llvm::Triple::riscv32:
-    // TODO: add cases for FreeBSD, NetBSD, RTEMS once tested.
-    if (os == llvm::Triple::Linux)
+    // TODO: add cases for NetBSD, RTEMS once tested.
+    switch (os) {
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<RISCV32TargetInfo>(Triple, Opts);
+    case llvm::Triple::Linux:
       return new LinuxTargetInfo<RISCV32TargetInfo>(Triple, Opts);
-    return new RISCV32TargetInfo(Triple, Opts);
+    default:
+      return new RISCV32TargetInfo(Triple, Opts);
+    }
+
   case llvm::Triple::riscv64:
-    // TODO: add cases for FreeBSD, NetBSD, RTEMS once tested.
-    if (os == llvm::Triple::Linux)
+    // TODO: add cases for NetBSD, RTEMS once tested.
+    switch (os) {
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<RISCV64TargetInfo>(Triple, Opts);
+    case llvm::Triple::Linux:
       return new LinuxTargetInfo<RISCV64TargetInfo>(Triple, Opts);
-    return new RISCV64TargetInfo(Triple, Opts);
+    default:
+      return new RISCV64TargetInfo(Triple, Opts);
+    }
 
   case llvm::Triple::sparc:
     switch (os) {

@@ -426,6 +426,8 @@ def note_pp_framework_without_header : Note<
   "did not find header '%0' in framework '%1' (loaded from '%2')">;
 def err_pp_error_opening_file : Error<
   "error opening file '%0': %1">, DefaultFatal;
+def err_pp_including_mainfile_in_preamble : Error<
+  "main file cannot be included recursively when building a preamble">;
 def err_pp_empty_filename : Error<"empty filename">;
 def err_pp_include_too_deep : Error<"#include nested too deeply">;
 def err_pp_expects_filename : Error<"expected \"FILENAME\" or <FILENAME>">;
@@ -813,6 +815,15 @@ def err_pp_include_in_assume_nonnull : Error<
   "inside '#pragma clang assume_nonnull'">;
 def err_pp_eof_in_assume_nonnull : Error<
   "'#pragma clang assume_nonnull' was not ended within this file">;
+
+}
+
+let CategoryName = "Dependency Directive Source Minimization Issue" in {
+
+def err_dep_source_minimizer_missing_sema_after_at_import : Error<
+  "could not find ';' after @import">;
+def err_dep_source_minimizer_unexpected_tokens_at_import : Error<
+  "unexpected extra tokens at end of @import declaration">;
 
 }
 

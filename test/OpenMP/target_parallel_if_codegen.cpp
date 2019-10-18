@@ -68,15 +68,15 @@
 // TCHECK: @{{.+}} = weak constant [[ENTTY]]
 
 // Check if offloading descriptor is created.
-// CHECK: [[ENTBEGIN:@.+]] = external constant [[ENTTY]]
-// CHECK: [[ENTEND:@.+]] = external constant [[ENTTY]]
+// CHECK: [[ENTBEGIN:@.+]] = external hidden constant [[ENTTY]]
+// CHECK: [[ENTEND:@.+]] = external hidden constant [[ENTTY]]
 // CHECK: [[DEVBEGIN:@.+]] = extern_weak constant i8
 // CHECK: [[DEVEND:@.+]] = extern_weak constant i8
 // CHECK: [[IMAGES:@.+]] = internal unnamed_addr constant [1 x [[DEVTY]]] [{{.+}} { i8* [[DEVBEGIN]], i8* [[DEVEND]], [[ENTTY]]* [[ENTBEGIN]], [[ENTTY]]* [[ENTEND]] }], comdat($[[REGFN]])
 // CHECK: [[DESC:@.+]] = internal constant [[DSCTY]] { i32 1, [[DEVTY]]* getelementptr inbounds ([1 x [[DEVTY]]], [1 x [[DEVTY]]]* [[IMAGES]], i32 0, i32 0), [[ENTTY]]* [[ENTBEGIN]], [[ENTTY]]* [[ENTEND]] }, comdat($[[REGFN]])
 
 // Check target registration is registered as a Ctor.
-// CHECK: appending global [1 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 0, void ()* @[[REGFN]], i8* bitcast (void ()* @[[REGFN]] to i8*) }]
+// CHECK: appending global [2 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 0, void ()* @.omp_offloading.requires_reg, i8* null }, { i32, void ()*, i8* } { i32 0, void ()* @[[REGFN]], i8* bitcast (void ()* @[[REGFN]] to i8*) }]
 
 
 template<typename tx>

@@ -38,6 +38,17 @@ struct PrintingPolicy;
 
 namespace ast_type_traits {
 
+/// Defines how we descend a level in the AST when we pass
+/// through expressions.
+enum TraversalKind {
+  /// Will traverse all child nodes.
+  TK_AsIs,
+
+  /// Will not traverse implicit casts and parentheses.
+  /// Corresponds to Expr::IgnoreParenImpCasts()
+  TK_IgnoreImplicitCastsAndParentheses
+};
+
 /// Kind identifier.
 ///
 /// It can be constructed from any node kind and allows for runtime type
@@ -137,7 +148,7 @@ private:
 #include "clang/AST/StmtNodes.inc"
     NKI_Type,
 #define TYPE(DERIVED, BASE) NKI_##DERIVED##Type,
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
     NKI_OMPClause,
 #define OPENMP_CLAUSE(TextualSpelling, Class) NKI_##Class,
 #include "clang/Basic/OpenMPKinds.def"
@@ -194,7 +205,7 @@ KIND_TO_KIND_ID(OMPClause)
 #define STMT(DERIVED, BASE) KIND_TO_KIND_ID(DERIVED)
 #include "clang/AST/StmtNodes.inc"
 #define TYPE(DERIVED, BASE) KIND_TO_KIND_ID(DERIVED##Type)
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
 #define OPENMP_CLAUSE(TextualSpelling, Class) KIND_TO_KIND_ID(Class)
 #include "clang/Basic/OpenMPKinds.def"
 #undef KIND_TO_KIND_ID

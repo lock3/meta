@@ -12,6 +12,7 @@
 
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTLambda.h"
 #include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/AttrIterator.h"
@@ -99,7 +100,7 @@ void *Decl::operator new(std::size_t Size, const ASTContext &Ctx,
     // Ensure required alignment of the resulting object by adding extra
     // padding at the start if required.
     size_t ExtraAlign =
-        llvm::OffsetToAlignment(sizeof(Module *), alignof(Decl));
+        llvm::offsetToAlignment(sizeof(Module *), llvm::Align(alignof(Decl)));
     auto *Buffer = reinterpret_cast<char *>(
         ::operator new(ExtraAlign + sizeof(Module *) + Size + Extra, Ctx));
     Buffer += ExtraAlign;
@@ -208,8 +209,8 @@ bool Decl::isTemplateParameterPack() const {
 }
 
 bool Decl::isParameterPack() const {
-  if (const auto *Parm = dyn_cast<ParmVarDecl>(this))
-    return Parm->isParameterPack();
+  if (const auto *Var = dyn_cast<VarDecl>(this))
+    return Var->isParameterPack();
 
   return isTemplateParameterPack();
 }
@@ -354,7 +355,8 @@ bool Decl::isInAnonymousNamespace() const {
 }
 
 bool Decl::isInStdNamespace() const {
-  return getDeclContext()->isStdNamespace();
+  const DeclContext *DC = getDeclContext();
+  return DC && DC->isStdNamespace();
 }
 
 bool Decl::isInFragment() const {
@@ -713,6 +715,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case Binding:
     case NonTypeTemplateParm:
     case VarTemplate:
+    case Concept:
     case CXXRequiredDeclarator:
       // These (C++-only) declarations are found by redeclaration lookup for
       // tag types, so we include them in the tag namespace.
@@ -929,6 +932,7 @@ bool Decl::AccessDeclContextSanity() const {
   if (isa<TranslationUnitDecl>(this) ||
       isa<TemplateTypeParmDecl>(this) ||
       isa<NonTypeTemplateParmDecl>(this) ||
+      !getDeclContext() ||
       !isa<CXXRecordDecl>(getDeclContext()) ||
       isInvalidDecl() ||
       isa<StaticAssertDecl>(this) ||
@@ -965,9 +969,11 @@ const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
     return nullptr;
 
   if (Ty->isFunctionPointerType())
-    Ty = Ty->getAs<PointerType>()->getPointeeType();
+    Ty = Ty->castAs<PointerType>()->getPointeeType();
+  else if (Ty->isFunctionReferenceType())
+    Ty = Ty->castAs<ReferenceType>()->getPointeeType();
   else if (BlocksToo && Ty->isBlockPointerType())
-    Ty = Ty->getAs<BlockPointerType>()->getPointeeType();
+    Ty = Ty->castAs<BlockPointerType>()->getPointeeType();
 
   return Ty->getAs<FunctionType>();
 }
@@ -1047,6 +1053,12 @@ DeclContext *DeclContext::getLookupParent() {
     if (getParent()->getRedeclContext()->isFileContext() &&
         getLexicalParent()->getRedeclContext()->isRecord())
       return getLexicalParent();
+
+  // A lookup within the call operator of a lambda never looks in the lambda
+  // class; instead, skip to the context in which that closure type is
+  // declared.
+  if (isLambdaCallOperator(this))
+    return getParent()->getParent();
 
   return getParent();
 }

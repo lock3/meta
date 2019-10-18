@@ -122,10 +122,10 @@ static void DefineFloatMacros(MacroBuilder &Builder, StringRef Prefix,
                    "4.94065645841246544176568792868221e-324",
                    "1.92592994438723585305597794258492732e-34");
   int MantissaDigits = PickFP(Sem, 11, 24, 53, 64, 106, 113);
-  int Min10Exp = PickFP(Sem, -13, -37, -307, -4931, -291, -4931);
+  int Min10Exp = PickFP(Sem, -4, -37, -307, -4931, -291, -4931);
   int Max10Exp = PickFP(Sem, 4, 38, 308, 4932, 308, 4932);
-  int MinExp = PickFP(Sem, -14, -125, -1021, -16381, -968, -16381);
-  int MaxExp = PickFP(Sem, 15, 128, 1024, 16384, 1024, 16384);
+  int MinExp = PickFP(Sem, -13, -125, -1021, -16381, -968, -16381);
+  int MaxExp = PickFP(Sem, 16, 128, 1024, 16384, 1024, 16384);
   Min = PickFP(Sem, "6.103515625e-5", "1.17549435e-38", "2.2250738585072014e-308",
                "3.36210314311209350626e-4932",
                "2.00416836000897277799610805135016e-292",
@@ -411,7 +411,7 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
       if (LangOpts.OpenCLCPlusPlusVersion == 100)
         Builder.defineMacro("__OPENCL_CPP_VERSION__", "100");
       else
-        llvm_unreachable("Unsupported OpenCL C++ version");
+        llvm_unreachable("Unsupported C++ version for OpenCL");
       Builder.defineMacro("__CL_CPP_VERSION_1_0__", "100");
     } else {
       // OpenCL v1.0 and v1.1 do not have a predefined macro to indicate the
@@ -437,17 +437,17 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
       default:
         llvm_unreachable("Unsupported OpenCL version");
       }
-      Builder.defineMacro("CL_VERSION_1_0", "100");
-      Builder.defineMacro("CL_VERSION_1_1", "110");
-      Builder.defineMacro("CL_VERSION_1_2", "120");
-      Builder.defineMacro("CL_VERSION_2_0", "200");
-
-      if (TI.isLittleEndian())
-        Builder.defineMacro("__ENDIAN_LITTLE__");
-
-      if (LangOpts.FastRelaxedMath)
-        Builder.defineMacro("__FAST_RELAXED_MATH__");
     }
+    Builder.defineMacro("CL_VERSION_1_0", "100");
+    Builder.defineMacro("CL_VERSION_1_1", "110");
+    Builder.defineMacro("CL_VERSION_1_2", "120");
+    Builder.defineMacro("CL_VERSION_2_0", "200");
+
+    if (TI.isLittleEndian())
+      Builder.defineMacro("__ENDIAN_LITTLE__");
+
+    if (LangOpts.FastRelaxedMath)
+      Builder.defineMacro("__FAST_RELAXED_MATH__");
   }
   // Not "standard" per se, but available even with the -undef flag.
   if (LangOpts.AsmPreprocessor)
@@ -480,6 +480,7 @@ static void InitializeCPlusPlusFeatureTestMacros(const LangOptions &LangOpts,
     Builder.defineMacro("__cpp_user_defined_literals", "200809L");
     Builder.defineMacro("__cpp_lambdas", "200907L");
     Builder.defineMacro("__cpp_constexpr",
+                        LangOpts.CPlusPlus2a ? "201907L" :
                         LangOpts.CPlusPlus17 ? "201603L" :
                         LangOpts.CPlusPlus14 ? "201304L" : "200704");
     Builder.defineMacro("__cpp_range_based_for",
@@ -540,6 +541,11 @@ static void InitializeCPlusPlusFeatureTestMacros(const LangOptions &LangOpts,
     Builder.defineMacro("__cpp_template_template_args", "201611L");
 
   // C++20 features.
+  if (LangOpts.CPlusPlus2a) {
+    Builder.defineMacro("__cpp_conditional_explicit", "201806L");
+    Builder.defineMacro("__cpp_constexpr_dynamic_alloc", "201907L");
+    Builder.defineMacro("__cpp_constinit", "201907L");
+  }
   if (LangOpts.Char8)
     Builder.defineMacro("__cpp_char8_t", "201811L");
   Builder.defineMacro("__cpp_impl_destroying_delete", "201806L");
@@ -568,13 +574,22 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   Builder.defineMacro("__clang_version__",
                       "\"" CLANG_VERSION_STRING " "
                       + getClangFullRepositoryVersion() + "\"");
-  if (!LangOpts.MSVCCompat) {
-    // Currently claim to be compatible with GCC 4.2.1-5621, but only if we're
-    // not compiling for MSVC compatibility
-    Builder.defineMacro("__GNUC_MINOR__", "2");
-    Builder.defineMacro("__GNUC_PATCHLEVEL__", "1");
-    Builder.defineMacro("__GNUC__", "4");
+
+  if (LangOpts.GNUCVersion != 0) {
+    // Major, minor, patch, are given two decimal places each, so 4.2.1 becomes
+    // 40201.
+    unsigned GNUCMajor = LangOpts.GNUCVersion / 100 / 100;
+    unsigned GNUCMinor = LangOpts.GNUCVersion / 100 % 100;
+    unsigned GNUCPatch = LangOpts.GNUCVersion % 100;
+    Builder.defineMacro("__GNUC__", Twine(GNUCMajor));
+    Builder.defineMacro("__GNUC_MINOR__", Twine(GNUCMinor));
+    Builder.defineMacro("__GNUC_PATCHLEVEL__", Twine(GNUCPatch));
     Builder.defineMacro("__GXX_ABI_VERSION", "1002");
+
+    if (LangOpts.CPlusPlus) {
+      Builder.defineMacro("__GNUG__", Twine(GNUCMajor));
+      Builder.defineMacro("__GXX_WEAK__");
+    }
   }
 
   // Define macros for the C11 / C++11 memory orderings
@@ -602,10 +617,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // Support for #pragma redefine_extname (Sun compatibility)
   Builder.defineMacro("__PRAGMA_REDEFINE_EXTNAME", "1");
 
-  // As sad as it is, enough software depends on the __VERSION__ for version
-  // checks that it is necessary to report 4.2.1 (the base GCC version we claim
-  // compatibility with) first.
-  Builder.defineMacro("__VERSION__", "\"4.2.1 Compatible " +
+  // Previously this macro was set to a string aiming to achieve compatibility
+  // with GCC 4.2.1. Now, just return the full Clang version
+  Builder.defineMacro("__VERSION__", "\"" +
                       Twine(getClangFullCPPVersion()) + "\"");
 
   // Initialize language-specific preprocessor defines.
@@ -614,7 +628,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (!LangOpts.GNUMode && !LangOpts.MSVCCompat)
     Builder.defineMacro("__STRICT_ANSI__");
 
-  if (!LangOpts.MSVCCompat && LangOpts.CPlusPlus11)
+  if (LangOpts.GNUCVersion && LangOpts.CPlusPlus11)
     Builder.defineMacro("__GXX_EXPERIMENTAL_CXX0X__");
 
   if (LangOpts.ObjC) {
@@ -694,7 +708,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   if (!LangOpts.MSVCCompat && LangOpts.Exceptions)
     Builder.defineMacro("__EXCEPTIONS");
-  if (!LangOpts.MSVCCompat && LangOpts.RTTI)
+  if (LangOpts.GNUCVersion && LangOpts.RTTI)
     Builder.defineMacro("__GXX_RTTI");
 
   if (LangOpts.SjLjExceptions)
@@ -708,11 +722,8 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (LangOpts.Deprecated)
     Builder.defineMacro("__DEPRECATED");
 
-  if (!LangOpts.MSVCCompat && LangOpts.CPlusPlus) {
-    Builder.defineMacro("__GNUG__", "4");
-    Builder.defineMacro("__GXX_WEAK__");
+  if (!LangOpts.MSVCCompat && LangOpts.CPlusPlus)
     Builder.defineMacro("__private_extern__", "extern");
-  }
 
   if (LangOpts.MicrosoftExt) {
     if (LangOpts.WChar) {
@@ -922,7 +933,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   else
     Builder.defineMacro("__FINITE_MATH_ONLY__", "0");
 
-  if (!LangOpts.MSVCCompat) {
+  if (LangOpts.GNUCVersion) {
     if (LangOpts.GNUInline || LangOpts.CPlusPlus)
       Builder.defineMacro("__GNUC_GNU_INLINE__");
     else
@@ -959,7 +970,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 #undef DEFINE_LOCK_FREE_MACRO
   };
   addLockFreeMacros("__CLANG_ATOMIC_");
-  if (!LangOpts.MSVCCompat)
+  if (LangOpts.GNUCVersion)
     addLockFreeMacros("__GCC_ATOMIC_");
 
   if (LangOpts.NoInlineDefine)
@@ -1031,15 +1042,18 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     switch (LangOpts.OpenMP) {
     case 0:
       break;
+    case 31:
+      Builder.defineMacro("_OPENMP", "201107");
+      break;
     case 40:
       Builder.defineMacro("_OPENMP", "201307");
       break;
-    case 45:
-      Builder.defineMacro("_OPENMP", "201511");
+    case 50:
+      Builder.defineMacro("_OPENMP", "201811");
       break;
     default:
-      // Default version is OpenMP 3.1
-      Builder.defineMacro("_OPENMP", "201107");
+      // Default version is OpenMP 4.5
+      Builder.defineMacro("_OPENMP", "201511");
       break;
     }
   }
@@ -1070,8 +1084,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro(#Ext);
 #include "clang/Basic/OpenCLExtensions.def"
 
-    auto Arch = TI.getTriple().getArch();
-    if (Arch == llvm::Triple::spir || Arch == llvm::Triple::spir64)
+    if (TI.getTriple().isSPIR())
       Builder.defineMacro("__IMAGE_SUPPORT__");
   }
 

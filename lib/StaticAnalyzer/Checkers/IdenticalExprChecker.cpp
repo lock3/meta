@@ -118,7 +118,7 @@ bool FindIdenticalExprVisitor::VisitIfStmt(const IfStmt *I) {
   if (const CompoundStmt *CS = dyn_cast<CompoundStmt>(Stmt1)) {
     if (!CS->body_empty()) {
       const IfStmt *InnerIf = dyn_cast<IfStmt>(*CS->body_begin());
-      if (InnerIf && isIdenticalStmt(EvalCtx, I->getCond(), InnerIf->getCond(), /*ignoreSideEffects=*/false)) {
+      if (InnerIf && isIdenticalStmt(EvalCtx, I->getCond(), InnerIf->getCond(), /*IgnoreSideEffects=*/false)) {
         PathDiagnosticLocation ELoc(InnerIf->getCond(), BR.getSourceManager(), AC);
         BR.EmitBasicReport(AC->getDecl(), Checker, "Identical conditions",
           categories::LogicError,

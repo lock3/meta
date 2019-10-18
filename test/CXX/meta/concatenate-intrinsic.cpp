@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang_cc1 -freflection -std=c++2a %s
 
 using string_type = const char *;
 

@@ -16,8 +16,8 @@ void foo() {
 // CHECK-DAG: $[[REGFN:\.omp_offloading\..+\.powerpc64le-ibm-linux-gnu\.x86_64-pc-linux-gnu+]] = comdat any
 
 // Check if offloading descriptor is created.
-// CHECK: [[ENTBEGIN:@.+]] = external constant [[ENTTY]]
-// CHECK: [[ENTEND:@.+]] = external constant [[ENTTY]]
+// CHECK: [[ENTBEGIN:@.+]] = external hidden constant [[ENTTY]]
+// CHECK: [[ENTEND:@.+]] = external hidden constant [[ENTTY]]
 // CHECK: [[DEV1BEGIN:@.+]] = extern_weak constant i8
 // CHECK: [[DEV1END:@.+]] = extern_weak constant i8
 // CHECK: [[DEV2BEGIN:@.+]] = extern_weak constant i8
@@ -26,15 +26,19 @@ void foo() {
 // CHECK: [[DESC:@.+]] = internal constant [[DSCTY]] { i32 2, [[DEVTY]]* getelementptr inbounds ([2 x [[DEVTY]]], [2 x [[DEVTY]]]* [[IMAGES]], i32 0, i32 0), [[ENTTY]]* [[ENTBEGIN]], [[ENTTY]]* [[ENTEND]] }, comdat($[[REGFN]])
 
 // Check target registration is registered as a Ctor.
-// CHECK: appending global [1 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 0, void ()* @[[REGFN]], i8* bitcast (void ()* @[[REGFN]] to i8*) }]
+// CHECK: appending global [2 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 0, void ()* @.omp_offloading.requires_reg, i8* null }, { i32, void ()*, i8* } { i32 0, void ()* @[[REGFN]], i8* bitcast (void ()* @[[REGFN]] to i8*) }]
 
 // Check presence of foo() and the outlined target region
 // CHECK: define void [[FOO:@.+]]()
-// CHECK: define internal void [[OUTLINEDTARGET:@.+]]() 
+// CHECK: define internal void [[OUTLINEDTARGET:@.+]]()
 
 // Check registration and unregistration code.
 
-// CHECK:     define internal void @[[UNREGFN:.+]](i8*)
+// CHECK:     define internal void @.omp_offloading.requires_reg()
+// CHECK:     call void @__tgt_register_requires(i64 1)
+// CHECK:     ret void
+
+// CHECK:     define internal void @[[UNREGFN:.+]](i8* %0)
 // CHECK-SAME: comdat($[[REGFN]]) {
 // CHECK:     call i32 @__tgt_unregister_lib([[DSCTY]]* [[DESC]])
 // CHECK:     ret void

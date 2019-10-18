@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 -triple i686-unknown-windows-msvc %s -fsyntax-only -verify -fms-extensions -Wunknown-pragmas
 // RUN: not %clang_cc1 -triple i686-unknown-windows-msvc %s -fms-extensions -E | FileCheck %s
-// REQUIRES: non-ps4-sdk
+// UNSUPPORTED: ps4
 
 // rdar://6495941
 
@@ -51,6 +51,8 @@ __pragma(comment(linker," bar=" BAR))
   __pragma(warning(pop)); \
 }
 
+#define PRAGMA_IN_ARGS(p) p
+
 void f()
 {
   __pragma() // expected-warning{{unknown pragma ignored}}
@@ -64,8 +66,16 @@ void f()
 // CHECK: #pragma warning(disable: 10000)
 // CHECK: ; 1 + (2 > 3) ? 4 : 5;
 // CHECK: #pragma warning(pop)
-}
 
+  // Check that macro arguments can contain __pragma.
+  PRAGMA_IN_ARGS(MACRO_WITH__PRAGMA) // expected-warning {{lower precedence}} \
+                                     // expected-note 2 {{place parentheses}} \
+                                     // expected-warning {{expression result unused}}
+// CHECK: #pragma warning(push)
+// CHECK: #pragma warning(disable: 10000)
+// CHECK: ; 1 + (2 > 3) ? 4 : 5;
+// CHECK: #pragma warning(pop)
+}
 
 // This should include macro_arg_directive even though the include
 // is looking for test.h  This allows us to assign to "n"

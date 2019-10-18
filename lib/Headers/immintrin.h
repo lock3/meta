@@ -64,9 +64,8 @@
 #include <vpclmulqdqintrin.h>
 #endif
 
-#if !defined(_MSC_VER) || __has_feature(modules) || defined(__BMI__)
+/* No feature check desired due to internal checks */
 #include <bmiintrin.h>
-#endif
 
 #if !defined(_MSC_VER) || __has_feature(modules) || defined(__BMI2__)
 #include <bmi2intrin.h>
@@ -179,6 +178,15 @@
 
 #if !defined(_MSC_VER) || __has_feature(modules) || defined(__AVX512PF__)
 #include <avx512pfintrin.h>
+#endif
+
+#if !defined(_MSC_VER) || __has_feature(modules) || defined(__AVX512BF16__)
+#include <avx512bf16intrin.h>
+#endif
+
+#if !defined(_MSC_VER) || __has_feature(modules) || \
+    (defined(__AVX512VL__) && defined(__AVX512BF16__))
+#include <avx512vlbf16intrin.h>
 #endif
 
 #if !defined(_MSC_VER) || __has_feature(modules) || defined(__PKU__)
@@ -412,7 +420,21 @@ _storebe_i64(void * __P, long long __D) {
 #include <invpcidintrin.h>
 #endif
 
-#ifdef _MSC_VER
+#if !defined(_MSC_VER) || __has_feature(modules) || \
+  defined(__AVX512VP2INTERSECT__)
+#include <avx512vp2intersectintrin.h>
+#endif
+
+#if !defined(_MSC_VER) || __has_feature(modules) || \
+  (defined(__AVX512VL__) && defined(__AVX512VP2INTERSECT__))
+#include <avx512vlvp2intersectintrin.h>
+#endif
+
+#if !defined(_MSC_VER) || __has_feature(modules) || defined(__ENQCMD__)
+#include <enqcmdintrin.h>
+#endif
+
+#if defined(_MSC_VER) && __has_extension(gnu_asm)
 /* Define the default attributes for these intrinsics */
 #define __DEFAULT_FN_ATTRS __attribute__((__always_inline__, __nodebug__))
 #ifdef __cplusplus
@@ -494,6 +516,6 @@ _InterlockedCompareExchange64_HLERelease(__int64 volatile *_Destination,
 
 #undef __DEFAULT_FN_ATTRS
 
-#endif /* _MSC_VER */
+#endif /* defined(_MSC_VER) && __has_extension(gnu_asm) */
 
 #endif /* __IMMINTRIN_H */

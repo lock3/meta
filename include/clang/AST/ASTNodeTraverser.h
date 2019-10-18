@@ -205,6 +205,24 @@ public:
     });
   }
 
+  void Visit(const ast_type_traits::DynTypedNode &N) {
+    // FIXME: Improve this with a switch or a visitor pattern.
+    if (const auto *D = N.get<Decl>())
+      Visit(D);
+    else if (const auto *S = N.get<Stmt>())
+      Visit(S);
+    else if (const auto *QT = N.get<QualType>())
+      Visit(*QT);
+    else if (const auto *T = N.get<Type>())
+      Visit(T);
+    else if (const auto *C = N.get<CXXCtorInitializer>())
+      Visit(C);
+    else if (const auto *C = N.get<OMPClause>())
+      Visit(C);
+    else if (const auto *T = N.get<TemplateArgument>())
+      Visit(*T);
+  }
+
   void dumpDeclContext(const DeclContext *DC) {
     if (!DC)
       return;
@@ -221,8 +239,12 @@ public:
       Visit(TP);
   }
 
-  void dumpTemplateArgumentListInfo(const TemplateArgumentListInfo &TALI) {
-    for (const auto &TA : TALI.arguments())
+  void
+  dumpASTTemplateArgumentListInfo(const ASTTemplateArgumentListInfo *TALI) {
+    if (!TALI)
+      return;
+
+    for (const auto &TA : TALI->arguments())
       dumpTemplateArgumentLoc(TA);
   }
 
@@ -484,8 +506,7 @@ public:
   void VisitClassScopeFunctionSpecializationDecl(
       const ClassScopeFunctionSpecializationDecl *D) {
     Visit(D->getSpecialization());
-    if (D->hasExplicitTemplateArgs())
-      dumpTemplateArgumentListInfo(D->templateArgs());
+    dumpASTTemplateArgumentListInfo(D->getTemplateArgsAsWritten());
   }
   void VisitVarTemplateDecl(const VarTemplateDecl *D) { dumpTemplateDecl(D); }
 
@@ -526,6 +547,11 @@ public:
       dumpTemplateArgumentLoc(
           D->getDefaultArgument(), D->getDefaultArgStorage().getInheritedFrom(),
           D->defaultArgumentWasInherited() ? "inherited from" : "previous");
+  }
+
+  void VisitConceptDecl(const ConceptDecl *D) {
+    dumpTemplateParameters(D->getTemplateParameters());
+    Visit(D->getConstraintExpr());
   }
 
   void VisitUsingShadowDecl(const UsingShadowDecl *D) {

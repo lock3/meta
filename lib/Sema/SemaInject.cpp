@@ -218,6 +218,11 @@ public:
     TransformedDecls[Old] = New;
   }
 
+  void transformedLocalDecl(Decl *Old, ArrayRef<Decl *> New) {
+    // FIXME: Handle number of new decls.
+    transformedLocalDecl(Old, New.front());
+  }
+
   /// Adds a substitution from one declaration to another.
   void AddDeclSubstitution(const Decl *Old, Decl *New) {
     transformedLocalDecl(const_cast<Decl*>(Old), New);
@@ -1042,16 +1047,16 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
       D->getStorageClass(), D->isInlineSpecified(), D->hasWrittenPrototype(),
-      D->isConstexpr());
+      D->getConstexprKind());
   AddDeclSubstitution(D, Fn);
   UpdateFunctionParms(D, Fn);
 
   // Update the constexpr specifier.
   if (GetModifiers().addConstexpr()) {
-    Fn->setConstexpr(true);
+    Fn->setConstexprKind(CSK_constexpr);
     Fn->setType(Fn->getType().withConst());
   } else {
-    Fn->setConstexpr(D->isConstexpr());
+    Fn->setConstexprKind(D->getConstexprKind());
   }
 
   // Set properties.
@@ -1509,6 +1514,14 @@ ImplicitlyInstantiatedByFragment(TemplateSpecializationKind TemplateSK,
   return D && !D->isLocalClass();
 }
 
+template<typename T>
+static ExplicitSpecifier getExplicit(T *D, ReflectionModifiers &Mods) {
+  ExplicitSpecifier Spec = D->getExplicitSpecifier();
+  if (Mods.addExplicit())
+    Spec.setKind(ExplicitSpecKind::ResolvedTrue);
+  return Spec;
+}
+
 Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   ASTContext &AST = getContext();
   DeclarationNameInfo DNI;
@@ -1523,28 +1536,31 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
     Method = CXXConstructorDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
                                         TSI->getType(), TSI,
-                                        Ctor->isExplicit(),
+                                        getExplicit(Ctor, GetModifiers()),
                                         Ctor->isInlineSpecified(),
                                         Ctor->isImplicit(),
-                                        Ctor->isConstexpr());
+                                        Ctor->getConstexprKind());
     Method->setRangeEnd(D->getEndLoc());
   } else if (CXXDestructorDecl *Dtor = dyn_cast<CXXDestructorDecl>(D)) {
     Method = CXXDestructorDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
                                        TSI->getType(), TSI,
                                        Dtor->isInlineSpecified(),
-                                       Dtor->isImplicit());
+                                       Dtor->isImplicit(),
+                                       Dtor->getConstexprKind());
     Method->setRangeEnd(D->getEndLoc());
   } else if (CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(D)) {
     Method = CXXConversionDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
                                        TSI->getType(), TSI,
                                        Conv->isInlineSpecified(),
-                                       Conv->isExplicit(), Conv->isConstexpr(),
+                                       getExplicit(Conv, GetModifiers()),
+                                       Conv->getConstexprKind(),
                                        Conv->getEndLoc());
   } else {
     Method = CXXMethodDecl::Create(AST, Owner, D->getBeginLoc(), DNI,
                                    TSI->getType(), TSI,
                                    D->isStatic() ? SC_Static : SC_None,
-                                   D->isInlineSpecified(), D->isConstexpr(),
+                                   D->isInlineSpecified(),
+                                   D->getConstexprKind(),
                                    D->getEndLoc());
   }
   AddDeclSubstitution(D, Method);
@@ -1569,20 +1585,13 @@ Decl *InjectionContext::InjectCXXMethodDecl(CXXMethodDecl *D) {
   // Update the constexpr specifier.
   if (GetModifiers().addConstexpr()) {
     if (isa<CXXDestructorDecl>(Method)) {
-      SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor);
+      SemaRef.Diag(D->getLocation(), diag::err_constexpr_dtor) << CSK_constexpr;
       Method->setInvalidDecl(true);
     }
-    Method->setConstexpr(true);
+    Method->setConstexprKind(CSK_constexpr);
     Method->setType(Method->getType().withConst());
   } else {
-    Method->setConstexpr(D->isConstexpr());
-  }
-
-  // Update the explicit specifier.
-  if (GetModifiers().addExplicit()) {
-    Method->setExplicitSpecified(true);
-  } else {
-    Method->setExplicitSpecified(D->isExplicitSpecified());
+    Method->setConstexprKind(D->getConstexprKind());
   }
 
   // Propagate virtual flags.
@@ -2357,7 +2366,7 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
     FunctionDecl *FD = cast<FunctionDecl>(RequiredDeclarator);
     if (FD->isConstexpr() != FoundFD->isConstexpr()) {
       S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
-                   << FD << FD->isConstexpr();
+          << FD << FD->getConstexprKind() << FoundFD->getConstexprKind();
       S.Diag(FoundFD->getLocation(), diag::note_previous_declaration);
       return true;
     }
@@ -2373,8 +2382,9 @@ static bool TypeCheckRequiredDeclarator(Sema &S, Decl *Required, Decl *Found) {
   if (const VarDecl *FoundVD = dyn_cast<VarDecl>(FoundDeclarator)) {
     VarDecl *VD = cast<VarDecl>(RequiredDeclarator);
     if (VD->isConstexpr() != FoundVD->isConstexpr()) {
-      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch)
-        << VD << VD->isConstexpr();
+      S.Diag(RDLoc, diag::err_constexpr_redecl_mismatch) << VD
+        << (VD->isConstexpr() ? CSK_constexpr : CSK_unspecified)
+        << (FoundVD->isConstexpr() ? CSK_constexpr : CSK_unspecified);
       S.Diag(FoundVD->getLocation(), diag::note_previous_declaration);
       return true;
     }
@@ -2758,25 +2768,23 @@ static void FindCapturesInScope(Sema &SemaRef, Scope *S,
 static void FindCaptures(Sema &SemaRef, Scope *S, FunctionDecl *Fn,
                          SmallVectorImpl<ValueDecl *> &Vars) {
   assert(S && "Expected non-null scope");
-  while (S && S->getEntity() != Fn) {
+
+  do {
     FindCapturesInScope(SemaRef, S, Vars);
-    S = S->getParent();
-  }
-  if (S)
-    FindCapturesInScope(SemaRef, S, Vars);
+    if (S->getEntity() == Fn)
+      break;
+  } while ((S = S->getParent()));
 }
 
 /// Construct a reference to each captured value and force an r-value
 /// conversion so that we get rvalues during evaluation.
 static void ReferenceCaptures(Sema &SemaRef,
-                              SmallVectorImpl<ValueDecl *> &Vars,
+                              const SmallVectorImpl<ValueDecl *> &Vars,
                               SmallVectorImpl<Expr *> &Refs) {
   Refs.resize(Vars.size());
   std::transform(Vars.begin(), Vars.end(), Refs.begin(), [&](ValueDecl *D) {
-    Expr *Ref = new (SemaRef.Context) DeclRefExpr(
+    return new (SemaRef.Context) DeclRefExpr(
         SemaRef.Context, D, false, D->getType(), VK_LValue, D->getLocation());
-    return ImplicitCastExpr::Create(SemaRef.Context, D->getType(),
-                                    CK_LValueToRValue, Ref, nullptr, VK_RValue);
   });
 }
 
@@ -2822,11 +2830,12 @@ void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
   //
   // FIXME: It might be better to use the scope, but the flags don't appear
   // to be set right within constexpr declarations, etc.
-  if (isa<FunctionDecl>(CurContext)) {
-    SmallVector<ValueDecl *, 8> Vars;
-    FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
-    ReferenceCaptures(*this, Vars, Captures);
-  }
+  if (!isa<FunctionDecl>(CurContext))
+    return;
+
+  SmallVector<ValueDecl *, 8> Vars;
+  FindCaptures(*this, CurScope, getCurFunctionDecl(), Vars);
+  ReferenceCaptures(*this, Vars, Captures);
 }
 
 /// Called at the start of a source code fragment to establish the fragment
@@ -2903,7 +2912,6 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   QualType ClassTy = Context.getRecordType(Class);
   TypeSourceInfo *ClassTSI = Context.getTrivialTypeSourceInfo(ClassTy);
 
-
   // Build the class fields.
   SmallVector<FieldDecl *, 4> Fields;
 
@@ -2954,13 +2962,14 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   DeclarationNameInfo NameInfo(Name, Loc);
   CXXConstructorDecl *Ctor = CXXConstructorDecl::Create(
       Context, Class, Loc, NameInfo, /*Type*/QualType(), /*TInfo=*/nullptr,
-      /*isExplicit=*/true, /*isInline=*/true, /*isImplicitlyDeclared=*/false,
-      /*isConstexpr=*/true);
+      ExplicitSpecifier(nullptr, ExplicitSpecKind::ResolvedTrue),
+      /*isInline=*/true, /*isImplicitlyDeclared=*/false,
+      /*ConstexprKind=*/CSK_consteval);
   Ctor->setAccess(AS_public);
 
   // Build the function type for said constructor.
   FunctionProtoType::ExtProtoInfo EPI;
-  EPI.ExceptionSpec.Type = EST_Unevaluated;
+  EPI.ExceptionSpec.Type = EST_None;
   EPI.ExceptionSpec.SourceDecl = Ctor;
   EPI.ExtInfo = EPI.ExtInfo.withCallingConv(
       Context.getDefaultCallingConvention(/*IsVariadic=*/false,
@@ -2976,6 +2985,8 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
 
   QualType CtorTy = Context.getFunctionType(Context.VoidTy, ArgTypes, EPI);
   Ctor->setType(CtorTy);
+
+  S.ResolveExceptionSpec(Loc, CtorTy->getAs<FunctionProtoType>());
 
   // Build the constructor params.
   SmallVector<ParmVarDecl *, 4> Parms;
@@ -3046,26 +3057,12 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
   }
 
   // Build an expression that that initializes the fragment object.
-  Expr *Init;
-  if (CtorArgs.size() == 1) {
-    CXXConstructExpr *Cast = CXXConstructExpr::Create(
-        Context, ClassTy, Loc, Ctor, true, CtorArgs,
-        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
-        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false,
-        CXXConstructExpr::CK_Complete, SourceRange(Loc, Loc));
-    Init = CXXFunctionalCastExpr::Create(
-        Context, ClassTy, VK_RValue, ClassTSI, CK_NoOp, Cast,
-        /*Path=*/nullptr, Loc, Loc);
-  } else {
-    Init = CXXTemporaryObjectExpr::Create(
-        Context, Ctor, ClassTy, ClassTSI, CtorArgs, SourceRange(Loc, Loc),
-        /*HadMultipleCandidates=*/false, /*ListInitialization=*/false,
-        /*StdInitListInitialization=*/false, /*ZeroInitialization=*/false);
-  }
+  ExprResult InitExpr = S.BuildCXXTypeConstructExpr(
+      ClassTSI, Loc, CtorArgs, Loc, /*ListInitialization=*/false);
 
   // Finally, build the fragment expression.
   return new (Context) CXXFragmentExpr(Context, Loc, ClassTy, FD, Captures,
-                                       Init);
+                                       InitExpr.get());
 }
 
 /// Builds a new fragment expression.
@@ -3163,13 +3160,6 @@ StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
   if (!IsDependent && !CheckInjectionOperand(*this, Operand)) {
     return StmtError();
   }
-
-  // Perform an lvalue-to-value conversion so that we get an rvalue in
-  // evaluation.
-  if (Operand->isGLValue())
-    Operand = ImplicitCastExpr::Create(Context, Operand->getType(),
-                                       CK_LValueToRValue, Operand,
-                                       nullptr, VK_RValue);
 
   return new (Context) CXXInjectionStmt(Loc, ContextSpecifier, Operand);
 }
@@ -3926,7 +3916,7 @@ ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
                            FunctionTy, FunctionTyInfo, SC_None,
                            /*isInlineSpecified=*/false,
                            /*hasWrittenPrototype=*/true,
-                           /*isConstexprSpecified=*/true);
+                           /*ConstexprKind=*/CSK_consteval);
   Function->setImplicit();
   Function->setMetaprogram();
 

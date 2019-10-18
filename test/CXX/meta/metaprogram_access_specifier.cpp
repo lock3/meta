@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++1z %s
+// RUN: %clang_cc1 -fsyntax-only -verify -freflection -std=c++2a %s
 
 namespace class_default_tests {
   constexpr auto frag = __fragment class {

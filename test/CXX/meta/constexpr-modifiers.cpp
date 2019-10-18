@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -verify -freflection -std=c++1z %s
+// RUN: %clang_cc1 -verify -freflection -std=c++2a %s
 
 #include "reflection_query.h"
 #include "reflection_mod.h"
@@ -38,7 +38,7 @@ struct NewBrokenField {
 };
 
 struct ExistingDestructorOnly {
-  ~ExistingDestructorOnly(); // expected-error {{destructor cannot be marked constexpr}}
+  ~ExistingDestructorOnly(); // expected-error {{destructor cannot be declared constexpr}}
 };
 
 

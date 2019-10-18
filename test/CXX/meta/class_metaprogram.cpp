@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -freflection -std=c++1z %s
+// RUN: %clang_cc1 -freflection -std=c++2a %s
 
 #define assert(E) if (!(E)) __builtin_abort();
 

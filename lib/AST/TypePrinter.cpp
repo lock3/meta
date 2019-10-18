@@ -125,7 +125,7 @@ namespace {
 #define TYPE(CLASS, PARENT) \
     void print##CLASS##Before(const CLASS##Type *T, raw_ostream &OS); \
     void print##CLASS##After(const CLASS##Type *T, raw_ostream &OS);
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
 
   private:
     void printBefore(const Type *ty, Qualifiers qs, raw_ostream &OS);
@@ -261,6 +261,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Paren:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
+    case Type::MacroQualified:
     case Type::CXXDependentVariadicReifier:
       CanPrefixQualifiers = false;
       break;
@@ -323,7 +324,7 @@ void TypePrinter::printBefore(const Type *T,Qualifiers Quals, raw_ostream &OS) {
 #define TYPE(CLASS, PARENT) case Type::CLASS: \
     print##CLASS##Before(cast<CLASS##Type>(T), OS); \
     break;
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
   }
 
   if (hasAfterQuals) {
@@ -349,7 +350,7 @@ void TypePrinter::printAfter(const Type *T, Qualifiers Quals, raw_ostream &OS) {
 #define TYPE(CLASS, PARENT) case Type::CLASS: \
     print##CLASS##After(cast<CLASS##Type>(T), OS); \
     break;
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
   }
 }
 
@@ -736,6 +737,8 @@ FunctionProtoType::printExceptionSpecification(raw_ostream &OS,
         OS << getExceptionType(I).stream(Policy);
       }
     OS << ')';
+  } else if (EST_NoThrow == getExceptionSpecType()) {
+    OS << " __attribute__((nothrow))";
   } else if (isNoexceptExceptionSpec(getExceptionSpecType())) {
     OS << " noexcept";
     // FIXME:Is it useful to print out the expression for a non-dependent
@@ -972,6 +975,21 @@ void TypePrinter::printCXXRequiredTypeAfter(const CXXRequiredTypeType *T,
 
 void TypePrinter::printTypedefBefore(const TypedefType *T, raw_ostream &OS) {
   printTypeSpec(T->getDecl(), OS);
+}
+
+void TypePrinter::printMacroQualifiedBefore(const MacroQualifiedType *T,
+                                            raw_ostream &OS) {
+  StringRef MacroName = T->getMacroIdentifier()->getName();
+  OS << MacroName << " ";
+
+  // Since this type is meant to print the macro instead of the whole attribute,
+  // we trim any attributes and go directly to the original modified type.
+  printBefore(T->getModifiedType(), OS);
+}
+
+void TypePrinter::printMacroQualifiedAfter(const MacroQualifiedType *T,
+                                           raw_ostream &OS) {
+  printAfter(T->getModifiedType(), OS);
 }
 
 void TypePrinter::printTypedefAfter(const TypedefType *T, raw_ostream &OS) {}
@@ -1246,8 +1264,18 @@ void TypePrinter::printTemplateTypeParmBefore(const TemplateTypeParmType *T,
                                               raw_ostream &OS) {
   if (IdentifierInfo *Id = T->getIdentifier())
     OS << Id->getName();
-  else
-    OS << "type-parameter-" << T->getDepth() << '-' << T->getIndex();
+  else {
+    bool IsLambdaAutoParam = false;
+    if (auto D = T->getDecl()) {
+      if (auto M = dyn_cast_or_null<CXXMethodDecl>(D->getDeclContext()))
+        IsLambdaAutoParam = D->isImplicit() && M->getParent()->isLambda();
+    }
+
+    if (IsLambdaAutoParam)
+      OS << "auto";
+    else
+      OS << "type-parameter-" << T->getDepth() << '-' << T->getIndex();
+  }
   spaceBeforePlaceHolder(OS);
 }
 
@@ -1549,7 +1577,7 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
    QualType t = T->getEquivalentType();
    while (!t->isFunctionType())
      t = t->getPointeeType();
-   OS << (t->getAs<FunctionType>()->getCallConv() == CC_AAPCS ?
+   OS << (t->castAs<FunctionType>()->getCallConv() == CC_AAPCS ?
          "\"aapcs\"" : "\"aapcs-vfp\"");
    OS << ')';
    break;
@@ -1817,17 +1845,19 @@ void Qualifiers::print(raw_ostream &OS, const PrintingPolicy& Policy,
       case LangAS::opencl_private:
         break;
       case LangAS::opencl_constant:
-      case LangAS::cuda_constant:
         OS << "__constant";
         break;
       case LangAS::opencl_generic:
         OS << "__generic";
         break;
       case LangAS::cuda_device:
-        OS << "__device";
+        OS << "__device__";
+        break;
+      case LangAS::cuda_constant:
+        OS << "__constant__";
         break;
       case LangAS::cuda_shared:
-        OS << "__shared";
+        OS << "__shared__";
         break;
       default:
         OS << "__attribute__((address_space(";
