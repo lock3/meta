@@ -337,6 +337,10 @@ std::initializer_list<int> dangling_initializer_list() {
   // expected-note@-1 {{temporary was destroyed at the end of the full expression}}
 }
 
+int* static_or_null() {
+  return nullptr; // OK
+}
+
 // Examples from paper P0936 by Richard Smith and Nicolai Josuttis
 namespace P0936 {
 template <typename T>

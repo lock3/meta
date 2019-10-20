@@ -313,8 +313,7 @@ public:
         }
       }
       // For not_null types are never null regardless of type matching.
-      if (!isNullableType(OutputType))
-        Ret.ContainsNull = false;
+      Ret.ContainsNull = isNullableType(OutputType);
       if (Ret.isEmpty())
         Ret.ContainsStatic = true;
       return Ret;

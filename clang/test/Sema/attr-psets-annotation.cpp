@@ -281,7 +281,7 @@ void f() {
   // expected-warning@-4 {{pset(Pre(*c)) = ((invalid))}}
   // expected-warning@-5 {{pset(Pre(this)) = (*this)}}
   // expected-warning@-6 {{pset(Post(*c)) = ((null), *a, *b)}}
-  // expected-warning@-7 {{pset(Post((return value))) = (*this)}}
+  // expected-warning@-7 {{pset(Post((return value))) = ((null), *this)}}
   __lifetime_contracts(p7);
   // expected-warning@-1 {{pset(Pre(a)) = ((null), *a)}}
   // expected-warning@-2 {{pset(Pre(b)) = ((null), *b)}}
