@@ -553,10 +553,13 @@ public:
 
     unsigned Pos = 0;
     for (const Expr *Arg : Args) {
-      if (Pos >= FD->getNumParams())
-        break;
-      const ParmVarDecl *PVD = FD->getParamDecl(Pos);
-      ParamCallback(Variable(PVD), Arg, Pos);
+      // This can happen for c style var arg functions
+      if (Pos >= FD->getNumParams()) {
+        ParamCallback(nullptr, Arg, Pos);
+      } else {
+        const ParmVarDecl *PVD = FD->getParamDecl(Pos);
+        ParamCallback(PVD, Arg, Pos);
+      }
       ++Pos;
     }
     if (ObjectArg) {
@@ -588,10 +591,16 @@ public:
     auto ReturnIt = Fill.find(Variable::returnVal());
     forEachArgParamPair(
         CE,
-        [&](Variable V, const Expr *Arg, int Pos) {
-          PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
-          if (ArgPS.isUnknown())
+        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
+          if(!PVD) {
+            // PVD is a c-style vararg argument
             return;
+          }
+          PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
+          if (ArgPS.isUnknown()) {
+            return;
+          }
+          Variable V = PVD;
           V.deref();
           for (auto &VarToPSet : Fill)
             bindTwoDerefLevels(V, ArgPS, VarToPSet);
@@ -647,14 +656,25 @@ public:
     // Check preconditions. We might have them 2 levels deep.
     forEachArgParamPair(
         CallE,
-        [&](Variable V, const Expr *Arg, int Pos) {
+        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
           PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
           if (ArgPS.isUnknown())
             return;
-          if (PreConditions.count(V) &&
-              !ArgPS.checkSubstitutableFor(PreConditions[V],
+          if(!PVD) {
+            // PVD is a c-style vararg argument
+            if (ArgPS.containsInvalid()) {
+              Reporter.warnNullDangling(WarnType::Dangling, Arg->getSourceRange(), ValueSource::Param, "",
+                                        !ArgPS.isInvalid());
+              ArgPS.explainWhyInvalid(Reporter);
+              setPSet(Arg, PSet()); // Suppress further warnings.
+            }
+            return;
+          }
+          if (PreConditions.count(PVD) &&
+              !ArgPS.checkSubstitutableFor(PreConditions[PVD],
                                            Arg->getSourceRange(), Reporter))
             setPSet(Arg, PSet()); // Suppress further warnings.
+          Variable V = PVD;
           V.deref();
           if (PreConditions.count(V))
             derefPSet(ArgPS).checkSubstitutableFor(
@@ -702,8 +722,12 @@ public:
     // Invalidate owners taken by Pointer to non-const.
     forEachArgParamPair(
         CallE,
-        [&](Variable Par, const Expr *Arg, int Pos) {
-          QualType Pointee = getPointeeType(Par.getType());
+        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
+          if(!PVD) {
+            // C-style vararg argument
+            return;
+          }
+          QualType Pointee = getPointeeType(PVD->getType());
           if (Pointee.isNull())
             return;
           if (classifyTypeCategory(Pointee) != TypeCategory::Owner ||
@@ -734,7 +758,12 @@ public:
     // Bind output arguments.
     forEachArgParamPair(
         CallE,
-        [&](Variable V, const Expr *Arg, int Pos) {
+        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
+          if(!PVD) {
+            // C-style vararg argument
+            return;
+          }
+          Variable V = PVD;
           V.deref();
           if (PostConditions.count(V))
             setPSet(getPSet(Arg), PostConditions[V], Arg->getSourceRange());

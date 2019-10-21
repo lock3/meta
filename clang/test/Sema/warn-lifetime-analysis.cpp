@@ -30,6 +30,8 @@ struct string {
   ~string();
   iterator begin();
   iterator end();
+  size_t length() const noexcept;
+  const char *c_str() const noexcept;
 };
 
 template <typename T>
@@ -431,3 +433,25 @@ void sj5() {
 }
 
 } // namespace P0936
+
+// https://github.com/mgehre/llvm-project/issues/62
+namespace bug_report_63 {
+
+int printf(const char *format, ...);
+
+const char *longer(std::string const &s1, std::string const &s2) {
+  if (s1.length() > s2.length()) {
+    return s1.c_str();
+  }
+  return s2.c_str();
+}
+
+const char *f1();
+const char *f2();
+
+int main() {
+  const char *lg = longer(f1(), f2()); // expected-note {{temporary was destroyed at the end of the full expression}}
+  printf("longer arg is %s", lg); // expected-warning {{passing a dangling pointer as argument}}
+  return 0;
+}
+} // namespace bug_report_63
