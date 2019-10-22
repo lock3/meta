@@ -1,3 +1,4 @@
+[![Actions Status](https://github.com/mgehre/llvm-project/workflows/main/badge.svg)](https://github.commgehre/llvm-project/actions)
 # The -Wlifetime warnings implemented in clang
 This project contains clang's experimental implementation
 of the [lifetime safety profile of the C++ core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#SS-lifetime).
