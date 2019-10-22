@@ -309,9 +309,8 @@ void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
     return;
   if (Func->isInStdNamespace())
     return;
-  if (shouldSuppressLifetime(Func)) {
+  if (shouldSuppressLifetime(Func))
     return;
-  }
   if (const auto *DC = Func->getEnclosingNamespaceContext())
     if (const auto *NS = dyn_cast<NamespaceDecl>(DC))
       if (NS->getIdentifier() && NS->getName() == "gsl")
