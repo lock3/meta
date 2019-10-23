@@ -290,6 +290,16 @@ bool isNoopBlock(const CFGBlock &B) {
   return true;
 }
 
+static bool shouldSuppressLifetime(const FunctionDecl *Func) {
+  auto Attr = Func->getAttr<SuppressAttr>();
+  if (!Attr) {
+    return false;
+  }
+  return llvm::any_of(Attr->diagnosticIdentifiers(), [](auto &Identifier) {
+    return Identifier == "lifetime";
+  });
+}
+
 /// Check that the function adheres to the lifetime profile.
 void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
                  LifetimeReporterBase &Reporter,
@@ -298,6 +308,8 @@ void runAnalysis(const FunctionDecl *Func, ASTContext &Context,
   if (!Func->doesThisDeclarationHaveABody())
     return;
   if (Func->isInStdNamespace())
+    return;
+  if (shouldSuppressLifetime(Func))
     return;
   if (const auto *DC = Func->getEnclosingNamespaceContext())
     if (const auto *NS = dyn_cast<NamespaceDecl>(DC))
