@@ -14,8 +14,8 @@ by choosing the clang version `experimental -Wlifetime`.
 * `-Wlifetime-global`: Flow-sensitive analysis that requires global variables of Pointer type to always point to variables with static lifetime
 * `-Wlifetime-disabled`: Get warnings when the flow-sensitive analysis is disabled on a function due to forbidden constructs (`reinterpret_cast` or pointer arithmetic)
 
-Supress Warnings
-* The `[[gsl::suppress("lifetime")]]` attribute can be used to supress lifetime warnings for functions. See  [clang/test/Sema/attr-lifetime-suppress.cpp](clang/test/Sema/attr-lifetime-suppress.cpp) for an example.
+Suppress Warnings
+* The `[[gsl::suppress("lifetime")]]` attribute can be used to suppress lifetime warnings for functions. See  [clang/test/Sema/attr-lifetime-suppress.cpp](clang/test/Sema/attr-lifetime-suppress.cpp) for an example.
 
 ## Build
 You can either try it on [Compiler Explorer](https://godbolt.org/z/z-x3Jj), or build clang yourself:
