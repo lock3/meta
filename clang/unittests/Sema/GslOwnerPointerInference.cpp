@@ -52,4 +52,16 @@ TEST(OwnerPointer, LateForwardDeclOnly) {
                           hasName("C"), hasAttr(clang::attr::Owner))));
 }
 
+TEST(OwnerPointer, Specialization) {
+  EXPECT_TRUE(matches("template<class T, int N>"
+                      "class [[gsl::Owner]] C {};"
+
+                      "template<class T>"
+                      "class C<T,0> {};"
+
+                      "C<int, 0> c;",
+                      classTemplateSpecializationDecl(
+                          hasName("C"), hasAttr(clang::attr::Owner))));
+}
+
 } // namespace clang

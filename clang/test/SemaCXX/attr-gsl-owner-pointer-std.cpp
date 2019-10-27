@@ -170,6 +170,20 @@ class reference_wrapper;
 // CHECK: ClassTemplateDecl {{.*}} reference_wrapper
 // CHECK: PointerAttr {{.*}}
 
+// Partial specialization.
+template <typename Tp, int Extent = 0> class span;
+template <typename Tp, int Extent> class span {};
+template <typename Tp> class span<Tp, 0> {};
+// CHECK: ClassTemplateDecl {{.*}} span
+// CHECK: PointerAttr {{.*}}
+// CHECK: ClassTemplateSpecializationDecl {{.*}} span
+// CHECK: PointerAttr {{.*}}
+// CHECK: ClassTemplateDecl {{.*}} prev {{.*}} span
+// CHECK: PointerAttr {{.*}}
+// CHECK: ClassTemplatePartialSpecializationDecl {{.*}} span
+// CHECK: PointerAttr {{.*}}
+static_assert(sizeof(span<int>), ""); // Force instantiation.
+
 class some_unknown_type;
 // CHECK: CXXRecordDecl {{.*}} some_unknown_type
 

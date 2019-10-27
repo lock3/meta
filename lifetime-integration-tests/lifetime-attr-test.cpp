@@ -143,3 +143,16 @@ string_view f_string_view() {
     return s; // expected-warning {{address of stack memory associated with local variable 's' returned}}
 }
 #endif
+
+#if __has_include(<span>)
+#include <span>
+span<int> f_span_from_vector() {
+    std::vector<int> v{1,2,3};
+    return v; // expected-warning {{address of stack memory associated with local variable 'v' returned}}
+}
+
+span<int> f_span_from_array() {
+    std::array<int, 3> a{1,2,3};
+    return a; // expected-warning {{address of stack memory associated with local variable 'a' returned}}
+}
+#endif
