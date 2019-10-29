@@ -2834,6 +2834,18 @@ def Pointer : InheritableAttr {
   let Documentation = [LifetimePointerDocs];
 }
 
+def Lifetimeconst : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime_const">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
+def Lifetime : InheritableParamAttr {
+  let Spellings = [CXX11<"gsl", "lifetime">];
+  let Subjects = SubjectList<[CXXMethod, ParmVar]>;
+  let Documentation = [Undocumented]; // FIXME
+}
+
 // Microsoft-related attributes
 
 def MSNoVTable : InheritableAttr, TargetSpecificAttr<TargetMicrosoftCXXABI> {

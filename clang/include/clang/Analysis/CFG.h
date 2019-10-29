@@ -1248,6 +1248,7 @@ public:
     bool AddCXXNewAllocator = false;
     bool AddCXXDefaultInitExprInCtors = false;
     bool AddRichCXXConstructors = false;
+    bool AddExprWithCleanups = false;
     bool MarkElidedCXXConstructors = false;
     bool AddVirtualBaseBranches = false;
 

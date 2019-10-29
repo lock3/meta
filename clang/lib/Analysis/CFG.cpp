@@ -4415,6 +4415,11 @@ CFGBlock *CFGBuilder::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
 
 CFGBlock *CFGBuilder::VisitExprWithCleanups(ExprWithCleanups *E,
     AddStmtChoice asc, bool ExternallyDestructed) {
+  if (BuildOpts.AddExprWithCleanups) {
+    autoCreateBlock();
+    appendStmt(Block, E);
+  }
+
   if (BuildOpts.AddTemporaryDtors) {
     // If adding implicit destructors visit the full expression for adding
     // destructors of temporaries.

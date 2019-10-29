@@ -38,6 +38,8 @@ public:
     unsigned enableCheckUnreachable : 1;
     unsigned enableThreadSafetyAnalysis : 1;
     unsigned enableConsumedAnalysis : 1;
+    unsigned enableLifetimeAnalysis : 1;
+
   public:
     Policy();
     void disableCheckFallThrough() { enableCheckFallThrough = 0; }

@@ -6960,8 +6960,16 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleSuppressAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Owner:
+    handleSimpleAttribute<OwnerAttr>(S, D, AL);
+    break;
   case ParsedAttr::AT_Pointer:
     handleLifetimeCategoryAttr(S, D, AL);
+    break;
+  case ParsedAttr::AT_Lifetimeconst:
+    handleSimpleAttribute<LifetimeconstAttr>(S, D, AL);
+    break;
+  case ParsedAttr::AT_Lifetime:
+    handleSimpleAttribute<LifetimeAttr>(S, D, AL);
     break;
   case ParsedAttr::AT_OpenCLKernel:
     handleSimpleAttribute<OpenCLKernelAttr>(S, D, AL);
