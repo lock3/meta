@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection %s
 // expected-no-diagnostics
 
 #define assert(E) if (!(E)) __builtin_abort();

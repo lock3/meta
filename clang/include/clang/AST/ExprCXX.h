@@ -18,6 +18,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclarationName.h"
+#include "clang/AST/CXXInjectionContextSpecifier.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
@@ -57,6 +58,31 @@ class IdentifierInfo;
 class LambdaCapture;
 class NonTypeTemplateParmDecl;
 class TemplateParameterList;
+
+/// An injection records a code generation effect resulting from evaluation.
+/// This is a set containing type and evaluated value information,
+/// which shall be used in the injection process.
+struct InjectionEffect {
+  /// The type of the expression evaluated to produce this effect.
+  const QualType ExprType;
+
+  /// The evaluated value of the expression evaluated to produce this effect.
+  const APValue ExprValue;
+
+  /// The context specifier describing where this
+  /// effect should be injected into.
+  const CXXInjectionContextSpecifier ContextSpecifier;
+
+  InjectionEffect(QualType ExprType, APValue ExprValue,
+                  const CXXInjectionContextSpecifier &ContextSpecifier)
+    : ExprType(ExprType), ExprValue(ExprValue),
+      ContextSpecifier(ContextSpecifier) { }
+
+  InjectionEffect(const InjectionEffect &Effect,
+                  const CXXInjectionContextSpecifier &ContextOverride)
+    : ExprType(Effect.ExprType), ExprValue(Effect.ExprValue),
+      ContextSpecifier(ContextOverride) { }
+};
 
 //===--------------------------------------------------------------------===//
 // C++ Expressions.
@@ -4777,6 +4803,10 @@ class CXXConstantExpr : public Expr {
   /// \brief The computed value of the source expression.
   APValue *Value;
 public:
+  CXXConstantExpr(Expr *E, const APValue& V)
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
+           E->getObjectKind(), false, false, false, false), Source(E),
+      Value(new APValue(V)) {}
   CXXConstantExpr(Expr *E, APValue&& V)
     : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
            E->getObjectKind(), false, false, false, false), Source(E),
@@ -5037,7 +5067,69 @@ public:
   }
 };
 
-/// \brief A reflection printing intrinsic for integer and string values.
+/// A reflection write query intrinsic.
+///
+/// A reflection write query is an update to a reflection's modifiers.
+/// All write querys accept a sequence of arguments (expressions,
+/// the first of which is the reflection needing updated.
+class CXXReflectionWriteQueryExpr : public Expr {
+protected:
+  ReflectionQuery Query;
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectionWriteQueryExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+                         ArrayRef<Expr *> Args,
+                         SourceLocation KeywordLoc,
+                         SourceLocation LParenLoc,
+                         SourceLocation RParenLoc);
+
+  CXXReflectionWriteQueryExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the trait's query value.
+  ReflectionQuery getQuery() const { return Query; }
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+};
+
+/// A reflection printing intrinsic for integer and string values.
 class CXXReflectPrintLiteralExpr : public Expr {
   unsigned NumArgs;
   Expr **Args;
@@ -5725,6 +5817,92 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CXXConcatenateExprClass;
+  }
+};
+
+/// \brief An expression that introduces a source code fragment.
+///
+/// This expression binds together two constructs: the declaration of a
+/// source code fragment, and a subexpression that computes a reflection of
+/// the fragment. For example, this expression:
+///
+///     <<struct:  int x;>>
+///
+/// introduces the fragment containing struct { int x; } and the reflection of
+/// that entity.
+///
+/// FIXME: The destination context might actually be a block statement. As in:
+/// inject a statement at the end of this block. We don't currently support
+/// that.
+class CXXFragmentExpr : public Expr {
+  /// \brief The location of the introducer token.
+  SourceLocation IntroLoc;
+
+  /// \brief The number of captured declarations.
+  std::size_t NumCaptures;
+
+  /// \brief The reference expressions to local variables. These are all
+  /// DeclRefExprs. We store these instead of their underlying declarations
+  /// to facilitate their evaluation during injection.
+  ///
+  /// TODO: These are implicitly stored as operands to the initializer.
+  /// Do we need to store them twice?
+  Expr **Captures;
+
+  /// The fragment introduced by the expression.
+  CXXFragmentDecl *Fragment;
+
+  /// The expression that constructs the reflection value for the fragment.
+  Stmt *Init;
+
+  public:
+  CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc, QualType T,
+                  CXXFragmentDecl *Fragment, ArrayRef<Expr *> Captures,
+                  Expr *Init);
+
+  explicit CXXFragmentExpr(EmptyShell Empty)
+    : Expr(CXXFragmentExprClass, Empty), IntroLoc(), NumCaptures(),
+      Captures(), Init() {}
+
+  /// \brief The number of captured declarations.
+  std::size_t getNumCaptures() const { return NumCaptures; }
+
+  /// \brief The Ith capture of the injection statement.
+  const Expr *getCapture(std::size_t I) const { return Captures[I]; }
+  Expr *getCapture(std::size_t I) { return Captures[I]; }
+
+  using capture_iterator = Expr**;
+  using capture_range = llvm::iterator_range<capture_iterator>;
+
+  capture_iterator begin_captures() const { return Captures; }
+  capture_iterator end_captures() const { return Captures + NumCaptures; }
+
+  capture_range captures() const {
+    return capture_range(begin_captures(), end_captures());
+  }
+
+  /// \brief The introduced fragment.
+  CXXFragmentDecl *getFragment() const { return Fragment; }
+
+  /// \brief The expression that value initializes an object of this type.
+  Expr *getInitializer() const { return reinterpret_cast<Expr *>(Init); }
+
+  child_range children() {
+    return child_range(&Init, &Init + 1);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&Init, &Init + 1);
+  }
+
+  /// \brief The location of the introducer token.
+  SourceLocation getIntroLoc() const { return IntroLoc; }
+
+  SourceLocation getBeginLoc() const { return IntroLoc; }
+  SourceLocation getEndLoc() const { return IntroLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXFragmentExprClass;
   }
 };
 

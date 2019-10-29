@@ -247,6 +247,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
 
   case Stmt::CXXCompositeExpansionStmtClass:
   case Stmt::CXXPackExpansionStmtClass:
+  case Stmt::CXXInjectionStmtClass:
+  case Stmt::CXXBaseInjectionStmtClass:
     // FIXME: These should be exposed.
     K = CXCursor_UnexposedStmt;
     break;
@@ -272,6 +274,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::CXXReflectExprClass:
   case Stmt::CXXInvalidReflectionExprClass:
   case Stmt::CXXReflectionReadQueryExprClass:
+  case Stmt::CXXReflectionWriteQueryExprClass:
   case Stmt::CXXReflectPrintLiteralExprClass:
   case Stmt::CXXReflectPrintReflectionExprClass:
   case Stmt::CXXReflectDumpReflectionExprClass:
@@ -310,6 +313,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ObjCBoxedExprClass:
   case Stmt::ObjCSubscriptRefExprClass:
   case Stmt::CXXCompilerErrorExprClass:
+  case Stmt::CXXFragmentExprClass:
     K = CXCursor_UnexposedExpr;
     break;
 

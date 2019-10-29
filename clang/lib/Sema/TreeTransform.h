@@ -642,6 +642,14 @@ public:
       TypeLocBuilder &TLB, DependentTemplateSpecializationTypeLoc TL,
       NestedNameSpecifierLoc QualifierLoc);
 
+  bool ExpandInjectedParameters(
+      ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams);
+
+  bool TransformInjectedParameter(
+              ParmVarDecl *OldParm, ParmVarDecl *&NewParm, int IndexAdjustment);
+
+  bool ContractInjectedParameters(ArrayRef<ParmVarDecl *> SourceParams);
+
   /// Transforms the parameters of a function type into the
   /// given vectors.
   ///
@@ -650,7 +658,7 @@ public:
   ///
   /// Return true on error.
   bool TransformFunctionTypeParams(
-      SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
+      SourceLocation Loc, ArrayRef<ParmVarDecl *> SourceParams,
       const QualType *ParamTypes,
       const FunctionProtoType::ExtParameterInfo *ParamInfos,
       SmallVectorImpl<QualType> &PTypes, SmallVectorImpl<ParmVarDecl *> *PVars,
@@ -693,6 +701,9 @@ public:
       TypeSourceInfo **RecoveryTSI);
 
   StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
+
+  CXXBaseSpecifier *TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
+                                              const CXXBaseSpecifier *Base);
 
   // Check if the current expression is a dependent C++ variadic reifier that
   // still needs expansion. If so, transform and expand it.
@@ -921,6 +932,11 @@ public:
   QualType RebuildMacroQualifiedType(QualType T,
                                      const IdentifierInfo *MacroII) {
     return SemaRef.Context.getMacroQualifiedType(T, MacroII);
+  }
+
+  /// Build a new required type type.
+  QualType RebuildCXXRequiredTypeType(CXXRequiredTypeDecl *D) {
+    return SemaRef.Context.getCXXRequiredTypeType(D);
   }
 
   /// Build a new class/struct/union type.
@@ -1497,6 +1513,18 @@ public:
                                                  LParenLoc, RParenLoc);
   }
 
+  /// Build a new reflection query write expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildCXXReflectionWriteQueryExpr(SmallVectorImpl<Expr *> &Args,
+                                                SourceLocation KeywordLoc,
+                                                SourceLocation LParenLoc,
+                                                SourceLocation RParenLoc) {
+    return getSema().ActOnCXXReflectionWriteQuery(KeywordLoc, Args,
+                                                  LParenLoc, RParenLoc);
+  }
+
   /// Build a new reflect print literal expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -1547,6 +1575,17 @@ public:
                                          SourceLocation BuiltinLoc,
                                          SourceLocation RParenLoc) {
     return getSema().ActOnCXXCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
+  }
+
+  /// Transform the contents of the fragment.
+  bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                   Decl *OriginalContent,
+                                   Decl *&NewContent);
+
+  /// Build a new fragment expression.
+  ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
+                                    SmallVectorImpl<Expr *> &Captures) {
+    return getSema().BuildCXXFragmentExpr(Loc, Fragment, Captures);
   }
 
   /// Build a new Objective-C \@try statement.
@@ -2230,6 +2269,21 @@ public:
     return getSema().BuildCXXExpansionStmt(ForLoc, EllipsisLoc, LoopVar,
                                            ColonLoc, RangeExpr, RParenLoc,
                                            Sema::BFRK_Rebuild, false);
+  }
+
+  StmtResult RebuildCXXInjectionStmt(SourceLocation Loc,
+                           const CXXInjectionContextSpecifier &ContextSpecifier,
+                                     Expr *Ref) {
+    return getSema().BuildCXXInjectionStmt(Loc, ContextSpecifier, Ref);
+  }
+
+  StmtResult RebuildCXXBaseInjectionStmt(
+      SourceLocation KWLoc, SourceLocation LParenLoc,
+      SmallVectorImpl<CXXBaseSpecifier *> &BaseSpecifiers,
+      SourceLocation RParenLoc) {
+
+    return getSema().BuildCXXBaseInjectionStmt(KWLoc, LParenLoc,
+                                               BaseSpecifiers, RParenLoc);
   }
 
   /// Build a new C++0x range-based for statement.
@@ -3482,6 +3536,9 @@ public:
   }
 
 private:
+  void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
+                        SmallVectorImpl<Stmt *> &Stmts);
+
   TypeLoc TransformTypeInObjectScope(TypeLoc TL,
                                      QualType ObjectType,
                                      NamedDecl *FirstQualifierInScope,
@@ -4623,6 +4680,15 @@ QualType TreeTransform<Derived>::RebuildQualifiedType(QualType T,
 }
 
 template<typename Derived>
+void
+TreeTransform<Derived>::PushInjectedStmt(CXXInjectorDecl *MetaDecl,
+                                         SmallVectorImpl<Stmt *> &Stmts) {
+  for (Stmt *InjectedStmt : MetaDecl->getInjectedStmts()) {
+    Stmts.push_back(InjectedStmt);
+  }
+}
+
+template<typename Derived>
 TypeLoc
 TreeTransform<Derived>::TransformTypeInObjectScope(TypeLoc TL,
                                                    QualType ObjectType,
@@ -5336,8 +5402,38 @@ ParmVarDecl *TreeTransform<Derived>::TransformFunctionTypeParam(
 }
 
 template <typename Derived>
+bool TreeTransform<Derived>::ExpandInjectedParameters(
+     ArrayRef<ParmVarDecl *> SourceParams, ArrayRef<ParmVarDecl *> &OutParams) {
+  OutParams = SourceParams;
+  return false;
+}
+
+template <typename Derived>
+bool TreeTransform<Derived>::TransformInjectedParameter(
+             ParmVarDecl *OldParm, ParmVarDecl *&NewParm, int IndexAdjustment) {
+  const CXXInjectedParmsInfo *Injected = OldParm->InjectedParmsInfo;
+  assert(Injected && "Expected injection ParmVarDecl");
+
+  ExprResult NewOperand = getDerived().TransformExpr(Injected->Operand);
+  if (NewOperand.isInvalid())
+    return true;
+
+  CXXInjectedParmsInfo ParmInjectionInfo(Injected->ArrowLoc, NewOperand.get());
+  NewParm = ParmVarDecl::Create(SemaRef.Context, ParmInjectionInfo);
+  NewParm->setScopeInfo(OldParm->getFunctionScopeDepth(),
+                        OldParm->getFunctionScopeIndex() + IndexAdjustment);
+  return false;
+}
+
+template <typename Derived>
+bool TreeTransform<Derived>::ContractInjectedParameters(
+                                         ArrayRef<ParmVarDecl *> SourceParams) {
+  return false;
+}
+
+template <typename Derived>
 bool TreeTransform<Derived>::TransformFunctionTypeParams(
-    SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
+    SourceLocation Loc, ArrayRef<ParmVarDecl *> SourceParams,
     const QualType *ParamTypes,
     const FunctionProtoType::ExtParameterInfo *ParamInfos,
     SmallVectorImpl<QualType> &OutParamTypes,
@@ -5345,10 +5441,32 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
     Sema::ExtParameterInfoBuilder &PInfos) {
   int indexAdjustment = 0;
 
+  ArrayRef<ParmVarDecl *> Params;
+  if (getDerived().ExpandInjectedParameters(SourceParams, Params))
+    return true;
+
   unsigned NumParams = Params.size();
   for (unsigned i = 0; i != NumParams; ++i) {
     if (ParmVarDecl *OldParm = Params[i]) {
       assert(OldParm->getFunctionScopeIndex() == i);
+
+      // If this is an injection parameter, perform transform, and rebuild.
+      //
+      // The actual expansion will occur later in ExpandInjectedParameters
+      // once we've hit an injection transform.
+      if (OldParm->InjectedParmsInfo) {
+        ParmVarDecl *NewParm = nullptr;
+        if (TransformInjectedParameter(OldParm, NewParm, indexAdjustment))
+          return true;
+
+        if (ParamInfos)
+          PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+        OutParamTypes.push_back(NewParm->getType());
+        if (PVars)
+          PVars->push_back(NewParm);
+
+        continue;
+      }
 
       Optional<unsigned> NumExpansions;
       ParmVarDecl *NewParm = nullptr;
@@ -5549,6 +5667,9 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         assert(parm->getFunctionScopeIndex() == i);
   }
 #endif
+
+  if (getDerived().ContractInjectedParameters(SourceParams))
+    return true;
 
   return false;
 }
@@ -5796,6 +5917,29 @@ TreeTransform<Derived>::TransformUnresolvedUsingType(TypeLocBuilder &TLB,
 
   // We might get an arbitrary type spec type back.  We should at
   // least always get a type spec type, though.
+  TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(Result);
+  NewTL.setNameLoc(TL.getNameLoc());
+
+  return Result;
+}
+
+template<typename Derived> QualType
+TreeTransform<Derived>::TransformCXXRequiredTypeType(TypeLocBuilder &TLB,
+                                                 CXXRequiredTypeTypeLoc TL) {
+  const CXXRequiredTypeType *T = TL.getTypePtr();
+  CXXRequiredTypeDecl *D =
+    cast_or_null<CXXRequiredTypeDecl>(getDerived().TransformDecl(
+                                        TL.getNameLoc(), T->getDecl()));
+  if (!D)
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() || D != T->getDecl()) {
+    Result = getDerived().RebuildCXXRequiredTypeType(D);
+    if (Result.isNull())
+      return QualType();
+  }
+
   TypeSpecTypeLoc NewTL = TLB.pushTypeSpec(Result);
   NewTL.setNameLoc(TL.getNameLoc());
 
@@ -6901,7 +7045,18 @@ TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
 
     SubStmtChanged = SubStmtChanged || Result.get() != B;
     Statements.push_back(Result.getAs<Stmt>());
+
+    if (auto *VD = dyn_cast<DeclStmt>(Result.get())) {
+      if (VD->isSingleDecl()) {
+        Decl *D = VD->getSingleDecl();
+
+        if (auto *MetaDecl = dyn_cast<CXXInjectorDecl>(D))
+          PushInjectedStmt(MetaDecl, Statements);
+      }
+    }
   }
+
+  SubStmtChanged = SubStmtChanged || S->size() != Statements.size();
 
   if (SubStmtInvalid)
     return StmtError();
@@ -7712,6 +7867,24 @@ TreeTransform<Derived>::TransformCXXReflectionReadQueryExpr(
 
 template <typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  SmallVector<Expr *, 2> Args(E->getNumArgs());
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    ExprResult Arg = getDerived().TransformExpr(E->getArg(i));
+    if (Arg.isInvalid())
+      return ExprError();
+    Args[i] = Arg.get();
+  }
+
+  return getDerived().RebuildCXXReflectionWriteQueryExpr(Args,
+                                                         E->getKeywordLoc(),
+                                                         E->getLParenLoc(),
+                                                         E->getRParenLoc());
+}
+
+template <typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCXXReflectPrintLiteralExpr(
                                                 CXXReflectPrintLiteralExpr *E) {
   SmallVector<Expr *, 2> Args(E->getNumArgs());
@@ -7845,7 +8018,7 @@ TreeTransform<Derived>::TransformCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
       Message.get(), E->getBuiltinLoc(), E->getRParenLoc());
 }
 
-template<typename Derived>
+template <typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXConcatenateExpr(CXXConcatenateExpr *E) {
   SmallVector<Expr *, 4> Parts;
@@ -7863,6 +8036,19 @@ ExprResult
 TreeTransform<Derived>::TransformCXXDependentVariadicReifierExpr(
   CXXDependentVariadicReifierExpr* E) {
   return ExprError();
+}
+
+template<typename Derived>
+CXXBaseSpecifier *
+TreeTransform<Derived>::TransformCXXBaseSpecifier(CXXRecordDecl *NewClass,
+                                                  const CXXBaseSpecifier *Base) {
+  TypeSourceInfo *TSI = getDerived().TransformType(Base->getTypeSourceInfo());
+  if (!TSI)
+    return nullptr;
+
+  return getSema().CheckBaseSpecifier(
+      NewClass, Base->getSourceRange(), Base->isVirtual(),
+      Base->getAccessSpecifierAsWritten(), TSI, Base->getEllipsisLoc());
 }
 
 template <typename Derived>
@@ -7987,6 +8173,66 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
   }
 
   return false;
+}
+
+template<typename Derived>
+bool
+TreeTransform<Derived>::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                                    Decl *OriginalContent,
+                                                    Decl *&NewContent) {
+  // Arguments used to instantiate the fragment are those used to
+  // instantiate the current context.
+  NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
+  MultiLevelTemplateArgumentList Args =
+      getSema().getTemplateInstantiationArgs(Owner);
+  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, Args);
+  return !NewContent;
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
+  // Transform captures first.
+  SmallVector<Expr *, 8> Captures;
+  for (Expr *Old : E->captures()) {
+    ExprResult New = getDerived().TransformExpr(Old);
+    if (New.isInvalid())
+      return ExprError();
+
+    Captures.push_back(New.get());
+  }
+
+  // Create the fragment declaration and its placeholders.
+  //
+  // FIXME: The instantiation of the fragment and its content should
+  // probably be managed by SubstDecl.
+  SourceLocation Loc = E->getExprLoc();
+  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
+  CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
+  CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
+
+  // Register captured parameters as local instantiations. Merge with the
+  // parent scope so that names used in this context can refer to declarations
+  // outside.
+  LocalInstantiationScope Scope(getSema(), true);
+  auto OldIter = OldFragment->decls_begin();
+  auto NewIter = NewFragment->decls_begin();
+  while (NewIter != NewFragment->decls_end())
+    Scope.InstantiatedLocal(*OldIter++, *NewIter++);
+
+  // Clone the underlying declaration.
+  {
+    Decl *NewContent;
+    if (getDerived().TransformCXXFragmentContent(NewFragment,
+                                                 OldFragment->getContent(),
+                                                 NewContent))
+      return ExprError();
+    F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
+    if (!F)
+      return ExprError();
+  }
+
+  return getDerived().RebuildCXXFragmentExpr(Loc, F, Captures);
 }
 
 // Objective-C Statements.
@@ -8417,6 +8663,32 @@ TreeTransform<Derived>::TransformCXXCompositeExpansionStmt(
 
   CXXExpansionStmt *TES = cast<CXXExpansionStmt>(NewStmt.get());
   return getSema().FinishCXXExpansionStmt(TES, Body.get());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXInjectionStmt(CXXInjectionStmt *S) {
+  ExprResult E = TransformExpr(S->getOperand());
+  if (E.isInvalid())
+    return StmtError();
+  return RebuildCXXInjectionStmt(S->getBeginLoc(), S->getContextSpecifier(), E.get());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
+  SmallVector<CXXBaseSpecifier *, 4> BaseSpecifiers;
+  for (CXXBaseSpecifier *OldBase : S->getBaseSpecifiers()) {
+    CXXBaseSpecifier *NewBase = TransformCXXBaseSpecifier(nullptr, OldBase);
+
+    if (!NewBase)
+      return StmtError();
+
+    BaseSpecifiers.push_back(NewBase);
+  }
+
+  return RebuildCXXBaseInjectionStmt(S->getIntroLoc(), S->getLParenLoc(),
+                                     BaseSpecifiers, S->getRParenLoc());
 }
 
 template<typename Derived>

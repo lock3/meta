@@ -311,6 +311,15 @@ namespace clang {
     SD_Dynamic         ///< Dynamic storage duration.
   };
 
+  /// The type of range for traversal
+  enum RangeKind {
+    RK_Array,
+    RK_Range,
+    RK_Tuple,
+    RK_Struct,
+    RK_Unknown
+  };
+
   /// Describes the nullability of a particular type.
   enum class NullabilityKind : uint8_t {
     /// Values of this type can never be null.

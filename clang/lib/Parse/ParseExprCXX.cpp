@@ -2632,7 +2632,7 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
-/// [Meta]  unqualid ( reflection )
+/// [Meta]  reflected-unqualid-id
 ///
 /// \endcode
 ///
@@ -2809,7 +2809,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   }
 
   // unqualified-id:
-  //   'unqualid' '(' reflection ')'
+  //   reflected-unqualid-id
   if (Tok.is(tok::kw_unqualid))
     return ParseCXXReflectedId(SS,
                      TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Result);

@@ -102,6 +102,7 @@ def DependentNameType : Type, AlwaysDependent;
 def DependentTemplateSpecializationType : Type, AlwaysDependent;
 def PackExpansionType : Type, NeverCanonicalUnlessDependent;
 def CXXDependentVariadicReifierType : Type, MetaType;
+def CXXRequiredTypeType : Type, MetaType;
 def ObjCTypeParamType : Type, NeverCanonical;
 def ObjCObjectType : Type;
 def ObjCInterfaceType : DerivedType<ObjCObjectType>, LeafType;

@@ -698,6 +698,9 @@ class CastExpressionIdValidator final : public CorrectionCandidateCallback {
 ///                   '::'[opt] 'delete' cast-expression
 ///                   '::'[opt] 'delete' '[' ']' cast-expression
 ///
+///       fragment-expression:
+///                   '<<' fragment
+///
 /// [GNU/Embarcadero] unary-type-trait:
 ///                   '__is_arithmetic'
 ///                   '__is_floating_point'
@@ -1431,6 +1434,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw_delete: // [C++] delete-expression
     return ParseCXXDeleteExpression(false, Tok.getLocation());
 
+  case tok::kw___fragment:
+    return ParseCXXFragmentExpression();
+
   case tok::kw_noexcept: { // [C++0x] 'noexcept' '(' expression ')'
     Diag(Tok, diag::warn_cxx98_compat_noexcept_expr);
     SourceLocation KeyLoc = ConsumeToken();
@@ -1468,6 +1474,9 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 
   case tok::kw___reflect:
     return ParseCXXReflectionReadQuery();
+
+  case tok::kw___reflect_mod:
+    return ParseCXXReflectionWriteQuery();
 
   case tok::kw___invalid_reflection:
     return ParseCXXInvalidReflectionExpression();

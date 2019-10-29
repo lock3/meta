@@ -145,7 +145,8 @@ Parser::DeclGroupPtrTy Parser::ParseNamespace(DeclaratorContext Context,
 
   if (getCurScope()->isClassScope() || getCurScope()->isTemplateParamScope() ||
       getCurScope()->isInObjcMethodScope() || getCurScope()->getBlockParent() ||
-      getCurScope()->getFnParent()) {
+      (getCurScope()->getFnParent() &&
+       !getCurScope()->getFnParent()->isMetaFunctionScope())) {
     Diag(T.getOpenLocation(), diag::err_namespace_nonnamespace_scope);
     SkipUntil(tok::r_brace);
     return nullptr;
@@ -480,6 +481,10 @@ Parser::ParseUsingDirectiveOrDeclaration(DeclaratorContext Context,
     Diag(TemplateLoc, diag::err_unexpected_template_after_using)
         << FixItHint::CreateRemoval(TemplateLoc);
   }
+
+  // 'using struct' or 'using class' indicates a generated type.
+  if (Tok.isOneOf(tok::kw_class, tok::kw_struct))
+    return ParseCXXTypeTransformerDeclaration(UsingLoc);
 
   // 'using namespace' means this is a using-directive.
   if (Tok.is(tok::kw_namespace)) {
@@ -878,6 +883,68 @@ Decl *Parser::ParseAliasDeclarationAfterDeclarator(
   return Actions.ActOnAliasDeclaration(getCurScope(), AS, TemplateParamsArg,
                                        UsingLoc, D.Name, Attrs, TypeAlias,
                                        DeclFromDeclSpec);
+}
+
+Decl *
+Parser::ParseCXXRequiredTypenameDecl(SourceLocation RequiresLoc,
+                                     DeclaratorContext Ctx,
+                                     AccessSpecifier AS) {
+  assert(Tok.isOneOf(tok::kw_class, tok::kw_typename) &&
+         "A require type starts with 'class' or 'typename'");
+
+  bool DeclaredWithTypename = Tok.is(tok::kw_typename);
+
+  SourceLocation SpecLoc = ConsumeToken();
+  CXXScopeSpec SS;
+  if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
+                                     /*EnteringContext=*/false, nullptr,
+                                     /*IsTypename*/true))
+    return nullptr;
+
+  // The actual name of the type.
+  if (!Tok.is(tok::identifier))
+    return nullptr;
+  IdentifierInfo *TypeId = Tok.getIdentifierInfo();
+  ConsumeToken();
+
+  // Eat the ';'.
+  ExpectAndConsume(tok::semi, diag::err_expected_semi_declaration);
+
+  return Actions.ActOnCXXRequiredTypeDecl(AS, RequiresLoc, SpecLoc, TypeId,
+                                          DeclaredWithTypename);
+}
+
+Decl *
+Parser::ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
+                                       DeclaratorContext Ctx,
+                                       AccessSpecifier AS) {
+  DeclSpecContext DSC = getDeclSpecContextFromDeclaratorContext(Ctx);
+
+  // Get the specifiers and declarator we are going to require.
+  DeclSpec DS(AttrFactory);
+  ParseDeclarationSpecifiers(DS, ParsedTemplateInfo(), AS, DSC);
+
+  Declarator DeclaratorInfo(DS, Ctx);
+  ParseDeclarator(DeclaratorInfo);
+
+  // Eat the ';'.
+  ExpectAndConsume(tok::semi);
+
+  return Actions.ActOnCXXRequiredDeclaratorDecl(getCurScope(),
+                                                RequiresLoc,
+                                                DeclaratorInfo);
+}
+
+Decl *
+Parser::ParseCXXRequiredDecl(DeclaratorContext Ctx, AccessSpecifier AS) {
+  assert(Tok.is(tok::kw_requires) && "Not requires!");
+  SourceLocation RequiresLoc = ConsumeToken();
+
+  // We have a declaration the form 'requires typename T'
+  if (Tok.isOneOf(tok::kw_class, tok::kw_typename))
+    return ParseCXXRequiredTypenameDecl(RequiresLoc, Ctx, AS);
+
+  return ParseCXXRequiredDeclaratorDecl(RequiresLoc, Ctx, AS);
 }
 
 /// ParseStaticAssertDeclaration - Parse C++0x or C11 static_assert-declaration.
@@ -1398,6 +1465,13 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
 ///         'class'
 ///         'struct'
 ///         'union'
+/// [Meta]  nested-name-specifier[opt] metaclass-name
+///         'class' metaclass-specifier
+///         'struct' metaclass-specifier
+///         'union' metaclass-specifier
+///
+/// [Meta] metaclass-specifier:
+///         '(' id-expression ')'
 ///
 ///       elaborated-type-specifier: [C++ dcl.type.elab]
 ///         class-key ::[opt] nested-name-specifier[opt] identifier
@@ -1432,6 +1506,19 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   else {
     assert(TagTokKind == tok::kw_union && "Not a class specifier");
     TagType = DeclSpec::TST_union;
+  }
+
+  // [Meta] Match the optional metaclass-specifier
+  ExprResult Meta;
+  if (Tok.is(tok::l_paren)) {
+    BalancedDelimiterTracker T(*this, tok::l_paren);
+    if (T.expectAndConsume(diag::err_expected_lparen_after, "class-key"))
+      return;
+    Meta = ParseCXXIdExpression();
+    if (T.consumeClose())
+      return;
+    if (Meta.isInvalid())
+      return;
   }
 
   if (Tok.is(tok::code_completion)) {
@@ -1958,8 +2045,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
     // Declaration or definition of a class type
     TagOrTempResult = Actions.ActOnTag(
-        getCurScope(), TagType, TUK, StartLoc, SS, Name, NameLoc, attrs, AS,
-        DS.getModulePrivateSpecLoc(), TParams, Owned, IsDependent,
+        getCurScope(), TagType, Meta.get(), TUK, StartLoc, SS, Name, NameLoc,
+        attrs, AS, DS.getModulePrivateSpecLoc(), TParams, Owned, IsDependent,
         SourceLocation(), false, clang::TypeResult(),
         DSC == DeclSpecContext::DSC_type_specifier,
         DSC == DeclSpecContext::DSC_template_param ||
@@ -1983,9 +2070,15 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     if (SkipBody.ShouldSkip)
       SkipCXXMemberSpecification(StartLoc, AttrFixitLoc, TagType,
                                  TagOrTempResult.get());
-    else if (getLangOpts().CPlusPlus)
+    else if (getLangOpts().CPlusPlus) {
+      // We need to be able to update the TagOrTempResult
+      // for any substitutions resulting from meta class
+      // construction completion.
+      Decl *ResultDecl = TagOrTempResult.get();
       ParseCXXMemberSpecification(StartLoc, AttrFixitLoc, attrs, TagType,
-                                  TagOrTempResult.get());
+                                  ResultDecl);
+      TagOrTempResult = ResultDecl;
+    }
     else {
       Decl *D =
           SkipBody.CheckSameAsPrevious ? SkipBody.New : TagOrTempResult.get();
@@ -2052,48 +2145,38 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   }
 }
 
-/// ParseBaseClause - Parse the base-clause of a C++ class [C++ class.derived].
-///
-///       base-clause : [C++ class.derived]
-///         ':' base-specifier-list
+/// ParseBaseSpeciiferList - Parse the base-specifier-list of a C++ class
+///                          [C++ class.derived].
 ///       base-specifier-list:
 ///         base-specifier '...'[opt]
 ///         base-specifier-list ',' base-specifier '...'[opt]
-void Parser::ParseBaseClause(Decl *ClassDecl) {
-  assert(Tok.is(tok::colon) && "Not a base clause");
-  ConsumeToken();
-
+SmallVector<CXXBaseSpecifier *, 8>
+Parser::ParseCXXBaseSpecifierList(Decl *ClassDecl) {
   // Build up an array of parsed base specifiers.
   SmallVector<CXXBaseSpecifier *, 8> BaseInfo;
 
   while (true) {
     // Parse a base-specifier.
-
-    SmallVector<BaseResult, 4> ReifiedTypes;
-
-    // Parse the base specifier. If it was a variadic reifier,
-    // the types will be put in ReifiedTypes. If it wasn't,
-    // ReifiedTypes will be empty.
-    BaseResult Result = ParseBaseSpecifier(ClassDecl, ReifiedTypes);
+    SmallVector<BaseResult, 4> Result = ParseBaseSpecifier(ClassDecl);
 
     // Check and push any reified types.
-    for (auto Typename : ReifiedTypes) {
-      if (Typename.isInvalid()) {
-        // Skip the rest of this base specifier, up until the comma or
-        // opening brace.
-        SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-      } else {
-        // Add this to our array of base specifiers.
-        BaseInfo.push_back(Typename.get());
+    bool AnyInvalid = false;
+    for (auto BaseSpecifier : Result) {
+      if (BaseSpecifier.isInvalid()) {
+        AnyInvalid = true;
+        break;
       }
     }
 
-    // If this base spec wasn't a variadic reifier, then add it.
-    if (ReifiedTypes.empty()) {
-      if (Result.isInvalid())
-        SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
-      else
-        BaseInfo.push_back(Result.get());
+    if (AnyInvalid) {
+      // Skip the rest of this base specifier, up until the comma or
+      // opening brace.
+      SkipUntil(tok::comma, tok::l_brace, StopAtSemi | StopBeforeMatch);
+    } else {
+      for (auto BaseSpecifier : Result) {
+        // Add this to our array of base specifiers.
+        BaseInfo.push_back(BaseSpecifier.get());
+      }
     }
 
     // If the next token is a comma, consume it and keep reading
@@ -2101,6 +2184,19 @@ void Parser::ParseBaseClause(Decl *ClassDecl) {
     if (!TryConsumeToken(tok::comma))
       break;
   }
+
+  return BaseInfo;
+}
+
+/// ParseBaseClause - Parse the base-clause of a C++ class [C++ class.derived].
+///
+///       base-clause : [C++ class.derived]
+///         ':' base-specifier-list
+void Parser::ParseBaseClause(Decl *ClassDecl) {
+  assert(Tok.is(tok::colon) && "Not a base clause");
+  ConsumeToken();
+
+  auto BaseInfo = ParseCXXBaseSpecifierList(ClassDecl);
 
   // Attach the base specifiers
   Actions.ActOnBaseSpecifiers(ClassDecl, BaseInfo);
@@ -2141,9 +2237,8 @@ MaybeEmitBadReifierContextDiag(Parser &ParserRef, tok::TokenKind TK,
 ///                 base-type-specifier
 ///         attribute-specifier-seq[opt] access-specifier 'virtual'[opt]
 ///                 base-type-specifier
-BaseResult
-Parser::ParseBaseSpecifier(Decl *ClassDecl,
-                           llvm::SmallVectorImpl<BaseResult> &ReifiedTypes) {
+SmallVector<BaseResult, 4>
+Parser::ParseBaseSpecifier(Decl *ClassDecl) {
   bool IsVirtual = false;
   SourceLocation StartLoc = Tok.getLocation();
 
@@ -2186,8 +2281,9 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
     SourceRange Range(StartLoc, Tok.getLocation());
     llvm::SmallVector<QualType, 4> SpecList;
+    llvm::SmallVector<BaseResult, 4> ReifiedTypes;
     if (ParseVariadicReifier(SpecList))
-      return true;
+      return { true };
 
     for (auto BaseTy : SpecList) {
       OpaquePtr<QualType> BaseTyPtr;
@@ -2199,7 +2295,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
                                    SourceLocation(), /*VariadicReif=*/true));
     }
 
-    return false;
+    return ReifiedTypes;
   }
   // Parse the class-name.
 
@@ -2215,7 +2311,7 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
   SourceLocation BaseLoc;
   TypeResult BaseType = ParseBaseTypeSpecifier(BaseLoc, EndLocation);
   if (BaseType.isInvalid())
-    return true;
+    return { true };
 
   // Parse the optional ellipsis (for a pack expansion). The ellipsis is
   // actually part of the base-specifier-list grammar productions, but we
@@ -2228,12 +2324,10 @@ Parser::ParseBaseSpecifier(Decl *ClassDecl,
 
   // Notify semantic analysis that we have parsed a complete
   // base-specifier.
-  return Actions.ActOnBaseSpecifier(ClassDecl, Range, Attributes, IsVirtual,
-                                    Access, BaseType.get(), BaseLoc,
-                                    EllipsisLoc);
-}
-
-void Parser::ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>) {
+  BaseResult Result = Actions.ActOnBaseSpecifier(
+      ClassDecl, Range, Attributes, IsVirtual, Access,
+      BaseType.get(), BaseLoc, EllipsisLoc);
+  return { Result };
 }
 
 /// getAccessSpecifierIfPresent - Determine whether the next token is
@@ -2680,6 +2774,10 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
           << FixItHint::CreateRemoval(TemplateLoc);
     }
 
+    // 'using struct' or 'using class' indicates a generated type.
+    if (Tok.isOneOf(tok::kw_class, tok::kw_struct))
+      return ParseCXXTypeTransformerDeclaration(UsingLoc);
+
     if (Tok.is(tok::kw_namespace)) {
       Diag(UsingLoc, diag::err_using_namespace_in_class);
       SkipUntil(tok::semi, StopBeforeMatch);
@@ -2689,6 +2787,18 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // Otherwise, it must be a using-declaration or an alias-declaration.
     return ParseUsingDeclaration(DeclaratorContext::MemberContext, TemplateInfo,
                                  UsingLoc, DeclEnd, AS);
+  }
+
+  if (Tok.is(tok::kw_consteval)) {
+    // [Meta] injector-declaration
+    if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration())
+      return Actions.ConvertDeclToDeclGroup(ParsedDecl);
+  }
+
+  if (Tok.is(tok::kw_requires)) {
+    ProhibitAttributes(attrs);
+    return Actions.ConvertDeclToDeclGroup(
+        ParseCXXRequiredDecl(DeclaratorContext::MemberContext, AS));
   }
 
   // Hold late-parsed attributes so we can attach a Decl to them later.
@@ -3257,7 +3367,7 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
 void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
                                          SourceLocation AttrFixitLoc,
                                          ParsedAttributesWithRange &Attrs,
-                                         unsigned TagType, Decl *TagDecl) {
+                                         unsigned TagType, Decl *&TagDecl) {
   assert((TagType == DeclSpec::TST_struct ||
          TagType == DeclSpec::TST_interface ||
          TagType == DeclSpec::TST_union  ||
@@ -3295,6 +3405,11 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
       if ((S->getFlags() & Scope::FnScope))
         // If we're in a function or function template then this is a local
         // class rather than a nested class.
+        break;
+
+      if ((S->getFlags() & Scope::FragmentScope))
+        // If we're in a fragment scope, this is a class fragment
+        // rather than a nested class.
         break;
     }
   }
@@ -3404,22 +3519,21 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
   BalancedDelimiterTracker T(*this, tok::l_brace);
   T.consumeOpen();
 
-  if (TagDecl)
+  if (TagDecl) {
     Actions.ActOnStartCXXMemberDeclarations(getCurScope(), TagDecl, FinalLoc,
                                             IsFinalSpelledSealed,
                                             T.getOpenLocation());
 
-  // C++ 11p3: Members of a class defined with the keyword class are private
-  // by default. Members of a class defined with the keywords struct or union
-  // are public by default.
-  AccessSpecifier CurAS;
-  if (TagType == DeclSpec::TST_class)
-    CurAS = AS_private;
-  else
-    CurAS = AS_public;
-  ParsedAttributesWithRange AccessAttrs(AttrFactory);
+    // C++ 11p3: Members of a class defined with the keyword class are private
+    // by default. Members of a class defined with the keywords struct or union
+    // are public by default.
+    AccessSpecifier CurAS;
+    if (TagType == DeclSpec::TST_class)
+      CurAS = AS_private;
+    else
+      CurAS = AS_public;
+    ParsedAttributesWithRange AccessAttrs(AttrFactory);
 
-  if (TagDecl) {
     // While we still have something to read, read the member-declarations.
     while (!tryParseMisplacedModuleImport() && Tok.isNot(tok::r_brace) &&
            Tok.isNot(tok::eof)) {
@@ -3428,47 +3542,46 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
           CurAS, AccessAttrs, static_cast<DeclSpec::TST>(TagType), TagDecl);
     }
     T.consumeClose();
+
+    // If attributes exist after class contents, parse them.
+    ParsedAttributes attrs(AttrFactory);
+    MaybeParseGNUAttributes(attrs);
+
+    Actions.ActOnFinishCXXMemberSpecification(getCurScope(), RecordLoc, TagDecl,
+                                              T.getOpenLocation(),
+                                              T.getCloseLocation(),
+                                              attrs);
+
+    // C++11 [class.mem]p2:
+    //   Within the class member-specification, the class is regarded as complete
+    //   within function bodies, default arguments, exception-specifications, and
+    //   brace-or-equal-initializers for non-static data members (including such
+    //   things in nested classes).
+    if (NonNestedClass) {
+      // We are not inside a nested class. This class and its nested classes
+      // are complete and we can parse the delayed portions of method
+      // declarations and the lexed inline method definitions, along with any
+      // delayed attributes.
+      SourceLocation SavedPrevTokLocation = PrevTokLocation;
+      ParseLexedAttributes(getCurrentClass());
+      ParseLexedMethodDeclarations(getCurrentClass());
+
+      // We've finished with all pending member declarations.
+      Actions.ActOnFinishCXXMemberDecls();
+
+      ParseLexedMemberInitializers(getCurrentClass());
+      ParseLexedMethodDefs(getCurrentClass());
+      PrevTokLocation = SavedPrevTokLocation;
+
+      // We've finished parsing everything, including default argument
+      // initializers.
+      Actions.ActOnFinishCXXNonNestedClass(TagDecl);
+    }
+
+    Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
   } else {
     SkipUntil(tok::r_brace);
   }
-
-  // If attributes exist after class contents, parse them.
-  ParsedAttributes attrs(AttrFactory);
-  MaybeParseGNUAttributes(attrs);
-
-  if (TagDecl)
-    Actions.ActOnFinishCXXMemberSpecification(getCurScope(), RecordLoc, TagDecl,
-                                              T.getOpenLocation(),
-                                              T.getCloseLocation(), attrs);
-
-  // C++11 [class.mem]p2:
-  //   Within the class member-specification, the class is regarded as complete
-  //   within function bodies, default arguments, exception-specifications, and
-  //   brace-or-equal-initializers for non-static data members (including such
-  //   things in nested classes).
-  if (TagDecl && NonNestedClass) {
-    // We are not inside a nested class. This class and its nested classes
-    // are complete and we can parse the delayed portions of method
-    // declarations and the lexed inline method definitions, along with any
-    // delayed attributes.
-    SourceLocation SavedPrevTokLocation = PrevTokLocation;
-    ParseLexedAttributes(getCurrentClass());
-    ParseLexedMethodDeclarations(getCurrentClass());
-
-    // We've finished with all pending member declarations.
-    Actions.ActOnFinishCXXMemberDecls();
-
-    ParseLexedMemberInitializers(getCurrentClass());
-    ParseLexedMethodDefs(getCurrentClass());
-    PrevTokLocation = SavedPrevTokLocation;
-
-    // We've finished parsing everything, including default argument
-    // initializers.
-    Actions.ActOnFinishCXXNonNestedClass(TagDecl);
-  }
-
-  if (TagDecl)
-    Actions.ActOnTagFinishDefinition(getCurScope(), TagDecl, T.getRange());
 
   // Leave the class scope.
   ParsingDef.Pop();

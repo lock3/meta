@@ -298,6 +298,16 @@ Retry:
     SemiError = "co_return";
     break;
 
+  case tok::arrow:
+    Res = ParseCXXInjectionStatement();
+    SemiError = "->";
+    break;
+
+  case tok::kw___inject_base:
+    Res = ParseCXXBaseInjectionStatement();
+    SemiError = "__inject_base";
+    break;
+
   case tok::kw_asm: {
     ProhibitAttributes(Attrs);
     bool msAsm = false;
@@ -1017,6 +1027,13 @@ StmtResult Parser::handleExprStmt(ExprResult E, ParsedStmtContext StmtCtx) {
   return Actions.ActOnExprStmt(E, /*DiscardedValue=*/!IsStmtExprResult);
 }
 
+void PushInjectedStmt(CXXInjectorDecl *MetaDecl,
+                      SmallVectorImpl<Stmt *> &Stmts) {
+  for (Stmt *InjectedStmt : MetaDecl->getInjectedStmts()) {
+    Stmts.push_back(InjectedStmt);
+  }
+}
+
 /// ParseCompoundStatementBody - Parse a sequence of statements and invoke the
 /// ActOnCompoundStmt action.  This expects the '{' to be the current token, and
 /// consume the '}' at the end of the block.  It does not manipulate the scope
@@ -1130,8 +1147,18 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       }
     }
 
-    if (R.isUsable())
-      Stmts.push_back(R.get());
+    if (R.isUsable()) {
+      Stmt *Result = R.get();
+      Stmts.push_back(Result);
+
+      if (auto *VD = dyn_cast<DeclStmt>(Result)) {
+        if (VD->isSingleDecl()) {
+          Decl *D = VD->getSingleDecl();
+          if (auto *MetaDecl = dyn_cast<CXXInjectorDecl>(D))
+            PushInjectedStmt(MetaDecl, Stmts);
+        }
+      }
+    }
   }
 
   SourceLocation CloseLoc = Tok.getLocation();

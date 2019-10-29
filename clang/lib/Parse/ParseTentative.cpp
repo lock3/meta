@@ -59,6 +59,10 @@ bool Parser::isCXXDeclarationStatement() {
   case tok::kw_static_assert:
   case tok::kw__Static_assert:
     return true;
+  case tok::kw_requires:
+    if (NextToken().is(tok::kw_typename) || NextToken().is(tok::kw_class))
+      ParsingTypenameRequires = true;
+    return true;
     // simple-declaration
   default:
     return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/false);

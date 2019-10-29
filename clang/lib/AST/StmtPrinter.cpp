@@ -196,10 +196,31 @@ void StmtPrinter::VisitNullStmt(NullStmt *Node) {
   Indent() << ";" << NL;
 }
 
+static CXXInjectorDecl *GetInjectorFromDeclStmt(DeclStmt *DS) {
+  if (!DS->isSingleDecl())
+    return nullptr;
+
+  return dyn_cast_or_null<CXXInjectorDecl>(DS->getSingleDecl());
+}
+
 void StmtPrinter::VisitDeclStmt(DeclStmt *Node) {
+  auto *InjectorDecl = GetInjectorFromDeclStmt(Node);
+  if (InjectorDecl) {
+    // Do not print injector decls, unless in a dependent context where
+    // they haven't been evaluated.
+    DeclContext *InjectorDC = InjectorDecl->getDeclContext();
+    if (!InjectorDC->isDependentContext()) {
+      return;
+    }
+  }
+
   Indent();
   PrintRawDeclStmt(Node);
-  OS << ";" << NL;
+
+  // Injectors do not require a simicolon, and will print one if they have one.
+  if (!InjectorDecl) {
+    OS << ";" << NL;
+  }
 }
 
 void StmtPrinter::VisitCompoundStmt(CompoundStmt *Node) {
@@ -389,6 +410,35 @@ void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
     OS << "\n";
 }
 
+void StmtPrinter::VisitCXXInjectionStmt(CXXInjectionStmt *Node) {
+  // FIXME: Actually print something meaningful.
+  Indent() << "-> ";
+  CXXInjectionContextSpecifier ContextSpecifier = Node->getContextSpecifier();
+  switch (ContextSpecifier.getContextKind()) {
+  case CXXInjectionContextSpecifier::CurrentContext:
+    break;
+
+  case CXXInjectionContextSpecifier::ParentNamespace:
+    OS << "namespace ";
+    break;
+
+  case CXXInjectionContextSpecifier::SpecifiedNamespace:
+    OS << "namespace(";
+    OS << *cast<NamespaceDecl>(ContextSpecifier.getSpecifiedNamespace());
+    OS << ") ";
+    break;
+  }
+
+  Visit(Node->getOperand());
+
+  if (Policy.IncludeNewlines) OS << "\n";
+}
+
+void StmtPrinter::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *Node) {
+  // FIXME: Actually print something meaningful.
+  Indent() << "__inject_base( ... )";
+  if (Policy.IncludeNewlines) OS << "\n";
+}
 
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
@@ -2341,6 +2391,17 @@ void StmtPrinter::VisitCXXReflectionReadQueryExpr(
   OS << ')';
 }
 
+void StmtPrinter::VisitCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  OS << "__reflect_mod(";
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
+}
+
 void StmtPrinter::VisitCXXReflectPrintLiteralExpr(
                                                 CXXReflectPrintLiteralExpr *E) {
   OS << "__reflect_print(";
@@ -2396,7 +2457,7 @@ void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
 }
 
 void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
-  CXXDependentVariadicReifierExpr *E) {
+    CXXDependentVariadicReifierExpr *E) {
   // TODO Finish this
   switch(E->getKeywordId()) {
   case tok::kw_valueof:
@@ -2414,6 +2475,11 @@ void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
   default:
     break;
   }
+}
+
+void StmtPrinter::VisitCXXFragmentExpr(CXXFragmentExpr *Node) {
+ OS << "__fragment ";
+ Node->getFragment()->getContent()->print(OS, Policy);
 }
 
 // Obj-C

@@ -2568,6 +2568,18 @@ def err_invalid_immeidate_fp_conversion : Error<
   "immediate functions can only be converted to function pointers inside "
   "of an immediate function context or, as part of an immediate invocation">;
 
+def err_ambiguous_required_name : Error<
+    "Required %select{type|declarator}0 cannot be ambiguous.">;
+def err_required_name_not_found : Error<
+    "Required %select{type|declarator}0 not found.">;
+def err_required_decl_mismatch : Error<
+    "Required conflicting types %diff{($ vs $) |}0,1">;
+def note_required_bad_conv : Note<
+    "required declarator candidate not viable: "
+    "cannot convert declarator of type %diff{($ to $) |}0,1">;
+def note_required_candidate : Note<
+    "required candidate:">;
+
 // tuple and pack loops
 def note_loop_body_instantiation_here : Note<
   "in instantiation of loop body expansion">;
@@ -2598,10 +2610,12 @@ def err_expression_not_type_reflection : Error<
   "expression does not reflect a type">;
 def err_expression_not_value_reflection : Error<
   "expression does not reflect a value">;
-def reflection_not_constant_expression : Error<
+def err_reflection_not_constant_expression : Error<
   "reflection is not a constant expression">;
-def reflection_reflects_non_constant_expression : Error<
+def err_reflection_reflects_non_constant_expression : Error<
   "reflection reflects an expression which is not constexpr">;
+def err_reflection_not_parm_var_decl : Error<
+  "reflection does not reflect a parameter">;
 def err_reflection_not_known : Error<
   "expression does not reflect a construct">;
 def err_empty_type_reflection : Error<
@@ -9836,6 +9850,26 @@ def note_await_ready_no_bool_conversion : Note<
   "return type of 'await_ready' is required to be contextually convertible to 'bool'"
 >;
 }
+
+let CategoryName = "Injection Issue" in {
+def err_injection_stmt_constexpr : Error<
+  "injection statements can only appear in constexpr contexts">;
+def err_invalid_injection_operand : Error<
+  "invalid operand of type %0; expected a reflection or fragment">;
+def err_invalid_injection : Error<
+  "injecting %select{statements|class members|enum members|namespace members}0 into "
+  "%select{a function|a class|an enum|a namespace}1">;
+def err_injecting_local_into_invalid_scope : Error<
+  "cannot inject a local variable into %select{namespace|class}0 scope">;
+def err_injecting_into_parent_of_global_namespace : Error<
+  "cannot inject into the parent namespace of the global namespace">;
+def err_modify_virtual_constructor : Error<
+  "cannot make a constructor virtual">;
+def err_modify_constexpr_field : Error<
+  "cannot make a non-static data member constexpr">;
+def err_invalid_type_transformer_operand : Error<
+  "invalid operand of type %0; expected a reflection">;
+} // end of reflection issue category
 
 let CategoryName = "Documentation Issue" in {
 def warn_not_a_doxygen_trailing_member_comment : Warning<

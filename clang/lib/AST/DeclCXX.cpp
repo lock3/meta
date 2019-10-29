@@ -102,9 +102,9 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
       ImplicitCopyConstructorCanHaveConstParamForNonVBase(true),
       ImplicitCopyAssignmentHasConstParam(true),
       HasDeclaredCopyConstructorWithConstParam(false),
-      HasDeclaredCopyAssignmentWithConstParam(false), IsLambda(false),
-      IsParsingBaseSpecifiers(false), ComputedVisibleConversions(false),
-      HasODRHash(false), Definition(D) {}
+      HasDeclaredCopyAssignmentWithConstParam(false), IsFragment(false),
+      IsLambda(false), IsParsingBaseSpecifiers(false),
+      ComputedVisibleConversions(false), HasODRHash(false), Definition(D) {}
 
 CXXBaseSpecifier *CXXRecordDecl::DefinitionData::getBasesSlowCase() const {
   return Bases.get(Definition->getASTContext().getExternalSource());
@@ -120,7 +120,8 @@ CXXRecordDecl::CXXRecordDecl(Kind K, TagKind TK, const ASTContext &C,
                              CXXRecordDecl *PrevDecl)
     : RecordDecl(K, TK, C, DC, StartLoc, IdLoc, Id, PrevDecl),
       DefinitionData(PrevDecl ? PrevDecl->DefinitionData
-                              : nullptr) {}
+                              : nullptr),
+      Metafunction(nullptr) {}
 
 CXXRecordDecl *CXXRecordDecl::Create(const ASTContext &C, TagKind TK,
                                      DeclContext *DC, SourceLocation StartLoc,
@@ -1918,6 +1919,19 @@ bool CXXRecordDecl::mayBeAbstract() const {
   return false;
 }
 
+/// A prototype class is nested within a generated class.
+bool CXXRecordDecl::isPrototypeClass() const {
+  if (const CXXRecordDecl *Parent = dyn_cast<CXXRecordDecl>(getDeclContext())) {
+    if (const ClassTemplateSpecializationDecl *SpecializedParent
+        = dyn_cast<ClassTemplateSpecializationDecl>(Parent)) {
+      return SpecializedParent->getMetafunction();
+    }
+
+    return Parent->getMetafunction() && isImplicit() && isFragment();
+  }
+  return false;
+}
+
 void CXXDeductionGuideDecl::anchor() {}
 
 bool ExplicitSpecifier::isEquivalent(const ExplicitSpecifier Other) const {
@@ -2707,59 +2721,6 @@ NamespaceDecl *UsingDirectiveDecl::getNominatedNamespace() {
   return cast_or_null<NamespaceDecl>(NominatedNamespace);
 }
 
-NamespaceDecl::NamespaceDecl(ASTContext &C, DeclContext *DC, bool Inline,
-                             SourceLocation StartLoc, SourceLocation IdLoc,
-                             IdentifierInfo *Id, NamespaceDecl *PrevDecl)
-    : NamedDecl(Namespace, DC, IdLoc, Id), DeclContext(Namespace),
-      redeclarable_base(C), LocStart(StartLoc),
-      AnonOrFirstNamespaceAndInline(nullptr, Inline) {
-  setPreviousDecl(PrevDecl);
-
-  if (PrevDecl)
-    AnonOrFirstNamespaceAndInline.setPointer(PrevDecl->getOriginalNamespace());
-}
-
-NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
-                                     bool Inline, SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
-                                     NamespaceDecl *PrevDecl) {
-  return new (C, DC) NamespaceDecl(C, DC, Inline, StartLoc, IdLoc, Id,
-                                   PrevDecl);
-}
-
-NamespaceDecl *NamespaceDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) NamespaceDecl(C, nullptr, false, SourceLocation(),
-                                   SourceLocation(), nullptr, nullptr);
-}
-
-NamespaceDecl *NamespaceDecl::getOriginalNamespace() {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-const NamespaceDecl *NamespaceDecl::getOriginalNamespace() const {
-  if (isFirstDecl())
-    return this;
-
-  return AnonOrFirstNamespaceAndInline.getPointer();
-}
-
-bool NamespaceDecl::isOriginalNamespace() const { return isFirstDecl(); }
-
-NamespaceDecl *NamespaceDecl::getNextRedeclarationImpl() {
-  return getNextRedeclaration();
-}
-
-NamespaceDecl *NamespaceDecl::getPreviousDeclImpl() {
-  return getPreviousDecl();
-}
-
-NamespaceDecl *NamespaceDecl::getMostRecentDeclImpl() {
-  return getMostRecentDecl();
-}
-
 void NamespaceAliasDecl::anchor() {}
 
 NamespaceAliasDecl *NamespaceAliasDecl::getNextRedeclarationImpl() {
@@ -3070,6 +3031,118 @@ MSPropertyDecl *MSPropertyDecl::CreateDeserialized(ASTContext &C,
   return new (C, ID) MSPropertyDecl(nullptr, SourceLocation(),
                                     DeclarationName(), QualType(), nullptr,
                                     SourceLocation(), nullptr, nullptr);
+}
+
+bool CXXInjectorDecl::hasBody() const {
+  if (!hasRepresentation())
+    return false;
+  return getFunctionDecl()->hasBody();
+}
+
+Stmt *CXXInjectorDecl::getBody() const {
+  if (!hasRepresentation())
+    return nullptr;
+  return getFunctionDecl()->getBody();
+}
+
+void CXXMetaprogramDecl::anchor() {}
+
+CXXMetaprogramDecl *CXXMetaprogramDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation CXXMetaprogramLoc,
+                                     FunctionDecl *Fn) {
+  return new (Cxt, DC) CXXMetaprogramDecl(DC, CXXMetaprogramLoc, Fn);
+}
+
+CXXMetaprogramDecl *CXXMetaprogramDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) CXXMetaprogramDecl(nullptr, SourceLocation());
+}
+
+SourceRange CXXMetaprogramDecl::getSourceRange() const {
+  SourceLocation RangeEnd = getLocation();
+  if (Stmt *Body = getBody())
+    RangeEnd = Body->getEndLoc();
+  return SourceRange(getLocation(), RangeEnd);
+}
+
+void CXXInjectionDecl::anchor() {}
+
+CXXInjectionDecl *CXXInjectionDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                     SourceLocation CXXInjectionLoc,
+                                     FunctionDecl *Fn) {
+  return new (Cxt, DC) CXXInjectionDecl(DC, CXXInjectionLoc, Fn);
+}
+
+CXXInjectionDecl *CXXInjectionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  return new (C, ID) CXXInjectionDecl(nullptr, SourceLocation());
+}
+
+Stmt *CXXInjectionDecl::getInjectionStmt() const {
+  auto *BodyPtr = cast<CompoundStmt>(getBody());
+  assert(BodyPtr->size() == 1);
+  return *(BodyPtr->body_begin());
+}
+
+void CXXFragmentDecl::anchor() {}
+
+CXXFragmentDecl *CXXFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                                         SourceLocation IntroLoc) {
+  return new (Cxt, DC) CXXFragmentDecl(DC, IntroLoc);
+}
+
+CXXFragmentDecl *CXXFragmentDecl::CreateDeserialized(ASTContext &C,
+                                                     unsigned ID) {
+  return new (C, ID) CXXFragmentDecl(nullptr, SourceLocation());
+}
+
+CXXStmtFragmentDecl
+*CXXStmtFragmentDecl::Create(ASTContext &Cxt, DeclContext *DC,
+                             SourceLocation IntroLoc) {
+  return new (Cxt, DC) CXXStmtFragmentDecl(DC, IntroLoc);
+}
+
+CXXRequiredTypeDecl::CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
+                                         SourceLocation SL, IdentifierInfo *Id,
+                                         bool Typename)
+  : TypeDecl(CXXRequiredType, DC, RL, Id, RL), RequiresLoc(RL), SpecLoc(SL),
+    WasDeclaredWithTypename(Typename)
+{
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::Create(ASTContext &Ctx, DeclContext *DC, SourceLocation RL,
+                            SourceLocation SL, IdentifierInfo *Id, bool Typename) {
+  return new (Ctx, DC) CXXRequiredTypeDecl(DC, RL, SL, Id, Typename);
+}
+
+CXXRequiredTypeDecl *
+CXXRequiredTypeDecl::CreateDeserialized(ASTContext &Ctx, unsigned ID) {
+  IdentifierInfo *II = &Ctx.Idents.get("");
+  return new (Ctx, ID) CXXRequiredTypeDecl(nullptr, SourceLocation(),
+                                           SourceLocation(), II, true);
+}
+
+CXXRequiredDeclaratorDecl::CXXRequiredDeclaratorDecl(ASTContext &Context,
+                                                     DeclContext *DC,
+                                                     DeclaratorDecl *DD,
+                                                     SourceLocation RL)
+  : DeclaratorDecl(CXXRequiredDeclarator, DC, RL, DD->getDeclName(),
+                   QualType(Context.DependentTy),
+                   Context.CreateTypeSourceInfo(QualType(Context.DependentTy)),
+                   RL), RequiresLoc(RL), RequiredDeclarator(DD) {
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::Create(ASTContext &Ctx, DeclContext *DC,
+                                  DeclaratorDecl *RequiredDecl,
+                                  SourceLocation RequiresLoc) {
+  return new (Ctx, DC) CXXRequiredDeclaratorDecl(Ctx, DC, RequiredDecl,
+                                                 RequiresLoc);
+}
+
+CXXRequiredDeclaratorDecl *
+CXXRequiredDeclaratorDecl::CreateDeserialized(ASTContext &Context,
+                                              unsigned ID) {
+  llvm_unreachable("unimplemented.");
 }
 
 static const char *getAccessName(AccessSpecifier AS) {

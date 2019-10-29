@@ -336,6 +336,11 @@ void ASTTypeWriter::VisitUnresolvedUsingType(const UnresolvedUsingType *T) {
   Code = TYPE_UNRESOLVED_USING;
 }
 
+void ASTTypeWriter::VisitCXXRequiredTypeType(const CXXRequiredTypeType *T) {
+  Record.AddDeclRef(T->getDecl());
+  Code = TYPE_CXX_REQUIRED;
+}
+
 void ASTTypeWriter::VisitTypedefType(const TypedefType *T) {
   Record.AddDeclRef(T->getDecl());
   assert(!T->isCanonicalUnqualified() && "Invalid typedef ?");
@@ -731,6 +736,10 @@ void TypeLocWriter::VisitFunctionNoProtoTypeLoc(FunctionNoProtoTypeLoc TL) {
 }
 
 void TypeLocWriter::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
+  Record.AddSourceLocation(TL.getNameLoc());
+}
+
+void TypeLocWriter::VisitCXXRequiredTypeTypeLoc(CXXRequiredTypeTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
 

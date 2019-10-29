@@ -1189,6 +1189,9 @@ namespace serialization {
 
       /// A CXXDependentVariadicReifier record.
       TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 51,
+
+      /// A CXXRequiredTypeType record.
+      TYPE_CXX_REQUIRED = 52,
     };
 
     /// The type IDs for special types constructed by semantic
@@ -1561,7 +1564,19 @@ namespace serialization {
       /// An OMPDeclareReductionDecl record.
       DECL_OMP_DECLARE_REDUCTION,
 
-      DECL_LAST = DECL_OMP_DECLARE_REDUCTION
+      /// A CXXMetaprogramDecl record.
+      DECL_CXX_METAPROGRAM,
+
+      /// A CXXInjectionDecl record.
+      DECL_CXX_INJECTION,
+
+      /// A CXXRequiredTypeDecl record.
+      DECL_CXX_REQUIRED_TYPE,
+
+      /// A CXXRequiredDeclaratorDecl record.
+      DECL_CXX_REQUIRED_DECLARATOR,
+
+      DECL_LAST = DECL_CXX_INJECTION
     };
 
     /// Record codes for each kind of statement or expression.
@@ -1841,6 +1856,12 @@ namespace serialization {
 
       /// A CXXTryStmt record.
       STMT_CXX_TRY,
+
+      /// A CXXInjection record.
+      STMT_CXX_INJECTION,
+
+      /// A CXXBaseInjection record.
+      STMT_CXX_BASE_INJECTION,
 
       /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,

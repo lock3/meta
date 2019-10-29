@@ -233,6 +233,14 @@ public:
       return (AccessSpecifier)Access;
   }
 
+  /// Sets the access specifier for this base specifier.
+  ///
+  /// This is used by injection, and will change the specifiers
+  /// as written state.
+  void setAccessSpecifier(AccessSpecifier AS) {
+    this->Access = AS;
+  }
+
   /// Retrieves the access specifier as written in the source code
   /// (which may mean that no access specifier was explicitly written).
   ///
@@ -282,6 +290,9 @@ class CXXRecordDecl : public RecordDecl {
     #define FIELD(Name, Width, Merge) \
     unsigned Name : Width;
     #include "CXXRecordDeclDefinitionBits.def"
+
+    /// Whether this class describes a C++ fragment.
+    unsigned IsFragment : 1;
 
     /// Whether this class describes a C++ lambda.
     unsigned IsLambda : 1;
@@ -454,6 +465,10 @@ class CXXRecordDecl : public RecordDecl {
   /// instantiated or specialized.
   llvm::PointerUnion<ClassTemplateDecl *, MemberSpecializationInfo *>
       TemplateOrInstantiation;
+
+  /// An unresolved id expression that nominates a function to
+  /// generate the definition of this class.
+  Expr *Metafunction;
 
   /// Called from setBases and addedMember to notify the class that a
   /// direct or virtual base class or a member of class type has been added.
@@ -955,6 +970,16 @@ public:
   /// class.
   bool needsOverloadResolutionForDestructor() const {
     return data().NeedOverloadResolutionForDestructor;
+  }
+
+  /// Determine whether this class describes a fragment object.
+  bool isFragment() const {
+    const auto *DD = dataPtr();
+    return DD && DD->IsFragment;
+  }
+
+  void setFragment(bool IsFrag) {
+    data().IsFragment = IsFrag;
   }
 
   /// Determine whether this class describes a lambda function object.
@@ -1769,6 +1794,26 @@ public:
   // Determine whether this type is an Interface Like type for
   // __interface inheritance purposes.
   bool isInterfaceLike() const;
+
+  /// Determines whether this class is a prototype specification for a
+  /// metaclass.
+  ///
+  /// In other words:
+  ///
+  /// \code
+  /// class(meta) C { ... };
+  /// \endcode
+  ///
+  /// If this class is the prototype definition of metaclass C,
+  /// then this is true.
+  bool isPrototypeClass() const;
+
+  /// The expression used to generate a final class from a prototype.
+  /// This is always an unresolved id expression.
+  Expr *getMetafunction() const { return Metafunction; }
+
+  /// Associates a metafunction with with a class.
+  void setMetafunction(Expr *E) { Metafunction = E; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
@@ -3865,6 +3910,352 @@ public:
   bool hasSetter() const { return SetterId != nullptr; }
   IdentifierInfo* getSetterId() const { return SetterId; }
 };
+
+/// Base class for C++ injector-declarations.
+class CXXInjectorDecl : public Decl {
+  /// The de-sugared form of the declaration.
+  FunctionDecl *Representation;
+
+  /// The de-sugared call expression.
+  CallExpr *Call = nullptr;
+
+  /// A placeholder for injected statements.
+  llvm::SmallVector<Stmt *, 0> InjectedStmts;
+
+  /// A placeholder for injected declarations.
+  llvm::SmallVector<Decl *, 0> InjectedDecls;
+
+protected:
+  CXXInjectorDecl(Kind DK, DeclContext *DC, SourceLocation L)
+      : Decl(DK, DC, L), Representation(nullptr) { }
+
+  CXXInjectorDecl(Kind DK, DeclContext *DC, SourceLocation L,
+                  FunctionDecl *Fn)
+      : Decl(DK, DC, L), Representation(Fn) { }
+
+public:
+  /// Returns true if there is a de-sugared representation of
+  /// the declaration.
+  bool hasRepresentation() const {
+    return Representation;
+  }
+
+  /// Returns the function representation of the declaration.
+  FunctionDecl *getFunctionDecl() const {
+    return Representation;
+  }
+
+  /// Returns \c true if the metaprogram-declaration has a body.
+  bool hasBody() const override;
+
+  /// Returns the body of the metaprogram-declaration.
+  Stmt *getBody() const override;
+
+  /// Returns the expression that evaluates the metaprogram-declaration.
+  CallExpr *getCallExpr() const { return Call; }
+
+  /// Sets the expression that evaluates the metaprogram-declaration.
+  void setCallExpr(CallExpr *E) { Call = E; }
+
+  llvm::SmallVectorImpl<Stmt *> &getInjectedStmts() {
+    return InjectedStmts;
+  }
+
+  const llvm::SmallVectorImpl<Stmt *> &getInjectedStmts() const {
+    return InjectedStmts;
+  }
+
+  llvm::SmallVectorImpl<Decl *> &getInjectedDecls() {
+    return InjectedDecls;
+  }
+
+  const llvm::SmallVectorImpl<Decl *> &getInjectedDecls() const {
+    return InjectedDecls;
+  }
+
+  // Implement isa/clang/cast/dyncast/etc.
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) {
+    return K >= firstCXXInjector && K <= lastCXXInjector;
+  }
+};
+
+/// Represents a C++ metaprogram-declaration.
+///
+/// A metaprogram-declaration contains a sequence of statements that are
+/// evaluated at compile-time. For example:
+///
+/// \code
+/// constexpr {
+///   // statements
+/// }
+/// \endcode
+///
+/// When the metaprogram-declaration appears in namespace or class scope, this
+/// class contains a \c constexpr \c void function that contains the parsed body
+/// of the declaration.
+class CXXMetaprogramDecl : public CXXInjectorDecl {
+  virtual void anchor();
+
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc)
+      : CXXInjectorDecl(CXXMetaprogram, DC, CXXMetaprogramLoc) { }
+
+  CXXMetaprogramDecl(DeclContext *DC, SourceLocation CXXMetaprogramLoc,
+                     FunctionDecl *Fn)
+      : CXXInjectorDecl(CXXMetaprogram, DC, CXXMetaprogramLoc, Fn) { }
+
+public:
+  static CXXMetaprogramDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                    SourceLocation CXXMetaprogramLoc,
+                                    FunctionDecl *Fn);
+  static CXXMetaprogramDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  SourceRange getSourceRange() const override;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXMetaprogram; }
+
+  friend class ASTDeclReader;
+};
+
+/// \brief Represents a C++ injection-declaration.
+///
+/// A injection-declaration contains an injection-statement that is evaluated
+/// at compile-time. For example:
+///
+/// \code
+/// constexpr -> fragment-or-reflection;
+/// \endcode
+class CXXInjectionDecl : public CXXInjectorDecl {
+  virtual void anchor();
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc)
+      : CXXInjectorDecl(CXXInjection, DC, CXXInjectionLoc) { }
+
+  CXXInjectionDecl(DeclContext *DC, SourceLocation CXXInjectionLoc,
+                   FunctionDecl *Fn)
+      : CXXInjectorDecl(CXXInjection, DC, CXXInjectionLoc, Fn) { }
+
+public:
+  static CXXInjectionDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                    SourceLocation CXXInjectionLoc,
+                                    FunctionDecl *Fn);
+  static CXXInjectionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// Returns the injection statement for the injection-decl.
+  Stmt *getInjectionStmt() const;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXInjection; }
+
+  friend class ASTDeclReader;
+};
+
+
+/// \brief Contains a fragment of source code.
+///
+/// This is an implicit structure created when defining a source code fragment.
+/// The nested declaration is called the fragment's content. This declaration
+/// contains the set of constant parameters over which the the fragment is
+/// defined. This has no corresponding concrete syntax.
+///
+/// Example:
+///
+///     contexpr int n = 4;
+///     auto x = <<class: int x = n; >>;
+///
+/// The fragment expression introduces an implicit fragment declaration
+/// containing the referenced fragment (the expression maintains captured
+/// values). The fragment declaration contains the class definition, and
+/// the variable is initialized with its reflection.
+///
+/// Note the fragment itself is not part of the declaration context, but held
+/// separately.
+///
+/// FIXME: The fragment might also be statement.
+class CXXFragmentDecl : public Decl, public DeclContext {
+  virtual void anchor();
+
+  /// The source code fragment.
+  Decl *Content;
+
+  /// A ParsingClass object from the parser. If this is a class fragment,
+  /// then this will contain the late-parsed declarations associated with
+  /// the class fragment's definition.
+  void* ParsedClass;
+
+  CXXFragmentDecl(DeclContext *DC, SourceLocation IntroLoc)
+      : Decl(CXXFragment, DC, IntroLoc), DeclContext(CXXFragment), Content(),
+        ParsedClass() {}
+public:
+  static CXXFragmentDecl *Create(ASTContext &CXT, DeclContext *DC,
+                                 SourceLocation IntroLoc);
+  static CXXFragmentDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief The contained fragment.
+  Decl *getContent() const { return Content; }
+
+  /// \brief Sets the contained fragment.
+  void setContent(Decl *D) {
+    assert(!Content && "Content already set.");
+    Content = D;
+  }
+
+  /// \brief Information needed to parse definitions within the fragment.
+  void* getParsedClass() const { return ParsedClass; }
+
+  /// \brief Sets the parsing information.
+  void setParsedClass(void* PC) {
+    assert(!ParsedClass && "Parsing info already set");
+    ParsedClass = PC;
+  }
+
+  /// brief True if the fragment has dynamic type T.
+  template<typename T>
+  bool isA() const { return isa<T>(Content); }
+
+  /// \brief The fragment dynamically cast as the given type or nullptr.
+  template<typename T>
+  T* getAs() const { return dyn_cast<T>(Content); }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXFragment; }
+
+  static DeclContext *castToDeclContext(const CXXFragmentDecl *D) {
+    return static_cast<DeclContext *>(const_cast<CXXFragmentDecl*>(D));
+  }
+  static CXXFragmentDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<CXXFragmentDecl *>(const_cast<DeclContext*>(DC));
+  }
+};
+
+class CXXStmtFragmentDecl : public Decl, public DeclContext {
+  Stmt *Body;
+
+  CXXStmtFragmentDecl(DeclContext *DC, SourceLocation BeginLoc)
+    : Decl(CXXStmtFragment, DC, BeginLoc), DeclContext(CXXStmtFragment)
+    {}
+public:
+  static CXXStmtFragmentDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                     SourceLocation BeginLoc);
+
+  void setBody(Stmt *S) { Body = S; }
+  bool hasBody() const { return Body; }
+  Stmt *getBody() const { return Body; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXStmtFragment; }
+  static DeclContext *castToDeclContext(const CXXStmtFragmentDecl *D) {
+    return static_cast<DeclContext *>(const_cast<CXXStmtFragmentDecl*>(D));
+  }
+  static CXXStmtFragmentDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<CXXStmtFragmentDecl *>(const_cast<DeclContext*>(DC));
+  }
+};
+
+/// Represents a dependent requires declaration which was marked with
+/// \c typename
+/// Similar to a CXXRequiredDeclaratorDecl, this declares a type exists
+/// outside of the fragment, but lookup is not performed until injection.
+///
+/// \code
+/// __fragment {
+///   requires typename S;
+///   S instance;
+/// }
+/// \endcode
+///
+/// The type associated with a CXXRequiredTypeDecl is currently always
+/// always a typename type.
+class CXXRequiredTypeDecl : public TypeDecl {
+  /// The source location of the 'requires' keyword
+  SourceLocation RequiresLoc;
+
+  /// The source location of the 'typename' or 'class' keyword
+  SourceLocation SpecLoc;
+
+  /// True if this was declared with the 'typename' keyword
+  bool WasDeclaredWithTypename : 1;
+
+  CXXRequiredTypeDecl(DeclContext *DC, SourceLocation RL,
+                      SourceLocation SL, IdentifierInfo *Id,
+                      bool Typename);
+public:
+  static CXXRequiredTypeDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                     SourceLocation RL, SourceLocation SL,
+                                     IdentifierInfo *Id, bool Typename);
+  static CXXRequiredTypeDecl *CreateDeserialized(ASTContext &Ctx, unsigned ID);
+
+  /// Get the location of the 'requires' keyword.
+  SourceLocation getRequiresLoc() const { return RequiresLoc; }
+  /// Get the location of the 'typename' or 'class' keyword.
+  SourceLocation getSpecLoc() const { return SpecLoc; }
+
+  /// Was this declared with the 'typename' keyword?
+  bool wasDeclaredWithTypename() const { return WasDeclaredWithTypename; }
+
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXRequiredType; }
+};
+
+/// Represents a requires declaration which was not marked with
+/// \c typename
+/// This declares a typed name exists somewhere outside of the fragment,
+/// but does not look it up until the fragment is injected.
+///
+/// \code
+/// __fragment {
+///  requires int x;
+///  x = 42;
+/// }
+/// \endcode
+///
+/// Like an UnresolvedUsingValueDecl, these only declare non-types.
+class CXXRequiredDeclaratorDecl : public DeclaratorDecl {
+  /// The location of the 'requires' keyword
+  SourceLocation RequiresLoc;
+
+  /// The actual declarator we are requiring, alternatively
+  /// the declarator owned by this declaration.
+  DeclaratorDecl *RequiredDeclarator;
+
+  CXXRequiredDeclaratorDecl(ASTContext &Context, DeclContext *DC,
+                            DeclaratorDecl *DD, SourceLocation RL);
+public:
+  static CXXRequiredDeclaratorDecl *Create(ASTContext &Ctx, DeclContext *DC,
+                                           DeclaratorDecl *RequiredDecl,
+                                           SourceLocation RequiresLoc);
+  static CXXRequiredDeclaratorDecl *CreateDeserialized(ASTContext &Context,
+                                                       unsigned ID);
+
+  SourceLocation getRequiresLoc() const { return RequiresLoc; }
+
+  QualType getDeclaratorType() const {
+    return RequiredDeclarator->getType();
+  }
+
+  TypeSourceInfo *getDeclaratorTInfo() const {
+    return RequiredDeclarator->getTypeSourceInfo();
+  }
+
+  DeclaratorDecl *getRequiredDeclarator() const { return RequiredDeclarator; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXRequiredDeclarator; }
+};
+
+// class CXXRequiredFunctionDecl : public FunctionDecl {
+//   SourceLocation RequiresLoc;
+
+//   CXXRequiredFunctionDecl(FunctionDecl *D);
+// public:
+//   static CXXRequiredFunctionDecl *Create(ASTContext &Ctx, FunctionDecl *D,
+//                                          SourceLocation RequiresLoc);
+// };
 
 /// Insertion operator for diagnostics.  This allows sending an AccessSpecifier
 /// into a diagnostic with <<.

@@ -35,6 +35,7 @@ def Named : Decl<"named declarations", 1>;
             def ClassTemplatePartialSpecialization
               : DDecl<ClassTemplateSpecialization>;
     def TemplateTypeParm : DDecl<Type>;
+    def CXXRequiredType : DDecl<Type>;
   def Value : DDecl<Named, "value declarations", 1>;
     def EnumConstant : DDecl<Value, "enumerators">;
     def UnresolvedUsingValue : DDecl<Value>;
@@ -62,6 +63,7 @@ def Named : Decl<"named declarations", 1>;
         def Decomposition : DDecl<Var>;
         def OMPCapturedExpr : DDecl<Var>;
       def NonTypeTemplateParm : DDecl<Declarator>;
+      def CXXRequiredDeclarator : DDecl<Declarator>;
   def Template : DDecl<Named, "templates", 1>;
     def RedeclarableTemplate : DDecl<Template, "redeclarable templates", 1>;
       def FunctionTemplate : DDecl<RedeclarableTemplate>;
@@ -102,4 +104,8 @@ def OMPThreadPrivate : Decl;
 def OMPAllocate : Decl;
 def OMPRequires : Decl;
 def Empty : Decl;
-
+def CXXInjector : Decl<"injector declarations", 1>;
+  def CXXMetaprogram : DDecl<CXXInjector>;
+  def CXXInjection : DDecl<CXXInjector>;
+def CXXFragment : Decl, DeclContext;
+def CXXStmtFragment : Decl, DeclContext;

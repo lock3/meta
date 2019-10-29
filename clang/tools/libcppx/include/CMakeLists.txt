@@ -12,19 +12,33 @@ set_source_files_properties(${LIBCPPX_HEADERS} PROPERTIES HEADER_FILE_ONLY
 
 # Copy the headers to the build tree if we're building Clang.
 if(LIBCPPX_BUILDING_CLANG)
-  # Install these headers in the build version of the resource dir
-  # This installs into "experimental" so that #include <experimental/meta>
-  # will just work.
-  set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)
+  function(setup_configuration base_output_dir)
+    # Install these headers in the build version of the resource dir
+    # This installs into "experimental" so that #include <experimental/meta>
+    # will just work.
+    set(output_dir ${base_output_dir}/clang/${CLANG_VERSION}/include)
 
-  message(STATUS "Copying CPPX headers")
-  file(COPY ${LIBCPPX_HEADERS} DESTINATION ${output_dir})
+    message(STATUS "Copying CPPX headers")
 
-  # Force reconfiguration when headers are modified so that the updated headers
-  # are copied to the build tree.
-  foreach(LIBCPPX_HEADER ${LIBCPPX_HEADERS})
-    configure_file(${LIBCPPX_HEADER} ${output_dir}/${LIBCPPX_HEADER} COPYONLY)
-  endforeach()
+    # Force reconfiguration when headers are modified so that the updated headers
+    # are copied to the build tree.
+    foreach(LIBCPPX_HEADER ${LIBCPPX_HEADERS})
+      configure_file(${LIBCPPX_HEADER} ${output_dir}/${LIBCPPX_HEADER} COPYONLY)
+    endforeach()
+  endfunction()
+
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
+      message(STATUS "Configuring ${cfg}")
+
+      # Perform a macro expansion for this build type.
+      STRING(REPLACE ${CMAKE_CFG_INTDIR} ${cfg} base_output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR})
+
+      setup_configuration(${base_output_dir})
+    endforeach()
+  else()
+    setup_configuration(${LLVM_LIBRARY_OUTPUT_INTDIR})
+  endif()
 endif()
 
 if(LIBCPPX_INSTALL_HEADERS)

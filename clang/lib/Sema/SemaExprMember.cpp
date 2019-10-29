@@ -100,16 +100,6 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
   bool isField = false;
   BaseSet Classes;
   for (NamedDecl *D : R) {
-    // if(isa<CXXMethodDecl>(D)) {
-    //   llvm::outs() << "Decl kind: " << D->getDeclKindName() << '\n';
-    //   if(dyn_cast<CXXMethodDecl>(D)->isReflectionParameter()) {
-    // 	llvm::outs() << "D is a reflection parameter.\n";
-    // 	return IMA_Static;
-    //   }
-    // }
-
-    // llvm::outs() << "Qualified name: " << D->getQualifiedNameAsString() << '\n';
-    // Look through any using decls.
     D = D->getUnderlyingDecl();
 
     if (D->isCXXInstanceMember()) {

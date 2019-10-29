@@ -1777,6 +1777,18 @@ Parser::ParseDeclaration(DeclaratorContext Context, SourceLocation &DeclEnd,
     ProhibitAttributes(attrs);
     SingleDecl = ParseStaticAssertDeclaration(DeclEnd);
     break;
+  case tok::kw_requires:
+    ProhibitAttributes(attrs);
+    SingleDecl = ParseCXXRequiredDecl(Context);
+    break;
+  case tok::kw_consteval:
+    // [Meta] injector-declaration
+    if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {
+      SingleDecl = ParsedDecl;
+      break;
+    }
+    LLVM_FALLTHROUGH;
+
   default:
     return ParseSimpleDeclaration(Context, DeclEnd, attrs, true, nullptr,
                                   DeclSpecStart);
@@ -4558,10 +4570,10 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   const char *PrevSpec = nullptr;
   unsigned DiagID;
   Decl *TagDecl = Actions.ActOnTag(
-      getCurScope(), DeclSpec::TST_enum, TUK, StartLoc, SS, Name, NameLoc,
-      attrs, AS, DS.getModulePrivateSpecLoc(), TParams, Owned, IsDependent,
-      ScopedEnumKWLoc, IsScopedUsingClassTag, BaseType,
-      DSC == DeclSpecContext::DSC_type_specifier,
+      getCurScope(), DeclSpec::TST_enum, /*Metafunction=*/nullptr, TUK,
+      StartLoc, SS, Name, NameLoc, attrs, AS, DS.getModulePrivateSpecLoc(),
+      TParams, Owned, IsDependent, ScopedEnumKWLoc, IsScopedUsingClassTag,
+      BaseType, DSC == DeclSpecContext::DSC_type_specifier,
       DSC == DeclSpecContext::DSC_template_param ||
           DSC == DeclSpecContext::DSC_template_type_arg,
       &SkipBody);
@@ -4635,15 +4647,75 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     Diag(StartLoc, DiagID) << PrevSpec;
 }
 
+static void PushInjectedECD(
+    Parser &P, CXXInjectorDecl *MetaDecl,
+    SmallVectorImpl<Decl *> &EnumConstantDecls,
+    SmallVectorImpl<SuppressAccessChecks> &EnumAvailabilityDiags) {
+  EnumAvailabilityDiags.emplace_back(P);
+  EnumAvailabilityDiags.back().done();
+
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
+    EnumAvailabilityDiags.emplace_back(P);
+    EnumAvailabilityDiags.back().done();
+
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
+static bool isEnumFragment(Scope *S) {
+  bool InFragment = S->getFlags() & Scope::FragmentScope;
+  if (!InFragment) {
+    return false;
+  }
+
+  bool InEnum = false;
+
+  do {
+    InEnum = S->getFlags() & Scope::EnumScope;
+    S = S->getParent();
+  } while(!InEnum && S);
+
+  return InEnum;
+}
+
+bool Parser::ParseEnumeratorIdentifier(DeclarationNameInfo &NameInfo) {
+  if (Tok.is(tok::kw_unqualid)) {
+    CXXScopeSpec SS;
+    UnqualifiedId UnqualifiedId;
+    if (ParseCXXReflectedId(SS, /*TemplateKWLoc=*/SourceLocation(),
+                            UnqualifiedId))
+      return true;
+
+    NameInfo = Actions.GetNameFromUnqualifiedId(UnqualifiedId);
+    return false;
+  }
+
+  // Parse enumerator. If failed, try skipping till the start of the next
+  // enumerator definition.
+  if (Tok.isNot(tok::identifier))
+    return true;
+
+  IdentifierInfo *Ident = Tok.getIdentifierInfo();
+  SourceLocation IdentLoc = ConsumeToken();
+  NameInfo = DeclarationNameInfo(Ident, IdentLoc);
+
+  return false;
+}
+
 /// ParseEnumBody - Parse a {} enclosed enumerator-list.
 ///       enumerator-list:
 ///         enumerator
 ///         enumerator-list ',' enumerator
 ///       enumerator:
-///         enumeration-constant attributes[opt]
-///         enumeration-constant attributes[opt] '=' constant-expression
-///       enumeration-constant:
+///         enumerator-identifier attributes[opt]
+///         enumerator-identifier attributes[opt] '=' constant-expression
+///         metaprogram-declaration
+///         injection-declaration
+///       enumerator-identifier:
 ///         identifier
+///         reflected-unqualid-id
 ///
 void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Enter the scope of the enum body and start the definition.
@@ -4660,21 +4732,40 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   SmallVector<Decl *, 32> EnumConstantDecls;
   SmallVector<SuppressAccessChecks, 32> EnumAvailabilityDiags;
 
-  Decl *LastEnumConstDecl = nullptr;
+  EnumConstantDecl *OriginalLastEnumConst = Actions.LastEnumConstDecl;
+  Actions.LastEnumConstDecl = nullptr;
 
   // Parse the enumerator-list.
   while (Tok.isNot(tok::r_brace)) {
-    // Parse enumerator. If failed, try skipping till the start of the next
-    // enumerator definition.
-    if (Tok.isNot(tok::identifier)) {
-      Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    if (getLangOpts().CPlusPlus && Tok.is(tok::kw_consteval)) {
+      // [Meta] metaprogram-declaration
+      if (NextToken().is(tok::l_brace)) {
+        if (auto *ParsedDecl = ParseCXXMetaprogramDeclaration()) {
+          PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
+                          EnumConstantDecls, EnumAvailabilityDiags);
+          TryConsumeToken(tok::comma);
+          continue;
+        }
+      }
+      // [Meta] injection-declaration
+      if (NextToken().is(tok::arrow)) {
+        if (auto *ParsedDecl = ParseCXXInjectionDeclaration()) {
+          PushInjectedECD(*this, cast<CXXInjectorDecl>(ParsedDecl),
+                          EnumConstantDecls, EnumAvailabilityDiags);
+          TryConsumeToken(tok::comma);
+          continue;
+        }
+      }
+    }
+
+    DeclarationNameInfo NameInfo;
+    if (ParseEnumeratorIdentifier(NameInfo)) {
+      Diag(Tok.getLocation(), diag::err_expected_enumerator_identifier);
       if (SkipUntil(tok::comma, tok::r_brace, StopBeforeMatch) &&
           TryConsumeToken(tok::comma))
         continue;
       break;
     }
-    IdentifierInfo *Ident = Tok.getIdentifierInfo();
-    SourceLocation IdentLoc = ConsumeToken();
 
     // If attributes exist after the enumerator, parse them.
     ParsedAttributesWithRange attrs(AttrFactory);
@@ -4703,12 +4794,12 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
     // Install the enumerator constant into EnumDecl.
     Decl *EnumConstDecl = Actions.ActOnEnumConstant(
-        getCurScope(), EnumDecl, LastEnumConstDecl, IdentLoc, Ident, attrs,
-        EqualLoc, AssignedVal.get());
+        getCurScope(), EnumDecl, Actions.LastEnumConstDecl,
+        NameInfo, attrs, EqualLoc, AssignedVal.get());
     EnumAvailabilityDiags.back().done();
 
     EnumConstantDecls.push_back(EnumConstDecl);
-    LastEnumConstDecl = EnumConstDecl;
+    Actions.LastEnumConstDecl = cast_or_null<EnumConstantDecl>(EnumConstDecl);
 
     if (Tok.is(tok::identifier)) {
       // We're missing a comma between enumerators.
@@ -4752,6 +4843,8 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // Eat the }.
   T.consumeClose();
 
+  Actions.LastEnumConstDecl = OriginalLastEnumConst;
+
   // If attributes exist after the identifier list, parse them.
   ParsedAttributes attrs(AttrFactory);
   MaybeParseGNUAttributes(attrs);
@@ -4773,7 +4866,8 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   // The next token must be valid after an enum definition. If not, a ';'
   // was probably forgotten.
   bool CanBeBitfield = getCurScope()->getFlags() & Scope::ClassScope;
-  if (!isValidAfterTypeSpecifier(CanBeBitfield)) {
+  if (!isValidAfterTypeSpecifier(CanBeBitfield) &&
+      !isEnumFragment(getCurScope())) {
     ExpectAndConsume(tok::semi, diag::err_expected_after, "enum");
     // Push this token back into the preprocessor and change our current token
     // to ';' so that the rest of the code recovers as though there were an
@@ -6593,6 +6687,11 @@ void Parser::ParseParameterDeclarationClause(
     // before deciding this was a parameter-declaration-clause.
     if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
       break;
+
+    if (Tok.is(tok::arrow)) {
+      ParseCXXInjectedParameter(ParamInfo);
+      continue;
+    }
 
     // Parse the declaration-specifiers.
     // Just use the ParsingDeclaration "scope" of the declarator.

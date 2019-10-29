@@ -293,6 +293,8 @@ serialization::getDefinitiveDeclContext(const DeclContext *DC) {
   case Decl::CXXConstructor:
   case Decl::CXXDestructor:
   case Decl::CXXConversion:
+  case Decl::CXXMetaprogram:
+  case Decl::CXXInjection:
   case Decl::ObjCMethod:
   case Decl::Block:
   case Decl::Captured:
@@ -404,6 +406,12 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::Decomposition:
   case Decl::Binding:
   case Decl::Concept:
+  case Decl::CXXFragment:
+  case Decl::CXXMetaprogram:
+  case Decl::CXXInjection:
+  case Decl::CXXStmtFragment:
+  case Decl::CXXRequiredType:
+  case Decl::CXXRequiredDeclarator:
     return false;
 
   // These indirectly derive from Redeclarable<T> but are not actually

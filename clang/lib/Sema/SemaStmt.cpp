@@ -2960,6 +2960,9 @@ struct ExpansionStatementBuilder
   Expr *EndCallRef;
 
   SizeOfPackExpr *PackSize;
+
+  /// If this is a range that failed to find an acceptable count call.
+  bool CountCallFailure = false;
 };
 
 ExpansionStatementBuilder::
@@ -3125,6 +3128,10 @@ ExpansionStatementBuilder::Build()
   ForStmt = BuildExpansionOverRange();
   if (!ForStmt.isInvalid())
     return Finish(ForStmt);
+
+  // This is a constexpr range, but there was no way to compute the size.
+  if (CountCallFailure)
+    return StmtError();
 
   // If that doesn't succeed, try with a destructurable class.
   ForStmt = BuildExpansionOverClass();
@@ -3677,12 +3684,14 @@ ExpansionStatementBuilder::BuildExpansionOverRange()
   }
 
   // We couldn't find a way of computing the range.
-  if (!CountCall)
+  if (!CountCall) {
+    CountCallFailure = true;
     return StmtError();
+  }
 
   // Note the constant evaluation of the expression.
   EnterExpressionEvaluationContext EvalContext(SemaRef,
-    Sema::ExpressionEvaluationContext::ConstantEvaluated);
+      Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
   Expr::EvalResult Result;
   Expr::EvalContext EvalCtx(
@@ -3772,6 +3781,13 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVar))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVar)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 
@@ -3790,6 +3806,13 @@ StmtResult Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVarDS))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVarDS)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 
@@ -3807,6 +3830,13 @@ Sema::BuildCXXExpansionStmt(SourceLocation ForLoc,
   Builder.ColonLoc = ColonLoc;
   Builder.RParenLoc = RParenLoc;
   StmtResult Ret = Builder.Build();
+  if (Ret.isInvalid()) {
+    if (!isa<DeclStmt>(LoopVarDS))
+      return StmtError();
+
+    Decl *LoopVarDecl = cast<DeclStmt>(LoopVarDS)->getSingleDecl();
+    LoopVarDecl->setInvalidDecl(true);
+  }
   return Ret;
 }
 
@@ -4072,7 +4102,8 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
 
     InstantiatingTemplate Inst(*this, B->getBeginLoc(), Expansion, Args,
                                B->getSourceRange());
-    StmtResult Instantiation = SubstStmt(Body, MultiArgs);
+    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+    StmtResult Instantiation = SubstStmt(Body, MultiArgs, ExistingMappings);
     if (Instantiation.isInvalid())
       return StmtError();
     Stmts.push_back(Instantiation.get());
@@ -4823,6 +4854,11 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       RelatedRetType = Context.getObjCInterfaceType(MD->getClassInterface());
       RelatedRetType = Context.getObjCObjectPointerType(RelatedRetType);
     }
+  } else if (CurContext->isFragmentContext()) {
+    // If we're inside of a fragment context, we don't know the function
+    // corresponding to this return statement, we must defer.
+    return ReturnStmt::Create(Context, ReturnLoc, RetValExp,
+                              /*NRVOCandidate=*/nullptr);
   } else // If we don't have a function/method context, bail.
     return StmtError();
 

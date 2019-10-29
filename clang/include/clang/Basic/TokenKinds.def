@@ -392,14 +392,16 @@ KEYWORD(templarg                    , KEYREFLECT)
 KEYWORD(unqualid                    , KEYREFLECT)
 KEYWORD(idexpr                      , KEYREFLECT)
 KEYWORD(valueof                     , KEYREFLECT)
-KEYWORD(__reflect                   , KEYREFLECT)
 KEYWORD(__invalid_reflection        , KEYREFLECT)
+KEYWORD(__reflect                   , KEYREFLECT)
+KEYWORD(__reflect_mod               , KEYREFLECT)
 KEYWORD(__reflect_print             , KEYREFLECT)
 KEYWORD(__reflect_pretty_print      , KEYREFLECT)
 KEYWORD(__reflect_dump              , KEYREFLECT)
 KEYWORD(__compiler_error            , KEYREFLECT)
 KEYWORD(__concatenate               , KEYREFLECT)
 KEYWORD(__select_member             , KEYREFLECT)
+KEYWORD(__inject_base               , KEYREFLECT)
 
 // C++20 keywords.
 CXX2A_KEYWORD(char8_t               , CHAR8SUPPORT)
@@ -533,6 +535,9 @@ TYPE_TRAIT_1(__is_const, IsConst, KEYCXX)
 TYPE_TRAIT_1(__is_volatile, IsVolatile, KEYCXX)
 TYPE_TRAIT_1(__is_signed, IsSigned, KEYCXX)
 TYPE_TRAIT_1(__is_unsigned, IsUnsigned, KEYCXX)
+
+// Placeholders for future syntax
+KEYWORD(__fragment , KEYALL)
 
 // Embarcadero Binary Type Traits
 TYPE_TRAIT_2(__is_same, IsSame, KEYCXX)

@@ -391,7 +391,6 @@ class VarDecl;
     llvm::PointerUnion<Decl *, DeclArgumentPack *> *
     lookupInstantiationOf(const Decl *D);
 
-
     void InstantiatedLocal(const Decl *D, Decl *Inst);
     void InstantiatedLocalPackArg(const Decl *D, VarDecl *Inst);
     void MakeInstantiatedLocalArgPack(const Decl *D);

@@ -27,6 +27,7 @@ class Decl;
 class Expr;
 class NamespaceDecl;
 class NestedNameSpecifier;
+class Sema;
 class Type;
 class UnresolvedLookupExpr;
 
@@ -276,6 +277,115 @@ bool isAssociatedReflectionQuery(ReflectionQuery Q);
 /// True if Q returns a name.
 bool isNameQuery(ReflectionQuery Q);
 
+/// True if Q updates modifiers.
+bool isModifierUpdateQuery(ReflectionQuery Q);
+
+enum class AccessModifier : unsigned {
+  NotModified,
+  Default,
+  Public,
+  Protected,
+  Private
+};
+
+enum class StorageModifier : unsigned {
+  NotModified,
+  Static,
+  Automatic,
+  ThreadLocal
+};
+
+class ReflectionModifiers {
+  AccessModifier Access;
+  StorageModifier Storage;
+  bool AddConstexpr;
+  bool AddExplicit;
+  bool AddVirtual;
+  bool AddPureVirtual;
+  const Expr *NewName;
+public:
+  ReflectionModifiers()
+    : Access(AccessModifier::NotModified),
+      Storage(StorageModifier::NotModified),
+      AddConstexpr(false), AddExplicit(false), AddVirtual(false),
+      AddPureVirtual(false), NewName(nullptr) { }
+
+  void setAccessModifier(AccessModifier Access) {
+    this->Access = Access;
+  }
+
+  bool modifyAccess() const {
+    return Access != AccessModifier::NotModified;
+  }
+
+  AccessModifier getAccessModifier() const {
+    return Access;
+  }
+
+  void setStorageModifier(StorageModifier Storage) {
+    assert((Storage == StorageModifier::NotModified
+            || Storage == StorageModifier::Static)
+           && "Currently only static storage modification is supported");
+    this->Storage = Storage;
+  }
+
+  bool modifyStorage() const {
+    return Storage != StorageModifier::NotModified;
+  }
+
+  StorageModifier getStorageModifier() const {
+    return Storage;
+  }
+
+  void setAddConstexpr(bool AddConstexpr) {
+    this->AddConstexpr = AddConstexpr;
+  }
+
+  bool addConstexpr() const {
+    return AddConstexpr;
+  }
+
+  void setAddExplicit(bool AddExplicit) {
+    this->AddExplicit = AddExplicit;
+  }
+
+  bool addExplicit() const {
+    return AddExplicit;
+  }
+
+  void setAddVirtual(bool AddVirtual) {
+    this->AddVirtual = AddVirtual;
+  }
+
+  bool addVirtual() const {
+    return AddVirtual;
+  }
+
+  void setAddPureVirtual(bool AddPureVirtual) {
+    this->AddPureVirtual = AddPureVirtual;
+  }
+
+  bool addPureVirtual() const {
+    return AddPureVirtual;
+  }
+
+  void setNewName(const Expr *NewName) {
+    this->NewName = NewName;
+  }
+
+  bool hasRename() const {
+    return NewName != nullptr;
+  }
+
+  const Expr *getNewName() const {
+    return NewName;
+  }
+
+  std::string getNewNameAsString() const {
+    return cast<StringLiteral>(NewName)->getString();
+  }
+};
+
 /// The reflection class provides context for evaluating queries.
 ///
 /// FIXME: This might not need diagnostics; we could simply return invalid
@@ -310,9 +420,9 @@ public:
   ///
   /// DEPRECATED: Avoid using this class for evaluation state,
   /// instead it should be used as a useful wrapper around APValue reflections.
-  Reflection(ASTContext &C, const APValue &R, const Expr *E,
+  Reflection(ASTContext &C, const APValue &R, const Expr *Query,
              SmallVectorImpl<PartialDiagnosticAt> *D = nullptr)
-    : Ctx(&C), Ref(R), Query(E), Diag(D) {
+    : Ctx(&C), Ref(R), Query(Query), Diag(D) {
     assert(Ref.isReflection() && "not a reflection");
   }
 
@@ -334,6 +444,11 @@ public:
   /// Returns the reflection kind.
   ReflectionKind getKind() const {
     return Ref.getReflectionKind();
+  }
+
+  // Returns the opaque reflection pointer.
+  const void *getOpaqueValue() const {
+    return Ref.getOpaqueReflectionValue();
   }
 
   /// True if this is the invalid reflection.
@@ -376,6 +491,10 @@ public:
     return Ref.getReflectedDeclaration();
   }
 
+  /// If R designates some kind of declaration, either directly, as a type,
+  /// or via a reflection, return that declaration.
+  const Decl *getAsReachableDeclaration() const;
+
   /// Returns this as an expression.
   const Expr *getAsExpression() const {
     return Ref.getReflectedExpression();
@@ -384,6 +503,11 @@ public:
   /// Returns this as a base class specifier.
   const CXXBaseSpecifier *getAsBase() const {
     return Ref.getReflectedBaseSpecifier();
+  }
+
+  /// Returns the modifiers associated with this reflection.
+  const ReflectionModifiers &getModifiers() const {
+    return Ref.getReflectionModifiers();
   }
 
   unsigned getOffsetInParent() const {
@@ -402,7 +526,13 @@ public:
   bool GetAssociatedReflection(ReflectionQuery Q, APValue &Result);
 
   /// Returns the entity name designated by Q.
-  bool GetName(ReflectionQuery, APValue &Result);
+  bool GetName(ReflectionQuery Q, APValue &Result);
+
+  /// Updates this reflections reflection modifiers with the
+  /// requested changes.
+  bool UpdateModifier(ReflectionQuery Q,
+                      const ArrayRef<APValue> &ContextualArgs,
+                      APValue &Result);
 
   /// True if A and B reflect the same entity.
   static bool Equal(ASTContext &Ctx, APValue const& X, APValue const& Y);
@@ -457,6 +587,10 @@ public:
   /// Evaluates the predicate designated by Q.
   bool EvaluatePredicate(SmallVectorImpl<APValue> &Args, APValue &Result);
 };
+
+bool EvaluateReflection(Sema &S, Expr *E, Reflection &R);
+
+void DiagnoseInvalidReflection(Sema &S, Expr *E, const Reflection &R);
 
 } // namespace clang
 

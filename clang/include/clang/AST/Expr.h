@@ -55,6 +55,7 @@ namespace clang {
   class StringLiteral;
   class TargetInfo;
   class ValueDecl;
+  struct InjectionEffect;
 
 /// A simple array of base specifiers.
 typedef SmallVector<CXXBaseSpecifier*, 4> CXXCastPath;
@@ -568,6 +569,14 @@ public:
     /// the notes will describes why it isn't a constant expression. If the
     /// expression *is* a constant expression, no notes will be produced.
     SmallVectorImpl<PartialDiagnosticAt> *Diag;
+
+    /// A list of injection side effects encountered during evaluation.
+    ///
+    /// If evaluation encounters an source code injection when this is not
+    /// set, the expression has undefined behavior. This is only set for the
+    /// evaluation of metaprograms. No other evaluations should modify source
+    /// code.
+    SmallVectorImpl<InjectionEffect> *InjectionEffects;
 
     EvalStatus()
         : HasSideEffects(false), HasUndefinedBehavior(false), Diag(nullptr) {}

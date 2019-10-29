@@ -204,6 +204,10 @@ public:
     RValue Res = CGF.EmitAtomicExpr(E);
     EmitFinalDestCopy(E->getType(), Res);
   }
+
+  void VisitCXXFragmentExpr(CXXFragmentExpr *E) {
+    return; // nothing to do.
+  }
 };
 }  // end anonymous namespace.
 

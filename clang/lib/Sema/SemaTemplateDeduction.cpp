@@ -621,6 +621,7 @@ static bool IsPossiblyOpaquelyQualifiedType(QualType T) {
   case Type::Decltype:
   case Type::UnresolvedUsing:
   case Type::TemplateTypeParm:
+  case Type::CXXRequiredType:
     return true;
 
   case Type::ConstantArray:
@@ -2114,6 +2115,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::PackExpansion:
     case Type::CXXDependentVariadicReifier:
     case Type::Pipe:
+    case Type::CXXRequiredType:
       // No template argument deduction for these types
       return Sema::TDK_Success;
   }
@@ -5635,6 +5637,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::UnresolvedUsing:
   case Type::Pipe:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXRequiredType:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)
@@ -5743,4 +5746,20 @@ bool hasDeducibleTemplateParameters(Sema &S,
                                Deduced);
 
   return Deduced.any();
+}
+
+bool
+Sema::TypeCheckRequiredAutoReturn(SourceLocation Loc,
+                                  QualType TypeWithAuto, QualType Replacement) {
+  TemplateDeductionInfo Info(Loc);
+  unsigned TDF = 0;
+  SmallVector<DeducedTemplateArgument, 1> Deduced;
+  auto Res = DeduceTemplateArgumentsByTypeMatch(*this, nullptr, TypeWithAuto,
+                                               Replacement, Info, Deduced, TDF);
+  if (Res != TDK_Success) {
+    Diag(Info.getLocation(), diag::err_auto_inconsistent_deduction) <<
+      Info.FirstArg << Info.SecondArg << Loc;
+  }
+
+  return Res != TDK_Success;
 }

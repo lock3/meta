@@ -54,6 +54,8 @@ def CXXForRangeStmt : Stmt;
 def CXXExpansionStmt : Stmt<1>;
 def CXXCompositeExpansionStmt : DStmt<CXXExpansionStmt>;
 def CXXPackExpansionStmt : DStmt<CXXExpansionStmt>;
+def CXXInjectionStmt : Stmt;
+def CXXBaseInjectionStmt : Stmt;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : Stmt;
@@ -162,6 +164,7 @@ def FunctionParmPackExpr : DStmt<Expr>;
 def MaterializeTemporaryExpr : DStmt<Expr>;
 def LambdaExpr : DStmt<Expr>;
 def CXXFoldExpr : DStmt<Expr>;
+def CXXFragmentExpr : DStmt<Expr>;
 
 // C++ Coroutines TS expressions
 def CoroutineSuspendExpr : DStmt<Expr, 1>;
@@ -174,6 +177,7 @@ def CXXConstantExpr : DStmt<Expr>;
 def CXXReflectExpr : DStmt<Expr>;
 def CXXInvalidReflectionExpr : DStmt<Expr>;
 def CXXReflectionReadQueryExpr : DStmt<Expr>;
+def CXXReflectionWriteQueryExpr : DStmt<Expr>;
 def CXXReflectPrintLiteralExpr : DStmt<Expr>;
 def CXXReflectPrintReflectionExpr : DStmt<Expr>;
 def CXXReflectDumpReflectionExpr : DStmt<Expr>;

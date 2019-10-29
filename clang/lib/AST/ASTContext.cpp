@@ -2891,6 +2891,21 @@ bool ASTContext::hasSameFunctionTypeIgnoringExceptionSpec(QualType T,
                       getFunctionTypeWithExceptionSpec(U, EST_None)));
 }
 
+bool ASTContext::hasSameFunctionTypeIgnoringReturn(QualType T, QualType U) {
+  assert(T->isFunctionType() && U->isFunctionType());
+
+  if (hasSameType(T, U))
+    return true;
+
+  const auto *TProto = T->getAs<FunctionProtoType>();
+  QualType TNoReturn = getFunctionType(DependentTy, TProto->getParamTypes(),
+                                       TProto->getExtProtoInfo());
+  const auto *UProto = U->getAs<FunctionProtoType>();
+  QualType UNoReturn = getFunctionType(DependentTy, UProto->getParamTypes(),
+                                       UProto->getExtProtoInfo());
+  return hasSameType(TNoReturn, UNoReturn);
+}
+
 void ASTContext::adjustExceptionSpec(
     FunctionDecl *FD, const FunctionProtoType::ExceptionSpecInfo &ESI,
     bool AsWritten) {
@@ -3272,6 +3287,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXRequiredType:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -3999,6 +4015,9 @@ QualType ASTContext::getTypeDeclTypeSlow(const TypeDecl *Decl) const {
     Type *newType = new (*this, TypeAlignment) UnresolvedUsingType(Using);
     Decl->TypeForDecl = newType;
     Types.push_back(newType);
+  } else if (const auto *Req = dyn_cast<CXXRequiredTypeDecl>(Decl)) {
+    const Type *newType = getCXXRequiredTypeType(Req).getTypePtr();
+    Decl->TypeForDecl = newType;
   } else
     llvm_unreachable("TypeDecl without a type?");
 
@@ -4314,6 +4333,13 @@ QualType ASTContext::getElaboratedType(ElaboratedTypeKeyword Keyword,
   Types.push_back(T);
   ElaboratedTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
+}
+
+QualType
+ASTContext::getCXXRequiredTypeType(const CXXRequiredTypeDecl *D) const {
+  Type *newType = new (*this, TypeAlignment) CXXRequiredTypeType(D);
+  Types.push_back(newType);
+  return QualType(newType, 0);
 }
 
 QualType

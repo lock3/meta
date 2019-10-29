@@ -911,6 +911,21 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     }
     goto dont_know;
 
+  case tok::kw_consteval:
+    // [Meta] injector-declaration
+    if (Decl *ParsedDecl = MaybeParseCXXInjectorDeclaration()) {
+      SingleDecl = ParsedDecl;
+      break;
+    }
+    goto dont_know;
+
+  case tok::kw_requires:
+    if (getLangOpts().Reflection) {
+      SourceLocation DeclEnd;
+      return ParseDeclaration(DeclaratorContext::FileContext, DeclEnd, attrs);
+    }
+    goto dont_know;
+
   case tok::kw___if_exists:
   case tok::kw___if_not_exists:
     ParseMicrosoftIfExistsExternalDeclaration();
@@ -1768,6 +1783,14 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
       if (!Result)
         Diag(Tok.getLocation(), diag::warn_expected_qualified_after_typename);
       return Result;
+    }
+
+    /// Parse a C++ required-typename-specifier
+    /// e.g. "requires typename T::type", but only if we are not
+    /// parsing a typename-specifier.
+    if (ParsingTypenameRequires) {
+      ParsingTypenameRequires = false;
+      return false;
     }
 
     // Parse a C++ typename-specifier, e.g., "typename T::type".

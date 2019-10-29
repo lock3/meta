@@ -463,6 +463,8 @@ public:
 
   bool isInStdNamespace() const;
 
+  bool isInFragment() const;
+
   ASTContext &getASTContext() const LLVM_READONLY;
 
   void setAccess(AccessSpecifier AS) {
@@ -1861,6 +1863,18 @@ public:
   }
 
   bool isNamespace() const { return getDeclKind() == Decl::Namespace; }
+
+  bool isEnum() const { return getDeclKind() == Decl::Enum; }
+
+  bool isFragment() const { return getDeclKind() == Decl::CXXFragment; }
+
+  bool isStatementFragment() const {
+    return getDeclKind() == Decl::CXXStmtFragment;
+  }
+
+  /// Determines whether this context is itself a fragment, or a
+  /// subcontext inside of a fragment.
+  bool isFragmentContext() const;
 
   bool isStdNamespace() const;
 

@@ -687,9 +687,62 @@ TemplateDeclInstantiator::VisitLabelDecl(LabelDecl *D) {
   return Inst;
 }
 
+static bool
+InstantiateFunctionBody(Sema &SemaRef,
+                        const MultiLevelTemplateArgumentList &TemplateArgs,
+                        FunctionDecl *OldFn, FunctionDecl *NewFn) {
+  // FIXME: We probably need to manage the function's definition a little
+  // better. Note that we can't use InstantiateFunctionDefinition; that
+  // assumes that the NewFn will have a template pattern, and that
+  // it is not defined.
+  StmtResult NewBody;
+  {
+    Sema::ContextRAII Switch(SemaRef, NewFn);
+    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+    NewBody = SemaRef.SubstStmt(OldFn->getBody(), TemplateArgs,
+                                ExistingMappings);
+  }
+
+  if (NewBody.isInvalid())
+    return true;
+
+  NewFn->setBody(NewBody.get());
+  return false;
+}
+
 Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
-  llvm_unreachable("Namespaces cannot be instantiated");
+  assert(D->getDeclContext()->isFragment()
+         && "Only fragments may contain transformable namespaces");
+
+  // Build the namespace.
+  //
+  // We don't actually want to find the previous declaration and perform any
+  // "stiching", as the namespace name, if present, is really just a
+  // localized name for use inside of the fragment.
+  NamespaceDecl *Inst = NamespaceDecl::Create(
+      SemaRef.Context, Owner, D->isInline(), D->getLocation(), D->getLocation(),
+      D->getIdentifier(), /*PrevDecl=*/nullptr);
+
+  Owner->addDecl(Inst);
+
+  // Rebuild the namespace members
+  for (Decl *OldMember : D->decls()) {
+    Decl *NewMember = SemaRef.SubstDecl(OldMember, Inst, TemplateArgs);
+
+    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(NewMember)) {
+      Inst->addDecl(FD);
+
+      if (InstantiateFunctionBody(SemaRef, TemplateArgs,
+                                  cast<FunctionDecl>(OldMember), FD))
+        FD->setInvalidDecl();
+    }
+
+    if (!NewMember || NewMember->isInvalidDecl())
+      Inst->setInvalidDecl(true);
+  }
+
+  return Inst;
 }
 
 Decl *
@@ -1063,6 +1116,126 @@ Decl *TemplateDeclInstantiator::VisitMSPropertyDecl(MSPropertyDecl *D) {
   return Property;
 }
 
+template <typename MetaType>
+static Decl *VisitMetaDecl(Sema &SemaRef, DeclContext *&Owner,
+                           const MultiLevelTemplateArgumentList &TemplateArgs,
+                           MetaType *D) {
+  FunctionDecl *Fn = D->getFunctionDecl();
+  // Instantiate the nested function.
+  //
+  // FIXME: The point of instantiation is probably wrong.
+  FunctionDecl *NewFn = cast_or_null<FunctionDecl>(
+                                  SemaRef.SubstDecl(Fn, Owner, TemplateArgs));
+  if (!NewFn || NewFn->isInvalidDecl())
+    return nullptr;
+
+  {
+    Sema::ContextRAII SavedContext(SemaRef, NewFn);
+
+    SemaRef.PushFunctionScope();
+    Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
+
+    if (InstantiateFunctionBody(SemaRef, TemplateArgs, Fn, NewFn))
+      return nullptr;
+  }
+
+  // Build the constexpr declaration.
+  MetaType *MD = MetaType::Create(SemaRef.Context, Owner,
+                                  Fn->getLocation(), NewFn);
+  Owner->addDecl(MD); // FIXME: OWner or CurContext?
+
+  // And evaluate it if needed.
+  if (!NewFn->isDependentContext()) {
+    // FIXME: What the hell are we going to do with late parsed
+    // declarations during template instantiation?
+    SmallVector<void *, 8> LateParsedDecls;
+    SemaRef.EvaluateCXXMetaDecl(MD, NewFn);
+  }
+
+  return MD;
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {
+  return VisitMetaDecl(SemaRef, Owner, TemplateArgs, D);
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXInjectionDecl(CXXInjectionDecl *D) {
+  return VisitMetaDecl(SemaRef, Owner, TemplateArgs, D);
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXFragmentDecl(CXXFragmentDecl *D) {
+  // Fragment declarations only occur as part of a fragment expression.
+  // These declarations are instantiated independently from the visitor.
+  llvm_unreachable("should never get here");
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXStmtFragmentDecl(CXXStmtFragmentDecl *D)
+{
+  if (!D->hasBody())
+    return D;
+
+  CXXStmtFragmentDecl *Inst =
+      CXXStmtFragmentDecl::Create(SemaRef.Context, Owner, D->getBeginLoc());
+
+  Sema::ContextRAII SavedContext(SemaRef, Inst);
+
+  SemaRef.PushFunctionScope();
+  Sema::FunctionScopeRAII FunctionScopeCleanup(SemaRef);
+
+  SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+  StmtResult NewBody =
+    SemaRef.SubstStmt(D->getBody(), TemplateArgs, ExistingMappings);
+  if (NewBody.isInvalid())
+    return nullptr;
+
+  Inst->setBody(NewBody.get());
+  Owner->addDecl(Inst);
+  return Inst;
+}
+
+Decl
+*TemplateDeclInstantiator::VisitCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
+  IdentifierInfo *Id = D->getNameInfo().getName().getAsIdentifierInfo();
+
+  auto *Inst = CXXRequiredTypeDecl::Create(
+      SemaRef.Context, Owner, D->getRequiresLoc(),
+      D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
+
+  Owner->addDecl(Inst);
+
+  SemaRef.CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+
+  return Inst;
+}
+
+Decl *TemplateDeclInstantiator::VisitCXXRequiredDeclaratorDecl(
+  CXXRequiredDeclaratorDecl *D) {
+  // FIXME: Do this eventually
+  // SubstQualifier(getSema(), D, NewD, TemplateArgs);
+  SemaRef.AnalyzingRequiredDeclarator = true;
+  DeclaratorDecl *NewDecl =
+    cast<DeclaratorDecl>(SemaRef.SubstDecl(D->getRequiredDeclarator(),
+                                           SemaRef.CurContext, TemplateArgs));
+  SemaRef.AnalyzingRequiredDeclarator = false;
+
+  if (!NewDecl || NewDecl->isInvalidDecl())
+    return nullptr;
+
+  if (NewDecl->getType()->getContainedAutoType()) {
+    /// We haven't deduced the type on this yet.
+    QualType Sub = SemaRef.SubstAutoType(
+      NewDecl->getType(), SemaRef.Context.DependentTy);
+    NewDecl->setType(Sub);
+  }
+  SemaRef.CurrentInstantiationScope
+    ->InstantiatedLocal(D->getRequiredDeclarator(), NewDecl);
+
+  return CXXRequiredDeclaratorDecl::Create(SemaRef.Context,
+                                           SemaRef.CurContext,
+                                           NewDecl,
+                                           D->getRequiresLoc());
+}
+
 Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   NamedDecl **NamedChain =
     new (SemaRef.Context)NamedDecl*[D->getChainingSize()];
@@ -1070,7 +1243,7 @@ Decl *TemplateDeclInstantiator::VisitIndirectFieldDecl(IndirectFieldDecl *D) {
   int i = 0;
   for (auto *PI : D->chain()) {
     NamedDecl *Next = SemaRef.FindInstantiatedDecl(D->getLocation(), PI,
-                                              TemplateArgs);
+                                                   TemplateArgs);
     if (!Next)
       return nullptr;
 
@@ -1172,6 +1345,8 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
       EnumDecl::Create(SemaRef.Context, Owner, D->getBeginLoc(),
                        D->getLocation(), D->getIdentifier(), PrevDecl,
                        D->isScoped(), D->isScopedUsingClassTag(), D->isFixed());
+
+  Sema::ContextRAII SavedContext(SemaRef, Enum);
   if (D->isFixed()) {
     if (TypeSourceInfo *TI = D->getIntegerTypeSourceInfo()) {
       // If we have type source information for the underlying type, it means it
@@ -1238,6 +1413,16 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
   return Enum;
 }
 
+template<typename T>
+static void PushInjectedECD(
+    T *MetaDecl, SmallVectorImpl<Decl *> &EnumConstantDecls) {
+  EnumConstantDecls.push_back(MetaDecl);
+
+  for (Decl *ECD : MetaDecl->getInjectedDecls()) {
+    EnumConstantDecls.push_back(ECD);
+  }
+}
+
 void TemplateDeclInstantiator::InstantiateEnumDefinition(
     EnumDecl *Enum, EnumDecl *Pattern) {
   Enum->startDefinition();
@@ -1245,10 +1430,25 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
   // Update the location to refer to the definition.
   Enum->setLocation(Pattern->getLocation());
 
-  SmallVector<Decl*, 4> Enumerators;
+  SmallVector<Decl *, 4> Enumerators;
 
-  EnumConstantDecl *LastEnumConst = nullptr;
-  for (auto *EC : Pattern->enumerators()) {
+  EnumConstantDecl *OriginalLastEnumConst = SemaRef.LastEnumConstDecl;
+  SemaRef.LastEnumConstDecl = nullptr;
+
+  for (auto *D : Pattern->decls()) {
+    if (auto *OldMD = dyn_cast<CXXMetaprogramDecl>(D)) {
+      auto *NewMD = cast<CXXMetaprogramDecl>(VisitCXXMetaprogramDecl(OldMD));
+      PushInjectedECD(NewMD, Enumerators);
+      continue;
+    }
+    if (auto *OldMD = dyn_cast<CXXInjectionDecl>(D)) {
+      auto *NewMD = cast<CXXInjectionDecl>(VisitCXXInjectionDecl(OldMD));
+      PushInjectedECD(NewMD, Enumerators);
+      continue;
+    }
+
+    EnumConstantDecl *EC = cast<EnumConstantDecl>(D);
+
     // The specified value for the enumerator.
     ExprResult Value((Expr *)nullptr);
     if (Expr *UninstValue = EC->getInitExpr()) {
@@ -1266,10 +1466,11 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       isInvalid = true;
     }
 
+    DeclarationNameInfo DNI
+      = SemaRef.SubstDeclarationNameInfo(EC->getNameInfo(), TemplateArgs);
     EnumConstantDecl *EnumConst
-      = SemaRef.CheckEnumConstant(Enum, LastEnumConst,
-                                  EC->getLocation(), EC->getIdentifier(),
-                                  Value.get());
+      = SemaRef.CheckEnumConstant(Enum, SemaRef.LastEnumConstDecl,
+                                  DNI, Value.get());
 
     if (isInvalid) {
       if (EnumConst)
@@ -1283,7 +1484,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       EnumConst->setAccess(Enum->getAccess());
       Enum->addDecl(EnumConst);
       Enumerators.push_back(EnumConst);
-      LastEnumConst = EnumConst;
+      SemaRef.LastEnumConstDecl = EnumConst;
 
       if (Pattern->getDeclContext()->isFunctionOrMethod() &&
           !Enum->isScoped()) {
@@ -1293,6 +1494,8 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       }
     }
   }
+
+  SemaRef.LastEnumConstDecl = OriginalLastEnumConst;
 
   SemaRef.ActOnEnumBody(Enum->getLocation(), Enum->getBraceRange(), Enum,
                         Enumerators, nullptr, ParsedAttributesView());
@@ -1675,6 +1878,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
                                                               StartingScope);
 
   Record->setImplicit(D->isImplicit());
+
   // FIXME: Check against AS_none is an ugly hack to work around the issue that
   // the tag decls introduced by friend class declarations don't have an access
   // specifier. Remove once this area of the code gets sorted out.
@@ -1711,14 +1915,20 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
 
   Owner->addDecl(Record);
 
+  // In some cases, explicitly instantiate the definition.
+  //
   // DR1484 clarifies that the members of a local class are instantiated as part
   // of the instantiation of their enclosing entity.
-  if (D->isCompleteDefinition() && D->isLocalClass()) {
+  if (D->isCompleteDefinition() && (D->isLocalClass() || D->isInFragment())) {
     Sema::LocalEagerInstantiationScope LocalInstantiations(SemaRef);
 
     SemaRef.InstantiateClass(D->getLocation(), Record, D, TemplateArgs,
                              TSK_ImplicitInstantiation,
                              /*Complain=*/true);
+
+    // FIXME: This feels out of place, but setFragment depends
+    // on the data definition of the CXXRecordDecl
+    Record->setFragment(D->isFragment());
 
     // For nested local classes, we will instantiate the members when we
     // reach the end of the outermost (non-nested) local class.
@@ -1826,6 +2036,16 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     SS.Adopt(QualifierLoc);
     DC = SemaRef.computeDeclContext(SS);
     if (!DC) return nullptr;
+  } else if (D->isMetaprogram()) {
+    // Metaprograms are always instantiated
+    // into their owning context.
+    DC = Owner;
+  } else if (Owner->getParent() && Owner->getParent()->isFragment()) {
+    assert(Owner->isFileContext());
+
+    // Functions instantiated inside of a namespace fragment,
+    // are always in the owner.
+    DC = Owner;
   } else {
     DC = SemaRef.FindInstantiatedContext(D->getLocation(), D->getDeclContext(),
                                          TemplateArgs);
@@ -2798,7 +3018,7 @@ Decl *TemplateDeclInstantiator::VisitUsingDecl(UsingDecl *D) {
 
   // Process the shadow decls.
   for (auto *Shadow : D->shadows()) {
-    // FIXME: UsingShadowDecl doesn't preserve its immediate target, so
+    // FIXME: UsingShadowDecl doelsn't preserve its immediate target, so
     // reconstruct it in the case where it matters.
     NamedDecl *OldTarget = Shadow->getTargetDecl();
     if (auto *CUSD = dyn_cast<ConstructorUsingShadowDecl>(Shadow))
@@ -3489,6 +3709,49 @@ Decl *Sema::SubstDecl(Decl *D, DeclContext *Owner,
     SubstD = Instantiator.Visit(D);
   });
   return SubstD;
+}
+
+static SmallVector<std::pair<Decl *, Decl *>, 8>
+CalculateExistingMappingsFor(const CXXFragmentDecl *OldFrag,
+                             const CXXFragmentDecl *NewFrag) {
+  SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
+
+  auto OldIter = OldFrag->decls_begin();
+  auto OldIterEnd = OldFrag->decls_end();
+  auto NewIter = NewFrag->decls_begin();
+  auto NewIterEnd = NewFrag->decls_end();
+
+  assert(std::distance(OldIter, OldIterEnd) ==
+         std::distance(NewIter, NewIterEnd) && "Fragment decls do not match!");
+
+  while (NewIter != NewIterEnd)
+    ExistingMappings.push_back(std::make_pair(*OldIter++, *NewIter++));
+
+  return ExistingMappings;
+}
+
+static SmallVector<std::pair<Decl *, Decl *>, 8>
+CalculateExistingMappingsFor(const FunctionDecl *OldDecl,
+                             const FunctionDecl *NewDecl) {
+  const CXXMethodDecl *OldMethod
+    = dyn_cast<CXXMethodDecl>(OldDecl);
+  const CXXMethodDecl *NewMethod
+    = dyn_cast<CXXMethodDecl>(NewDecl);
+
+  if (OldMethod && NewMethod) {
+    const CXXRecordDecl *OldRecord = OldMethod->getParent();
+    const CXXRecordDecl *NewRecord = NewMethod->getParent();
+
+    const CXXFragmentDecl *OldFrag
+      = dyn_cast<CXXFragmentDecl>(OldRecord->getDeclContext());
+    const CXXFragmentDecl *NewFrag
+      = dyn_cast<CXXFragmentDecl>(NewRecord->getDeclContext());
+
+    if (OldFrag && NewFrag) {
+      return CalculateExistingMappingsFor(OldFrag, NewFrag);
+    }
+  }
+  return SmallVector<std::pair<Decl *, Decl *>, 8>();
 }
 
 /// Instantiates a nested template parameter list in the current
@@ -4388,7 +4651,9 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       Sema::FakeParseScopeStack FakeParseScopeStack(*this);
 
       // Instantiate the function body.
-      Body = SubstStmt(Pattern, TemplateArgs);
+      auto ExistingMappings = CalculateExistingMappingsFor(PatternDecl,
+                                                           Function);
+      Body = SubstStmt(Pattern, TemplateArgs, ExistingMappings);
 
       if (Body.isInvalid())
         Function->setInvalidDecl();
@@ -4682,6 +4947,9 @@ void Sema::InstantiateVariableInitializer(
 
     // We'll add an initializer to a for-range declaration later.
     if (Var->isCXXForRangeDecl() || Var->isObjCForDecl())
+      return;
+
+    if (AnalyzingRequiredDeclarator)
       return;
 
     ActOnUninitializedDecl(Var);

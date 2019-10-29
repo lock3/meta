@@ -397,6 +397,11 @@ void ASTStmtWriter::VisitCXXReflectionReadQueryExpr(
   llvm_unreachable("unimplemented");
 }
 
+void ASTStmtWriter::VisitCXXReflectionWriteQueryExpr(
+                                               CXXReflectionWriteQueryExpr *E) {
+  llvm_unreachable("unimplemented");
+}
+
 void ASTStmtWriter::VisitCXXReflectPrintLiteralExpr(
                                                 CXXReflectPrintLiteralExpr *E) {
   llvm_unreachable("unimplemented");
@@ -434,6 +439,10 @@ void ASTStmtWriter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
 }
 
 void ASTStmtWriter::VisitCXXConcatenateExpr(CXXConcatenateExpr *E) {
+  llvm_unreachable("not implemented");
+}
+
+void ASTStmtWriter::VisitCXXFragmentExpr(CXXFragmentExpr *E) {
   llvm_unreachable("not implemented");
 }
 
@@ -1415,6 +1424,18 @@ void ASTStmtWriter::VisitCXXCompositeExpansionStmt(
   VisitStmt(S);
   // FIXME: Implement me.
   Code = serialization::STMT_CXX_COMP_EXPANSION;
+}
+
+void ASTStmtWriter::VisitCXXInjectionStmt(CXXInjectionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_INJECTION;
+}
+
+void ASTStmtWriter::VisitCXXBaseInjectionStmt(CXXBaseInjectionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+  Code = serialization::STMT_CXX_BASE_INJECTION;
 }
 
 void ASTStmtWriter::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {

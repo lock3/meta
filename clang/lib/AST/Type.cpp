@@ -523,6 +523,12 @@ bool Type::isMetaType() const {
   return TypeBits.MetaType;
 }
 
+bool Type::isFragmentType() const {
+  if (CXXRecordDecl *RD = getAsCXXRecordDecl())
+    return RD->isFragment();
+  return false;
+}
+
 bool Type::isObjCBoxableRecordType() const {
   if (const auto *RT = getAs<RecordType>())
     return RT->getDecl()->hasAttr<ObjCBoxableAttr>();
@@ -2414,6 +2420,11 @@ QualType::isNonTrivialToPrimitiveDestructiveMove() const {
 }
 
 bool Type::isLiteralType(const ASTContext &Ctx) const {
+  // Fragments act as literal types even though they're dependent contexts.
+  // Their value is not actually dependent, just the name used internally.
+  if (isFragmentType())
+    return true;
+
   if (isDependentType())
     return false;
 
@@ -3968,6 +3979,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::DependentName:
   case Type::DependentTemplateSpecialization:
   case Type::Auto:
+  case Type::CXXRequiredType:
     return ResultIfUnknown;
 
   // Dependent template specializations can instantiate to pointer

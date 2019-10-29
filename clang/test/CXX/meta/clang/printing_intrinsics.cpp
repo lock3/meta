@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection %s
 
 #include "reflection_query.h"
 
@@ -63,6 +63,12 @@ void test() {
 
 class C {
   int y = 0;
+
+  template<typename T>
+  struct Template {};
+
+  template<>
+  struct Template<int> {};
 };
 
 enum E {

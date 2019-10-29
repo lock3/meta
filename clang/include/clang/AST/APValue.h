@@ -36,6 +36,7 @@ namespace clang {
   class QualType;
   struct PrintingPolicy;
   struct InvalidReflection;
+  class ReflectionModifiers;
 
 /// \brief The kind of construct reflected.
 enum ReflectionKind {
@@ -301,12 +302,14 @@ private:
   };
   struct MemberPointerData;
   struct ReflectionData {
-    ReflectionKind ReflKind;
+    const ReflectionKind ReflKind;
     const void *ReflEntity;
+    const ReflectionModifiers *ReflModifiers;
     unsigned Offset;
     const APValue *Parent;
 
     ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
+                   const ReflectionModifiers &ReflModifiers,
                    unsigned Offset, const APValue *Parent);
     ~ReflectionData();
   };
@@ -369,15 +372,13 @@ public:
       : Kind(None) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
-  APValue(ReflectionKind ReflKind, const void *ReflEntity)
-    : Kind(None) {
-    MakeReflection(ReflKind, ReflEntity, 0, nullptr);
-  }
+
+  APValue(ReflectionKind ReflKind, const void *ReflEntity);
   APValue(ReflectionKind ReflKind, const void *ReflEntity,
-          unsigned Offset, const APValue &Parent)
-    : Kind(None) {
-    MakeReflection(ReflKind, ReflEntity, Offset, &Parent);
-  }
+          const ReflectionModifiers &ReflModifiers);
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+          unsigned Offset, const APValue &Parent);
+
   static APValue IndeterminateValue() {
     APValue Result;
     Result.Kind = Indeterminate;
@@ -618,6 +619,9 @@ public:
   /// Returns the reflected base class specifier.
   const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
 
+  // Returns the modifiers to be applied to the reflection, upon injection.
+  const ReflectionModifiers &getReflectionModifiers() const;
+
   /// Returns the offset into the parent which if
   /// reflected, results in this reflection.
   ///
@@ -745,6 +749,7 @@ private:
     Kind = AddrLabelDiff;
   }
   void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
+                      const ReflectionModifiers &ReflModifiers,
                       unsigned Offset, const APValue *Parent) {
     assert(isAbsent() && "Bad state change");
 
@@ -756,6 +761,7 @@ private:
 #endif
 
     new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
+                                                   ReflModifiers,
                                                    Offset, Parent);
     Kind = Reflection;
   }

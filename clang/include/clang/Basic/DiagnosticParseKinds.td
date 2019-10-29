@@ -385,6 +385,8 @@ def warn_cxx14_compat_static_assert_no_message : Warning<
   DefaultIgnore, InGroup<CXXPre17Compat>;
 def err_function_definition_not_allowed : Error<
   "function definition is not allowed here">;
+def err_expected_enumerator_identifier : Error<
+  "expected an enumerator identifier">;
 def err_expected_end_of_enumerator : Error<
   "expected '= constant-expression' or end of enumerator definition">;
 def err_expected_coloncolon_after_super : Error<
@@ -902,6 +904,9 @@ def warn_cxx17_compat_lambda_template_parameter_list: Warning<
   "C++ standards before C++2a">, InGroup<CXXPre2aCompat>, DefaultIgnore;
 def err_lambda_template_parameter_list_empty : Error<
   "lambda template parameter list cannot be empty">;
+
+// C++ code fragments
+def err_expected_fragment : Error<"expected fragment">;
 
 // Availability attribute
 def err_expected_version : Error<

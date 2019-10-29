@@ -1709,13 +1709,6 @@ static bool isDependent(const Expr *E) {
   return E->isTypeDependent() || E->isValueDependent();
 }
 
-static bool isDependentType(const Decl *D) {
-  if (const TagDecl *TD = dyn_cast<TagDecl>(D))
-    return TD->isDependentType();
-
-  return false;
-}
-
 CXXReflectExpr::CXXReflectExpr(QualType T)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
          false, false, false, false), Ref() { }
@@ -1743,7 +1736,7 @@ CXXReflectExpr::CXXReflectExpr(QualType T, Expr *Arg)
 
 CXXReflectExpr::CXXReflectExpr(QualType T, Decl *Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
-         false, isDependentType(Arg), false, false), Ref(Arg) { }
+         false, false, false, false), Ref(Arg) { }
 
 CXXReflectExpr::CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg)
   : Expr(CXXReflectExprClass, T, VK_RValue, OK_Ordinary,
@@ -1848,6 +1841,18 @@ bool AnyOf(ArrayRef<Expr *> A, P pred) {
   return std::any_of(A.begin(), A.end(), pred);
 }
 
+static bool AnyTypeDependentExprs(ArrayRef<Expr *> Args) {
+  return AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); });
+}
+
+static bool AnyValueDependentExprs(ArrayRef<Expr *> Args) {
+  return AnyOf(Args, [](Expr *E) { return E->isValueDependent(); });
+}
+
+static bool AnyInstantiationDependentExprs(ArrayRef<Expr *> Args) {
+  return AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); });
+}
+
 CXXReflectionReadQueryExpr::CXXReflectionReadQueryExpr(ASTContext &C, QualType T,
                                                        ReflectionQuery Q,
                                                        ArrayRef<Expr *> Args,
@@ -1855,10 +1860,27 @@ CXXReflectionReadQueryExpr::CXXReflectionReadQueryExpr(ASTContext &C, QualType T
                                                        SourceLocation LP,
                                                        SourceLocation RP)
   : Expr(CXXReflectionReadQueryExprClass, T, VK_RValue, OK_Ordinary,
-         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
+         AnyTypeDependentExprs(Args),
+         AnyValueDependentExprs(Args),
+         AnyInstantiationDependentExprs(Args),
+         /*ContainsUnexpandedParameterPack=*/false),
+    Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
+    KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
+  std::copy(Args.begin(), Args.end(), this->Args);
+}
+
+CXXReflectionWriteQueryExpr::CXXReflectionWriteQueryExpr(ASTContext &C,
+                                                         QualType T,
+                                                         ReflectionQuery Q,
+                                                         ArrayRef<Expr *> Args,
+                                                         SourceLocation KW,
+                                                         SourceLocation LP,
+                                                         SourceLocation RP)
+  : Expr(CXXReflectionWriteQueryExprClass, T, VK_RValue, OK_Ordinary,
+         AnyTypeDependentExprs(Args),
+         AnyValueDependentExprs(Args),
+         AnyInstantiationDependentExprs(Args),
+         /*ContainsUnexpandedParameterPack=*/false),
     Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
     KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
   std::copy(Args.begin(), Args.end(), this->Args);
@@ -1869,10 +1891,10 @@ CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
     SourceLocation KeywordLoc,
     SourceLocation LParenLoc, SourceLocation RParenLoc)
   : Expr(CXXReflectPrintLiteralExprClass, T, VK_RValue, OK_Ordinary,
-         AnyOf(Args, [](Expr *E) { return E->isTypeDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Args, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
+         AnyTypeDependentExprs(Args),
+         AnyValueDependentExprs(Args),
+         AnyInstantiationDependentExprs(Args),
+         /*ContainsUnexpandedParameterPack=*/false),
     NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
     KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {
   std::copy(Args.begin(), Args.end(), this->Args);
@@ -1943,10 +1965,25 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
                                        QualType T, SourceLocation L,
                                        ArrayRef<Expr *> Parts)
   : Expr(CXXConcatenateExprClass, T, VK_RValue, OK_Ordinary,
-         false, AnyOf(Parts, [](Expr *E) { return E->isValueDependent(); }),
-         AnyOf(Parts, [](Expr *E) { return E->isInstantiationDependent(); }),
-         false),
+         /*TD=*/false,
+         AnyValueDependentExprs(Parts),
+         AnyInstantiationDependentExprs(Parts),
+         /*ContainsUnexpandedParameterPack=*/false),
     Loc(L), NumOperands(Parts.size()), Operands(new (Ctx) Stmt*[NumOperands])
 {
   std::copy(Parts.begin(), Parts.end(), Operands);
+}
+
+// FIXME: Can a fragment be value dependent?
+CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
+                                 QualType T, CXXFragmentDecl *Frag,
+                                 ArrayRef<Expr *> Caps, Expr *E)
+  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary,
+         /*TD=*/T->isDependentType() || AnyTypeDependentExprs(Caps),
+         /*VD=*/AnyValueDependentExprs(Caps),
+         /*ID=*/AnyInstantiationDependentExprs(Caps),
+         /*ContainsUnexpandedParameterPack=*/false),
+    IntroLoc(IntroLoc), NumCaptures(Caps.size()),
+    Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
+  std::copy(Caps.begin(), Caps.end(), Captures);
 }

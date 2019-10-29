@@ -266,6 +266,15 @@ enum reflection_query : unsigned {
   // Names
   query_get_name,
   query_get_display_name,
+
+  // Modifier updates
+  query_set_access,
+  query_set_storage,
+  query_set_add_constexpr,
+  query_set_add_explicit,
+  query_set_add_virtual,
+  query_set_add_pure_virtual,
+  query_set_new_name
 };
 
 /// Explicit requirements.
@@ -283,6 +292,8 @@ consteval static void require_spec_mem_function(info reflection,
                                                 const char *custom_err = nullptr);
 consteval static void require_function(info reflection,
                                        const char *custom_err = nullptr);
+consteval static void require_ctor_or_conv(info reflection,
+                                           const char *custom_err = nullptr);
 consteval static void require_base_or_mem(info reflection,
                                           const char *custom_err = nullptr);
 consteval static void require_type(info reflection,
@@ -425,6 +436,23 @@ constexpr std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> las
     ++n;
   return n;
 }
+
+// Kinds of access modifiers.
+enum access_modifier : unsigned {
+  am_not_modified,
+  am_default,
+  am_public,
+  am_protected,
+  am_private
+};
+
+// Kinds of storage modifiers.
+enum storage_modifier : unsigned {
+  sm_not_modified,
+  sm_static,
+  sm_automatic,
+  sm_thread_local
+};
 
 } // end internal namespace detail
 
@@ -3184,6 +3212,161 @@ constexpr auto parameters_of(info reflection)
   return iterator();
 }
 
+// Storage
+
+// Updates the value of variable adding an automatic storage modifier.
+// When injected via declaration cloning, this storage modifier will result
+// in the injected declaration having automatic storage.
+//
+// Error if the reflected entity is not a variable.
+// consteval void make_automatic(info& variable) {
+//   detail::require_variable(variable);
+//   __reflect_mod(detail::query_set_storage, variable, detail::sm_automatic);
+// }
+
+// Requires: is_data_member(data_mem)
+//
+// Updates the value of variable adding a static storage modifier.
+// When injected via declaration cloning, this storage modifier will result
+// in the injected declaration having static storage.
+consteval void make_static(info& data_mem) {
+  detail::require_data_member(data_mem);
+  __reflect_mod(detail::query_set_storage, data_mem, detail::sm_static);
+}
+
+// Updates the value of variable adding a thread local storage modifier.
+// When injected via declaration cloning, this storage modifier will result
+// in the injected declaration having thread local storage.
+//
+// Error if the reflected entity is not a variable.
+// consteval void make_thread_local(info& variable) {
+//   detail::require_variable(variable);
+//   __reflect_mod(detail::query_set_storage, variable, detail::sm_thread_local);
+// }
+
+// Requires: is_data_member(data_mem)
+//
+// Updates the value of variable removing any storage modifier.
+// When injected via declaration cloning, the original storage shall be used.
+consteval void clear_storage_modifier(info& data_mem) {
+  detail::require_data_member(data_mem);
+  __reflect_mod(detail::query_set_storage, data_mem, detail::sm_not_modified);
+}
+
+// Access
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Updates the value of base_or_mem adding a default access modifier.
+// When injected via declaration cloning, this access modifier will result
+// in the injected declaration having access equivalent to the default access
+// for members in the given class kind, ie. for injection into a struct this
+// shall be public, for injection into a class this shall be private.
+consteval void make_default(info& base_or_mem) {
+  detail::require_base_or_mem(base_or_mem);
+  __reflect_mod(detail::query_set_access, base_or_mem, detail::am_default);
+}
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Updates the value of base_or_mem adding a public access modifier.
+// When injected via declaration cloning, this access modifier will result
+// in the injected declaration having public access.
+consteval void make_public(info& base_or_mem) {
+  detail::require_base_or_mem(base_or_mem);
+  __reflect_mod(detail::query_set_access, base_or_mem, detail::am_public);
+}
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Updates the value of base_or_mem adding a protected access modifier.
+// When injected via declaration cloning, this access modifier will result
+// in the injected declaration having protected access.
+consteval void make_protected(info& base_or_mem) {
+  detail::require_base_or_mem(base_or_mem);
+  __reflect_mod(detail::query_set_access, base_or_mem, detail::am_protected);
+}
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Updates the value of base_or_mem adding a private access modifier.
+// When injected via declaration cloning, this access modifier will result
+// in the injected declaration having private access.
+consteval void make_private(info& base_or_mem) {
+  detail::require_base_or_mem(base_or_mem);
+  __reflect_mod(detail::query_set_access, base_or_mem, detail::am_private);
+}
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Updates the value of base_or_mem removing any access modifier.
+// When injected via declaration cloning, the original access shall be used.
+consteval void clear_access_modifier(info& base_or_mem) {
+  detail::require_base_or_mem(base_or_mem);
+  __reflect_mod(detail::query_set_access, base_or_mem, detail::am_not_modified);
+}
+
+// Constexpr
+
+// Updates the value of reflection adding a constexpr modifier if true,
+// removing any constexpr modifier if false.
+// When injected via declaration cloning, a constexpr modifier will result
+// in the injected declaration being constexpr.
+consteval void make_constexpr(info& reflection, bool mark_constexpr = true) {
+  __reflect_mod(detail::query_set_add_constexpr, reflection, mark_constexpr);
+}
+
+// Explicit
+
+// Requires: is_constructor(ctor_or_conv) or is_conversion(ctor_or_conv)
+//
+// Updates the value of reflection adding an explicit modifier if true,
+// removing any explicit modifier if false.
+// When injected via declaration cloning, an explicit modifier will result
+// in the injected declaration being explicit.
+consteval void make_explicit(info& ctor_or_conv, bool mark_explicit = true) {
+  detail::require_ctor_or_conv(ctor_or_conv);
+  __reflect_mod(detail::query_set_add_explicit, ctor_or_conv, mark_explicit);
+}
+
+// Virtual
+
+// Requires: is_member_function(mem_function)
+//
+// Updates the value of mem_function adding a virtual modifier if true,
+// removing any virtual modifier if false.
+// When injected via declaration cloning, a virtual modifier will result
+// in the injected declaration being virtual.
+consteval void make_virtual(info& mem_function, bool mark_virtual = true) {
+  detail::require_mem_function(mem_function);
+  __reflect_mod(detail::query_set_add_virtual, mem_function, mark_virtual);
+}
+
+// Requires: is_member_function(mem_function)
+//
+// Updates the value of mem_function adding a pure virtual modifier if true,
+// removing any pure virtual modifier if false.
+// A pure virtual modifier effectively acts implicitly as a virtual modifier
+// if present. When injected via declaration cloning, a pure virtual modifier
+// will result in the injected declaration being pure virtual.
+consteval void make_pure_virtual(info& mem_function, bool mark_pure_virtual = true) {
+  detail::require_mem_function(mem_function);
+  __reflect_mod(detail::query_set_add_pure_virtual, mem_function, mark_pure_virtual);
+}
+
+// Names
+
+// Requires: is_named(named)
+//
+// Updates the value of named adding a name modifier if non-null with the
+// specifier new_name, removing any name modifier if null.
+// When injected via declaration cloning, a name modifier will result
+// in the injected declaration having the specifier name.
+consteval void set_new_name(info& named, const char* new_name) {
+  detail::require_named(named);
+  __reflect_mod(detail::query_set_new_name, named, new_name);
+}
+
 } // inline namespace v1
 
 consteval void
@@ -3265,6 +3448,15 @@ detail::require_function(info reflection, const char *custom_err) {
   if(custom_err)
     __compiler_error(custom_err);
   __compiler_error("Reflected entity must be a function.");
+}
+
+consteval void
+detail::require_ctor_or_conv(info reflection, const char *custom_err) {
+  if (is_constructor(reflection) || is_conversion(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a constructor or a type conversion function.");
 }
 
 consteval void

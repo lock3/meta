@@ -4880,6 +4880,70 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
       if (ESR != ESR_Succeeded)
         return ESR;
     }
+    return ESR_Succeeded;
+  }
+
+  case Stmt::CXXInjectionStmtClass: {
+    if (Info.checkingPotentialConstantExpression())
+      return ESR_Succeeded;
+
+    if (!Info.EvalStatus.InjectionEffects) {
+      // Only metapgrams can produce injection results.
+      Info.CCEDiag(S->getBeginLoc(), diag::note_injection_outside_constexpr_decl);
+      return ESR_Failed;
+    }
+
+    // Compute the value of the injected reflection and its modifications.
+    const CXXInjectionStmt *IS = cast<CXXInjectionStmt>(S);
+    Expr *Operand = IS->getOperand();
+    APValue OperandValue;
+    if (!::EvaluateAsRValue(Info, Operand, OperandValue))
+      return ESR_Failed;
+
+    // If we are injecting a reflection, as apposed to a fragment.
+    // We need to verify that it's actually a reflection of a declaration.
+    QualType OperandType = Operand->getType();
+    if (OperandType->isReflectionType()) {
+      Reflection R(Info.Ctx.ASTCtx, OperandValue);
+      if (R.isInvalid()) {
+        return ESR_Failed;
+      }
+
+      if (!R.getAsReachableDeclaration()) {
+        Info.CCEDiag(S->getBeginLoc(), diag::err_injecting_non_decl_reflection);
+        return ESR_Failed;
+      }
+    }
+
+    CXXInjectionContextSpecifier &&ContextSpecifier = IS->getContextSpecifier();
+
+    // Queue the injection as a side effect.
+    Info.EvalStatus.InjectionEffects->emplace_back(OperandType,
+                                                   OperandValue,
+                                                   ContextSpecifier);
+    return ESR_Succeeded;
+  }
+
+  case Stmt::CXXBaseInjectionStmtClass: {
+    if (Info.checkingPotentialConstantExpression())
+      return ESR_Succeeded;
+
+    if (!Info.EvalStatus.InjectionEffects) {
+      // Only metapgrams can produce injection results.
+      Info.CCEDiag(S->getBeginLoc(), diag::note_injection_outside_constexpr_decl);
+      return ESR_Failed;
+    }
+
+    // Compute the value of the injected reflection and its modifications.
+    const CXXBaseInjectionStmt *IS = cast<CXXBaseInjectionStmt>(S);
+    for (CXXBaseSpecifier *BS : IS->getBaseSpecifiers()) {
+      QualType OperandType = Info.Ctx.ASTCtx.MetaInfoTy;
+      APValue OperandValue = APValue(RK_base_specifier, BS);
+      CXXInjectionContextSpecifier ContextSpecifier;
+
+      Info.EvalStatus.InjectionEffects->emplace_back(OperandType, OperandValue,
+                                                     ContextSpecifier);
+    }
 
     return ESR_Succeeded;
   }
@@ -7234,6 +7298,7 @@ public:
   bool VisitCXXInvalidReflectionExpr(const CXXInvalidReflectionExpr *E);
 
   bool VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *E);
+  bool VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *E);
 
   bool VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
     SmallString<256> Buf;
@@ -7271,6 +7336,19 @@ public:
     if (!Evaluate(Val, Info, Str))
       return false;
     return DerivedSuccess(Val, E);
+  }
+
+  bool VisitCXXFragmentExpr(const CXXFragmentExpr *E) {
+    if (Info.checkingPotentialConstantExpression())
+      return false;
+
+    // Just evaluate the initializer to produce an object of fragment type.
+    // This will also evaluate the captured variables since they are
+    // arguments to the constructor call.
+    APValue Result;
+    if (!Evaluate(Result, Info, E->getInitializer()))
+      return false;
+    return DerivedSuccess(Result, E);
   }
 
   /// Visit a value which is evaluated, but whose value is ignored.
@@ -7371,7 +7449,7 @@ static bool Print(EvalInfo &Info, const Expr *PE, const APValue& EV) {
 }
 
 static void CompletePrint() {
-  llvm::outs() << '\n';
+  llvm::errs() << '\n';
 }
 
 static bool Dump(EvalInfo &Info, const Expr *PE, const APValue& EV) {
@@ -7483,6 +7561,59 @@ bool ExprEvaluatorBase<Derived>::VisitCXXReflectionReadQueryExpr(
     return Error(E);
 
   return DerivedSuccess(Result, E);
+}
+
+template<typename Derived>
+bool ExprEvaluatorBase<Derived>::VisitCXXReflectionWriteQueryExpr(
+                                         const CXXReflectionWriteQueryExpr *E) {
+  const int QUERY_ARG_INDEX             = 0;
+  const int REFLECTION_ARG_INDEX        = 1;
+  const int CONTEXTUAL_ARGS_BEGIN_INDEX = 2;
+
+  SmallVector<APValue, 2> Args(E->getNumArgs());
+  for (std::size_t I = 0; I < Args.size(); ++I) {
+    if (I == REFLECTION_ARG_INDEX)
+      continue;
+
+    const Expr *Arg = E->getArg(I);
+    if (!Evaluate(Args[I], Info, Arg))
+      return false;
+  }
+
+  // This should be equal in integer value to Args[0].
+  ReflectionQuery Query = E->getQuery();
+
+  // Get the reflection's LValue.
+  LValue ReflLVal;
+  if (!EvaluateLValue(E->getArg(REFLECTION_ARG_INDEX), ReflLVal, Info))
+    return false;
+
+  // Get the reflection as an RValue.
+  APValue ReflRVal;
+  if (!handleLValueToRValueConversion(Info, E, E->getType(), ReflLVal,
+                                      ReflRVal))
+    return false;
+
+  // Build the reflection.
+  Reflection R(Info.Ctx.ASTCtx, ReflRVal, E, Info.EvalStatus.Diag);
+
+  APValue Result;
+  bool Ok;
+  if (isModifierUpdateQuery(Query)) {
+    ArrayRef<APValue> ContextualArgs(Args.begin() + CONTEXTUAL_ARGS_BEGIN_INDEX,
+                                     Args.end());
+    Ok = R.UpdateModifier(Query, ContextualArgs, Result);
+  } else
+    return Error(E->getArg(QUERY_ARG_INDEX));
+
+  if (!Ok)
+    return Error(E);
+
+  // Update the reflection's LValue with the new RValue.
+  if (!handleAssignment(Info, E, ReflLVal, E->getType(), Result))
+    return false;
+
+  return true;
 }
 
 } // namespace
@@ -13733,6 +13864,7 @@ public:
 
   bool VisitCXXReflectExpr(const CXXReflectExpr *E);
   bool VisitCXXReflectionReadQueryExpr(const CXXReflectionReadQueryExpr *E);
+  bool VisitCXXReflectionWriteQueryExpr(const CXXReflectionWriteQueryExpr *E);
 
   bool ZeroInitialization(const Expr *E);
 };
@@ -13776,6 +13908,11 @@ bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
 bool ReflectionEvaluator::VisitCXXReflectionReadQueryExpr(
                                           const CXXReflectionReadQueryExpr *E) {
   return BaseType::VisitCXXReflectionReadQueryExpr(E);
+}
+
+bool ReflectionEvaluator::VisitCXXReflectionWriteQueryExpr(
+                                         const CXXReflectionWriteQueryExpr *E) {
+  return BaseType::VisitCXXReflectionWriteQueryExpr(E);
 }
 
 bool ReflectionEvaluator::ZeroInitialization(const Expr *E) {
@@ -14436,6 +14573,7 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CoyieldExprClass:
   case Expr::CXXConcatenateExprClass:
   case Expr::CXXDependentVariadicReifierExprClass:
+  case Expr::CXXFragmentExprClass:
     return ICEDiag(IK_NotICE, E->getBeginLoc());
 
   case Expr::InitListExprClass: {
@@ -14484,6 +14622,7 @@ static ICEDiag CheckICE(const Expr* E, const Expr::EvalContext &Ctx) {
   case Expr::CXXReflectExprClass:
   case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionReadQueryExprClass:
+  case Expr::CXXReflectionWriteQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:

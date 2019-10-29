@@ -1,5 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection -verify %s
-// expected-no-diagnostics
+// RUN: %clang_cc1 -std=c++2a -freflection -verify %s
 
 /// Tuple stuff
 
@@ -164,6 +163,14 @@ void test_nonstatic_constexpr_range() {
   template for (constexpr int n : ints) {
     template for (constexpr int n : ints)
       ;
+  }
+}
+
+void test_invalid_constexpr_range() {
+  template for (constexpr auto n : ints) { // expected-error {{use of undeclared identifier 'ints'}}
+    consteval {
+      (void)__reflect_dump(reflexpr(n));
+    }
   }
 }
 

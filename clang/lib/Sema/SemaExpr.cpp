@@ -2995,7 +2995,8 @@ ExprValueKind Sema::getValueKindForDeclReference(QualType &T, ValueDecl *VD,
       break;
 
     // Non-type template parameters are either l-values or r-values
-    // depending on the type.
+    // depending on the type. Required declarators act similarly.
+    case Decl::CXXRequiredDeclarator:
     case Decl::NonTypeTemplateParm: {
       if (const ReferenceType *reftype = T->getAs<ReferenceType>()) {
         T = reftype->getPointeeType();
@@ -15460,7 +15461,13 @@ static OdrUseContext isOdrUseContext(Sema &SemaRef) {
       break;
   }
 
-  if (SemaRef.CurContext->isDependentContext())
+  // An expression in a template is not really an expression until it's been
+  // instantiated, so it doesn't trigger odr-use.
+  //
+  // Similarly, an expression in a fragment is not really an expression
+  // until it's been injected, so it doesn't trigger odr-use.
+  if (SemaRef.CurContext->isDependentContext() ||
+      SemaRef.CurContext->isFragmentContext())
     return OdrUseContext::Dependent;
 
   // If we're anywhere inside an expansion loop body for
@@ -16136,6 +16143,17 @@ bool Sema::tryCaptureVariable(
   // If the variable is declared in the current context, there is no need to
   // capture it.
   if (VarDC == DC) return true;
+
+  // An exception is made for metaprograms, which behave as though, they share
+  // a scope with their parent inside of a function body.
+  //
+  // As a FIXME: metaprograms should be represented as pseudo-functions,
+  // which should result in this being unnecessary/the exception being made
+  // for pseudo-functions, rather than metaprograms.
+  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(DC)) {
+    if (FD->isMetaprogram() && VarDC == FD->getDeclContext())
+      return true;
+  }
 
   // Capture global variables if it is required to use private copy of this
   // variable.

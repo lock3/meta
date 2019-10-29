@@ -1838,6 +1838,9 @@ void CXXNameMangler::manglePrefix(const DeclContext *DC, bool NoFunction) {
   if (NoFunction && isLocalContainerContext(DC))
     return;
 
+  if (isa<CXXFragmentDecl>(DC))
+    return;
+
   assert(!isLocalContainerContext(DC));
 
   const NamedDecl *ND = cast<NamedDecl>(DC);
@@ -2002,6 +2005,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
   case Type::CXXDependentVariadicReifier:
+  case Type::CXXRequiredType:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -3737,11 +3741,13 @@ recurse:
   case Expr::CXXConstantExprClass:
   case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionReadQueryExprClass:
+  case Expr::CXXReflectionWriteQueryExprClass:
   case Expr::CXXReflectPrintLiteralExprClass:
   case Expr::CXXReflectPrintReflectionExprClass:
   case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
+  case Expr::CXXFragmentExprClass:
   {
     if (!NullOut) {
       // As bad as this diagnostic is, it's better than crashing.

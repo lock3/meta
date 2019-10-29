@@ -1853,6 +1853,18 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while/for condition expression.
   struct ForRangeInfo;
+
+  //===--------------------------------------------------------------------===//
+  // C++ Code Injection
+
+  Decl *ParseNamespaceDeclForInjectionContext();
+  bool ParseOptionalCXXInjectionContextSpecifier(
+                                       CXXInjectionContextSpecifier &Specifier);
+  StmtResult ParseCXXInjectionStatement();
+  StmtResult ParseCXXBaseInjectionStatement();
+
+  //===--------------------------------------------------------------------===//
+  // C++ if/switch/while condition expression.
   Sema::ConditionResult ParseCXXCondition(StmtResult *InitStmt,
                                           SourceLocation Loc,
                                           Sema::ConditionKind CK,
@@ -2165,6 +2177,7 @@ private:
   void ParseEnumSpecifier(SourceLocation TagLoc, DeclSpec &DS,
                           const ParsedTemplateInfo &TemplateInfo,
                           AccessSpecifier AS, DeclSpecContext DSC);
+  bool ParseEnumeratorIdentifier(DeclarationNameInfo &NameInfo);
   void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
   void ParseStructUnionBody(SourceLocation StartLoc, DeclSpec::TST TagType,
                             Decl *TagDecl);
@@ -2777,8 +2790,20 @@ private:
                             SourceLocation AliasLoc, IdentifierInfo *Alias,
                             SourceLocation &DeclEnd);
 
+  Decl *ParseCXXRequiredTypenameDecl(SourceLocation RequiresLoc,
+                                     DeclaratorContext Ctx, AccessSpecifier AS);
+  Decl *ParseCXXRequiredDeclaratorDecl(SourceLocation RequiresLoc,
+                                       DeclaratorContext Ctx,
+                                       AccessSpecifier AS);
+  Decl *ParseCXXRequiredDecl(DeclaratorContext Ctx,
+                             AccessSpecifier AS = AS_none);
+
+private:
+  bool ParsingTypenameRequires = false;
+
   //===--------------------------------------------------------------------===//
   // C++ 9: classes [class] and C structs/unions.
+public:
   bool isValidAfterTypeSpecifier(bool CouldBeBitfield);
   void ParseClassSpecifier(tok::TokenKind TagTokKind, SourceLocation TagLoc,
                            DeclSpec &DS, const ParsedTemplateInfo &TemplateInfo,
@@ -2793,7 +2818,7 @@ private:
                                    SourceLocation AttrFixitLoc,
                                    ParsedAttributesWithRange &Attrs,
                                    unsigned TagType,
-                                   Decl *TagDecl);
+                                   Decl *&TagDecl);
   ExprResult ParseCXXMemberInitializer(Decl *D, bool IsFunction,
                                        SourceLocation &EqualLoc);
   bool ParseCXXMemberDeclaratorBeforeInitializer(Declarator &DeclaratorInfo,
@@ -2828,10 +2853,9 @@ private:
   // C++ 10: Derived classes [class.derived]
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
+  SmallVector<CXXBaseSpecifier *, 8> ParseCXXBaseSpecifierList(Decl *ClassDecl);
   void ParseBaseClause(Decl *ClassDecl);
-  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
-                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
-  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
+  SmallVector<BaseResult, 4> ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -2856,6 +2880,7 @@ private:
   ExprResult ParseCXXReflectExpression();
   ExprResult ParseCXXInvalidReflectionExpression();
   ExprResult ParseCXXReflectionReadQuery();
+  ExprResult ParseCXXReflectionWriteQuery();
   ExprResult ParseCXXReflectPrintLiteralExpression();
   ExprResult ParseCXXReflectPrintReflectionExpression();
   ExprResult ParseCXXReflectDumpReflectionExpression();
@@ -2888,6 +2913,27 @@ private:
 
   /// Parse a __select expression
   ExprResult ParseCXXSelectMemberExpr();
+
+  // C++ Code Fragments
+  Decl *ParseCXXNamespaceFragment(Decl *Fragment);
+  Decl *ParseCXXClassFragment(Decl *Fragment);
+  Decl *ParseCXXEnumFragment(Decl *Fragment);
+  Decl *ParseCXXBlockFragment(Decl *Fragment);
+  Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
+  ExprResult ParseCXXFragmentExpression();
+
+  Decl *MaybeParseCXXInjectorDeclaration();
+  Decl *ParseCXXMetaprogramDeclaration();
+private:
+  Decl *ParseCXXInjectionDeclaration(bool IncludeTerminator);
+public:
+  Decl *ParseCXXInjectionDeclaration();
+  Decl *ParseCXXTerminatedInjectionDeclaration();
+
+  bool ParseCXXInjectedParameter(
+                        SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo);
+
+  DeclGroupPtrTy ParseCXXTypeTransformerDeclaration(SourceLocation UsingLoc);
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.

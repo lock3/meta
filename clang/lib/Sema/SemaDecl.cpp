@@ -1196,6 +1196,13 @@ Sema::getTemplateNameKindForDiagnostics(TemplateName Name) {
   return TemplateNameKindForDiagnostics::DependentTemplate;
 }
 
+static bool isMetaprogram(DeclContext *DC) {
+  if (FunctionDecl *F = cast<FunctionDecl>(DC))
+    return F->isMetaprogram();
+
+  return false;
+}
+
 // Determines the context to return to after temporarily entering a
 // context.  This depends in an unnecessarily complicated way on the
 // exact ordering of callbacks from the parser.
@@ -1213,7 +1220,8 @@ DeclContext *Sema::getContainingDC(DeclContext *DC) {
   // ill-formed fashion (such as to specify the width of a bit-field, or
   // in an array-bound) - in which case we still want to return the
   // lexically containing DC (which could be a nested class).
-  if (isa<FunctionDecl>(DC) && !isLambdaCallOperator(DC)) {
+  if (isa<FunctionDecl>(DC) && !isLambdaCallOperator(DC)
+      && !isMetaprogram(DC)) {
     DC = DC->getLexicalParent();
 
     // A function not defined within a class will always return to its
@@ -6388,6 +6396,9 @@ static bool isIncompleteDeclExternC(Sema &S, const T *D) {
 }
 
 static bool shouldConsiderLinkage(const VarDecl *VD) {
+  if (VD->isInFragment())
+    return false;
+
   const DeclContext *DC = VD->getDeclContext()->getRedeclContext();
   if (DC->isFunctionOrMethod() || isa<OMPDeclareReductionDecl>(DC) ||
       isa<OMPDeclareMapperDecl>(DC))
@@ -6405,6 +6416,8 @@ static bool shouldConsiderLinkage(const FunctionDecl *FD) {
       isa<OMPDeclareReductionDecl>(DC) || isa<OMPDeclareMapperDecl>(DC))
     return true;
   if (DC->isRecord())
+    return false;
+  if (DC->isFragmentContext())
     return false;
   llvm_unreachable("Unexpected context");
 }
@@ -8899,7 +8912,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   }
 
   // Filter out previous declarations that don't match the scope.
-  FilterLookupForScope(Previous, OriginalDC, S, shouldConsiderLinkage(NewFD),
+  FilterLookupForScope(Previous, OriginalDC, S, (AnalyzingRequiredDeclarator
+                       || shouldConsiderLinkage(NewFD)),
                        D.getCXXScopeSpec().isNotEmpty() ||
                        isMemberSpecialization ||
                        isFunctionTemplateSpecialization);
@@ -14702,13 +14716,15 @@ static bool isAcceptableTagRedeclContext(Sema &S, DeclContext *OldDC,
 /// TagSpec indicates what kind of tag this is. TUK indicates whether this is a
 /// reference/declaration/definition of a tag.
 ///
+/// \param Metafunction The generative meta function, if any.
+///
 /// \param IsTypeSpecifier \c true if this is a type-specifier (or
 /// trailing-type-specifier) other than one in an alias-declaration.
 ///
 /// \param SkipBody If non-null, will be set to indicate if the caller should
 /// skip the definition of this tag and treat it as if it were a declaration.
-Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
-                     SourceLocation KWLoc, CXXScopeSpec &SS,
+Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, Expr *Metafunction,
+                     TagUseKind TUK, SourceLocation KWLoc, CXXScopeSpec &SS,
                      IdentifierInfo *Name, SourceLocation NameLoc,
                      const ParsedAttributesView &Attrs, AccessSpecifier AS,
                      SourceLocation ModulePrivateLoc,
@@ -14755,8 +14771,8 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
 
         OwnedDecl = false;
         DeclResult Result = CheckClassTemplate(
-            S, TagSpec, TUK, KWLoc, SS, Name, NameLoc, Attrs, TemplateParams,
-            AS, ModulePrivateLoc,
+            S, TagSpec, Metafunction, TUK, KWLoc, SS, Name, NameLoc, Attrs,
+            TemplateParams, AS, ModulePrivateLoc,
             /*FriendLoc*/ SourceLocation(), TemplateParameterLists.size() - 1,
             TemplateParameterLists.data(), SkipBody);
         return Result.get();
@@ -15476,6 +15492,11 @@ CreateNewDecl:
                                cast_or_null<RecordDecl>(PrevDecl));
   }
 
+  if (Metafunction) {
+    CXXRecordDecl *Class = cast<CXXRecordDecl>(New);
+    New = ActOnStartMetaclass(Class, Metafunction, TUK);
+  }
+
   // C++11 [dcl.type]p3:
   //   A type-specifier-seq shall not define a class or enumeration [...].
   if (getLangOpts().CPlusPlus && (IsTypeSpecifier || IsTemplateParamOrArg) &&
@@ -15586,6 +15607,14 @@ CreateNewDecl:
   if (TUK == TUK_Definition && (!SkipBody || !SkipBody->ShouldSkip))
     New->startDefinition();
 
+  if (Metafunction) {
+    CXXRecordDecl *Proto = cast<CXXRecordDecl>(New);
+    ActOnStartMetaclassDefinition(Proto);
+    // At this point the metaclass prototype should now have the proper
+    // flags set to be identified as a prototype class.
+    assert(Proto->isPrototypeClass());
+  }
+
   ProcessDeclAttributeList(S, New, Attrs);
   AddPragmaAttributes(S, New);
 
@@ -15634,13 +15663,40 @@ CreateNewDecl:
   if (Invalid && getLangOpts().CPlusPlus) {
     if (New->isBeingDefined())
       if (auto RD = dyn_cast<RecordDecl>(New))
-        RD->completeDefinition();
+        CompleteDefinition(RD);
     return nullptr;
   } else if (SkipBody && SkipBody->ShouldSkip) {
     return SkipBody->Previous;
   } else {
     return New;
   }
+}
+
+void Sema::StartDefinition(TagDecl *D) {
+  D->startDefinition();
+}
+
+/// If there are any pending field definitions, we need to
+/// handle them now. At this point we should have a
+/// declaration complete class. Member definitions shall
+/// be handled after all field definitions have been processed,
+/// and the class is otherwise both declaration, and
+/// definition complete.
+static void ProcessFieldInjections(Sema &SemaRef, CXXRecordDecl *D) {
+  if (!D || !SemaRef.ShouldInjectPendingDefinitionsOf(D))
+    return;
+
+  SemaRef.InjectPendingFieldDefinitions();
+}
+
+void Sema::CompleteDefinition(RecordDecl *D) {
+  D->completeDefinition();
+  ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
+}
+
+void Sema::CompleteDefinition(CXXRecordDecl *D, CXXFinalOverriderMap *Map) {
+  D->completeDefinition(Map);
+  ProcessFieldInjections(*this, dyn_cast<CXXRecordDecl>(D));
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
@@ -15714,17 +15770,18 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
          "Broken injected-class-name");
 }
 
-void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
+void Sema::ActOnTagFinishDefinition(Scope *S, Decl *&TagD,
                                     SourceRange BraceRange) {
-  AdjustDeclIfTemplate(TagD);
-  TagDecl *Tag = cast<TagDecl>(TagD);
+  Decl *LocalTagD = TagD;
+  AdjustDeclIfTemplate(LocalTagD);
+  TagDecl *Tag = cast<TagDecl>(LocalTagD);
   Tag->setBraceRange(BraceRange);
 
   // Make sure we "complete" the definition even it is invalid.
   if (Tag->isBeingDefined()) {
     assert(Tag->isInvalidDecl() && "We should already have completed it");
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   if (isa<CXXRecordDecl>(Tag)) {
@@ -15738,9 +15795,22 @@ void Sema::ActOnTagFinishDefinition(Scope *S, Decl *TagD,
       Tag->getDeclContext()->isFileContext())
     Tag->setTopLevelDeclInObjCContainer();
 
-  // Notify the consumer that we've defined a tag.
-  if (!Tag->isInvalidDecl())
+  // If we just finished a prototype, apply it's metaclass to create the
+  // final class.
+  if (CXXRecordDecl *Proto = dyn_cast<CXXRecordDecl>(Tag)) {
+    if (Proto->isPrototypeClass()) {
+      TagD = Tag = ActOnFinishMetaclass(Proto, S, BraceRange);
+    }
+  }
+
+  if (!Tag->isInvalidDecl()) {
+    // Notify the consumer that we've defined a tag.
     Consumer.HandleTagDeclDefinition(Tag);
+
+    // Inject any namespace definitions waiting upon the completion of
+    // the record.
+    InjectPendingNamespaceInjections();
+  }
 }
 
 void Sema::ActOnObjCContainerFinishDefinition() {
@@ -15767,7 +15837,7 @@ void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
   // Make sure we "complete" the definition even it is invalid.
   if (Tag->isBeingDefined()) {
     if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag))
-      RD->completeDefinition();
+      CompleteDefinition(RD);
   }
 
   // We're undoing ActOnTagStartDefinition here, not
@@ -16686,8 +16756,13 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
       }
 
       if (!CXXRecord->isDependentType()) {
-        // Add any implicitly-declared members to this class.
-        AddImplicitlyDeclaredMembersToClass(CXXRecord);
+        // Add any implicitly-declared members to this class, unless
+        // we're handling a prototype class. In the case of a prototype class,
+        // the implicitly declared members shall instead be handled by the
+        // produced metaclass.
+        bool AddImplicityDeclaredMembers = !CXXRecord->isPrototypeClass();
+        if (AddImplicityDeclaredMembers)
+          AddImplicitlyDeclaredMembersToClass(CXXRecord);
 
         if (!CXXRecord->isInvalidDecl()) {
           // If we have virtual base classes, we may end up finding multiple
@@ -16726,7 +16801,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
                 Record->setInvalidDecl();
               }
             }
-            CXXRecord->completeDefinition(&FinalOverriders);
+            CompleteDefinition(CXXRecord, &FinalOverriders);
             Completed = true;
           }
         }
@@ -16734,7 +16809,7 @@ void Sema::ActOnFields(Scope *S, SourceLocation RecLoc, Decl *EnclosingDecl,
     }
 
     if (!Completed)
-      Record->completeDefinition();
+      CompleteDefinition(Record);
 
     // Handle attributes before checking the layout.
     ProcessDeclAttributeList(S, Record, Attrs);
@@ -16916,8 +16991,7 @@ static QualType getNextLargerIntegralType(ASTContext &Context, QualType T) {
 
 EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
                                           EnumConstantDecl *LastEnumConst,
-                                          SourceLocation IdLoc,
-                                          IdentifierInfo *Id,
+                                          const DeclarationNameInfo &NameInfo,
                                           Expr *Val) {
   unsigned IntWidth = Context.getTargetInfo().getIntWidth();
   llvm::APSInt EnumVal(IntWidth);
@@ -16961,9 +17035,9 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
             if (Context.getTargetInfo()
                     .getTriple()
                     .isWindowsMSVCEnvironment()) {
-              Diag(IdLoc, diag::ext_enumerator_too_large) << EltTy;
+              Diag(NameInfo.getLoc(), diag::ext_enumerator_too_large) << EltTy;
             } else {
-              Diag(IdLoc, diag::err_enumerator_too_large) << EltTy;
+              Diag(NameInfo.getLoc(), diag::err_enumerator_too_large) << EltTy;
             }
           }
 
@@ -16987,7 +17061,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
 
           // Complain if the value is not representable in an int.
           if (!isRepresentableIntegerValue(Context, EnumVal, Context.IntTy))
-            Diag(IdLoc, diag::ext_enum_value_not_int)
+            Diag(NameInfo.getLoc(), diag::ext_enum_value_not_int)
               << EnumVal.toString(10) << Val->getSourceRange()
               << (EnumVal.isUnsigned() || EnumVal.isNonNegative());
           else if (!Context.hasSameType(Val->getType(), Context.IntTy)) {
@@ -17045,11 +17119,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           ++EnumVal;
           if (Enum->isFixed())
             // When the underlying type is fixed, this is ill-formed.
-            Diag(IdLoc, diag::err_enumerator_wrapped)
+            Diag(NameInfo.getLoc(), diag::err_enumerator_wrapped)
               << EnumVal.toString(10)
               << EltTy;
           else
-            Diag(IdLoc, diag::ext_enumerator_increment_too_large)
+            Diag(NameInfo.getLoc(), diag::ext_enumerator_increment_too_large)
               << EnumVal.toString(10);
         } else {
           EltTy = T;
@@ -17069,11 +17143,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
         // permits enumerator values that are representable in some larger
         // integral type.
         if (!getLangOpts().CPlusPlus && !T.isNull())
-          Diag(IdLoc, diag::warn_enum_value_overflow);
+          Diag(NameInfo.getLoc(), diag::warn_enum_value_overflow);
       } else if (!getLangOpts().CPlusPlus &&
                  !isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
         // Enforce C99 6.7.2.2p2 even when we compute the next value.
-        Diag(IdLoc, diag::ext_enum_value_not_int)
+        Diag(NameInfo.getLoc(), diag::ext_enum_value_not_int)
           << EnumVal.toString(10) << 1;
       }
     }
@@ -17086,8 +17160,8 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
     EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
   }
 
-  return EnumConstantDecl::Create(Context, Enum, IdLoc, Id, EltTy,
-                                  Val, EnumVal);
+  return EnumConstantDecl::Create(Context, Enum, NameInfo.getLoc(),
+                                  NameInfo.getName(), EltTy, Val, EnumVal);
 }
 
 Sema::SkipBodyInfo Sema::shouldSkipAnonEnumBody(Scope *S, IdentifierInfo *II,
@@ -17117,7 +17191,7 @@ Sema::SkipBodyInfo Sema::shouldSkipAnonEnumBody(Scope *S, IdentifierInfo *II,
 }
 
 Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
-                              SourceLocation IdLoc, IdentifierInfo *Id,
+                              const DeclarationNameInfo &NameInfo,
                               const ParsedAttributesView &Attrs,
                               SourceLocation EqualLoc, Expr *Val) {
   EnumDecl *TheEnumDecl = cast<EnumDecl>(theEnumDecl);
@@ -17130,13 +17204,13 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
 
   // Verify that there isn't already something declared with this name in this
   // scope.
-  LookupResult R(*this, Id, IdLoc, LookupOrdinaryName, ForVisibleRedeclaration);
+  LookupResult R(*this, NameInfo, LookupOrdinaryName, ForVisibleRedeclaration);
   LookupName(R, S);
   NamedDecl *PrevDecl = R.getAsSingle<NamedDecl>();
 
   if (PrevDecl && PrevDecl->isTemplateParameter()) {
     // Maybe we will complain about the shadowed template parameter.
-    DiagnoseTemplateParameterShadow(IdLoc, PrevDecl);
+    DiagnoseTemplateParameterShadow(NameInfo.getLoc(), PrevDecl);
     // Just pretend that we didn't see the previous declaration.
     PrevDecl = nullptr;
   }
@@ -17147,11 +17221,10 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
   // - every enumerator of every member of class T that is an unscoped
   // enumerated type
   if (getLangOpts().CPlusPlus && !TheEnumDecl->isScoped())
-    DiagnoseClassNameShadow(TheEnumDecl->getDeclContext(),
-                            DeclarationNameInfo(Id, IdLoc));
+    DiagnoseClassNameShadow(TheEnumDecl->getDeclContext(), NameInfo);
 
   EnumConstantDecl *New =
-    CheckEnumConstant(TheEnumDecl, LastEnumConst, IdLoc, Id, Val);
+    CheckEnumConstant(TheEnumDecl, LastEnumConst, NameInfo, Val);
   if (!New)
     return nullptr;
 
@@ -17167,10 +17240,11 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
            "Received TagDecl when not in C++!");
     if (!isa<TagDecl>(PrevDecl) && isDeclInScope(PrevDecl, CurContext, S)) {
       if (isa<EnumConstantDecl>(PrevDecl))
-        Diag(IdLoc, diag::err_redefinition_of_enumerator) << Id;
+        Diag(NameInfo.getLoc(), diag::err_redefinition_of_enumerator)
+          << NameInfo.getName();
       else
-        Diag(IdLoc, diag::err_redefinition) << Id;
-      notePreviousDefinition(PrevDecl, IdLoc);
+        Diag(NameInfo.getLoc(), diag::err_redefinition) << NameInfo.getName();
+      notePreviousDefinition(PrevDecl, NameInfo.getLoc());
       return nullptr;
     }
   }
@@ -17377,10 +17451,12 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
 
   if (Enum->isDependentType()) {
     for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
-      EnumConstantDecl *ECD =
-        cast_or_null<EnumConstantDecl>(Elements[i]);
-      if (!ECD) continue;
+      Decl *D = Elements[i];
 
+      if (!D || isa<CXXInjectorDecl>(D))
+        continue;
+
+      EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
       ECD->setType(EnumType);
     }
 
@@ -17404,8 +17480,11 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
   bool AllElementsInt = true;
 
   for (unsigned i = 0, e = Elements.size(); i != e; ++i) {
-    EnumConstantDecl *ECD =
-      cast_or_null<EnumConstantDecl>(Elements[i]);
+    Decl *D = Elements[i];
+    if (!D || isa<CXXInjectorDecl>(D))
+      continue;
+
+    EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
     if (!ECD) continue;  // Already issued a diagnostic.
 
     const llvm::APSInt &InitVal = ECD->getInitVal();
@@ -17521,7 +17600,10 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceRange BraceRange,
   // Loop over all of the enumerator constants, changing their types to match
   // the type of the enum if needed.
   for (auto *D : Elements) {
-    auto *ECD = cast_or_null<EnumConstantDecl>(D);
+    if (!D || isa<CXXInjectorDecl>(D))
+      continue;
+
+    EnumConstantDecl *ECD = cast<EnumConstantDecl>(D);
     if (!ECD) continue;  // Already issued a diagnostic.
 
     // Standard C says the enumerators have int type, but we allow, as an

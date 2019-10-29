@@ -989,6 +989,10 @@ namespace {
                         /* DeclContext *Owner */ Owner, TemplateArgs);
       return DeclInstantiator.SubstTemplateParams(OrigTPL);
     }
+
+    bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                     Decl *OriginalContent,
+                                     Decl *&NewContent);
   private:
     ExprResult transformNonTypeTemplateParmRef(NonTypeTemplateParmDecl *parm,
                                                SourceLocation loc,
@@ -2106,6 +2110,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   Pattern = PatternDef;
 
+  Expr *Metafunction = Pattern->getMetafunction();
+  if (Metafunction)
+    Instantiation = ActOnStartMetaclass(Instantiation, Metafunction);
+
   // Record the point of instantiation.
   if (MemberSpecializationInfo *MSInfo
         = Instantiation->getMemberSpecializationInfo()) {
@@ -2147,6 +2155,9 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   // Start the definition of this instantiation.
   Instantiation->startDefinition();
+
+  if (Instantiation->isPrototypeClass())
+    ActOnStartMetaclassDefinition(Instantiation);
 
   // The instantiation is visible here, even if it was first declared in an
   // unimported module.
@@ -2300,6 +2311,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
       }
     }
   }
+
+  if (Instantiation->isPrototypeClass())
+    ActOnFinishMetaclass(Instantiation, getCurScope(),
+                         Instantiation->getBraceRange());
 
   // Exit the scope of this instantiation.
   SavedContext.pop();
@@ -2674,7 +2689,8 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
   assert(
       (TSK == TSK_ExplicitInstantiationDefinition ||
        TSK == TSK_ExplicitInstantiationDeclaration ||
-       (TSK == TSK_ImplicitInstantiation && Instantiation->isLocalClass())) &&
+       (TSK == TSK_ImplicitInstantiation &&
+        (Instantiation->isLocalClass() || Instantiation->isInFragment()))) &&
       "Unexpected template specialization kind!");
   for (auto *D : Instantiation->decls()) {
     bool SuppressNew = false;
@@ -2901,14 +2917,21 @@ Sema::InstantiateClassTemplateSpecializationMembers(
                           TSK);
 }
 
+using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
+
 StmtResult
-Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
+Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs,
+                const DeclMappingList &ExistingMappings) {
   if (!S)
     return S;
 
   TemplateInstantiator Instantiator(*this, TemplateArgs,
                                     SourceLocation(),
                                     DeclarationName());
+
+  for (const auto& Mapping : ExistingMappings)
+    Instantiator.transformedLocalDecl(Mapping.first, Mapping.second);
+
   return Instantiator.TransformStmt(S);
 }
 
@@ -3143,4 +3166,11 @@ NamedDecl *LocalInstantiationScope::getPartiallySubstitutedPack(
   }
 
   return nullptr;
+}
+
+bool TemplateInstantiator::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
+                                                    Decl *OriginalContent,
+                                                    Decl *&NewContent) {
+  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, TemplateArgs);
+  return !NewContent;
 }

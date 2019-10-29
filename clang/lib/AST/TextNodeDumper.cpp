@@ -1175,6 +1175,10 @@ void TextNodeDumper::VisitUnresolvedUsingType(const UnresolvedUsingType *T) {
   dumpDeclRef(T->getDecl());
 }
 
+void TextNodeDumper::VisitCXXRequiredTypeType(const CXXRequiredTypeType *T) {
+  dumpDeclRef(T->getDecl());
+}
+
 void TextNodeDumper::VisitTypedefType(const TypedefType *T) {
   dumpDeclRef(T->getDecl());
 }
@@ -1513,6 +1517,12 @@ void TextNodeDumper::VisitUsingDirectiveDecl(const UsingDirectiveDecl *D) {
 void TextNodeDumper::VisitNamespaceAliasDecl(const NamespaceAliasDecl *D) {
   dumpName(D);
   dumpDeclRef(D->getAliasedNamespace());
+}
+
+void TextNodeDumper::VisitCXXRequiredDeclaratorDecl(
+                                           const CXXRequiredDeclaratorDecl *D) {
+  dumpName(D);
+  dumpType(D->getTypeSourceInfo()->getType());
 }
 
 void TextNodeDumper::VisitTypeAliasDecl(const TypeAliasDecl *D) {

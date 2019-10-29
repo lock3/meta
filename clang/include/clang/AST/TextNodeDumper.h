@@ -254,6 +254,7 @@ public:
   void VisitCXXThisExpr(const CXXThisExpr *Node);
   void VisitCXXFunctionalCastExpr(const CXXFunctionalCastExpr *Node);
   void VisitCXXUnresolvedConstructExpr(const CXXUnresolvedConstructExpr *Node);
+  void VisitCXXRequiredTypeType(const CXXRequiredTypeType *T);
   void VisitCXXConstructExpr(const CXXConstructExpr *Node);
   void VisitCXXBindTemporaryExpr(const CXXBindTemporaryExpr *Node);
   void VisitCXXNewExpr(const CXXNewExpr *Node);
@@ -316,6 +317,7 @@ public:
   void VisitNamespaceDecl(const NamespaceDecl *D);
   void VisitUsingDirectiveDecl(const UsingDirectiveDecl *D);
   void VisitNamespaceAliasDecl(const NamespaceAliasDecl *D);
+  void VisitCXXRequiredDeclaratorDecl(const CXXRequiredDeclaratorDecl *D);
   void VisitTypeAliasDecl(const TypeAliasDecl *D);
   void VisitTypeAliasTemplateDecl(const TypeAliasTemplateDecl *D);
   void VisitCXXRecordDecl(const CXXRecordDecl *D);

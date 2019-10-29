@@ -15,6 +15,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/Reflection.h"
 #include "clang/AST/Type.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -235,15 +236,18 @@ APValue::UnionData::~UnionData () {
 
 APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
                                         const void *ReflEntity,
+                                        const ReflectionModifiers &ReflModifiers,
                                         unsigned Offset,
                                         const APValue *Parent) :
   ReflKind(ReflKind), ReflEntity(ReflEntity),
+  ReflModifiers(new ReflectionModifiers(ReflModifiers)),
   Offset(Offset), Parent(nullptr) {
   if (Parent)
     this->Parent = new APValue(*Parent);
 }
 
 APValue::ReflectionData::~ReflectionData() {
+  delete ReflModifiers;
   if (Parent)
     delete Parent;
 }
@@ -320,10 +324,27 @@ APValue::APValue(const APValue &RHS) : Kind(None) {
     const APValue *ParentRefl = RHS.hasParentReflection()
                               ? &RHS.getParentReflection() : nullptr;
     MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue(),
+                   RHS.getReflectionModifiers(),
                    RHS.getReflectionOffset(), ParentRefl);
     break;
   }
   }
+}
+
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity)
+  : APValue(ReflKind, ReflEntity, ReflectionModifiers()) {
+}
+
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
+                 const ReflectionModifiers &ReflModifiers)
+    : Kind(None) {
+  MakeReflection(ReflKind, ReflEntity, ReflModifiers, 0, nullptr);
+}
+
+APValue::APValue(ReflectionKind ReflKind, const void *ReflEntity,
+                 unsigned Offset, const APValue &Parent)
+    : Kind(None) {
+  MakeReflection(ReflKind, ReflEntity, ReflectionModifiers(), Offset, &Parent);
 }
 
 void APValue::DestroyDataAndMakeUninit() {
@@ -399,37 +420,6 @@ void APValue::swap(APValue &RHS) {
   memcpy(TmpData, Data.buffer, DataSize);
   memcpy(Data.buffer, RHS.Data.buffer, DataSize);
   memcpy(RHS.Data.buffer, TmpData, DataSize);
-}
-
-bool APValue::isInvalidReflection() const {
-  return getReflectionKind() == RK_invalid;
-}
-
-const InvalidReflection *APValue::getInvalidReflectionInfo() const {
-  assert(getReflectionKind() == RK_invalid);
-
-  using InvalidReflTy = const InvalidReflection *;
-  return reinterpret_cast<InvalidReflTy>(getOpaqueReflectionValue());
-}
-
-QualType APValue::getReflectedType() const {
-  assert(getReflectionKind() == RK_type);
-  return QualType::getFromOpaquePtr(getOpaqueReflectionValue());
-}
-
-const Decl *APValue::getReflectedDeclaration() const {
-  assert(getReflectionKind() == RK_declaration);
-  return reinterpret_cast<const Decl *>(getOpaqueReflectionValue());
-}
-
-const Expr *APValue::getReflectedExpression() const {
-  assert(getReflectionKind() == RK_expression);
-  return reinterpret_cast<const Expr *>(getOpaqueReflectionValue());
-}
-
-const CXXBaseSpecifier *APValue::getReflectedBaseSpecifier() const {
-  assert(getReflectionKind() == RK_base_specifier);
-  return reinterpret_cast<const CXXBaseSpecifier *>(getOpaqueReflectionValue());
 }
 
 LLVM_DUMP_METHOD void APValue::dump() const {
@@ -874,6 +864,42 @@ ArrayRef<const CXXRecordDecl*> APValue::getMemberPointerPath() const {
   const MemberPointerData &MPD =
       *((const MemberPointerData *)(const char *)Data.buffer);
   return llvm::makeArrayRef(MPD.getPath(), MPD.PathLength);
+}
+
+bool APValue::isInvalidReflection() const {
+  return getReflectionKind() == RK_invalid;
+}
+
+const InvalidReflection *APValue::getInvalidReflectionInfo() const {
+  assert(getReflectionKind() == RK_invalid);
+
+  using InvalidReflTy = const InvalidReflection *;
+  return reinterpret_cast<InvalidReflTy>(getOpaqueReflectionValue());
+}
+
+QualType APValue::getReflectedType() const {
+  assert(getReflectionKind() == RK_type);
+  return QualType::getFromOpaquePtr(getOpaqueReflectionValue());
+}
+
+const Decl *APValue::getReflectedDeclaration() const {
+  assert(getReflectionKind() == RK_declaration);
+  return reinterpret_cast<const Decl *>(getOpaqueReflectionValue());
+}
+
+const Expr *APValue::getReflectedExpression() const {
+  assert(getReflectionKind() == RK_expression);
+  return reinterpret_cast<const Expr *>(getOpaqueReflectionValue());
+}
+
+const CXXBaseSpecifier *APValue::getReflectedBaseSpecifier() const {
+  assert(getReflectionKind() == RK_base_specifier);
+  return reinterpret_cast<const CXXBaseSpecifier *>(getOpaqueReflectionValue());
+}
+
+const ReflectionModifiers &APValue::getReflectionModifiers() const {
+  assert(isReflection() && "Invalid accessor");
+  return *(((const ReflectionData*)(const char*)Data.buffer)->ReflModifiers);
 }
 
 void APValue::MakeLValue() {
