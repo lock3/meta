@@ -715,7 +715,7 @@ class ContainsReference : public ConstEvaluatedExprVisitor<ContainsReference> {
 public:
   typedef ConstEvaluatedExprVisitor<ContainsReference> Inherited;
 
-  ContainsReference(ASTContext &Context, const DeclRefExpr *Needle)
+  ContainsReference(const Expr::EvalContext &Context, const DeclRefExpr *Needle)
     : Inherited(Context), FoundReference(false), Needle(Needle) {}
 
   void VisitExpr(const Expr *E) {
@@ -984,7 +984,8 @@ static bool DiagnoseUninitializedUse(Sema &S, const VarDecl *VD,
       if (!alwaysReportSelfInit && DRE == Initializer->IgnoreParenImpCasts())
         return false;
 
-      ContainsReference CR(S.Context, DRE);
+      Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+      ContainsReference CR(EvalCtx, DRE);
       CR.Visit(Initializer);
       if (CR.doesContainReference()) {
         S.Diag(DRE->getBeginLoc(), diag::warn_uninit_self_reference_in_init)
@@ -1301,7 +1302,7 @@ static void DiagnoseSwitchLabelsFallthrough(Sema &S, AnalysisDeclContext &AC,
     S.Diag(F->getBeginLoc(), diag::err_fallthrough_attr_invalid_placement);
 }
 
-static bool isInLoop(const ASTContext &Ctx, const ParentMap &PM,
+static bool isInLoop(const Expr::EvalContext &Ctx, const ParentMap &PM,
                      const Stmt *S) {
   assert(S);
 
@@ -1337,6 +1338,7 @@ static void diagnoseRepeatedUseOfWeak(Sema &S,
   StmtUsesPair;
 
   ASTContext &Ctx = S.getASTContext();
+  Expr::EvalContext EvalCtx(Ctx, S.GetReflectionCallbackObj());
 
   const WeakObjectUseMap &WeakMap = CurFn->getWeakObjectUses();
 
@@ -1368,7 +1370,7 @@ static void diagnoseRepeatedUseOfWeak(Sema &S,
           break;
 
       if (UI2 == UE) {
-        if (!isInLoop(Ctx, PM, UI->getUseExpr()))
+        if (!isInLoop(EvalCtx, PM, UI->getUseExpr()))
           continue;
 
         const WeakObjectProfileTy &Profile = I->first;

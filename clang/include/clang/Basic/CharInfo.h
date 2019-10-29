@@ -60,6 +60,7 @@ LLVM_READONLY inline bool isIdentifierBody(unsigned char c,
   using namespace charinfo;
   if (InfoTable[c] & (CHAR_UPPER|CHAR_LOWER|CHAR_DIGIT|CHAR_UNDER))
     return true;
+
   return AllowDollar && c == '$';
 }
 

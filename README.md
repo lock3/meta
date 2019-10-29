@@ -1,5 +1,7 @@
-# The LLVM Compiler Infrastructure
+# The Lock3 LLVM Reflection & Metaprograming Clang Fork
 
-This directory and its subdirectories contain source code for LLVM,
-a toolkit for the construction of highly optimized compilers,
-optimizers, and runtime environments.
+This repository contains a modified version of the clang compiler for
+reflection (feature/reflect) and metaprogramming (feature/metaprogramming).
+
+To find our more information, including build instructions, please consult
+our wiki: https://gitlab.com/lock3/clang/wikis/home

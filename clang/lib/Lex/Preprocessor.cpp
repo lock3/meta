@@ -877,6 +877,7 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
     ModuleImportExpectsIdentifier = true;
     CurLexerKind = CLK_LexAfterModuleImport;
   }
+
   return true;
 }
 

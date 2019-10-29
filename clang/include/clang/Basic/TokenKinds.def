@@ -329,7 +329,7 @@ KEYWORD(export                      , KEYCXX)
 KEYWORD(false                       , BOOLSUPPORT)
 KEYWORD(friend                      , KEYCXX)
 KEYWORD(mutable                     , KEYCXX)
-KEYWORD(namespace                   , KEYCXX)
+KEYWORD(namespace                   , KEYCXX|KEYREFLECT)
 KEYWORD(new                         , KEYCXX)
 KEYWORD(operator                    , KEYCXX)
 KEYWORD(private                     , KEYCXX)
@@ -342,7 +342,7 @@ KEYWORD(this                        , KEYCXX)
 KEYWORD(throw                       , KEYCXX)
 KEYWORD(true                        , BOOLSUPPORT)
 KEYWORD(try                         , KEYCXX)
-KEYWORD(typename                    , KEYCXX)
+KEYWORD(typename                    , KEYCXX|KEYREFLECT)
 KEYWORD(typeid                      , KEYCXX)
 KEYWORD(using                       , KEYCXX)
 KEYWORD(virtual                     , KEYCXX)
@@ -385,6 +385,21 @@ COROUTINES_KEYWORD(co_yield)
 // C++ modules TS keywords
 MODULES_KEYWORD(module)
 MODULES_KEYWORD(import)
+
+// C++ metaprogramming keywords
+KEYWORD(reflexpr                    , KEYREFLECT)
+KEYWORD(templarg                    , KEYREFLECT)
+KEYWORD(unqualid                    , KEYREFLECT)
+KEYWORD(idexpr                      , KEYREFLECT)
+KEYWORD(valueof                     , KEYREFLECT)
+KEYWORD(__reflect                   , KEYREFLECT)
+KEYWORD(__invalid_reflection        , KEYREFLECT)
+KEYWORD(__reflect_print             , KEYREFLECT)
+KEYWORD(__reflect_pretty_print      , KEYREFLECT)
+KEYWORD(__reflect_dump              , KEYREFLECT)
+KEYWORD(__compiler_error            , KEYREFLECT)
+KEYWORD(__concatenate               , KEYREFLECT)
+KEYWORD(__select_member             , KEYREFLECT)
 
 // C++20 keywords.
 CXX2A_KEYWORD(char8_t               , CHAR8SUPPORT)
@@ -731,6 +746,8 @@ ANNOTATION(template_id)  // annotation for a C++ template-id that names a
 ANNOTATION(primary_expr) // annotation for a primary expression
 ANNOTATION(decltype)     // annotation for a decltype expression,
                          // e.g., "decltype(foo.bar())"
+ANNOTATION(refltype)     // annotation for a reflected type specifier of the
+                         // form "typename(reflection)".
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

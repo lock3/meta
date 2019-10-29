@@ -470,6 +470,7 @@ class CFGBuilder {
   using JumpSource = BlockScopePosPair;
 
   ASTContext *Context;
+  Expr::EvalContext EvalCtx = Expr::EvalContext(*Context, nullptr);
   std::unique_ptr<CFG> cfg;
 
   // Current block.
@@ -531,7 +532,7 @@ class CFGBuilder {
 public:
   explicit CFGBuilder(ASTContext *astContext,
                       const CFG::BuildOptions &buildOpts)
-      : Context(astContext), cfg(new CFG()), // crew a new CFG
+    : Context(astContext), cfg(new CFG()), // crew a new CFG
         ConstructionContextMap(), BuildOpts(buildOpts) {}
 
 
@@ -1070,8 +1071,8 @@ private:
       return {};
 
     Expr::EvalResult L1Result, L2Result;
-    if (!NumExpr1->EvaluateAsInt(L1Result, *Context) ||
-        !NumExpr2->EvaluateAsInt(L2Result, *Context))
+    if (!NumExpr1->EvaluateAsInt(L1Result, EvalCtx) ||
+        !NumExpr2->EvaluateAsInt(L2Result, EvalCtx))
       return {};
 
     llvm::APSInt L1 = L1Result.Val.getInt();
@@ -1145,7 +1146,7 @@ private:
       return false;
     return !S->isTypeDependent() &&
            !S->isValueDependent() &&
-           S->EvaluateAsRValue(outResult, *Context);
+           S->EvaluateAsRValue(outResult, EvalCtx);
   }
 
   /// tryEvaluateBool - Try and evaluate the Stmt and return 0 or 1
@@ -1177,14 +1178,14 @@ private:
             // If either operand is zero, we know the value
             // must be false.
             Expr::EvalResult LHSResult;
-            if (Bop->getLHS()->EvaluateAsInt(LHSResult, *Context)) {
+            if (Bop->getLHS()->EvaluateAsInt(LHSResult, EvalCtx)) {
               llvm::APSInt IntVal = LHSResult.Val.getInt();
               if (!IntVal.getBoolValue()) {
                 return TryResult(false);
               }
             }
             Expr::EvalResult RHSResult;
-            if (Bop->getRHS()->EvaluateAsInt(RHSResult, *Context)) {
+            if (Bop->getRHS()->EvaluateAsInt(RHSResult, EvalCtx)) {
               llvm::APSInt IntVal = RHSResult.Val.getInt();
               if (!IntVal.getBoolValue()) {
                 return TryResult(false);
@@ -1244,7 +1245,7 @@ private:
     }
 
     bool Result;
-    if (E->EvaluateAsBooleanCondition(Result, *Context))
+    if (E->EvaluateAsBooleanCondition(Result, EvalCtx))
       return Result;
 
     return {};
@@ -2560,7 +2561,7 @@ CFGBlock *CFGBuilder::VisitCallExpr(CallExpr *C, AddStmtChoice asc) {
     if (!FD->isVariadic())
       findConstructionContextsForArguments(C);
 
-    if (FD->isNoReturn() || C->isBuiltinAssumeFalse(*Context))
+    if (FD->isNoReturn() || C->isBuiltinAssumeFalse(EvalCtx))
       NoReturn = true;
     if (FD->hasAttr<NoThrowAttr>())
       AddEHEdge = false;
@@ -4065,7 +4066,7 @@ CFGBlock *CFGBuilder::VisitSwitchStmt(SwitchStmt *Terminator) {
 static bool shouldAddCase(bool &switchExclusivelyCovered,
                           const Expr::EvalResult *switchCond,
                           const CaseStmt *CS,
-                          ASTContext &Ctx) {
+                          Expr::EvalContext &EvalCtx) {
   if (!switchCond)
     return true;
 
@@ -4074,7 +4075,7 @@ static bool shouldAddCase(bool &switchExclusivelyCovered,
   if (!switchExclusivelyCovered) {
     if (switchCond->Val.isInt()) {
       // Evaluate the LHS of the case value.
-      const llvm::APSInt &lhsInt = CS->getLHS()->EvaluateKnownConstInt(Ctx);
+      const llvm::APSInt &lhsInt = CS->getLHS()->EvaluateKnownConstInt(EvalCtx);
       const llvm::APSInt &condInt = switchCond->Val.getInt();
 
       if (condInt == lhsInt) {
@@ -4084,7 +4085,7 @@ static bool shouldAddCase(bool &switchExclusivelyCovered,
       else if (condInt > lhsInt) {
         if (const Expr *RHS = CS->getRHS()) {
           // Evaluate the RHS of the case value.
-          const llvm::APSInt &V2 = RHS->EvaluateKnownConstInt(Ctx);
+          const llvm::APSInt &V2 = RHS->EvaluateKnownConstInt(EvalCtx);
           if (V2 >= condInt) {
             addCase = true;
             switchExclusivelyCovered = true;
@@ -4118,7 +4119,7 @@ CFGBlock *CFGBuilder::VisitCaseStmt(CaseStmt *CS) {
 
       addSuccessor(SwitchTerminatedBlock,
                    shouldAddCase(switchExclusivelyCovered, switchCond,
-                                 CS, *Context)
+                                 CS, EvalCtx)
                    ? currentBlock : nullptr);
 
       LastBlock = currentBlock;
@@ -4145,7 +4146,7 @@ CFGBlock *CFGBuilder::VisitCaseStmt(CaseStmt *CS) {
   assert(SwitchTerminatedBlock);
   addSuccessor(SwitchTerminatedBlock, CaseBlock,
                shouldAddCase(switchExclusivelyCovered, switchCond,
-                             CS, *Context));
+                             CS, EvalCtx));
 
   // We set Block to NULL to allow lazy creation of a new block (if necessary)
   Block = nullptr;

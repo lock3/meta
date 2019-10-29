@@ -3476,6 +3476,7 @@ enum CXTemplateArgumentKind {
   CXTemplateArgumentKind_TemplateExpansion,
   CXTemplateArgumentKind_Expression,
   CXTemplateArgumentKind_Pack,
+  CXTemplateArgumentKind_Reflected,
   /* Indicates an error case, preventing the kind from being deduced. */
   CXTemplateArgumentKind_Invalid
 };

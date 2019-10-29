@@ -564,6 +564,9 @@ def ext_constexpr_if : ExtWarn<
 def warn_cxx14_compat_constexpr_if : Warning<
   "constexpr if is incompatible with C++ standards before C++17">,
   DefaultIgnore, InGroup<CXXPre17Compat>;
+// TODO: this should be in a meta group.
+def ext_expansion_stmt : ExtWarn<
+  "Expansion statements are a Reflection extension">, InGroup<CXX17>;
 def ext_init_statement : ExtWarn<
   "'%select{if|switch}0' initialization statements are a C++17 extension">,
   InGroup<CXX17>;
@@ -1314,6 +1317,12 @@ def err_concept_definition_not_identifier : Error<
 def ext_concept_legacy_bool_keyword : ExtWarn<
   "ISO C++2a does not permit the 'bool' keyword after 'concept'">,
   InGroup<DiagGroup<"concepts-ts-compat">>;
+}
+
+let CategoryName = "Reflection Issue" in {
+def err_invalid_reifier_context_parse : Error<
+  "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
+   "reifier in this context: %select{expression|typename}1 expected.">;
 }
 
 } // end of Parser diagnostics

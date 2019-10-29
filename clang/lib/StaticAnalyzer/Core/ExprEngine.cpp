@@ -1211,6 +1211,23 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXTypeidExprClass:
     case Stmt::CXXUuidofExprClass:
     case Stmt::CXXFoldExprClass:
+    case Stmt::CXXConstantExprClass:
+    case Stmt::CXXReflectExprClass:
+    case Stmt::CXXInvalidReflectionExprClass:
+    case Stmt::CXXReflectionReadQueryExprClass:
+    case Stmt::CXXReflectPrintLiteralExprClass:
+    case Stmt::CXXReflectPrintReflectionExprClass:
+    case Stmt::CXXReflectDumpReflectionExprClass:
+    case Stmt::CXXCompilerErrorExprClass:
+    case Stmt::CXXIdExprExprClass:
+    case Stmt::CXXReflectedIdExprClass:
+    case Stmt::CXXValueOfExprClass:
+    case Stmt::CXXConcatenateExprClass:
+    case Stmt::CXXDependentVariadicReifierExprClass:
+    case Stmt::CXXPackExpansionStmtClass:
+    case Stmt::CXXCompositeExpansionStmtClass:
+    case Stmt::CXXSelectMemberExprClass:
+    case Stmt::CXXSelectPackExprClass:
     case Stmt::MSPropertyRefExprClass:
     case Stmt::MSPropertySubscriptExprClass:
     case Stmt::CXXUnresolvedConstructExprClass:
@@ -2358,13 +2375,14 @@ void ExprEngine::processSwitch(SwitchNodeBuilder& builder) {
     const CaseStmt *Case = I.getCase();
 
     // Evaluate the LHS of the case value.
-    llvm::APSInt V1 = Case->getLHS()->EvaluateKnownConstInt(getContext());
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
+    llvm::APSInt V1 = Case->getLHS()->EvaluateKnownConstInt(EvalCtx);
     assert(V1.getBitWidth() == getContext().getIntWidth(CondE->getType()));
 
     // Get the RHS of the case, if it exists.
     llvm::APSInt V2;
     if (const Expr *E = Case->getRHS())
-      V2 = E->EvaluateKnownConstInt(getContext());
+      V2 = E->EvaluateKnownConstInt(EvalCtx);
     else
       V2 = V1;
 

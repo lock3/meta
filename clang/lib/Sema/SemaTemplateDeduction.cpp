@@ -363,6 +363,10 @@ checkDeducedTemplateArguments(ASTContext &Context,
         TemplateArgument::CreatePackCopy(Context, NewPack),
         X.wasDeducedFromArrayBound() && Y.wasDeducedFromArrayBound());
   }
+
+  case TemplateArgument::Reflected:
+    llvm_unreachable("You cannot deduce a reflected template argument");
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -443,8 +447,9 @@ static Sema::TemplateDeductionResult DeduceNullPtrTemplateArgument(
                           NullPtrType, CK_NullToPointer)
           .get();
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
-                                       Value->getType(), Info, Deduced);
+      DeducedTemplateArgument(
+          TemplateArgument(Value, TemplateArgument::Expression)),
+      Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -456,8 +461,9 @@ static Sema::TemplateDeductionResult DeduceNonTypeTemplateArgument(
     NonTypeTemplateParmDecl *NTTP, Expr *Value, TemplateDeductionInfo &Info,
     SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   return DeduceNonTypeTemplateArgument(S, TemplateParams, NTTP,
-                                       DeducedTemplateArgument(Value),
-                                       Value->getType(), Info, Deduced);
+      DeducedTemplateArgument(
+          TemplateArgument(Value, TemplateArgument::Expression)),
+      Value->getType(), Info, Deduced);
 }
 
 /// Deduce the value of the given non-type template parameter
@@ -2100,11 +2106,13 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::DependentName:
     case Type::UnresolvedUsing:
     case Type::Decltype:
+    case Type::Reflected:
     case Type::UnaryTransform:
     case Type::Auto:
     case Type::DeducedTemplateSpecialization:
     case Type::DependentTemplateSpecialization:
     case Type::PackExpansion:
+    case Type::CXXDependentVariadicReifier:
     case Type::Pipe:
       // No template argument deduction for these types
       return Sema::TDK_Success;
@@ -2222,6 +2230,10 @@ DeduceTemplateArguments(Sema &S,
 
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
+
+  case TemplateArgument::Reflected:
+    llvm_unreachable("You cannot deduce a reflected template argument");
+
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -2402,6 +2414,7 @@ static bool isSameTemplateArg(ASTContext &Context,
     case TemplateArgument::Integral:
       return hasSameExtendedValue(X.getAsIntegral(), Y.getAsIntegral());
 
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       llvm::FoldingSetNodeID XID, YID;
       X.getAsExpr()->Profile(XID, Context, true);
@@ -2455,7 +2468,8 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
       NTTPType = Arg.getParamTypeForDecl();
     Expr *E = BuildExpressionFromDeclTemplateArgument(Arg, NTTPType, Loc)
                   .getAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
   case TemplateArgument::NullPtr: {
@@ -2470,27 +2484,29 @@ Sema::getTrivialTemplateArgumentLoc(const TemplateArgument &Arg,
   case TemplateArgument::Integral: {
     Expr *E =
         BuildExpressionFromIntegralTemplateArgument(Arg, Loc).getAs<Expr>();
-    return TemplateArgumentLoc(TemplateArgument(E), E);
+    return TemplateArgumentLoc(
+        TemplateArgument(E, TemplateArgument::Expression), E);
   }
 
-    case TemplateArgument::Template:
-    case TemplateArgument::TemplateExpansion: {
-      NestedNameSpecifierLocBuilder Builder;
-      TemplateName Template = Arg.getAsTemplate();
-      if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
-        Builder.MakeTrivial(Context, DTN->getQualifier(), Loc);
-      else if (QualifiedTemplateName *QTN =
-                   Template.getAsQualifiedTemplateName())
-        Builder.MakeTrivial(Context, QTN->getQualifier(), Loc);
+  case TemplateArgument::Template:
+  case TemplateArgument::TemplateExpansion: {
+    NestedNameSpecifierLocBuilder Builder;
+    TemplateName Template = Arg.getAsTemplate();
+    if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
+      Builder.MakeTrivial(Context, DTN->getQualifier(), Loc);
+    else if (QualifiedTemplateName *QTN =
+                 Template.getAsQualifiedTemplateName())
+      Builder.MakeTrivial(Context, QTN->getQualifier(), Loc);
 
-      if (Arg.getKind() == TemplateArgument::Template)
-        return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                                   Loc);
-
+    if (Arg.getKind() == TemplateArgument::Template)
       return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
-                                 Loc, Loc);
-    }
+                                 Loc);
 
+    return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(Context),
+                               Loc, Loc);
+  }
+
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
 
@@ -5580,6 +5596,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                  OnlyDeduced, Depth, Used);
     break;
 
+  case Type::Reflected:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(Ctx,
+                                 cast<ReflectedType>(T)->getReflection(),
+                                 OnlyDeduced, Depth, Used);
+    break;
+
   case Type::UnaryTransform:
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(Ctx,
@@ -5611,6 +5634,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
   case Type::ObjCObjectPointer:
   case Type::UnresolvedUsing:
   case Type::Pipe:
+  case Type::CXXDependentVariadicReifier:
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)
@@ -5651,6 +5675,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
                                OnlyDeduced, Depth, Used);
     break;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     MarkUsedTemplateParameters(Ctx, TemplateArg.getAsExpr(), OnlyDeduced,
                                Depth, Used);

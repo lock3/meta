@@ -273,6 +273,13 @@ class VarDecl;
     /// lookup will search our outer scope.
     bool CombineWithOuterScope;
 
+  public:
+    /// Whether we should allow uninstatiated decls to be used
+    /// if no instantiated version can be found. Used for
+    /// expansion statements.
+    const bool AllowUninstantiated;
+
+  private:
     /// If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack = nullptr;
@@ -287,9 +294,11 @@ class VarDecl;
     unsigned NumArgsInPartiallySubstitutedPack;
 
   public:
-    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
+    LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false,
+                            bool AllowUninstantiated = false)
         : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
-          CombineWithOuterScope(CombineWithOuterScope) {
+          CombineWithOuterScope(CombineWithOuterScope),
+          AllowUninstantiated(AllowUninstantiated) {
       SemaRef.CurrentInstantiationScope = this;
     }
 
@@ -376,6 +385,12 @@ class VarDecl;
     /// returns NULL.
     llvm::PointerUnion<Decl *, DeclArgumentPack *> *
     findInstantiationOf(const Decl *D);
+
+    /// Like above, but returns a nullptr if there is no local
+    /// declaration.
+    llvm::PointerUnion<Decl *, DeclArgumentPack *> *
+    lookupInstantiationOf(const Decl *D);
+
 
     void InstantiatedLocal(const Decl *D, Decl *Inst);
     void InstantiatedLocalPackArg(const Decl *D, VarDecl *Inst);

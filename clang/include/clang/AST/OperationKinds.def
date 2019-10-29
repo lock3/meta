@@ -300,6 +300,10 @@ CAST_OPERATION(IntegralComplexCast)
 ///   _Complex unsigned -> _Complex float
 CAST_OPERATION(IntegralComplexToFloatingComplex)
 
+/// Converts from a reflection to a bool by comparing against
+/// the invalid reflection.
+CAST_OPERATION(ReflectionToBoolean)
+
 /// [ARC] Produces a retainable object pointer so that it may
 /// be consumed, e.g. by being passed to a consuming parameter.
 /// Calls objc_retain.

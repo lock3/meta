@@ -221,7 +221,7 @@ namespace clang {
 
     // Always use these functions to create a Decl during import. There are
     // certain tasks which must be done after the Decl was created, e.g. we
-    // must immediately register that as an imported Decl.  The parameter `ToD`
+    // must immediatey register that as an imported Decl.  The parameter `ToD`
     // will be set to the newly created Decl or if had been imported before
     // then to the already imported Decl.  Returns a bool value set to true if
     // the `FromD` had been imported before.
@@ -346,6 +346,8 @@ namespace clang {
     ExpectedType VisitElaboratedType(const ElaboratedType *T);
     ExpectedType VisitDependentNameType(const DependentNameType *T);
     ExpectedType VisitPackExpansionType(const PackExpansionType *T);
+    ExpectedType VisitCXXDependentVariadicReifierType
+    (const CXXDependentVariadicReifierType *T);
     ExpectedType VisitDependentTemplateSpecializationType(
         const DependentTemplateSpecializationType *T);
     ExpectedType VisitObjCInterfaceType(const ObjCInterfaceType *T);
@@ -787,9 +789,10 @@ ASTNodeImporter::import(const TemplateArgument &From) {
         *ToTemplateOrErr, From.getNumTemplateExpansions());
   }
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (ExpectedExpr ToExpr = import(From.getAsExpr()))
-      return TemplateArgument(*ToExpr);
+      return TemplateArgument(*ToExpr, From.getKind());
     else
       return ToExpr.takeError();
 
@@ -1451,6 +1454,14 @@ ASTNodeImporter::VisitPackExpansionType(const PackExpansionType *T) {
                                                       T->getNumExpansions());
 }
 
+ExpectedType
+ASTNodeImporter::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType *T) {
+  return Importer.getToContext().
+    getCXXDependentVariadicReifierType(T->getRange(), T->getBeginLoc(),
+                                       T->getEllipsisLoc(), T->getEndLoc());
+}
+
 ExpectedType ASTNodeImporter::VisitDependentTemplateSpecializationType(
     const DependentTemplateSpecializationType *T) {
   auto ToQualifierOrErr = import(T->getQualifier());
@@ -1652,6 +1663,14 @@ ASTNodeImporter::ImportDeclarationNameLoc(
       To.setNamedTypeInfo(*ToTInfoOrErr);
     else
       return ToTInfoOrErr.takeError();
+    return Error::success();
+  }
+  case DeclarationName::CXXReflectedIdName: {
+    SourceRange Range = From.getCXXOperatorNameRange();
+    if (Expected<SourceRange> ToSourceRange = import(Range))
+      To.setCXXReflectedIdNameRange(*ToSourceRange);
+    else
+      return ToSourceRange.takeError();
     return Error::success();
   }
   }
@@ -8676,6 +8695,9 @@ Expected<DeclarationName> ASTImporter::Import(DeclarationName FromName) {
   case DeclarationName::CXXLiteralOperatorName:
     return ToContext.DeclarationNames.getCXXLiteralOperatorName(
         Import(FromName.getCXXLiteralIdentifier()));
+
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
 
   case DeclarationName::CXXUsingDirective:
     // FIXME: STATICS!

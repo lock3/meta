@@ -14,6 +14,7 @@
 #define LLVM_CLANG_AST_TYPEVISITOR_H
 
 #include "clang/AST/Type.h"
+#include "clang/AST/LocInfoType.h"
 
 namespace clang {
 
@@ -66,6 +67,9 @@ public:
 
   /// Performs the operation associated with this visitor object.
   RetTy Visit(const Type *T) {
+    if (const LocInfoType *LIT = dyn_cast<LocInfoType>(T))
+      return Visit(LIT->getType().getTypePtr());
+
     // Top switch stmt: dispatch to VisitFooType for each FooType.
     switch (T->getTypeClass()) {
 #define ABSTRACT_TYPE(CLASS, PARENT)

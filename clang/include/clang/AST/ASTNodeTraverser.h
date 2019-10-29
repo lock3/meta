@@ -515,10 +515,11 @@ public:
   }
 
   void VisitNonTypeTemplateParmDecl(const NonTypeTemplateParmDecl *D) {
-    if (D->hasDefaultArgument())
-      Visit(D->getDefaultArgument(), SourceRange(),
-            D->getDefaultArgStorage().getInheritedFrom(),
+    if (D->hasDefaultArgument()) {
+      TemplateArgument Arg(D->getDefaultArgument(), TemplateArgument::Expression);
+      Visit(Arg, SourceRange(), D->getDefaultArgStorage().getInheritedFrom(),
             D->defaultArgumentWasInherited() ? "inherited from" : "previous");
+    }
   }
 
   void VisitTemplateTemplateParmDecl(const TemplateTemplateParmDecl *D) {

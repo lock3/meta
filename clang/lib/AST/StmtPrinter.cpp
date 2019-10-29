@@ -360,6 +360,36 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   PrintControlledStmt(Node->getBody());
 }
 
+void StmtPrinter::VisitCXXCompositeExpansionStmt(
+                                              CXXCompositeExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeInit());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
+void StmtPrinter::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *Node) {
+  Indent() << "for... (";
+  PrintingPolicy SubPolicy(Policy);
+  SubPolicy.SuppressInitializers = true;
+  Node->getLoopVariable()->print(OS, SubPolicy, IndentLevel);
+  OS << " : ";
+  PrintExpr(Node->getRangeExpr());
+  OS << ") {\n";
+  PrintStmt(Node->getBody());
+  Indent() << "}";
+  if (Policy.IncludeNewlines)
+    OS << "\n";
+}
+
+
 void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
   Indent();
   if (Node->isIfExists())
@@ -1319,6 +1349,22 @@ void StmtPrinter::VisitOMPArraySectionExpr(OMPArraySectionExpr *Node) {
   OS << "]";
 }
 
+void StmtPrinter::VisitCXXSelectMemberExpr(CXXSelectMemberExpr *Node) {
+  OS << "__select_member(";
+  PrintExpr(Node->getBase());
+  OS << ", ";
+  PrintExpr(Node->getSelector());
+  OS << ")";
+}
+
+void StmtPrinter::VisitCXXSelectPackExpr(CXXSelectPackExpr *Node) {
+  OS << "__select_member(";
+  PrintExpr(Node->getBase());
+  OS << ", ";
+  PrintExpr(Node->getSelector());
+  OS << ")";
+}
+
 void StmtPrinter::PrintCallArgs(CallExpr *Call) {
   for (unsigned i = 0, e = Call->getNumArgs(); i != e; ++i) {
     if (isa<CXXDefaultArgExpr>(Call->getArg(i))) {
@@ -2253,6 +2299,121 @@ void StmtPrinter::VisitDependentCoawaitExpr(DependentCoawaitExpr *S) {
 void StmtPrinter::VisitCoyieldExpr(CoyieldExpr *S) {
   OS << "co_yield ";
   PrintExpr(S->getOperand());
+}
+
+void StmtPrinter::VisitCXXConstantExpr(CXXConstantExpr *S) {
+  PrintExpr(S->getExpression());
+}
+
+void StmtPrinter::VisitCXXReflectExpr(CXXReflectExpr *S) {
+  OS << "reflexpr(...)";
+  #if 0
+  OS << "reflexpr(";
+  APValue Reflection = S->getValue();
+  if (const Decl *D = getAsReflectedDeclaration(Reflection)) {
+    if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
+      OS << ND->getDeclName();
+    else
+      OS << "<non-printable>"; // FIXME: ???
+  } else if (const Type *T = getAsReflectedType(Reflection)) {
+    QualType(T, 0).print(OS, Policy);
+  } else {
+    llvm_unreachable("invalid reflection");
+  }
+  OS << ")";
+  #endif
+}
+
+void StmtPrinter::VisitCXXInvalidReflectionExpr(CXXInvalidReflectionExpr *E) {
+  OS << "__invalid_reflection(";
+  PrintExpr(E->getMessage());
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectionReadQueryExpr(
+                                                CXXReflectionReadQueryExpr *E) {
+  OS << "__reflect(";
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectPrintLiteralExpr(
+                                                CXXReflectPrintLiteralExpr *E) {
+  OS << "__reflect_print(";
+  for (unsigned i = 0; i < E->getNumArgs(); ++i) {
+    PrintExpr(E->getArg(i));
+    if (i + 1 != E->getNumArgs())
+      OS << ", ";
+  }
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectPrintReflectionExpr(
+                                             CXXReflectPrintReflectionExpr *E) {
+  OS << "__reflect_pretty_print(";
+  PrintExpr(E->getReflection());
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXReflectDumpReflectionExpr(
+                                              CXXReflectDumpReflectionExpr *E) {
+  OS << "__reflect_dump(";
+  PrintExpr(E->getReflection());
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXCompilerErrorExpr(CXXCompilerErrorExpr *E) {
+  OS << "__compiler_error(";
+  PrintExpr(E->getMessage());
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXIdExprExpr(CXXIdExprExpr *E) {
+  OS << "idexpr(...)"; // TODO Finish this
+}
+
+void StmtPrinter::VisitCXXReflectedIdExpr(CXXReflectedIdExpr *Node) {
+  OS << "(. " << Node->getNameInfo() << " .)";
+}
+
+void StmtPrinter::VisitCXXValueOfExpr(CXXValueOfExpr *E) {
+  OS << "valueof(...)"; // TODO Finish this
+}
+
+void StmtPrinter::VisitCXXConcatenateExpr(CXXConcatenateExpr *Node) {
+  OS << "__concatenate" << '(';
+  CXXConcatenateExpr::child_range Ch = Node->children();
+  for (auto I = Ch.begin(); I != Ch.end(); ++I) {
+    if (I != Ch.begin())
+      OS << ", ";
+    PrintStmt(*I);
+  }
+  OS << ')';
+}
+
+void StmtPrinter::VisitCXXDependentVariadicReifierExpr(
+  CXXDependentVariadicReifierExpr *E) {
+  // TODO Finish this
+  switch(E->getKeywordId()) {
+  case tok::kw_valueof:
+    OS << "valueof(...)";
+    break;
+  case tok::kw_idexpr:
+    OS << "idexpr(...)";
+    break;
+  case tok::kw_unqualid:
+    OS << "unqualid(...)";
+    break;
+  case tok::kw_typename:
+    OS << "typename(...)";
+    break;
+  default:
+    break;
+  }
 }
 
 // Obj-C

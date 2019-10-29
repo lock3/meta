@@ -89,6 +89,10 @@ public:
 // CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams distribute parallel for private(this->a) private(this->a) private(this->S::a)
 // CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute parallel for private(this->a) private(this->a)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute parallel for default(none) private(b) firstprivate(argv) shared(d) reduction(+: c) reduction(max: e) num_teams(f) thread_limit(d) copyin(x)
+// CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams distribute parallel for private(this->a) private(this->a) private(this->S7<S>::a)
 // CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams distribute parallel for private(this->a) private(this->a)

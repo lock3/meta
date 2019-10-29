@@ -2170,6 +2170,8 @@ public:
                             TBAAAccessInfo *TBAAInfo = nullptr);
   LValue EmitLoadOfPointerLValue(Address Ptr, const PointerType *PtrTy);
 
+  llvm::Constant *EmitConstantValue(const APValue &Value, QualType DestType);
+
   /// CreateTempAlloca - This creates an alloca and inserts it into the entry
   /// block if \p ArraySize is nullptr, otherwise inserts it at the current
   /// insertion point of the builder. The caller is responsible for setting an
@@ -2953,6 +2955,10 @@ public:
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
+  void EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
+                            ArrayRef<const Attr *> Attrs = None);
+  void EmitCXXCompositeExpansionStmt(const CXXCompositeExpansionStmt &S,
+                                     ArrayRef<const Attr *> Attrs = None);
 
   /// Controls insertion of cancellation exit blocks in worksharing constructs.
   class OMPCancelStackRAII {
@@ -3502,6 +3508,8 @@ public:
                                 bool Accessed = false);
   LValue EmitOMPArraySectionExpr(const OMPArraySectionExpr *E,
                                  bool IsLowerBound = true);
+  LValue EmitCXXSelectMemberExpr(const CXXSelectMemberExpr *E);
+  LValue EmitCXXSelectPackExpr(const CXXSelectPackExpr *E);
   LValue EmitExtVectorElementExpr(const ExtVectorElementExpr *E);
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);

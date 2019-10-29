@@ -623,6 +623,11 @@ void TextNodeDumper::VisitPackTemplateArgument(const TemplateArgument &) {
   OS << " pack";
 }
 
+void TextNodeDumper::VisitReflectedTemplateArgument(const TemplateArgument &TA) {
+  OS << " reflected ";
+  TA.getAsExpr()->dump(OS);
+}
+
 static void dumpBasePath(raw_ostream &OS, const CastExpr *Node) {
   if (Node->path_empty())
     return;

@@ -2853,7 +2853,20 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
     return;
 
   SourceLocation EllipsisLoc;
-  ExprResult ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
+
+  ExprResult ArgExpr;
+  ArgsVector ArgExprs;
+
+  if (isVariadicReifier()) {
+    llvm::SmallVector<Expr*, 4> ExpandedAlignments;
+    if(ParseVariadicReifier(ExpandedAlignments)) {
+      T.skipToEnd();
+      return;
+    }
+
+    ArgExprs.append(ExpandedAlignments.begin(), ExpandedAlignments.end());
+  } else
+    ArgExpr = ParseAlignArgument(T.getOpenLocation(), EllipsisLoc);
   if (ArgExpr.isInvalid()) {
     T.skipToEnd();
     return;
@@ -2863,7 +2876,6 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
   if (EndLoc)
     *EndLoc = T.getCloseLocation();
 
-  ArgsVector ArgExprs;
   ArgExprs.push_back(ArgExpr.get());
   Attrs.addNew(KWName, KWLoc, nullptr, KWLoc, ArgExprs.data(), 1,
                ParsedAttr::AS_Keyword, EllipsisLoc);
@@ -3251,6 +3263,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       continue;
     }
 
+    case tok::annot_refltype:
     case tok::annot_typename: {
       // If we've previously seen a tag definition, we were almost surely
       // missing a semicolon after it.
@@ -4819,6 +4832,10 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
     // typedef-name
   case tok::annot_typename:
     return true;
+
+    // [Meta] reflected-type-specifier
+  case tok::annot_refltype:
+    return true;
   }
 }
 
@@ -4906,6 +4923,10 @@ bool Parser::isTypeSpecifierQualifier() {
 
     // typedef-name
   case tok::annot_typename:
+    return true;
+
+    // [Meta] reflected-type-specifiers
+  case tok::annot_refltype:
     return true;
 
     // GNU ObjC bizarre protocol extension: <proto1,proto2> with implicit 'id'.
@@ -5087,6 +5108,9 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     // C++11 decltype and constexpr.
   case tok::annot_decltype:
   case tok::kw_constexpr:
+
+    // [Meta] reflected-type-specifier
+  case tok::annot_refltype:
 
     // C++20 consteval and constinit.
   case tok::kw_consteval:
@@ -5805,7 +5829,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     }
 
     if (Tok.isOneOf(tok::identifier, tok::kw_operator, tok::annot_template_id,
-                    tok::tilde)) {
+                    tok::tilde, tok::kw_unqualid)) {
       // We found something that indicates the start of an unqualified-id.
       // Parse that unqualified-id.
       bool AllowConstructorName;

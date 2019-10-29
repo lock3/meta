@@ -1249,12 +1249,10 @@ static bool checkTupleLikeDecomposition(Sema &S,
   return false;
 }
 
-/// Find the base class to decompose in a built-in decomposition of a class type.
-/// This base class search is, unfortunately, not quite like any other that we
-/// perform anywhere else in C++.
-static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
-                                                const CXXRecordDecl *RD,
-                                                CXXCastPath &BasePath) {
+DeclAccessPair
+Sema::FindDecomposableBaseClass(SourceLocation Loc,
+                                const CXXRecordDecl *RD,
+                                CXXCastPath &BasePath) {
   auto BaseHasFields = [](const CXXBaseSpecifier *Specifier,
                           CXXBasePath &Path) {
     return Specifier->getType()->getAsCXXRecordDecl()->hasDirectFields();
@@ -1281,10 +1279,10 @@ static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
     for (auto &P : Paths) {
       if (!BestPath)
         BestPath = &P;
-      else if (!S.Context.hasSameType(P.back().Base->getType(),
+      else if (!Context.hasSameType(P.back().Base->getType(),
                                       BestPath->back().Base->getType())) {
         //   ... the same ...
-        S.Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
+        Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
           << false << RD << BestPath->back().Base->getType()
           << P.back().Base->getType();
         return DeclAccessPair();
@@ -1295,26 +1293,26 @@ static DeclAccessPair findDecomposableBaseClass(Sema &S, SourceLocation Loc,
 
     //   ... unambiguous ...
     QualType BaseType = BestPath->back().Base->getType();
-    if (Paths.isAmbiguous(S.Context.getCanonicalType(BaseType))) {
-      S.Diag(Loc, diag::err_decomp_decl_ambiguous_base)
-        << RD << BaseType << S.getAmbiguousPathsDisplayString(Paths);
+    if (Paths.isAmbiguous(Context.getCanonicalType(BaseType))) {
+      Diag(Loc, diag::err_decomp_decl_ambiguous_base)
+        << RD << BaseType << getAmbiguousPathsDisplayString(Paths);
       return DeclAccessPair();
     }
 
     //   ... [accessible, implied by other rules] base class of E.
-    S.CheckBaseClassAccess(Loc, BaseType, S.Context.getRecordType(RD),
+    CheckBaseClassAccess(Loc, BaseType, Context.getRecordType(RD),
                            *BestPath, diag::err_decomp_decl_inaccessible_base);
     AS = BestPath->Access;
 
     ClassWithFields = BaseType->getAsCXXRecordDecl();
-    S.BuildBasePathArray(Paths, BasePath);
+    BuildBasePathArray(Paths, BasePath);
   }
 
   // The above search did not check whether the selected class itself has base
   // classes with fields, so check that now.
   CXXBasePaths Paths;
   if (ClassWithFields->lookupInBases(BaseHasFields, Paths)) {
-    S.Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
+    Diag(Loc, diag::err_decomp_decl_multiple_bases_with_members)
       << (ClassWithFields == RD) << RD << ClassWithFields
       << Paths.front().back().Base->getType();
     return DeclAccessPair();
@@ -1332,7 +1330,7 @@ static bool checkMemberDecomposition(Sema &S, ArrayRef<BindingDecl*> Bindings,
 
   CXXCastPath BasePath;
   DeclAccessPair BasePair =
-      findDecomposableBaseClass(S, Src->getLocation(), OrigRD, BasePath);
+      S.FindDecomposableBaseClass(Src->getLocation(), OrigRD, BasePath);
   const CXXRecordDecl *RD = cast_or_null<CXXRecordDecl>(BasePair.getDecl());
   if (!RD)
     return true;
@@ -1770,6 +1768,12 @@ static bool CheckConstexprDeclStmt(Sema &SemaRef, const FunctionDecl *Dcl,
   //  The definition of a constexpr function(p3) or constructor(p4) [...] shall
   //  contain only
   for (const auto *DclIt : DS->decls()) {
+    if (DclIt->isInvalidDecl()) {
+      // We've already complained about this decl, any further
+      // errors can be confusing and/or misleading.
+      return false;
+    }
+
     switch (DclIt->getKind()) {
     case Decl::StaticAssert:
     case Decl::Using:
@@ -2032,6 +2036,8 @@ CheckConstexprFunctionStmt(Sema &SemaRef, const FunctionDecl *Dcl, Stmt *S,
   case Stmt::ForStmtClass:
   case Stmt::CXXForRangeStmtClass:
   case Stmt::ContinueStmtClass:
+  case Stmt::CXXPackExpansionStmtClass:
+  case Stmt::CXXCompositeExpansionStmtClass:
     // C++1y allows all of these. We don't allow them as extensions in C++11,
     // because they don't make sense without variable mutation.
     if (!SemaRef.getLangOpts().CPlusPlus14)
@@ -2408,7 +2414,8 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
                          SourceRange SpecifierRange,
                          bool Virtual, AccessSpecifier Access,
                          TypeSourceInfo *TInfo,
-                         SourceLocation EllipsisLoc) {
+                         SourceLocation EllipsisLoc,
+                         bool VariadicReifier) {
   QualType BaseType = TInfo->getType();
 
   // C++ [class.union]p1:
@@ -2419,7 +2426,7 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
     return nullptr;
   }
 
-  if (EllipsisLoc.isValid() &&
+  if (!VariadicReifier && EllipsisLoc.isValid() &&
       !TInfo->getType()->containsUnexpandedParameterPack()) {
     Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
       << TInfo->getTypeLoc().getSourceRange();
@@ -2549,7 +2556,8 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
                          ParsedAttributes &Attributes,
                          bool Virtual, AccessSpecifier Access,
                          ParsedType basetype, SourceLocation BaseLoc,
-                         SourceLocation EllipsisLoc) {
+                         SourceLocation EllipsisLoc,
+                         bool VariadicReifier) {
   if (!classdecl)
     return true;
 
@@ -2574,8 +2582,10 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
 
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(basetype, &TInfo);
+  if (VariadicReifier)
+    TInfo = Context.CreateTypeSourceInfo(basetype.get());
 
-  if (EllipsisLoc.isInvalid() &&
+  if (!VariadicReifier && EllipsisLoc.isInvalid() &&
       DiagnoseUnexpandedParameterPack(SpecifierRange.getBegin(), TInfo,
                                       UPPC_BaseType))
     return true;
@@ -3974,8 +3984,8 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, InitList,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
+                             TemplateTypeTy, DS, IdLoc, InitList,
                              EllipsisLoc);
 }
 
@@ -3993,7 +4003,27 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation RParenLoc,
                           SourceLocation EllipsisLoc) {
   Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, QualType(),
+                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
+}
+
+/// Handle a C++ member initializer using a (dependent) variadic reifier.
+MemInitResult
+Sema::ActOnMemInitializer(Decl *ConstructorD,
+                          Scope *S,
+                          CXXScopeSpec &SS,
+                          IdentifierInfo *MemberOrBase,
+                          QualType ReifierType,
+                          ParsedType TemplateTypeTy,
+                          const DeclSpec &DS,
+                          SourceLocation IdLoc,
+                          SourceLocation LParenLoc,
+                          ArrayRef<Expr *> Args,
+                          SourceLocation RParenLoc,
+                          SourceLocation EllipsisLoc) {
+  Expr *List = ParenListExpr::Create(Context, LParenLoc, Args, RParenLoc);
+  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase,
+                             ReifierType, TemplateTypeTy,
                              DS, IdLoc, List, EllipsisLoc);
 }
 
@@ -4047,6 +4077,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
+                          QualType ReifierType,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -4108,6 +4139,16 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
   } else if (DS.getTypeSpecType() == TST_decltype_auto) {
     Diag(DS.getTypeSpecTypeLoc(), diag::err_decltype_auto_invalid);
     return true;
+  } else if (!ReifierType.isNull() &&
+             CXXDependentVariadicReifierType::
+             classof(ReifierType.getTypePtr())) {
+    TInfo = Context.getTrivialTypeSourceInfo(ReifierType, IdLoc);
+    CXXDependentVariadicReifierType const *Reifier =
+      cast<CXXDependentVariadicReifierType>(ReifierType.getTypePtr());
+    DeclRefExpr *RangeRef = cast<DeclRefExpr>(Reifier->getRange());
+    MarkAnyDeclReferenced(RangeRef->getLocation(), RangeRef->getFoundDecl(), /*OdrUse=*/false);
+    return BuildBaseInitializer(ReifierType, TInfo, Init,
+                                ClassDecl, EllipsisLoc);
   } else {
     LookupResult R(*this, MemberOrBase, IdLoc, LookupOrdinaryName);
     LookupParsedName(R, S, &SS);
@@ -4254,13 +4295,13 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
     // Initialize the member.
     InitializedEntity MemberEntity =
       DirectMember ? InitializedEntity::InitializeMember(DirectMember, nullptr)
-                   : InitializedEntity::InitializeMember(IndirectMember,
-                                                         nullptr);
+      : InitializedEntity::InitializeMember(IndirectMember,
+                                            nullptr);
     InitializationKind Kind =
-        InitList ? InitializationKind::CreateDirectList(
-                       IdLoc, Init->getBeginLoc(), Init->getEndLoc())
-                 : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
-                                                    InitRange.getEnd());
+      InitList ? InitializationKind::CreateDirectList(
+        IdLoc, Init->getBeginLoc(), Init->getEndLoc())
+      : InitializationKind::CreateDirect(IdLoc, InitRange.getBegin(),
+                                         InitRange.getEnd());
 
     InitializationSequence InitSeq(*this, MemberEntity, Kind, Args);
     ExprResult MemberInit = InitSeq.Perform(*this, MemberEntity, Kind, Args,
@@ -4785,7 +4826,8 @@ struct BaseAndFieldInfo {
     AllToInit.push_back(Init);
 
     // Check whether this initializer makes the field "used".
-    if (Init->getInit()->HasSideEffects(S.Context))
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    if (Init->getInit()->HasSideEffects(EvalCtx))
       S.UnusedPrivateFields.remove(Init->getAnyMember());
 
     return false;
@@ -6706,7 +6748,7 @@ static bool defaultedSpecialMemberIsConstexpr(
     }
   }
 
-  // All OK, it's constexpr!
+  // All OK, it's consteval
   return true;
 }
 
@@ -8312,7 +8354,7 @@ unsigned Sema::ActOnReenterTemplateScope(Scope *S, Decl *D) {
     for (NamedDecl *Param : *Params) {
       if (Param->getDeclName()) {
         S->AddDecl(Param);
-        IdResolver.AddDecl(Param);
+        IdResolver->AddDecl(Param);
       }
     }
   }
@@ -8341,7 +8383,7 @@ void Sema::ActOnReenterCXXMethodParameter(Scope *S, ParmVarDecl *Param) {
 
   S->AddDecl(Param);
   if (Param->getDeclName())
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
 }
 
 /// ActOnStartDelayedCXXMethodDeclaration - We have completed
@@ -8373,7 +8415,7 @@ void Sema::ActOnDelayedCXXMethodParameter(Scope *S, Decl *ParamD) {
 
   S->AddDecl(Param);
   if (Param->getDeclName())
-    IdResolver.AddDecl(Param);
+    IdResolver->AddDecl(Param);
 }
 
 /// ActOnFinishDelayedCXXMethodDeclaration - We have finished
@@ -9609,6 +9651,12 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                                        SourceLocation IdentLoc,
                                        IdentifierInfo *Ident) {
   R.clear();
+  // We must not do typo corrections while reflecting.
+  // Emitting diagnostics from typo correction breaks the tenative parse
+  // we use for reflexpr operand parsing.
+  if (S.isReflecting())
+    return false;
+
   NamespaceValidatorCCC CCC{};
   if (TypoCorrection Corrected =
           S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS, CCC,
@@ -9728,6 +9776,33 @@ void Sema::PushUsingDirective(Scope *S, UsingDirectiveDecl *UDir) {
     S->PushUsingDirective(UDir);
 }
 
+Decl *Sema::ActOnNamespaceName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *Id,
+                               SourceLocation Loc) {
+  // Lookup namespace name.
+  LookupResult R(*this, Id, Loc, LookupNamespaceName);
+  LookupParsedName(R, S, &SS);
+  if (R.isAmbiguous())
+    return nullptr;
+
+  if (R.empty())
+    // If lookup was initially empty, attempt a correction.
+    TryNamespaceTypoCorrection(*this, R, S, SS, Loc, Id);
+
+  if (R.empty()) {
+    // FIXME: This is only ever called from the parse of a reflection
+    // expression (which is a tentative parse), so don't diagnose the
+    // error.
+    return nullptr;
+  }
+
+  if (isReflecting()) {
+    if (auto *AD = R.getAsSingle<NamespaceAliasDecl>())
+      return AD;
+  }
+
+  return R.getAsSingle<NamespaceDecl>();
+}
+
 Decl *Sema::ActOnUsingDeclaration(Scope *S, AccessSpecifier AS,
                                   SourceLocation UsingLoc,
                                   SourceLocation TypenameLoc, CXXScopeSpec &SS,
@@ -9773,6 +9848,10 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S, AccessSpecifier AS,
 
   case UnqualifiedIdKind::IK_DeductionGuideName:
     llvm_unreachable("cannot parse qualified deduction guide name");
+
+  case UnqualifiedIdKind::IK_ReflectedId:
+    // FIXME: This is probably valid.
+    llvm_unreachable("Using reflected-id");
   }
 
   DeclarationNameInfo TargetNameInfo = GetNameFromUnqualifiedId(Name);
@@ -10079,7 +10158,7 @@ void Sema::HideUsingShadowDecl(Scope *S, UsingShadowDecl *Shadow) {
   // ...and the scope, if applicable...
   if (S) {
     S->RemoveDecl(Shadow);
-    IdResolver.RemoveDecl(Shadow);
+    IdResolver->RemoveDecl(Shadow);
   }
 
   // ...and the using decl.
@@ -11402,8 +11481,9 @@ Sema::findInheritingConstructor(SourceLocation Loc,
     TypeSourceInfo *TInfo =
         Context.getTrivialTypeSourceInfo(FPT->getParamType(I), UsingLoc);
     ParmVarDecl *PD = ParmVarDecl::Create(
-        Context, DerivedCtor, UsingLoc, UsingLoc, /*IdentifierInfo=*/nullptr,
-        FPT->getParamType(I), TInfo, SC_None, /*DefArg=*/nullptr);
+        Context, DerivedCtor, UsingLoc, UsingLoc,
+        static_cast<IdentifierInfo *>(nullptr), FPT->getParamType(I),
+        TInfo, SC_None, /*DefArg=*/nullptr);
     PD->setScopeInfo(0, I);
     PD->setImplicit();
     // Ensure attributes are propagated onto parameters (this matters for
@@ -12172,11 +12252,10 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   setupImplicitSpecialMemberType(CopyAssignment, RetType, ArgType);
 
   // Add the parameter to the operator.
-  ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyAssignment,
-                                               ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
-                                               /*TInfo=*/nullptr, SC_None,
-                                               nullptr);
+  ParmVarDecl *FromParam = ParmVarDecl::Create(
+      Context, CopyAssignment, ClassLoc, ClassLoc,
+      static_cast<IdentifierInfo *>(nullptr), ArgType,
+      /*TInfo=*/nullptr, SC_None, nullptr);
   CopyAssignment->setParams(FromParam);
 
   CopyAssignment->setTrivial(
@@ -12496,11 +12575,10 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
   MoveAssignment->setType(Context.getFunctionType(RetType, ArgType, EPI));
 
   // Add the parameter to the operator.
-  ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveAssignment,
-                                               ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
-                                               /*TInfo=*/nullptr, SC_None,
-                                               nullptr);
+  ParmVarDecl *FromParam = ParmVarDecl::Create(
+      Context, MoveAssignment, ClassLoc, ClassLoc,
+      static_cast<IdentifierInfo *>(nullptr), ArgType,
+      /*TInfo=*/nullptr, SC_None, nullptr);
   MoveAssignment->setParams(FromParam);
 
   MoveAssignment->setTrivial(
@@ -12874,11 +12952,10 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   setupImplicitSpecialMemberType(CopyConstructor, Context.VoidTy, ArgType);
 
   // Add the parameter to the constructor.
-  ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyConstructor,
-                                               ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
-                                               ArgType, /*TInfo=*/nullptr,
-                                               SC_None, nullptr);
+  ParmVarDecl *FromParam = ParmVarDecl::Create(
+      Context, CopyConstructor, ClassLoc, ClassLoc,
+      static_cast<IdentifierInfo *>(nullptr),
+      ArgType, /*TInfo=*/nullptr, SC_None, nullptr);
   CopyConstructor->setParams(FromParam);
 
   CopyConstructor->setTrivial(
@@ -13006,11 +13083,10 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
   setupImplicitSpecialMemberType(MoveConstructor, Context.VoidTy, ArgType);
 
   // Add the parameter to the constructor.
-  ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveConstructor,
-                                               ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
-                                               ArgType, /*TInfo=*/nullptr,
-                                               SC_None, nullptr);
+  ParmVarDecl *FromParam = ParmVarDecl::Create(
+      Context, MoveConstructor, ClassLoc, ClassLoc,
+      static_cast<IdentifierInfo *>(nullptr), ArgType, /*TInfo=*/nullptr,
+      SC_None, nullptr);
   MoveConstructor->setParams(FromParam);
 
   MoveConstructor->setTrivial(
@@ -13300,12 +13376,21 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
   if (getLangOpts().CUDA && !CheckCUDACall(ConstructLoc, Constructor))
     return ExprError();
 
-  return CXXConstructExpr::Create(
+  Expr *Call = CXXConstructExpr::Create(
       Context, DeclInitType, ConstructLoc, Constructor, Elidable,
       ExprArgs, HadMultipleCandidates, IsListInitialization,
       IsStdInitListInitialization, RequiresZeroInit,
       static_cast<CXXConstructExpr::ConstructionKind>(ConstructKind),
       ParenRange);
+
+  if (Constructor->isConsteval()) {
+    ExprResult Value = BuildImmediateInvocation(Call);
+    if (Value.isInvalid())
+      return ExprError();
+    Call = Value.get();
+  }
+
+  return Call;
 }
 
 ExprResult Sema::BuildCXXDefaultInitExpr(SourceLocation Loc, FieldDecl *Field) {
@@ -13443,6 +13528,8 @@ Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
                               SmallVectorImpl<Expr*> &ConvertedArgs,
                               bool AllowExplicit,
                               bool IsListInitialization) {
+  Sema::ImmediateInvocationRAII InvocationRAII(*this, Constructor);
+
   // FIXME: This duplicates a lot of code from Sema::ConvertArgumentsForCall.
   unsigned NumArgs = ArgsPtr.size();
   Expr **Args = ArgsPtr.data();
@@ -14850,6 +14937,7 @@ NamedDecl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D,
     case UnqualifiedIdKind::IK_LiteralOperatorId:
     case UnqualifiedIdKind::IK_OperatorFunctionId:
     case UnqualifiedIdKind::IK_TemplateId:
+    case UnqualifiedIdKind::IK_ReflectedId:
       break;
     }
     // This implies that it has to be an operator or function.

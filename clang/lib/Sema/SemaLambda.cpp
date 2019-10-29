@@ -1514,7 +1514,8 @@ mapImplicitCaptureStyle(CapturingScopeInfo::ImplicitCaptureStyle ICS) {
 bool Sema::CaptureHasSideEffects(const Capture &From) {
   if (From.isInitCapture()) {
     Expr *Init = From.getVariable()->getInit();
-    if (Init && Init->HasSideEffects(Context))
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (Init && Init->HasSideEffects(EvalCtx))
       return true;
   }
 
@@ -1867,7 +1868,7 @@ ExprResult Sema::BuildBlockForLambdaConversion(SourceLocation CurrentLocation,
   TypeSourceInfo *CapVarTSI =
       Context.getTrivialTypeSourceInfo(Src->getType());
   VarDecl *CapVar = VarDecl::Create(Context, Block, ConvLocation,
-                                    ConvLocation, nullptr,
+                                    ConvLocation, DeclarationName(),
                                     Src->getType(), CapVarTSI,
                                     SC_None);
   BlockDecl::Capture Capture(/*variable=*/CapVar, /*byRef=*/false,

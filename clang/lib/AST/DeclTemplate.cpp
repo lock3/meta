@@ -1071,17 +1071,18 @@ VarTemplateDecl::findPartialSpecInstantiatedFromMember(
 
 VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(
     Kind DK, ASTContext &Context, DeclContext *DC, SourceLocation StartLoc,
-    SourceLocation IdLoc, VarTemplateDecl *SpecializedTemplate, QualType T,
+    SourceLocation NameLoc, VarTemplateDecl *SpecializedTemplate, QualType T,
     TypeSourceInfo *TInfo, StorageClass S, ArrayRef<TemplateArgument> Args)
-    : VarDecl(DK, Context, DC, StartLoc, IdLoc,
-              SpecializedTemplate->getIdentifier(), T, TInfo, S),
+    : VarDecl(DK, Context, DC, StartLoc,
+              NameLoc, SpecializedTemplate->getDeclName(), T, TInfo, S),
       SpecializedTemplate(SpecializedTemplate),
       TemplateArgs(TemplateArgumentList::CreateCopy(Context, Args)),
       SpecializationKind(TSK_Undeclared), IsCompleteDefinition(false) {}
 
 VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(Kind DK,
                                                              ASTContext &C)
-    : VarDecl(DK, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+    : VarDecl(DK, C, nullptr, SourceLocation(),
+              SourceLocation(), DeclarationName(),
               QualType(), nullptr, SC_None),
       SpecializationKind(TSK_Undeclared), IsCompleteDefinition(false) {}
 

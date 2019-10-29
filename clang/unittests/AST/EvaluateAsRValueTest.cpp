@@ -42,7 +42,8 @@ class EvaluateConstantInitializersVisitor
   bool VisitVarDecl(const clang::VarDecl *VD) {
     if (const clang::Expr *Init = VD->getInit()) {
       clang::Expr::EvalResult Result;
-      bool WasEvaluated = Init->EvaluateAsRValue(Result, VD->getASTContext());
+      clang::Expr::EvalContext EvalCtx(VD->getASTContext(), nullptr);
+      bool WasEvaluated = Init->EvaluateAsRValue(Result, EvalCtx);
       VarInfo[VD->getNameAsString()] = WasEvaluated;
       EXPECT_EQ(WasEvaluated, Init->isConstantInitializer(VD->getASTContext(),
                                                           false /*ForRef*/));

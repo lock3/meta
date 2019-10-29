@@ -903,7 +903,25 @@ bool Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
 
       TryConsumeToken(tok::ellipsis, EllipsisLocs[1]);
 
-      if (Tok.is(tok::identifier)) {
+      if (isVariadicReifier()) {
+        llvm::SmallVector<Expr *, 4> ExpandedExprs;
+        if (ParseVariadicReifier(ExpandedExprs))
+          return Invalid([&] {
+            Diag(Tok.getLocation(), diag::err_expected_capture);
+          });
+
+        for (auto E : ExpandedExprs) {
+          ParsedType InitCaptureType;
+          SourceLocation TempLoc = SourceLocation();
+          // This performs any lvalue-to-rvalue conversions if necessary, which
+          // can affect what gets captured in the containing decl-context.
+          InitCaptureType = Actions.actOnLambdaInitCaptureInitialization(
+              TempLoc, Kind == LCK_ByRef, EllipsisLocs[0], Id, InitKind, E);
+
+          Intro.addCapture(Kind, Loc, Id, EllipsisLocs[0], InitKind, Init,
+                           InitCaptureType, SourceRange(TempLoc, TempLoc));
+        }
+      } else if (Tok.is(tok::identifier)) {
         Id = Tok.getIdentifierInfo();
         Loc = ConsumeToken();
       } else if (Tok.is(tok::kw_this)) {
@@ -1820,6 +1838,7 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
     };
 
     if (Tok.isNot(tok::r_paren)) {
+      Sema::OverloadParseRAII ParsingOverloads(Actions);
       if (ParseExpressionList(Exprs, CommaLocs, [&] {
             PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                 RunSignatureHelp);
@@ -2061,6 +2080,8 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
     llvm_unreachable("Not a simple-type-specifier token!");
 
   // type-name
+  // [Meta] reflected-type-specifier
+  case tok::annot_refltype: // typename(x)
   case tok::annot_typename: {
     if (getTypeAnnotation(Tok))
       DS.SetTypeSpecType(DeclSpec::TST_typename, Loc, PrevSpec, DiagID,
@@ -2611,6 +2632,7 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
 /// [C++0x] literal-operator-id [TODO]
 ///         ~ class-name
 ///         template-id
+/// [Meta]  unqualid ( reflection )
 ///
 /// \endcode
 ///
@@ -2646,7 +2668,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
   if (Tok.is(tok::kw_template)) {
-    if (TemplateKWLoc && (ObjectType || SS.isSet())) {
+    if (TemplateKWLoc && (ObjectType || SS.isSet() || NextToken().is(tok::kw_unqualid))) {
       TemplateSpecified = true;
       *TemplateKWLoc = ConsumeToken();
     } else {
@@ -2785,6 +2807,12 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
 
     return false;
   }
+
+  // unqualified-id:
+  //   'unqualid' '(' reflection ')'
+  if (Tok.is(tok::kw_unqualid))
+    return ParseCXXReflectedId(SS,
+                     TemplateKWLoc ? *TemplateKWLoc : SourceLocation(), Result);
 
   if (getLangOpts().CPlusPlus &&
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {
@@ -3546,4 +3574,57 @@ ExprResult Parser::ParseBuiltinBitCast() {
 
   return Actions.ActOnBuiltinBitCastExpr(KWLoc, DeclaratorInfo, Operand,
                                          T.getCloseLocation());
+}
+
+ExprResult
+Parser::ParseCXXSelectMemberExpr() {
+  assert(Tok.is(tok::kw___select_member) && "Not __select_member!");
+  SourceLocation KWLoc = ConsumeToken();
+
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+  llvm::SmallVector<Expr *, 2> Exprs;
+  llvm::SmallVector<SourceLocation, 1> CommaLocs;
+  ParseExpressionList(Exprs, CommaLocs, llvm::function_ref<void()>(nullptr));
+
+  if (Parens.consumeClose())
+    return ExprError();
+
+  if (Exprs.size() != 2)
+    return ExprError();
+
+  // If we cannot find a record decl for the record object,
+  // just quit now.
+  Expr *Base = Exprs.front();
+  Expr *Index = Exprs.back();
+  // // TODO: will this conflict with unqualid or idexpr?
+  // FIXME: what about typos?
+  if (!isa<DeclRefExpr>(Base))
+    return ExprError();
+  DeclRefExpr *BaseDRE = cast<DeclRefExpr>(Base);
+
+  // If this is a parameter pack, we don't need any knowledge
+  // of the record and there won't be a VarDecl. Just return here.
+  if (BaseDRE->containsUnexpandedParameterPack())
+    return Actions.ActOnCXXSelectPackExpr(BaseDRE, Index,
+                                          KWLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
+
+  // Otherwise, we are trying to destructure a class.
+  Decl *FoundDecl = BaseDRE->getDecl();
+  if (!isa<VarDecl>(FoundDecl))
+    return ExprError();
+  VarDecl *BaseVar =
+    cast<VarDecl>(FoundDecl);
+  CXXRecordDecl *Record = BaseVar->getType()->getAsCXXRecordDecl();
+  if (!Record && !BaseVar->getType()->isDependentType())
+    return ExprError();
+
+  return Actions.ActOnCXXSelectMemberExpr(Record, cast<VarDecl>(FoundDecl), Index,
+                                          KWLoc,
+                                          BaseDRE->getLocation(),
+                                          Index->getExprLoc());
 }

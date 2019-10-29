@@ -737,6 +737,7 @@ llvm::DIType *CGDebugInfo::CreateType(const BuiltinType *BT) {
   case BuiltinType::ULong:
   case BuiltinType::WChar_U:
   case BuiltinType::ULongLong:
+  case BuiltinType::MetaInfo:
     Encoding = llvm::dwarf::DW_ATE_unsigned;
     break;
   case BuiltinType::Short:
@@ -1825,6 +1826,7 @@ CGDebugInfo::CollectTemplateParams(const TemplateParameterList *TPList,
           TheCU, Name, nullptr,
           CollectTemplateParams(nullptr, TA.getPackAsArray(), Unit)));
       break;
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression: {
       const Expr *E = TA.getAsExpr();
       QualType T = E->getType();
@@ -2663,7 +2665,8 @@ llvm::DIType *CGDebugInfo::CreateType(const ArrayType *Ty, llvm::DIFile *Unit) {
     else if (const auto *VAT = dyn_cast<VariableArrayType>(Ty)) {
       if (Expr *Size = VAT->getSizeExpr()) {
         Expr::EvalResult Result;
-        if (Size->EvaluateAsInt(Result, CGM.getContext()))
+        Expr::EvalContext EvalCtx(CGM.getContext(), nullptr);
+        if (Size->EvaluateAsInt(Result, EvalCtx))
           Count = Result.Val.getInt().getExtValue();
       }
     }
@@ -2868,6 +2871,9 @@ static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
     case Type::Decltype:
       T = cast<DecltypeType>(T)->getUnderlyingType();
       break;
+    case Type::Reflected:
+      T = cast<ReflectedType>(T)->getUnderlyingType();
+      break;
     case Type::UnaryTransform:
       T = cast<UnaryTransformType>(T)->getUnderlyingType();
       break;
@@ -3067,6 +3073,7 @@ llvm::DIType *CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::UnaryTransform:
   case Type::PackExpansion:
     break;

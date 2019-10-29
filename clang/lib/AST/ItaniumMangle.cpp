@@ -515,6 +515,7 @@ private:
   // Declare manglers for every type class.
 #define ABSTRACT_TYPE(CLASS, PARENT)
 #define NON_CANONICAL_TYPE(CLASS, PARENT)
+#define META_TYPE(CLASS, PARENT)
 #define TYPE(CLASS, PARENT) void mangleType(const CLASS##Type *T);
 #include "clang/AST/TypeNodes.inc"
 
@@ -542,6 +543,7 @@ private:
   void mangleCastExpression(const Expr *E, StringRef CastEncoding);
   void mangleInitListElements(const InitListExpr *InitList);
   void mangleDeclRefExpr(const NamedDecl *D);
+  void mangleReflectionOp(const ReflectionOperand &Op);
   void mangleExpression(const Expr *E, unsigned Arity = UnknownArity);
   void mangleCXXCtorType(CXXCtorType T, const CXXRecordDecl *InheritedFrom);
   void mangleCXXDtorType(CXXDtorType T);
@@ -1237,6 +1239,8 @@ void CXXNameMangler::mangleUnresolvedName(
       llvm_unreachable("Can't mangle a using directive name!");
     case DeclarationName::CXXDeductionGuideName:
       llvm_unreachable("Can't mangle a deduction guide name!");
+    case DeclarationName::CXXReflectedIdName:
+      llvm_unreachable("Can't mangle a reflected-id name!");
     case DeclarationName::ObjCMultiArgSelector:
     case DeclarationName::ObjCOneArgSelector:
     case DeclarationName::ObjCZeroArgSelector:
@@ -1477,6 +1481,9 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
 
   case DeclarationName::CXXDeductionGuideName:
     llvm_unreachable("Can't mangle a deduction guide name!");
+
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("Can't mangle an reflected-id name!");
 
   case DeclarationName::CXXUsingDirective:
     llvm_unreachable("Can't mangle a using directive name!");
@@ -1994,6 +2001,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
+  case Type::CXXDependentVariadicReifier:
   case Type::ObjCObject:
   case Type::ObjCInterface:
   case Type::ObjCObjectPointer:
@@ -2018,6 +2026,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::TemplateTypeParm:
   case Type::UnaryTransform:
   case Type::SubstTemplateTypeParm:
@@ -2122,6 +2131,7 @@ void CXXNameMangler::mangleOperatorName(DeclarationName Name, unsigned Arity) {
   case DeclarationName::CXXConstructorName:
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXDeductionGuideName:
+  case DeclarationName::CXXReflectedIdName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::Identifier:
   case DeclarationName::ObjCMultiArgSelector:
@@ -2495,6 +2505,10 @@ void CXXNameMangler::mangleType(QualType T) {
     case Type::CLASS: \
       llvm_unreachable("can't mangle non-canonical type " #CLASS "Type"); \
       return;
+#define META_TYPE(CLASS, PARENT) \
+    case Type::CLASS: \
+      llvm_unreachable("can't mangle meta type " #CLASS "Type"); \
+      return;
 #define TYPE(CLASS, PARENT) \
     case Type::CLASS: \
       mangleType(static_cast<const CLASS##Type*>(ty)); \
@@ -2543,6 +2557,7 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
   //                 ::= Di # char32_t
   //                 ::= Ds # char16_t
   //                 ::= Dn # std::nullptr_t (i.e., decltype(nullptr))
+  //                 ::= Dm # std::meta::info (i.e., typename(reflexpr(void)))
   //                 ::= u <source-name>    # vendor extended type
   std::string type_name;
   switch (T->getKind()) {
@@ -2660,6 +2675,9 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
   }
   case BuiltinType::NullPtr:
     Out << "Dn";
+    break;
+  case BuiltinType::MetaInfo:
+    Out << "Dm";
     break;
 
 #define BUILTIN_TYPE(Id, SingletonId)
@@ -3399,6 +3417,13 @@ void CXXNameMangler::mangleType(const DecltypeType *T) {
   Out << 'E';
 }
 
+void CXXNameMangler::mangleType(const ReflectedType *T) {
+  // <type> ::= RT <expression> E  # decltype of an expression
+  Out << "RT";
+  mangleExpression(T->getReflection());
+  Out << 'E';
+}
+
 void CXXNameMangler::mangleType(const UnaryTransformType *T) {
   // If this is dependent, we need to record that. If not, we simply
   // mangle it as the underlying type since they are equivalent.
@@ -3575,6 +3600,43 @@ void CXXNameMangler::mangleDeclRefExpr(const NamedDecl *D) {
   }
 }
 
+void CXXNameMangler::mangleReflectionOp(const ReflectionOperand &Op) {
+  switch (Op.getKind()) {
+  case ReflectionOperand::Type: {
+    Out << "Ty";
+    mangleType(Op.getAsType());
+    return;
+  }
+  case ReflectionOperand::Template: {
+    mangleTemplatePrefix(Op.getAsTemplate());
+    return;
+  }
+  case ReflectionOperand::Namespace: {
+    Decl *D = Op.getAsNamespace().getNamespaceAsDecl();
+    if (NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
+      mangleName(NSD);
+    } else {
+      assert(isa<TranslationUnitDecl>(D));
+      Out << "Tu";
+    }
+    return;
+  }
+  case ReflectionOperand::Declaration: {
+    NamedDecl *ND = cast<NamedDecl>(Op.getAsDeclaration());
+    mangleName(ND);
+    return;
+  }
+  case ReflectionOperand::Invalid:
+  case ReflectionOperand::Expression:
+  case ReflectionOperand::BaseSpecifier: {
+    Out << reinterpret_cast<std::uintmax_t>(Op.getOpaqueReflectionValue());
+    return;
+  }
+  }
+
+  llvm_unreachable("unhandled reflection kind");
+}
+
 void CXXNameMangler::mangleExpression(const Expr *E, unsigned Arity) {
   // <expression> ::= <unary operator-name> <expression>
   //              ::= <binary operator-name> <expression> <expression>
@@ -3626,6 +3688,12 @@ recurse:
   case Expr::TypoExprClass:  // This should no longer exist in the AST by now.
   case Expr::OMPArraySectionExprClass:
   case Expr::CXXInheritedCtorInitExprClass:
+  case Expr::CXXIdExprExprClass:
+  case Expr::CXXReflectedIdExprClass:
+  case Expr::CXXValueOfExprClass:
+  case Expr::CXXConcatenateExprClass:
+  case Expr::CXXDependentVariadicReifierExprClass:
+  case Expr::CXXCompilerErrorExprClass:
     llvm_unreachable("unexpected statement kind");
 
   case Expr::ConstantExprClass:
@@ -3666,6 +3734,12 @@ recurse:
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::SourceLocExprClass:
+  case Expr::CXXConstantExprClass:
+  case Expr::CXXInvalidReflectionExprClass:
+  case Expr::CXXReflectionReadQueryExprClass:
+  case Expr::CXXReflectPrintLiteralExprClass:
+  case Expr::CXXReflectPrintReflectionExprClass:
+  case Expr::CXXReflectDumpReflectionExprClass:
   case Expr::FixedPointLiteralClass:
   case Expr::BuiltinBitCastExprClass:
   {
@@ -3679,6 +3753,16 @@ recurse:
     }
     break;
   }
+
+  case Expr::CXXReflectExprClass: {
+    Out << "Re";
+
+    const CXXReflectExpr *RE = cast<CXXReflectExpr>(E);
+    const ReflectionOperand &Op = RE->getOperand();
+
+    mangleReflectionOp(Op);
+    break;
+ }
 
   case Expr::CXXUuidofExprClass: {
     const CXXUuidofExpr *UE = cast<CXXUuidofExpr>(E);
@@ -3982,7 +4066,8 @@ recurse:
       QualType T = (ImplicitlyConvertedToType.isNull() ||
                     !ImplicitlyConvertedToType->isIntegerType())? SAE->getType()
                                                     : ImplicitlyConvertedToType;
-      llvm::APSInt V = SAE->EvaluateKnownConstInt(Context.getASTContext());
+      Expr::EvalContext EvalCtx(Context.getASTContext(), nullptr);
+      llvm::APSInt V = SAE->EvaluateKnownConstInt(EvalCtx);
       mangleIntegerLiteral(T, V);
       break;
     }
@@ -4074,6 +4159,17 @@ recurse:
     Out << "ix";
     mangleExpression(AE->getLHS());
     mangleExpression(AE->getRHS());
+    break;
+  }
+
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass: {
+    const CXXSelectionExpr *SME = cast<CXXSelectMemberExpr>(E);
+
+    // Treated as a binary operator, see: ArraySubscriptExpr
+    Out << "ix";
+    mangleExpression(SME->getBase());
+    mangleExpression(SME->getSelector());
     break;
   }
 
@@ -4591,7 +4687,10 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     for (const auto &P : A.pack_elements())
       mangleTemplateArg(P);
     Out << 'E';
+    break;
   }
+  case TemplateArgument::Reflected:
+    llvm_unreachable("This should not exist at codegen");
   }
 }
 

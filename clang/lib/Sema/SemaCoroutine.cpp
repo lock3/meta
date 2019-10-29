@@ -263,8 +263,8 @@ static ExprResult buildOperatorCoawaitLookupExpr(Sema &SemaRef, Scope *S,
       Functions.size() > 1 ||
       (Functions.size() == 1 && isa<FunctionTemplateDecl>(*Functions.begin()));
   Expr *CoawaitOp = UnresolvedLookupExpr::Create(
-      SemaRef.Context, /*NamingClass*/ nullptr, NestedNameSpecifierLoc(),
-      DeclarationNameInfo(OpName, Loc), /*RequiresADL*/ true, IsOverloaded,
+      SemaRef.Context, /*NamingClass=*/nullptr, NestedNameSpecifierLoc(),
+      DeclarationNameInfo(OpName, Loc), /*ADL=*/true, IsOverloaded,
       Functions.begin(), Functions.end());
   assert(CoawaitOp);
   return CoawaitOp;

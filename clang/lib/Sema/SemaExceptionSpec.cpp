@@ -1274,6 +1274,8 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::ObjCAvailabilityCheckExprClass:
   case Expr::OffsetOfExprClass:
   case Expr::PackExpansionExprClass:
+  case Expr::CXXSelectMemberExprClass:
+  case Expr::CXXSelectPackExprClass:
   case Expr::PseudoObjectExprClass:
   case Expr::SubstNonTypeTemplateParmExprClass:
   case Expr::SubstNonTypeTemplateParmPackExprClass:
@@ -1314,6 +1316,19 @@ CanThrowResult Sema::canThrow(const Expr *E) {
   case Expr::SizeOfPackExprClass:
   case Expr::StringLiteralClass:
   case Expr::SourceLocExprClass:
+  case Expr::CXXConstantExprClass:
+  case Expr::CXXReflectExprClass:
+  case Expr::CXXInvalidReflectionExprClass:
+  case Expr::CXXReflectionReadQueryExprClass:
+  case Expr::CXXReflectPrintLiteralExprClass:
+  case Expr::CXXReflectPrintReflectionExprClass:
+  case Expr::CXXReflectDumpReflectionExprClass:
+  case Expr::CXXCompilerErrorExprClass:
+  case Expr::CXXIdExprExprClass:
+  case Expr::CXXReflectedIdExprClass:
+  case Expr::CXXValueOfExprClass:
+  case Expr::CXXConcatenateExprClass:
+  case Expr::CXXDependentVariadicReifierExprClass:
     // These expressions can never throw.
     return CT_Cannot;
 

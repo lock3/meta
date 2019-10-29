@@ -1559,6 +1559,9 @@ def frelaxed_template_template_args : Flag<["-"], "frelaxed-template-template-ar
   Group<f_Group>;
 def fno_relaxed_template_template_args : Flag<["-"], "fno-relaxed-template-template-args">,
   Group<f_Group>;
+def freflection : Flag<["-"], "freflection">, Group<f_Group>,
+  HelpText<"Enable C++ reflection and metaclasses">, Flags<[CC1Option]>;
+def fno_reflection : Flag<["-"], "fno-reflection">, Group<f_Group>;
 def fsized_deallocation : Flag<["-"], "fsized-deallocation">, Flags<[CC1Option]>,
   HelpText<"Enable C++14 sized global deallocation functions">, Group<f_Group>;
 def fno_sized_deallocation: Flag<["-"], "fno-sized-deallocation">, Group<f_Group>;

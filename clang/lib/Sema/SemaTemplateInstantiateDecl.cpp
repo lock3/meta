@@ -106,8 +106,10 @@ static void instantiateDependentAlignedAttr(
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   if (Aligned->isAlignmentExpr())
-    S.collectUnexpandedParameterPacks(Aligned->getAlignmentExpr(),
-                                      Unexpanded);
+    S.collectUnexpandedParameterPacks(
+        TemplateArgument(Aligned->getAlignmentExpr(),
+                         TemplateArgument::Expression),
+        Unexpanded);
   else
     S.collectUnexpandedParameterPacks(Aligned->getAlignmentType()->getTypeLoc(),
                                       Unexpanded);
@@ -2213,7 +2215,6 @@ Decl *TemplateDeclInstantiator::VisitCXXMethodDecl(
     // Record that this is an instantiation of a member function.
     Method->setInstantiationOfMemberFunction(D, TSK_ImplicitInstantiation);
   }
-
   // If we are instantiating a member function defined
   // out-of-line, the instantiation will have the same lexical
   // context (which will be a namespace scope) as the template.
@@ -3910,8 +3911,17 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
     if (!PatternParam->isParameterPack()) {
       // Simple case: not a parameter pack.
       assert(FParamIdx < Function->getNumParams());
+
+      // FIXME: We have already substitued the declaration name for
+      // the specialization, why are we reassigning the name here,
+      // and subsequently forcing ourselves to correct name information
+      // again?
+      DeclarationNameInfo DNI = S.SubstDeclarationNameInfo(
+                                    PatternParam->getNameInfo(), TemplateArgs);
+
       ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
-      FunctionParam->setDeclName(PatternParam->getDeclName());
+      FunctionParam->setDeclName(DNI.getName());
+
       // If the parameter's type is not dependent, update it to match the type
       // in the pattern. They can differ in top-level cv-qualifiers, and we want
       // the pattern's type here. If the type is dependent, they can't differ,
@@ -3920,8 +3930,8 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
       // FIXME: Updating the type to work around this is at best fragile.
       if (!PatternDecl->getType()->isDependentType()) {
         QualType T = S.SubstType(PatternParam->getType(), TemplateArgs,
-                                 FunctionParam->getLocation(),
-                                 FunctionParam->getDeclName());
+                                 DNI.getLoc(),
+                                 DNI.getName());
         if (T.isNull())
           return true;
         FunctionParam->setType(T);
@@ -3940,13 +3950,20 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
       QualType PatternType =
           PatternParam->getType()->castAs<PackExpansionType>()->getPattern();
       for (unsigned Arg = 0; Arg < *NumArgumentsInExpansion; ++Arg) {
+        // FIXME: We have already substitued the declaration name for
+        // the specialization, why are we reassigning the name here,
+        // and subsequently forcing ourselves to correct name information
+        // again?
+        DeclarationNameInfo DNI = S.SubstDeclarationNameInfo(
+                                     PatternParam->getNameInfo(), TemplateArgs);
+
         ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
-        FunctionParam->setDeclName(PatternParam->getDeclName());
+        FunctionParam->setDeclName(DNI.getName());
         if (!PatternDecl->getType()->isDependentType()) {
           Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(S, Arg);
           QualType T = S.SubstType(PatternType, TemplateArgs,
-                                   FunctionParam->getLocation(),
-                                   FunctionParam->getDeclName());
+                                   DNI.getLoc(),
+                                   DNI.getName());
           if (T.isNull())
             return true;
           FunctionParam->setType(T);
@@ -4365,6 +4382,10 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
           InstantiateDefaultCtorDefaultArgs(*this, Ctor);
         }
       }
+
+      // Push a fake parse scope stack in case we need to perform unqualified
+      // lookup during tree transform.
+      Sema::FakeParseScopeStack FakeParseScopeStack(*this);
 
       // Instantiate the function body.
       Body = SubstStmt(Pattern, TemplateArgs);
@@ -4906,11 +4927,58 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   GlobalInstantiations.perform();
 }
 
+/// If a member initializer is a variadic reifier, substitute its range
+/// and instantiate it. Returns true on error.
+static bool
+InstantiateVariadicReifierMemInit(Sema &SemaRef,
+                          CXXConstructorDecl *New,
+                          const CXXCtorInitializer *Init,
+                          llvm::SmallVectorImpl<CXXCtorInitializer *> &NewInits,
+                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+  CXXDependentVariadicReifierType const *Reifier =
+    cast<CXXDependentVariadicReifierType>(Init->getBaseClass());
+  ExprResult TempRange =
+    SemaRef.SubstExpr(Reifier->getRange(), TemplateArgs);
+  if (TempRange.isInvalid())
+    return true;
+
+  llvm::SmallVector<QualType, 8> ReifiedTypes;
+  SemaRef.ActOnVariadicReifier(ReifiedTypes, SourceLocation(), TempRange.get(),
+                               SourceLocation(), SourceLocation(),
+                               SourceLocation());
+
+  for (auto ReifiedType : ReifiedTypes) {
+    ExprResult TempInit =
+      SemaRef.SubstInitializer(Init->getInit(), TemplateArgs,
+                               /*CXXDirectInit=*/true);
+    if (TempInit.isInvalid())
+      return true;
+
+    TypeSourceInfo *BaseTInfo =
+      SemaRef.Context.CreateTypeSourceInfo(ReifiedType);
+    BaseTInfo->getTypeLoc().initialize(SemaRef.Context, Reifier->getBeginLoc());
+    if (!BaseTInfo)
+      return true;
+
+    MemInitResult NewInit =
+      SemaRef.BuildBaseInitializer(BaseTInfo->getType(),
+                                   BaseTInfo, Init->getInit(),
+                                   New->getParent(),
+                                   SourceLocation());
+    if (NewInit.isInvalid())
+      return true;
+
+    auto NewInitExpr = NewInit.get();
+    NewInits.push_back(NewInitExpr);
+  }
+
+  return false;
+}
+
 void
 Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                  const CXXConstructorDecl *Tmpl,
                            const MultiLevelTemplateArgumentList &TemplateArgs) {
-
   SmallVector<CXXCtorInitializer*, 4> NewInits;
   bool AnyErrors = Tmpl->isInvalidDecl();
 
@@ -4928,7 +4996,9 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       TypeLoc BaseTL = Init->getTypeSourceInfo()->getTypeLoc();
       SmallVector<UnexpandedParameterPack, 4> Unexpanded;
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
-      collectUnexpandedParameterPacks(Init->getInit(), Unexpanded);
+      collectUnexpandedParameterPacks(
+          TemplateArgument(Init->getInit(), TemplateArgument::Expression),
+          Unexpanded);
       bool ShouldExpand = false;
       bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;
@@ -4979,6 +5049,18 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         NewInits.push_back(NewInit.get());
       }
 
+      continue;
+    }
+
+    if (Init->isBaseInitializer() &&
+        isa<CXXDependentVariadicReifierType>(Init->getBaseClass())) {
+      // The expanded range is necessarily constexpr.
+      EnterExpressionEvaluationContext EvalContext(
+        *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
+      AnyErrors =
+        InstantiateVariadicReifierMemInit(*this, New, Init,
+                                          NewInits, TemplateArgs);
       continue;
     }
 
@@ -5373,15 +5455,40 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
       return cast<TypeDecl>(Inst);
     }
 
-    // If we didn't find the decl, then we must have a label decl that hasn't
-    // been found yet.  Lazily instantiate it and return it now.
-    assert(isa<LabelDecl>(D));
+    // If we didn't find the decl, then our scope must either be allowing
+    // uninstantiated resolutions, or we have a label decl that hasn't
+    // been found yet. If we have a label decl, prefer lazy instantiation
+    // of the label over falling back to the uninstantiated decl.
+    if (isa<LabelDecl>(D)) {
+      // Lazily instantiate and return the label now.
+      Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
+      assert(Inst && "Failed to instantiate label??");
 
-    Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
-    assert(Inst && "Failed to instantiate label??");
+      CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+      return cast<LabelDecl>(Inst);
+    }
 
-    CurrentInstantiationScope->InstantiatedLocal(D, Inst);
-    return cast<LabelDecl>(Inst);
+    // Fall back to the uninstantiated decl.
+    assert(CurrentInstantiationScope);
+    assert(CurrentInstantiationScope->AllowUninstantiated);
+
+    return D;
+  }
+
+  // For certain instantiations (e.g., for loop instantiations, and code
+  // injection), we could have local instantiations that are not obviously
+  // local. For example, if we have this in a non-dependent context:
+  //
+  //    for... (auto x : tup)
+  //      (void)x;
+  //
+  // Then the resolution of x in (void)x would not satisfy the criteria
+  // for local lookup above: it's local, but not in a dependent context.
+  if (CurrentInstantiationScope) {
+    if (auto Found = CurrentInstantiationScope->lookupInstantiationOf(D)) {
+      if (Decl *FD = Found->dyn_cast<Decl *>())
+        return cast<NamedDecl>(FD);
+    }
   }
 
   if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(D)) {

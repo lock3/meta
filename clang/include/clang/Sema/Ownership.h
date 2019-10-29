@@ -14,6 +14,7 @@
 #define LLVM_CLANG_SEMA_OWNERSHIP_H
 
 #include "clang/AST/Expr.h"
+#include "clang/AST/Reflection.h"
 #include "clang/Basic/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
@@ -33,6 +34,7 @@ class CXXCtorInitializer;
 class Decl;
 class Expr;
 class ParsedTemplateArgument;
+class ParsedReflectionOperand;
 class QualType;
 class Stmt;
 class TemplateName;

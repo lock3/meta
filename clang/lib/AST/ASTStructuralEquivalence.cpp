@@ -106,6 +106,23 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      NestedNameSpecifier *NNS2);
 static bool IsStructurallyEquivalent(const IdentifierInfo *Name1,
                                      const IdentifierInfo *Name2);
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     const Expr *E1, const Expr *E2);
+
+template<typename T>
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     llvm::ArrayRef<T> Arg1,
+                                     llvm::ArrayRef<T> Arg2) {
+  if (Arg1.size() != Arg2.size())
+    return false;
+
+  for (unsigned I = 0; I < Arg1.size(); ++I) {
+    if (!IsStructurallyEquivalent(Context, Arg1[I], Arg2[I]))
+      return false;
+  }
+
+  return true;
+}
 
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      const DeclarationName Name1,
@@ -141,6 +158,11 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   case DeclarationName::CXXLiteralOperatorName:
     return IsStructurallyEquivalent(Name1.getCXXLiteralIdentifier(),
                                     Name2.getCXXLiteralIdentifier());
+
+  case DeclarationName::CXXReflectedIdName:
+    return IsStructurallyEquivalent(Context,
+                                    Name1.getCXXReflectedIdArguments(),
+                                    Name2.getCXXReflectedIdArguments());
 
   case DeclarationName::CXXUsingDirective:
     return true; // FIXME When do we consider two using directives equal?
@@ -340,6 +362,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                     Arg1.getAsTemplateOrTemplatePattern(),
                                     Arg2.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return IsStructurallyEquivalent(Context, Arg1.getAsExpr(),
                                     Arg2.getAsExpr());
@@ -729,6 +752,13 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
     break;
 
+  case Type::Reflected:
+    if (!IsStructurallyEquivalent(Context,
+                                  cast<ReflectedType>(T1)->getReflection(),
+                                  cast<ReflectedType>(T2)->getReflection()))
+      return false;
+    break;
+
   case Type::Auto:
     if (!IsStructurallyEquivalent(Context, cast<AutoType>(T1)->getDeducedType(),
                                   cast<AutoType>(T2)->getDeducedType()))
@@ -871,6 +901,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (!IsStructurallyEquivalent(Context,
                                   cast<PackExpansionType>(T1)->getPattern(),
                                   cast<PackExpansionType>(T2)->getPattern()))
+      return false;
+    break;
+
+  case Type::CXXDependentVariadicReifier:
+    if (!IsStructurallyEquivalent
+        (Context,
+         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType(),
+         cast<CXXDependentVariadicReifierType>(T1)->getRange()->getType()))
       return false;
     break;
 

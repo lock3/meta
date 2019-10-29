@@ -1649,9 +1649,11 @@ bool Lexer::LexIdentifier(Token &Result, const char *CurPtr) {
   // TODO: Could merge these checks into an InfoTable flag to make the
   // comparison cheaper
   if (isASCII(C) && C != '\\' && C != '?' &&
+      C != '!' &&
       (C != '$' || !LangOpts.DollarIdents)) {
 FinishIdentifier:
     const char *IdStart = BufferPtr;
+
     FormTokenWithChars(Result, CurPtr, tok::raw_identifier);
     Result.setRawIdentifierData(IdStart);
 
@@ -1697,10 +1699,22 @@ FinishIdentifier:
 
     return true;
   }
-
-  // Otherwise, $,\,? in identifier found.  Enter slower path.
+  // Otherwise, $,\,?,! in identifier found.  Enter slower path.
 
   C = getCharAndSize(CurPtr, Size);
+
+  if (C == '!') {
+    if (LangOpts.Reflection) {
+      if (strncmp(BufferPtr, "constexpr", 9) == 0
+	  && LangOpts.CPlusPlus17) {
+	CurPtr = ConsumeChar(CurPtr, Size, Result);
+	C = getCharAndSize(CurPtr, Size);
+      }
+    }
+
+    goto FinishIdentifier;
+  }
+
   while (true) {
     if (C == '$') {
       // If we hit a $ and they are not supported in identifiers, we are done.

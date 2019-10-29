@@ -411,6 +411,7 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
       case CK_IntegralComplexToBoolean:
       case CK_IntegralComplexCast:
       case CK_IntegralComplexToFloatingComplex:
+      case CK_ReflectionToBoolean:
       case CK_CPointerToObjCPointerCast:
       case CK_BlockPointerToObjCPointerCast:
       case CK_AnyPointerToBlockPointerCast:
@@ -847,7 +848,8 @@ VisitOffsetOfExpr(const OffsetOfExpr *OOE,
                   ExplodedNode *Pred, ExplodedNodeSet &Dst) {
   StmtNodeBuilder B(Pred, Dst, *currBldrCtx);
   Expr::EvalResult Result;
-  if (OOE->EvaluateAsInt(Result, getContext())) {
+  Expr::EvalContext EvalCtx(getContext(), nullptr);
+  if (OOE->EvaluateAsInt(Result, EvalCtx)) {
     APSInt IV = Result.Val.getInt();
     assert(IV.getBitWidth() == getContext().getTypeSize(OOE->getType()));
     assert(OOE->getType()->castAs<BuiltinType>()->isInteger());
@@ -891,7 +893,8 @@ VisitUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *Ex,
       }
     }
 
-    APSInt Value = Ex->EvaluateKnownConstInt(getContext());
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
+    APSInt Value = Ex->EvaluateKnownConstInt(EvalCtx);
     CharUnits amt = CharUnits::fromQuantity(Value.getZExtValue());
 
     ProgramStateRef state = (*I)->getState();

@@ -185,6 +185,12 @@ void CodeGenFunction::EmitStmt(const Stmt *S, ArrayRef<const Attr *> Attrs) {
   case Stmt::CXXForRangeStmtClass:
     EmitCXXForRangeStmt(cast<CXXForRangeStmt>(*S), Attrs);
     break;
+  case Stmt::CXXPackExpansionStmtClass:
+    EmitCXXPackExpansionStmt(cast<CXXPackExpansionStmt>(*S));
+    break;
+  case Stmt::CXXCompositeExpansionStmtClass:
+    EmitCXXCompositeExpansionStmt(cast<CXXCompositeExpansionStmt>(*S));
+    break;
   case Stmt::SEHTryStmtClass:
     EmitSEHTryStmt(cast<SEHTryStmt>(*S));
     break;
@@ -1025,6 +1031,62 @@ CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S,
   EmitBlock(LoopExit.getBlock(), true);
 }
 
+void
+CodeGenFunction::EmitCXXCompositeExpansionStmt(
+  const CXXCompositeExpansionStmt &S, ArrayRef<const Attr *> ForAttrs) {
+  JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
+
+  // Create a basic block for each instantiation.
+  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
+  for (std::size_t I = 0; I < S.getSize(); ++I)
+    Blocks.push_back(createBasicBlock("expand.body"));
+  Blocks.push_back(LoopExit.getBlock());
+
+  LexicalScope ForScope(*this, S.getSourceRange());
+
+  // Evaluate the first pieces before the loop.
+  // There is no range variable for pack expansions.
+  EmitStmt(S.getRangeVarStmt());
+
+  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
+  for (std::size_t I = 0; I < S.getSize(); ++I) {
+    LexicalScope BodyScope(*this, S.getSourceRange());
+    BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
+    BreakContinueStack.push_back(BC);
+    EmitBlock(Blocks[I]);
+    EmitStmt(Stmts[I]);
+    BreakContinueStack.pop_back();
+  }
+
+  EmitBlock(LoopExit.getBlock(), true);
+}
+
+void
+CodeGenFunction::EmitCXXPackExpansionStmt(const CXXPackExpansionStmt &S,
+                                          ArrayRef<const Attr *> ForAttrs) {
+  JumpDest LoopExit = getJumpDestInCurrentScope("expand.end");
+
+  // Create a basic block for each instantiation.
+  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
+  for (std::size_t I = 0; I < S.getSize(); ++I)
+    Blocks.push_back(createBasicBlock("expand.body"));
+  Blocks.push_back(LoopExit.getBlock());
+
+  LexicalScope ForScope(*this, S.getSourceRange());
+
+  ArrayRef<Stmt *> Stmts = S.getInstantiatedStatements();
+  for (std::size_t I = 0; I < S.getSize(); ++I) {
+    LexicalScope BodyScope(*this, S.getSourceRange());
+    BreakContinue BC(LoopExit, getJumpDestInCurrentScope(Blocks[I + 1]));
+    BreakContinueStack.push_back(BC);
+    EmitBlock(Blocks[I]);
+    EmitStmt(Stmts[I]);
+    BreakContinueStack.pop_back();
+  }
+
+  EmitBlock(LoopExit.getBlock(), true);
+}
+
 void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {
   if (RV.isScalar()) {
     Builder.CreateStore(RV.getScalarVal(), ReturnValue);
@@ -1119,7 +1181,8 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   }
 
   ++NumReturnExprs;
-  if (!RV || RV->isEvaluatable(getContext()))
+  Expr::EvalContext EvalCtx(getContext(), nullptr);
+  if (!RV || RV->isEvaluatable(EvalCtx))
     ++NumSimpleReturnExprs;
 
   cleanupScope.ForceCleanup();
@@ -1166,8 +1229,9 @@ void CodeGenFunction::EmitContinueStmt(const ContinueStmt &S) {
 void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S) {
   assert(S.getRHS() && "Expected RHS value in CaseStmt");
 
-  llvm::APSInt LHS = S.getLHS()->EvaluateKnownConstInt(getContext());
-  llvm::APSInt RHS = S.getRHS()->EvaluateKnownConstInt(getContext());
+  Expr::EvalContext EvalCtx(getContext(), nullptr);
+  llvm::APSInt LHS = S.getLHS()->EvaluateKnownConstInt(EvalCtx);
+  llvm::APSInt RHS = S.getRHS()->EvaluateKnownConstInt(EvalCtx);
 
   // Emit the code for this case. We do this first to make sure it is
   // properly chained from our predecessor before generating the
@@ -1258,8 +1322,9 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
     return;
   }
 
+  Expr::EvalContext EvalCtx(getContext(), nullptr);
   llvm::ConstantInt *CaseVal =
-    Builder.getInt(S.getLHS()->EvaluateKnownConstInt(getContext()));
+    Builder.getInt(S.getLHS()->EvaluateKnownConstInt(EvalCtx));
 
   // If the body of the case is just a 'break', try to not emit an empty block.
   // If we're profiling or we're not optimizing, leave the block in for better
@@ -1306,8 +1371,9 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
   // Otherwise, iteratively add consecutive cases to this switch stmt.
   while (NextCase && NextCase->getRHS() == nullptr) {
     CurCase = NextCase;
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
     llvm::ConstantInt *CaseVal =
-      Builder.getInt(CurCase->getLHS()->EvaluateKnownConstInt(getContext()));
+      Builder.getInt(CurCase->getLHS()->EvaluateKnownConstInt(EvalCtx));
 
     if (SwitchWeights)
       SwitchWeights->push_back(getProfileCount(NextCase));
@@ -1545,7 +1611,8 @@ static bool FindCaseStatementsForValue(const SwitchStmt &S,
     if (CS->getRHS()) return false;
 
     // If we found our case, remember it as 'case'.
-    if (CS->getLHS()->EvaluateKnownConstInt(C) == ConstantCondValue)
+    Expr::EvalContext EvalCtx(C, nullptr);
+    if (CS->getLHS()->EvaluateKnownConstInt(EvalCtx) == ConstantCondValue)
       break;
   }
 
@@ -1844,9 +1911,10 @@ llvm::Value* CodeGenFunction::EmitAsmInput(
   // If this can't be a register or memory, i.e., has to be a constant
   // (immediate or symbolic), try to emit it as such.
   if (!Info.allowsRegister() && !Info.allowsMemory()) {
+    Expr::EvalContext EvalCtx(getContext(), nullptr);
     if (Info.requiresImmediateConstant()) {
       Expr::EvalResult EVResult;
-      InputExpr->EvaluateAsRValue(EVResult, getContext(), true);
+      InputExpr->EvaluateAsRValue(EVResult, EvalCtx, true);
 
       llvm::APSInt IntResult;
       if (EVResult.Val.toIntegralConstant(IntResult, InputExpr->getType(),
@@ -1855,7 +1923,7 @@ llvm::Value* CodeGenFunction::EmitAsmInput(
     }
 
     Expr::EvalResult Result;
-    if (InputExpr->EvaluateAsInt(Result, getContext()))
+    if (InputExpr->EvaluateAsInt(Result, EvalCtx))
       return llvm::ConstantInt::get(getLLVMContext(), Result.Val.getInt());
   }
 

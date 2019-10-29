@@ -109,6 +109,10 @@ inline bool isExternalFormalLinkage(Linkage L) {
   return getFormalLinkage(L) == ExternalLinkage;
 }
 
+inline bool isInternalFormalLinkage(Linkage L) {
+  return getFormalLinkage(L) == InternalLinkage;
+}
+
 /// Compute the minimum linkage given two linkages.
 ///
 /// The linkage can be interpreted as a pair formed by the formal linkage and

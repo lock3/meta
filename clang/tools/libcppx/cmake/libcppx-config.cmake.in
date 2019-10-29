@@ -1,0 +1,38 @@
+#.rst:
+# libcppx-config
+# --------------
+#
+# Package configuration file for libcppx.
+#
+# This file is loaded by the :command:`find_package` command and defines
+# variables/targets for CMake projects that use libcppx.
+#
+# This file will define the following variables:
+#
+# ``libcppx_INCLUDE_DIRS``
+#   The list of directories to search for header files when using libcppx.
+#
+# The :command:`find_package` command will also define the following variables
+# (where ``<package>`` is the package name given to the invocation of the
+# command, either as the first argument or as one of the arguments to the
+# ``NAMES`` option):
+#
+# ``<package>_FOUND``
+#   Set to true if libcppx was found and can be used.
+# ``<package>_CONFIG``
+#   Path to this package configuration file.
+#
+# In addition, the cache variable ``<package>_DIR`` will be set to the path to
+# the directory containing this package configuration file.
+
+@PACKAGE_INIT@
+
+# Set variables.
+set_and_check(libcppx_INCLUDE_DIR "@PACKAGE_LIBCPPX_INCLUDE_DIR@")
+if(NOT PACKAGE_PREFIX_DIR STREQUAL "@CMAKE_INSTALL_PREFIX@")
+  set_and_check(libcppx_EXTRA_INCLUDE_DIR "@PACKAGE_LIBCPPX_EXTRA_INCLUDE_DIR@")
+endif()
+set(libcppx_INCLUDE_DIRS ${libcppx_EXTRA_INCLUDE_DIR} ${libcppx_INCLUDE_DIR})
+
+# Add imported targets.
+include(${CMAKE_CURRENT_LIST_DIR}/libcppx-targets.cmake)

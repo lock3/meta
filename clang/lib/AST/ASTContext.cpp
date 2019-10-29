@@ -31,6 +31,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExternalASTSource.h"
+#include "clang/AST/LocInfoType.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/MangleNumberingContext.h"
 #include "clang/AST/NestedNameSpecifier.h"
@@ -1380,6 +1381,9 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target,
   // nullptr type (C++0x 2.14.7)
   InitBuiltinType(NullPtrTy,           BuiltinType::NullPtr);
 
+  // meta::info type
+  InitBuiltinType(MetaInfoTy,          BuiltinType::MetaInfo);
+
   // half type (OpenCL 6.1.1.1) / ARM NEON __fp16
   InitBuiltinType(HalfTy, BuiltinType::Half);
 
@@ -2005,6 +2009,10 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
     case BuiltinType::NullPtr:
       Width = Target->getPointerWidth(0); // C++ 3.9.1p11: sizeof(nullptr_t)
       Align = Target->getPointerAlign(0); //   == sizeof(void*)
+      break;
+    case BuiltinType::MetaInfo:
+      Width = Target->getMetaInfoWidth();
+      Align = Target->getMetaInfoAlign();
       break;
     case BuiltinType::ObjCId:
     case BuiltinType::ObjCClass:
@@ -3252,6 +3260,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::TypeOfExpr:
   case Type::TypeOf:
   case Type::Decltype:
+  case Type::Reflected:
   case Type::UnaryTransform:
   case Type::DependentName:
   case Type::InjectedClassName:
@@ -3262,6 +3271,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::Auto:
   case Type::DeducedTemplateSpecialization:
   case Type::PackExpansion:
+  case Type::CXXDependentVariadicReifier:
     llvm_unreachable("type should never be variably-modified");
 
   // These types can be variably-modified but should never need to
@@ -4451,7 +4461,7 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
     if (NTTP->isParameterPack())
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
                                         None);
-    Arg = TemplateArgument(E);
+    Arg = TemplateArgument(E, TemplateArgument::Expression);
   } else {
     auto *TTP = cast<TemplateTemplateParmDecl>(Param);
     if (TTP->isParameterPack())
@@ -4513,6 +4523,17 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
       PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
+  return QualType(T, 0);
+}
+
+QualType
+ASTContext::getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
+                                               SourceLocation EllipsisLoc,
+                                               SourceLocation RParenLoc) {
+  CXXDependentVariadicReifierType *T =
+    new (*this, TypeAlignment)
+    CXXDependentVariadicReifierType(Range, KWLoc, EllipsisLoc, RParenLoc);
+  Types.push_back(T);
   return QualType(T, 0);
 }
 
@@ -4944,6 +4965,36 @@ QualType ASTContext::getDecltypeType(Expr *e, QualType UnderlyingType) const {
   Types.push_back(dt);
   return QualType(dt, 0);
 }
+
+QualType ASTContext::getReflectedType(Expr *E, QualType T) const {
+  ReflectedType *RT;
+
+  const Type *UnderlyingType = &(*T);
+  if (const LocInfoType *LITy = dyn_cast_or_null<LocInfoType>(UnderlyingType)) {
+    T = LITy->getType();
+  }
+
+  if (E->isInstantiationDependent()) {
+    llvm::FoldingSetNodeID ID;
+    DependentReflectedType::Profile(ID, *this, E);
+
+    void *InsertPos = nullptr;
+    DependentReflectedType *Canon
+      = DependentReflectedTypes.FindNodeOrInsertPos(ID, InsertPos);
+    if (!Canon) {
+      // Build a new, canonical typename(E) type.
+      Canon = new (*this, TypeAlignment) DependentReflectedType(*this, E);
+      DependentReflectedTypes.InsertNode(Canon, InsertPos);
+    }
+    RT = new (*this, TypeAlignment) ReflectedType(E, T, QualType(Canon, 0));
+  } else {
+    CanQualType Canon = getCanonicalType(T);
+    RT = new (*this, TypeAlignment) ReflectedType(E, T, Canon);
+  }
+  Types.push_back(RT);
+  return QualType(RT, 0);
+}
+
 
 /// getUnaryTransformationType - We don't unique these, since the memory
 /// savings are minimal and these are rare.
@@ -5442,6 +5493,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::Null:
       return Arg;
 
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
       return Arg;
 
@@ -6703,6 +6755,7 @@ static char getObjCEncodingForPrimitiveType(const ASTContext *C,
     case BuiltinType::SatUShortFract:
     case BuiltinType::SatUFract:
     case BuiltinType::SatULongFract:
+    case BuiltinType::MetaInfo: // FIXME: Does this belong here?
       // FIXME: potentially need @encodes for these!
       return ' ';
 
@@ -9062,7 +9115,8 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
         if (VAT) {
           llvm::APSInt TheInt;
           Expr *E = VAT->getSizeExpr();
-          if (E && E->isIntegerConstantExpr(TheInt, *this))
+          Expr::EvalContext EvalCtx(*this, nullptr);
+          if (E && E->isIntegerConstantExpr(TheInt, EvalCtx))
             return std::make_pair(true, TheInt);
           else
             return std::make_pair(false, TheInt);
@@ -10075,7 +10129,8 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
     return true;
 
   // Variables that have initialization with side-effects are required.
-  if (VD->getInit() && VD->getInit()->HasSideEffects(*this) &&
+  Expr::EvalContext EvalCtx(*this, nullptr);
+  if (VD->getInit() && VD->getInit()->HasSideEffects(EvalCtx) &&
       // We can get a value-dependent initializer during error recovery.
       (VD->getInit()->isValueDependent() || !VD->evaluateValue()))
     return true;

@@ -40,3 +40,9 @@ add_llvm_external_project(clang-tools-extra extra)
 
 # libclang may require clang-tidy in clang-tools-extra.
 add_clang_subdirectory(libclang)
+
+# Add language support for reflection and metaprogramming.
+#
+# FIXME: This shouldn't be part of Clang, but we're bundling it because
+# the alternatives are currently worse.
+add_clang_subdirectory(libcppx)

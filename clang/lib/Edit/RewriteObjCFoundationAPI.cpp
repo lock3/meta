@@ -1034,6 +1034,7 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
     case CK_FloatingComplexToBoolean:
     case CK_IntegralComplexToReal:
     case CK_IntegralComplexToBoolean:
+    case CK_ReflectionToBoolean:
     case CK_AtomicToNonAtomic:
     case CK_AddressSpaceConversion:
       needsCast = true;

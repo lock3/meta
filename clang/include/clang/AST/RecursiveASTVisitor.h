@@ -800,6 +800,11 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclarationNameInfo(
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
+  case DeclarationName::CXXReflectedIdName: {
+    for (Expr *E : NameInfo.getName().getCXXReflectedIdArguments())
+      TRY_TO(TraverseStmt(E));
+    break;
+  }
   case DeclarationName::CXXUsingDirective:
     break;
   }
@@ -835,6 +840,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(Arg.getAsExpr());
 
@@ -876,6 +882,7 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
     return getDerived().TraverseTemplateName(
         Arg.getAsTemplateOrTemplatePattern());
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return getDerived().TraverseStmt(ArgLoc.getSourceExpression());
 
@@ -1029,6 +1036,9 @@ DEF_TRAVERSE_TYPE(TypeOfType, { TRY_TO(TraverseType(T->getUnderlyingType())); })
 DEF_TRAVERSE_TYPE(DecltypeType,
                   { TRY_TO(TraverseStmt(T->getUnderlyingExpr())); })
 
+DEF_TRAVERSE_TYPE(ReflectedType,
+                  { TRY_TO(TraverseStmt(T->getReflection())); })
+
 DEF_TRAVERSE_TYPE(UnaryTransformType, {
   TRY_TO(TraverseType(T->getBaseType()));
   TRY_TO(TraverseType(T->getUnderlyingType()));
@@ -1081,6 +1091,7 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
 })
 
 DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
+DEF_TRAVERSE_TYPE(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPE(ObjCTypeParamType, {})
 
@@ -1273,6 +1284,10 @@ DEF_TRAVERSE_TYPELOC(DecltypeType, {
   TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
 })
 
+DEF_TRAVERSE_TYPELOC(ReflectedType, {
+  TRY_TO(TraverseStmt(TL.getTypePtr()->getReflection()));
+})
+
 DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
   TRY_TO(TraverseTypeLoc(TL.getUnderlyingTInfo()->getTypeLoc()));
 })
@@ -1337,6 +1352,8 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPELOC(PackExpansionType,
                      { TRY_TO(TraverseTypeLoc(TL.getPatternLoc())); })
+
+DEF_TRAVERSE_TYPELOC(CXXDependentVariadicReifierType, {})
 
 DEF_TRAVERSE_TYPELOC(ObjCTypeParamType, {})
 
@@ -2223,6 +2240,26 @@ DEF_TRAVERSE_STMT(CXXForRangeStmt, {
   }
 })
 
+DEF_TRAVERSE_STMT(CXXCompositeExpansionStmt, {
+  if (!getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
+    // Visit everything else only if shouldVisitImplicitCode().
+    ShouldVisitChildren = false;
+  }
+})
+
+DEF_TRAVERSE_STMT(CXXPackExpansionStmt, {
+  if (!getDerived().shouldVisitImplicitCode()) {
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getRangeExprStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getLoopVarStmt());
+    TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(S->getBody());
+    // Visit everything else only if shouldVisitImplicitCode().
+    ShouldVisitChildren = false;
+  }
+})
+
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
   TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));
@@ -2498,6 +2535,8 @@ DEF_TRAVERSE_STMT(CXXMemberCallExpr, {})
 DEF_TRAVERSE_STMT(AddrLabelExpr, {})
 DEF_TRAVERSE_STMT(ArraySubscriptExpr, {})
 DEF_TRAVERSE_STMT(OMPArraySectionExpr, {})
+DEF_TRAVERSE_STMT(CXXSelectMemberExpr, {})
+DEF_TRAVERSE_STMT(CXXSelectPackExpr, {})
 
 DEF_TRAVERSE_STMT(BlockExpr, {
   TRY_TO(TraverseDecl(S->getBlockDecl()));
@@ -2624,6 +2663,19 @@ DEF_TRAVERSE_STMT(FunctionParmPackExpr, {})
 DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, {})
 DEF_TRAVERSE_STMT(CXXFoldExpr, {})
 DEF_TRAVERSE_STMT(AtomicExpr, {})
+DEF_TRAVERSE_STMT(CXXConstantExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectExpr, {})
+DEF_TRAVERSE_STMT(CXXInvalidReflectionExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectionReadQueryExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectPrintLiteralExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectPrintReflectionExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectDumpReflectionExpr, {})
+DEF_TRAVERSE_STMT(CXXCompilerErrorExpr, {})
+DEF_TRAVERSE_STMT(CXXIdExprExpr, {})
+DEF_TRAVERSE_STMT(CXXReflectedIdExpr, {})
+DEF_TRAVERSE_STMT(CXXValueOfExpr, {})
+DEF_TRAVERSE_STMT(CXXConcatenateExpr, {})
+DEF_TRAVERSE_STMT(CXXDependentVariadicReifierExpr, {})
 
 // For coroutines expressions, traverse either the operand
 // as written or the implied calls, depending on what the

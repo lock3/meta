@@ -1010,6 +1010,9 @@ namespace serialization {
       /// \brief The '_Sat unsigned long _Fract' type
       PREDEF_TYPE_SAT_ULONG_FRACT_ID = 69,
 
+      /// \brief C++ meta::info type
+      PREDEF_TYPE_META_INFO_ID = 70,
+
       /// OpenCL image types with auto numeration
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
       PREDEF_TYPE_##Id##_ID,
@@ -1028,7 +1031,7 @@ namespace serialization {
     ///
     /// Type IDs for non-predefined types will start at
     /// NUM_PREDEF_TYPE_IDs.
-    const unsigned NUM_PREDEF_TYPE_IDS = 200;
+    const unsigned NUM_PREDEF_TYPE_IDS = 201;
 
     /// Record codes for each kind of type.
     ///
@@ -1179,7 +1182,13 @@ namespace serialization {
       TYPE_DEPENDENT_SIZED_VECTOR = 48,
 
       /// A type defined in a macro.
-      TYPE_MACRO_QUALIFIED = 49
+      TYPE_MACRO_QUALIFIED = 49,
+
+      /// A ReflectedType record.
+      TYPE_REFLECTED  = 50,
+
+      /// A CXXDependentVariadicReifier record.
+      TYPE_CXX_DEPENDENT_VARIADIC_REIFIER = 51,
     };
 
     /// The type IDs for special types constructed by semantic
@@ -1832,9 +1841,15 @@ namespace serialization {
 
       /// A CXXTryStmt record.
       STMT_CXX_TRY,
-      /// A CXXForRangeStmt record.
 
+      /// A CXXForRangeStmt record.
       STMT_CXX_FOR_RANGE,
+
+      /// A CXXCompositeExpansionStmt record.
+      STMT_CXX_PACK_EXPANSION,
+
+      /// A CXXCompositeExpansionStmt record.
+      STMT_CXX_COMP_EXPANSION,
 
       /// A CXXOperatorCallExpr record.
       EXPR_CXX_OPERATOR_CALL,

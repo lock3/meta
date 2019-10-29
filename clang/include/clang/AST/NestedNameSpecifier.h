@@ -519,6 +519,179 @@ inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
   return DB;
 }
 
+/// Represents a C++ nested-name-specifier or a global scope specifier.
+///
+/// These can be in 3 states:
+///   1) Not present, identified by isEmpty()
+///   2) Present, identified by isNotEmpty()
+///      2.a) Valid, identified by isValid()
+///      2.b) Invalid, identified by isInvalid().
+///
+/// isSet() is deprecated because it mostly corresponded to "valid" but was
+/// often used as if it meant "present".
+///
+/// The actual scope is described by getScopeRep().
+class CXXScopeSpec {
+  SourceRange Range;
+  NestedNameSpecifierLocBuilder Builder;
+
+public:
+  SourceRange getRange() const { return Range; }
+  void setRange(SourceRange R) { Range = R; }
+  void setBeginLoc(SourceLocation Loc) { Range.setBegin(Loc); }
+  void setEndLoc(SourceLocation Loc) { Range.setEnd(Loc); }
+  SourceLocation getBeginLoc() const { return Range.getBegin(); }
+  SourceLocation getEndLoc() const { return Range.getEnd(); }
+
+  /// Retrieve the representation of the nested-name-specifier.
+  NestedNameSpecifier *getScopeRep() const {
+    return Builder.getRepresentation();
+  }
+
+  /// Extend the current nested-name-specifier by another
+  /// nested-name-specifier component of the form 'type::'.
+  ///
+  /// \param Context The AST context in which this nested-name-specifier
+  /// resides.
+  ///
+  /// \param TemplateKWLoc The location of the 'template' keyword, if present.
+  ///
+  /// \param TL The TypeLoc that describes the type preceding the '::'.
+  ///
+  /// \param ColonColonLoc The location of the trailing '::'.
+  void Extend(ASTContext &Context, SourceLocation TemplateKWLoc, TypeLoc TL,
+              SourceLocation ColonColonLoc);
+
+  /// Extend the current nested-name-specifier by another
+  /// nested-name-specifier component of the form 'identifier::'.
+  ///
+  /// \param Context The AST context in which this nested-name-specifier
+  /// resides.
+  ///
+  /// \param Identifier The identifier.
+  ///
+  /// \param IdentifierLoc The location of the identifier.
+  ///
+  /// \param ColonColonLoc The location of the trailing '::'.
+  void Extend(ASTContext &Context, IdentifierInfo *Identifier,
+              SourceLocation IdentifierLoc, SourceLocation ColonColonLoc);
+
+  /// Extend the current nested-name-specifier by another
+  /// nested-name-specifier component of the form 'namespace::'.
+  ///
+  /// \param Context The AST context in which this nested-name-specifier
+  /// resides.
+  ///
+  /// \param Namespace The namespace.
+  ///
+  /// \param NamespaceLoc The location of the namespace name.
+  ///
+  /// \param ColonColonLoc The location of the trailing '::'.
+  void Extend(ASTContext &Context, NamespaceDecl *Namespace,
+              SourceLocation NamespaceLoc, SourceLocation ColonColonLoc);
+
+  /// Extend the current nested-name-specifier by another
+  /// nested-name-specifier component of the form 'namespace-alias::'.
+  ///
+  /// \param Context The AST context in which this nested-name-specifier
+  /// resides.
+  ///
+  /// \param Alias The namespace alias.
+  ///
+  /// \param AliasLoc The location of the namespace alias
+  /// name.
+  ///
+  /// \param ColonColonLoc The location of the trailing '::'.
+  void Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
+              SourceLocation AliasLoc, SourceLocation ColonColonLoc);
+
+  /// Turn this (empty) nested-name-specifier into the global
+  /// nested-name-specifier '::'.
+  void MakeGlobal(ASTContext &Context, SourceLocation ColonColonLoc);
+
+  /// Turns this (empty) nested-name-specifier into '__super'
+  /// nested-name-specifier.
+  ///
+  /// \param Context The AST context in which this nested-name-specifier
+  /// resides.
+  ///
+  /// \param RD The declaration of the class in which nested-name-specifier
+  /// appeared.
+  ///
+  /// \param SuperLoc The location of the '__super' keyword.
+  /// name.
+  ///
+  /// \param ColonColonLoc The location of the trailing '::'.
+  void MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
+                 SourceLocation SuperLoc, SourceLocation ColonColonLoc);
+
+  /// Make a new nested-name-specifier from incomplete source-location
+  /// information.
+  ///
+  /// FIXME: This routine should be used very, very rarely, in cases where we
+  /// need to synthesize a nested-name-specifier. Most code should instead use
+  /// \c Adopt() with a proper \c NestedNameSpecifierLoc.
+  void MakeTrivial(ASTContext &Context, NestedNameSpecifier *Qualifier,
+                   SourceRange R);
+
+  /// Adopt an existing nested-name-specifier (with source-range
+  /// information).
+  void Adopt(NestedNameSpecifierLoc Other);
+
+  /// Retrieve a nested-name-specifier with location information, copied
+  /// into the given AST context.
+  ///
+  /// \param Context The context into which this nested-name-specifier will be
+  /// copied.
+  NestedNameSpecifierLoc getWithLocInContext(ASTContext &Context) const;
+
+  /// Retrieve the location of the name in the last qualifier
+  /// in this nested name specifier.
+  ///
+  /// For example, the location of \c bar
+  /// in
+  /// \verbatim
+  ///   \::foo::bar<0>::
+  ///           ^~~
+  /// \endverbatim
+  SourceLocation getLastQualifierNameLoc() const;
+
+  /// No scope specifier.
+  bool isEmpty() const { return !Range.isValid(); }
+  /// A scope specifier is present, but may be valid or invalid.
+  bool isNotEmpty() const { return !isEmpty(); }
+
+  /// An error occurred during parsing of the scope specifier.
+  bool isInvalid() const { return isNotEmpty() && getScopeRep() == nullptr; }
+  /// A scope specifier is present, and it refers to a real scope.
+  bool isValid() const { return isNotEmpty() && getScopeRep() != nullptr; }
+
+  /// Indicate that this nested-name-specifier is invalid.
+  void SetInvalid(SourceRange R) {
+    assert(R.isValid() && "Must have a valid source range");
+    if (Range.getBegin().isInvalid())
+      Range.setBegin(R.getBegin());
+    Range.setEnd(R.getEnd());
+    Builder.Clear();
+  }
+
+  /// Deprecated.  Some call sites intend isNotEmpty() while others intend
+  /// isValid().
+  bool isSet() const { return getScopeRep() != nullptr; }
+
+  void clear() {
+    Range = SourceRange();
+    Builder.Clear();
+  }
+
+  /// Retrieve the data associated with the source-location information.
+  char *location_data() const { return Builder.getBuffer().first; }
+
+  /// Retrieve the size of the data associated with source-location
+  /// information.
+  unsigned location_size() const { return Builder.getBuffer().second; }
+};
+
 } // namespace clang
 
 #endif // LLVM_CLANG_AST_NESTEDNAMESPECIFIER_H

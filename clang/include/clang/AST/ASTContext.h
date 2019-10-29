@@ -201,6 +201,7 @@ private:
     FunctionProtoTypes;
   mutable llvm::FoldingSet<DependentTypeOfExprType> DependentTypeOfExprTypes;
   mutable llvm::FoldingSet<DependentDecltypeType> DependentDecltypeTypes;
+  mutable llvm::FoldingSet<DependentReflectedType> DependentReflectedTypes;
   mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ObjCTypeParamType> ObjCTypeParamTypes;
   mutable llvm::FoldingSet<SubstTemplateTypeParmType>
@@ -585,6 +586,11 @@ public:
 
   /// Returns the clang bytecode interpreter context.
   interp::Context &getInterpContext();
+
+  /// Active destructures of structures or parameter packs, used by
+  /// expansion statements. Maps a record decl to its destructured fields.
+  using MemberVector = llvm::SmallVector<Expr *, 8>;
+  llvm::DenseMap<const Expr *, MemberVector *> Destructures;
 
   /// Container for either a single DynTypedNode or for an ArrayRef to
   /// DynTypedNode. For use with ParentMap.
@@ -1041,6 +1047,7 @@ public:
   CanQualType FloatComplexTy, DoubleComplexTy, LongDoubleComplexTy;
   CanQualType Float128ComplexTy;
   CanQualType VoidPtrTy, NullPtrTy;
+  CanQualType MetaInfoTy;
   CanQualType DependentTy, OverloadTy, BoundMemberTy, UnknownAnyTy;
   CanQualType BuiltinFnTy;
   CanQualType PseudoObjectTy, ARCUnbridgedCastTy;
@@ -1489,6 +1496,10 @@ public:
   QualType getPackExpansionType(QualType Pattern,
                                 Optional<unsigned> NumExpansions);
 
+  QualType getCXXDependentVariadicReifierType(Expr *Range, SourceLocation KWLoc,
+                                              SourceLocation EllipsisLoc,
+                                              SourceLocation RParenLoc);
+
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
 
@@ -1523,6 +1534,9 @@ public:
 
   /// C++11 decltype.
   QualType getDecltypeType(Expr *e, QualType UnderlyingType) const;
+
+  /// \brief Reflected types.
+  QualType getReflectedType(Expr *e, QualType UnderlyingType) const;
 
   /// Unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,

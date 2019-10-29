@@ -175,6 +175,11 @@ ExprResult Parser::ParseAssignmentExpression(TypeCastState isTypeCast) {
   return ParseRHSOfBinaryExpression(LHS, prec::Assignment);
 }
 
+ExprResult Parser::ParseConditionalExpression(TypeCastState isTypeCast) {
+  ExprResult LHS(ParseCastExpression(false, false, isTypeCast));
+  return ParseRHSOfBinaryExpression(LHS, prec::Conditional);
+}
+
 /// Parse an assignment expression where part of an Objective-C message
 /// send has already been parsed.
 ///
@@ -202,8 +207,7 @@ Parser::ParseConstantExpressionInExprEvalContext(TypeCastState isTypeCast) {
              Sema::ExpressionEvaluationContext::ConstantEvaluated &&
          "Call this function only if your ExpressionEvaluationContext is "
          "already ConstantEvaluated");
-  ExprResult LHS(ParseCastExpression(false, false, isTypeCast));
-  ExprResult Res(ParseRHSOfBinaryExpression(LHS, prec::Conditional));
+  ExprResult Res(ParseConditionalExpression(isTypeCast));
   return Actions.ActOnConstantExpression(Res);
 }
 
@@ -612,6 +616,7 @@ class CastExpressionIdValidator final : public CorrectionCandidateCallback {
 /// [C++11] 'noexcept' '(' expression ')' [C++11 5.3.7]
 /// [C++]   new-expression
 /// [C++]   delete-expression
+/// [Meta]  reflect-expression
 ///
 ///       unary-operator: one of
 ///         '&'  '*'  '+'  '-'  '~'  '!'
@@ -1049,21 +1054,21 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     CXXScopeSpec ScopeSpec;
     SourceLocation TemplateKWLoc;
     Token Replacement;
-    CastExpressionIdValidator Validator(
+    auto Validator = std::make_unique<CastExpressionIdValidator>(
         /*Next=*/Tok,
         /*AllowTypes=*/isTypeCast != NotTypeCast,
         /*AllowNonTypes=*/isTypeCast != IsTypeCast);
-    Validator.IsAddressOfOperand = isAddressOfOperand;
+    Validator->IsAddressOfOperand = isAddressOfOperand;
     if (Tok.isOneOf(tok::periodstar, tok::arrowstar)) {
-      Validator.WantExpressionKeywords = false;
-      Validator.WantRemainingKeywords = false;
+      Validator->WantExpressionKeywords = false;
+      Validator->WantRemainingKeywords = false;
     } else {
-      Validator.WantRemainingKeywords = Tok.isNot(tok::r_paren);
+      Validator->WantRemainingKeywords = Tok.isNot(tok::r_paren);
     }
     Name.setIdentifier(&II, ILoc);
     Res = Actions.ActOnIdExpression(
         getCurScope(), ScopeSpec, TemplateKWLoc, Name, Tok.is(tok::l_paren),
-        isAddressOfOperand, &Validator,
+        isAddressOfOperand, std::move(Validator),
         /*IsInlineAsmIdentifier=*/false,
         Tok.is(tok::r_paren) ? nullptr : &Replacement);
     if (!Res.isInvalid() && Res.isUnset()) {
@@ -1236,6 +1241,22 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXThis();
     break;
 
+  case tok::kw_reflexpr:
+    Res = ParseCXXReflectExpression();
+    break;
+
+  case tok::kw_idexpr:
+    Res = ParseCXXIdExprExpression();
+    break;
+
+  case tok::kw_valueof:
+    Res = ParseCXXValueOfExpression();
+    break;
+
+  case tok::kw___select_member:
+    Res = ParseCXXSelectMemberExpr();
+    break;
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       ParsedType Type = getTypeAnnotation(Tok);
@@ -1369,7 +1390,17 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     LLVM_FALLTHROUGH;
   }
 
+  // [Meta] id-expression: template unqualid ( reflection )
+  case tok::kw_template: {
+    if (Tok.is(tok::kw_template) && !NextToken().is(tok::kw_unqualid)) {
+      NotCastExpr = true;
+      return ExprError();
+    }
+
+    LLVM_FALLTHROUGH;
+  }
   case tok::kw_operator: // [C++] id-expression: operator/conversion-function-id
+  case tok::kw_unqualid: // [Meta] id-expression: unqualid ( reflection )
     Res = ParseCXXIdExpression(isAddressOfOperand);
     break;
 
@@ -1434,6 +1465,27 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_lvalue_expr:
   case tok::kw___is_rvalue_expr:
     return ParseExpressionTrait();
+
+  case tok::kw___reflect:
+    return ParseCXXReflectionReadQuery();
+
+  case tok::kw___invalid_reflection:
+    return ParseCXXInvalidReflectionExpression();
+
+  case tok::kw___reflect_print:
+    return ParseCXXReflectPrintLiteralExpression();
+
+  case tok::kw___reflect_pretty_print:
+    return ParseCXXReflectPrintReflectionExpression();
+
+  case tok::kw___reflect_dump:
+    return ParseCXXReflectDumpReflectionExpression();
+
+  case tok::kw___compiler_error:
+    return ParseCXXCompilerErrorExpression();
+
+  case tok::kw___concatenate:
+    return ParseCXXConcatenateExpression();
 
   case tok::at: {
     SourceLocation AtLoc = ConsumeToken();
@@ -1679,6 +1731,7 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       };
       if (OpKind == tok::l_paren || !LHS.isInvalid()) {
         if (Tok.isNot(tok::r_paren)) {
+          Sema::OverloadParseRAII ParsingOverloads(Actions);
           if (ParseExpressionList(ArgExprs, CommaLocs, [&] {
                 PreferredType.enterFunctionArgument(Tok.getLocation(),
                                                     RunSignatureHelp);
@@ -1759,6 +1812,18 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
                                                    MayBePseudoDestructor);
         if (LHS.isInvalid())
           break;
+
+        if (getLangOpts().CPlusPlus && Tok.is(tok::kw_idexpr)) {
+          ExprResult IdExpr = ParseCXXIdExprExpression();
+
+          if (IdExpr.isInvalid())
+            return ExprError(); // Errors should already be reported
+                                // by ParseCXXIdExprExpression.
+
+          LHS = Actions.ActOnMemberAccessExpr(LHS.get(), OpLoc,
+                                              OpKind, IdExpr.get());
+          break;
+        }
 
         ParseOptionalCXXScopeSpecifier(SS, ObjectType,
                                        /*EnteringContext=*/false,
@@ -2896,20 +2961,41 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
     if (ExpressionStarts)
       ExpressionStarts();
 
-    ExprResult Expr;
+    ExprResult ArgExpr;
+    bool VariadicReifier = isVariadicReifier();
+
     if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
       Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-      Expr = ParseBraceInitializer();
+      ArgExpr = ParseBraceInitializer();
+    } else if (VariadicReifier) {
+      llvm::SmallVector<Expr *, 4> ExpandedExprs;
+
+      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+      SawError = ParseVariadicReifier(ExpandedExprs);
+
+      // We need to insert several fake commas to get around error checking.
+      // We only need size() - 1, since there is already a comma in front of
+      // the reifier parameter.
+      if (!ExpandedExprs.empty())
+        for (std::size_t I = 0; I < ExpandedExprs.size() - 1; ++I)
+          CommaLocs.emplace_back();
+
+      if (SawError)
+        SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
+
+      // Add our expanded expressions into the parameter list.
+      Exprs.append(ExpandedExprs.begin(), ExpandedExprs.end());
     } else
-      Expr = ParseAssignmentExpression();
+      ArgExpr = ParseAssignmentExpression();
 
     if (Tok.is(tok::ellipsis))
-      Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());
-    if (Expr.isInvalid()) {
+      ArgExpr = Actions.ActOnPackExpansion(ArgExpr.get(), ConsumeToken());
+    if (ArgExpr.isInvalid() && !VariadicReifier) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;
-    } else {
-      Exprs.push_back(Expr.get());
+    } else if (!VariadicReifier) {
+      Exprs.push_back(ArgExpr.get());
     }
 
     if (Tok.isNot(tok::comma))
@@ -2928,6 +3014,7 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       if (Expr.isUsable()) E = Expr.get();
     }
   }
+
   return SawError;
 }
 

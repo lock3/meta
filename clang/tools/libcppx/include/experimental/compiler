@@ -1,0 +1,45 @@
+// -*- C++ -*-
+
+#ifndef CPPX_COMPILER
+#define CPPX_COMPILER
+
+#include "meta"
+
+namespace std::experimental
+{
+
+namespace meta {
+inline namespace v1 {
+
+  struct {
+    consteval void print(info type_reflection) const {
+      (void) __reflect_pretty_print(definition_of(type_reflection));
+    }
+
+    consteval void print(const char* message = "") const {
+      (void) __reflect_print(message);
+    }
+
+    consteval void error(const char* message) const {
+      __compiler_error(message);
+    }
+
+    consteval void require(bool condition, const char* message) const {
+      if (!condition) error(message);
+    }
+  } compiler;
+
+  [[deprecated]] consteval void compiler_print_type_definition(info type_reflection) {
+    (void) __reflect_pretty_print(definition_of(type_reflection));
+  }
+
+  [[deprecated]] consteval void compiler_print_lines(int num_lines) {
+    for (int i = 0; i < num_lines; ++i)
+      compiler.print("");
+  }
+
+} // inline namespace v1
+} // namespace meta
+} // namespace cppx
+
+#endif // CPPX_COMPILER

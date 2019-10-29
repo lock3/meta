@@ -1892,6 +1892,14 @@ public:
   Expr *getUnderlyingExpr() const { return getTypePtr()->getUnderlyingExpr(); }
 };
 
+// FIXME: location of the 'typename' and parens.
+class ReflectedTypeLoc : public InheritingConcreteTypeLoc<TypeSpecTypeLoc,
+                                                         ReflectedTypeLoc,
+                                                         ReflectedType> {
+public:
+  Expr *getReflection() const { return getTypePtr()->getReflection(); }
+};
+
 struct UnaryTransformTypeLocInfo {
   // FIXME: While there's only one unary transform right now, future ones may
   // need different representations
@@ -2230,6 +2238,41 @@ public:
 
   QualType getInnerType() const {
     return this->getTypePtr()->getPattern();
+  }
+};
+
+/// A dependent C++ variadic typename expression.
+struct CXXDependentVariadicReifierTypeLocInfo {
+  SourceLocation EllipsisLoc;
+};
+
+class CXXDependentVariadicReifierTypeLoc :
+    public ConcreteTypeLoc<UnqualTypeLoc, CXXDependentVariadicReifierTypeLoc,
+                           CXXDependentVariadicReifierType,
+                           CXXDependentVariadicReifierTypeLocInfo> {
+public:
+    SourceLocation getEllipsisLoc() const {
+    return this->getLocalData()->EllipsisLoc;
+  }
+
+  void setEllipsisLoc(SourceLocation Loc) {
+    this->getLocalData()->EllipsisLoc = Loc;
+  }
+
+  SourceRange getLocalSourceRange() const {
+    return SourceRange(getEllipsisLoc(), getEllipsisLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc) {
+    setEllipsisLoc(Loc);
+  }
+
+  TypeLoc getPatternLoc() const {
+    return getInnerTypeLoc();
+  }
+
+  QualType getInnerType() const {
+    return this->getTypePtr()->getRange()->getType();
   }
 };
 

@@ -510,7 +510,8 @@ namespace {
 
     bool UsesThis;
 
-    DynamicThisUseChecker(const ASTContext &C) : super(C), UsesThis(false) {}
+    DynamicThisUseChecker(const Expr::EvalContext &C)
+      : super(C), UsesThis(false) {}
 
     // Black-list all explicit and implicit references to 'this'.
     //
@@ -521,8 +522,10 @@ namespace {
   };
 } // end anonymous namespace
 
-static bool BaseInitializerUsesThis(ASTContext &C, const Expr *Init) {
-  DynamicThisUseChecker Checker(C);
+static bool BaseInitializerUsesThis(ASTContext &C,
+                                    const Expr *Init) {
+  Expr::EvalContext EvalCtx(C, nullptr);
+  DynamicThisUseChecker Checker(EvalCtx);
   Checker.Visit(Init);
   return Checker.UsesThis;
 }

@@ -1100,6 +1100,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_L__FUNCSIG__:
   case tok::kw___PRETTY_FUNCTION__:
   case tok::kw___uuidof:
+  case tok::kw___compiler_error:
 #define TYPE_TRAIT(N,Spelling,K) \
   case tok::kw_##Spelling:
 #include "clang/Basic/TokenKinds.def"
@@ -1404,6 +1405,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
     //   'friend'
     //   'typedef'
     //   'constexpr'
+    //   'consteval'
   case tok::kw_friend:
   case tok::kw_typedef:
   case tok::kw_constexpr:
@@ -1625,6 +1627,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
 
     // simple-type-specifier:
 
+  case tok::annot_refltype:
   case tok::annot_typename:
   case_typename:
     // In Objective-C, we might have a protocol-qualified type.

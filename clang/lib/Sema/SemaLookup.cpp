@@ -438,6 +438,11 @@ static bool isPreferredLookupResult(Sema &S, Sema::LookupNameKind Kind,
 
   // For most kinds of declaration, it doesn't really matter which one we pick.
   if (!isa<FunctionDecl>(DUnderlying) && !isa<VarDecl>(DUnderlying)) {
+    // If we're reflecting, and the existing declaration is a namespace
+    // alias decl, prefer the alias decl.
+    if (S.isReflecting() && isa<NamespaceAliasDecl>(Existing))
+      return true;
+
     // If the existing declaration is hidden, prefer the new one. Otherwise,
     // keep what we've got.
     return !S.isVisible(Existing);
@@ -805,7 +810,7 @@ static void InsertOCLBuiltinDeclarationsFromTable(Sema &S, LookupResult &LR,
         for (unsigned IParm = 0, e = FP->getNumParams(); IParm != e; ++IParm) {
           ParmVarDecl *Parm = ParmVarDecl::Create(
               Context, NewOpenCLBuiltin, SourceLocation(), SourceLocation(),
-              nullptr, FP->getParamType(IParm),
+              DeclarationName(), FP->getParamType(IParm),
               /*TInfo=*/nullptr, SC_None, nullptr);
           Parm->setScopeInfo(0, IParm);
           ParmList.push_back(Parm);
@@ -1232,8 +1237,8 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
 
   Scope *Initial = S;
   IdentifierResolver::iterator
-    I = IdResolver.begin(Name),
-    IEnd = IdResolver.end();
+    I = IdResolver->begin(Name),
+    IEnd = IdResolver->end();
 
   // First we lookup local scope.
   // We don't consider using-directives, as per 7.3.4.p1 [namespace.udir]
@@ -1936,8 +1941,8 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
     // deep shadowing is extremely uncommon.
     bool LeftStartingScope = false;
 
-    for (IdentifierResolver::iterator I = IdResolver.begin(Name),
-                                   IEnd = IdResolver.end();
+    for (IdentifierResolver::iterator I = IdResolver->begin(Name),
+                                   IEnd = IdResolver->end();
          I != IEnd; ++I)
       if (NamedDecl *D = R.getAcceptableDecl(*I)) {
         if (NameKind == LookupRedeclarationWithLinkage) {
@@ -2698,6 +2703,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
 
     case TemplateArgument::Declaration:
     case TemplateArgument::Integral:
+    case TemplateArgument::Reflected:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:
       // [Note: non-type template arguments do not contribute to the set of
@@ -3782,10 +3788,10 @@ private:
 
       // Walk all lookup results in the TU for each identifier.
       for (const auto &Ident : Idents) {
-        for (auto I = S.IdResolver.begin(Ident.getValue()),
-                  E = S.IdResolver.end();
+        for (auto I = S.IdResolver->begin(Ident.getValue()),
+                  E = S.IdResolver->end();
              I != E; ++I) {
-          if (S.IdResolver.isDeclInScope(*I, Ctx)) {
+          if (S.IdResolver->isDeclInScope(*I, Ctx)) {
             if (NamedDecl *ND = Result.getAcceptableDecl(*I)) {
               Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
               Visited.add(ND);

@@ -65,6 +65,7 @@ using namespace llvm;
 #define TypeMacroArgs "(Class, Base)"
 #define LastTypeMacroName "LAST_TYPE"
 #define LeafTypeMacroName "LEAF_TYPE"
+#define MetaTypeMacroName "META_TYPE"
 
 // These are spellings in the tblgen file.
 // (Type is also used for the spelling of the AST class.)
@@ -74,6 +75,7 @@ using namespace llvm;
 #define NeverCanonicalClassName "NeverCanonical"
 #define NeverCanonicalUnlessDependentClassName "NeverCanonicalUnlessDependent"
 #define LeafTypeClassName "LeafType"
+#define MetaTypeClassName "MetaType"
 #define AbstractFieldName "Abstract"
 #define BaseFieldName "Base"
 
@@ -128,6 +130,7 @@ void TypeNodeEmitter::emit() {
 	emitFallbackDefine(DependentTypeMacroName, TypeMacroName, TypeMacroArgs);
 	emitFallbackDefine(NonCanonicalUnlessDependentTypeMacroName, TypeMacroName, 
 										 TypeMacroArgs);
+	emitFallbackDefine(MetaTypeMacroName, DependentTypeMacroName, TypeMacroArgs);
 
 	// Invocations.
 	emitNodeInvocations();
@@ -170,6 +173,8 @@ void TypeNodeEmitter::emitNodeInvocations() {
 			setMacroName(NonCanonicalTypeMacroName);
 		if (type->isSubClassOf(NeverCanonicalUnlessDependentClassName))
 			setMacroName(NonCanonicalUnlessDependentTypeMacroName);
+    if (type->isSubClassOf(MetaTypeClassName))
+      setMacroName(MetaTypeMacroName);
 		if (type->getValueAsBit(AbstractFieldName))
 			setMacroName(AbstractTypeMacroName);
 		if (macroName.empty())

@@ -142,7 +142,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
       CodeSegStack(nullptr), CurInitSeg(nullptr), VisContext(nullptr),
       PragmaAttributeCurrentTargetDecl(nullptr),
       IsBuildingRecoveryCallExpr(false), Cleanup{}, LateTemplateParser(nullptr),
-      LateTemplateParserCleanup(nullptr), OpaqueParser(nullptr), IdResolver(pp),
+      LateTemplateParserCleanup(nullptr), OpaqueParser(nullptr),
+      IdResolver(new (ctxt) IdentifierResolver(pp)),
       StdExperimentalNamespaceCache(nullptr), StdInitializerList(nullptr),
       StdCoroutineTraitsCache(nullptr), CXXTypeInfoDecl(nullptr),
       MSVCGuidDecl(nullptr), NSNumberDecl(nullptr), NSValueDecl(nullptr),
@@ -157,8 +158,11 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
       NonInstantiationEntries(0), ArgumentPackSubstitutionIndex(-1),
       CurrentInstantiationScope(nullptr), DisableTypoCorrection(false),
       TyposCorrected(0), AnalysisWarnings(*this),
-      ThreadSafetyDeclCache(nullptr), VarDataSharingAttributesStack(nullptr),
-      CurScope(nullptr), Ident_super(nullptr), Ident___float128(nullptr) {
+      ThreadSafetyDeclCache(nullptr),
+      ReflectionCallbackObj(ReflectionCallbackImpl(*this)),
+      VarDataSharingAttributesStack(nullptr), CurScope(nullptr),
+      Ident_super(nullptr), Ident___float128(nullptr)
+      {
   TUScope = nullptr;
   isConstantEvaluatedOverride = false;
 
@@ -191,7 +195,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
 
 void Sema::addImplicitTypedef(StringRef Name, QualType T) {
   DeclarationName DN = &Context.Idents.get(Name);
-  if (IdResolver.begin(DN) == IdResolver.end())
+  if (IdResolver->begin(DN) == IdResolver->end())
     PushOnScopeChains(Context.buildImplicitTypedef(T, Name), TUScope);
 }
 
@@ -216,11 +220,11 @@ void Sema::Initialize() {
     // If either of the 128-bit integer types are unavailable to name lookup,
     // define them now.
     DeclarationName Int128 = &Context.Idents.get("__int128_t");
-    if (IdResolver.begin(Int128) == IdResolver.end())
+    if (IdResolver->begin(Int128) == IdResolver->end())
       PushOnScopeChains(Context.getInt128Decl(), TUScope);
 
     DeclarationName UInt128 = &Context.Idents.get("__uint128_t");
-    if (IdResolver.begin(UInt128) == IdResolver.end())
+    if (IdResolver->begin(UInt128) == IdResolver->end())
       PushOnScopeChains(Context.getUInt128Decl(), TUScope);
   }
 
@@ -230,35 +234,35 @@ void Sema::Initialize() {
     // If 'SEL' does not yet refer to any declarations, make it refer to the
     // predefined 'SEL'.
     DeclarationName SEL = &Context.Idents.get("SEL");
-    if (IdResolver.begin(SEL) == IdResolver.end())
+    if (IdResolver->begin(SEL) == IdResolver->end())
       PushOnScopeChains(Context.getObjCSelDecl(), TUScope);
 
     // If 'id' does not yet refer to any declarations, make it refer to the
     // predefined 'id'.
     DeclarationName Id = &Context.Idents.get("id");
-    if (IdResolver.begin(Id) == IdResolver.end())
+    if (IdResolver->begin(Id) == IdResolver->end())
       PushOnScopeChains(Context.getObjCIdDecl(), TUScope);
 
     // Create the built-in typedef for 'Class'.
     DeclarationName Class = &Context.Idents.get("Class");
-    if (IdResolver.begin(Class) == IdResolver.end())
+    if (IdResolver->begin(Class) == IdResolver->end())
       PushOnScopeChains(Context.getObjCClassDecl(), TUScope);
 
     // Create the built-in forward declaratino for 'Protocol'.
     DeclarationName Protocol = &Context.Idents.get("Protocol");
-    if (IdResolver.begin(Protocol) == IdResolver.end())
+    if (IdResolver->begin(Protocol) == IdResolver->end())
       PushOnScopeChains(Context.getObjCProtocolDecl(), TUScope);
   }
 
   // Create the internal type for the *StringMakeConstantString builtins.
   DeclarationName ConstantString = &Context.Idents.get("__NSConstantString");
-  if (IdResolver.begin(ConstantString) == IdResolver.end())
+  if (IdResolver->begin(ConstantString) == IdResolver->end())
     PushOnScopeChains(Context.getCFConstantStringDecl(), TUScope);
 
   // Initialize Microsoft "predefined C++ types".
   if (getLangOpts().MSVCCompat) {
     if (getLangOpts().CPlusPlus &&
-        IdResolver.begin(&Context.Idents.get("type_info")) == IdResolver.end())
+       IdResolver->begin(&Context.Idents.get("type_info")) == IdResolver->end())
       PushOnScopeChains(Context.buildImplicitRecord("type_info", TTK_Class),
                         TUScope);
 
@@ -347,12 +351,12 @@ void Sema::Initialize() {
 
   if (Context.getTargetInfo().hasBuiltinMSVaList()) {
     DeclarationName MSVaList = &Context.Idents.get("__builtin_ms_va_list");
-    if (IdResolver.begin(MSVaList) == IdResolver.end())
+    if (IdResolver->begin(MSVaList) == IdResolver->end())
       PushOnScopeChains(Context.getBuiltinMSVaListDecl(), TUScope);
   }
 
   DeclarationName BuiltinVaList = &Context.Idents.get("__builtin_va_list");
-  if (IdResolver.begin(BuiltinVaList) == IdResolver.end())
+  if (IdResolver->begin(BuiltinVaList) == IdResolver->end())
     PushOnScopeChains(Context.getBuiltinVaListDecl(), TUScope);
 }
 

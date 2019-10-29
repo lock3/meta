@@ -1295,6 +1295,7 @@ bool CursorVisitor::VisitDeclarationNameInfo(DeclarationNameInfo Name) {
   case clang::DeclarationName::CXXDeductionGuideName:
   case clang::DeclarationName::CXXOperatorName:
   case clang::DeclarationName::CXXUsingDirective:
+  case clang::DeclarationName::CXXReflectedIdName:
     return false;
 
   case clang::DeclarationName::CXXConstructorName:
@@ -1465,12 +1466,12 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
     return false;
-      
+
   case TemplateArgument::Type:
     if (TypeSourceInfo *TSInfo = TAL.getTypeSourceInfo())
       return Visit(TSInfo->getTypeLoc());
     return false;
-      
+
   case TemplateArgument::Declaration:
     if (Expr *E = TAL.getSourceDeclExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
@@ -1481,16 +1482,17 @@ bool CursorVisitor::VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL) {
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
     return false;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     if (Expr *E = TAL.getSourceExpression())
       return Visit(MakeCXCursor(E, StmtParent, TU, RegionOfInterest));
     return false;
-  
+
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
     if (VisitNestedNameSpecifierLoc(TAL.getTemplateQualifierLoc()))
       return true;
-      
+
     return VisitTemplateName(TAL.getArgument().getAsTemplateOrTemplatePattern(), 
                              TAL.getTemplateNameLoc());
   }
@@ -1516,6 +1518,7 @@ bool CursorVisitor::VisitBuiltinTypeLoc(BuiltinTypeLoc TL) {
 
   case BuiltinType::Void:
   case BuiltinType::NullPtr:
+  case BuiltinType::MetaInfo:
   case BuiltinType::Dependent:
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   case BuiltinType::Id:
@@ -1753,8 +1756,20 @@ bool CursorVisitor::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   return Visit(TL.getPatternLoc());
 }
 
+bool CursorVisitor::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
+  return Visit(TL.getPatternLoc());
+}
+
 bool CursorVisitor::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   if (Expr *E = TL.getUnderlyingExpr())
+    return Visit(MakeCXCursor(E, StmtParent, TU));
+
+  return false;
+}
+
+bool CursorVisitor::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+  if (Expr *E = TL.getReflection())
     return Visit(MakeCXCursor(E, StmtParent, TU));
 
   return false;
@@ -3788,7 +3803,8 @@ static const ExprEvalResult* evaluateExpr(Expr *expr, CXCursor C) {
   expr = expr->IgnoreParens();
   if (expr->isValueDependent())
     return nullptr;
-  if (!expr->EvaluateAsRValue(ER, ctx))
+  Expr::EvalContext EvalCtx(ctx, nullptr);
+  if (!expr->EvaluateAsRValue(ER, EvalCtx))
     return nullptr;
 
   QualType rettype;

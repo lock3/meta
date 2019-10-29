@@ -51,6 +51,8 @@ class NeverCanonicalUnlessDependent {}
 /// to types that may not be leaves should not declare this.
 class LeafType {}
 
+class MetaType { }
+
 def BuiltinType : Type, LeafType;
 def ComplexType : Type;
 def PointerType : Type;
@@ -81,6 +83,7 @@ def DecayedType : DerivedType<AdjustedType>, NeverCanonical;
 def TypeOfExprType : Type, NeverCanonicalUnlessDependent;
 def TypeOfType : Type, NeverCanonicalUnlessDependent;
 def DecltypeType : Type, NeverCanonicalUnlessDependent;
+def ReflectedType : Type, NeverCanonicalUnlessDependent;
 def UnaryTransformType : Type, NeverCanonicalUnlessDependent;
 def TagType : Type<1>;
 def RecordType : DerivedType<TagType>, LeafType;
@@ -98,6 +101,7 @@ def InjectedClassNameType : Type, AlwaysDependent, LeafType;
 def DependentNameType : Type, AlwaysDependent;
 def DependentTemplateSpecializationType : Type, AlwaysDependent;
 def PackExpansionType : Type, NeverCanonicalUnlessDependent;
+def CXXDependentVariadicReifierType : Type, MetaType;
 def ObjCTypeParamType : Type, NeverCanonical;
 def ObjCObjectType : Type;
 def ObjCInterfaceType : DerivedType<ObjCObjectType>, LeafType;

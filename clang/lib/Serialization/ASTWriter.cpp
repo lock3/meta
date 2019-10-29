@@ -359,6 +359,12 @@ void ASTTypeWriter::VisitDecltypeType(const DecltypeType *T) {
   Code = TYPE_DECLTYPE;
 }
 
+void ASTTypeWriter::VisitReflectedType(const ReflectedType *T) {
+  Record.AddTypeRef(T->getUnderlyingType());
+  Record.AddStmt(T->getReflection());
+  Code = TYPE_REFLECTED;
+}
+
 void ASTTypeWriter::VisitUnaryTransformType(const UnaryTransformType *T) {
   Record.AddTypeRef(T->getBaseType());
   Record.AddTypeRef(T->getUnderlyingType());
@@ -511,6 +517,12 @@ void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   else
     Record.push_back(0);
   Code = TYPE_PACK_EXPANSION;
+}
+
+void ASTTypeWriter::VisitCXXDependentVariadicReifierType
+(const CXXDependentVariadicReifierType *T) {
+  Record.AddTypeRef(T->getRange()->getType());
+  Code = TYPE_CXX_DEPENDENT_VARIADIC_REIFIER;
 }
 
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
@@ -752,6 +764,10 @@ void TypeLocWriter::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
 }
 
+void TypeLocWriter::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+  Record.AddSourceLocation(TL.getNameLoc());
+}
+
 void TypeLocWriter::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   Record.AddSourceLocation(TL.getKWLoc());
   Record.AddSourceLocation(TL.getLParenLoc());
@@ -843,6 +859,11 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
 }
 
 void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
+  Record.AddSourceLocation(TL.getEllipsisLoc());
+}
+
+void TypeLocWriter::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
 }
 
@@ -4935,8 +4956,8 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
     // Sort the identifiers to visit based on their name.
     llvm::sort(IIs, llvm::deref<std::less<>>());
     for (const IdentifierInfo *II : IIs) {
-      for (IdentifierResolver::iterator D = SemaRef.IdResolver.begin(II),
-                                     DEnd = SemaRef.IdResolver.end();
+      for (IdentifierResolver::iterator D = SemaRef.IdResolver->begin(II),
+                                     DEnd = SemaRef.IdResolver->end();
            D != DEnd; ++D) {
         GetDeclRef(*D);
       }
@@ -5070,7 +5091,7 @@ ASTFileSignature ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
   WriteSelectors(SemaRef);
   WriteReferencedSelectorsPool(SemaRef);
   WriteLateParsedTemplates(SemaRef);
-  WriteIdentifierTable(PP, SemaRef.IdResolver, isModule);
+  WriteIdentifierTable(PP, *SemaRef.IdResolver, isModule);
   WriteFPPragmaOptions(SemaRef.getFPOptions());
   WriteOpenCLExtensions(SemaRef);
   WriteOpenCLExtensionTypes(SemaRef);
@@ -5460,6 +5481,7 @@ void ASTRecordWriter::AddAPValue(const APValue &Value) {
   case APValue::Union:
   case APValue::MemberPointer:
   case APValue::AddrLabelDiff:
+  case APValue::Reflection:
     // TODO : Handle all these APValue::ValueKind.
     return;
   }
@@ -5538,6 +5560,7 @@ void ASTRecordWriter::AddCXXTemporary(const CXXTemporary *Temp) {
 void ASTRecordWriter::AddTemplateArgumentLocInfo(
     TemplateArgument::ArgKind Kind, const TemplateArgumentLocInfo &Arg) {
   switch (Kind) {
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
     break;
@@ -5756,6 +5779,9 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     AddIdentifierRef(Name.getCXXLiteralIdentifier());
     break;
 
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
+
   case DeclarationName::CXXUsingDirective:
     // No extra data to emit
     break;
@@ -5810,6 +5836,12 @@ void ASTRecordWriter::AddDeclarationNameLoc(const DeclarationNameLoc &DNLoc,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
+    break;
+  case DeclarationName::CXXReflectedIdName:
+    AddSourceLocation(SourceLocation::getFromRawEncoding(
+        DNLoc.CXXOperatorName.BeginOpNameLoc));
+    AddSourceLocation(SourceLocation::getFromRawEncoding(
+        DNLoc.CXXOperatorName.EndOpNameLoc));
     break;
   }
 }
@@ -6016,6 +6048,7 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
     else
       Record->push_back(0);
     break;
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
     break;

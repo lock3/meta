@@ -454,7 +454,7 @@ public:
   }
 
   /// Get the underlying, templated declaration.
-  NamedDecl *getTemplatedDecl() const { return TemplatedDecl; }
+  NamedDecl *getTemplatedDecl() const { return TemplatedDecl.getPointer(); }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -465,11 +465,20 @@ public:
 
   SourceRange getSourceRange() const override LLVM_READONLY {
     return SourceRange(getTemplateParameters()->getTemplateLoc(),
-                       TemplatedDecl->getSourceRange().getEnd());
+                       TemplatedDecl.getPointer()->getSourceRange().getEnd());
   }
 
+  /// Whether this is a (C++ Concepts TS) function or variable concept.
+  bool isConcept() const { return TemplatedDecl.getInt(); }
+  void setConcept() { TemplatedDecl.setInt(true); }
+
 protected:
-  NamedDecl *TemplatedDecl;
+  /// \brief The named declaration from which this template was instantiated.
+  /// (or null).
+  ///
+  /// The boolean value will be true to indicate that this template
+  /// (function or variable) is a concept.
+  llvm::PointerIntPair<NamedDecl *, 1, bool> TemplatedDecl;
 
   /// The template parameter list and optional requires-clause
   /// associated with this declaration; alternatively, a
@@ -499,9 +508,9 @@ public:
   /// Initialize the underlying templated declaration and
   /// template parameters.
   void init(NamedDecl *templatedDecl, TemplateParameterList* templateParams) {
-    assert(!TemplatedDecl && "TemplatedDecl already set!");
+    assert(!TemplatedDecl.getPointer() && "TemplatedDecl already set!");
     assert(!TemplateParams && "TemplateParams already set!");
-    TemplatedDecl = templatedDecl;
+    TemplatedDecl.setPointer(templatedDecl);
     TemplateParams = templateParams;
   }
 };
@@ -1078,7 +1087,7 @@ public:
 
   /// Get the underlying function declaration of the template.
   FunctionDecl *getTemplatedDecl() const {
-    return static_cast<FunctionDecl *>(TemplatedDecl);
+    return static_cast<FunctionDecl *>(TemplatedDecl.getPointer());
   }
 
   /// Returns whether this template declaration defines the primary
@@ -2171,7 +2180,7 @@ public:
 
   /// Get the underlying class declarations of the template.
   CXXRecordDecl *getTemplatedDecl() const {
-    return static_cast<CXXRecordDecl *>(TemplatedDecl);
+    return static_cast<CXXRecordDecl *>(TemplatedDecl.getPointer());
   }
 
   /// Returns whether this template declaration defines the primary
@@ -2418,7 +2427,7 @@ public:
 
   /// Get the underlying function declaration of the template.
   TypeAliasDecl *getTemplatedDecl() const {
-    return static_cast<TypeAliasDecl *>(TemplatedDecl);
+    return static_cast<TypeAliasDecl *>(TemplatedDecl.getPointer());
   }
 
 
@@ -2597,7 +2606,7 @@ class VarTemplateSpecializationDecl : public VarDecl,
 
 protected:
   VarTemplateSpecializationDecl(Kind DK, ASTContext &Context, DeclContext *DC,
-                                SourceLocation StartLoc, SourceLocation IdLoc,
+                                SourceLocation StartLoc, SourceLocation NameLoc,
                                 VarTemplateDecl *SpecializedTemplate,
                                 QualType T, TypeSourceInfo *TInfo,
                                 StorageClass S,
@@ -2612,8 +2621,8 @@ public:
 
   static VarTemplateSpecializationDecl *
   Create(ASTContext &Context, DeclContext *DC, SourceLocation StartLoc,
-         SourceLocation IdLoc, VarTemplateDecl *SpecializedTemplate, QualType T,
-         TypeSourceInfo *TInfo, StorageClass S,
+         SourceLocation NameLoc, VarTemplateDecl *SpecializedTemplate,
+         QualType T, TypeSourceInfo *TInfo, StorageClass S,
          ArrayRef<TemplateArgument> Args);
   static VarTemplateSpecializationDecl *CreateDeserialized(ASTContext &C,
                                                            unsigned ID);
@@ -2978,7 +2987,7 @@ public:
 
   /// Get the underlying variable declarations of the template.
   VarDecl *getTemplatedDecl() const {
-    return static_cast<VarDecl *>(TemplatedDecl);
+    return static_cast<VarDecl *>(TemplatedDecl.getPointer());
   }
 
   /// Returns whether this template declaration defines the primary

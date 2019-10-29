@@ -129,7 +129,8 @@ bool ConversionChecker::isLossOfPrecision(const ImplicitCastExpr *Cast,
                                           QualType DestType,
                                           CheckerContext &C) const {
   // Don't warn about explicit loss of precision.
-  if (Cast->isEvaluatable(C.getASTContext()))
+  Expr::EvalContext EvalCtx(C.getASTContext(), nullptr);
+  if (Cast->isEvaluatable(EvalCtx))
     return false;
 
   QualType SubType = Cast->IgnoreParenImpCasts()->getType();

@@ -1,0 +1,3301 @@
+// -*- C++ -*-
+
+#ifndef CPPX_META
+#define CPPX_META
+
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+
+namespace std::experimental
+{
+namespace meta {
+inline namespace v1 {
+
+// An opaque handle to a reflected entity.
+using info = decltype(reflexpr(void));
+
+// Placeholder for constexpr string.
+using string_type = const char*;
+
+consteval info add_const(info type);
+consteval info add_lvalue_reference(info type);
+consteval info add_rvalue_reference(info type);
+
+consteval info type_of(info reflection);
+
+namespace detail {
+
+enum reflection_query : unsigned {
+  query_unknown,
+
+  query_is_invalid,
+  query_is_entity,
+  query_is_named,
+
+  // Scopes
+  query_is_local,
+
+  // Variables
+  query_is_variable,
+  query_has_static_storage,
+  query_has_thread_local_storage,
+  query_has_automatic_storage,
+
+  // Functions
+  query_is_function,
+  query_is_nothrow,
+  // query_has_ellipsis,
+
+  // Classes
+  query_is_class,
+  query_is_union,
+  query_has_virtual_destructor,
+  query_is_declared_struct,
+  query_is_declared_class,
+
+  // Class members
+  query_is_class_member,
+
+  // Data members
+  query_is_static_data_member,
+  query_is_nonstatic_data_member,
+  query_is_bit_field,
+  query_is_mutable,
+
+  // Member functions
+  query_is_static_member_function,
+  query_is_nonstatic_member_function,
+  query_is_normal,
+  query_is_override,
+  query_is_override_specified,
+  query_is_deleted,
+  query_is_virtual,
+  query_is_pure_virtual,
+
+  // Special members
+  query_is_constructor,
+  query_is_default_constructor,
+  query_is_copy_constructor,
+  query_is_move_constructor,
+  query_is_copy_assignment_operator,
+  query_is_move_assignment_operator,
+  query_is_destructor,
+  query_is_conversion,
+  query_is_defaulted,
+  query_is_explicit,
+
+  // Access
+  query_has_access,
+  query_is_public,
+  query_is_protected,
+  query_is_private,
+  query_has_default_access,
+
+  // Linkage
+  query_has_linkage,
+  query_is_externally_linked,
+  query_is_internally_linked,
+
+  // General purpose
+  query_is_extern_specified,
+  query_is_inline,
+  query_is_inline_specified,
+  query_is_constexpr,
+  query_is_consteval,
+  query_is_final,
+  query_is_defined,
+  query_is_complete,
+
+  // Namespaces
+  query_is_namespace,
+
+  // Aliases
+  query_is_namespace_alias,
+  query_is_type_alias,
+  query_is_alias_template,
+
+  // Enums
+  query_is_unscoped_enum,
+  query_is_scoped_enum,
+
+  // Enumerators
+  query_is_enumerator,
+
+  // Templates
+  query_is_template,
+  query_is_class_template,
+  query_is_function_template,
+  query_is_variable_template,
+  query_is_static_member_function_template,
+  query_is_nonstatic_member_function_template,
+  query_is_constructor_template,
+  query_is_destructor_template,
+  query_is_concept,
+
+  // Specializations
+  query_is_specialization,
+  query_is_partial_specialization,
+  query_is_explicit_specialization,
+  query_is_implicit_instantiation,
+  query_is_explicit_instantiation,
+
+  // Base class specifiers
+  query_is_direct_base,
+  query_is_virtual_base,
+
+  // Parameters
+  query_is_function_parameter,
+  query_is_type_template_parameter,
+  query_is_nontype_template_parameter,
+  query_is_template_template_parameter,
+  query_has_default_argument,
+
+  // Attributes
+  query_has_attribute,
+
+  // Types
+  query_is_type,
+  query_is_fundamental_type,
+  query_is_arithmetic_type,
+  query_is_scalar_type,
+  query_is_object_type,
+  query_is_compound_type,
+  query_is_function_type,
+  query_is_class_type,
+  query_is_union_type,
+  query_is_unscoped_enum_type,
+  query_is_scoped_enum_type,
+  query_is_void_type,
+  query_is_null_pointer_type,
+  query_is_integral_type,
+  query_is_floating_point_type,
+  query_is_array_type,
+  query_is_pointer_type,
+  query_is_lvalue_reference_type,
+  query_is_rvalue_reference_type,
+  query_is_member_object_pointer_type,
+  query_is_member_function_pointer_type,
+  query_is_closure_type,
+
+  // Type properties
+  query_is_incomplete_type,
+  query_is_const_type,
+  query_is_volatile_type,
+  query_is_trivial_type,
+  query_is_trivially_copyable_type,
+  query_is_standard_layout_type,
+  query_is_pod_type,
+  query_is_literal_type,
+  query_is_empty_type,
+  query_is_polymorphic_type,
+  query_is_abstract_type,
+  query_is_final_type,
+  query_is_aggregate_type,
+  query_is_signed_type,
+  query_is_unsigned_type,
+  query_has_unique_object_representations_type,
+
+  // Type operations
+  query_is_constructible,
+  query_is_trivially_constructible,
+  query_is_nothrow_constructible,
+  query_is_assignable,
+  query_is_trivially_assignable,
+  query_is_nothrow_assignable,
+  query_is_destructible,
+  query_is_trivially_destructible,
+  query_is_nothrow_destructible,
+
+  // Captures
+  query_has_default_ref_capture,
+  query_has_default_copy_capture,
+  query_is_capture,
+  query_is_simple_capture,
+  query_is_ref_capture,
+  query_is_copy_capture,
+  query_is_explicit_capture,
+  query_is_init_capture,
+  query_has_captures,
+
+  // Expressions
+  query_is_expression,
+  query_is_lvalue,
+  query_is_xvalue,
+  query_is_prvalue,
+  query_is_value,
+
+  // Associated types
+  query_get_type,
+  query_get_return_type,
+  query_get_this_ref_type,
+  query_get_underlying_type,
+
+  // Entities
+  query_get_entity,
+  query_get_parent,
+  query_get_definition,
+
+  // Traversal
+  query_get_begin,
+  query_get_next,
+  query_get_begin_template_param,
+  query_get_next_template_param,
+  query_get_begin_param,
+  query_get_next_param,
+  query_get_begin_member,
+  query_get_next_member,
+  query_get_begin_base_spec,
+  query_get_next_base_spec,
+
+  // Type transformations
+  query_remove_const,
+  query_remove_volatile,
+  query_add_const,
+  query_add_volatile,
+  query_remove_reference,
+  query_add_lvalue_reference,
+  query_add_rvalue_reference,
+  query_remove_pointer,
+  query_add_pointer,
+  query_decay,
+  query_make_signed,
+  query_make_unsigned,
+
+  // Names
+  query_get_name,
+  query_get_display_name,
+};
+
+/// Explicit requirements.
+consteval static void require_variable(info reflection,
+                                       const char *custom_err = nullptr);
+consteval static void require_class(info reflection,
+                                    const char *custom_err = nullptr);
+consteval static void require_class_member(info reflection,
+                                           const char *custom_err = nullptr);
+consteval static void require_data_member(info reflection,
+                                          const char *custom_err = nullptr);
+consteval static void require_mem_function(info reflection,
+                                           const char *custom_err = nullptr);
+consteval static void require_spec_mem_function(info reflection,
+                                                const char *custom_err = nullptr);
+consteval static void require_function(info reflection,
+                                       const char *custom_err = nullptr);
+consteval static void require_base_or_mem(info reflection,
+                                          const char *custom_err = nullptr);
+consteval static void require_type(info reflection,
+                                   const char *custom_err = nullptr);
+consteval static void require_parameter(info reflection,
+                                        const char *custom_err = nullptr);
+consteval static void require_named(info reflection,
+                                    const char *custom_err = nullptr);
+
+constexpr struct always_true_fn
+{
+  consteval bool operator()(info) {
+    return true;
+  }
+} always_true;
+
+} // namespace detail
+
+// -------------------------------------------------------------------------- //
+// Invalid reflections
+
+// Returns true if the reflection is invalid.
+constexpr struct is_invalid_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_invalid, reflection);
+  }
+} is_invalid;
+
+// Returns true if the reflection is invalid.
+constexpr struct is_valid_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return !is_invalid(reflection);
+  }
+} is_valid;
+
+
+// Returns an invalid reflection with the given error message.
+consteval info invalid_reflection(string_type error_message) {
+  return __invalid_reflection(error_message);
+}
+
+namespace detail
+{
+template<info (*F)(info), info (*N)(info), typename P = always_true_fn>
+class iterator
+{
+  info m_info;
+  P m_pred;
+
+  constexpr void advance() {
+    while (!is_invalid(m_info) && !m_pred(m_info))
+      m_info = N(m_info);
+  }
+
+public:
+  using value_type = info;
+  using reference = info;
+  using pointer = info;
+  using difference_type = std::ptrdiff_t;
+  using iterator_category = std::forward_iterator_tag;
+  using filter_type = P;
+
+  constexpr iterator(P pred = {})
+    : m_info(), m_pred(pred)
+  { }
+
+  constexpr iterator(meta::info reflection, P pred = {})
+    : m_info(F(reflection)), m_pred(pred)
+  {
+    advance();
+  }
+
+  constexpr info operator*() const {
+    return m_info;
+  }
+
+  constexpr iterator operator++() {
+    m_info = N(m_info);
+    advance();
+    return *this;
+  }
+
+  constexpr iterator operator++(int) {
+    iterator tmp = *this;
+    operator++();
+    return tmp;
+  }
+
+  constexpr P filter() const {
+    return m_pred;
+  }
+
+  constexpr friend bool operator==(iterator a, iterator b) {
+    return a.m_info == b.m_info;
+  }
+
+  constexpr friend bool operator!=(iterator a, iterator b) {
+    return a.m_info != b.m_info;
+  }
+};
+
+template<typename I>
+class range
+{
+  I m_first;
+  I m_last;
+
+public:
+  using iterator = I;
+  using filter_type = typename I::filter_type;
+
+  constexpr range(filter_type pred = {})
+    : m_first(pred), m_last(pred)
+  { }
+
+  constexpr range(info reflection, filter_type pred = {})
+    : m_first(reflection, pred), m_last(pred)
+  { }
+
+  constexpr iterator begin() const
+  {
+    return m_first;
+  }
+
+  constexpr iterator end() const
+  {
+    return m_last;
+  }
+};
+
+template<info (*F)(info), info (*N)(info), typename P>
+constexpr std::ptrdiff_t distance(iterator<F, N, P> first, iterator<F, N, P> last)
+{
+  std::ptrdiff_t n = 0;
+  for (; first != last; ++first)
+    ++n;
+  return n;
+}
+
+} // end internal namespace detail
+
+// -------------------------------------------------------------------------- //
+// Scopes
+
+// Returns true if the reflected entity is declared in block scope.
+constexpr struct is_local_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_local, reflection);
+  }
+} is_local;
+
+// -------------------------------------------------------------------------- //
+// Variables
+
+// Returns true if the reflected entity is a variable.
+constexpr struct is_variable_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_variable, reflection);
+  }
+} is_variable;
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable has static storage duration.
+constexpr struct has_static_storage_duration_fn
+{
+  consteval bool operator()(info variable) const
+  {
+    detail::require_variable(variable);
+    return __reflect(detail::query_has_static_storage, variable);
+  }
+} has_static_storage_duration;
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable has static storage duration.
+//
+// Deprecated in favor of has_static_storage_duration.
+[[deprecated]] consteval bool has_static_storage(info variable) {
+  return has_static_storage_duration(variable);
+}
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable thread local storage duration.
+constexpr struct has_thread_local_storage_duration_fn
+{
+  consteval bool operator()(info variable) const
+  {
+    detail::require_variable(variable);
+    return __reflect(detail::query_has_thread_local_storage, variable);
+  }
+} has_thread_local_storage_duration;
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable thread local storage duration.
+//
+// Deprecated in favor of has_thread_local_storage_duration.
+[[deprecated]] consteval bool has_thread_storage(info variable) {
+  return has_thread_local_storage_duration(variable);
+}
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable has automatic storage duration.
+constexpr struct has_automatic_storage_duration_fn
+{
+  consteval bool operator()(info variable) const
+  {
+    detail::require_variable(variable);
+    return __reflect(detail::query_has_automatic_storage, variable);
+  }
+} has_automatic_storage_duration;
+
+// Requires: is_variable(variable)
+//
+// Returns true if the reflected variable has automatic storage duration.
+//
+// Deprecated in favor of has_automatic_storage_duration.
+[[deprecated]] consteval bool has_automatic_storage(info variable) {
+  return has_automatic_storage_duration(variable);
+}
+
+// -------------------------------------------------------------------------- //
+// Functions
+
+// Equivalent to std::is_function<T>::value where reflection is reflexpr(T).
+//
+// Returns true if the reflected entity is a function.
+constexpr struct is_function_fn
+{
+  consteval bool operator()(info function) const
+  {
+    return __reflect(detail::query_is_function, function);
+  }
+} is_function;
+
+// Requires: is_function(function)
+//
+// Returns true if the reflected entity is a function which does not throw.
+constexpr struct is_nothrow_fn
+{
+  consteval bool operator()(info function) const
+  {
+    detail::require_function(function);
+    return __reflect(detail::query_is_nothrow, function);
+  }
+} is_nothrow;
+
+// Requires: is_function(function)
+//
+// Returns true if the reflected entity is a function which does not throw.
+//
+// Deprecated in favor of is_no_throw.
+[[deprecated]] consteval bool is_noexcept(info function) {
+  return is_nothrow(function);
+}
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is a member function with a
+// deleted definition.
+constexpr struct is_deleted_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_deleted, mem_function);
+  }
+} is_deleted;
+
+// -------------------------------------------------------------------------- //
+// Classes
+
+// Equivalent to std::is_class<T>::value.
+//
+// Returns true if the reflected entity is a class or struct
+// where reflection is reflexpr(T).
+constexpr struct is_class_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_class, reflection);
+  }
+} is_class;
+
+// Equivalent to std::is_union<T>::value where reflection is reflexpr(T).
+//
+// Returns true if the reflected entity is a union.
+constexpr struct is_union_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_union, reflection);
+  }
+} is_union;
+
+// Requires: is_class(class_type)
+//
+// Equivalent to std::has_virtual_destructor<T>::value where class_type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is a class or struct tag
+// declaration (“class type”) and has a virtual destructor,
+// either directly or via a parent class.
+constexpr struct has_virtual_destructor_fn
+{
+  consteval bool operator()(info class_type) const
+  {
+    detail::require_class(class_type);
+    return __reflect(detail::query_has_virtual_destructor, class_type);
+  }
+} has_virtual_destructor;
+
+// Requires: is_class(class_type)
+//
+// Returns true if the reflected entity is a class,
+// declared via the class keyword.
+constexpr struct is_declared_struct_fn
+{
+  consteval bool operator()(info class_type) const
+  {
+    detail::require_class(class_type);
+    return __reflect(detail::query_is_declared_struct, class_type);
+  }
+} is_declared_struct;
+
+
+// Requires: is_class(class_type)
+//
+// Returns true if the reflected entity is a class,
+// declared via the struct keyword.
+constexpr struct is_declared_class_fn
+{
+  consteval bool operator()(info class_type) const
+  {
+    detail::require_class(class_type);
+    return __reflect(detail::query_is_declared_class, class_type);
+  }
+} is_declared_class;
+
+// -------------------------------------------------------------------------- //
+// Class members
+
+// Returns true if the reflected entity is declared in class scope.
+constexpr struct is_class_member_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_class_member, reflection);
+  }
+} is_class_member;
+
+// -------------------------------------------------------------------------- //
+// Data members
+
+// Returns true if the reflected entity is a data member.
+constexpr struct is_static_data_member_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_static_data_member, reflection);
+  }
+} is_static_data_member;
+
+// Returns true if the reflected entity is a data member
+// declared with the static declaration specifier.
+constexpr struct is_nonstatic_data_member_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_nonstatic_data_member, reflection);
+  }
+} is_nonstatic_data_member;
+
+// Returns true if the reflected entity is a data member
+// declared without the static declaration specifier.
+constexpr struct is_data_member_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_nonstatic_data_member(reflection) || is_static_data_member(reflection);
+  }
+} is_data_member;
+
+// Requires: is_data_member(data_mem)
+//
+// Returns true if the reflected entity is a bit-field.
+constexpr struct is_bit_field_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_bit_field, reflection);
+  }
+} is_bit_field;
+
+// Requires: is_data_member(data_mem)
+//
+// Returns true if the reflected entity is a bit-field.
+//
+// Deprecated in favor of is_bit_field.
+[[deprecated]] consteval bool is_bitfield(info data_mem) {
+  return is_bit_field(data_mem);
+}
+
+// Requires: is_data_member(data_mem)
+//
+// Returns true if the reflected entity is a mutable data member.
+constexpr struct is_mutable_fn
+{
+  consteval bool operator()(info data_mem) const
+  {
+    return __reflect(detail::query_is_mutable, data_mem);
+  }
+} is_mutable;
+
+// -------------------------------------------------------------------------- //
+// Member functions
+
+// Returns true if the reflected entity is a member function.
+constexpr struct is_static_member_function_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_static_member_function, reflection);
+  }
+} is_static_member_function;
+
+// Returns true if the reflected entity is a member function declared with
+// the static declaration specifier.
+constexpr struct is_nonstatic_member_function_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_nonstatic_member_function, reflection);
+  }
+} is_nonstatic_member_function;
+
+// Returns true if the reflected entity is a member function declared without
+// the static declaration specifier.
+constexpr struct is_member_function_fn
+{
+  consteval bool operator()(info reflection) const {
+    return is_nonstatic_member_function(reflection) || is_static_member_function(reflection);
+  }
+} is_member_function;
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is a normal member function,
+// i.e. a function with no special language rules associated with it.
+constexpr struct is_normal_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_normal, mem_function);
+  }
+} is_normal;
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is either implicitly or
+// explicitly a member function override.
+constexpr struct is_override_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_override, mem_function);
+  }
+} is_override;
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is a member function override
+// that was explicitly specified via override specifier.
+constexpr struct is_override_specified_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_override_specified, mem_function);
+  }
+} is_override_specified;
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is a member function that was
+// declared with the virtual specifier.
+constexpr struct is_virtual_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_virtual, mem_function);
+  }
+} is_virtual;
+
+// Requires: is_member_function(mem_function)
+//
+// Returns true if the reflected entity is a member function that was
+// declared with the virtual specifier and defined as pure virtual.
+constexpr struct is_pure_virtual_fn
+{
+  consteval bool operator()(info mem_function) const
+  {
+    detail::require_mem_function(mem_function);
+    return __reflect(detail::query_is_pure_virtual, mem_function);
+  }
+} is_pure_virtual;
+
+// -------------------------------------------------------------------------- //
+// Special members
+
+// Returns true if the reflected entity is any kind of constructor.
+constexpr struct is_constructor_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_constructor, reflection);
+  }
+} is_constructor;
+
+// Returns true if the reflected entity is a default constructor.
+constexpr struct is_default_constructor_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_default_constructor, reflection);
+  }
+} is_default_constructor;
+
+// Returns true if the reflected entity is a copy constructor.
+constexpr struct is_copy_constructor_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_copy_constructor, reflection);
+  }
+} is_copy_constructor;
+
+// Returns true if the reflected entity is a move constructor.
+constexpr struct is_move_constructor_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_move_constructor, reflection);
+  }
+} is_move_constructor;
+
+// Returns true if the reflected entity is a copy assignment operator.
+constexpr struct is_copy_assignment_operator_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_copy_assignment_operator, reflection);
+  }
+} is_copy_assignment_operator;
+
+// Returns true if the reflected entity is a move assignment operator.
+constexpr struct is_move_assignment_operator_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_move_assignment_operator, reflection);
+  }
+} is_move_assignment_operator;
+
+// Returns true if the reflected entity is a copy constructor, or
+// copy assignment operator.
+constexpr struct is_copy_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_copy_constructor(reflection) || is_copy_assignment_operator(reflection);
+  }
+} is_copy;
+
+// Returns true if the reflected entity is a move constructor, or
+// move assignment operator.
+constexpr struct is_move_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_move_constructor(reflection) || is_move_assignment_operator(reflection);
+  }
+} is_move;
+
+// Returns true if the reflected entity is a destructor.
+constexpr struct is_destructor_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_destructor, reflection);
+  }
+} is_destructor;
+
+// Returns true if the reflected entity is type conversion function.
+constexpr struct is_conversion_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_conversion, reflection);
+  }
+} is_conversion;
+
+constexpr struct is_special_member_function_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return
+      is_constructor(reflection) ||
+      is_copy_assignment_operator(reflection) ||
+      is_move_assignment_operator(reflection) ||
+      is_destructor(reflection) ||
+      is_conversion(reflection);
+  }
+} is_special_member_function;
+
+// Requires: is_special_member_function(mem_function)
+//
+// Returns true if the reflected entity is a special member function
+// with a defaulted definition.
+constexpr struct is_defaulted_fn
+{
+  consteval bool operator()(info spec_mem_fun) const
+  {
+    detail::require_spec_mem_function(spec_mem_fun);
+    return __reflect(detail::query_is_defaulted, spec_mem_fun);
+  }
+} is_defaulted;
+
+// Requires: is_special_member_function(mem_function)
+//
+// Returns true if the reflected entity is a special member function
+// explicitly declared as explicit.
+constexpr struct is_explicit_fn
+{
+  consteval bool operator()(info spec_mem_fun) const
+  {
+    detail::require_spec_mem_function(spec_mem_fun);
+    return __reflect(detail::query_is_explicit, spec_mem_fun);
+  }
+} is_explicit;
+
+// -------------------------------------------------------------------------- //
+// Access
+
+// Returns true if the reflected entity has an access specification
+// (e.g. public, private, protected).
+//
+// Deprecated as this should not be necessary.
+[[deprecated]] consteval bool has_access(info reflection) {
+  return __reflect(detail::query_has_access, reflection);
+}
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Returns true if the reflected entity is a base class or member and has
+// public access specification.
+constexpr struct is_public_fn
+{
+  consteval bool operator()(info base_or_mem) const
+  {
+    detail::require_base_or_mem(base_or_mem);
+    return __reflect(detail::query_is_public, base_or_mem);
+  }
+} is_public;
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Returns true if the reflected entity is a base class or member and has
+// protected access specification.
+constexpr struct is_protected_fn
+{
+  consteval bool operator()(info base_or_mem) const
+  {
+    detail::require_base_or_mem(base_or_mem);
+    return __reflect(detail::query_is_protected, base_or_mem);
+  }
+} is_protected;
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Returns true if the reflected entity is a base class or member and has
+// private access specification.
+constexpr struct is_private_fn
+{
+  consteval bool operator()(info base_or_mem) const
+  {
+    detail::require_base_or_mem(base_or_mem);
+    return __reflect(detail::query_is_private, base_or_mem);
+  }
+} is_private;
+
+// Requires: is_base_class(base_or_mem) or is_class_member(base_or_mem)
+//
+// Returns true if no access specifier precedes the declaration of the
+// reflected entity.
+//
+// Note that any preceding access specifier, even one corresponding with the
+// default access of the record type (e.g. public for struct), will cause
+// this function to return false.
+//
+// Example:
+//   struct T {
+//     int x;
+//   };
+//
+//   struct U {
+//   public:
+//     int y;
+//   };
+//
+//   has_default_access(reflexpr(T::x));  // true
+//   has_default_access(reflexpr(U::y));  // false
+constexpr struct has_default_access_fn
+{
+  consteval bool operator()(info base_or_mem) const
+  {
+    detail::require_base_or_mem(base_or_mem);
+    return __reflect(detail::query_has_default_access, base_or_mem);
+  }
+} has_default_access;
+
+// -------------------------------------------------------------------------- //
+// Linkage
+
+// Returns true if the reflected entity has linkage.
+constexpr struct has_linkage_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_has_linkage, reflection);
+  }
+} has_linkage;
+
+// Returns true if the reflected entity is externally linked.
+consteval bool is_externally_linked(info reflection) {
+  return __reflect(detail::query_is_externally_linked, reflection);
+}
+
+// Returns true if the reflected entity is externally linked.
+//
+// Deprecated in favor of is_externally_linked.
+[[deprecated]] consteval bool has_external_linkage(info reflection) {
+  return is_externally_linked(reflection);
+}
+
+// Returns true if the reflected entity is internally linked.
+consteval bool is_internally_linked(info reflection) {
+  return __reflect(detail::query_is_internally_linked, reflection);
+}
+
+// Returns true if the reflected entity is internally linked.
+//
+// Deprecated in favor of is_internally_linked.
+[[deprecated]] consteval bool has_internal_linkage(info reflection) {
+  return is_internally_linked(reflection);
+}
+
+// -------------------------------------------------------------------------- //
+// General purpose
+
+// Returns true if the reflected entity has an extern specifier.
+constexpr struct is_extern_specified_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_extern_specified, reflection);
+  }
+} is_extern_specified;
+
+// Returns true if the reflected entity has an extern specifier.
+//
+// Deprecated in favor of is_extern.
+[[deprecated]] consteval bool is_extern(info reflection) {
+  return is_extern_specified(reflection);
+}
+
+// Returns true if the reflected entity is either
+// implicitly or explicitly inline.
+constexpr struct is_inline_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_inline, reflection);
+  }
+} is_inline;
+
+// Returns true if the reflected entity is explicitly inline.
+constexpr struct is_inline_specified_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_inline_specified, reflection);
+  }
+} is_inline_specified;
+
+// Returns true if the reflected entity is constexpr.
+constexpr struct is_constexpr_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_constexpr, reflection);
+  }
+} is_constexpr;
+
+// Returns true if the reflected entity is consteval.
+constexpr struct is_consteval_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_consteval, reflection);
+  }
+} is_consteval;
+
+// Returns true if the reflected entity is final.
+constexpr struct is_final_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_final, reflection);
+  }
+} is_final;
+
+// Returns true if the reflected entity is defined.
+constexpr struct is_defined_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_defined, reflection);
+  }
+} is_defined;
+
+// Returns true if the reflected entity is complete.
+constexpr struct is_complete_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_complete, reflection);
+  }
+} is_complete;
+
+// -------------------------------------------------------------------------- //
+// Namespaces
+
+// Returns true if the reflected entity is a namespace.
+constexpr struct is_namespace_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_namespace, reflection);
+  }
+} is_namespace;
+
+// -------------------------------------------------------------------------- //
+// Aliases
+
+// Returns true if the reflected entity is a namespace alias.
+constexpr struct is_namespace_alias_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_namespace_alias, reflection);
+  }
+} is_namespace_alias;
+
+// Returns true if the reflected entity is a type alias.
+constexpr struct is_type_alias_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_type_alias, reflection);
+  }
+} is_type_alias;
+
+// Returns true if the reflected entity is an alias template.
+constexpr struct is_alias_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_alias_template, reflection);
+  }
+} is_alias_template;
+
+// Returns true if the reflected entity is an alias.
+constexpr struct is_alias_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_namespace_alias(reflection) || is_type_alias(reflection) || is_alias_template(reflection);
+
+  }
+} is_alias;
+
+// -------------------------------------------------------------------------- //
+// Enums
+
+// Returns true if the reflected entity is an unscoped enumeration.
+constexpr struct is_unscoped_enum_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_unscoped_enum, reflection);
+  }
+} is_unscoped_enum;
+
+// Returns true if the reflected entity is a scoped enumeration.
+constexpr struct is_scoped_enum_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_scoped_enum, reflection);
+  }
+} is_scoped_enum;
+
+// Returns true if the reflected entity is a scoped enumeration.
+//
+// Deprecated in favor of is_scoped_enum.
+[[deprecated]] consteval bool is_scoped(info reflection) {
+  return is_scoped_enum(reflection);
+}
+
+// Equivalent to std::is_enum<T> where reflection is reflexpr(T).
+//
+// Returns true if the reflected entity is an enumeration, scoped or unscoped.
+constexpr struct is_enum_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_unscoped_enum(reflection) || is_scoped_enum(reflection);
+  }
+} is_enum;
+
+// -------------------------------------------------------------------------- //
+// Enumerators
+
+// Returns true if the reflected entity is an enumerator.
+constexpr struct is_enumerator_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_enumerator, reflection);
+  }
+} is_enumerator;
+
+// -------------------------------------------------------------------------- //
+// Templates
+
+// Returns true if the reflected entity is any kind of template.
+constexpr struct is_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_template, reflection);
+  }
+} is_template;
+
+// Returns true if the reflected entity is a class template.
+constexpr struct is_class_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_class_template, reflection);
+  }
+} is_class_template;
+
+// Returns true if the reflected entity is a function template.
+constexpr struct is_function_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_function_template, reflection);
+  }
+} is_function_template;
+
+// Returns true if the reflected entity is a variable template.
+constexpr struct is_variable_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_variable_template, reflection);
+  }
+} is_variable_template;
+
+// Returns true if the reflected entity is a member function template
+// declared with the static declaration specifier.
+constexpr struct is_static_member_function_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_static_member_function_template, reflection);
+  }
+} is_static_member_function_template;
+
+// Returns true if the reflected entity is a member function template
+// declared without the static declaration specifier.
+constexpr struct is_nonstatic_member_function_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_nonstatic_member_function_template, reflection);
+  }
+} is_nonstatic_member_function_template;
+
+// Returns true if the reflected entity is a member function template.
+constexpr struct is_member_function_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_static_member_function_template(reflection) ||
+           is_nonstatic_member_function_template(reflection);
+  }
+} is_member_function_template;
+
+// Returns true if the reflected entity is a template of a constructor.
+constexpr struct is_constructor_template_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_constructor_template, reflection);
+  }
+} is_constructor_template;
+
+// Returns true if the reflected entity is a template of a destructor.
+consteval bool is_destructor_template(info reflection) {
+  return __reflect(detail::query_is_destructor_template, reflection);
+}
+
+// Returns true if the reflected entity is a concept.
+constexpr struct is_concept_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_concept, reflection);
+  }
+} is_concept;
+
+// -------------------------------------------------------------------------- //
+// Specializations
+
+// Returns true if the reflected entity is any kind of template specialization.
+constexpr struct is_specialization_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_specialization, reflection);
+  }
+} is_specialization;
+
+// Returns true if the reflected entity is a partial template specialization.
+constexpr struct is_partial_specialization_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_partial_specialization, reflection);
+  }
+} is_partial_specialization;
+
+// Returns true if the reflected entity is an explicit template specialization.
+constexpr struct is_explicit_specialization_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_explicit_specialization, reflection);
+  }
+} is_explicit_specialization;
+
+// Returns true if the reflected entity is an implicit template instantiation.
+constexpr struct is_implicit_instantiation_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_implicit_instantiation, reflection);
+  }
+} is_implicit_instantiation;
+
+// Returns true if the reflected entity is an explicit template instantiation.
+constexpr struct is_explicit_instantiation_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_explicit_instantiation, reflection);
+  }
+} is_explicit_instantiation;
+
+// -------------------------------------------------------------------------- //
+// Base class specifiers
+
+// Returns true if the reflected entity is a direct base class specifier.
+constexpr struct is_direct_base_class_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_direct_base, reflection);
+  }
+} is_direct_base_class;
+
+// Returns true if the reflected entity is a virtual base class specifier.
+constexpr struct is_virtual_base_class_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_virtual_base, reflection);
+  }
+} is_virtual_base_class;
+
+// Returns true if the reflected entity is a base class specifier.
+constexpr struct is_base_class_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_direct_base_class(reflection) || is_virtual_base_class(reflection);
+  }
+} is_base_class;
+
+// -------------------------------------------------------------------------- //
+// Parameters
+
+// Returns true if the reflected entity is a function parameter declaration.
+constexpr struct is_function_parameter_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_function_parameter, reflection);
+  }
+} is_function_parameter;
+
+// Returns true if the reflected entity is a type template parameter.
+constexpr struct is_type_template_parameter_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_type_template_parameter, reflection);
+  }
+} is_type_template_parameter;
+
+// Returns true if the reflected entity is a nontype template parameter.
+constexpr struct is_nontype_template_parameter_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_nontype_template_parameter, reflection);
+  }
+} is_nontype_template_parameter;
+
+// Returns true if the reflected entity is a template template parameter.
+constexpr struct is_template_template_parameter_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_template_template_parameter, reflection);
+  }
+} is_template_template_parameter;
+
+// Returns true if the reflected entity is a template parameter.
+constexpr struct is_template_parameter_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_type_template_parameter(reflection) ||
+           is_nontype_template_parameter(reflection) ||
+           is_template_template_parameter(reflection);
+  }
+} is_template_parameter;
+
+// Requires: is_function_parameter(parameter) or
+//           is_template_parameter(parameter)
+//
+// Returns true if the reflected entity is a function parameter and
+// has a default argument.
+constexpr struct has_default_argument_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    // detail::require_parameter(reflection);
+    return __reflect(detail::query_has_default_argument, reflection);
+  }
+} has_default_argument;
+
+
+// -------------------------------------------------------------------------- //
+// Attributes
+
+// Returns true if the reflected entity has an attribute with the given name.
+consteval bool has_attribute(info reflection, string_type attribute_name) {
+  return __reflect(detail::query_has_attribute, reflection, attribute_name);
+}
+
+// -------------------------------------------------------------------------- //
+// Types
+
+// Returns true if the reflected entity is a type, either builtin
+// or user-defined.
+constexpr struct is_type_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return __reflect(detail::query_is_type, reflection);
+  }
+} is_type;
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_fundamental<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a fundamental type.
+constexpr struct is_fundamental_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_fundamental_type, type);
+  }
+} is_fundamental_type;
+
+// Returns true if the reflected entity has fundamental type.
+constexpr struct has_fundamental_type_fn
+{
+  consteval bool operator()(info reflection) const
+  {
+    return is_fundamental_type(type_of(reflection));
+  }
+} has_fundamental_type;
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_arithmetic<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an arithmetic type.
+constexpr struct is_arithmetic_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_arithmetic_type, type);
+  }
+} is_arithmetic_type;
+
+// Returns true if the reflected entity has arithmetic type.
+consteval bool has_arithmetic_type(info reflection) {
+  return is_arithmetic_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_scalar<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a scalar type.
+constexpr struct is_scalar_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_scalar_type, type);
+  }
+} is_scalar_type;
+
+// Returns true if the reflected entity has scalar type.
+consteval bool has_scalar_type(info reflection) {
+  return is_scalar_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_object<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an object type.
+constexpr struct is_object_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_object_type, type);
+  }
+} is_object_type;
+
+// Returns true if the reflected entity has object type.
+consteval bool has_object_type(info reflection) {
+  return is_object_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_compound<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a compound type.
+constexpr struct is_compound_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_compound_type, type);
+  }
+} is_compound_type;
+
+// Returns true if the reflected entity has compound type.
+consteval bool has_compound_type(info reflection) {
+  return is_compound_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_function<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a function type.
+constexpr struct is_function_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_function_type, type);
+  }
+} is_function_type;
+
+// Returns true if the reflected entity has function type.
+consteval bool has_function_type(info reflection) {
+  return is_function_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_class<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a class type.
+constexpr struct is_class_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_class_type, type);
+  }
+} is_class_type;
+
+// Returns true if the reflected entity has class type.
+consteval bool has_class_type(info reflection) {
+  return is_class_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_union<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a union type.
+constexpr struct is_union_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_union_type, type);
+  }
+} is_union_type;
+
+// Returns true if the reflected entity has union type.
+consteval bool has_union_type(info reflection) {
+  return is_union_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_unscoped_enum<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an unscoped enum type.
+consteval bool is_unscoped_enum_type(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_is_unscoped_enum_type, type);
+}
+
+// Returns true if the reflected entity has unscoped enum type.
+consteval bool has_unscoped_enum_type(info reflection) {
+  return is_unscoped_enum_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_scoped_enum<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a type that is a scoped enum.
+consteval bool is_scoped_enum_type(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_is_scoped_enum_type, type);
+}
+
+// Returns true if the reflected entity has scoped enum type.
+consteval bool has_scoped_enum_type(info reflection) {
+  return is_scoped_enum_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_enum<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an enum type.
+consteval bool is_enum_type(info type) {
+  return is_unscoped_enum_type(type) || is_scoped_enum_type(type);
+}
+
+// Returns true if the reflected entity has enum type.
+consteval bool has_enum_type(info reflection) {
+  return is_enum_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_void<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a void type.
+constexpr struct is_void_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_void_type, type);
+  }
+} is_void_type;
+
+// Returns true if the reflected entity has void type.
+consteval bool has_void_type(info reflection) {
+  return is_void_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nullptr<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a null pointer type.
+constexpr struct is_null_pointer_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_null_pointer_type, type);
+  }
+} is_null_pointer_type;
+
+// Returns true if the reflected entity has null pointer type.
+consteval bool has_null_pointer_type(info reflection) {
+  return is_null_pointer_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_integral<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an integral type.
+constexpr struct is_integral_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_integral_type, type);
+  }
+} is_integral_type;
+
+// Returns true if the reflected entity has integral type.
+consteval bool has_integeral_type(info reflection) {
+  return is_integral_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_floating_point<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a floating point type.
+constexpr struct is_floating_point_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_floating_point_type, type);
+  }
+} is_floating_point_type;
+
+// Returns true if the reflected entity has floating point type.
+consteval bool has_floating_point_type(info reflection) {
+  return is_floating_point_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_array<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an array type.
+constexpr struct is_array_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_array_type, type);
+  }
+} is_array_type;
+
+// Returns true if the reflected entity has array type.
+consteval bool has_array_type(info reflection) {
+  return is_array_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_pointer<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a pointer type.
+constexpr struct is_pointer_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_pointer_type, type);
+  }
+} is_pointer_type;
+
+// Returns true if the reflected entity has pointer type.
+consteval bool has_pointer_type(info reflection) {
+  return is_pointer_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_lvalue_reference<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an lvalue reference type.
+constexpr struct is_lvalue_reference_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_lvalue_reference_type, type);
+  }
+} is_lvalue_reference_type;
+
+// Returns true if the reflected entity has lvalue reference type.
+consteval bool has_lvalue_reference_type(info reflection) {
+  return is_lvalue_reference_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_rvalue_reference<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is an rvalue reference type.
+constexpr struct is_rvalue_reference_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_rvalue_reference_type, type);
+  }
+} is_rvalue_reference_type;
+
+// Returns true if the reflected entity has rvalue reference type.
+consteval bool has_rvalue_reference_type(info reflection) {
+  return is_rvalue_reference_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_reference<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a reference type.
+constexpr struct is_reference_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return is_lvalue_reference_type(type) || is_rvalue_reference_type(type);
+  }
+} is_reference_type;
+
+// Returns true if the reflected entity has reference type.
+consteval bool has_reference_type(info reflection) {
+  return is_reference_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_member_object_pointer<T>::value when
+// type is reflexpr(T).
+//
+// Returns true if the reflected entity is a member object pointer type.
+constexpr struct is_member_object_pointer_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_member_object_pointer_type, type);
+  }
+} is_member_object_pointer_type;
+
+// Returns true if the reflected entity has member object pointer type.
+consteval bool has_member_object_pointer_type(info reflection) {
+  return is_member_object_pointer_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_member_function_pointer<T>::value when
+// type is reflexpr(T).
+//
+// Returns true if the reflected entity is a member function pointer type.
+constexpr struct is_member_function_pointer_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_member_function_pointer_type, type);
+  }
+} is_member_function_pointer_type;
+
+// Returns true if the reflected entity has member function pointer type.
+consteval bool has_member_function_pointer_type(info reflection) {
+  return is_member_function_pointer_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_member_pointer<T>::value when type is reflexpr(T).
+//
+// Returns true if the reflected entity is a member pointer type.
+constexpr struct is_member_pointer_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return is_member_object_pointer_type(type) ||
+           is_member_function_pointer_type(type);
+  }
+} is_member_pointer_type;
+
+// Returns true if the reflected entity has member pointer type.
+consteval bool has_member_pointer_type(info reflection) {
+  return is_member_pointer_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Returns true if the reflected entity is a closure type.
+constexpr struct is_closure_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_closure_type, type);
+  }
+} is_closure_type;
+
+// Returns true if the reflected entity has closure type.
+consteval bool has_closure_type(info reflection) {
+  return is_closure_type(type_of(reflection));
+}
+
+// -------------------------------------------------------------------------- //
+// Type properties
+
+// Requires: is_type(type)
+//
+// Returns true if the reflected entity is an incomplete type.
+constexpr struct is_incomplete_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_incomplete_type, type);
+  }
+} is_incomplete_type;
+
+// Returns true if the reflected entity has incomplete type.
+consteval bool has_incomplete_type(info reflection) {
+  return is_incomplete_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_const<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a const qualified type.
+constexpr struct is_const_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_const_type, type);
+  }
+} is_const_type;
+
+// Returns true if the reflected entity has a const qualified type.
+consteval bool has_const_type(info reflection) {
+  return is_const_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_volatile<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a volatile qualified type.
+constexpr struct is_volatile_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_volatile_type, type);
+  }
+} is_volatile_type;
+
+// Returns true if the reflected entity has volatile qualified type.
+consteval bool has_volatile_type(info reflection) {
+  return is_volatile_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivial<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a trivial type.
+constexpr struct is_trivial_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_trivial_type, type);
+  }
+} is_trivial_type;
+
+// Returns true if the reflected entity has trivial type.
+consteval bool has_trivial_type(info reflection) {
+  return is_trivial_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_copyable<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a trivially copyable type.
+constexpr struct is_trivially_copyable_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_trivially_copyable_type, type);
+  }
+} is_trivially_copyable_type;
+
+// Returns true if the reflected entity has trivially copyable type.
+consteval bool has_trivially_copyable_type(info reflection) {
+  return is_trivially_copyable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_standard_layout<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a standard layout type.
+constexpr struct is_standard_layout_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_standard_layout_type, type);
+  }
+} is_standard_layout_type;
+
+// Returns true if the reflected entity has standard layout type.
+consteval bool has_standard_layout_type(info reflection) {
+  return is_standard_layout_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_pod<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a pod type.
+constexpr struct is_pod_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_pod_type, type);
+  }
+} is_pod_type;
+
+// Returns true if the reflected entity has pod type.
+consteval bool has_pod_type(info reflection) {
+  return is_pod_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_literal<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a literal type.
+constexpr struct is_literal_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_literal_type, type);
+  }
+} is_literal_type;
+
+// Returns true if the reflected entity has literal type.
+consteval bool has_literal_type(info reflection) {
+  return is_literal_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_empty<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an empty type.
+constexpr struct is_empty_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_empty_type, type);
+  }
+} is_empty_type;
+
+// Returns true if the reflected entity has empty type.
+consteval bool has_empty_type(info reflection) {
+  return is_empty_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_polymorphic<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a polymorphic type.
+constexpr struct is_polymorphic_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_polymorphic_type, type);
+  }
+} is_polymorphic_type;
+
+// Returns true if the reflected entity has polymorphic type.
+consteval bool has_polymorphic_type(info reflection) {
+  return is_polymorphic_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_abstract<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an abstract type.
+constexpr struct is_abstract_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_abstract_type, type);
+  }
+} is_abstract_type;
+
+// Returns true if the reflected entity has abstract type.
+consteval bool has_abstract_type(info reflection) {
+  return is_abstract_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_final<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a final type.
+constexpr struct is_final_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_final_type, type);
+  }
+} is_final_type;
+
+// Returns true if the reflected entity has final type.
+consteval bool has_final_type(info reflection) {
+  return is_final_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_aggregate<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an aggregate type.
+constexpr struct is_aggregate_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_aggregate_type, type);
+  }
+} is_aggregate_type;
+
+// Returns true if the reflected entity has aggregate type.
+consteval bool has_aggregate_type(info reflection) {
+  return is_aggregate_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_signed<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a signed type.
+constexpr struct is_signed_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_signed_type, type);
+  }
+} is_signed_type;
+
+// Returns true if the reflected entity has signed type.
+consteval bool has_signed_type(info reflection) {
+  return is_signed_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_unsigned<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is an unsigned type.
+constexpr struct is_unsigned_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_unsigned_type, type);
+  }
+} is_unsigned_type;
+
+// Returns true if the reflected entity has unsigned type.
+consteval bool has_unsigned_type(info reflection) {
+  return is_unsigned_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::has_unique_object_representations<T>::value
+// where type is reflexpr(T).
+//
+// Returns true if the reflected entity is a type with unique object
+// representations.
+constexpr struct has_unique_object_representation_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_has_unique_object_representations_type, type);
+  }
+} has_unique_object_representations_type;
+
+// Returns true if the reflected entity has a type with
+// unique object representations.
+consteval bool has_type_with_unique_object_representations(info reflection) {
+  return has_unique_object_representations_type(type_of(reflection));
+}
+
+// -------------------------------------------------------------------------- //
+// Type operations
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_default_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is default constructible.
+constexpr struct is_default_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_constructible, type);
+  }
+} is_default_constructible_type;
+
+// Returns true if the reflected entity has
+// default constructible type.
+consteval bool has_default_constructible_type(info reflection) {
+  return is_default_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_default_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially default constructible.
+constexpr struct is_trivially_default_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_trivially_constructible, type);
+  }
+} is_trivially_default_constructible_type;
+
+// Returns true if the reflected entity has
+// trivially default constructible type.
+consteval bool has_trivially_default_constructible_type(info reflection) {
+  return is_trivially_default_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_default_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow default constructible.
+constexpr struct is_nothrow_default_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_nothrow_constructible, type);
+  }
+} is_nothrow_default_constructible_type;
+
+// Returns true if the reflected entity has
+// trivially nothrow constructible type.
+consteval bool has_nothrow_default_constructible_type(info reflection) {
+  return is_nothrow_default_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_copy_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is copy constructible.
+constexpr struct is_copy_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_lvalue_reference(add_const(type));
+    return __reflect(detail::query_is_constructible, type, arg);
+  }
+} is_copy_constructible_type;
+
+// Returns true if the reflected entity has
+// copy constructible type.
+consteval bool has_copy_constructible_type(info reflection) {
+  return is_copy_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_copy_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially copy constructible.
+constexpr struct is_trivially_copy_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_lvalue_reference(add_const(type));
+    return __reflect(detail::query_is_trivially_constructible, type, arg);
+  }
+} is_trivially_copy_constructible_type;
+
+// Returns true if the reflected entity has
+// trivially copy constructible type.
+consteval bool has_trivially_copy_constructible_type(info reflection) {
+  return is_trivially_copy_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_copy_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow copy constructible.
+constexpr struct is_nothrow_copy_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_lvalue_reference(add_const(type));
+    return __reflect(detail::query_is_nothrow_constructible, type, arg);
+  }
+} is_nothrow_copy_constructible_type;
+
+// Returns true if the reflected entity has
+// copy constructible type.
+consteval bool has_nothrow_copy_constructible_type(info reflection) {
+  return is_nothrow_copy_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_move_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is move constructible.
+constexpr struct is_move_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_rvalue_reference(add_const(type));
+    return __reflect(detail::query_is_constructible, type, arg);
+  }
+} is_move_constructible_type;
+
+// Returns true if the reflected entity has
+// move constructible type.
+consteval bool has_move_constructible_type(info reflection) {
+  return is_move_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_move_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially move constructible.
+constexpr struct is_trivially_move_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_rvalue_reference(add_const(type));
+    return __reflect(detail::query_is_trivially_constructible, type, arg);
+  }
+} is_trivially_move_constructible_type;
+
+// Returns true if the reflected entity has
+// trivially move constructible type.
+consteval bool has_trivially_move_constructible_type(info reflection) {
+  return is_trivially_move_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_move_constructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow move constructible.
+constexpr struct is_nothrow_move_constructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    info arg = add_rvalue_reference(add_const(type));
+    return __reflect(detail::query_is_nothrow_constructible, type, arg);
+  }
+} is_nothrow_move_constructible_type;
+
+// Returns true if the reflected entity has
+// nothrow move constructible type.
+consteval bool has_nothrow_move_constructible_type(info reflection) {
+  return is_nothrow_move_constructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type) and is_type(assigned_type)
+//
+// Equivalent to std::is_assignable<T, U>::value where type
+// is reflexpr(T), and assigned_type is reflexpr(U).
+//
+// Returns true if the reflected entity of assigned_type is
+// assignable to the reflected entity of type.
+consteval bool is_assignable_type(info type, info assigned_type) {
+  detail::require_type(type);
+  detail::require_type(assigned_type);
+  return __reflect(detail::query_is_assignable, type,
+                   assigned_type);
+}
+
+// Requires: is_type(type) and is_type(assigned_type)
+//
+// Equivalent to std::is_trivially_assignable<T, U>::value where type
+// is reflexpr(T), and assigned_type is reflexpr(U).
+//
+// Returns true if the reflected entity of assigned_type is
+// trivially assignable to the reflected entity of type.
+consteval bool is_trivially_assignable_type(info type,
+                                            info assigned_type) {
+  detail::require_type(type);
+  detail::require_type(assigned_type);
+  return __reflect(detail::query_is_trivially_assignable,
+                   type, assigned_type);
+}
+
+// Requires: is_type(type) and is_type(assigned_type)
+//
+// Equivalent to std::is_nothrow_assignable<T, U>::value where type
+// is reflexpr(T), and assigned_type is reflexpr(U).
+//
+// Returns true if the reflected entity of assigned_type is
+// nothrow assignable to the reflected entity of type.
+consteval bool is_nothrow_assignable_type(info type,
+                                          info assigned_type) {
+  detail::require_type(type);
+  detail::require_type(assigned_type);
+  return __reflect(detail::query_is_nothrow_assignable,
+                   type, assigned_type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_copy_assignable<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is copy assignable.
+consteval bool is_copy_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_lvalue_reference(add_const(type));
+  return is_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has copy assignable type.
+consteval bool has_copy_assignable_type(info reflection) {
+  return is_copy_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_copy_assignable<T>::value
+// where type is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially copy assignable.
+consteval bool is_trivially_copy_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_lvalue_reference(add_const(type));
+  return is_trivially_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has
+// trivially copy assignable type.
+consteval bool has_trivially_copy_assignable_type(info reflection) {
+  return is_trivially_copy_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_copy_assignable<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow copy assignable.
+consteval bool is_nothrow_copy_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_lvalue_reference(add_const(type));
+  return is_nothrow_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has
+// nothrow copy assignable type.
+consteval bool has_nothrow_copy_assignable_type(info reflection) {
+  return is_nothrow_copy_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_move_assignable<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is move assignable.
+consteval bool is_move_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_rvalue_reference(add_const(type));
+  return is_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has
+// move assignable type.
+consteval bool has_move_assignable_type(info reflection) {
+  return is_move_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_move_assignable<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially move assignable.
+consteval bool is_trivially_move_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_rvalue_reference(add_const(type));
+  return is_trivially_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has
+// move assignable type.
+consteval bool has_trivially_move_assignable_type(info reflection) {
+  return is_trivially_move_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_move_assignable<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow move assignable.
+consteval bool is_nothrow_move_assignable_type(info type) {
+  detail::require_type(type);
+  info assign_arg = add_rvalue_reference(add_const(type));
+  return is_nothrow_assignable_type(type, assign_arg);
+}
+
+// Returns true if the reflected entity has
+// nothrow move assignable type.
+consteval bool has_nothrow_move_assignable_type(info reflection) {
+  return is_nothrow_move_assignable_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_destructible<T>::value where type
+// is reflexpr(T).
+//
+// Returns true if the reflected entity is destructible.
+constexpr struct is_destructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_destructible, type);
+  }
+} is_destructible_type;
+
+// Returns true if the reflected entity has
+// destructible type.
+consteval bool has_destructible_type(info reflection) {
+  return is_destructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_trivially_destructible<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is trivially destructible.
+constexpr struct is_trivially_destructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_trivially_destructible, type);
+  }
+} is_trivially_destructible_type;
+
+// Returns true if the reflected entity has
+// trivially destructible type.
+consteval bool has_trivially_destructible_type(info reflection) {
+  return is_trivially_destructible_type(type_of(reflection));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to std::is_nothrow_destructible<T>::value where type is reflexpr(T).
+//
+// Returns true if the reflected entity is nothrow destructible.
+constexpr struct is_nothrow_destructible_type_fn
+{
+  consteval bool operator()(info type) const
+  {
+    detail::require_type(type);
+    return __reflect(detail::query_is_nothrow_destructible, type);
+  }
+} is_nothrow_destructible_type;
+
+// Returns true if the reflected entity has
+// nothrow destructible type.
+consteval bool has_nothrow_destructible_type(info reflection) {
+  return is_nothrow_destructible_type(type_of(reflection));
+}
+
+// -------------------------------------------------------------------------- //
+// Type transformations
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_const<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection with the const qualifier removed, if present.
+consteval info remove_const(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_remove_const, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_volatile<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection with volatile qualifier removed, if present.
+consteval info remove_volatile(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_remove_volatile, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_cv<T>::type) where type
+// is reflexpr(T).
+//
+// Shorthand returning the result of remove_volatile(remove_const(type)).
+consteval info remove_cv(info type) {
+  detail::require_type(type);
+  return remove_volatile(remove_const(type));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::add_const<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection with const qualifier added,
+// if not already present.
+consteval info add_const(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_add_const, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::add_volatile<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection with volatile qualifier added,
+// if not already present.
+consteval info add_volatile(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_add_volatile, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::add_cv<T>::type) where type
+// is reflexpr(T).
+//
+// Shorthand returning the result of add_const(add_volatile(type)).
+consteval info add_cv(info type) {
+  detail::require_type(type);
+  return add_const(add_volatile(type));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_reference<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection which reflects the type referred to
+// by the reference type. If the provided type reflection does not
+// reflect a reference type, returns a new type reflection
+// of equivalent type.
+consteval info remove_reference(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_remove_reference, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_lvalue_reference<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection of an lvalue reference type to the type
+// reflected by the provided type reflection. If the provided type
+// reflection does not reflected a referenceable type, returns a new type
+// reflection of equivalent type.
+consteval info add_lvalue_reference(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_add_lvalue_reference, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_rvalue_reference<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection of an rvalue reference type to the type
+// reflected by the provided type reflection. If the provided type
+// reflection does not reflected a referenceable type, returns a new type
+// reflection of equivalent type.
+consteval info add_rvalue_reference(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_add_rvalue_reference, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_pointer<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection of the type pointed to by the type
+// reflected by the provided type reflection. If the provided type
+// reflection does not reflected a pointer type, returns a new type
+// reflection of equivalent type.
+consteval info remove_pointer(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_remove_pointer, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::add_pointer<T>::type) where type
+// is reflexpr(T).
+//
+// Returns a new type reflection of a pointer type pointing to the type
+// reflected by the provided type reflection. If the provided type
+// reflection does not reflect a type which can be pointed to,
+// returns a new type reflection of equivalent type.
+consteval info add_pointer(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_add_pointer, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::remove_cvref<T>::type) where type
+// is reflexpr(T).
+//
+// Shorthand returning the result of remove_cv(remove_reference(type)).
+consteval info remove_cvref(info type) {
+  detail::require_type(type);
+  return remove_cv(remove_reference(type));
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::decay<T>::type) where type is reflexpr(T).
+//
+// If reflected type names the type "array of U" or "reference to array of U",
+// returns a new type reflection of U*.
+//
+// If T is a function type F or a reference thereto, equivalent to add_pointer(type).
+//
+// Otherwise, equivalent to remove_cvref(type).
+consteval info decay(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_decay, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::make_signed<T>::type) where type is reflexpr(T)
+// without undefined behavior.
+//
+// If type is a type reflection of an integral (except bool) or enumeration
+// type, returns a new type reflection of the signed integer type
+// corresponding said reflected type, with the same cv-qualifiers.
+//
+// If type is a type reflection of a signed integral type, returns a new
+// type reflection of equivalent type.
+//
+// Otherwise, returns an invalid reflection.
+consteval info make_signed(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_make_signed, type);
+}
+
+// Requires: is_type(type)
+//
+// Equivalent to reflexpr(std::make_unsigned<T>::type) where type is reflexpr(T)
+// without undefined behavior.
+//
+// If type is a type reflection of an integral (except bool) or enumeration
+// type, returns a new type reflection of the unsigned integer type
+// corresponding said reflected type, with the same cv-qualifiers.
+// The unsigned integer type corresponding to an enumeration type is
+// the unsigned integer type with the smallest rank having the same
+// sizeof as the enumeration.
+//
+// If type is a type reflection of an unsigned integral type, returns a new
+// type reflection of equivalent type.
+//
+// Otherwise, returns an invalid reflection.
+consteval info make_unsigned(info type) {
+  detail::require_type(type);
+  return __reflect(detail::query_make_unsigned, type);
+}
+
+// -------------------------------------------------------------------------- //
+// Associated types
+
+// Requires: is_member_function(mem_function)
+//
+// Given a reflection, mem_function, of a member function, f,
+// return a reflection of the type of the this reference of f.
+consteval info this_ref_type_of(info mem_function) {
+  detail::require_mem_function(mem_function);
+  return __reflect(detail::query_get_this_ref_type, mem_function);
+}
+
+// Returns a reflection of the underlying type of an enumeration.
+//
+// Example:
+//
+//   enum byte : unsigned char {};
+//   constexpr info r = underlying_type(reflexpr(byte));
+//   typename(r); // unsigned char
+//
+consteval info underlying_type_of(info reflection) {
+  return __reflect(detail::query_get_underlying_type, reflection);
+}
+
+// Returns a reflection to the type of the reflected entity.
+consteval info type_of(info reflection) {
+  return __reflect(detail::query_get_type, reflection);
+}
+
+// Requires: is_function(function)
+//
+// Returns a reflection to the return type of the reflected entity.
+consteval info return_type_of(info function) {
+  detail::require_function(function);
+  return __reflect(detail::query_get_return_type, function);
+}
+
+// -------------------------------------------------------------------------- //
+// Associated reflections
+
+// Returns a reflection of the entity of reflection.
+//
+// In the case of a reflected type, returns
+// a reflection of the canonical type.
+//
+// In the case of a reflected declaration, returns
+// a reflection of the canonical declaration.
+//
+// In the case of a reflected expression,
+// if a canonical declaration is associated, returns
+// a reflection of the associated canonical declaration.
+//
+// In the case of a base specifier, returns
+// a reflection of the canonical type named by the base specifier.
+//
+// Otherwise, returns an invalid reflection.
+consteval info entity_of(info reflection) {
+  return __reflect(detail::query_get_entity, reflection);
+}
+
+// Returns a reflection to the lexical context of the declaration
+// reflected by reflection.
+//
+// Example:
+//
+//   struct S {
+//     struct T {};
+//   };
+//
+//   parent_of(reflexpr(S::T)); // reflexpr(S)
+//
+consteval info parent_of(info reflection) {
+  return __reflect(detail::query_get_parent, reflection);
+}
+
+// Returns a reflection of the declaration defining the reflected entity.
+// If this reflected entity has no associated defining declaration,
+// returns an invalid reflection.
+consteval info definition_of(info reflection) {
+  return __reflect(detail::query_get_definition, reflection);
+}
+
+// -------------------------------------------------------------------------- //
+// Names
+
+// Returns true if the reflected entity has a name.
+consteval bool is_named(info reflection) {
+  return __reflect(detail::query_is_named, reflection);
+}
+
+// Requires: is_named(named)
+//
+// Returns the name of the reflected entity.
+consteval string_type name_of(info named) {
+  detail::require_named(named);
+  return __reflect(detail::query_get_name, named);
+}
+
+// -------------------------------------------------------------------------- //
+// Expresions
+
+// True if reflection reflects an expression.
+consteval bool is_expression(info reflection) {
+  return __reflect(detail::query_is_expression, reflection);
+}
+
+// True if reflection reflects an lvalue expression.
+consteval bool is_lvalue(info reflection) {
+  return __reflect(detail::query_is_lvalue, reflection);
+}
+
+// True if reflection reflects an xvalue expression.
+consteval bool is_xvalue(info reflection) {
+  return __reflect(detail::query_is_xvalue, reflection);
+}
+
+// True if reflection reflects an prvalue expression.
+consteval bool is_prvalue(info reflection) {
+  return __reflect(detail::query_is_prvalue, reflection);
+}
+
+// True if reflection reflects an rvalue expression.
+consteval bool is_rvalue(info reflection) {
+  return is_prvalue(reflection) || is_xvalue(reflection);
+}
+
+// True if reflection reflects a glvalue expression.
+consteval bool is_glvalue(info reflection) {
+  return is_lvalue(reflection) || is_xvalue(reflection);
+}
+
+// True if reflection reflects a value.
+consteval bool is_value(info reflection) {
+  return __reflect(detail::query_is_value, reflection);
+}
+
+// -------------------------------------------------------------------------- //
+// Traversal
+
+// Returns the first child of declaration context. This can be used with
+// next() to traverse contexts as template arguments (iterators don't work
+// as template arguments).
+constexpr info front(info reflection) {
+  return __reflect(detail::query_get_begin, reflection);
+}
+
+// Returns the next info in the sequence.
+constexpr info next(info reflection) {
+  return __reflect(detail::query_get_next, reflection);
+}
+
+// Returns the first member of the reflected entity.
+constexpr info front_member(info reflection) {
+  return __reflect(detail::query_get_begin_member, reflection);
+}
+
+// Returns the next member in the sequence of declarations
+// of which the reflected entity is a member of.
+constexpr info next_member(info reflection) {
+  return __reflect(detail::query_get_next_member, reflection);
+}
+
+// Returns the first function parameter of the reflected entity.
+constexpr info front_param(info reflection) {
+  return __reflect(detail::query_get_begin_param, reflection);
+}
+
+// Returns the next function parameter in the sequence of function
+// parameters of which the reflected entity is a member of.
+constexpr info next_param(info reflection) {
+  return __reflect(detail::query_get_next_param, reflection);
+}
+
+// Returns the first template parameter of the reflected entity.
+constexpr info front_template_param(info reflection) {
+  return __reflect(detail::query_get_begin_template_param, reflection);
+}
+
+// Returns the next template parameter in the sequence of template
+// parameters of which the reflected entity is a member of.
+constexpr info next_template_param(info reflection) {
+  return __reflect(detail::query_get_next_template_param, reflection);
+}
+
+// Returns the first base specifier of the reflected entity.
+constexpr info front_base_spec(info reflection) {
+  return __reflect(detail::query_get_begin_base_spec, reflection);
+}
+
+// Returns the next base specifier in the sequence of base
+// specifiers of which the reflected entity is a member of.
+constexpr info next_base_spec(info reflection) {
+  return __reflect(detail::query_get_next_base_spec, reflection);
+}
+
+// Deprecated in favor of more specific iterator classes.
+class [[deprecated]] iterator {
+  meta::info m_info;
+
+public:
+  using value_type = info;
+  using reference = info;
+  using pointer = info;
+  using difference_type = std::ptrdiff_t;
+  using iterator_category = std::forward_iterator_tag;
+
+  constexpr iterator()
+    : m_info()
+  { }
+
+  constexpr iterator(meta::info reflection)
+    : m_info(front(reflection))
+  { }
+
+  constexpr meta::info operator*() const {
+    return m_info;
+  }
+
+  constexpr iterator operator++() {
+    m_info = next(m_info);
+    return *this;
+  }
+
+  constexpr iterator operator++(int) {
+    iterator tmp = *this;
+    operator++();
+    return tmp;
+  }
+
+  constexpr friend bool operator==(iterator a, iterator b) {
+    return a.m_info == b.m_info;
+  }
+
+  constexpr friend bool operator!=(iterator a, iterator b) {
+    return a.m_info != b.m_info;
+  }
+};
+
+class [[deprecated]] range {
+  iterator m_first;
+  iterator m_last;
+
+public:
+  constexpr range() { }
+
+  constexpr range(info cxt)
+    : m_first(cxt), m_last()
+  { }
+
+  constexpr iterator begin() const { return m_first; }
+
+  constexpr iterator end() const { return m_last; }
+};
+
+using member_iterator = detail::iterator<front_member, next_member>;
+using member_range = detail::range<member_iterator>;
+
+using member_fn_iterator = detail::iterator<front_member, next_member, is_member_function_fn>;
+using member_fn_range = detail::range<member_fn_iterator>;
+
+using data_member_iterator = detail::iterator<front_member, next_member, is_data_member_fn>;
+using data_member_range = detail::range<data_member_iterator>;
+
+using param_iterator = detail::iterator<front_param, next_param>;
+using param_range = detail::range<param_iterator>;
+
+using template_param_iterator = detail::iterator<front_template_param, next_template_param>;
+using template_param_range = detail::range<template_param_iterator>;
+
+using base_spec_iterator = detail::iterator<front_base_spec, next_base_spec>;
+using base_spec_range = detail::range<base_spec_iterator>;
+
+// Ranges
+
+template<typename P>
+constexpr auto members_of(info reflection, P pred)
+{
+  using iterator = detail::iterator<front_member, next_member, P>;
+  using range = detail::range<iterator>;
+  return range(reflection, pred);
+}
+
+template<typename... Ps>
+constexpr auto members_of(info reflection, Ps... preds)
+{
+  return members_of(reflection, [&](info reflection) {
+    return (preds(reflection) && ...);
+  });
+}
+
+template<typename P>
+constexpr auto members_of(info reflection) {
+  return members_of(reflection, detail::always_true);
+}
+
+constexpr auto parameters_of(info reflection)
+{
+  return param_range(reflection);
+}
+
+// Returns the first sub-object of reflection. Objects behave
+// as forward iterators.
+//
+// Deprecated without replacement.
+[[deprecated]] constexpr iterator begin(info reflection) {
+  return __reflect(detail::query_get_begin, reflection);
+}
+
+// Returns a null sub-object of reflection, indicating
+// the end of a sequence.
+//
+// Deprecated without replacement.
+[[deprecated]] constexpr iterator end(info reflection) {
+  return iterator();
+}
+
+} // inline namespace v1
+
+consteval void
+detail::require_variable(info reflection, const char* custom_err) {
+  if (is_variable(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a variable.");
+}
+
+consteval void
+detail::require_class(info reflection, const char* custom_err) {
+  if (is_class_type(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a class or structure.");
+}
+
+consteval void
+detail::require_class_member(info reflection,
+                             const char* custom_err) {
+  if (is_class_member(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a class member.");
+}
+
+consteval void
+detail::require_data_member(info reflection,
+                            const char* custom_err) {
+  if (is_data_member(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a data member.");
+}
+
+consteval void
+detail::require_mem_function(info reflection,
+                             const char* custom_err) {
+  if (is_member_function(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a member function.");
+}
+
+consteval void
+detail::require_spec_mem_function(info reflection,
+                                  const char* custom_err) {
+  if (is_special_member_function(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a special member function.");
+}
+
+consteval void
+detail::require_base_or_mem(info reflection,
+                            const char* custom_err) {
+  if (is_class_member(reflection))
+    return;
+  if (is_base_class(reflection))
+    return;
+
+  if(custom_err)
+    __compiler_error(custom_err);
+
+  __compiler_error("Reflected entity must be a base class specifier or class member.");
+}
+
+consteval void
+detail::require_function(info reflection, const char *custom_err) {
+  if (is_function(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a function.");
+}
+
+consteval void
+detail::require_type(info reflection, const char *custom_err) {
+  if (is_type(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a type.");
+}
+
+consteval void
+detail::require_parameter(info reflection, const char *custom_err) {
+  if (is_function_parameter(reflection) || is_template_parameter(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be a parameter.");
+}
+
+consteval void
+detail::require_named(info reflection, const char *custom_err) {
+  if (is_named(reflection))
+    return;
+  if(custom_err)
+    __compiler_error(custom_err);
+  __compiler_error("Reflected entity must be named.");
+}
+
+} // namespace meta
+} // namespace std::experimental
+
+
+#endif // CPPX_META

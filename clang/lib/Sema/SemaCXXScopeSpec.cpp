@@ -196,8 +196,7 @@ CXXRecordDecl *Sema::getCurrentInstantiationOf(NestedNameSpecifier *NNS) {
 /// that is currently being defined. Or, if we have a type that names
 /// a class template specialization that is not a complete type, we
 /// will attempt to instantiate that class template.
-bool Sema::RequireCompleteDeclContext(CXXScopeSpec &SS,
-                                      DeclContext *DC) {
+bool Sema::RequireCompleteDeclContext(CXXScopeSpec &SS, DeclContext *DC) {
   assert(DC && "given null context");
 
   TagDecl *tag = dyn_cast<TagDecl>(DC);

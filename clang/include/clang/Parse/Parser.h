@@ -1629,6 +1629,7 @@ public:
   ExprResult ParseExpression(TypeCastState isTypeCast = NotTypeCast);
   ExprResult ParseConstantExpressionInExprEvalContext(
       TypeCastState isTypeCast = NotTypeCast);
+  ExprResult ParseConditionalExpression(TypeCastState isTypecast = NotTypeCast);
   ExprResult ParseConstantExpression(TypeCastState isTypeCast = NotTypeCast);
   ExprResult ParseCaseExpression(SourceLocation CaseLoc);
   ExprResult ParseConstraintExpression();
@@ -1921,6 +1922,10 @@ private:
   StmtResult
   ParseStatement(SourceLocation *TrailingElseLoc = nullptr,
                  ParsedStmtContext StmtCtx = ParsedStmtContext::SubStmt);
+  StmtResult
+  StmtOrDeclAfterAttributesDefault(ParsedStmtContext StmtCtx,
+                                   ParsedAttributesWithRange &Attrs,
+                                   SourceLocation &GNUAttributeLoc);
   StmtResult ParseStatementOrDeclaration(
       StmtVector &Stmts, ParsedStmtContext StmtCtx,
       SourceLocation *TrailingElseLoc = nullptr);
@@ -2741,6 +2746,7 @@ private:
                             SourceLocation UsingLoc,
                             SourceLocation &DeclEnd,
                             ParsedAttributes &attrs);
+  Decl *ParseNamespaceName(CXXScopeSpec &SS, SourceLocation &IdentLoc);
 
   struct UsingDeclarator {
     SourceLocation TypenameLoc;
@@ -2805,6 +2811,16 @@ private:
       DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
+  bool
+  ParseReifMemInitializer(Decl *ConstructorDecl,
+                          llvm::SmallVectorImpl<QualType> &Typenames,
+                          llvm::SmallVectorImpl<CXXCtorInitializer *> &MemInits);
+  bool ParseMemInitExprList(Decl *ConstructorDecl,
+                            CXXScopeSpec &SS, IdentifierInfo *II,
+                            DeclSpec const &DS, ParsedType const &TemplateTypeTy,
+                            SourceLocation IdLoc, SourceLocation &LParen,
+                            ExprVector &ArgExprs,
+                            SourceLocation &RParen, SourceLocation &Ellipsis);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
                                       Decl *ThisDecl);
 
@@ -2813,7 +2829,9 @@ private:
   TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                     SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
-  BaseResult ParseBaseSpecifier(Decl *ClassDecl);
+  BaseResult ParseBaseSpecifier(Decl *ClassDecl,
+                          llvm::SmallVectorImpl<BaseResult> &ReifiedTypes);
+  void ParseReifierBaseSpecifier(llvm::SmallVectorImpl<QualType>);
   AccessSpecifier getAccessSpecifierIfPresent() const;
 
   bool ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
@@ -2827,6 +2845,49 @@ private:
   bool ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
                                   ParsedType ObjectType,
                                   UnqualifiedId &Result);
+
+  //===--------------------------------------------------------------------===//
+  // Metaprogramming
+
+  // C++ 14.3: Template arguments [temp.arg]
+  typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
+
+  ParsedReflectionOperand ParseCXXReflectOperand();
+  ExprResult ParseCXXReflectExpression();
+  ExprResult ParseCXXInvalidReflectionExpression();
+  ExprResult ParseCXXReflectionReadQuery();
+  ExprResult ParseCXXReflectPrintLiteralExpression();
+  ExprResult ParseCXXReflectPrintReflectionExpression();
+  ExprResult ParseCXXReflectDumpReflectionExpression();
+  ExprResult ParseCXXCompilerErrorExpression();
+
+  bool ParseCXXReflectedId(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
+                           UnqualifiedId &Result);
+  ExprResult ParseCXXIdExprExpression();
+  ExprResult ParseCXXValueOfExpression();
+  TypeResult ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
+                                         SourceLocation &EndLoc);
+  ParsedTemplateArgument ParseReflectedTemplateArgument();
+  ExprResult ParseCXXConcatenateExpression();
+
+  /// Returns true if reflection is enabled and the
+  /// current expression appears to be a variadic reifier.
+  bool isVariadicReifier() const;
+
+  /// Parse a variadic reifier. Returns true on error.
+  bool ParseVariadicReifier(llvm::SmallVectorImpl<Expr *> &Exprs);
+  bool ParseVariadicReifier(llvm::SmallVectorImpl<QualType> &Types);
+
+  /// Parse the two types of variadic reifiers that may appear in a template
+  /// argument list.
+  bool ParseNonTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
+  bool ParseTypeReifier(TemplateArgList &Args, SourceLocation KWLoc);
+
+  /// Parse a variadic reifier as a member/base initializer.
+  void ParseReifierMemInitalizer(llvm::SmallVectorImpl<QualType>& Types);
+
+  /// Parse a __select expression
+  ExprResult ParseCXXSelectMemberExpr();
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
@@ -3011,8 +3072,6 @@ private:
                                  bool IdentifierHasName);
   void DiagnoseMisplacedEllipsisInDeclarator(SourceLocation EllipsisLoc,
                                              Declarator &D);
-  // C++ 14.3: Template arguments [temp.arg]
-  typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
   bool ParseGreaterThanInTemplateList(SourceLocation &RAngleLoc,
                                       bool ConsumeLastToken,

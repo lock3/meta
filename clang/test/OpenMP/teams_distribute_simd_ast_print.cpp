@@ -68,6 +68,12 @@ public:
 // CHECK-NEXT: #pragma omp teams distribute simd simdlen(slen1) safelen(slen2) aligned(arr: alen)
 // CHECK: #pragma omp target
 // CHECK-NEXT: #pragma omp teams distribute simd private(this->a) private(this->a) private(this->S::a)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute simd private(this->a) private(this->a) linear(k)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute simd default(none) private(b) firstprivate(argv) shared(d) reduction(+: c) reduction(max: e) num_teams(f) thread_limit(d)
+// CHECK: #pragma omp target
+// CHECK-NEXT: #pragma omp teams distribute simd simdlen(slen1) safelen(slen2) aligned(arr: alen)
 
 class S8 : public S7<S> {
   S8() {}

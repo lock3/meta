@@ -47,7 +47,7 @@ public:
 
   void CheckMallocArgument(
     SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
-    const Expr *TheArgument, ASTContext &Context) const;
+    const Expr *TheArgument, const Expr::EvalContext &EvalCtx) const;
 
   void OutputPossibleOverflows(
     SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
@@ -63,8 +63,7 @@ static inline bool EvaluatesToZero(APSInt &Val, BinaryOperatorKind op) {
 
 void MallocOverflowSecurityChecker::CheckMallocArgument(
   SmallVectorImpl<MallocOverflowCheck> &PossibleMallocOverflows,
-  const Expr *TheArgument,
-  ASTContext &Context) const {
+  const Expr *TheArgument, const Expr::EvalContext &EvalCtx) const {
 
   /* Look for a linear combination with a single variable, and at least
    one multiplication.
@@ -88,14 +87,14 @@ void MallocOverflowSecurityChecker::CheckMallocArgument(
 
       const Expr *lhs = binop->getLHS();
       const Expr *rhs = binop->getRHS();
-      if (rhs->isEvaluatable(Context)) {
+      if (rhs->isEvaluatable(EvalCtx)) {
         e = lhs;
-        maxVal = rhs->EvaluateKnownConstInt(Context);
+        maxVal = rhs->EvaluateKnownConstInt(EvalCtx);
         if (EvaluatesToZero(maxVal, opc))
           return;
       } else if ((opc == BO_Add || opc == BO_Mul) &&
-                 lhs->isEvaluatable(Context)) {
-        maxVal = lhs->EvaluateKnownConstInt(Context);
+                 lhs->isEvaluatable(EvalCtx)) {
+        maxVal = lhs->EvaluateKnownConstInt(EvalCtx);
         if (EvaluatesToZero(maxVal, opc))
           return;
         e = rhs;
@@ -135,7 +134,8 @@ private:
       if (!E->getType()->isIntegralOrEnumerationType())
         return false;
       Expr::EvalResult Result;
-      if (E->EvaluateAsInt(Result, Context))
+      Expr::EvalContext EvalCtx(Context, nullptr);
+      if (E->EvaluateAsInt(Result, EvalCtx))
         return Result.Val.getInt() == 0;
       return false;
     }
@@ -180,7 +180,8 @@ private:
 
       // Erase if the multiplicand was assigned a constant value.
       const Expr *rhs = AssignEx->getRHS();
-      if (rhs->isEvaluatable(Context))
+      Expr::EvalContext EvalCtx(Context, nullptr);
+      if (rhs->isEvaluatable(EvalCtx))
         assignKnown = true;
 
       // Discard the report if the multiplicand was assigned a value,
@@ -191,12 +192,12 @@ private:
         if (BOp->getOpcode() == BO_Div) {
           const Expr *denom = BOp->getRHS()->IgnoreParenImpCasts();
           Expr::EvalResult Result;
-          if (denom->EvaluateAsInt(Result, Context)) {
+          if (denom->EvaluateAsInt(Result, EvalCtx)) {
             denomVal = Result.Val.getInt();
             denomKnown = true;
           }
           const Expr *numerator = BOp->getLHS()->IgnoreParenImpCasts();
-          if (numerator->isEvaluatable(Context))
+          if (numerator->isEvaluatable(EvalCtx))
             numeratorKnown = true;
         }
       }
@@ -321,9 +322,11 @@ void MallocOverflowSecurityChecker::checkASTCodeBody(const Decl *D,
             continue;
 
           if (FnInfo->isStr ("malloc") || FnInfo->isStr ("_MALLOC")) {
-            if (TheCall->getNumArgs() == 1)
+            if (TheCall->getNumArgs() == 1) {
+              Expr::EvalContext EvalCtx(mgr.getASTContext(), nullptr);
               CheckMallocArgument(PossibleMallocOverflows, TheCall->getArg(0),
-                                  mgr.getASTContext());
+                                  EvalCtx);
+            }
           }
         }
       }

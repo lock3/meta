@@ -74,7 +74,9 @@ static bool isBuiltinAssumeFalse(const CFGBlock *B, const Stmt *S,
   }
   if (Optional<CFGStmt> CS = B->back().getAs<CFGStmt>()) {
     if (const auto *CE = dyn_cast<CallExpr>(CS->getStmt())) {
-      return CE->getCallee()->IgnoreCasts() == S && CE->isBuiltinAssumeFalse(C);
+      Expr::EvalContext EvalCtx(C, nullptr);
+      return CE->getCallee()->IgnoreCasts() == S
+          && CE->isBuiltinAssumeFalse(EvalCtx);
     }
   }
   return false;

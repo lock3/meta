@@ -27,11 +27,38 @@ namespace clang {
   class CXXRecordDecl;
   class Decl;
   class DiagnosticBuilder;
+  class Stmt;
   class Expr;
-  class FieldDecl;
-  struct PrintingPolicy;
-  class Type;
   class ValueDecl;
+  class FieldDecl;
+  class CXXBaseSpecifier;
+  class Type;
+  class QualType;
+  struct PrintingPolicy;
+  struct InvalidReflection;
+
+/// \brief The kind of construct reflected.
+enum ReflectionKind {
+  /// \brief Represents the invalid reflection.
+  RK_invalid = 0,
+
+  /// \brief A reflection of a named entity, possibly a namespace. Note
+  /// that user-defined types are reflected as declarations, not types.
+  /// Corresponds to an object of type Decl*.
+  RK_declaration = 1,
+
+  /// \brief A reflection of a non-user-defined type. Corresponds to
+  /// an object of type QualType.
+  RK_type = 2,
+
+  /// \brief A reflection of an expression. Corresponds to an object of
+  /// type Expr*.
+  RK_expression = 3,
+
+  /// \brief A base class specifier. Corresponds to an object of type
+  /// CXXBaseSpecifier*.
+  RK_base_specifier = 4,
+};
 
 /// Symbolic representation of typeid(T) for some type T.
 class TypeInfoLValue {
@@ -132,7 +159,8 @@ public:
     Struct,
     Union,
     MemberPointer,
-    AddrLabelDiff
+    AddrLabelDiff,
+    Reflection
   };
 
   class LValueBase {
@@ -272,6 +300,16 @@ private:
     const AddrLabelExpr* RHSExpr;
   };
   struct MemberPointerData;
+  struct ReflectionData {
+    ReflectionKind ReflKind;
+    const void *ReflEntity;
+    unsigned Offset;
+    const APValue *Parent;
+
+    ReflectionData(ReflectionKind ReflKind, const void *ReflEntity,
+                   unsigned Offset, const APValue *Parent);
+    ~ReflectionData();
+  };
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
@@ -331,6 +369,15 @@ public:
       : Kind(None) {
     MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity)
+    : Kind(None) {
+    MakeReflection(ReflKind, ReflEntity, 0, nullptr);
+  }
+  APValue(ReflectionKind ReflKind, const void *ReflEntity,
+          unsigned Offset, const APValue &Parent)
+    : Kind(None) {
+    MakeReflection(ReflKind, ReflEntity, Offset, &Parent);
+  }
   static APValue IndeterminateValue() {
     APValue Result;
     Result.Kind = Indeterminate;
@@ -370,6 +417,7 @@ public:
   bool isUnion() const { return Kind == Union; }
   bool isMemberPointer() const { return Kind == MemberPointer; }
   bool isAddrLabelDiff() const { return Kind == AddrLabelDiff; }
+  bool isReflection() const { return Kind == Reflection; }
 
   void dump() const;
   void dump(raw_ostream &OS) const;
@@ -540,6 +588,56 @@ public:
     return ((const AddrLabelDiffData*)(const char*)Data.buffer)->RHSExpr;
   }
 
+  // Returns the kind of reflected value.
+  ReflectionKind getReflectionKind() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->ReflKind;
+  }
+
+  // Returns the opaque reflection pointer.
+  const void *getOpaqueReflectionValue() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->ReflEntity;
+  }
+
+  /// True if this is the invalid reflection.
+  bool isInvalidReflection() const;
+
+  /// Returns the invalid reflection information.
+  const InvalidReflection *getInvalidReflectionInfo() const;
+
+  /// Returns the reflected type.
+  QualType getReflectedType() const;
+
+  /// Returns the reflected template declaration.
+  const Decl *getReflectedDeclaration() const;
+
+  /// Returns the reflected expression.
+  const Expr *getReflectedExpression() const;
+
+  /// Returns the reflected base class specifier.
+  const CXXBaseSpecifier *getReflectedBaseSpecifier() const;
+
+  /// Returns the offset into the parent which if
+  /// reflected, results in this reflection.
+  ///
+  /// If 0, there is no parent information available.
+  unsigned getReflectionOffset() const {
+    assert(isReflection() && "Invalid accessor");
+    return ((const ReflectionData*)(const char*)Data.buffer)->Offset;
+  }
+
+  bool hasParentReflection() const {
+    return getReflectionOffset();
+  }
+
+  /// Returns the parent reflection, if present.
+  const APValue &getParentReflection() const {
+    assert(isReflection() && "Invalid accessor");
+    assert(hasParentReflection() && "No parent reflection");
+    return *((const ReflectionData*)(const char*)Data.buffer)->Parent;
+  }
+
   void setInt(APSInt I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt *)(char *)Data.buffer = std::move(I);
@@ -645,6 +743,21 @@ private:
     assert(isAbsent() && "Bad state change");
     new ((void*)(char*)Data.buffer) AddrLabelDiffData();
     Kind = AddrLabelDiff;
+  }
+  void MakeReflection(ReflectionKind ReflKind, const void *ReflEntity,
+                      unsigned Offset, const APValue *Parent) {
+    assert(isAbsent() && "Bad state change");
+
+#ifndef NDEBUG
+    if (Offset)
+      assert(Parent && "Parent missing");
+    else
+      assert(!Parent && "Parent provided with no offset");
+#endif
+
+    new ((void*)(char*)Data.buffer) ReflectionData(ReflKind, ReflEntity,
+                                                   Offset, Parent);
+    Kind = Reflection;
   }
 };
 

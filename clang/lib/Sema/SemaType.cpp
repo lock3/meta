@@ -2362,7 +2362,8 @@ QualType Sema::BuildVectorType(QualType CurType, Expr *SizeExpr,
                                                VectorType::GenericVector);
 
   llvm::APSInt VecSize(32);
-  if (!SizeExpr->isIntegerConstantExpr(VecSize, Context)) {
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+  if (!SizeExpr->isIntegerConstantExpr(VecSize, EvalCtx)) {
     Diag(AttrLoc, diag::err_attribute_argument_type)
         << "vector_size" << AANT_ArgumentIntegerConstant
         << SizeExpr->getSourceRange();
@@ -2419,7 +2420,8 @@ QualType Sema::BuildExtVectorType(QualType T, Expr *ArraySize,
 
   if (!ArraySize->isTypeDependent() && !ArraySize->isValueDependent()) {
     llvm::APSInt vecSize(32);
-    if (!ArraySize->isIntegerConstantExpr(vecSize, Context)) {
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+    if (!ArraySize->isIntegerConstantExpr(vecSize, EvalCtx)) {
       Diag(AttrLoc, diag::err_attribute_argument_type)
         << "ext_vector_type" << AANT_ArgumentIntegerConstant
         << ArraySize->getSourceRange();
@@ -2915,6 +2917,7 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
   case UnqualifiedIdKind::IK_Identifier:
   case UnqualifiedIdKind::IK_LiteralOperatorId:
   case UnqualifiedIdKind::IK_TemplateId:
+  case UnqualifiedIdKind::IK_ReflectedId:
     T = ConvertDeclSpecToType(state);
 
     if (!D.isInvalidType() && D.getDeclSpec().isTypeSpecOwned()) {
@@ -5894,7 +5897,8 @@ static bool BuildAddressSpaceIndex(Sema &S, LangAS &ASIdx,
                                    SourceLocation AttrLoc) {
   if (!AddrSpace->isValueDependent()) {
     llvm::APSInt addrSpace(32);
-    if (!AddrSpace->isIntegerConstantExpr(addrSpace, S.Context)) {
+    Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
+    if (!AddrSpace->isIntegerConstantExpr(addrSpace, EvalCtx)) {
       S.Diag(AttrLoc, diag::err_attribute_argument_type)
           << "'address_space'" << AANT_ArgumentIntegerConstant
           << AddrSpace->getSourceRange();
@@ -7277,8 +7281,9 @@ static void HandleNeonVectorTypeAttr(QualType &CurType, const ParsedAttr &Attr,
   // The number of elements must be an ICE.
   Expr *numEltsExpr = static_cast<Expr *>(Attr.getArgAsExpr(0));
   llvm::APSInt numEltsInt(32);
+  Expr::EvalContext EvalCtx(S.Context, S.GetReflectionCallbackObj());
   if (numEltsExpr->isTypeDependent() || numEltsExpr->isValueDependent() ||
-      !numEltsExpr->isIntegerConstantExpr(numEltsInt, S.Context)) {
+      !numEltsExpr->isIntegerConstantExpr(numEltsInt, EvalCtx)) {
     S.Diag(Attr.getLoc(), diag::err_attribute_argument_type)
         << Attr << AANT_ArgumentIntegerConstant
         << numEltsExpr->getSourceRange();
@@ -8381,8 +8386,9 @@ QualType Sema::BuildDecltypeType(Expr *E, SourceLocation Loc,
                                  bool AsUnevaluated) {
   assert(!E->hasPlaceholderType() && "unexpected placeholder");
 
+  Expr::EvalContext EvalCtx(Context, this->GetReflectionCallbackObj());
   if (AsUnevaluated && CodeSynthesisContexts.empty() &&
-      E->HasSideEffects(Context, false)) {
+      E->HasSideEffects(EvalCtx, false)) {
     // The expression operand for decltype is in an unevaluated expression
     // context, so side effects could result in unintended consequences.
     Diag(E->getExprLoc(), diag::warn_side_effects_unevaluated_context);

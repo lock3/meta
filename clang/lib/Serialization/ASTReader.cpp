@@ -1124,6 +1124,8 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXUsingDirective:
     Data = 0;
     break;
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
   }
 
   return DeclarationNameKey(Kind, Data);
@@ -6514,6 +6516,12 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getDecltypeType(ReadExpr(*Loc.F), UnderlyingType);
   }
 
+  case TYPE_REFLECTED: {
+    QualType UnderlyingType = readType(*Loc.F, Record, Idx);
+    Expr *Reflection = ReadExpr(*Loc.F);
+    return Context.getReflectedType(Reflection, UnderlyingType);
+  }
+
   case TYPE_UNARY_TRANSFORM: {
     QualType BaseType = readType(*Loc.F, Record, Idx);
     QualType UnderlyingType = readType(*Loc.F, Record, Idx);
@@ -6610,6 +6618,14 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     if (Record[1])
       NumExpansions = Record[1] - 1;
     return Context.getPackExpansionType(Pattern, NumExpansions);
+  }
+
+  case TYPE_CXX_DEPENDENT_VARIADIC_REIFIER: {
+    // TODO: IMPLEMENT ME
+    return Context.getCXXDependentVariadicReifierType(nullptr,
+                                                      SourceLocation(),
+                                                      SourceLocation(),
+                                                      SourceLocation());
   }
 
   case TYPE_ELABORATED: {
@@ -7040,6 +7056,10 @@ void TypeLocReader::VisitDecltypeTypeLoc(DecltypeTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation());
 }
 
+void TypeLocReader::VisitReflectedTypeLoc(ReflectedTypeLoc TL) {
+  TL.setNameLoc(ReadSourceLocation());
+}
+
 void TypeLocReader::VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
   TL.setKWLoc(ReadSourceLocation());
   TL.setLParenLoc(ReadSourceLocation());
@@ -7134,6 +7154,11 @@ void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation());
 }
 
+void TypeLocReader::VisitCXXDependentVariadicReifierTypeLoc
+(CXXDependentVariadicReifierTypeLoc TL) {
+  TL.setEllipsisLoc(ReadSourceLocation());
+}
+
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation());
 }
@@ -7204,6 +7229,9 @@ QualType ASTReader::GetType(TypeID ID) {
     switch ((PredefinedTypeIDs)Index) {
     case PREDEF_TYPE_NULL_ID:
       return QualType();
+    case PREDEF_TYPE_META_INFO_ID:
+      T = Context.MetaInfoTy;
+      break;
     case PREDEF_TYPE_VOID_ID:
       T = Context.VoidTy;
       break;
@@ -7476,6 +7504,7 @@ ASTReader::GetTemplateArgumentLocInfo(ModuleFile &F,
                                       const RecordData &Record,
                                       unsigned &Index) {
   switch (Kind) {
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     return ReadExpr(F);
   case TemplateArgument::Type:
@@ -9087,6 +9116,9 @@ ASTReader::ReadDeclarationName(ModuleFile &F,
     return Context.DeclarationNames.getCXXLiteralOperatorName(
                                        GetIdentifierInfo(F, Record, Idx));
 
+  case DeclarationName::CXXReflectedIdName:
+    llvm_unreachable("unimplemented");
+
   case DeclarationName::CXXUsingDirective:
     return DeclarationName::getUsingDirectiveName();
   }
@@ -9123,6 +9155,13 @@ void ASTReader::ReadDeclarationNameLoc(ModuleFile &F,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
+    break;
+
+  case DeclarationName::CXXReflectedIdName:
+    DNLoc.CXXOperatorName.BeginOpNameLoc
+        = ReadSourceLocation(F, Record, Idx).getRawEncoding();
+    DNLoc.CXXOperatorName.EndOpNameLoc
+        = ReadSourceLocation(F, Record, Idx).getRawEncoding();
     break;
   }
 }
@@ -9255,8 +9294,9 @@ TemplateArgument ASTReader::ReadTemplateArgument(ModuleFile &F,
       NumTemplateExpansions = NumExpansions - 1;
     return TemplateArgument(Name, NumTemplateExpansions);
   }
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
-    return TemplateArgument(ReadExpr(F));
+    return TemplateArgument(ReadExpr(F), Kind);
   case TemplateArgument::Pack: {
     unsigned NumArgs = Record[Idx++];
     TemplateArgument *Args = new (Context) TemplateArgument[NumArgs];
@@ -11657,11 +11697,15 @@ void ASTReader::diagnoseOdrViolations() {
                 ODRDiagError(FirstTemplate->getLocation(),
                              FirstTemplate->getSourceRange(),
                              FunctionTemplateParameterDifferentDefaultArgument)
-                    << FirstTemplate << (i + 1) << FirstDefaultArgument;
+                    << FirstTemplate << (i + 1)
+                    << TemplateArgument(FirstDefaultArgument,
+                                        TemplateArgument::Expression);
                 ODRDiagNote(SecondTemplate->getLocation(),
                             SecondTemplate->getSourceRange(),
                             FunctionTemplateParameterDifferentDefaultArgument)
-                    << SecondTemplate << (i + 1) << SecondDefaultArgument;
+                    << SecondTemplate << (i + 1)
+                    << TemplateArgument(SecondDefaultArgument,
+                                        TemplateArgument::Expression);
                 ParameterMismatch = true;
                 break;
               }
@@ -12126,7 +12170,7 @@ void ASTReader::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
     auto It = PendingFakeLookupResults.find(II);
     if (It != PendingFakeLookupResults.end()) {
       for (auto *ND : It->second)
-        SemaObj->IdResolver.RemoveDecl(ND);
+        SemaObj->IdResolver->RemoveDecl(ND);
       // FIXME: this works around module+PCH performance issue.
       // Rather than erase the result from the map, which is O(n), just clear
       // the vector of NamedDecls.
@@ -12134,14 +12178,14 @@ void ASTReader::pushExternalDeclIntoScope(NamedDecl *D, DeclarationName Name) {
     }
   }
 
-  if (SemaObj->IdResolver.tryAddTopLevelDecl(D, Name) && SemaObj->TUScope) {
+  if (SemaObj->IdResolver->tryAddTopLevelDecl(D, Name) && SemaObj->TUScope) {
     SemaObj->TUScope->AddDecl(D);
   } else if (SemaObj->TUScope) {
     // Adding the decl to IdResolver may have failed because it was already in
     // (even though it was not added in scope). If it is already in, make sure
     // it gets in the scope as well.
-    if (std::find(SemaObj->IdResolver.begin(Name),
-                  SemaObj->IdResolver.end(), D) != SemaObj->IdResolver.end())
+    if (std::find(SemaObj->IdResolver->begin(Name),
+                  SemaObj->IdResolver->end(), D) != SemaObj->IdResolver->end())
       SemaObj->TUScope->AddDecl(D);
   }
 }
@@ -12189,7 +12233,7 @@ ASTReader::~ASTReader() {
 }
 
 IdentifierResolver &ASTReader::getIdResolver() {
-  return SemaObj ? SemaObj->IdResolver : DummyIdResolver;
+  return SemaObj ? *SemaObj->IdResolver : DummyIdResolver;
 }
 
 Expected<unsigned> ASTRecordReader::readRecord(llvm::BitstreamCursor &Cursor,

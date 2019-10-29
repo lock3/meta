@@ -1776,7 +1776,30 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     //     'typename' '::' [opt] nested-name-specifier identifier
     //     'typename' '::' [opt] nested-name-specifier template [opt]
     //            simple-template-id
+    // [Meta]
+    //     'typename' '(' constant-expression ')'
     SourceLocation TypenameLoc = ConsumeToken();
+
+    // Match 'typename (e)' and build annotated token for it.
+    if (Tok.is(tok::l_paren)) {
+      SourceLocation EndLoc;
+      TypeResult Ty = ParseReflectedTypeSpecifier(TypenameLoc, EndLoc);
+      if (Ty.isInvalid())
+        return true;
+
+      // Re-enter the last token ')' and annotate as the reflected type.
+      if (PP.isBacktrackEnabled())
+        PP.RevertCachedTokens(1);
+      else
+        PP.EnterToken(Tok, /*IsReinject=*/true);
+      Tok.setKind(tok::annot_refltype);
+      setTypeAnnotation(Tok, Ty.get());
+      Tok.setAnnotationEndLoc(EndLoc);
+      Tok.setLocation(TypenameLoc);
+      PP.AnnotateCachedTokens(Tok);
+      return false;
+    }
+
     CXXScopeSpec SS;
     if (ParseOptionalCXXScopeSpecifier(SS, /*ObjectType=*/nullptr,
                                        /*EnteringContext=*/false, nullptr,

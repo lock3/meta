@@ -1326,7 +1326,16 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 ///         constant-expression
 ///         type-id
 ///         id-expression
+///         templarg ( reflection )
 ParsedTemplateArgument Parser::ParseTemplateArgument() {
+  EnterExpressionEvaluationContext EnterConstantEvaluated(
+    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
+    /*LambdaContextDecl=*/nullptr,
+    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
+  if (Tok.is(tok::kw_templarg)) {
+    return ParseReflectedTemplateArgument();
+  }
+
   // C++ [temp.arg]p2:
   //   In a template-argument, an ambiguity between a type-id and an
   //   expression is resolved to a type-id, regardless of the form of
@@ -1337,10 +1346,6 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
   // so enter the appropriate context for a constant expression template
   // argument before trying to disambiguate.
 
-  EnterExpressionEvaluationContext EnterConstantEvaluated(
-    Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
-    /*LambdaContextDecl=*/nullptr,
-    /*ExprContext=*/Sema::ExpressionEvaluationContextRecord::EK_TemplateArgument);
   if (isCXXTypeId(TypeIdAsTemplateArgument)) {
     TypeResult TypeArg = ParseTypeName(
         /*Range=*/nullptr, DeclaratorContext::TemplateArgContext);
@@ -1380,22 +1385,44 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
 ///         template-argument-list ',' template-argument
 bool
 Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
-
   ColonProtectionRAIIObject ColonProtection(*this, false);
 
   do {
-    ParsedTemplateArgument Arg = ParseTemplateArgument();
-    SourceLocation EllipsisLoc;
-    if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
-      Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
 
-    if (Arg.isInvalid()) {
-      SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
-      return true;
+    if (isVariadicReifier()) {
+      /// Let reflection_range = {r1, r2, ..., rN, where rI is a reflection}.
+      /// valueof(... reflection_range) expands to valueof(r1), ..., valueof(rN)
+      SourceLocation KWLoc = Tok.getLocation();
+
+      switch(Tok.getIdentifierInfo()->getTokenID()) {
+      case tok::kw_typename:
+        if (ParseTypeReifier(TemplateArgs, KWLoc))
+          return true;
+        break;
+      case tok::kw_valueof:
+      case tok::kw_unqualid:
+      case tok::kw_idexpr:
+        if (ParseNonTypeReifier(TemplateArgs, KWLoc))
+          return true;
+        break;
+      default:
+        return true;
+      }
     }
+    else {
+      ParsedTemplateArgument Arg = ParseTemplateArgument();
+      SourceLocation EllipsisLoc;
+      if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+        Arg = Actions.ActOnPackExpansion(Arg, EllipsisLoc);
 
-    // Save this template argument.
-    TemplateArgs.push_back(Arg);
+      if (Arg.isInvalid()) {
+        SkipUntil(tok::comma, tok::greater, StopAtSemi | StopBeforeMatch);
+        return true;
+      }
+
+      // Save this template argument.
+      TemplateArgs.push_back(Arg);
+    }
 
     // If the next token is a comma, consume it and keep reading
     // arguments.

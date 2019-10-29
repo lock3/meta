@@ -107,7 +107,9 @@ public:
   int tadd(int a, int b) { return a + b; }
 
 // CHECK: #pragma omp declare simd simdlen(16)
-// CHECK-NEXT: int tadd(int a, int b);
+// CHECK-NEXT: int tadd(int a, int b) {
+// CHECK-NEXT:   return a + b;
+// CHECK-NEXT: }
 
   #pragma omp declare simd aligned(a : X * 2) aligned(b) linear(ref(b): X)
   float taddpf(float *a, T *&b) { return *a + *b; }

@@ -35,7 +35,9 @@ namespace clang {
       /// A non-type template parameter, stored as an expression.
       NonType,
       /// A template template argument, stored as a template name.
-      Template
+      Template,
+      /// A dependent template argument, stored as an expression.
+      Dependent
     };
 
     /// Build an empty template argument.
@@ -80,7 +82,8 @@ namespace clang {
 
     /// Retrieve the non-type template argument's expression.
     Expr *getAsExpr() const {
-      assert(Kind == NonType && "Not a non-type template argument");
+      assert((Kind == NonType || Kind == Dependent)
+             && "Not a non-type template argument");
       return static_cast<Expr*>(Arg);
     }
 

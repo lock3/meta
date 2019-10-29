@@ -233,6 +233,21 @@ APValue::UnionData::~UnionData () {
   delete Value;
 }
 
+APValue::ReflectionData::ReflectionData(ReflectionKind ReflKind,
+                                        const void *ReflEntity,
+                                        unsigned Offset,
+                                        const APValue *Parent) :
+  ReflKind(ReflKind), ReflEntity(ReflEntity),
+  Offset(Offset), Parent(nullptr) {
+  if (Parent)
+    this->Parent = new APValue(*Parent);
+}
+
+APValue::ReflectionData::~ReflectionData() {
+  if (Parent)
+    delete Parent;
+}
+
 APValue::APValue(const APValue &RHS) : Kind(None) {
   switch (RHS.getKind()) {
   case None:
@@ -301,6 +316,13 @@ APValue::APValue(const APValue &RHS) : Kind(None) {
     MakeAddrLabelDiff();
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
+  case Reflection: {
+    const APValue *ParentRefl = RHS.hasParentReflection()
+                              ? &RHS.getParentReflection() : nullptr;
+    MakeReflection(RHS.getReflectionKind(), RHS.getOpaqueReflectionValue(),
+                   RHS.getReflectionOffset(), ParentRefl);
+    break;
+  }
   }
 }
 
@@ -337,6 +359,7 @@ bool APValue::needsCleanup() const {
   case None:
   case Indeterminate:
   case AddrLabelDiff:
+  case Reflection:
     return false;
   case Struct:
   case Union:
@@ -376,6 +399,37 @@ void APValue::swap(APValue &RHS) {
   memcpy(TmpData, Data.buffer, DataSize);
   memcpy(Data.buffer, RHS.Data.buffer, DataSize);
   memcpy(RHS.Data.buffer, TmpData, DataSize);
+}
+
+bool APValue::isInvalidReflection() const {
+  return getReflectionKind() == RK_invalid;
+}
+
+const InvalidReflection *APValue::getInvalidReflectionInfo() const {
+  assert(getReflectionKind() == RK_invalid);
+
+  using InvalidReflTy = const InvalidReflection *;
+  return reinterpret_cast<InvalidReflTy>(getOpaqueReflectionValue());
+}
+
+QualType APValue::getReflectedType() const {
+  assert(getReflectionKind() == RK_type);
+  return QualType::getFromOpaquePtr(getOpaqueReflectionValue());
+}
+
+const Decl *APValue::getReflectedDeclaration() const {
+  assert(getReflectionKind() == RK_declaration);
+  return reinterpret_cast<const Decl *>(getOpaqueReflectionValue());
+}
+
+const Expr *APValue::getReflectedExpression() const {
+  assert(getReflectionKind() == RK_expression);
+  return reinterpret_cast<const Expr *>(getOpaqueReflectionValue());
+}
+
+const CXXBaseSpecifier *APValue::getReflectedBaseSpecifier() const {
+  assert(getReflectionKind() == RK_base_specifier);
+  return reinterpret_cast<const CXXBaseSpecifier *>(getOpaqueReflectionValue());
 }
 
 LLVM_DUMP_METHOD void APValue::dump() const {
@@ -465,6 +519,9 @@ void APValue::dump(raw_ostream &OS) const {
     return;
   case AddrLabelDiff:
     OS << "AddrLabelDiff: <todo>";
+    return;
+  case Reflection:
+    OS << "Reflection: <todo>";
     return;
   }
   llvm_unreachable("Unknown APValue kind!");
@@ -697,6 +754,9 @@ void APValue::printPretty(raw_ostream &Out, const ASTContext &Ctx,
     Out << "&&" << getAddrLabelDiffLHS()->getLabel()->getName();
     Out << " - ";
     Out << "&&" << getAddrLabelDiffRHS()->getLabel()->getName();
+    return;
+  case APValue::Reflection:
+    // FIXME: This needs implemented
     return;
   }
   llvm_unreachable("Unknown APValue kind!");

@@ -16,6 +16,7 @@
 #define LLVM_CLANG_BASIC_IDENTIFIERTABLE_H
 
 #include "clang/Basic/LLVM.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TokenKinds.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/SmallString.h"
@@ -35,10 +36,11 @@ namespace clang {
 
 class DeclarationName;
 class DeclarationNameTable;
+class Expr;
 class IdentifierInfo;
 class LangOptions;
 class MultiKeywordSelector;
-class SourceLocation;
+class ParsedTemplateArgument;
 
 /// A simple pair of identifier info and location.
 using IdentifierLocPair = std::pair<IdentifierInfo *, SourceLocation>;
@@ -108,6 +110,8 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
   // True if this is the 'import' contextual keyword.
   unsigned IsModulesImport : 1;
 
+  // True if this is the 'consteval' keyword.
+  bool IsConsteval : 1;
   // 29 bits left in a 64-bit word.
 
   // Managed by the language front-end.
@@ -121,7 +125,7 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
         IsPoisoned(false), IsCPPOperatorKeyword(false),
         NeedsHandleIdentifier(false), IsFromAST(false), ChangedAfterLoad(false),
         FEChangedAfterLoad(false), RevertedTokenID(false), OutOfDate(false),
-        IsModulesImport(false) {}
+        IsModulesImport(false), IsConsteval(false) {}
 
 public:
   IdentifierInfo(const IdentifierInfo &) = delete;
@@ -303,6 +307,11 @@ public:
   /// language.
   bool isCPlusPlusKeyword(const LangOptions &LangOpts) const;
 
+  // Return true if this token is a C++ Reflection keyword
+  bool isReflectionKeyword(const LangOptions &LangOpts) const;
+
+  bool isReifierKeyword(const LangOptions &LangOpts) const;
+
   /// Get and set FETokenInfo. The language front-end is allowed to associate
   /// arbitrary metadata with this token.
   void *getFETokenInfo() const { return FETokenInfo; }
@@ -371,6 +380,17 @@ public:
       RecomputeNeedsHandleIdentifier();
   }
 
+  /// Determine whether this is the consteval keyword
+  bool isConsteval() const { return IsConsteval; }
+
+  void setConsteval(bool I = true) {
+    IsConsteval = I;
+    if (I)
+      NeedsHandleIdentifier = true;
+    else
+      RecomputeNeedsHandleIdentifier();
+  }
+
   /// Return true if this identifier is an editor placeholder.
   ///
   /// Editor placeholders are produced by the code-completion engine and are
@@ -399,7 +419,59 @@ private:
   void RecomputeNeedsHandleIdentifier() {
     NeedsHandleIdentifier = isPoisoned() || hasMacroDefinition() ||
                             isExtensionToken() || isFutureCompatKeyword() ||
-                            isOutOfDate() || isModulesImport();
+                            isOutOfDate() || isModulesImport() ||
+                            isConsteval();
+  }
+};
+
+class ReflectedIdentifierInfo {
+  using ASTTemplateArgsPtr = MutableArrayRef<ParsedTemplateArgument>;
+
+  ASTTemplateArgsPtr TemplateArgs = { };
+
+  SourceLocation TemplateKWLoc, LAngleLoc, RAngleLoc;
+
+  /// Memory for this array is allocated by the context.
+  llvm::ArrayRef<Expr *> NameComponents = { };
+public:
+  void setTemplateArgs(ASTTemplateArgsPtr TemplateArgs) {
+    this->TemplateArgs = TemplateArgs;
+  }
+
+  ASTTemplateArgsPtr getTemplateArgs() const {
+    return TemplateArgs;
+  }
+
+  void setTemplateKWLoc(SourceLocation TemplateKWLoc) {
+    this->TemplateKWLoc = TemplateKWLoc;
+  }
+
+  SourceLocation getTemplateKWLoc() const {
+    return TemplateKWLoc;
+  }
+
+  void setLAngleLoc(SourceLocation LAngleLoc) {
+    this->LAngleLoc = LAngleLoc;
+  }
+
+  SourceLocation getLAngleLoc() const {
+    return LAngleLoc;
+  }
+
+  void setRAngleLoc(SourceLocation RAngleLoc) {
+    this->RAngleLoc = RAngleLoc;
+  }
+
+  SourceLocation getRAngleLoc() const {
+    return RAngleLoc;
+  }
+
+  void setNameComponents(llvm::ArrayRef<Expr *> NameComponents) {
+    this->NameComponents = NameComponents;
+  }
+
+  llvm::ArrayRef<Expr *> getNameComponents() const {
+    return NameComponents;
   }
 };
 
@@ -883,6 +955,7 @@ protected:
     CXXDeductionGuideName,
     CXXLiteralOperatorName,
     CXXUsingDirective,
+    CXXReflectedIdName,
     ObjCMultiArgSelector
   };
 

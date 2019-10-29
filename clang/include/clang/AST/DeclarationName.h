@@ -134,6 +134,28 @@ public:
   void Profile(llvm::FoldingSetNodeID &FSID) { FSID.AddPointer(ID); }
 };
 
+/// Contains the set of operands used to compute an id-expr name.
+/// Memory for the arguments is allocated by the AST context.
+class alignas(IdentifierInfoAlignment) CXXReflectedIdNameExtra
+  : public detail::DeclarationNameExtra, public llvm::FoldingSetNode {
+  friend class clang::DeclarationName;
+  friend class clang::DeclarationNameTable;
+
+  const ASTContext *Ctx;
+  std::size_t NumArgs;
+  Expr **Args;
+
+  /// FETokenInfo - Extra information associated with this declaration
+  /// name that can be used by the front end.
+  void *FETokenInfo;
+
+  CXXReflectedIdNameExtra()
+    : DeclarationNameExtra(CXXReflectedIdName) {}
+
+public:
+  void Profile(llvm::FoldingSetNodeID &ID);
+};
+
 } // namespace detail
 
 /// The name of a declaration. In the common case, this just stores
@@ -214,6 +236,8 @@ public:
         detail::DeclarationNameExtra::CXXLiteralOperatorName,
     CXXUsingDirective = UncommonNameKindOffset +
                         detail::DeclarationNameExtra::CXXUsingDirective,
+    CXXReflectedIdName = UncommonNameKindOffset +
+                               detail::DeclarationNameExtra::CXXReflectedIdName,
     ObjCMultiArgSelector = UncommonNameKindOffset +
                            detail::DeclarationNameExtra::ObjCMultiArgSelector
   };
@@ -336,6 +360,14 @@ private:
     assert(getNameKind() == CXXLiteralOperatorName &&
            "DeclarationName does not store a CXXLiteralOperatorIdName!");
     return static_cast<detail::CXXLiteralOperatorIdName *>(getPtr());
+  }
+
+  /// Assert that the stored pointer points to a CXXReflectedIdNameExtra
+  /// and return it.
+  detail::CXXReflectedIdNameExtra *castAsCXXReflectedIdNameExtra() const {
+    assert(getNameKind() == CXXReflectedIdName &&
+           "DeclarationName does not store a CXXReflectedIdNameExtra!");
+    return static_cast<detail::CXXReflectedIdNameExtra *>(getPtr());
   }
 
   /// Get and set the FETokenInfo in the less common cases where the
@@ -477,6 +509,19 @@ public:
     return nullptr;
   }
 
+  /// getCXXReflectIdArguments - If this is an idexpr name, retrieve the list
+  /// of arguments.
+  llvm::ArrayRef<Expr *> getCXXReflectedIdArguments() const {
+    if (getNameKind() == CXXReflectedIdName) {
+      assert(getPtr() &&
+             "getCXXReflectedIdArguments on a null DeclarationName!");
+
+      detail::CXXReflectedIdNameExtra *Name = castAsCXXReflectedIdNameExtra();
+      return llvm::ArrayRef<Expr *>(Name->Args, Name->Args + Name->NumArgs);
+    }
+    return llvm::ArrayRef<Expr *>();
+  }
+
   /// Get the Objective-C selector stored in this declaration name.
   Selector getObjCSelector() const {
     assert((getNameKind() == ObjCZeroArgSelector ||
@@ -601,6 +646,8 @@ class DeclarationNameTable {
   /// from the corresponding template declaration.
   llvm::FoldingSet<detail::CXXDeductionGuideNameExtra> CXXDeductionGuideNames;
 
+  llvm::FoldingSet<detail::CXXReflectedIdNameExtra> CXXReflectedIdNames;
+
 public:
   DeclarationNameTable(const ASTContext &C);
   DeclarationNameTable(const DeclarationNameTable &) = delete;
@@ -642,6 +689,9 @@ public:
 
   /// Get the name of the literal operator function with II as the identifier.
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
+
+  /// getCXXReflectedIdName - Get a name computed from the given arguments.
+  DeclarationName getCXXReflectedIdName(std::size_t NumArgs, Expr **Args);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
@@ -779,6 +829,31 @@ public:
   void setCXXLiteralOperatorNameLoc(SourceLocation Loc) {
     assert(Name.getNameKind() == DeclarationName::CXXLiteralOperatorName);
     LocInfo.CXXLiteralOperatorName.OpNameLoc = Loc.getRawEncoding();
+  }
+
+  /// The source range of the unqualid operator.
+  /// Reuses the structure of operator names.
+  SourceRange getCXXReflectedIdNameRange() const {
+    assert(Name.getNameKind() == DeclarationName::CXXReflectedIdName);
+
+    // FIXME: Name information can be lost currently as not everywhere that
+    // supports unqualid will store the DeclarationNameLoc object which
+    // contains the range information.
+    auto &&OpNameInfo = LocInfo.CXXOperatorName;
+    SourceRange Range(
+        SourceLocation::getFromRawEncoding(OpNameInfo.BeginOpNameLoc),
+        SourceLocation::getFromRawEncoding(OpNameInfo.EndOpNameLoc));
+    if (Range.isValid())
+      return Range;
+
+    return SourceRange(getLoc(), getLoc());
+  }
+
+  /// Sets the range of the operator name.
+  void setCXXReflectedIdNameRange(SourceRange R) {
+    assert(Name.getNameKind() == DeclarationName::CXXReflectedIdName);
+    LocInfo.CXXOperatorName.BeginOpNameLoc = R.getBegin().getRawEncoding();
+    LocInfo.CXXOperatorName.EndOpNameLoc = R.getEnd().getRawEncoding();
   }
 
   /// Determine whether this name involves a template parameter.

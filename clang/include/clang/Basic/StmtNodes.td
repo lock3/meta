@@ -51,6 +51,9 @@ def ObjCAutoreleasePoolStmt : Stmt;
 def CXXCatchStmt : Stmt;
 def CXXTryStmt : Stmt;
 def CXXForRangeStmt : Stmt;
+def CXXExpansionStmt : Stmt<1>;
+def CXXCompositeExpansionStmt : DStmt<CXXExpansionStmt>;
+def CXXPackExpansionStmt : DStmt<CXXExpansionStmt>;
 
 // C++ Coroutines TS statements
 def CoroutineBodyStmt : Stmt;
@@ -149,6 +152,9 @@ def UnresolvedLookupExpr : DStmt<OverloadExpr>;
 def UnresolvedMemberExpr : DStmt<OverloadExpr>;
 def CXXNoexceptExpr : DStmt<Expr>;
 def PackExpansionExpr : DStmt<Expr>;
+def CXXSelectionExpr : DStmt<Expr, 1>;
+def CXXSelectMemberExpr : DStmt<CXXSelectionExpr>;
+def CXXSelectPackExpr : DStmt<CXXSelectionExpr>;
 def SizeOfPackExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmExpr : DStmt<Expr>;
 def SubstNonTypeTemplateParmPackExpr : DStmt<Expr>;
@@ -162,6 +168,21 @@ def CoroutineSuspendExpr : DStmt<Expr, 1>;
 def CoawaitExpr : DStmt<CoroutineSuspendExpr>;
 def DependentCoawaitExpr : DStmt<Expr>;
 def CoyieldExpr : DStmt<CoroutineSuspendExpr>;
+
+// [Meta] expressions
+def CXXConstantExpr : DStmt<Expr>;
+def CXXReflectExpr : DStmt<Expr>;
+def CXXInvalidReflectionExpr : DStmt<Expr>;
+def CXXReflectionReadQueryExpr : DStmt<Expr>;
+def CXXReflectPrintLiteralExpr : DStmt<Expr>;
+def CXXReflectPrintReflectionExpr : DStmt<Expr>;
+def CXXReflectDumpReflectionExpr : DStmt<Expr>;
+def CXXCompilerErrorExpr : DStmt<Expr>;
+def CXXIdExprExpr : DStmt<Expr>;
+def CXXReflectedIdExpr : DStmt<Expr>;
+def CXXValueOfExpr : DStmt<Expr>;
+def CXXConcatenateExpr : DStmt<Expr>;
+def CXXDependentVariadicReifierExpr : DStmt<Expr>;
 
 // Obj-C Expressions.
 def ObjCStringLiteral : DStmt<Expr>;

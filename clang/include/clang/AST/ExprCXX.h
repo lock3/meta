@@ -22,6 +22,7 @@
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/Reflection.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/UnresolvedSet.h"
@@ -3445,6 +3446,10 @@ class CXXDependentScopeMemberExpr final
   /// FIXME: could also be a template-id
   DeclarationNameInfo MemberNameInfo;
 
+  /// This is a hack which allows us to work in reflections to the existing
+  /// structure.
+  Expr *IdExpr;
+
   // CXXDependentScopeMemberExpr is followed by several trailing objects,
   // some of which optional. They are in order:
   //
@@ -3489,6 +3494,11 @@ class CXXDependentScopeMemberExpr final
                               DeclarationNameInfo MemberNameInfo,
                               const TemplateArgumentListInfo *TemplateArgs);
 
+  CXXDependentScopeMemberExpr(const ASTContext &C, Expr *Base,
+                              QualType BaseType, bool IsArrow,
+                              SourceLocation OperatorLoc,
+                              Expr *IdExpr);
+
   CXXDependentScopeMemberExpr(EmptyShell Empty, bool HasTemplateKWAndArgsInfo,
                               bool HasFirstQualifierFoundInScope);
 
@@ -3499,6 +3509,10 @@ public:
          SourceLocation TemplateKWLoc, NamedDecl *FirstQualifierFoundInScope,
          DeclarationNameInfo MemberNameInfo,
          const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXDependentScopeMemberExpr *
+  Create(const ASTContext &C, Expr *Base, QualType BaseType, bool IsArrow,
+         SourceLocation OperatorLoc, Expr *IdExpr);
 
   static CXXDependentScopeMemberExpr *
   CreateEmpty(const ASTContext &Ctx, bool HasTemplateKWAndArgsInfo,
@@ -3628,6 +3642,10 @@ public:
 
   ArrayRef<TemplateArgumentLoc> template_arguments() const {
     return {getTemplateArgs(), getNumTemplateArgs()};
+  }
+
+  Expr *getIdExpr() const {
+    return IdExpr;
   }
 
   SourceLocation getBeginLoc() const LLVM_READONLY {
@@ -4747,6 +4765,966 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == BuiltinBitCastExprClass;
+  }
+};
+
+/// \brief Represents a compile-time value that was computed by a constant
+//// expression.
+class CXXConstantExpr : public Expr {
+  /// \brief The source expression.
+  Stmt *Source;
+
+  /// \brief The computed value of the source expression.
+  APValue *Value;
+public:
+  CXXConstantExpr(Expr *E, APValue&& V)
+    : Expr(CXXConstantExprClass, E->getType(), E->getValueKind(),
+           E->getObjectKind(), false, false, false, false), Source(E),
+      Value(new APValue(V)) { }
+  // FIXME: This allocation is an explicit memory leak to get around
+  // APValues not being trivially destructible.
+
+  CXXConstantExpr(EmptyShell Empty)
+    : Expr(CXXConstantExprClass, Empty) { }
+
+  /// \brief Returns the evaluated expression.
+  Expr *getExpression() const { return cast<Expr>(Source); }
+
+  /// \brief Returns the computed value.
+  const APValue& getValue() const { return *Value; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return Source->getBeginLoc();
+  }
+
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return Source->getEndLoc();
+  }
+
+  child_range children() {
+    return child_range(&Source, &Source + 1);
+  }
+
+  const_child_range children() const {
+    return const_child_range(&Source, &Source + 1);
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConstantExprClass;
+  }
+};
+
+/// \brief Represents expressions of the form `reflexpr(x)`.
+///
+/// The operand of the expression is either a type, an expression, a
+/// template-name, or a namespace-name.
+///
+class CXXReflectExpr : public Expr {
+  // The operand of the expression.
+  ReflectionOperand Ref;
+
+  // Source locations.
+  SourceLocation KWLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+  CXXReflectExpr(QualType T);
+  CXXReflectExpr(QualType T, InvalidReflection *Arg);
+  CXXReflectExpr(QualType T, QualType Arg);
+  CXXReflectExpr(QualType T, TemplateName Arg);
+  CXXReflectExpr(QualType T, NamespaceName Arg);
+  CXXReflectExpr(QualType T, Expr *Arg);
+  CXXReflectExpr(QualType T, Decl *Arg);
+  CXXReflectExpr(QualType T, CXXBaseSpecifier *Arg);
+
+  CXXReflectExpr(EmptyShell Empty)
+    : Expr(CXXReflectExprClass, Empty) {}
+
+public:
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, InvalidReflection *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, QualType Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, TemplateName Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, NamespaceName Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, Expr *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, Decl *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *Create(ASTContext &C, QualType T,
+                                SourceLocation KW, CXXBaseSpecifier *Arg,
+                                SourceLocation LP, SourceLocation RP);
+
+  static CXXReflectExpr *CreateInvalid(ASTContext &C, QualType T,
+                                       SourceLocation KW,
+                                       SourceLocation LP, SourceLocation RP);
+
+  /// Returns the reflection operand.
+  const ReflectionOperand &getOperand() const { return Ref; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return KWLoc;
+  }
+
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return RParenLoc;
+  }
+
+  /// Returns location of the `reflexpr` keyword.
+  SourceLocation getKeywordLoc() const { return KWLoc; }
+
+  /// Returns the location of the '(' token.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the location of the ')' token.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Sets the location of the `reflexpr` keyword.
+  void setKeywordLoc(SourceLocation L) { KWLoc = L; }
+
+  /// Sets the location of the `(` token.
+  void setLParenLoc(SourceLocation L) { LParenLoc = L; }
+
+  /// Sets the location of the `)` token.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectExprClass;
+  }
+};
+
+class CXXInvalidReflectionExpr : public Expr {
+  Stmt *Message;
+  SourceLocation BuiltinLoc, RParenLoc;
+
+  CXXInvalidReflectionExpr(QualType Type, Expr *Message,
+                           SourceLocation BuiltinLoc, SourceLocation RParenLoc)
+      : Expr(CXXInvalidReflectionExprClass, Type, VK_RValue, OK_Ordinary, false,
+         Message->isTypeDependent() || Message->isValueDependent(),
+         Message->isInstantiationDependent(),
+         Message->containsUnexpandedParameterPack()),
+    Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) { }
+
+  explicit CXXInvalidReflectionExpr(EmptyShell Empty)
+    : Expr(CXXInvalidReflectionExprClass, Empty) { }
+
+public:
+  static CXXInvalidReflectionExpr *Create(const ASTContext &C, QualType Type,
+                                          Expr *Message,
+                                          SourceLocation BuiltinLoc,
+                                          SourceLocation RParenLoc);
+
+  static CXXInvalidReflectionExpr *CreateEmpty(const ASTContext &C,
+                                               EmptyShell Empty);
+
+  /// Return the string to be used by the invalid reflection during
+  /// diagnostics.
+  Expr *getMessage() { return cast<Expr>(Message); }
+
+  /// Return the string to be used by the invalid reflection during
+  /// diagnostics.
+  const Expr *getMessage() const { return cast<Expr>(Message); }
+
+  /// Sets the string to be used by the invalid reflection during
+  /// diagnostics.
+  void setMessage(Expr *M) { Message = M; }
+
+  /// Return the location of the \c __invalid_reflection token.
+  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
+
+  /// Set the location of the \c __invalid_reflection token.
+  void setBuiltinLoc(SourceLocation L) { BuiltinLoc = L; }
+
+  /// Return the location of final right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Set the location of final right parenthesis.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return BuiltinLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXInvalidReflectionExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Message, &Message + 1); }
+};
+
+/// A reflection read query intrinsic.
+///
+/// A reflection read query is a query to retreive information
+/// about a reflected entity.
+/// All read queries accept a sequence of arguments (expressions,
+/// the first of which is the reflection needing updated.
+class CXXReflectionReadQueryExpr : public Expr {
+protected:
+  ReflectionQuery Query;
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectionReadQueryExpr(ASTContext &C, QualType T, ReflectionQuery Q,
+                             ArrayRef<Expr *> Args,
+                             SourceLocation KeywordLoc,
+                             SourceLocation LParenLoc,
+                             SourceLocation RParenLoc);
+
+  CXXReflectionReadQueryExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the trait's query value.
+  ReflectionQuery getQuery() const { return Query; }
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+};
+
+/// \brief A reflection printing intrinsic for integer and string values.
+class CXXReflectPrintLiteralExpr : public Expr {
+  unsigned NumArgs;
+  Expr **Args;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectPrintLiteralExpr(ASTContext &C, QualType T, ArrayRef<Expr *> Args,
+                             SourceLocation KeywordLoc,
+                             SourceLocation LParenLoc,
+                             SourceLocation RParenLoc);
+
+  CXXReflectPrintLiteralExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the arity of the trait.
+  unsigned getNumArgs() const { return NumArgs; }
+
+  /// Returns the ith argument of the reflection trait.
+  Expr *getArg(unsigned I) const {
+    assert(I < NumArgs && "Argument out-of-range");
+    return cast<Expr>(Args[I]);
+  }
+
+  /// \brief Returns the array of arguments.
+  Expr **getArgs() const { return Args; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                       reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt **>(&Args[0]),
+                             reinterpret_cast<Stmt **>(&Args[0] + NumArgs));
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectPrintLiteralExprClass;
+  }
+};
+
+/// \brief A reflection printing intrinsic for reflections.
+class CXXReflectPrintReflectionExpr : public Expr {
+  Expr *Reflection;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectPrintReflectionExpr(ASTContext &C, QualType T, Expr* Reflection,
+                                SourceLocation KeywordLoc,
+                                SourceLocation LParenLoc,
+                                SourceLocation RParenLoc)
+    : Expr(CXXReflectPrintReflectionExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection), KeywordLoc(KeywordLoc),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXReflectPrintReflectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the reflection to be printed.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectPrintReflectionExprClass;
+  }
+};
+
+/// \brief A reflection dumping intrinsic for reflections.
+class CXXReflectDumpReflectionExpr : public Expr {
+  Expr *Reflection;
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXReflectDumpReflectionExpr(ASTContext &C, QualType T, Expr* Reflection,
+                               SourceLocation KeywordLoc,
+                               SourceLocation LParenLoc,
+                               SourceLocation RParenLoc)
+    : Expr(CXXReflectDumpReflectionExprClass, T, VK_RValue, OK_Ordinary,
+           Reflection->isTypeDependent(),
+           Reflection->isValueDependent(),
+           Reflection->isInstantiationDependent(),
+           Reflection->containsUnexpandedParameterPack()),
+      Reflection(Reflection), KeywordLoc(KeywordLoc),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXReflectDumpReflectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Returns the reflection to be printed.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectDumpReflectionExprClass;
+  }
+};
+
+
+/// Represents a call to the builtin function \c __compiler_error.
+///
+/// This AST node provides support for issuing a compile-time error. It takes a
+/// single constant string argument. Its effect is similar to that of an \c
+/// \#error directive or a failed static assertion: the program becomes
+/// ill-formed, and the text of the given string is included in the resulting
+/// diagnostic message.
+class CXXCompilerErrorExpr : public Expr {
+  Stmt *Message;
+  SourceLocation BuiltinLoc, RParenLoc;
+
+  CXXCompilerErrorExpr(QualType Type, Expr *Message, SourceLocation BuiltinLoc,
+                    SourceLocation RParenLoc)
+      : Expr(CXXCompilerErrorExprClass, Type, VK_RValue, OK_Ordinary, false,
+             Message->isTypeDependent() || Message->isValueDependent(),
+             Message->isInstantiationDependent(),
+             Message->containsUnexpandedParameterPack()),
+        Message(Message), BuiltinLoc(BuiltinLoc), RParenLoc(RParenLoc) {}
+
+  explicit CXXCompilerErrorExpr(EmptyShell Empty)
+      : Expr(CXXCompilerErrorExprClass, Empty) {}
+
+public:
+  /// Construct a \c __compiler_error expression.
+  static CXXCompilerErrorExpr *Create(const ASTContext &C, QualType Type,
+                                      Expr *Message, SourceLocation BuiltinLoc,
+                                      SourceLocation RParenLoc);
+
+  /// Construct an empty \c __compiler_error expression.
+  static CXXCompilerErrorExpr *CreateEmpty(const ASTContext &C,
+                                           EmptyShell Empty);
+
+  /// Return the string to be included in the diagnostic message.
+  Expr *getMessage() { return cast<Expr>(Message); }
+
+  /// Return the string to be included in the diagnostic message.
+  const Expr *getMessage() const { return cast<Expr>(Message); }
+
+  /// Set the string to be included in the diagnostic message.
+  void setMessage(Expr *M) { Message = M; }
+
+  /// Return the location of the \c __compiler_error token.
+  SourceLocation getBuiltinLoc() const { return BuiltinLoc; }
+
+  /// Set the location of the \c __compiler_error token.
+  void setBuiltinLoc(SourceLocation L) { BuiltinLoc = L; }
+
+  /// Return the location of final right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  /// Set the location of final right parenthesis.
+  void setRParenLoc(SourceLocation L) { RParenLoc = L; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return BuiltinLoc; }
+  SourceLocation getEndLoc() const LLVM_READONLY { return RParenLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXCompilerErrorExprClass;
+  }
+
+  // Iterators
+  child_range children() { return child_range(&Message, &Message + 1); }
+};
+
+class CXXIdExprExpr : public Expr {
+  Expr *Reflection;
+
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXIdExprExpr(QualType T, Expr *Reflection,
+                SourceLocation KeywordLoc,
+                SourceLocation LParenLoc, SourceLocation RParenLoc)
+    : Expr(CXXIdExprExprClass, T, VK_RValue, OK_Ordinary,
+           /*TD=*/true, /*VD=*/true, /*ID=*/true,
+           /*ContainsUnexpandedParameterPack=*/false),
+      Reflection(Reflection),
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc), RParenLoc(RParenLoc) {}
+
+  CXXIdExprExpr(EmptyShell Empty)
+    : Expr(CXXIdExprExprClass, Empty) {}
+
+  /// Returns the reflection operand.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXIdExprExprClass;
+  }
+};
+
+class CXXDependentVariadicReifierExpr : public Expr {
+
+  Expr *Range;
+
+  SourceLocation KeywordLoc;
+  IdentifierInfo *Keyword;
+
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+  SourceLocation EllipsisLoc;
+public:
+  CXXDependentVariadicReifierExpr(QualType DependentTy,
+                                  Expr *Range,
+                                  SourceLocation KeywordLoc,
+                                  IdentifierInfo *Keyword,
+                                  SourceLocation LParenLoc,
+                                  SourceLocation RParenLoc,
+                                  SourceLocation EllipsisLoc)
+    : Expr(CXXDependentVariadicReifierExprClass, DependentTy, VK_RValue,
+           OK_Ordinary, /*TypeDependent*/true, /*ValueDependent*/true,
+           Range->isInstantiationDependent(),
+           Range->containsUnexpandedParameterPack()),
+      Range(Range), KeywordLoc(KeywordLoc), Keyword(Keyword),
+      LParenLoc(LParenLoc), RParenLoc(RParenLoc), EllipsisLoc(EllipsisLoc) {}
+
+  CXXDependentVariadicReifierExpr(EmptyShell Empty)
+    : Expr(CXXDependentVariadicReifierExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
+
+  tok::TokenKind getKeywordId() const { return Keyword->getTokenID(); }
+
+  Expr *getRange() const { return Range; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDependentVariadicReifierExprClass;
+  }
+};
+
+/// Represents a C++11 selection that yields a single expression from
+/// a parameter pack or destructurable class.
+///
+/// This is used internally to define the bodies of expansion statements.
+class CXXSelectionExpr : public Expr {
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+
+protected:
+  /// The location of the __select keyword.
+  SourceLocation SelectLoc;
+
+  /// The location of the object being projected on
+  SourceLocation BaseLoc;
+
+  /// The base object and integral selector.
+  Stmt *Args[2];
+
+  /// The computed expression this selection refers to.
+  const Expr *Value = nullptr;
+
+  /// The number of fields or expansions in the structure we
+  /// are selecting on.
+  std::size_t NumFields;
+
+public:
+  CXXSelectionExpr(StmtClass SC, QualType T, Expr *Base,
+                   Expr *Sel, std::size_t NumFields,
+                   SourceLocation SelectLoc, SourceLocation BaseLoc)
+    : Expr(SC, T, Base->getValueKind(),
+           Base->getObjectKind(),
+           Base->isTypeDependent() || Sel->isTypeDependent(),
+           Base->isValueDependent() || Sel->isValueDependent(),
+           Base->isInstantiationDependent() || Sel->isInstantiationDependent(),
+           /*ContainsUnexpandedParameterPack=*/false),
+      SelectLoc(SelectLoc), BaseLoc(BaseLoc), Args{Base, Sel},
+      NumFields(NumFields) {}
+
+  CXXSelectionExpr(StmtClass SC, EmptyShell Empty)
+    : Expr(SC, Empty) {}
+
+  /// Retrieve the unexpanded pack or class object reference.
+  const Expr *getBase() const { return reinterpret_cast<Expr *>(Args[0]); }
+  Expr *getBase() { return reinterpret_cast<Expr *>(Args[0]); }
+
+  /// Retrieve selector integral selector argument.
+  const Expr *getSelector() const { return reinterpret_cast<Expr *>(Args[1]); }
+  Expr *getSelector() { return reinterpret_cast<Expr *>(Args[1]); }
+
+  const Expr *getValue() const { return Value; }
+  void setValue(Expr *V) { Value = V; }
+
+  std::size_t getNumFields() const { return NumFields; }
+
+  /// Retrieve the location of the ellipsis that describes this pack
+  /// expansion.
+  SourceLocation getSelectLoc() const { return SelectLoc; }
+
+  /// Return the location of the base object being selected upon.
+  SourceLocation getBaseLoc() const { return BaseLoc; }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocStart() const LLVM_READONLY,
+                            "Use getBeginLoc instead") {
+    return getBeginLoc();
+  }
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return SelectLoc;
+  }
+
+  LLVM_ATTRIBUTE_DEPRECATED(SourceLocation getLocEnd() const LLVM_READONLY,
+                            "Use getEndLoc instead") {
+    return getEndLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY { return SelectLoc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectMemberExprClass ||
+      T->getStmtClass() == CXXSelectPackExprClass;
+  }
+
+  // Iterators
+  child_range children() {
+    return child_range(&Args[0], &Args[0] + 2);
+  }
+};
+
+// Selects the __Nth public, nonstatic field of an object of record type.
+class CXXSelectMemberExpr : public CXXSelectionExpr {
+  /// The canonical record of the base we are selecting on.
+  CXXRecordDecl *Record;
+
+  /// The location of the record.
+  SourceLocation RecordLoc;
+public:
+  CXXSelectMemberExpr(Expr *Base,
+                      QualType T,
+                      Expr *Index,
+                      std::size_t NumFields,
+                      CXXRecordDecl *RD,
+                      SourceLocation RecordLoc,
+                      SourceLocation KWLoc = SourceLocation(),
+                      SourceLocation BaseLoc = SourceLocation())
+    : CXXSelectionExpr(CXXSelectMemberExprClass, T, Base, Index, NumFields,
+                       KWLoc, BaseLoc), Record(RD), RecordLoc(RecordLoc)
+    {}
+
+  CXXSelectMemberExpr(EmptyShell Empty)
+    : CXXSelectionExpr(CXXSelectMemberExprClass, Empty) {}
+
+  /// Returns the source code location of the (optional) ellipsis.
+  SourceLocation getRecordLoc() const { return RecordLoc; }
+  CXXRecordDecl *getRecord() const { return Record; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectMemberExprClass;
+  }
+};
+
+class CXXSelectPackExpr : public CXXSelectionExpr {
+  /// The ParameterPack of the pack expansion we are selecting on.
+  const VarDecl *Pack;
+
+public:
+  CXXSelectPackExpr(Expr *Base,
+                    QualType T,
+                    Expr *Index,
+                    std::size_t NumFields,
+                    const VarDecl *Pack,
+                    SourceLocation KWLoc = SourceLocation(),
+                    SourceLocation BaseLoc = SourceLocation())
+    : CXXSelectionExpr(CXXSelectPackExprClass, T, Base, Index, NumFields,
+                       KWLoc, BaseLoc), Pack(Pack)
+    {}
+
+  CXXSelectPackExpr(EmptyShell Empty)
+    : CXXSelectionExpr(CXXSelectPackExprClass, Empty) {}
+
+  const VarDecl *getPack() const { return Pack; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXSelectPackExprClass;
+  }
+};
+
+/// Represents a reflected id-expression of the form '(. args .)'.
+/// Some of the arguments in args are dependent.
+class CXXReflectedIdExpr final
+    : public Expr,
+      private llvm::TrailingObjects<
+          CXXReflectedIdExpr, ASTTemplateKWAndArgsInfo, TemplateArgumentLoc> {
+  friend TrailingObjects;
+
+  DeclarationNameInfo NameInfo;
+
+  const CXXScopeSpec *SS;
+  /// The nested-name-specifier that qualifies this reflected id.
+  NestedNameSpecifierLoc QualifierLoc;
+
+  bool TrailingLParen;
+  bool AddressOfOperand;
+
+  /// Whether the name includes info for explicit template
+  /// keyword and arguments.
+  bool HasTemplateKWAndArgsInfo = false;
+
+  size_t numTrailingObjects(OverloadToken<ASTTemplateKWAndArgsInfo>) const {
+    return HasTemplateKWAndArgsInfo ? 1 : 0;
+  }
+
+  CXXReflectedIdExpr(DeclarationNameInfo DNI, QualType T,
+                     const CXXScopeSpec &SS,
+                     NestedNameSpecifierLoc QualifierLoc,
+                     SourceLocation TemplateKWLoc,
+                     bool TrailingLParen, bool AddressOfOperand,
+                     const TemplateArgumentListInfo *TemplateArgs);
+
+  CXXReflectedIdExpr(EmptyShell Empty)
+    : Expr(CXXReflectedIdExprClass, Empty) { }
+
+public:
+  static CXXReflectedIdExpr *Create(
+      const ASTContext &C, DeclarationNameInfo DNI, QualType T,
+      const CXXScopeSpec &SS, NestedNameSpecifierLoc QualifierLoc,
+      SourceLocation TemplateKWLoc, bool TrailingLParen,
+      bool AddressOfOperand, const TemplateArgumentListInfo *TemplateArgs);
+
+  static CXXReflectedIdExpr *CreateEmpty(const ASTContext &C,
+                                         EmptyShell Empty);
+
+  /// Returns the evaluated expression.
+  DeclarationNameInfo getNameInfo() const { return NameInfo; }
+
+  CXXScopeSpec getScopeSpecifier() const { return *SS; }
+
+  /// Retrieve the nested-name-specifier that qualifies the
+  /// name, with source location information.
+  NestedNameSpecifierLoc getQualifierLoc() const { return QualifierLoc; }
+
+  bool HasTrailingLParen() const { return TrailingLParen; }
+
+  bool IsAddressOfOperand() const { return AddressOfOperand; }
+
+  ASTTemplateKWAndArgsInfo *getTrailingASTTemplateKWAndArgsInfo() {
+    if (!HasTemplateKWAndArgsInfo)
+      return nullptr;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>();
+  }
+
+  TemplateArgumentLoc *getTrailingTemplateArgumentLoc() {
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the location of the left angle bracket starting the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getLAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->LAngleLoc;
+  }
+
+  /// Retrieve the location of the right angle bracket ending the
+  /// explicit template argument list following the member name, if any.
+  SourceLocation getRAngleLoc() const {
+    if (!HasTemplateKWAndArgsInfo) return SourceLocation();
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->RAngleLoc;
+  }
+
+  /// Determines whether this member expression actually had a C++
+  /// template argument list explicitly specified, e.g., x.f<int>.
+  bool hasExplicitTemplateArgs() const { return getLAngleLoc().isValid(); }
+
+  /// Retrieve the template arguments provided as part of this
+  /// template-id.
+  const TemplateArgumentLoc *getTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return nullptr;
+
+    return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  /// Retrieve the number of template arguments provided as part of this
+  /// template-id.
+  unsigned getNumTemplateArgs() const {
+    if (!hasExplicitTemplateArgs())
+      return 0;
+
+    return getTrailingObjects<ASTTemplateKWAndArgsInfo>()->NumTemplateArgs;
+  }
+
+  SourceRange getSourceRange() const {
+    return NameInfo.getCXXReflectedIdNameRange();
+  }
+
+  SourceLocation getBeginLoc() const { return getSourceRange().getBegin(); }
+  SourceLocation getEndLoc() const { return getSourceRange().getEnd(); }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReflectedIdExprClass;
+  }
+};
+
+class CXXValueOfExpr : public Expr {
+  Expr *Reflection;
+
+  SourceLocation KeywordLoc;
+  SourceLocation LParenLoc;
+  SourceLocation EllipsisLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXValueOfExpr(QualType T, Expr *Reflection,
+                 SourceLocation KeywordLoc,
+                 SourceLocation LParenLoc,
+                 SourceLocation RParenLoc,
+                 SourceLocation EllipsisLoc = SourceLocation())
+    : Expr(CXXValueOfExprClass, T, VK_RValue, OK_Ordinary,
+           /*TD=*/true, /*VD=*/true, /*ID=*/true,
+           /*ContainsUnexpandedParameterPack=*/false),
+      Reflection(Reflection),
+      KeywordLoc(KeywordLoc), LParenLoc(LParenLoc),
+      EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc) {}
+
+  CXXValueOfExpr(EmptyShell Empty)
+    : Expr(CXXValueOfExprClass, Empty) {}
+
+  /// Returns the reflection operand.
+  Expr *getReflection() const { return Reflection; }
+
+  /// Returns the source code location of the trait keyword.
+  SourceLocation getKeywordLoc() const { return KeywordLoc; }
+
+  /// Returns the source code location of the left parenthesis.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns the source code location of the right parenthesis.
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+
+  SourceLocation getBeginLoc() const { return KeywordLoc; }
+
+  SourceLocation getEndLoc() const { return RParenLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXValueOfExprClass;
+  }
+};
+
+/// Represents the expression __concatenate(...)
+class CXXConcatenateExpr : public Expr {
+  /// The location of the introducer token.
+  SourceLocation Loc;
+
+  /// The number operands of the expression.
+  std::size_t NumOperands;
+
+  /// The operands of the expression.
+  Stmt **Operands;
+
+public:
+  CXXConcatenateExpr(ASTContext &Ctx, QualType T, SourceLocation Loc,
+                     ArrayRef<Expr *> Parts);
+
+  explicit CXXConcatenateExpr(EmptyShell Empty)
+      : Expr(CXXConcatenateExprClass, Empty), Loc(), NumOperands(),
+        Operands() {}
+
+  /// The number of captured declarations.
+  std::size_t getNumOperands() const { return NumOperands; }
+
+  /// The Ith capture of the injection statement.
+  const Expr *getOperand(std::size_t I) const { return (Expr *)Operands[I]; }
+  Expr *getOperand(std::size_t I) { return (Expr *)Operands[I]; }
+
+  child_range children() {
+    return child_range(Operands, Operands + NumOperands);
+  }
+
+  const_child_range children() const {
+    return const_child_range(Operands, Operands + NumOperands);
+  }
+
+  /// The location of the introducer token.
+  SourceLocation getIntroLoc() const { return Loc; }
+
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConcatenateExprClass;
   }
 };
 

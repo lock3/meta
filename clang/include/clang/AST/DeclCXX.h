@@ -204,7 +204,9 @@ public:
   bool isBaseOfClass() const { return BaseOfClass; }
 
   /// Determine whether this base specifier is a pack expansion.
-  bool isPackExpansion() const { return EllipsisLoc.isValid(); }
+  bool isPackExpansion() const {
+    return EllipsisLoc.isValid();
+  }
 
   /// Determine whether this base class's constructors get inherited.
   bool getInheritConstructors() const { return InheritConstructors; }
@@ -1892,6 +1894,9 @@ public:
 class CXXMethodDecl : public FunctionDecl {
   void anchor() override;
 
+  // True if this is a parameter for a CXXReflectExpr
+  bool ReflectionParameter = false;
+
 protected:
   CXXMethodDecl(Kind DK, ASTContext &C, CXXRecordDecl *RD,
                 SourceLocation StartLoc, const DeclarationNameInfo &NameInfo,
@@ -1972,6 +1977,11 @@ public:
 
   /// Determine whether this is a move assignment operator.
   bool isMoveAssignmentOperator() const;
+
+  /// Determine whether this is a reflection parameter.
+  bool isReflectionParameter() const { return ReflectionParameter; }
+
+  void setReflectionParameter() { ReflectionParameter = true; }
 
   CXXMethodDecl *getCanonicalDecl() override {
     return cast<CXXMethodDecl>(FunctionDecl::getCanonicalDecl());
@@ -2125,8 +2135,7 @@ class CXXCtorInitializer final {
   /// Either the base class name/delegating constructor type (stored as
   /// a TypeSourceInfo*), an normal field (FieldDecl), or an anonymous field
   /// (IndirectFieldDecl*) being initialized.
-  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *>
-    Initializee;
+  llvm::PointerUnion3<TypeSourceInfo *, FieldDecl *, IndirectFieldDecl *> Initializee;
 
   /// The source location for the field name or, for a base initializer
   /// pack expansion, the location of the ellipsis.
@@ -3769,8 +3778,8 @@ class DecompositionDecl final
                     SourceLocation LSquareLoc, QualType T,
                     TypeSourceInfo *TInfo, StorageClass SC,
                     ArrayRef<BindingDecl *> Bindings)
-      : VarDecl(Decomposition, C, DC, StartLoc, LSquareLoc, nullptr, T, TInfo,
-                SC),
+      : VarDecl(Decomposition, C, DC, StartLoc,
+                LSquareLoc, DeclarationName(), T, TInfo, SC),
         NumBindings(Bindings.size()) {
     std::uninitialized_copy(Bindings.begin(), Bindings.end(),
                             getTrailingObjects<BindingDecl *>());

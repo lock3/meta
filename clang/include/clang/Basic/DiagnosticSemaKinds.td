@@ -2543,6 +2543,104 @@ def err_concept_not_implemented : Error<
 def err_template_different_associated_constraints : Error<
   "associated constraints differ in template redeclaration">;
 
+// [Meta]
+// FIXME: The err_immediate_tag and err_immediate_no_declarators are dups
+// of constexpr errors. These should be merged.
+def err_incorrect_defaulted_immediate : Error<
+  "defaulted definition of %sub{select_special_member_kind}0 "
+  "is not implicitly constexpr">;
+def err_immediate_tag : Error<
+  "%select{class|struct|interface|union|enum}0 cannot be marked 'consteval'">;
+def err_immediate_no_declarators : Error<
+  "'consteval' can only be used in function definitions">;
+def err_immediate_var : Error<
+  "variable cannot be marked 'consteval'">;
+def err_immediate_dtor : Error<
+  "destructor cannot be marked 'consteval'">;
+def err_cannot_evaluate_immedate : Error<
+  "cannot evaluate call to consteval %select{function|member function}0">;
+def err_immediate_redecl_mismatch : Error<
+  "%select{non-consteval declaration of %0 follows consteval declaration"
+  "|consteval declaration of %0 follows non-consteval declaration}1">;
+def err_invalid_immediate : Error<
+  "function parameter cannot be consteval">;
+def err_invalid_immeidate_fp_conversion : Error<
+  "immediate functions can only be converted to function pointers inside "
+  "of an immediate function context or, as part of an immediate invocation">;
+
+// tuple and pack loops
+def note_loop_body_instantiation_here : Note<
+  "in instantiation of loop body expansion">;
+def err_select_index_not_constant : Error<
+  "Index of a __select expression must be a constant expression.">;
+def err_select_index_exceeds_bounds : Error<
+  "A member may not be selected at an out-of-bounds index.">;
+
+// Reflection
+def err_reflect_undeclared_id : Error<"reflection of undeclared identifier %0">;
+def err_reflect_ambiguous_id : Error<"reflection of ambiguous identifier %0">;
+def err_reflect_overloaded_id : Error<"reflection of overloaded identifier %0">;
+def err_reflection_not_named : Error<"reflected entity is not named named">;
+def err_reflection_failed : Error<"reflection failed">;
+
+def err_reflection_query_wrong_type : Error<
+  "query selector does not have type 'int'">;
+def err_reflection_query_not_constant : Error<
+  "query selector is not a constant expression">;
+def err_reflection_query_invalid : Error<
+  "invalid query selector">;
+def err_reflection_wrong_arity : Error<
+  "expected between %0 and %1 arguments, %2 given">;
+
+def err_expression_not_reflection : Error<
+  "expression is not a reflection">;
+def err_expression_not_type_reflection : Error<
+  "expression does not reflect a type">;
+def err_expression_not_value_reflection : Error<
+  "expression does not reflect a value">;
+def reflection_not_constant_expression : Error<
+  "reflection is not a constant expression">;
+def reflection_reflects_non_constant_expression : Error<
+  "reflection reflects an expression which is not constexpr">;
+def err_reflection_not_known : Error<
+  "expression does not reflect a construct">;
+def err_empty_type_reflection : Error<
+  "cannot project a type for an empty reflection">;
+def err_cannot_project_value : Error<
+  "cannot project a value for a %select{constructor|destructor}0">;
+def err_reflect_print_literal_wrong_operand_type : Error<
+  "expected either integer or string operand">;
+def err_invalid_reflection_wrong_operand_type : Error<
+  "expected a string operand">;
+def err_reify_invalid_reflection : Error<
+  "cannot reify invalid reflection">;
+def note_user_defined_note : Note<
+  "%0">;
+def err_compiler_error_wrong_operand_type : Error<
+  "expected a string operand">;
+def err_concatenate_wrong_operand_type : Error<
+  "expected either integer or string operand">;
+
+def err_constexpr_range_iteration_failed : Error<
+  "constexpr range iteration failed">;
+
+def err_meta_type_constexpr : Error<"meta type variables must be constexpr">;
+
+// variadic reifiers
+def err_namespace_as_variadic_reifier : Error<
+  "'namespace' cannot be used as a variadic reifier.">;
+def err_invalid_reifier_context : Error<
+  "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
+   "reifier in this context: %select{expression|typename}1 expected.">;
+
+// declaration names
+def err_reflected_id_with_integer_prefix : Error<
+  "declaration name begins with an integer">;
+def err_reflected_id_invalid_operand_type : Error<
+  "cannot include expression of type %0 in a declaration name">;
+def err_reflected_id_not_an_identifer : Error<
+  "declaration name %0 is not an identifier">;
+
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
   "'%0' type specifier is incompatible with C++98">,

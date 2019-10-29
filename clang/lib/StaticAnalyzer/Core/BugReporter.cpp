@@ -777,8 +777,10 @@ PathDiagnosticPieceRef PathDiagnosticBuilder::generateDiagForSwitchOP(
         }
       }
 
-      if (GetRawInt)
-        os << LHS->EvaluateKnownConstInt(getASTContext());
+      if (GetRawInt) {
+        Expr::EvalContext EvalCtx(getASTContext(), nullptr);
+        os << LHS->EvaluateKnownConstInt(EvalCtx);
+      }
 
       os << ":'  at line " << End.asLocation().getExpansionLineNumber();
       break;

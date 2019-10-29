@@ -383,12 +383,13 @@ StmtResult Sema::ActOnGCCAsmStmt(SourceLocation AsmLoc, bool IsSimple,
     } else if (Info.requiresImmediateConstant() && !Info.allowsRegister()) {
       if (!InputExpr->isValueDependent()) {
         Expr::EvalResult EVResult;
-        if (InputExpr->EvaluateAsRValue(EVResult, Context, true)) {
+        Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
+        if (InputExpr->EvaluateAsRValue(EVResult, EvalCtx, true)) {
           // For compatibility with GCC, we also allow pointers that would be
           // integral constant expressions if they were cast to int.
           llvm::APSInt IntResult;
           if (EVResult.Val.toIntegralConstant(IntResult, InputExpr->getType(),
-                                               Context))
+                                              Context))
             if (!Info.isValidAsmImmediate(IntResult))
               return StmtError(Diag(InputExpr->getBeginLoc(),
                                     diag::err_invalid_asm_value_for_constraint)
@@ -639,9 +640,10 @@ StmtResult Sema::ActOnGCCAsmStmt(SourceLocation AsmLoc, bool IsSimple,
     // mentioned.  One more special case that we'll allow: if the tied input is
     // integer, unmentioned, and is a constant, then we'll allow truncating it
     // down to the size of the destination.
+    Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
     if (InputDomain == AD_Int && OutputDomain == AD_Int &&
         !isOperandMentioned(InputOpNo, Pieces) &&
-        InputExpr->isEvaluatable(Context)) {
+        InputExpr->isEvaluatable(EvalCtx)) {
       CastKind castKind =
         (OutTy->isBooleanType() ? CK_IntegralToBoolean : CK_IntegralCast);
       InputExpr = ImpCastExprToType(InputExpr, OutTy, castKind).get();
@@ -698,20 +700,23 @@ StmtResult Sema::ActOnGCCAsmStmt(SourceLocation AsmLoc, bool IsSimple,
 void Sema::FillInlineAsmIdentifierInfo(Expr *Res,
                                        llvm::InlineAsmIdentifierInfo &Info) {
   QualType T = Res->getType();
-  Expr::EvalResult Eval;
   if (T->isFunctionType() || T->isDependentType())
     return Info.setLabel(Res);
+
+  Expr::EvalResult Eval;
+  Expr::EvalContext EvalCtx(Context, GetReflectionCallbackObj());
   if (Res->isRValue()) {
-    if (isa<clang::EnumType>(T) && Res->EvaluateAsRValue(Eval, Context))
+    if (isa<clang::EnumType>(T) && Res->EvaluateAsRValue(Eval, EvalCtx))
       return Info.setEnum(Eval.Val.getInt().getSExtValue());
     return Info.setLabel(Res);
   }
+
   unsigned Size = Context.getTypeSizeInChars(T).getQuantity();
   unsigned Type = Size;
   if (const auto *ATy = Context.getAsArrayType(T))
     Type = Context.getTypeSizeInChars(ATy->getElementType()).getQuantity();
   bool IsGlobalLV = false;
-  if (Res->EvaluateAsLValue(Eval, Context))
+  if (Res->EvaluateAsLValue(Eval, EvalCtx))
     IsGlobalLV = Eval.isGlobalLValue();
   Info.setVar(Res, IsGlobalLV, Size, Type);
 }

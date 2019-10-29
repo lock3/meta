@@ -344,6 +344,15 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitCXXPackExpansionStmt(const CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+}
+
+void StmtProfiler::VisitCXXCompositeExpansionStmt(
+                                           const CXXCompositeExpansionStmt *S) {
+  VisitStmt(S);
+}
+
 void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
   VisitStmt(S);
   ID.AddBoolean(S->isIfExists());
@@ -1129,6 +1138,18 @@ void StmtProfiler::VisitOMPArraySectionExpr(const OMPArraySectionExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitCXXSelectionExpr(const CXXSelectionExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitCXXSelectPackExpr(const CXXSelectPackExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitCallExpr(const CallExpr *S) {
   VisitExpr(S);
 }
@@ -1891,6 +1912,67 @@ void StmtProfiler::VisitOpaqueValueExpr(const OpaqueValueExpr *E) {
   VisitExpr(E);
 }
 
+void StmtProfiler::VisitCXXConstantExpr(const CXXConstantExpr *S) {
+  VisitExpr(S);
+}
+
+void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *S) {
+  VisitExpr(S);
+  const ReflectionOperand &Operand = S->getOperand();
+  ID.AddInteger(Operand.getKind());
+  ID.AddInteger(reinterpret_cast<std::size_t>(Operand.getOpaqueReflectionValue()));
+}
+
+void StmtProfiler::VisitCXXInvalidReflectionExpr(
+                                            const CXXInvalidReflectionExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectionReadQueryExpr(
+                                          const CXXReflectionReadQueryExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectPrintLiteralExpr(
+                                          const CXXReflectPrintLiteralExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectPrintReflectionExpr(
+                                       const CXXReflectPrintReflectionExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectDumpReflectionExpr(
+                                        const CXXReflectDumpReflectionExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXCompilerErrorExpr(const CXXCompilerErrorExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXIdExprExpr(const CXXIdExprExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXReflectedIdExpr(const CXXReflectedIdExpr *E) {
+  VisitName(E->getNameInfo().getName());
+}
+
+void StmtProfiler::VisitCXXValueOfExpr(const CXXValueOfExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXConcatenateExpr(const CXXConcatenateExpr *E) {
+  VisitExpr(E);
+}
+
+void StmtProfiler::VisitCXXDependentVariadicReifierExpr(
+  const CXXDependentVariadicReifierExpr *E) {
+  VisitExpr(E);
+}
+
 void StmtProfiler::VisitTypoExpr(const TypoExpr *E) {
   VisitExpr(E);
 }
@@ -2025,6 +2107,7 @@ void StmtProfiler::VisitTemplateArgument(const TemplateArgument &Arg) {
     VisitType(Arg.getIntegralType());
     break;
 
+  case TemplateArgument::Reflected:
   case TemplateArgument::Expression:
     Visit(Arg.getAsExpr());
     break;
