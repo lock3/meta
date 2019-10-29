@@ -47,8 +47,17 @@ struct Variable : public ContractVariable {
     return Variable(ContractVariable::returnVal(), nullptr);
   }
 
-  // TODO: is this what we want when derefs are involved?
-  bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
+  bool isParent(const Variable &O) const {
+    auto isPrefixOf =
+        [this](
+            const llvm::SmallVector<const FieldDecl *, 4> &OtherFDs) -> bool {
+      if (OtherFDs.size() < FDs.size())
+        return false;
+      return FDs.end() ==
+             std::mismatch(FDs.begin(), FDs.end(), OtherFDs.begin()).first;
+    };
+    return Var == O.Var && isPrefixOf(O.FDs);
+  }
 
   bool hasStaticLifetime() const {
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
@@ -332,12 +341,10 @@ public:
     return !ContainsInvalid && !ContainsNull && !ContainsStatic && Vars.empty();
   }
 
-
   /// Returns true if we look for S and we have S.field in the set.
-  bool containsBase(Variable Var, unsigned Order = 0) const {
-    return llvm::any_of(Vars, [Var, Order](const Variable &Other) {
-      return Var.isBaseEqual(Other) && Order <= Other.getOrder();
-    });
+  bool containsBase(Variable Var) const {
+    return llvm::any_of(
+        Vars, [Var](const Variable &Other) { return Var.isParent(Other); });
   }
 
   bool containsNull() const { return ContainsNull; }
