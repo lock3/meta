@@ -342,7 +342,7 @@ public:
   }
 
   /// Returns true if we look for S and we have S.field in the set.
-  bool containsBase(Variable Var) const {
+  bool containsParent(Variable Var) const {
     return llvm::any_of(
         Vars, [Var](const Variable &Other) { return Var.isParent(Other); });
   }
