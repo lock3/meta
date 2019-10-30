@@ -4,7 +4,10 @@
 using namespace std;
 
 auto f() {
+#ifndef _LIBCPP_VERSION // see https://github.com/mgehre/llvm-project/issues/77
     auto i = std::vector<bool>{}.begin();
+    // expected-warning@-1 {{object backing the pointer will be destroyed}}
+#endif
     std::vector<int> v;
     return v.begin(); // expected-warning {{address of stack memory}}
 }
