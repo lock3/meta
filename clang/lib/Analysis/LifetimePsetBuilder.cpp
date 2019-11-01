@@ -783,9 +783,8 @@ public:
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
-      if (PS.containsParent(V)) {
+      if (PS.containsParent(V))
         setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getRange());
-      }
     }
   }
 
@@ -800,9 +799,8 @@ public:
 
       auto DerefV = V;
       DerefV.deref();
-      if (PS.containsParent(DerefV)) {
+      if (PS.containsParent(DerefV))
         setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getRange());
-      }
     }
   }
 
