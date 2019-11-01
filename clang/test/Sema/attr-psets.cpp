@@ -1555,3 +1555,43 @@ void fn1(c d) {
   d.b();
 }
 } // namespace creduce14
+namespace bug_report_66 {
+class [[gsl::Owner]] O {
+public:
+  void a();
+  int *begin();
+};
+
+void working() {
+  O o;
+  auto &R = o;
+  // R points _at_ o
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+
+  auto *iter = R.begin();
+  // iter now points _into_ o
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = (*o)}}
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+
+  R.a(); // invalidates psets that contain *o.
+  // does not invalidate psets that contain o.
+
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = ((invalid))}}
+}
+
+void not_working(O &R) {
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+  __lifetime_pset(R);     // expected-warning {{pset(R) = (**R)}}
+
+  auto *iter = R.begin();
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = (**R)}}
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+
+  // Should invalidate psets that contain **R.
+  // Should not invalidate psets that contain *R.
+  R.a();
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = ((invalid))}}
+}
+} // namespace bug_report_66
