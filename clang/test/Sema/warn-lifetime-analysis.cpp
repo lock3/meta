@@ -451,7 +451,19 @@ const char *f2();
 
 int main() {
   const char *lg = longer(f1(), f2()); // expected-note {{temporary was destroyed at the end of the full expression}}
-  printf("longer arg is %s", lg); // expected-warning {{passing a dangling pointer as argument}}
+  printf("longer arg is %s", lg);      // expected-warning {{passing a dangling pointer as argument}}
   return 0;
 }
 } // namespace bug_report_63
+
+namespace bug_report_66 {
+
+class [[gsl::Owner]] basic_string {
+public:
+  void a();
+};
+void b(basic_string &c) {
+  c.a();
+  c; // expected-warning {{expression result unused}}
+}
+} // namespace bug_report_66

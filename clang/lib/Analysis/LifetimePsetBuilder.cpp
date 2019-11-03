@@ -519,8 +519,7 @@ public:
       PSet PS = getPSet(DE->getArgument());
       for (const auto &Var : PS.vars()) {
         // TODO: diagnose if we are deleting the buffer of on owner?
-        invalidateVar(Var, 0,
-                      InvalidationReason::Deleted(DE->getSourceRange()));
+        invalidateVar(Var, InvalidationReason::Deleted(DE->getSourceRange()));
       }
     }
   }
@@ -735,19 +734,18 @@ public:
             return;
           PSet ArgPS = getPSet(Arg);
           for (Variable V : ArgPS.vars())
-            invalidateVar(V, 1,
-                          InvalidationReason::Modified(Arg->getSourceRange()));
+            invalidateOwner(
+                V, InvalidationReason::Modified(Arg->getSourceRange()));
         },
         [&](Variable, const RecordDecl *RD, const Expr *ObjExpr) {
           const auto *RT = RD->getTypeForDecl();
           if (classifyTypeCategory(RT) != TypeCategory::Owner ||
               isLifetimeConst(Callee, QualType(RT, 0), -1))
             return;
-          PSet ArgPS = derefPSet(getPSet(ObjExpr));
-          for (Variable V : ArgPS.vars())
-            invalidateVar(
-                V, V.getOrder(),
-                InvalidationReason::Modified(ObjExpr->getSourceRange()));
+          PSet ArgPs = getPSet(ObjExpr);
+          for (Variable V : ArgPs.vars())
+            invalidateOwner(
+                V, InvalidationReason::Modified(ObjExpr->getSourceRange()));
         });
 
     // Bind Pointer return value.
@@ -778,20 +776,31 @@ public:
 
   bool CheckPSetValidity(const PSet &PS, SourceRange Range);
 
-  /// Invalidates all psets that point to V or something owned by V
-  void invalidateVar(Variable V, unsigned Order, InvalidationReason Reason) {
+  void invalidateVar(Variable V, InvalidationReason Reason) {
     for (auto &I : PMap) {
-      const auto &Pointer = I.first;
-      if (V.isBaseEqual(Pointer) && Order > 0)
+      const auto &Var = I.first;
+      PSet &PS = I.second;
+      if (PS.containsInvalid())
+        continue; // Nothing to invalidate
+
+      if (PS.containsParent(V))
+        setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getRange());
+    }
+  }
+
+  void invalidateOwner(Variable V, InvalidationReason Reason) {
+    for (auto &I : PMap) {
+      const auto &Var = I.first;
+      if (V == Var)
         continue; // Invalidating Owner' should not change the pset of Owner
       PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
-      if (PS.containsBase(V, Order)) {
-        setPSet(PSet::singleton(Pointer), PSet::invalid(Reason),
-                Reason.getRange());
-      }
+      auto DerefV = V;
+      DerefV.deref();
+      if (PS.containsParent(DerefV))
+        setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getRange());
     }
   }
 
@@ -806,7 +815,7 @@ public:
            : InvalidationReason::TemporaryLeftScope(Range);
     if (VD) {
       PMap.erase(VD);
-      invalidateVar(VD, 0, Reason);
+      invalidateVar(VD, Reason);
     }
     // Remove all materialized temporaries that were extended by this
     // variable (or a lifetime extended temporary without an extending

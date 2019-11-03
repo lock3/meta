@@ -36,6 +36,7 @@ struct vector {
   iterator end();
   const_iterator cbegin() const;
   const_iterator cend() const;
+  void push_back (const T&);
   T &operator[](unsigned);
   T &at(unsigned);
   T *data();
@@ -1555,3 +1556,67 @@ void fn1(c d) {
   d.b();
 }
 } // namespace creduce14
+namespace bug_report_66 {
+class [[gsl::Owner]] O {
+public:
+  void a();
+  int *begin();
+};
+
+void working() {
+  O o;
+  auto &R = o;
+  // R points _at_ o
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+
+  auto *iter = R.begin();
+  // iter now points _into_ o
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = (*o)}}
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+
+  R.a(); // invalidates psets that contain *o.
+  // does not invalidate psets that contain o.
+
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (o)}}
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = ((invalid))}}
+}
+
+void not_working(O &R) {
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+  __lifetime_pset(R);     // expected-warning {{pset(R) = (**R)}}
+
+  auto *iter = R.begin();
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = (**R)}}
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+
+  // Should invalidate psets that contain **R.
+  // Should not invalidate psets that contain *R.
+  R.a();
+  __lifetime_pset_ref(R); // expected-warning {{pset(R) = (*R)}}
+  __lifetime_pset(iter);  // expected-warning {{pset(iter) = ((invalid))}}
+}
+} // namespace bug_report_66
+namespace owner_in_owner_invalidation {
+auto fun() {
+  std::vector<std::vector<int>> v1;
+  std::vector<int> &v2 = *v1.begin();
+  auto *p1 = &v1;
+  auto *p2 = &v2;
+  auto i1 = v1.begin();
+  auto i2 = v2.begin();
+  v2.push_back(1);
+  __lifetime_pset(v2);  // expected-warning {{pset(v2) = ((invalid))}}
+  __lifetime_pset(p1);  // expected-warning {{pset(p1) = (v1)}}
+  __lifetime_pset(p2);  // expected-warning {{pset(p2) = (*v1)}}
+  __lifetime_pset(i1);  // expected-warning {{pset(i1) = (*v1)}}
+  __lifetime_pset(i2);  // expected-warning {{pset(i2) = ((invalid))}}
+  i2 = v2.begin();
+  v1.push_back({});     // expected-note {{modified here}}
+  __lifetime_pset(v2);  // expected-warning {{pset(v2) = ((unknown))}}
+                        // expected-warning@-1 {{dereferencing a dangling pointer}}
+  __lifetime_pset(p1);  // expected-warning {{pset(p1) = (v1)}}
+  __lifetime_pset(p2);  // expected-warning {{pset(p2) = ((invalid))}}
+  __lifetime_pset(i1);  // expected-warning {{pset(i1) = ((invalid))}}
+  __lifetime_pset(i2);  // expected-warning {{pset(i2) = ((invalid))}}
+}
+} // namespace owner_in_owner_invalidation
