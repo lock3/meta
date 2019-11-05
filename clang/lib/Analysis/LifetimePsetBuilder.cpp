@@ -842,6 +842,8 @@ public:
 
   PSet getPSet(const Expr *E, bool AllowNonExisting = false) {
     E = IgnoreTransparentExprs(E);
+    if (!AllowNonExisting)
+      AllowNonExisting = isa<MaterializeTemporaryExpr>(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
       if (I != RefersTo.end())
