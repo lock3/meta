@@ -1320,12 +1320,13 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
         eraseVariable(nullptr, S->getEndLoc());
       }
       if (!isa<Expr>(S)) {
-        // Clean up PSets for subexpressions. We should never reference
-        // subexpressions again after the full expression ended. The
-        // problem is, it is not trivial to find out the end of a full
-        // expression with linearized CFGs. Just after the
-        // ExprWithCleanups node we might still need the resulting
-        // RValue, thus PSetsOfExpr is not always cleaned.
+        // Clean up P- and RefersTo-sets for subexpressions.
+        // We should never reference subexpressions again after
+        // the full expression ended. The problem is,
+        // it is not trivial to find out the end of a full
+        // expression with linearized CFGs.
+        // This is why currently the sets are only cleared for
+        // statements which are not expressions.
         // TODO: clean this up by properly tracking end of full exprs.
         RefersTo.clear();
         PSetsOfExpr.clear();
