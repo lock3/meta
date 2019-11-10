@@ -842,8 +842,6 @@ public:
 
   PSet getPSet(const Expr *E, bool AllowNonExisting = false) {
     E = IgnoreTransparentExprs(E);
-    if (!AllowNonExisting)
-      AllowNonExisting = isa<MaterializeTemporaryExpr>(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
       if (I != RefersTo.end())
@@ -1320,6 +1318,8 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
       if (isa<ExprWithCleanups>(S) || isa<DeclStmt>(S)) {
         // Remove all materialized temporaries that are not extended.
         eraseVariable(nullptr, S->getEndLoc());
+      }
+      if (isa<Stmt>(S) && !isa<Expr>(S)) {
         // Clean up PSets for subexpressions. We should never reference
         // subexpressions again after the full expression ended. The
         // problem is, it is not trivial to find out the end of a full
@@ -1328,8 +1328,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
         // RValue, thus PSetsOfExpr is not always cleaned.
         // TODO: clean this up by properly tracking end of full exprs.
         RefersTo.clear();
-        if (isa<DeclStmt>(S))
-          PSetsOfExpr.clear();
+        PSetsOfExpr.clear();
       }
 
       break;
