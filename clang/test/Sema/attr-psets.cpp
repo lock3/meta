@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wno-unused-value -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wno-unused-value -Wno-return-stack-address -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }
@@ -1620,3 +1620,18 @@ auto fun() {
   __lifetime_pset(i2);  // expected-warning {{pset(i2) = ((invalid))}}
 }
 } // namespace owner_in_owner_invalidation
+namespace bug_report_69 {
+const int &min(const int &a, const int &b); //like std::min
+class A {
+public:
+  const int &b() const;
+};
+const int &A::b() const { return 0; } // expected-warning {{returning a dangling pointer}}
+// expected-note@-1 {{temporary was destroyed at the end of the full expression}}
+auto fun() {
+  auto &m = min(1, 2);  // expected-note {{temporary was destroyed at the end of the full expression}}
+  __lifetime_pset_ref(m); // expected-warning {{pset(m) = ((unknown))}}
+  // expected-warning@-1 {{dereferencing a dangling pointer}}
+}
+
+} // namespace bug_report_69
