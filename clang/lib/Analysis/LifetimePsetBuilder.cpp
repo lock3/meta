@@ -1319,7 +1319,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
         // Remove all materialized temporaries that are not extended.
         eraseVariable(nullptr, S->getEndLoc());
       }
-      if (isa<Stmt>(S) && !isa<Expr>(S)) {
+      if (!isa<Expr>(S)) {
         // Clean up PSets for subexpressions. We should never reference
         // subexpressions again after the full expression ended. The
         // problem is, it is not trivial to find out the end of a full
