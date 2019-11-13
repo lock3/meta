@@ -161,6 +161,7 @@ public:
                           uptr Alignment = MinAlignment,
                           bool ZeroContents = false) {
     initThreadMaybe();
+    ZeroContents = ZeroContents || Options.ZeroContents;
 
     if (UNLIKELY(Alignment > MaxAlignment)) {
       if (Options.MayReturnNull)
@@ -200,7 +201,8 @@ public:
         TSD->unlock();
     } else {
       ClassId = 0;
-      Block = Secondary.allocate(NeededSize, Alignment, &BlockEnd);
+      Block =
+          Secondary.allocate(NeededSize, Alignment, &BlockEnd, ZeroContents);
     }
 
     if (UNLIKELY(!Block)) {
@@ -212,7 +214,7 @@ public:
     // We only need to zero the contents for Primary backed allocations. This
     // condition is not necessarily unlikely, but since memset is costly, we
     // might as well mark it as such.
-    if (UNLIKELY((ZeroContents || Options.ZeroContents) && ClassId))
+    if (UNLIKELY(ZeroContents && ClassId))
       memset(Block, 0, PrimaryT::getSizeByClassId(ClassId));
 
     Chunk::UnpackedHeader Header = {};
@@ -311,18 +313,30 @@ public:
                                   OldHeader.Origin, Chunk::Origin::Malloc);
     }
 
-    const uptr OldSize = getSize(OldPtr, &OldHeader);
-    // If the new size is identical to the old one, or lower but within an
-    // acceptable range, we just keep the old chunk, and update its header.
-    if (UNLIKELY(NewSize == OldSize))
-      return OldPtr;
-    if (NewSize < OldSize) {
-      const uptr Delta = OldSize - NewSize;
-      if (Delta < (SizeClassMap::MaxSize / 2)) {
+    void *BlockBegin = getBlockBegin(OldPtr, &OldHeader);
+    uptr BlockEnd;
+    uptr OldSize;
+    const uptr ClassId = OldHeader.ClassId;
+    if (LIKELY(ClassId)) {
+      BlockEnd = reinterpret_cast<uptr>(BlockBegin) +
+                 SizeClassMap::getSizeByClassId(ClassId);
+      OldSize = OldHeader.SizeOrUnusedBytes;
+    } else {
+      BlockEnd = SecondaryT::getBlockEnd(BlockBegin);
+      OldSize = BlockEnd -
+                (reinterpret_cast<uptr>(OldPtr) + OldHeader.SizeOrUnusedBytes);
+    }
+    // If the new chunk still fits in the previously allocated block (with a
+    // reasonable delta), we just keep the old block, and update the chunk
+    // header to reflect the size change.
+    if (reinterpret_cast<uptr>(OldPtr) + NewSize <= BlockEnd) {
+      const uptr Delta =
+          OldSize < NewSize ? NewSize - OldSize : OldSize - NewSize;
+      if (Delta <= SizeClassMap::MaxSize / 2) {
         Chunk::UnpackedHeader NewHeader = OldHeader;
         NewHeader.SizeOrUnusedBytes =
-            (OldHeader.ClassId ? NewHeader.SizeOrUnusedBytes - Delta
-                               : NewHeader.SizeOrUnusedBytes + Delta) &
+            (ClassId ? NewSize
+                     : BlockEnd - (reinterpret_cast<uptr>(OldPtr) + NewSize)) &
             Chunk::SizeOrUnusedBytesMask;
         Chunk::compareExchangeHeader(Cookie, OldPtr, &NewHeader, &OldHeader);
         return OldPtr;
@@ -335,6 +349,7 @@ public:
     // are currently unclear.
     void *NewPtr = allocate(NewSize, Chunk::Origin::Malloc, Alignment);
     if (NewPtr) {
+      const uptr OldSize = getSize(OldPtr, &OldHeader);
       memcpy(NewPtr, OldPtr, Min(NewSize, OldSize));
       quarantineOrDeallocateChunk(OldPtr, &OldHeader, OldSize);
     }
@@ -356,12 +371,31 @@ public:
     Primary.enable();
   }
 
-  void printStats() {
+  // The function returns the amount of bytes required to store the statistics,
+  // which might be larger than the amount of bytes provided. Note that the
+  // statistics buffer is not necessarily constant between calls to this
+  // function. This can be called with a null buffer or zero size for buffer
+  // sizing purposes.
+  uptr getStats(char *Buffer, uptr Size) {
+    ScopedString Str(1024);
     disable();
-    Primary.printStats();
-    Secondary.printStats();
-    Quarantine.printStats();
+    const uptr Length = getStats(&Str) + 1;
     enable();
+    if (Length < Size)
+      Size = Length;
+    if (Buffer && Size) {
+      memcpy(Buffer, Str.data(), Size);
+      Buffer[Size - 1] = '\0';
+    }
+    return Length;
+  }
+
+  void printStats() {
+    ScopedString Str(1024);
+    disable();
+    getStats(&Str);
+    enable();
+    Str.output();
   }
 
   void releaseToOS() { Primary.releaseToOS(); }
@@ -417,7 +451,7 @@ public:
   }
 
 private:
-  typedef MapAllocator SecondaryT;
+  using SecondaryT = typename Params::Secondary;
   typedef typename PrimaryT::SizeClassMap SizeClassMap;
 
   static const uptr MinAlignmentLog = SCUDO_MIN_ALIGNMENT_LOG;
@@ -549,6 +583,13 @@ private:
     if (Size)
       *Size = getSize(Ptr, &Header);
     return P;
+  }
+
+  uptr getStats(ScopedString *Str) {
+    Primary.getStats(Str);
+    Secondary.getStats(Str);
+    Quarantine.getStats(Str);
+    return Str->length();
   }
 };
 

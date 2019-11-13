@@ -1167,7 +1167,8 @@ void UnwrappedLineParser::parseStructuralElement() {
       case tok::objc_autoreleasepool:
         nextToken();
         if (FormatTok->Tok.is(tok::l_brace)) {
-          if (Style.BraceWrapping.AfterControlStatement)
+          if (Style.BraceWrapping.AfterControlStatement ==
+              FormatStyle::BWACS_Always)
             addUnwrappedLine();
           parseBlock(/*MustBeDeclaration=*/false);
         }
@@ -1179,7 +1180,8 @@ void UnwrappedLineParser::parseStructuralElement() {
           // Skip synchronization object
           parseParens();
         if (FormatTok->Tok.is(tok::l_brace)) {
-          if (Style.BraceWrapping.AfterControlStatement)
+          if (Style.BraceWrapping.AfterControlStatement ==
+              FormatStyle::BWACS_Always)
             addUnwrappedLine();
           parseBlock(/*MustBeDeclaration=*/false);
         }
@@ -1351,7 +1353,7 @@ void UnwrappedLineParser::parseStructuralElement() {
           (TokenCount == 2 && Line->Tokens.front().Tok->is(tok::comment))) {
         if (FormatTok->Tok.is(tok::colon) && !Line->MustBeDeclaration) {
           Line->Tokens.begin()->Tok->MustBreakBefore = true;
-          parseLabel();
+          parseLabel(!Style.IndentGotoLabels);
           return;
         }
         // Recognize function-like macro usages without trailing semicolon as
@@ -1440,8 +1442,11 @@ bool UnwrappedLineParser::tryToParseLambda() {
     case tok::identifier:
     case tok::numeric_constant:
     case tok::coloncolon:
+    case tok::kw_class:
     case tok::kw_mutable:
     case tok::kw_noexcept:
+    case tok::kw_template:
+    case tok::kw_typename:
       nextToken();
       break;
     // Specialization of a template with an integer parameter can contain
@@ -1455,6 +1460,9 @@ bool UnwrappedLineParser::tryToParseLambda() {
     // followed by an `a->b` expression, such as:
     // ([obj func:arg] + a->b)
     // Otherwise the code below would parse as a lambda.
+    //
+    // FIXME: This heuristic is incorrect for C++20 generic lambdas with
+    // explicit template lists: []<bool b = true && false>(U &&u){}
     case tok::plus:
     case tok::minus:
     case tok::exclaim:
@@ -1970,18 +1978,21 @@ void UnwrappedLineParser::parseDoWhile() {
   parseStructuralElement();
 }
 
-void UnwrappedLineParser::parseLabel() {
+void UnwrappedLineParser::parseLabel(bool LeftAlignLabel) {
   nextToken();
   unsigned OldLineLevel = Line->Level;
   if (Line->Level > 1 || (!Line->InPPDirective && Line->Level > 0))
     --Line->Level;
+  if (LeftAlignLabel)
+    Line->Level = 0;
   if (CommentsBeforeNextToken.empty() && FormatTok->Tok.is(tok::l_brace)) {
     CompoundStatementIndenter Indenter(this, Line->Level,
                                        Style.BraceWrapping.AfterCaseLabel,
                                        Style.BraceWrapping.IndentBraces);
     parseBlock(/*MustBeDeclaration=*/false);
     if (FormatTok->Tok.is(tok::kw_break)) {
-      if (Style.BraceWrapping.AfterControlStatement)
+      if (Style.BraceWrapping.AfterControlStatement ==
+          FormatStyle::BWACS_Always)
         addUnwrappedLine();
       parseStructuralElement();
     }

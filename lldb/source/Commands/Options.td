@@ -4,6 +4,8 @@ let Command = "target modules dump symtab" in {
   def tm_sort : Option<"sort", "s">, Group<1>,
     Desc<"Supply a sort order when dumping the symbol table.">,
     EnumArg<"SortOrder", "OptionEnumValues(g_sort_option_enumeration)">;
+  def tm_smn : Option<"show-mangled-names", "m">, Group<1>,
+    Desc<"Do not demangle symbol names before showing them.">;
 }
 
 let Command = "help" in {
@@ -163,17 +165,6 @@ let Command = "breakpoint set" in {
     "match against all source files, pass the \"--all-files\" option.">;
   def breakpoint_set_all_files : Option<"all-files", "A">, Group<9>,
     Desc<"All files are searched for source pattern matches.">;
-  def breakpoint_set_python_class : Option<"python-class", "P">, Group<11>,
-    Arg<"PythonClass">, Required, Desc<"The name of the class that implement "
-    "a scripted breakpoint.">;
-  def breakpoint_set_python_class_key : Option<"python-class-key", "k">,
-    Group<11>, Arg<"None">,
-    Desc<"The key for a key/value pair passed to the class that implements a "
-    "scripted breakpoint.  Can be specified more than once.">;
-  def breakpoint_set_python_class_value : Option<"python-class-value", "v">,
-    Group<11>, Arg<"None">, Desc<"The value for the previous key in the pair "
-    "passed to the class that implements a scripted breakpoint. "
-    "Can be specified more than once.">;
   def breakpoint_set_language_exception : Option<"language-exception", "E">,
     Group<10>, Arg<"Language">, Required,
     Desc<"Set the breakpoint on exceptions thrown by the specified language "
@@ -279,10 +270,6 @@ let Command = "breakpoint command add" in {
     EnumArg<"None", "ScriptOptionEnum()">,
     Desc<"Specify the language for the commands - if none is specified, the "
     "lldb command interpreter will be used.">;
-  def breakpoint_add_python_function : Option<"python-function", "F">,
-    Group<2>, Arg<"PythonFunction">,
-    Desc<"Give the name of a Python function to run as command for this "
-    "breakpoint. Be sure to give a module name if appropriate.">;
   def breakpoint_add_dummy_breakpoints : Option<"dummy-breakpoints", "D">,
     Desc<"Sets Dummy breakpoints - i.e. breakpoints set before a file is "
     "provided, which prime new targets.">;
@@ -442,6 +429,15 @@ let Command = "log" in {
     Desc<"Prepend the names of files and function that generate the logs.">;
 }
 
+let Command = "reproducer" in {
+  def reproducer_provider : Option<"provider", "p">, Group<1>,
+    EnumArg<"None", "ReproducerProviderType()">,
+    Required, Desc<"The reproducer provider to dump.">;
+  def reproducer_file : Option<"file", "f">, Group<1>, Arg<"Filename">,
+    Desc<"The reproducer path. If a reproducer is replayed and no path is "
+    "provided, that reproducer is dumped.">;
+}
+
 let Command = "memory read" in {
   def memory_read_num_per_line : Option<"num-per-line", "l">, Group<1>,
     Arg<"NumberPerLine">, Desc<"The number of items per line to display.">;
@@ -593,6 +589,9 @@ let Command = "platform process list" in {
   def platform_process_list_show_args : Option<"show-args", "A">,
     GroupRange<1, 6>,
     Desc<"Show process arguments instead of the process executable basename.">;
+  def platform_process_list_all_users: Option<"all-users", "x">,
+    GroupRange<1,6>,
+    Desc<"Show processes matching all user IDs.">;
   def platform_process_list_verbose : Option<"verbose", "v">, GroupRange<1, 6>,
     Desc<"Enable verbose output.">;
 }
@@ -906,9 +905,6 @@ let Command = "thread step scope" in {
   def thread_step_scope_step_in_target : Option<"step-in-target", "t">,
     Group<1>, Arg<"FunctionName">, Desc<"The name of the directly called "
     "function step in should stop at when stepping into.">;
-  def thread_step_scope_python_class : Option<"python-class", "C">, Group<2>,
-    Arg<"PythonClass">, Desc<"The name of the class that will manage this step "
-    "- only supported for Scripted Step.">;
 }
 
 let Command = "thread until" in {

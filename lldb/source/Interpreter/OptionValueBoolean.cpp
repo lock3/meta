@@ -73,17 +73,15 @@ lldb::OptionValueSP OptionValueBoolean::DeepCopy() const {
 
 void OptionValueBoolean::AutoComplete(CommandInterpreter &interpreter,
                                       CompletionRequest &request) {
-  static const llvm::StringRef g_autocomplete_entries[] = {
-      "true", "false", "on", "off", "yes", "no", "1", "0"};
+  llvm::StringRef autocomplete_entries[] = {"true", "false", "on", "off",
+                                            "yes",  "no",    "1",  "0"};
 
-  auto entries = llvm::makeArrayRef(g_autocomplete_entries);
+  auto entries = llvm::makeArrayRef(autocomplete_entries);
 
   // only suggest "true" or "false" by default
   if (request.GetCursorArgumentPrefix().empty())
     entries = entries.take_front(2);
 
-  for (auto entry : entries) {
-    if (entry.startswith_lower(request.GetCursorArgumentPrefix()))
-      request.AddCompletion(entry);
-  }
+  for (auto entry : entries)
+    request.TryCompleteCurrentArg(entry);
 }

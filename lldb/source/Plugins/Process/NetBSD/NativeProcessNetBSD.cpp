@@ -340,12 +340,14 @@ Status NativeProcessNetBSD::Resume(const ResumeActionList &resume_actions) {
   }
 
   Status error;
+  int signal =
+      action->signal != LLDB_INVALID_SIGNAL_NUMBER ? action->signal : 0;
 
   switch (action->state) {
   case eStateRunning: {
     // Run the thread, possibly feeding it the signal.
     error = NativeProcessNetBSD::PtraceWrapper(PT_CONTINUE, GetID(), (void *)1,
-                                               action->signal);
+                                               signal);
     if (!error.Success())
       return error;
     for (const auto &thread : m_threads)
@@ -356,7 +358,7 @@ Status NativeProcessNetBSD::Resume(const ResumeActionList &resume_actions) {
   case eStateStepping:
     // Run the thread, possibly feeding it the signal.
     error = NativeProcessNetBSD::PtraceWrapper(PT_STEP, GetID(), (void *)1,
-                                               action->signal);
+                                               signal);
     if (!error.Success())
       return error;
     for (const auto &thread : m_threads)
@@ -379,12 +381,7 @@ Status NativeProcessNetBSD::Resume(const ResumeActionList &resume_actions) {
 }
 
 Status NativeProcessNetBSD::Halt() {
-  Status error;
-
-  if (kill(GetID(), SIGSTOP) != 0)
-    error.SetErrorToErrno();
-
-  return error;
+  return PtraceWrapper(PT_STOP, GetID());
 }
 
 Status NativeProcessNetBSD::Detach() {
@@ -407,6 +404,10 @@ Status NativeProcessNetBSD::Signal(int signo) {
     error.SetErrorToErrno();
 
   return error;
+}
+
+Status NativeProcessNetBSD::Interrupt() {
+  return PtraceWrapper(PT_STOP, GetID());
 }
 
 Status NativeProcessNetBSD::Kill() {

@@ -326,14 +326,13 @@ void DwarfCompileUnit::addRange(RangeSpan Range) {
   // emitted into and the subprogram was contained within. If these are the
   // same then extend our current range, otherwise add this as a new range.
   if (CURanges.empty() || !SameAsPrevCU ||
-      (&CURanges.back().getEnd()->getSection() !=
-       &Range.getEnd()->getSection())) {
+      (&CURanges.back().End->getSection() !=
+       &Range.End->getSection())) {
     CURanges.push_back(Range);
-    DD->addSectionLabel(Range.getStart());
     return;
   }
 
-  CURanges.back().setEnd(Range.getEnd());
+  CURanges.back().End = Range.End;
 }
 
 void DwarfCompileUnit::initStmtList() {
@@ -468,14 +467,6 @@ void DwarfCompileUnit::constructScopeDIE(
 
 void DwarfCompileUnit::addScopeRangeList(DIE &ScopeDIE,
                                          SmallVector<RangeSpan, 2> Range) {
-  const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
-
-  // Emit the offset into .debug_ranges or .debug_rnglists as a relocatable
-  // label. emitDIE() will handle emitting it appropriately.
-  const MCSymbol *RangeSectionSym =
-      DD->getDwarfVersion() >= 5
-          ? TLOF.getDwarfRnglistsSection()->getBeginSymbol()
-          : TLOF.getDwarfRangesSection()->getBeginSymbol();
 
   HasRangeLists = true;
 
@@ -494,12 +485,17 @@ void DwarfCompileUnit::addScopeRangeList(DIE &ScopeDIE,
   // (DW_RLE_startx_endx etc.).
   if (DD->getDwarfVersion() >= 5)
     addUInt(ScopeDIE, dwarf::DW_AT_ranges, dwarf::DW_FORM_rnglistx, Index);
-  else if (isDwoUnit())
-    addSectionDelta(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
-                    RangeSectionSym);
-  else
-    addSectionLabel(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
-                    RangeSectionSym);
+  else {
+    const TargetLoweringObjectFile &TLOF = Asm->getObjFileLowering();
+    const MCSymbol *RangeSectionSym =
+        TLOF.getDwarfRangesSection()->getBeginSymbol();
+    if (isDwoUnit())
+      addSectionDelta(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
+                      RangeSectionSym);
+    else
+      addSectionLabel(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
+                      RangeSectionSym);
+  }
 }
 
 void DwarfCompileUnit::attachRangesOrLowHighPC(
@@ -507,7 +503,7 @@ void DwarfCompileUnit::attachRangesOrLowHighPC(
   if (Ranges.size() == 1 || !DD->useRangesSection()) {
     const RangeSpan &Front = Ranges.front();
     const RangeSpan &Back = Ranges.back();
-    attachLowHighPC(Die, Front.getStart(), Back.getEnd());
+    attachLowHighPC(Die, Front.Begin, Back.End);
   } else
     addScopeRangeList(Die, std::move(Ranges));
 }
@@ -517,8 +513,8 @@ void DwarfCompileUnit::attachRangesOrLowHighPC(
   SmallVector<RangeSpan, 2> List;
   List.reserve(Ranges.size());
   for (const InsnRange &R : Ranges)
-    List.push_back(RangeSpan(DD->getLabelBeforeInsn(R.first),
-                             DD->getLabelAfterInsn(R.second)));
+    List.push_back(
+        {DD->getLabelBeforeInsn(R.first), DD->getLabelAfterInsn(R.second)});
   attachRangesOrLowHighPC(Die, std::move(List));
 }
 
@@ -1165,16 +1161,8 @@ void DwarfCompileUnit::addGlobalTypeUnitType(const DIType *Ty,
   GlobalTypes.insert(std::make_pair(std::move(FullName), &getUnitDie()));
 }
 
-/// addVariableAddress - Add DW_AT_location attribute for a
-/// DbgVariable based on provided MachineLocation.
 void DwarfCompileUnit::addVariableAddress(const DbgVariable &DV, DIE &Die,
                                           MachineLocation Location) {
-  // addBlockByrefAddress is obsolete and will be removed soon.
-  // The clang frontend always generates block byref variables with a
-  // complex expression that encodes exactly what addBlockByrefAddress
-  // would do.
-  assert((!DV.isBlockByrefVariable() || DV.hasComplexAddress()) &&
-         "block byref variable without a complex expression");
   if (DV.hasComplexAddress())
     addComplexAddress(DV, Die, dwarf::DW_AT_location, Location);
   else
@@ -1217,7 +1205,7 @@ void DwarfCompileUnit::addComplexAddress(const DbgVariable &DV, DIE &Die,
 
   if (DIExpr->isEntryValue()) {
     DwarfExpr.setEntryValueFlag();
-    DwarfExpr.addEntryValueExpression(Cursor);
+    DwarfExpr.beginEntryValueExpression(Cursor);
   }
 
   const TargetRegisterInfo &TRI = *Asm->MF->getSubtarget().getRegisterInfo();

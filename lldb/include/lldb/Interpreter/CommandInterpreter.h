@@ -443,13 +443,13 @@ public:
 
   bool GetPromptOnQuit() const;
 
-  void SetPromptOnQuit(bool b);
+  void SetPromptOnQuit(bool enable);
 
   bool GetEchoCommands() const;
-  void SetEchoCommands(bool b);
+  void SetEchoCommands(bool enable);
 
   bool GetEchoCommentCommands() const;
-  void SetEchoCommentCommands(bool b);
+  void SetEchoCommentCommands(bool enable);
 
   /// Specify if the command interpreter should allow that the user can
   /// specify a custom exit code when calling 'quit'.
@@ -501,6 +501,8 @@ protected:
   bool IOHandlerInterrupt(IOHandler &io_handler) override;
 
   void GetProcessOutput();
+
+  bool DidProcessStopAbnormally() const;
 
   void SetSynchronous(bool value);
 

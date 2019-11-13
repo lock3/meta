@@ -68,7 +68,7 @@ CtorDtorIterator::Element CtorDtorIterator::operator*() const {
     }
   }
 
-  ConstantInt *Priority = dyn_cast<ConstantInt>(CS->getOperand(0));
+  auto *Priority = cast<ConstantInt>(CS->getOperand(0));
   Value *Data = CS->getNumOperands() == 3 ? CS->getOperand(2) : nullptr;
   if (Data && !isa<GlobalValue>(Data))
     Data = nullptr;
@@ -88,7 +88,7 @@ iterator_range<CtorDtorIterator> getDestructors(const Module &M) {
 }
 
 void CtorDtorRunner::add(iterator_range<CtorDtorIterator> CtorDtors) {
-  if (empty(CtorDtors))
+  if (CtorDtors.empty())
     return;
 
   MangleAndInterner Mangle(

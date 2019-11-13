@@ -18,7 +18,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SparseSet.h"
 #include "llvm/ADT/iterator_range.h"
-#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
@@ -373,6 +372,13 @@ LaneBitmask ScheduleDAGInstrs::getLaneMaskForMO(const MachineOperand &MO) const
   return TRI->getSubRegIndexLaneMask(SubReg);
 }
 
+bool ScheduleDAGInstrs::deadDefHasNoUse(const MachineOperand &MO) {
+  auto RegUse = CurrentVRegUses.find(MO.getReg());
+  if (RegUse == CurrentVRegUses.end())
+    return true;
+  return (RegUse->LaneMask & getLaneMaskForMO(MO)).none();
+}
+
 /// Adds register output and data dependencies from this SUnit to instructions
 /// that occur later in the same scheduling region if they read from or write to
 /// the virtual register defined at OperIdx.
@@ -393,6 +399,18 @@ void ScheduleDAGInstrs::addVRegDefDeps(SUnit *SU, unsigned OperIdx) {
     // earlier instruction.
     KillLaneMask = IsKill ? LaneBitmask::getAll() : DefLaneMask;
 
+    if (MO.getSubReg() != 0 && MO.isUndef()) {
+      // There may be other subregister defs on the same instruction of the same
+      // register in later operands. The lanes of other defs will now be live
+      // after this instruction, so these should not be treated as killed by the
+      // instruction even though they appear to be killed in this one operand.
+      for (int I = OperIdx + 1, E = MI->getNumOperands(); I != E; ++I) {
+        const MachineOperand &OtherMO = MI->getOperand(I);
+        if (OtherMO.isReg() && OtherMO.isDef() && OtherMO.getReg() == Reg)
+          KillLaneMask &= ~getLaneMaskForMO(OtherMO);
+      }
+    }
+
     // Clear undef flag, we'll re-add it later once we know which subregister
     // Def is first.
     MO.setIsUndef(false);
@@ -402,8 +420,7 @@ void ScheduleDAGInstrs::addVRegDefDeps(SUnit *SU, unsigned OperIdx) {
   }
 
   if (MO.isDead()) {
-    assert(CurrentVRegUses.find(Reg) == CurrentVRegUses.end() &&
-           "Dead defs should have no uses");
+    assert(deadDefHasNoUse(MO) && "Dead defs should have no uses");
   } else {
     // Add data dependence to all uses we found so far.
     const TargetSubtargetInfo &ST = MF.getSubtarget();
@@ -514,7 +531,7 @@ void ScheduleDAGInstrs::addVRegUseDeps(SUnit *SU, unsigned OperIdx) {
 
 /// Returns true if MI is an instruction we are unable to reason about
 /// (like a call or something with unmodeled side effects).
-static inline bool isGlobalMemoryObject(AliasAnalysis *AA, MachineInstr *MI) {
+static inline bool isGlobalMemoryObject(AAResults *AA, MachineInstr *MI) {
   return MI->isCall() || MI->hasUnmodeledSideEffects() ||
          (MI->hasOrderedMemoryRef() && !MI->isDereferenceableInvariantLoad(AA));
 }
@@ -701,7 +718,7 @@ void ScheduleDAGInstrs::insertBarrierChain(Value2SUsMap &map) {
   map.reComputeSize();
 }
 
-void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
+void ScheduleDAGInstrs::buildSchedGraph(AAResults *AA,
                                         RegPressureTracker *RPTracker,
                                         PressureDiffs *PDiffs,
                                         LiveIntervals *LIS,

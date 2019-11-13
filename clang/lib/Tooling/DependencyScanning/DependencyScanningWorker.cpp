@@ -12,7 +12,9 @@
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Frontend/Utils.h"
+#include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Tooling/DependencyScanning/DependencyScanningService.h"
+#include "clang/Tooling/DependencyScanning/ModuleDepCollector.h"
 #include "clang/Tooling/Tooling.h"
 
 using namespace clang;
@@ -29,8 +31,12 @@ public:
       : DependencyFileGenerator(*Opts), Opts(std::move(Opts)), C(C) {}
 
   void finishedMainFile(DiagnosticsEngine &Diags) override {
-    for (const auto &File : getDependencies())
-      C.handleFileDependency(*Opts, File);
+    llvm::SmallString<256> CanonPath;
+    for (const auto &File : getDependencies()) {
+      CanonPath = File;
+      llvm::sys::path::remove_dots(CanonPath, /*remove_dot_dot=*/true);
+      C.handleFileDependency(*Opts, CanonPath);
+    }
   }
 
 private:
@@ -66,9 +72,12 @@ class DependencyScanningAction : public tooling::ToolAction {
 public:
   DependencyScanningAction(
       StringRef WorkingDirectory, DependencyConsumer &Consumer,
-      llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS)
+      llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS,
+      ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings,
+      ScanningOutputFormat Format)
       : WorkingDirectory(WorkingDirectory), Consumer(Consumer),
-        DepFS(std::move(DepFS)) {}
+        DepFS(std::move(DepFS)), PPSkipMappings(PPSkipMappings),
+        Format(Format) {}
 
   bool runInvocation(std::shared_ptr<CompilerInvocation> Invocation,
                      FileManager *FileMgr,
@@ -101,6 +110,12 @@ public:
       // filesystem.
       FileMgr->setVirtualFileSystem(createVFSFromCompilerInvocation(
           CI, Compiler.getDiagnostics(), DepFS));
+
+      // Pass the skip mappings which should speed up excluded conditional block
+      // skipping in the preprocessor.
+      if (PPSkipMappings)
+        Compiler.getPreprocessorOpts()
+            .ExcludedConditionalDirectiveSkipMappings = PPSkipMappings;
     }
 
     FileMgr->getFileSystemOpts().WorkingDir = WorkingDirectory;
@@ -119,9 +134,20 @@ public:
     // We need at least one -MT equivalent for the generator to work.
     if (Opts->Targets.empty())
       Opts->Targets = {"clang-scan-deps dependency"};
-    Compiler.addDependencyCollector(
-        std::make_shared<DependencyConsumerForwarder>(std::move(Opts),
-                                                      Consumer));
+
+    switch (Format) {
+    case ScanningOutputFormat::Make:
+      Compiler.addDependencyCollector(
+          std::make_shared<DependencyConsumerForwarder>(std::move(Opts),
+                                                        Consumer));
+      break;
+    case ScanningOutputFormat::Full:
+      Compiler.addDependencyCollector(
+          std::make_shared<ModuleDepCollector>(Compiler, Consumer));
+      break;
+    }
+
+    Consumer.handleContextHash(Compiler.getInvocation().getModuleHash());
 
     auto Action = std::make_unique<PreprocessOnlyAction>();
     const bool Result = Compiler.ExecuteAction(*Action);
@@ -134,18 +160,24 @@ private:
   StringRef WorkingDirectory;
   DependencyConsumer &Consumer;
   llvm::IntrusiveRefCntPtr<DependencyScanningWorkerFilesystem> DepFS;
+  ExcludedPreprocessorDirectiveSkipMapping *PPSkipMappings;
+  ScanningOutputFormat Format;
 };
 
 } // end anonymous namespace
 
 DependencyScanningWorker::DependencyScanningWorker(
-    DependencyScanningService &Service) {
+    DependencyScanningService &Service)
+    : Format(Service.getFormat()) {
   DiagOpts = new DiagnosticOptions();
   PCHContainerOps = std::make_shared<PCHContainerOperations>();
   RealFS = new ProxyFileSystemWithoutChdir(llvm::vfs::getRealFileSystem());
+  if (Service.canSkipExcludedPPRanges())
+    PPSkipMappings =
+        std::make_unique<ExcludedPreprocessorDirectiveSkipMapping>();
   if (Service.getMode() == ScanningMode::MinimizedSourcePreprocessing)
-    DepFS = new DependencyScanningWorkerFilesystem(Service.getSharedCache(),
-                                                   RealFS);
+    DepFS = new DependencyScanningWorkerFilesystem(
+        Service.getSharedCache(), RealFS, PPSkipMappings.get());
   if (Service.canReuseFileManager())
     Files = new FileManager(FileSystemOptions(), RealFS);
 }
@@ -178,7 +210,8 @@ llvm::Error DependencyScanningWorker::computeDependencies(
     Tool.setRestoreWorkingDir(false);
     Tool.setPrintErrorMessage(false);
     Tool.setDiagnosticConsumer(&DC);
-    DependencyScanningAction Action(WorkingDirectory, Consumer, DepFS);
+    DependencyScanningAction Action(WorkingDirectory, Consumer, DepFS,
+                                    PPSkipMappings.get(), Format);
     return !Tool.run(&Action);
   });
 }

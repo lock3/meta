@@ -362,7 +362,9 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
   CountersDelta = swap(Header.CountersDelta);
   NamesDelta = swap(Header.NamesDelta);
   auto DataSize = swap(Header.DataSize);
+  auto PaddingBytesBeforeCounters = swap(Header.PaddingBytesBeforeCounters);
   auto CountersSize = swap(Header.CountersSize);
+  auto PaddingBytesAfterCounters = swap(Header.PaddingBytesAfterCounters);
   NamesSize = swap(Header.NamesSize);
   ValueKindLast = swap(Header.ValueKindLast);
 
@@ -370,8 +372,10 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
   auto PaddingSize = getNumPaddingBytes(NamesSize);
 
   ptrdiff_t DataOffset = sizeof(RawInstrProf::Header);
-  ptrdiff_t CountersOffset = DataOffset + DataSizeInBytes;
-  ptrdiff_t NamesOffset = CountersOffset + sizeof(uint64_t) * CountersSize;
+  ptrdiff_t CountersOffset =
+      DataOffset + DataSizeInBytes + PaddingBytesBeforeCounters;
+  ptrdiff_t NamesOffset = CountersOffset + (sizeof(uint64_t) * CountersSize) +
+                          PaddingBytesAfterCounters;
   ptrdiff_t ValueDataOffset = NamesOffset + NamesSize + PaddingSize;
 
   auto *Start = reinterpret_cast<const char *>(&Header);
@@ -783,13 +787,13 @@ IndexedInstrProfReader::readSummary(IndexedInstrProf::ProfVersion Version,
         SummaryData->get(Summary::TotalNumFunctions));
     return Cur + SummarySize;
   } else {
-    // For older version of profile data, we need to compute on the fly:
-    using namespace IndexedInstrProf;
-
+    // The older versions do not support a profile summary. This just computes
+    // an empty summary, which will not result in accurate hot/cold detection.
+    // We would need to call addRecord for all NamedInstrProfRecords to get the
+    // correct summary. However, this version is old (prior to early 2016) and
+    // has not been supporting an accurate summary for several years.
     InstrProfSummaryBuilder Builder(ProfileSummaryBuilder::DefaultCutoffs);
-    // FIXME: This only computes an empty summary. Need to call addRecord for
-    // all NamedInstrProfRecords to get the correct summary.
-    this->Summary = Builder.getSummary();
+    Summary = Builder.getSummary();
     return Cur;
   }
 }
@@ -907,7 +911,7 @@ Error IndexedInstrProfReader::readNextRecord(NamedInstrProfRecord &Record) {
   return success();
 }
 
-void InstrProfReader::accumuateCounts(CountSumOrPercent &Sum, bool IsCS) {
+void InstrProfReader::accumulateCounts(CountSumOrPercent &Sum, bool IsCS) {
   uint64_t NumFuncs = 0;
   for (const auto &Func : *this) {
     if (isIRLevelProfile()) {
@@ -915,7 +919,7 @@ void InstrProfReader::accumuateCounts(CountSumOrPercent &Sum, bool IsCS) {
       if (FuncIsCS != IsCS)
         continue;
     }
-    Func.accumuateCounts(Sum);
+    Func.accumulateCounts(Sum);
     ++NumFuncs;
   }
   Sum.NumEntries = NumFuncs;

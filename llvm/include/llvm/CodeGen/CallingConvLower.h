@@ -44,6 +44,7 @@ public:
     AExtUpper, // The value is in the upper bits of the location and should be
                // extended with undefined upper bits when retrieved.
     BCvt,      // The value is bit-converted in the location.
+    Trunc,     // The value is truncated in the location.
     VExt,      // The value is vector-widened in the location.
                // FIXME: Not implemented yet. Code that uses AExt to mean
                // vector-widen should be fixed to use VExt instead.
@@ -423,18 +424,18 @@ public:
   /// AllocateStack - Allocate a chunk of stack space with the specified size
   /// and alignment.
   unsigned AllocateStack(unsigned Size, unsigned Alignment) {
-    const llvm::Align Align(Alignment);
-    StackOffset = alignTo(StackOffset, Align);
+    const Align CheckedAlignment(Alignment);
+    StackOffset = alignTo(StackOffset, CheckedAlignment);
     unsigned Result = StackOffset;
     StackOffset += Size;
-    MaxStackArgAlign = std::max(Align, MaxStackArgAlign);
-    ensureMaxAlignment(Align);
+    MaxStackArgAlign = std::max(CheckedAlignment, MaxStackArgAlign);
+    ensureMaxAlignment(CheckedAlignment);
     return Result;
   }
 
-  void ensureMaxAlignment(llvm::Align Align) {
+  void ensureMaxAlignment(Align Alignment) {
     if (!AnalyzingMustTailForwardedRegs)
-      MF.getFrameInfo().ensureMaxAlignment(Align.value());
+      MF.getFrameInfo().ensureMaxAlignment(Alignment.value());
   }
 
   /// Version of AllocateStack with extra register to be shadowed.

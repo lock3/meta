@@ -52,8 +52,8 @@ public:
   virtual ~Searcher();
 
   virtual CallbackReturn SearchCallback(SearchFilter &filter,
-                                        SymbolContext &context, Address *addr,
-                                        bool complete) = 0;
+                                        SymbolContext &context,
+                                        Address *addr) = 0;
 
   virtual lldb::SearchDepth GetDepth() = 0;
 
@@ -366,8 +366,6 @@ public:
 
   ~SearchFilterByModuleList() override;
 
-  SearchFilterByModuleList &operator=(const SearchFilterByModuleList &rhs);
-
   bool ModulePasses(const lldb::ModuleSP &module_sp) override;
 
   bool ModulePasses(const FileSpec &spec) override;
@@ -416,12 +414,7 @@ public:
                                 const FileSpecList &module_list,
                                 const FileSpecList &cu_list);
 
-  SearchFilterByModuleListAndCU(const SearchFilterByModuleListAndCU &rhs);
-
   ~SearchFilterByModuleListAndCU() override;
-
-  SearchFilterByModuleListAndCU &
-  operator=(const SearchFilterByModuleListAndCU &rhs);
 
   bool AddressPasses(Address &address) override;
 

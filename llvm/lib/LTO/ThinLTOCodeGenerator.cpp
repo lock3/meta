@@ -39,6 +39,7 @@
 #include "llvm/Support/CachePruning.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SHA1.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
@@ -52,6 +53,7 @@
 #include "llvm/Transforms/IPO/FunctionImport.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/IPO/WholeProgramDevirt.h"
 #include "llvm/Transforms/ObjCARC.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 
@@ -224,7 +226,8 @@ crossImportIntoModule(Module &TheModule, const ModuleSummaryIndex &Index,
 }
 
 static void optimizeModule(Module &TheModule, TargetMachine &TM,
-                           unsigned OptLevel, bool Freestanding) {
+                           unsigned OptLevel, bool Freestanding,
+                           ModuleSummaryIndex *Index) {
   // Populate the PassManager
   PassManagerBuilder PMB;
   PMB.LibraryInfo = new TargetLibraryInfoImpl(TM.getTargetTriple());
@@ -238,6 +241,7 @@ static void optimizeModule(Module &TheModule, TargetMachine &TM,
   // Already did this in verifyLoadedModule().
   PMB.VerifyInput = false;
   PMB.VerifyOutput = false;
+  PMB.ImportSummary = Index;
 
   legacy::PassManager PM;
 
@@ -368,23 +372,26 @@ public:
     // Write to a temporary to avoid race condition
     SmallString<128> TempFilename;
     SmallString<128> CachePath(EntryPath);
-    int TempFD;
     llvm::sys::path::remove_filename(CachePath);
     sys::path::append(TempFilename, CachePath, "Thin-%%%%%%.tmp.o");
-    std::error_code EC =
-      sys::fs::createUniqueFile(TempFilename, TempFD, TempFilename);
-    if (EC) {
-      errs() << "Error: " << EC.message() << "\n";
-      report_fatal_error("ThinLTO: Can't get a temporary file");
+
+    if (auto Err = handleErrors(
+            llvm::writeFileAtomically(TempFilename, EntryPath,
+                                      OutputBuffer.getBuffer()),
+            [](const llvm::AtomicFileWriteError &E) {
+              std::string ErrorMsgBuffer;
+              llvm::raw_string_ostream S(ErrorMsgBuffer);
+              E.log(S);
+
+              if (E.Error ==
+                  llvm::atomic_write_error::failed_to_create_uniq_file) {
+                errs() << "Error: " << ErrorMsgBuffer << "\n";
+                report_fatal_error("ThinLTO: Can't get a temporary file");
+              }
+            })) {
+      // FIXME
+      consumeError(std::move(Err));
     }
-    {
-      raw_fd_ostream OS(TempFD, /* ShouldClose */ true);
-      OS << OutputBuffer.getBuffer();
-    }
-    // Rename temp file to final destination; rename is atomic
-    EC = sys::fs::rename(TempFilename, EntryPath);
-    if (EC)
-      sys::fs::remove(TempFilename);
   }
 };
 
@@ -429,7 +436,7 @@ ProcessThinLTOModule(Module &TheModule, ModuleSummaryIndex &Index,
     saveTempBitcode(TheModule, SaveTempsDir, count, ".3.imported.bc");
   }
 
-  optimizeModule(TheModule, TM, OptLevel, Freestanding);
+  optimizeModule(TheModule, TM, OptLevel, Freestanding, &Index);
 
   saveTempBitcode(TheModule, SaveTempsDir, count, ".4.opt.bc");
 
@@ -489,7 +496,8 @@ static void initTMBuilder(TargetMachineBuilder &TMBuilder,
       TMBuilder.MCpu = "core2";
     else if (TheTriple.getArch() == llvm::Triple::x86)
       TMBuilder.MCpu = "yonah";
-    else if (TheTriple.getArch() == llvm::Triple::aarch64)
+    else if (TheTriple.getArch() == llvm::Triple::aarch64 ||
+             TheTriple.getArch() == llvm::Triple::aarch64_32)
       TMBuilder.MCpu = "cyclone";
   }
   TMBuilder.TheTriple = std::move(TheTriple);
@@ -572,29 +580,38 @@ std::unique_ptr<ModuleSummaryIndex> ThinLTOCodeGenerator::linkCombinedIndex() {
   return CombinedIndex;
 }
 
-static void internalizeAndPromoteInIndex(
-    const StringMap<FunctionImporter::ExportSetTy> &ExportLists,
-    const DenseSet<GlobalValue::GUID> &GUIDPreservedSymbols,
-    const DenseMap<GlobalValue::GUID, const GlobalValueSummary *>
-        &PrevailingCopy,
-    ModuleSummaryIndex &Index) {
-  auto isExported = [&](StringRef ModuleIdentifier, GlobalValue::GUID GUID) {
+namespace {
+struct IsExported {
+  const StringMap<FunctionImporter::ExportSetTy> &ExportLists;
+  const DenseSet<GlobalValue::GUID> &GUIDPreservedSymbols;
+
+  IsExported(const StringMap<FunctionImporter::ExportSetTy> &ExportLists,
+             const DenseSet<GlobalValue::GUID> &GUIDPreservedSymbols)
+      : ExportLists(ExportLists), GUIDPreservedSymbols(GUIDPreservedSymbols) {}
+
+  bool operator()(StringRef ModuleIdentifier, GlobalValue::GUID GUID) const {
     const auto &ExportList = ExportLists.find(ModuleIdentifier);
     return (ExportList != ExportLists.end() &&
             ExportList->second.count(GUID)) ||
            GUIDPreservedSymbols.count(GUID);
-  };
+  }
+};
 
-  auto isPrevailing = [&](GlobalValue::GUID GUID, const GlobalValueSummary *S) {
+struct IsPrevailing {
+  const DenseMap<GlobalValue::GUID, const GlobalValueSummary *> &PrevailingCopy;
+  IsPrevailing(const DenseMap<GlobalValue::GUID, const GlobalValueSummary *>
+                   &PrevailingCopy)
+      : PrevailingCopy(PrevailingCopy) {}
+
+  bool operator()(GlobalValue::GUID GUID, const GlobalValueSummary *S) const {
     const auto &Prevailing = PrevailingCopy.find(GUID);
     // Not in map means that there was only one copy, which must be prevailing.
     if (Prevailing == PrevailingCopy.end())
       return true;
     return Prevailing->second == S;
   };
-
-  thinLTOInternalizeAndPromoteInIndex(Index, isExported, isPrevailing);
-}
+};
+} // namespace
 
 static void computeDeadSymbolsInIndex(
     ModuleSummaryIndex &Index,
@@ -651,8 +668,9 @@ void ThinLTOCodeGenerator::promote(Module &TheModule, ModuleSummaryIndex &Index,
 
   // Promote the exported values in the index, so that they are promoted
   // in the module.
-  internalizeAndPromoteInIndex(ExportLists, GUIDPreservedSymbols,
-                               PrevailingCopy, Index);
+  thinLTOInternalizeAndPromoteInIndex(
+      Index, IsExported(ExportLists, GUIDPreservedSymbols),
+      IsPrevailing(PrevailingCopy));
 
   promoteModule(TheModule, Index);
 }
@@ -809,8 +827,9 @@ void ThinLTOCodeGenerator::internalize(Module &TheModule,
 
   // Promote the exported values in the index, so that they are promoted
   // in the module.
-  internalizeAndPromoteInIndex(ExportLists, GUIDPreservedSymbols,
-                               PrevailingCopy, Index);
+  thinLTOInternalizeAndPromoteInIndex(
+      Index, IsExported(ExportLists, GUIDPreservedSymbols),
+      IsPrevailing(PrevailingCopy));
 
   promoteModule(TheModule, Index);
 
@@ -829,7 +848,8 @@ void ThinLTOCodeGenerator::optimize(Module &TheModule) {
   initTMBuilder(TMBuilder, Triple(TheModule.getTargetTriple()));
 
   // Optimize now
-  optimizeModule(TheModule, *TMBuilder.create(), OptLevel, Freestanding);
+  optimizeModule(TheModule, *TMBuilder.create(), OptLevel, Freestanding,
+                 nullptr);
 }
 
 /// Write out the generated object file, either from CacheEntryPath or from
@@ -950,6 +970,15 @@ void ThinLTOCodeGenerator::run() {
   // Synthesize entry counts for functions in the combined index.
   computeSyntheticCounts(*Index);
 
+  // Perform index-based WPD. This will return immediately if there are
+  // no index entries in the typeIdMetadata map (e.g. if we are instead
+  // performing IR-based WPD in hybrid regular/thin LTO mode).
+  std::map<ValueInfo, std::vector<VTableSlotSummary>> LocalWPDTargetsMap;
+  std::set<GlobalValue::GUID> ExportedGUIDs;
+  runWholeProgramDevirtOnIndex(*Index, ExportedGUIDs, LocalWPDTargetsMap);
+  for (auto GUID : ExportedGUIDs)
+    GUIDPreservedSymbols.insert(GUID);
+
   // Collect the import/export lists for all modules from the call-graph in the
   // combined index.
   StringMap<FunctionImporter::ImportMapTy> ImportLists(ModuleCount);
@@ -974,8 +1003,12 @@ void ThinLTOCodeGenerator::run() {
   // Use global summary-based analysis to identify symbols that can be
   // internalized (because they aren't exported or preserved as per callback).
   // Changes are made in the index, consumed in the ThinLTO backends.
-  internalizeAndPromoteInIndex(ExportLists, GUIDPreservedSymbols,
-                               PrevailingCopy, *Index);
+  updateIndexWPDForExports(*Index,
+                           IsExported(ExportLists, GUIDPreservedSymbols),
+                           LocalWPDTargetsMap);
+  thinLTOInternalizeAndPromoteInIndex(
+      *Index, IsExported(ExportLists, GUIDPreservedSymbols),
+      IsPrevailing(PrevailingCopy));
 
   // Make sure that every module has an entry in the ExportLists, ImportList,
   // GVSummary and ResolvedODR maps to enable threaded access to these maps

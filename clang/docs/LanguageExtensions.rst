@@ -1157,14 +1157,12 @@ The following type trait primitives are supported by Clang. Those traits marked
 * ``__is_reference`` (C++, Embarcadero)
 * ``__is_rvalue_reference`` (C++, Embarcadero)
 * ``__is_same`` (C++, Embarcadero)
+* ``__is_same_as`` (GCC): Synonym for ``__is_same``.
 * ``__is_scalar`` (C++, Embarcadero)
 * ``__is_sealed`` (Microsoft):
   Synonym for ``__is_final``.
 * ``__is_signed`` (C++, Embarcadero):
-  Note that this currently returns true for enumeration types if the underlying
-  type is signed, and returns false for floating-point types, in violation of
-  the requirements for ``std::is_signed``. This behavior is likely to change in
-  a future version of Clang.
+  Returns false for enumeration types, and returns true for floating-point types. Note, before Clang 10, returned true for enumeration types if the underlying type was signed, and returned false for floating-point types.
 * ``__is_standard_layout`` (C++, GNU, Microsoft, Embarcadero)
 * ``__is_trivial`` (C++, GNU, Microsoft, Embarcadero)
 * ``__is_trivially_assignable`` (C++, GNU, Microsoft)
@@ -2353,12 +2351,14 @@ and other similar allocation libraries, and are only available in C++.
 array subscript access and structure/union member access are relocatable
 under bpf compile-once run-everywhere framework. Debuginfo (typically
 with ``-g``) is needed, otherwise, the compiler will exit with an error.
+The return type for the intrinsic is the same as the type of the
+argument.
 
 **Syntax**:
 
 .. code-block:: c
 
-  const void * __builtin_preserve_access_index(const void * ptr)
+  type __builtin_preserve_access_index(type arg)
 
 **Example of Use**:
 
@@ -2373,7 +2373,8 @@ with ``-g``) is needed, otherwise, the compiler will exit with an error.
     } c[4];
   };
   struct t *v = ...;
-  const void *pb =__builtin_preserve_access_index(&v->c[3].b);
+  int *pb =__builtin_preserve_access_index(&v->c[3].b);
+  __builtin_preserve_access_index(v->j);
 
 Multiprecision Arithmetic Builtins
 ----------------------------------
@@ -3027,6 +3028,14 @@ provides options for vectorization, interleaving, predication, unrolling and
 distribution. Loop hints can be specified before any loop and will be ignored if
 the optimization is not safe to apply.
 
+There are loop hints that control transformations (e.g. vectorization, loop
+unrolling) and there are loop hints that set transformation options (e.g.
+``vectorize_width``, ``unroll_count``).  Pragmas setting transformation options
+imply the transformation is enabled, as if it was enabled via the corresponding
+transformation pragma (e.g. ``vectorize(enable)``). If the transformation is
+disabled  (e.g. ``vectorize(disable)``), that takes precedence over
+transformations option pragmas implying that transformation.
+
 Vectorization, Interleaving, and Predication
 --------------------------------------------
 
@@ -3437,14 +3446,14 @@ The section names can be specified as:
 
 .. code-block:: c++
 
-  #pragma clang section bss="myBSS" data="myData" rodata="myRodata" text="myText"
+  #pragma clang section bss="myBSS" data="myData" rodata="myRodata" relro="myRelro" text="myText"
 
 The section names can be reverted back to default name by supplying an empty
 string to the section kind, for example:
 
 .. code-block:: c++
 
-  #pragma clang section bss="" data="" text="" rodata=""
+  #pragma clang section bss="" data="" text="" rodata="" relro=""
 
 The ``#pragma clang section`` directive obeys the following rules:
 

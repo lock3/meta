@@ -27,6 +27,7 @@
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Capacity.h"
@@ -45,6 +46,16 @@
 #include <utility>
 
 using namespace clang;
+
+#define DEBUG_TYPE "file-search"
+
+ALWAYS_ENABLED_STATISTIC(NumIncluded, "Number of attempted #includes.");
+ALWAYS_ENABLED_STATISTIC(
+    NumMultiIncludeFileOptzn,
+    "Number of #includes skipped due to the multi-include optimization.");
+ALWAYS_ENABLED_STATISTIC(NumFrameworkLookups, "Number of framework lookups.");
+ALWAYS_ENABLED_STATISTIC(NumSubFrameworkLookups,
+                         "Number of subframework lookups.");
 
 const IdentifierInfo *
 HeaderFileInfo::getControllingMacro(ExternalPreprocessorSource *External) {
@@ -76,8 +87,8 @@ HeaderSearch::HeaderSearch(std::shared_ptr<HeaderSearchOptions> HSOpts,
       ModMap(SourceMgr, Diags, LangOpts, Target, *this) {}
 
 void HeaderSearch::PrintStats() {
-  fprintf(stderr, "\n*** HeaderSearch Stats:\n");
-  fprintf(stderr, "%d files tracked.\n", (int)FileInfo.size());
+  llvm::errs() << "\n*** HeaderSearch Stats:\n"
+               << FileInfo.size() << " files tracked.\n";
   unsigned NumOnceOnlyFiles = 0, MaxNumIncludes = 0, NumSingleIncludedFiles = 0;
   for (unsigned i = 0, e = FileInfo.size(); i != e; ++i) {
     NumOnceOnlyFiles += FileInfo[i].isImport;
@@ -85,16 +96,16 @@ void HeaderSearch::PrintStats() {
       MaxNumIncludes = FileInfo[i].NumIncludes;
     NumSingleIncludedFiles += FileInfo[i].NumIncludes == 1;
   }
-  fprintf(stderr, "  %d #import/#pragma once files.\n", NumOnceOnlyFiles);
-  fprintf(stderr, "  %d included exactly once.\n", NumSingleIncludedFiles);
-  fprintf(stderr, "  %d max times a file is included.\n", MaxNumIncludes);
+  llvm::errs() << "  " << NumOnceOnlyFiles << " #import/#pragma once files.\n"
+               << "  " << NumSingleIncludedFiles << " included exactly once.\n"
+               << "  " << MaxNumIncludes << " max times a file is included.\n";
 
-  fprintf(stderr, "  %d #include/#include_next/#import.\n", NumIncluded);
-  fprintf(stderr, "    %d #includes skipped due to"
-          " the multi-include optimization.\n", NumMultiIncludeFileOptzn);
+  llvm::errs() << "  " << NumIncluded << " #include/#include_next/#import.\n"
+               << "    " << NumMultiIncludeFileOptzn
+               << " #includes skipped due to the multi-include optimization.\n";
 
-  fprintf(stderr, "%d framework lookups.\n", NumFrameworkLookups);
-  fprintf(stderr, "%d subframework lookups.\n", NumSubFrameworkLookups);
+  llvm::errs() << NumFrameworkLookups << " framework lookups.\n"
+               << NumSubFrameworkLookups << " subframework lookups.\n";
 }
 
 /// CreateHeaderMap - This method returns a HeaderMap for the specified
@@ -341,9 +352,10 @@ Optional<FileEntryRef> DirectoryLookup::LookupFile(
     SmallVectorImpl<char> *SearchPath, SmallVectorImpl<char> *RelativePath,
     Module *RequestingModule, ModuleMap::KnownHeader *SuggestedModule,
     bool &InUserSpecifiedSystemFramework, bool &IsFrameworkFound,
-    bool &HasBeenMapped, SmallVectorImpl<char> &MappedName) const {
+    bool &IsInHeaderMap, SmallVectorImpl<char> &MappedName) const {
   InUserSpecifiedSystemFramework = false;
-  HasBeenMapped = false;
+  IsInHeaderMap = false;
+  MappedName.clear();
 
   SmallString<1024> TmpDir;
   if (isNormalDir()) {
@@ -377,6 +389,8 @@ Optional<FileEntryRef> DirectoryLookup::LookupFile(
   if (Dest.empty())
     return None;
 
+  IsInHeaderMap = true;
+
   auto FixupSearchPath = [&]() {
     if (SearchPath) {
       StringRef SearchPathRef(getName());
@@ -393,10 +407,8 @@ Optional<FileEntryRef> DirectoryLookup::LookupFile(
   // ("Foo.h" -> "Foo/Foo.h"), in which case continue header lookup using the
   // framework include.
   if (llvm::sys::path::is_relative(Dest)) {
-    MappedName.clear();
     MappedName.append(Dest.begin(), Dest.end());
     Filename = StringRef(MappedName.begin(), MappedName.size());
-    HasBeenMapped = true;
     Optional<FileEntryRef> Result = HM->LookupFile(Filename, HS.getFileMgr());
     if (Result) {
       FixupSearchPath();
@@ -510,7 +522,7 @@ Optional<FileEntryRef> DirectoryLookup::DoFrameworkLookup(
 
   // If the cache entry was unresolved, populate it now.
   if (!CacheEntry.Directory) {
-    HS.IncrementFrameworkLookupCount();
+    ++NumFrameworkLookups;
 
     // If the framework dir doesn't exist, we fail.
     auto Dir = FileMgr.getDirectory(FrameworkName);
@@ -883,18 +895,22 @@ Optional<FileEntryRef> HeaderSearch::LookupFile(
   // Check each directory in sequence to see if it contains this file.
   for (; i != SearchDirs.size(); ++i) {
     bool InUserSpecifiedSystemFramework = false;
-    bool HasBeenMapped = false;
+    bool IsInHeaderMap = false;
     bool IsFrameworkFoundInDir = false;
     Optional<FileEntryRef> File = SearchDirs[i].LookupFile(
         Filename, *this, IncludeLoc, SearchPath, RelativePath, RequestingModule,
         SuggestedModule, InUserSpecifiedSystemFramework, IsFrameworkFoundInDir,
-        HasBeenMapped, MappedName);
-    if (HasBeenMapped) {
+        IsInHeaderMap, MappedName);
+    if (!MappedName.empty()) {
+      assert(IsInHeaderMap && "MappedName should come from a header map");
       CacheLookup.MappedName =
-          copyString(Filename, LookupFileCache.getAllocator());
-      if (IsMapped)
-        *IsMapped = true;
+          copyString(MappedName, LookupFileCache.getAllocator());
     }
+    if (IsMapped)
+      // A filename is mapped when a header map remapped it to a relative path
+      // used in subsequent header search or to an absolute path pointing to an
+      // existing file.
+      *IsMapped |= (!MappedName.empty() || (IsInHeaderMap && File));
     if (IsFrameworkFound)
       // Because we keep a filename remapped for subsequent search directory
       // lookups, ignore IsFrameworkFoundInDir after the first remapping and not

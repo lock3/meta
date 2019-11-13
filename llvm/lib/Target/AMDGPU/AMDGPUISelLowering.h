@@ -38,6 +38,7 @@ private:
 public:
   static unsigned numBitsUnsigned(SDValue Op, SelectionDAG &DAG);
   static unsigned numBitsSigned(SDValue Op, SelectionDAG &DAG);
+  static bool hasDefinedInitializer(const GlobalValue *GV);
 
 protected:
   SDValue LowerEXTRACT_SUBVECTOR(SDValue Op, SelectionDAG &DAG) const;
@@ -325,10 +326,6 @@ public:
   }
 
   AtomicExpansionKind shouldExpandAtomicRMWInIR(AtomicRMWInst *) const override;
-
-  bool SelectFlatOffset(bool IsSigned, SelectionDAG &DAG, SDNode *N,
-                        SDValue Addr, SDValue &VAddr, SDValue &Offset,
-                        SDValue &SLC) const;
 };
 
 namespace AMDGPUISD {
@@ -479,11 +476,6 @@ enum NodeType : unsigned {
   BUILD_VERTICAL_VECTOR,
   /// Pointer to the start of the shader's constant data.
   CONST_DATA_PTR,
-  INIT_EXEC,
-  INIT_EXEC_FROM_INPUT,
-  INTERP_MOV,
-  INTERP_P1,
-  INTERP_P2,
   INTERP_P1LL_F16,
   INTERP_P1LV_F16,
   INTERP_P2_F16,
@@ -539,7 +531,6 @@ enum NodeType : unsigned {
   BUFFER_ATOMIC_CMPSWAP,
   BUFFER_ATOMIC_FADD,
   BUFFER_ATOMIC_PK_FADD,
-  ATOMIC_FADD,
   ATOMIC_PK_FADD,
 
   LAST_AMDGPU_ISD_NUMBER

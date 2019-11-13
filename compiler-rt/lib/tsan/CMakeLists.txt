@@ -32,7 +32,7 @@ set(TSAN_SOURCES
   rtl/tsan_fd.cpp
   rtl/tsan_flags.cpp
   rtl/tsan_ignoreset.cpp
-  rtl/tsan_interceptors.cpp
+  rtl/tsan_interceptors_posix.cpp
   rtl/tsan_interface.cpp
   rtl/tsan_interface_ann.cpp
   rtl/tsan_interface_atomic.cpp
@@ -63,6 +63,7 @@ set(TSAN_CXX_SOURCES
 if(APPLE)
   list(APPEND TSAN_SOURCES
     rtl/tsan_interceptors_mac.cpp
+    rtl/tsan_interceptors_mach_vm.cpp
     rtl/tsan_platform_mac.cpp
     rtl/tsan_platform_posix.cpp
     )

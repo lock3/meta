@@ -762,7 +762,8 @@ LTO::addRegularLTO(BitcodeModule BM, ArrayRef<InputFile::Symbol> Syms,
       // For now they aren't reported correctly by ModuleSymbolTable.
       auto &CommonRes = RegularLTO.Commons[Sym.getIRName()];
       CommonRes.Size = std::max(CommonRes.Size, Sym.getCommonSize());
-      CommonRes.Align = std::max(CommonRes.Align, Sym.getCommonAlignment());
+      CommonRes.Align =
+          std::max(CommonRes.Align, MaybeAlign(Sym.getCommonAlignment()));
       CommonRes.Prevailing |= Res.Prevailing;
     }
 
@@ -907,8 +908,7 @@ Error LTO::run(AddStreamFn AddStream, NativeObjectCache Cache) {
         GlobalValue::dropLLVMManglingEscape(Res.second.IRName));
 
     if (Res.second.VisibleOutsideSummary && Res.second.Prevailing)
-      GUIDPreservedSymbols.insert(GlobalValue::getGUID(
-          GlobalValue::dropLLVMManglingEscape(Res.second.IRName)));
+      GUIDPreservedSymbols.insert(GUID);
 
     GUIDPrevailingResolutions[GUID] =
         Res.second.Prevailing ? PrevailingType::Yes : PrevailingType::No;
@@ -1004,12 +1004,24 @@ Error LTO::runRegularLTO(AddStreamFn AddStream) {
         GV->setLinkage(GlobalValue::InternalLinkage);
     }
 
+    RegularLTO.CombinedModule->addModuleFlag(Module::Error, "LTOPostLink", 1);
+
     if (Conf.PostInternalizeModuleHook &&
         !Conf.PostInternalizeModuleHook(0, *RegularLTO.CombinedModule))
       return Error::success();
   }
   return backend(Conf, AddStream, RegularLTO.ParallelCodeGenParallelismLevel,
                  std::move(RegularLTO.CombinedModule), ThinLTO.CombinedIndex);
+}
+
+static const char *libcallRoutineNames[] = {
+#define HANDLE_LIBCALL(code, name) name,
+#include "llvm/IR/RuntimeLibcalls.def"
+#undef HANDLE_LIBCALL
+};
+
+ArrayRef<const char*> LTO::getRuntimeLibcallSymbols() {
+  return makeArrayRef(libcallRoutineNames);
 }
 
 /// This class defines the interface to the ThinLTO backend.
@@ -1295,11 +1307,6 @@ Error LTO::runThinLTO(AddStreamFn AddStream, NativeObjectCache Cache,
     ComputeCrossModuleImport(ThinLTO.CombinedIndex, ModuleToDefinedGVSummaries,
                              ImportLists, ExportLists);
 
-  // Update local devirtualized targets that were exported by cross-module
-  // importing
-  updateIndexWPDForExports(ThinLTO.CombinedIndex, ExportLists,
-                           LocalWPDTargetsMap);
-
   // Figure out which symbols need to be internalized. This also needs to happen
   // at -O0 because summary-based DCE is implemented using internalization, and
   // we must apply DCE consistently with the full LTO module in order to avoid
@@ -1329,6 +1336,12 @@ Error LTO::runThinLTO(AddStreamFn AddStream, NativeObjectCache Cache,
             ExportList->second.count(GUID)) ||
            ExportedGUIDs.count(GUID);
   };
+
+  // Update local devirtualized targets that were exported by cross-module
+  // importing or by other devirtualizations marked in the ExportedGUIDs set.
+  updateIndexWPDForExports(ThinLTO.CombinedIndex, isExported,
+                           LocalWPDTargetsMap);
+
   auto isPrevailing = [&](GlobalValue::GUID GUID,
                           const GlobalValueSummary *S) {
     return ThinLTO.PrevailingModuleForGUID[GUID] == S->modulePath();

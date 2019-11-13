@@ -80,9 +80,9 @@ static bool WarnOnPotentialUnquotedUnsignedType(Args &command,
     return false;
 
   for (auto entry : llvm::enumerate(command.entries().drop_back())) {
-    if (entry.value().ref != "unsigned")
+    if (entry.value().ref() != "unsigned")
       continue;
-    auto next = command.entries()[entry.index() + 1].ref;
+    auto next = command.entries()[entry.index() + 1].ref();
     if (next == "int" || next == "short" || next == "char" || next == "long") {
       result.AppendWarningWithFormat(
           "unsigned %s being treated as two types. if you meant the combined "
@@ -151,7 +151,7 @@ public:
         "for\n"
         "        internal_dict: an LLDB support object not to be used\"\"\"\n";
 
-    StreamFileSP output_sp(io_handler.GetOutputStreamFile());
+    StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
     if (output_sp && interactive) {
       output_sp->PutCString(g_summary_addreader_instructions);
       output_sp->Flush();
@@ -160,7 +160,7 @@ public:
 
   void IOHandlerInputComplete(IOHandler &io_handler,
                               std::string &data) override {
-    StreamFileSP error_sp = io_handler.GetErrorStreamFile();
+    StreamFileSP error_sp = io_handler.GetErrorStreamFileSP();
 
 #ifndef LLDB_DISABLE_PYTHON
     ScriptInterpreter *interpreter = GetDebugger().GetScriptInterpreter();
@@ -383,7 +383,7 @@ protected:
   }
 
   void IOHandlerActivated(IOHandler &io_handler, bool interactive) override {
-    StreamFileSP output_sp(io_handler.GetOutputStreamFile());
+    StreamFileSP output_sp(io_handler.GetOutputStreamFileSP());
     if (output_sp && interactive) {
       output_sp->PutCString(g_synth_addreader_instructions);
       output_sp->Flush();
@@ -392,7 +392,7 @@ protected:
 
   void IOHandlerInputComplete(IOHandler &io_handler,
                               std::string &data) override {
-    StreamFileSP error_sp = io_handler.GetErrorStreamFile();
+    StreamFileSP error_sp = io_handler.GetErrorStreamFileSP();
 
 #ifndef LLDB_DISABLE_PYTHON
     ScriptInterpreter *interpreter = GetDebugger().GetScriptInterpreter();
@@ -679,15 +679,15 @@ protected:
     WarnOnPotentialUnquotedUnsignedType(command, result);
 
     for (auto &arg_entry : command.entries()) {
-      if (arg_entry.ref.empty()) {
+      if (arg_entry.ref().empty()) {
         result.AppendError("empty typenames not allowed");
         result.SetStatus(eReturnStatusFailed);
         return false;
       }
 
-      ConstString typeCS(arg_entry.ref);
+      ConstString typeCS(arg_entry.ref());
       if (m_command_options.m_regex) {
-        RegularExpression typeRX(arg_entry.ref);
+        RegularExpression typeRX(arg_entry.ref());
         if (!typeRX.IsValid()) {
           result.AppendError(
               "regex format error (maybe this is not really a regex?)");
@@ -1059,8 +1059,9 @@ protected:
 
     bool any_printed = false;
 
-    auto category_closure = [&result, &formatter_regex, &any_printed](
-        const lldb::TypeCategoryImplSP &category) -> void {
+    auto category_closure =
+        [&result, &formatter_regex,
+         &any_printed](const lldb::TypeCategoryImplSP &category) -> void {
       result.GetOutputStream().Printf(
           "-----------------------\nCategory: %s%s\n-----------------------\n",
           category->GetName(), category->IsEnabled() ? "" : " (disabled)");
@@ -1328,13 +1329,13 @@ bool CommandObjectTypeSummaryAdd::Execute_ScriptSummary(
                              m_options.m_name, m_options.m_category);
 
     for (auto &entry : command.entries()) {
-      if (entry.ref.empty()) {
+      if (entry.ref().empty()) {
         result.AppendError("empty typenames not allowed");
         result.SetStatus(eReturnStatusFailed);
         return false;
       }
 
-      options->m_target_types << entry.ref;
+      options->m_target_types << entry.ref();
     }
 
     m_interpreter.GetPythonCommandsFromIOHandler(
@@ -1355,7 +1356,7 @@ bool CommandObjectTypeSummaryAdd::Execute_ScriptSummary(
 
   for (auto &entry : command.entries()) {
     CommandObjectTypeSummaryAdd::AddSummary(
-        ConstString(entry.ref), script_format,
+        ConstString(entry.ref()), script_format,
         (m_options.m_regex ? eRegexSummary : eRegularSummary),
         m_options.m_category, &error);
     if (error.Fail()) {
@@ -1428,12 +1429,12 @@ bool CommandObjectTypeSummaryAdd::Execute_StringSummary(
   // now I have a valid format, let's add it to every type
   Status error;
   for (auto &arg_entry : command.entries()) {
-    if (arg_entry.ref.empty()) {
+    if (arg_entry.ref().empty()) {
       result.AppendError("empty typenames not allowed");
       result.SetStatus(eReturnStatusFailed);
       return false;
     }
-    ConstString typeCS(arg_entry.ref);
+    ConstString typeCS(arg_entry.ref());
 
     AddSummary(typeCS, entry,
                (m_options.m_regex ? eRegexSummary : eRegularSummary),
@@ -1786,7 +1787,7 @@ protected:
 
     for (auto &entry : command.entries()) {
       TypeCategoryImplSP category_sp;
-      if (DataVisualization::Categories::GetCategory(ConstString(entry.ref),
+      if (DataVisualization::Categories::GetCategory(ConstString(entry.ref()),
                                                      category_sp) &&
           category_sp) {
         category_sp->AddLanguage(m_options.m_cate_language.GetCurrentValue());
@@ -2228,13 +2229,13 @@ bool CommandObjectTypeSynthAdd::Execute_HandwritePython(
       m_options.m_cascade, m_options.m_regex, m_options.m_category);
 
   for (auto &entry : command.entries()) {
-    if (entry.ref.empty()) {
+    if (entry.ref().empty()) {
       result.AppendError("empty typenames not allowed");
       result.SetStatus(eReturnStatusFailed);
       return false;
     }
 
-    options->m_target_types << entry.ref;
+    options->m_target_types << entry.ref();
   }
 
   m_interpreter.GetPythonCommandsFromIOHandler(
@@ -2293,13 +2294,13 @@ bool CommandObjectTypeSynthAdd::Execute_PythonClass(
   Status error;
 
   for (auto &arg_entry : command.entries()) {
-    if (arg_entry.ref.empty()) {
+    if (arg_entry.ref().empty()) {
       result.AppendError("empty typenames not allowed");
       result.SetStatus(eReturnStatusFailed);
       return false;
     }
 
-    ConstString typeCS(arg_entry.ref);
+    ConstString typeCS(arg_entry.ref());
     if (!AddSynth(typeCS, entry,
                   m_options.m_regex ? eRegexSynth : eRegularSynth,
                   m_options.m_category, &error)) {
@@ -2343,9 +2344,9 @@ bool CommandObjectTypeSynthAdd::AddSynth(ConstString type_name,
       type = eRegexSynth;
   }
 
-  if (category->AnyMatches(type_name, eFormatCategoryItemFilter |
-                                          eFormatCategoryItemRegexFilter,
-                           false)) {
+  if (category->AnyMatches(
+          type_name, eFormatCategoryItemFilter | eFormatCategoryItemRegexFilter,
+          false)) {
     if (error)
       error->SetErrorStringWithFormat("cannot add synthetic for type %s when "
                                       "filter is defined in same category!",
@@ -2468,9 +2469,9 @@ private:
         type = eRegexFilter;
     }
 
-    if (category->AnyMatches(type_name, eFormatCategoryItemSynth |
-                                            eFormatCategoryItemRegexSynth,
-                             false)) {
+    if (category->AnyMatches(
+            type_name, eFormatCategoryItemSynth | eFormatCategoryItemRegexSynth,
+            false)) {
       if (error)
         error->SetErrorStringWithFormat("cannot add filter for type %s when "
                                         "synthetic is defined in same "
@@ -2594,13 +2595,13 @@ protected:
     WarnOnPotentialUnquotedUnsignedType(command, result);
 
     for (auto &arg_entry : command.entries()) {
-      if (arg_entry.ref.empty()) {
+      if (arg_entry.ref().empty()) {
         result.AppendError("empty typenames not allowed");
         result.SetStatus(eReturnStatusFailed);
         return false;
       }
 
-      ConstString typeCS(arg_entry.ref);
+      ConstString typeCS(arg_entry.ref());
       if (!AddFilter(typeCS, entry,
                      m_options.m_regex ? eRegexFilter : eRegularFilter,
                      m_options.m_category, &error)) {
@@ -2828,8 +2829,7 @@ public:
   CommandObjectFormatterInfo(CommandInterpreter &interpreter,
                              const char *formatter_name,
                              DiscoveryFunction discovery_func)
-      : CommandObjectRaw(interpreter, "", "", "",
-                         eCommandRequiresFrame),
+      : CommandObjectRaw(interpreter, "", "", "", eCommandRequiresFrame),
         m_formatter_name(formatter_name ? formatter_name : ""),
         m_discovery_function(discovery_func) {
     StreamString name;

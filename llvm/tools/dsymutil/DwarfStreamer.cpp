@@ -61,7 +61,8 @@ bool DwarfStreamer::init(Triple TheTriple) {
   if (!MRI)
     return error(Twine("no register info for target ") + TripleName, Context);
 
-  MAI.reset(TheTarget->createMCAsmInfo(*MRI, TripleName));
+  MCTargetOptions MCOptions = InitMCTargetOptionsFromFlags();
+  MAI.reset(TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   if (!MAI)
     return error("no asm info for target " + TripleName, Context);
 
@@ -73,7 +74,6 @@ bool DwarfStreamer::init(Triple TheTriple) {
   if (!MSTI)
     return error("no subtarget info for target " + TripleName, Context);
 
-  MCTargetOptions MCOptions = InitMCTargetOptionsFromFlags();
   MAB = TheTarget->createMCAsmBackend(*MSTI, *MRI, MCOptions);
   if (!MAB)
     return error("no asm backend for target " + TripleName, Context);
@@ -260,7 +260,7 @@ void DwarfStreamer::emitAppleTypes(
 /// Emit the swift_ast section stored in \p Buffers.
 void DwarfStreamer::emitSwiftAST(StringRef Buffer) {
   MCSection *SwiftASTSection = MOFI->getDwarfSwiftASTSection();
-  SwiftASTSection->setAlignment(1 << 5);
+  SwiftASTSection->setAlignment(Align(32));
   MS->SwitchSection(SwiftASTSection);
   MS->EmitBytes(Buffer);
 }
@@ -339,7 +339,7 @@ void DwarfStreamer::emitUnitRangesEntries(CompileUnit &Unit,
         sizeof(int8_t);   // Segment Size (in bytes)
 
     unsigned TupleSize = AddressSize * 2;
-    unsigned Padding = OffsetToAlignment(HeaderSize, TupleSize);
+    unsigned Padding = offsetToAlignment(HeaderSize, Align(TupleSize));
 
     Asm->EmitLabelDifference(EndLabel, BeginLabel, 4); // Arange length
     Asm->OutStreamer->EmitLabel(BeginLabel);
@@ -399,6 +399,9 @@ void DwarfStreamer::emitLocationsForUnit(
   MS->SwitchSection(MC->getObjectFileInfo()->getDwarfLocSection());
 
   unsigned AddressSize = Unit.getOrigUnit().getAddressByteSize();
+  uint64_t BaseAddressMarker = (AddressSize == 8)
+                                   ? std::numeric_limits<uint64_t>::max()
+                                   : std::numeric_limits<uint32_t>::max();
   const DWARFSection &InputSec = Dwarf.getDWARFObj().getLocSection();
   DataExtractor Data(InputSec.Data, Dwarf.isLittleEndian(), AddressSize);
   DWARFUnit &OrigUnit = Unit.getOrigUnit();
@@ -418,11 +421,20 @@ void DwarfStreamer::emitLocationsForUnit(
       uint64_t Low = Data.getUnsigned(&Offset, AddressSize);
       uint64_t High = Data.getUnsigned(&Offset, AddressSize);
       LocSectionSize += 2 * AddressSize;
+      // End of list entry.
       if (Low == 0 && High == 0) {
         Asm->OutStreamer->EmitIntValue(0, AddressSize);
         Asm->OutStreamer->EmitIntValue(0, AddressSize);
         break;
       }
+      // Base address selection entry.
+      if (Low == BaseAddressMarker) {
+        Asm->OutStreamer->EmitIntValue(BaseAddressMarker, AddressSize);
+        Asm->OutStreamer->EmitIntValue(High + Attr.second, AddressSize);
+        LocPcOffset = 0;
+        continue;
+      }
+      // Location list entry.
       Asm->OutStreamer->EmitIntValue(Low + LocPcOffset, AddressSize);
       Asm->OutStreamer->EmitIntValue(High + LocPcOffset, AddressSize);
       uint64_t Length = Data.getU16(&Offset);

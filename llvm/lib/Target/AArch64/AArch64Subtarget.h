@@ -48,7 +48,6 @@ public:
     CortexA75,
     CortexA76,
     Cyclone,
-    ExynosM1,
     ExynosM3,
     Falkor,
     Kryo,
@@ -116,6 +115,7 @@ protected:
   bool HasTRACEV8_4 = false;
   bool HasAM = false;
   bool HasSEL2 = false;
+  bool HasPMU = false;
   bool HasTLB_RMI = false;
   bool HasFMI = false;
   bool HasRCPC_IMMO = false;
@@ -353,10 +353,10 @@ public:
   unsigned getVectorInsertExtractBaseCost() const {
     return VectorInsertExtractBaseCost;
   }
-  unsigned getCacheLineSize() const { return CacheLineSize; }
-  unsigned getPrefetchDistance() const { return PrefetchDistance; }
-  unsigned getMinPrefetchStride() const { return MinPrefetchStride; }
-  unsigned getMaxPrefetchIterationsAhead() const {
+  unsigned getCacheLineSize() const override { return CacheLineSize; }
+  unsigned getPrefetchDistance() const override { return PrefetchDistance; }
+  unsigned getMinPrefetchStride() const override { return MinPrefetchStride; }
+  unsigned getMaxPrefetchIterationsAhead() const override {
     return MaxPrefetchIterationsAhead;
   }
   unsigned getPrefFunctionLogAlignment() const {
@@ -411,6 +411,8 @@ public:
   bool isTargetELF() const { return TargetTriple.isOSBinFormatELF(); }
   bool isTargetMachO() const { return TargetTriple.isOSBinFormatMachO(); }
 
+  bool isTargetILP32() const { return TargetTriple.isArch32Bit(); }
+
   bool useAA() const override { return UseAA; }
 
   bool hasVH() const { return HasVH; }
@@ -433,9 +435,16 @@ public:
   bool hasTRACEV8_4() const { return HasTRACEV8_4; }
   bool hasAM() const { return HasAM; }
   bool hasSEL2() const { return HasSEL2; }
+  bool hasPMU() const { return HasPMU; }
   bool hasTLB_RMI() const { return HasTLB_RMI; }
   bool hasFMI() const { return HasFMI; }
   bool hasRCPC_IMMO() const { return HasRCPC_IMMO; }
+
+  bool addrSinkUsingGEPs() const override {
+    // Keeping GEPs inbounds is important for exploiting AArch64
+    // addressing-modes in ILP32 mode.
+    return useAA() || isTargetILP32();
+  }
 
   bool useSmallAddressing() const {
     switch (TLInfo.getTargetMachine().getCodeModel()) {
@@ -465,6 +474,8 @@ public:
                            unsigned NumRegionInstrs) const override;
 
   bool enableEarlyIfConversion() const override;
+
+  bool enableAdvancedRASplitCost() const override { return true; }
 
   std::unique_ptr<PBQPRAConstraint> getCustomPBQPConstraints() const override;
 

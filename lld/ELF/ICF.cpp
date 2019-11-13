@@ -88,12 +88,12 @@
 #include <algorithm>
 #include <atomic>
 
-using namespace lld;
-using namespace lld::elf;
 using namespace llvm;
 using namespace llvm::ELF;
 using namespace llvm::object;
 
+namespace lld {
+namespace elf {
 namespace {
 template <class ELFT> class ICF {
 public:
@@ -446,10 +446,11 @@ static void print(const Twine &s) {
 // The main function of ICF.
 template <class ELFT> void ICF<ELFT>::run() {
   // Collect sections to merge.
-  for (InputSectionBase *sec : inputSections)
-    if (auto *s = dyn_cast<InputSection>(sec))
-      if (isEligible(s))
-        sections.push_back(s);
+  for (InputSectionBase *sec : inputSections) {
+    auto *s = cast<InputSection>(sec);
+    if (isEligible(s))
+      sections.push_back(s);
+  }
 
   // Initially, we use hash values to partition sections.
   parallelForEach(sections, [&](InputSection *s) {
@@ -511,9 +512,12 @@ template <class ELFT> void ICF<ELFT>::run() {
 }
 
 // ICF entry point function.
-template <class ELFT> void elf::doIcf() { ICF<ELFT>().run(); }
+template <class ELFT> void doIcf() { ICF<ELFT>().run(); }
 
-template void elf::doIcf<ELF32LE>();
-template void elf::doIcf<ELF32BE>();
-template void elf::doIcf<ELF64LE>();
-template void elf::doIcf<ELF64BE>();
+template void doIcf<ELF32LE>();
+template void doIcf<ELF32BE>();
+template void doIcf<ELF64LE>();
+template void doIcf<ELF64BE>();
+
+} // namespace elf
+} // namespace lld

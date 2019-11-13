@@ -41,6 +41,7 @@ Using Clang as a Compiler
    SourceBasedCodeCoverage
    Modules
    MSVCCompatibility
+   OpenCLSupport
    OpenMPSupport
    ThinLTO
    CommandGuide/index
@@ -88,6 +89,7 @@ Design Documents
    PCHInternals
    ItaniumMangleAbiTags
    HardwareAssistedAddressSanitizerDesign.rst
+   ConstantInterpreter
 
 
 Indices and tables

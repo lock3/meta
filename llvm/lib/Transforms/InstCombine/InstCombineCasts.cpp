@@ -140,7 +140,7 @@ Instruction *InstCombiner::PromoteCastOfAllocation(BitCastInst &CI,
   }
 
   AllocaInst *New = AllocaBuilder.CreateAlloca(CastElTy, Amt);
-  New->setAlignment(AI.getAlignment());
+  New->setAlignment(MaybeAlign(AI.getAlignment()));
   New->takeName(&AI);
   New->setUsedWithInAlloca(AI.isUsedWithInAlloca());
 
@@ -1531,16 +1531,16 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
   // what we can and cannot do safely varies from operation to operation, and
   // is explained below in the various case statements.
   Type *Ty = FPT.getType();
-  BinaryOperator *OpI = dyn_cast<BinaryOperator>(FPT.getOperand(0));
-  if (OpI && OpI->hasOneUse()) {
-    Type *LHSMinType = getMinimumFPType(OpI->getOperand(0));
-    Type *RHSMinType = getMinimumFPType(OpI->getOperand(1));
-    unsigned OpWidth = OpI->getType()->getFPMantissaWidth();
+  auto *BO = dyn_cast<BinaryOperator>(FPT.getOperand(0));
+  if (BO && BO->hasOneUse()) {
+    Type *LHSMinType = getMinimumFPType(BO->getOperand(0));
+    Type *RHSMinType = getMinimumFPType(BO->getOperand(1));
+    unsigned OpWidth = BO->getType()->getFPMantissaWidth();
     unsigned LHSWidth = LHSMinType->getFPMantissaWidth();
     unsigned RHSWidth = RHSMinType->getFPMantissaWidth();
     unsigned SrcWidth = std::max(LHSWidth, RHSWidth);
     unsigned DstWidth = Ty->getFPMantissaWidth();
-    switch (OpI->getOpcode()) {
+    switch (BO->getOpcode()) {
       default: break;
       case Instruction::FAdd:
       case Instruction::FSub:
@@ -1563,10 +1563,10 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
         // could be tightened for those cases, but they are rare (the main
         // case of interest here is (float)((double)float + float)).
         if (OpWidth >= 2*DstWidth+1 && DstWidth >= SrcWidth) {
-          Value *LHS = Builder.CreateFPTrunc(OpI->getOperand(0), Ty);
-          Value *RHS = Builder.CreateFPTrunc(OpI->getOperand(1), Ty);
-          Instruction *RI = BinaryOperator::Create(OpI->getOpcode(), LHS, RHS);
-          RI->copyFastMathFlags(OpI);
+          Value *LHS = Builder.CreateFPTrunc(BO->getOperand(0), Ty);
+          Value *RHS = Builder.CreateFPTrunc(BO->getOperand(1), Ty);
+          Instruction *RI = BinaryOperator::Create(BO->getOpcode(), LHS, RHS);
+          RI->copyFastMathFlags(BO);
           return RI;
         }
         break;
@@ -1577,9 +1577,9 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
         // rounding can possibly occur; we can safely perform the operation
         // in the destination format if it can represent both sources.
         if (OpWidth >= LHSWidth + RHSWidth && DstWidth >= SrcWidth) {
-          Value *LHS = Builder.CreateFPTrunc(OpI->getOperand(0), Ty);
-          Value *RHS = Builder.CreateFPTrunc(OpI->getOperand(1), Ty);
-          return BinaryOperator::CreateFMulFMF(LHS, RHS, OpI);
+          Value *LHS = Builder.CreateFPTrunc(BO->getOperand(0), Ty);
+          Value *RHS = Builder.CreateFPTrunc(BO->getOperand(1), Ty);
+          return BinaryOperator::CreateFMulFMF(LHS, RHS, BO);
         }
         break;
       case Instruction::FDiv:
@@ -1590,9 +1590,9 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
         // condition used here is a good conservative first pass.
         // TODO: Tighten bound via rigorous analysis of the unbalanced case.
         if (OpWidth >= 2*DstWidth && DstWidth >= SrcWidth) {
-          Value *LHS = Builder.CreateFPTrunc(OpI->getOperand(0), Ty);
-          Value *RHS = Builder.CreateFPTrunc(OpI->getOperand(1), Ty);
-          return BinaryOperator::CreateFDivFMF(LHS, RHS, OpI);
+          Value *LHS = Builder.CreateFPTrunc(BO->getOperand(0), Ty);
+          Value *RHS = Builder.CreateFPTrunc(BO->getOperand(1), Ty);
+          return BinaryOperator::CreateFDivFMF(LHS, RHS, BO);
         }
         break;
       case Instruction::FRem: {
@@ -1604,14 +1604,14 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
           break;
         Value *LHS, *RHS;
         if (LHSWidth == SrcWidth) {
-           LHS = Builder.CreateFPTrunc(OpI->getOperand(0), LHSMinType);
-           RHS = Builder.CreateFPTrunc(OpI->getOperand(1), LHSMinType);
+           LHS = Builder.CreateFPTrunc(BO->getOperand(0), LHSMinType);
+           RHS = Builder.CreateFPTrunc(BO->getOperand(1), LHSMinType);
         } else {
-           LHS = Builder.CreateFPTrunc(OpI->getOperand(0), RHSMinType);
-           RHS = Builder.CreateFPTrunc(OpI->getOperand(1), RHSMinType);
+           LHS = Builder.CreateFPTrunc(BO->getOperand(0), RHSMinType);
+           RHS = Builder.CreateFPTrunc(BO->getOperand(1), RHSMinType);
         }
 
-        Value *ExactResult = Builder.CreateFRemFMF(LHS, RHS, OpI);
+        Value *ExactResult = Builder.CreateFRemFMF(LHS, RHS, BO);
         return CastInst::CreateFPCast(ExactResult, Ty);
       }
     }
@@ -2338,13 +2338,29 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
     // If we found a path from the src to dest, create the getelementptr now.
     if (SrcElTy == DstElTy) {
       SmallVector<Value *, 8> Idxs(NumZeros + 1, Builder.getInt32(0));
-      return GetElementPtrInst::CreateInBounds(SrcPTy->getElementType(), Src,
-                                               Idxs);
+      GetElementPtrInst *GEP =
+          GetElementPtrInst::Create(SrcPTy->getElementType(), Src, Idxs);
+
+      // If the source pointer is dereferenceable, then assume it points to an
+      // allocated object and apply "inbounds" to the GEP.
+      bool CanBeNull;
+      if (Src->getPointerDereferenceableBytes(DL, CanBeNull)) {
+        // In a non-default address space (not 0), a null pointer can not be
+        // assumed inbounds, so ignore that case (dereferenceable_or_null).
+        // The reason is that 'null' is not treated differently in these address
+        // spaces, and we consequently ignore the 'gep inbounds' special case
+        // for 'null' which allows 'inbounds' on 'null' if the indices are
+        // zeros.
+        if (SrcPTy->getAddressSpace() == 0 || !CanBeNull)
+          GEP->setIsInBounds();
+      }
+      return GEP;
     }
   }
 
   if (VectorType *DestVTy = dyn_cast<VectorType>(DestTy)) {
-    if (DestVTy->getNumElements() == 1 && !SrcTy->isVectorTy()) {
+    if (DestVTy->getNumElements() == 1 &&
+        VectorType::isValidElementType(SrcTy)) {
       Value *Elem = Builder.CreateBitCast(Src, DestVTy->getElementType());
       return InsertElementInst::Create(UndefValue::get(DestTy), Elem,
                      Constant::getNullValue(Type::getInt32Ty(CI.getContext())));
@@ -2376,7 +2392,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
     if (SrcVTy->getNumElements() == 1) {
       // If our destination is not a vector, then make this a straight
       // scalar-scalar cast.
-      if (!DestTy->isVectorTy()) {
+      if (VectorType::isValidElementType(DestTy)) {
         Value *Elem =
           Builder.CreateExtractElement(Src,
                      Constant::getNullValue(Type::getInt32Ty(CI.getContext())));

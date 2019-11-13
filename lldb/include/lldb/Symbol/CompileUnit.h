@@ -163,6 +163,18 @@ public:
   void ForeachFunction(
       llvm::function_ref<bool(const lldb::FunctionSP &)> lambda) const;
 
+  /// Find a function in the compile unit based on the predicate matching_lambda
+  ///
+  /// \param[in] matching_lambda
+  ///     A predicate that will be used within FindFunction to evaluate each
+  ///     FunctionSP in m_functions_by_uid. When the predicate returns true
+  ///     FindFunction will return the corresponding FunctionSP.
+  ///
+  /// \return
+  ///   The first FunctionSP that the matching_lambda prediate returns true for.
+  lldb::FunctionSP FindFunction(
+      llvm::function_ref<bool(const lldb::FunctionSP &)> matching_lambda);
+
   /// Dump the compile unit contents to the stream \a s.
   ///
   /// \param[in] s
@@ -224,6 +236,14 @@ public:
   LineTable *GetLineTable();
 
   DebugMacros *GetDebugMacros();
+
+  /// Apply a lambda to each external lldb::Module referenced by this
+  /// compilation unit. Recursively also descends into the referenced external
+  /// modules of any encountered compilation unit.
+  ///
+  /// \param[in] lambda
+  ///     The lambda that should be applied to every module.
+  void ForEachExternalModule(llvm::function_ref<void(lldb::ModuleSP)> f);
 
   /// Get the compile unit's support file list.
   ///

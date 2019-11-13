@@ -1,8 +1,18 @@
-Build
-=====
+Building
+========
 
 .. contents::
    :local:
+
+Getting the Sources
+-------------------
+
+Please refer to the `LLVM Getting Started Guide
+<https://llvm.org/docs/GettingStarted.html#getting-started-with-llvm>`_ for
+general instructions on how to check out the LLVM monorepo, which contains the
+LLDB sources.
+
+Git browser: https://github.com/llvm/llvm-project/tree/master/lldb
 
 Preliminaries
 -------------
@@ -120,10 +130,11 @@ Standalone builds
 *****************
 
 This is another way to build LLDB. We can use the same source-tree as we
-checked out above, but now we will have two build-trees:
+checked out above, but now we will have multiple build-trees:
 
 * the main build-tree for LLDB in ``/path/to/lldb-build``
-* a provided build-tree for LLVM and Clang in ``/path/to/llvm-build``
+* one or more provided build-trees for LLVM and Clang; for simplicity we use a
+  single one in ``/path/to/llvm-build``
 
 Run CMake with ``-B`` pointing to a new directory for the provided
 build-tree\ :sup:`1` and the positional argument pointing to the ``llvm``
@@ -139,15 +150,15 @@ Clang. Then we build the ``ALL`` target with ninja:
 
 Now run CMake a second time with ``-B`` pointing to a new directory for the
 main build-tree and the positional argument pointing to the ``lldb`` directory
-in the source-tree. In order to find the provided build-tree, the build-system
-needs the options ``LLVM_DIR`` and ``Clang_DIR`` (CMake variables are
-case-sensitive!):
+in the source-tree. In order to find the provided build-tree, the build system
+looks for the path to its CMake modules in ``LLVM_DIR``. If you use a separate
+build directory for Clang, remember to pass its module path via ``Clang_DIR``
+(CMake variables are case-sensitive!):
 
 ::
 
   > cmake -B /path/to/lldb-build -G Ninja \
           -DLLVM_DIR=/path/to/llvm-build/lib/cmake/llvm \
-          -DClang_DIR=/path/to/llvm-build/lib/cmake/clang \
           [<more cmake options>] /path/to/llvm-project/lldb
   > ninja lldb
 
@@ -185,8 +196,7 @@ suite.
 ::
 
   > cmake -G Ninja \
-      -DLLDB_TEST_C_COMPILER=<path to C compiler> \
-      -DLLDB_TEST_CXX_COMPILER=<path to C++ compiler> \
+      -DLLDB_TEST_COMPILER=<path to C compiler> \
       <path to root of llvm source tree>
 
 It is strongly recommend to use a release build for the compiler to speed up
@@ -226,7 +236,7 @@ Sample command line:
   > cmake -G Ninja^
       -DLLDB_TEST_DEBUG_TEST_CRASHES=1^
       -DPYTHON_HOME=C:\Python35^
-      -DLLDB_TEST_C_COMPILER=d:\src\llvmbuild\ninja_release\bin\clang.exe^
+      -DLLDB_TEST_COMPILER=d:\src\llvmbuild\ninja_release\bin\clang.exe^
       <path to root of llvm source tree>
 
 
@@ -320,7 +330,6 @@ Build LLDB standalone for development with Xcode:
   > cmake -B /path/to/lldb-build \
           -C /path/to/llvm-project/lldb/cmake/caches/Apple-lldb-Xcode.cmake \
           -DLLVM_DIR=/path/to/llvm-build/lib/cmake/llvm \
-          -DClang_DIR=/path/to/llvm-build/lib/cmake/clang \
           llvm-project/lldb
   > open lldb.xcodeproj
   > cmake --build /path/to/lldb-build --target check-lldb

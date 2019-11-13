@@ -64,8 +64,6 @@ public:
   explicit Status(const char *format, ...)
       __attribute__((format(printf, 2, 3)));
 
-  const Status &operator=(const Status &rhs);
-
   ~Status();
 
   // llvm::Error support
@@ -211,5 +209,12 @@ template <> struct format_provider<lldb_private::Status> {
                      llvm::StringRef Options);
 };
 }
+
+#define LLDB_ERRORF(status, fmt, ...)                                          \
+  do {                                                                         \
+    if (status) {                                                              \
+      (status)->SetErrorStringWithFormat((fmt), __VA_ARGS__);                  \
+    }                                                                          \
+  } while (0);
 
 #endif // #ifndef LLDB_UTILITY_STATUS_H

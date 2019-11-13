@@ -27,6 +27,7 @@
 #include "clang/Analysis/AnalysisDeclContext.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Analysis/CFGStmtMap.h"
+#include "clang/Analysis/PathDiagnostic.h"
 #include "clang/Analysis/ProgramPoint.h"
 #include "clang/CrossTU/CrossTranslationUnit.h"
 #include "clang/Basic/IdentifierTable.h"
@@ -34,7 +35,6 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Specifiers.h"
-#include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicTypeInfo.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/DynamicType.h"
@@ -519,7 +519,7 @@ static void addParameterValuesToBindings(const StackFrameContext *CalleeCtx,
 
     // TODO: Support allocator calls.
     if (Call.getKind() != CE_CXXAllocator)
-      if (Call.isArgumentConstructedDirectly(Idx))
+      if (Call.isArgumentConstructedDirectly(Call.getASTArgumentIndex(Idx)))
         continue;
 
     // TODO: Allocators should receive the correct size and possibly alignment,
@@ -1080,7 +1080,7 @@ ObjCMessageKind ObjCMethodCall::getMessageKind() const {
 
 const ObjCPropertyDecl *ObjCMethodCall::getAccessedProperty() const {
   // Look for properties accessed with property syntax (foo.bar = ...)
-  if ( getMessageKind() == OCM_PropertyAccess) {
+  if (getMessageKind() == OCM_PropertyAccess) {
     const PseudoObjectExpr *POE = getContainingPseudoObjectExpr();
     assert(POE && "Property access without PseudoObjectExpr?");
 

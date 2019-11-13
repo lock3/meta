@@ -1,7 +1,0 @@
-breakpoint set -f main.cpp -l 5
-run
-expr -l Objective-C++ -- @import Foo
-expr -l Objective-C++ -- @import Bar
-expr -- Bar()
-cont
-reproducer generate

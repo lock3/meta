@@ -20,11 +20,18 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_REFACTOR_ACTIONS_TWEAK_H
 
 #include "ParsedAST.h"
+#include "Path.h"
 #include "Protocol.h"
 #include "Selection.h"
+#include "SourceCode.h"
+#include "index/Index.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include <string>
+
 namespace clang {
 namespace clangd {
 
@@ -40,9 +47,12 @@ class Tweak {
 public:
   /// Input to prepare and apply tweaks.
   struct Selection {
-    Selection(ParsedAST &AST, unsigned RangeBegin, unsigned RangeEnd);
+    Selection(const SymbolIndex *Index, ParsedAST &AST, unsigned RangeBegin,
+              unsigned RangeEnd);
     /// The text of the active document.
     llvm::StringRef Code;
+    /// The Index for handling codebase related queries.
+    const SymbolIndex *Index = nullptr;
     /// Parsed AST of the active file.
     ParsedAST &AST;
     /// A location of the cursor in the editor.
@@ -67,19 +77,27 @@ public:
   struct Effect {
     /// A message to be displayed to the user.
     llvm::Optional<std::string> ShowMessage;
-    /// An edit to apply to the input file.
-    llvm::Optional<tooling::Replacements> ApplyEdit;
+    /// A mapping from file path(the one used for accessing the underlying VFS)
+    /// to edits.
+    llvm::StringMap<Edit> ApplyEdits;
 
-    static Effect applyEdit(tooling::Replacements R) {
-      Effect E;
-      E.ApplyEdit = std::move(R);
-      return E;
-    }
     static Effect showMessage(StringRef S) {
       Effect E;
       E.ShowMessage = S;
       return E;
     }
+
+    /// Path is the absolute, symlink-resolved path for the file pointed by FID
+    /// in SM. Edit is generated from Replacements.
+    /// Fails if cannot figure out absolute path for FID.
+    static llvm::Expected<std::pair<Path, Edit>>
+    fileEdit(const SourceManager &SM, FileID FID,
+             tooling::Replacements Replacements);
+
+    /// Creates an effect with an Edit for the main file.
+    /// Fails if cannot figure out absolute path for main file.
+    static llvm::Expected<Tweak::Effect>
+    mainFileEdit(const SourceManager &SM, tooling::Replacements Replacements);
   };
 
   virtual ~Tweak() = default;
@@ -126,7 +144,6 @@ prepareTweaks(const Tweak::Selection &S,
 // If prepare() returns true, returns the corresponding tweak.
 llvm::Expected<std::unique_ptr<Tweak>> prepareTweak(StringRef TweakID,
                                                     const Tweak::Selection &S);
-
 } // namespace clangd
 } // namespace clang
 

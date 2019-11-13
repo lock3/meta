@@ -250,26 +250,19 @@ static void FindInterveningFrames(Function &begin, Function &end,
            begin.GetDisplayName(), end.GetDisplayName(), return_pc);
 
   // Find a non-tail calling edge with the correct return PC.
-  auto first_level_edges = begin.GetCallEdges();
   if (log)
-    for (const CallEdge &edge : first_level_edges)
+    for (const CallEdge &edge : begin.GetCallEdges())
       LLDB_LOG(log, "FindInterveningFrames: found call with retn-PC = {0:x}",
                edge.GetReturnPCAddress(begin, target));
-  auto first_edge_it = std::lower_bound(
-      first_level_edges.begin(), first_level_edges.end(), return_pc,
-      [&](const CallEdge &edge, addr_t target_pc) {
-        return edge.GetReturnPCAddress(begin, target) < target_pc;
-      });
-  if (first_edge_it == first_level_edges.end() ||
-      first_edge_it->GetReturnPCAddress(begin, target) != return_pc) {
+  CallEdge *first_edge = begin.GetCallEdgeForReturnAddress(return_pc, target);
+  if (!first_edge) {
     LLDB_LOG(log, "No call edge outgoing from {0} with retn-PC == {1:x}",
              begin.GetDisplayName(), return_pc);
     return;
   }
-  CallEdge &first_edge = const_cast<CallEdge &>(*first_edge_it);
 
   // The first callee may not be resolved, or there may be nothing to fill in.
-  Function *first_callee = first_edge.GetCallee(images);
+  Function *first_callee = first_edge->GetCallee(images);
   if (!first_callee) {
     LLDB_LOG(log, "Could not resolve callee");
     return;
@@ -293,15 +286,15 @@ static void FindInterveningFrames(Function &begin, Function &end,
 
     DFS(Function *end, ModuleList &images) : end(end), images(images) {}
 
-    void search(Function *first_callee, std::vector<Function *> &path) {
+    void search(Function &first_callee, std::vector<Function *> &path) {
       dfs(first_callee);
       if (!ambiguous)
         path = std::move(solution_path);
     }
 
-    void dfs(Function *callee) {
+    void dfs(Function &callee) {
       // Found a path to the target function.
-      if (callee == end) {
+      if (&callee == end) {
         if (solution_path.empty())
           solution_path = active_path;
         else
@@ -313,19 +306,19 @@ static void FindInterveningFrames(Function &begin, Function &end,
       // there's more than one way to reach a target. This errs on the side of
       // caution: it conservatively stops searching when some solutions are
       // still possible to save time in the average case.
-      if (!visited_nodes.insert(callee).second) {
+      if (!visited_nodes.insert(&callee).second) {
         ambiguous = true;
         return;
       }
 
       // Search the calls made from this callee.
-      active_path.push_back(callee);
-      for (CallEdge &edge : callee->GetTailCallingEdges()) {
+      active_path.push_back(&callee);
+      for (CallEdge &edge : callee.GetTailCallingEdges()) {
         Function *next_callee = edge.GetCallee(images);
         if (!next_callee)
           continue;
 
-        dfs(next_callee);
+        dfs(*next_callee);
         if (ambiguous)
           return;
       }
@@ -333,7 +326,7 @@ static void FindInterveningFrames(Function &begin, Function &end,
     }
   };
 
-  DFS(&end, images).search(first_callee, path);
+  DFS(&end, images).search(*first_callee, path);
 }
 
 /// Given that \p next_frame will be appended to the frame list, synthesize

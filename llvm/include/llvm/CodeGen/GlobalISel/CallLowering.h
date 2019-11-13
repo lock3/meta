@@ -95,6 +95,10 @@ public:
     /// optimization.
     bool IsTailCall = false;
 
+    /// True if the call was lowered as a tail call. This is consumed by the
+    /// legalizer. This allows the legalizer to lower libcalls as tail calls.
+    bool LoweredTailCall = false;
+
     /// True if the call is to a vararg function.
     bool IsVarArg = false;
   };
@@ -114,7 +118,7 @@ public:
 
     /// Returns true if the handler is dealing with incoming arguments,
     /// i.e. those that move values from some physical location to vregs.
-    virtual bool isIncomingArgumentHandler() const { return false; }
+    virtual bool isIncomingArgumentHandler() const = 0;
 
     /// Materialize a VReg containing the address of the specified
     /// stack-based object. This is either based on a FrameIndex or
@@ -210,6 +214,33 @@ protected:
                          MachineIRBuilder &MIRBuilder,
                          SmallVectorImpl<ArgInfo> &Args,
                          ValueHandler &Handler) const;
+
+  /// Analyze passed or returned values from a call, supplied in \p ArgInfo,
+  /// incorporating info about the passed values into \p CCState.
+  ///
+  /// Used to check if arguments are suitable for tail call lowering.
+  bool analyzeArgInfo(CCState &CCState, SmallVectorImpl<ArgInfo> &Args,
+                      CCAssignFn &AssignFnFixed,
+                      CCAssignFn &AssignFnVarArg) const;
+
+  /// \returns True if the calling convention for a callee and its caller pass
+  /// results in the same way. Typically used for tail call eligibility checks.
+  ///
+  /// \p Info is the CallLoweringInfo for the call.
+  /// \p MF is the MachineFunction for the caller.
+  /// \p InArgs contains the results of the call.
+  /// \p CalleeAssignFnFixed is the CCAssignFn to be used for the callee for
+  /// fixed arguments.
+  /// \p CalleeAssignFnVarArg is similar, but for varargs.
+  /// \p CallerAssignFnFixed is the CCAssignFn to be used for the caller for
+  /// fixed arguments.
+  /// \p CallerAssignFnVarArg is similar, but for varargs.
+  bool resultsCompatible(CallLoweringInfo &Info, MachineFunction &MF,
+                         SmallVectorImpl<ArgInfo> &InArgs,
+                         CCAssignFn &CalleeAssignFnFixed,
+                         CCAssignFn &CalleeAssignFnVarArg,
+                         CCAssignFn &CallerAssignFnFixed,
+                         CCAssignFn &CallerAssignFnVarArg) const;
 
 public:
   CallLowering(const TargetLowering *TLI) : TLI(TLI) {}

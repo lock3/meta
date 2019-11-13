@@ -155,7 +155,7 @@ StackMaps::parseOperand(MachineInstr::const_mop_iterator MOI,
 
     unsigned Offset = 0;
     unsigned DwarfRegNum = getDwarfRegNum(MOI->getReg(), TRI);
-    unsigned LLVMRegNum = TRI->getLLVMRegNum(DwarfRegNum, false);
+    unsigned LLVMRegNum = *TRI->getLLVMRegNum(DwarfRegNum, false);
     unsigned SubRegIdx = TRI->getSubRegIndex(LLVMRegNum, MOI->getReg());
     if (SubRegIdx)
       Offset = TRI->getSubRegIdxOffset(SubRegIdx);
@@ -260,7 +260,7 @@ StackMaps::parseRegisterLiveOutMask(const uint32_t *Mask) const {
 
   // Create a LiveOutReg for each bit that is set in the register mask.
   for (unsigned Reg = 0, NumRegs = TRI->getNumRegs(); Reg != NumRegs; ++Reg)
-    if ((Mask[Reg / 32] >> Reg % 32) & 1)
+    if ((Mask[Reg / 32] >> (Reg % 32)) & 1)
       LiveOuts.push_back(createLiveOutReg(Reg, TRI));
 
   // We don't need to keep track of a register if its super-register is already

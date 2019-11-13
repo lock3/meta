@@ -110,6 +110,8 @@ bool AArch64ExpandPseudo::expandMOVImm(MachineBasicBlock &MBB,
                                        unsigned BitSize) {
   MachineInstr &MI = *MBBI;
   Register DstReg = MI.getOperand(0).getReg();
+  uint64_t RenamableState =
+      MI.getOperand(0).isRenamable() ? RegState::Renamable : 0;
   uint64_t Imm = MI.getOperand(1).getImm();
 
   if (DstReg == AArch64::XZR || DstReg == AArch64::WZR) {
@@ -144,7 +146,8 @@ bool AArch64ExpandPseudo::expandMOVImm(MachineBasicBlock &MBB,
       bool DstIsDead = MI.getOperand(0).isDead();
       MIBS.push_back(BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(I->Opcode))
         .addReg(DstReg, RegState::Define |
-                getDeadRegState(DstIsDead && LastItem))
+                getDeadRegState(DstIsDead && LastItem) |
+                RenamableState)
         .addImm(I->Op1)
         .addImm(I->Op2));
       } break;
@@ -155,7 +158,8 @@ bool AArch64ExpandPseudo::expandMOVImm(MachineBasicBlock &MBB,
       MIBS.push_back(BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(I->Opcode))
         .addReg(DstReg,
                 RegState::Define |
-                getDeadRegState(DstIsDead && LastItem))
+                getDeadRegState(DstIsDead && LastItem) |
+                RenamableState)
         .addReg(DstReg)
         .addImm(I->Op1)
         .addImm(I->Op2));
@@ -495,12 +499,26 @@ bool AArch64ExpandPseudo::expandMI(MachineBasicBlock &MBB,
       }
     } else {
       // Small codemodel expand into ADRP + LDR.
+      MachineFunction &MF = *MI.getParent()->getParent();
+      DebugLoc DL = MI.getDebugLoc();
       MachineInstrBuilder MIB1 =
           BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(AArch64::ADRP), DstReg);
-      MachineInstrBuilder MIB2 =
-          BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(AArch64::LDRXui))
-              .add(MI.getOperand(0))
-              .addReg(DstReg);
+
+      MachineInstrBuilder MIB2;
+      if (MF.getSubtarget<AArch64Subtarget>().isTargetILP32()) {
+        auto TRI = MBB.getParent()->getSubtarget().getRegisterInfo();
+        unsigned Reg32 = TRI->getSubReg(DstReg, AArch64::sub_32);
+        unsigned DstFlags = MI.getOperand(0).getTargetFlags();
+        MIB2 = BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(AArch64::LDRWui))
+                   .addDef(Reg32)
+                   .addReg(DstReg, RegState::Kill)
+                   .addReg(DstReg, DstFlags | RegState::Implicit);
+      } else {
+        unsigned DstReg = MI.getOperand(0).getReg();
+        MIB2 = BuildMI(MBB, MBBI, DL, TII->get(AArch64::LDRXui))
+                   .add(MI.getOperand(0))
+                   .addUse(DstReg, RegState::Kill);
+      }
 
       if (MO1.isGlobal()) {
         MIB1.addGlobalAddress(MO1.getGlobal(), 0, Flags | AArch64II::MO_PAGE);
@@ -660,7 +678,7 @@ bool AArch64ExpandPseudo::expandMI(MachineBasicBlock &MBB,
      int BaseOffset = -AFI->getTaggedBasePointerOffset();
      unsigned FrameReg;
      StackOffset FrameRegOffset = TFI->resolveFrameOffsetReference(
-         MF, BaseOffset, false /*isFixed*/, FrameReg,
+         MF, BaseOffset, false /*isFixed*/, false /*isSVE*/, FrameReg,
          /*PreferFP=*/false,
          /*ForSimm=*/true);
      Register SrcReg = FrameReg;

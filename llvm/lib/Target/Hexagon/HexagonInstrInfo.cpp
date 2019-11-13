@@ -674,86 +674,96 @@ unsigned HexagonInstrInfo::insertBranch(MachineBasicBlock &MBB,
   return 2;
 }
 
-/// Analyze the loop code to find the loop induction variable and compare used
-/// to compute the number of iterations. Currently, we analyze loop that are
-/// controlled using hardware loops.  In this case, the induction variable
-/// instruction is null.  For all other cases, this function returns true, which
-/// means we're unable to analyze it.
-bool HexagonInstrInfo::analyzeLoop(MachineLoop &L,
-                                   MachineInstr *&IndVarInst,
-                                   MachineInstr *&CmpInst) const {
+namespace {
+class HexagonPipelinerLoopInfo : public TargetInstrInfo::PipelinerLoopInfo {
+  MachineInstr *Loop, *EndLoop;
+  MachineFunction *MF;
+  const HexagonInstrInfo *TII;
+  int64_t TripCount;
+  Register LoopCount;
+  DebugLoc DL;
 
-  MachineBasicBlock *LoopEnd = L.getBottomBlock();
-  MachineBasicBlock::iterator I = LoopEnd->getFirstTerminator();
+public:
+  HexagonPipelinerLoopInfo(MachineInstr *Loop, MachineInstr *EndLoop)
+      : Loop(Loop), EndLoop(EndLoop), MF(Loop->getParent()->getParent()),
+        TII(MF->getSubtarget<HexagonSubtarget>().getInstrInfo()),
+        DL(Loop->getDebugLoc()) {
+    // Inspect the Loop instruction up-front, as it may be deleted when we call
+    // createTripCountGreaterCondition.
+    TripCount = Loop->getOpcode() == Hexagon::J2_loop0r
+                    ? -1
+                    : Loop->getOperand(1).getImm();
+    if (TripCount == -1)
+      LoopCount = Loop->getOperand(1).getReg();
+  }
+
+  bool shouldIgnoreForPipelining(const MachineInstr *MI) const override {
+    // Only ignore the terminator.
+    return MI == EndLoop;
+  }
+
+  Optional<bool>
+  createTripCountGreaterCondition(int TC, MachineBasicBlock &MBB,
+                                  SmallVectorImpl<MachineOperand> &Cond) override {
+    if (TripCount == -1) {
+      // Check if we're done with the loop.
+      unsigned Done = TII->createVR(MF, MVT::i1);
+      MachineInstr *NewCmp = BuildMI(&MBB, DL,
+                                     TII->get(Hexagon::C2_cmpgtui), Done)
+                                 .addReg(LoopCount)
+                                 .addImm(TC);
+      Cond.push_back(MachineOperand::CreateImm(Hexagon::J2_jumpf));
+      Cond.push_back(NewCmp->getOperand(0));
+      return {};
+    }
+
+    return TripCount > TC;
+  }
+
+  void setPreheader(MachineBasicBlock *NewPreheader) override {
+    NewPreheader->splice(NewPreheader->getFirstTerminator(), Loop->getParent(),
+                         Loop);
+  }
+
+  void adjustTripCount(int TripCountAdjust) override {
+    // If the loop trip count is a compile-time value, then just change the
+    // value.
+    if (Loop->getOpcode() == Hexagon::J2_loop0i ||
+        Loop->getOpcode() == Hexagon::J2_loop1i) {
+      int64_t TripCount = Loop->getOperand(1).getImm() + TripCountAdjust;
+      assert(TripCount > 0 && "Can't create an empty or negative loop!");
+      Loop->getOperand(1).setImm(TripCount);
+      return;
+    }
+
+    // The loop trip count is a run-time value. We generate code to subtract
+    // one from the trip count, and update the loop instruction.
+    Register LoopCount = Loop->getOperand(1).getReg();
+    Register NewLoopCount = TII->createVR(MF, MVT::i32);
+    BuildMI(*Loop->getParent(), Loop, Loop->getDebugLoc(),
+            TII->get(Hexagon::A2_addi), NewLoopCount)
+        .addReg(LoopCount)
+        .addImm(TripCountAdjust);
+    Loop->getOperand(1).setReg(NewLoopCount);
+  }
+
+  void disposed() override { Loop->eraseFromParent(); }
+};
+} // namespace
+
+std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
+HexagonInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
   // We really "analyze" only hardware loops right now.
-  if (I != LoopEnd->end() && isEndLoopN(I->getOpcode())) {
-    IndVarInst = nullptr;
-    CmpInst = &*I;
-    return false;
-  }
-  return true;
-}
+  MachineBasicBlock::iterator I = LoopBB->getFirstTerminator();
 
-/// Generate code to reduce the loop iteration by one and check if the loop is
-/// finished. Return the value/register of the new loop count. this function
-/// assumes the nth iteration is peeled first.
-unsigned HexagonInstrInfo::reduceLoopCount(
-    MachineBasicBlock &MBB, MachineBasicBlock &PreHeader, MachineInstr *IndVar,
-    MachineInstr &Cmp, SmallVectorImpl<MachineOperand> &Cond,
-    SmallVectorImpl<MachineInstr *> &PrevInsts, unsigned Iter,
-    unsigned MaxIter) const {
-  // We expect a hardware loop currently. This means that IndVar is set
-  // to null, and the compare is the ENDLOOP instruction.
-  assert((!IndVar) && isEndLoopN(Cmp.getOpcode())
-                   && "Expecting a hardware loop");
-  MachineFunction *MF = MBB.getParent();
-  DebugLoc DL = Cmp.getDebugLoc();
-  SmallPtrSet<MachineBasicBlock *, 8> VisitedBBs;
-  MachineInstr *Loop = findLoopInstr(&MBB, Cmp.getOpcode(),
-                                     Cmp.getOperand(0).getMBB(), VisitedBBs);
-  if (!Loop)
-    return 0;
-  // If the loop trip count is a compile-time value, then just change the
-  // value.
-  if (Loop->getOpcode() == Hexagon::J2_loop0i ||
-      Loop->getOpcode() == Hexagon::J2_loop1i) {
-    int64_t Offset = Loop->getOperand(1).getImm();
-    if (Offset <= 1)
-      Loop->eraseFromParent();
-    else
-      Loop->getOperand(1).setImm(Offset - 1);
-    return Offset - 1;
+  if (I != LoopBB->end() && isEndLoopN(I->getOpcode())) {
+    SmallPtrSet<MachineBasicBlock *, 8> VisitedBBs;
+    MachineInstr *LoopInst = findLoopInstr(
+        LoopBB, I->getOpcode(), I->getOperand(0).getMBB(), VisitedBBs);
+    if (LoopInst)
+      return std::make_unique<HexagonPipelinerLoopInfo>(LoopInst, &*I);
   }
-  // The loop trip count is a run-time value. We generate code to subtract
-  // one from the trip count, and update the loop instruction.
-  assert(Loop->getOpcode() == Hexagon::J2_loop0r && "Unexpected instruction");
-  Register LoopCount = Loop->getOperand(1).getReg();
-  // Check if we're done with the loop.
-  unsigned LoopEnd = createVR(MF, MVT::i1);
-  MachineInstr *NewCmp = BuildMI(&MBB, DL, get(Hexagon::C2_cmpgtui), LoopEnd).
-    addReg(LoopCount).addImm(1);
-  unsigned NewLoopCount = createVR(MF, MVT::i32);
-  MachineInstr *NewAdd = BuildMI(&MBB, DL, get(Hexagon::A2_addi), NewLoopCount).
-    addReg(LoopCount).addImm(-1);
-  const HexagonRegisterInfo &HRI = *Subtarget.getRegisterInfo();
-  // Update the previously generated instructions with the new loop counter.
-  for (SmallVectorImpl<MachineInstr *>::iterator I = PrevInsts.begin(),
-         E = PrevInsts.end(); I != E; ++I)
-    (*I)->substituteRegister(LoopCount, NewLoopCount, 0, HRI);
-  PrevInsts.clear();
-  PrevInsts.push_back(NewCmp);
-  PrevInsts.push_back(NewAdd);
-  // Insert the new loop instruction if this is the last time the loop is
-  // decremented.
-  if (Iter == MaxIter)
-    BuildMI(&MBB, DL, get(Hexagon::J2_loop0r)).
-      addMBB(Loop->getOperand(0).getMBB()).addReg(NewLoopCount);
-  // Delete the old loop instruction.
-  if (Iter == 0)
-    Loop->eraseFromParent();
-  Cond.push_back(MachineOperand::CreateImm(Hexagon::J2_jumpf));
-  Cond.push_back(NewCmp->getOperand(0));
-  return NewLoopCount;
+  return nullptr;
 }
 
 bool HexagonInstrInfo::isProfitableToIfCvt(MachineBasicBlock &MBB,
@@ -776,8 +786,8 @@ bool HexagonInstrInfo::isProfitableToDupForIfCvt(MachineBasicBlock &MBB,
 
 void HexagonInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator I,
-                                   const DebugLoc &DL, unsigned DestReg,
-                                   unsigned SrcReg, bool KillSrc) const {
+                                   const DebugLoc &DL, MCRegister DestReg,
+                                   MCRegister SrcReg, bool KillSrc) const {
   const HexagonRegisterInfo &HRI = *Subtarget.getRegisterInfo();
   unsigned KillFlag = getKillRegState(KillSrc);
 
@@ -878,10 +888,7 @@ void HexagonInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
   MachineFunction &MF = *MBB.getParent();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   unsigned SlotAlign = MFI.getObjectAlignment(FI);
-  unsigned RegAlign = TRI->getSpillAlignment(*RC);
   unsigned KillFlag = getKillRegState(isKill);
-  bool HasAlloca = MFI.hasVarSizedObjects();
-  const HexagonFrameLowering &HFI = *Subtarget.getFrameLowering();
 
   MachineMemOperand *MMO = MF.getMachineMemOperand(
       MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOStore,
@@ -908,29 +915,13 @@ void HexagonInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
       .addFrameIndex(FI).addImm(0)
       .addReg(SrcReg, KillFlag).addMemOperand(MMO);
   } else if (Hexagon::HvxVRRegClass.hasSubClassEq(RC)) {
-    // If there are variable-sized objects, spills will not be aligned.
-    if (HasAlloca)
-      SlotAlign = HFI.getStackAlignment();
-    unsigned Opc = SlotAlign < RegAlign ? Hexagon::V6_vS32Ub_ai
-                                        : Hexagon::V6_vS32b_ai;
-    MachineMemOperand *MMOA = MF.getMachineMemOperand(
-        MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOStore,
-        MFI.getObjectSize(FI), SlotAlign);
-    BuildMI(MBB, I, DL, get(Opc))
+    BuildMI(MBB, I, DL, get(Hexagon::PS_vstorerv_ai))
       .addFrameIndex(FI).addImm(0)
-      .addReg(SrcReg, KillFlag).addMemOperand(MMOA);
+      .addReg(SrcReg, KillFlag).addMemOperand(MMO);
   } else if (Hexagon::HvxWRRegClass.hasSubClassEq(RC)) {
-    // If there are variable-sized objects, spills will not be aligned.
-    if (HasAlloca)
-      SlotAlign = HFI.getStackAlignment();
-    unsigned Opc = SlotAlign < RegAlign ? Hexagon::PS_vstorerwu_ai
-                                        : Hexagon::PS_vstorerw_ai;
-    MachineMemOperand *MMOA = MF.getMachineMemOperand(
-        MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOStore,
-        MFI.getObjectSize(FI), SlotAlign);
-    BuildMI(MBB, I, DL, get(Opc))
+    BuildMI(MBB, I, DL, get(Hexagon::PS_vstorerw_ai))
       .addFrameIndex(FI).addImm(0)
-      .addReg(SrcReg, KillFlag).addMemOperand(MMOA);
+      .addReg(SrcReg, KillFlag).addMemOperand(MMO);
   } else {
     llvm_unreachable("Unimplemented");
   }
@@ -944,9 +935,6 @@ void HexagonInstrInfo::loadRegFromStackSlot(
   MachineFunction &MF = *MBB.getParent();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   unsigned SlotAlign = MFI.getObjectAlignment(FI);
-  unsigned RegAlign = TRI->getSpillAlignment(*RC);
-  bool HasAlloca = MFI.hasVarSizedObjects();
-  const HexagonFrameLowering &HFI = *Subtarget.getFrameLowering();
 
   MachineMemOperand *MMO = MF.getMachineMemOperand(
       MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOLoad,
@@ -968,27 +956,11 @@ void HexagonInstrInfo::loadRegFromStackSlot(
     BuildMI(MBB, I, DL, get(Hexagon::PS_vloadrq_ai), DestReg)
       .addFrameIndex(FI).addImm(0).addMemOperand(MMO);
   } else if (Hexagon::HvxVRRegClass.hasSubClassEq(RC)) {
-    // If there are variable-sized objects, spills will not be aligned.
-    if (HasAlloca)
-      SlotAlign = HFI.getStackAlignment();
-    unsigned Opc = SlotAlign < RegAlign ? Hexagon::V6_vL32Ub_ai
-                                        : Hexagon::V6_vL32b_ai;
-    MachineMemOperand *MMOA = MF.getMachineMemOperand(
-        MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOLoad,
-        MFI.getObjectSize(FI), SlotAlign);
-    BuildMI(MBB, I, DL, get(Opc), DestReg)
-      .addFrameIndex(FI).addImm(0).addMemOperand(MMOA);
+    BuildMI(MBB, I, DL, get(Hexagon::PS_vloadrv_ai), DestReg)
+      .addFrameIndex(FI).addImm(0).addMemOperand(MMO);
   } else if (Hexagon::HvxWRRegClass.hasSubClassEq(RC)) {
-    // If there are variable-sized objects, spills will not be aligned.
-    if (HasAlloca)
-      SlotAlign = HFI.getStackAlignment();
-    unsigned Opc = SlotAlign < RegAlign ? Hexagon::PS_vloadrwu_ai
-                                        : Hexagon::PS_vloadrw_ai;
-    MachineMemOperand *MMOA = MF.getMachineMemOperand(
-        MachinePointerInfo::getFixedStack(MF, FI), MachineMemOperand::MOLoad,
-        MFI.getObjectSize(FI), SlotAlign);
-    BuildMI(MBB, I, DL, get(Opc), DestReg)
-      .addFrameIndex(FI).addImm(0).addMemOperand(MMOA);
+    BuildMI(MBB, I, DL, get(Hexagon::PS_vloadrw_ai), DestReg)
+      .addFrameIndex(FI).addImm(0).addMemOperand(MMO);
   } else {
     llvm_unreachable("Can't store this register to stack slot");
   }
@@ -1028,6 +1000,15 @@ bool HexagonInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     MIB.addReg(CSx, RegState::Implicit);
     MBB.erase(MI);
     return true;
+  };
+
+  auto UseAligned = [&] (const MachineInstr &MI, unsigned NeedAlign) {
+    if (MI.memoperands().empty())
+      return false;
+    return all_of(MI.memoperands(),
+                  [NeedAlign] (const MachineMemOperand *MMO) {
+                    return NeedAlign <= MMO->getAlignment();
+                  });
   };
 
   switch (Opc) {
@@ -1076,47 +1057,78 @@ bool HexagonInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
       MRI.clearKillFlags(SrcSubHi);
       return true;
     }
-    case Hexagon::PS_vstorerw_ai:
-    case Hexagon::PS_vstorerwu_ai: {
-      bool Aligned = Opc == Hexagon::PS_vstorerw_ai;
-      Register SrcReg = MI.getOperand(2).getReg();
-      Register SrcSubHi = HRI.getSubReg(SrcReg, Hexagon::vsub_hi);
-      Register SrcSubLo = HRI.getSubReg(SrcReg, Hexagon::vsub_lo);
-      unsigned NewOpc = Aligned ? Hexagon::V6_vS32b_ai : Hexagon::V6_vS32Ub_ai;
-      unsigned Offset = HRI.getSpillSize(Hexagon::HvxVRRegClass);
-
-      MachineInstr *MI1New = BuildMI(MBB, MI, DL, get(NewOpc))
-                                 .add(MI.getOperand(0))
-                                 .addImm(MI.getOperand(1).getImm())
-                                 .addReg(SrcSubLo)
-                                 .cloneMemRefs(MI);
-      MI1New->getOperand(0).setIsKill(false);
-      BuildMI(MBB, MI, DL, get(NewOpc))
-          .add(MI.getOperand(0))
-          // The Vectors are indexed in multiples of vector size.
-          .addImm(MI.getOperand(1).getImm() + Offset)
-          .addReg(SrcSubHi)
+    case Hexagon::PS_vloadrv_ai: {
+      Register DstReg = MI.getOperand(0).getReg();
+      const MachineOperand &BaseOp = MI.getOperand(1);
+      assert(BaseOp.getSubReg() == 0);
+      int Offset = MI.getOperand(2).getImm();
+      unsigned NeedAlign = HRI.getSpillAlignment(Hexagon::HvxVRRegClass);
+      unsigned NewOpc = UseAligned(MI, NeedAlign) ? Hexagon::V6_vL32b_ai
+                                                  : Hexagon::V6_vL32Ub_ai;
+      BuildMI(MBB, MI, DL, get(NewOpc), DstReg)
+          .addReg(BaseOp.getReg(), getRegState(BaseOp))
+          .addImm(Offset)
           .cloneMemRefs(MI);
       MBB.erase(MI);
       return true;
     }
-    case Hexagon::PS_vloadrw_ai:
-    case Hexagon::PS_vloadrwu_ai: {
-      bool Aligned = Opc == Hexagon::PS_vloadrw_ai;
+    case Hexagon::PS_vloadrw_ai: {
       Register DstReg = MI.getOperand(0).getReg();
-      unsigned NewOpc = Aligned ? Hexagon::V6_vL32b_ai : Hexagon::V6_vL32Ub_ai;
-      unsigned Offset = HRI.getSpillSize(Hexagon::HvxVRRegClass);
-
-      MachineInstr *MI1New = BuildMI(MBB, MI, DL, get(NewOpc),
-                                     HRI.getSubReg(DstReg, Hexagon::vsub_lo))
-                                 .add(MI.getOperand(1))
-                                 .addImm(MI.getOperand(2).getImm())
-                                 .cloneMemRefs(MI);
-      MI1New->getOperand(1).setIsKill(false);
-      BuildMI(MBB, MI, DL, get(NewOpc), HRI.getSubReg(DstReg, Hexagon::vsub_hi))
-          .add(MI.getOperand(1))
-          // The Vectors are indexed in multiples of vector size.
-          .addImm(MI.getOperand(2).getImm() + Offset)
+      const MachineOperand &BaseOp = MI.getOperand(1);
+      assert(BaseOp.getSubReg() == 0);
+      int Offset = MI.getOperand(2).getImm();
+      unsigned VecOffset = HRI.getSpillSize(Hexagon::HvxVRRegClass);
+      unsigned NeedAlign = HRI.getSpillAlignment(Hexagon::HvxVRRegClass);
+      unsigned NewOpc = UseAligned(MI, NeedAlign) ? Hexagon::V6_vL32b_ai
+                                                  : Hexagon::V6_vL32Ub_ai;
+      BuildMI(MBB, MI, DL, get(NewOpc),
+              HRI.getSubReg(DstReg, Hexagon::vsub_lo))
+          .addReg(BaseOp.getReg(), getRegState(BaseOp) & ~RegState::Kill)
+          .addImm(Offset)
+          .cloneMemRefs(MI);
+      BuildMI(MBB, MI, DL, get(NewOpc),
+              HRI.getSubReg(DstReg, Hexagon::vsub_hi))
+          .addReg(BaseOp.getReg(), getRegState(BaseOp))
+          .addImm(Offset + VecOffset)
+          .cloneMemRefs(MI);
+      MBB.erase(MI);
+      return true;
+    }
+    case Hexagon::PS_vstorerv_ai: {
+      const MachineOperand &SrcOp = MI.getOperand(2);
+      assert(SrcOp.getSubReg() == 0);
+      const MachineOperand &BaseOp = MI.getOperand(0);
+      assert(BaseOp.getSubReg() == 0);
+      int Offset = MI.getOperand(1).getImm();
+      unsigned NeedAlign = HRI.getSpillAlignment(Hexagon::HvxVRRegClass);
+      unsigned NewOpc = UseAligned(MI, NeedAlign) ? Hexagon::V6_vS32b_ai
+                                                  : Hexagon::V6_vS32Ub_ai;
+      BuildMI(MBB, MI, DL, get(NewOpc))
+          .addReg(BaseOp.getReg(), getRegState(BaseOp))
+          .addImm(Offset)
+          .addReg(SrcOp.getReg(), getRegState(SrcOp))
+          .cloneMemRefs(MI);
+      MBB.erase(MI);
+      return true;
+    }
+    case Hexagon::PS_vstorerw_ai: {
+      Register SrcReg = MI.getOperand(2).getReg();
+      const MachineOperand &BaseOp = MI.getOperand(0);
+      assert(BaseOp.getSubReg() == 0);
+      int Offset = MI.getOperand(1).getImm();
+      unsigned VecOffset = HRI.getSpillSize(Hexagon::HvxVRRegClass);
+      unsigned NeedAlign = HRI.getSpillAlignment(Hexagon::HvxVRRegClass);
+      unsigned NewOpc = UseAligned(MI, NeedAlign) ? Hexagon::V6_vS32b_ai
+                                                  : Hexagon::V6_vS32Ub_ai;
+      BuildMI(MBB, MI, DL, get(NewOpc))
+          .addReg(BaseOp.getReg(), getRegState(BaseOp) & ~RegState::Kill)
+          .addImm(Offset)
+          .addReg(HRI.getSubReg(SrcReg, Hexagon::vsub_lo))
+          .cloneMemRefs(MI);
+      BuildMI(MBB, MI, DL, get(NewOpc))
+          .addReg(BaseOp.getReg(), getRegState(BaseOp))
+          .addImm(Offset + VecOffset)
+          .addReg(HRI.getSubReg(SrcReg, Hexagon::vsub_hi))
           .cloneMemRefs(MI);
       MBB.erase(MI);
       return true;
@@ -1856,8 +1868,7 @@ DFAPacketizer *HexagonInstrInfo::CreateTargetScheduleState(
 //  S2_storeri_io %r29, 132, killed %r1; flags:  mem:ST4[FixedStack1]
 // Currently AA considers the addresses in these instructions to be aliasing.
 bool HexagonInstrInfo::areMemAccessesTriviallyDisjoint(
-    const MachineInstr &MIa, const MachineInstr &MIb,
-    AliasAnalysis *AA) const {
+    const MachineInstr &MIa, const MachineInstr &MIb) const {
   if (MIa.hasUnmodeledSideEffects() || MIb.hasUnmodeledSideEffects() ||
       MIa.hasOrderedMemoryRef() || MIb.hasOrderedMemoryRef())
     return false;
@@ -2674,9 +2685,11 @@ bool HexagonInstrInfo::isValidOffset(unsigned Opcode, int Offset,
   // misaligns with respect to load size.
   switch (Opcode) {
   case Hexagon::PS_vstorerq_ai:
+  case Hexagon::PS_vstorerv_ai:
   case Hexagon::PS_vstorerw_ai:
   case Hexagon::PS_vstorerw_nt_ai:
   case Hexagon::PS_vloadrq_ai:
+  case Hexagon::PS_vloadrv_ai:
   case Hexagon::PS_vloadrw_ai:
   case Hexagon::PS_vloadrw_nt_ai:
   case Hexagon::V6_vL32b_ai:

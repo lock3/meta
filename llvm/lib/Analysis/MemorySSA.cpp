@@ -285,6 +285,11 @@ instructionClobbersQuery(const MemoryDef *MD, const MemoryLocation &UseLoc,
     case Intrinsic::invariant_end:
     case Intrinsic::assume:
       return {false, NoAlias};
+    case Intrinsic::dbg_addr:
+    case Intrinsic::dbg_declare:
+    case Intrinsic::dbg_label:
+    case Intrinsic::dbg_value:
+      llvm_unreachable("debuginfo shouldn't have associated defs!");
     default:
       break;
     }
@@ -868,6 +873,7 @@ template <class AliasAnalysisType> class ClobberWalker {
         if (!DefChainEnd)
           for (auto *MA : def_chain(const_cast<MemoryAccess *>(Target)))
             DefChainEnd = MA;
+        assert(DefChainEnd && "Failed to find dominating phi/liveOnEntry");
 
         // If any of the terminated paths don't dominate the phi we'll try to
         // optimize, we need to figure out what they are and quit.
@@ -1223,6 +1229,7 @@ MemorySSA::MemorySSA(Function &Func, AliasAnalysis *AA, DominatorTree *DT)
   // safe because there are no CFG changes while building MemorySSA and can
   // significantly reduce the time spent by the compiler in AA, because we will
   // make queries about all the instructions in the Function.
+  assert(AA && "No alias analysis?");
   BatchAAResults BatchAA(*AA);
   buildMemorySSA(BatchAA);
   // Intentionally leave AA to nullptr while building so we don't accidently
@@ -1725,12 +1732,20 @@ MemoryUseOrDef *MemorySSA::createNewAccess(Instruction *I,
                                            AliasAnalysisType *AAP,
                                            const MemoryUseOrDef *Template) {
   // The assume intrinsic has a control dependency which we model by claiming
-  // that it writes arbitrarily. Ignore that fake memory dependency here.
+  // that it writes arbitrarily. Debuginfo intrinsics may be considered
+  // clobbers when we have a nonstandard AA pipeline. Ignore these fake memory
+  // dependencies here.
   // FIXME: Replace this special casing with a more accurate modelling of
   // assume's control dependency.
   if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I))
     if (II->getIntrinsicID() == Intrinsic::assume)
       return nullptr;
+
+  // Using a nonstandard AA pipelines might leave us with unexpected modref
+  // results for I, so add a check to not model instructions that may not read
+  // from or write to memory. This is necessary for correctness.
+  if (!I->mayReadFromMemory() && !I->mayWriteToMemory())
+    return nullptr;
 
   bool Def, Use;
   if (Template) {

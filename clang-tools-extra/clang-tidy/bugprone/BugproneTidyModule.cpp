@@ -12,6 +12,7 @@
 #include "../cppcoreguidelines/NarrowingConversionsCheck.h"
 #include "ArgumentCommentCheck.h"
 #include "AssertSideEffectCheck.h"
+#include "BadSignalToKillThreadCheck.h"
 #include "BoolPointerImplicitConversionCheck.h"
 #include "BranchCloneCheck.h"
 #include "CopyConstructorInitCheck.h"
@@ -23,6 +24,7 @@
 #include "ForwardingReferenceOverloadCheck.h"
 #include "InaccurateEraseCheck.h"
 #include "IncorrectRoundingsCheck.h"
+#include "InfiniteLoopCheck.h"
 #include "IntegerDivisionCheck.h"
 #include "LambdaFunctionNameCheck.h"
 #include "MacroParenthesesCheck.h"
@@ -31,6 +33,7 @@
 #include "MisplacedWideningCastCheck.h"
 #include "MoveForwardingReferenceCheck.h"
 #include "MultipleStatementMacroCheck.h"
+#include "NotNullTerminatedResultCheck.h"
 #include "ParentVirtualCallCheck.h"
 #include "PosixReturnCheck.h"
 #include "SizeofContainerCheck.h"
@@ -66,6 +69,8 @@ public:
         "bugprone-argument-comment");
     CheckFactories.registerCheck<AssertSideEffectCheck>(
         "bugprone-assert-side-effect");
+    CheckFactories.registerCheck<BadSignalToKillThreadCheck>(
+        "bugprone-bad-signal-to-kill-thread");
     CheckFactories.registerCheck<BoolPointerImplicitConversionCheck>(
         "bugprone-bool-pointer-implicit-conversion");
     CheckFactories.registerCheck<BranchCloneCheck>(
@@ -88,6 +93,8 @@ public:
         "bugprone-inaccurate-erase");
     CheckFactories.registerCheck<IncorrectRoundingsCheck>(
         "bugprone-incorrect-roundings");
+    CheckFactories.registerCheck<InfiniteLoopCheck>(
+        "bugprone-infinite-loop");
     CheckFactories.registerCheck<IntegerDivisionCheck>(
         "bugprone-integer-division");
     CheckFactories.registerCheck<LambdaFunctionNameCheck>(
@@ -106,6 +113,8 @@ public:
         "bugprone-multiple-statement-macro");
     CheckFactories.registerCheck<cppcoreguidelines::NarrowingConversionsCheck>(
         "bugprone-narrowing-conversions");
+    CheckFactories.registerCheck<NotNullTerminatedResultCheck>(
+        "bugprone-not-null-terminated-result");
     CheckFactories.registerCheck<ParentVirtualCallCheck>(
         "bugprone-parent-virtual-call");
     CheckFactories.registerCheck<PosixReturnCheck>(

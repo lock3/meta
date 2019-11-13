@@ -70,6 +70,7 @@ class MCTargetOptions;
 class MDNode;
 class Module;
 class raw_ostream;
+class RemarkStreamer;
 class StackMaps;
 class TargetLoweringObjectFile;
 class TargetMachine;
@@ -110,6 +111,10 @@ public:
   /// The symbol for the current function. This is recalculated at the beginning
   /// of each call to runOnMachineFunction().
   MCSymbol *CurrentFnSym = nullptr;
+
+  /// The symbol for the current function descriptor on AIX. This is created
+  /// at the beginning of each call to SetupMachineFunction().
+  MCSymbol *CurrentFnDescSym = nullptr;
 
   /// The symbol used to represent the start of the current function for the
   /// purpose of calculating its size (e.g. using the .size directive). By
@@ -304,7 +309,7 @@ public:
 
   /// This should be called when a new MachineFunction is being processed from
   /// runOnMachineFunction.
-  void SetupMachineFunction(MachineFunction &MF);
+  virtual void SetupMachineFunction(MachineFunction &MF);
 
   /// This method emits the body and trailer for a function.
   void EmitFunctionBody();
@@ -315,7 +320,7 @@ public:
 
   void emitStackSizeSection(const MachineFunction &MF);
 
-  void emitRemarksSection(Module &M);
+  void emitRemarksSection(RemarkStreamer &RS);
 
   enum CFIMoveType { CFI_M_None, CFI_M_EH, CFI_M_Debug };
   CFIMoveType needsCFIMoves() const;
@@ -342,12 +347,11 @@ public:
   /// so, emit it and return true, otherwise do nothing and return false.
   bool EmitSpecialLLVMGlobal(const GlobalVariable *GV);
 
-  /// Emit an alignment directive to the specified power of two boundary. For
-  /// example, if you pass in 3 here, you will get an 8 byte alignment. If a
+  /// Emit an alignment directive to the specified power of two boundary. If a
   /// global value is specified, and if that global has an explicit alignment
   /// requested, it will override the alignment request if required for
   /// correctness.
-  void EmitAlignment(unsigned NumBits, const GlobalObject *GV = nullptr) const;
+  void EmitAlignment(Align Alignment, const GlobalObject *GV = nullptr) const;
 
   /// Lower the specified LLVM Constant to an MCExpr.
   virtual const MCExpr *lowerConstant(const Constant *CV);
@@ -414,6 +418,10 @@ public:
   virtual MCSymbol *GetCPISymbol(unsigned CPID) const;
 
   virtual void EmitFunctionEntryLabel();
+
+  virtual void EmitFunctionDescriptor() {
+    llvm_unreachable("Function descriptor is target-specific.");
+  }
 
   virtual void EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV);
 
@@ -635,10 +643,9 @@ public:
   /// supported by the target.
   void EmitLinkage(const GlobalValue *GV, MCSymbol *GVSym) const;
 
-  /// Return the alignment in log2 form for the specified \p GV.
-  static unsigned getGVAlignmentLog2(const GlobalValue *GV,
-                                     const DataLayout &DL,
-                                     unsigned InBits = 0);
+  /// Return the alignment for the specified \p GV.
+  static Align getGVAlignment(const GlobalValue *GV, const DataLayout &DL,
+                              Align InAlign = Align::None());
 
 private:
   /// Private state for PrintSpecial()

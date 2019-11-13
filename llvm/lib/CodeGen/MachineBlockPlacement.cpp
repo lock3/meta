@@ -38,7 +38,6 @@
 #include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachinePostDominators.h"
@@ -2713,7 +2712,6 @@ void MachineBlockPlacement::optimizeBranches() {
   // cannot because all branches may not be analyzable.
   // E.g., the target may be able to remove an unconditional branch to
   // a fallthrough when it occurs after predicated terminators.
-  SmallVector<MachineBasicBlock*, 4> EmptyBB;
   for (MachineBasicBlock *ChainBB : FunctionChain) {
     Cond.clear();
     MachineBasicBlock *TBB = nullptr, *FBB = nullptr; // For AnalyzeBranch.
@@ -2733,49 +2731,8 @@ void MachineBlockPlacement::optimizeBranches() {
         TII->removeBranch(*ChainBB);
         TII->insertBranch(*ChainBB, FBB, TBB, Cond, dl);
         ChainBB->updateTerminator();
-      } else if (Cond.empty() && TBB && ChainBB != TBB && !TBB->empty() &&
-                 !TBB->canFallThrough()) {
-        // When ChainBB is unconditional branch to the TBB, and TBB has no
-        // fallthrough predecessor and fallthrough successor, try to merge
-        // ChainBB and TBB. This is legal under the one of following conditions:
-        // 1. ChainBB is empty except for an unconditional branch.
-        // 2. TBB has only one predecessor.
-        MachineFunction::iterator I(TBB);
-        if (((TBB == &*F->begin()) || !std::prev(I)->canFallThrough()) &&
-             (TailDup.isSimpleBB(ChainBB) || (TBB->pred_size() == 1))) {
-          TII->removeBranch(*ChainBB);
-          ChainBB->removeSuccessor(TBB);
-
-          // Update the CFG.
-          while (!TBB->pred_empty()) {
-            MachineBasicBlock *Pred = *(TBB->pred_end() - 1);
-            Pred->ReplaceUsesOfBlockWith(TBB, ChainBB);
-          }
-
-          while (!TBB->succ_empty()) {
-            MachineBasicBlock *Succ = *(TBB->succ_end() - 1);
-            ChainBB->addSuccessor(Succ, MBPI->getEdgeProbability(TBB, Succ));
-            TBB->removeSuccessor(Succ);
-          }
-
-          // Move all the instructions of TBB to ChainBB.
-          ChainBB->splice(ChainBB->end(), TBB, TBB->begin(), TBB->end());
-          EmptyBB.push_back(TBB);
-
-          // If TBB was the target of a jump table, update jump tables to go to
-          // the ChainBB instead.
-          if (MachineJumpTableInfo *MJTI = F->getJumpTableInfo())
-            MJTI->ReplaceMBBInJumpTables(TBB, ChainBB);
-        }
       }
     }
-  }
-
-  for (auto BB: EmptyBB) {
-    MLI->removeBlock(BB);
-    FunctionChain.remove(BB);
-    BlockToChain.erase(BB);
-    F->erase(BB);
   }
 }
 
@@ -2807,8 +2764,8 @@ void MachineBlockPlacement::alignBlocks() {
     if (!L)
       continue;
 
-    unsigned LogAlign = TLI->getPrefLoopLogAlignment(L);
-    if (!LogAlign)
+    const Align Align = TLI->getPrefLoopAlignment(L);
+    if (Align == 1)
       continue; // Don't care about loop alignment.
 
     // If the block is cold relative to the function entry don't waste space
@@ -2832,7 +2789,7 @@ void MachineBlockPlacement::alignBlocks() {
     // Force alignment if all the predecessors are jumps. We already checked
     // that the block isn't cold above.
     if (!LayoutPred->isSuccessor(ChainBB)) {
-      ChainBB->setLogAlignment(LogAlign);
+      ChainBB->setAlignment(Align);
       continue;
     }
 
@@ -2844,7 +2801,7 @@ void MachineBlockPlacement::alignBlocks() {
         MBPI->getEdgeProbability(LayoutPred, ChainBB);
     BlockFrequency LayoutEdgeFreq = MBFI->getBlockFreq(LayoutPred) * LayoutProb;
     if (LayoutEdgeFreq <= (Freq * ColdProb))
-      ChainBB->setLogAlignment(LogAlign);
+      ChainBB->setAlignment(Align);
   }
 }
 
@@ -3082,8 +3039,9 @@ bool MachineBlockPlacement::runOnMachineFunction(MachineFunction &MF) {
     BranchFolder BF(/*EnableTailMerge=*/true, /*CommonHoist=*/false, *MBFI,
                     *MBPI, TailMergeSize);
 
+    auto *MMIWP = getAnalysisIfAvailable<MachineModuleInfoWrapperPass>();
     if (BF.OptimizeFunction(MF, TII, MF.getSubtarget().getRegisterInfo(),
-                            getAnalysisIfAvailable<MachineModuleInfo>(), MLI,
+                            MMIWP ? &MMIWP->getMMI() : nullptr, MLI,
                             /*AfterPlacement=*/true)) {
       // Redo the layout if tail merging creates/removes/moves blocks.
       BlockToChain.clear();
@@ -3096,9 +3054,6 @@ bool MachineBlockPlacement::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  // optimizeBranches() may change the blocks, but we haven't updated the
-  // post-dominator tree. Because the post-dominator tree won't be used after
-  // this function and this pass don't preserve the post-dominator tree.
   optimizeBranches();
   alignBlocks();
 
@@ -3109,14 +3064,14 @@ bool MachineBlockPlacement::runOnMachineFunction(MachineFunction &MF) {
   if (AlignAllBlock)
     // Align all of the blocks in the function to a specific alignment.
     for (MachineBasicBlock &MBB : MF)
-      MBB.setLogAlignment(AlignAllBlock);
+      MBB.setAlignment(Align(1ULL << AlignAllBlock));
   else if (AlignAllNonFallThruBlocks) {
     // Align all of the blocks that have no fall-through predecessors to a
     // specific alignment.
     for (auto MBI = std::next(MF.begin()), MBE = MF.end(); MBI != MBE; ++MBI) {
       auto LayoutPred = std::prev(MBI);
       if (!LayoutPred->isSuccessor(&*MBI))
-        MBI->setLogAlignment(AlignAllNonFallThruBlocks);
+        MBI->setAlignment(Align(1ULL << AlignAllNonFallThruBlocks));
     }
   }
   if (ViewBlockLayoutWithBFI != GVDT_None &&

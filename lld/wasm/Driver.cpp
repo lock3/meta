@@ -37,10 +37,9 @@ using namespace llvm::object;
 using namespace llvm::sys;
 using namespace llvm::wasm;
 
-using namespace lld;
-using namespace lld::wasm;
-
-Configuration *lld::wasm::config;
+namespace lld {
+namespace wasm {
+Configuration *config;
 
 namespace {
 
@@ -79,8 +78,7 @@ private:
 };
 } // anonymous namespace
 
-bool lld::wasm::link(ArrayRef<const char *> args, bool canExitEarly,
-                     raw_ostream &error) {
+bool link(ArrayRef<const char *> args, bool canExitEarly, raw_ostream &error) {
   errorHandler().logName = args::getFilenameWithoutExe(args[0]);
   errorHandler().errorOS = &error;
   errorHandler().errorLimitExceededMsg =
@@ -441,10 +439,8 @@ static Symbol *handleUndefined(StringRef name) {
 
 static UndefinedGlobal *
 createUndefinedGlobal(StringRef name, llvm::wasm::WasmGlobalType *type) {
-  auto *sym =
-      cast<UndefinedGlobal>(symtab->addUndefinedGlobal(name, name,
-                                                       defaultModule, 0,
-                                                       nullptr, type));
+  auto *sym = cast<UndefinedGlobal>(symtab->addUndefinedGlobal(
+      name, name, defaultModule, WASM_SYMBOL_UNDEFINED, nullptr, type));
   config->allowUndefinedSymbols.insert(sym->getName());
   sym->isUsedInRegularObj = true;
   return sym;
@@ -582,7 +578,8 @@ struct WrappedSymbol {
 };
 
 static Symbol *addUndefined(StringRef name) {
-  return symtab->addUndefinedFunction(name, "", "", 0, nullptr, nullptr, false);
+  return symtab->addUndefinedFunction(name, "", "", WASM_SYMBOL_UNDEFINED,
+                                      nullptr, nullptr, false);
 }
 
 // Handles -wrap option.
@@ -788,3 +785,6 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   // Write the result to the file.
   writeResult();
 }
+
+} // namespace wasm
+} // namespace lld

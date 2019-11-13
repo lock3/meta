@@ -216,7 +216,6 @@ public:
     return !FrameIndexExprs.empty();
   }
 
-  bool isBlockByrefVariable() const;
   const DIType *getType() const;
 
   static bool classof(const DbgEntity *N) {
@@ -505,6 +504,7 @@ class DwarfDebug : public DebugHandlerBase {
   /// Emit address ranges into a debug ranges section.
   void emitDebugRanges();
   void emitDebugRangesDWO();
+  void emitDebugRangesImpl(const DwarfFile &Holder, MCSection *Section);
 
   /// Emit macros into a debug macinfo section.
   void emitDebugMacinfo();

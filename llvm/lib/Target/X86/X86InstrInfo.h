@@ -67,6 +67,9 @@ unsigned getSwappedVPCMPImm(unsigned Imm);
 /// Get the VPCOM immediate if the opcodes are swapped.
 unsigned getSwappedVPCOMImm(unsigned Imm);
 
+/// Get the VCMP immediate if the opcodes are swapped.
+unsigned getSwappedVCMPImm(unsigned Imm);
+
 } // namespace X86
 
 /// isGlobalStubReference - Return true if the specified TargetFlag operand is
@@ -203,7 +206,7 @@ public:
                                     int &FrameIndex) const override;
 
   bool isReallyTriviallyReMaterializable(const MachineInstr &MI,
-                                         AliasAnalysis *AA) const override;
+                                         AAResults *AA) const override;
   void reMaterialize(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
                      unsigned DestReg, unsigned SubIdx,
                      const MachineInstr &Orig,
@@ -251,7 +254,7 @@ public:
   ///     findCommutedOpIndices(MI, Op1, Op2);
   /// can be interpreted as a query asking to find an operand that would be
   /// commutable with the operand#1.
-  bool findCommutedOpIndices(MachineInstr &MI, unsigned &SrcOpIdx1,
+  bool findCommutedOpIndices(const MachineInstr &MI, unsigned &SrcOpIdx1,
                              unsigned &SrcOpIdx2) const override;
 
   /// Returns an adjusted FMA opcode that must be used in FMA instruction that
@@ -309,7 +312,7 @@ public:
                     ArrayRef<MachineOperand> Cond, unsigned TrueReg,
                     unsigned FalseReg) const override;
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
-                   const DebugLoc &DL, unsigned DestReg, unsigned SrcReg,
+                   const DebugLoc &DL, MCRegister DestReg, MCRegister SrcReg,
                    bool KillSrc) const override;
   void storeRegToStackSlot(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MI, unsigned SrcReg,
@@ -539,10 +542,10 @@ protected:
                                        unsigned CommuteOpIdx2) const override;
 
   /// If the specific machine instruction is a instruction that moves/copies
-  /// value from one register to another register return true along with
-  /// @Source machine operand and @Destination machine operand.
-  bool isCopyInstrImpl(const MachineInstr &MI, const MachineOperand *&Source,
-                       const MachineOperand *&Destination) const override;
+  /// value from one register to another register return destination and source
+  /// registers as machine operands.
+  Optional<DestSourcePair>
+  isCopyInstrImpl(const MachineInstr &MI) const override;
 
 private:
   /// This is a helper for convertToThreeAddress for 8 and 16-bit instructions.

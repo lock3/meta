@@ -130,9 +130,8 @@ insert-before or insert-after.");
 
     const size_t argc = request.GetParsedLine().GetArgumentCount();
     const char *arg = nullptr;
-    int setting_var_idx;
-    for (setting_var_idx = 0; setting_var_idx < static_cast<int>(argc);
-         ++setting_var_idx) {
+    size_t setting_var_idx;
+    for (setting_var_idx = 0; setting_var_idx < argc; ++setting_var_idx) {
       arg = request.GetParsedLine().GetArgumentAtIndex(setting_var_idx);
       if (arg && arg[0] != '-')
         break; // We found our setting variable name index
@@ -144,25 +143,24 @@ insert-before or insert-after.");
           request, nullptr);
       return;
     }
-      arg =
-          request.GetParsedLine().GetArgumentAtIndex(request.GetCursorIndex());
+    arg = request.GetParsedLine().GetArgumentAtIndex(request.GetCursorIndex());
 
-      if (!arg)
-        return;
+    if (!arg)
+      return;
 
-      // Complete option name
-      if (arg[0] != '-')
-        return;
+    // Complete option name
+    if (arg[0] != '-')
+      return;
 
-      // Complete setting value
-      const char *setting_var_name =
-          request.GetParsedLine().GetArgumentAtIndex(setting_var_idx);
-      Status error;
-      lldb::OptionValueSP value_sp(GetDebugger().GetPropertyValue(
-          &m_exe_ctx, setting_var_name, false, error));
-      if (!value_sp)
-        return;
-      value_sp->AutoComplete(m_interpreter, request);
+    // Complete setting value
+    const char *setting_var_name =
+        request.GetParsedLine().GetArgumentAtIndex(setting_var_idx);
+    Status error;
+    lldb::OptionValueSP value_sp(GetDebugger().GetPropertyValue(
+        &m_exe_ctx, setting_var_name, false, error));
+    if (!value_sp)
+      return;
+    value_sp->AutoComplete(m_interpreter, request);
   }
 
 protected:
@@ -281,7 +279,7 @@ protected:
     if (!args.empty()) {
       for (const auto &arg : args) {
         Status error(GetDebugger().DumpPropertyValue(
-            &m_exe_ctx, result.GetOutputStream(), arg.ref,
+            &m_exe_ctx, result.GetOutputStream(), arg.ref(),
             OptionValue::eDumpGroupValue));
         if (error.Success()) {
           result.GetOutputStream().EOL();
@@ -376,12 +374,11 @@ protected:
     FileSpec file_spec(m_options.m_filename);
     FileSystem::Instance().Resolve(file_spec);
     std::string path(file_spec.GetPath());
-    uint32_t options = File::OpenOptions::eOpenOptionWrite |
-                       File::OpenOptions::eOpenOptionCanCreate;
+    auto options = File::eOpenOptionWrite | File::eOpenOptionCanCreate;
     if (m_options.m_append)
-      options |= File::OpenOptions::eOpenOptionAppend;
+      options |= File::eOpenOptionAppend;
     else
-      options |= File::OpenOptions::eOpenOptionTruncate;
+      options |= File::eOpenOptionTruncate;
 
     StreamFile out_file(path.c_str(), options,
                         lldb::eFilePermissionsFileDefault);
@@ -403,7 +400,7 @@ protected:
 
     for (const auto &arg : args) {
       Status error(GetDebugger().DumpPropertyValue(
-          &clean_ctx, out_file, arg.ref, OptionValue::eDumpGroupExport));
+          &clean_ctx, out_file, arg.ref(), OptionValue::eDumpGroupExport));
       if (!error.Success()) {
         result.AppendError(error.AsCString());
         result.SetStatus(eReturnStatusFailed);

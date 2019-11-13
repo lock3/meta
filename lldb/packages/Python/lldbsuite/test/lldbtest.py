@@ -696,7 +696,7 @@ class Base(unittest2.TestCase):
             "settings set plugin.process.gdb-remote.packet-timeout 60",
 
             'settings set symbols.clang-modules-cache-path "{}"'.format(
-                configuration.module_cache_dir),
+                configuration.lldb_module_cache_dir),
             "settings set use-color false",
         ]
         # Make sure that a sanitizer LLDB's environment doesn't get passed on.
@@ -1169,26 +1169,10 @@ class Base(unittest2.TestCase):
                 if test is self:
                     print(traceback, file=self.session)
 
-        # put footer (timestamp/rerun instructions) into session
-        testMethod = getattr(self, self._testMethodName)
-        if getattr(testMethod, "__benchmarks_test__", False):
-            benchmarks = True
-        else:
-            benchmarks = False
-
         import datetime
         print(
             "Session info generated @",
             datetime.datetime.now().ctime(),
-            file=self.session)
-        print(
-            "To rerun this test, issue the following command from the 'test' directory:\n",
-            file=self.session)
-        print(
-            "./dotest.py %s -v %s %s" %
-            (self.getRunOptions(),
-             ('+b' if benchmarks else '-t'),
-                self.getRerunArgs()),
             file=self.session)
         self.session.close()
         del self.session
@@ -1938,6 +1922,15 @@ class TestBase(Base):
 
         return environment
 
+    def registerSanitizerLibrariesWithTarget(self, target):
+        runtimes = []
+        for m in target.module_iter():
+            libspec = m.GetFileSpec()
+            if "clang_rt" in libspec.GetFilename():
+                runtimes.append(os.path.join(libspec.GetDirectory(),
+                                             libspec.GetFilename()))
+        return self.registerSharedLibrariesWithTarget(target, runtimes)
+
     # utility methods that tests can use to access the current objects
     def target(self):
         if not self.dbg:
@@ -2207,11 +2200,15 @@ class TestBase(Base):
             self,
             command,
             check_file,
-            filecheck_options = ''):
+            filecheck_options = '',
+            expect_cmd_failure = False):
         # Run the command.
         self.runCmd(
                 command,
+                check=(not expect_cmd_failure),
                 msg="FileCheck'ing result of `{0}`".format(command))
+
+        self.assertTrue((not expect_cmd_failure) == self.res.Succeeded())
 
         # Get the error text if there was an error, and the regular text if not.
         output = self.res.GetOutput() if self.res.Succeeded() \

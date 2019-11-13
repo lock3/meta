@@ -218,6 +218,7 @@ void X86AsmPrinter::PrintOperand(const MachineInstr *MI, unsigned OpNo,
     O << MO.getImm();
     return;
 
+  case MachineOperand::MO_ConstantPoolIndex:
   case MachineOperand::MO_GlobalAddress: {
     if (IsATT)
       O << '$';
@@ -575,7 +576,7 @@ void X86AsmPrinter::EmitStartOfAsmFile(Module &M) {
 
       // Emitting note header.
       int WordSize = TT.isArch64Bit() ? 8 : 4;
-      EmitAlignment(WordSize == 4 ? 2 : 3);
+      EmitAlignment(WordSize == 4 ? Align(4) : Align(8));
       OutStreamer->EmitIntValue(4, 4 /*size*/); // data size for "GNU\0"
       OutStreamer->EmitIntValue(8 + WordSize, 4 /*size*/); // Elf_Prop size
       OutStreamer->EmitIntValue(ELF::NT_GNU_PROPERTY_TYPE_0, 4 /*size*/);
@@ -585,7 +586,7 @@ void X86AsmPrinter::EmitStartOfAsmFile(Module &M) {
       OutStreamer->EmitIntValue(ELF::GNU_PROPERTY_X86_FEATURE_1_AND, 4);
       OutStreamer->EmitIntValue(4, 4);               // data size
       OutStreamer->EmitIntValue(FeatureFlagsAnd, 4); // data
-      EmitAlignment(WordSize == 4 ? 2 : 3);          // padding
+      EmitAlignment(WordSize == 4 ? Align(4) : Align(8)); // padding
 
       OutStreamer->endSection(Nt);
       OutStreamer->SwitchSection(Cur);
@@ -614,7 +615,7 @@ void X86AsmPrinter::EmitStartOfAsmFile(Module &M) {
       Feat00Flags |= 1;
     }
 
-    if (M.getModuleFlag("cfguardtable"))
+    if (M.getModuleFlag("cfguard"))
       Feat00Flags |= 0x800; // Object is CFG-aware.
 
     OutStreamer->EmitSymbolAttribute(S, MCSA_Global);

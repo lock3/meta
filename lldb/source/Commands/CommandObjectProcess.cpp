@@ -429,7 +429,6 @@ protected:
         result.AppendMessage(stream.GetString());
         result.SetStatus(eReturnStatusSuccessFinishNoResult);
         result.SetDidChangeProcessState(true);
-        result.SetAbnormalStopWasExpected(true);
       } else {
         result.AppendError(
             "no error returned from Target::Attach, and target has no process");
@@ -923,7 +922,7 @@ protected:
     for (auto &entry : command.entries()) {
       Status error;
       PlatformSP platform = process->GetTarget().GetPlatform();
-      llvm::StringRef image_path = entry.ref;
+      llvm::StringRef image_path = entry.ref();
       uint32_t image_token = LLDB_INVALID_IMAGE_TOKEN;
 
       if (!m_options.do_install) {
@@ -985,9 +984,9 @@ protected:
 
     for (auto &entry : command.entries()) {
       uint32_t image_token;
-      if (entry.ref.getAsInteger(0, image_token)) {
+      if (entry.ref().getAsInteger(0, image_token)) {
         result.AppendErrorWithFormat("invalid image index argument '%s'",
-                                     entry.ref.str().c_str());
+                                     entry.ref().str().c_str());
         result.SetStatus(eReturnStatusFailed);
         break;
       } else {
@@ -1015,10 +1014,10 @@ protected:
 class CommandObjectProcessSignal : public CommandObjectParsed {
 public:
   CommandObjectProcessSignal(CommandInterpreter &interpreter)
-      : CommandObjectParsed(interpreter, "process signal",
-                            "Send a UNIX signal to the current target process.",
-                            nullptr, eCommandRequiresProcess |
-                                         eCommandTryTargetAPILock) {
+      : CommandObjectParsed(
+            interpreter, "process signal",
+            "Send a UNIX signal to the current target process.", nullptr,
+            eCommandRequiresProcess | eCommandTryTargetAPILock) {
     CommandArgumentEntry arg;
     CommandArgumentData signal_arg;
 
@@ -1225,7 +1224,7 @@ public:
     const uint32_t start_frame = 0;
     const uint32_t num_frames = 1;
     const uint32_t num_frames_with_source = 1;
-    const bool     stop_format = true;
+    const bool stop_format = true;
     process->GetStatus(strm);
     process->GetThreadStatus(strm, only_threads_with_stop_reason, start_frame,
                              num_frames, num_frames_with_source, stop_format);

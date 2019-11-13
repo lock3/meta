@@ -184,6 +184,7 @@
 // RUN: %clang -march=pentium2 -m32 -E -dM %s -o - 2>&1 \
 // RUN:     -target i386-unknown-linux \
 // RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_PENTIUM2_M32
+// CHECK_PENTIUM2_M32: #define __FXSR__ 1
 // CHECK_PENTIUM2_M32: #define __MMX__ 1
 // CHECK_PENTIUM2_M32: #define __i386 1
 // CHECK_PENTIUM2_M32: #define __i386__ 1
@@ -3240,6 +3241,9 @@
 // CHECK_SYSTEMZ_ARCH12: #define __zarch__ 1
 
 // RUN: %clang -march=arch13 -E -dM %s -o - 2>&1 \
+// RUN:     -target s390x-unknown-linux \
+// RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_SYSTEMZ_ARCH13
+// RUN: %clang -march=z15 -E -dM %s -o - 2>&1 \
 // RUN:     -target s390x-unknown-linux \
 // RUN:   | FileCheck -match-full-lines %s -check-prefix=CHECK_SYSTEMZ_ARCH13
 // CHECK_SYSTEMZ_ARCH13: #define __ARCH__ 13

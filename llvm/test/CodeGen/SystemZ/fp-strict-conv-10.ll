@@ -14,82 +14,69 @@ declare i32 @llvm.experimental.constrained.fptoui.i32.f64(double, metadata)
 declare i32 @llvm.experimental.constrained.fptoui.i32.f128(fp128, metadata)
 
 ; Test f32->i32.
-define i32 @f1(float %f) {
+define i32 @f1(float %f) #0 {
 ; CHECK-LABEL: f1:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    larl %r1, .LCPI0_0
-; CHECK-NEXT:    le %f2, 0(%r1)
-; CHECK-NEXT:    ler %f1, %f0
-; CHECK-NEXT:    sebr %f1, %f2
-; CHECK-NEXT:    cebr %f0, %f2
+; CHECK-NEXT:    le %f1, 0(%r1)
+; CHECK-NEXT:    cebr %f0, %f1
+; CHECK-NEXT:    lhi %r0, 0
 ; CHECK-NEXT:    jl .LBB0_2
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    ler %f0, %f1
-; CHECK-NEXT:  .LBB0_2:
-; CHECK-NEXT:    lhi %r0, 0
-; CHECK-NEXT:    jl .LBB0_4
-; CHECK-NEXT:  # %bb.3:
+; CHECK-NEXT:    sebr %f0, %f1
 ; CHECK-NEXT:    llilh %r0, 32768
-; CHECK-NEXT:  .LBB0_4:
+; CHECK-NEXT:  .LBB0_2:
 ; CHECK-NEXT:    cfebr %r2, 5, %f0
 ; CHECK-NEXT:    xr %r2, %r0
 ; CHECK-NEXT:    br %r14
   %conv = call i32 @llvm.experimental.constrained.fptoui.i32.f32(float %f,
-                                               metadata !"fpexcept.strict")
+                                               metadata !"fpexcept.strict") #0
   ret i32 %conv
 }
 
 ; Test f64->i32.
-define i32 @f2(double %f) {
+define i32 @f2(double %f) #0 {
 ; CHECK-LABEL: f2:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    larl %r1, .LCPI1_0
-; CHECK-NEXT:    ldeb %f2, 0(%r1)
-; CHECK-NEXT:    ldr %f1, %f0
-; CHECK-NEXT:    sdbr %f1, %f2
-; CHECK-NEXT:    cdbr %f0, %f2
+; CHECK-NEXT:    ldeb %f1, 0(%r1)
+; CHECK-NEXT:    cdbr %f0, %f1
+; CHECK-NEXT:    lhi %r0, 0
 ; CHECK-NEXT:    jl .LBB1_2
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    ldr %f0, %f1
-; CHECK-NEXT:  .LBB1_2:
-; CHECK-NEXT:    lhi %r0, 0
-; CHECK-NEXT:    jl .LBB1_4
-; CHECK-NEXT:  # %bb.3:
+; CHECK-NEXT:    sdbr %f0, %f1
 ; CHECK-NEXT:    llilh %r0, 32768
-; CHECK-NEXT:  .LBB1_4:
+; CHECK-NEXT:  .LBB1_2:
 ; CHECK-NEXT:    cfdbr %r2, 5, %f0
 ; CHECK-NEXT:    xr %r2, %r0
 ; CHECK-NEXT:    br %r14
   %conv = call i32 @llvm.experimental.constrained.fptoui.i32.f64(double %f,
-                                               metadata !"fpexcept.strict")
+                                               metadata !"fpexcept.strict") #0
   ret i32 %conv
 }
 
 ; Test f128->i32.
-define i32 @f3(fp128 *%src) {
+define i32 @f3(fp128 *%src) #0 {
 ; CHECK-LABEL: f3:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    ld %f0, 0(%r2)
 ; CHECK-NEXT:    ld %f2, 8(%r2)
 ; CHECK-NEXT:    larl %r1, .LCPI2_0
-; CHECK-NEXT:    lxeb %f4, 0(%r1)
-; CHECK-NEXT:    lxr %f1, %f0
-; CHECK-NEXT:    sxbr %f1, %f4
-; CHECK-NEXT:    cxbr %f0, %f4
+; CHECK-NEXT:    lxeb %f1, 0(%r1)
+; CHECK-NEXT:    cxbr %f0, %f1
+; CHECK-NEXT:    lhi %r0, 0
 ; CHECK-NEXT:    jl .LBB2_2
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    lxr %f0, %f1
-; CHECK-NEXT:  .LBB2_2:
-; CHECK-NEXT:    lhi %r0, 0
-; CHECK-NEXT:    jl .LBB2_4
-; CHECK-NEXT:  # %bb.3:
+; CHECK-NEXT:    sxbr %f0, %f1
 ; CHECK-NEXT:    llilh %r0, 32768
-; CHECK-NEXT:  .LBB2_4:
+; CHECK-NEXT:  .LBB2_2:
 ; CHECK-NEXT:    cfxbr %r2, 5, %f0
 ; CHECK-NEXT:    xr %r2, %r0
 ; CHECK-NEXT:    br %r14
   %f = load fp128, fp128 *%src
   %conv = call i32 @llvm.experimental.constrained.fptoui.i32.f128(fp128 %f,
-                                               metadata !"fpexcept.strict")
+                                               metadata !"fpexcept.strict") #0
   ret i32 %conv
 }
+
+attributes #0 = { strictfp }

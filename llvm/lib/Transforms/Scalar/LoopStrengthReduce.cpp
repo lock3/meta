@@ -1386,7 +1386,9 @@ void Cost::RateFormula(const Formula &F,
 
   // Treat every new register that exceeds TTI.getNumberOfRegisters() - 1 as
   // additional instruction (at least fill).
-  unsigned TTIRegNum = TTI->getNumberOfRegisters(false) - 1;
+  // TODO: Need distinguish register class?
+  unsigned TTIRegNum = TTI->getNumberOfRegisters(
+                       TTI->getRegisterClassForType(false, F.getType())) - 1;
   if (C.NumRegs > TTIRegNum) {
     // Cost already exceeded TTIRegNum, then only newly added register can add
     // new instructions.
@@ -3165,6 +3167,7 @@ void LSRInstance::GenerateIVChain(const IVChain &Chain, SCEVExpander &Rewriter,
     LLVM_DEBUG(dbgs() << "Concealed chain head: " << *Head.UserInst << "\n");
     return;
   }
+  assert(IVSrc && "Failed to find IV chain source");
 
   LLVM_DEBUG(dbgs() << "Generate chain at: " << *IVSrc << "\n");
   Type *IVTy = IVSrc->getType();
@@ -4835,6 +4838,7 @@ void LSRInstance::NarrowSearchSpaceByPickingWinnerRegs() {
         }
       }
     }
+    assert(Best && "Failed to find best LSRUse candidate");
 
     LLVM_DEBUG(dbgs() << "Narrowing the search space by assuming " << *Best
                       << " will yield profitable reuse.\n");

@@ -289,41 +289,27 @@ uint32_t SymbolFileBreakpad::ResolveSymbolContext(
   return sc_list.GetSize() - old_size;
 }
 
-uint32_t SymbolFileBreakpad::FindFunctions(
+void SymbolFileBreakpad::FindFunctions(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
-    FunctionNameType name_type_mask, bool include_inlines, bool append,
+    FunctionNameType name_type_mask, bool include_inlines,
     SymbolContextList &sc_list) {
   // TODO
-  if (!append)
-    sc_list.Clear();
-  return sc_list.GetSize();
 }
 
-uint32_t SymbolFileBreakpad::FindFunctions(const RegularExpression &regex,
-                                           bool include_inlines, bool append,
-                                           SymbolContextList &sc_list) {
+void SymbolFileBreakpad::FindFunctions(const RegularExpression &regex,
+                                       bool include_inlines,
+                                       SymbolContextList &sc_list) {
   // TODO
-  if (!append)
-    sc_list.Clear();
-  return sc_list.GetSize();
 }
 
-uint32_t SymbolFileBreakpad::FindTypes(
+void SymbolFileBreakpad::FindTypes(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
-    bool append, uint32_t max_matches,
-    llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {
-  if (!append)
-    types.Clear();
-  return types.GetSize();
-}
+    uint32_t max_matches, llvm::DenseSet<SymbolFile *> &searched_symbol_files,
+    TypeMap &types) {}
 
-size_t SymbolFileBreakpad::FindTypes(llvm::ArrayRef<CompilerContext> pattern,
-                                     LanguageSet languages, bool append,
-                                     TypeMap &types) {
-  if (!append)
-    types.Clear();
-  return types.GetSize();
-}
+void SymbolFileBreakpad::FindTypes(
+    llvm::ArrayRef<CompilerContext> pattern, LanguageSet languages,
+    llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {}
 
 void SymbolFileBreakpad::AddSymbols(Symtab &symtab) {
   Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_SYMBOLS);
@@ -349,8 +335,8 @@ void SymbolFileBreakpad::AddSymbols(Symtab &symtab) {
       return;
     }
     symbols.try_emplace(
-        address, /*symID*/ 0, Mangled(name, /*is_mangled*/ false),
-        eSymbolTypeCode, /*is_global*/ true, /*is_debug*/ false,
+        address, /*symID*/ 0, Mangled(name), eSymbolTypeCode,
+        /*is_global*/ true, /*is_debug*/ false,
         /*is_trampoline*/ false, /*is_artificial*/ false,
         AddressRange(section_sp, address - section_sp->GetFileAddress(),
                      size.getValueOr(0)),
@@ -372,6 +358,20 @@ void SymbolFileBreakpad::AddSymbols(Symtab &symtab) {
   for (auto &KV : symbols)
     symtab.AddSymbol(std::move(KV.second));
   symtab.CalculateSymbolSizes();
+}
+
+llvm::Expected<lldb::addr_t>
+SymbolFileBreakpad::GetParameterStackSize(Symbol &symbol) {
+  ParseUnwindData();
+  if (auto *entry = m_unwind_data->win.FindEntryThatContains(
+          symbol.GetAddress().GetFileAddress())) {
+    auto record = StackWinRecord::parse(
+        *LineIterator(*m_objfile_sp, Record::StackWin, entry->data));
+    assert(record.hasValue());
+    return record->ParameterSize;
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "Parameter size unknown.");
 }
 
 static llvm::Optional<std::pair<llvm::StringRef, llvm::StringRef>>
@@ -585,12 +585,19 @@ SymbolFileBreakpad::ParseWinUnwindPlan(const Bookmark &bookmark,
 
   // We assume the first value will be the CFA. It is usually called T0, but
   // clang will use T1, if it needs to realign the stack.
-  if (!postfix::ResolveSymbols(it->second, symbol_resolver)) {
-    LLDB_LOG(log, "Resolving symbols in `{0}` failed.", record->ProgramString);
-    return nullptr;
+  auto *symbol = llvm::dyn_cast<postfix::SymbolNode>(it->second);
+  if (symbol && symbol->GetName() == ".raSearch") {
+    row_sp->GetCFAValue().SetRaSearch(record->LocalSize +
+                                      record->SavedRegisterSize);
+  } else {
+    if (!postfix::ResolveSymbols(it->second, symbol_resolver)) {
+      LLDB_LOG(log, "Resolving symbols in `{0}` failed.",
+               record->ProgramString);
+      return nullptr;
+    }
+    llvm::ArrayRef<uint8_t> saved  = SaveAsDWARF(*it->second);
+    row_sp->GetCFAValue().SetIsDWARFExpression(saved.data(), saved.size());
   }
-  llvm::ArrayRef<uint8_t> saved = SaveAsDWARF(*it->second);
-  row_sp->GetCFAValue().SetIsDWARFExpression(saved.data(), saved.size());
 
   // Replace the node value with InitialValueNode, so that subsequent
   // expressions refer to the CFA value instead of recomputing the whole

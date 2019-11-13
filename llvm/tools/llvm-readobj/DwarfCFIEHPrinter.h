@@ -99,7 +99,7 @@ template <typename ELFT>
 void PrinterContext<ELFT>::printEHFrameHdr(uint64_t EHFrameHdrOffset,
                                            uint64_t EHFrameHdrAddress,
                                            uint64_t EHFrameHdrSize) const {
-  ListScope L(W, "EH_FRAME Header");
+  DictScope L(W, "EHFrameHeader");
   W.startLine() << format("Address: 0x%" PRIx64 "\n", EHFrameHdrAddress);
   W.startLine() << format("Offset: 0x%" PRIx64 "\n", EHFrameHdrOffset);
   W.startLine() << format("Size: 0x%" PRIx64 "\n", EHFrameHdrSize);
@@ -114,11 +114,9 @@ void PrinterContext<ELFT>::printEHFrameHdr(uint64_t EHFrameHdrOffset,
     W.printString("Corresponding Section", *SectionName);
   }
 
-  DataExtractor DE(
-      StringRef(reinterpret_cast<const char *>(Obj->base()) + EHFrameHdrOffset,
-                EHFrameHdrSize),
-      ELFT::TargetEndianness == support::endianness::little,
-      ELFT::Is64Bits ? 8 : 4);
+  DataExtractor DE(makeArrayRef(Obj->base() + EHFrameHdrOffset, EHFrameHdrSize),
+                   ELFT::TargetEndianness == support::endianness::little,
+                   ELFT::Is64Bits ? 8 : 4);
 
   DictScope D(W, "Header");
   uint64_t Offset = 0;

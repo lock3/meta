@@ -29,6 +29,7 @@ static_library("Support") {
   ]
   sources = [
     "AArch64TargetParser.cpp",
+    "ABIBreak.cpp",
     "AMDGPUMetadata.cpp",
     "APFloat.cpp",
     "APInt.cpp",
@@ -78,7 +79,6 @@ static_library("Support") {
     "IntervalMap.cpp",
     "ItaniumManglingCanonicalizer.cpp",
     "JSON.cpp",
-    "JamCRC.cpp",
     "KnownBits.cpp",
     "LEB128.cpp",
     "LineIterator.cpp",

@@ -180,11 +180,9 @@ protected:
   bool HasVFPv3SP = false;
   bool HasVFPv4SP = false;
   bool HasFPARMv8SP = false;
-  bool HasVFPv2D16 = false;
   bool HasVFPv3D16 = false;
   bool HasVFPv4D16 = false;
   bool HasFPARMv8D16 = false;
-  bool HasVFPv2D16SP = false;
   bool HasVFPv3D16SP = false;
   bool HasVFPv4D16SP = false;
   bool HasFPARMv8D16SP = false;
@@ -224,9 +222,6 @@ protected:
   /// DisablePostRAScheduler - False if scheduling should happen again after
   /// register allocation.
   bool DisablePostRAScheduler = false;
-
-  /// UseAA - True if using AA during codegen (DAGCombine, MISched, etc)
-  bool UseAA = false;
 
   /// HasThumb2 - True if Thumb2 instructions are supported.
   bool HasThumb2 = false;
@@ -451,7 +446,7 @@ protected:
 
   /// stackAlignment - The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.
-  unsigned stackAlignment = 4;
+  Align stackAlignment = Align(4);
 
   /// CPUString - String name of used CPU.
   std::string CPUString;
@@ -606,7 +601,7 @@ public:
 
   bool hasARMOps() const { return !NoARM; }
 
-  bool hasVFP2Base() const { return HasVFPv2D16SP; }
+  bool hasVFP2Base() const { return HasVFPv2SP; }
   bool hasVFP3Base() const { return HasVFPv3D16SP; }
   bool hasVFP4Base() const { return HasVFPv4D16SP; }
   bool hasFPARMv8Base() const { return HasFPARMv8D16SP; }
@@ -674,6 +669,12 @@ public:
   bool hasSB() const { return HasSB; }
   bool genLongCalls() const { return GenLongCalls; }
   bool genExecuteOnly() const { return GenExecuteOnly; }
+  bool hasBaseDSP() const {
+    if (isThumb())
+      return hasDSP();
+    else
+      return hasV5TEOps();
+  }
 
   bool hasFP16() const { return HasFP16; }
   bool hasD32() const { return HasD32; }
@@ -802,9 +803,12 @@ public:
   /// True for some subtargets at > -O0.
   bool enablePostRAScheduler() const override;
 
+  /// True for some subtargets at > -O0.
+  bool enablePostRAMachineScheduler() const override;
+
   /// Enable use of alias analysis during code generation (during MI
   /// scheduling, DAGCombine, etc.).
-  bool useAA() const override { return UseAA; }
+  bool useAA() const override { return true; }
 
   // enableAtomicExpand- True if we need to expand our atomics.
   bool enableAtomicExpand() const override;
@@ -818,7 +822,7 @@ public:
   /// getStackAlignment - Returns the minimum alignment known to hold of the
   /// stack frame on entry to the function and which must be maintained by every
   /// function for this subtarget.
-  unsigned getStackAlignment() const { return stackAlignment; }
+  Align getStackAlignment() const { return stackAlignment; }
 
   unsigned getMaxInterleaveFactor() const { return MaxInterleaveFactor; }
 

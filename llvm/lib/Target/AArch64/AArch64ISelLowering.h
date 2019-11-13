@@ -191,6 +191,11 @@ enum NodeType : unsigned {
   FRECPE, FRECPS,
   FRSQRTE, FRSQRTS,
 
+  SUNPKHI,
+  SUNPKLO,
+  UUNPKHI,
+  UUNPKLO,
+
   // NEON Load/Store with post-increment base updates
   LD2post = ISD::FIRST_TARGET_MEMORY_OPCODE,
   LD3post,
@@ -260,6 +265,14 @@ public:
                                      const APInt &DemandedElts,
                                      const SelectionDAG &DAG,
                                      unsigned Depth = 0) const override;
+
+  MVT getPointerTy(const DataLayout &DL, uint32_t AS = 0) const override {
+    // Returning i64 unconditionally here (i.e. even for ILP32) means that the
+    // *DAG* representation of pointers will always be 64-bits. They will be
+    // truncated and extended when transferred to memory, but the 64-bit DAG
+    // allows us to use AArch64's addressing modes much more easily.
+    return MVT::getIntegerVT(64);
+  }
 
   bool targetShrinkDemandedConstant(SDValue Op, const APInt &Demanded,
                                     TargetLoweringOpt &TLO) const override;
@@ -664,6 +677,7 @@ private:
   SDValue LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerSPLAT_VECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerEXTRACT_SUBVECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerVectorSRA_SRL_SHL(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
@@ -699,8 +713,8 @@ private:
   unsigned combineRepeatedFPDivisors() const override;
 
   ConstraintType getConstraintType(StringRef Constraint) const override;
-  unsigned getRegisterByName(const char* RegName, EVT VT,
-                             SelectionDAG &DAG) const override;
+  Register getRegisterByName(const char* RegName, EVT VT,
+                             const MachineFunction &MF) const override;
 
   /// Examine constraint string and operand type and determine a weight value.
   /// The operand object must already have been set up with the operand type.
@@ -727,6 +741,7 @@ private:
     return TargetLowering::getInlineAsmMemConstraint(ConstraintCode);
   }
 
+  bool isVectorLoadExtDesirable(SDValue ExtVal) const override;
   bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const override;
   bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
   bool getIndexedAddressParts(SDNode *Op, SDValue &Base, SDValue &Offset,

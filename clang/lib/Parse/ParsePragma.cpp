@@ -1468,9 +1468,9 @@ void Parser::HandlePragmaAttribute() {
     if (Tok.getIdentifierInfo()) {
       // If we suspect that this is an attribute suggest the use of
       // '__attribute__'.
-      if (ParsedAttr::getKind(Tok.getIdentifierInfo(), /*ScopeName=*/nullptr,
-                              ParsedAttr::AS_GNU) !=
-          ParsedAttr::UnknownAttribute) {
+      if (ParsedAttr::getParsedKind(
+              Tok.getIdentifierInfo(), /*ScopeName=*/nullptr,
+              ParsedAttr::AS_GNU) != ParsedAttr::UnknownAttribute) {
         SourceLocation InsertStartLoc = Tok.getLocation();
         ConsumeToken();
         if (Tok.is(tok::l_paren)) {
@@ -1504,7 +1504,7 @@ void Parser::HandlePragmaAttribute() {
   ParsedAttr &Attribute = *Attrs.begin();
   if (!Attribute.isSupportedByPragmaAttribute()) {
     Diag(PragmaLoc, diag::err_pragma_attribute_unsupported_attribute)
-        << Attribute.getName();
+        << Attribute;
     SkipToEnd();
     return;
   }
@@ -1790,7 +1790,7 @@ void PragmaMSStructHandler::HandlePragma(Preprocessor &PP,
                       /*IsReinject=*/false);
 }
 
-// #pragma clang section bss="abc" data="" rodata="def" text=""
+// #pragma clang section bss="abc" data="" rodata="def" text="" relro=""
 void PragmaClangSectionHandler::HandlePragma(Preprocessor &PP,
                                              PragmaIntroducer Introducer,
                                              Token &FirstToken) {
@@ -1812,6 +1812,8 @@ void PragmaClangSectionHandler::HandlePragma(Preprocessor &PP,
       SecKind = Sema::PragmaClangSectionKind::PCSK_Data;
     else if (SecType->isStr("rodata"))
       SecKind = Sema::PragmaClangSectionKind::PCSK_Rodata;
+    else if (SecType->isStr("relro"))
+      SecKind = Sema::PragmaClangSectionKind::PCSK_Relro;
     else if (SecType->isStr("text"))
       SecKind = Sema::PragmaClangSectionKind::PCSK_Text;
     else {

@@ -151,7 +151,7 @@ void LTOCodeGenerator::initializeLTOPasses() {
 void LTOCodeGenerator::setAsmUndefinedRefs(LTOModule *Mod) {
   const std::vector<StringRef> &undefs = Mod->getAsmUndefinedRefs();
   for (int i = 0, e = undefs.size(); i != e; ++i)
-    AsmUndefinedRefs[undefs[i]] = 1;
+    AsmUndefinedRefs.insert(undefs[i]);
 }
 
 bool LTOCodeGenerator::addModule(LTOModule *Mod) {
@@ -365,7 +365,8 @@ bool LTOCodeGenerator::determineTarget() {
       MCpu = "core2";
     else if (Triple.getArch() == llvm::Triple::x86)
       MCpu = "yonah";
-    else if (Triple.getArch() == llvm::Triple::aarch64)
+    else if (Triple.getArch() == llvm::Triple::aarch64 ||
+             Triple.getArch() == llvm::Triple::aarch64_32)
       MCpu = "cyclone";
   }
 
@@ -461,6 +462,8 @@ void LTOCodeGenerator::applyScopeRestrictions() {
   updateCompilerUsed(*MergedModule, *TargetMach, AsmUndefinedRefs);
 
   internalizeModule(*MergedModule, mustPreserveGV);
+
+  MergedModule->addModuleFlag(Module::Error, "LTOPostLink", 1);
 
   ScopeRestrictionsDone = true;
 }

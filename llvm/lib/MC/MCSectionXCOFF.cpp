@@ -15,26 +15,31 @@ using namespace llvm;
 
 MCSectionXCOFF::~MCSectionXCOFF() = default;
 
+
 void MCSectionXCOFF::PrintSwitchToSection(const MCAsmInfo &MAI, const Triple &T,
                                           raw_ostream &OS,
                                           const MCExpr *Subsection) const {
   if (getKind().isText()) {
     if (getMappingClass() != XCOFF::XMC_PR)
-      llvm_unreachable("Unsupported storage-mapping class for .text csect");
+      report_fatal_error("Unhandled storage-mapping class for .text csect");
 
-    OS << "\t.csect " << getSectionName() << "["
-       << "PR"
-       << "]" << '\n';
+    OS << "\t.csect " << QualName->getName() << '\n';
     return;
   }
 
   if (getKind().isData()) {
-    assert(getMappingClass() == XCOFF::XMC_RW &&
-           "Unhandled storage-mapping class for data section.");
-
-    OS << "\t.csect " << getSectionName() << "["
-       << "RW"
-       << "]" << '\n';
+    switch (getMappingClass()) {
+    case XCOFF::XMC_RW:
+    case XCOFF::XMC_DS:
+      OS << "\t.csect " << QualName->getName() << '\n';
+      break;
+    case XCOFF::XMC_TC0:
+      OS << "\t.toc\n";
+      break;
+    default:
+      report_fatal_error(
+          "Unhandled storage-mapping class for .data csect.");
+    }
     return;
   }
 

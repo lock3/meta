@@ -43,6 +43,10 @@ multiple file formats.
  starts with ".note". Otherwise, it will have type `SHT_PROGBITS`. Can be
  specified multiple times to add multiple sections.
 
+.. option:: --binary-architecture <arch>, -B
+
+ Ignored for compatibility.
+
 .. option:: --disable-deterministic-archives, -U
 
  Use real values for UIDs, GIDs and timestamps when updating archive member
@@ -63,10 +67,35 @@ multiple file formats.
 
  Print a summary of command line options.
 
+.. option:: --only-keep-debug
+
+ Produce a debug file as the output that only preserves contents of sections
+ useful for debugging purposes.
+
+ For ELF objects, this removes the contents of `SHF_ALLOC` sections that are not
+ `SHT_NOTE` by making them `SHT_NOBITS` and shrinking the program headers where
+ possible.
+
 .. option:: --only-section <section>, -j
 
  Remove all sections from the output, except for sections named ``<section>``.
  Can be specified multiple times to keep multiple sections.
+
+ For MachO objects, ``<section>`` must be formatted as
+ ``<segment name>,<section name>``.
+
+.. option:: --redefine-sym <old>=<new>
+
+ Rename symbols called ``<old>`` to ``<new>`` in the output. Can be specified
+ multiple times to rename multiple symbols.
+
+.. option:: --redefine-syms <filename>
+
+ Rename symbols in the output as described in the file ``<filename>``. In the
+ file, each line represents a single symbol to rename, with the old name and new
+ name separated by whitespace. Leading and trailing whitespace is ignored, as is
+ anything following a '#'. Can be specified multiple times to read names from
+ multiple files.
 
 .. option:: --regex
 
@@ -78,6 +107,11 @@ multiple file formats.
  Remove the specified section from the output. Can be specified multiple times
  to remove multiple sections simultaneously.
 
+.. option:: --set-section-alignment <section>=<align>
+
+ Set the alignment of section ``<section>`` to `<align>``. Can be specified
+ multiple times to update multiple sections.
+
 .. option:: --strip-all-gnu
 
  Remove all symbols, debug sections and relocations from the output. This option
@@ -86,10 +120,11 @@ multiple file formats.
 .. option:: --strip-all, -S
 
  For ELF objects, remove from the output all symbols and non-alloc sections not
- within segments, except for .gnu.warning sections and the section name table.
+ within segments, except for .gnu.warning, .ARM.attribute sections and the
+ section name table.
 
- For COFF objects, remove all symbols, debug sections, and relocations from the
- output.
+ For COFF and Mach-O objects, remove all symbols, debug sections, and
+ relocations from the output.
 
 .. option:: --strip-debug, -g
 
@@ -123,11 +158,39 @@ multiple file formats.
 .. option:: --strip-unneeded
 
  Remove from the output all local or undefined symbols that are not required by
- relocations.
+ relocations. Also remove all debug sections.
 
 .. option:: --version, -V
 
-  Display the version of this program.
+ Display the version of the :program:`llvm-objcopy` executable.
+
+.. option:: @<FILE>
+
+ Read command-line options and commands from response file `<FILE>`.
+
+.. option:: --wildcard, -w
+
+  Allow wildcard syntax for symbol-related flags. On by default for
+  section-related flags. Incompatible with --regex.
+
+  Wildcard syntax allows the following special symbols:
+
+  ====================== ========================= ==================
+   Character              Meaning                   Equivalent
+  ====================== ========================= ==================
+  ``*``                  Any number of characters  ``.*``
+  ``?``                  Any single character      ``.``
+  ``\``                  Escape the next character ``\``
+  ``[a-z]``              Character class           ``[a-z]``
+  ``[!a-z]``, ``[^a-z]`` Negated character class   ``[^a-z]``
+  ====================== ========================= ==================
+
+  Additionally, starting a wildcard with '!' will prevent a match, even if
+  another flag matches. For example ``-w -N '*' -N '!x'`` will strip all symbols
+  except for ``x``.
+
+  The order of wildcards does not matter. For example, ``-w -N '*' -N '!x'`` is
+  the same as ``-w -N '!x' -N '*'``.
 
 COFF-SPECIFIC OPTIONS
 ---------------------
@@ -135,11 +198,6 @@ COFF-SPECIFIC OPTIONS
 The following options are implemented only for COFF objects. If used with other
 objects, :program:`llvm-objcopy` will either emit an error or silently ignore
 them.
-
-.. option:: --only-keep-debug
-
- Remove the contents of non-debug sections from the output, but keep the section
- headers.
 
 ELF-SPECIFIC OPTIONS
 --------------------
@@ -174,25 +232,8 @@ them.
 
 .. option:: --allow-broken-links
 
- Allow llvm-objcopy to remove sections even if it would leave invalid section
- references. Any invalid sh_link fields will be set to zero.
-
-.. option:: --binary-architecture <arch>, -B
-
- Specify the architecture to use, when transforming an architecture-less format
- (e.g. binary) to another format. Valid options are:
-
- - `aarch64`
- - `arm`
- - `i386`
- - `i386:x86-64`
- - `mips`
- - `powerpc:common64`
- - `riscv:rv32`
- - `riscv:rv64`
- - `sparc`
- - `sparcel`
- - `x86-64`
+ Allow :program:`llvm-objcopy` to remove sections even if it would leave invalid
+ section references. Any invalid sh_link fields will be set to zero.
 
 .. option:: --build-id-link-dir <dir>
 
@@ -349,19 +390,6 @@ them.
 .. option:: --preserve-dates, -p
 
  Preserve access and modification timestamps in the output.
-
-.. option:: --redefine-sym <old>=<new>
-
- Rename symbols called ``<old>`` to ``<new>`` in the output. Can be specified
- multiple times to rename multiple symbols.
-
-.. option:: --redefine-syms <filename>
-
- Rename symbols in the output as described in the file ``<filename>``. In the
- file, each line represents a single symbol to rename, with the old name and new
- name separated by an equals sign. Leading and trailing whitespace is ignored,
- as is anything following a '#'. Can be specified multiple times to read names
- from multiple files.
 
 .. option:: --rename-section <old>=<new>[,<flag>,...]
 

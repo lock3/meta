@@ -93,9 +93,11 @@ bool CommandObjectMultiword::Execute(const char *args_string,
     return result.Succeeded();
   }
 
-  auto sub_command = args[0].ref;
-  if (sub_command.empty())
+  auto sub_command = args[0].ref();
+  if (sub_command.empty()) {
+    result.AppendError("Need to specify a non-empty subcommand.");
     return result.Succeeded();
+  }
 
   if (sub_command.equals_lower("help")) {
     this->CommandObject::GenerateHelpText(result);
@@ -180,7 +182,7 @@ void CommandObjectMultiword::GenerateHelpText(Stream &output_stream) {
 }
 
 void CommandObjectMultiword::HandleCompletion(CompletionRequest &request) {
-  auto arg0 = request.GetParsedLine()[0].ref;
+  auto arg0 = request.GetParsedLine()[0].ref();
   if (request.GetCursorIndex() == 0) {
     StringList new_matches, descriptions;
     AddNamesMatchingPartialString(m_subcommand_dict, arg0, new_matches,
@@ -195,8 +197,7 @@ void CommandObjectMultiword::HandleCompletion(CompletionRequest &request) {
       if (cmd_obj != nullptr) {
         if (request.GetParsedLine().GetArgumentCount() != 1) {
           request.GetParsedLine().Shift();
-          request.SetCursorCharPosition(0);
-          request.GetParsedLine().AppendArgument(llvm::StringRef());
+          request.AppendEmptyArgument();
           cmd_obj->HandleCompletion(request);
         }
       }
@@ -214,8 +215,7 @@ void CommandObjectMultiword::HandleCompletion(CompletionRequest &request) {
   // Remove the one match that we got from calling GetSubcommandObject.
   new_matches.DeleteStringAtIndex(0);
   request.AddCompletions(new_matches);
-  request.GetParsedLine().Shift();
-  request.SetCursorIndex(request.GetCursorIndex() - 1);
+  request.ShiftArguments();
   sub_command_object->HandleCompletion(request);
 }
 
@@ -225,7 +225,7 @@ const char *CommandObjectMultiword::GetRepeatCommand(Args &current_command_args,
   if (current_command_args.GetArgumentCount() <= index)
     return nullptr;
   CommandObject *sub_command_object =
-      GetSubcommandObject(current_command_args[index].ref);
+      GetSubcommandObject(current_command_args[index].ref());
   if (sub_command_object == nullptr)
     return nullptr;
   return sub_command_object->GetRepeatCommand(current_command_args, index);

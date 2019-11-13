@@ -155,6 +155,7 @@ void TargetLoweringObjectFileELF::Initialize(MCContext &Ctx,
     break;
   case Triple::aarch64:
   case Triple::aarch64_be:
+  case Triple::aarch64_32:
     // The small model guarantees static code/data size < 4GB, but not where it
     // will be in memory. Most of these could end up >2GB away so even a signed
     // pc-relative 32-bit address is insufficient, theoretically.
@@ -376,7 +377,7 @@ void TargetLoweringObjectFileELF::emitPersonalityValue(
                                                    ELF::SHT_PROGBITS, Flags, 0);
   unsigned Size = DL.getPointerSize();
   Streamer.SwitchSection(Sec);
-  Streamer.EmitValueToAlignment(DL.getPointerABIAlignment(0));
+  Streamer.EmitValueToAlignment(DL.getPointerABIAlignment(0).value());
   Streamer.EmitSymbolAttribute(Label, MCSA_ELF_TypeObject);
   const MCExpr *E = MCConstantExpr::create(Size, getContext());
   Streamer.emitELFSize(Label, E);
@@ -567,6 +568,8 @@ MCSection *TargetLoweringObjectFileELF::getExplicitSectionGlobal(
       SectionName = Attrs.getAttribute("bss-section").getValueAsString();
     } else if (Attrs.hasAttribute("rodata-section") && Kind.isReadOnly()) {
       SectionName = Attrs.getAttribute("rodata-section").getValueAsString();
+    } else if (Attrs.hasAttribute("relro-section") && Kind.isReadOnlyWithRel()) {
+      SectionName = Attrs.getAttribute("relro-section").getValueAsString();
     } else if (Attrs.hasAttribute("data-section") && Kind.isData()) {
       SectionName = Attrs.getAttribute("data-section").getValueAsString();
     }
@@ -1850,6 +1853,12 @@ MCSection *TargetLoweringObjectFileXCOFF::SelectSectionForGlobal(
     return TextSection;
 
   if (Kind.isData())
+    return DataSection;
+
+  // Zero initialized data must be emitted to the .data section because external
+  // linkage control sections that get mapped to the .bss section will be linked
+  // as tentative defintions, which is only appropriate for SectionKind::Common.
+  if (Kind.isBSS())
     return DataSection;
 
   report_fatal_error("XCOFF other section types not yet implemented.");

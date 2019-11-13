@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "BreakpointPrinter.h"
-#include "Debugify.h"
 #include "NewPMDriver.h"
 #include "PassPrinters.h"
 #include "llvm/ADT/Triple.h"
@@ -56,6 +55,7 @@
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Debugify.h"
 #include <algorithm>
 #include <memory>
 using namespace llvm;
@@ -328,7 +328,7 @@ public:
     PassKind Kind = P->getPassKind();
     StringRef Name = P->getPassName();
 
-    // TODO: Implement Debugify for BasicBlockPass, LoopPass.
+    // TODO: Implement Debugify for LoopPass.
     switch (Kind) {
       case PT_Function:
         super::add(createDebugifyFunctionPass());
@@ -476,11 +476,36 @@ static TargetMachine* GetTargetMachine(Triple TheTriple, StringRef CPUStr,
                                         getCodeModel(), GetCodeGenOptLevel());
 }
 
+#ifdef BUILD_EXAMPLES
+void initializeExampleIRTransforms(llvm::PassRegistry &Registry);
+#endif
+
 #ifdef LINK_POLLY_INTO_TOOLS
 namespace polly {
 void initializePollyPasses(llvm::PassRegistry &Registry);
 }
 #endif
+
+void exportDebugifyStats(llvm::StringRef Path, const DebugifyStatsMap &Map) {
+  std::error_code EC;
+  raw_fd_ostream OS{Path, EC};
+  if (EC) {
+    errs() << "Could not open file: " << EC.message() << ", " << Path << '\n';
+    return;
+  }
+
+  OS << "Pass Name" << ',' << "# of missing debug values" << ','
+     << "# of missing locations" << ',' << "Missing/Expected value ratio" << ','
+     << "Missing/Expected location ratio" << '\n';
+  for (const auto &Entry : Map) {
+    StringRef Pass = Entry.first;
+    DebugifyStatistics Stats = Entry.second;
+
+    OS << Pass << ',' << Stats.NumDbgValuesMissing << ','
+       << Stats.NumDbgLocsMissing << ',' << Stats.getMissingValueRatio() << ','
+       << Stats.getEmptyLocationRatio() << '\n';
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // main for opt
@@ -523,7 +548,6 @@ int main(int argc, char **argv) {
   initializeDwarfEHPreparePass(Registry);
   initializeSafeStackLegacyPassPass(Registry);
   initializeSjLjEHPreparePass(Registry);
-  initializeStackProtectorPass(Registry);
   initializePreISelIntrinsicLoweringLegacyPassPass(Registry);
   initializeGlobalMergePass(Registry);
   initializeIndirectBrExpandPassPass(Registry);
@@ -536,6 +560,10 @@ int main(int argc, char **argv) {
   initializeWasmEHPreparePass(Registry);
   initializeWriteBitcodePassPass(Registry);
   initializeHardwareLoopsPass(Registry);
+
+#ifdef BUILD_EXAMPLES
+  initializeExampleIRTransforms(Registry);
+#endif
 
 #ifdef LINK_POLLY_INTO_TOOLS
   polly::initializePollyPasses(Registry);
@@ -612,7 +640,9 @@ int main(int argc, char **argv) {
       OutputFilename = "-";
 
     std::error_code EC;
-    Out.reset(new ToolOutputFile(OutputFilename, EC, sys::fs::OF_None));
+    sys::fs::OpenFlags Flags = OutputAssembly ? sys::fs::OF_Text
+                                              : sys::fs::OF_None;
+    Out.reset(new ToolOutputFile(OutputFilename, EC, Flags));
     if (EC) {
       errs() << EC.message() << '\n';
       return 1;
@@ -789,9 +819,6 @@ int main(int argc, char **argv) {
 
       if (AnalyzeOnly) {
         switch (Kind) {
-        case PT_BasicBlock:
-          Passes.add(createBasicBlockPassPrinter(PassInf, Out->os(), Quiet));
-          break;
         case PT_Region:
           Passes.add(createRegionPassPrinter(PassInf, Out->os(), Quiet));
           break;

@@ -63,7 +63,6 @@
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/ThreadPlanCallFunction.h"
 #include "lldb/Utility/Args.h"
-#include "lldb/Utility/CleanUp.h"
 #include "lldb/Utility/FileSpec.h"
 #include "lldb/Utility/Reproducer.h"
 #include "lldb/Utility/State.h"
@@ -81,12 +80,12 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Utility/StringExtractorGDBRemote.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 #define DEBUGSERVER_BASENAME "debugserver"
-using namespace llvm;
 using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::process_gdb_remote;
@@ -99,12 +98,14 @@ namespace lldb {
 // namespace. This allows you to attach with a debugger and call this function
 // and get the packet history dumped to a file.
 void DumpProcessGDBRemotePacketHistory(void *p, const char *path) {
-  StreamFile strm;
-  Status error = FileSystem::Instance().Open(strm.GetFile(), FileSpec(path),
-                                             File::eOpenOptionWrite |
-                                                 File::eOpenOptionCanCreate);
-  if (error.Success())
-    ((ProcessGDBRemote *)p)->GetGDBRemote().DumpHistory(strm);
+  auto file = FileSystem::Instance().Open(
+      FileSpec(path), File::eOpenOptionWrite | File::eOpenOptionCanCreate);
+  if (!file) {
+    llvm::consumeError(file.takeError());
+    return;
+  }
+  StreamFile stream(std::move(file.get()));
+  ((ProcessGDBRemote *)p)->GetGDBRemote().DumpHistory(stream);
 }
 } // namespace lldb
 
@@ -153,6 +154,11 @@ public:
         nullptr, idx,
         g_processgdbremote_properties[idx].default_uint_value != 0);
   }
+
+  bool GetUseGPacketForReading() const {
+    const uint32_t idx = ePropertyUseGPacketForReading;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean(nullptr, idx, true);
+  }
 };
 
 typedef std::shared_ptr<PluginProperties> ProcessKDPPropertiesSP;
@@ -163,45 +169,6 @@ static const ProcessKDPPropertiesSP &GetGlobalPluginProperties() {
     g_settings_sp = std::make_shared<PluginProperties>();
   return g_settings_sp;
 }
-
-class ProcessGDBRemoteProvider
-    : public repro::Provider<ProcessGDBRemoteProvider> {
-public:
-  struct Info {
-    static const char *name;
-    static const char *file;
-  };
-
-  ProcessGDBRemoteProvider(const FileSpec &directory) : Provider(directory) {
-  }
-
-  raw_ostream *GetHistoryStream() {
-    FileSpec history_file = GetRoot().CopyByAppendingPathComponent(Info::file);
-
-    std::error_code EC;
-    m_stream_up = std::make_unique<raw_fd_ostream>(
-        history_file.GetPath(), EC, sys::fs::OpenFlags::OF_Text);
-    return m_stream_up.get();
-  }
-
-  void SetCallback(std::function<void()> callback) {
-    m_callback = std::move(callback);
-  }
-
-  void Keep() override { m_callback(); }
-
-  void Discard() override { m_callback(); }
-
-  static char ID;
-
-private:
-  std::function<void()> m_callback;
-  std::unique_ptr<raw_fd_ostream> m_stream_up;
-};
-
-char ProcessGDBRemoteProvider::ID = 0;
-const char *ProcessGDBRemoteProvider::Info::name = "gdb-remote";
-const char *ProcessGDBRemoteProvider::Info::file = "gdb-remote.yaml";
 
 } // namespace
 
@@ -312,8 +279,8 @@ ProcessGDBRemote::ProcessGDBRemote(lldb::TargetSP target_sp,
                                    "async thread did exit");
 
   if (repro::Generator *g = repro::Reproducer::Instance().GetGenerator()) {
-    ProcessGDBRemoteProvider &provider =
-        g->GetOrCreate<ProcessGDBRemoteProvider>();
+    repro::ProcessGDBRemoteProvider &provider =
+        g->GetOrCreate<repro::ProcessGDBRemoteProvider>();
     // Set the history stream to the stream owned by the provider.
     m_gdb_comm.SetHistoryStream(provider.GetHistoryStream());
     // Make sure to clear the stream again when we're finished.
@@ -347,6 +314,9 @@ ProcessGDBRemote::ProcessGDBRemote(lldb::TargetSP target_sp,
       GetGlobalPluginProperties()->GetPacketTimeout();
   if (timeout_seconds > 0)
     m_gdb_comm.SetPacketTimeout(std::chrono::seconds(timeout_seconds));
+
+  m_use_g_packet_for_reading =
+      GetGlobalPluginProperties()->GetUseGPacketForReading();
 }
 
 // Destructor
@@ -3423,7 +3393,8 @@ Status ProcessGDBRemote::ConnectToReplayServer(repro::Loader *loader) {
     return Status("No loader provided.");
 
   // Construct replay history path.
-  FileSpec history_file = loader->GetFile<ProcessGDBRemoteProvider::Info>();
+  FileSpec history_file =
+      loader->GetFile<repro::ProcessGDBRemoteProvider::Info>();
   if (!history_file)
     return Status("No provider for gdb-remote.");
 
@@ -3519,8 +3490,8 @@ Status ProcessGDBRemote::LaunchAndConnectToDebugserver(
 
     int our_socket = sockets[0];
     int gdb_socket = sockets[1];
-    CleanUp cleanup_our(close, our_socket);
-    CleanUp cleanup_gdb(close, gdb_socket);
+    auto cleanup_our = llvm::make_scope_exit([&]() { close(our_socket); });
+    auto cleanup_gdb = llvm::make_scope_exit([&]() { close(gdb_socket); });
 
     // Don't let any child processes inherit our communication socket
     SetCloexecFlag(our_socket);
@@ -3540,7 +3511,7 @@ Status ProcessGDBRemote::LaunchAndConnectToDebugserver(
 #ifdef USE_SOCKETPAIR_FOR_LOCAL_CONNECTION
       // Our process spawned correctly, we can now set our connection to use
       // our end of the socket pair
-      cleanup_our.disable();
+      cleanup_our.release();
       m_gdb_comm.SetConnection(new ConnectionFileDescriptor(our_socket, true));
 #endif
       StartAsyncThread();
@@ -5126,7 +5097,7 @@ ParseStructuredDataPacket(llvm::StringRef packet) {
   if (log) {
     if (json_sp) {
       StreamString json_str;
-      json_sp->Dump(json_str);
+      json_sp->Dump(json_str, true);
       json_str.Flush();
       LLDB_LOGF(log,
                 "ProcessGDBRemote::%s() "

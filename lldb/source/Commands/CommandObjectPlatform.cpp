@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <mutex>
 #include "CommandObjectPlatform.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
@@ -23,6 +22,7 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Utility/Args.h"
 #include "lldb/Utility/DataExtractor.h"
+#include <mutex>
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Threading.h"
@@ -1152,8 +1152,7 @@ protected:
   class CommandOptions : public Options {
   public:
     CommandOptions()
-        : Options(), match_info(), show_args(false), verbose(false) {
-    }
+        : Options(), match_info(), show_args(false), verbose(false) {}
 
     ~CommandOptions() override = default;
 
@@ -1264,6 +1263,10 @@ protected:
         verbose = true;
         break;
 
+      case 'x':
+        match_info.SetMatchAllUsers(true);
+        break;
+
       default:
         llvm_unreachable("Unimplemented option");
       }
@@ -1336,9 +1339,9 @@ protected:
           Stream &ostrm = result.GetOutputStream();
           for (auto &entry : args.entries()) {
             lldb::pid_t pid;
-            if (entry.ref.getAsInteger(0, pid)) {
+            if (entry.ref().getAsInteger(0, pid)) {
               result.AppendErrorWithFormat("invalid process ID argument '%s'",
-                                           entry.ref.str().c_str());
+                                           entry.ref().str().c_str());
               result.SetStatus(eReturnStatusFailed);
               break;
             } else {
@@ -1602,7 +1605,6 @@ public:
                  CommandReturnObject &result) override {
     ExecutionContext exe_ctx = GetCommandInterpreter().GetExecutionContext();
     m_options.NotifyOptionParsingStarting(&exe_ctx);
-
 
     // Print out an usage syntax on an empty command line.
     if (raw_command_line.empty()) {

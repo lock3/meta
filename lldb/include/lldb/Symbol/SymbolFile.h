@@ -19,8 +19,8 @@
 #include "lldb/Symbol/TypeList.h"
 #include "lldb/Symbol/TypeSystem.h"
 #include "lldb/lldb-private.h"
-
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/Errc.h"
 
 #include <mutex>
 
@@ -122,6 +122,9 @@ public:
   virtual size_t ParseFunctions(CompileUnit &comp_unit) = 0;
   virtual bool ParseLineTable(CompileUnit &comp_unit) = 0;
   virtual bool ParseDebugMacros(CompileUnit &comp_unit) = 0;
+  virtual void
+  ForEachExternalModule(CompileUnit &comp_unit,
+                        llvm::function_ref<void(lldb::ModuleSP)> f) {}
   virtual bool ParseSupportFiles(CompileUnit &comp_unit,
                                  FileSpecList &support_files) = 0;
   virtual size_t ParseTypes(CompileUnit &comp_unit) = 0;
@@ -170,40 +173,42 @@ public:
                                         SymbolContextList &sc_list);
 
   virtual void DumpClangAST(Stream &s) {}
-  virtual uint32_t
+  virtual void
   FindGlobalVariables(ConstString name,
                       const CompilerDeclContext *parent_decl_ctx,
                       uint32_t max_matches, VariableList &variables);
-  virtual uint32_t FindGlobalVariables(const RegularExpression &regex,
-                                       uint32_t max_matches,
-                                       VariableList &variables);
-  virtual uint32_t FindFunctions(ConstString name,
-                                 const CompilerDeclContext *parent_decl_ctx,
-                                 lldb::FunctionNameType name_type_mask,
-                                 bool include_inlines, bool append,
-                                 SymbolContextList &sc_list);
-  virtual uint32_t FindFunctions(const RegularExpression &regex,
-                                 bool include_inlines, bool append,
-                                 SymbolContextList &sc_list);
-  virtual uint32_t
+  virtual void FindGlobalVariables(const RegularExpression &regex,
+                                   uint32_t max_matches,
+                                   VariableList &variables);
+  virtual void FindFunctions(ConstString name,
+                             const CompilerDeclContext *parent_decl_ctx,
+                             lldb::FunctionNameType name_type_mask,
+                             bool include_inlines, SymbolContextList &sc_list);
+  virtual void FindFunctions(const RegularExpression &regex,
+                             bool include_inlines, SymbolContextList &sc_list);
+  virtual void
   FindTypes(ConstString name, const CompilerDeclContext *parent_decl_ctx,
-            bool append, uint32_t max_matches,
+            uint32_t max_matches,
             llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
             TypeMap &types);
 
   /// Find types specified by a CompilerContextPattern.
-  /// \param languages    Only return results in these languages.
-  virtual size_t FindTypes(llvm::ArrayRef<CompilerContext> pattern,
-                           LanguageSet languages, bool append,
-                           TypeMap &types);
+  /// \param languages
+  ///     Only return results in these languages.
+  /// \param searched_symbol_files
+  ///     Prevents one file from being visited multiple times.
+  virtual void
+  FindTypes(llvm::ArrayRef<CompilerContext> pattern, LanguageSet languages,
+            llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
+            TypeMap &types);
 
   virtual void
   GetMangledNamesForFunction(const std::string &scope_qualified_name,
                              std::vector<ConstString> &mangled_names);
 
-  virtual size_t GetTypes(lldb_private::SymbolContextScope *sc_scope,
-                          lldb::TypeClass type_mask,
-                          lldb_private::TypeList &type_list) = 0;
+  virtual void GetTypes(lldb_private::SymbolContextScope *sc_scope,
+                        lldb::TypeClass type_mask,
+                        lldb_private::TypeList &type_list) = 0;
 
   virtual void PreloadSymbols();
 
@@ -240,6 +245,13 @@ public:
   virtual lldb::UnwindPlanSP
   GetUnwindPlan(const Address &address, const RegisterInfoResolver &resolver) {
     return nullptr;
+  }
+
+  /// Return the number of stack bytes taken up by the parameters to this
+  /// function.
+  virtual llvm::Expected<lldb::addr_t> GetParameterStackSize(Symbol &symbol) {
+    return llvm::createStringError(make_error_code(llvm::errc::not_supported),
+                                   "Operation not supported.");
   }
 
   virtual void Dump(Stream &s);

@@ -106,11 +106,11 @@ void CallLowering::setArgFlags(CallLowering::ArgInfo &Arg, unsigned OpIdx,
       FrameAlign = FuncInfo.getParamAlignment(OpIdx - 2);
     else
       FrameAlign = getTLI()->getByValTypeAlignment(ElementTy, DL);
-    Flags.setByValAlign(FrameAlign);
+    Flags.setByValAlign(Align(FrameAlign));
   }
   if (Attrs.hasAttribute(OpIdx, Attribute::Nest))
     Flags.setNest();
-  Flags.setOrigAlign(DL.getABITypeAlignment(Arg.Ty));
+  Flags.setOrigAlign(Align(DL.getABITypeAlignment(Arg.Ty)));
 }
 
 template void
@@ -198,14 +198,12 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
       unsigned NumParts = TLI->getNumRegistersForCallingConv(
           F.getContext(), F.getCallingConv(), CurVT);
       if (NumParts > 1) {
-        if (CurVT.isVector())
-          return false;
         // For now only handle exact splits.
         if (NewVT.getSizeInBits() * NumParts != CurVT.getSizeInBits())
           return false;
       }
 
-      // For incoming arguments (return values), we could have values in
+      // For incoming arguments (physregs to vregs), we could have values in
       // physregs (or memlocs) which we want to extract and copy to vregs.
       // During this, we might have to deal with the LLT being split across
       // multiple regs, so we have to record this information for later.
@@ -221,7 +219,7 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
             return false;
         } else {
           // We're handling an incoming arg which is split over multiple regs.
-          // E.g. returning an s128 on AArch64.
+          // E.g. passing an s128 on AArch64.
           ISD::ArgFlagsTy OrigFlags = Args[i].Flags[0];
           Args[i].OrigRegs.push_back(Args[i].Regs[0]);
           Args[i].Regs.clear();
@@ -237,14 +235,14 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
             if (Part == 0) {
               Flags.setSplit();
             } else {
-              Flags.setOrigAlign(1);
+              Flags.setOrigAlign(Align::None());
               if (Part == NumParts - 1)
                 Flags.setSplitEnd();
             }
             Args[i].Regs.push_back(Reg);
             Args[i].Flags.push_back(Flags);
-            if (Handler.assignArg(i, NewVT, NewVT, CCValAssign::Full, Args[i],
-                                  Args[i].Flags[Part], CCInfo)) {
+            if (Handler.assignArg(i + Part, NewVT, NewVT, CCValAssign::Full,
+                                  Args[i], Args[i].Flags[Part], CCInfo)) {
               // Still couldn't assign this smaller part type for some reason.
               return false;
             }
@@ -270,14 +268,14 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
           if (PartIdx == 0) {
             Flags.setSplit();
           } else {
-            Flags.setOrigAlign(1);
+            Flags.setOrigAlign(Align::None());
             if (PartIdx == NumParts - 1)
               Flags.setSplitEnd();
           }
           Args[i].Regs.push_back(Unmerge.getReg(PartIdx));
           Args[i].Flags.push_back(Flags);
-          if (Handler.assignArg(i, NewVT, NewVT, CCValAssign::Full, Args[i],
-                                Args[i].Flags[PartIdx], CCInfo))
+          if (Handler.assignArg(i + PartIdx, NewVT, NewVT, CCValAssign::Full,
+                                Args[i], Args[i].Flags[PartIdx], CCInfo))
             return false;
         }
       }
@@ -298,9 +296,9 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
     // FIXME: Pack registers if we have more than one.
     Register ArgReg = Args[i].Regs[0];
 
+    MVT OrigVT = MVT::getVT(Args[i].Ty);
+    MVT VAVT = VA.getValVT();
     if (VA.isRegLoc()) {
-      MVT OrigVT = MVT::getVT(Args[i].Ty);
-      MVT VAVT = VA.getValVT();
       if (Handler.isIncomingArgumentHandler() && VAVT != OrigVT) {
         if (VAVT.getSizeInBits() < OrigVT.getSizeInBits()) {
           // Expected to be multiple regs for a single incoming arg.
@@ -355,6 +353,14 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
         Handler.assignValueToReg(ArgReg, VA.getLocReg(), VA);
       }
     } else if (VA.isMemLoc()) {
+      // Don't currently support loading/storing a type that needs to be split
+      // to the stack. Should be easy, just not implemented yet.
+      if (Args[i].Regs.size() > 1) {
+        LLVM_DEBUG(
+            dbgs()
+            << "Load/store a split arg to/from the stack not implemented yet");
+        return false;
+      }
       MVT VT = MVT::getVT(Args[i].Ty);
       unsigned Size = VT == MVT::iPTR ? DL.getPointerSize()
                                       : alignTo(VT.getSizeInBits(), 8) / 8;
@@ -367,6 +373,81 @@ bool CallLowering::handleAssignments(CCState &CCInfo,
       return false;
     }
   }
+  return true;
+}
+
+bool CallLowering::analyzeArgInfo(CCState &CCState,
+                                  SmallVectorImpl<ArgInfo> &Args,
+                                  CCAssignFn &AssignFnFixed,
+                                  CCAssignFn &AssignFnVarArg) const {
+  for (unsigned i = 0, e = Args.size(); i < e; ++i) {
+    MVT VT = MVT::getVT(Args[i].Ty);
+    CCAssignFn &Fn = Args[i].IsFixed ? AssignFnFixed : AssignFnVarArg;
+    if (Fn(i, VT, VT, CCValAssign::Full, Args[i].Flags[0], CCState)) {
+      // Bail out on anything we can't handle.
+      LLVM_DEBUG(dbgs() << "Cannot analyze " << EVT(VT).getEVTString()
+                        << " (arg number = " << i << "\n");
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CallLowering::resultsCompatible(CallLoweringInfo &Info,
+                                     MachineFunction &MF,
+                                     SmallVectorImpl<ArgInfo> &InArgs,
+                                     CCAssignFn &CalleeAssignFnFixed,
+                                     CCAssignFn &CalleeAssignFnVarArg,
+                                     CCAssignFn &CallerAssignFnFixed,
+                                     CCAssignFn &CallerAssignFnVarArg) const {
+  const Function &F = MF.getFunction();
+  CallingConv::ID CalleeCC = Info.CallConv;
+  CallingConv::ID CallerCC = F.getCallingConv();
+
+  if (CallerCC == CalleeCC)
+    return true;
+
+  SmallVector<CCValAssign, 16> ArgLocs1;
+  CCState CCInfo1(CalleeCC, false, MF, ArgLocs1, F.getContext());
+  if (!analyzeArgInfo(CCInfo1, InArgs, CalleeAssignFnFixed,
+                      CalleeAssignFnVarArg))
+    return false;
+
+  SmallVector<CCValAssign, 16> ArgLocs2;
+  CCState CCInfo2(CallerCC, false, MF, ArgLocs2, F.getContext());
+  if (!analyzeArgInfo(CCInfo2, InArgs, CallerAssignFnFixed,
+                      CalleeAssignFnVarArg))
+    return false;
+
+  // We need the argument locations to match up exactly. If there's more in
+  // one than the other, then we are done.
+  if (ArgLocs1.size() != ArgLocs2.size())
+    return false;
+
+  // Make sure that each location is passed in exactly the same way.
+  for (unsigned i = 0, e = ArgLocs1.size(); i < e; ++i) {
+    const CCValAssign &Loc1 = ArgLocs1[i];
+    const CCValAssign &Loc2 = ArgLocs2[i];
+
+    // We need both of them to be the same. So if one is a register and one
+    // isn't, we're done.
+    if (Loc1.isRegLoc() != Loc2.isRegLoc())
+      return false;
+
+    if (Loc1.isRegLoc()) {
+      // If they don't have the same register location, we're done.
+      if (Loc1.getLocReg() != Loc2.getLocReg())
+        return false;
+
+      // They matched, so we can move to the next ArgLoc.
+      continue;
+    }
+
+    // Loc1 wasn't a RegLoc, so they both must be MemLocs. Check if they match.
+    if (Loc1.getLocMemOffset() != Loc2.getLocMemOffset())
+      return false;
+  }
+
   return true;
 }
 

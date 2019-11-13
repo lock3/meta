@@ -16,6 +16,7 @@ static_library("bugprone") {
   sources = [
     "ArgumentCommentCheck.cpp",
     "AssertSideEffectCheck.cpp",
+    "BadSignalToKillThreadCheck.cpp",
     "BoolPointerImplicitConversionCheck.cpp",
     "BranchCloneCheck.cpp",
     "BugproneTidyModule.cpp",
@@ -28,6 +29,7 @@ static_library("bugprone") {
     "ForwardingReferenceOverloadCheck.cpp",
     "InaccurateEraseCheck.cpp",
     "IncorrectRoundingsCheck.cpp",
+    "InfiniteLoopCheck.cpp",
     "IntegerDivisionCheck.cpp",
     "LambdaFunctionNameCheck.cpp",
     "MacroParenthesesCheck.cpp",
@@ -36,6 +38,7 @@ static_library("bugprone") {
     "MisplacedWideningCastCheck.cpp",
     "MoveForwardingReferenceCheck.cpp",
     "MultipleStatementMacroCheck.cpp",
+    "NotNullTerminatedResultCheck.cpp",
     "ParentVirtualCallCheck.cpp",
     "PosixReturnCheck.cpp",
     "SizeofContainerCheck.cpp",

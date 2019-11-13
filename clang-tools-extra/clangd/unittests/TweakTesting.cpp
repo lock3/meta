@@ -9,10 +9,14 @@
 #include "TweakTesting.h"
 
 #include "Annotations.h"
-#include "refactor/Tweak.h"
 #include "SourceCode.h"
+#include "TestFS.h"
+#include "refactor/Tweak.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "llvm/Support/Error.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include <string>
 
 namespace clang {
 namespace clangd {
@@ -59,7 +63,7 @@ std::pair<unsigned, unsigned> rangeOrPoint(const Annotations &A) {
           cantFail(positionToOffset(A.code(), SelectionRng.end))};
 }
 
-MATCHER_P3(TweakIsAvailable, TweakID, Ctx, Header,
+MATCHER_P6(TweakIsAvailable, TweakID, Ctx, Header, ExtraArgs, ExtraFiles, Index,
            (TweakID + (negation ? " is unavailable" : " is available")).str()) {
   std::string WrappedCode = wrap(Ctx, arg);
   Annotations Input(WrappedCode);
@@ -67,8 +71,10 @@ MATCHER_P3(TweakIsAvailable, TweakID, Ctx, Header,
   TestTU TU;
   TU.HeaderCode = Header;
   TU.Code = Input.code();
+  TU.ExtraArgs = ExtraArgs;
+  TU.AdditionalFiles = std::move(ExtraFiles);
   ParsedAST AST = TU.build();
-  Tweak::Selection S(AST, Selection.first, Selection.second);
+  Tweak::Selection S(Index, AST, Selection.first, Selection.second);
   auto PrepareResult = prepareTweak(TweakID, S);
   if (PrepareResult)
     return true;
@@ -78,15 +84,19 @@ MATCHER_P3(TweakIsAvailable, TweakID, Ctx, Header,
 
 } // namespace
 
-std::string TweakTest::apply(llvm::StringRef MarkedCode) const {
+std::string TweakTest::apply(llvm::StringRef MarkedCode,
+                             llvm::StringMap<std::string> *EditedFiles) const {
   std::string WrappedCode = wrap(Context, MarkedCode);
   Annotations Input(WrappedCode);
   auto Selection = rangeOrPoint(Input);
+
   TestTU TU;
   TU.HeaderCode = Header;
+  TU.AdditionalFiles = std::move(ExtraFiles);
   TU.Code = Input.code();
+  TU.ExtraArgs = ExtraArgs;
   ParsedAST AST = TU.build();
-  Tweak::Selection S(AST, Selection.first, Selection.second);
+  Tweak::Selection S(Index.get(), AST, Selection.first, Selection.second);
 
   auto T = prepareTweak(TweakID, S);
   if (!T) {
@@ -98,18 +108,31 @@ std::string TweakTest::apply(llvm::StringRef MarkedCode) const {
     return "fail: " + llvm::toString(Result.takeError());
   if (Result->ShowMessage)
     return "message:\n" + *Result->ShowMessage;
-  if (Result->ApplyEdit) {
-    if (auto NewText =
-            tooling::applyAllReplacements(Input.code(), *Result->ApplyEdit))
-      return unwrap(Context, *NewText);
-    else
+  if (Result->ApplyEdits.empty())
+    return "no effect";
+
+  std::string EditedMainFile;
+  for (auto &It : Result->ApplyEdits) {
+    auto NewText = It.second.apply();
+    if (!NewText)
       return "bad edits: " + llvm::toString(NewText.takeError());
+    llvm::StringRef Unwrapped = unwrap(Context, *NewText);
+    if (It.first() == testPath(TU.Filename))
+      EditedMainFile = Unwrapped;
+    else {
+      if (!EditedFiles)
+        ADD_FAILURE() << "There were changes to additional files, but client "
+                         "provided a nullptr for EditedFiles.";
+      else
+        EditedFiles->try_emplace(It.first(), Unwrapped.str());
+    }
   }
-  return "no effect";
+  return EditedMainFile;
 }
 
 ::testing::Matcher<llvm::StringRef> TweakTest::isAvailable() const {
-  return TweakIsAvailable(llvm::StringRef(TweakID), Context, Header); 
+  return TweakIsAvailable(llvm::StringRef(TweakID), Context, Header, ExtraArgs,
+                          ExtraFiles, Index.get());
 }
 
 std::vector<std::string> TweakTest::expandCases(llvm::StringRef MarkedCode) {

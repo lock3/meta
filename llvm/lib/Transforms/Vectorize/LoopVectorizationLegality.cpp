@@ -15,6 +15,8 @@
 //
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/LoopVectorizationLegality.h"
+#include "llvm/Analysis/Loads.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/VectorUtils.h"
 #include "llvm/IR/IntrinsicInst.h"
 
@@ -407,7 +409,8 @@ int LoopVectorizationLegality::isConsecutivePtr(Value *Ptr) {
   const ValueToValueMap &Strides =
       getSymbolicStrides() ? *getSymbolicStrides() : ValueToValueMap();
 
-  int Stride = getPtrStride(PSE, Ptr, TheLoop, Strides, true, false);
+  bool CanAddPredicate = !TheLoop->getHeader()->getParent()->hasOptSize();
+  int Stride = getPtrStride(PSE, Ptr, TheLoop, Strides, CanAddPredicate, false);
   if (Stride == 1 || Stride == -1)
     return Stride;
   return 0;
@@ -738,9 +741,9 @@ bool LoopVectorizationLegality::canVectorizeInstrs() {
           // Arbitrarily try a vector of 2 elements.
           Type *VecTy = VectorType::get(T, /*NumElements=*/2);
           assert(VecTy && "did not find vectorized version of stored type");
-          unsigned Alignment = getLoadStoreAlignment(ST);
+          const MaybeAlign Alignment = getLoadStoreAlignment(ST);
           assert(Alignment && "Alignment should be set");
-          if (!TTI->isLegalNTStore(VecTy, llvm::Align(Alignment))) {
+          if (!TTI->isLegalNTStore(VecTy, *Alignment)) {
             reportVectorizationFailure(
                 "nontemporal store instruction cannot be vectorized",
                 "nontemporal store instruction cannot be vectorized",
@@ -755,9 +758,9 @@ bool LoopVectorizationLegality::canVectorizeInstrs() {
           // supported on the target (arbitrarily try a vector of 2 elements).
           Type *VecTy = VectorType::get(I.getType(), /*NumElements=*/2);
           assert(VecTy && "did not find vectorized version of load type");
-          unsigned Alignment = getLoadStoreAlignment(LD);
+          const MaybeAlign Alignment = getLoadStoreAlignment(LD);
           assert(Alignment && "Alignment should be set");
-          if (!TTI->isLegalNTLoad(VecTy, llvm::Align(Alignment))) {
+          if (!TTI->isLegalNTLoad(VecTy, *Alignment)) {
             reportVectorizationFailure(
                 "nontemporal load instruction cannot be vectorized",
                 "nontemporal load instruction cannot be vectorized",
@@ -936,12 +939,25 @@ bool LoopVectorizationLegality::canVectorizeWithIfConvert() {
 
   // Collect safe addresses.
   for (BasicBlock *BB : TheLoop->blocks()) {
-    if (blockNeedsPredication(BB))
+    if (!blockNeedsPredication(BB)) {
+      for (Instruction &I : *BB)
+        if (auto *Ptr = getLoadStorePointerOperand(&I))
+          SafePointes.insert(Ptr);
       continue;
+    }
 
-    for (Instruction &I : *BB)
-      if (auto *Ptr = getLoadStorePointerOperand(&I))
-        SafePointes.insert(Ptr);
+    // For a block which requires predication, a address may be safe to access
+    // in the loop w/o predication if we can prove dereferenceability facts
+    // sufficient to ensure it'll never fault within the loop. For the moment,
+    // we restrict this to loads; stores are more complicated due to
+    // concurrency restrictions.
+    ScalarEvolution &SE = *PSE.getSE();
+    for (Instruction &I : *BB) {
+      LoadInst *LI = dyn_cast<LoadInst>(&I);
+      if (LI && !mustSuppressSpeculation(*LI) &&
+          isDereferenceableAndAlignedInLoop(LI, TheLoop, SE, *DT))
+        SafePointes.insert(LI->getPointerOperand());
+    }
   }
 
   // Collect the blocks that need predication.

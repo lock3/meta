@@ -3,7 +3,7 @@
 
 ---
 name:            t1
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -25,7 +25,7 @@ body:             |
 ...
 ---
 name:            t2
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -53,7 +53,7 @@ body:             |
 ...
 ---
 name:            t3
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -75,7 +75,7 @@ body:             |
 ...
 ---
 name:            t4
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -100,7 +100,7 @@ body:             |
 ...
 ---
 name:            t5
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -124,7 +124,7 @@ body:             |
 ...
 ---
 name:            t6
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -153,7 +153,7 @@ body:             |
 ...
 ---
 name:            t7
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -174,7 +174,7 @@ body:             |
 ...
 ---
 name:            t8
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -194,7 +194,7 @@ body:             |
 ...
 ---
 name:            t9
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -239,7 +239,7 @@ body:             |
 ...
 ---
 name:            t10
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -262,7 +262,7 @@ body:             |
 ...
 ---
 name:            LIS8
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -284,7 +284,7 @@ body:             |
 ...
 ---
 name:            LIS
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -306,7 +306,7 @@ body:             |
 ...
 ---
 name:            modify_and_kill_the_reg_in_the_same_inst
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -323,7 +323,7 @@ body:             |
 ...
 ---
 name:            dead_load_immediate_followed_by_a_redundancy
-alignment:       4
+alignment:       16
 tracksRegLiveness: true
 machineFunctionInfo: {}
 body:             |
@@ -343,6 +343,28 @@ body:             |
     renamable $x5 = ADDI8 $x1, -128
     renamable $r3 = LI 128
     STW killed renamable $r3, 16, $x4
+    BLR8 implicit $lr8, implicit $rm
+
+...
+---
+name:            overwrite_reg_before_killed
+alignment:       16
+tracksRegLiveness: true
+machineFunctionInfo: {}
+body:             |
+  bb.0.entry:
+    liveins: $x1
+
+    ; CHECK-LABEL: name: overwrite_reg_before_killed
+    ; CHECK: liveins: $x1
+    ; CHECK: renamable $x3 = LI8 0
+    ; CHECK: STD renamable $x3, 16, $x1
+    ; CHECK: STD killed renamable $x3, 8, $x1
+    ; CHECK: BLR8 implicit $lr8, implicit $rm
+    renamable $x3 = LI8 0
+    STD renamable $x3, 16, $x1
+    renamable $x3 = LI8 0
+    STD killed renamable $x3, 8, $x1
     BLR8 implicit $lr8, implicit $rm
 
 ...

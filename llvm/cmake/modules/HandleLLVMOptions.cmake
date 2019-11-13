@@ -18,17 +18,6 @@ else()
   set(LINKER_IS_LLD_LINK FALSE)
 endif()
 
-set(LLVM_CXX_STD_default "c++14")
-# Preserve behaviour of legacy cache variables
-if (LLVM_ENABLE_CXX1Z)
-  set(LLVM_CXX_STD_default "c++1z")
-endif()
-if (LLVM_CXX_STD STREQUAL "c++11")
-  set(LLVM_CXX_STD_force FORCE)
-endif()
-set(LLVM_CXX_STD ${LLVM_CXX_STD_default}
-    CACHE STRING "C++ standard to use for compilation." ${LLVM_CXX_STD_force})
-
 set(LLVM_ENABLE_LTO OFF CACHE STRING "Build LLVM with LTO. May be specified as Thin or Full to use a particular kind of LTO")
 string(TOUPPER "${LLVM_ENABLE_LTO}" uppercase_LLVM_ENABLE_LTO)
 
@@ -445,23 +434,6 @@ if ( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
   add_flag_if_supported("-Werror=unguarded-availability-new" WERROR_UNGUARDED_AVAILABILITY_NEW)
 endif( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
 
-# C++ language standard selection for compilers accepting the GCC-style option:
-if ( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
-  check_cxx_compiler_flag("-std=${LLVM_CXX_STD}" CXX_SUPPORTS_CXX_STD)
-  if (CXX_SUPPORTS_CXX_STD)
-   if (CYGWIN OR MINGW)
-      # MinGW and Cygwin are a bit stricter and lack things like
-      # 'strdup', 'stricmp', etc in c++11 mode.
-      string(REPLACE "c++" "gnu++" gnu_LLVM_CXX_STD "${LLVM_CXX_STD}")
-      append("-std=${gnu_LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
-    else()
-      append("-std=${LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
-    endif()
-  else()
-    message(FATAL_ERROR "The host compiler does not support '-std=${LLVM_CXX_STD}'.")
-  endif()
-endif( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
-
 # Modules enablement for GCC-compatible compilers:
 if ( LLVM_COMPILER_IS_GCC_COMPATIBLE AND LLVM_ENABLE_MODULES )
   set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
@@ -821,37 +793,53 @@ string(TOUPPER "${LLVM_BUILD_INSTRUMENTED}" uppercase_LLVM_BUILD_INSTRUMENTED)
 
 if (LLVM_BUILD_INSTRUMENTED)
   if (LLVM_ENABLE_IR_PGO OR uppercase_LLVM_BUILD_INSTRUMENTED STREQUAL "IR")
-    append("-fprofile-generate='${LLVM_PROFILE_DATA_DIR}'"
+    append("-fprofile-generate=\"${LLVM_PROFILE_DATA_DIR}\""
       CMAKE_CXX_FLAGS
-      CMAKE_C_FLAGS
-      CMAKE_EXE_LINKER_FLAGS
-      CMAKE_SHARED_LINKER_FLAGS)
+      CMAKE_C_FLAGS)
+    if(NOT LINKER_IS_LLD_LINK)
+        append("-fprofile-generate=\"${LLVM_PROFILE_DATA_DIR}\""
+          CMAKE_EXE_LINKER_FLAGS
+          CMAKE_SHARED_LINKER_FLAGS)
+    endif()
   elseif(uppercase_LLVM_BUILD_INSTRUMENTED STREQUAL "CSIR")
-    append("-fcs-profile-generate='${LLVM_CSPROFILE_DATA_DIR}'"
+    append("-fcs-profile-generate=\"${LLVM_CSPROFILE_DATA_DIR}\""
       CMAKE_CXX_FLAGS
-      CMAKE_C_FLAGS
-      CMAKE_EXE_LINKER_FLAGS
-      CMAKE_SHARED_LINKER_FLAGS)
+      CMAKE_C_FLAGS)
+    if(NOT LINKER_IS_LLD_LINK)
+      append("-fcs-profile-generate=\"${LLVM_CSPROFILE_DATA_DIR}\""
+        CMAKE_EXE_LINKER_FLAGS
+        CMAKE_SHARED_LINKER_FLAGS)
+    endif()
   else()
-    append("-fprofile-instr-generate='${LLVM_PROFILE_FILE_PATTERN}'"
+    append("-fprofile-instr-generate=\"${LLVM_PROFILE_FILE_PATTERN}\""
       CMAKE_CXX_FLAGS
-      CMAKE_C_FLAGS
-      CMAKE_EXE_LINKER_FLAGS
-      CMAKE_SHARED_LINKER_FLAGS)
+      CMAKE_C_FLAGS)
+    if(NOT LINKER_IS_LLD_LINK)
+      append("-fprofile-instr-generate=\"${LLVM_PROFILE_FILE_PATTERN}\""
+        CMAKE_EXE_LINKER_FLAGS
+        CMAKE_SHARED_LINKER_FLAGS)
+    endif()
   endif()
 endif()
 
-# Need to pass -fprofile-instr-use to linker for context-sensitive PGO
-# compilation.
 if(LLVM_PROFDATA_FILE AND EXISTS ${LLVM_PROFDATA_FILE})
-    append("-fprofile-instr-use='${LLVM_PROFDATA_FILE}'"
-      CMAKE_EXE_LINKER_FLAGS
-      CMAKE_SHARED_LINKER_FLAGS)
+  if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" )
+    append("-fprofile-instr-use=\"${LLVM_PROFDATA_FILE}\""
+      CMAKE_CXX_FLAGS
+      CMAKE_C_FLAGS)
+    if(NOT LINKER_IS_LLD_LINK)
+      append("-fprofile-instr-use=\"${LLVM_PROFDATA_FILE}\""
+        CMAKE_EXE_LINKER_FLAGS
+        CMAKE_SHARED_LINKER_FLAGS)
+    endif()
+  else()
+    message(FATAL_ERROR "LLVM_PROFDATA_FILE can only be specified when compiling with clang")
+  endif()
 endif()
 
 option(LLVM_BUILD_INSTRUMENTED_COVERAGE "Build LLVM and tools with Code Coverage instrumentation" Off)
 mark_as_advanced(LLVM_BUILD_INSTRUMENTED_COVERAGE)
-append_if(LLVM_BUILD_INSTRUMENTED_COVERAGE "-fprofile-instr-generate='${LLVM_PROFILE_FILE_PATTERN}' -fcoverage-mapping"
+append_if(LLVM_BUILD_INSTRUMENTED_COVERAGE "-fprofile-instr-generate=\"${LLVM_PROFILE_FILE_PATTERN}\" -fcoverage-mapping"
   CMAKE_CXX_FLAGS
   CMAKE_C_FLAGS
   CMAKE_EXE_LINKER_FLAGS
@@ -881,6 +869,9 @@ if(uppercase_LLVM_ENABLE_LTO STREQUAL "THIN")
            CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
   elseif(LLVM_USE_LINKER STREQUAL "gold")
     append("-Wl,--plugin-opt,cache-dir=${PROJECT_BINARY_DIR}/lto.cache"
+           CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
+  elseif(LINKER_IS_LLD_LINK)
+    append("/lldltocache:${PROJECT_BINARY_DIR}/lto.cache"
            CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
   endif()
 elseif(uppercase_LLVM_ENABLE_LTO STREQUAL "FULL")

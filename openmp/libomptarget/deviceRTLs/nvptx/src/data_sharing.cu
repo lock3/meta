@@ -96,7 +96,7 @@ __kmpc_initialize_data_sharing_environment(__kmpc_data_sharing_slot *rootS,
 
 EXTERN void *__kmpc_data_sharing_environment_begin(
     __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack,
-    void **SavedSharedFrame, int32_t *SavedActiveThreads,
+    void **SavedSharedFrame, __kmpc_impl_lanemask_t *SavedActiveThreads,
     size_t SharingDataSize, size_t SharingDefaultDataSize,
     int16_t IsOMPRuntimeInitialized) {
 
@@ -117,7 +117,7 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
   __kmpc_data_sharing_slot *&SlotP = DataSharingState.SlotPtr[WID];
   void *&StackP = DataSharingState.StackPtr[WID];
   void * volatile &FrameP = DataSharingState.FramePtr[WID];
-  int32_t &ActiveT = DataSharingState.ActiveThreads[WID];
+  __kmpc_impl_lanemask_t &ActiveT = DataSharingState.ActiveThreads[WID];
 
   DSPRINT0(DSFLAG, "Save current slot/stack values.\n");
   // Save the current values.
@@ -180,13 +180,14 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
         } else {
           DSPRINT(DSFLAG, "Cleaning up -failed reuse - %016llx\n",
                   (unsigned long long)SlotP->Next);
-          free(ExistingSlot);
+          SafeFree(ExistingSlot, "Failed reuse");
         }
       }
 
       if (!NewSlot) {
-        NewSlot = (__kmpc_data_sharing_slot *)malloc(
-            sizeof(__kmpc_data_sharing_slot) + NewSize);
+        NewSlot = (__kmpc_data_sharing_slot *)SafeMalloc(
+            sizeof(__kmpc_data_sharing_slot) + NewSize,
+            "Warp master slot allocation");
         DSPRINT(DSFLAG, "New slot allocated %016llx (data size=%016llx)\n",
                 (unsigned long long)NewSlot, NewSize);
       }
@@ -205,7 +206,7 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
       if (SlotP->Next) {
         DSPRINT(DSFLAG, "Cleaning up - old not required - %016llx\n",
                 (unsigned long long)SlotP->Next);
-        free(SlotP->Next);
+        SafeFree(SlotP->Next, "Old slot not required");
         SlotP->Next = 0;
       }
 
@@ -225,7 +226,7 @@ EXTERN void *__kmpc_data_sharing_environment_begin(
 
 EXTERN void __kmpc_data_sharing_environment_end(
     __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack,
-    void **SavedSharedFrame, int32_t *SavedActiveThreads,
+    void **SavedSharedFrame, __kmpc_impl_lanemask_t *SavedActiveThreads,
     int32_t IsEntryPoint) {
 
   DSPRINT0(DSFLAG, "Entering __kmpc_data_sharing_environment_end\n");
@@ -243,7 +244,7 @@ EXTERN void __kmpc_data_sharing_environment_end(
                                         : DataSharingState.SlotPtr[WID];
 
       if (S->Next) {
-        free(S->Next);
+        SafeFree(S->Next, "Sharing environment end");
         S->Next = 0;
       }
     }
@@ -260,7 +261,7 @@ EXTERN void __kmpc_data_sharing_environment_end(
   // assume that threads will converge right after the call site that started
   // the environment.
   if (IsWarpMasterActiveThread()) {
-    int32_t &ActiveT = DataSharingState.ActiveThreads[WID];
+    __kmpc_impl_lanemask_t &ActiveT = DataSharingState.ActiveThreads[WID];
 
     DSPRINT0(DSFLAG, "Before restoring the stack\n");
     // Zero the bits in the mask. If it is still different from zero, then we

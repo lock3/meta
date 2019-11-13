@@ -1220,21 +1220,21 @@ Status Platform::PutFile(const FileSpec &source, const FileSpec &destination,
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_PLATFORM));
   LLDB_LOGF(log, "[PutFile] Using block by block transfer....\n");
 
-  uint32_t source_open_options =
+  auto source_open_options =
       File::eOpenOptionRead | File::eOpenOptionCloseOnExec;
   namespace fs = llvm::sys::fs;
   if (fs::is_symlink_file(source.GetPath()))
     source_open_options |= File::eOpenOptionDontFollowSymlinks;
 
-  File source_file;
-  Status error = FileSystem::Instance().Open(
-      source_file, source, source_open_options, lldb::eFilePermissionsUserRW);
-  uint32_t permissions = source_file.GetPermissions(error);
+  auto source_file = FileSystem::Instance().Open(source, source_open_options,
+                                                 lldb::eFilePermissionsUserRW);
+  if (!source_file)
+    return Status(source_file.takeError());
+  Status error;
+  uint32_t permissions = source_file.get()->GetPermissions(error);
   if (permissions == 0)
     permissions = lldb::eFilePermissionsFileDefault;
 
-  if (!source_file.IsValid())
-    return Status("PutFile: unable to open source file");
   lldb::user_id_t dest_file = OpenFile(
       destination, File::eOpenOptionCanCreate | File::eOpenOptionWrite |
                        File::eOpenOptionTruncate | File::eOpenOptionCloseOnExec,
@@ -1249,7 +1249,7 @@ Status Platform::PutFile(const FileSpec &source, const FileSpec &destination,
   uint64_t offset = 0;
   for (;;) {
     size_t bytes_read = buffer_sp->GetByteSize();
-    error = source_file.Read(buffer_sp->GetBytes(), bytes_read);
+    error = source_file.get()->Read(buffer_sp->GetBytes(), bytes_read);
     if (error.Fail() || bytes_read == 0)
       break;
 
@@ -1262,7 +1262,7 @@ Status Platform::PutFile(const FileSpec &source, const FileSpec &destination,
     if (bytes_written != bytes_read) {
       // We didn't write the correct number of bytes, so adjust the file
       // position in the source file we are reading from...
-      source_file.SeekFromStart(offset);
+      source_file.get()->SeekFromStart(offset);
     }
   }
   CloseFile(dest_file, error);
@@ -1796,8 +1796,7 @@ lldb::ProcessSP Platform::ConnectProcess(llvm::StringRef connect_url,
   if (!process_sp)
     return nullptr;
 
-  error =
-      process_sp->ConnectRemote(debugger.GetOutputFile().get(), connect_url);
+  error = process_sp->ConnectRemote(&debugger.GetOutputStream(), connect_url);
   if (error.Fail())
     return nullptr;
 
@@ -1817,10 +1816,17 @@ size_t Platform::GetSoftwareBreakpointTrapOpcode(Target &target,
   size_t trap_opcode_size = 0;
 
   switch (arch.GetMachine()) {
+  case llvm::Triple::aarch64_32:
   case llvm::Triple::aarch64: {
     static const uint8_t g_aarch64_opcode[] = {0x00, 0x00, 0x20, 0xd4};
     trap_opcode = g_aarch64_opcode;
     trap_opcode_size = sizeof(g_aarch64_opcode);
+  } break;
+
+  case llvm::Triple::arc: {
+    static const uint8_t g_hex_opcode[] = { 0xff, 0x7f };
+    trap_opcode = g_hex_opcode;
+    trap_opcode_size = sizeof(g_hex_opcode);
   } break;
 
   // TODO: support big-endian arm and thumb trap codes.

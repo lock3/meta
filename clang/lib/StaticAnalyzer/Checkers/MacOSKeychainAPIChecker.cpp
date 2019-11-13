@@ -113,11 +113,14 @@ private:
   const ExplodedNode *getAllocationNode(const ExplodedNode *N, SymbolRef Sym,
                                         CheckerContext &C) const;
 
-  std::unique_ptr<BugReport> generateAllocatedDataNotReleasedReport(
-      const AllocationPair &AP, ExplodedNode *N, CheckerContext &C) const;
+  std::unique_ptr<PathSensitiveBugReport>
+  generateAllocatedDataNotReleasedReport(const AllocationPair &AP,
+                                         ExplodedNode *N,
+                                         CheckerContext &C) const;
 
   /// Mark an AllocationPair interesting for diagnostic reporting.
-  void markInteresting(BugReport *R, const AllocationPair &AP) const {
+  void markInteresting(PathSensitiveBugReport *R,
+                       const AllocationPair &AP) const {
     R->markInteresting(AP.first);
     R->markInteresting(AP.second->Region);
   }
@@ -141,7 +144,7 @@ private:
 
     PathDiagnosticPieceRef VisitNode(const ExplodedNode *N,
                                      BugReporterContext &BRC,
-                                     BugReport &BR) override;
+                                     PathSensitiveBugReport &BR) override;
   };
 };
 }
@@ -236,7 +239,7 @@ void MacOSKeychainAPIChecker::
 
   os << "Deallocator doesn't match the allocator: '"
      << FunctionsToTrack[PDeallocIdx].Name << "' should be used.";
-  auto Report = std::make_unique<BugReport>(*BT, os.str(), N);
+  auto Report = std::make_unique<PathSensitiveBugReport>(*BT, os.str(), N);
   Report->addVisitor(std::make_unique<SecKeychainBugVisitor>(AP.first));
   Report->addRange(ArgExpr->getSourceRange());
   markInteresting(Report.get(), AP);
@@ -280,7 +283,8 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
             << "the allocator: missing a call to '"
             << FunctionsToTrack[DIdx].Name
             << "'.";
-        auto Report = std::make_unique<BugReport>(*BT, os.str(), N);
+        auto Report =
+            std::make_unique<PathSensitiveBugReport>(*BT, os.str(), N);
         Report->addVisitor(std::make_unique<SecKeychainBugVisitor>(V));
         Report->addRange(ArgExpr->getSourceRange());
         Report->markInteresting(AS->Region);
@@ -334,7 +338,7 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
     if (!N)
       return;
     initBugType();
-    auto Report = std::make_unique<BugReport>(
+    auto Report = std::make_unique<PathSensitiveBugReport>(
         *BT, "Trying to free data which has not been allocated.", N);
     Report->addRange(ArgExpr->getSourceRange());
     if (AS)
@@ -465,7 +469,7 @@ MacOSKeychainAPIChecker::getAllocationNode(const ExplodedNode *N,
   return AllocNode;
 }
 
-std::unique_ptr<BugReport>
+std::unique_ptr<PathSensitiveBugReport>
 MacOSKeychainAPIChecker::generateAllocatedDataNotReleasedReport(
     const AllocationPair &AP, ExplodedNode *N, CheckerContext &C) const {
   const ADFunctionInfo &FI = FunctionsToTrack[AP.second->AllocatorIdx];
@@ -480,16 +484,16 @@ MacOSKeychainAPIChecker::generateAllocatedDataNotReleasedReport(
   // allocated, and only report a single path.
   PathDiagnosticLocation LocUsedForUniqueing;
   const ExplodedNode *AllocNode = getAllocationNode(N, AP.first, C);
-  const Stmt *AllocStmt = PathDiagnosticLocation::getStmt(AllocNode);
+  const Stmt *AllocStmt = AllocNode->getStmtForDiagnostics();
 
   if (AllocStmt)
     LocUsedForUniqueing = PathDiagnosticLocation::createBegin(AllocStmt,
                                               C.getSourceManager(),
                                               AllocNode->getLocationContext());
 
-  auto Report =
-      std::make_unique<BugReport>(*BT, os.str(), N, LocUsedForUniqueing,
-                                  AllocNode->getLocationContext()->getDecl());
+  auto Report = std::make_unique<PathSensitiveBugReport>(
+      *BT, os.str(), N, LocUsedForUniqueing,
+      AllocNode->getLocationContext()->getDecl());
 
   Report->addVisitor(std::make_unique<SecKeychainBugVisitor>(AP.first));
   markInteresting(Report.get(), AP);
@@ -615,7 +619,8 @@ ProgramStateRef MacOSKeychainAPIChecker::checkPointerEscape(
 
 PathDiagnosticPieceRef
 MacOSKeychainAPIChecker::SecKeychainBugVisitor::VisitNode(
-    const ExplodedNode *N, BugReporterContext &BRC, BugReport &BR) {
+    const ExplodedNode *N, BugReporterContext &BRC,
+    PathSensitiveBugReport &BR) {
   const AllocationState *AS = N->getState()->get<AllocatedData>(Sym);
   if (!AS)
     return nullptr;

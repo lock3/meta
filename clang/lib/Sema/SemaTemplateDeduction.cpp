@@ -1486,7 +1486,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
 #define NON_CANONICAL_TYPE(Class, Base) \
   case Type::Class: llvm_unreachable("deducing non-canonical type: " #Class);
 #define TYPE(Class, Base)
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
 
     case Type::TemplateTypeParm:
     case Type::SubstTemplateTypeParmPack:
@@ -3093,6 +3093,13 @@ Sema::SubstituteExplicitTemplateArguments(
                   Function->getTypeSpecStartLoc(), Function->getDeclName());
     if (ResultType.isNull() || Trap.hasErrorOccurred())
       return TDK_SubstitutionFailure;
+    // CUDA: Kernel function must have 'void' return type.
+    if (getLangOpts().CUDA)
+      if (Function->hasAttr<CUDAGlobalAttr>() && !ResultType->isVoidType()) {
+        Diag(Function->getLocation(), diag::err_kern_type_not_void_return)
+            << Function->getType() << Function->getSourceRange();
+        return TDK_SubstitutionFailure;
+      }
   }
 
   // Instantiate the types of each of the function parameters given the
@@ -3819,8 +3826,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
   if (Args.size() < Function->getMinRequiredArguments() && !PartialOverloading)
     return TDK_TooFewArguments;
   else if (TooManyArguments(NumParams, Args.size(), PartialOverloading)) {
-    const FunctionProtoType *Proto
-      = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Proto = Function->getType()->castAs<FunctionProtoType>();
     if (Proto->isTemplateVariadic())
       /* Do nothing */;
     else if (!Proto->isVariadic())
@@ -3967,11 +3973,8 @@ QualType Sema::adjustCCAndNoReturn(QualType ArgFunctionType,
   if (ArgFunctionType.isNull())
     return ArgFunctionType;
 
-  const FunctionProtoType *FunctionTypeP =
-      FunctionType->castAs<FunctionProtoType>();
-  const FunctionProtoType *ArgFunctionTypeP =
-      ArgFunctionType->getAs<FunctionProtoType>();
-
+  const auto *FunctionTypeP = FunctionType->castAs<FunctionProtoType>();
+  const auto *ArgFunctionTypeP = ArgFunctionType->castAs<FunctionProtoType>();
   FunctionProtoType::ExtProtoInfo EPI = ArgFunctionTypeP->getExtProtoInfo();
   bool Rebuild = false;
 
@@ -5617,7 +5620,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
 #define ABSTRACT_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
     break;
   }
 }

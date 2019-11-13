@@ -522,7 +522,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                         F->arg_begin()->getType());
       return true;
     }
-    Regex vldRegex("^arm\\.neon\\.vld([1234]|[234]lane)\\.v[a-z0-9]*$");
+    static const Regex vldRegex("^arm\\.neon\\.vld([1234]|[234]lane)\\.v[a-z0-9]*$");
     if (vldRegex.match(Name)) {
       auto fArgs = F->getFunctionType()->params();
       SmallVector<Type *, 4> Tys(fArgs.begin(), fArgs.end());
@@ -533,7 +533,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                "llvm." + Name + ".p0i8", F->getParent());
       return true;
     }
-    Regex vstRegex("^arm\\.neon\\.vst([1234]|[234]lane)\\.v[a-z0-9]*$");
+    static const Regex vstRegex("^arm\\.neon\\.vst([1234]|[234]lane)\\.v[a-z0-9]*$");
     if (vstRegex.match(Name)) {
       static const Intrinsic::ID StoreInts[] = {Intrinsic::arm_neon_vst1,
                                                 Intrinsic::arm_neon_vst2,
@@ -598,7 +598,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
   }
   case 'e': {
     SmallVector<StringRef, 2> Groups;
-    Regex R("^experimental.vector.reduce.([a-z]+)\\.[fi][0-9]+");
+    static const Regex R("^experimental.vector.reduce.([a-z]+)\\.[fi][0-9]+");
     if (R.match(Name, &Groups)) {
       Intrinsic::ID ID = Intrinsic::not_intrinsic;
       if (Groups[1] == "fadd")
@@ -3877,14 +3877,35 @@ void llvm::UpgradeARCRuntime(Module &M) {
       FunctionType *NewFuncTy = NewFn->getFunctionType();
       SmallVector<Value *, 2> Args;
 
+      // Don't upgrade the intrinsic if it's not valid to bitcast the return
+      // value to the return type of the old function.
+      if (NewFuncTy->getReturnType() != CI->getType() &&
+          !CastInst::castIsValid(Instruction::BitCast, CI,
+                                 NewFuncTy->getReturnType()))
+        continue;
+
+      bool InvalidCast = false;
+
       for (unsigned I = 0, E = CI->getNumArgOperands(); I != E; ++I) {
         Value *Arg = CI->getArgOperand(I);
+
         // Bitcast argument to the parameter type of the new function if it's
         // not a variadic argument.
-        if (I < NewFuncTy->getNumParams())
+        if (I < NewFuncTy->getNumParams()) {
+          // Don't upgrade the intrinsic if it's not valid to bitcast the argument
+          // to the parameter type of the new function.
+          if (!CastInst::castIsValid(Instruction::BitCast, Arg,
+                                     NewFuncTy->getParamType(I))) {
+            InvalidCast = true;
+            break;
+          }
           Arg = Builder.CreateBitCast(Arg, NewFuncTy->getParamType(I));
+        }
         Args.push_back(Arg);
       }
+
+      if (InvalidCast)
+        continue;
 
       // Create a call instruction that calls the new function.
       CallInst *NewCall = Builder.CreateCall(NewFuncTy, NewFn, Args);
@@ -4112,4 +4133,24 @@ MDNode *llvm::upgradeInstructionLoopAttachment(MDNode &N) {
     Ops.push_back(upgradeLoopArgument(MD));
 
   return MDTuple::get(T->getContext(), Ops);
+}
+
+std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
+  std::string AddrSpaces = "-p270:32:32-p271:32:32-p272:64:64";
+
+  // If X86, and the datalayout matches the expected format, add pointer size
+  // address spaces to the datalayout.
+  Triple::ArchType Arch = Triple(TT).getArch();
+  if ((Arch != llvm::Triple::x86 && Arch != llvm::Triple::x86_64) ||
+      DL.contains(AddrSpaces))
+    return DL;
+
+  SmallVector<StringRef, 4> Groups;
+  Regex R("(e-m:[a-z](-p:32:32)?)(-[if]64:.*$)");
+  if (!R.match(DL, &Groups))
+    return DL;
+
+  SmallString<1024> Buf;
+  std::string Res = (Groups[1] + AddrSpaces + Groups[3]).toStringRef(Buf).str();
+  return Res;
 }

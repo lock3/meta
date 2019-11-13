@@ -443,6 +443,15 @@ class InstructionEncoding {
   bit hasCompleteDecoder = 1;
 }
 
+// Allows specifying an InstructionEncoding by HwMode. If an Instruction specifies
+// an EncodingByHwMode, its Inst and Size members are ignored and Ts are used
+// to encode and decode based on HwMode.
+class EncodingByHwMode<list<HwMode> Ms = [], list<InstructionEncoding> Ts = []>
+    : HwModeSelect<Ms> {
+  // The length of this list must be the same as the length of Ms.
+  list<InstructionEncoding> Objects = Ts;
+}
+
 //===----------------------------------------------------------------------===//
 // Instruction set description - These classes correspond to the C++ classes in
 // the Target/TargetInstrInfo.h file.
@@ -453,6 +462,10 @@ class Instruction : InstructionEncoding {
   dag OutOperandList;       // An dag containing the MI def operand list.
   dag InOperandList;        // An dag containing the MI use operand list.
   string AsmString = "";    // The .s format to print the instruction with.
+
+  // Allows specifying a canonical InstructionEncoding by HwMode. If non-empty,
+  // the Inst member of this Instruction is ignored.
+  EncodingByHwMode EncodingInfos;
 
   // Pattern - Set to the DAG pattern for this instruction, if we know of one,
   // otherwise, uninitialized.
@@ -478,6 +491,10 @@ class Instruction : InstructionEncoding {
 
   // Added complexity passed onto matching pattern.
   int AddedComplexity  = 0;
+
+  // Indicates if this is a pre-isel opcode that should be
+  // legalized/regbankselected/selected.
+  bit isPreISelOpcode = 0;
 
   // These bits capture information about the high-level semantics of the
   // instruction.
@@ -1193,7 +1210,7 @@ def PATCHABLE_TAIL_CALL : StandardPseudoInstruction {
 }
 def PATCHABLE_EVENT_CALL : StandardPseudoInstruction {
   let OutOperandList = (outs);
-  let InOperandList = (ins ptr_rc:$event, i8imm:$size);
+  let InOperandList = (ins ptr_rc:$event, unknown:$size);
   let AsmString = "# XRay Custom Event Log.";
   let usesCustomInserter = 1;
   let isCall = 1;
@@ -1203,7 +1220,7 @@ def PATCHABLE_EVENT_CALL : StandardPseudoInstruction {
 }
 def PATCHABLE_TYPED_EVENT_CALL : StandardPseudoInstruction {
   let OutOperandList = (outs);
-  let InOperandList = (ins i16imm:$type, ptr_rc:$event, i32imm:$size);
+  let InOperandList = (ins unknown:$type, ptr_rc:$event, unknown:$size);
   let AsmString = "# XRay Typed Event Log.";
   let usesCustomInserter = 1;
   let isCall = 1;

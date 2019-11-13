@@ -273,9 +273,9 @@ void Fuzzer::InterruptCallback() {
 NO_SANITIZE_MEMORY
 void Fuzzer::AlarmCallback() {
   assert(Options.UnitTimeoutSec > 0);
-  // In Windows Alarm callback is executed by a different thread.
+  // In Windows and Fuchsia, Alarm callback is executed by a different thread.
   // NetBSD's current behavior needs this change too.
-#if !LIBFUZZER_WINDOWS && !LIBFUZZER_NETBSD
+#if !LIBFUZZER_WINDOWS && !LIBFUZZER_NETBSD && !LIBFUZZER_FUCHSIA
   if (!InFuzzingThread())
     return;
 #endif
@@ -513,10 +513,12 @@ size_t Fuzzer::GetCurrentUnitInFuzzingThead(const uint8_t **Data) const {
 }
 
 void Fuzzer::CrashOnOverwrittenData() {
-  Printf("==%d== ERROR: libFuzzer: fuzz target overwrites it's const input\n",
+  Printf("==%d== ERROR: libFuzzer: fuzz target overwrites its const input\n",
          GetPid());
+  PrintStackTrace();
+  Printf("SUMMARY: libFuzzer: overwrites-const-input\n");
   DumpCurrentUnit("crash-");
-  Printf("SUMMARY: libFuzzer: out-of-memory\n");
+  PrintFinalStats();
   _Exit(Options.ErrorExitCode); // Stop right now.
 }
 
@@ -739,10 +741,6 @@ void Fuzzer::ReadAndExecuteSeedCorpora(Vector<SizedFile> &CorporaFiles) {
   // Test the callback with empty input and never try it again.
   uint8_t dummy = 0;
   ExecuteCallback(&dummy, 0);
-
-  // Protect lazy counters here, after the once-init code has been executed.
-  if (Options.LazyCounters)
-    TPC.ProtectLazyCounters();
 
   if (CorporaFiles.empty()) {
     Printf("INFO: A corpus is not provided, starting from an empty corpus\n");

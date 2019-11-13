@@ -483,6 +483,9 @@ private:
   bool translateUserOp2(const User &U, MachineIRBuilder &MIRBuilder) {
     return false;
   }
+  bool translateFreeze(const User &U, MachineIRBuilder &MIRBuilder) {
+    return false;
+  }
 
   /// @}
 
@@ -517,6 +520,10 @@ private:
   // True when either the Target Machine specifies no optimizations or the
   // function has the optnone attribute.
   bool EnableOpts = false;
+
+  /// True when the block contains a tail call. This allows the IRTranslator to
+  /// stop translating such blocks early.
+  bool HasTailCall = false;
 
   /// Switch analysis and optimization.
   class GISelSwitchLowering : public SwitchCG::SwitchLowering {

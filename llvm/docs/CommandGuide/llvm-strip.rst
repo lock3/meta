@@ -13,10 +13,10 @@ DESCRIPTION
 
 :program:`llvm-strip` is a tool to strip sections and symbols from object files.
 If no other stripping or remove options are specified, :option:`--strip-all`
-will be enabled by default.
+will be enabled.
 
-The input files are modified in-place. If "-" is specified for the input file,
-the input is read from the program's standard input stream.
+By default, the input files are modified in-place. If "-" is specified for the
+input file, the input is read from the program's standard input stream.
 
 If the input is an archive, any requested operations will be applied to each
 archive member individually.
@@ -52,7 +52,7 @@ multiple file formats.
 
 .. option::  --no-strip-all
 
- Disable --strip-all.
+ Disable :option:`--strip-all`.
 
 .. option::  -o <file>
 
@@ -77,18 +77,15 @@ multiple file formats.
 .. option:: --strip-all, -S
 
  For ELF objects, remove from the output all symbols and non-alloc sections not
- within segments, except for .gnu.warning sections and the section name table.
+ within segments, except for .gnu.warning, .ARM.attribute sections and the
+ section name table.
 
  For COFF objects, remove all symbols, debug sections, and relocations from the
  output.
 
 .. option:: --strip-debug, -g
 
- Remove all debug sections.
-
-.. option:: --strip-sections
-
- Remove all section headers and all sections not in segments.
+ Remove all debug sections from the output.
 
 .. option:: --strip-symbol <symbol>, -N
 
@@ -97,11 +94,40 @@ multiple file formats.
 
 .. option:: --strip-unneeded
 
- Remove all local or undefined symbols that are not required by relocations.
+ Remove from the output all local or undefined symbols that are not required by
+ relocations. Also remove all debug sections.
 
 .. option:: --version, -V
 
-  Display the version of this program.
+ Display the version of the :program:`llvm-strip` executable.
+
+.. option:: @<FILE>
+
+ Read command-line options and commands from response file `<FILE>`.
+
+.. option:: --wildcard, -w
+
+  Allow wildcard syntax for symbol-related flags. On by default for
+  section-related flags. Incompatible with --regex.
+
+  Wildcard syntax allows the following special symbols:
+
+  ====================== ========================= ==================
+   Character              Meaning                   Equivalent
+  ====================== ========================= ==================
+  ``*``                  Any number of characters  ``.*``
+  ``?``                  Any single character      ``.``
+  ``\``                  Escape the next character ``\``
+  ``[a-z]``              Character class           ``[a-z]``
+  ``[!a-z]``, ``[^a-z]`` Negated character class   ``[^a-z]``
+  ====================== ========================= ==================
+
+  Additionally, starting a wildcard with '!' will prevent a match, even if
+  another flag matches. For example ``-w -N '*' -N '!x'`` will strip all symbols
+  except for ``x``.
+
+  The order of wildcards does not matter. For example, ``-w -N '*' -N '!x'`` is
+  the same as ``-w -N '!x' -N '*'``.
 
 COFF-SPECIFIC OPTIONS
 ---------------------
@@ -124,8 +150,8 @@ them.
 
 .. option:: --allow-broken-links
 
- Allow llvm-strip to remove sections even if it would leave invalid section
- references. Any invalid sh_link fields will be set to zero.
+ Allow :program:`llvm-strip` to remove sections even if it would leave invalid
+ section references. Any invalid sh_link fields will be set to zero.
 
 .. option:: --discard-locals, -X
 
@@ -142,13 +168,18 @@ them.
 
 .. option:: --keep-symbol <symbol>, -K
 
- Do not remove symbols named ``<symbol>``. Can be specified multiple times to
- keep multiple symbols.
+ When removing symbols from the output, do not remove symbols named
+ ``<symbol>``. Can be specified multiple times to keep multiple symbols.
 
 .. option::  --preserve-dates, -p
 
- Preserve access and modification timestamps.
+ Preserve access and modification timestamps in the output.
 
+.. option:: --strip-sections
+
+ Remove from the output all section headers and all section data not within
+ segments. Note that many tools will not be able to use an object without
+ section headers.
 
 EXIT STATUS
 -----------

@@ -430,45 +430,44 @@ Sema::ActOnCaseExpr(SourceLocation CaseLoc, ExprResult Val) {
 
   // If we're not inside a switch, let the 'case' statement handling diagnose
   // this. Just clean up after the expression as best we can.
-  if (!getCurFunction()->SwitchStack.empty()) {
-    Expr *CondExpr =
-        getCurFunction()->SwitchStack.back().getPointer()->getCond();
-    if (!CondExpr)
-      return ExprError();
-    QualType CondType = CondExpr->getType();
+  if (getCurFunction()->SwitchStack.empty())
+    return ActOnFinishFullExpr(Val.get(), Val.get()->getExprLoc(), false,
+                               getLangOpts().CPlusPlus11);
 
-    auto CheckAndFinish = [&](Expr *E) {
-      if (CondType->isDependentType() || E->isTypeDependent())
-        return ExprResult(E);
+  Expr *CondExpr =
+      getCurFunction()->SwitchStack.back().getPointer()->getCond();
+  if (!CondExpr)
+    return ExprError();
+  QualType CondType = CondExpr->getType();
 
-      if (getLangOpts().CPlusPlus11) {
-        // C++11 [stmt.switch]p2: the constant-expression shall be a converted
-        // constant expression of the promoted type of the switch condition.
-        llvm::APSInt TempVal;
-        return CheckConvertedConstantExpression(E, CondType, TempVal,
-                                                CCEK_CaseValue);
-      }
+  auto CheckAndFinish = [&](Expr *E) {
+    if (CondType->isDependentType() || E->isTypeDependent())
+      return ExprResult(E);
 
-      ExprResult ER = E;
-      if (!E->isValueDependent())
-        ER = VerifyIntegerConstantExpression(E);
-      if (!ER.isInvalid())
-        ER = DefaultLvalueConversion(ER.get());
-      if (!ER.isInvalid())
-        ER = ImpCastExprToType(ER.get(), CondType, CK_IntegralCast);
-      return ER;
-    };
+    if (getLangOpts().CPlusPlus11) {
+      // C++11 [stmt.switch]p2: the constant-expression shall be a converted
+      // constant expression of the promoted type of the switch condition.
+      llvm::APSInt TempVal;
+      return CheckConvertedConstantExpression(E, CondType, TempVal,
+                                              CCEK_CaseValue);
+    }
 
-    ExprResult Converted = CorrectDelayedTyposInExpr(Val, CheckAndFinish);
-    if (Converted.get() == Val.get())
-      Converted = CheckAndFinish(Val.get());
-    if (Converted.isInvalid())
-      return ExprError();
-    Val = Converted;
-  }
+    ExprResult ER = E;
+    if (!E->isValueDependent())
+      ER = VerifyIntegerConstantExpression(E);
+    if (!ER.isInvalid())
+      ER = DefaultLvalueConversion(ER.get());
+    if (!ER.isInvalid())
+      ER = ImpCastExprToType(ER.get(), CondType, CK_IntegralCast);
+    if (!ER.isInvalid())
+      ER = ActOnFinishFullExpr(ER.get(), ER.get()->getExprLoc(), false);
+    return ER;
+  };
 
-  return ActOnFinishFullExpr(Val.get(), Val.get()->getExprLoc(), false,
-                             getLangOpts().CPlusPlus11);
+  ExprResult Converted = CorrectDelayedTyposInExpr(Val, CheckAndFinish);
+  if (Converted.get() == Val.get())
+    Converted = CheckAndFinish(Val.get());
+  return Converted;
 }
 
 StmtResult
@@ -964,7 +963,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     // condition is constant.
     llvm::APSInt ConstantCondValue;
     bool HasConstantCond = false;
-    if (!HasDependentValue && !TheDefaultStmt) {
+    if (!TheDefaultStmt) {
       Expr::EvalResult Result;
       HasConstantCond = CondExpr->EvaluateAsInt(Result, Context,
                                                 Expr::SE_AllowSideEffects);
@@ -2675,6 +2674,11 @@ StmtResult Sema::BuildCXXForRangeStmt(SourceLocation ForLoc,
   if (Kind == BFRK_Check)
     return StmtResult();
 
+  // In OpenMP loop region loop control variable must be private. Perform
+  // analysis of first part (if any).
+  if (getLangOpts().OpenMP >= 50 && BeginDeclStmt.isUsable())
+    ActOnOpenMPLoopInitialization(ForLoc, BeginDeclStmt.get());
+
   return new (Context) CXXForRangeStmt(
       InitStmt, RangeDS, cast_or_null<DeclStmt>(BeginDeclStmt.get()),
       cast_or_null<DeclStmt>(EndDeclStmt.get()), NotEqExpr.get(),
@@ -3306,18 +3310,18 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   }
   assert(!FnRetType.isNull());
 
-  if (BlockScopeInfo *CurBlock = dyn_cast<BlockScopeInfo>(CurCap)) {
-    if (CurBlock->FunctionType->getAs<FunctionType>()->getNoReturnAttr()) {
+  if (auto *CurBlock = dyn_cast<BlockScopeInfo>(CurCap)) {
+    if (CurBlock->FunctionType->castAs<FunctionType>()->getNoReturnAttr()) {
       Diag(ReturnLoc, diag::err_noreturn_block_has_return_expr);
       return StmtError();
     }
-  } else if (CapturedRegionScopeInfo *CurRegion =
-                 dyn_cast<CapturedRegionScopeInfo>(CurCap)) {
+  } else if (auto *CurRegion = dyn_cast<CapturedRegionScopeInfo>(CurCap)) {
     Diag(ReturnLoc, diag::err_return_in_captured_stmt) << CurRegion->getRegionName();
     return StmtError();
   } else {
     assert(CurLambda && "unknown kind of captured scope");
-    if (CurLambda->CallOperator->getType()->getAs<FunctionType>()
+    if (CurLambda->CallOperator->getType()
+            ->castAs<FunctionType>()
             ->getNoReturnAttr()) {
       Diag(ReturnLoc, diag::err_noreturn_lambda_has_return_expr);
       return StmtError();
@@ -3500,6 +3504,14 @@ bool Sema::DeduceFunctionTypeFromReturnExpr(FunctionDecl *FD,
     if (Deduced.isNull())
       return true;
   }
+
+  // CUDA: Kernel function must have 'void' return type.
+  if (getLangOpts().CUDA)
+    if (FD->hasAttr<CUDAGlobalAttr>() && !Deduced->isVoidType()) {
+      Diag(FD->getLocation(), diag::err_kern_type_not_void_return)
+          << FD->getType() << FD->getSourceRange();
+      return true;
+    }
 
   //  If a function with a declared return type that contains a placeholder type
   //  has multiple return statements, the return type is deduced for each return
@@ -4172,19 +4184,16 @@ StmtResult Sema::ActOnSEHTryBlock(bool IsCXXTry, SourceLocation TryLoc,
   return SEHTryStmt::Create(Context, IsCXXTry, TryLoc, TryBlock, Handler);
 }
 
-StmtResult
-Sema::ActOnSEHExceptBlock(SourceLocation Loc,
-                          Expr *FilterExpr,
-                          Stmt *Block) {
+StmtResult Sema::ActOnSEHExceptBlock(SourceLocation Loc, Expr *FilterExpr,
+                                     Stmt *Block) {
   assert(FilterExpr && Block);
-
-  if(!FilterExpr->getType()->isIntegerType()) {
-    return StmtError(Diag(FilterExpr->getExprLoc(),
-                     diag::err_filter_expression_integral)
-                     << FilterExpr->getType());
+  QualType FTy = FilterExpr->getType();
+  if (!FTy->isIntegerType() && !FTy->isDependentType()) {
+    return StmtError(
+        Diag(FilterExpr->getExprLoc(), diag::err_filter_expression_integral)
+        << FTy);
   }
-
-  return SEHExceptStmt::Create(Context,Loc,FilterExpr,Block);
+  return SEHExceptStmt::Create(Context, Loc, FilterExpr, Block);
 }
 
 void Sema::ActOnStartSEHFinallyBlock() {

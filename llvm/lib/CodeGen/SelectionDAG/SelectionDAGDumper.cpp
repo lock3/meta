@@ -280,6 +280,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::EXTRACT_SUBVECTOR:          return "extract_subvector";
   case ISD::SCALAR_TO_VECTOR:           return "scalar_to_vector";
   case ISD::VECTOR_SHUFFLE:             return "vector_shuffle";
+  case ISD::SPLAT_VECTOR:               return "splat_vector";
   case ISD::CARRY_FALSE:                return "carry_false";
   case ISD::ADDC:                       return "addc";
   case ISD::ADDE:                       return "adde";
@@ -319,7 +320,6 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FP_ROUND:                   return "fp_round";
   case ISD::STRICT_FP_ROUND:            return "strict_fp_round";
   case ISD::FLT_ROUNDS_:                return "flt_rounds";
-  case ISD::FP_ROUND_INREG:             return "fp_round_inreg";
   case ISD::FP_EXTEND:                  return "fp_extend";
   case ISD::STRICT_FP_EXTEND:           return "strict_fp_extend";
 
@@ -334,9 +334,13 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FP16_TO_FP:                 return "fp16_to_fp";
   case ISD::FP_TO_FP16:                 return "fp_to_fp16";
   case ISD::LROUND:                     return "lround";
+  case ISD::STRICT_LROUND:              return "strict_lround";
   case ISD::LLROUND:                    return "llround";
+  case ISD::STRICT_LLROUND:             return "strict_llround";
   case ISD::LRINT:                      return "lrint";
+  case ISD::STRICT_LRINT:               return "strict_lrint";
   case ISD::LLRINT:                     return "llrint";
+  case ISD::STRICT_LLRINT:              return "strict_llrint";
 
     // Control flow instructions
   case ISD::BR:                         return "br";

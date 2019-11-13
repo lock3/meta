@@ -499,7 +499,7 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         P = ToolChain.GetFilePath(crtbegin);
       }
       CmdArgs.push_back(Args.MakeArgString(P));
-	  }
+    }
 
     // Add crtfastmath.o if available and fast math is enabled.
     ToolChain.AddFastMathRuntimeIfAvailable(Args, CmdArgs);
@@ -555,9 +555,13 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       bool WantPthread = Args.hasArg(options::OPT_pthread) ||
                          Args.hasArg(options::OPT_pthreads);
 
+      // Use the static OpenMP runtime with -static-openmp
+      bool StaticOpenMP = Args.hasArg(options::OPT_static_openmp) &&
+                          !Args.hasArg(options::OPT_static);
+
       // FIXME: Only pass GompNeedsRT = true for platforms with libgomp that
       // require librt. Most modern Linux platforms do, but some may not.
-      if (addOpenMPRuntime(CmdArgs, ToolChain, Args,
+      if (addOpenMPRuntime(CmdArgs, ToolChain, Args, StaticOpenMP,
                            JA.isHostOffloading(Action::OFK_OpenMP),
                            /* GompNeedsRT= */ true))
         // OpenMP runtimes implies pthreads when using the GNU toolchain.
@@ -618,9 +622,6 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
     }
   }
-
-  // Add OpenMP offloading linker script args if required.
-  AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);
 
   // Add HIP offloading linker script args if required.
   AddHIPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA,
@@ -819,7 +820,8 @@ void tools::gnutools::Assembler::ConstructJob(Compilation &C,
       A->render(Args, CmdArgs);
     } else if (mips::shouldUseFPXX(
                    Args, getToolChain().getTriple(), CPUName, ABIName,
-                   mips::getMipsFloatABI(getToolChain().getDriver(), Args)))
+                   mips::getMipsFloatABI(getToolChain().getDriver(), Args,
+                                         getToolChain().getTriple())))
       CmdArgs.push_back("-mfpxx");
 
     // Pass on -mmips16 or -mno-mips16. However, the assembler equivalent of
@@ -1391,7 +1393,8 @@ bool clang::driver::findMIPSMultilibs(const Driver &D,
   addMultilibFlag(CPUName == "mips32r6", "march=mips32r6", Flags);
   addMultilibFlag(CPUName == "mips64", "march=mips64", Flags);
   addMultilibFlag(CPUName == "mips64r2" || CPUName == "mips64r3" ||
-                      CPUName == "mips64r5" || CPUName == "octeon",
+                      CPUName == "mips64r5" || CPUName == "octeon" ||
+                      CPUName == "octeon+",
                   "march=mips64r2", Flags);
   addMultilibFlag(CPUName == "mips64r6", "march=mips64r6", Flags);
   addMultilibFlag(isMicroMips(Args), "mmicromips", Flags);

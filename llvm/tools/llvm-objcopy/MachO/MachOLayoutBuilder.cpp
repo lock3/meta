@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MachOLayoutBuilder.h"
+#include "llvm/Support/Alignment.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -145,7 +146,7 @@ uint64_t MachOLayoutBuilder::layoutSegments() {
           Sec.Offset = 0;
         } else {
           uint64_t PaddingSize =
-              OffsetToAlignment(SegFileSize, 1ull << Sec.Align);
+              offsetToAlignment(SegFileSize, Align(1ull << Sec.Align));
           Sec.Offset = SegOffset + SegFileSize + PaddingSize;
           Sec.Size = Sec.Content.size();
           SegFileSize += PaddingSize + Sec.Size;
@@ -317,6 +318,9 @@ Error MachOLayoutBuilder::layoutTail(uint64_t Offset) {
     case MachO::LC_SEGMENT:
     case MachO::LC_SEGMENT_64:
     case MachO::LC_VERSION_MIN_MACOSX:
+    case MachO::LC_VERSION_MIN_IPHONEOS:
+    case MachO::LC_VERSION_MIN_TVOS:
+    case MachO::LC_VERSION_MIN_WATCHOS:
     case MachO::LC_BUILD_VERSION:
     case MachO::LC_ID_DYLIB:
     case MachO::LC_LOAD_DYLIB:

@@ -676,7 +676,7 @@ static int RunAtexit() {
   return ret;
 }
 
-#pragma section(".CRT$XID", long, read)  // NOLINT
+#pragma section(".CRT$XID", long, read)
 __declspec(allocate(".CRT$XID")) int (*__run_atexit)() = RunAtexit;
 #endif
 
@@ -943,6 +943,11 @@ uptr SignalContext::GetAddress() const {
 
 bool SignalContext::IsMemoryAccess() const {
   return GetWriteFlag() != SignalContext::UNKNOWN;
+}
+
+bool SignalContext::IsTrueFaultingAddress() const {
+  // FIXME: Provide real implementation for this. See Linux and Mac variants.
+  return IsMemoryAccess();
 }
 
 SignalContext::WriteFlag SignalContext::GetWriteFlag() const {

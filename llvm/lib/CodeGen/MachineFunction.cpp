@@ -173,16 +173,16 @@ void MachineFunction::init() {
     FrameInfo->ensureMaxAlignment(F.getFnStackAlignment());
 
   ConstantPool = new (Allocator) MachineConstantPool(getDataLayout());
-  LogAlignment = STI->getTargetLowering()->getMinFunctionLogAlignment();
+  Alignment = STI->getTargetLowering()->getMinFunctionAlignment();
 
   // FIXME: Shouldn't use pref alignment if explicit alignment is set on F.
   // FIXME: Use Function::hasOptSize().
   if (!F.hasFnAttribute(Attribute::OptimizeForSize))
-    LogAlignment = std::max(
-        LogAlignment, STI->getTargetLowering()->getPrefFunctionLogAlignment());
+    Alignment = std::max(Alignment,
+                         STI->getTargetLowering()->getPrefFunctionAlignment());
 
   if (AlignAllFunctions)
-    LogAlignment = AlignAllFunctions;
+    Alignment = Align(1ULL << AlignAllFunctions);
 
   JumpTableInfo = nullptr;
 
@@ -447,12 +447,11 @@ MachineFunction::getMachineMemOperand(const MachineMemOperand *MMO,
       MMO->getOrdering(), MMO->getFailureOrdering());
 }
 
-MachineInstr::ExtraInfo *
-MachineFunction::createMIExtraInfo(ArrayRef<MachineMemOperand *> MMOs,
-                                   MCSymbol *PreInstrSymbol,
-                                   MCSymbol *PostInstrSymbol) {
+MachineInstr::ExtraInfo *MachineFunction::createMIExtraInfo(
+    ArrayRef<MachineMemOperand *> MMOs, MCSymbol *PreInstrSymbol,
+    MCSymbol *PostInstrSymbol, MDNode *HeapAllocMarker) {
   return MachineInstr::ExtraInfo::create(Allocator, MMOs, PreInstrSymbol,
-                                         PostInstrSymbol);
+                                         PostInstrSymbol, HeapAllocMarker);
 }
 
 const char *MachineFunction::createExternalSymbolName(StringRef Name) {
@@ -519,6 +518,13 @@ void MachineFunction::print(raw_ostream &OS, const SlotIndexes *Indexes) const {
   }
 
   OS << "\n# End machine code for function " << getName() << ".\n\n";
+}
+
+/// True if this function needs frame moves for debug or exceptions.
+bool MachineFunction::needsFrameMoves() const {
+  return getMMI().hasDebugInfo() ||
+         getTarget().Options.ForceDwarfFrameSection ||
+         F.needsUnwindTableEntry();
 }
 
 namespace llvm {
@@ -824,31 +830,36 @@ try_next:;
   return FilterID;
 }
 
-void MachineFunction::addCodeViewHeapAllocSite(MachineInstr *I,
-                                               const MDNode *MD) {
-  MCSymbol *BeginLabel = Ctx.createTempSymbol("heapallocsite", true);
-  MCSymbol *EndLabel = Ctx.createTempSymbol("heapallocsite", true);
-  I->setPreInstrSymbol(*this, BeginLabel);
-  I->setPostInstrSymbol(*this, EndLabel);
+void MachineFunction::moveCallSiteInfo(const MachineInstr *Old,
+                                       const MachineInstr *New) {
+  assert(New->isCall() && "Call site info refers only to call instructions!");
 
-  const DIType *DI = dyn_cast<DIType>(MD);
-  CodeViewHeapAllocSites.push_back(std::make_tuple(BeginLabel, EndLabel, DI));
-}
-
-void MachineFunction::updateCallSiteInfo(const MachineInstr *Old,
-                                         const MachineInstr *New) {
-  if (!Target.Options.EnableDebugEntryValues || Old == New)
-    return;
-
-  assert(Old->isCall() && (!New || New->isCall()) &&
-         "Call site info referes only to call instructions!");
-  CallSiteInfoMap::iterator CSIt = CallSitesInfo.find(Old);
+  CallSiteInfoMap::iterator CSIt = getCallSiteInfo(Old);
   if (CSIt == CallSitesInfo.end())
     return;
+
   CallSiteInfo CSInfo = std::move(CSIt->second);
   CallSitesInfo.erase(CSIt);
-  if (New)
-    CallSitesInfo[New] = CSInfo;
+  CallSitesInfo[New] = CSInfo;
+}
+
+void MachineFunction::eraseCallSiteInfo(const MachineInstr *MI) {
+  CallSiteInfoMap::iterator CSIt = getCallSiteInfo(MI);
+  if (CSIt == CallSitesInfo.end())
+    return;
+  CallSitesInfo.erase(CSIt);
+}
+
+void MachineFunction::copyCallSiteInfo(const MachineInstr *Old,
+                                       const MachineInstr *New) {
+  assert(New->isCall() && "Call site info refers only to call instructions!");
+
+  CallSiteInfoMap::iterator CSIt = getCallSiteInfo(Old);
+  if (CSIt == CallSitesInfo.end())
+    return;
+
+  CallSiteInfo CSInfo = CSIt->second;
+  CallSitesInfo[New] = CSInfo;
 }
 
 /// \}
@@ -883,13 +894,13 @@ unsigned MachineJumpTableInfo::getEntryAlignment(const DataLayout &TD) const {
   // alignment.
   switch (getEntryKind()) {
   case MachineJumpTableInfo::EK_BlockAddress:
-    return TD.getPointerABIAlignment(0);
+    return TD.getPointerABIAlignment(0).value();
   case MachineJumpTableInfo::EK_GPRel64BlockAddress:
-    return TD.getABIIntegerTypeAlignment(64);
+    return TD.getABIIntegerTypeAlignment(64).value();
   case MachineJumpTableInfo::EK_GPRel32BlockAddress:
   case MachineJumpTableInfo::EK_LabelDifference32:
   case MachineJumpTableInfo::EK_Custom32:
-    return TD.getABIIntegerTypeAlignment(32);
+    return TD.getABIIntegerTypeAlignment(32).value();
   case MachineJumpTableInfo::EK_Inline:
     return 1;
   }

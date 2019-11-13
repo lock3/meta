@@ -326,9 +326,9 @@ void MachineBasicBlock::print(raw_ostream &OS, ModuleSlotTracker &MST,
     OS << "landing-pad";
     HasAttributes = true;
   }
-  if (getLogAlignment()) {
+  if (getAlignment() != Align::None()) {
     OS << (HasAttributes ? ", " : " (");
-    OS << "align " << getLogAlignment();
+    OS << "align " << Log2(getAlignment());
     HasAttributes = true;
   }
   if (HasAttributes)
@@ -1461,6 +1461,11 @@ MachineBasicBlock::computeRegisterLiveness(const TargetRegisterInfo *TRI,
 
     } while (I != begin() && N > 0);
   }
+
+  // If all the instructions before this in the block are debug instructions,
+  // skip over them.
+  while (I != begin() && std::prev(I)->isDebugInstr())
+    --I;
 
   // Did we get to the start of the block?
   if (I == begin()) {

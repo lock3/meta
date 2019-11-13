@@ -481,12 +481,12 @@ bool TypeInfer::EnforceSmallerThan(TypeSetByHwMode &Small,
 
     if (any_of(S, isIntegerOrPtr) && any_of(S, isIntegerOrPtr)) {
       auto NotInt = [](MVT VT) { return !isIntegerOrPtr(VT); };
-      Changed |= berase_if(S, NotInt) |
-                 berase_if(B, NotInt);
+      Changed |= berase_if(S, NotInt);
+      Changed |= berase_if(B, NotInt);
     } else if (any_of(S, isFloatingPoint) && any_of(B, isFloatingPoint)) {
       auto NotFP = [](MVT VT) { return !isFloatingPoint(VT); };
-      Changed |= berase_if(S, NotFP) |
-                 berase_if(B, NotFP);
+      Changed |= berase_if(S, NotFP);
+      Changed |= berase_if(B, NotFP);
     } else if (S.empty() || B.empty()) {
       Changed = !S.empty() || !B.empty();
       S.clear();
@@ -497,8 +497,8 @@ bool TypeInfer::EnforceSmallerThan(TypeSetByHwMode &Small,
     }
 
     if (none_of(S, isVector) || none_of(B, isVector)) {
-      Changed |= berase_if(S, isVector) |
-                 berase_if(B, isVector);
+      Changed |= berase_if(S, isVector);
+      Changed |= berase_if(B, isVector);
     }
   }
 
@@ -769,7 +769,10 @@ void TypeInfer::expandOverloads(TypeSetByHwMode::SetType &Out,
         for (MVT T : MVT::integer_valuetypes())
           if (Legal.count(T))
             Out.insert(T);
-        for (MVT T : MVT::integer_vector_valuetypes())
+        for (MVT T : MVT::integer_fixedlen_vector_valuetypes())
+          if (Legal.count(T))
+            Out.insert(T);
+        for (MVT T : MVT::integer_scalable_vector_valuetypes())
           if (Legal.count(T))
             Out.insert(T);
         return;
@@ -777,7 +780,10 @@ void TypeInfer::expandOverloads(TypeSetByHwMode::SetType &Out,
         for (MVT T : MVT::fp_valuetypes())
           if (Legal.count(T))
             Out.insert(T);
-        for (MVT T : MVT::fp_vector_valuetypes())
+        for (MVT T : MVT::fp_fixedlen_vector_valuetypes())
+          if (Legal.count(T))
+            Out.insert(T);
+        for (MVT T : MVT::fp_scalable_vector_valuetypes())
           if (Legal.count(T))
             Out.insert(T);
         return;
@@ -919,6 +925,7 @@ std::string TreePredicateFn::getPredCode() const {
 
   if (isAtomic()) {
     if (getMemoryVT() == nullptr && !isAtomicOrderingMonotonic() &&
+        getAddressSpaces() == nullptr &&
         !isAtomicOrderingAcquire() && !isAtomicOrderingRelease() &&
         !isAtomicOrderingAcquireRelease() &&
         !isAtomicOrderingSequentiallyConsistent() &&
@@ -2790,6 +2797,7 @@ TreePatternNodePtr TreePattern::ParseTreePattern(Init *TheInit,
 
     if (Operator->isSubClassOf("SDNode") &&
         Operator->getName() != "imm" &&
+        Operator->getName() != "timm" &&
         Operator->getName() != "fpimm" &&
         Operator->getName() != "tglobaltlsaddr" &&
         Operator->getName() != "tconstpool" &&

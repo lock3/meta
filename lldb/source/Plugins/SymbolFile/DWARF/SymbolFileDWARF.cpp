@@ -8,6 +8,7 @@
 
 #include "SymbolFileDWARF.h"
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Threading.h"
 
@@ -178,6 +179,23 @@ ParseLLVMLineTable(lldb_private::DWARFContext &context,
   return *line_table;
 }
 
+static llvm::Optional<std::string>
+GetFileByIndex(const llvm::DWARFDebugLine::Prologue &prologue, size_t idx,
+               llvm::StringRef compile_dir, FileSpec::Style style) {
+  // Try to get an absolute path first.
+  std::string abs_path;
+  auto absolute = llvm::DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath;
+  if (prologue.getFileNameByIndex(idx, compile_dir, absolute, abs_path, style))
+    return std::move(abs_path);
+
+  // Otherwise ask for a relative path.
+  std::string rel_path;
+  auto relative = llvm::DILineInfoSpecifier::FileLineInfoKind::Default;
+  if (!prologue.getFileNameByIndex(idx, compile_dir, relative, rel_path, style))
+    return {};
+  return std::move(rel_path);
+}
+
 static FileSpecList ParseSupportFilesFromPrologue(
     const lldb::ModuleSP &module,
     const llvm::DWARFDebugLine::Prologue &prologue, FileSpec::Style style,
@@ -187,27 +205,12 @@ static FileSpecList ParseSupportFilesFromPrologue(
 
   const size_t number_of_files = prologue.FileNames.size();
   for (size_t idx = 1; idx <= number_of_files; ++idx) {
-    std::string original_file;
-    if (!prologue.getFileNameByIndex(
-            idx, compile_dir,
-            llvm::DILineInfoSpecifier::FileLineInfoKind::Default, original_file,
-            style)) {
-      // Always add an entry so the indexes remain correct.
-      support_files.EmplaceBack();
-      continue;
-    }
-
     std::string remapped_file;
-    if (!prologue.getFileNameByIndex(
-            idx, compile_dir,
-            llvm::DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath,
-            remapped_file, style)) {
-      // Always add an entry so the indexes remain correct.
-      support_files.EmplaceBack(original_file, style);
-      continue;
-    }
+    if (auto file_path = GetFileByIndex(prologue, idx, compile_dir, style))
+      if (!module->RemapSourceFile(llvm::StringRef(*file_path), remapped_file))
+        remapped_file = std::move(*file_path);
 
-    module->RemapSourceFile(llvm::StringRef(original_file), remapped_file);
+    // Unconditionally add an entry, so the indices match up.
     support_files.EmplaceBack(remapped_file, style);
   }
 
@@ -313,6 +316,8 @@ void SymbolFileDWARF::GetTypes(const DWARFDIE &die, dw_offset_t min_die_offset,
       case DW_TAG_ptr_to_member_type:
         add_type = (type_mask & eTypeClassMemberPointer) != 0;
         break;
+      default:
+        break;
       }
 
       if (add_type) {
@@ -332,8 +337,8 @@ void SymbolFileDWARF::GetTypes(const DWARFDIE &die, dw_offset_t min_die_offset,
   }
 }
 
-size_t SymbolFileDWARF::GetTypes(SymbolContextScope *sc_scope,
-                                 TypeClass type_mask, TypeList &type_list)
+void SymbolFileDWARF::GetTypes(SymbolContextScope *sc_scope,
+                               TypeClass type_mask, TypeList &type_list)
 
 {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
@@ -346,8 +351,8 @@ size_t SymbolFileDWARF::GetTypes(SymbolContextScope *sc_scope,
 
   if (comp_unit) {
     dwarf_cu = GetDWARFCompileUnit(comp_unit);
-    if (dwarf_cu == nullptr)
-      return 0;
+    if (!dwarf_cu)
+      return;
     GetTypes(dwarf_cu->DIE(), dwarf_cu->GetOffset(),
              dwarf_cu->GetNextUnitOffset(), type_mask, type_set);
   } else {
@@ -364,16 +369,13 @@ size_t SymbolFileDWARF::GetTypes(SymbolContextScope *sc_scope,
   }
 
   std::set<CompilerType> compiler_type_set;
-  size_t num_types_added = 0;
   for (Type *type : type_set) {
     CompilerType compiler_type = type->GetForwardCompilerType();
     if (compiler_type_set.find(compiler_type) == compiler_type_set.end()) {
       compiler_type_set.insert(compiler_type);
       type_list.Insert(type->shared_from_this());
-      ++num_types_added;
     }
   }
-  return num_types_added;
 }
 
 // Gets the first parent that is a lexical block, function or inlined
@@ -391,6 +393,8 @@ SymbolFileDWARF::GetParentSymbolContextDIE(const DWARFDIE &child_die) {
     case DW_TAG_inlined_subroutine:
     case DW_TAG_lexical_block:
       return die;
+    default:
+      break;
     }
   }
   return DWARFDIE();
@@ -826,6 +830,8 @@ lldb::LanguageType SymbolFileDWARF::ParseLanguage(CompileUnit &comp_unit) {
 }
 
 size_t SymbolFileDWARF::ParseFunctions(CompileUnit &comp_unit) {
+  static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
+  Timer scoped_timer(func_cat, "SymbolFileDWARF::ParseFunctions");
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   DWARFUnit *dwarf_cu = GetDWARFCompileUnit(&comp_unit);
   if (!dwarf_cu)
@@ -842,6 +848,18 @@ size_t SymbolFileDWARF::ParseFunctions(CompileUnit &comp_unit) {
   }
   // FixupTypes();
   return functions_added;
+}
+
+void SymbolFileDWARF::ForEachExternalModule(
+    CompileUnit &comp_unit, llvm::function_ref<void(ModuleSP)> f) {
+  UpdateExternalModuleListIfNeeded();
+
+  for (auto &p : m_external_type_modules) {
+    ModuleSP module = p.second;
+    f(module);
+    for (std::size_t i = 0; i < module->GetNumCompileUnits(); ++i)
+      module->GetCompileUnitAtIndex(i)->ForEachExternalModule(f);
+  }
 }
 
 bool SymbolFileDWARF::ParseSupportFiles(CompileUnit &comp_unit,
@@ -1204,16 +1222,9 @@ bool SymbolFileDWARF::ClassOrStructIsVirtual(const DWARFDIE &parent_die) {
 
 void SymbolFileDWARF::ParseDeclsForContext(CompilerDeclContext decl_ctx) {
   auto *type_system = decl_ctx.GetTypeSystem();
-  if (!type_system)
-    return;
-  DWARFASTParser *ast_parser = type_system->GetDWARFParser();
-  std::vector<DWARFDIE> decl_ctx_die_list =
-      ast_parser->GetDIEForDeclContext(decl_ctx);
-
-  for (DWARFDIE decl_ctx_die : decl_ctx_die_list)
-    for (DWARFDIE decl = decl_ctx_die.GetFirstChild(); decl;
-         decl = decl.GetSibling())
-      ast_parser->GetDeclForUIDFromDWARF(decl);
+  if (type_system != nullptr)
+    type_system->GetDWARFParser()->EnsureAllDIEsInDeclContextHaveBeenParsed(
+        decl_ctx);
 }
 
 user_id_t SymbolFileDWARF::GetUID(DIERef ref) {
@@ -1998,7 +2009,7 @@ bool SymbolFileDWARF::DeclContextMatchesThisSymbolFile(
   return false;
 }
 
-uint32_t SymbolFileDWARF::FindGlobalVariables(
+void SymbolFileDWARF::FindGlobalVariables(
     ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches, VariableList &variables) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
@@ -2013,11 +2024,11 @@ uint32_t SymbolFileDWARF::FindGlobalVariables(
         max_matches);
 
   if (!DeclContextMatchesThisSymbolFile(parent_decl_ctx))
-    return 0;
+    return;
 
   DWARFDebugInfo *info = DebugInfo();
-  if (info == nullptr)
-    return 0;
+  if (!info)
+    return;
 
   // Remember how many variables are in the list before we search.
   const uint32_t original_size = variables.GetSize();
@@ -2104,12 +2115,11 @@ uint32_t SymbolFileDWARF::FindGlobalVariables(
         name.GetCString(), static_cast<const void *>(parent_decl_ctx),
         max_matches, num_matches);
   }
-  return num_matches;
 }
 
-uint32_t SymbolFileDWARF::FindGlobalVariables(const RegularExpression &regex,
-                                              uint32_t max_matches,
-                                              VariableList &variables) {
+void SymbolFileDWARF::FindGlobalVariables(const RegularExpression &regex,
+                                          uint32_t max_matches,
+                                          VariableList &variables) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_LOOKUPS));
 
@@ -2122,8 +2132,8 @@ uint32_t SymbolFileDWARF::FindGlobalVariables(const RegularExpression &regex,
   }
 
   DWARFDebugInfo *info = DebugInfo();
-  if (info == nullptr)
-    return 0;
+  if (!info)
+    return;
 
   // Remember how many variables are in the list before we search.
   const uint32_t original_size = variables.GetSize();
@@ -2156,9 +2166,6 @@ uint32_t SymbolFileDWARF::FindGlobalVariables(const RegularExpression &regex,
         m_index->ReportInvalidDIERef(die_ref, regex.GetText());
     }
   }
-
-  // Return the number of variable that were appended to the list
-  return variables.GetSize() - original_size;
 }
 
 bool SymbolFileDWARF::ResolveFunction(const DWARFDIE &orig_die,
@@ -2234,10 +2241,11 @@ bool SymbolFileDWARF::DIEInDeclContext(const CompilerDeclContext *decl_ctx,
   return false;
 }
 
-uint32_t SymbolFileDWARF::FindFunctions(
-    ConstString name, const CompilerDeclContext *parent_decl_ctx,
-    FunctionNameType name_type_mask, bool include_inlines, bool append,
-    SymbolContextList &sc_list) {
+void SymbolFileDWARF::FindFunctions(ConstString name,
+                                    const CompilerDeclContext *parent_decl_ctx,
+                                    FunctionNameType name_type_mask,
+                                    bool include_inlines,
+                                    SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
   Timer scoped_timer(func_cat, "SymbolFileDWARF::FindFunctions (name = '%s')",
@@ -2252,21 +2260,16 @@ uint32_t SymbolFileDWARF::FindFunctions(
   if (log) {
     GetObjectFile()->GetModule()->LogMessage(
         log,
-        "SymbolFileDWARF::FindFunctions (name=\"%s\", "
-        "name_type_mask=0x%x, append=%u, sc_list)",
-        name.GetCString(), name_type_mask, append);
+        "SymbolFileDWARF::FindFunctions (name=\"%s\", name_type_mask=0x%x, sc_list)",
+        name.GetCString(), name_type_mask);
   }
 
-  // If we aren't appending the results to this list, then clear the list
-  if (!append)
-    sc_list.Clear();
-
   if (!DeclContextMatchesThisSymbolFile(parent_decl_ctx))
-    return 0;
+    return;
 
   // If name is empty then we won't find anything.
   if (name.IsEmpty())
-    return 0;
+    return;
 
   // Remember how many sc_list are in the list before we search in case we are
   // appending the results to a variable list.
@@ -2293,17 +2296,15 @@ uint32_t SymbolFileDWARF::FindFunctions(
     GetObjectFile()->GetModule()->LogMessage(
         log,
         "SymbolFileDWARF::FindFunctions (name=\"%s\", "
-        "name_type_mask=0x%x, include_inlines=%d, append=%u, sc_list) => "
-        "%u",
-        name.GetCString(), name_type_mask, include_inlines, append,
+        "name_type_mask=0x%x, include_inlines=%d, sc_list) => %u",
+        name.GetCString(), name_type_mask, include_inlines,
         num_matches);
   }
-  return num_matches;
 }
 
-uint32_t SymbolFileDWARF::FindFunctions(const RegularExpression &regex,
-                                        bool include_inlines, bool append,
-                                        SymbolContextList &sc_list) {
+void SymbolFileDWARF::FindFunctions(const RegularExpression &regex,
+                                    bool include_inlines,
+                                    SymbolContextList &sc_list) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   static Timer::Category func_cat(LLVM_PRETTY_FUNCTION);
   Timer scoped_timer(func_cat, "SymbolFileDWARF::FindFunctions (regex = '%s')",
@@ -2313,22 +2314,13 @@ uint32_t SymbolFileDWARF::FindFunctions(const RegularExpression &regex,
 
   if (log) {
     GetObjectFile()->GetModule()->LogMessage(
-        log,
-        "SymbolFileDWARF::FindFunctions (regex=\"%s\", append=%u, sc_list)",
-        regex.GetText().str().c_str(), append);
+        log, "SymbolFileDWARF::FindFunctions (regex=\"%s\", sc_list)",
+        regex.GetText().str().c_str());
   }
-
-  // If we aren't appending the results to this list, then clear the list
-  if (!append)
-    sc_list.Clear();
 
   DWARFDebugInfo *info = DebugInfo();
   if (!info)
-    return 0;
-
-  // Remember how many sc_list are in the list before we search in case we are
-  // appending the results to a variable list.
-  uint32_t original_size = sc_list.GetSize();
+    return;
 
   DIEArray offsets;
   m_index->GetFunctions(regex, offsets);
@@ -2343,9 +2335,6 @@ uint32_t SymbolFileDWARF::FindFunctions(const RegularExpression &regex,
     if (resolved_dies.insert(die.GetDIE()).second)
       ResolveFunction(die, include_inlines, sc_list);
   }
-
-  // Return the number of variable that were appended to the list
-  return sc_list.GetSize() - original_size;
 }
 
 void SymbolFileDWARF::GetMangledNamesForFunction(
@@ -2373,25 +2362,19 @@ void SymbolFileDWARF::GetMangledNamesForFunction(
   }
 }
 
-uint32_t SymbolFileDWARF::FindTypes(
-    ConstString name, const CompilerDeclContext *parent_decl_ctx, bool append,
+void SymbolFileDWARF::FindTypes(
+    ConstString name, const CompilerDeclContext *parent_decl_ctx,
     uint32_t max_matches,
     llvm::DenseSet<lldb_private::SymbolFile *> &searched_symbol_files,
     TypeMap &types) {
   std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  // If we aren't appending the results to this list, then clear the list
-  if (!append)
-    types.Clear();
-
-  // Make sure we haven't already searched this SymbolFile before...
-  if (searched_symbol_files.count(this))
-    return 0;
-  else
-    searched_symbol_files.insert(this);
+  // Make sure we haven't already searched this SymbolFile before.
+  if (!searched_symbol_files.insert(this).second)
+    return;
 
   DWARFDebugInfo *info = DebugInfo();
-  if (info == nullptr)
-    return 0;
+  if (!info)
+    return;
 
   Log *log(LogChannelDWARF::GetLogIfAll(DWARF_LOG_LOOKUPS));
 
@@ -2400,63 +2383,41 @@ uint32_t SymbolFileDWARF::FindTypes(
       GetObjectFile()->GetModule()->LogMessage(
           log,
           "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx = "
-          "%p (\"%s\"), append=%u, max_matches=%u, type_list)",
+          "%p (\"%s\"), max_matches=%u, type_list)",
           name.GetCString(), static_cast<const void *>(parent_decl_ctx),
-          parent_decl_ctx->GetName().AsCString("<NULL>"), append, max_matches);
+          parent_decl_ctx->GetName().AsCString("<NULL>"), max_matches);
     else
       GetObjectFile()->GetModule()->LogMessage(
           log,
           "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx = "
-          "NULL, append=%u, max_matches=%u, type_list)",
-          name.GetCString(), append, max_matches);
+          "NULL, max_matches=%u, type_list)",
+          name.GetCString(), max_matches);
   }
 
   if (!DeclContextMatchesThisSymbolFile(parent_decl_ctx))
-    return 0;
+    return;
 
   DIEArray die_offsets;
   m_index->GetTypes(name, die_offsets);
   const size_t num_die_matches = die_offsets.size();
 
-  if (num_die_matches) {
-    const uint32_t initial_types_size = types.GetSize();
-    for (size_t i = 0; i < num_die_matches; ++i) {
-      const DIERef &die_ref = die_offsets[i];
-      DWARFDIE die = GetDIE(die_ref);
+  for (size_t i = 0; i < num_die_matches; ++i) {
+    const DIERef &die_ref = die_offsets[i];
+    DWARFDIE die = GetDIE(die_ref);
+    if (die) {
+      if (!DIEInDeclContext(parent_decl_ctx, die))
+        continue; // The containing decl contexts don't match
 
-      if (die) {
-        if (!DIEInDeclContext(parent_decl_ctx, die))
-          continue; // The containing decl contexts don't match
-
-        Type *matching_type = ResolveType(die, true, true);
-        if (matching_type) {
-          // We found a type pointer, now find the shared pointer form our type
-          // list
-          types.InsertUnique(matching_type->shared_from_this());
-          if (types.GetSize() >= max_matches)
-            break;
-        }
-      } else {
-        m_index->ReportInvalidDIERef(die_ref, name.GetStringRef());
+      Type *matching_type = ResolveType(die, true, true);
+      if (matching_type) {
+        // We found a type pointer, now find the shared pointer form our type
+        // list
+        types.InsertUnique(matching_type->shared_from_this());
+        if (types.GetSize() >= max_matches)
+          break;
       }
-    }
-    const uint32_t num_matches = types.GetSize() - initial_types_size;
-    if (log && num_matches) {
-      if (parent_decl_ctx) {
-        GetObjectFile()->GetModule()->LogMessage(
-            log,
-            "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx "
-            "= %p (\"%s\"), append=%u, max_matches=%u, type_list) => %u",
-            name.GetCString(), static_cast<const void *>(parent_decl_ctx),
-            parent_decl_ctx->GetName().AsCString("<NULL>"), append, max_matches,
-            num_matches);
-      } else {
-        GetObjectFile()->GetModule()->LogMessage(
-            log,
-            "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx "
-            "= NULL, append=%u, max_matches=%u, type_list) => %u",
-            name.GetCString(), append, max_matches, num_matches);
-      }
+    } else {
+      m_index->ReportInvalidDIERef(die_ref, name.GetStringRef());
     }
   }
 
@@ -2466,69 +2427,73 @@ uint32_t SymbolFileDWARF::FindTypes(
   if (num_die_matches < max_matches) {
     UpdateExternalModuleListIfNeeded();
 
-    for (const auto &pair : m_external_type_modules) {
-      ModuleSP external_module_sp = pair.second;
-      if (external_module_sp) {
-        SymbolFile *sym_file = external_module_sp->GetSymbolFile();
-        if (sym_file) {
-          const uint32_t num_external_matches =
-              sym_file->FindTypes(name, parent_decl_ctx, append, max_matches,
-                                  searched_symbol_files, types);
-          if (num_external_matches)
-            return num_external_matches;
-        }
-      }
-    }
+    for (const auto &pair : m_external_type_modules)
+      if (ModuleSP external_module_sp = pair.second) 
+        if (SymbolFile *sym_file = external_module_sp->GetSymbolFile())
+          sym_file->FindTypes(name, parent_decl_ctx, max_matches,
+                              searched_symbol_files, types);
   }
 
-  return num_die_matches;
+  if (log && types.GetSize()) {
+    if (parent_decl_ctx) {
+      GetObjectFile()->GetModule()->LogMessage(
+          log,
+          "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx "
+          "= %p (\"%s\"), max_matches=%u, type_list) => %u",
+          name.GetCString(), static_cast<const void *>(parent_decl_ctx),
+          parent_decl_ctx->GetName().AsCString("<NULL>"), max_matches,
+          types.GetSize());
+    } else {
+      GetObjectFile()->GetModule()->LogMessage(
+          log,
+          "SymbolFileDWARF::FindTypes (sc, name=\"%s\", parent_decl_ctx "
+          "= NULL, max_matches=%u, type_list) => %u",
+          name.GetCString(), max_matches, types.GetSize());
+    }
+  }
 }
 
-size_t SymbolFileDWARF::FindTypes(llvm::ArrayRef<CompilerContext> pattern,
-                                  LanguageSet languages, bool append,
-                                  TypeMap &types) {
-  std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
-  if (!append)
-    types.Clear();
+void SymbolFileDWARF::FindTypes(
+    llvm::ArrayRef<CompilerContext> pattern, LanguageSet languages,
+    llvm::DenseSet<SymbolFile *> &searched_symbol_files, TypeMap &types) {
+  // Make sure we haven't already searched this SymbolFile before.
+  if (!searched_symbol_files.insert(this).second)
+    return;
 
+  std::lock_guard<std::recursive_mutex> guard(GetModuleMutex());
   if (pattern.empty())
-    return 0;
+    return;
 
   ConstString name = pattern.back().name;
 
   if (!name)
-    return 0;
+    return;
 
   DIEArray die_offsets;
   m_index->GetTypes(name, die_offsets);
   const size_t num_die_matches = die_offsets.size();
 
-  size_t num_matches = 0;
   for (size_t i = 0; i < num_die_matches; ++i) {
     const DIERef &die_ref = die_offsets[i];
     DWARFDIE die = GetDIE(die_ref);
 
-    if (die) {
-      if (!languages[die.GetCU()->GetLanguageType()])
-        continue;
-
-      llvm::SmallVector<CompilerContext, 4> die_context;
-      die.GetDeclContext(die_context);
-      if (!contextMatches(die_context, pattern))
-        continue;
-
-      Type *matching_type = ResolveType(die, true, true);
-      if (matching_type) {
-        // We found a type pointer, now find the shared pointer form our type
-        // list
-        types.InsertUnique(matching_type->shared_from_this());
-        ++num_matches;
-      }
-    } else {
+    if (!die) {
       m_index->ReportInvalidDIERef(die_ref, name.GetStringRef());
+      continue;
     }
+    if (!languages[die.GetCU()->GetLanguageType()])
+      continue;
+
+    llvm::SmallVector<CompilerContext, 4> die_context;
+    die.GetDeclContext(die_context);
+    if (!contextMatches(die_context, pattern))
+      continue;
+
+    if (Type *matching_type = ResolveType(die, true, true))
+      // We found a type pointer, now find the shared pointer form our type
+      // list.
+      types.InsertUnique(matching_type->shared_from_this());
   }
-  return num_matches;
 }
 
 CompilerDeclContext
@@ -3021,8 +2986,7 @@ TypeSP SymbolFileDWARF::ParseType(const SymbolContext &sc, const DWARFDIE &die,
   if (!dwarf_ast)
     return {};
 
-  Log *log = LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_INFO);
-  TypeSP type_sp = dwarf_ast->ParseTypeFromDWARF(sc, die, log, type_is_new_ptr);
+  TypeSP type_sp = dwarf_ast->ParseTypeFromDWARF(sc, die, type_is_new_ptr);
   if (type_sp) {
     GetTypeList().Insert(type_sp);
 
@@ -3045,12 +3009,21 @@ size_t SymbolFileDWARF::ParseTypes(const SymbolContext &sc,
                                    bool parse_siblings, bool parse_children) {
   size_t types_added = 0;
   DWARFDIE die = orig_die;
+
   while (die) {
+    const dw_tag_t tag = die.Tag();
     bool type_is_new = false;
-    if (ParseType(sc, die, &type_is_new).get()) {
-      if (type_is_new)
-        ++types_added;
-    }
+
+    Tag dwarf_tag = static_cast<Tag>(tag);
+
+    // TODO: Currently ParseTypeFromDWARF(...) which is called by ParseType(...)
+    // does not handle DW_TAG_subrange_type. It is not clear if this is a bug or
+    // not.
+    if (isType(dwarf_tag) && tag != DW_TAG_subrange_type)
+      ParseType(sc, die, &type_is_new);
+
+    if (type_is_new)
+      ++types_added;
 
     if (parse_children && die.HasChildren()) {
       if (die.Tag() == DW_TAG_subprogram) {
@@ -3577,6 +3550,8 @@ SymbolFileDWARF::FindBlockContainingSpecification(
           spec_block_die_offset)
         return die;
     } break;
+    default:
+      break;
     }
 
     // Give the concrete function die specified by "func_die_offset", find the
@@ -3708,9 +3683,57 @@ size_t SymbolFileDWARF::ParseVariables(const SymbolContext &sc,
   return vars_added;
 }
 
+/// Collect call site parameters in a DW_TAG_call_site DIE.
+static CallSiteParameterArray
+CollectCallSiteParameters(ModuleSP module, DWARFDIE call_site_die) {
+  CallSiteParameterArray parameters;
+  for (DWARFDIE child = call_site_die.GetFirstChild(); child.IsValid();
+       child = child.GetSibling()) {
+    if (child.Tag() != DW_TAG_call_site_parameter)
+      continue;
+
+    llvm::Optional<DWARFExpression> LocationInCallee = {};
+    llvm::Optional<DWARFExpression> LocationInCaller = {};
+
+    DWARFAttributes attributes;
+    const size_t num_attributes = child.GetAttributes(attributes);
+
+    // Parse the location at index \p attr_index within this call site parameter
+    // DIE, or return None on failure.
+    auto parse_simple_location =
+        [&](int attr_index) -> llvm::Optional<DWARFExpression> {
+      DWARFFormValue form_value;
+      if (!attributes.ExtractFormValueAtIndex(attr_index, form_value))
+        return {};
+      if (!DWARFFormValue::IsBlockForm(form_value.Form()))
+        return {};
+      auto data = child.GetData();
+      uint32_t block_offset = form_value.BlockData() - data.GetDataStart();
+      uint32_t block_length = form_value.Unsigned();
+      return DWARFExpression(module,
+                             DataExtractor(data, block_offset, block_length),
+                             child.GetCU());
+    };
+
+    for (size_t i = 0; i < num_attributes; ++i) {
+      dw_attr_t attr = attributes.AttributeAtIndex(i);
+      if (attr == DW_AT_location)
+        LocationInCallee = parse_simple_location(i);
+      if (attr == DW_AT_call_value)
+        LocationInCaller = parse_simple_location(i);
+    }
+
+    if (LocationInCallee && LocationInCaller) {
+      CallSiteParameter param = {*LocationInCallee, *LocationInCaller};
+      parameters.push_back(param);
+    }
+  }
+  return parameters;
+}
+
 /// Collect call graph edges present in a function DIE.
 static std::vector<lldb_private::CallEdge>
-CollectCallEdges(DWARFDIE function_die) {
+CollectCallEdges(ModuleSP module, DWARFDIE function_die) {
   // Check if the function has a supported call site-related attribute.
   // TODO: In the future it may be worthwhile to support call_all_source_calls.
   uint64_t has_call_edges =
@@ -3747,9 +3770,28 @@ CollectCallEdges(DWARFDIE function_die) {
     addr_t return_pc = child.GetAttributeValueAsAddress(DW_AT_call_return_pc,
                                                         LLDB_INVALID_ADDRESS);
 
+    // Extract call site parameters.
+    CallSiteParameterArray parameters =
+        CollectCallSiteParameters(module, child);
+
     LLDB_LOG(log, "CollectCallEdges: Found call origin: {0} (retn-PC: {1:x})",
              call_origin.GetPubname(), return_pc);
-    call_edges.emplace_back(call_origin.GetMangledName(), return_pc);
+    if (log && parameters.size()) {
+      for (const CallSiteParameter &param : parameters) {
+        StreamString callee_loc_desc, caller_loc_desc;
+        param.LocationInCallee.GetDescription(&callee_loc_desc,
+                                              eDescriptionLevelBrief,
+                                              LLDB_INVALID_ADDRESS, nullptr);
+        param.LocationInCaller.GetDescription(&caller_loc_desc,
+                                              eDescriptionLevelBrief,
+                                              LLDB_INVALID_ADDRESS, nullptr);
+        LLDB_LOG(log, "CollectCallEdges: \tparam: {0} => {1}",
+                 callee_loc_desc.GetString(), caller_loc_desc.GetString());
+      }
+    }
+
+    call_edges.emplace_back(call_origin.GetMangledName(), return_pc,
+                            std::move(parameters));
   }
   return call_edges;
 }
@@ -3758,7 +3800,7 @@ std::vector<lldb_private::CallEdge>
 SymbolFileDWARF::ParseCallEdgesInFunction(UserID func_id) {
   DWARFDIE func_die = GetDIE(func_id.GetID());
   if (func_die.IsValid())
-    return CollectCallEdges(func_die);
+    return CollectCallEdges(GetObjectFile()->GetModule(), func_die);
   return {};
 }
 

@@ -52,7 +52,7 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-z");
     CmdArgs.push_back("rodynamic");
     CmdArgs.push_back("-z");
-    CmdArgs.push_back("separate-code");
+    CmdArgs.push_back("separate-loadable-segments");
   }
 
   if (!D.SysRoot.empty())
@@ -343,5 +343,10 @@ SanitizerMask Fuchsia::getSupportedSanitizers() const {
 }
 
 SanitizerMask Fuchsia::getDefaultSanitizers() const {
-  return SanitizerKind::SafeStack;
+  SanitizerMask Res;
+  if (getTriple().getArch() == llvm::Triple::aarch64)
+    Res |= SanitizerKind::ShadowCallStack;
+  else
+    Res |= SanitizerKind::SafeStack;
+  return Res;
 }

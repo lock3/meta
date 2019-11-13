@@ -222,6 +222,10 @@ static cl::opt<bool>
                          cl::init(true),
                          cl::desc("Enable splitting large offset of GEP."));
 
+static cl::opt<bool> EnableICMP_EQToICMP_ST(
+    "cgp-icmp-eq2icmp-st", cl::Hidden, cl::init(false),
+    cl::desc("Enable ICMP_EQ to ICMP_S(L|G)T conversion."));
+
 namespace {
 
 enum ExtType {
@@ -1408,6 +1412,93 @@ static bool sinkCmpExpression(CmpInst *Cmp, const TargetLowering &TLI) {
   return MadeChange;
 }
 
+/// For pattern like:
+///
+///   DomCond = icmp sgt/slt CmpOp0, CmpOp1 (might not be in DomBB)
+///   ...
+/// DomBB:
+///   ...
+///   br DomCond, TrueBB, CmpBB
+/// CmpBB: (with DomBB being the single predecessor)
+///   ...
+///   Cmp = icmp eq CmpOp0, CmpOp1
+///   ...
+///
+/// It would use two comparison on targets that lowering of icmp sgt/slt is
+/// different from lowering of icmp eq (PowerPC). This function try to convert
+/// 'Cmp = icmp eq CmpOp0, CmpOp1' to ' Cmp = icmp slt/sgt CmpOp0, CmpOp1'.
+/// After that, DomCond and Cmp can use the same comparison so reduce one
+/// comparison.
+///
+/// Return true if any changes are made.
+static bool foldICmpWithDominatingICmp(CmpInst *Cmp,
+                                       const TargetLowering &TLI) {
+  if (!EnableICMP_EQToICMP_ST && TLI.isEqualityCmpFoldedWithSignedCmp())
+    return false;
+
+  ICmpInst::Predicate Pred = Cmp->getPredicate();
+  if (Pred != ICmpInst::ICMP_EQ)
+    return false;
+
+  // If icmp eq has users other than BranchInst and SelectInst, converting it to
+  // icmp slt/sgt would introduce more redundant LLVM IR.
+  for (User *U : Cmp->users()) {
+    if (isa<BranchInst>(U))
+      continue;
+    if (isa<SelectInst>(U) && cast<SelectInst>(U)->getCondition() == Cmp)
+      continue;
+    return false;
+  }
+
+  // This is a cheap/incomplete check for dominance - just match a single
+  // predecessor with a conditional branch.
+  BasicBlock *CmpBB = Cmp->getParent();
+  BasicBlock *DomBB = CmpBB->getSinglePredecessor();
+  if (!DomBB)
+    return false;
+
+  // We want to ensure that the only way control gets to the comparison of
+  // interest is that a less/greater than comparison on the same operands is
+  // false.
+  Value *DomCond;
+  BasicBlock *TrueBB, *FalseBB;
+  if (!match(DomBB->getTerminator(), m_Br(m_Value(DomCond), TrueBB, FalseBB)))
+    return false;
+  if (CmpBB != FalseBB)
+    return false;
+
+  Value *CmpOp0 = Cmp->getOperand(0), *CmpOp1 = Cmp->getOperand(1);
+  ICmpInst::Predicate DomPred;
+  if (!match(DomCond, m_ICmp(DomPred, m_Specific(CmpOp0), m_Specific(CmpOp1))))
+    return false;
+  if (DomPred != ICmpInst::ICMP_SGT && DomPred != ICmpInst::ICMP_SLT)
+    return false;
+
+  // Convert the equality comparison to the opposite of the dominating
+  // comparison and swap the direction for all branch/select users.
+  // We have conceptually converted:
+  // Res = (a < b) ? <LT_RES> : (a == b) ? <EQ_RES> : <GT_RES>;
+  // to
+  // Res = (a < b) ? <LT_RES> : (a > b)  ? <GT_RES> : <EQ_RES>;
+  // And similarly for branches.
+  for (User *U : Cmp->users()) {
+    if (auto *BI = dyn_cast<BranchInst>(U)) {
+      assert(BI->isConditional() && "Must be conditional");
+      BI->swapSuccessors();
+      continue;
+    }
+    if (auto *SI = dyn_cast<SelectInst>(U)) {
+      // Swap operands
+      SI->swapValues();
+      SI->swapProfMetadata();
+      continue;
+    }
+    llvm_unreachable("Must be a branch or a select");
+  }
+  Cmp->setPredicate(CmpInst::getSwappedPredicate(DomPred));
+  return true;
+}
+
 bool CodeGenPrepare::optimizeCmp(CmpInst *Cmp, bool &ModifiedDT) {
   if (sinkCmpExpression(Cmp, *TLI))
     return true;
@@ -1416,6 +1507,9 @@ bool CodeGenPrepare::optimizeCmp(CmpInst *Cmp, bool &ModifiedDT) {
     return true;
 
   if (combineToUSubWithOverflow(Cmp, ModifiedDT))
+    return true;
+
+  if (foldICmpWithDominatingICmp(Cmp, *TLI))
     return true;
 
   return false;
@@ -1524,7 +1618,7 @@ SinkShiftAndTruncate(BinaryOperator *ShiftI, Instruction *User, ConstantInt *CI,
                      const TargetLowering &TLI, const DataLayout &DL) {
   BasicBlock *UserBB = User->getParent();
   DenseMap<BasicBlock *, CastInst *> InsertedTruncs;
-  TruncInst *TruncI = dyn_cast<TruncInst>(User);
+  auto *TruncI = cast<TruncInst>(User);
   bool MadeChange = false;
 
   for (Value::user_iterator TruncUI = TruncI->user_begin(),
@@ -1812,7 +1906,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
       AllocaInst *AI;
       if ((AI = dyn_cast<AllocaInst>(Val)) && AI->getAlignment() < PrefAlign &&
           DL->getTypeAllocSize(AI->getAllocatedType()) >= MinSize + Offset2)
-        AI->setAlignment(PrefAlign);
+        AI->setAlignment(MaybeAlign(PrefAlign));
       // Global variables can only be aligned if they are defined in this
       // object (i.e. they are uniquely initialized in this object), and
       // over-aligning global variables that have an explicit section is
@@ -1822,7 +1916,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
           GV->getPointerAlignment(*DL) < PrefAlign &&
           DL->getTypeAllocSize(GV->getValueType()) >=
               MinSize + Offset2)
-        GV->setAlignment(PrefAlign);
+        GV->setAlignment(MaybeAlign(PrefAlign));
     }
     // If this is a memcpy (or similar) then we may be able to improve the
     // alignment
@@ -1868,24 +1962,10 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
       });
       return true;
     }
-    case Intrinsic::objectsize: {
-      // Lower all uses of llvm.objectsize.*
-      Value *RetVal =
-          lowerObjectSizeCall(II, *DL, TLInfo, /*MustSucceed=*/true);
-
-      resetIteratorIfInvalidatedWhileCalling(BB, [&]() {
-        replaceAndRecursivelySimplify(CI, RetVal, TLInfo, nullptr);
-      });
-      return true;
-    }
-    case Intrinsic::is_constant: {
-      // If is_constant hasn't folded away yet, lower it to false now.
-      Constant *RetVal = ConstantInt::get(II->getType(), 0);
-      resetIteratorIfInvalidatedWhileCalling(BB, [&]() {
-        replaceAndRecursivelySimplify(CI, RetVal, TLInfo, nullptr);
-      });
-      return true;
-    }
+    case Intrinsic::objectsize:
+      llvm_unreachable("llvm.objectsize.* should have been lowered already");
+    case Intrinsic::is_constant:
+      llvm_unreachable("llvm.is.constant.* should have been lowered already");
     case Intrinsic::aarch64_stlxr:
     case Intrinsic::aarch64_stxr: {
       ZExtInst *ExtVal = dyn_cast<ZExtInst>(CI->getArgOperand(0));
@@ -3046,7 +3126,7 @@ public:
       To = dyn_cast<PHINode>(OldReplacement);
       OldReplacement = Get(From);
     }
-    assert(Get(To) == To && "Replacement PHI node is already replaced.");
+    assert(To && Get(To) == To && "Replacement PHI node is already replaced.");
     Put(From, To);
     From->replaceAllUsesWith(To);
     AllPhiNodes.erase(From);
@@ -3332,7 +3412,7 @@ private:
         // So the values are different and does not match. So we need them to
         // match. (But we register no more than one match per PHI node, so that
         // we won't later try to replace them twice.)
-        if (!MatchedPHIs.insert(FirstPhi).second)
+        if (MatchedPHIs.insert(FirstPhi).second)
           Matcher.insert({ FirstPhi, SecondPhi });
         // But me must check it.
         WorkList.push_back({ FirstPhi, SecondPhi });
@@ -3410,11 +3490,10 @@ private:
         Select->setFalseValue(ST.Get(Map[FalseValue]));
       } else {
         // Must be a Phi node then.
-        PHINode *PHI = cast<PHINode>(V);
-        auto *CurrentPhi = dyn_cast<PHINode>(Current);
+        auto *PHI = cast<PHINode>(V);
         // Fill the Phi node with values from predecessors.
         for (auto B : predecessors(PHI->getParent())) {
-          Value *PV = CurrentPhi->getIncomingValueForBlock(B);
+          Value *PV = cast<PHINode>(Current)->getIncomingValueForBlock(B);
           assert(Map.find(PV) != Map.end() && "No predecessor Value!");
           PHI->addIncoming(ST.Get(Map[PV]), B);
         }
@@ -3783,13 +3862,11 @@ bool TypePromotionHelper::canGetThrough(const Instruction *Inst,
   //          poisoned value                    regular value
   // It should be OK since undef covers valid value.
   if (Inst->getOpcode() == Instruction::Shl && Inst->hasOneUse()) {
-    const Instruction *ExtInst =
-        dyn_cast<const Instruction>(*Inst->user_begin());
+    const auto *ExtInst = cast<const Instruction>(*Inst->user_begin());
     if (ExtInst->hasOneUse()) {
-      const Instruction *AndInst =
-          dyn_cast<const Instruction>(*ExtInst->user_begin());
+      const auto *AndInst = dyn_cast<const Instruction>(*ExtInst->user_begin());
       if (AndInst && AndInst->getOpcode() == Instruction::And) {
-        const ConstantInt *Cst = dyn_cast<ConstantInt>(AndInst->getOperand(1));
+        const auto *Cst = dyn_cast<ConstantInt>(AndInst->getOperand(1));
         if (Cst &&
             Cst->getValue().isIntN(Inst->getType()->getIntegerBitWidth()))
           return true;
@@ -4791,8 +4868,8 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
                       << " for " << *MemoryInst << "\n");
     if (SunkAddr->getType() != Addr->getType())
       SunkAddr = Builder.CreatePointerCast(SunkAddr, Addr->getType());
-  } else if (AddrSinkUsingGEPs ||
-             (!AddrSinkUsingGEPs.getNumOccurrences() && TM && TTI->useAA())) {
+  } else if (AddrSinkUsingGEPs || (!AddrSinkUsingGEPs.getNumOccurrences() &&
+                                   TM && SubtargetInfo->addrSinkUsingGEPs())) {
     // By default, we use the GEP-based method when AA is used later. This
     // prevents new inttoptr/ptrtoint pairs from degrading AA capabilities.
     LLVM_DEBUG(dbgs() << "CGP: SINKING nonlocal addrmode: " << AddrMode
@@ -5814,7 +5891,7 @@ bool CodeGenPrepare::optimizeLoadExt(LoadInst *Load) {
     return false;
 
   IRBuilder<> Builder(Load->getNextNode());
-  auto *NewAnd = dyn_cast<Instruction>(
+  auto *NewAnd = cast<Instruction>(
       Builder.CreateAnd(Load, ConstantInt::get(Ctx, DemandBits)));
   // Mark this instruction as "inserted by CGP", so that other
   // optimizations don't touch it.
@@ -6191,35 +6268,49 @@ bool CodeGenPrepare::tryToSinkFreeOperands(Instruction *I) {
 
   // OpsToSink can contain multiple uses in a use chain (e.g.
   // (%u1 with %u1 = shufflevector), (%u2 with %u2 = zext %u1)). The dominating
-  // uses must come first, which means they are sunk first, temporarily creating
-  // invalid IR. This will be fixed once their dominated users are sunk and
-  // updated.
+  // uses must come first, so we process the ops in reverse order so as to not
+  // create invalid IR.
   BasicBlock *TargetBB = I->getParent();
   bool Changed = false;
   SmallVector<Use *, 4> ToReplace;
-  for (Use *U : OpsToSink) {
+  for (Use *U : reverse(OpsToSink)) {
     auto *UI = cast<Instruction>(U->get());
     if (UI->getParent() == TargetBB || isa<PHINode>(UI))
       continue;
     ToReplace.push_back(U);
   }
 
-  SmallPtrSet<Instruction *, 4> MaybeDead;
+  SetVector<Instruction *> MaybeDead;
+  DenseMap<Instruction *, Instruction *> NewInstructions;
+  Instruction *InsertPoint = I;
   for (Use *U : ToReplace) {
     auto *UI = cast<Instruction>(U->get());
     Instruction *NI = UI->clone();
+    NewInstructions[UI] = NI;
     MaybeDead.insert(UI);
     LLVM_DEBUG(dbgs() << "Sinking " << *UI << " to user " << *I << "\n");
-    NI->insertBefore(I);
+    NI->insertBefore(InsertPoint);
+    InsertPoint = NI;
     InsertedInsts.insert(NI);
-    U->set(NI);
+
+    // Update the use for the new instruction, making sure that we update the
+    // sunk instruction uses, if it is part of a chain that has already been
+    // sunk.
+    Instruction *OldI = cast<Instruction>(U->getUser());
+    if (NewInstructions.count(OldI))
+      NewInstructions[OldI]->setOperand(U->getOperandNo(), NI);
+    else
+      U->set(NI);
     Changed = true;
   }
 
   // Remove instructions that are dead after sinking.
-  for (auto *I : MaybeDead)
-    if (!I->hasNUsesOrMore(1))
+  for (auto *I : MaybeDead) {
+    if (!I->hasNUsesOrMore(1)) {
+      LLVM_DEBUG(dbgs() << "Removing dead instruction: " << *I << "\n");
       I->eraseFromParent();
+    }
+  }
 
   return Changed;
 }

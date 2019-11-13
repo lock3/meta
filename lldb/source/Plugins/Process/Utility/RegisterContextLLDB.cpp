@@ -12,12 +12,14 @@
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/DWARFExpression.h"
 #include "lldb/Symbol/ArmUnwindInfo.h"
+#include "lldb/Symbol/CallFrameInfo.h"
 #include "lldb/Symbol/DWARFCallFrameInfo.h"
 #include "lldb/Symbol/FuncUnwinders.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContext.h"
+#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -783,6 +785,16 @@ UnwindPlanSP RegisterContextLLDB::GetFullUnwindPlanForFrame() {
         unwind_plan_sp.reset();
     }
 
+    CallFrameInfo *object_file_unwind =
+        pc_module_sp->GetUnwindTable().GetObjectFileUnwindInfo();
+    if (object_file_unwind) {
+      unwind_plan_sp = std::make_shared<UnwindPlan>(lldb::eRegisterKindGeneric);
+      if (object_file_unwind->GetUnwindPlan(m_current_pc, *unwind_plan_sp))
+        return unwind_plan_sp;
+      else
+        unwind_plan_sp.reset();
+    }
+
     return arch_default_unwind_plan_sp;
   }
 
@@ -795,6 +807,9 @@ UnwindPlanSP RegisterContextLLDB::GetFullUnwindPlanForFrame() {
     m_fast_unwind_plan_sp.reset();
     unwind_plan_sp =
         func_unwinders_sp->GetEHFrameUnwindPlan(process->GetTarget());
+    if (!unwind_plan_sp)
+      unwind_plan_sp =
+          func_unwinders_sp->GetObjectFileUnwindPlan(process->GetTarget());
     if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress(m_current_pc) &&
         unwind_plan_sp->GetSourcedFromCompiler() == eLazyBoolYes) {
       return unwind_plan_sp;
@@ -817,6 +832,9 @@ UnwindPlanSP RegisterContextLLDB::GetFullUnwindPlanForFrame() {
     // intend) or compact unwind (this won't work)
     unwind_plan_sp =
         func_unwinders_sp->GetEHFrameUnwindPlan(process->GetTarget());
+    if (!unwind_plan_sp)
+      unwind_plan_sp =
+          func_unwinders_sp->GetObjectFileUnwindPlan(process->GetTarget());
     if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress(m_current_pc)) {
       UnwindLogMsgVerbose("frame uses %s for full UnwindPlan because the "
                           "DynamicLoader suggested we prefer it",
@@ -1852,10 +1870,64 @@ bool RegisterContextLLDB::ReadFrameAddress(
                  error.AsCString());
     break;
   }
+  case UnwindPlan::Row::FAValue::isRaSearch: {
+    Process &process = *m_thread.GetProcess();
+    lldb::addr_t return_address_hint = GetReturnAddressHint(fa.GetOffset());
+    if (return_address_hint == LLDB_INVALID_ADDRESS)
+      return false;
+    const unsigned max_iterations = 256;
+    for (unsigned i = 0; i < max_iterations; ++i) {
+      Status st;
+      lldb::addr_t candidate_addr =
+          return_address_hint + i * process.GetAddressByteSize();
+      lldb::addr_t candidate =
+          process.ReadPointerFromMemory(candidate_addr, st);
+      if (st.Fail()) {
+        UnwindLogMsg("Cannot read memory at 0x%" PRIx64 ": %s", candidate_addr,
+                     st.AsCString());
+        return false;
+      }
+      Address addr;
+      uint32_t permissions;
+      if (process.GetLoadAddressPermissions(candidate, permissions) &&
+          permissions & lldb::ePermissionsExecutable) {
+        address = candidate_addr;
+        UnwindLogMsg("Heuristically found CFA: 0x%" PRIx64, address);
+        return true;
+      }
+    }
+    UnwindLogMsg("No suitable CFA found");
+    break;
+  }
   default:
     return false;
   }
   return false;
+}
+
+lldb::addr_t RegisterContextLLDB::GetReturnAddressHint(int32_t plan_offset) {
+  addr_t hint;
+  if (!ReadGPRValue(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, hint))
+    return LLDB_INVALID_ADDRESS;
+  if (!m_sym_ctx.module_sp || !m_sym_ctx.symbol)
+    return LLDB_INVALID_ADDRESS;
+
+  hint += plan_offset;
+
+  if (auto next = GetNextFrame()) {
+    if (!next->m_sym_ctx.module_sp || !next->m_sym_ctx.symbol)
+      return LLDB_INVALID_ADDRESS;
+    if (auto expected_size =
+            next->m_sym_ctx.module_sp->GetSymbolFile()->GetParameterStackSize(
+                *next->m_sym_ctx.symbol))
+      hint += *expected_size;
+    else {
+      UnwindLogMsgVerbose("Could not retrieve parameter size: %s",
+                          llvm::toString(expected_size.takeError()).c_str());
+      return LLDB_INVALID_ADDRESS;
+    }
+  }
+  return hint;
 }
 
 // Retrieve a general purpose register value for THIS frame, as saved by the

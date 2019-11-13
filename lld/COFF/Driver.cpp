@@ -27,6 +27,7 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/BinaryFormat/Magic.h"
+#include "llvm/LTO/LTO.h"
 #include "llvm/Object/ArchiveWriter.h"
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/COFFModuleDefinition.h"
@@ -103,10 +104,7 @@ static std::pair<StringRef, StringRef> getOldNewOptions(opt::InputArgList &args,
 
 // Drop directory components and replace extension with ".exe" or ".dll".
 static std::string getOutputPath(StringRef path) {
-  auto p = path.find_last_of("\\/");
-  StringRef s = (p == StringRef::npos) ? path : path.substr(p + 1);
-  const char* e = config->dll ? ".dll" : ".exe";
-  return (s.substr(0, s.rfind('.')) + e).str();
+  return (sys::path::stem(path) + (config->dll ? ".dll" : ".exe")).str();
 }
 
 // Returns true if S matches /crtend.?\.o$/.
@@ -188,8 +186,9 @@ void LinkerDriver::addBuffer(std::unique_ptr<MemoryBuffer> mb,
       Archive *archive = file.get();
       make<std::unique_ptr<Archive>>(std::move(file)); // take ownership
 
+      int memberIndex = 0;
       for (MemoryBufferRef m : getArchiveMembers(archive))
-        addArchiveBuffer(m, "<whole-archive>", filename, 0);
+        addArchiveBuffer(m, "<whole-archive>", filename, memberIndex++);
       return;
     }
     symtab->addFile(make<ArchiveFile>(mbref));
@@ -309,9 +308,10 @@ void LinkerDriver::enqueueArchiveMember(const Archive::Child &c,
     auto mbOrErr = future->get();
     if (mbOrErr.second)
       reportBufferError(errorCodeToError(mbOrErr.second), childName);
+    // Pass empty string as archive name so that the original filename is
+    // used as the buffer identifier.
     driver->addArchiveBuffer(takeBuffer(std::move(mbOrErr.first)),
-                             toCOFFString(sym), parentName,
-                             /*OffsetInArchive=*/0);
+                             toCOFFString(sym), "", /*OffsetInArchive=*/0);
   });
 }
 
@@ -600,6 +600,7 @@ static std::string createResponseFile(const opt::InputArgList &args,
   for (auto *arg : args) {
     switch (arg->getOption().getID()) {
     case OPT_linkrepro:
+    case OPT_reproduce:
     case OPT_INPUT:
     case OPT_defaultlib:
     case OPT_libpath:
@@ -714,8 +715,7 @@ static std::string getImplibPath() {
   return out.str();
 }
 
-//
-// The import name is caculated as the following:
+// The import name is calculated as follows:
 //
 //        | LIBRARY w/ ext |   LIBRARY w/o ext   | no LIBRARY
 //   -----+----------------+---------------------+------------------
@@ -1068,11 +1068,25 @@ void LinkerDriver::maybeExportMinGWSymbols(const opt::InputArgList &args) {
   });
 }
 
-static const char *libcallRoutineNames[] = {
-#define HANDLE_LIBCALL(code, name) name,
-#include "llvm/IR/RuntimeLibcalls.def"
-#undef HANDLE_LIBCALL
-};
+// lld has a feature to create a tar file containing all input files as well as
+// all command line options, so that other people can run lld again with exactly
+// the same inputs. This feature is accessible via /linkrepro and /reproduce.
+//
+// /linkrepro and /reproduce are very similar, but /linkrepro takes a directory
+// name while /reproduce takes a full path. We have /linkrepro for compatibility
+// with Microsoft link.exe.
+Optional<std::string> getReproduceFile(const opt::InputArgList &args) {
+  if (auto *arg = args.getLastArg(OPT_reproduce))
+    return std::string(arg->getValue());
+
+  if (auto *arg = args.getLastArg(OPT_linkrepro)) {
+    SmallString<64> path = StringRef(arg->getValue());
+    sys::path::append(path, "repro.tar");
+    return path.str().str();
+  }
+
+  return None;
+}
 
 void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   // Needed for LTO.
@@ -1092,7 +1106,7 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
 
   // Parse command line options.
   ArgParser parser;
-  opt::InputArgList args = parser.parseLINK(argsArr);
+  opt::InputArgList args = parser.parse(argsArr);
 
   // Parse and evaluate -mllvm options.
   std::vector<const char *> v;
@@ -1136,17 +1150,15 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   // options are handled.
   config->mingw = args.hasArg(OPT_lldmingw);
 
-  if (auto *arg = args.getLastArg(OPT_linkrepro)) {
-    SmallString<64> path = StringRef(arg->getValue());
-    sys::path::append(path, "repro.tar");
-
+  // Handle /linkrepro and /reproduce.
+  if (Optional<std::string> path = getReproduceFile(args)) {
     Expected<std::unique_ptr<TarWriter>> errOrWriter =
-        TarWriter::create(path, "repro");
+        TarWriter::create(*path, sys::path::stem(*path));
 
     if (errOrWriter) {
       tar = std::move(*errOrWriter);
     } else {
-      error("/linkrepro: failed to open " + path + ": " +
+      error("/linkrepro: failed to open " + *path + ": " +
             toString(errOrWriter.takeError()));
     }
   }
@@ -1162,7 +1174,8 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   searchPaths.push_back("");
   for (auto *arg : args.filtered(OPT_libpath))
     searchPaths.push_back(arg->getValue());
-  addLibSearchPaths();
+  if (!args.hasArg(OPT_lldignoreenv))
+    addLibSearchPaths();
 
   // Handle /ignore
   for (auto *arg : args.filtered(OPT_ignore)) {
@@ -1175,6 +1188,8 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
         config->warnDebugInfoUnusable = false;
       else if (s == "4217")
         config->warnLocallyDefinedImported = false;
+      else if (s == "longsections")
+        config->warnLongSectionNames = false;
       // Other warning numbers are ignored.
     }
   }
@@ -1514,6 +1529,11 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
   config->debugGHashes = debug == DebugKind::GHash;
   config->debugSymtab = debug == DebugKind::Symtab;
 
+  // Don't warn about long section names, such as .debug_info, for mingw or when
+  // -debug:dwarf is requested.
+  if (config->mingw || config->debugDwarf)
+    config->warnLongSectionNames = false;
+
   config->mapFile = getMapFile(args);
 
   if (config->incremental && args.hasArg(OPT_profile)) {
@@ -1803,7 +1823,7 @@ void LinkerDriver::link(ArrayRef<const char *> argsArr) {
     // bitcode file in an archive member, we need to arrange to use LTO to
     // compile those archive members by adding them to the link beforehand.
     if (!BitcodeFile::instances.empty())
-      for (const char *s : libcallRoutineNames)
+      for (auto *s : lto::LTO::getRuntimeLibcallSymbols())
         symtab->addLibcall(s);
 
     // Windows specific -- if __load_config_used can be resolved, resolve it.

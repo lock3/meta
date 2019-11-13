@@ -162,12 +162,11 @@ public:
 
 protected:
   bool DoExecute(Args &command, CommandReturnObject &result) override {
-    SBCommandReturnObject sb_return(&result);
+    SBCommandReturnObject sb_return(result);
     SBCommandInterpreter sb_interpreter(&m_interpreter);
     SBDebugger debugger_sb(m_interpreter.GetDebugger().shared_from_this());
     bool ret = m_backend->DoExecute(
         debugger_sb, (char **)command.GetArgumentVector(), sb_return);
-    sb_return.Release();
     return ret;
   }
   std::shared_ptr<lldb::SBCommandPluginInterface> m_backend;
@@ -394,7 +393,7 @@ int SBCommandInterpreter::HandleCompletionWithDescriptions(
     // If we matched a unique single command, add a space... Only do this if
     // the completer told us this was a complete word, however...
     if (lldb_matches.GetSize() == 1) {
-      char quote_char = request.GetParsedArg().quote;
+      char quote_char = request.GetParsedArg().GetQuoteChar();
       common_prefix =
           Args::EscapeLLDBCommandArgument(common_prefix, quote_char);
       if (request.GetParsedArg().IsQuoted())

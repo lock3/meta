@@ -34,6 +34,21 @@ using namespace lldb_private;
 #define LLDB_OPTIONS_log
 #include "CommandOptions.inc"
 
+/// Common completion logic for log enable/disable.
+static void CompleteEnableDisable(CompletionRequest &request) {
+  size_t arg_index = request.GetCursorIndex();
+  if (arg_index == 0) { // We got: log enable/disable x[tab]
+    for (llvm::StringRef channel : Log::ListChannels())
+      request.TryCompleteCurrentArg(channel);
+  } else if (arg_index >= 1) { // We got: log enable/disable channel x[tab]
+    llvm::StringRef channel = request.GetParsedLine().GetArgumentAtIndex(0);
+    Log::ForEachChannelCategory(
+        channel, [&request](llvm::StringRef name, llvm::StringRef desc) {
+          request.TryCompleteCurrentArg(name, desc);
+        });
+  }
+}
+
 class CommandObjectLogEnable : public CommandObjectParsed {
 public:
   // Constructors and Destructors
@@ -134,6 +149,12 @@ public:
     uint32_t log_options;
   };
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    CompleteEnableDisable(request);
+  }
+
 protected:
   bool DoExecute(Args &args, CommandReturnObject &result) override {
     if (args.GetArgumentCount() < 2) {
@@ -145,7 +166,7 @@ protected:
     }
 
     // Store into a std::string since we're about to shift the channel off.
-    const std::string channel = args[0].ref;
+    const std::string channel = args[0].ref();
     args.Shift(); // Shift off the channel
     char log_file[PATH_MAX];
     if (m_options.log_file)
@@ -202,6 +223,12 @@ public:
 
   ~CommandObjectLogDisable() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    CompleteEnableDisable(request);
+  }
+
 protected:
   bool DoExecute(Args &args, CommandReturnObject &result) override {
     if (args.empty()) {
@@ -212,7 +239,7 @@ protected:
       return false;
     }
 
-    const std::string channel = args[0].ref;
+    const std::string channel = args[0].ref();
     args.Shift(); // Shift off the channel
     if (channel == "all") {
       Log::DisableAllLogChannels();
@@ -254,6 +281,13 @@ public:
 
   ~CommandObjectLogList() override = default;
 
+  void
+  HandleArgumentCompletion(CompletionRequest &request,
+                           OptionElementVector &opt_element_vector) override {
+    for (llvm::StringRef channel : Log::ListChannels())
+      request.TryCompleteCurrentArg(channel);
+  }
+
 protected:
   bool DoExecute(Args &args, CommandReturnObject &result) override {
     std::string output;
@@ -265,7 +299,7 @@ protected:
       bool success = true;
       for (const auto &entry : args.entries())
         success =
-            success && Log::ListChannelCategories(entry.ref, output_stream);
+            success && Log::ListChannelCategories(entry.ref(), output_stream);
       if (success)
         result.SetStatus(eReturnStatusSuccessFinishResult);
     }
@@ -291,7 +325,7 @@ protected:
     result.SetStatus(eReturnStatusFailed);
 
     if (args.GetArgumentCount() == 1) {
-      auto sub_command = args[0].ref;
+      auto sub_command = args[0].ref();
 
       if (sub_command.equals_lower("enable")) {
         Timer::SetDisplayDepth(UINT32_MAX);
@@ -308,8 +342,8 @@ protected:
         result.SetStatus(eReturnStatusSuccessFinishResult);
       }
     } else if (args.GetArgumentCount() == 2) {
-      auto sub_command = args[0].ref;
-      auto param = args[1].ref;
+      auto sub_command = args[0].ref();
+      auto param = args[1].ref();
 
       if (sub_command.equals_lower("enable")) {
         uint32_t depth;

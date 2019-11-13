@@ -688,6 +688,15 @@ TEST_F(TUSchedulerTests, Run) {
   S.run("add 2", [&] { Counter += 2; });
   ASSERT_TRUE(S.blockUntilIdle(timeoutSeconds(10)));
   EXPECT_EQ(Counter.load(), 3);
+
+  Notification TaskRun;
+  Key<int> TestKey;
+  WithContextValue CtxWithKey(TestKey, 10);
+  S.run("props context", [&] {
+    EXPECT_EQ(Context::current().getExisting(TestKey), 10);
+    TaskRun.notify();
+  });
+  TaskRun.wait();
 }
 
 TEST_F(TUSchedulerTests, TUStatus) {
@@ -769,12 +778,14 @@ TEST_F(TUSchedulerTests, CommandLineWarnings) {
   // We should not see warnings from command-line parsing.
   CDB.ExtraClangFlags = {"-Wsome-unknown-warning"};
 
+  // (!) 'Ready' must live longer than TUScheduler.
+  Notification Ready;
+
   TUScheduler S(CDB, /*AsyncThreadsCount=*/getDefaultAsyncThreadsCount(),
                 /*StorePreambleInMemory=*/true, /*ASTCallbacks=*/captureDiags(),
                 /*UpdateDebounce=*/std::chrono::steady_clock::duration::zero(),
                 ASTRetentionPolicy());
 
-  Notification Ready;
   std::vector<Diag> Diagnostics;
   updateWithDiags(S, testPath("foo.cpp"), "void test() {}",
                   WantDiagnostics::Yes, [&](std::vector<Diag> D) {

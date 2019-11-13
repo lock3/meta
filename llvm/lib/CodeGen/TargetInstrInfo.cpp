@@ -143,7 +143,7 @@ TargetInstrInfo::ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
   while (Tail != MBB->end()) {
     auto MI = Tail++;
     if (MI->isCall())
-      MBB->getParent()->updateCallSiteInfo(&*MI);
+      MBB->getParent()->eraseCallSiteInfo(&*MI);
     MBB->erase(MI);
   }
 
@@ -282,7 +282,7 @@ bool TargetInstrInfo::fixCommutedOpIndices(unsigned &ResultIdx1,
   return true;
 }
 
-bool TargetInstrInfo::findCommutedOpIndices(MachineInstr &MI,
+bool TargetInstrInfo::findCommutedOpIndices(const MachineInstr &MI,
                                             unsigned &SrcOpIdx1,
                                             unsigned &SrcOpIdx2) const {
   assert(!MI.isBundle() &&
@@ -394,7 +394,7 @@ bool TargetInstrInfo::getStackSlotRange(const TargetRegisterClass *RC,
   if (BitOffset < 0 || BitOffset % 8)
     return false;
 
-  Size = BitSize /= 8;
+  Size = BitSize / 8;
   Offset = (unsigned)BitOffset / 8;
 
   assert(TRI->getSpillSize(*RC) >= (Offset + Size) && "bad subregister range");
@@ -880,7 +880,7 @@ void TargetInstrInfo::genAlternativeCodeSequence(
 }
 
 bool TargetInstrInfo::isReallyTriviallyReMaterializableGeneric(
-    const MachineInstr &MI, AliasAnalysis *AA) const {
+    const MachineInstr &MI, AAResults *AA) const {
   const MachineFunction &MF = *MI.getMF();
   const MachineRegisterInfo &MRI = MF.getRegInfo();
 
@@ -1123,28 +1123,14 @@ bool TargetInstrInfo::hasLowDefLatency(const TargetSchedModel &SchedModel,
 Optional<ParamLoadedValue>
 TargetInstrInfo::describeLoadedValue(const MachineInstr &MI) const {
   const MachineFunction *MF = MI.getMF();
-  const MachineOperand *Op = nullptr;
-  DIExpression *Expr = DIExpression::get(MF->getFunction().getContext(), {});;
-  const MachineOperand *SrcRegOp, *DestRegOp;
+  DIExpression *Expr = DIExpression::get(MF->getFunction().getContext(), {});
+  int64_t Offset;
 
-  if (isCopyInstr(MI, SrcRegOp, DestRegOp)) {
-    Op = SrcRegOp;
-    return ParamLoadedValue(*Op, Expr);
-  } else if (MI.isMoveImmediate()) {
-    Op = &MI.getOperand(1);
-    return ParamLoadedValue(*Op, Expr);
-  } else if (MI.hasOneMemOperand()) {
-    int64_t Offset;
-    const auto &TRI = MF->getSubtarget().getRegisterInfo();
-    const auto &TII = MF->getSubtarget().getInstrInfo();
-    const MachineOperand *BaseOp;
-
-    if (!TII->getMemOperandWithOffset(MI, BaseOp, Offset, TRI))
-      return None;
-
-    Expr = DIExpression::prepend(Expr, DIExpression::DerefAfter, Offset);
-    Op = BaseOp;
-    return ParamLoadedValue(*Op, Expr);
+  if (auto DestSrc = isCopyInstr(MI)) {
+    return ParamLoadedValue(*DestSrc->Source, Expr);
+  } else if (auto DestSrc = isAddImmediate(MI, Offset)) {
+    Expr = DIExpression::prepend(Expr, DIExpression::ApplyOffset, Offset);
+    return ParamLoadedValue(*DestSrc->Source, Expr);
   }
 
   return None;
@@ -1257,3 +1243,5 @@ bool TargetInstrInfo::getInsertSubregInputs(
   InsertedReg.SubIdx = (unsigned)MOSubIdx.getImm();
   return true;
 }
+
+TargetInstrInfo::PipelinerLoopInfo::~PipelinerLoopInfo() {}

@@ -240,12 +240,74 @@ bool HexagonTargetLowering::mayBeEmittedAsTailCall(const CallInst *CI) const {
   return true;
 }
 
-unsigned  HexagonTargetLowering::getRegisterByName(const char* RegName, EVT VT,
-                                              SelectionDAG &DAG) const {
+Register HexagonTargetLowering::getRegisterByName(
+      const char* RegName, EVT VT, const MachineFunction &) const {
   // Just support r19, the linux kernel uses it.
-  unsigned Reg = StringSwitch<unsigned>(RegName)
+  Register Reg = StringSwitch<Register>(RegName)
+                     .Case("r0", Hexagon::R0)
+                     .Case("r1", Hexagon::R1)
+                     .Case("r2", Hexagon::R2)
+                     .Case("r3", Hexagon::R3)
+                     .Case("r4", Hexagon::R4)
+                     .Case("r5", Hexagon::R5)
+                     .Case("r6", Hexagon::R6)
+                     .Case("r7", Hexagon::R7)
+                     .Case("r8", Hexagon::R8)
+                     .Case("r9", Hexagon::R9)
+                     .Case("r10", Hexagon::R10)
+                     .Case("r11", Hexagon::R11)
+                     .Case("r12", Hexagon::R12)
+                     .Case("r13", Hexagon::R13)
+                     .Case("r14", Hexagon::R14)
+                     .Case("r15", Hexagon::R15)
+                     .Case("r16", Hexagon::R16)
+                     .Case("r17", Hexagon::R17)
+                     .Case("r18", Hexagon::R18)
                      .Case("r19", Hexagon::R19)
-                     .Default(0);
+                     .Case("r20", Hexagon::R20)
+                     .Case("r21", Hexagon::R21)
+                     .Case("r22", Hexagon::R22)
+                     .Case("r23", Hexagon::R23)
+                     .Case("r24", Hexagon::R24)
+                     .Case("r25", Hexagon::R25)
+                     .Case("r26", Hexagon::R26)
+                     .Case("r27", Hexagon::R27)
+                     .Case("r28", Hexagon::R28)
+                     .Case("r29", Hexagon::R29)
+                     .Case("r30", Hexagon::R30)
+                     .Case("r31", Hexagon::R31)
+                     .Case("r1:0", Hexagon::D0)
+                     .Case("r3:2", Hexagon::D1)
+                     .Case("r5:4", Hexagon::D2)
+                     .Case("r7:6", Hexagon::D3)
+                     .Case("r9:8", Hexagon::D4)
+                     .Case("r11:10", Hexagon::D5)
+                     .Case("r13:12", Hexagon::D6)
+                     .Case("r15:14", Hexagon::D7)
+                     .Case("r17:16", Hexagon::D8)
+                     .Case("r19:18", Hexagon::D9)
+                     .Case("r21:20", Hexagon::D10)
+                     .Case("r23:22", Hexagon::D11)
+                     .Case("r25:24", Hexagon::D12)
+                     .Case("r27:26", Hexagon::D13)
+                     .Case("r29:28", Hexagon::D14)
+                     .Case("r31:30", Hexagon::D15)
+                     .Case("sp", Hexagon::R29)
+                     .Case("fp", Hexagon::R30)
+                     .Case("lr", Hexagon::R31)
+                     .Case("p0", Hexagon::P0)
+                     .Case("p1", Hexagon::P1)
+                     .Case("p2", Hexagon::P2)
+                     .Case("p3", Hexagon::P3)
+                     .Case("sa0", Hexagon::SA0)
+                     .Case("lc0", Hexagon::LC0)
+                     .Case("sa1", Hexagon::SA1)
+                     .Case("lc1", Hexagon::LC1)
+                     .Case("m0", Hexagon::M0)
+                     .Case("m1", Hexagon::M1)
+                     .Case("usr", Hexagon::USR)
+                     .Case("ugp", Hexagon::UGP)
+                     .Default(Register());
   if (Reg)
     return Reg;
 
@@ -1235,9 +1297,9 @@ HexagonTargetLowering::HexagonTargetLowering(const TargetMachine &TM,
       Subtarget(ST) {
   auto &HRI = *Subtarget.getRegisterInfo();
 
-  setPrefLoopAlignment(llvm::Align(16));
-  setMinFunctionAlignment(llvm::Align(4));
-  setPrefFunctionAlignment(llvm::Align(16));
+  setPrefLoopAlignment(Align(16));
+  setMinFunctionAlignment(Align(4));
+  setPrefFunctionAlignment(Align(16));
   setStackPointerRegisterToSaveRestore(HRI.getStackRegister());
   setBooleanContents(TargetLoweringBase::UndefinedBooleanContent);
   setBooleanVectorContents(TargetLoweringBase::UndefinedBooleanContent);
@@ -1439,12 +1501,12 @@ HexagonTargetLowering::HexagonTargetLowering(const TargetMachine &TM,
     ISD::CONCAT_VECTORS,        ISD::VECTOR_SHUFFLE
   };
 
-  for (MVT VT : MVT::vector_valuetypes()) {
+  for (MVT VT : MVT::fixedlen_vector_valuetypes()) {
     for (unsigned VectExpOp : VectExpOps)
       setOperationAction(VectExpOp, VT, Expand);
 
     // Expand all extending loads and truncating stores:
-    for (MVT TargetVT : MVT::vector_valuetypes()) {
+    for (MVT TargetVT : MVT::fixedlen_vector_valuetypes()) {
       if (TargetVT == VT)
         continue;
       setLoadExtAction(ISD::EXTLOAD, TargetVT, VT, Expand);
@@ -1864,26 +1926,33 @@ bool HexagonTargetLowering::isShuffleMaskLegal(ArrayRef<int> Mask,
 
 TargetLoweringBase::LegalizeTypeAction
 HexagonTargetLowering::getPreferredVectorAction(MVT VT) const {
-  if (VT.getVectorNumElements() == 1)
+  unsigned VecLen = VT.getVectorNumElements();
+  MVT ElemTy = VT.getVectorElementType();
+
+  if (VecLen == 1 || VT.isScalableVector())
     return TargetLoweringBase::TypeScalarizeVector;
 
-  // Always widen vectors of i1.
-  MVT ElemTy = VT.getVectorElementType();
-  if (ElemTy == MVT::i1)
-    return TargetLoweringBase::TypeWidenVector;
-
   if (Subtarget.useHVXOps()) {
+    unsigned HwLen = Subtarget.getVectorLength();
     // If the size of VT is at least half of the vector length,
     // widen the vector. Note: the threshold was not selected in
     // any scientific way.
     ArrayRef<MVT> Tys = Subtarget.getHVXElementTypes();
     if (llvm::find(Tys, ElemTy) != Tys.end()) {
-      unsigned HwWidth = 8*Subtarget.getVectorLength();
+      unsigned HwWidth = 8*HwLen;
       unsigned VecWidth = VT.getSizeInBits();
       if (VecWidth >= HwWidth/2 && VecWidth < HwWidth)
         return TargetLoweringBase::TypeWidenVector;
     }
+    // Split vectors of i1 that correspond to (byte) vector pairs.
+    if (ElemTy == MVT::i1 && VecLen == 2*HwLen)
+      return TargetLoweringBase::TypeSplitVector;
   }
+
+  // Always widen (remaining) vectors of i1.
+  if (ElemTy == MVT::i1)
+    return TargetLoweringBase::TypeWidenVector;
+
   return TargetLoweringBase::TypeSplitVector;
 }
 
@@ -2666,7 +2735,8 @@ HexagonTargetLowering::LowerUnalignedLoad(SDValue Op, SelectionDAG &DAG)
     DoDefault = true;
 
   if (!AlignLoads) {
-    if (allowsMemoryAccess(Ctx, DL, LN->getMemoryVT(), *LN->getMemOperand()))
+    if (allowsMemoryAccessForAlignment(Ctx, DL, LN->getMemoryVT(),
+                                       *LN->getMemOperand()))
       return Op;
     DoDefault = true;
   }
@@ -2674,7 +2744,8 @@ HexagonTargetLowering::LowerUnalignedLoad(SDValue Op, SelectionDAG &DAG)
     // The PartTy is the equivalent of "getLoadableTypeOfSize(HaveAlign)".
     MVT PartTy = HaveAlign <= 8 ? MVT::getIntegerVT(8 * HaveAlign)
                                 : MVT::getVectorVT(MVT::i8, HaveAlign);
-    DoDefault = allowsMemoryAccess(Ctx, DL, PartTy, *LN->getMemOperand());
+    DoDefault =
+        allowsMemoryAccessForAlignment(Ctx, DL, PartTy, *LN->getMemOperand());
   }
   if (DoDefault) {
     std::pair<SDValue, SDValue> P = expandUnalignedLoad(LN, DAG);

@@ -294,8 +294,20 @@ HANDLE_TARGET_OPCODE(G_SEXTLOAD)
 /// Generic zeroext load
 HANDLE_TARGET_OPCODE(G_ZEXTLOAD)
 
+/// Generic indexed load (including anyext load)
+HANDLE_TARGET_OPCODE(G_INDEXED_LOAD)
+
+/// Generic indexed signext load
+HANDLE_TARGET_OPCODE(G_INDEXED_SEXTLOAD)
+
+/// Generic indexed zeroext load
+HANDLE_TARGET_OPCODE(G_INDEXED_ZEXTLOAD)
+
 /// Generic store.
 HANDLE_TARGET_OPCODE(G_STORE)
+
+/// Generic indexed store.
+HANDLE_TARGET_OPCODE(G_INDEXED_STORE)
 
 /// Generic atomic cmpxchg with internal success check.
 HANDLE_TARGET_OPCODE(G_ATOMIC_CMPXCHG_WITH_SUCCESS)
@@ -512,7 +524,7 @@ HANDLE_TARGET_OPCODE(G_FMINIMUM)
 HANDLE_TARGET_OPCODE(G_FMAXIMUM)
 
 /// Generic pointer offset
-HANDLE_TARGET_OPCODE(G_GEP)
+HANDLE_TARGET_OPCODE(G_PTR_ADD)
 
 /// Clear the specified number of low bits in a pointer. This rounds the value
 /// *down* to the given alignment.

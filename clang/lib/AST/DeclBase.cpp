@@ -100,7 +100,7 @@ void *Decl::operator new(std::size_t Size, const ASTContext &Ctx,
     // Ensure required alignment of the resulting object by adding extra
     // padding at the start if required.
     size_t ExtraAlign =
-        llvm::OffsetToAlignment(sizeof(Module *), alignof(Decl));
+        llvm::offsetToAlignment(sizeof(Module *), llvm::Align(alignof(Decl)));
     auto *Buffer = reinterpret_cast<char *>(
         ::operator new(ExtraAlign + sizeof(Module *) + Size + Extra, Ctx));
     Buffer += ExtraAlign;
@@ -959,11 +959,11 @@ const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
     return nullptr;
 
   if (Ty->isFunctionPointerType())
-    Ty = Ty->getAs<PointerType>()->getPointeeType();
+    Ty = Ty->castAs<PointerType>()->getPointeeType();
   else if (Ty->isFunctionReferenceType())
-    Ty = Ty->getAs<ReferenceType>()->getPointeeType();
+    Ty = Ty->castAs<ReferenceType>()->getPointeeType();
   else if (BlocksToo && Ty->isBlockPointerType())
-    Ty = Ty->getAs<BlockPointerType>()->getPointeeType();
+    Ty = Ty->castAs<BlockPointerType>()->getPointeeType();
 
   return Ty->getAs<FunctionType>();
 }

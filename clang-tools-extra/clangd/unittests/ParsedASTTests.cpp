@@ -144,6 +144,9 @@ TEST(ParsedASTTest,
     template <>
     int foo<bool> = 0;
   )cpp";
+  // FIXME: Auto-completion in a template requires disabling delayed template
+  // parsing.
+  TU.ExtraArgs.push_back("-fno-delayed-template-parsing");
 
   auto AST = TU.build();
   EXPECT_THAT(
@@ -229,27 +232,29 @@ TEST(ParsedASTTest, CanBuildInvocationWithUnknownArgs) {
 
 TEST(ParsedASTTest, CollectsMainFileMacroExpansions) {
   Annotations TestCase(R"cpp(
-    #define MACRO_ARGS(X, Y) X Y
+    #define ^MACRO_ARGS(X, Y) X Y
+    // - preamble ends
     ^ID(int A);
     // Macro arguments included.
     ^MACRO_ARGS(^MACRO_ARGS(^MACRO_EXP(int), A), ^ID(= 2));
 
     // Macro names inside other macros not included.
-    #define FOO BAR
-    #define BAR 1
+    #define ^MACRO_ARGS2(X, Y) X Y
+    #define ^FOO BAR
+    #define ^BAR 1
     int A = ^FOO;
 
     // Macros from token concatenations not included.
-    #define CONCAT(X) X##A()
-    #define PREPEND(X) MACRO##X()
-    #define MACROA() 123
+    #define ^CONCAT(X) X##A()
+    #define ^PREPEND(X) MACRO##X()
+    #define ^MACROA() 123
     int B = ^CONCAT(MACRO);
     int D = ^PREPEND(A)
 
     // Macros included not from preamble not included.
     #include "foo.inc"
 
-    #define assert(COND) if (!(COND)) { printf("%s", #COND); exit(0); }
+    #define ^assert(COND) if (!(COND)) { printf("%s", #COND); exit(0); }
 
     void test() {
       // Includes macro expansions in arguments that are expressions
@@ -268,13 +273,11 @@ TEST(ParsedASTTest, CollectsMainFileMacroExpansions) {
     int D = DEF;
   )cpp";
   ParsedAST AST = TU.build();
-  const std::vector<SourceLocation> &MacroExpansionLocations =
-      AST.getMainFileExpansions();
   std::vector<Position> MacroExpansionPositions;
-  for (const auto &L : MacroExpansionLocations)
-    MacroExpansionPositions.push_back(
-        sourceLocToPosition(AST.getSourceManager(), L));
-  EXPECT_EQ(MacroExpansionPositions, TestCase.points());
+  for (const auto &R : AST.getMacros().Ranges)
+    MacroExpansionPositions.push_back(R.start);
+  EXPECT_THAT(MacroExpansionPositions,
+              testing::UnorderedElementsAreArray(TestCase.points()));
 }
 
 } // namespace

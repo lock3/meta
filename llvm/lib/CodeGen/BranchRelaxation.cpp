@@ -64,19 +64,18 @@ class BranchRelaxation : public MachineFunctionPass {
     /// Compute the offset immediately following this block. \p MBB is the next
     /// block.
     unsigned postOffset(const MachineBasicBlock &MBB) const {
-      unsigned PO = Offset + Size;
-      unsigned LogAlign = MBB.getLogAlignment();
-      if (LogAlign == 0)
+      const unsigned PO = Offset + Size;
+      const Align Alignment = MBB.getAlignment();
+      if (Alignment == 1)
         return PO;
 
-      unsigned AlignAmt = 1 << LogAlign;
-      unsigned ParentLogAlign = MBB.getParent()->getLogAlignment();
-      if (LogAlign <= ParentLogAlign)
-        return PO + OffsetToAlignment(PO, AlignAmt);
+      const Align ParentAlign = MBB.getParent()->getAlignment();
+      if (Alignment <= ParentAlign)
+        return PO + offsetToAlignment(PO, Alignment);
 
       // The alignment of this MBB is larger than the function's alignment, so we
       // can't tell whether or not it will insert nops. Assume that it will.
-      return PO + AlignAmt + OffsetToAlignment(PO, AlignAmt);
+      return PO + Alignment.value() + offsetToAlignment(PO, Alignment);
     }
   };
 
@@ -128,9 +127,8 @@ void BranchRelaxation::verify() {
 #ifndef NDEBUG
   unsigned PrevNum = MF->begin()->getNumber();
   for (MachineBasicBlock &MBB : *MF) {
-    unsigned LogAlign = MBB.getLogAlignment();
-    unsigned Num = MBB.getNumber();
-    assert(BlockInfo[Num].Offset % (1u << LogAlign) == 0);
+    const unsigned Num = MBB.getNumber();
+    assert(isAligned(MBB.getAlignment(), BlockInfo[Num].Offset));
     assert(!Num || BlockInfo[PrevNum].postOffset(MBB) <= BlockInfo[Num].Offset);
     assert(BlockInfo[Num].Size == computeBlockSize(MBB));
     PrevNum = Num;

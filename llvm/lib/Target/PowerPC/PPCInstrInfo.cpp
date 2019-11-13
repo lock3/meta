@@ -90,7 +90,6 @@ enum SpillOpcodeKey {
   SOK_QuadBitSpill,
   SOK_SpillToVSR,
   SOK_SPESpill,
-  SOK_SPE4Spill,
   SOK_LastOpcodeSpill  // This must be last on the enum.
 };
 
@@ -329,6 +328,7 @@ bool PPCInstrInfo::isReallyTriviallyReMaterializable(const MachineInstr &MI,
   case PPC::LIS:
   case PPC::LIS8:
   case PPC::QVGPCI:
+  case PPC::ADDIStocHA:
   case PPC::ADDIStocHA8:
   case PPC::ADDItocL:
   case PPC::LOAD_STACK_GUARD:
@@ -449,7 +449,8 @@ MachineInstr *PPCInstrInfo::commuteInstructionImpl(MachineInstr &MI, bool NewMI,
   return &MI;
 }
 
-bool PPCInstrInfo::findCommutedOpIndices(MachineInstr &MI, unsigned &SrcOpIdx1,
+bool PPCInstrInfo::findCommutedOpIndices(const MachineInstr &MI,
+                                         unsigned &SrcOpIdx1,
                                          unsigned &SrcOpIdx2) const {
   // For VSX A-Type FMA instructions, it is the first two operands that can be
   // commuted, however, because the non-encoded tied input operand is listed
@@ -902,15 +903,15 @@ static unsigned getCRBitValue(unsigned CRBit) {
 
 void PPCInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                MachineBasicBlock::iterator I,
-                               const DebugLoc &DL, unsigned DestReg,
-                               unsigned SrcReg, bool KillSrc) const {
+                               const DebugLoc &DL, MCRegister DestReg,
+                               MCRegister SrcReg, bool KillSrc) const {
   // We can end up with self copies and similar things as a result of VSX copy
   // legalization. Promote them here.
   const TargetRegisterInfo *TRI = &getRegisterInfo();
   if (PPC::F8RCRegClass.contains(DestReg) &&
       PPC::VSRCRegClass.contains(SrcReg)) {
-    unsigned SuperReg =
-      TRI->getMatchingSuperReg(DestReg, PPC::sub_64, &PPC::VSRCRegClass);
+    MCRegister SuperReg =
+        TRI->getMatchingSuperReg(DestReg, PPC::sub_64, &PPC::VSRCRegClass);
 
     if (VSXSelfCopyCrash && SrcReg == SuperReg)
       llvm_unreachable("nop VSX copy");
@@ -918,8 +919,8 @@ void PPCInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     DestReg = SuperReg;
   } else if (PPC::F8RCRegClass.contains(SrcReg) &&
              PPC::VSRCRegClass.contains(DestReg)) {
-    unsigned SuperReg =
-      TRI->getMatchingSuperReg(SrcReg, PPC::sub_64, &PPC::VSRCRegClass);
+    MCRegister SuperReg =
+        TRI->getMatchingSuperReg(SrcReg, PPC::sub_64, &PPC::VSRCRegClass);
 
     if (VSXSelfCopyCrash && DestReg == SuperReg)
       llvm_unreachable("nop VSX copy");
@@ -930,7 +931,7 @@ void PPCInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   // Different class register copy
   if (PPC::CRBITRCRegClass.contains(SrcReg) &&
       PPC::GPRCRegClass.contains(DestReg)) {
-    unsigned CRReg = getCRFromCRBit(SrcReg);
+    MCRegister CRReg = getCRFromCRBit(SrcReg);
     BuildMI(MBB, I, DL, get(PPC::MFOCRF), DestReg).addReg(CRReg);
     getKillRegState(KillSrc);
     // Rotate the CR bit in the CR fields to be the least significant bit and
@@ -967,11 +968,11 @@ void PPCInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     getKillRegState(KillSrc);
     return;
   } else if (PPC::SPERCRegClass.contains(SrcReg) &&
-             PPC::SPE4RCRegClass.contains(DestReg)) {
+             PPC::GPRCRegClass.contains(DestReg)) {
     BuildMI(MBB, I, DL, get(PPC::EFSCFD), DestReg).addReg(SrcReg);
     getKillRegState(KillSrc);
     return;
-  } else if (PPC::SPE4RCRegClass.contains(SrcReg) &&
+  } else if (PPC::GPRCRegClass.contains(SrcReg) &&
              PPC::SPERCRegClass.contains(DestReg)) {
     BuildMI(MBB, I, DL, get(PPC::EFDCFS), DestReg).addReg(SrcReg);
     getKillRegState(KillSrc);
@@ -1010,8 +1011,6 @@ void PPCInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     Opc = PPC::QVFMRb;
   else if (PPC::CRBITRCRegClass.contains(DestReg, SrcReg))
     Opc = PPC::CROR;
-  else if (PPC::SPE4RCRegClass.contains(DestReg, SrcReg))
-    Opc = PPC::OR;
   else if (PPC::SPERCRegClass.contains(DestReg, SrcReg))
     Opc = PPC::EVOR;
   else
@@ -1044,8 +1043,6 @@ unsigned PPCInstrInfo::getStoreOpcodeForSpill(unsigned Reg,
       OpcodeIndex = SOK_Float4Spill;
     } else if (PPC::SPERCRegClass.hasSubClassEq(RC)) {
       OpcodeIndex = SOK_SPESpill;
-    } else if (PPC::SPE4RCRegClass.hasSubClassEq(RC)) {
-      OpcodeIndex = SOK_SPE4Spill;
     } else if (PPC::CRRCRegClass.hasSubClassEq(RC)) {
       OpcodeIndex = SOK_CRSpill;
     } else if (PPC::CRBITRCRegClass.hasSubClassEq(RC)) {
@@ -1084,8 +1081,6 @@ unsigned PPCInstrInfo::getStoreOpcodeForSpill(unsigned Reg,
       OpcodeIndex = SOK_Float4Spill;
     } else if (PPC::SPERCRegClass.contains(Reg)) {
       OpcodeIndex = SOK_SPESpill;
-    } else if (PPC::SPE4RCRegClass.contains(Reg)) {
-      OpcodeIndex = SOK_SPE4Spill;
     } else if (PPC::CRRCRegClass.contains(Reg)) {
       OpcodeIndex = SOK_CRSpill;
     } else if (PPC::CRBITRCRegClass.contains(Reg)) {
@@ -1134,8 +1129,6 @@ PPCInstrInfo::getLoadOpcodeForSpill(unsigned Reg,
       OpcodeIndex = SOK_Float4Spill;
     } else if (PPC::SPERCRegClass.hasSubClassEq(RC)) {
       OpcodeIndex = SOK_SPESpill;
-    } else if (PPC::SPE4RCRegClass.hasSubClassEq(RC)) {
-      OpcodeIndex = SOK_SPE4Spill;
     } else if (PPC::CRRCRegClass.hasSubClassEq(RC)) {
       OpcodeIndex = SOK_CRSpill;
     } else if (PPC::CRBITRCRegClass.hasSubClassEq(RC)) {
@@ -1174,8 +1167,6 @@ PPCInstrInfo::getLoadOpcodeForSpill(unsigned Reg,
       OpcodeIndex = SOK_Float4Spill;
     } else if (PPC::SPERCRegClass.contains(Reg)) {
       OpcodeIndex = SOK_SPESpill;
-    } else if (PPC::SPE4RCRegClass.contains(Reg)) {
-      OpcodeIndex = SOK_SPE4Spill;
     } else if (PPC::CRRCRegClass.contains(Reg)) {
       OpcodeIndex = SOK_CRSpill;
     } else if (PPC::CRBITRCRegClass.contains(Reg)) {
@@ -2283,7 +2274,7 @@ void PPCInstrInfo::replaceInstrOperandWithImm(MachineInstr &MI,
   Register InUseReg = MI.getOperand(OpNo).getReg();
   MI.getOperand(OpNo).ChangeToImmediate(Imm);
 
-  if (empty(MI.implicit_operands()))
+  if (MI.implicit_operands().empty())
     return;
 
   // We need to make sure that the MI didn't have any implicit use
@@ -2433,7 +2424,7 @@ const unsigned *PPCInstrInfo::getStoreOpcodesForSpillArray() const {
       {PPC::STW, PPC::STD, PPC::STFD, PPC::STFS, PPC::SPILL_CR,
        PPC::SPILL_CRBIT, PPC::STVX, PPC::STXVD2X, PPC::STXSDX, PPC::STXSSPX,
        PPC::SPILL_VRSAVE, PPC::QVSTFDX, PPC::QVSTFSXs, PPC::QVSTFDXb,
-       PPC::SPILLTOVSR_ST, PPC::EVSTDD, PPC::SPESTW},
+       PPC::SPILLTOVSR_ST, PPC::EVSTDD},
       // Power 9
       {PPC::STW, PPC::STD, PPC::STFD, PPC::STFS, PPC::SPILL_CR,
        PPC::SPILL_CRBIT, PPC::STVX, PPC::STXV, PPC::DFSTOREf64, PPC::DFSTOREf32,
@@ -2449,7 +2440,7 @@ const unsigned *PPCInstrInfo::getLoadOpcodesForSpillArray() const {
       {PPC::LWZ, PPC::LD, PPC::LFD, PPC::LFS, PPC::RESTORE_CR,
        PPC::RESTORE_CRBIT, PPC::LVX, PPC::LXVD2X, PPC::LXSDX, PPC::LXSSPX,
        PPC::RESTORE_VRSAVE, PPC::QVLFDX, PPC::QVLFSXs, PPC::QVLFDXb,
-       PPC::SPILLTOVSR_LD, PPC::EVLDD, PPC::SPELWZ},
+       PPC::SPILLTOVSR_LD, PPC::EVLDD},
       // Power 9
       {PPC::LWZ, PPC::LD, PPC::LFD, PPC::LFS, PPC::RESTORE_CR,
        PPC::RESTORE_CRBIT, PPC::LVX, PPC::LXV, PPC::DFLOADf64, PPC::DFLOADf32,
@@ -2534,6 +2525,225 @@ void PPCInstrInfo::fixupIsDeadOrKill(MachineInstr &StartMI, MachineInstr &EndMI,
   // Ensure RegMo liveness is killed after EndMI.
   assert((IsKillSet || (MO && MO->isDead())) &&
          "RegNo should be killed or dead");
+}
+
+// This opt tries to convert the following imm form to an index form to save an
+// add for stack variables.
+// Return false if no such pattern found.
+//
+// ADDI instr: ToBeChangedReg = ADDI FrameBaseReg, OffsetAddi
+// ADD instr:  ToBeDeletedReg = ADD ToBeChangedReg(killed), ScaleReg
+// Imm instr:  Reg            = op OffsetImm, ToBeDeletedReg(killed)
+//
+// can be converted to:
+//
+// new ADDI instr: ToBeChangedReg = ADDI FrameBaseReg, (OffsetAddi + OffsetImm)
+// Index instr:    Reg            = opx ScaleReg, ToBeChangedReg(killed)
+//
+// In order to eliminate ADD instr, make sure that:
+// 1: (OffsetAddi + OffsetImm) must be int16 since this offset will be used in
+//    new ADDI instr and ADDI can only take int16 Imm.
+// 2: ToBeChangedReg must be killed in ADD instr and there is no other use
+//    between ADDI and ADD instr since its original def in ADDI will be changed
+//    in new ADDI instr. And also there should be no new def for it between
+//    ADD and Imm instr as ToBeChangedReg will be used in Index instr.
+// 3: ToBeDeletedReg must be killed in Imm instr and there is no other use
+//    between ADD and Imm instr since ADD instr will be eliminated.
+// 4: ScaleReg must not be redefined between ADD and Imm instr since it will be
+//    moved to Index instr.
+bool PPCInstrInfo::foldFrameOffset(MachineInstr &MI) const {
+  MachineFunction *MF = MI.getParent()->getParent();
+  MachineRegisterInfo *MRI = &MF->getRegInfo();
+  bool PostRA = !MRI->isSSA();
+  // Do this opt after PEI which is after RA. The reason is stack slot expansion
+  // in PEI may expose such opportunities since in PEI, stack slot offsets to
+  // frame base(OffsetAddi) are determined.
+  if (!PostRA)
+    return false;
+  unsigned ToBeDeletedReg = 0;
+  int64_t OffsetImm = 0;
+  unsigned XFormOpcode = 0;
+  ImmInstrInfo III;
+
+  // Check if Imm instr meets requirement.
+  if (!isImmInstrEligibleForFolding(MI, ToBeDeletedReg, XFormOpcode, OffsetImm,
+                                    III))
+    return false;
+
+  bool OtherIntermediateUse = false;
+  MachineInstr *ADDMI = getDefMIPostRA(ToBeDeletedReg, MI, OtherIntermediateUse);
+
+  // Exit if there is other use between ADD and Imm instr or no def found.
+  if (OtherIntermediateUse || !ADDMI)
+    return false;
+
+  // Check if ADD instr meets requirement.
+  if (!isADDInstrEligibleForFolding(*ADDMI))
+    return false;
+
+  unsigned ScaleRegIdx = 0;
+  int64_t OffsetAddi = 0;
+  MachineInstr *ADDIMI = nullptr;
+
+  // Check if there is a valid ToBeChangedReg in ADDMI.
+  // 1: It must be killed.
+  // 2: Its definition must be a valid ADDIMI.
+  // 3: It must satify int16 offset requirement.
+  if (isValidToBeChangedReg(ADDMI, 1, ADDIMI, OffsetAddi, OffsetImm))
+    ScaleRegIdx = 2;
+  else if (isValidToBeChangedReg(ADDMI, 2, ADDIMI, OffsetAddi, OffsetImm))
+    ScaleRegIdx = 1;
+  else
+    return false;
+
+  assert(ADDIMI && "There should be ADDIMI for valid ToBeChangedReg.");
+  unsigned ToBeChangedReg = ADDIMI->getOperand(0).getReg();
+  unsigned ScaleReg = ADDMI->getOperand(ScaleRegIdx).getReg();
+  auto NewDefFor = [&](unsigned Reg, MachineBasicBlock::iterator Start,
+                       MachineBasicBlock::iterator End) {
+    for (auto It = ++Start; It != End; It++)
+      if (It->modifiesRegister(Reg, &getRegisterInfo()))
+        return true;
+    return false;
+  };
+  // Make sure no other def for ToBeChangedReg and ScaleReg between ADD Instr
+  // and Imm Instr.
+  if (NewDefFor(ToBeChangedReg, *ADDMI, MI) || NewDefFor(ScaleReg, *ADDMI, MI))
+    return false;
+
+  // Now start to do the transformation.
+  LLVM_DEBUG(dbgs() << "Replace instruction: "
+                    << "\n");
+  LLVM_DEBUG(ADDIMI->dump());
+  LLVM_DEBUG(ADDMI->dump());
+  LLVM_DEBUG(MI.dump());
+  LLVM_DEBUG(dbgs() << "with: "
+                    << "\n");
+
+  // Update ADDI instr.
+  ADDIMI->getOperand(2).setImm(OffsetAddi + OffsetImm);
+
+  // Update Imm instr.
+  MI.setDesc(get(XFormOpcode));
+  MI.getOperand(III.ImmOpNo)
+      .ChangeToRegister(ScaleReg, false, false,
+                        ADDMI->getOperand(ScaleRegIdx).isKill());
+
+  MI.getOperand(III.OpNoForForwarding)
+      .ChangeToRegister(ToBeChangedReg, false, false, true);
+
+  // Eliminate ADD instr.
+  ADDMI->eraseFromParent();
+
+  LLVM_DEBUG(ADDIMI->dump());
+  LLVM_DEBUG(MI.dump());
+
+  return true;
+}
+
+bool PPCInstrInfo::isADDIInstrEligibleForFolding(MachineInstr &ADDIMI,
+                                                 int64_t &Imm) const {
+  unsigned Opc = ADDIMI.getOpcode();
+
+  // Exit if the instruction is not ADDI.
+  if (Opc != PPC::ADDI && Opc != PPC::ADDI8)
+    return false;
+
+  Imm = ADDIMI.getOperand(2).getImm();
+
+  return true;
+}
+
+bool PPCInstrInfo::isADDInstrEligibleForFolding(MachineInstr &ADDMI) const {
+  unsigned Opc = ADDMI.getOpcode();
+
+  // Exit if the instruction is not ADD.
+  return Opc == PPC::ADD4 || Opc == PPC::ADD8;
+}
+
+bool PPCInstrInfo::isImmInstrEligibleForFolding(MachineInstr &MI,
+                                                unsigned &ToBeDeletedReg,
+                                                unsigned &XFormOpcode,
+                                                int64_t &OffsetImm,
+                                                ImmInstrInfo &III) const {
+  // Only handle load/store.
+  if (!MI.mayLoadOrStore())
+    return false;
+
+  unsigned Opc = MI.getOpcode();
+
+  XFormOpcode = RI.getMappedIdxOpcForImmOpc(Opc);
+
+  // Exit if instruction has no index form.
+  if (XFormOpcode == PPC::INSTRUCTION_LIST_END)
+    return false;
+
+  // TODO: sync the logic between instrHasImmForm() and ImmToIdxMap.
+  if (!instrHasImmForm(XFormOpcode, isVFRegister(MI.getOperand(0).getReg()),
+                       III, true))
+    return false;
+
+  if (!III.IsSummingOperands)
+    return false;
+
+  MachineOperand ImmOperand = MI.getOperand(III.ImmOpNo);
+  MachineOperand RegOperand = MI.getOperand(III.OpNoForForwarding);
+  // Only support imm operands, not relocation slots or others.
+  if (!ImmOperand.isImm())
+    return false;
+
+  assert(RegOperand.isReg() && "Instruction format is not right");
+
+  // There are other use for ToBeDeletedReg after Imm instr, can not delete it.
+  if (!RegOperand.isKill())
+    return false;
+
+  ToBeDeletedReg = RegOperand.getReg();
+  OffsetImm = ImmOperand.getImm();
+
+  return true;
+}
+
+bool PPCInstrInfo::isValidToBeChangedReg(MachineInstr *ADDMI, unsigned Index,
+                                         MachineInstr *&ADDIMI,
+                                         int64_t &OffsetAddi,
+                                         int64_t OffsetImm) const {
+  assert((Index == 1 || Index == 2) && "Invalid operand index for add.");
+  MachineOperand &MO = ADDMI->getOperand(Index);
+
+  if (!MO.isKill())
+    return false;
+
+  bool OtherIntermediateUse = false;
+
+  ADDIMI = getDefMIPostRA(MO.getReg(), *ADDMI, OtherIntermediateUse);
+  // Currently handle only one "add + Imminstr" pair case, exit if other
+  // intermediate use for ToBeChangedReg found.
+  // TODO: handle the cases where there are other "add + Imminstr" pairs
+  // with same offset in Imminstr which is like:
+  //
+  // ADDI instr: ToBeChangedReg  = ADDI FrameBaseReg, OffsetAddi
+  // ADD instr1: ToBeDeletedReg1 = ADD ToBeChangedReg, ScaleReg1
+  // Imm instr1: Reg1            = op1 OffsetImm, ToBeDeletedReg1(killed)
+  // ADD instr2: ToBeDeletedReg2 = ADD ToBeChangedReg(killed), ScaleReg2
+  // Imm instr2: Reg2            = op2 OffsetImm, ToBeDeletedReg2(killed)
+  //
+  // can be converted to:
+  //
+  // new ADDI instr: ToBeChangedReg = ADDI FrameBaseReg,
+  //                                       (OffsetAddi + OffsetImm)
+  // Index instr1:   Reg1           = opx1 ScaleReg1, ToBeChangedReg
+  // Index instr2:   Reg2           = opx2 ScaleReg2, ToBeChangedReg(killed)
+
+  if (OtherIntermediateUse || !ADDIMI)
+    return false;
+  // Check if ADDI instr meets requirement.
+  if (!isADDIInstrEligibleForFolding(*ADDIMI, OffsetAddi))
+    return false;
+
+  if (isInt<16>(OffsetAddi + OffsetImm))
+    return true;
+  return false;
 }
 
 // If this instruction has an immediate form and one of its operands is a
@@ -3581,16 +3791,20 @@ bool PPCInstrInfo::transformToImmFormFedByLI(MachineInstr &MI,
       } else {
         // The 32 bit and 64 bit instructions are quite different.
         if (SpecialShift32) {
-          // Left shifts use (N, 0, 31-N), right shifts use (32-N, N, 31).
-          uint64_t SH = RightShift ? 32 - ShAmt : ShAmt;
+          // Left shifts use (N, 0, 31-N).
+          // Right shifts use (32-N, N, 31) if 0 < N < 32.
+          //              use (0, 0, 31)    if N == 0.
+          uint64_t SH = ShAmt == 0 ? 0 : RightShift ? 32 - ShAmt : ShAmt;
           uint64_t MB = RightShift ? ShAmt : 0;
           uint64_t ME = RightShift ? 31 : 31 - ShAmt;
           replaceInstrOperandWithImm(MI, III.OpNoForForwarding, SH);
           MachineInstrBuilder(*MI.getParent()->getParent(), MI).addImm(MB)
             .addImm(ME);
         } else {
-          // Left shifts use (N, 63-N), right shifts use (64-N, N).
-          uint64_t SH = RightShift ? 64 - ShAmt : ShAmt;
+          // Left shifts use (N, 63-N).
+          // Right shifts use (64-N, N) if 0 < N < 64.
+          //              use (0, 0)    if N == 0.
+          uint64_t SH = ShAmt == 0 ? 0 : RightShift ? 64 - ShAmt : ShAmt;
           uint64_t ME = RightShift ? ShAmt : 63 - ShAmt;
           replaceInstrOperandWithImm(MI, III.OpNoForForwarding, SH);
           MachineInstrBuilder(*MI.getParent()->getParent(), MI).addImm(ME);
@@ -3941,21 +4155,99 @@ bool PPCInstrInfo::isBDNZ(unsigned Opcode) const {
   return (Opcode == (Subtarget.isPPC64() ? PPC::BDNZ8 : PPC::BDNZ));
 }
 
-bool PPCInstrInfo::analyzeLoop(MachineLoop &L, MachineInstr *&IndVarInst,
-                               MachineInstr *&CmpInst) const {
-  MachineBasicBlock *LoopEnd = L.getBottomBlock();
-  MachineBasicBlock::iterator I = LoopEnd->getFirstTerminator();
-  // We really "analyze" only CTR loops right now.
-  if (I != LoopEnd->end() && isBDNZ(I->getOpcode())) {
-    IndVarInst = nullptr;
-    CmpInst = &*I;
-    return false;
+namespace {
+class PPCPipelinerLoopInfo : public TargetInstrInfo::PipelinerLoopInfo {
+  MachineInstr *Loop, *EndLoop, *LoopCount;
+  MachineFunction *MF;
+  const TargetInstrInfo *TII;
+  int64_t TripCount;
+
+public:
+  PPCPipelinerLoopInfo(MachineInstr *Loop, MachineInstr *EndLoop,
+                       MachineInstr *LoopCount)
+      : Loop(Loop), EndLoop(EndLoop), LoopCount(LoopCount),
+        MF(Loop->getParent()->getParent()),
+        TII(MF->getSubtarget().getInstrInfo()) {
+    // Inspect the Loop instruction up-front, as it may be deleted when we call
+    // createTripCountGreaterCondition.
+    if (LoopCount->getOpcode() == PPC::LI8 || LoopCount->getOpcode() == PPC::LI)
+      TripCount = LoopCount->getOperand(1).getImm();
+    else
+      TripCount = -1;
   }
-  return true;
+
+  bool shouldIgnoreForPipelining(const MachineInstr *MI) const override {
+    // Only ignore the terminator.
+    return MI == EndLoop;
+  }
+
+  Optional<bool>
+  createTripCountGreaterCondition(int TC, MachineBasicBlock &MBB,
+                                  SmallVectorImpl<MachineOperand> &Cond) override {
+    if (TripCount == -1) {
+      // Since BDZ/BDZ8 that we will insert will also decrease the ctr by 1,
+      // so we don't need to generate any thing here.
+      Cond.push_back(MachineOperand::CreateImm(0));
+      Cond.push_back(MachineOperand::CreateReg(
+          MF->getSubtarget<PPCSubtarget>().isPPC64() ? PPC::CTR8 : PPC::CTR,
+          true));
+      return {};
+    }
+
+    return TripCount > TC;
+  }
+
+  void setPreheader(MachineBasicBlock *NewPreheader) override {
+    // Do nothing. We want the LOOP setup instruction to stay in the *old*
+    // preheader, so we can use BDZ in the prologs to adapt the loop trip count.
+  }
+
+  void adjustTripCount(int TripCountAdjust) override {
+    // If the loop trip count is a compile-time value, then just change the
+    // value.
+    if (LoopCount->getOpcode() == PPC::LI8 ||
+        LoopCount->getOpcode() == PPC::LI) {
+      int64_t TripCount = LoopCount->getOperand(1).getImm() + TripCountAdjust;
+      LoopCount->getOperand(1).setImm(TripCount);
+      return;
+    }
+
+    // Since BDZ/BDZ8 that we will insert will also decrease the ctr by 1,
+    // so we don't need to generate any thing here.
+  }
+
+  void disposed() override {
+    Loop->eraseFromParent();
+    // Ensure the loop setup instruction is deleted too.
+    LoopCount->eraseFromParent();
+  }
+};
+} // namespace
+
+std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
+PPCInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
+  // We really "analyze" only hardware loops right now.
+  MachineBasicBlock::iterator I = LoopBB->getFirstTerminator();
+  MachineBasicBlock *Preheader = *LoopBB->pred_begin();
+  if (Preheader == LoopBB)
+    Preheader = *std::next(LoopBB->pred_begin());
+  MachineFunction *MF = Preheader->getParent();
+
+  if (I != LoopBB->end() && isBDNZ(I->getOpcode())) {
+    SmallPtrSet<MachineBasicBlock *, 8> Visited;
+    if (MachineInstr *LoopInst = findLoopInstr(*Preheader, Visited)) {
+      Register LoopCountReg = LoopInst->getOperand(0).getReg();
+      MachineRegisterInfo &MRI = MF->getRegInfo();
+      MachineInstr *LoopCount = MRI.getUniqueVRegDef(LoopCountReg);
+      return std::make_unique<PPCPipelinerLoopInfo>(LoopInst, &*I, LoopCount);
+    }
+  }
+  return nullptr;
 }
 
-MachineInstr *
-PPCInstrInfo::findLoopInstr(MachineBasicBlock &PreHeader) const {
+MachineInstr *PPCInstrInfo::findLoopInstr(
+    MachineBasicBlock &PreHeader,
+    SmallPtrSet<MachineBasicBlock *, 8> &Visited) const {
 
   unsigned LOOPi = (Subtarget.isPPC64() ? PPC::MTCTR8loop : PPC::MTCTRloop);
 
@@ -3964,50 +4256,6 @@ PPCInstrInfo::findLoopInstr(MachineBasicBlock &PreHeader) const {
     if (I.getOpcode() == LOOPi)
       return &I;
   return nullptr;
-}
-
-unsigned PPCInstrInfo::reduceLoopCount(
-    MachineBasicBlock &MBB, MachineBasicBlock &PreHeader, MachineInstr *IndVar,
-    MachineInstr &Cmp, SmallVectorImpl<MachineOperand> &Cond,
-    SmallVectorImpl<MachineInstr *> &PrevInsts, unsigned Iter,
-    unsigned MaxIter) const {
-  // We expect a hardware loop currently. This means that IndVar is set
-  // to null, and the compare is the ENDLOOP instruction.
-  assert((!IndVar) && isBDNZ(Cmp.getOpcode()) && "Expecting a CTR loop");
-  MachineFunction *MF = MBB.getParent();
-  DebugLoc DL = Cmp.getDebugLoc();
-  MachineInstr *Loop = findLoopInstr(PreHeader);
-  if (!Loop)
-    return 0;
-  Register LoopCountReg = Loop->getOperand(0).getReg();
-  MachineRegisterInfo &MRI = MF->getRegInfo();
-  MachineInstr *LoopCount = MRI.getUniqueVRegDef(LoopCountReg);
-
-  if (!LoopCount)
-    return 0;
-  // If the loop trip count is a compile-time value, then just change the
-  // value.
-  if (LoopCount->getOpcode() == PPC::LI8 || LoopCount->getOpcode() == PPC::LI) {
-    int64_t Offset = LoopCount->getOperand(1).getImm();
-    if (Offset <= 1) {
-      LoopCount->eraseFromParent();
-      Loop->eraseFromParent();
-      return 0;
-    }
-    LoopCount->getOperand(1).setImm(Offset - 1);
-    return Offset - 1;
-  }
-
-  // The loop trip count is a run-time value.
-  // We need to subtract one from the trip count,
-  // and insert branch later to check if we're done with the loop.
-
-  // Since BDZ/BDZ8 that we will insert will also decrease the ctr by 1,
-  // so we don't need to generate any thing here.
-  Cond.push_back(MachineOperand::CreateImm(0));
-  Cond.push_back(MachineOperand::CreateReg(
-      Subtarget.isPPC64() ? PPC::CTR8 : PPC::CTR, true));
-  return LoopCountReg;
 }
 
 // Return true if get the base operand, byte offset of an instruction and the
@@ -4036,8 +4284,7 @@ bool PPCInstrInfo::getMemOperandWithOffsetWidth(
 }
 
 bool PPCInstrInfo::areMemAccessesTriviallyDisjoint(
-    const MachineInstr &MIa, const MachineInstr &MIb,
-    AliasAnalysis * /*AA*/) const {
+    const MachineInstr &MIa, const MachineInstr &MIb) const {
   assert(MIa.mayLoadOrStore() && "MIa must be a load or store.");
   assert(MIb.mayLoadOrStore() && "MIb must be a load or store.");
 

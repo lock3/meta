@@ -12,6 +12,7 @@
 
 #include <limits.h>
 #include <malloc.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 extern "C" {
@@ -279,4 +280,15 @@ TEST(ScudoWrappersCTest, MallocIterateBoundary) {
   EXPECT_EQ(Count, 1U);
 
   free(P);
+}
+
+TEST(ScudoWrappersCTest, MallocInfo) {
+  char Buffer[64];
+  FILE *F = fmemopen(Buffer, sizeof(Buffer), "w+");
+  EXPECT_NE(F, nullptr);
+  errno = 0;
+  EXPECT_EQ(malloc_info(0, F), 0);
+  EXPECT_EQ(errno, 0);
+  fclose(F);
+  EXPECT_EQ(strncmp(Buffer, "<malloc version=\"scudo-", 23), 0);
 }

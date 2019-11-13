@@ -39,9 +39,9 @@
 
 using namespace llvm;
 using namespace llvm::wasm;
-using namespace lld;
-using namespace lld::wasm;
 
+namespace lld {
+namespace wasm {
 static constexpr int stackAlignment = 16;
 
 namespace {
@@ -226,8 +226,6 @@ void Writer::layoutMemory() {
 
   if (WasmSym::globalBase)
     WasmSym::globalBase->setVirtualAddress(memoryPtr);
-  if (WasmSym::definedMemoryBase)
-    WasmSym::definedMemoryBase->setVirtualAddress(memoryPtr);
 
   uint32_t dataStart = memoryPtr;
 
@@ -263,7 +261,6 @@ void Writer::layoutMemory() {
     memoryPtr += 4;
   }
 
-  // TODO: Add .bss space here.
   if (WasmSym::dataEnd)
     WasmSym::dataEnd->setVirtualAddress(memoryPtr);
 
@@ -510,8 +507,8 @@ void Writer::calculateExports() {
     out.exportSec->exports.push_back(
         WasmExport{functionTableName, WASM_EXTERNAL_TABLE, 0});
 
-  unsigned fakeGlobalIndex = out.importSec->getNumImportedGlobals() +
-                             out.globalSec->inputGlobals.size();
+  unsigned globalIndex =
+      out.importSec->getNumImportedGlobals() + out.globalSec->numGlobals();
 
   for (Symbol *sym : symtab->getSymbols()) {
     if (!sym->isExported())
@@ -537,8 +534,8 @@ void Writer::calculateExports() {
       export_ = {name, WASM_EXTERNAL_EVENT, e->getEventIndex()};
     } else {
       auto *d = cast<DefinedData>(sym);
-      out.globalSec->definedFakeGlobals.emplace_back(d);
-      export_ = {name, WASM_EXTERNAL_GLOBAL, fakeGlobalIndex++};
+      out.globalSec->dataAddressGlobals.push_back(d);
+      export_ = {name, WASM_EXTERNAL_GLOBAL, globalIndex++};
     }
 
     LLVM_DEBUG(dbgs() << "Export: " << name << "\n");
@@ -667,15 +664,39 @@ void Writer::createOutputSegments() {
       OutputSegment *&s = segmentMap[name];
       if (s == nullptr) {
         LLVM_DEBUG(dbgs() << "new segment: " << name << "\n");
-        s = make<OutputSegment>(name, segments.size());
+        s = make<OutputSegment>(name);
         if (config->sharedMemory || name == ".tdata")
           s->initFlags = WASM_SEGMENT_IS_PASSIVE;
+        // Exported memories are guaranteed to be zero-initialized, so no need
+        // to emit data segments for bss sections.
+        // TODO: consider initializing bss sections with memory.fill
+        // instructions when memory is imported and bulk-memory is available.
+        if (!config->importMemory && !config->relocatable &&
+            name.startswith(".bss"))
+          s->isBss = true;
         segments.push_back(s);
       }
       s->addInputSegment(segment);
       LLVM_DEBUG(dbgs() << "added data: " << name << ": " << s->size << "\n");
     }
   }
+
+  // Sort segments by type, placing .bss last
+  std::stable_sort(segments.begin(), segments.end(),
+                   [](const OutputSegment *a, const OutputSegment *b) {
+                     auto order = [](StringRef name) {
+                       return StringSwitch<int>(name)
+                           .StartsWith(".rodata", 0)
+                           .StartsWith(".data", 1)
+                           .StartsWith(".tdata", 2)
+                           .StartsWith(".bss", 4)
+                           .Default(3);
+                     };
+                     return order(a->name) < order(b->name);
+                   });
+
+  for (size_t i = 0; i < segments.size(); ++i)
+    segments[i]->index = i;
 }
 
 static void createFunction(DefinedFunction *func, StringRef bodyContent) {
@@ -945,7 +966,7 @@ void Writer::createSyntheticSections() {
   out.exportSec = make<ExportSection>();
   out.startSec = make<StartSection>(segments.size());
   out.elemSec = make<ElemSection>();
-  out.dataCountSec = make<DataCountSection>(segments.size());
+  out.dataCountSec = make<DataCountSection>(segments);
   out.linkingSec = make<LinkingSection>(initFunctions, segments);
   out.nameSec = make<NameSection>();
   out.producersSec = make<ProducersSection>();
@@ -1019,7 +1040,7 @@ void Writer::run() {
 
   if (errorHandler().verbose) {
     log("Defined Functions: " + Twine(out.functionSec->inputFunctions.size()));
-    log("Defined Globals  : " + Twine(out.globalSec->inputGlobals.size()));
+    log("Defined Globals  : " + Twine(out.globalSec->numGlobals()));
     log("Defined Events   : " + Twine(out.eventSec->inputEvents.size()));
     log("Function Imports : " +
         Twine(out.importSec->getNumImportedFunctions()));
@@ -1072,4 +1093,7 @@ void Writer::createHeader() {
   fileSize += header.size();
 }
 
-void lld::wasm::writeResult() { Writer().run(); }
+void writeResult() { Writer().run(); }
+
+} // namespace wasm
+} // namespace lld

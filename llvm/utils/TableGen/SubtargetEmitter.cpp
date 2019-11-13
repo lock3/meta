@@ -1057,6 +1057,7 @@ void SubtargetEmitter::GenSchedClassTables(const CodeGenProcModel &ProcModel,
         LLVM_DEBUG(dbgs() << ProcModel.ModelName
                           << " does not have resources for class " << SC.Name
                           << '\n');
+        SCDesc.NumMicroOps = MCSchedClassDesc::InvalidNumMicroOps;
       }
     }
     // Sum resources across all operand writes.
@@ -1746,7 +1747,10 @@ void SubtargetEmitter::emitGenMCSubtargetInfo(raw_ostream &OS) {
      << "    return " << Target << "_MC"
      << "::resolveVariantSchedClassImpl(SchedClass, MI, CPUID); \n";
   OS << "  }\n";
+  if (TGT.getHwModes().getNumModeIds() > 1)
+    OS << "  unsigned getHwMode() const override;\n";
   OS << "};\n";
+  EmitHwModeCheck(Target + "GenMCSubtargetInfo", OS);
 }
 
 void SubtargetEmitter::EmitMCInstrAnalysisPredicateFunctions(raw_ostream &OS) {

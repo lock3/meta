@@ -22,16 +22,27 @@
 
 #define DEBUG_TYPE "lld"
 
-using namespace lld;
-using namespace lld::wasm;
-
 using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::wasm;
 
-std::unique_ptr<llvm::TarWriter> lld::wasm::tar;
+namespace lld {
 
-Optional<MemoryBufferRef> lld::wasm::readFile(StringRef path) {
+// Returns a string in the format of "foo.o" or "foo.a(bar.o)".
+std::string toString(const wasm::InputFile *file) {
+  if (!file)
+    return "<internal>";
+
+  if (file->archiveName.empty())
+    return file->getName();
+
+  return (file->archiveName + "(" + file->getName() + ")").str();
+}
+
+namespace wasm {
+std::unique_ptr<llvm::TarWriter> tar;
+
+Optional<MemoryBufferRef> readFile(StringRef path) {
   log("Loading: " + path);
 
   auto mbOrErr = MemoryBuffer::getFile(path);
@@ -48,7 +59,7 @@ Optional<MemoryBufferRef> lld::wasm::readFile(StringRef path) {
   return mbref;
 }
 
-InputFile *lld::wasm::createObjectFile(MemoryBufferRef mb,
+InputFile *createObjectFile(MemoryBufferRef mb,
                                        StringRef archiveName) {
   file_magic magic = identify_magic(mb.getBuffer());
   if (magic == file_magic::wasm_object) {
@@ -165,15 +176,20 @@ uint32_t ObjFile::calcNewValue(const WasmRelocation &reloc) const {
   switch (reloc.Type) {
   case R_WASM_TABLE_INDEX_I32:
   case R_WASM_TABLE_INDEX_SLEB:
-  case R_WASM_TABLE_INDEX_REL_SLEB:
+  case R_WASM_TABLE_INDEX_REL_SLEB: {
     if (!getFunctionSymbol(reloc.Index)->hasTableIndex())
       return 0;
-    return getFunctionSymbol(reloc.Index)->getTableIndex();
+    uint32_t index = getFunctionSymbol(reloc.Index)->getTableIndex();
+    if (reloc.Type == R_WASM_TABLE_INDEX_REL_SLEB)
+      index -= config->tableBase;
+    return index;
+
+  }
   case R_WASM_MEMORY_ADDR_SLEB:
   case R_WASM_MEMORY_ADDR_I32:
   case R_WASM_MEMORY_ADDR_LEB:
   case R_WASM_MEMORY_ADDR_REL_SLEB:
-    if (isa<UndefinedData>(sym))
+    if (isa<UndefinedData>(sym) || sym->isUndefWeak())
       return 0;
     return cast<DefinedData>(sym)->getVirtualAddress() + reloc.Addend;
   case R_WASM_TYPE_INDEX_LEB:
@@ -421,7 +437,7 @@ Symbol *ObjFile::createDefined(const WasmSymbol &sym) {
 
 Symbol *ObjFile::createUndefined(const WasmSymbol &sym, bool isCalledDirectly) {
   StringRef name = sym.Info.Name;
-  uint32_t flags = sym.Info.Flags;
+  uint32_t flags = sym.Info.Flags | WASM_SYMBOL_UNDEFINED;
 
   switch (sym.Info.Kind) {
   case WASM_SYMBOL_TYPE_FUNCTION:
@@ -509,9 +525,10 @@ static Symbol *createBitcodeSymbol(const std::vector<bool> &keptComdats,
   bool excludedByComdat = c != -1 && !keptComdats[c];
 
   if (objSym.isUndefined() || excludedByComdat) {
+    flags |= WASM_SYMBOL_UNDEFINED;
     if (objSym.isExecutable())
-      return symtab->addUndefinedFunction(name, name, defaultModule, flags, &f,
-                                          nullptr, true);
+      return symtab->addUndefinedFunction(name, "", "", flags, &f, nullptr,
+                                          true);
     return symtab->addUndefinedData(name, flags, &f);
   }
 
@@ -536,13 +553,5 @@ void BitcodeFile::parse() {
     symbols.push_back(createBitcodeSymbol(keptComdats, objSym, *this));
 }
 
-// Returns a string in the format of "foo.o" or "foo.a(bar.o)".
-std::string lld::toString(const wasm::InputFile *file) {
-  if (!file)
-    return "<internal>";
-
-  if (file->archiveName.empty())
-    return file->getName();
-
-  return (file->archiveName + "(" + file->getName() + ")").str();
-}
+} // namespace wasm
+} // namespace lld
