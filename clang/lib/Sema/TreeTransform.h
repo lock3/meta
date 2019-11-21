@@ -1580,11 +1580,6 @@ public:
     return getSema().ActOnCXXCompilerErrorExpr(Message, BuiltinLoc, RParenLoc);
   }
 
-  /// Transform the contents of the fragment.
-  bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
-                                   Decl *OriginalContent,
-                                   Decl *&NewContent);
-
   /// Build a new fragment expression.
   ExprResult RebuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                     SmallVectorImpl<Expr *> &Captures) {
@@ -8223,20 +8218,6 @@ TreeTransform<Derived>::MaybeTransformVariadicReifier
 }
 
 template<typename Derived>
-bool
-TreeTransform<Derived>::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
-                                                    Decl *OriginalContent,
-                                                    Decl *&NewContent) {
-  // Arguments used to instantiate the fragment are those used to
-  // instantiate the current context.
-  NamedDecl *Owner = dyn_cast<NamedDecl>(getSema().CurContext);
-  MultiLevelTemplateArgumentList Args =
-      getSema().getTemplateInstantiationArgs(Owner);
-  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, Args);
-  return !NewContent;
-}
-
-template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
   // Transform captures first.
@@ -8249,37 +8230,19 @@ TreeTransform<Derived>::TransformCXXFragmentExpr(CXXFragmentExpr *E) {
     Captures.push_back(New.get());
   }
 
-  // Create the fragment declaration and its placeholders.
-  //
-  // FIXME: The instantiation of the fragment and its content should
-  // probably be managed by SubstDecl.
+  // Create a new fragment closure, using the existing fragment
+  // content.
   SourceLocation Loc = E->getExprLoc();
-  Decl *F = getSema().ActOnStartCXXFragment(nullptr, Loc, Captures);
-  CXXFragmentDecl *NewFragment = cast<CXXFragmentDecl>(F);
-  CXXFragmentDecl *OldFragment = cast<CXXFragmentDecl>(E->getFragment());
+  CXXFragmentDecl *IncompleteNewFragment = getSema().ActOnStartCXXFragment(
+                                                        nullptr, Loc, Captures);
+  Decl *OldFragmentContent = E->getFragment()->getContent();
+  CXXFragmentDecl *NewFragment = getSema().ActOnFinishCXXFragment(nullptr,
+                                     IncompleteNewFragment, OldFragmentContent);
+  if (!NewFragment)
+    return ExprError();
 
-  // Register captured parameters as local instantiations. Merge with the
-  // parent scope so that names used in this context can refer to declarations
-  // outside.
-  LocalInstantiationScope Scope(getSema(), true);
-  auto OldIter = OldFragment->decls_begin();
-  auto NewIter = NewFragment->decls_begin();
-  while (NewIter != NewFragment->decls_end())
-    Scope.InstantiatedLocal(*OldIter++, *NewIter++);
-
-  // Clone the underlying declaration.
-  {
-    Decl *NewContent;
-    if (getDerived().TransformCXXFragmentContent(NewFragment,
-                                                 OldFragment->getContent(),
-                                                 NewContent))
-      return ExprError();
-    F = getSema().ActOnFinishCXXFragment(nullptr, NewFragment, NewContent);
-    if (!F)
-      return ExprError();
-  }
-
-  return getDerived().RebuildCXXFragmentExpr(Loc, F, Captures);
+  // Rebuild the expression with the new FragmentDecl, and updated captures.
+  return getDerived().RebuildCXXFragmentExpr(Loc, NewFragment, Captures);
 }
 
 // Objective-C Statements.

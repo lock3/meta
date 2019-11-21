@@ -15751,7 +15751,7 @@ CreateNewDecl:
     CheckRedeclarationModuleOwnership(New, PrevDecl);
 
   if (TUK == TUK_Definition && (!SkipBody || !SkipBody->ShouldSkip))
-    New->startDefinition();
+    StartDefinition(New);
 
   if (Metafunction) {
     CXXRecordDecl *Proto = cast<CXXRecordDecl>(New);

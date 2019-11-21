@@ -1040,6 +1040,8 @@ namespace {
     ExprResult TransformSubstNonTypeTemplateParmPackExpr(
                                            SubstNonTypeTemplateParmPackExpr *E);
 
+    ExprResult TransformCXXFragmentExpr(CXXFragmentExpr *E);
+
     /// Rebuild a DeclRefExpr for a VarDecl reference.
     ExprResult RebuildVarDeclRefExpr(VarDecl *PD, SourceLocation Loc);
 
@@ -1095,9 +1097,6 @@ namespace {
       return DeclInstantiator.SubstTemplateParams(OrigTPL);
     }
 
-    bool TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
-                                     Decl *OriginalContent,
-                                     Decl *&NewContent);
   private:
     ExprResult transformNonTypeTemplateParmRef(NonTypeTemplateParmDecl *parm,
                                                SourceLocation loc,
@@ -1452,18 +1451,17 @@ ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
     result = SemaRef.BuildExpressionFromDeclTemplateArgument(arg, type, loc);
 
     if (!result.isInvalid()) type = result.get()->getType();
-  } else if (arg.getKind() == TemplateArgument::Integral) {
+  } else {
     result = SemaRef.BuildExpressionFromIntegralTemplateArgument(arg, loc);
 
     // Note that this type can be different from the type of 'result',
     // e.g. if it's an enum type.
     type = arg.getIntegralType();
-  } else {
-    llvm_unreachable("unsupported nontype template parameter");
   }
   if (result.isInvalid()) return ExprError();
 
   Expr *resultExpr = result.get();
+
   return new (SemaRef.Context) SubstNonTypeTemplateParmExpr(
       type, resultExpr->getValueKind(), loc, parm, resultExpr);
 }
@@ -1481,6 +1479,65 @@ TemplateInstantiator::TransformSubstNonTypeTemplateParmPackExpr(
   return transformNonTypeTemplateParmRef(E->getParameterPack(),
                                          E->getParameterPackLocation(),
                                          Arg);
+}
+
+ExprResult TemplateInstantiator::TransformCXXFragmentExpr(
+    CXXFragmentExpr *OriginalExpr) {
+  // Perform the normal transform.
+  ExprResult Result = inherited::TransformCXXFragmentExpr(OriginalExpr);
+  if (Result.isInvalid())
+    return Result;
+
+  // Track template arguments in a side table, for use by injection.
+  auto &FragmentDependentTemplArgs =
+      getSema().FragmentDependentInstantiationArgs;
+  CXXFragmentExpr *E = cast<CXXFragmentExpr>(Result.get());
+
+  // If the fragment has an initializer, it is non-dependent,
+  // and we can create the vector of template arguments.
+  //
+  // If the fragment is dependent, we should store those template
+  // arguments in a separate table, which will be used to construct
+  // the final table.
+  if (Expr *FragmentInitializer = E->getInitializer()) {
+    CXXRecordDecl *FragmentClosureDecl =
+      FragmentInitializer->getType()->getAsCXXRecordDecl();
+
+    // Create and retrieve vector for our complete template argument
+    // list(s).
+    //
+    // This should only happen once per closure.
+    auto &FragmentTemplArgs = getSema().FragmentInstantiationArgs;
+    assert(FragmentTemplArgs.count(FragmentClosureDecl) == 0);
+    FragmentTemplArgs.insert({FragmentClosureDecl, {}});
+
+    auto Iter = FragmentTemplArgs.find(FragmentClosureDecl);
+    assert(Iter != FragmentTemplArgs.end());
+
+    // If we have template arguments that need applied before
+    // applying our current template arguments, add them now.
+    auto DependIter = FragmentDependentTemplArgs.find(OriginalExpr);
+    if (DependIter != FragmentDependentTemplArgs.end()) {
+      Iter->second.push_back(DependIter->second);
+    }
+
+    // Add our current template arguments.
+    Iter->second.push_back(CompleteTemplateArgumentList(TemplateArgs));
+
+    return Result;
+  } else {
+    // Note: This case has only been observed with lambdas
+    // inside of templated classes.
+    //
+    // FIXME: Can there be more?
+    assert(FragmentDependentTemplArgs.count(E) == 0
+           && "Only one dependent instantiation is supported");
+
+    FragmentDependentTemplArgs.insert(
+        {E, CompleteTemplateArgumentList(TemplateArgs)});
+  }
+
+  return Result;
 }
 
 ExprResult TemplateInstantiator::RebuildVarDeclRefExpr(VarDecl *PD,
@@ -3031,18 +3088,13 @@ Sema::InstantiateClassTemplateSpecializationMembers(
 using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
 
 StmtResult
-Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs,
-                const DeclMappingList &ExistingMappings) {
+Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!S)
     return S;
 
   TemplateInstantiator Instantiator(*this, TemplateArgs,
                                     SourceLocation(),
                                     DeclarationName());
-
-  for (const auto& Mapping : ExistingMappings)
-    Instantiator.transformedLocalDecl(Mapping.first, Mapping.second);
-
   return Instantiator.TransformStmt(S);
 }
 
@@ -3290,9 +3342,3 @@ NamedDecl *LocalInstantiationScope::getPartiallySubstitutedPack(
   return nullptr;
 }
 
-bool TemplateInstantiator::TransformCXXFragmentContent(CXXFragmentDecl *NewFrag,
-                                                    Decl *OriginalContent,
-                                                    Decl *&NewContent) {
-  NewContent = getSema().SubstDecl(OriginalContent, NewFrag, TemplateArgs);
-  return !NewContent;
-}
