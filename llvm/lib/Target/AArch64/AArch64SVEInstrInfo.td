@@ -102,8 +102,8 @@ let Predicates = [HasSVE] in {
   defm CNT_ZPmZ  : sve_int_un_pred_arit_1<   0b010, "cnt",  int_aarch64_sve_cnt>;
   defm CNOT_ZPmZ : sve_int_un_pred_arit_1<   0b011, "cnot", int_aarch64_sve_cnot>;
   defm NOT_ZPmZ  : sve_int_un_pred_arit_1<   0b110, "not",  int_aarch64_sve_not>;
-  defm FABS_ZPmZ : sve_int_un_pred_arit_1_fp<0b100, "fabs">;
-  defm FNEG_ZPmZ : sve_int_un_pred_arit_1_fp<0b101, "fneg">;
+  defm FABS_ZPmZ : sve_int_un_pred_arit_1_fp<0b100, "fabs", int_aarch64_sve_fabs>;
+  defm FNEG_ZPmZ : sve_int_un_pred_arit_1_fp<0b101, "fneg", int_aarch64_sve_fneg>;
 
   defm SMAX_ZPmZ : sve_int_bin_pred_arit_1<0b000, "smax", int_aarch64_sve_smax>;
   defm UMAX_ZPmZ : sve_int_bin_pred_arit_1<0b001, "umax", int_aarch64_sve_umax>;
@@ -112,8 +112,8 @@ let Predicates = [HasSVE] in {
   defm SABD_ZPmZ : sve_int_bin_pred_arit_1<0b100, "sabd", int_aarch64_sve_sabd>;
   defm UABD_ZPmZ : sve_int_bin_pred_arit_1<0b101, "uabd", int_aarch64_sve_uabd>;
 
-  defm FRECPE_ZZ  : sve_fp_2op_u_zd<0b110, "frecpe">;
-  defm FRSQRTE_ZZ : sve_fp_2op_u_zd<0b111, "frsqrte">;
+  defm FRECPE_ZZ  : sve_fp_2op_u_zd<0b110, "frecpe",  int_aarch64_sve_frecpe_x>;
+  defm FRSQRTE_ZZ : sve_fp_2op_u_zd<0b111, "frsqrte", int_aarch64_sve_frsqrte_x>;
 
   defm FADD_ZPmI    : sve_fp_2op_i_p_zds<0b000, "fadd", sve_fpimm_half_one>;
   defm FSUB_ZPmI    : sve_fp_2op_i_p_zds<0b001, "fsub", sve_fpimm_half_one>;
@@ -145,36 +145,36 @@ let Predicates = [HasSVE] in {
   defm FRECPS_ZZZ  : sve_fp_3op_u_zd<0b110, "frecps",  int_aarch64_sve_frecps_x>;
   defm FRSQRTS_ZZZ : sve_fp_3op_u_zd<0b111, "frsqrts", int_aarch64_sve_frsqrts_x>;
 
-  defm FTSSEL_ZZZ : sve_int_bin_cons_misc_0_b<"ftssel">;
+  defm FTSSEL_ZZZ : sve_int_bin_cons_misc_0_b<"ftssel", int_aarch64_sve_ftssel_x>;
 
-  defm FCADD_ZPmZ : sve_fp_fcadd<"fcadd">;
-  defm FCMLA_ZPmZZ : sve_fp_fcmla<"fcmla">;
+  defm FCADD_ZPmZ : sve_fp_fcadd<"fcadd", int_aarch64_sve_fcadd>;
+  defm FCMLA_ZPmZZ : sve_fp_fcmla<"fcmla", int_aarch64_sve_fcmla>;
 
-  defm FMLA_ZPmZZ  : sve_fp_3op_p_zds_a<0b00, "fmla">;
-  defm FMLS_ZPmZZ  : sve_fp_3op_p_zds_a<0b01, "fmls">;
-  defm FNMLA_ZPmZZ : sve_fp_3op_p_zds_a<0b10, "fnmla">;
-  defm FNMLS_ZPmZZ : sve_fp_3op_p_zds_a<0b11, "fnmls">;
+  defm FMLA_ZPmZZ  : sve_fp_3op_p_zds_a<0b00, "fmla",  int_aarch64_sve_fmla>;
+  defm FMLS_ZPmZZ  : sve_fp_3op_p_zds_a<0b01, "fmls",  int_aarch64_sve_fmls>;
+  defm FNMLA_ZPmZZ : sve_fp_3op_p_zds_a<0b10, "fnmla", int_aarch64_sve_fnmla>;
+  defm FNMLS_ZPmZZ : sve_fp_3op_p_zds_a<0b11, "fnmls", int_aarch64_sve_fnmls>;
 
-  defm FMAD_ZPmZZ  : sve_fp_3op_p_zds_b<0b00, "fmad">;
-  defm FMSB_ZPmZZ  : sve_fp_3op_p_zds_b<0b01, "fmsb">;
-  defm FNMAD_ZPmZZ : sve_fp_3op_p_zds_b<0b10, "fnmad">;
-  defm FNMSB_ZPmZZ : sve_fp_3op_p_zds_b<0b11, "fnmsb">;
+  defm FMAD_ZPmZZ  : sve_fp_3op_p_zds_b<0b00, "fmad",  int_aarch64_sve_fmad>;
+  defm FMSB_ZPmZZ  : sve_fp_3op_p_zds_b<0b01, "fmsb",  int_aarch64_sve_fmsb>;
+  defm FNMAD_ZPmZZ : sve_fp_3op_p_zds_b<0b10, "fnmad", int_aarch64_sve_fnmad>;
+  defm FNMSB_ZPmZZ : sve_fp_3op_p_zds_b<0b11, "fnmsb", int_aarch64_sve_fnmsb>;
 
-  defm FTMAD_ZZI : sve_fp_ftmad<"ftmad">;
+  defm FTMAD_ZZI : sve_fp_ftmad<"ftmad", int_aarch64_sve_ftmad_x>;
 
-  defm FMLA_ZZZI : sve_fp_fma_by_indexed_elem<0b0, "fmla">;
-  defm FMLS_ZZZI : sve_fp_fma_by_indexed_elem<0b1, "fmls">;
+  defm FMLA_ZZZI : sve_fp_fma_by_indexed_elem<0b0, "fmla", int_aarch64_sve_fmla_lane>;
+  defm FMLS_ZZZI : sve_fp_fma_by_indexed_elem<0b1, "fmls", int_aarch64_sve_fmls_lane>;
 
-  defm FCMLA_ZZZI : sve_fp_fcmla_by_indexed_elem<"fcmla">;
-  defm FMUL_ZZZI   : sve_fp_fmul_by_indexed_elem<"fmul">;
+  defm FCMLA_ZZZI : sve_fp_fcmla_by_indexed_elem<"fcmla", int_aarch64_sve_fcmla_lane>;
+  defm FMUL_ZZZI   : sve_fp_fmul_by_indexed_elem<"fmul", int_aarch64_sve_fmul_lane>;
 
   // SVE floating point reductions.
-  defm FADDA_VPZ   : sve_fp_2op_p_vd<0b000, "fadda">;
-  defm FADDV_VPZ   : sve_fp_fast_red<0b000, "faddv">;
-  defm FMAXNMV_VPZ : sve_fp_fast_red<0b100, "fmaxnmv">;
-  defm FMINNMV_VPZ : sve_fp_fast_red<0b101, "fminnmv">;
-  defm FMAXV_VPZ   : sve_fp_fast_red<0b110, "fmaxv">;
-  defm FMINV_VPZ   : sve_fp_fast_red<0b111, "fminv">;
+  defm FADDA_VPZ   : sve_fp_2op_p_vd<0b000, "fadda", int_aarch64_sve_fadda>;
+  defm FADDV_VPZ   : sve_fp_fast_red<0b000, "faddv", int_aarch64_sve_faddv>;
+  defm FMAXNMV_VPZ : sve_fp_fast_red<0b100, "fmaxnmv", int_aarch64_sve_fmaxnmv>;
+  defm FMINNMV_VPZ : sve_fp_fast_red<0b101, "fminnmv", int_aarch64_sve_fminnmv>;
+  defm FMAXV_VPZ   : sve_fp_fast_red<0b110, "fmaxv", int_aarch64_sve_fmaxv>;
+  defm FMINV_VPZ   : sve_fp_fast_red<0b111, "fminv", int_aarch64_sve_fminv>;
 
   // Splat immediate (unpredicated)
   defm DUP_ZI   : sve_int_dup_imm<"dup">;
@@ -222,9 +222,7 @@ let Predicates = [HasSVE] in {
   defm MOVPRFX_ZPzZ : sve_int_movprfx_pred_zero<0b000, "movprfx">;
   defm MOVPRFX_ZPmZ : sve_int_movprfx_pred_merge<0b001, "movprfx">;
   def MOVPRFX_ZZ : sve_int_bin_cons_misc_0_c<0b00000001, "movprfx", ZPRAny>;
-  def FEXPA_ZZ_H : sve_int_bin_cons_misc_0_c<0b01000000, "fexpa", ZPR16>;
-  def FEXPA_ZZ_S : sve_int_bin_cons_misc_0_c<0b10000000, "fexpa", ZPR32>;
-  def FEXPA_ZZ_D : sve_int_bin_cons_misc_0_c<0b11000000, "fexpa", ZPR64>;
+  defm FEXPA_ZZ : sve_int_bin_cons_misc_0_c_fexpa<"fexpa", int_aarch64_sve_fexpa_x>;
 
   def BRKPA_PPzPP  : sve_int_brkp<0b00, "brkpa">;
   def BRKPAS_PPzPP : sve_int_brkp<0b10, "brkpas">;
@@ -738,13 +736,13 @@ let Predicates = [HasSVE] in {
   defm CMPLO_PPzZI : sve_int_ucmp_vi<0b10, "cmplo">;
   defm CMPLS_PPzZI : sve_int_ucmp_vi<0b11, "cmpls">;
 
-  defm FCMGE_PPzZZ : sve_fp_3op_p_pd<0b000, "fcmge">;
-  defm FCMGT_PPzZZ : sve_fp_3op_p_pd<0b001, "fcmgt">;
-  defm FCMEQ_PPzZZ : sve_fp_3op_p_pd<0b010, "fcmeq">;
-  defm FCMNE_PPzZZ : sve_fp_3op_p_pd<0b011, "fcmne">;
-  defm FCMUO_PPzZZ : sve_fp_3op_p_pd<0b100, "fcmuo">;
-  defm FACGE_PPzZZ : sve_fp_3op_p_pd<0b101, "facge">;
-  defm FACGT_PPzZZ : sve_fp_3op_p_pd<0b111, "facgt">;
+  defm FCMGE_PPzZZ : sve_fp_3op_p_pd<0b000, "fcmge", int_aarch64_sve_fcmpge>;
+  defm FCMGT_PPzZZ : sve_fp_3op_p_pd<0b001, "fcmgt", int_aarch64_sve_fcmpgt>;
+  defm FCMEQ_PPzZZ : sve_fp_3op_p_pd<0b010, "fcmeq", int_aarch64_sve_fcmpeq>;
+  defm FCMNE_PPzZZ : sve_fp_3op_p_pd<0b011, "fcmne", int_aarch64_sve_fcmpne>;
+  defm FCMUO_PPzZZ : sve_fp_3op_p_pd<0b100, "fcmuo", int_aarch64_sve_fcmpuo>;
+  defm FACGE_PPzZZ : sve_fp_3op_p_pd<0b101, "facge", int_aarch64_sve_facge>;
+  defm FACGT_PPzZZ : sve_fp_3op_p_pd<0b111, "facgt", int_aarch64_sve_facgt>;
 
   defm FCMGE_PPzZ0 : sve_fp_2op_p_pd<0b000, "fcmge">;
   defm FCMGT_PPzZ0 : sve_fp_2op_p_pd<0b001, "fcmgt">;
@@ -891,50 +889,50 @@ let Predicates = [HasSVE] in {
   defm LSR_WIDE_ZPmZ : sve_int_bin_pred_shift_wide<0b001, "lsr">;
   defm LSL_WIDE_ZPmZ : sve_int_bin_pred_shift_wide<0b011, "lsl">;
 
-  def FCVT_ZPmZ_StoH   : sve_fp_2op_p_zd<0b1001000, "fcvt",   ZPR32, ZPR16, ElementSizeS>;
-  def FCVT_ZPmZ_HtoS   : sve_fp_2op_p_zd<0b1001001, "fcvt",   ZPR16, ZPR32, ElementSizeS>;
-  def SCVTF_ZPmZ_HtoH  : sve_fp_2op_p_zd<0b0110010, "scvtf",  ZPR16, ZPR16, ElementSizeH>;
-  def SCVTF_ZPmZ_StoS  : sve_fp_2op_p_zd<0b1010100, "scvtf",  ZPR32, ZPR32, ElementSizeS>;
-  def UCVTF_ZPmZ_StoS  : sve_fp_2op_p_zd<0b1010101, "ucvtf",  ZPR32, ZPR32, ElementSizeS>;
-  def UCVTF_ZPmZ_HtoH  : sve_fp_2op_p_zd<0b0110011, "ucvtf",  ZPR16, ZPR16, ElementSizeH>;
-  def FCVTZS_ZPmZ_HtoH : sve_fp_2op_p_zd<0b0111010, "fcvtzs", ZPR16, ZPR16, ElementSizeH>;
-  def FCVTZS_ZPmZ_StoS : sve_fp_2op_p_zd<0b1011100, "fcvtzs", ZPR32, ZPR32, ElementSizeS>;
-  def FCVTZU_ZPmZ_HtoH : sve_fp_2op_p_zd<0b0111011, "fcvtzu", ZPR16, ZPR16, ElementSizeH>;
-  def FCVTZU_ZPmZ_StoS : sve_fp_2op_p_zd<0b1011101, "fcvtzu", ZPR32, ZPR32, ElementSizeS>;
-  def FCVT_ZPmZ_DtoH   : sve_fp_2op_p_zd<0b1101000, "fcvt",   ZPR64, ZPR16, ElementSizeD>;
-  def FCVT_ZPmZ_HtoD   : sve_fp_2op_p_zd<0b1101001, "fcvt",   ZPR16, ZPR64, ElementSizeD>;
-  def FCVT_ZPmZ_DtoS   : sve_fp_2op_p_zd<0b1101010, "fcvt",   ZPR64, ZPR32, ElementSizeD>;
-  def FCVT_ZPmZ_StoD   : sve_fp_2op_p_zd<0b1101011, "fcvt",   ZPR32, ZPR64, ElementSizeD>;
-  def SCVTF_ZPmZ_StoD  : sve_fp_2op_p_zd<0b1110000, "scvtf",  ZPR32, ZPR64, ElementSizeD>;
-  def UCVTF_ZPmZ_StoD  : sve_fp_2op_p_zd<0b1110001, "ucvtf",  ZPR32, ZPR64, ElementSizeD>;
-  def UCVTF_ZPmZ_StoH  : sve_fp_2op_p_zd<0b0110101, "ucvtf",  ZPR32, ZPR16, ElementSizeS>;
-  def SCVTF_ZPmZ_DtoS  : sve_fp_2op_p_zd<0b1110100, "scvtf",  ZPR64, ZPR32, ElementSizeD>;
-  def SCVTF_ZPmZ_StoH  : sve_fp_2op_p_zd<0b0110100, "scvtf",  ZPR32, ZPR16, ElementSizeS>;
-  def SCVTF_ZPmZ_DtoH  : sve_fp_2op_p_zd<0b0110110, "scvtf",  ZPR64, ZPR16, ElementSizeD>;
-  def UCVTF_ZPmZ_DtoS  : sve_fp_2op_p_zd<0b1110101, "ucvtf",  ZPR64, ZPR32, ElementSizeD>;
-  def UCVTF_ZPmZ_DtoH  : sve_fp_2op_p_zd<0b0110111, "ucvtf",  ZPR64, ZPR16, ElementSizeD>;
-  def SCVTF_ZPmZ_DtoD  : sve_fp_2op_p_zd<0b1110110, "scvtf",  ZPR64, ZPR64, ElementSizeD>;
-  def UCVTF_ZPmZ_DtoD  : sve_fp_2op_p_zd<0b1110111, "ucvtf",  ZPR64, ZPR64, ElementSizeD>;
-  def FCVTZS_ZPmZ_DtoS : sve_fp_2op_p_zd<0b1111000, "fcvtzs", ZPR64, ZPR32, ElementSizeD>;
-  def FCVTZU_ZPmZ_DtoS : sve_fp_2op_p_zd<0b1111001, "fcvtzu", ZPR64, ZPR32, ElementSizeD>;
-  def FCVTZS_ZPmZ_StoD : sve_fp_2op_p_zd<0b1111100, "fcvtzs", ZPR32, ZPR64, ElementSizeD>;
-  def FCVTZS_ZPmZ_HtoS : sve_fp_2op_p_zd<0b0111100, "fcvtzs", ZPR16, ZPR32, ElementSizeS>;
-  def FCVTZS_ZPmZ_HtoD : sve_fp_2op_p_zd<0b0111110, "fcvtzs", ZPR16, ZPR64, ElementSizeD>;
-  def FCVTZU_ZPmZ_HtoS : sve_fp_2op_p_zd<0b0111101, "fcvtzu", ZPR16, ZPR32, ElementSizeS>;
-  def FCVTZU_ZPmZ_HtoD : sve_fp_2op_p_zd<0b0111111, "fcvtzu", ZPR16, ZPR64, ElementSizeD>;
-  def FCVTZU_ZPmZ_StoD : sve_fp_2op_p_zd<0b1111101, "fcvtzu", ZPR32, ZPR64, ElementSizeD>;
-  def FCVTZS_ZPmZ_DtoD : sve_fp_2op_p_zd<0b1111110, "fcvtzs", ZPR64, ZPR64, ElementSizeD>;
-  def FCVTZU_ZPmZ_DtoD : sve_fp_2op_p_zd<0b1111111, "fcvtzu", ZPR64, ZPR64, ElementSizeD>;
+  defm FCVT_ZPmZ_StoH   : sve_fp_2op_p_zd<0b1001000, "fcvt",   ZPR32, ZPR16, int_aarch64_sve_fcvt_f16f32,    nxv8f16, nxv16i1, nxv4f32, ElementSizeS>;
+  defm FCVT_ZPmZ_HtoS   : sve_fp_2op_p_zd<0b1001001, "fcvt",   ZPR16, ZPR32, int_aarch64_sve_fcvt_f32f16,    nxv4f32, nxv16i1, nxv8f16, ElementSizeS>;
+  defm SCVTF_ZPmZ_HtoH  : sve_fp_2op_p_zd<0b0110010, "scvtf",  ZPR16, ZPR16, int_aarch64_sve_scvtf,          nxv8f16, nxv8i1,  nxv8i16, ElementSizeH>;
+  defm SCVTF_ZPmZ_StoS  : sve_fp_2op_p_zd<0b1010100, "scvtf",  ZPR32, ZPR32, int_aarch64_sve_scvtf,          nxv4f32, nxv4i1,  nxv4i32, ElementSizeS>;
+  defm UCVTF_ZPmZ_StoS  : sve_fp_2op_p_zd<0b1010101, "ucvtf",  ZPR32, ZPR32, int_aarch64_sve_ucvtf,          nxv4f32, nxv4i1,  nxv4i32, ElementSizeS>;
+  defm UCVTF_ZPmZ_HtoH  : sve_fp_2op_p_zd<0b0110011, "ucvtf",  ZPR16, ZPR16, int_aarch64_sve_ucvtf,          nxv8f16, nxv8i1,  nxv8i16, ElementSizeH>;
+  defm FCVTZS_ZPmZ_HtoH : sve_fp_2op_p_zd<0b0111010, "fcvtzs", ZPR16, ZPR16, int_aarch64_sve_fcvtzs,         nxv8i16, nxv8i1,  nxv8f16, ElementSizeH>;
+  defm FCVTZS_ZPmZ_StoS : sve_fp_2op_p_zd<0b1011100, "fcvtzs", ZPR32, ZPR32, int_aarch64_sve_fcvtzs,         nxv4i32, nxv4i1,  nxv4f32, ElementSizeS>;
+  defm FCVTZU_ZPmZ_HtoH : sve_fp_2op_p_zd<0b0111011, "fcvtzu", ZPR16, ZPR16, int_aarch64_sve_fcvtzu,         nxv8i16, nxv8i1,  nxv8f16, ElementSizeH>;
+  defm FCVTZU_ZPmZ_StoS : sve_fp_2op_p_zd<0b1011101, "fcvtzu", ZPR32, ZPR32, int_aarch64_sve_fcvtzu,         nxv4i32, nxv4i1,  nxv4f32, ElementSizeS>;
+  defm FCVT_ZPmZ_DtoH   : sve_fp_2op_p_zd<0b1101000, "fcvt",   ZPR64, ZPR16, int_aarch64_sve_fcvt_f16f64,    nxv8f16, nxv16i1, nxv2f64, ElementSizeD>;
+  defm FCVT_ZPmZ_HtoD   : sve_fp_2op_p_zd<0b1101001, "fcvt",   ZPR16, ZPR64, int_aarch64_sve_fcvt_f64f16,    nxv2f64, nxv16i1, nxv8f16, ElementSizeD>;
+  defm FCVT_ZPmZ_DtoS   : sve_fp_2op_p_zd<0b1101010, "fcvt",   ZPR64, ZPR32, int_aarch64_sve_fcvt_f32f64,    nxv4f32, nxv16i1, nxv2f64, ElementSizeD>;
+  defm FCVT_ZPmZ_StoD   : sve_fp_2op_p_zd<0b1101011, "fcvt",   ZPR32, ZPR64, int_aarch64_sve_fcvt_f64f32,    nxv2f64, nxv16i1, nxv4f32, ElementSizeD>;
+  defm SCVTF_ZPmZ_StoD  : sve_fp_2op_p_zd<0b1110000, "scvtf",  ZPR32, ZPR64, int_aarch64_sve_scvtf_f64i32,   nxv2f64, nxv16i1, nxv4i32, ElementSizeD>;
+  defm UCVTF_ZPmZ_StoD  : sve_fp_2op_p_zd<0b1110001, "ucvtf",  ZPR32, ZPR64, int_aarch64_sve_ucvtf_f64i32,   nxv2f64, nxv16i1, nxv4i32, ElementSizeD>;
+  defm UCVTF_ZPmZ_StoH  : sve_fp_2op_p_zd<0b0110101, "ucvtf",  ZPR32, ZPR16, int_aarch64_sve_ucvtf_f16i32,   nxv8f16, nxv16i1, nxv4i32, ElementSizeS>;
+  defm SCVTF_ZPmZ_DtoS  : sve_fp_2op_p_zd<0b1110100, "scvtf",  ZPR64, ZPR32, int_aarch64_sve_scvtf_f32i64,   nxv4f32, nxv16i1, nxv2i64, ElementSizeD>;
+  defm SCVTF_ZPmZ_StoH  : sve_fp_2op_p_zd<0b0110100, "scvtf",  ZPR32, ZPR16, int_aarch64_sve_scvtf_f16i32,   nxv8f16, nxv16i1, nxv4i32, ElementSizeS>;
+  defm SCVTF_ZPmZ_DtoH  : sve_fp_2op_p_zd<0b0110110, "scvtf",  ZPR64, ZPR16, int_aarch64_sve_scvtf_f16i64,   nxv8f16, nxv16i1, nxv2i64, ElementSizeD>;
+  defm UCVTF_ZPmZ_DtoS  : sve_fp_2op_p_zd<0b1110101, "ucvtf",  ZPR64, ZPR32, int_aarch64_sve_ucvtf_f32i64,   nxv4f32, nxv16i1, nxv2i64, ElementSizeD>;
+  defm UCVTF_ZPmZ_DtoH  : sve_fp_2op_p_zd<0b0110111, "ucvtf",  ZPR64, ZPR16, int_aarch64_sve_ucvtf_f16i64,   nxv8f16, nxv16i1, nxv2i64, ElementSizeD>;
+  defm SCVTF_ZPmZ_DtoD  : sve_fp_2op_p_zd<0b1110110, "scvtf",  ZPR64, ZPR64, int_aarch64_sve_scvtf,          nxv2f64, nxv2i1,  nxv2i64, ElementSizeD>;
+  defm UCVTF_ZPmZ_DtoD  : sve_fp_2op_p_zd<0b1110111, "ucvtf",  ZPR64, ZPR64, int_aarch64_sve_ucvtf,          nxv2f64, nxv2i1,  nxv2i64, ElementSizeD>;
+  defm FCVTZS_ZPmZ_DtoS : sve_fp_2op_p_zd<0b1111000, "fcvtzs", ZPR64, ZPR32, int_aarch64_sve_fcvtzs_i32f64,  nxv4i32, nxv16i1, nxv2f64, ElementSizeD>;
+  defm FCVTZU_ZPmZ_DtoS : sve_fp_2op_p_zd<0b1111001, "fcvtzu", ZPR64, ZPR32, int_aarch64_sve_fcvtzu_i32f64,  nxv4i32, nxv16i1, nxv2f64, ElementSizeD>;
+  defm FCVTZS_ZPmZ_StoD : sve_fp_2op_p_zd<0b1111100, "fcvtzs", ZPR32, ZPR64, int_aarch64_sve_fcvtzs_i64f32,  nxv2i64, nxv16i1, nxv4f32, ElementSizeD>;
+  defm FCVTZS_ZPmZ_HtoS : sve_fp_2op_p_zd<0b0111100, "fcvtzs", ZPR16, ZPR32, int_aarch64_sve_fcvtzs_i32f16,  nxv4i32, nxv16i1, nxv8f16, ElementSizeS>;
+  defm FCVTZS_ZPmZ_HtoD : sve_fp_2op_p_zd<0b0111110, "fcvtzs", ZPR16, ZPR64, int_aarch64_sve_fcvtzs_i64f16,  nxv2i64, nxv16i1, nxv8f16, ElementSizeD>;
+  defm FCVTZU_ZPmZ_HtoS : sve_fp_2op_p_zd<0b0111101, "fcvtzu", ZPR16, ZPR32, int_aarch64_sve_fcvtzu_i32f16,  nxv4i32, nxv16i1, nxv8f16, ElementSizeS>;
+  defm FCVTZU_ZPmZ_HtoD : sve_fp_2op_p_zd<0b0111111, "fcvtzu", ZPR16, ZPR64, int_aarch64_sve_fcvtzu_i64f16,  nxv2i64, nxv16i1, nxv8f16, ElementSizeD>;
+  defm FCVTZU_ZPmZ_StoD : sve_fp_2op_p_zd<0b1111101, "fcvtzu", ZPR32, ZPR64, int_aarch64_sve_fcvtzu_i64f32,  nxv2i64, nxv16i1, nxv4f32, ElementSizeD>;
+  defm FCVTZS_ZPmZ_DtoD : sve_fp_2op_p_zd<0b1111110, "fcvtzs", ZPR64, ZPR64, int_aarch64_sve_fcvtzs,         nxv2i64, nxv2i1,  nxv2f64, ElementSizeD>;
+  defm FCVTZU_ZPmZ_DtoD : sve_fp_2op_p_zd<0b1111111, "fcvtzu", ZPR64, ZPR64, int_aarch64_sve_fcvtzu,         nxv2i64, nxv2i1,  nxv2f64, ElementSizeD>;
 
-  defm FRINTN_ZPmZ : sve_fp_2op_p_zd_HSD<0b00000, "frintn">;
-  defm FRINTP_ZPmZ : sve_fp_2op_p_zd_HSD<0b00001, "frintp">;
-  defm FRINTM_ZPmZ : sve_fp_2op_p_zd_HSD<0b00010, "frintm">;
-  defm FRINTZ_ZPmZ : sve_fp_2op_p_zd_HSD<0b00011, "frintz">;
-  defm FRINTA_ZPmZ : sve_fp_2op_p_zd_HSD<0b00100, "frinta">;
-  defm FRINTX_ZPmZ : sve_fp_2op_p_zd_HSD<0b00110, "frintx">;
-  defm FRINTI_ZPmZ : sve_fp_2op_p_zd_HSD<0b00111, "frinti">;
-  defm FRECPX_ZPmZ : sve_fp_2op_p_zd_HSD<0b01100, "frecpx">;
-  defm FSQRT_ZPmZ  : sve_fp_2op_p_zd_HSD<0b01101, "fsqrt">;
+  defm FRINTN_ZPmZ : sve_fp_2op_p_zd_HSD<0b00000, "frintn", int_aarch64_sve_frintn>;
+  defm FRINTP_ZPmZ : sve_fp_2op_p_zd_HSD<0b00001, "frintp", int_aarch64_sve_frintp>;
+  defm FRINTM_ZPmZ : sve_fp_2op_p_zd_HSD<0b00010, "frintm", int_aarch64_sve_frintm>;
+  defm FRINTZ_ZPmZ : sve_fp_2op_p_zd_HSD<0b00011, "frintz", int_aarch64_sve_frintz>;
+  defm FRINTA_ZPmZ : sve_fp_2op_p_zd_HSD<0b00100, "frinta", int_aarch64_sve_frinta>;
+  defm FRINTX_ZPmZ : sve_fp_2op_p_zd_HSD<0b00110, "frintx", int_aarch64_sve_frintx>;
+  defm FRINTI_ZPmZ : sve_fp_2op_p_zd_HSD<0b00111, "frinti", int_aarch64_sve_frinti>;
+  defm FRECPX_ZPmZ : sve_fp_2op_p_zd_HSD<0b01100, "frecpx", int_aarch64_sve_frecpx>;
+  defm FSQRT_ZPmZ  : sve_fp_2op_p_zd_HSD<0b01101, "fsqrt",  int_aarch64_sve_fsqrt>;
 
   // InstAliases
   def : InstAlias<"mov $Zd, $Zn",
@@ -1424,10 +1422,10 @@ let Predicates = [HasSVE2] in {
   defm FLOGB_ZPmZ : sve2_fp_flogb<"flogb">;
 
   // SVE2 floating-point convert precision
-  defm FCVTXNT_ZPmZ : sve2_fp_convert_down_odd_rounding<"fcvtxnt">;
-  defm FCVTNT_ZPmZ  : sve2_fp_convert_down_narrow<"fcvtnt">;
-  defm FCVTLT_ZPmZ  : sve2_fp_convert_up_long<"fcvtlt">;
-  def FCVTX_ZPmZ_DtoS : sve_fp_2op_p_zd<0b0001010, "fcvtx", ZPR64, ZPR32, ElementSizeD>;
+  defm FCVTXNT_ZPmZ : sve2_fp_convert_down_odd_rounding_top<"fcvtxnt", "int_aarch64_sve_fcvtxnt">;
+  defm FCVTX_ZPmZ   : sve2_fp_convert_down_odd_rounding<"fcvtx",       "int_aarch64_sve_fcvtx">;
+  defm FCVTNT_ZPmZ  : sve2_fp_convert_down_narrow<"fcvtnt",            "int_aarch64_sve_fcvtnt">;
+  defm FCVTLT_ZPmZ  : sve2_fp_convert_up_long<"fcvtlt",                "int_aarch64_sve_fcvtlt">;
 
   // SVE2 floating-point pairwise operations
   defm FADDP_ZPmZZ   : sve2_fp_pairwise_pred<0b000, "faddp">;

@@ -124,6 +124,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -7428,12 +7429,18 @@ getScalarEpilogueLowering(Function *F, Loop *L, LoopVectorizeHints &Hints,
                           ScalarEvolution *SE, DominatorTree *DT,
                           const LoopAccessInfo *LAI) {
   ScalarEpilogueLowering SEL = CM_ScalarEpilogueAllowed;
+  bool PredicateOptDisabled = PreferPredicateOverEpilog.getNumOccurrences() &&
+                              !PreferPredicateOverEpilog;
+
   if (Hints.getForce() != LoopVectorizeHints::FK_Enabled &&
       (F->hasOptSize() ||
        llvm::shouldOptimizeForSize(L->getHeader(), PSI, BFI)))
     SEL = CM_ScalarEpilogueNotAllowedOptSize;
-  else if (PreferPredicateOverEpilog || Hints.getPredicate() ||
-           TTI->preferPredicateOverEpilogue(L, LI, *SE, *AC, TLI, DT, LAI))
+  else if (PreferPredicateOverEpilog ||
+           Hints.getPredicate() == LoopVectorizeHints::FK_Enabled ||
+           (TTI->preferPredicateOverEpilogue(L, LI, *SE, *AC, TLI, DT, LAI) &&
+            Hints.getPredicate() != LoopVectorizeHints::FK_Disabled &&
+            !PredicateOptDisabled))
     SEL = CM_ScalarEpilogueNotNeededUsePredicate;
 
   return SEL;

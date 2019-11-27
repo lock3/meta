@@ -542,7 +542,7 @@ void SIInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       RC == &AMDGPU::SReg_32RegClass) {
     if (SrcReg == AMDGPU::SCC) {
       BuildMI(MBB, MI, DL, get(AMDGPU::S_CSELECT_B32), DestReg)
-          .addImm(-1)
+          .addImm(1)
           .addImm(0);
       return;
     }
@@ -840,7 +840,7 @@ void SIInstrInfo::insertVectorSelect(MachineBasicBlock &MBB,
       Register SReg = MRI.createVirtualRegister(BoolXExecRC);
       BuildMI(MBB, I, DL, get(ST.isWave32() ? AMDGPU::S_CSELECT_B32
                                             : AMDGPU::S_CSELECT_B64), SReg)
-        .addImm(-1)
+        .addImm(1)
         .addImm(0);
       BuildMI(MBB, I, DL, get(AMDGPU::V_CNDMASK_B32_e64), DstReg)
         .addImm(0)
@@ -855,7 +855,7 @@ void SIInstrInfo::insertVectorSelect(MachineBasicBlock &MBB,
       BuildMI(MBB, I, DL, get(ST.isWave32() ? AMDGPU::S_CSELECT_B32
                                             : AMDGPU::S_CSELECT_B64), SReg)
         .addImm(0)
-        .addImm(-1);
+        .addImm(1);
       BuildMI(MBB, I, DL, get(AMDGPU::V_CNDMASK_B32_e64), DstReg)
         .addImm(0)
         .addReg(FalseReg)
@@ -900,7 +900,7 @@ void SIInstrInfo::insertVectorSelect(MachineBasicBlock &MBB,
         .addImm(0);
       BuildMI(MBB, I, DL, get(ST.isWave32() ? AMDGPU::S_CSELECT_B32
                                             : AMDGPU::S_CSELECT_B64), SReg)
-        .addImm(-1)
+        .addImm(1)
         .addImm(0);
       BuildMI(MBB, I, DL, get(AMDGPU::V_CNDMASK_B32_e64), DstReg)
         .addImm(0)
@@ -919,7 +919,7 @@ void SIInstrInfo::insertVectorSelect(MachineBasicBlock &MBB,
       BuildMI(MBB, I, DL, get(ST.isWave32() ? AMDGPU::S_CSELECT_B32
                                             : AMDGPU::S_CSELECT_B64), SReg)
         .addImm(0)
-        .addImm(-1);
+        .addImm(1);
       BuildMI(MBB, I, DL, get(AMDGPU::V_CNDMASK_B32_e64), DstReg)
         .addImm(0)
         .addReg(FalseReg)
@@ -6329,6 +6329,26 @@ static SIEncodingFamily subtargetEncodingFamily(const GCNSubtarget &ST) {
   llvm_unreachable("Unknown subtarget generation!");
 }
 
+bool SIInstrInfo::isAsmOnlyOpcode(int MCOp) const {
+  switch(MCOp) {
+  // These opcodes use indirect register addressing so
+  // they need special handling by codegen (currently missing).
+  // Therefore it is too risky to allow these opcodes
+  // to be selected by dpp combiner or sdwa peepholer.
+  case AMDGPU::V_MOVRELS_B32_dpp_gfx10:
+  case AMDGPU::V_MOVRELS_B32_sdwa_gfx10:
+  case AMDGPU::V_MOVRELD_B32_dpp_gfx10:
+  case AMDGPU::V_MOVRELD_B32_sdwa_gfx10:
+  case AMDGPU::V_MOVRELSD_B32_dpp_gfx10:
+  case AMDGPU::V_MOVRELSD_B32_sdwa_gfx10:
+  case AMDGPU::V_MOVRELSD_2_B32_dpp_gfx10:
+  case AMDGPU::V_MOVRELSD_2_B32_sdwa_gfx10:
+    return true;
+  default:
+    return false;
+  }
+}
+
 int SIInstrInfo::pseudoToMCOpcode(int Opcode) const {
   SIEncodingFamily Gen = subtargetEncodingFamily(ST);
 
@@ -6365,6 +6385,9 @@ int SIInstrInfo::pseudoToMCOpcode(int Opcode) const {
   // (uint16_t)-1 means that Opcode is a pseudo instruction that has
   // no encoding in the given subtarget generation.
   if (MCOp == (uint16_t)-1)
+    return -1;
+
+  if (isAsmOnlyOpcode(MCOp))
     return -1;
 
   return MCOp;

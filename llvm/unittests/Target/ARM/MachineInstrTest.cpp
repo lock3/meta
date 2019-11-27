@@ -250,6 +250,9 @@ TEST(MachineInstrValidTailPredication, IsCorrect) {
     case MVE_VMUL_qr_i8:
     case MVE_VMULf16:
     case MVE_VMULf32:
+    case MVE_VMULi16:
+    case MVE_VMULi8:
+    case MVE_VMULi32:
     case MVE_VMVN:
     case MVE_VMVNimmi16:
     case MVE_VMVNimmi32:

@@ -1148,10 +1148,14 @@ Optional<DIExpression *> DIExpression::createFragmentExpression(
     for (auto Op : Expr->expr_ops()) {
       switch (Op.getOp()) {
       default: break;
+      case dwarf::DW_OP_shr:
+      case dwarf::DW_OP_shra:
+      case dwarf::DW_OP_shl:
       case dwarf::DW_OP_plus:
+      case dwarf::DW_OP_plus_uconst:
       case dwarf::DW_OP_minus:
-        // We can't safely split arithmetic into multiple fragments because we
-        // can't express carry-over between fragments.
+        // We can't safely split arithmetic or shift operations into multiple
+        // fragments because we can't express carry-over between fragments.
         //
         // FIXME: We *could* preserve the lowest fragment of a constant offset
         // operation if the offset fits into SizeInBits.
@@ -1187,6 +1191,15 @@ bool DIExpression::isConstant() const {
   if (getNumElements() == 6 && getElement(3) != dwarf::DW_OP_LLVM_fragment)
     return false;
   return true;
+}
+
+DIExpression *DIExpression::appendExt(const DIExpression *Expr,
+                                      unsigned FromSize, unsigned ToSize,
+                                      bool Signed) {
+  dwarf::TypeKind TK = Signed ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
+  uint64_t Ops[] = {dwarf::DW_OP_LLVM_convert, FromSize, TK,
+                    dwarf::DW_OP_LLVM_convert, ToSize,   TK};
+  return appendToStack(Expr, Ops);
 }
 
 DIGlobalVariableExpression *

@@ -75,14 +75,17 @@ LinkerDriver *driver;
 static void setConfigs(opt::InputArgList &args);
 static void readConfigs(opt::InputArgList &args);
 
-bool link(ArrayRef<const char *> args, bool canExitEarly, raw_ostream &error) {
+bool link(ArrayRef<const char *> args, bool canExitEarly, raw_ostream &stdoutOS,
+          raw_ostream &stderrOS) {
+  lld::stdoutOS = &stdoutOS;
+  lld::stderrOS = &stderrOS;
+
   errorHandler().logName = args::getFilenameWithoutExe(args[0]);
   errorHandler().errorLimitExceededMsg =
       "too many errors emitted, stopping now (use "
       "-error-limit=0 to see all errors)";
-  errorHandler().errorOS = &error;
   errorHandler().exitEarly = canExitEarly;
-  enableColors(error.has_colors());
+  stderrOS.enable_colors(stderrOS.has_colors());
 
   inputSections.clear();
   outputSections.clear();
@@ -965,7 +968,6 @@ static void readConfigs(opt::InputArgList &args) {
       args.hasFlag(OPT_warn_symbol_ordering, OPT_no_warn_symbol_ordering, true);
   config->zCombreloc = getZFlag(args, "combreloc", "nocombreloc", true);
   config->zCopyreloc = getZFlag(args, "copyreloc", "nocopyreloc", true);
-  config->zExecstack = getZFlag(args, "execstack", "noexecstack", false);
   config->zGlobal = hasZOption(args, "global");
   config->zGnustack = getZGnuStack(args);
   config->zHazardplt = hasZOption(args, "hazardplt");
@@ -1008,6 +1010,14 @@ static void readConfigs(opt::InputArgList &args) {
 
   if (config->splitStackAdjustSize < 0)
     error("--split-stack-adjust-size: size must be >= 0");
+
+  // The text segment is traditionally the first segment, whose address equals
+  // the base address. However, lld places the R PT_LOAD first. -Ttext-segment
+  // is an old-fashioned option that does not play well with lld's layout.
+  // Suggest --image-base as a likely alternative.
+  if (args.hasArg(OPT_Ttext_segment))
+    error("-Ttext-segment is not supported. Use --image-base if you "
+          "intend to set the base address");
 
   // Parse ELF{32,64}{LE,BE} and CPU type.
   if (auto *arg = args.getLastArg(OPT_m)) {
@@ -1398,13 +1408,13 @@ static void handleUndefinedGlob(StringRef arg) {
   }
 
   std::vector<Symbol *> syms;
-  symtab->forEachSymbol([&](Symbol *sym) {
+  for (Symbol *sym : symtab->symbols()) {
     // Calling Sym->fetch() from here is not safe because it may
     // add new symbols to the symbol table, invalidating the
     // current iterator. So we just keep a note.
     if (pat->match(sym->getName()))
       syms.push_back(sym);
-  });
+  }
 
   for (Symbol *sym : syms)
     handleUndefined(sym);
@@ -1430,10 +1440,10 @@ static void handleLibcall(StringRef name) {
 // result, the passes after the symbol resolution won't see any
 // symbols of type CommonSymbol.
 static void replaceCommonSymbols() {
-  symtab->forEachSymbol([](Symbol *sym) {
+  for (Symbol *sym : symtab->symbols()) {
     auto *s = dyn_cast<CommonSymbol>(sym);
     if (!s)
-      return;
+      continue;
 
     auto *bss = make<BssSection>("COMMON", s->size, s->alignment);
     bss->file = s->file;
@@ -1441,7 +1451,7 @@ static void replaceCommonSymbols() {
     inputSections.push_back(bss);
     s->replace(Defined{s->file, s->getName(), s->binding, s->stOther, s->type,
                        /*value=*/0, s->size, bss});
-  });
+  }
 }
 
 // If all references to a DSO happen to be weak, the DSO is not added
@@ -1449,15 +1459,15 @@ static void replaceCommonSymbols() {
 // created from the DSO. Otherwise, they become dangling references
 // that point to a non-existent DSO.
 static void demoteSharedSymbols() {
-  symtab->forEachSymbol([](Symbol *sym) {
+  for (Symbol *sym : symtab->symbols()) {
     auto *s = dyn_cast<SharedSymbol>(sym);
     if (!s || s->getFile().isNeeded)
-      return;
+      continue;
 
     bool used = s->used;
     s->replace(Undefined{nullptr, s->getName(), STB_WEAK, s->stOther, s->type});
     s->used = used;
-  });
+  }
 }
 
 // The section referred to by `s` is considered address-significant. Set the
@@ -1493,10 +1503,9 @@ static void findKeepUniqueSections(opt::InputArgList &args) {
 
   // Symbols in the dynsym could be address-significant in other executables
   // or DSOs, so we conservatively mark them as address-significant.
-  symtab->forEachSymbol([&](Symbol *sym) {
+  for (Symbol *sym : symtab->symbols())
     if (sym->includeInDynsym())
       markAddrsig(sym);
-  });
 
   // Visit the address-significance table in each object file and mark each
   // referenced symbol as address-significant.

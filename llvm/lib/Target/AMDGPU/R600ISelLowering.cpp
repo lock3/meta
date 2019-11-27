@@ -62,6 +62,9 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
   addRegisterClass(MVT::v4f32, &R600::R600_Reg128RegClass);
   addRegisterClass(MVT::v4i32, &R600::R600_Reg128RegClass);
 
+  setBooleanContents(ZeroOrNegativeOneBooleanContent);
+  setBooleanVectorContents(ZeroOrNegativeOneBooleanContent);
+
   computeRegisterProperties(Subtarget->getRegisterInfo());
 
   // Legalize loads and stores to the private address space.
@@ -223,10 +226,8 @@ R600TargetLowering::R600TargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::FMA, MVT::f64, Expand);
   }
 
-  // FIXME: This was moved from AMDGPUTargetLowering, I'm not sure if we
-  // need it for R600.
-  if (!Subtarget->hasFP32Denormals())
-    setOperationAction(ISD::FMAD, MVT::f32, Legal);
+  // FIXME: May need no denormals check
+  setOperationAction(ISD::FMAD, MVT::f32, Legal);
 
   if (!Subtarget->hasBFI()) {
     // fcopysign can be done in a single instruction with BFI.

@@ -58,6 +58,7 @@ namespace llvm {
 
 class AAResults;
 class BlockAddress;
+class BlockFrequencyInfo;
 class Constant;
 class ConstantFP;
 class ConstantInt;
@@ -71,6 +72,7 @@ class MachineBasicBlock;
 class MachineConstantPoolValue;
 class MCSymbol;
 class OptimizationRemarkEmitter;
+class ProfileSummaryInfo;
 class SDDbgValue;
 class SDDbgLabel;
 class SelectionDAG;
@@ -234,6 +236,9 @@ class SelectionDAG {
   /// The function-level optimization remark emitter.  Used to emit remarks
   /// whenever manipulating the DAG.
   OptimizationRemarkEmitter *ORE;
+
+  ProfileSummaryInfo *PSI = nullptr;
+  BlockFrequencyInfo *BFI = nullptr;
 
   /// The starting token.
   SDNode EntryNode;
@@ -401,7 +406,8 @@ public:
   /// Prepare this SelectionDAG to process code in the given MachineFunction.
   void init(MachineFunction &NewMF, OptimizationRemarkEmitter &NewORE,
             Pass *PassPtr, const TargetLibraryInfo *LibraryInfo,
-            LegacyDivergenceAnalysis * Divergence);
+            LegacyDivergenceAnalysis * Divergence,
+            ProfileSummaryInfo *PSIin, BlockFrequencyInfo *BFIin);
 
   void setFunctionLoweringInfo(FunctionLoweringInfo * FuncInfo) {
     FLI = FuncInfo;
@@ -423,6 +429,8 @@ public:
   const LegacyDivergenceAnalysis *getDivergenceAnalysis() const { return DA; }
   LLVMContext *getContext() const {return Context; }
   OptimizationRemarkEmitter &getORE() const { return *ORE; }
+  ProfileSummaryInfo *getPSI() const { return PSI; }
+  BlockFrequencyInfo *getBFI() const { return BFI; }
 
   /// Pop up a GraphViz/gv window with the DAG rendered using 'dot'.
   void viewGraph(const std::string &Title);
@@ -1128,14 +1136,19 @@ public:
   /// Returns sum of the base pointer and offset.
   SDValue getMemBasePlusOffset(SDValue Base, unsigned Offset, const SDLoc &DL);
 
-  SDValue getMaskedLoad(EVT VT, const SDLoc &dl, SDValue Chain, SDValue Ptr,
-                        SDValue Mask, SDValue Src0, EVT MemVT,
-                        MachineMemOperand *MMO, ISD::LoadExtType,
-                        bool IsExpanding = false);
+  SDValue getMaskedLoad(EVT VT, const SDLoc &dl, SDValue Chain, SDValue Base,
+                        SDValue Offset, SDValue Mask, SDValue Src0, EVT MemVT,
+                        MachineMemOperand *MMO, ISD::MemIndexedMode AM,
+                        ISD::LoadExtType, bool IsExpanding = false);
+  SDValue getIndexedMaskedLoad(SDValue OrigLoad, const SDLoc &dl, SDValue Base,
+                               SDValue Offset, ISD::MemIndexedMode AM);
   SDValue getMaskedStore(SDValue Chain, const SDLoc &dl, SDValue Val,
-                         SDValue Ptr, SDValue Mask, EVT MemVT,
-                         MachineMemOperand *MMO, bool IsTruncating = false,
-                         bool IsCompressing = false);
+                         SDValue Base, SDValue Offset, SDValue Mask, EVT MemVT,
+                         MachineMemOperand *MMO, ISD::MemIndexedMode AM,
+                         bool IsTruncating = false, bool IsCompressing = false);
+  SDValue getIndexedMaskedStore(SDValue OrigStore, const SDLoc &dl,
+                                SDValue Base, SDValue Offset,
+                                ISD::MemIndexedMode AM);
   SDValue getMaskedGather(SDVTList VTs, EVT VT, const SDLoc &dl,
                           ArrayRef<SDValue> Ops, MachineMemOperand *MMO,
                           ISD::MemIndexType IndexType);
@@ -1710,6 +1723,14 @@ public:
       return nullptr;
     return It->second.HeapAllocSite;
   }
+
+  /// Return the current function's default denormal handling kind for the given
+  /// floating point type.
+  DenormalMode getDenormalMode(EVT VT) const {
+    return MF->getDenormalMode(EVTToAPFloatSemantics(VT));
+  }
+
+  bool shouldOptForSize() const;
 
 private:
   void InsertNode(SDNode *N);

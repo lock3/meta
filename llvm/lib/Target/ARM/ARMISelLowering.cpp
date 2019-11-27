@@ -209,6 +209,9 @@ void ARMTargetLowering::addTypeForNEON(MVT VT, MVT PromotedLdStVT,
       VT != MVT::v2i64 && VT != MVT::v1i64)
     for (auto Opcode : {ISD::ABS, ISD::SMIN, ISD::SMAX, ISD::UMIN, ISD::UMAX})
       setOperationAction(Opcode, VT, Legal);
+  if (!VT.isFloatingPoint())
+    for (auto Opcode : {ISD::SADDSAT, ISD::UADDSAT, ISD::SSUBSAT, ISD::USUBSAT})
+      setOperationAction(Opcode, VT, Legal);
 }
 
 void ARMTargetLowering::addDRTypeForNEON(MVT VT) {
@@ -296,6 +299,8 @@ void ARMTargetLowering::addMVEVectorTypes(bool HasMVEFP) {
          im != (unsigned)ISD::LAST_INDEXED_MODE; ++im) {
       setIndexedLoadAction(im, VT, Legal);
       setIndexedStoreAction(im, VT, Legal);
+      setIndexedMaskedLoadAction(im, VT, Legal);
+      setIndexedMaskedStoreAction(im, VT, Legal);
     }
   }
 
@@ -322,6 +327,8 @@ void ARMTargetLowering::addMVEVectorTypes(bool HasMVEFP) {
          im != (unsigned)ISD::LAST_INDEXED_MODE; ++im) {
       setIndexedLoadAction(im, VT, Legal);
       setIndexedStoreAction(im, VT, Legal);
+      setIndexedMaskedLoadAction(im, VT, Legal);
+      setIndexedMaskedStoreAction(im, VT, Legal);
     }
 
     if (HasMVEFP) {
@@ -374,12 +381,12 @@ void ARMTargetLowering::addMVEVectorTypes(bool HasMVEFP) {
   // Pre and Post inc on these are legal, given the correct extends
   for (unsigned im = (unsigned)ISD::PRE_INC;
        im != (unsigned)ISD::LAST_INDEXED_MODE; ++im) {
-    setIndexedLoadAction(im, MVT::v8i8, Legal);
-    setIndexedStoreAction(im, MVT::v8i8, Legal);
-    setIndexedLoadAction(im, MVT::v4i8, Legal);
-    setIndexedStoreAction(im, MVT::v4i8, Legal);
-    setIndexedLoadAction(im, MVT::v4i16, Legal);
-    setIndexedStoreAction(im, MVT::v4i16, Legal);
+    for (auto VT : {MVT::v8i8, MVT::v4i8, MVT::v4i16}) {
+      setIndexedLoadAction(im, VT, Legal);
+      setIndexedStoreAction(im, VT, Legal);
+      setIndexedMaskedLoadAction(im, VT, Legal);
+      setIndexedMaskedStoreAction(im, VT, Legal);
+    }
   }
 
   // Predicate types
@@ -5572,9 +5579,15 @@ SDValue ARMTargetLowering::LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const {
 Register ARMTargetLowering::getRegisterByName(const char* RegName, EVT VT,
                                               const MachineFunction &MF) const {
   Register Reg = StringSwitch<unsigned>(RegName)
-                       .Case("sp", ARM::SP)
-                       .Default(0);
-  if (Reg)
+                     .Case("r6", ARM::R6)
+                     .Case("r7", ARM::R7)
+                     .Case("r8", ARM::R8)
+                     .Case("r9", ARM::R9)
+                     .Case("r10", ARM::R10)
+                     .Case("r11", ARM::R11)
+                     .Case("sp", ARM::SP)
+                     .Default(ARM::NoRegister);
+  if (Reg != ARM::NoRegister)
     return Reg;
   report_fatal_error(Twine("Invalid register name \""
                               + StringRef(RegName)  + "\"."));
@@ -9007,8 +9020,9 @@ static SDValue LowerMLOAD(SDValue Op, SelectionDAG &DAG) {
   SDValue ZeroVec = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
                                 DAG.getTargetConstant(0, dl, MVT::i32));
   SDValue NewLoad = DAG.getMaskedLoad(
-      VT, dl, N->getChain(), N->getBasePtr(), Mask, ZeroVec, N->getMemoryVT(),
-      N->getMemOperand(), N->getExtensionType(), N->isExpandingLoad());
+      VT, dl, N->getChain(), N->getBasePtr(), N->getOffset(), Mask, ZeroVec,
+      N->getMemoryVT(), N->getMemOperand(), N->getAddressingMode(),
+      N->getExtensionType(), N->isExpandingLoad());
   SDValue Combo = NewLoad;
   if (!PassThru.isUndef() &&
       (PassThru.getOpcode() != ISD::BITCAST ||
@@ -14820,7 +14834,8 @@ int ARMTargetLowering::getScalingFactorCost(const DataLayout &DL,
 ///
 /// For MVE, we set this to true as it helps simplify the need for some
 /// patterns (and we don't have the non-fused floating point instruction).
-bool ARMTargetLowering::isFMAFasterThanFMulAndFAdd(EVT VT) const {
+bool ARMTargetLowering::isFMAFasterThanFMulAndFAdd(const MachineFunction &MF,
+                                                   EVT VT) const {
   if (!Subtarget->hasMVEFloatOps())
     return false;
 
@@ -14880,7 +14895,7 @@ static bool isLegalT2AddressImmediate(int64_t V, EVT VT,
     V = -V;
   }
 
-  unsigned NumBytes = std::max(VT.getSizeInBits() / 8, 1U);
+  unsigned NumBytes = std::max((unsigned)VT.getSizeInBits() / 8, 1U);
 
   // MVE: size * imm7
   if (VT.isVector() && Subtarget->hasMVEIntegerOps()) {
@@ -15185,13 +15200,18 @@ static bool getT2IndexedAddressParts(SDNode *Ptr, EVT VT,
 }
 
 static bool getMVEIndexedAddressParts(SDNode *Ptr, EVT VT, unsigned Align,
-                                      bool isSEXTLoad, bool isLE, SDValue &Base,
-                                      SDValue &Offset, bool &isInc,
-                                      SelectionDAG &DAG) {
+                                      bool isSEXTLoad, bool IsMasked, bool isLE,
+                                      SDValue &Base, SDValue &Offset,
+                                      bool &isInc, SelectionDAG &DAG) {
   if (Ptr->getOpcode() != ISD::ADD && Ptr->getOpcode() != ISD::SUB)
     return false;
   if (!isa<ConstantSDNode>(Ptr->getOperand(1)))
     return false;
+
+  // We allow LE non-masked loads to change the type (for example use a vldrb.8
+  // as opposed to a vldrw.32). This can allow extra addressing modes or
+  // alignments for what is otherwise an equivalent instruction.
+  bool CanChangeType = isLE && !IsMasked;
 
   ConstantSDNode *RHS = cast<ConstantSDNode>(Ptr->getOperand(1));
   int RHSC = (int)RHS->getZExtValue();
@@ -15211,7 +15231,7 @@ static bool getMVEIndexedAddressParts(SDNode *Ptr, EVT VT, unsigned Align,
   };
 
   // Try to find a matching instruction based on s/zext, Alignment, Offset and
-  // (in BE) type.
+  // (in BE/masked) type.
   Base = Ptr->getOperand(0);
   if (VT == MVT::v4i16) {
     if (Align >= 2 && IsInRange(RHSC, 0x80, 2))
@@ -15219,13 +15239,15 @@ static bool getMVEIndexedAddressParts(SDNode *Ptr, EVT VT, unsigned Align,
   } else if (VT == MVT::v4i8 || VT == MVT::v8i8) {
     if (IsInRange(RHSC, 0x80, 1))
       return true;
-  } else if (Align >= 4 && (isLE || VT == MVT::v4i32 || VT == MVT::v4f32) &&
+  } else if (Align >= 4 &&
+             (CanChangeType || VT == MVT::v4i32 || VT == MVT::v4f32) &&
              IsInRange(RHSC, 0x80, 4))
     return true;
-  else if (Align >= 2 && (isLE || VT == MVT::v8i16 || VT == MVT::v8f16) &&
+  else if (Align >= 2 &&
+           (CanChangeType || VT == MVT::v8i16 || VT == MVT::v8f16) &&
            IsInRange(RHSC, 0x80, 2))
     return true;
-  else if ((isLE || VT == MVT::v16i8) && IsInRange(RHSC, 0x80, 1))
+  else if ((CanChangeType || VT == MVT::v16i8) && IsInRange(RHSC, 0x80, 1))
     return true;
   return false;
 }
@@ -15245,6 +15267,7 @@ ARMTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
   SDValue Ptr;
   unsigned Align;
   bool isSEXTLoad = false;
+  bool IsMasked = false;
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
     Ptr = LD->getBasePtr();
     VT = LD->getMemoryVT();
@@ -15254,6 +15277,17 @@ ARMTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
     Ptr = ST->getBasePtr();
     VT = ST->getMemoryVT();
     Align = ST->getAlignment();
+  } else if (MaskedLoadSDNode *LD = dyn_cast<MaskedLoadSDNode>(N)) {
+    Ptr = LD->getBasePtr();
+    VT = LD->getMemoryVT();
+    Align = LD->getAlignment();
+    isSEXTLoad = LD->getExtensionType() == ISD::SEXTLOAD;
+    IsMasked = true;
+  } else if (MaskedStoreSDNode *ST = dyn_cast<MaskedStoreSDNode>(N)) {
+    Ptr = ST->getBasePtr();
+    VT = ST->getMemoryVT();
+    Align = ST->getAlignment();
+    IsMasked = true;
   } else
     return false;
 
@@ -15262,8 +15296,8 @@ ARMTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
   if (VT.isVector())
     isLegal = Subtarget->hasMVEIntegerOps() &&
               getMVEIndexedAddressParts(Ptr.getNode(), VT, Align, isSEXTLoad,
-                                        Subtarget->isLittle(), Base, Offset,
-                                        isInc, DAG);
+                                        IsMasked, Subtarget->isLittle(), Base,
+                                        Offset, isInc, DAG);
   else {
     if (Subtarget->isThumb2())
       isLegal = getT2IndexedAddressParts(Ptr.getNode(), VT, isSEXTLoad, Base,
@@ -15291,6 +15325,7 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
   SDValue Ptr;
   unsigned Align;
   bool isSEXTLoad = false, isNonExt;
+  bool IsMasked = false;
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
     VT = LD->getMemoryVT();
     Ptr = LD->getBasePtr();
@@ -15302,6 +15337,19 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
     Ptr = ST->getBasePtr();
     Align = ST->getAlignment();
     isNonExt = !ST->isTruncatingStore();
+  } else if (MaskedLoadSDNode *LD = dyn_cast<MaskedLoadSDNode>(N)) {
+    VT = LD->getMemoryVT();
+    Ptr = LD->getBasePtr();
+    Align = LD->getAlignment();
+    isSEXTLoad = LD->getExtensionType() == ISD::SEXTLOAD;
+    isNonExt = LD->getExtensionType() == ISD::NON_EXTLOAD;
+    IsMasked = true;
+  } else if (MaskedStoreSDNode *ST = dyn_cast<MaskedStoreSDNode>(N)) {
+    VT = ST->getMemoryVT();
+    Ptr = ST->getBasePtr();
+    Align = ST->getAlignment();
+    isNonExt = !ST->isTruncatingStore();
+    IsMasked = true;
   } else
     return false;
 
@@ -15325,7 +15373,7 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
   bool isLegal = false;
   if (VT.isVector())
     isLegal = Subtarget->hasMVEIntegerOps() &&
-              getMVEIndexedAddressParts(Op, VT, Align, isSEXTLoad,
+              getMVEIndexedAddressParts(Op, VT, Align, isSEXTLoad, IsMasked,
                                         Subtarget->isLittle(), Base, Offset,
                                         isInc, DAG);
   else {
@@ -16674,15 +16722,20 @@ ARMTargetLowering::getNumInterleavedAccesses(VectorType *VecTy,
 }
 
 bool ARMTargetLowering::isLegalInterleavedAccessType(
-    VectorType *VecTy, const DataLayout &DL) const {
+    unsigned Factor, VectorType *VecTy, const DataLayout &DL) const {
 
   unsigned VecSize = DL.getTypeSizeInBits(VecTy);
   unsigned ElSize = DL.getTypeSizeInBits(VecTy->getElementType());
 
+  if (!Subtarget->hasNEON() && !Subtarget->hasMVEIntegerOps())
+    return false;
+
   // Ensure the vector doesn't have f16 elements. Even though we could do an
   // i16 vldN, we can't hold the f16 vectors and will end up converting via
   // f32.
-  if (VecTy->getElementType()->isHalfTy())
+  if (Subtarget->hasNEON() && VecTy->getElementType()->isHalfTy())
+    return false;
+  if (Subtarget->hasMVEIntegerOps() && Factor == 3)
     return false;
 
   // Ensure the number of vector elements is greater than 1.
@@ -16695,11 +16748,15 @@ bool ARMTargetLowering::isLegalInterleavedAccessType(
 
   // Ensure the total vector size is 64 or a multiple of 128. Types larger than
   // 128 will be split into multiple interleaved accesses.
-  return VecSize == 64 || VecSize % 128 == 0;
+  if (Subtarget->hasNEON() && VecSize == 64)
+    return true;
+  return VecSize % 128 == 0;
 }
 
 unsigned ARMTargetLowering::getMaxSupportedInterleaveFactor() const {
   if (Subtarget->hasNEON())
+    return 4;
+  if (Subtarget->hasMVEIntegerOps())
     return 4;
   return TargetLoweringBase::getMaxSupportedInterleaveFactor();
 }
@@ -16732,7 +16789,7 @@ bool ARMTargetLowering::lowerInterleavedLoad(
   // Skip if we do not have NEON and skip illegal vector types. We can
   // "legalize" wide vector types into multiple interleaved accesses as long as
   // the vector types are divisible by 128.
-  if (!Subtarget->hasNEON() || !isLegalInterleavedAccessType(VecTy, DL))
+  if (!isLegalInterleavedAccessType(Factor, VecTy, DL))
     return false;
 
   unsigned NumLoads = getNumInterleavedAccesses(VecTy, DL);
@@ -16764,13 +16821,37 @@ bool ARMTargetLowering::lowerInterleavedLoad(
 
   assert(isTypeLegal(EVT::getEVT(VecTy)) && "Illegal vldN vector type!");
 
-  Type *Int8Ptr = Builder.getInt8PtrTy(LI->getPointerAddressSpace());
-  Type *Tys[] = {VecTy, Int8Ptr};
-  static const Intrinsic::ID LoadInts[3] = {Intrinsic::arm_neon_vld2,
-                                            Intrinsic::arm_neon_vld3,
-                                            Intrinsic::arm_neon_vld4};
-  Function *VldnFunc =
-      Intrinsic::getDeclaration(LI->getModule(), LoadInts[Factor - 2], Tys);
+  auto createLoadIntrinsic = [&](Value *BaseAddr) {
+    if (Subtarget->hasNEON()) {
+      Type *Int8Ptr = Builder.getInt8PtrTy(LI->getPointerAddressSpace());
+      Type *Tys[] = {VecTy, Int8Ptr};
+      static const Intrinsic::ID LoadInts[3] = {Intrinsic::arm_neon_vld2,
+                                                Intrinsic::arm_neon_vld3,
+                                                Intrinsic::arm_neon_vld4};
+      Function *VldnFunc =
+          Intrinsic::getDeclaration(LI->getModule(), LoadInts[Factor - 2], Tys);
+
+      SmallVector<Value *, 2> Ops;
+      Ops.push_back(Builder.CreateBitCast(BaseAddr, Int8Ptr));
+      Ops.push_back(Builder.getInt32(LI->getAlignment()));
+
+      return Builder.CreateCall(VldnFunc, Ops, "vldN");
+    } else {
+      assert((Factor == 2 || Factor == 4) &&
+             "expected interleave factor of 2 or 4 for MVE");
+      Intrinsic::ID LoadInts =
+          Factor == 2 ? Intrinsic::arm_mve_vld2q : Intrinsic::arm_mve_vld4q;
+      Type *VecEltTy = VecTy->getVectorElementType()->getPointerTo(
+          LI->getPointerAddressSpace());
+      Type *Tys[] = {VecTy, VecEltTy};
+      Function *VldnFunc =
+          Intrinsic::getDeclaration(LI->getModule(), LoadInts, Tys);
+
+      SmallVector<Value *, 2> Ops;
+      Ops.push_back(Builder.CreateBitCast(BaseAddr, VecEltTy));
+      return Builder.CreateCall(VldnFunc, Ops, "vldN");
+    }
+  };
 
   // Holds sub-vectors extracted from the load intrinsic return values. The
   // sub-vectors are associated with the shufflevector instructions they will
@@ -16785,11 +16866,7 @@ bool ARMTargetLowering::lowerInterleavedLoad(
           Builder.CreateConstGEP1_32(VecTy->getVectorElementType(), BaseAddr,
                                      VecTy->getVectorNumElements() * Factor);
 
-    SmallVector<Value *, 2> Ops;
-    Ops.push_back(Builder.CreateBitCast(BaseAddr, Int8Ptr));
-    Ops.push_back(Builder.getInt32(LI->getAlignment()));
-
-    CallInst *VldN = Builder.CreateCall(VldnFunc, Ops, "vldN");
+    CallInst *VldN = createLoadIntrinsic(BaseAddr);
 
     // Replace uses of each shufflevector with the corresponding vector loaded
     // by ldN.
@@ -16868,7 +16945,7 @@ bool ARMTargetLowering::lowerInterleavedStore(StoreInst *SI,
   // Skip if we do not have NEON and skip illegal vector types. We can
   // "legalize" wide vector types into multiple interleaved accesses as long as
   // the vector types are divisible by 128.
-  if (!Subtarget->hasNEON() || !isLegalInterleavedAccessType(SubVecTy, DL))
+  if (!isLegalInterleavedAccessType(Factor, SubVecTy, DL))
     return false;
 
   unsigned NumStores = getNumInterleavedAccesses(SubVecTy, DL);
@@ -16912,11 +16989,46 @@ bool ARMTargetLowering::lowerInterleavedStore(StoreInst *SI,
 
   auto Mask = SVI->getShuffleMask();
 
-  Type *Int8Ptr = Builder.getInt8PtrTy(SI->getPointerAddressSpace());
-  Type *Tys[] = {Int8Ptr, SubVecTy};
-  static const Intrinsic::ID StoreInts[3] = {Intrinsic::arm_neon_vst2,
-                                             Intrinsic::arm_neon_vst3,
-                                             Intrinsic::arm_neon_vst4};
+  auto createStoreIntrinsic = [&](Value *BaseAddr,
+                                  SmallVectorImpl<Value *> &Shuffles) {
+    if (Subtarget->hasNEON()) {
+      static const Intrinsic::ID StoreInts[3] = {Intrinsic::arm_neon_vst2,
+                                                 Intrinsic::arm_neon_vst3,
+                                                 Intrinsic::arm_neon_vst4};
+      Type *Int8Ptr = Builder.getInt8PtrTy(SI->getPointerAddressSpace());
+      Type *Tys[] = {Int8Ptr, SubVecTy};
+
+      Function *VstNFunc = Intrinsic::getDeclaration(
+          SI->getModule(), StoreInts[Factor - 2], Tys);
+
+      SmallVector<Value *, 6> Ops;
+      Ops.push_back(Builder.CreateBitCast(BaseAddr, Int8Ptr));
+      for (auto S : Shuffles)
+        Ops.push_back(S);
+      Ops.push_back(Builder.getInt32(SI->getAlignment()));
+      Builder.CreateCall(VstNFunc, Ops);
+    } else {
+      assert((Factor == 2 || Factor == 4) &&
+             "expected interleave factor of 2 or 4 for MVE");
+      Intrinsic::ID StoreInts =
+          Factor == 2 ? Intrinsic::arm_mve_vst2q : Intrinsic::arm_mve_vst4q;
+      Type *EltPtrTy = SubVecTy->getVectorElementType()->getPointerTo(
+          SI->getPointerAddressSpace());
+      Type *Tys[] = {EltPtrTy, SubVecTy};
+      Function *VstNFunc =
+          Intrinsic::getDeclaration(SI->getModule(), StoreInts, Tys);
+
+      SmallVector<Value *, 6> Ops;
+      Ops.push_back(Builder.CreateBitCast(BaseAddr, EltPtrTy));
+      for (auto S : Shuffles)
+        Ops.push_back(S);
+      for (unsigned F = 0; F < Factor; F++) {
+        Ops.push_back(Builder.getInt32(F));
+        Builder.CreateCall(VstNFunc, Ops);
+        Ops.pop_back();
+      }
+    }
+  };
 
   for (unsigned StoreCount = 0; StoreCount < NumStores; ++StoreCount) {
     // If we generating more than one store, we compute the base address of
@@ -16925,17 +17037,13 @@ bool ARMTargetLowering::lowerInterleavedStore(StoreInst *SI,
       BaseAddr = Builder.CreateConstGEP1_32(SubVecTy->getVectorElementType(),
                                             BaseAddr, LaneLen * Factor);
 
-    SmallVector<Value *, 6> Ops;
-    Ops.push_back(Builder.CreateBitCast(BaseAddr, Int8Ptr));
-
-    Function *VstNFunc =
-        Intrinsic::getDeclaration(SI->getModule(), StoreInts[Factor - 2], Tys);
+    SmallVector<Value *, 4> Shuffles;
 
     // Split the shufflevector operands into sub vectors for the new vstN call.
     for (unsigned i = 0; i < Factor; i++) {
       unsigned IdxI = StoreCount * LaneLen * Factor + i;
       if (Mask[IdxI] >= 0) {
-        Ops.push_back(Builder.CreateShuffleVector(
+        Shuffles.push_back(Builder.CreateShuffleVector(
             Op0, Op1, createSequentialMask(Builder, Mask[IdxI], LaneLen, 0)));
       } else {
         unsigned StartMask = 0;
@@ -16952,13 +17060,12 @@ bool ARMTargetLowering::lowerInterleavedStore(StoreInst *SI,
         // In the case of all undefs we're defaulting to using elems from 0
         // Note: StartMask cannot be negative, it's checked in
         // isReInterleaveMask
-        Ops.push_back(Builder.CreateShuffleVector(
+        Shuffles.push_back(Builder.CreateShuffleVector(
             Op0, Op1, createSequentialMask(Builder, StartMask, LaneLen, 0)));
       }
     }
 
-    Ops.push_back(Builder.getInt32(SI->getAlignment()));
-    Builder.CreateCall(VstNFunc, Ops);
+    createStoreIntrinsic(BaseAddr, Shuffles);
   }
   return true;
 }

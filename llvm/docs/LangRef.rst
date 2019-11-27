@@ -4857,13 +4857,6 @@ DIFlags
 
 These flags encode various properties of DINodes.
 
-The `ArgumentNotModified` flag marks a function argument whose value
-is not modified throughout of a function. This flag is used to decide
-whether a DW_OP_LLVM_entry_value can be used in a location description
-after the function prologue. The language frontend is expected to compute
-this property for each DILocalVariable. The flag should be used
-only in optimized code.
-
 The `ExportSymbols` flag marks a class, struct or union whose members
 may be referenced as if they were defined in the containing class or
 union. This flag is used to decide whether the DW_AT_export_symbols can
@@ -12708,13 +12701,15 @@ floating-point type. Not all targets support all types however.
 Overview:
 """""""""
 
-The '``llvm.lround.*``' intrinsics returns the operand rounded to the
-nearest integer.
+The '``llvm.lround.*``' intrinsics return the operand rounded to the nearest
+integer with ties away from zero.
+
 
 Arguments:
 """"""""""
 
-The argument is a floating-point number and return is an integer type.
+The argument is a floating-point number and the return value is an integer
+type.
 
 Semantics:
 """"""""""
@@ -12742,13 +12737,14 @@ floating-point type. Not all targets support all types however.
 Overview:
 """""""""
 
-The '``llvm.llround.*``' intrinsics returns the operand rounded to the
-nearest integer.
+The '``llvm.llround.*``' intrinsics return the operand rounded to the nearest
+integer with ties away from zero.
 
 Arguments:
 """"""""""
 
-The argument is a floating-point number and return is an integer type.
+The argument is a floating-point number and the return value is an integer
+type.
 
 Semantics:
 """"""""""
@@ -12782,13 +12778,15 @@ floating-point type. Not all targets support all types however.
 Overview:
 """""""""
 
-The '``llvm.lrint.*``' intrinsics returns the operand rounded to the
-nearest integer.
+The '``llvm.lrint.*``' intrinsics return the operand rounded to the nearest
+integer.
+
 
 Arguments:
 """"""""""
 
-The argument is a floating-point number and return is an integer type.
+The argument is a floating-point number and the return value is an integer
+type.
 
 Semantics:
 """"""""""
@@ -12816,13 +12814,14 @@ floating-point type. Not all targets support all types however.
 Overview:
 """""""""
 
-The '``llvm.llrint.*``' intrinsics returns the operand rounded to the
-nearest integer.
+The '``llvm.llrint.*``' intrinsics return the operand rounded to the nearest
+integer.
 
 Arguments:
 """"""""""
 
-The argument is a floating-point number and return is an integer type.
+The argument is a floating-point number and the return value is an integer
+type.
 
 Semantics:
 """"""""""

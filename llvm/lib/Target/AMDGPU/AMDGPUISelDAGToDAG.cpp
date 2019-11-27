@@ -19,12 +19,12 @@
 #include "AMDGPURegisterInfo.h"
 #include "AMDGPUSubtarget.h"
 #include "AMDGPUTargetMachine.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "SIDefines.h"
 #include "SIISelLowering.h"
 #include "SIInstrInfo.h"
 #include "SIMachineFunctionInfo.h"
 #include "SIRegisterInfo.h"
-#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -39,6 +39,7 @@
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/InitializePasses.h"
 #ifdef EXPENSIVE_CHECKS
 #include "llvm/IR/Dominators.h"
 #endif
@@ -127,6 +128,10 @@ class AMDGPUDAGToDAGISel : public SelectionDAGISel {
   // Subtarget - Keep a pointer to the AMDGPU Subtarget around so that we can
   // make the right decision when generating code for different targets.
   const GCNSubtarget *Subtarget;
+
+  // Default FP mode for the current function.
+  AMDGPU::SIModeRegisterDefaults Mode;
+
   bool EnableLateStructurizeCFG;
 
 public:
@@ -392,6 +397,7 @@ bool AMDGPUDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
   }
 #endif
   Subtarget = &MF.getSubtarget<GCNSubtarget>();
+  Mode = AMDGPU::SIModeRegisterDefaults(MF.getFunction(), *Subtarget);
   return SelectionDAGISel::runOnMachineFunction(MF);
 }
 
@@ -2103,7 +2109,7 @@ void AMDGPUDAGToDAGISel::SelectFMAD_FMA(SDNode *N) {
   bool Sel1 = SelectVOP3PMadMixModsImpl(Src1, Src1, Src1Mods);
   bool Sel2 = SelectVOP3PMadMixModsImpl(Src2, Src2, Src2Mods);
 
-  assert((IsFMA || !Subtarget->hasFP32Denormals()) &&
+  assert((IsFMA || !Mode.FP32Denormals) &&
          "fmad selected with denormals enabled");
   // TODO: We can select this with f32 denormals enabled if all the sources are
   // converted from f16 (in which case fmad isn't legal).

@@ -63,6 +63,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/PredIteratorCache.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -1500,7 +1501,8 @@ static void moveInstructionBefore(Instruction &I, Instruction &Dest,
   if (MSSAU)
     if (MemoryUseOrDef *OldMemAcc = cast_or_null<MemoryUseOrDef>(
             MSSAU->getMemorySSA()->getMemoryAccess(&I)))
-      MSSAU->moveToPlace(OldMemAcc, Dest.getParent(), MemorySSA::End);
+      MSSAU->moveToPlace(OldMemAcc, Dest.getParent(),
+                         MemorySSA::BeforeTerminator);
   if (SE)
     SE->forgetValue(&I);
 }

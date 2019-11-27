@@ -4621,10 +4621,10 @@ static const NeonIntrinsicInfo ARMSIMDIntrinsicMap [] = {
   NEONMAP2(vpmin_v, arm_neon_vpminu, arm_neon_vpmins, Add1ArgType | UnsignedAlts),
   NEONMAP1(vqabs_v, arm_neon_vqabs, Add1ArgType),
   NEONMAP1(vqabsq_v, arm_neon_vqabs, Add1ArgType),
-  NEONMAP2(vqadd_v, arm_neon_vqaddu, arm_neon_vqadds, Add1ArgType | UnsignedAlts),
-  NEONMAP2(vqaddq_v, arm_neon_vqaddu, arm_neon_vqadds, Add1ArgType | UnsignedAlts),
-  NEONMAP2(vqdmlal_v, arm_neon_vqdmull, arm_neon_vqadds, 0),
-  NEONMAP2(vqdmlsl_v, arm_neon_vqdmull, arm_neon_vqsubs, 0),
+  NEONMAP2(vqadd_v, uadd_sat, sadd_sat, Add1ArgType | UnsignedAlts),
+  NEONMAP2(vqaddq_v, uadd_sat, sadd_sat, Add1ArgType | UnsignedAlts),
+  NEONMAP2(vqdmlal_v, arm_neon_vqdmull, sadd_sat, 0),
+  NEONMAP2(vqdmlsl_v, arm_neon_vqdmull, ssub_sat, 0),
   NEONMAP1(vqdmulh_v, arm_neon_vqdmulh, Add1ArgType),
   NEONMAP1(vqdmulhq_v, arm_neon_vqdmulh, Add1ArgType),
   NEONMAP1(vqdmull_v, arm_neon_vqdmull, Add1ArgType),
@@ -4642,8 +4642,8 @@ static const NeonIntrinsicInfo ARMSIMDIntrinsicMap [] = {
   NEONMAP2(vqshlq_v, arm_neon_vqshiftu, arm_neon_vqshifts, Add1ArgType | UnsignedAlts),
   NEONMAP1(vqshlu_n_v, arm_neon_vqshiftsu, 0),
   NEONMAP1(vqshluq_n_v, arm_neon_vqshiftsu, 0),
-  NEONMAP2(vqsub_v, arm_neon_vqsubu, arm_neon_vqsubs, Add1ArgType | UnsignedAlts),
-  NEONMAP2(vqsubq_v, arm_neon_vqsubu, arm_neon_vqsubs, Add1ArgType | UnsignedAlts),
+  NEONMAP2(vqsub_v, usub_sat, ssub_sat, Add1ArgType | UnsignedAlts),
+  NEONMAP2(vqsubq_v, usub_sat, ssub_sat, Add1ArgType | UnsignedAlts),
   NEONMAP1(vraddhn_v, arm_neon_vraddhn, Add1ArgType),
   NEONMAP2(vrecpe_v, arm_neon_vrecpe, arm_neon_vrecpe, 0),
   NEONMAP2(vrecpeq_v, arm_neon_vrecpe, arm_neon_vrecpe, 0),
@@ -5455,6 +5455,11 @@ Value *CodeGenFunction::EmitCommonNeonBuiltinExpr(
   case NEON::BI__builtin_neon_vcvtmq_u64_v: {
     llvm::Type *Tys[2] = { Ty, GetFloatNeonType(this, Type) };
     return EmitNeonCall(CGM.getIntrinsic(LLVMIntrinsic, Tys), Ops, NameHint);
+  }
+  case NEON::BI__builtin_neon_vcvtx_f32_v: {
+    llvm::Type *Tys[2] = { VTy->getTruncatedElementVectorType(VTy), Ty};
+    return EmitNeonCall(CGM.getIntrinsic(LLVMIntrinsic, Tys), Ops, NameHint);
+
   }
   case NEON::BI__builtin_neon_vext_v:
   case NEON::BI__builtin_neon_vextq_v: {
@@ -6793,6 +6798,14 @@ static llvm::Value *SignOrZeroExtend(CGBuilderTy &Builder, llvm::Value *V,
   // Helper function called by Tablegen-constructed ARM MVE builtin codegen,
   // which finds it convenient to specify signed/unsigned as a boolean flag.
   return Unsigned ? Builder.CreateZExt(V, T) : Builder.CreateSExt(V, T);
+}
+
+static llvm::Value *ARMMVEVectorSplat(CGBuilderTy &Builder, llvm::Value *V) {
+  // MVE-specific helper function for a vector splat, which infers the element
+  // count of the output vector by knowing that MVE vectors are all 128 bits
+  // wide.
+  unsigned Elements = 128 / V->getType()->getPrimitiveSizeInBits();
+  return Builder.CreateVectorSplat(Elements, V);
 }
 
 Value *CodeGenFunction::EmitARMMVEBuiltinExpr(unsigned BuiltinID,

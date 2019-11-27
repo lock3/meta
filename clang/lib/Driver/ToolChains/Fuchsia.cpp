@@ -224,7 +224,7 @@ Fuchsia::Fuchsia(const Driver &D, const llvm::Triple &Triple,
 std::string Fuchsia::ComputeEffectiveClangTriple(const ArgList &Args,
                                                  types::ID InputType) const {
   llvm::Triple Triple(ComputeLLVMTriple(Args, InputType));
-  return (Triple.getArchName() + "-" + Triple.getOSName()).str();
+  return Triple.str();
 }
 
 Tool *Fuchsia::buildLinker() const {
@@ -344,9 +344,16 @@ SanitizerMask Fuchsia::getSupportedSanitizers() const {
 
 SanitizerMask Fuchsia::getDefaultSanitizers() const {
   SanitizerMask Res;
-  if (getTriple().getArch() == llvm::Triple::aarch64)
+  switch (getTriple().getArch()) {
+  case llvm::Triple::aarch64:
     Res |= SanitizerKind::ShadowCallStack;
-  else
+    break;
+  case llvm::Triple::x86_64:
     Res |= SanitizerKind::SafeStack;
+    break;
+  default:
+    // TODO: Enable SafeStack on RISC-V once tested.
+    break;
+  }
   return Res;
 }

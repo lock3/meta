@@ -364,8 +364,8 @@ Value *LibCallSimplifier::optimizeStrChr(CallInst *CI, IRBuilder<> &B) {
   StringRef Str;
   if (!getConstantStringInfo(SrcStr, Str)) {
     if (CharC->isZero()) // strchr(p, 0) -> p + strlen(p)
-      return B.CreateGEP(B.getInt8Ty(), SrcStr, emitStrLen(SrcStr, B, DL, TLI),
-                         "strchr");
+      if (Value *StrLen = emitStrLen(SrcStr, B, DL, TLI))
+        return B.CreateGEP(B.getInt8Ty(), SrcStr, StrLen, "strchr");
     return nullptr;
   }
 
@@ -1117,6 +1117,45 @@ Value *LibCallSimplifier::optimizeMemCpy(CallInst *CI, IRBuilder<> &B) {
       B.CreateMemCpy(CI->getArgOperand(0), 1, CI->getArgOperand(1), 1, Size);
   NewCI->setAttributes(CI->getAttributes());
   return CI->getArgOperand(0);
+}
+
+Value *LibCallSimplifier::optimizeMemCCpy(CallInst *CI, IRBuilder<> &B) {
+  Value *Dst = CI->getArgOperand(0);
+  Value *Src = CI->getArgOperand(1);
+  ConstantInt *StopChar = dyn_cast<ConstantInt>(CI->getArgOperand(2));
+  ConstantInt *N = dyn_cast<ConstantInt>(CI->getArgOperand(3));
+  StringRef SrcStr;
+  if (CI->use_empty() && Dst == Src)
+    return Dst;
+  // memccpy(d, s, c, 0) -> nullptr
+  if (N) {
+    if (N->isNullValue())
+      return Constant::getNullValue(CI->getType());
+    if (!getConstantStringInfo(Src, SrcStr, /*Offset=*/0,
+                               /*TrimAtNul=*/false) ||
+        !StopChar)
+      return nullptr;
+  } else {
+    return nullptr;
+  }
+
+  // Wrap arg 'c' of type int to char
+  size_t Pos = SrcStr.find(StopChar->getSExtValue() & 0xFF);
+  if (Pos == StringRef::npos) {
+    if (N->getZExtValue() <= SrcStr.size()) {
+      B.CreateMemCpy(Dst, 1, Src, 1, CI->getArgOperand(3));
+      return Constant::getNullValue(CI->getType());
+    }
+    return nullptr;
+  }
+
+  Value *NewN =
+      ConstantInt::get(N->getType(), std::min(uint64_t(Pos + 1), N->getZExtValue()));
+  // memccpy -> llvm.memcpy
+  B.CreateMemCpy(Dst, 1, Src, 1, NewN);
+  return Pos + 1 <= N->getZExtValue()
+             ? B.CreateInBoundsGEP(B.getInt8Ty(), Dst, NewN)
+             : Constant::getNullValue(CI->getType());
 }
 
 Value *LibCallSimplifier::optimizeMemPCpy(CallInst *CI, IRBuilder<> &B) {
@@ -2864,6 +2903,8 @@ Value *LibCallSimplifier::optimizeStringMemoryLibCall(CallInst *CI,
       return optimizeMemCmp(CI, Builder);
     case LibFunc_memcpy:
       return optimizeMemCpy(CI, Builder);
+    case LibFunc_memccpy:
+      return optimizeMemCCpy(CI, Builder);
     case LibFunc_mempcpy:
       return optimizeMemPCpy(CI, Builder);
     case LibFunc_memmove:

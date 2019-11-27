@@ -259,12 +259,12 @@ public:
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
     PSet Singleton = PSet::singleton(E);
     setPSet(E, Singleton);
-    if (hasPSet(E->GetTemporaryExpr())) {
-      auto TC = classifyTypeCategory(E->GetTemporaryExpr()->getType());
+    if (hasPSet(E->getSubExpr())) {
+      auto TC = classifyTypeCategory(E->getSubExpr()->getType());
       if (TC == TypeCategory::Owner)
         setPSet(Singleton, PSet::singleton(E, 1), E->getSourceRange());
       else
-        setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
+        setPSet(Singleton, getPSet(E->getSubExpr()), E->getSourceRange());
     }
   }
 

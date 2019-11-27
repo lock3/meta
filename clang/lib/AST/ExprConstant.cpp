@@ -107,7 +107,7 @@ namespace {
             dyn_cast<MaterializeTemporaryExpr>(Base)) {
       SmallVector<const Expr *, 2> CommaLHSs;
       SmallVector<SubobjectAdjustment, 2> Adjustments;
-      const Expr *Temp = MTE->GetTemporaryExpr();
+      const Expr *Temp = MTE->getSubExpr();
       const Expr *Inner = Temp->skipRValueSubobjectAdjustments(CommaLHSs,
                                                                Adjustments);
       // Keep any cv-qualifiers from the reference if we generated a temporary
@@ -921,10 +921,10 @@ namespace {
     EvalInfo(const ASTContext &C, Expr::EvalStatus &S, EvaluationMode Mode)
         : Ctx(const_cast<ASTContext &>(C)), EvalStatus(S), CurrentCall(nullptr),
           CallStackDepth(0), NextCallIndex(1),
-          StepsLeft(getLangOpts().ConstexprStepLimit),
-          ForceNewConstInterp(getLangOpts().ForceNewConstInterp),
+          StepsLeft(C.getLangOpts().ConstexprStepLimit),
+          ForceNewConstInterp(C.getLangOpts().ForceNewConstInterp),
           EnableNewConstInterp(ForceNewConstInterp ||
-                               getLangOpts().EnableNewConstInterp),
+                               C.getLangOpts().EnableNewConstInterp),
           BottomFrame(*this, SourceLocation(), nullptr, nullptr, nullptr),
           EvaluatingDecl((const ValueDecl *)nullptr),
           EvaluatingDeclValue(nullptr), HasActiveDiagnostic(false),
@@ -2075,7 +2075,7 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
         return false;
       }
 
-      APValue *V = Info.Ctx.getMaterializedTemporaryValue(MTE, false);
+      APValue *V = MTE->getOrCreateValue(false);
       assert(V && "evasluation result refers to uninitialised temporary");
       if (!CheckEvaluationResult(CheckEvaluationResultKind::ConstantExpression,
                                  Info, MTE->getExprLoc(), TempType, *V,
@@ -3679,7 +3679,7 @@ static CompleteObject findCompleteObject(EvalInfo &Info, const Expr *E,
           return CompleteObject();
         }
 
-        BaseVal = Info.Ctx.getMaterializedTemporaryValue(MTE, false);
+        BaseVal = MTE->getOrCreateValue(false);
         assert(BaseVal && "got reference to unevaluated temporary");
       } else {
         if (!IsAccess)
@@ -7470,8 +7470,8 @@ bool LValueExprEvaluator::VisitMaterializeTemporaryExpr(
   // Walk through the expression to find the materialized temporary itself.
   SmallVector<const Expr *, 2> CommaLHSs;
   SmallVector<SubobjectAdjustment, 2> Adjustments;
-  const Expr *Inner = E->GetTemporaryExpr()->
-      skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
+  const Expr *Inner =
+      E->getSubExpr()->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
 
   // If we passed any comma operators, evaluate their LHSs.
   for (unsigned I = 0, N = CommaLHSs.size(); I != N; ++I)
@@ -7483,7 +7483,7 @@ bool LValueExprEvaluator::VisitMaterializeTemporaryExpr(
   // value for use outside this evaluation.
   APValue *Value;
   if (E->getStorageDuration() == SD_Static) {
-    Value = Info.Ctx.getMaterializedTemporaryValue(E, true);
+    Value = E->getOrCreateValue(true);
     *Value = APValue();
     Result.set(E);
   } else {
@@ -9031,7 +9031,7 @@ bool RecordExprEvaluator::VisitCXXConstructExpr(const CXXConstructExpr *E,
   if (E->isElidable() && !ZeroInit)
     if (const MaterializeTemporaryExpr *ME
           = dyn_cast<MaterializeTemporaryExpr>(E->getArg(0)))
-      return Visit(ME->GetTemporaryExpr());
+      return Visit(ME->getSubExpr());
 
   if (ZeroInit && !ZeroInitialization(E, T))
     return false;

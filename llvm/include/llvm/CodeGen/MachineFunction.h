@@ -20,6 +20,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
@@ -36,7 +37,6 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Recycler.h"
-#include "llvm/Target/TargetMachine.h"
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -403,14 +403,7 @@ private:
 
   /// A helper function that returns call site info for a give call
   /// instruction if debug entry value support is enabled.
-  CallSiteInfoMap::iterator getCallSiteInfo(const MachineInstr *MI) {
-    assert(MI->isCall() &&
-           "Call site info refers only to call instructions!");
-
-    if (!Target.Options.EnableDebugEntryValues)
-      return CallSitesInfo.end();
-    return CallSitesInfo.find(MI);
-  }
+  CallSiteInfoMap::iterator getCallSiteInfo(const MachineInstr *MI);
 
   // Callbacks for insertion and removal.
   void handleInsertion(MachineInstr &MI);
@@ -581,6 +574,10 @@ public:
   const Ty *getInfo() const {
      return const_cast<MachineFunction*>(this)->getInfo<Ty>();
   }
+
+  /// Returns the denormal handling type for the default rounding mode of the
+  /// function.
+  DenormalMode getDenormalMode(const fltSemantics &FPType) const;
 
   /// getBlockNumbered - MachineBasicBlocks are automatically numbered when they
   /// are inserted into the machine function.  The block number for a machine

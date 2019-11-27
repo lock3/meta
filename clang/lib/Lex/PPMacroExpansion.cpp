@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Basic/Attributes.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/LLVM.h"
@@ -28,6 +29,7 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorLexer.h"
+#include "clang/Lex/PreprocessorOptions.h"
 #include "clang/Lex/Token.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -35,9 +37,9 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Casting.h"
@@ -369,7 +371,11 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_extension    = RegisterBuiltinMacro(*this, "__has_extension");
   Ident__has_builtin      = RegisterBuiltinMacro(*this, "__has_builtin");
   Ident__has_attribute    = RegisterBuiltinMacro(*this, "__has_attribute");
-  Ident__has_c_attribute  = RegisterBuiltinMacro(*this, "__has_c_attribute");
+  if (!LangOpts.CPlusPlus)
+    Ident__has_c_attribute = RegisterBuiltinMacro(*this, "__has_c_attribute");
+  else
+    Ident__has_c_attribute = nullptr;
+
   Ident__has_declspec = RegisterBuiltinMacro(*this, "__has_declspec_attribute");
   Ident__has_include      = RegisterBuiltinMacro(*this, "__has_include");
   Ident__has_include_next = RegisterBuiltinMacro(*this, "__has_include_next");
@@ -1445,6 +1451,17 @@ static bool isTargetEnvironment(const TargetInfo &TI,
   return TI.getTriple().getEnvironment() == Env.getEnvironment();
 }
 
+static void remapMacroPath(
+    SmallString<256> &Path,
+    const std::map<std::string, std::string, std::greater<std::string>>
+        &MacroPrefixMap) {
+  for (const auto &Entry : MacroPrefixMap)
+    if (Path.startswith(Entry.first)) {
+      Path = (Twine(Entry.second) + Path.substr(Entry.first.size())).str();
+      break;
+    }
+}
+
 /// ExpandBuiltinMacro - If an identifier token is read that is to be expanded
 /// as a builtin macro, handle it and return the next token as 'Tok'.
 void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
@@ -1511,7 +1528,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     // Escape this filename.  Turn '\' -> '\\' '"' -> '\"'
-    SmallString<128> FN;
+    SmallString<256> FN;
     if (PLoc.isValid()) {
       // __FILE_NAME__ is a Clang-specific extension that expands to the
       // the last part of __FILE__.
@@ -1527,6 +1544,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
         FN += PLoc.getFilename();
       }
       Lexer::Stringify(FN);
+      remapMacroPath(FN, PPOpts->MacroPrefixMap);
       OS << '"' << FN << '"';
     }
     Tok.setKind(tok::string_literal);

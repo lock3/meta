@@ -31,6 +31,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -307,15 +308,16 @@ static const Value *getPointerOperand(const Instruction *I) {
 
   return nullptr;
 }
-static const Value *getBasePointerOfAccessPointerOperand(const Instruction *I,
-                                                         int64_t &BytesOffset,
-                                                         const DataLayout &DL) {
+static const Value *
+getBasePointerOfAccessPointerOperand(const Instruction *I, int64_t &BytesOffset,
+                                     const DataLayout &DL,
+                                     bool AllowNonInbounds = false) {
   const Value *Ptr = getPointerOperand(I);
   if (!Ptr)
     return nullptr;
 
   return GetPointerBaseWithConstantOffset(Ptr, BytesOffset, DL,
-                                          /*AllowNonInbounds*/ false);
+                                          AllowNonInbounds);
 }
 
 ChangeStatus AbstractAttribute::update(Attributor &A) {
@@ -1388,7 +1390,7 @@ ChangeStatus AANoSyncImpl::updateImpl(Attributor &A) {
 
   auto CheckRWInstForNoSync = [&](Instruction &I) {
     /// We are looking for volatile instructions or Non-Relaxed atomics.
-    /// FIXME: We should ipmrove the handling of intrinsics.
+    /// FIXME: We should improve the handling of intrinsics.
 
     if (isa<IntrinsicInst>(&I) && isNoSyncIntrinsic(&I))
       return true;
@@ -1701,8 +1703,7 @@ static int64_t getKnownNonNullAndDerefBytesForUse(
     return 0;
   }
   if (auto *GEP = dyn_cast<GetElementPtrInst>(I))
-    if (GEP->hasAllZeroIndices() ||
-        (GEP->isInBounds() && GEP->hasAllConstantIndices())) {
+    if (GEP->hasAllConstantIndices()) {
       TrackUse = true;
       return 0;
     }
@@ -1713,6 +1714,18 @@ static int64_t getKnownNonNullAndDerefBytesForUse(
       int64_t DerefBytes =
           (int64_t)DL.getTypeStoreSize(PtrTy->getPointerElementType()) + Offset;
 
+      IsNonNull |= !NullPointerIsDefined;
+      return std::max(int64_t(0), DerefBytes);
+    }
+  }
+
+  /// Corner case when an offset is 0.
+  if (const Value *Base = getBasePointerOfAccessPointerOperand(
+          I, Offset, DL, /*AllowNonInbounds*/ true)) {
+    if (Offset == 0 && Base == &AssociatedValue &&
+        getPointerOperand(I) == UseV) {
+      int64_t DerefBytes =
+          (int64_t)DL.getTypeStoreSize(PtrTy->getPointerElementType());
       IsNonNull |= !NullPointerIsDefined;
       return std::max(int64_t(0), DerefBytes);
     }
@@ -2048,6 +2061,34 @@ struct AAWillReturnCallSite final : AAWillReturnImpl {
 
   /// See AbstractAttribute::trackStatistics()
   void trackStatistics() const override { STATS_DECLTRACK_CS_ATTR(willreturn); }
+};
+
+/// -------------------AAReachability Attribute--------------------------
+
+struct AAReachabilityImpl : AAReachability {
+  AAReachabilityImpl(const IRPosition &IRP) : AAReachability(IRP) {}
+
+  const std::string getAsStr() const override {
+    // TODO: Return the number of reachable queries.
+    return "reachable";
+  }
+
+  /// See AbstractAttribute::initialize(...).
+  void initialize(Attributor &A) override {
+    indicatePessimisticFixpoint();
+  }
+
+  /// See AbstractAttribute::updateImpl(...).
+  ChangeStatus updateImpl(Attributor &A) override {
+    return indicatePessimisticFixpoint();
+  }
+};
+
+struct AAReachabilityFunction final : public AAReachabilityImpl {
+  AAReachabilityFunction(const IRPosition &IRP) : AAReachabilityImpl(IRP) {}
+
+  /// See AbstractAttribute::trackStatistics()
+  void trackStatistics() const override { STATS_DECLTRACK_FN_ATTR(reachable); }
 };
 
 /// ------------------------ NoAlias Argument Attribute ------------------------
@@ -3090,6 +3131,20 @@ static unsigned int getKnownAlignForUse(Attributor &A,
                                         AbstractAttribute &QueryingAA,
                                         Value &AssociatedValue, const Use *U,
                                         const Instruction *I, bool &TrackUse) {
+  // We need to follow common pointer manipulation uses to the accesses they
+  // feed into.
+  if (isa<CastInst>(I)) {
+    TrackUse = true;
+    return 0;
+  }
+  if (auto *GEP = dyn_cast<GetElementPtrInst>(I)) {
+    if (GEP->hasAllConstantIndices()) {
+      TrackUse = true;
+      return 0;
+    }
+  }
+
+  unsigned Alignment = 0;
   if (ImmutableCallSite ICS = ImmutableCallSite(I)) {
     if (ICS.isBundleOperand(U) || ICS.isCallee(U))
       return 0;
@@ -3100,23 +3155,34 @@ static unsigned int getKnownAlignForUse(Attributor &A,
     // dependences here.
     auto &AlignAA = A.getAAFor<AAAlign>(QueryingAA, IRP,
                                         /* TrackDependence */ false);
-    return AlignAA.getKnownAlign();
+    Alignment = AlignAA.getKnownAlign();
   }
 
-  // We need to follow common pointer manipulation uses to the accesses they
-  // feed into.
-  // TODO: Consider gep instruction
-  if (isa<CastInst>(I)) {
-    TrackUse = true;
-    return 0;
-  }
-
+  const Value *UseV = U->get();
   if (auto *SI = dyn_cast<StoreInst>(I))
-    return SI->getAlignment();
+    Alignment = SI->getAlignment();
   else if (auto *LI = dyn_cast<LoadInst>(I))
-    return LI->getAlignment();
+    Alignment = LI->getAlignment();
 
-  return 0;
+  if (Alignment <= 1)
+    return 0;
+
+  auto &DL = A.getDataLayout();
+  int64_t Offset;
+
+  if (const Value *Base = GetPointerBaseWithConstantOffset(UseV, Offset, DL)) {
+    if (Base == &AssociatedValue) {
+      // BasePointerAddr + Offset = Alignment * Q for some integer Q.
+      // So we can say that the maximum power of two which is a divisor of
+      // gcd(Offset, Alignment) is an alignment.
+
+      uint32_t gcd =
+          greatestCommonDivisor(uint32_t(abs((int32_t)Offset)), Alignment);
+      Alignment = llvm::PowerOf2Floor(gcd);
+    }
+  }
+
+  return Alignment;
 }
 struct AAAlignImpl : AAAlign {
   AAAlignImpl(const IRPosition &IRP) : AAAlign(IRP) {}
@@ -4154,11 +4220,6 @@ ChangeStatus AAHeapToStackImpl::updateImpl(Attributor &A) {
         continue;
       }
 
-      // NOTE: Right now, if a function that has malloc pointer as an argument
-      // frees memory, we assume that the malloc pointer is freed.
-
-      // TODO: Add nofree callsite argument attribute to indicate that pointer
-      // argument is not freed.
       if (auto *CB = dyn_cast<CallBase>(UserI)) {
         if (!CB->isArgOperand(U))
           continue;
@@ -4179,15 +4240,16 @@ ChangeStatus AAHeapToStackImpl::updateImpl(Attributor &A) {
           continue;
         }
 
-        // If a function does not free memory we are fine
-        const auto &NoFreeAA =
-            A.getAAFor<AANoFree>(*this, IRPosition::callsite_function(*CB));
-
         unsigned ArgNo = CB->getArgOperandNo(U);
+
         const auto &NoCaptureAA = A.getAAFor<AANoCapture>(
             *this, IRPosition::callsite_argument(*CB, ArgNo));
 
-        if (!NoCaptureAA.isAssumedNoCapture() || !NoFreeAA.isAssumedNoFree()) {
+        // If a callsite argument use is nofree, we are fine.
+        const auto &ArgNoFreeAA = A.getAAFor<AANoFree>(
+            *this, IRPosition::callsite_argument(*CB, ArgNo));
+
+        if (!NoCaptureAA.isAssumedNoCapture() || !ArgNoFreeAA.isAssumedNoFree()) {
           LLVM_DEBUG(dbgs() << "[H2S] Bad user: " << *UserI << "\n");
           ValidUsesOnly = false;
         }
@@ -5683,6 +5745,7 @@ const char AANonNull::ID = 0;
 const char AANoRecurse::ID = 0;
 const char AAWillReturn::ID = 0;
 const char AANoAlias::ID = 0;
+const char AAReachability::ID = 0;
 const char AANoReturn::ID = 0;
 const char AAIsDead::ID = 0;
 const char AADereferenceable::ID = 0;
@@ -5802,6 +5865,7 @@ CREATE_ALL_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAIsDead)
 CREATE_ALL_ABSTRACT_ATTRIBUTE_FOR_POSITION(AANoFree)
 
 CREATE_FUNCTION_ONLY_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAHeapToStack)
+CREATE_FUNCTION_ONLY_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAReachability)
 
 CREATE_NON_RET_ABSTRACT_ATTRIBUTE_FOR_POSITION(AAMemoryBehavior)
 

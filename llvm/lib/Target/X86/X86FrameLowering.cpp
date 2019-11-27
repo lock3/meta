@@ -1261,7 +1261,7 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF,
     if (Is64Bit) {
       // Handle the 64-bit Windows ABI case where we need to call __chkstk.
       // Function prologue is responsible for adjusting the stack pointer.
-      int Alloc = isEAXAlive ? NumBytes - 8 : NumBytes;
+      int64_t Alloc = isEAXAlive ? NumBytes - 8 : NumBytes;
       if (isUInt<32>(Alloc)) {
         BuildMI(MBB, MBBI, DL, TII.get(X86::MOV32ri), X86::EAX)
             .addImm(Alloc)
@@ -1860,7 +1860,7 @@ int X86FrameLowering::getWin64EHFrameIndexRef(const MachineFunction &MF,
     return getFrameIndexReference(MF, FI, FrameReg);
 
   FrameReg = TRI->getStackRegister();
-  return alignTo(MFI.getMaxCallFrameSize(), getStackAlignment()) + it->second;
+  return alignDown(MFI.getMaxCallFrameSize(), getStackAlignment()) + it->second;
 }
 
 int X86FrameLowering::getFrameIndexReferenceSP(const MachineFunction &MF,

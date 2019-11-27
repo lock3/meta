@@ -57,6 +57,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
@@ -1291,7 +1292,7 @@ bool LiveDebugValues::isEntryValueCandidate(
   // TODO: Add support for modified arguments that can be expressed
   // by using its entry value.
   auto *DIVar = MI.getDebugVariable();
-  if (!DIVar->isParameter() || !DIVar->isNotModified())
+  if (!DIVar->isParameter())
     return false;
 
   // Do not consider parameters that belong to an inlined function.

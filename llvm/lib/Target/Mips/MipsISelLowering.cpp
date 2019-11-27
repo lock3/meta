@@ -111,21 +111,19 @@ static bool isShiftedMask(uint64_t I, uint64_t &Pos, uint64_t &Size) {
 MVT MipsTargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
                                                       CallingConv::ID CC,
                                                       EVT VT) const {
-  if (VT.isVector()) {
-      if (Subtarget.isABI_O32()) {
-        return MVT::i32;
-      } else {
-        return (VT.getSizeInBits() == 32) ? MVT::i32 : MVT::i64;
-      }
-  }
-  return MipsTargetLowering::getRegisterType(Context, VT);
+  if (!VT.isVector())
+    return getRegisterType(Context, VT);
+
+  return Subtarget.isABI_O32() || VT.getSizeInBits() == 32 ? MVT::i32
+                                                           : MVT::i64;
 }
 
 unsigned MipsTargetLowering::getNumRegistersForCallingConv(LLVMContext &Context,
                                                            CallingConv::ID CC,
                                                            EVT VT) const {
   if (VT.isVector())
-    return std::max((VT.getSizeInBits() / (Subtarget.isABI_O32() ? 32 : 64)),
+    return std::max(((unsigned)VT.getSizeInBits() /
+                     (Subtarget.isABI_O32() ? 32 : 64)),
                     1U);
   return MipsTargetLowering::getNumRegisters(Context, VT);
 }

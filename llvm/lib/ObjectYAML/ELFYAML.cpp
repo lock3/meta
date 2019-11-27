@@ -863,6 +863,24 @@ template <> struct SequenceElementTraits<StOtherPiece> {
   static const bool flow = true;
 };
 
+template <> struct ScalarTraits<ELFYAML::YAMLFlowString> {
+  static void output(const ELFYAML::YAMLFlowString &Val, void *,
+                     raw_ostream &Out) {
+    Out << Val;
+  }
+  static StringRef input(StringRef Scalar, void *,
+                         ELFYAML::YAMLFlowString &Val) {
+    Val = Scalar;
+    return {};
+  }
+  static QuotingType mustQuote(StringRef S) {
+    return ScalarTraits<StringRef>::mustQuote(S);
+  }
+};
+template <> struct SequenceElementTraits<ELFYAML::YAMLFlowString> {
+  static const bool flow = true;
+};
+
 namespace {
 
 struct NormalizedOther {
@@ -1056,7 +1074,8 @@ static void sectionMapping(IO &IO, ELFYAML::NoBitsSection &Section) {
 static void sectionMapping(IO &IO, ELFYAML::VerdefSection &Section) {
   commonSectionMapping(IO, Section);
   IO.mapRequired("Info", Section.Info);
-  IO.mapRequired("Entries", Section.Entries);
+  IO.mapOptional("Entries", Section.Entries);
+  IO.mapOptional("Content", Section.Content);
 }
 
 static void sectionMapping(IO &IO, ELFYAML::SymverSection &Section) {
@@ -1103,6 +1122,13 @@ static void fillMapping(IO &IO, ELFYAML::Fill &Fill) {
 static void sectionMapping(IO &IO, ELFYAML::LinkerOptionsSection &Section) {
   commonSectionMapping(IO, Section);
   IO.mapOptional("Options", Section.Options);
+  IO.mapOptional("Content", Section.Content);
+}
+
+static void sectionMapping(IO &IO,
+                           ELFYAML::DependentLibrariesSection &Section) {
+  commonSectionMapping(IO, Section);
+  IO.mapOptional("Libraries", Section.Libs);
   IO.mapOptional("Content", Section.Content);
 }
 
@@ -1227,6 +1253,12 @@ void MappingTraits<std::unique_ptr<ELFYAML::Chunk>>::mapping(
     if (!IO.outputting())
       Section.reset(new ELFYAML::LinkerOptionsSection());
     sectionMapping(IO, *cast<ELFYAML::LinkerOptionsSection>(Section.get()));
+    break;
+  case ELF::SHT_LLVM_DEPENDENT_LIBRARIES:
+    if (!IO.outputting())
+      Section.reset(new ELFYAML::DependentLibrariesSection());
+    sectionMapping(IO,
+                   *cast<ELFYAML::DependentLibrariesSection>(Section.get()));
     break;
   default:
     if (!IO.outputting()) {
@@ -1372,11 +1404,26 @@ StringRef MappingTraits<std::unique_ptr<ELFYAML::Chunk>>::validate(
     return {};
   }
 
+  if (const auto *Sec = dyn_cast<ELFYAML::DependentLibrariesSection>(C.get())) {
+    if (Sec->Libs && Sec->Content)
+      return "SHT_LLVM_DEPENDENT_LIBRARIES: \"Libraries\" and \"Content\" "
+             "can't "
+             "be used together";
+    return {};
+  }
+
   if (const auto *F = dyn_cast<ELFYAML::Fill>(C.get())) {
     if (!F->Pattern)
       return {};
     if (F->Pattern->binary_size() != 0 && !F->Size)
       return "\"Size\" can't be 0 when \"Pattern\" is not empty";
+    return {};
+  }
+
+  if (const auto *VD = dyn_cast<ELFYAML::VerdefSection>(C.get())) {
+    if (VD->Entries && VD->Content)
+      return "SHT_GNU_verdef: \"Entries\" and \"Content\" can't be used "
+             "together";
     return {};
   }
 

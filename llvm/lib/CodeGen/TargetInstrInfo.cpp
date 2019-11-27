@@ -1131,6 +1131,31 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI) const {
   } else if (auto DestSrc = isAddImmediate(MI, Offset)) {
     Expr = DIExpression::prepend(Expr, DIExpression::ApplyOffset, Offset);
     return ParamLoadedValue(*DestSrc->Source, Expr);
+  } else if (MI.hasOneMemOperand()) {
+    // Only describe memory which provably does not escape the function. As
+    // described in llvm.org/PR43343, escaped memory may be clobbered by the
+    // callee (or by another thread).
+    const auto &TII = MF->getSubtarget().getInstrInfo();
+    const MachineFrameInfo &MFI = MF->getFrameInfo();
+    const MachineMemOperand *MMO = MI.memoperands()[0];
+    const PseudoSourceValue *PSV = MMO->getPseudoValue();
+
+    // If the address points to "special" memory (e.g. a spill slot), it's
+    // sufficient to check that it isn't aliased by any high-level IR value.
+    if (!PSV || PSV->mayAlias(&MFI))
+      return None;
+
+    const auto &TRI = MF->getSubtarget().getRegisterInfo();
+    const MachineOperand *BaseOp;
+    if (!TII->getMemOperandWithOffset(MI, BaseOp, Offset, TRI))
+      return None;
+
+    SmallVector<uint64_t, 8> Ops;
+    DIExpression::appendOffset(Ops, Offset);
+    Ops.push_back(dwarf::DW_OP_deref_size);
+    Ops.push_back(MMO->getSize());
+    Expr = DIExpression::prependOpcodes(Expr, Ops);
+    return ParamLoadedValue(*BaseOp, Expr);
   }
 
   return None;

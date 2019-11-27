@@ -464,6 +464,9 @@ void MCObjectFileInfo::initELFMCObjectFileInfo(const Triple &T, bool Large) {
   DwarfRnglistsDWOSection =
       Ctx->getELFSection(".debug_rnglists.dwo", DebugSecType, ELF::SHF_EXCLUDE);
 
+  DwarfLoclistsDWOSection =
+      Ctx->getELFSection(".debug_loclists.dwo", DebugSecType, ELF::SHF_EXCLUDE);
+
   // DWP Sections
   DwarfCUIndexSection =
       Ctx->getELFSection(".debug_cu_index", DebugSecType, 0);
@@ -777,6 +780,10 @@ void MCObjectFileInfo::initXCOFFMCObjectFileInfo(const Triple &T) {
   DataSection = Ctx->getXCOFFSection(
       ".data", XCOFF::StorageMappingClass::XMC_RW, XCOFF::XTY_SD,
       XCOFF::C_HIDEXT, SectionKind::getData());
+
+  ReadOnlySection = Ctx->getXCOFFSection(
+      ".rodata", XCOFF::StorageMappingClass::XMC_RO, XCOFF::XTY_SD,
+      XCOFF::C_HIDEXT, SectionKind::getReadOnly());
 }
 
 void MCObjectFileInfo::InitMCObjectFileInfo(const Triple &TheTriple, bool PIC,

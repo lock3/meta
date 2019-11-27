@@ -2694,7 +2694,7 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     // Space between the type and the *
     // operator void*(), operator char*(), operator Foo*() dependant
     // on PointerAlignment style.
-    return (Style.PointerAlignment == FormatStyle::PAS_Right);
+    return (Style.PointerAlignment != FormatStyle::PAS_Left);
   const auto SpaceRequiredForArrayInitializerLSquare =
       [](const FormatToken &LSquareTok, const FormatStyle &Style) {
         return Style.SpacesInContainerLiterals ||
@@ -2724,7 +2724,9 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
       !Right.isOneOf(TT_ObjCMethodExpr, TT_LambdaLSquare,
                      TT_DesignatedInitializerLSquare,
                      TT_StructuredBindingLSquare, TT_AttributeSquare) &&
-      !Left.isOneOf(tok::numeric_constant, TT_DictLiteral))
+      !Left.isOneOf(tok::numeric_constant, TT_DictLiteral) &&
+      !(!Left.is(tok::r_square) && Style.SpaceBeforeSquareBrackets &&
+        Right.is(TT_ArraySubscriptLSquare)))
     return false;
   if (Left.is(tok::l_brace) && Right.is(tok::r_brace))
     return !Left.Children.empty(); // No spaces in "{}".
@@ -2996,14 +2998,18 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
     return true;
   }
   if (Left.is(TT_UnaryOperator)) {
-    // The alternative operators for ~ and ! are "compl" and "not".
-    // If they are used instead, we do not want to combine them with
-    // the token to the right, unless that is a left paren.
     if (!Right.is(tok::l_paren)) {
+      // The alternative operators for ~ and ! are "compl" and "not".
+      // If they are used instead, we do not want to combine them with
+      // the token to the right, unless that is a left paren.
       if (Left.is(tok::exclaim) && Left.TokenText == "not")
         return true;
       if (Left.is(tok::tilde) && Left.TokenText == "compl")
         return true;
+      // Lambda captures allow for a lone &, so "&]" needs to be properly
+      // handled.
+      if (Left.is(tok::amp) && Right.is(tok::r_square))
+        return Style.SpacesInSquareBrackets;
     }
     return (Style.SpaceAfterLogicalNot && Left.is(tok::exclaim)) ||
            Right.is(TT_BinaryOperator);
