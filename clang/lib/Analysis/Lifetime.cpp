@@ -178,8 +178,7 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
 
 /// Initialize psets for all members of *this that are Owner or Pointers.
 /// Assume that all Pointers are valid.
-void createEntryPsetsForMembers(const CXXMethodDecl *Method, PSetsMap &PMap) {
-
+static void createEntryPsetsForMembers(const CXXMethodDecl *Method, PSetsMap &PMap) {
   const CXXRecordDecl *RD = Method->getParent();
   auto CallBack = [&PMap, RD](const CXXRecordDecl *Base) {
     for (const FieldDecl *Field : Base->fields()) {

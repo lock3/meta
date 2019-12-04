@@ -131,7 +131,8 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
 
 /// Checks if all bases agree to the same TypeClassification,
 /// and if they do, returns it.
-Optional<TypeClassification> getBaseClassification(const CXXRecordDecl *R) {
+static Optional<TypeClassification>
+getBaseClassification(const CXXRecordDecl *R) {
   QualType PointeeType;
   bool HasOwnerBase = false;
   bool HasPointerBase = false;

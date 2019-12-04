@@ -29,7 +29,8 @@ namespace {
 
 static bool hasPSet(const Expr *E) {
   auto TC = classifyTypeCategory(E->getType());
-  return TC == TypeCategory::Pointer || TC == TypeCategory::Owner;
+  return E->isLValue() || TC == TypeCategory::Pointer ||
+         TC == TypeCategory::Owner;
 }
 
 static bool isPointer(const Expr *E) {
@@ -126,20 +127,6 @@ public:
     return E && IgnoreTransparentExprs(E) != E;
   }
 
-  static bool mustSetPset(const Expr *E) { return hasPSet(E) || E->isLValue(); }
-
-  PSet varRefersTo(Variable V, SourceRange Range) {
-    if (V.getType()->isReferenceType()) {
-      auto P = getPSet(V);
-      if (CheckPSetValidity(P, Range))
-        return P;
-      else
-        return PSet();
-    } else {
-      return PSet::singleton(V);
-    }
-  };
-
   void VisitStringLiteral(const StringLiteral *SL) {
     setPSet(SL, PSet::staticVar(false));
   }
@@ -167,6 +154,18 @@ public:
     if (hasPSet(E))
       setPSet(E, getPSet(E->getExpr()));
   }
+
+  PSet varRefersTo(Variable V, SourceRange Range) const {
+    if (V.getType()->isReferenceType()) {
+      auto P = getPSet(V);
+      if (CheckPSetValidity(P, Range))
+        return P;
+      else
+        return {};
+    } else {
+      return PSet::singleton(V);
+    }
+  };
 
   void VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
     if (isa<FunctionDecl>(DeclRef->getDecl()) ||
@@ -239,12 +238,12 @@ public:
   VisitSubstNonTypeTemplateParmExpr(const SubstNonTypeTemplateParmExpr *E) {
     // Non-type template parameters that are pointers must point to something
     // static (because only addresses known at compiler time are allowed)
-    if (mustSetPset(E))
+    if (hasPSet(E))
       setPSet(E, PSet::staticVar());
   }
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *E) {
-    if (!hasPSet(E) && !E->isLValue())
+    if (!hasPSet(E))
       return;
     // If the condition is trivially true/false, the corresponding branch
     // will be pruned from the CFG and we will not find a pset of it.
@@ -269,8 +268,7 @@ public:
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
-    if (I->isSyntacticForm())
-      I = I->getSemanticForm();
+    I = I->isSyntacticForm() ? I->getSemanticForm() : I;
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
@@ -278,6 +276,8 @@ public:
             I, PSet::null(NullReason::defaultConstructed(I->getSourceRange())));
         return;
       }
+      // TODO: Instead of assuming that the pset comes from the first argument
+      // use the same logic we have in call modelling.
       if (I->getNumInits() == 1) {
         setPSet(I, getPSet(I->getInit(0)));
         return;
@@ -414,14 +414,14 @@ public:
     }
     default:
       // Workaround: detecting compiler generated AST node.
-      if (hasPSet(UO) && UO->getBeginLoc() != UO->getEndLoc()) {
+      if (isPointer(UO) && UO->getBeginLoc() != UO->getEndLoc()) {
         Reporter.warnPointerArithmetic(UO->getOperatorLoc());
         AnalysisDisabled = true;
         setPSet(getPSet(UO->getSubExpr()), {}, UO->getSourceRange());
       }
     }
 
-    if (hasPSet(UO) || UO->isLValue())
+    if (hasPSet(UO))
       setPSet(UO, getPSet(UO->getSubExpr()));
   }
 
@@ -460,40 +460,42 @@ public:
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
-    if (isPointer(E)) {
-      if (E->getNumArgs() == 0) {
-        setPSet(
-            E, PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
-        return;
-      }
-      auto Ctor = E->getConstructor();
-      auto ParmTy = Ctor->getParamDecl(0)->getType();
-      auto TC = classifyTypeCategory(E->getArg(0)->getType());
-      // For ctors taking a const reference we assume that we will not take the
-      // address of the argument but copy it.
-      // TODO: Use the function call rules here.
-      if (TC == TypeCategory::Owner || Ctor->isCopyOrMoveConstructor() ||
-          (ParmTy->isReferenceType() &&
-           ParmTy->getPointeeType().isConstQualified()))
-        setPSet(E, derefPSet(getPSet(E->getArg(0))));
-      else if (TC == TypeCategory::Pointer)
-        setPSet(E, getPSet(E->getArg(0)));
-      else
-        setPSet(E, PSet::invalid(InvalidationReason::NotInitialized(
-                       E->getSourceRange())));
-    } else {
+    if (!isPointer(E)) {
       // Constructing a temporary owner/value
       setPSet(E, {});
+      return;
     }
+
+    if (E->getNumArgs() == 0) {
+      setPSet(E,
+              PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
+      return;
+    }
+  
+    auto Ctor = E->getConstructor();
+    auto ParmTy = Ctor->getParamDecl(0)->getType();
+    auto TC = classifyTypeCategory(E->getArg(0)->getType());
+    // For ctors taking a const reference we assume that we will not take the
+    // address of the argument but copy it.
+    // TODO: Use the function call rules here.
+    if (TC == TypeCategory::Owner || Ctor->isCopyOrMoveConstructor() ||
+        (ParmTy->isReferenceType() &&
+         ParmTy->getPointeeType().isConstQualified()))
+      setPSet(E, derefPSet(getPSet(E->getArg(0))));
+    else if (TC == TypeCategory::Pointer)
+      setPSet(E, getPSet(E->getArg(0)));
+    else
+      setPSet(E, PSet::invalid(
+                     InvalidationReason::NotInitialized(E->getSourceRange())));
   }
 
   void VisitCXXStdInitializerListExpr(const CXXStdInitializerListExpr *E) {
-    if (hasPSet(E) || E->isLValue())
+    if (hasPSet(E))
       setPSet(E, getPSet(E->getSubExpr()));
   }
 
   void VisitCXXDefaultArgExpr(const CXXDefaultArgExpr *E) {
-    if (hasPSet(E) || E->isLValue())
+    if (hasPSet(E))
       // FIXME: We should do setPSet(E, getPSet(E->getSubExpr())),
       // but the getSubExpr() is not visited as part of the CFG,
       // so it does not have a pset.
@@ -535,8 +537,8 @@ public:
   }
 
   template <typename PC, typename TC>
-  void forEachArgParamPair(const CallExpr *CE, const PC &ParamCallback,
-                           const TC &ThisCallback) {
+  static void forEachArgParamPair(const CallExpr *CE, const PC &ParamCallback,
+                                  const TC &ThisCallback) {
     const FunctionDecl *FD = CE->getDirectCallee();
     assert(FD);
 
@@ -590,9 +592,9 @@ public:
     auto ReturnIt = Fill.find(Variable::returnVal());
     forEachArgParamPair(
         CE,
-        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
-          if(!PVD) {
-            // PVD is a c-style vararg argument
+        [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
+          if (!PVD) {
+            // PVD is a c-style vararg argument.
             return;
           }
           PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
@@ -655,15 +657,16 @@ public:
     // Check preconditions. We might have them 2 levels deep.
     forEachArgParamPair(
         CallE,
-        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
+        [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
           PSet ArgPS = getPSet(Arg, /*AllowNonExisting=*/true);
           if (ArgPS.isUnknown())
             return;
-          if(!PVD) {
+          if (!PVD) {
             // PVD is a c-style vararg argument
             if (ArgPS.containsInvalid()) {
-              Reporter.warnNullDangling(WarnType::Dangling, Arg->getSourceRange(), ValueSource::Param, "",
-                                        !ArgPS.isInvalid());
+              Reporter.warnNullDangling(
+                  WarnType::Dangling, Arg->getSourceRange(), ValueSource::Param,
+                  "", !ArgPS.isInvalid());
               ArgPS.explainWhyInvalid(Reporter);
               setPSet(Arg, PSet()); // Suppress further warnings.
             }
@@ -721,9 +724,9 @@ public:
     // Invalidate owners taken by Pointer to non-const.
     forEachArgParamPair(
         CallE,
-        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
-          if(!PVD) {
-            // C-style vararg argument
+        [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
+          if (!PVD) {
+            // C-style vararg argument.
             return;
           }
           QualType Pointee = getPointeeType(PVD->getType());
@@ -756,9 +759,9 @@ public:
     // Bind output arguments.
     forEachArgParamPair(
         CallE,
-        [&](const ParmVarDecl* PVD, const Expr *Arg, int Pos) {
-          if(!PVD) {
-            // C-style vararg argument
+        [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
+          if (!PVD) {
+            // C-style vararg argument.
             return;
           }
           Variable V = PVD;
@@ -774,26 +777,26 @@ public:
         });
   }
 
-  bool CheckPSetValidity(const PSet &PS, SourceRange Range);
+  bool CheckPSetValidity(const PSet &PS, SourceRange Range) const;
 
   void invalidateVar(Variable V, InvalidationReason Reason) {
-    for (auto &I : PMap) {
-      const auto &Var = I.first;
-      PSet &PS = I.second;
+    for (const auto &I : PMap) {
+      const PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
+      const auto &Var = I.first;
       if (PS.containsParent(V))
         setPSet(PSet::singleton(Var), PSet::invalid(Reason), Reason.getRange());
     }
   }
 
   void invalidateOwner(Variable V, InvalidationReason Reason) {
-    for (auto &I : PMap) {
+    for (const auto &I : PMap) {
       const auto &Var = I.first;
       if (V == Var)
         continue; // Invalidating Owner' should not change the pset of Owner
-      PSet &PS = I.second;
+      const PSet &PS = I.second;
       if (PS.containsInvalid())
         continue; // Nothing to invalidate
 
@@ -838,9 +841,9 @@ public:
     }
   }
 
-  PSet getPSet(Variable P);
+  PSet getPSet(Variable P) const;
 
-  PSet getPSet(const Expr *E, bool AllowNonExisting = false) {
+  PSet getPSet(const Expr *E, bool AllowNonExisting = false) const {
     E = IgnoreTransparentExprs(E);
     if (E->isLValue()) {
       auto I = RefersTo.find(E);
@@ -867,7 +870,7 @@ public:
     }
   }
 
-  PSet getPSet(const PSet &P) {
+  PSet getPSet(const PSet &P) const {
     PSet Ret;
     if (P.containsInvalid())
       return PSet::invalid(P.invReasons());
@@ -892,12 +895,12 @@ public:
     }
   }
   void setPSet(PSet LHS, PSet RHS, SourceRange Range);
-  PSet derefPSet(const PSet &P);
+  PSet derefPSet(const PSet &P) const;
 
-  bool HandleDebugFunctions(const CallExpr *CallE);
+  bool HandleDebugFunctions(const CallExpr *CallE) const;
 
   PSet handlePointerAssign(QualType LHS, PSet RHS, SourceRange Range,
-                           bool AddReason = true) {
+                           bool AddReason = true) const {
     if (RHS.containsNull()) {
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range));
@@ -908,16 +911,6 @@ public:
     }
     return RHS;
   }
-
-public:
-  PSetsBuilder(const FunctionDecl *FD, LifetimeReporterBase &Reporter,
-               ASTContext &ASTCtxt, PSetsMap &PMap,
-               std::map<const Expr *, PSet> &PSetsOfExpr,
-               std::map<const Expr *, PSet> &RefersTo,
-               IsConvertibleTy IsConvertible)
-      : AnalyzedFD(FD), Reporter(Reporter), ASTCtxt(ASTCtxt),
-        IsConvertible(IsConvertible), PMap(PMap), PSetsOfExpr(PSetsOfExpr),
-        RefersTo(RefersTo) {}
 
   void VisitVarDecl(const VarDecl *VD) {
     const Expr *Initializer = VD->getInit();
@@ -950,17 +943,28 @@ public:
     }
   }
 
-  void VisitBlock(const CFGBlock &B,
-                  llvm::Optional<PSetsMap> &FalseBranchExitPMap);
-
   void UpdatePSetsFromCondition(const Stmt *S, bool Positive,
                                 llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                                 SourceRange Range);
+
+public:
+  PSetsBuilder(const FunctionDecl *FD, LifetimeReporterBase &Reporter,
+               ASTContext &ASTCtxt, PSetsMap &PMap,
+               std::map<const Expr *, PSet> &PSetsOfExpr,
+               std::map<const Expr *, PSet> &RefersTo,
+               IsConvertibleTy IsConvertible)
+      : AnalyzedFD(FD), Reporter(Reporter), ASTCtxt(ASTCtxt),
+        IsConvertible(IsConvertible), PMap(PMap), PSetsOfExpr(PSetsOfExpr),
+        RefersTo(RefersTo) {}
+
+
+  void VisitBlock(const CFGBlock &B,
+                  llvm::Optional<PSetsMap> &FalseBranchExitPMap);
 }; // namespace
 } // namespace
 
 // Manages lifetime information for the CFG of a FunctionDecl
-PSet PSetsBuilder::getPSet(Variable P) {
+PSet PSetsBuilder::getPSet(Variable P) const {
   // Assumption: global Pointers have a pset of {static}
   if (P.hasStaticLifetime())
     return PSet::staticVar(false);
@@ -1001,7 +1005,7 @@ PSet PSetsBuilder::getPSet(Variable P) {
 
 /// Computes the pset of dereferencing a variable with the given pset
 /// If PS contains (null), it is silently ignored.
-PSet PSetsBuilder::derefPSet(const PSet &PS) {
+PSet PSetsBuilder::derefPSet(const PSet &PS) const {
   // When a local Pointer p is dereferenced using unary * or -> to create a
   // temporary tmp, then if pset(pset(p)) is nonempty, set pset(tmp) =
   // pset(pset(p)) and Kill(pset(tmp)'). Otherwise, set pset(tmp) = {tmp}.
@@ -1055,7 +1059,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   }
 }
 
-bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) {
+bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) const {
   if (PS.containsInvalid()) {
     Reporter.warn(WarnType::DerefDangling, Range, !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
@@ -1128,7 +1132,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     return;
   }
 
-  if (E->isLValue() && hasPSet(E)) {
+  if (hasPSet(E)) {
     auto Ref = getPSet(E);
     // We refer to multiple variables (or none),
     // and we cannot know which of them is null/non-null.
@@ -1163,7 +1167,7 @@ void PSetsBuilder::UpdatePSetsFromCondition(
 
 /// Checks if the statement S is a call to a debug function and dumps the
 /// corresponding part of the state.
-bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
+bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) const {
 
   const FunctionDecl *Callee = CallE->getDirectCallee();
   if (!Callee)
@@ -1252,21 +1256,18 @@ bool PSetsBuilder::HandleDebugFunctions(const CallExpr *CallE) {
   }
 } // namespace lifetime
 
-// For expressions like (bool)(p && q), q will only have one successor,
-// the cast operation. But we still want to compute two sets for q so
-// we can propagate this information through the cast.
 static const Stmt *getRealTerminator(const CFGBlock &B) {
-  if (B.succ_size() > 2 || B.succ_size() == 0 || B.empty() ||
-      B.rbegin()->getKind() != CFGElement::Kind::Statement)
-    return nullptr;
-
-  if (B.succ_size() == 1) {
+  // For expressions like (bool)(p && q), q will only have one successor,
+  // the cast operation. But we still want to compute two sets for q so
+  // we can propagate this information through the cast.
+  if (B.succ_size() == 1 && !B.empty() &&
+      B.rbegin()->getKind() == CFGElement::Kind::Statement) {
     auto Succ = B.succ_begin()->getReachableBlock();
-    if (!Succ || !isNoopBlock(*Succ) || Succ->succ_size() != 2)
-      return nullptr;
+    if (Succ && isNoopBlock(*Succ) && Succ->succ_size() == 2)
+      return B.rbegin()->castAs<CFGStmt>().getStmt();
   }
 
-  return B.rbegin()->castAs<CFGStmt>().getStmt();
+  return B.getLastCondition();
 }
 
 static bool isThrowingBlock(const CFGBlock &B) {

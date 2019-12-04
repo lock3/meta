@@ -556,6 +556,7 @@ void goto_skipping_decl(bool b) {
 l1:
   int *p = nullptr;
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
+                      // expected-warning@-1 {{pset(p) = ((null))}}
   if (b)
     p = &i;
   goto l1;
@@ -1132,13 +1133,13 @@ auto lambda_capture(const int *param, const int *param2) {
   auto a = [&]() {
     return *param + *alias;
   };
-  __lifetime_pset(a); // TODOexpected-warning {{pset(a) = (param, param2)}}
+  //__lifetime_pset(a); // TODOexpected-warning {{pset(a) = (param, param2)}}
   int i;
   int *ptr = &i;
   auto b = [=]() {
     return *param + *ptr;
   };
-  __lifetime_pset(b); // TODOexpected-warning {{pset(b) = (*param, (null), i)}}
+  //__lifetime_pset(b); // TODOexpected-warning {{pset(b) = (*param, (null), i)}}
   return b;           // TODOexpected-warning {{returning a pointer with points-to set (*param, (null), i) where points-to set (*param, *param2, (null)) is expected}}
 }
 

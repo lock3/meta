@@ -188,7 +188,7 @@ public:
   /// representation of lifetime contracts. Both the expressions and the
   /// ContractVariables are stored in the annotation. The former is only read to
   /// build the latter.
-  void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) {
+  void fillPSetsForDecl(LifetimeContractAttr *ContractAttr) const {
     // Fill the lifetime_in/lifetime_out annotations.
     ParamDerivedLocations Locations;
     auto *IOAttr = FD->getAttr<LifetimeIOAttr>();
@@ -335,7 +335,7 @@ public:
   }
 
 private:
-  bool canAssign(QualType From, QualType To) {
+  bool canAssign(QualType From, QualType To) const {
     QualType FromPointee = getPointeeType(From);
     if (FromPointee.isNull())
       return false;
@@ -348,7 +348,7 @@ private:
                          ASTCtxt.getPointerType(ToPointee));
   }
 
-  QualType getLocationType(ContractVariable CV) {
+  QualType getLocationType(ContractVariable CV) const {
     if (CV == ContractVariable::returnVal())
       return FD->getReturnType();
     return Variable(CV, FD).getType();
