@@ -178,7 +178,8 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
 
 /// Initialize psets for all members of *this that are Owner or Pointers.
 /// Assume that all Pointers are valid.
-static void createEntryPsetsForMembers(const CXXMethodDecl *Method, PSetsMap &PMap) {
+static void createEntryPsetsForMembers(const CXXMethodDecl *Method,
+                                       PSetsMap &PMap) {
   const CXXRecordDecl *RD = Method->getParent();
   auto CallBack = [&PMap, RD](const CXXRecordDecl *Base) {
     for (const FieldDecl *Field : Base->fields()) {
@@ -290,11 +291,10 @@ bool isNoopBlock(const CFGBlock &B) {
 }
 
 static bool shouldSuppressLifetime(const FunctionDecl *Func) {
-  auto Attr = Func->getAttr<SuppressAttr>();
-  if (!Attr) {
+  const auto *Attr = Func->getAttr<SuppressAttr>();
+  if (!Attr)
     return false;
-  }
-  return llvm::any_of(Attr->diagnosticIdentifiers(), [](auto &Identifier) {
+  return llvm::any_of(Attr->diagnosticIdentifiers(), [](StringRef Identifier) {
     return Identifier == "lifetime";
   });
 }
