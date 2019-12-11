@@ -471,7 +471,7 @@ public:
               PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
       return;
     }
-  
+
     auto Ctor = E->getConstructor();
     auto ParmTy = Ctor->getParamDecl(0)->getType();
     auto TC = classifyTypeCategory(E->getArg(0)->getType());
@@ -957,7 +957,6 @@ public:
         IsConvertible(IsConvertible), PMap(PMap), PSetsOfExpr(PSetsOfExpr),
         RefersTo(RefersTo) {}
 
-
   void VisitBlock(const CFGBlock &B,
                   llvm::Optional<PSetsMap> &FalseBranchExitPMap);
 }; // namespace
@@ -1132,7 +1131,9 @@ void PSetsBuilder::UpdatePSetsFromCondition(
     return;
   }
 
-  if (hasPSet(E)) {
+  auto TC = classifyTypeCategory(E->getType());
+  if (E->isLValue() &&
+      (TC == TypeCategory::Pointer || TC == TypeCategory::Owner)) {
     auto Ref = getPSet(E);
     // We refer to multiple variables (or none),
     // and we cannot know which of them is null/non-null.

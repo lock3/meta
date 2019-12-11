@@ -556,7 +556,6 @@ void goto_skipping_decl(bool b) {
 l1:
   int *p = nullptr;
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null))}}
-                      // expected-warning@-1 {{pset(p) = ((null))}}
   if (b)
     p = &i;
   goto l1;
