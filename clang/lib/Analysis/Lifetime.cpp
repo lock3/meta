@@ -21,6 +21,13 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
+bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source) const {
+  if (!PostDom)
+    return false;
+
+  return !PostDom->dominates(Current, Source);
+}
+
 class LifetimeContext {
   /// Additional information for each CFGBlock.
   struct BlockContext {
@@ -37,6 +44,7 @@ class LifetimeContext {
 
   ASTContext &ASTCtxt;
   CFG *ControlFlowGraph;
+  CFGPostDomTree PostDom;
   const FunctionDecl *FuncDecl;
   std::vector<BlockContext> BlockContexts;
   AnalysisDeclContext AC;
@@ -101,6 +109,11 @@ public:
     ControlFlowGraph = AC.getCFG();
     // dumpCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());
+
+    if (Reporter.shouldFilterWarnings()) {
+      PostDom.buildDominatorTree(ControlFlowGraph);
+      Reporter.setPostDom(&PostDom);
+    }
   }
 
   void TraverseBlocks();
@@ -224,7 +237,7 @@ void LifetimeContext::TraverseBlocks() {
           continue;
 
         // ExitPSets are the function parameters.
-        getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, IsConvertible,
+        getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, B, IsConvertible,
                              Reporter);
         if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
           createEntryPsetsForMembers(Method, BC.ExitPMap);

@@ -65,6 +65,7 @@ class PSetsBuilder : public ConstStmtVisitor<PSetsBuilder, void> {
   PSetsMap &PMap;
   std::map<const Expr *, PSet> &PSetsOfExpr;
   std::map<const Expr *, PSet> &RefersTo;
+  const CFGBlock *CurrentBlock = nullptr;
 
   /// Certain constructs that violate the type and bounds profile of the
   /// C++ core guidelines (such as reinterpret_cast) disable lifetime analysis.
@@ -272,8 +273,8 @@ public:
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
-        setPSet(
-            I, PSet::null(NullReason::defaultConstructed(I->getSourceRange())));
+        setPSet(I, PSet::null(NullReason::defaultConstructed(
+                       I->getSourceRange(), CurrentBlock)));
         return;
       }
       // TODO: Instead of assuming that the pset comes from the first argument
@@ -290,8 +291,8 @@ public:
     // Appears for `T()` in a template specialisation, where
     // T is a simple type.
     if (E->getType()->isPointerType()) {
-      setPSet(E,
-              PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
+      setPSet(E, PSet::null(NullReason::defaultConstructed(E->getSourceRange(),
+                                                           CurrentBlock)));
     }
   }
 
@@ -313,7 +314,8 @@ public:
       setPSet(E, derefPSet(getPSet(E->getSubExpr())));
       return;
     case CK_NullToPointer:
-      setPSet(E, PSet::null(NullReason::nullptrConstant(E->getSourceRange())));
+      setPSet(E, PSet::null(NullReason::nullptrConstant(E->getSourceRange(),
+                                                        CurrentBlock)));
       return;
     case CK_LValueToRValue:
       // For L-values, the pset refers to the memory location,
@@ -439,21 +441,21 @@ public:
     // the ReturnStmt node
     for (auto &Var : RetPSet.vars()) {
       if (Var.isTemporary()) {
-        RetPSet = PSet::invalid(
-            InvalidationReason::TemporaryLeftScope(R->getSourceRange()));
+        RetPSet = PSet::invalid(InvalidationReason::TemporaryLeftScope(
+            R->getSourceRange(), CurrentBlock));
         break;
       } else if (auto *VD = Var.asVarDecl()) {
         // Allow to return a pointer to *p (then p is a parameter).
         if (VD->hasLocalStorage() && !Var.isDeref()) {
-          RetPSet = PSet::invalid(
-              InvalidationReason::PointeeLeftScope(R->getSourceRange(), VD));
+          RetPSet = PSet::invalid(InvalidationReason::PointeeLeftScope(
+              R->getSourceRange(), CurrentBlock, VD));
           break;
         }
       }
     }
     PSetsMap PostConditions;
-    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
-                         Reporter, /*Pre=*/false);
+    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, CurrentBlock,
+                         IsConvertible, Reporter, /*Pre=*/false);
     RetPSet.checkSubstitutableFor(PostConditions[Variable::returnVal()],
                                   R->getSourceRange(), Reporter,
                                   ValueSource::Return);
@@ -467,8 +469,8 @@ public:
     }
 
     if (E->getNumArgs() == 0) {
-      setPSet(E,
-              PSet::null(NullReason::defaultConstructed(E->getSourceRange())));
+      setPSet(E, PSet::null(NullReason::defaultConstructed(E->getSourceRange(),
+                                                           CurrentBlock)));
       return;
     }
 
@@ -485,8 +487,8 @@ public:
     else if (TC == TypeCategory::Pointer)
       setPSet(E, getPSet(E->getArg(0)));
     else
-      setPSet(E, PSet::invalid(
-                     InvalidationReason::NotInitialized(E->getSourceRange())));
+      setPSet(E, PSet::invalid(InvalidationReason::NotInitialized(
+                     E->getSourceRange(), CurrentBlock)));
   }
 
   void VisitCXXStdInitializerListExpr(const CXXStdInitializerListExpr *E) {
@@ -521,7 +523,8 @@ public:
       PSet PS = getPSet(DE->getArgument());
       for (const auto &Var : PS.vars()) {
         // TODO: diagnose if we are deleting the buffer of on owner?
-        invalidateVar(Var, InvalidationReason::Deleted(DE->getSourceRange()));
+        invalidateVar(Var, InvalidationReason::Deleted(DE->getSourceRange(),
+                                                       CurrentBlock));
       }
     }
   }
@@ -650,8 +653,8 @@ public:
 
     // Get preconditions.
     PSetsMap PreConditions;
-    getLifetimeContracts(PreConditions, Callee, ASTCtxt, IsConvertible,
-                         Reporter, /*Pre=*/true);
+    getLifetimeContracts(PreConditions, Callee, ASTCtxt, CurrentBlock,
+                         IsConvertible, Reporter, /*Pre=*/true);
     bindArguments(PreConditions, PreConditions, CallE);
 
     // Check preconditions. We might have them 2 levels deep.
@@ -664,10 +667,12 @@ public:
           if (!PVD) {
             // PVD is a c-style vararg argument
             if (ArgPS.containsInvalid()) {
-              Reporter.warnNullDangling(
-                  WarnType::Dangling, Arg->getSourceRange(), ValueSource::Param,
-                  "", !ArgPS.isInvalid());
-              ArgPS.explainWhyInvalid(Reporter);
+              if (!ArgPS.shouldBeFilteredBasedOnNotes(Reporter)) {
+                Reporter.warnNullDangling(
+                    WarnType::Dangling, Arg->getSourceRange(),
+                    ValueSource::Param, "", !ArgPS.isInvalid());
+                ArgPS.explainWhyInvalid(Reporter);
+              }
               setPSet(Arg, PSet()); // Suppress further warnings.
             }
             return;
@@ -695,8 +700,8 @@ public:
         });
 
     PSetsMap PostConditions;
-    getLifetimeContracts(PostConditions, Callee, ASTCtxt, IsConvertible,
-                         Reporter, /*Pre=*/false);
+    getLifetimeContracts(PostConditions, Callee, ASTCtxt, CurrentBlock,
+                         IsConvertible, Reporter, /*Pre=*/false);
     bindArguments(PostConditions, PreConditions, CallE, /*Checking=*/false);
     // PSets might become empty during the argument binding.
     // E.g.: when the pset(null) is bind to a non-null pset.
@@ -737,8 +742,8 @@ public:
             return;
           PSet ArgPS = getPSet(Arg);
           for (Variable V : ArgPS.vars())
-            invalidateOwner(
-                V, InvalidationReason::Modified(Arg->getSourceRange()));
+            invalidateOwner(V, InvalidationReason::Modified(
+                                   Arg->getSourceRange(), CurrentBlock));
         },
         [&](Variable, const RecordDecl *RD, const Expr *ObjExpr) {
           const auto *RT = RD->getTypeForDecl();
@@ -747,8 +752,8 @@ public:
             return;
           PSet ArgPs = getPSet(ObjExpr);
           for (Variable V : ArgPs.vars())
-            invalidateOwner(
-                V, InvalidationReason::Modified(ObjExpr->getSourceRange()));
+            invalidateOwner(V, InvalidationReason::Modified(
+                                   ObjExpr->getSourceRange(), CurrentBlock));
         });
 
     // Bind Pointer return value.
@@ -814,8 +819,8 @@ public:
   // MaterializeTemporaryExpr without extending decl.
   void eraseVariable(const VarDecl *VD, SourceRange Range) {
     InvalidationReason Reason =
-        VD ? InvalidationReason::PointeeLeftScope(Range, VD)
-           : InvalidationReason::TemporaryLeftScope(Range);
+        VD ? InvalidationReason::PointeeLeftScope(Range, CurrentBlock, VD)
+           : InvalidationReason::TemporaryLeftScope(Range, CurrentBlock);
     if (VD) {
       PMap.erase(VD);
       invalidateVar(VD, Reason);
@@ -903,7 +908,7 @@ public:
                            bool AddReason = true) const {
     if (RHS.containsNull()) {
       if (AddReason)
-        RHS.addNullReason(NullReason::assigned(Range));
+        RHS.addNullReason(NullReason::assigned(Range, CurrentBlock));
       if (!isNullableType(LHS)) {
         Reporter.warn(WarnType::AssignNull, Range, RHS.isSingleton());
         RHS = PSet{};
@@ -929,8 +934,8 @@ public:
         // Never treat local statics as uninitialized.
         PS = PSet::staticVar(/*TODO*/ false);
       } else {
-        PS = PSet::invalid(
-            InvalidationReason::NotInitialized(VD->getLocation()));
+        PS = PSet::invalid(InvalidationReason::NotInitialized(VD->getLocation(),
+                                                              CurrentBlock));
       }
       setPSet(PSet::singleton(VD), PS, Range);
       break;
@@ -996,7 +1001,7 @@ PSet PSetsBuilder::getPSet(Variable P) const {
     // Handle goto_forward_over_decl() in test attr-pset.cpp
     if (!isa<ParmVarDecl>(VD))
       return PSet::invalid(
-          InvalidationReason::NotInitialized(VD->getLocation()));
+          InvalidationReason::NotInitialized(VD->getLocation(), CurrentBlock));
   }
 
   return {};
@@ -1060,12 +1065,16 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
 
 bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) const {
   if (PS.containsInvalid()) {
+    if (PS.shouldBeFilteredBasedOnNotes(Reporter))
+      return false;
     Reporter.warn(WarnType::DerefDangling, Range, !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
     return false;
   }
 
   if (PS.containsNull()) {
+    if (PS.shouldBeFilteredBasedOnNotes(Reporter))
+      return false;
     Reporter.warn(WarnType::DerefNull, Range, !PS.isNull());
     PS.explainWhyNull(Reporter);
     return false;
@@ -1289,6 +1298,7 @@ static SourceRange getSourceRange(const CFGElement &E) {
 // Update PSets in Builder through all CFGElements of this block
 void PSetsBuilder::VisitBlock(const CFGBlock &B,
                               llvm::Optional<PSetsMap> &FalseBranchExitPMap) {
+  CurrentBlock = &B;
   for (const auto &E : B) {
     switch (E.getKind()) {
     case CFGElement::Statement: {
@@ -1366,7 +1376,7 @@ void PSetsBuilder::VisitBlock(const CFGBlock &B,
     return;
   if (B.succ_size() == 1 && *B.succ_begin() == &B.getParent()->getExit()) {
     PSetsMap PostConditions;
-    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, IsConvertible,
+    getLifetimeContracts(PostConditions, AnalyzedFD, ASTCtxt, &B, IsConvertible,
                          Reporter, /*Pre=*/false);
     for (auto &VarToPSet : PostConditions) {
       if (VarToPSet.first.isReturnVal())
@@ -1386,6 +1396,7 @@ bool VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible) {
+  Reporter.setCurrentBlock(&B);
   PSetsBuilder Builder(FD, Reporter, ASTCtxt, PMap, PSetsOfExpr, RefersTo,
                        IsConvertible);
   Builder.VisitBlock(B, FalseBranchExitPMap);

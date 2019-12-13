@@ -383,7 +383,7 @@ private:
 } // anonymous namespace
 
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
-                          const ASTContext &ASTCtxt,
+                          const ASTContext &ASTCtxt, const CFGBlock *Block,
                           IsConvertibleTy isConvertible,
                           LifetimeReporterBase &Reporter, bool Pre) {
   auto *ContractAttr = FD->getCanonicalDecl()->getAttr<LifetimeContractAttr>();
@@ -402,10 +402,11 @@ void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
       PSet PS(Pair.second, FD);
       if (const auto *PVD = dyn_cast_or_null<ParmVarDecl>(V.asVarDecl())) {
         if (!V.isField() && !V.isDeref() && PS.containsNull())
-          PS.addNullReason(NullReason::parameterNull(PVD->getSourceRange()));
+          PS.addNullReason(
+              NullReason::parameterNull(PVD->getSourceRange(), Block));
         if (PS.containsInvalid())
-          PS = PSet::invalid(
-              InvalidationReason::NotInitialized(PVD->getSourceRange()));
+          PS = PSet::invalid(InvalidationReason::NotInitialized(
+              PVD->getSourceRange(), Block));
       }
       PMap.emplace(V, PS);
     }

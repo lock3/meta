@@ -3359,6 +3359,8 @@ def warn_unsupported_expression : Warning<"this pre/postcondition is not support
 
 def warn_lifetime_category : Warning<"%0 could be annotate as %1">, InGroup<LifetimeCategory>, DefaultIgnore;
 
+def warn_lifetime_filtered : Warning<"TODO: this is just a placeholder, never actually emitted.">, InGroup<LifetimeFiltered>, DefaultIgnore;
+
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;
 def note_temporary_destroyed: Note<"temporary was destroyed at the end of the full expression">;

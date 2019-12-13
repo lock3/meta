@@ -10,6 +10,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIME_H
 
+#include "clang/Analysis/Analyses/Dominators.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include <string>
@@ -53,6 +54,12 @@ enum class ValueSource { Param, Return, OutputParam };
 class LifetimeReporterBase {
 public:
   virtual ~LifetimeReporterBase() = default;
+
+  virtual bool shouldFilterWarnings() const { return false; }
+  void setPostDom(CFGPostDomTree *PD) { PostDom = PD; }
+  void setCurrentBlock(const CFGBlock *B) { Current = B; }
+  bool shouldBeFiltered(const CFGBlock *Source) const;
+
   virtual void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                                 std::string ActualPset) = 0;
   virtual void warnNullDangling(WarnType T, SourceRange Range,
@@ -73,6 +80,10 @@ public:
                          std::string Pset) = 0;
   virtual void debugTypeCategory(SourceRange Range, TypeCategory Category,
                                  StringRef Pointee = "") = 0;
+
+private:
+  CFGPostDomTree *PostDom = nullptr;
+  const CFGBlock *Current = nullptr;
 };
 
 bool isNoopBlock(const CFGBlock &B);

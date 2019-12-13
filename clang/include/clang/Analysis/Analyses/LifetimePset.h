@@ -208,15 +208,17 @@ class InvalidationReason {
   NoteType Reason;
   const VarDecl *Pointee;
   SourceRange Range;
+  const CFGBlock *Block;
 
-  InvalidationReason(SourceRange Range, NoteType Reason,
+  InvalidationReason(SourceRange Range, const CFGBlock *Block, NoteType Reason,
                      const VarDecl *Pointee = nullptr)
-      : Reason(Reason), Pointee(Pointee), Range(Range) {
+      : Reason(Reason), Pointee(Pointee), Range(Range), Block(Block) {
     assert(Range.isValid());
   }
 
 public:
   SourceRange getRange() const { return Range; }
+  const CFGBlock *getBlock() const { return Block; }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
     if (Reason == NoteType::PointeeLeftScope) {
@@ -227,67 +229,75 @@ public:
     Reporter.note(Reason, Range);
   }
 
-  static InvalidationReason NotInitialized(SourceRange Range) {
-    return {Range, NoteType::NeverInit};
+  static InvalidationReason NotInitialized(SourceRange Range,
+                                           const CFGBlock *Block) {
+    return {Range, Block, NoteType::NeverInit};
   }
 
   static InvalidationReason PointeeLeftScope(SourceRange Range,
+                                             const CFGBlock *Block,
                                              const VarDecl *Pointee) {
     assert(Pointee);
-    return {Range, NoteType::PointeeLeftScope, Pointee};
+    return {Range, Block, NoteType::PointeeLeftScope, Pointee};
   }
 
-  static InvalidationReason TemporaryLeftScope(SourceRange Range) {
-    return {Range, NoteType::TempDestroyed};
+  static InvalidationReason TemporaryLeftScope(SourceRange Range,
+                                               const CFGBlock *Block) {
+    return {Range, Block, NoteType::TempDestroyed};
   }
 
-  static InvalidationReason Dereferenced(SourceRange Range) {
-    return {Range, NoteType::Dereferenced};
+  static InvalidationReason Dereferenced(SourceRange Range,
+                                         const CFGBlock *Block) {
+    return {Range, Block, NoteType::Dereferenced};
   }
 
-  static InvalidationReason ForbiddenCast(SourceRange Range) {
-    return {Range, NoteType::ForbiddenCast};
+  static InvalidationReason ForbiddenCast(SourceRange Range,
+                                          const CFGBlock *Block) {
+    return {Range, Block, NoteType::ForbiddenCast};
   }
 
-  static InvalidationReason Modified(SourceRange Range) {
-    return {Range, NoteType::Modified};
+  static InvalidationReason Modified(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Modified};
   }
 
-  static InvalidationReason Deleted(SourceRange Range) {
-    return {Range, NoteType::Deleted};
+  static InvalidationReason Deleted(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Deleted};
   }
 };
 
 /// The reason how null entered a pset.
 class NullReason {
   SourceRange Range;
-
-public:
+  const CFGBlock *Block;
   NoteType Reason;
 
-  NullReason(SourceRange Range, NoteType Reason)
-      : Range(Range), Reason(Reason) {
+public:
+  const CFGBlock *getBlock() const { return Block; }
+
+  NullReason(SourceRange Range, const CFGBlock *Block, NoteType Reason)
+      : Range(Range), Block(Block), Reason(Reason) {
     assert(Range.isValid());
   }
 
-  static NullReason assigned(SourceRange Range) {
-    return {Range, NoteType::Assigned};
+  static NullReason assigned(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Assigned};
   }
 
-  static NullReason parameterNull(SourceRange Range) {
-    return {Range, NoteType::ParamNull};
+  static NullReason parameterNull(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::ParamNull};
   }
 
-  static NullReason defaultConstructed(SourceRange Range) {
-    return {Range, NoteType::NullDefaultConstructed};
+  static NullReason defaultConstructed(SourceRange Range,
+                                       const CFGBlock *Block) {
+    return {Range, Block, NoteType::NullDefaultConstructed};
   }
 
-  static NullReason comparedToNull(SourceRange Range) {
-    return {Range, NoteType::ComparedToNull};
+  static NullReason comparedToNull(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::ComparedToNull};
   }
 
-  static NullReason nullptrConstant(SourceRange Range) {
-    return {Range, NoteType::NullConstant};
+  static NullReason nullptrConstant(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::NullConstant};
   }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
@@ -330,6 +340,17 @@ public:
   void explainWhyNull(LifetimeReporterBase &Reporter) const {
     for (auto &R : NullReasons)
       R.emitNote(Reporter);
+  }
+
+  bool shouldBeFilteredBasedOnNotes(LifetimeReporterBase &Reporter) const {
+    if (!Reporter.shouldFilterWarnings())
+      return false;
+    bool Result = true; 
+    for (auto &R : InvReasons)
+      Result &= Reporter.shouldBeFiltered(R.getBlock());
+    for (auto &R : NullReasons)
+      Result &= Reporter.shouldBeFiltered(R.getBlock());
+    return Result;
   }
 
   bool containsInvalid() const { return ContainsInvalid; }

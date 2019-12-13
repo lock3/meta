@@ -1989,6 +1989,7 @@ const int Notes[] = {diag::note_never_initialized,
 
 class Reporter : public LifetimeReporterBase {
   Sema &S;
+  bool FilterWarnings;
   std::set<SourceLocation> WarningLocs;
   bool IgnoreCurrentWarning = false;
 
@@ -1999,7 +2000,10 @@ class Reporter : public LifetimeReporterBase {
   }
 
 public:
-  Reporter(Sema &S) : S(S) {}
+  Reporter(Sema &S, bool FilterWarnings)
+      : S(S), FilterWarnings(FilterWarnings) {}
+
+  bool shouldFilterWarnings() const final { return FilterWarnings; }
 
   void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                         std::string ActualPset) final {
@@ -2078,6 +2082,7 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
   enableThreadSafetyAnalysis = 0;
   enableConsumedAnalysis = 0;
   enableLifetimeAnalysis = 0;
+  filterLifetimeWarnings = 0;
 }
 
 static unsigned isEnabled(DiagnosticsEngine &D, unsigned diag) {
@@ -2112,6 +2117,7 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
     isEnabled(D, warn_use_in_invalid_state);
 
   DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_dangling);
+  DefaultPolicy.filterLifetimeWarnings = isEnabled(D, warn_lifetime_filtered);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
@@ -2297,7 +2303,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       return !ICS.isFailure();
     };
 
-    lifetime::Reporter Reporter{S};
+    lifetime::Reporter Reporter{S, (bool)P.filterLifetimeWarnings};
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
       lifetime::runAnalysis(FD, S.Context, Reporter, isConvertible);
   }

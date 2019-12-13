@@ -33,7 +33,7 @@ bool VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
 
 /// Get the initial PSets for function parameters.
 void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
-                          const ASTContext &ASTCtxt,
+                          const ASTContext &ASTCtxt, const CFGBlock *Block,
                           IsConvertibleTy isConvertible,
                           LifetimeReporterBase &Reporter, bool Pre = true);
 } // namespace lifetime
