@@ -25,6 +25,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -542,6 +543,10 @@ static bool isLegalMaskCompare(SDNode *N, const X86Subtarget *Subtarget) {
     // this happens we will use 512-bit operations and the mask will not be
     // zero extended.
     EVT OpVT = N->getOperand(0).getValueType();
+    // The first operand of X86ISD::CMPM is chain, so we need to get the second
+    // operand.
+    if (Opcode == X86ISD::CMPM)
+      OpVT = N->getOperand(1).getValueType();
     if (OpVT.is256BitVector() || OpVT.is128BitVector())
       return Subtarget->hasVLX();
 
@@ -2224,12 +2229,11 @@ bool X86DAGToDAGISel::selectVectorAddr(SDNode *Parent, SDValue N, SDValue &Base,
   AM.Scale = cast<ConstantSDNode>(Mgs->getScale())->getZExtValue();
 
   unsigned AddrSpace = cast<MemSDNode>(Parent)->getPointerInfo().getAddrSpace();
-  // AddrSpace 256 -> GS, 257 -> FS, 258 -> SS.
-  if (AddrSpace == 256)
+  if (AddrSpace == X86AS::GS)
     AM.Segment = CurDAG->getRegister(X86::GS, MVT::i16);
-  if (AddrSpace == 257)
+  if (AddrSpace == X86AS::FS)
     AM.Segment = CurDAG->getRegister(X86::FS, MVT::i16);
-  if (AddrSpace == 258)
+  if (AddrSpace == X86AS::SS)
     AM.Segment = CurDAG->getRegister(X86::SS, MVT::i16);
 
   SDLoc DL(N);
@@ -5219,16 +5223,6 @@ void X86DAGToDAGISel::Select(SDNode *Node) {
     ReplaceNode(Node, Res.getNode());
     SelectCode(Res.getNode());
     return;
-  }
-  case ISD::STRICT_FADD:
-  case ISD::STRICT_FSUB:
-  case ISD::STRICT_FP_ROUND: {
-    // X87 instructions has enabled these strict fp operation.
-    bool UsingFp80 = Node->getSimpleValueType(0) == MVT::f80 ||
-                     Node->getOperand(1).getSimpleValueType() == MVT::f80;
-    if (UsingFp80 || (!Subtarget->hasSSE1() && Subtarget->hasX87()))
-      break;
-    LLVM_FALLTHROUGH;
   }
   case ISD::STRICT_FP_TO_SINT:
   case ISD::STRICT_FP_TO_UINT:

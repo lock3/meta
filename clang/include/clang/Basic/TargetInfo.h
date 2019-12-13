@@ -938,12 +938,6 @@ public:
     return true;
   }
 
-  /// Check if the register is reserved globally
-  ///
-  /// This function returns true if the register passed in RegName is reserved
-  /// using the corresponding -ffixed-RegName option.
-  virtual bool isRegisterReservedGlobally(StringRef) const { return true; }
-
   // validateOutputConstraint, validateInputConstraint - Checks that
   // a constraint is valid and provides information about it.
   // FIXME: These should return a real error instead of just true/false.
@@ -1394,6 +1388,9 @@ public:
   }
 
   virtual void setAuxTarget(const TargetInfo *Aux) {}
+
+  /// Whether target allows debuginfo types for decl only variables.
+  virtual bool allowDebugInfoForExternalVar() const { return false; }
 
 protected:
   /// Copy type and layout related info.

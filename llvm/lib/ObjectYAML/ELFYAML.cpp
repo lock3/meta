@@ -54,6 +54,7 @@ void ScalarEnumerationTraits<ELFYAML::ELF_PT>::enumeration(
   ECase(PT_GNU_EH_FRAME);
   ECase(PT_GNU_STACK);
   ECase(PT_GNU_RELRO);
+  ECase(PT_GNU_PROPERTY);
 #undef ECase
   IO.enumFallback<Hex32>(Value);
 }
@@ -1016,10 +1017,12 @@ static void commonSectionMapping(IO &IO, ELFYAML::Section &Section) {
   // are producing YAML, because yaml2obj sets appropriate values for them
   // automatically when they are not explicitly defined.
   assert(!IO.outputting() ||
-         (!Section.ShOffset.hasValue() && !Section.ShSize.hasValue()));
+         (!Section.ShOffset.hasValue() && !Section.ShSize.hasValue() &&
+          !Section.ShName.hasValue() && !Section.ShFlags.hasValue()));
   IO.mapOptional("ShName", Section.ShName);
   IO.mapOptional("ShOffset", Section.ShOffset);
   IO.mapOptional("ShSize", Section.ShSize);
+  IO.mapOptional("ShFlags", Section.ShFlags);
 }
 
 static void sectionMapping(IO &IO, ELFYAML::DynamicSection &Section) {
@@ -1086,7 +1089,8 @@ static void sectionMapping(IO &IO, ELFYAML::SymverSection &Section) {
 static void sectionMapping(IO &IO, ELFYAML::VerneedSection &Section) {
   commonSectionMapping(IO, Section);
   IO.mapRequired("Info", Section.Info);
-  IO.mapRequired("Dependencies", Section.VerneedV);
+  IO.mapOptional("Dependencies", Section.VerneedV);
+  IO.mapOptional("Content", Section.Content);
 }
 
 static void sectionMapping(IO &IO, ELFYAML::RelocationSection &Section) {
@@ -1281,11 +1285,12 @@ void MappingTraits<std::unique_ptr<ELFYAML::Chunk>>::mapping(
 
 StringRef MappingTraits<std::unique_ptr<ELFYAML::Chunk>>::validate(
     IO &io, std::unique_ptr<ELFYAML::Chunk> &C) {
-  if (const auto *RawSection =
-          dyn_cast<ELFYAML::RawContentSection>(C.get())) {
+  if (const auto *RawSection = dyn_cast<ELFYAML::RawContentSection>(C.get())) {
     if (RawSection->Size && RawSection->Content &&
         (uint64_t)(*RawSection->Size) < RawSection->Content->binary_size())
       return "Section size must be greater than or equal to the content size";
+    if (RawSection->Flags && RawSection->ShFlags)
+      return "ShFlags and Flags cannot be used together";
     return {};
   }
 
@@ -1423,6 +1428,13 @@ StringRef MappingTraits<std::unique_ptr<ELFYAML::Chunk>>::validate(
   if (const auto *VD = dyn_cast<ELFYAML::VerdefSection>(C.get())) {
     if (VD->Entries && VD->Content)
       return "SHT_GNU_verdef: \"Entries\" and \"Content\" can't be used "
+             "together";
+    return {};
+  }
+
+  if (const auto *VD = dyn_cast<ELFYAML::VerneedSection>(C.get())) {
+    if (VD->VerneedV && VD->Content)
+      return "SHT_GNU_verneed: \"Dependencies\" and \"Content\" can't be used "
              "together";
     return {};
   }

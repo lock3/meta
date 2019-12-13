@@ -10,6 +10,7 @@
 #define liblldb_IOHandler_h_
 
 #include "lldb/Core/ValueObjectList.h"
+#include "lldb/Host/Config.h"
 #include "lldb/Utility/CompletionRequest.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/Flags.h"
@@ -406,7 +407,7 @@ public:
   void PrintAsync(Stream *stream, const char *s, size_t len) override;
 
 private:
-#ifndef LLDB_DISABLE_LIBEDIT
+#if LLDB_ENABLE_LIBEDIT
   static bool IsInputCompleteCallback(Editline *editline, StringList &lines,
                                       void *baton);
 
@@ -417,7 +418,7 @@ private:
 #endif
 
 protected:
-#ifndef LLDB_DISABLE_LIBEDIT
+#if LLDB_ENABLE_LIBEDIT
   std::unique_ptr<Editline> m_editline_up;
 #endif
   IOHandlerDelegate &m_delegate;
@@ -454,43 +455,6 @@ public:
 protected:
   const bool m_default_response;
   bool m_user_response;
-};
-
-class IOHandlerCursesGUI : public IOHandler {
-public:
-  IOHandlerCursesGUI(Debugger &debugger);
-
-  ~IOHandlerCursesGUI() override;
-
-  void Run() override;
-
-  void Cancel() override;
-
-  bool Interrupt() override;
-
-  void GotEOF() override;
-
-  void Activate() override;
-
-  void Deactivate() override;
-
-protected:
-  curses::ApplicationAP m_app_ap;
-};
-
-class IOHandlerCursesValueObjectList : public IOHandler {
-public:
-  IOHandlerCursesValueObjectList(Debugger &debugger,
-                                 ValueObjectList &valobj_list);
-
-  ~IOHandlerCursesValueObjectList() override;
-
-  void Run() override;
-
-  void GotEOF() override;
-
-protected:
-  ValueObjectList m_valobj_list;
 };
 
 class IOHandlerStack {

@@ -66,6 +66,10 @@ def xor: IRBuilder<"CreateXor">;
 def sub: IRBuilder<"CreateSub">;
 def shl: IRBuilder<"CreateShl">;
 def lshr: IRBuilder<"CreateLShr">;
+def immshr: CGHelperFn<"MVEImmediateShr"> {
+  let special_params = [IRBuilderIntParam<1, "unsigned">,
+                        IRBuilderIntParam<2, "bool">];
+}
 def fadd: IRBuilder<"CreateFAdd">;
 def fmul: IRBuilder<"CreateFMul">;
 def fsub: IRBuilder<"CreateFSub">;
@@ -107,6 +111,7 @@ def fcmp_ge: IRBuilder<"CreateFCmpOGE">;
 def fcmp_lt: IRBuilder<"CreateFCmpOLT">;
 def fcmp_le: IRBuilder<"CreateFCmpOLE">;
 def splat: CGHelperFn<"ARMMVEVectorSplat">;
+def select: IRBuilder<"CreateSelect">;
 
 // A node that makes an Address out of a pointer-typed Value, by
 // providing an alignment as the second argument.
@@ -185,6 +190,7 @@ def CTO_Pred: ComplexTypeOp;
 class CTO_Tuple<int n_>: ComplexTypeOp { int n = n_; }
 class CTO_Pointer<bit const_>: ComplexTypeOp { bit const = const_; }
 def CTO_CopyKind: ComplexTypeOp;
+def CTO_DoubleSize: ComplexTypeOp;
 
 // -----------------------------------------------------------------------------
 // Instances of Type intended to be used directly in the specification of an
@@ -259,6 +265,11 @@ class CPtr<Type t>: ComplexType<(CTO_Pointer<1> t)>;
 // matches that of s.
 class CopyKind<Type s, Type k>: ComplexType<(CTO_CopyKind s, k)>;
 
+// DoubleSize<k> expects k to be a scalar type. It returns a scalar type
+// whose kind (signed, unsigned or float) matches that of k, and whose size
+// is double that of k, if possible.
+class DoubleSize<Type k>: ComplexType<(CTO_DoubleSize k)>;
+
 // Unsigned<t> expects t to be a scalar type, and expands to the unsigned
 // integer scalar of the same size. So it returns u16 if you give it s16 or
 // f16 (or u16 itself).
@@ -268,6 +279,15 @@ class Unsigned<Type t>: ComplexType<(CTO_CopyKind t, u32)>;
 // Scalar and Vector.
 def UScalar: Unsigned<Scalar>;
 def UVector: VecOf<UScalar>;
+
+// DblVector expands to a vector of scalars of size twice the size of
+// Scalar.
+def DblVector: VecOf<DoubleSize<Scalar>>;
+
+// Expands to the 32-bit integer of the same signedness as Scalar.
+def Scalar32: CopyKind<u32, Scalar>;
+// Expands to the 64-bit integer of the same signedness as Scalar.
+def Scalar64: CopyKind<u64, Scalar>;
 
 // -----------------------------------------------------------------------------
 // Internal definitions for specifying immediate arguments for an intrinsic.
@@ -307,8 +327,8 @@ def imm_simd_vmvn : Immediate<u32, IB_UEltValue> {
 //
 // imm_0toNm1 is the same but with the range offset by 1, i.e. 0 to N-1
 // inclusive.
-def imm_1toN : Immediate<u32, IB_EltBit<1>>;
-def imm_0toNm1 : Immediate<u32, IB_EltBit<0>>;
+def imm_1toN : Immediate<sint, IB_EltBit<1>>;
+def imm_0toNm1 : Immediate<sint, IB_EltBit<0>>;
 
 // imm_lane has to be the index of a vector lane in the main vector type, i.e
 // it can range from 0 to (128 / size of scalar)-1 inclusive. (e.g. vgetq_lane)
@@ -400,6 +420,10 @@ class Intrinsic<Type ret_, dag args_, dag codegen_> {
 
   // True if the builtin has to avoid evaluating its arguments.
   bit nonEvaluating = 0;
+
+  // Use to override the suffix letter to make e.g.vfooq_p16
+  // with an override suffix letter of "p".
+  string overrideKindLetter = "";
 }
 
 // Sometimes you have to use two separate Intrinsic declarations to
@@ -411,6 +435,33 @@ class Intrinsic<Type ret_, dag args_, dag codegen_> {
 
 class NameOverride<string basename_> {
   string basename = basename_;
+}
+
+// A wrapper to define both _m and _x versions of a predicated
+// intrinsic.
+multiclass IntrinsicMX<Type rettype, dag arguments, dag cg,
+                       int wantXVariant = 1,
+                       string nameSuffix = "",
+                       PolymorphicNameType pnt_x = PNT_Type> {
+  // The _m variant takes an initial parameter called $inactive, which
+  // provides the input value of the output register, i.e. all the
+  // inactive lanes in the predicated operation take their values from
+  // this.
+  def "_m" # nameSuffix:
+     Intrinsic<rettype, !con((args rettype:$inactive), arguments), cg>;
+
+  foreach unusedVar = !if(!eq(wantXVariant, 1), [1], []<int>) in {
+    // The _x variant leaves off that parameter, and simply uses an
+    // undef value of the same type.
+    def "_x" # nameSuffix:
+       Intrinsic<rettype, arguments, (seq (undef rettype):$inactive, cg)> {
+      // Allow overriding of the polymorphic name type, because
+      // sometimes the _m and _x variants polymorph differently
+      // (typically because the type of the inactive parameter can be
+      // used as a disambiguator if it's present).
+      let pnt = pnt_x;
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -428,9 +479,20 @@ def T {
   list<Type> Int16 = [s16, u16];
   list<Type> Int32 = [s32, u32];
   list<Type> Int64 = [s64, u64];
+  list<Type> Poly = [u8, u16]; // Actually p8 and p16
   list<Type> All8 = Int8;
   list<Type> All16 = Int16 # [f16];
   list<Type> All32 = Int32 # [f32];
   list<Type> All64 = Int64;
   list<Type> All = Usual # All64;
+}
+
+// -----------------------------------------------------------------------------
+// Container record for DAG constant values. These constants are used because
+// bit/int class/multiclass parameters cannot be used to produce a dag node:
+// for example (u32 x) where x is 0 is transformed into (u32 { 0 }) by the
+// Tablegen parser.
+def V {
+  dag False = (u32 0);
+  dag True  = (u32 1);
 }

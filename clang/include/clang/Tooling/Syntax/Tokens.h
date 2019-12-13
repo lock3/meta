@@ -175,12 +175,17 @@ public:
   /// All tokens produced by the preprocessor after all macro replacements,
   /// directives, etc. Source locations found in the clang AST will always
   /// point to one of these tokens.
+  /// Tokens are in TU order (per SourceManager::isBeforeInTranslationUnit()).
   /// FIXME: figure out how to handle token splitting, e.g. '>>' can be split
   ///        into two '>' tokens by the parser. However, TokenBuffer currently
   ///        keeps it as a single '>>' token.
   llvm::ArrayRef<syntax::Token> expandedTokens() const {
     return ExpandedTokens;
   }
+
+  /// Returns the subrange of expandedTokens() corresponding to the closed
+  /// token range R.
+  llvm::ArrayRef<syntax::Token> expandedTokens(SourceRange R) const;
 
   /// Find the subrange of spelled tokens that produced the corresponding \p
   /// Expanded tokens.
@@ -303,6 +308,17 @@ private:
   // implicit assignment operator.
   const SourceManager *SourceMgr;
 };
+
+/// The spelled tokens that overlap or touch a spelling location Loc.
+/// This always returns 0-2 tokens.
+llvm::ArrayRef<syntax::Token>
+spelledTokensTouching(SourceLocation Loc, const syntax::TokenBuffer &Tokens);
+
+/// The identifier token that overlaps or touches a spelling location Loc.
+/// If there is none, returns nullptr.
+const syntax::Token *
+spelledIdentifierTouching(SourceLocation Loc,
+                          const syntax::TokenBuffer &Tokens);
 
 /// Lex the text buffer, corresponding to \p FID, in raw mode and record the
 /// resulting spelled tokens. Does minimal post-processing on raw identifiers,

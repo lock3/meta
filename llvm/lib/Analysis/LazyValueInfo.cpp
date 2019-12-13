@@ -136,12 +136,9 @@ namespace {
   /// A callback value handle updates the cache when values are erased.
   class LazyValueInfoCache;
   struct LVIValueHandle final : public CallbackVH {
-    // Needs to access getValPtr(), which is protected.
-    friend struct DenseMapInfo<LVIValueHandle>;
-
     LazyValueInfoCache *Parent;
 
-    LVIValueHandle(Value *V, LazyValueInfoCache *P)
+    LVIValueHandle(Value *V, LazyValueInfoCache *P = nullptr)
       : CallbackVH(V), Parent(P) { }
 
     void deleted() override;
@@ -155,89 +152,83 @@ namespace {
   /// This is the cache kept by LazyValueInfo which
   /// maintains information about queries across the clients' queries.
   class LazyValueInfoCache {
-    /// This is all of the cached block information for exactly one Value*.
-    /// The entries are sorted by the BasicBlock* of the
-    /// entries, allowing us to do a lookup with a binary search.
-    /// Over-defined lattice values are recorded in OverDefinedCache to reduce
-    /// memory overhead.
-    struct ValueCacheEntryTy {
-      ValueCacheEntryTy(Value *V, LazyValueInfoCache *P) : Handle(V, P) {}
-      LVIValueHandle Handle;
-      SmallDenseMap<PoisoningVH<BasicBlock>, ValueLatticeElement, 4> BlockVals;
+    /// This is all of the cached information for one basic block. It contains
+    /// the per-value lattice elements, as well as a separate set for
+    /// overdefined values to reduce memory usage. Additionally pointers
+    /// dereferenced in the block are cached for nullability queries.
+    struct BlockCacheEntryTy {
+      SmallDenseMap<AssertingVH<Value>, ValueLatticeElement, 4> LatticeElements;
+      SmallDenseSet<AssertingVH<Value>, 4> OverDefined;
+      // None indicates that the dereferenced pointers for this basic block
+      // block have not been computed yet.
+      Optional<DenseSet<AssertingVH<Value>>> DereferencedPointers;
     };
 
-    /// This tracks, on a per-block basis, the set of values that are
-    /// over-defined at the end of that block.
-    typedef DenseMap<PoisoningVH<BasicBlock>, SmallPtrSet<Value *, 4>>
-        OverDefinedCacheTy;
-    /// Keep track of all blocks that we have ever seen, so we
-    /// don't spend time removing unused blocks from our caches.
-    DenseSet<PoisoningVH<BasicBlock> > SeenBlocks;
-
-    /// This is all of the cached information for all values,
-    /// mapped from Value* to key information.
-    DenseMap<Value *, std::unique_ptr<ValueCacheEntryTy>> ValueCache;
-    OverDefinedCacheTy OverDefinedCache;
-
+    /// Cached information per basic block.
+    DenseMap<PoisoningVH<BasicBlock>, BlockCacheEntryTy> BlockCache;
+    /// Set of value handles used to erase values from the cache on deletion.
+    DenseSet<LVIValueHandle, DenseMapInfo<Value *>> ValueHandles;
 
   public:
     void insertResult(Value *Val, BasicBlock *BB,
                       const ValueLatticeElement &Result) {
-      SeenBlocks.insert(BB);
-
+      auto &CacheEntry = BlockCache.try_emplace(BB).first->second;
       // Insert over-defined values into their own cache to reduce memory
       // overhead.
       if (Result.isOverdefined())
-        OverDefinedCache[BB].insert(Val);
-      else {
-        auto It = ValueCache.find_as(Val);
-        if (It == ValueCache.end()) {
-          ValueCache[Val] = std::make_unique<ValueCacheEntryTy>(Val, this);
-          It = ValueCache.find_as(Val);
-          assert(It != ValueCache.end() && "Val was just added to the map!");
-        }
-        It->second->BlockVals[BB] = Result;
-      }
-    }
+        CacheEntry.OverDefined.insert(Val);
+      else
+        CacheEntry.LatticeElements.insert({ Val, Result });
 
-    bool isOverdefined(Value *V, BasicBlock *BB) const {
-      auto ODI = OverDefinedCache.find(BB);
-
-      if (ODI == OverDefinedCache.end())
-        return false;
-
-      return ODI->second.count(V);
+      auto HandleIt = ValueHandles.find_as(Val);
+      if (HandleIt == ValueHandles.end())
+        ValueHandles.insert({ Val, this });
     }
 
     bool hasCachedValueInfo(Value *V, BasicBlock *BB) const {
-      if (isOverdefined(V, BB))
-        return true;
-
-      auto I = ValueCache.find_as(V);
-      if (I == ValueCache.end())
+      auto It = BlockCache.find(BB);
+      if (It == BlockCache.end())
         return false;
 
-      return I->second->BlockVals.count(BB);
+      return It->second.OverDefined.count(V) ||
+             It->second.LatticeElements.count(V);
     }
 
     ValueLatticeElement getCachedValueInfo(Value *V, BasicBlock *BB) const {
-      if (isOverdefined(V, BB))
+      auto It = BlockCache.find(BB);
+      if (It == BlockCache.end())
+        return ValueLatticeElement();
+
+      if (It->second.OverDefined.count(V))
         return ValueLatticeElement::getOverdefined();
 
-      auto I = ValueCache.find_as(V);
-      if (I == ValueCache.end())
+      auto LatticeIt = It->second.LatticeElements.find(V);
+      if (LatticeIt == It->second.LatticeElements.end())
         return ValueLatticeElement();
-      auto BBI = I->second->BlockVals.find(BB);
-      if (BBI == I->second->BlockVals.end())
-        return ValueLatticeElement();
-      return BBI->second;
+
+      return LatticeIt->second;
+    }
+
+    bool isPointerDereferencedInBlock(
+        Value *V, BasicBlock *BB,
+        std::function<DenseSet<AssertingVH<Value>>(BasicBlock *)> InitFn) {
+      auto &CacheEntry = BlockCache.try_emplace(BB).first->second;
+      if (!CacheEntry.DereferencedPointers) {
+        CacheEntry.DereferencedPointers = InitFn(BB);
+        for (Value *V : *CacheEntry.DereferencedPointers) {
+          auto HandleIt = ValueHandles.find_as(V);
+          if (HandleIt == ValueHandles.end())
+            ValueHandles.insert({ V, this });
+        }
+      }
+
+      return CacheEntry.DereferencedPointers->count(V);
     }
 
     /// clear - Empty the cache.
     void clear() {
-      SeenBlocks.clear();
-      ValueCache.clear();
-      OverDefinedCache.clear();
+      BlockCache.clear();
+      ValueHandles.clear();
     }
 
     /// Inform the cache that a given value has been deleted.
@@ -251,23 +242,20 @@ namespace {
     /// OldSucc might have (unless also overdefined in NewSucc).  This just
     /// flushes elements from the cache and does not add any.
     void threadEdgeImpl(BasicBlock *OldSucc,BasicBlock *NewSucc);
-
-    friend struct LVIValueHandle;
   };
 }
 
 void LazyValueInfoCache::eraseValue(Value *V) {
-  for (auto I = OverDefinedCache.begin(), E = OverDefinedCache.end(); I != E;) {
-    // Copy and increment the iterator immediately so we can erase behind
-    // ourselves.
-    auto Iter = I++;
-    SmallPtrSetImpl<Value *> &ValueSet = Iter->second;
-    ValueSet.erase(V);
-    if (ValueSet.empty())
-      OverDefinedCache.erase(Iter);
+  for (auto &Pair : BlockCache) {
+    Pair.second.LatticeElements.erase(V);
+    Pair.second.OverDefined.erase(V);
+    if (Pair.second.DereferencedPointers)
+      Pair.second.DereferencedPointers->erase(V);
   }
 
-  ValueCache.erase(V);
+  auto HandleIt = ValueHandles.find_as(V);
+  if (HandleIt != ValueHandles.end())
+    ValueHandles.erase(HandleIt);
 }
 
 void LVIValueHandle::deleted() {
@@ -277,18 +265,7 @@ void LVIValueHandle::deleted() {
 }
 
 void LazyValueInfoCache::eraseBlock(BasicBlock *BB) {
-  // Shortcut if we have never seen this block.
-  DenseSet<PoisoningVH<BasicBlock> >::iterator I = SeenBlocks.find(BB);
-  if (I == SeenBlocks.end())
-    return;
-  SeenBlocks.erase(I);
-
-  auto ODI = OverDefinedCache.find(BB);
-  if (ODI != OverDefinedCache.end())
-    OverDefinedCache.erase(ODI);
-
-  for (auto &I : ValueCache)
-    I.second->BlockVals.erase(BB);
+  BlockCache.erase(BB);
 }
 
 void LazyValueInfoCache::threadEdgeImpl(BasicBlock *OldSucc,
@@ -306,10 +283,11 @@ void LazyValueInfoCache::threadEdgeImpl(BasicBlock *OldSucc,
   std::vector<BasicBlock*> worklist;
   worklist.push_back(OldSucc);
 
-  auto I = OverDefinedCache.find(OldSucc);
-  if (I == OverDefinedCache.end())
+  auto I = BlockCache.find(OldSucc);
+  if (I == BlockCache.end() || I->second.OverDefined.empty())
     return; // Nothing to process here.
-  SmallVector<Value *, 4> ValsToClear(I->second.begin(), I->second.end());
+  SmallVector<Value *, 4> ValsToClear(I->second.OverDefined.begin(),
+                                      I->second.OverDefined.end());
 
   // Use a worklist to perform a depth-first search of OldSucc's successors.
   // NOTE: We do not need a visited list since any blocks we have already
@@ -323,10 +301,10 @@ void LazyValueInfoCache::threadEdgeImpl(BasicBlock *OldSucc,
     if (ToUpdate == NewSucc) continue;
 
     // If a value was marked overdefined in OldSucc, and is here too...
-    auto OI = OverDefinedCache.find(ToUpdate);
-    if (OI == OverDefinedCache.end())
+    auto OI = BlockCache.find(ToUpdate);
+    if (OI == BlockCache.end() || OI->second.OverDefined.empty())
       continue;
-    SmallPtrSetImpl<Value *> &ValueSet = OI->second;
+    auto &ValueSet = OI->second.OverDefined;
 
     bool changed = false;
     for (Value *V : ValsToClear) {
@@ -336,11 +314,6 @@ void LazyValueInfoCache::threadEdgeImpl(BasicBlock *OldSucc,
       // If we removed anything, then we potentially need to update
       // blocks successors too.
       changed = true;
-
-      if (ValueSet.empty()) {
-        OverDefinedCache.erase(OI);
-        break;
-      }
     }
 
     if (!changed) continue;
@@ -442,6 +415,7 @@ namespace {
                                 BasicBlock *BB);
   bool solveBlockValueExtractValue(ValueLatticeElement &BBLV,
                                    ExtractValueInst *EVI, BasicBlock *BB);
+  bool isNonNullDueToDereferenceInBlock(Value *Val, BasicBlock *BB);
   void intersectAssumeOrGuardBlockValueConstantRange(Value *Val,
                                                      ValueLatticeElement &BBLV,
                                                      Instruction *BBI);
@@ -623,6 +597,20 @@ bool LazyValueInfoImpl::solveBlockValue(Value *Val, BasicBlock *BB) {
 
 bool LazyValueInfoImpl::solveBlockValueImpl(ValueLatticeElement &Res,
                                             Value *Val, BasicBlock *BB) {
+  // If this value is a nonnull pointer, record it's range and bailout.  Note
+  // that for all other pointer typed values, we terminate the search at the
+  // definition.  We could easily extend this to look through geps, bitcasts,
+  // and the like to prove non-nullness, but it's not clear that's worth it
+  // compile time wise.  The context-insensitive value walk done inside
+  // isKnownNonZero gets most of the profitable cases at much less expense.
+  // This does mean that we have a sensitivity to where the defining
+  // instruction is placed, even if it could legally be hoisted much higher.
+  // That is unfortunate.
+  PointerType *PT = dyn_cast<PointerType>(Val->getType());
+  if (PT && isKnownNonZero(Val, DL)) {
+    Res = ValueLatticeElement::getNot(ConstantPointerNull::get(PT));
+    return true;
+  }
 
   Instruction *BBI = dyn_cast<Instruction>(Val);
   if (!BBI || BBI->getParent() != BB)
@@ -634,20 +622,6 @@ bool LazyValueInfoImpl::solveBlockValueImpl(ValueLatticeElement &Res,
   if (auto *SI = dyn_cast<SelectInst>(BBI))
     return solveBlockValueSelect(Res, SI, BB);
 
-  // If this value is a nonnull pointer, record it's range and bailout.  Note
-  // that for all other pointer typed values, we terminate the search at the
-  // definition.  We could easily extend this to look through geps, bitcasts,
-  // and the like to prove non-nullness, but it's not clear that's worth it
-  // compile time wise.  The context-insensitive value walk done inside
-  // isKnownNonZero gets most of the profitable cases at much less expense.
-  // This does mean that we have a sensitivity to where the defining
-  // instruction is placed, even if it could legally be hoisted much higher.
-  // That is unfortunate.
-  PointerType *PT = dyn_cast<PointerType>(BBI->getType());
-  if (PT && isKnownNonZero(BBI, DL)) {
-    Res = ValueLatticeElement::getNot(ConstantPointerNull::get(PT));
-    return true;
-  }
   if (BBI->getType()->isIntegerTy()) {
     if (auto *CI = dyn_cast<CastInst>(BBI))
       return solveBlockValueCast(Res, CI, BB);
@@ -668,75 +642,61 @@ bool LazyValueInfoImpl::solveBlockValueImpl(ValueLatticeElement &Res,
   return true;
 }
 
-static bool InstructionDereferencesPointer(Instruction *I, Value *Ptr) {
+static void AddDereferencedPointer(
+    Value *Ptr, DenseSet<AssertingVH<Value>> &PtrSet, const DataLayout &DL) {
+  // TODO: Use NullPointerIsDefined instead.
+  if (Ptr->getType()->getPointerAddressSpace() == 0) {
+    Ptr = GetUnderlyingObject(Ptr, DL);
+    PtrSet.insert(Ptr);
+  }
+}
+
+static void AddPointersDereferencedByInstruction(
+    Instruction *I, DenseSet<AssertingVH<Value>> &PtrSet,
+    const DataLayout &DL) {
   if (LoadInst *L = dyn_cast<LoadInst>(I)) {
-    return L->getPointerAddressSpace() == 0 &&
-           GetUnderlyingObject(L->getPointerOperand(),
-                               L->getModule()->getDataLayout()) == Ptr;
-  }
-  if (StoreInst *S = dyn_cast<StoreInst>(I)) {
-    return S->getPointerAddressSpace() == 0 &&
-           GetUnderlyingObject(S->getPointerOperand(),
-                               S->getModule()->getDataLayout()) == Ptr;
-  }
-  if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(I)) {
-    if (MI->isVolatile()) return false;
+    AddDereferencedPointer(L->getPointerOperand(), PtrSet, DL);
+  } else if (StoreInst *S = dyn_cast<StoreInst>(I)) {
+    AddDereferencedPointer(S->getPointerOperand(), PtrSet, DL);
+  } else if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(I)) {
+    if (MI->isVolatile()) return;
 
     // FIXME: check whether it has a valuerange that excludes zero?
     ConstantInt *Len = dyn_cast<ConstantInt>(MI->getLength());
-    if (!Len || Len->isZero()) return false;
+    if (!Len || Len->isZero()) return;
 
-    if (MI->getDestAddressSpace() == 0)
-      if (GetUnderlyingObject(MI->getRawDest(),
-                              MI->getModule()->getDataLayout()) == Ptr)
-        return true;
+    AddDereferencedPointer(MI->getRawDest(), PtrSet, DL);
     if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(MI))
-      if (MTI->getSourceAddressSpace() == 0)
-        if (GetUnderlyingObject(MTI->getRawSource(),
-                                MTI->getModule()->getDataLayout()) == Ptr)
-          return true;
+      AddDereferencedPointer(MTI->getRawSource(), PtrSet, DL);
   }
-  return false;
 }
 
-/// Return true if the allocation associated with Val is ever dereferenced
-/// within the given basic block.  This establishes the fact Val is not null,
-/// but does not imply that the memory at Val is dereferenceable.  (Val may
-/// point off the end of the dereferenceable part of the object.)
-static bool isObjectDereferencedInBlock(Value *Val, BasicBlock *BB) {
-  assert(Val->getType()->isPointerTy());
+bool LazyValueInfoImpl::isNonNullDueToDereferenceInBlock(
+    Value *Val, BasicBlock *BB) {
+  if (NullPointerIsDefined(BB->getParent(),
+                           Val->getType()->getPointerAddressSpace()))
+    return false;
 
   const DataLayout &DL = BB->getModule()->getDataLayout();
-  Value *UnderlyingVal = GetUnderlyingObject(Val, DL);
-  // If 'GetUnderlyingObject' didn't converge, skip it. It won't converge
-  // inside InstructionDereferencesPointer either.
-  if (UnderlyingVal == GetUnderlyingObject(UnderlyingVal, DL, 1))
+  Val = GetUnderlyingObject(Val, DL);
+
+  return TheCache.isPointerDereferencedInBlock(Val, BB, [DL](BasicBlock *BB) {
+    DenseSet<AssertingVH<Value>> DereferencedPointers;
     for (Instruction &I : *BB)
-      if (InstructionDereferencesPointer(&I, UnderlyingVal))
-        return true;
-  return false;
+      AddPointersDereferencedByInstruction(&I, DereferencedPointers, DL);
+    return DereferencedPointers;
+  });
 }
 
 bool LazyValueInfoImpl::solveBlockValueNonLocal(ValueLatticeElement &BBLV,
-                                                 Value *Val, BasicBlock *BB) {
+                                                Value *Val, BasicBlock *BB) {
   ValueLatticeElement Result;  // Start Undefined.
 
   // If this is the entry block, we must be asking about an argument.  The
   // value is overdefined.
   if (BB == &BB->getParent()->getEntryBlock()) {
     assert(isa<Argument>(Val) && "Unknown live-in to the entry block");
-    // Before giving up, see if we can prove the pointer non-null local to
-    // this particular block.
-    PointerType *PTy = dyn_cast<PointerType>(Val->getType());
-    if (PTy &&
-        (isKnownNonZero(Val, DL) ||
-          (isObjectDereferencedInBlock(Val, BB) &&
-           !NullPointerIsDefined(BB->getParent(), PTy->getAddressSpace())))) {
-      Result = ValueLatticeElement::getNot(ConstantPointerNull::get(PTy));
-    } else {
-      Result = ValueLatticeElement::getOverdefined();
-    }
-    BBLV = Result;
+    BBLV = ValueLatticeElement::getOverdefined();
     return true;
   }
 
@@ -762,14 +722,6 @@ bool LazyValueInfoImpl::solveBlockValueNonLocal(ValueLatticeElement &BBLV,
     if (Result.isOverdefined()) {
       LLVM_DEBUG(dbgs() << " compute BB '" << BB->getName()
                         << "' - overdefined because of pred (non local).\n");
-      // Before giving up, see if we can prove the pointer non-null local to
-      // this particular block.
-      PointerType *PTy = dyn_cast<PointerType>(Val->getType());
-      if (PTy && isObjectDereferencedInBlock(Val, BB) &&
-          !NullPointerIsDefined(BB->getParent(), PTy->getAddressSpace())) {
-        Result = ValueLatticeElement::getNot(ConstantPointerNull::get(PTy));
-      }
-
       BBLV = Result;
       return true;
     }
@@ -842,16 +794,24 @@ void LazyValueInfoImpl::intersectAssumeOrGuardBlockValueConstantRange(
   // If guards are not used in the module, don't spend time looking for them
   auto *GuardDecl = BBI->getModule()->getFunction(
           Intrinsic::getName(Intrinsic::experimental_guard));
-  if (!GuardDecl || GuardDecl->use_empty())
-    return;
+  if (GuardDecl && !GuardDecl->use_empty()) {
+    if (BBI->getIterator() == BBI->getParent()->begin())
+      return;
+    for (Instruction &I : make_range(std::next(BBI->getIterator().getReverse()),
+                                     BBI->getParent()->rend())) {
+      Value *Cond = nullptr;
+      if (match(&I, m_Intrinsic<Intrinsic::experimental_guard>(m_Value(Cond))))
+        BBLV = intersect(BBLV, getValueFromCondition(Val, Cond));
+    }
+  }
 
-  if (BBI->getIterator() == BBI->getParent()->begin())
-    return;
-  for (Instruction &I : make_range(std::next(BBI->getIterator().getReverse()),
-                                   BBI->getParent()->rend())) {
-    Value *Cond = nullptr;
-    if (match(&I, m_Intrinsic<Intrinsic::experimental_guard>(m_Value(Cond))))
-      BBLV = intersect(BBLV, getValueFromCondition(Val, Cond));
+  if (BBLV.isOverdefined()) {
+    // Check whether we're checking at the terminator, and the pointer has
+    // been dereferenced in this block.
+    PointerType *PTy = dyn_cast<PointerType>(Val->getType());
+    if (PTy && BBI->getParent()->getTerminator() == BBI &&
+        isNonNullDueToDereferenceInBlock(Val, BBI->getParent()))
+      BBLV = ValueLatticeElement::getNot(ConstantPointerNull::get(PTy));
   }
 }
 

@@ -184,7 +184,7 @@ void SymbolContext::GetDescription(Stream *s, lldb::DescriptionLevel level,
                                    Target *target) const {
   if (module_sp) {
     s->Indent("     Module: file = \"");
-    module_sp->GetFileSpec().Dump(s);
+    module_sp->GetFileSpec().Dump(s->AsRawOstream());
     *s << '"';
     if (module_sp->GetArchitecture().IsValid())
       s->Printf(", arch = \"%s\"",
@@ -310,13 +310,13 @@ void SymbolContext::Dump(Stream *s, Target *target) const {
   s->Indent();
   *s << "Module       = " << module_sp.get() << ' ';
   if (module_sp)
-    module_sp->GetFileSpec().Dump(s);
+    module_sp->GetFileSpec().Dump(s->AsRawOstream());
   s->EOL();
   s->Indent();
   *s << "CompileUnit  = " << comp_unit;
   if (comp_unit != nullptr)
     s->Format(" {{{0:x-16}} {1}", comp_unit->GetID(),
-              *static_cast<FileSpec *>(comp_unit));
+              comp_unit->GetPrimaryFile());
   s->EOL();
   s->Indent();
   *s << "Function     = " << function;
@@ -1026,8 +1026,7 @@ bool SymbolContextSpecifier::SymbolContextMatches(SymbolContext &sc) {
           return false;
       } else {
         FileSpec module_file_spec(m_module_spec);
-        if (!FileSpec::Equal(module_file_spec, sc.module_sp->GetFileSpec(),
-                             false))
+        if (!FileSpec::Match(module_file_spec, sc.module_sp->GetFileSpec()))
           return false;
       }
     }
@@ -1046,8 +1045,8 @@ bool SymbolContextSpecifier::SymbolContextMatches(SymbolContext &sc) {
             sc.block->GetInlinedFunctionInfo();
         if (inline_info != nullptr) {
           was_inlined = true;
-          if (!FileSpec::Equal(inline_info->GetDeclaration().GetFile(),
-                               *(m_file_spec_up.get()), false))
+          if (!FileSpec::Match(*m_file_spec_up,
+                               inline_info->GetDeclaration().GetFile()))
             return false;
         }
       }
@@ -1055,7 +1054,7 @@ bool SymbolContextSpecifier::SymbolContextMatches(SymbolContext &sc) {
       // Next check the comp unit, but only if the SymbolContext was not
       // inlined.
       if (!was_inlined && sc.comp_unit != nullptr) {
-        if (!FileSpec::Equal(*(sc.comp_unit), *(m_file_spec_up.get()), false))
+        if (!FileSpec::Match(*m_file_spec_up, sc.comp_unit->GetPrimaryFile()))
           return false;
       }
     }

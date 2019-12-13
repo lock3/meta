@@ -30,6 +30,7 @@
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
+#include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -581,10 +582,7 @@ SDValue RISCVTargetLowering::lowerGlobalTLSAddress(SDValue Op,
   int64_t Offset = N->getOffset();
   MVT XLenVT = Subtarget.getXLenVT();
 
-  // Non-PIC TLS lowering should always use the LocalExec model.
-  TLSModel::Model Model = isPositionIndependent()
-                              ? getTargetMachine().getTLSModel(N->getGlobal())
-                              : TLSModel::LocalExec;
+  TLSModel::Model Model = getTargetMachine().getTLSModel(N->getGlobal());
 
   SDValue Addr;
   switch (Model) {

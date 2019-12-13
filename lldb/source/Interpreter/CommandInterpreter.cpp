@@ -48,7 +48,8 @@
 #include "lldb/Utility/Stream.h"
 #include "lldb/Utility/Timer.h"
 
-#ifndef LLDB_DISABLE_LIBEDIT
+#include "lldb/Host/Config.h"
+#if LLDB_ENABLE_LIBEDIT
 #include "lldb/Host/Editline.h"
 #endif
 #include "lldb/Host/Host.h"
@@ -362,10 +363,23 @@ void CommandInterpreter::Initialize() {
                   "controlled by the type's author.");
       po->SetHelpLong("");
     }
-    AddAlias("parray", cmd_obj_sp, "--element-count %1 --")->SetHelpLong("");
-    AddAlias("poarray", cmd_obj_sp,
-             "--object-description --element-count %1 --")
-        ->SetHelpLong("");
+    CommandAlias *parray_alias =
+        AddAlias("parray", cmd_obj_sp, "--element-count %1 --");
+    if (parray_alias) {
+        parray_alias->SetHelp
+          ("parray <COUNT> <EXPRESSION> -- lldb will evaluate EXPRESSION "
+           "to get a typed-pointer-to-an-array in memory, and will display "
+           "COUNT elements of that type from the array.");
+        parray_alias->SetHelpLong("");
+    }
+    CommandAlias *poarray_alias = AddAlias("poarray", cmd_obj_sp,
+             "--object-description --element-count %1 --");
+    if (poarray_alias) {
+      poarray_alias->SetHelp("poarray <COUNT> <EXPRESSION> -- lldb will "
+          "evaluate EXPRESSION to get the address of an array of COUNT "
+          "objects in memory, and will call po on them.");
+      poarray_alias->SetHelpLong("");
+    }
   }
 
   cmd_obj_sp = GetCommandSPExact("process kill", false);

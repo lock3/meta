@@ -1,5 +1,4 @@
 ; RUN: opt < %s -inferattrs -S | FileCheck %s
-; RUN: opt < %s -attributor --attributor-disable=false -S | FileCheck %s --check-prefix=ATTRIBUTOR
 
 
 
@@ -8,7 +7,6 @@
 
 define <4 x double> @PR21780(double* %ptr) {
 ; CHECK-LABEL: @PR21780(double* %ptr)
-; ATTRIBUTOR-LABEL: @PR21780(double* nocapture nofree nonnull readonly align 8 dereferenceable(32) %ptr)
 
   ; GEP of index 0 is simplified away.
   %arrayidx1 = getelementptr inbounds double, double* %ptr, i64 1
@@ -31,7 +29,6 @@ define <4 x double> @PR21780(double* %ptr) {
 
 define double @PR21780_only_access3_with_inbounds(double* %ptr) {
 ; CHECK-LABEL: @PR21780_only_access3_with_inbounds(double* %ptr)
-; ATTRIBUTOR-LABEL: @PR21780_only_access3_with_inbounds(double* nocapture nofree nonnull readonly align 8 dereferenceable(32) %ptr)
 
   %arrayidx3 = getelementptr inbounds double, double* %ptr, i64 3
   %t3 = load double, double* %arrayidx3, align 8
@@ -40,7 +37,6 @@ define double @PR21780_only_access3_with_inbounds(double* %ptr) {
 
 define double @PR21780_only_access3_without_inbounds(double* %ptr) {
 ; CHECK-LABEL: @PR21780_only_access3_without_inbounds(double* %ptr)
-; ATTRIBUTOR-LABEL: @PR21780_only_access3_without_inbounds(double* nocapture nofree readonly align 8 %ptr)
   %arrayidx3 = getelementptr double, double* %ptr, i64 3
   %t3 = load double, double* %arrayidx3, align 8
   ret double %t3
@@ -48,8 +44,6 @@ define double @PR21780_only_access3_without_inbounds(double* %ptr) {
 
 define double @PR21780_without_inbounds(double* %ptr) {
 ; CHECK-LABEL: @PR21780_without_inbounds(double* %ptr)
-; FIXME: this should be @PR21780_without_inbounds(double* nonnull dereferenceable(32) %ptr)
-; ATTRIBUTOR-LABEL: @PR21780_without_inbounds(double* nocapture nofree nonnull readonly align 8 dereferenceable(8) %ptr)
 
   %arrayidx1 = getelementptr double, double* %ptr, i64 1
   %arrayidx2 = getelementptr double, double* %ptr, i64 2
@@ -204,6 +198,7 @@ define void @variable_gep_index(i8* %unused, i8* %ptr, i64 %variable_index) {
 
 define void @multi_index_gep(<4 x i8>* %ptr) {
 ; CHECK-LABEL: @multi_index_gep(<4 x i8>* %ptr)
+; FIXME: %ptr should be dereferenceable(4)
   %arrayidx00 = getelementptr <4 x i8>, <4 x i8>* %ptr, i64 0, i64 0
   %t0 = load i8, i8* %arrayidx00
   ret void
@@ -342,5 +337,21 @@ define void @load_store(i32* %arg) {
   %arrayidx1 = getelementptr float, float* %ptr, i64 1
   %t1 = load float, float* %arrayidx0
   store float 2.0, float* %arrayidx1
+  ret void
+}
+
+define void @different_size1(i32* %arg) {
+; CHECK-LABEL: @different_size1(i32* %arg)
+  %arg-cast = bitcast i32* %arg to double*
+  store double 0.000000e+00, double* %arg-cast
+  store i32 0, i32* %arg
+  ret void
+}
+
+define void @different_size2(i32* %arg) {
+; CHECK-LABEL: @different_size2(i32* %arg)
+  store i32 0, i32* %arg
+  %arg-cast = bitcast i32* %arg to double*
+  store double 0.000000e+00, double* %arg-cast
   ret void
 }

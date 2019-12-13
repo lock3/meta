@@ -134,7 +134,7 @@ void Variable::Dump(Stream *s, bool show_context) const {
       s->PutCString("thread local");
       break;
     default:
-      *s << "??? (" << m_scope << ')';
+      s->AsRawOstream() << "??? (" << m_scope << ')';
     }
   }
 
@@ -483,13 +483,6 @@ bool Variable::DumpLocationForAddress(Stream *s, const Address &address) {
 
 static void PrivateAutoComplete(
     StackFrame *frame, llvm::StringRef partial_path,
-    const llvm::Twine
-        &prefix_path, // Anything that has been resolved already will be in here
-    const CompilerType &compiler_type, CompletionRequest &request);
-
-static void PrivateAutoCompleteMembers(
-    StackFrame *frame, const std::string &partial_member_name,
-    llvm::StringRef partial_path,
     const llvm::Twine
         &prefix_path, // Anything that has been resolved already will be in here
     const CompilerType &compiler_type, CompletionRequest &request);

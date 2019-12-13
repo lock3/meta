@@ -279,12 +279,9 @@ ProcessGDBRemote::ProcessGDBRemote(lldb::TargetSP target_sp,
                                    "async thread did exit");
 
   if (repro::Generator *g = repro::Reproducer::Instance().GetGenerator()) {
-    repro::ProcessGDBRemoteProvider &provider =
-        g->GetOrCreate<repro::ProcessGDBRemoteProvider>();
-    // Set the history stream to the stream owned by the provider.
-    m_gdb_comm.SetHistoryStream(provider.GetHistoryStream());
-    // Make sure to clear the stream again when we're finished.
-    provider.SetCallback([&]() { m_gdb_comm.SetHistoryStream(nullptr); });
+    repro::GDBRemoteProvider &provider =
+        g->GetOrCreate<repro::GDBRemoteProvider>();
+    m_gdb_comm.SetPacketRecorder(provider.GetNewPacketRecorder());
   }
 
   Log *log(ProcessGDBRemoteLog::GetLogIfAllCategoriesSet(GDBR_LOG_ASYNC));
@@ -386,36 +383,6 @@ bool ProcessGDBRemote::ParsePythonTargetDefinition(
     }
   }
   return false;
-}
-
-// If the remote stub didn't give us eh_frame or DWARF register numbers for a
-// register, see if the ABI can provide them.
-// DWARF and eh_frame register numbers are defined as a part of the ABI.
-static void AugmentRegisterInfoViaABI(RegisterInfo &reg_info,
-                                      ConstString reg_name, ABISP abi_sp) {
-  if (reg_info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM ||
-      reg_info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM) {
-    if (abi_sp) {
-      RegisterInfo abi_reg_info;
-      if (abi_sp->GetRegisterInfoByName(reg_name, abi_reg_info)) {
-        if (reg_info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindEHFrame] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindEHFrame] =
-              abi_reg_info.kinds[eRegisterKindEHFrame];
-        }
-        if (reg_info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindDWARF] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindDWARF] =
-              abi_reg_info.kinds[eRegisterKindDWARF];
-        }
-        if (reg_info.kinds[eRegisterKindGeneric] == LLDB_INVALID_REGNUM &&
-            abi_reg_info.kinds[eRegisterKindGeneric] != LLDB_INVALID_REGNUM) {
-          reg_info.kinds[eRegisterKindGeneric] =
-              abi_reg_info.kinds[eRegisterKindGeneric];
-        }
-      }
-    }
-  }
 }
 
 static size_t SplitCommaSeparatedRegisterNumberString(
@@ -615,12 +582,12 @@ void ProcessGDBRemote::BuildDynamicRegisterInfo(bool force) {
           reg_info.invalidate_regs = invalidate_regs.data();
         }
 
+        reg_info.name = reg_name.AsCString();
         // We have to make a temporary ABI here, and not use the GetABI because
         // this code gets called in DidAttach, when the target architecture
         // (and consequently the ABI we'll get from the process) may be wrong.
-        ABISP abi_to_use = ABI::FindPlugin(shared_from_this(), arch_to_use);
-
-        AugmentRegisterInfoViaABI(reg_info, reg_name, abi_to_use);
+        if (ABISP abi_sp = ABI::FindPlugin(shared_from_this(), arch_to_use))
+          abi_sp->AugmentRegisterInfo(reg_info);
 
         m_register_info.AddRegister(reg_info, reg_name, alt_name, set_name);
       } else {
@@ -3392,23 +3359,29 @@ Status ProcessGDBRemote::ConnectToReplayServer(repro::Loader *loader) {
   if (!loader)
     return Status("No loader provided.");
 
-  // Construct replay history path.
-  FileSpec history_file =
-      loader->GetFile<repro::ProcessGDBRemoteProvider::Info>();
-  if (!history_file)
-    return Status("No provider for gdb-remote.");
+  static std::unique_ptr<repro::MultiLoader<repro::GDBRemoteProvider>>
+      multi_loader = repro::MultiLoader<repro::GDBRemoteProvider>::Create(
+          repro::Reproducer::Instance().GetLoader());
 
-  // Enable replay mode.
-  m_replay_mode = true;
+  if (!multi_loader)
+    return Status("No gdb remote provider found.");
+
+  llvm::Optional<std::string> history_file = multi_loader->GetNextFile();
+  if (!history_file)
+    return Status("No gdb remote packet log found.");
 
   // Load replay history.
-  if (auto error = m_gdb_replay_server.LoadReplayHistory(history_file))
+  if (auto error =
+          m_gdb_replay_server.LoadReplayHistory(FileSpec(*history_file)))
     return Status("Unable to load replay history");
 
   // Make a local connection.
   if (auto error = GDBRemoteCommunication::ConnectLocally(m_gdb_comm,
                                                           m_gdb_replay_server))
     return Status("Unable to connect to replay server");
+
+  // Enable replay mode.
+  m_replay_mode = true;
 
   // Start server thread.
   m_gdb_replay_server.StartAsyncThread();
@@ -4483,7 +4456,9 @@ bool ParseRegisters(XMLNode feature_node, GdbServerTargetInfo &target_info,
         }
 
         ++cur_reg_num;
-        AugmentRegisterInfoViaABI(reg_info, reg_name, abi_sp);
+        reg_info.name = reg_name.AsCString();
+        if (abi_sp)
+          abi_sp->AugmentRegisterInfo(reg_info);
         dyn_reg_info.AddRegister(reg_info, reg_name, alt_name, set_name);
 
         return true; // Keep iterating through all "reg" elements

@@ -30,7 +30,7 @@ llvm::Expected<std::vector<Range>> getSemanticRanges(ParsedAST &AST,
                                                      Position Pos) {
   std::vector<Range> Result;
   const auto &SM = AST.getSourceManager();
-  const auto &LangOpts = AST.getASTContext().getLangOpts();
+  const auto &LangOpts = AST.getLangOpts();
 
   auto FID = SM.getMainFileID();
   auto Offset = positionToOffset(SM.getBufferData(FID), Pos);
@@ -39,7 +39,8 @@ llvm::Expected<std::vector<Range>> getSemanticRanges(ParsedAST &AST,
   }
 
   // Get node under the cursor.
-  SelectionTree ST(AST.getASTContext(), AST.getTokens(), *Offset);
+  SelectionTree ST = SelectionTree::createRight(
+      AST.getASTContext(), AST.getTokens(), *Offset, *Offset);
   for (const auto *Node = ST.commonAncestor(); Node != nullptr;
        Node = Node->Parent) {
     if (const Decl *D = Node->ASTNode.get<Decl>()) {

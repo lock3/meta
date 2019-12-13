@@ -92,10 +92,10 @@ void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   C.addCommand(std::make_unique<Command>(JA, *this, Linker, CmdArgs, Inputs));
 
-  // When optimizing, if wasm-opt is in the PATH, run wasm-opt.
+  // When optimizing, if wasm-opt is available, run it.
   if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
-    if (llvm::ErrorOr<std::string> WasmOptPath =
-           llvm::sys::findProgramByName("wasm-opt")) {
+    auto WasmOptPath = getToolChain().GetProgramPath("wasm-opt");
+    if (WasmOptPath != "wasm-opt") {
       StringRef OOpt = "s";
       if (A->getOption().matches(options::OPT_O4) ||
           A->getOption().matches(options::OPT_Ofast))
@@ -106,7 +106,7 @@ void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
         OOpt = A->getValue();
 
       if (OOpt != "0") {
-        const char *WasmOpt = Args.MakeArgString(*WasmOptPath);
+        const char *WasmOpt = Args.MakeArgString(WasmOptPath);
         ArgStringList CmdArgs;
         CmdArgs.push_back(Output.getFilename());
         CmdArgs.push_back(Args.MakeArgString(llvm::Twine("-O") + OOpt));
@@ -179,9 +179,9 @@ bool WebAssembly::HasNativeLLVMSupport() const { return true; }
 void WebAssembly::addClangTargetOptions(const ArgList &DriverArgs,
                                         ArgStringList &CC1Args,
                                         Action::OffloadKind) const {
-  if (DriverArgs.hasFlag(clang::driver::options::OPT_fuse_init_array,
-                         options::OPT_fno_use_init_array, true))
-    CC1Args.push_back("-fuse-init-array");
+  if (!DriverArgs.hasFlag(clang::driver::options::OPT_fuse_init_array,
+                          options::OPT_fno_use_init_array, true))
+    CC1Args.push_back("-fno-use-init-array");
 
   // '-pthread' implies atomics, bulk-memory, mutable-globals, and sign-ext
   if (DriverArgs.hasFlag(options::OPT_pthread, options::OPT_no_pthread,

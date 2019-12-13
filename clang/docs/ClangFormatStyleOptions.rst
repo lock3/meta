@@ -958,7 +958,7 @@ the configuration (without a prefix: ``Auto``).
 
     .. code-block:: c++
 
-      int f()   vs.   inf f()
+      int f()   vs.   int f()
       {}              {
                       }
 
@@ -2327,6 +2327,9 @@ the configuration (without a prefix: ``Auto``).
 
      true:                                  false:
      x = ( int32 )y                 vs.     x = (int32)y
+
+**SpacesInConditionalStatement** (``bool``)
+  If ``true``, spaces will be inserted around if/for/while (and similar) conditions.
 
 **SpacesInContainerLiterals** (``bool``)
   If ``true``, spaces are inserted inside container literals (e.g.

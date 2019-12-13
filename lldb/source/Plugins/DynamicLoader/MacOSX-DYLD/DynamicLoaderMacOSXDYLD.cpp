@@ -342,7 +342,10 @@ bool DynamicLoaderMacOSXDYLD::NotifyBreakpointHit(
     // get the values from the ABI:
 
     ClangASTContext *clang_ast_context =
-        process->GetTarget().GetScratchClangASTContext();
+        ClangASTContext::GetScratch(process->GetTarget());
+    if (!clang_ast_context)
+      return false;
+
     ValueList argument_values;
     Value input_value;
 
@@ -734,7 +737,7 @@ bool DynamicLoaderMacOSXDYLD::InitializeFromAllImageInfos() {
       if (!module_sp->IsLoadedInTarget(&target)) {
         if (log) {
           StreamString s;
-          module_sp->GetDescription(&s);
+          module_sp->GetDescription(s.AsRawOstream());
           LLDB_LOGF(log, "Unloading pre-run module: %s.", s.GetData());
         }
         not_loaded_modules.Append(module_sp);

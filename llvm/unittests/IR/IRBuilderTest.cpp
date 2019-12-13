@@ -12,6 +12,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/IntrinsicsAArch64.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
@@ -183,6 +184,8 @@ TEST_F(IRBuilderTest, ConstrainedFP) {
   // See if we get constrained intrinsics instead of non-constrained
   // instructions.
   Builder.setIsFPConstrained(true);
+  auto Parent = BB->getParent();
+  Parent->addFnAttr(Attribute::StrictFP);
 
   V = Builder.CreateFAdd(V, V);
   ASSERT_TRUE(isa<IntrinsicInst>(V));
@@ -233,7 +236,8 @@ TEST_F(IRBuilderTest, ConstrainedFP) {
   AttributeSet CallAttrs = II->getAttributes().getFnAttributes();
   EXPECT_EQ(CallAttrs.hasAttribute(Attribute::StrictFP), true);
 
-  // Verify attributes on the containing function are created automatically.
+  // Verify attributes on the containing function are created when requested.
+  Builder.setConstrainedFPFunctionAttr();
   AttributeList Attrs = BB->getParent()->getAttributes();
   AttributeSet FnAttrs = Attrs.getFnAttributes();
   EXPECT_EQ(FnAttrs.hasAttribute(Attribute::StrictFP), true);

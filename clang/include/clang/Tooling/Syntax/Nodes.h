@@ -37,7 +37,6 @@ namespace syntax {
 enum class NodeKind : uint16_t {
   Leaf,
   TranslationUnit,
-  TopLevelDeclaration,
 
   // Expressions
   UnknownExpression,
@@ -57,7 +56,19 @@ enum class NodeKind : uint16_t {
   ReturnStatement,
   RangeBasedForStatement,
   ExpressionStatement,
-  CompoundStatement
+  CompoundStatement,
+
+  // Declarations
+  UnknownDeclaration,
+  EmptyDeclaration,
+  StaticAssertDeclaration,
+  LinkageSpecificationDeclaration,
+  SimpleDeclaration,
+  NamespaceDefinition,
+  NamespaceAliasDefinition,
+  UsingNamespaceDirective,
+  UsingDeclaration,
+  TypeAliasDeclaration
 };
 /// For debugging purposes.
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, NodeKind K);
@@ -88,7 +99,9 @@ enum class NodeRole : uint8_t {
   IfStatement_elseStatement,
   ReturnStatement_value,
   ExpressionStatement_expression,
-  CompoundStatement_statement
+  CompoundStatement_statement,
+  StaticAssertDeclaration_condition,
+  StaticAssertDeclaration_message
 };
 /// For debugging purposes.
 llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, NodeRole R);
@@ -99,20 +112,6 @@ public:
   TranslationUnit() : Tree(NodeKind::TranslationUnit) {}
   static bool classof(const Node *N) {
     return N->kind() == NodeKind::TranslationUnit;
-  }
-};
-
-/// FIXME: this node is temporary and will be replaced with nodes for various
-///        'declarations' and 'declarators' from the C/C++ grammar
-///
-/// Represents any top-level declaration. Only there to give the syntax tree a
-/// bit of structure until we implement syntax nodes for declarations and
-/// declarators.
-class TopLevelDeclaration final : public Tree {
-public:
-  TopLevelDeclaration() : Tree(NodeKind::TopLevelDeclaration) {}
-  static bool classof(const Node *N) {
-    return N->kind() == NodeKind::TopLevelDeclaration;
   }
 };
 
@@ -311,6 +310,118 @@ public:
   /// FIXME: use custom iterator instead of 'vector'.
   std::vector<syntax::Statement *> statements();
   syntax::Leaf *rbrace();
+};
+
+/// A declaration that can appear at the top-level. Note that this does *not*
+/// correspond 1-to-1 to clang::Decl. Syntax trees distinguish between top-level
+/// declarations (e.g. namespace definitions) and declarators (e.g. variables,
+/// typedefs, etc.). Declarators are stored inside SimpleDeclaration.
+class Declaration : public Tree {
+public:
+  Declaration(NodeKind K) : Tree(K) {}
+  static bool classof(const Node *N) {
+    return NodeKind::UnknownDeclaration <= N->kind() &&
+           N->kind() <= NodeKind::TypeAliasDeclaration;
+  }
+};
+
+/// Declaration of an unknown kind, e.g. not yet supported in syntax trees.
+class UnknownDeclaration final : public Declaration {
+public:
+  UnknownDeclaration() : Declaration(NodeKind::UnknownDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::UnknownDeclaration;
+  }
+};
+
+/// A semicolon in the top-level context. Does not declare anything.
+class EmptyDeclaration final : public Declaration {
+public:
+  EmptyDeclaration() : Declaration(NodeKind::EmptyDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::EmptyDeclaration;
+  }
+};
+
+/// static_assert(<condition>, <message>)
+/// static_assert(<condition>)
+class StaticAssertDeclaration final : public Declaration {
+public:
+  StaticAssertDeclaration() : Declaration(NodeKind::StaticAssertDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::StaticAssertDeclaration;
+  }
+  syntax::Expression *condition();
+  syntax::Expression *message();
+};
+
+/// extern <string-literal> declaration
+/// extern <string-literal> { <decls>  }
+class LinkageSpecificationDeclaration final : public Declaration {
+public:
+  LinkageSpecificationDeclaration()
+      : Declaration(NodeKind::LinkageSpecificationDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::LinkageSpecificationDeclaration;
+  }
+};
+
+/// Groups multiple declarators (e.g. variables, typedefs, etc.) together. All
+/// grouped declarators share the same declaration specifiers (e.g. 'int' or
+/// 'typedef').
+class SimpleDeclaration final : public Declaration {
+public:
+  SimpleDeclaration() : Declaration(NodeKind::SimpleDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::SimpleDeclaration;
+  }
+};
+
+/// namespace <name> { <decls> }
+class NamespaceDefinition final : public Declaration {
+public:
+  NamespaceDefinition() : Declaration(NodeKind::NamespaceDefinition) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::NamespaceDefinition;
+  }
+};
+
+/// namespace <name> = <namespace-reference>
+class NamespaceAliasDefinition final : public Declaration {
+public:
+  NamespaceAliasDefinition()
+      : Declaration(NodeKind::NamespaceAliasDefinition) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::NamespaceAliasDefinition;
+  }
+};
+
+/// using namespace <name>
+class UsingNamespaceDirective final : public Declaration {
+public:
+  UsingNamespaceDirective() : Declaration(NodeKind::UsingNamespaceDirective) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::UsingNamespaceDirective;
+  }
+};
+
+/// using <scope>::<name>
+/// using typename <scope>::<name>
+class UsingDeclaration final : public Declaration {
+public:
+  UsingDeclaration() : Declaration(NodeKind::UsingDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::UsingDeclaration;
+  }
+};
+
+/// using <name> = <type>
+class TypeAliasDeclaration final : public Declaration {
+public:
+  TypeAliasDeclaration() : Declaration(NodeKind::TypeAliasDeclaration) {}
+  static bool classof(const Node *N) {
+    return N->kind() == NodeKind::TypeAliasDeclaration;
+  }
 };
 
 } // namespace syntax

@@ -119,6 +119,22 @@ llvm::StringRef FileRange::text(const SourceManager &SM) const {
   return Text.substr(Begin, length());
 }
 
+llvm::ArrayRef<syntax::Token> TokenBuffer::expandedTokens(SourceRange R) const {
+  if (R.isInvalid())
+    return {};
+  const Token *Begin =
+      llvm::partition_point(expandedTokens(), [&](const syntax::Token &T) {
+        return SourceMgr->isBeforeInTranslationUnit(T.location(), R.getBegin());
+      });
+  const Token *End =
+      llvm::partition_point(expandedTokens(), [&](const syntax::Token &T) {
+        return !SourceMgr->isBeforeInTranslationUnit(R.getEnd(), T.location());
+      });
+  if (Begin > End)
+    return {};
+  return {Begin, End};
+}
+
 std::pair<const syntax::Token *, const TokenBuffer::Mapping *>
 TokenBuffer::spelledForExpandedToken(const syntax::Token *Expanded) const {
   assert(Expanded);
@@ -230,6 +246,30 @@ TokenBuffer::expansionStartingAt(const syntax::Token *Spelled) const {
   E.Expanded = llvm::makeArrayRef(ExpandedTokens.data() + M->BeginExpanded,
                                   ExpandedTokens.data() + M->EndExpanded);
   return E;
+}
+
+llvm::ArrayRef<syntax::Token>
+syntax::spelledTokensTouching(SourceLocation Loc,
+                              const syntax::TokenBuffer &Tokens) {
+  assert(Loc.isFileID());
+  llvm::ArrayRef<syntax::Token> All =
+      Tokens.spelledTokens(Tokens.sourceManager().getFileID(Loc));
+  auto *Right = llvm::partition_point(
+      All, [&](const syntax::Token &Tok) { return Tok.location() < Loc; });
+  bool AcceptRight = Right != All.end() && Right->location() <= Loc;
+  bool AcceptLeft = Right != All.begin() && (Right - 1)->endLocation() >= Loc;
+  return llvm::makeArrayRef(Right - (AcceptLeft ? 1 : 0),
+                            Right + (AcceptRight ? 1 : 0));
+}
+
+const syntax::Token *
+syntax::spelledIdentifierTouching(SourceLocation Loc,
+                                  const syntax::TokenBuffer &Tokens) {
+  for (const syntax::Token &Tok : spelledTokensTouching(Loc, Tokens)) {
+    if (Tok.kind() == tok::identifier)
+      return &Tok;
+  }
+  return nullptr;
 }
 
 std::vector<const syntax::Token *>

@@ -57,7 +57,7 @@ public:
   }
   void MaterializeVisibleDecls(const clang::DeclContext *DC) { return; }
 
-  void InstallASTContext(clang::ASTContext &ast_context,
+  void InstallASTContext(ClangASTContext &ast_context,
                          clang::FileManager &file_manager,
                          bool is_shared_context = false);
 
@@ -249,18 +249,6 @@ public:
       return m_original.StartTranslationUnit(Consumer);
     }
 
-    ClangASTMetadata *GetMetadata(const void *object) {
-      return m_original.GetMetadata(object);
-    }
-
-    void SetMetadata(const void *object, ClangASTMetadata &metadata) {
-      return m_original.SetMetadata(object, metadata);
-    }
-
-    bool HasMetadata(const void *object) {
-      return m_original.HasMetadata(object);
-    }
-
   private:
     ClangASTSource &m_original;
   };
@@ -408,6 +396,8 @@ protected:
   const lldb::TargetSP m_target;
   /// The AST context requests are coming in for.
   clang::ASTContext *m_ast_context;
+  /// The ClangASTContext for m_ast_context.
+  ClangASTContext *m_clang_ast_context;
   /// The file manager paired with the AST context.
   clang::FileManager *m_file_manager;
   /// The target's AST importer.

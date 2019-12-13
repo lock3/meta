@@ -19,20 +19,26 @@ namespace clangd {
 namespace {
 using ::testing::UnorderedElementsAreArray;
 
+// Create a selection tree corresponding to a point or pair of points.
+// This uses the precisely-defined createRight semantics. The fuzzier
+// createEach is tested separately.
 SelectionTree makeSelectionTree(const StringRef MarkedCode, ParsedAST &AST) {
   Annotations Test(MarkedCode);
   switch (Test.points().size()) {
-  case 1: // Point selection.
-    return SelectionTree(AST.getASTContext(), AST.getTokens(),
-                         cantFail(positionToOffset(Test.code(), Test.point())));
+  case 1: { // Point selection.
+    unsigned Offset = cantFail(positionToOffset(Test.code(), Test.point()));
+    return SelectionTree::createRight(AST.getASTContext(), AST.getTokens(),
+                                      Offset, Offset);
+  }
   case 2: // Range selection.
-    return SelectionTree(
+    return SelectionTree::createRight(
         AST.getASTContext(), AST.getTokens(),
         cantFail(positionToOffset(Test.code(), Test.points()[0])),
         cantFail(positionToOffset(Test.code(), Test.points()[1])));
   default:
     ADD_FAILURE() << "Expected 1-2 points for selection.\n" << MarkedCode;
-    return SelectionTree(AST.getASTContext(), AST.getTokens(), 0u, 0u);
+    return SelectionTree::createRight(AST.getASTContext(), AST.getTokens(), 0u,
+                                      0u);
   }
 }
 
@@ -40,7 +46,7 @@ Range nodeRange(const SelectionTree::Node *N, ParsedAST &AST) {
   if (!N)
     return Range{};
   const SourceManager &SM = AST.getSourceManager();
-  const LangOptions &LangOpts = AST.getASTContext().getLangOpts();
+  const LangOptions &LangOpts = AST.getLangOpts();
   StringRef Buffer = SM.getBufferData(SM.getMainFileID());
   if (llvm::isa_and_nonnull<TranslationUnitDecl>(N->ASTNode.get<Decl>()))
     return Range{Position{}, offsetToPosition(Buffer, Buffer.size())};
@@ -133,6 +139,15 @@ TEST(SelectionTest, CommonAncestor) {
             void foo() { [[if (1^11) { return; } else {^ }]] }
           )cpp",
           "IfStmt",
+      },
+      {
+          R"cpp(
+            int x(int);
+            #define M(foo) x(foo)
+            int a = 42;
+            int b = M([[^a]]);
+          )cpp",
+          "DeclRefExpr",
       },
       {
           R"cpp(
@@ -234,6 +249,7 @@ TEST(SelectionTest, CommonAncestor) {
       {"void foo() { [[foo^()]]; }", "CallExpr"},
       {"void foo() { [[foo^]] (); }", "DeclRefExpr"},
       {"int bar; void foo() [[{ foo (); }]]^", "CompoundStmt"},
+      {"int x = [[42]]^;", "IntegerLiteral"},
 
       // Ignores whitespace, comments, and semicolons in the selection.
       {"void foo() { [[foo^()]]; /*comment*/^}", "CallExpr"},
@@ -271,7 +287,6 @@ TEST(SelectionTest, CommonAncestor) {
       // FIXME: Ideally we'd get a declstmt or the VarDecl itself here.
       // This doesn't happen now; the RAV doesn't traverse a node containing ;.
       {"int x = 42;^", nullptr},
-      {"int x = 42^;", nullptr},
 
       // Common ancestor is logically TUDecl, but we never return that.
       {"^int x; int y;^", nullptr},
@@ -378,6 +393,7 @@ TEST(SelectionTest, Selected) {
             $C[[return]];
           }]] else [[{^
           }]]]]
+          char z;
         }
       )cpp",
       R"cpp(
@@ -386,10 +402,10 @@ TEST(SelectionTest, Selected) {
           void foo(^$C[[unique_ptr<$C[[unique_ptr<$C[[int]]>]]>]]^ a) {}
       )cpp",
       R"cpp(int a = [[5 >^> 1]];)cpp",
-      R"cpp([[
+      R"cpp(
         #define ECHO(X) X
-        ECHO(EC^HO([[$C[[int]]) EC^HO(a]]));
-      ]])cpp",
+        ECHO(EC^HO($C[[int]]) EC^HO(a));
+      )cpp",
       R"cpp( $C[[^$C[[int]] a^]]; )cpp",
       R"cpp( $C[[^$C[[int]] a = $C[[5]]^]]; )cpp",
   };
@@ -428,6 +444,56 @@ TEST(SelectionTest, PathologicalPreprocessor) {
   EXPECT_EQ("WhileStmt", T.commonAncestor()->Parent->kind());
 }
 
+TEST(SelectionTest, IncludedFile) {
+  const char *Case = R"cpp(
+    void test() {
+#include "Exp^and.inc"
+        break;
+    }
+  )cpp";
+  Annotations Test(Case);
+  auto TU = TestTU::withCode(Test.code());
+  TU.AdditionalFiles["Expand.inc"] = "while(1)\n";
+  auto AST = TU.build();
+  auto T = makeSelectionTree(Case, AST);
+
+  EXPECT_EQ("WhileStmt", T.commonAncestor()->kind());
+}
+
+TEST(SelectionTest, MacroArgExpansion) {
+  // If a macro arg is expanded several times, we consider them all selected.
+  const char *Case = R"cpp(
+    int mul(int, int);
+    #define SQUARE(X) mul(X, X);
+    int nine = SQUARE(^3);
+  )cpp";
+  Annotations Test(Case);
+  auto AST = TestTU::withCode(Test.code()).build();
+  auto T = makeSelectionTree(Case, AST);
+  // Unfortunately, this makes the common ancestor the CallExpr...
+  // FIXME: hack around this by picking one?
+  EXPECT_EQ("CallExpr", T.commonAncestor()->kind());
+  EXPECT_FALSE(T.commonAncestor()->Selected);
+  EXPECT_EQ(2u, T.commonAncestor()->Children.size());
+  for (const auto* N : T.commonAncestor()->Children) {
+    EXPECT_EQ("IntegerLiteral", N->kind());
+    EXPECT_TRUE(N->Selected);
+  }
+
+  // Verify that the common assert() macro doesn't suffer from this.
+  // (This is because we don't associate the stringified token with the arg).
+  Case = R"cpp(
+    void die(const char*);
+    #define assert(x) (x ? (void)0 : die(#x)
+    void foo() { assert(^42); }
+  )cpp";
+  Test = Annotations(Case);
+  AST = TestTU::withCode(Test.code()).build();
+  T = makeSelectionTree(Case, AST);
+
+  EXPECT_EQ("IntegerLiteral", T.commonAncestor()->kind());
+}
+
 TEST(SelectionTest, Implicit) {
   const char* Test = R"cpp(
     struct S { S(const char*); };
@@ -445,6 +511,61 @@ TEST(SelectionTest, Implicit) {
       << "Didn't unwrap " << nodeKind(&Str->Parent->Parent->ignoreImplicit());
 
   EXPECT_EQ("CXXConstructExpr", nodeKind(&Str->outerImplicit()));
+}
+
+TEST(SelectionTest, CreateAll) {
+  llvm::Annotations Test("int$unique^ a=1$ambiguous^+1; $empty^");
+  auto AST = TestTU::withCode(Test.code()).build();
+  unsigned Seen = 0;
+  SelectionTree::createEach(
+      AST.getASTContext(), AST.getTokens(), Test.point("ambiguous"),
+      Test.point("ambiguous"), [&](SelectionTree T) {
+        // Expect to see the right-biased tree first.
+        if (Seen == 0)
+          EXPECT_EQ("BinaryOperator", nodeKind(T.commonAncestor()));
+        else if (Seen == 1)
+          EXPECT_EQ("IntegerLiteral", nodeKind(T.commonAncestor()));
+        ++Seen;
+        return false;
+      });
+  EXPECT_EQ(2u, Seen);
+
+  Seen = 0;
+  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(),
+                            Test.point("ambiguous"), Test.point("ambiguous"),
+                            [&](SelectionTree T) {
+                              ++Seen;
+                              return true;
+                            });
+  EXPECT_EQ(1u, Seen) << "Return true --> stop iterating";
+
+  Seen = 0;
+  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(),
+                            Test.point("unique"), Test.point("unique"),
+                            [&](SelectionTree T) {
+                              ++Seen;
+                              return false;
+                            });
+  EXPECT_EQ(1u, Seen) << "no ambiguity --> only one tree";
+
+  Seen = 0;
+  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(),
+                            Test.point("empty"), Test.point("empty"),
+                            [&](SelectionTree T) {
+                              EXPECT_FALSE(T.commonAncestor());
+                              ++Seen;
+                              return false;
+                            });
+  EXPECT_EQ(1u, Seen) << "empty tree still created";
+
+  Seen = 0;
+  SelectionTree::createEach(AST.getASTContext(), AST.getTokens(),
+                            Test.point("unique"), Test.point("ambiguous"),
+                            [&](SelectionTree T) {
+                              ++Seen;
+                              return false;
+                            });
+  EXPECT_EQ(1u, Seen) << "one tree for nontrivial selection";
 }
 
 } // namespace

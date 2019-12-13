@@ -1699,9 +1699,14 @@ Emit OpenMP code only for SIMD-based constructs.
 
 .. option:: -foperator-arrow-depth=<arg>
 
-.. option:: -foptimization-record-file=<arg>
+.. option:: -foptimization-record-file=<file>
 
-Specify the file name of any generated YAML optimization record
+Implies -fsave-optimization-record. On Darwin platforms, this
+  cannot be used with multiple -arch <arch> options.
+
+.. option:: -foptimization-record-passes=<regex>
+
+Only include passes which match a specified regular expression in the generated optimization record (by default, include all passes)
 
 .. option:: -foptimize-sibling-calls, -fno-optimize-sibling-calls
 
@@ -1833,6 +1838,12 @@ Turn on loop reroller
 .. option:: -fsave-optimization-record, -fno-save-optimization-record
 
 Generate a YAML optimization record file
+
+.. program:: clang1
+.. option:: -fsave-optimization-record=<format>
+.. program:: clang
+
+Generate an optimization record file in a specific format.
 
 .. option:: -fseh-exceptions
 
@@ -2430,30 +2441,9 @@ Enable XNACK (AMDGPU only)
 
 ARM
 ---
-
-.. option:: -ffixed-r6
-
-Reserve the r6 register (ARM only)
-
-.. option:: -ffixed-r7
-
-Reserve the r7 register (ARM only)
-
-.. option:: -ffixed-r8
-
-Reserve the r8 register (ARM only)
-
 .. option:: -ffixed-r9
 
 Reserve the r9 register (ARM only)
-
-.. option:: -ffixed-r10
-
-Reserve the r10 register (ARM only)
-
-.. option:: -ffixed-r11
-
-Reserve the r11 register (ARM only)
 
 .. option:: -mexecute-only, -mno-execute-only, -mpure-code
 

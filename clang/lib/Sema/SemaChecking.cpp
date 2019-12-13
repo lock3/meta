@@ -3051,8 +3051,37 @@ bool Sema::CheckHexagonBuiltinFunctionCall(unsigned BuiltinID,
          CheckHexagonBuiltinArgument(BuiltinID, TheCall);
 }
 
+bool Sema::CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
+  return CheckMipsBuiltinCpu(BuiltinID, TheCall) ||
+         CheckMipsBuiltinArgument(BuiltinID, TheCall);
+}
 
-// CheckMipsBuiltinFunctionCall - Checks the constant value passed to the
+bool Sema::CheckMipsBuiltinCpu(unsigned BuiltinID, CallExpr *TheCall) {
+  const TargetInfo &TI = Context.getTargetInfo();
+
+  if (Mips::BI__builtin_mips_addu_qb <= BuiltinID &&
+      BuiltinID <= Mips::BI__builtin_mips_lwx) {
+    if (!TI.hasFeature("dsp"))
+      return Diag(TheCall->getBeginLoc(), diag::err_mips_builtin_requires_dsp);
+  }
+
+  if (Mips::BI__builtin_mips_absq_s_qb <= BuiltinID &&
+      BuiltinID <= Mips::BI__builtin_mips_subuh_r_qb) {
+    if (!TI.hasFeature("dspr2"))
+      return Diag(TheCall->getBeginLoc(),
+                  diag::err_mips_builtin_requires_dspr2);
+  }
+
+  if (Mips::BI__builtin_msa_add_a_b <= BuiltinID &&
+      BuiltinID <= Mips::BI__builtin_msa_xori_b) {
+    if (!TI.hasFeature("msa"))
+      return Diag(TheCall->getBeginLoc(), diag::err_mips_builtin_requires_msa);
+  }
+
+  return false;
+}
+
+// CheckMipsBuiltinArgument - Checks the constant value passed to the
 // intrinsic is correct. The switch statement is ordered by DSP, MSA. The
 // ordering for DSP is unspecified. MSA is ordered by the data format used
 // by the underlying instruction i.e., df/m, df/n and then by size.
@@ -3061,7 +3090,7 @@ bool Sema::CheckHexagonBuiltinFunctionCall(unsigned BuiltinID,
 //        definitions from include/clang/Basic/BuiltinsMips.def.
 // FIXME: GCC is strict on signedness for some of these intrinsics, we should
 //        be too.
-bool Sema::CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
+bool Sema::CheckMipsBuiltinArgument(unsigned BuiltinID, CallExpr *TheCall) {
   unsigned i = 0, l = 0, u = 0, m = 0;
   switch (BuiltinID) {
   default: return false;
@@ -5779,10 +5808,11 @@ bool Sema::SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs) {
            << OrigArg->getType() << OrigArg->getSourceRange();
 
   // If this is an implicit conversion from float -> float, double, or
-  // long double, remove it.
+  // long double, or half -> half, float, double, or long double, remove it.
   if (ImplicitCastExpr *Cast = dyn_cast<ImplicitCastExpr>(OrigArg)) {
     // Only remove standard FloatCasts, leaving other casts inplace
     if (Cast->getCastKind() == CK_FloatingCast) {
+      bool IgnoreCast = false;
       Expr *CastArg = Cast->getSubExpr();
       if (CastArg->getType()->isSpecificBuiltinType(BuiltinType::Float)) {
         assert(
@@ -5791,6 +5821,20 @@ bool Sema::SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs) {
              Cast->getType()->isSpecificBuiltinType(BuiltinType::LongDouble)) &&
             "promotion from float to either float, double, or long double is "
             "the only expected cast here");
+        IgnoreCast = true;
+      } else if (CastArg->getType()->isSpecificBuiltinType(BuiltinType::Half) &&
+                 !Context.getTargetInfo().useFP16ConversionIntrinsics()) {
+        assert(
+            (Cast->getType()->isSpecificBuiltinType(BuiltinType::Double) ||
+             Cast->getType()->isSpecificBuiltinType(BuiltinType::Float) ||
+             Cast->getType()->isSpecificBuiltinType(BuiltinType::Half) ||
+             Cast->getType()->isSpecificBuiltinType(BuiltinType::LongDouble)) &&
+            "promotion from half to either half, float, double, or long double "
+            "is the only expected cast here");
+        IgnoreCast = true;
+      }
+
+      if (IgnoreCast) {
         Cast->setSubExpr(nullptr);
         TheCall->setArg(NumArgs-1, CastArg);
       }
@@ -12921,7 +12965,8 @@ public:
     //   expression or statement in the body of the function [and thus before
     //   the value computation of its result].
     SequencedSubexpression Sequenced(*this);
-    Base::VisitCallExpr(CE);
+    SemaRef.runWithSufficientStackSpace(CE->getExprLoc(),
+                                        [&] { Base::VisitCallExpr(CE); });
 
     // FIXME: CXXNewExpr and CXXDeleteExpr implicitly call functions.
   }
@@ -14676,6 +14721,8 @@ void Sema::RefersToMemberWithReducedAlignment(
   bool AnyIsPacked = false;
   do {
     QualType BaseType = ME->getBase()->getType();
+    if (BaseType->isDependentType())
+      return;
     if (ME->isArrow())
       BaseType = BaseType->getPointeeType();
     RecordDecl *RD = BaseType->castAs<RecordType>()->getDecl();

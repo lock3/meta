@@ -297,6 +297,28 @@ class RegConstraint<string C> {
   string Constraints = C;
 }
 
+// ARMCC condition codes. See ARMCC::CondCodes
+def ARMCCeq : PatLeaf<(i32 0)>;
+def ARMCCne : PatLeaf<(i32 1)>;
+def ARMCChs : PatLeaf<(i32 2)>;
+def ARMCClo : PatLeaf<(i32 3)>;
+def ARMCCmi : PatLeaf<(i32 4)>;
+def ARMCCpl : PatLeaf<(i32 5)>;
+def ARMCCvs : PatLeaf<(i32 6)>;
+def ARMCCvc : PatLeaf<(i32 7)>;
+def ARMCChi : PatLeaf<(i32 8)>;
+def ARMCCls : PatLeaf<(i32 9)>;
+def ARMCCge : PatLeaf<(i32 10)>;
+def ARMCClt : PatLeaf<(i32 11)>;
+def ARMCCgt : PatLeaf<(i32 12)>;
+def ARMCCle : PatLeaf<(i32 13)>;
+def ARMCCal : PatLeaf<(i32 14)>;
+
+// VCC predicates. See ARMVCC::VPTCodes
+def ARMVCCNone : PatLeaf<(i32 0)>;
+def ARMVCCThen : PatLeaf<(i32 1)>;
+def ARMVCCElse : PatLeaf<(i32 2)>;
+
 //===----------------------------------------------------------------------===//
 //  ARM specific transformation functions and pattern fragments.
 //
@@ -913,7 +935,10 @@ def MVEShiftImm1_7AsmOperand: ImmAsmOperand<1,7> {
   // encodings allow.
   let DiagnosticString = "operand must be an immediate in the range [1,8]";
 }
-def mve_shift_imm1_7 : Operand<i32> {
+def mve_shift_imm1_7 : Operand<i32>,
+    // SelectImmediateInRange / isScaledConstantInRange uses a
+    // half-open interval, so the parameters <1,8> mean 1-7 inclusive
+    ComplexPattern<i32, 1, "SelectImmediateInRange<1,8>", [], []> {
   let ParserMatchClass = MVEShiftImm1_7AsmOperand;
   let EncoderMethod = "getMVEShiftImmOpValue";
 }
@@ -926,7 +951,10 @@ def MVEShiftImm1_15AsmOperand: ImmAsmOperand<1,15> {
   // encodings allow.
   let DiagnosticString = "operand must be an immediate in the range [1,16]";
 }
-def mve_shift_imm1_15 : Operand<i32> {
+def mve_shift_imm1_15 : Operand<i32>,
+    // SelectImmediateInRange / isScaledConstantInRange uses a
+    // half-open interval, so the parameters <1,16> mean 1-15 inclusive
+    ComplexPattern<i32, 1, "SelectImmediateInRange<1,16>", [], []> {
   let ParserMatchClass = MVEShiftImm1_15AsmOperand;
   let EncoderMethod = "getMVEShiftImmOpValue";
 }

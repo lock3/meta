@@ -1995,16 +1995,6 @@ public:
     return const_cast<CXXMethodDecl*>(this)->getMostRecentDecl();
   }
 
-  /// True if this method is user-declared and was not
-  /// deleted or defaulted on its first declaration.
-  bool isUserProvided() const {
-    auto *DeclAsWritten = this;
-    if (auto *Pattern = getTemplateInstantiationPattern())
-      DeclAsWritten = cast<CXXMethodDecl>(Pattern);
-    return !(DeclAsWritten->isDeleted() ||
-             DeclAsWritten->getCanonicalDecl()->isDefaulted());
-  }
-
   void addOverriddenMethod(const CXXMethodDecl *MD);
 
   using method_iterator = const CXXMethodDecl *const *;
@@ -3041,7 +3031,9 @@ public:
 
 /// Implicit declaration of a temporary that was materialized by
 /// a MaterializeTemporaryExpr and lifetime-extended by a declaration
-class LifetimeExtendedTemporaryDecl final : public Decl {
+class LifetimeExtendedTemporaryDecl final
+    : public Decl,
+      public Mergeable<LifetimeExtendedTemporaryDecl> {
   friend class MaterializeTemporaryExpr;
   friend class ASTDeclReader;
 

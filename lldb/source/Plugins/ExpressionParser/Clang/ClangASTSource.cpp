@@ -57,10 +57,11 @@ ClangASTSource::ClangASTSource(const lldb::TargetSP &target)
   }
 }
 
-void ClangASTSource::InstallASTContext(clang::ASTContext &ast_context,
+void ClangASTSource::InstallASTContext(ClangASTContext &clang_ast_context,
                                        clang::FileManager &file_manager,
                                        bool is_shared_context) {
-  m_ast_context = &ast_context;
+  m_ast_context = clang_ast_context.getASTContext();
+  m_clang_ast_context = &clang_ast_context;
   m_file_manager = &file_manager;
   if (m_target->GetUseModernTypeLookup()) {
     // Configure the ExternalASTMerger.  The merger needs to be able to import
@@ -69,7 +70,7 @@ void ClangASTSource::InstallASTContext(clang::ASTContext &ast_context,
     // AST contexts.
 
     lldbassert(!m_merger_up);
-    clang::ExternalASTMerger::ImporterTarget target = {ast_context,
+    clang::ExternalASTMerger::ImporterTarget target = {*m_ast_context,
                                                        file_manager};
     std::vector<clang::ExternalASTMerger::ImporterSource> sources;
     for (lldb::ModuleSP module_sp : m_target->GetImages().Modules()) {
@@ -119,20 +120,23 @@ void ClangASTSource::InstallASTContext(clang::ASTContext &ast_context,
       // Update the scratch AST context's merger to reflect any new sources we
       // might have come across since the last time an expression was parsed.
 
-      auto scratch_ast_context = static_cast<ClangASTContextForExpressions*>(
-          m_target->GetScratchClangASTContext());
+      if (auto *clang_ast_context = ClangASTContext::GetScratch(*m_target)) {
 
-      scratch_ast_context->GetMergerUnchecked().AddSources(sources);
+        auto scratch_ast_context =
+            static_cast<ClangASTContextForExpressions *>(clang_ast_context);
 
-      sources.push_back({*scratch_ast_context->getASTContext(),
-                         *scratch_ast_context->getFileManager(),
-                         scratch_ast_context->GetOriginMap()});
+        scratch_ast_context->GetMergerUnchecked().AddSources(sources);
+
+        sources.push_back({*scratch_ast_context->getASTContext(),
+                           *scratch_ast_context->getFileManager(),
+                           scratch_ast_context->GetOriginMap()});
+      }
     }
 
     m_merger_up =
         std::make_unique<clang::ExternalASTMerger>(target, sources);
   } else {
-    m_ast_importer_sp->InstallMapCompleter(&ast_context, *this);
+    m_ast_importer_sp->InstallMapCompleter(m_ast_context, *this);
   }
 }
 
@@ -144,7 +148,7 @@ ClangASTSource::~ClangASTSource() {
   // demand by passing false to
   // Target::GetScratchClangASTContext(create_on_demand).
   ClangASTContext *scratch_clang_ast_context =
-      m_target->GetScratchClangASTContext(false);
+      ClangASTContext::GetScratch(*m_target, false);
 
   if (!scratch_clang_ast_context)
     return;
@@ -363,7 +367,6 @@ void ClangASTSource::CompleteType(TagDecl *tag_decl) {
       TypeList types;
 
       ConstString name(tag_decl->getName().str().c_str());
-      CompilerDeclContext namespace_decl;
 
       const ModuleList &module_list = m_target->GetImages();
 
@@ -524,8 +527,6 @@ void ClangASTSource::FindExternalLexicalDecls(
   } else if (!m_ast_importer_sp)
     return;
 
-  ClangASTMetrics::RegisterLexicalQuery();
-
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
   const Decl *context_decl = dyn_cast<Decl>(decl_context);
@@ -671,8 +672,6 @@ void ClangASTSource::FindExternalLexicalDecls(
 void ClangASTSource::FindExternalVisibleDecls(NameSearchContext &context) {
   assert(m_ast_context);
 
-  ClangASTMetrics::RegisterVisibleQuery();
-
   const ConstString name(context.m_decl_name.getAsString().c_str());
 
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
@@ -776,7 +775,7 @@ void ClangASTSource::FindExternalVisibleDecls(NameSearchContext &context) {
 }
 
 clang::Sema *ClangASTSource::getSema() {
-  return ClangASTContext::GetASTContext(m_ast_context)->getSema();
+  return m_clang_ast_context->getSema();
 }
 
 bool ClangASTSource::IgnoreName(const ConstString name,
@@ -1714,8 +1713,6 @@ bool ClangASTSource::layoutRecordType(const RecordDecl *record, uint64_t &size,
                                       FieldOffsetMap &field_offsets,
                                       BaseOffsetMap &base_offsets,
                                       BaseOffsetMap &virtual_base_offsets) {
-  ClangASTMetrics::RegisterRecordLayout();
-
   static unsigned int invocation_id = 0;
   unsigned int current_id = invocation_id++;
 
@@ -2032,8 +2029,6 @@ CompilerType ClangASTSource::GuardedCopyType(const CompilerType &src_type) {
   if (src_ast == nullptr)
     return CompilerType();
 
-  ClangASTMetrics::RegisterLLDBImport();
-
   SetImportInProgress(true);
 
   QualType copied_qual_type;
@@ -2059,8 +2054,7 @@ CompilerType ClangASTSource::GuardedCopyType(const CompilerType &src_type) {
     // seems to be generating bad types on occasion.
     return CompilerType();
 
-  return CompilerType(ClangASTContext::GetASTContext(m_ast_context),
-                      copied_qual_type.getAsOpaquePtr());
+  return CompilerType(m_clang_ast_context, copied_qual_type.getAsOpaquePtr());
 }
 
 clang::NamedDecl *NameSearchContext::AddVarDecl(const CompilerType &type) {
@@ -2187,10 +2181,9 @@ clang::NamedDecl *NameSearchContext::AddGenericFunDecl() {
       ArrayRef<QualType>(),                     // argument types
       proto_info));
 
-  return AddFunDecl(
-      CompilerType(ClangASTContext::GetASTContext(m_ast_source.m_ast_context),
-                   generic_function_type.getAsOpaquePtr()),
-      true);
+  return AddFunDecl(CompilerType(m_ast_source.m_clang_ast_context,
+                                 generic_function_type.getAsOpaquePtr()),
+                    true);
 }
 
 clang::NamedDecl *

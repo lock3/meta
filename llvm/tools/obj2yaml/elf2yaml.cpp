@@ -215,9 +215,11 @@ template <class ELFT> Expected<ELFYAML::Object *> ELFDumper<ELFT>::dump() {
       return std::move(E);
   }
 
-  if (DynSymTab)
-    if (Error E = dumpSymbols(DynSymTab, Y->DynamicSymbols))
+  if (DynSymTab) {
+    Y->DynamicSymbols.emplace();
+    if (Error E = dumpSymbols(DynSymTab, *Y->DynamicSymbols))
       return std::move(E);
+  }
 
   for (const Elf_Shdr &Sec : Sections) {
     switch (Sec.sh_type) {
@@ -993,6 +995,8 @@ ELFDumper<ELFT>::dumpVerneedSection(const Elf_Shdr *Shdr) {
   if (!StringTableOrErr)
     return StringTableOrErr.takeError();
 
+  S->VerneedV.emplace();
+
   llvm::ArrayRef<uint8_t> Data = *Contents;
   const uint8_t *Buf = Data.data();
   while (Buf) {
@@ -1019,7 +1023,7 @@ ELFDumper<ELFT>::dumpVerneedSection(const Elf_Shdr *Shdr) {
       BufAux = Vernaux->vna_next ? BufAux + Vernaux->vna_next : nullptr;
     }
 
-    S->VerneedV.push_back(Entry);
+    S->VerneedV->push_back(Entry);
     Buf = Verneed->vn_next ? Buf + Verneed->vn_next : nullptr;
   }
 

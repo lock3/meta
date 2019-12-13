@@ -424,6 +424,8 @@ namespace clang {
     template<typename T>
     void mergeMergeable(Mergeable<T> *D);
 
+    void mergeMergeable(LifetimeExtendedTemporaryDecl *D);
+
     void mergeTemplatePattern(RedeclarableTemplateDecl *D,
                               RedeclarableTemplateDecl *Existing,
                               DeclID DsID, bool IsKeyDecl);
@@ -884,6 +886,20 @@ void ASTDeclReader::VisitFunctionDecl(FunctionDecl *FD) {
 
   FD->ODRHash = Record.readInt();
   FD->setHasODRHash(true);
+  FD->setUsesFPIntrin(Record.readInt());
+
+  if (FD->isDefaulted()) {
+    if (unsigned NumLookups = Record.readInt()) {
+      SmallVector<DeclAccessPair, 8> Lookups;
+      for (unsigned I = 0; I != NumLookups; ++I) {
+        NamedDecl *ND = Record.readDeclAs<NamedDecl>();
+        AccessSpecifier AS = (AccessSpecifier)Record.readInt();
+        Lookups.push_back(DeclAccessPair::make(ND, AS));
+      }
+      FD->setDefaultedFunctionInfo(FunctionDecl::DefaultedFunctionInfo::Create(
+          Reader.getContext(), Lookups));
+    }
+  }
 
   switch ((FunctionDecl::TemplatedKind)Record.readInt()) {
   case FunctionDecl::TK_NonTemplate:
@@ -1014,9 +1030,9 @@ void ASTDeclReader::VisitObjCMethodDecl(ObjCMethodDecl *MD) {
     // definitions rarely show up in headers.
     Reader.PendingBodies[MD] = GetCurrentCursorOffset();
     HasPendingBody = true;
-    MD->setSelfDecl(ReadDeclAs<ImplicitParamDecl>());
-    MD->setCmdDecl(ReadDeclAs<ImplicitParamDecl>());
   }
+  MD->setSelfDecl(ReadDeclAs<ImplicitParamDecl>());
+  MD->setCmdDecl(ReadDeclAs<ImplicitParamDecl>());
   MD->setInstanceMethod(Record.readInt());
   MD->setVariadic(Record.readInt());
   MD->setPropertyAccessor(Record.readInt());
@@ -2358,6 +2374,7 @@ void ASTDeclReader::VisitLifetimeExtendedTemporaryDecl(
   if (Record.readInt())
     D->Value = new (D->getASTContext()) APValue(Record.readAPValue());
   D->ManglingNumber = Record.readInt();
+  mergeMergeable(D);
 }
 
 std::pair<uint64_t, uint64_t>
@@ -2553,6 +2570,25 @@ static bool allowODRLikeMergeInC(NamedDecl *ND) {
   if (isa<EnumConstantDecl>(ND))
     return true;
   return false;
+}
+
+/// Attempts to merge LifetimeExtendedTemporaryDecl with
+/// identical class definitions from two different modules.
+void ASTDeclReader::mergeMergeable(LifetimeExtendedTemporaryDecl *D) {
+  // If modules are not available, there is no reason to perform this merge.
+  if (!Reader.getContext().getLangOpts().Modules)
+    return;
+
+  LifetimeExtendedTemporaryDecl *LETDecl = D;
+
+  LifetimeExtendedTemporaryDecl *&LookupResult =
+      Reader.LETemporaryForMerging[std::make_pair(
+          LETDecl->getExtendingDecl(), LETDecl->getManglingNumber())];
+  if (LookupResult)
+    Reader.getContext().setPrimaryMergedDecl(LETDecl,
+                                             LookupResult->getCanonicalDecl());
+  else
+    LookupResult = LETDecl;
 }
 
 /// Attempts to merge the given declaration (D) with another declaration
