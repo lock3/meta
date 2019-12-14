@@ -50,7 +50,7 @@ void conditional_invalidation(bool flag) {
 
 void domination_param(int* p, bool flag) { // expected-note {{the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null}}
     if (flag) {
-        *p = 5;     // expected-warning {{dereferencing a possibly dangling pointer}
+        *p = 5;     // expected-warning {{dereferencing a possibly null pointer}}
     }
 }
 
