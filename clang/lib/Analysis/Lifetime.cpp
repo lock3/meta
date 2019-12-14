@@ -21,11 +21,16 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
+void LifetimeReporterBase::initializeFiltering(CFG *Cfg) {
+  PostDom.buildDominatorTree(Cfg);
+  Dom.buildDominatorTree(Cfg);
+}
+
 bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source) const {
-  if (!PostDom)
+  if (!shouldFilterWarnings())
     return false;
 
-  return !PostDom->dominates(Current, Source);
+  return !PostDom.dominates(Current, Source) && !Dom.dominates(Source, Current);
 }
 
 class LifetimeContext {
@@ -44,7 +49,6 @@ class LifetimeContext {
 
   ASTContext &ASTCtxt;
   CFG *ControlFlowGraph;
-  CFGPostDomTree PostDom;
   const FunctionDecl *FuncDecl;
   std::vector<BlockContext> BlockContexts;
   AnalysisDeclContext AC;
@@ -110,10 +114,8 @@ public:
     // dumpCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());
 
-    if (Reporter.shouldFilterWarnings()) {
-      PostDom.buildDominatorTree(ControlFlowGraph);
-      Reporter.setPostDom(&PostDom);
-    }
+    if (Reporter.shouldFilterWarnings())
+      Reporter.initializeFiltering(ControlFlowGraph);
   }
 
   void TraverseBlocks();

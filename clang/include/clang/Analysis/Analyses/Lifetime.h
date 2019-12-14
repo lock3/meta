@@ -56,7 +56,7 @@ public:
   virtual ~LifetimeReporterBase() = default;
 
   virtual bool shouldFilterWarnings() const { return false; }
-  void setPostDom(CFGPostDomTree *PD) { PostDom = PD; }
+  void initializeFiltering(CFG *Cfg);
   void setCurrentBlock(const CFGBlock *B) { Current = B; }
   bool shouldBeFiltered(const CFGBlock *Source) const;
 
@@ -82,7 +82,8 @@ public:
                                  StringRef Pointee = "") = 0;
 
 private:
-  CFGPostDomTree *PostDom = nullptr;
+  CFGPostDomTree PostDom;
+  CFGDomTree Dom;
   const CFGBlock *Current = nullptr;
 };
 
