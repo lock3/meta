@@ -1337,6 +1337,16 @@ void f() {
   // We don't handle Aggregates yet
   __lifetime_pset(E.V1); // expected-warning {{((static)}}
 }
+
+struct InClassInitializer {
+  int a;
+  const char *mem = nullptr;
+};
+
+void g() {
+  InClassInitializer c{3};
+  __lifetime_pset(c.mem); // expected-warning {{((static)}}
+}
 } // namespace Aggregates
 
 namespace TypeId {

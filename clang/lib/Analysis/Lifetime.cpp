@@ -107,6 +107,7 @@ public:
     AC.getCFGBuildOptions().AddCXXNewAllocator = true;
     AC.getCFGBuildOptions().AddExprWithCleanups = true;
     AC.getCFGBuildOptions().AddCXXDefaultInitExprInCtors = true;
+    AC.getCFGBuildOptions().AddCXXDefaultInitExprInAggregates = true;
     // TODO AddTemporaryDtors
     // TODO AddEHEdges
     AC.getCFGBuildOptions().setAllAlwaysAdd();
