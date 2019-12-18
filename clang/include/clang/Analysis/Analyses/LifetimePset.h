@@ -47,15 +47,30 @@ struct Variable : public ContractVariable {
     return Variable(ContractVariable::returnVal(), nullptr);
   }
 
+  // Is O a subobject of this?
+  // Examples:
+  //   a is the subobject of a
+  //   *a is the subobject of *a
+  //   **a is the subobject of **a
+  //   a.b.c is the subobject of a.b
+  //   (*a).b is the subobject of *a
+  //   *(*a).b is NOT the subobject of *a
   bool isParent(const Variable &O) const {
     auto isPrefixOf =
-        [this](
-            const llvm::SmallVector<const FieldDecl *, 4> &OtherFDs) -> bool {
-      if (OtherFDs.size() < FDs.size())
-        return false;
-      return FDs.end() ==
-             std::mismatch(FDs.begin(), FDs.end(), OtherFDs.begin()).first;
-    };
+        [this](const llvm::SmallVectorImpl<const FieldDecl *> &OtherFDs) {
+          if (OtherFDs.size() < FDs.size())
+            return false;
+          bool HasField = false;
+          for (const auto *FD : OtherFDs) {
+            if (FD)
+              HasField = true;
+            // Dereferencing a field, we are no longer in the same object.
+            if (HasField && !FD)
+              return false;
+          }
+          return FDs.end() ==
+                 std::mismatch(FDs.begin(), FDs.end(), OtherFDs.begin()).first;
+        };
     return Var == O.Var && isPrefixOf(O.FDs);
   }
 

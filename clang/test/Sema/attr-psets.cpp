@@ -1663,3 +1663,29 @@ void f() {
   __lifetime_pset(b); // expected-warning {{((unknown))}}
 }
 } // namespace structured_bindings
+
+namespace linked_structures {
+struct Node {
+  Node *next;
+  void freeList() {
+    Node *cur = this;
+    while (cur) {
+      __lifetime_pset(cur); // expected-warning {{(*this)}}
+                            // expected-warning@-1 {{(*(*this).next, *this)}}
+                            // expected-warning@-2 {{((static), *(*this).next, *this)}}
+      Node *next_temp = cur->next;
+      __lifetime_pset(next_temp); // expected-warning {{(*(*this).next)}}
+                                  // expected-warning@-1 {{((static), *(*this).next)}}
+                                  // expected-warning@-2 {{((static), *(*this).next)}}
+      delete cur;
+      __lifetime_pset(next_temp); // expected-warning {{(*(*this).next)}}
+                                  // expected-warning@-1 {{((static), *(*this).next)}}
+                                  // expected-warning@-2 {{((static), *(*this).next)}}
+      __lifetime_pset(cur); // expected-warning {{(invalid)}}
+                            // expected-warning@-1 {{(invalid)}}
+                            // expected-warning@-2 {{(invalid)}}
+      cur = next_temp;
+    }
+  }
+};
+} // namespace linked_structures
