@@ -105,9 +105,20 @@ INLINE uint32_t __kmpc_impl_smid() {
   return __smid();
 }
 
+INLINE double __target_impl_get_wtick() { return ((double)1E-9); }
+
+EXTERN int64_t __clock64();
+INLINE double __target_impl_get_wtime() {
+  return ((double)1.0 / 745000000.0) * __clock64();
+}
+
 INLINE uint64_t __kmpc_impl_ffs(uint64_t x) { return __builtin_ffsl(x); }
 
 INLINE uint64_t __kmpc_impl_popc(uint64_t x) { return __builtin_popcountl(x); }
+
+template <typename T> INLINE T __kmpc_impl_min(T x, T y) {
+  return x < y ? x : y;
+}
 
 INLINE __kmpc_impl_lanemask_t __kmpc_impl_activemask() {
   return __ballot64(1);
@@ -143,6 +154,13 @@ INLINE int GetThreadIdInBlock() { return __builtin_amdgcn_workitem_id_x(); }
 INLINE int GetBlockIdInKernel() { return __builtin_amdgcn_workgroup_id_x(); }
 INLINE int GetNumberOfBlocksInKernel() { return __ockl_get_num_groups(0); }
 INLINE int GetNumberOfThreadsInBlock() { return __ockl_get_local_size(0); }
+
+// Locks
+EXTERN void __kmpc_impl_init_lock(omp_lock_t *lock);
+EXTERN void __kmpc_impl_destroy_lock(omp_lock_t *lock);
+EXTERN void __kmpc_impl_set_lock(omp_lock_t *lock);
+EXTERN void __kmpc_impl_unset_lock(omp_lock_t *lock);
+EXTERN int __kmpc_impl_test_lock(omp_lock_t *lock);
 
 // DEVICE versions of part of libc
 extern "C" {
