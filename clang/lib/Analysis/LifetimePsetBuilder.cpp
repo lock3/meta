@@ -174,6 +174,9 @@ public:
       setPSet(DeclRef, PSet::staticVar(false));
     } else if (const auto *VD = dyn_cast<VarDecl>(DeclRef->getDecl())) {
       setPSet(DeclRef, varRefersTo(VD, DeclRef->getSourceRange()));
+    } else if (const auto *B = dyn_cast<BindingDecl>(DeclRef->getDecl())) {
+      // TODO: support BindingDecl in Variables?
+      setPSet(DeclRef, {});
     } else if (const auto *FD = dyn_cast<FieldDecl>(DeclRef->getDecl())) {
       Variable V = Variable::thisPointer(FD->getParent());
       V.deref();         // *this
@@ -923,6 +926,7 @@ public:
   }
 
   void VisitVarDecl(const VarDecl *VD) {
+    // TODO: handle DecompositionDecl.
     const Expr *Initializer = VD->getInit();
     SourceRange Range = VD->getSourceRange();
 

@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wno-unused-value -Wno-return-stack-address -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify %s
+// RUN: %clang_cc1 -fcxx-exceptions -fsyntax-only -Wno-undefined-inline -Wno-unused-value -Wno-return-stack-address -Wlifetime -Wlifetime-disabled -Wlifetime-debug -Wlifetime-global -verify -std=c++17 %s
 
 template <typename T>
 bool __lifetime_pset(const T &) { return true; }
@@ -1651,3 +1651,15 @@ void f() {
   __lifetime_pset(({ int *p = 0; p;})); // expected-warning {{((unknown))}}
 }
 } // namespace expressions_statement
+
+namespace structured_bindings {
+struct A { int *a; int *b; };
+A getA();
+
+void f() {
+  auto [a, b] = getA();
+  // TODO: fix these
+  __lifetime_pset(a); // expected-warning {{((unknown))}}
+  __lifetime_pset(b); // expected-warning {{((unknown))}}
+}
+} // namespace structured_bindings
