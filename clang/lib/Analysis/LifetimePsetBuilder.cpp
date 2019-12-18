@@ -518,6 +518,11 @@ public:
 
   void VisitVAArgExpr(const VAArgExpr *E) { setPSet(E, {}); }
 
+  void VisitStmtExpr(const StmtExpr *E) {
+    // TODO: not yet suppported.
+    setPSet(E, {});
+  }
+
   void VisitCXXDeleteExpr(const CXXDeleteExpr *DE) {
     if (hasPSet(DE->getArgument())) {
       PSet PS = getPSet(DE->getArgument());

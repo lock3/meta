@@ -1645,3 +1645,9 @@ auto fun() {
 }
 
 } // namespace bug_report_69
+
+namespace expressions_statement {
+void f() {
+  __lifetime_pset(({ int *p = 0; p;})); // expected-warning {{((unknown))}}
+}
+} // namespace expressions_statement
