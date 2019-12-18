@@ -97,9 +97,9 @@ struct ContractPSet {
                bool ContainsNull = false)
       : ContainsNull(ContainsNull), ContainsInvalid(false),
         ContainsStatic(false), Vars(Vs) {}
-  int ContainsNull : 1;
-  int ContainsInvalid : 1;
-  int ContainsStatic : 1;
+  unsigned ContainsNull : 1;
+  unsigned ContainsInvalid : 1;
+  unsigned ContainsStatic : 1;
   std::set<ContractVariable> Vars;
 
   void merge(const ContractPSet &RHS) {

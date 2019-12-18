@@ -910,7 +910,7 @@ public:
       if (AddReason)
         RHS.addNullReason(NullReason::assigned(Range, CurrentBlock));
       if (!isNullableType(LHS)) {
-        Reporter.warn(WarnType::AssignNull, Range, RHS.isSingleton());
+        Reporter.warn(WarnType::AssignNull, Range, !RHS.isNull());
         RHS = PSet{};
       }
     }
@@ -1045,7 +1045,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   }
 
   DBG("PMap[" << LHS.str() << "] = " << RHS.str() << "\n");
-  if (LHS.isSingleton()) {
+  if (LHS.vars().size() == 1) {
     Variable Var = *LHS.vars().begin();
     auto I = PMap.find(Var);
     if (I != PMap.end())

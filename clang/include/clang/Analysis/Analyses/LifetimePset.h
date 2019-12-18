@@ -400,11 +400,6 @@ public:
   }
   void addStatic() { ContainsStatic = true; }
 
-  bool isSingleton() const {
-    return !ContainsInvalid &&
-           (ContainsStatic ^ ContainsNull ^ (Vars.size() == 1));
-  }
-
   const std::set<Variable> &vars() const { return Vars; }
 
   const std::vector<InvalidationReason> &invReasons() const {
@@ -575,9 +570,9 @@ public:
   }
 
 private:
-  int ContainsNull : 1;
-  int ContainsInvalid : 1;
-  int ContainsStatic : 1;
+  unsigned ContainsNull : 1;
+  unsigned ContainsInvalid : 1;
+  unsigned ContainsStatic : 1;
   std::set<Variable> Vars;
 
   std::vector<InvalidationReason> InvReasons;
