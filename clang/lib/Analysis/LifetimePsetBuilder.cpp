@@ -1034,9 +1034,12 @@ PSet PSetsBuilder::derefPSet(const PSet &PS) const {
 
   for (auto V : PS.vars()) {
     int Order = V.getOrder();
-    if (Order > 0)
-      RetPS.insert(V.deref()); // pset(o') = { o'' }
-    else
+    if (Order > 0) {
+      if (Order > MaxOrderDepth)
+        RetPS.addStatic();
+      else
+        RetPS.insert(V.deref()); // pset(o') = { o'' }
+    } else
       RetPS.merge(getPSet(V));
   }
 

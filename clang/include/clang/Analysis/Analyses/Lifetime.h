@@ -32,6 +32,8 @@ enum class TypeCategory { Owner, Pointer, Aggregate, Value };
 
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
 
+constexpr int MaxOrderDepth = 3;
+
 enum class WarnType { DerefDangling, DerefNull, AssignNull, Null, Dangling };
 
 enum class NoteType {

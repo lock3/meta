@@ -1688,4 +1688,31 @@ struct Node {
     }
   }
 };
+
+namespace boundedness {
+struct Node;
+struct [[gsl::Owner]] SubRegion {
+  Node *begin();
+};
+bool cond();
+struct Node {
+  SubRegion subregions_;
+  Node *parent_;
+  bool f() {
+    for (auto itr = subregions_.begin(); cond();) {
+      Node* up = itr->parent_;
+      __lifetime_pset(up); // expected-warning {{(*(*(*this).subregions_).parent_)}}
+
+      do {
+        up = up->subregions_.begin();
+        up = up->parent_;
+        __lifetime_pset(up); // expected-warning {{(*(*(*(*(*this).subregions_).parent_).subregions_).parent_)}}
+                             // expected-warning@-1 {{((static), *(*(*(*(*this).subregions_).parent_).subregions_).parent_)}}
+                             // expected-warning@-2 {{((static), *(*(*(*(*this).subregions_).parent_).subregions_).parent_)}}
+      } while (cond());
+    }
+    return true;
+  }
+};
+} // namespace boundedness
 } // namespace linked_structures
