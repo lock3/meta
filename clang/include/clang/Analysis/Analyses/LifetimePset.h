@@ -360,12 +360,13 @@ public:
   bool shouldBeFilteredBasedOnNotes(LifetimeReporterBase &Reporter) const {
     if (!Reporter.shouldFilterWarnings())
       return false;
-    bool Result = true; 
     for (auto &R : InvReasons)
-      Result &= Reporter.shouldBeFiltered(R.getBlock());
+      if (Reporter.shouldBeFiltered(R.getBlock()))
+        return true;
     for (auto &R : NullReasons)
-      Result &= Reporter.shouldBeFiltered(R.getBlock());
-    return Result;
+      if (Reporter.shouldBeFiltered(R.getBlock()))
+        return true;
+    return false;
   }
 
   bool containsInvalid() const { return ContainsInvalid; }
