@@ -23,14 +23,13 @@ namespace lifetime {
 
 void LifetimeReporterBase::initializeFiltering(CFG *Cfg) {
   PostDom.buildDominatorTree(Cfg);
-  Dom.buildDominatorTree(Cfg);
 }
 
 bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source) const {
   if (!shouldFilterWarnings())
     return false;
 
-  return !PostDom.dominates(Current, Source) && !Dom.dominates(Source, Current);
+  return !PostDom.dominates(Current, Source);
 }
 
 class LifetimeContext {

@@ -85,7 +85,6 @@ public:
 
 private:
   CFGPostDomTree PostDom;
-  CFGDomTree Dom;
   const CFGBlock *Current = nullptr;
 };
 

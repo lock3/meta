@@ -675,7 +675,8 @@ public:
           if (!PVD) {
             // PVD is a c-style vararg argument
             if (ArgPS.containsInvalid()) {
-              if (!ArgPS.shouldBeFilteredBasedOnNotes(Reporter)) {
+              if (!ArgPS.shouldBeFilteredBasedOnNotes(Reporter) ||
+                  ArgPS.isInvalid()) {
                 Reporter.warnNullDangling(
                     WarnType::Dangling, Arg->getSourceRange(),
                     ValueSource::Param, "", !ArgPS.isInvalid());
@@ -1093,7 +1094,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
 
 bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) const {
   if (PS.containsInvalid()) {
-    if (PS.shouldBeFilteredBasedOnNotes(Reporter))
+    if (PS.shouldBeFilteredBasedOnNotes(Reporter) && !PS.isInvalid())
       return false;
     Reporter.warn(WarnType::DerefDangling, Range, !PS.isInvalid());
     PS.explainWhyInvalid(Reporter);
@@ -1101,7 +1102,7 @@ bool PSetsBuilder::CheckPSetValidity(const PSet &PS, SourceRange Range) const {
   }
 
   if (PS.containsNull()) {
-    if (PS.shouldBeFilteredBasedOnNotes(Reporter))
+    if (PS.shouldBeFilteredBasedOnNotes(Reporter) && !PS.isNull())
       return false;
     Reporter.warn(WarnType::DerefNull, Range, !PS.isNull());
     PS.explainWhyNull(Reporter);
