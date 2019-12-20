@@ -1133,6 +1133,9 @@ auto lambda_capture(const int *param, const int *param2) {
     return *param + *alias;
   };
   //__lifetime_pset(a); // TODOexpected-warning {{pset(a) = (param, param2)}}
+  a();
+  // TODO: This is a temporary workaround to suppress false positives.
+  __lifetime_pset(param);  // expected-warning {{pset(param) = ((unknown))}}
   int i;
   int *ptr = &i;
   auto b = [=]() {

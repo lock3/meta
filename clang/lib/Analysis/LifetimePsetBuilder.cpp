@@ -788,6 +788,22 @@ public:
             setPSet(getPSet(ObjExpr), PostConditions[V],
                     ObjExpr->getSourceRange());
         });
+
+    // Lambdas are not supported yet properly. Invalidate the captured pointers
+    // so we do not get false positives with uninitialized values.
+    if (const auto *M = dyn_cast<CXXMethodDecl>(Callee)) {
+      const CXXRecordDecl *RD = M->getParent();
+      if (!RD->isLambda())
+        return;
+      for (const LambdaCapture &Capture : RD->captures()) {
+        if (Capture.getCaptureKind() != LCK_ByRef ||
+            !Capture.capturesVariable())
+          continue;
+        const VarDecl *VD = Capture.getCapturedVar();
+        if (classifyTypeCategory(VD->getType()) == TypeCategory::Pointer)
+          setPSet(PSet::singleton(VD), {}, Callee->getSourceRange());
+      }
+    }
   }
 
   bool CheckPSetValidity(const PSet &PS, SourceRange Range) const;
