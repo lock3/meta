@@ -516,6 +516,10 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::ATOMIC_LOAD_AND, MVT::i32, Custom);
   setOperationAction(ISD::ATOMIC_LOAD_AND, MVT::i64, Custom);
 
+  // 128-bit loads and stores can be done without expanding
+  setOperationAction(ISD::LOAD, MVT::i128, Custom);
+  setOperationAction(ISD::STORE, MVT::i128, Custom);
+
   // Lower READCYCLECOUNTER using an mrs from PMCCNTR_EL0.
   // This requires the Performance Monitors extension.
   if (Subtarget->hasPerfMon())
@@ -1288,6 +1292,12 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AArch64ISD::ORV_PRED:          return "AArch64ISD::ORV_PRED";
   case AArch64ISD::EORV_PRED:         return "AArch64ISD::EORV_PRED";
   case AArch64ISD::ANDV_PRED:         return "AArch64ISD::ANDV_PRED";
+  case AArch64ISD::CLASTA_N:          return "AArch64ISD::CLASTA_N";
+  case AArch64ISD::CLASTB_N:          return "AArch64ISD::CLASTB_N";
+  case AArch64ISD::LASTA:             return "AArch64ISD::LASTA";
+  case AArch64ISD::LASTB:             return "AArch64ISD::LASTB";
+  case AArch64ISD::REV:               return "AArch64ISD::REV";
+  case AArch64ISD::TBL:               return "AArch64ISD::TBL";
   case AArch64ISD::NOT:               return "AArch64ISD::NOT";
   case AArch64ISD::BIT:               return "AArch64ISD::BIT";
   case AArch64ISD::CBZ:               return "AArch64ISD::CBZ";
@@ -1343,6 +1353,7 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AArch64ISD::UUNPKHI:           return "AArch64ISD::UUNPKHI";
   case AArch64ISD::UUNPKLO:           return "AArch64ISD::UUNPKLO";
   case AArch64ISD::INSR:              return "AArch64ISD::INSR";
+  case AArch64ISD::PTRUE:             return "AArch64ISD::PTRUE";
   case AArch64ISD::GLD1:              return "AArch64ISD::GLD1";
   case AArch64ISD::GLD1_SCALED:       return "AArch64ISD::GLD1_SCALED";
   case AArch64ISD::GLD1_SXTW:         return "AArch64ISD::GLD1_SXTW";
@@ -1364,6 +1375,8 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AArch64ISD::SST1_SXTW_SCALED:  return "AArch64ISD::SST1_SXTW_SCALED";
   case AArch64ISD::SST1_UXTW_SCALED:  return "AArch64ISD::SST1_UXTW_SCALED";
   case AArch64ISD::SST1_IMM:          return "AArch64ISD::SST1_IMM";
+  case AArch64ISD::LDP:               return "AArch64ISD::LDP";
+  case AArch64ISD::STP:               return "AArch64ISD::STP";
   }
   return nullptr;
 }
@@ -2915,6 +2928,45 @@ SDValue AArch64TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::aarch64_sve_uunpklo:
     return DAG.getNode(AArch64ISD::UUNPKLO, dl, Op.getValueType(),
                        Op.getOperand(1));
+  case Intrinsic::aarch64_sve_clasta_n:
+    return DAG.getNode(AArch64ISD::CLASTA_N, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2), Op.getOperand(3));
+  case Intrinsic::aarch64_sve_clastb_n:
+    return DAG.getNode(AArch64ISD::CLASTB_N, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2), Op.getOperand(3));
+  case Intrinsic::aarch64_sve_lasta:
+    return DAG.getNode(AArch64ISD::LASTA, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_lastb:
+    return DAG.getNode(AArch64ISD::LASTB, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_rev:
+    return DAG.getNode(AArch64ISD::REV, dl, Op.getValueType(),
+                       Op.getOperand(1));
+  case Intrinsic::aarch64_sve_tbl:
+    return DAG.getNode(AArch64ISD::TBL, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_trn1:
+    return DAG.getNode(AArch64ISD::TRN1, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_trn2:
+    return DAG.getNode(AArch64ISD::TRN2, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_uzp1:
+    return DAG.getNode(AArch64ISD::UZP1, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_uzp2:
+    return DAG.getNode(AArch64ISD::UZP2, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_zip1:
+    return DAG.getNode(AArch64ISD::ZIP1, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_zip2:
+    return DAG.getNode(AArch64ISD::ZIP2, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_sve_ptrue:
+    return DAG.getNode(AArch64ISD::PTRUE, dl, Op.getValueType(),
+                       Op.getOperand(1));
 
   case Intrinsic::aarch64_sve_insr: {
     SDValue Scalar = Op.getOperand(2);
@@ -2988,7 +3040,7 @@ static SDValue LowerTruncateVectorStore(SDLoc DL, StoreSDNode *ST,
 
 // Custom lowering for any store, vector or scalar and/or default or with
 // a truncate operations.  Currently only custom lower truncate operation
-// from vector v4i16 to v4i8.
+// from vector v4i16 to v4i8 or volatile stores of i128.
 SDValue AArch64TargetLowering::LowerSTORE(SDValue Op,
                                           SelectionDAG &DAG) const {
   SDLoc Dl(Op);
@@ -3000,18 +3052,32 @@ SDValue AArch64TargetLowering::LowerSTORE(SDValue Op,
   EVT VT = Value.getValueType();
   EVT MemVT = StoreNode->getMemoryVT();
 
-  assert (VT.isVector() && "Can only custom lower vector store types");
+  if (VT.isVector()) {
+    unsigned AS = StoreNode->getAddressSpace();
+    unsigned Align = StoreNode->getAlignment();
+    if (Align < MemVT.getStoreSize() &&
+        !allowsMisalignedMemoryAccesses(MemVT, AS, Align,
+                                        StoreNode->getMemOperand()->getFlags(),
+                                        nullptr)) {
+      return scalarizeVectorStore(StoreNode, DAG);
+    }
 
-  unsigned AS = StoreNode->getAddressSpace();
-  unsigned Align = StoreNode->getAlignment();
-  if (Align < MemVT.getStoreSize() &&
-      !allowsMisalignedMemoryAccesses(
-          MemVT, AS, Align, StoreNode->getMemOperand()->getFlags(), nullptr)) {
-    return scalarizeVectorStore(StoreNode, DAG);
-  }
-
-  if (StoreNode->isTruncatingStore()) {
-    return LowerTruncateVectorStore(Dl, StoreNode, VT, MemVT, DAG);
+    if (StoreNode->isTruncatingStore()) {
+      return LowerTruncateVectorStore(Dl, StoreNode, VT, MemVT, DAG);
+    }
+  } else if (MemVT == MVT::i128 && StoreNode->isVolatile()) {
+    assert(StoreNode->getValue()->getValueType(0) == MVT::i128);
+    SDValue Lo =
+        DAG.getNode(ISD::EXTRACT_ELEMENT, Dl, MVT::i64, StoreNode->getValue(),
+                    DAG.getConstant(0, Dl, MVT::i64));
+    SDValue Hi =
+        DAG.getNode(ISD::EXTRACT_ELEMENT, Dl, MVT::i64, StoreNode->getValue(),
+                    DAG.getConstant(1, Dl, MVT::i64));
+    SDValue Result = DAG.getMemIntrinsicNode(
+        AArch64ISD::STP, Dl, DAG.getVTList(MVT::Other),
+        {StoreNode->getChain(), Lo, Hi, StoreNode->getBasePtr()},
+        StoreNode->getMemoryVT(), StoreNode->getMemOperand());
+    return Result;
   }
 
   return SDValue();
@@ -9475,6 +9541,19 @@ AArch64TargetLowering::BuildSDIVPow2(SDNode *N, const APInt &Divisor,
   return DAG.getNode(ISD::SUB, DL, VT, DAG.getConstant(0, DL, VT), SRA);
 }
 
+static bool IsSVECntIntrinsic(SDValue S) {
+  switch(getIntrinsicID(S.getNode())) {
+  default:
+    break;
+  case Intrinsic::aarch64_sve_cntb:
+  case Intrinsic::aarch64_sve_cnth:
+  case Intrinsic::aarch64_sve_cntw:
+  case Intrinsic::aarch64_sve_cntd:
+    return true;
+  }
+  return false;
+}
+
 static SDValue performMulCombine(SDNode *N, SelectionDAG &DAG,
                                  TargetLowering::DAGCombinerInfo &DCI,
                                  const AArch64Subtarget *Subtarget) {
@@ -9485,8 +9564,17 @@ static SDValue performMulCombine(SDNode *N, SelectionDAG &DAG,
   if (!isa<ConstantSDNode>(N->getOperand(1)))
     return SDValue();
 
+  SDValue N0 = N->getOperand(0);
   ConstantSDNode *C = cast<ConstantSDNode>(N->getOperand(1));
   const APInt &ConstValue = C->getAPIntValue();
+
+  // Allow the scaling to be folded into the `cnt` instruction by preventing
+  // the scaling to be obscured here. This makes it easier to pattern match.
+  if (IsSVECntIntrinsic(N0) ||
+     (N0->getOpcode() == ISD::TRUNCATE &&
+      (IsSVECntIntrinsic(N0->getOperand(0)))))
+       if (ConstValue.sge(1) && ConstValue.sle(16))
+         return SDValue();
 
   // Multiplication of a power of two plus/minus one can be done more
   // cheaply as as shift+add/sub. For now, this is true unilaterally. If
@@ -9498,7 +9586,6 @@ static SDValue performMulCombine(SDNode *N, SelectionDAG &DAG,
   // e.g. 6=3*2=(2+1)*2.
   // TODO: consider lowering more cases, e.g. C = 14, -6, -14 or even 45
   // which equals to (1+2)*16-(1+2).
-  SDValue N0 = N->getOperand(0);
   // TrailingZeroes is used to test if the mul can be lowered to
   // shift+add+shift.
   unsigned TrailingZeroes = ConstValue.countTrailingZeros();
@@ -10660,6 +10747,31 @@ static SDValue LowerSVEIntReduction(SDNode *N, unsigned Opc,
   return SDValue();
 }
 
+static SDValue LowerSVEIntrinsicEXT(SDNode *N, SelectionDAG &DAG) {
+  SDLoc dl(N);
+  LLVMContext &Ctx = *DAG.getContext();
+  EVT VT = N->getValueType(0);
+
+  assert(VT.isScalableVector() && "Expected a scalable vector.");
+
+  // Current lowering only supports the SVE-ACLE types.
+  if (VT.getSizeInBits().getKnownMinSize() != AArch64::SVEBitsPerBlock)
+    return SDValue();
+
+  unsigned ElemSize = VT.getVectorElementType().getSizeInBits() / 8;
+  unsigned ByteSize = VT.getSizeInBits().getKnownMinSize() / 8;
+  EVT ByteVT = EVT::getVectorVT(Ctx, MVT::i8, { ByteSize, true });
+
+  // Convert everything to the domain of EXT (i.e bytes).
+  SDValue Op0 = DAG.getNode(ISD::BITCAST, dl, ByteVT, N->getOperand(1));
+  SDValue Op1 = DAG.getNode(ISD::BITCAST, dl, ByteVT, N->getOperand(2));
+  SDValue Op2 = DAG.getNode(ISD::MUL, dl, MVT::i32, N->getOperand(3),
+                            DAG.getConstant(ElemSize, dl, MVT::i32));
+
+  SDValue EXT = DAG.getNode(AArch64ISD::EXT, dl, ByteVT, Op0, Op1, Op2);
+  return DAG.getNode(ISD::BITCAST, dl, VT, EXT);
+}
+
 static SDValue tryConvertSVEWideCompare(SDNode *N, unsigned ReplacementIID,
                                         bool Invert,
                                         TargetLowering::DAGCombinerInfo &DCI,
@@ -10799,6 +10911,8 @@ static SDValue performIntrinsicCombine(SDNode *N,
     return LowerSVEIntReduction(N, AArch64ISD::EORV_PRED, DAG);
   case Intrinsic::aarch64_sve_andv:
     return LowerSVEIntReduction(N, AArch64ISD::ANDV_PRED, DAG);
+  case Intrinsic::aarch64_sve_ext:
+    return LowerSVEIntrinsicEXT(N, DAG);
   case Intrinsic::aarch64_sve_cmpeq_wide:
     return tryConvertSVEWideCompare(N, Intrinsic::aarch64_sve_cmpeq,
                                     false, DCI, DAG);
@@ -12689,6 +12803,69 @@ void AArch64TargetLowering::ReplaceNodeResults(
   case ISD::ATOMIC_CMP_SWAP:
     ReplaceCMP_SWAP_128Results(N, Results, DAG, Subtarget);
     return;
+  case ISD::LOAD: {
+    assert(SDValue(N, 0).getValueType() == MVT::i128 &&
+           "unexpected load's value type");
+    LoadSDNode *LoadNode = cast<LoadSDNode>(N);
+    if (!LoadNode->isVolatile() || LoadNode->getMemoryVT() != MVT::i128) {
+      // Non-volatile loads are optimized later in AArch64's load/store
+      // optimizer.
+      return;
+    }
+
+    SDValue Result = DAG.getMemIntrinsicNode(
+        AArch64ISD::LDP, SDLoc(N),
+        DAG.getVTList({MVT::i64, MVT::i64, MVT::Other}),
+        {LoadNode->getChain(), LoadNode->getBasePtr()}, LoadNode->getMemoryVT(),
+        LoadNode->getMemOperand());
+
+    SDValue Pair = DAG.getNode(ISD::BUILD_PAIR, SDLoc(N), MVT::i128,
+                               Result.getValue(0), Result.getValue(1));
+    Results.append({Pair, Result.getValue(2) /* Chain */});
+    return;
+  }
+  case ISD::INTRINSIC_WO_CHAIN: {
+    EVT VT = N->getValueType(0);
+    assert((VT == MVT::i8 || VT == MVT::i16) &&
+           "custom lowering for unexpected type");
+
+    ConstantSDNode *CN = cast<ConstantSDNode>(N->getOperand(0));
+    Intrinsic::ID IntID = static_cast<Intrinsic::ID>(CN->getZExtValue());
+    switch (IntID) {
+    default:
+      return;
+    case Intrinsic::aarch64_sve_clasta_n: {
+      SDLoc DL(N);
+      auto Op2 = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i32, N->getOperand(2));
+      auto V = DAG.getNode(AArch64ISD::CLASTA_N, DL, MVT::i32,
+                           N->getOperand(1), Op2, N->getOperand(3));
+      Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, VT, V));
+      return;
+    }
+    case Intrinsic::aarch64_sve_clastb_n: {
+      SDLoc DL(N);
+      auto Op2 = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i32, N->getOperand(2));
+      auto V = DAG.getNode(AArch64ISD::CLASTB_N, DL, MVT::i32,
+                           N->getOperand(1), Op2, N->getOperand(3));
+      Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, VT, V));
+      return;
+    }
+    case Intrinsic::aarch64_sve_lasta: {
+      SDLoc DL(N);
+      auto V = DAG.getNode(AArch64ISD::LASTA, DL, MVT::i32,
+                           N->getOperand(1), N->getOperand(2));
+      Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, VT, V));
+      return;
+    }
+    case Intrinsic::aarch64_sve_lastb: {
+      SDLoc DL(N);
+      auto V = DAG.getNode(AArch64ISD::LASTB, DL, MVT::i32,
+                           N->getOperand(1), N->getOperand(2));
+      Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, VT, V));
+      return;
+    }
+    }
+  }
   }
 }
 

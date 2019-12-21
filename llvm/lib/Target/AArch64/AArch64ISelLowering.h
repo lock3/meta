@@ -204,7 +204,15 @@ enum NodeType : unsigned {
   UUNPKHI,
   UUNPKLO,
 
+  CLASTA_N,
+  CLASTB_N,
+  LASTA,
+  LASTB,
+  REV,
+  TBL,
+
   INSR,
+  PTRUE,
 
   // Unsigned gather loads.
   GLD1,
@@ -260,8 +268,10 @@ enum NodeType : unsigned {
   STG,
   STZG,
   ST2G,
-  STZ2G
+  STZ2G,
 
+  LDP,
+  STP
 };
 
 } // end namespace AArch64ISD

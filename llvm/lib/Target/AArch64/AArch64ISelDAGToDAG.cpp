@@ -169,6 +169,28 @@ public:
     return SelectSVELogicalImm(N, VT, Imm);
   }
 
+  // Returns a suitable CNT/INC/DEC/RDVL multiplier to calculate VSCALE*N.
+  template<signed Min, signed Max, signed Scale, bool Shift>
+  bool SelectCntImm(SDValue N, SDValue &Imm) {
+    if (!isa<ConstantSDNode>(N))
+      return false;
+
+    int64_t MulImm = cast<ConstantSDNode>(N)->getSExtValue();
+    if (Shift)
+      MulImm = 1 << MulImm;
+
+    if ((MulImm % std::abs(Scale)) != 0)
+      return false;
+
+    MulImm /= Scale;
+    if ((MulImm >= Min) && (MulImm <= Max)) {
+      Imm = CurDAG->getTargetConstant(MulImm, SDLoc(N), MVT::i32);
+      return true;
+    }
+
+    return false;
+  }
+
   /// Form sequences of consecutive 64/128-bit registers for use in NEON
   /// instructions making use of a vector-list (e.g. ldN, tbl). Vecs must have
   /// between 1 and 4 elements. If it contains a single element that is returned
@@ -205,6 +227,7 @@ public:
   bool tryBitfieldInsertOp(SDNode *N);
   bool tryBitfieldInsertInZeroOp(SDNode *N);
   bool tryShiftAmountMod(SDNode *N);
+  bool tryHighFPExt(SDNode *N);
 
   bool tryReadRegister(SDNode *N);
   bool tryWriteRegister(SDNode *N);
@@ -1803,6 +1826,35 @@ bool AArch64DAGToDAGISel::tryBitfieldExtractOpFromSExt(SDNode *N) {
   return true;
 }
 
+/// Try to form fcvtl2 instructions from a floating-point extend of a high-half
+/// extract of a subvector.
+bool AArch64DAGToDAGISel::tryHighFPExt(SDNode *N) {
+  assert(N->getOpcode() == ISD::FP_EXTEND);
+
+  // There are 2 forms of fcvtl2 - extend to double or extend to float.
+  SDValue Extract = N->getOperand(0);
+  EVT VT = N->getValueType(0);
+  EVT NarrowVT = Extract.getValueType();
+  if ((VT != MVT::v2f64 || NarrowVT != MVT::v2f32) &&
+      (VT != MVT::v4f32 || NarrowVT != MVT::v4f16))
+    return false;
+
+  // Optionally look past a bitcast.
+  Extract = peekThroughBitcasts(Extract);
+  if (Extract.getOpcode() != ISD::EXTRACT_SUBVECTOR)
+    return false;
+
+  // Match extract from start of high half index.
+  // Example: v8i16 -> v4i16 means the extract must begin at index 4.
+  unsigned ExtractIndex = Extract.getConstantOperandVal(1);
+  if (ExtractIndex != Extract.getValueType().getVectorNumElements())
+    return false;
+
+  auto Opcode = VT == MVT::v2f64 ? AArch64::FCVTLv4i32 : AArch64::FCVTLv8i16;
+  CurDAG->SelectNodeTo(N, Opcode, VT, Extract.getOperand(0));
+  return true;
+}
+
 static bool isBitfieldExtractOp(SelectionDAG *CurDAG, SDNode *N, unsigned &Opc,
                                 SDValue &Opd0, unsigned &Immr, unsigned &Imms,
                                 unsigned NumberOfIgnoredLowBits = 0,
@@ -3007,6 +3059,11 @@ void AArch64DAGToDAGISel::Select(SDNode *Node) {
 
   case ISD::SIGN_EXTEND:
     if (tryBitfieldExtractOpFromSExt(Node))
+      return;
+    break;
+
+  case ISD::FP_EXTEND:
+    if (tryHighFPExt(Node))
       return;
     break;
 

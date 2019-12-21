@@ -65,10 +65,10 @@ CompilerType ClangASTImporter::CopyType(ClangASTContext &dst_ast,
 }
 
 clang::Decl *ClangASTImporter::CopyDecl(clang::ASTContext *dst_ast,
-                                        clang::ASTContext *src_ast,
                                         clang::Decl *decl) {
   ImporterDelegateSP delegate_sp;
 
+  clang::ASTContext *src_ast = &decl->getASTContext();
   delegate_sp = GetDelegate(dst_ast, src_ast);
 
   ASTImporterDelegate::CxxModuleScope std_scope(*delegate_sp, dst_ast);
@@ -320,10 +320,10 @@ CompilerType ClangASTImporter::DeportType(ClangASTContext &dst,
 }
 
 clang::Decl *ClangASTImporter::DeportDecl(clang::ASTContext *dst_ctx,
-                                          clang::ASTContext *src_ctx,
                                           clang::Decl *decl) {
   Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
 
+  clang::ASTContext *src_ctx = &decl->getASTContext();
   LLDB_LOGF(log,
             "    [ClangASTImporter] DeportDecl called on (%sDecl*)%p from "
             "(ASTContext*)%p to (ASTContext*)%p",
@@ -337,7 +337,7 @@ clang::Decl *ClangASTImporter::DeportDecl(clang::ASTContext *dst_ctx,
   clang::Decl *result;
   {
     CompleteTagDeclsScope complete_scope(*this, dst_ctx, src_ctx);
-    result = CopyDecl(dst_ctx, src_ctx, decl);
+    result = CopyDecl(dst_ctx, decl);
   }
 
   if (!result)
@@ -674,9 +674,8 @@ bool ClangASTImporter::CompleteAndFetchChildren(clang::QualType type) {
       }
     }
 
-    if (RecordDecl *record_decl = dyn_cast<RecordDecl>(origin_tag_decl)) {
+    if (RecordDecl *record_decl = dyn_cast<RecordDecl>(origin_tag_decl))
       record_decl->setHasLoadedFieldsFromExternalStorage(true);
-    }
 
     return true;
   }
@@ -706,9 +705,8 @@ bool ClangASTImporter::CompleteAndFetchChildren(clang::QualType type) {
       }
 
       return true;
-    } else {
-      return false;
     }
+    return false;
   }
 
   return true;
@@ -730,15 +728,12 @@ bool ClangASTImporter::RequireCompleteType(clang::QualType type) {
     if (ObjCInterfaceDecl *objc_interface_decl =
             objc_object_type->getInterface())
       return CompleteObjCInterfaceDecl(objc_interface_decl);
-    else
-      return false;
+    return false;
   }
-  if (const ArrayType *array_type = type->getAsArrayTypeUnsafe()) {
+  if (const ArrayType *array_type = type->getAsArrayTypeUnsafe())
     return RequireCompleteType(array_type->getElementType());
-  }
-  if (const AtomicType *atomic_type = type->getAs<AtomicType>()) {
+  if (const AtomicType *atomic_type = type->getAs<AtomicType>())
     return RequireCompleteType(atomic_type->getPointeeType());
-  }
 
   return true;
 }
@@ -748,8 +743,7 @@ ClangASTMetadata *ClangASTImporter::GetDeclMetadata(const clang::Decl *decl) {
 
   if (decl_origin.Valid())
     return ClangASTContext::GetMetadata(decl_origin.ctx, decl_origin.decl);
-  else
-    return ClangASTContext::GetMetadata(&decl->getASTContext(), decl);
+  return ClangASTContext::GetMetadata(&decl->getASTContext(), decl);
 }
 
 ClangASTImporter::DeclOrigin
@@ -762,8 +756,7 @@ ClangASTImporter::GetDeclOrigin(const clang::Decl *decl) {
 
   if (iter != origins.end())
     return iter->second;
-  else
-    return DeclOrigin();
+  return DeclOrigin();
 }
 
 void ClangASTImporter::SetDeclOrigin(const clang::Decl *decl,
@@ -777,9 +770,9 @@ void ClangASTImporter::SetDeclOrigin(const clang::Decl *decl,
   if (iter != origins.end()) {
     iter->second.decl = original_decl;
     iter->second.ctx = &original_decl->getASTContext();
-  } else {
-    origins[decl] = DeclOrigin(&original_decl->getASTContext(), original_decl);
+    return;
   }
+  origins[decl] = DeclOrigin(&original_decl->getASTContext(), original_decl);
 }
 
 void ClangASTImporter::RegisterNamespaceMap(const clang::NamespaceDecl *decl,
@@ -799,8 +792,7 @@ ClangASTImporter::GetNamespaceMap(const clang::NamespaceDecl *decl) {
 
   if (iter != namespace_maps.end())
     return iter->second;
-  else
-    return NamespaceMapSP();
+  return NamespaceMapSP();
 }
 
 void ClangASTImporter::BuildNamespaceMap(const clang::NamespaceDecl *decl) {

@@ -503,10 +503,10 @@ void DwarfCompileUnit::addScopeRangeList(DIE &ScopeDIE,
     const MCSymbol *RangeSectionSym =
         TLOF.getDwarfRangesSection()->getBeginSymbol();
     if (isDwoUnit())
-      addSectionDelta(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
+      addSectionDelta(ScopeDIE, dwarf::DW_AT_ranges, List.Label,
                       RangeSectionSym);
     else
-      addSectionLabel(ScopeDIE, dwarf::DW_AT_ranges, List.getSym(),
+      addSectionLabel(ScopeDIE, dwarf::DW_AT_ranges, List.Label,
                       RangeSectionSym);
   }
 }
@@ -972,8 +972,8 @@ DIE &DwarfCompileUnit::constructCallSiteEntryDIE(
     addAddress(CallSiteDIE, getDwarf5OrGNUAttr(dwarf::DW_AT_call_target),
                MachineLocation(CallReg));
   } else {
-    DIE *CalleeDIE = getOrCreateSubprogramDIE(CalleeSP);
-    assert(CalleeDIE && "Could not create DIE for call site entry origin");
+    DIE *CalleeDIE = getDIE(CalleeSP);
+    assert(CalleeDIE && "Could not find DIE for call site entry origin");
     addDIEEntry(CallSiteDIE, getDwarf5OrGNUAttr(dwarf::DW_AT_call_origin),
                 *CalleeDIE);
   }
