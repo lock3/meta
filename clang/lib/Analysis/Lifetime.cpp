@@ -12,6 +12,8 @@
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Analysis/CFGStmtMap.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 
 #define DEBUG_TYPE "Lifetime Analysis"
@@ -21,15 +23,96 @@ STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
 namespace clang {
 namespace lifetime {
 
-void LifetimeReporterBase::initializeFiltering(CFG *Cfg) {
+void LifetimeReporterBase::initializeFiltering(CFG *Cfg,
+                                               IsCleaningBlockTy ICB) {
+  this->Cfg = Cfg;
   PostDom.buildDominatorTree(Cfg);
+  Dom.buildDominatorTree(Cfg);
+  IsCleaningBlock = ICB;
 }
 
-bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source) const {
+namespace {
+
+// Mark all nodes true in a path backward from From.
+// Returns true if one of the nodes satisifes predicate P.
+template <typename Pred>
+bool markPathReachable(
+    const CFGBlock *From,
+    const llvm::DenseMap<const CFGBlock *, const CFGBlock *> &ParentMap,
+    llvm::BitVector &ToMark, Pred P) {
+  auto ParentIt = ParentMap.end();
+  do {
+    // Already propagated from different path.
+    if (ToMark[From->getBlockID()])
+      return false;
+    ToMark[From->getBlockID()] = true;
+    if (P(From))
+      return true;
+    ParentIt = ParentMap.find(From);
+    if (ParentIt == ParentMap.end())
+      break;
+    From = ParentIt->second;
+  } while (true);
+  return false;
+}
+
+// Returns true if there is a simple path from Source to Dest touching a node
+// that satisfies predicate P.
+template <typename Pred>
+bool hasPathThroughNodePred(const CFG &Cfg, const CFGBlock *Source,
+                            const CFGBlock *Dest, const Pred &P) {
+  SmallVector<const CFGBlock *, 32> WorkList;
+  llvm::BitVector Visited(Cfg.getNumBlockIDs());
+  llvm::BitVector CanReachDest(Cfg.getNumBlockIDs());
+  llvm::DenseMap<const CFGBlock *, const CFGBlock *> ParentMap;
+
+  CanReachDest[Dest->getBlockID()] = true;
+  Visited[Source->getBlockID()] = true;
+  WorkList.push_back(Source);
+
+  while (!WorkList.empty()) {
+    const CFGBlock *Current = WorkList.pop_back_val();
+    for (const CFGBlock *Succ : Current->succs()) {
+      // Ensure we only mark path through simple paths.
+      if (Succ == Source)
+        continue;
+
+      ParentMap.insert(std::make_pair(Succ, Current));
+      if (Visited[Succ->getBlockID()] || Succ == Dest) {
+        if (CanReachDest[Succ->getBlockID()])
+          if (markPathReachable(Current, ParentMap, CanReachDest, P))
+            return true;
+        continue;
+      }
+      Visited[Succ->getBlockID()] = true;
+      WorkList.push_back(Succ);
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source,
+                                            const Variable *V) const {
   if (!shouldFilterWarnings())
     return false;
 
-  return !PostDom.dominates(Current, Source);
+  if (!PostDom.dominates(Current, Source) && !Dom.dominates(Source, Current))
+    return true;
+
+  // Now we do know that the either the path between the Current and Source is
+  // feasible or one of the blocks is dead.
+  // Next step: do we clean nullness/invalidness between the two?
+
+  // If there is a (simple, i.e. no nodes repeated) path from Source to Current
+  // that has a cleaning block, filter the warning.
+  if (hasPathThroughNodePred(
+          *Cfg, Source, Current,
+          [V, this](const CFGBlock *B) { return IsCleaningBlock(*B, V); }))
+    return true;
+
+  return false;
 }
 
 class LifetimeContext {
@@ -114,8 +197,28 @@ public:
     // dumpCFG();
     BlockContexts.resize(ControlFlowGraph->getNumBlockIDs());
 
-    if (Reporter.shouldFilterWarnings())
-      Reporter.initializeFiltering(ControlFlowGraph);
+    if (Reporter.shouldFilterWarnings()) {
+      // Returns true if a block overwrites a variable that contains null or
+      // invalid with something that is not null or invalid.
+      auto IsCleaningBlock = [this](const CFGBlock &B, const Variable *V) {
+        if (!V)
+          return false;
+        BlockContext &BCtx = getBlockContext(&B);
+        auto PSetOfVarBefore = BCtx.EntryPMap.find(*V);
+        auto PSetOfVarAfter = BCtx.ExitPMap.find(*V);
+        if (PSetOfVarBefore == BCtx.EntryPMap.end())
+          return false;
+        assert(PSetOfVarAfter != BCtx.ExitPMap.end());
+        if (!PSetOfVarBefore->second.containsNull() &&
+            !PSetOfVarBefore->second.containsInvalid())
+          return false;
+        if (PSetOfVarAfter->second.containsNull() ||
+            PSetOfVarAfter->second.containsInvalid())
+          return false;
+        return true;
+      };
+      Reporter.initializeFiltering(ControlFlowGraph, IsCleaningBlock);
+    }
   }
 
   void TraverseBlocks();

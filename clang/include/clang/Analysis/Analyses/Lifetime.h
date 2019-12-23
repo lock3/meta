@@ -28,6 +28,8 @@ class FunctionDecl;
 class CFGBlock;
 
 namespace lifetime {
+class Variable;
+
 enum class TypeCategory { Owner, Pointer, Aggregate, Value };
 
 using IsConvertibleTy = llvm::function_ref<bool(QualType, QualType)>;
@@ -55,12 +57,14 @@ enum class ValueSource { Param, Return, OutputParam };
 
 class LifetimeReporterBase {
 public:
+  using IsCleaningBlockTy =
+      std::function<bool(const CFGBlock &Block, const Variable *)>;
   virtual ~LifetimeReporterBase() = default;
 
   virtual bool shouldFilterWarnings() const { return false; }
-  void initializeFiltering(CFG *Cfg);
+  void initializeFiltering(CFG *Cfg, IsCleaningBlockTy IsCleaningBlock);
   void setCurrentBlock(const CFGBlock *B) { Current = B; }
-  bool shouldBeFiltered(const CFGBlock *Source) const;
+  bool shouldBeFiltered(const CFGBlock *Source, const Variable *V) const;
 
   virtual void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                                 std::string ActualPset) = 0;
@@ -84,8 +88,11 @@ public:
                                  StringRef Pointee = "") = 0;
 
 private:
+  IsCleaningBlockTy IsCleaningBlock;
   CFGPostDomTree PostDom;
+  CFGDomTree Dom;
   const CFGBlock *Current = nullptr;
+  const CFG *Cfg;
 };
 
 bool isNoopBlock(const CFGBlock &B);

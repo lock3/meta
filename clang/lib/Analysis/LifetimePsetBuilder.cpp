@@ -1076,6 +1076,7 @@ void PSetsBuilder::setPSet(PSet LHS, PSet RHS, SourceRange Range) {
   DBG("PMap[" << LHS.str() << "] = " << RHS.str() << "\n");
   if (LHS.vars().size() == 1) {
     Variable Var = *LHS.vars().begin();
+    RHS.addReasonTarget(Var);
     auto I = PMap.find(Var);
     if (I != PMap.end())
       I->second = std::move(RHS);

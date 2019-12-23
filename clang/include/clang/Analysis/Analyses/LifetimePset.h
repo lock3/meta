@@ -28,7 +28,8 @@ namespace lifetime {
 /// plus fields of them (in member FDs).
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
-struct Variable : public ContractVariable {
+class Variable : public ContractVariable {
+public:
   Variable(const VarDecl *VD) : ContractVariable(VD) {}
   Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {
     assert(MT);
@@ -224,6 +225,7 @@ class InvalidationReason {
   const VarDecl *Pointee;
   SourceRange Range;
   const CFGBlock *Block;
+  Optional<Variable> InvalidatedMemory;
 
   InvalidationReason(SourceRange Range, const CFGBlock *Block, NoteType Reason,
                      const VarDecl *Pointee = nullptr)
@@ -233,6 +235,8 @@ class InvalidationReason {
 
 public:
   SourceRange getRange() const { return Range; }
+  Optional<Variable> getInvalidatedMemory() const { return InvalidatedMemory; }
+  void setInvalidatedMemory(const Variable &V) { InvalidatedMemory = V; }
   const CFGBlock *getBlock() const { return Block; }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
@@ -285,8 +289,11 @@ class NullReason {
   SourceRange Range;
   const CFGBlock *Block;
   NoteType Reason;
+  Optional<Variable> NulledMemory;
 
 public:
+  Optional<Variable> getNulledMemory() const { return NulledMemory; }
+  void setNulledMemory(const Variable &V) { NulledMemory = V; }
   const CFGBlock *getBlock() const { return Block; }
 
   NullReason(SourceRange Range, const CFGBlock *Block, NoteType Reason)
@@ -361,11 +368,13 @@ public:
     if (!Reporter.shouldFilterWarnings())
       return false;
     for (auto &R : InvReasons)
-      if (Reporter.shouldBeFiltered(R.getBlock()))
-        return true;
+      if (Optional<Variable> V = R.getInvalidatedMemory())
+        if (Reporter.shouldBeFiltered(R.getBlock(), V.getPointer()))
+          return true;
     for (auto &R : NullReasons)
-      if (Reporter.shouldBeFiltered(R.getBlock()))
-        return true;
+      if (Optional<Variable> V = R.getNulledMemory())
+        if (Reporter.shouldBeFiltered(R.getBlock(), V.getPointer()))
+          return true;
     return false;
   }
 
@@ -422,6 +431,13 @@ public:
     return InvReasons;
   }
   const std::vector<NullReason> &nullReasons() const { return NullReasons; }
+
+  void addReasonTarget(const Variable &V) {
+    for (auto &R : InvReasons)
+      R.setInvalidatedMemory(V);
+    for (auto &R : NullReasons)
+      R.setNulledMemory(V);
+  }
 
   bool checkSubstitutableFor(const PSet &O, SourceRange Range,
                              LifetimeReporterBase &Reporter,
