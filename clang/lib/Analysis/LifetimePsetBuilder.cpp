@@ -774,6 +774,8 @@ public:
         [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
           if (!PVD) {
             // C-style vararg argument.
+            if (!hasPSet(Arg))
+              return;
             PSet ArgPS = getPSet(Arg);
             if (ArgPS.vars().empty())
               return;
