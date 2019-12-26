@@ -739,10 +739,8 @@ public:
     forEachArgParamPair(
         CallE,
         [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
-          if (!PVD) {
-            // C-style vararg argument.
+          if (!PVD) // C-style vararg argument.
             return;
-          }
           QualType Pointee = getPointeeType(PVD->getType());
           if (Pointee.isNull())
             return;
@@ -776,6 +774,11 @@ public:
         [&](const ParmVarDecl *PVD, const Expr *Arg, int Pos) {
           if (!PVD) {
             // C-style vararg argument.
+            PSet ArgPS = getPSet(Arg);
+            if (ArgPS.vars().empty())
+              return;
+            setPSet(ArgPS, PSet::staticVar(false),
+                    Arg->getSourceRange());
             return;
           }
           Variable V = PVD;

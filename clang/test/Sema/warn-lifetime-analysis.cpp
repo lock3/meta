@@ -467,3 +467,14 @@ void b(basic_string &c) {
   c; // expected-warning {{expression result unused}}
 }
 } // namespace bug_report_66
+
+namespace varargs {
+void f(int, ...);
+
+void g() {
+  int *p;
+  f(1, &p);
+  *p = 5; // no-warning
+}
+
+} // namespace varargs
