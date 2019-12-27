@@ -101,6 +101,18 @@ struct shared_ptr {
   T2 &operator*();
   ~shared_ptr();
 };
+
+template <typename T1, typename T2>
+struct pair {
+  T1 first;
+  T2 second;
+};
+
+template <typename Key, typename Value>
+struct map {
+  pair<Key, Value> *begin();
+  Value &operator[](const Key&);
+};
 } // namespace std
 
 template <typename T>
@@ -138,6 +150,8 @@ struct my_implicit_owner {
 struct my_derived_owner : my_implicit_owner {
 };
 
+struct my_map : std::map<int, int> {};
+
 void owner() {
   // Use decltype to force template instantiation.
   __lifetime_type_category<my_owner>();                             // expected-warning {{Owner}}
@@ -158,6 +172,7 @@ void owner() {
   __lifetime_type_category<decltype(IntVector())>();         // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_implicit_owner())>(); // expected-warning {{Owner}}
   __lifetime_type_category<decltype(my_derived_owner())>();  // expected-warning {{Owner}}
+  __lifetime_type_category<decltype(my_map())>();            // expected-warning {{Owner with pointee struct std::pair<int, int>}}
 }
 
 void pointer() {

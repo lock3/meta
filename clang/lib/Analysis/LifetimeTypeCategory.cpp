@@ -48,12 +48,14 @@ static bool hasMethodLike(const CXXRecordDecl *R, T Predicate,
 }
 
 static bool hasOperator(const CXXRecordDecl *R, OverloadedOperatorKind Op,
-                        int NumParams = -1,
+                        int NumParams = -1, bool ConstOnly = false,
                         const CXXMethodDecl **FoundMD = nullptr) {
   return hasMethodLike(
       R,
-      [Op, NumParams](const CXXMethodDecl *MD) {
+      [Op, NumParams, ConstOnly](const CXXMethodDecl *MD) {
         if (NumParams != -1 && NumParams != (int)MD->param_size())
+          return false;
+        if (ConstOnly && !MD->isConst())
           return false;
         return MD->getOverloadedOperator() == Op;
       },
@@ -104,6 +106,7 @@ static bool hasDerefOperations(const CXXRecordDecl *R) {
 static bool IsVectorBoolReference(const CXXRecordDecl *D) {
   assert(D);
   static std::set<StringRef> StdVectorBoolReference{
+      "__bit_const_reference" /* for libc++ */,
       "__bit_reference" /* for libc++ */, "_Bit_reference" /* for libstdc++ */,
       "_Vb_reference" /* for MSVC */};
   if (!D->isInStdNamespace() || !D->getIdentifier())
@@ -328,26 +331,30 @@ bool isNullableType(QualType QT) {
 static QualType getPointeeType(const CXXRecordDecl *R) {
   assert(R);
 
-  // Workaround for vector<bool> that has bool as value_type.
-  // TODO: remove this check once vector<bool> correctly annotated.
-  if (!R->isInStdNamespace() || R->getName() != "vector") {
-    for (auto D : R->decls()) {
-      if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
-        if (TypeDef->getName() == "value_type")
-          return TypeDef->getUnderlyingType().getCanonicalType();
-      }
+  for (auto D : R->decls()) {
+    if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
+      if (TypeDef->getName() == "value_type")
+        return TypeDef->getUnderlyingType().getCanonicalType();
     }
   }
 
   // TODO operator* might be defined as a free function.
-  std::pair<OverloadedOperatorKind, int> Ops[] = {
-      {OO_Star, 0}, {OO_Arrow, 0}, {OO_Subscript, -1}};
+  struct OpTy {
+    OverloadedOperatorKind Kind;
+    int ParamNum;
+    bool ConstOnly;
+  };
+  OpTy Ops[] = {
+      {OO_Star, 0, false}, {OO_Arrow, 0, false}, {OO_Subscript, -1, true}};
   for (auto P : Ops) {
     const CXXMethodDecl *F;
-    if (hasOperator(R, P.first, P.second, &F) && !F->isDependentContext()) {
+    if (hasOperator(R, P.Kind, P.ParamNum, P.ConstOnly, &F) &&
+        !F->isDependentContext()) {
       auto PointeeType = F->getReturnType();
       if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
         PointeeType = PointeeType->getPointeeType();
+      if (P.ConstOnly)
+        return PointeeType.getCanonicalType().getUnqualifiedType();
       return PointeeType.getCanonicalType();
     }
   }
@@ -359,7 +366,7 @@ static QualType getPointeeType(const CXXRecordDecl *R) {
 #if CLASSIFY_DEBUG
       // TODO: diag?
       llvm::errs() << "begin() function does not return a Pointer!\n";
-      F->dump();
+      FoundMD->dump();
 #endif
       return {};
     }
@@ -389,7 +396,7 @@ static QualType getPointeeTypeImpl(const Type *T) {
 
   // std::vector<bool> contains std::vector<bool>::references
   if (IsVectorBoolReference(R))
-    return QualType(T, 0);
+    return R->getASTContext().BoolTy;
 
   if (!R->hasDefinition())
     return {};

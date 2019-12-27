@@ -37,6 +37,7 @@ struct vector {
   const_iterator cbegin() const;
   const_iterator cend() const;
   void push_back (const T&);
+  const T &operator[](unsigned) const;
   T &operator[](unsigned);
   T &at(unsigned);
   T *data();
