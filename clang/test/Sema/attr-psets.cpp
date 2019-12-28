@@ -40,6 +40,7 @@ struct vector {
   const T &operator[](unsigned) const;
   T &operator[](unsigned);
   T &at(unsigned);
+  const T &back() const;
   T *data();
   ~vector();
 };
@@ -640,6 +641,23 @@ void asserting6(const int *p, const int *q) {
   __lifetime_pset(p); // expected-warning {{pset(p) = ((null), *p)}}
   __lifetime_pset(q); // expected-warning {{pset(q) = ((null), *q)}}
 }
+
+namespace pset_propagation {
+struct Bar { int *field; };
+void f(const std::vector<Bar>& field_path, bool left_side) {
+  const Bar& specific_field = field_path.back();
+  __lifetime_pset_ref(specific_field); // expected-warning {{(**field_path)}}
+  const int* field = specific_field.field;
+  if (field) {
+    __lifetime_pset_ref(specific_field); // expected-warning {{(**field_path)}}
+  } else {
+    if(left_side) {
+      __lifetime_pset_ref(specific_field); // expected-warning {{(**field_path)}}
+    }
+    __lifetime_pset_ref(specific_field); // expected-warning {{(**field_path)}}
+  }
+}
+} // namespace pset_propagation
 
 const int *global_p1 = nullptr;
 const int *global_p2 = nullptr;

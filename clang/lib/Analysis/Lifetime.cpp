@@ -399,7 +399,7 @@ bool isNoopBlock(const CFGBlock &B) {
           if (BO->isLogicalOp())
             continue;
       }
-      break;
+      return false;
     }
     default:
       return false;
