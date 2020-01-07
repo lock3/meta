@@ -474,12 +474,16 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
     }
     const CXXRecordDecl *RD = MD->getParent();
     StringRef ClassName = RD->getName();
-    if (RD->isInStdNamespace() &&
-        (ClassName.endswith("map") || ClassName.endswith("set"))) {
-      if (FD->getDeclName().isIdentifier() &&
-          (FD->getName() == "insert" || FD->getName() == "emplace" ||
-           FD->getName() == "emplace_hint"))
-        return true;
+    if (RD->isInStdNamespace()) {
+      if (ClassName.endswith("map") || ClassName.endswith("set")) {
+        if (FD->getDeclName().isIdentifier() &&
+            (FD->getName() == "insert" || FD->getName() == "emplace" ||
+             FD->getName() == "emplace_hint"))
+          return true;
+      }
+      if (ClassName == "list" || ClassName == "forward_list")
+        return FD->getDeclName().isIdentifier() && FD->getName() != "clear" &&
+               FD->getName() != "assign";
     }
     return FD->getDeclName().isIdentifier() &&
            (FD->getName() == "at" || FD->getName() == "data" ||

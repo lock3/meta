@@ -105,6 +105,13 @@ struct optional {
   T &value();
 };
 
+template <typename T>
+struct list {
+  void clear();
+  void push_back(const T &);
+  T* begin();
+};
+
 } // namespace std
 
 namespace gsl {
@@ -1747,4 +1754,15 @@ struct Node {
   }
 };
 } // namespace boundedness
+
+
+void std_list_invalidation() {
+  std::list<int> l;
+  auto begin = l.begin();
+  __lifetime_pset(begin); // expected-warning {{(*l)}}
+  l.push_back(5);
+  __lifetime_pset(begin); // expected-warning {{(*l)}}
+  l.clear();
+  __lifetime_pset(begin); // expected-warning {{((invalid))}}
+}
 } // namespace linked_structures
