@@ -13,14 +13,14 @@
 #include "clang/Analysis/CFG.h"
 #include "clang/Analysis/CFGStmtMap.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 
 #define DEBUG_TYPE "Lifetime Analysis"
 
-STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
-STATISTIC(BlockVisitCount, "The # times blocks are visited");
-STATISTIC(AllIterations, "The cumulative # of iterations");
+STATISTIC(MaxBlockVisitCount, "The maximum # of block visit count");
+STATISTIC(BlockVisitCount, "The cummulative # times blocks are visited");
 
 namespace clang {
 namespace lifetime {
@@ -120,7 +120,6 @@ bool LifetimeReporterBase::shouldBeFiltered(const CFGBlock *Source,
 class LifetimeContext {
   /// Additional information for each CFGBlock.
   struct BlockContext {
-    bool Visited = false;
     /// Merged PSets of all predecessors of this CFGBlock.
     PSetsMap EntryPMap;
     /// Computed PSets after updating EntryPSets through all CFGElements of
@@ -142,7 +141,7 @@ class LifetimeContext {
   std::map<const Expr *, PSet> PSetsOfExpr;
   std::map<const Expr *, PSet> RefersTo;
 
-  bool computeEntryPSets(const CFGBlock &B);
+  void computeEntryPSets(const CFGBlock &B);
 
   BlockContext &getBlockContext(const CFGBlock *B) {
     return BlockContexts[B->getBlockID()];
@@ -244,7 +243,7 @@ static void mergePMaps(PSetsMap &From, PSetsMap &To) {
 /// of all reachable predecessors.
 /// Returns true if this block is reachable, i.e. one of it predecessors has
 /// been visited.
-bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
+void LifetimeContext::computeEntryPSets(const CFGBlock &B) {
   // Some special blocks has no real instructions but they merge the PMaps
   // prematurely at some emrge points. Try to keep the false/true PMaps
   // separate at those merge points to retain as much infromation as possible.
@@ -258,17 +257,12 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
     BC.FalseBranchExitPMap = PSetsMap();
   }
 
-  // If no predecessors have been visited by now, this block is not reachable.
-  bool IsReachable = false;
   for (auto &PredBlock : B.preds()) {
     if (!PredBlock.isReachable())
       continue;
 
     auto &PredBC = getBlockContext(PredBlock);
-    if (!PredBC.Visited)
-      continue; // Skip this back edge.
 
-    IsReachable = true;
     if (PropagateFalseSet) {
       // Predecessor have different PSets for true and false branches.
       // Figure out which PSets should be propated.
@@ -292,8 +286,6 @@ bool LifetimeContext::computeEntryPSets(const CFGBlock &B) {
       mergePMaps(PredPMap, BC.EntryPMap);
     }
   }
-
-  return IsReachable;
 }
 
 /// Initialize psets for all members of *this that are Owner or Pointers.
@@ -325,68 +317,107 @@ static void createEntryPsetsForMembers(const CXXMethodDecl *Method,
   RD->forallBases(CallBack);
 }
 
+namespace {
+class DataFlowWorklist {
+  struct ReversePostOrderCompare {
+    PostOrderCFGView::BlockOrderCompare Cmp;
+    bool operator()(const CFGBlock *lhs, const CFGBlock *rhs) const {
+      return Cmp(rhs, lhs);
+    }
+  };
+
+  llvm::BitVector EnqueuedBlocks;
+  const PostOrderCFGView *SortedGraph;
+  llvm::PriorityQueue<const CFGBlock *, SmallVector<const CFGBlock *, 20>,
+                      ReversePostOrderCompare>
+      WorkList;
+
+public:
+  DataFlowWorklist(AnalysisDeclContext &AC)
+      : EnqueuedBlocks(AC.getCFG()->getNumBlockIDs()),
+        SortedGraph(AC.getAnalysis<PostOrderCFGView>()),
+        WorkList(ReversePostOrderCompare{SortedGraph->getComparator()}) {
+    for (const auto *B : *SortedGraph)
+      enqueue(B);
+  }
+
+  void enqueue(const CFGBlock *B) {
+    if (!B || EnqueuedBlocks[B->getBlockID()])
+      return;
+    EnqueuedBlocks[B->getBlockID()] = true;
+    WorkList.push(B);
+  }
+
+  void enqueueSuccs(const CFGBlock *B) {
+    for (auto Succ : B->succs())
+      enqueue(Succ);
+  }
+
+  const CFGBlock *dequeue() {
+    if (WorkList.empty())
+      return nullptr;
+    const CFGBlock *Top = WorkList.top();
+    WorkList.pop();
+    EnqueuedBlocks[Top->getBlockID()] = false;
+    return Top;
+  }
+};
+
+} // namespace
+
 /// Traverse all blocks of the CFG.
 /// The traversal is repeated until the psets come to a steady state.
 void LifetimeContext::TraverseBlocks() {
-  const PostOrderCFGView *SortedGraph = AC.getAnalysis<PostOrderCFGView>();
-  static const unsigned IterationLimit = 128;
+  static constexpr unsigned IterationLimit = 100000;
 
-  bool Updated;
+  DataFlowWorklist WorkList(AC);
+
   unsigned IterationCount = 0;
-  do {
-    Updated = false;
-    for (const auto *B : *SortedGraph) {
-      auto &BC = getBlockContext(B);
+  llvm::BitVector Visited(ControlFlowGraph->getNumBlockIDs());
+  const CFGBlock *Current;
+  while ((Current = WorkList.dequeue()) && IterationCount < IterationLimit) {
+    auto &BC = getBlockContext(Current);
 
-      // The entry block introduces the function parameters into the psets.
-      if (B == &ControlFlowGraph->getEntry()) {
-        if (BC.Visited)
-          continue;
+    // The entry block introduces the function parameters into the psets.
+    if (Current == &ControlFlowGraph->getEntry()) {
+      // ExitPSets are the function parameters.
+      getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, Current,
+                           IsConvertible, Reporter);
+      if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
+        createEntryPsetsForMembers(Method, BC.ExitPMap);
 
-        // ExitPSets are the function parameters.
-        getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, B, IsConvertible,
-                             Reporter);
-        if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
-          createEntryPsetsForMembers(Method, BC.ExitPMap);
-
-        BC.Visited = true;
-        continue;
-      }
-
-      if (B == &ControlFlowGraph->getExit())
-        continue;
-
-      // Compute entry psets of this block by merging exit psets of all
-      // reachable predecessors.
-      auto OrigEntryPMap = BC.EntryPMap;
-      bool isReachableAndChanged = computeEntryPSets(*B);
-      if (!isReachableAndChanged)
-        continue;
-
-      if (BC.Visited && OrigEntryPMap == BC.EntryPMap) {
-        // Has been computed at least once and nothing changed; no need to
-        // recompute.
-        continue;
-      }
-
-      ++BlockVisitCount;
-      BC.ExitPMap = BC.EntryPMap;
-      if (!VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap,
-                      PSetsOfExpr, RefersTo, *B, Reporter, ASTCtxt,
-                      IsConvertible)) {
-        // An unsupported AST node (such as reinterpret_cast) disabled
-        // the analysis.
-        return;
-      }
-      BC.Visited = true;
-      Updated = true;
+      WorkList.enqueueSuccs(Current);
+      continue;
     }
-    ++IterationCount;
-    ++AllIterations;
-  } while (Updated && IterationCount < IterationLimit);
 
-  if (IterationCount > MaxIterations)
-    MaxIterations = IterationCount;
+    if (Current == &ControlFlowGraph->getExit())
+      continue;
+
+    // Compute entry psets of this block by merging exit psets of all
+    // reachable predecessors.
+    auto OrigEntryPMap = BC.EntryPMap;
+    computeEntryPSets(*Current);
+    if (Visited[Current->getBlockID()] && BC.EntryPMap == OrigEntryPMap) {
+      // Has been computed at least once and nothing changed; no need to
+      // recompute.
+      continue;
+    }
+
+    ++BlockVisitCount;
+    ++IterationCount;
+    BC.ExitPMap = BC.EntryPMap;
+    Visited[Current->getBlockID()] = true;
+    if (!VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap, PSetsOfExpr,
+                    RefersTo, *Current, Reporter, ASTCtxt, IsConvertible)) {
+      // An unsupported AST node (such as reinterpret_cast) disabled
+      // the analysis.
+      return;
+    }
+    WorkList.enqueueSuccs(Current);
+  }
+
+  if (IterationCount > MaxBlockVisitCount)
+    MaxBlockVisitCount = IterationCount;
 }
 
 bool isNoopBlock(const CFGBlock &B) {
