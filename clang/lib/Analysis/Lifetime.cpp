@@ -411,7 +411,7 @@ void LifetimeContext::TraverseBlocks() {
                     RefersTo, *Current, Reporter, ASTCtxt, IsConvertible)) {
       // An unsupported AST node (such as reinterpret_cast) disabled
       // the analysis.
-      return;
+      break;
     }
     WorkList.enqueueSuccs(Current);
   }
