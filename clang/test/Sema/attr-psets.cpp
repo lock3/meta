@@ -1668,6 +1668,16 @@ auto fun() {
 
 } // namespace bug_report_69
 
+namespace bug_report_86 {
+struct A {
+  unsigned data[2];
+};
+
+A f(unsigned start, unsigned end) {
+    return {start, end};
+}
+} // namespace bug_report_86
+
 namespace expressions_statement {
 void f() {
   __lifetime_pset(({ int *p = 0; p;})); // expected-warning {{((unknown))}}

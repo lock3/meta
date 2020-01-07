@@ -272,7 +272,7 @@ public:
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
-    I = I->isSyntacticForm() ? I->getSemanticForm() : I;
+    I = !I->isSemanticForm() ? I->getSemanticForm() : I;
 
     if (I->getType()->isPointerType()) {
       if (I->getNumInits() == 0) {
