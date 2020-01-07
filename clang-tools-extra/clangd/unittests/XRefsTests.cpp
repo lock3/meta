@@ -187,7 +187,7 @@ TEST(LocateSymbol, WithIndex) {
   EXPECT_THAT(LocateWithIndex(Test),
               ElementsAre(Sym("Foo", Test.range(), SymbolHeader.range("foo"))));
 
-  Test = Annotations(R"cpp(// defintion in AST.
+  Test = Annotations(R"cpp(// definition in AST.
         class [[Forward]] {};
         F^orward create();
       )cpp");
@@ -1119,6 +1119,27 @@ TEST(GetNonLocalDeclRefs, All) {
     EXPECT_THAT(Names, UnorderedElementsAreArray(C.ExpectedDecls))
         << File.code();
   }
+}
+
+TEST(DocumentLinks, All) {
+  Annotations MainCpp(R"cpp(
+      #include $foo[["foo.h"]]
+      int end_of_preamble = 0;
+      #include $bar[["bar.h"]]
+    )cpp");
+
+  TestTU TU;
+  TU.Code = MainCpp.code();
+  TU.AdditionalFiles = {{"foo.h", ""}, {"bar.h", ""}};
+  auto AST = TU.build();
+
+  EXPECT_THAT(
+      clangd::getDocumentLinks(AST),
+      ElementsAre(
+          DocumentLink({MainCpp.range("foo"),
+                        URIForFile::canonicalize(testPath("foo.h"), "")}),
+          DocumentLink({MainCpp.range("bar"),
+                        URIForFile::canonicalize(testPath("bar.h"), "")})));
 }
 
 } // namespace

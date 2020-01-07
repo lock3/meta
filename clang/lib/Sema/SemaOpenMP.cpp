@@ -11857,9 +11857,8 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
                                  ArgumentLoc, StartLoc, LParenLoc, EndLoc);
     break;
   case OMPC_proc_bind:
-    Res = ActOnOpenMPProcBindClause(
-        static_cast<OpenMPProcBindClauseKind>(Argument), ArgumentLoc, StartLoc,
-        LParenLoc, EndLoc);
+    Res = ActOnOpenMPProcBindClause(static_cast<ProcBindKind>(Argument),
+                                    ArgumentLoc, StartLoc, LParenLoc, EndLoc);
     break;
   case OMPC_atomic_default_mem_order:
     Res = ActOnOpenMPAtomicDefaultMemOrderClause(
@@ -11934,7 +11933,6 @@ getListOfPossibleValues(OpenMPClauseKind K, unsigned First, unsigned Last,
                         ArrayRef<unsigned> Exclude = llvm::None) {
   SmallString<256> Buffer;
   llvm::raw_svector_ostream Out(Buffer);
-  unsigned Bound = Last >= 2 ? Last - 2 : 0;
   unsigned Skipped = Exclude.size();
   auto S = Exclude.begin(), E = Exclude.end();
   for (unsigned I = First; I < Last; ++I) {
@@ -11943,9 +11941,9 @@ getListOfPossibleValues(OpenMPClauseKind K, unsigned First, unsigned Last,
       continue;
     }
     Out << "'" << getOpenMPSimpleClauseTypeName(K, I) << "'";
-    if (I == Bound - Skipped)
+    if (I + Skipped + 2 == Last)
       Out << " or ";
-    else if (I != Bound + 1 - Skipped)
+    else if (I + Skipped + 1 != Last)
       Out << ", ";
   }
   return Out.str();
@@ -11980,15 +11978,16 @@ OMPClause *Sema::ActOnOpenMPDefaultClause(OpenMPDefaultClauseKind Kind,
       OMPDefaultClause(Kind, KindKwLoc, StartLoc, LParenLoc, EndLoc);
 }
 
-OMPClause *Sema::ActOnOpenMPProcBindClause(OpenMPProcBindClauseKind Kind,
+OMPClause *Sema::ActOnOpenMPProcBindClause(ProcBindKind Kind,
                                            SourceLocation KindKwLoc,
                                            SourceLocation StartLoc,
                                            SourceLocation LParenLoc,
                                            SourceLocation EndLoc) {
-  if (Kind == OMPC_PROC_BIND_unknown) {
+  if (Kind == OMP_PROC_BIND_unknown) {
     Diag(KindKwLoc, diag::err_omp_unexpected_clause_value)
-        << getListOfPossibleValues(OMPC_proc_bind, /*First=*/0,
-                                   /*Last=*/OMPC_PROC_BIND_unknown)
+        << getListOfPossibleValues(OMPC_proc_bind,
+                                   /*First=*/unsigned(OMP_PROC_BIND_master),
+                                   /*Last=*/5)
         << getOpenMPClauseName(OMPC_proc_bind);
     return nullptr;
   }
@@ -13499,7 +13498,8 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
     }
   }
   if (ReductionIdScopeSpec.isSet()) {
-    SemaRef.Diag(Loc, diag::err_omp_not_resolved_reduction_identifier) << Range;
+    SemaRef.Diag(Loc, diag::err_omp_not_resolved_reduction_identifier)
+        << Ty << Range;
     return ExprError();
   }
   return ExprEmpty();
@@ -14354,8 +14354,8 @@ bool Sema::CheckOpenMPLinearDecl(const ValueDecl *D, SourceLocation ELoc,
   // A list item must be of integral or pointer type.
   Type = Type.getUnqualifiedType().getCanonicalType();
   const auto *Ty = Type.getTypePtrOrNull();
-  if (!Ty || (!Ty->isDependentType() && !Ty->isIntegralType(Context) &&
-              !Ty->isPointerType())) {
+  if (!Ty || (LinKind != OMPC_LINEAR_ref && !Ty->isDependentType() &&
+              !Ty->isIntegralType(Context) && !Ty->isPointerType())) {
     Diag(ELoc, diag::err_omp_linear_expected_int_or_ptr) << Type;
     if (D) {
       bool IsDecl =
@@ -15021,6 +15021,22 @@ Sema::ActOnOpenMPDependClause(OpenMPDependClauseKind DepKind,
       }
       OpsOffs.emplace_back(RHS, OOK);
     } else {
+      // OpenMP 5.0 [2.17.11, Restrictions]
+      // List items used in depend clauses cannot be zero-length array sections.
+      const auto *OASE = dyn_cast<OMPArraySectionExpr>(SimpleExpr);
+      if (OASE) {
+        const Expr *Length = OASE->getLength();
+        Expr::EvalResult Result;
+        if (Length && !Length->isValueDependent() &&
+            Length->EvaluateAsInt(Result, Context) &&
+            Result.Val.getInt().isNullValue()) {
+          Diag(ELoc,
+               diag::err_omp_depend_zero_length_array_section_not_allowed)
+              << SimpleExpr->getSourceRange();
+          continue;
+        }
+      }
+
       auto *ASE = dyn_cast<ArraySubscriptExpr>(SimpleExpr);
       if (!RefExpr->IgnoreParenImpCasts()->isLValue() ||
           (ASE &&

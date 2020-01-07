@@ -1396,16 +1396,19 @@ SDValue AMDGPUTargetLowering::SplitVectorLoad(const SDValue Op,
                                               SelectionDAG &DAG) const {
   LoadSDNode *Load = cast<LoadSDNode>(Op);
   EVT VT = Op.getValueType();
+  SDLoc SL(Op);
 
 
   // If this is a 2 element vector, we really want to scalarize and not create
   // weird 1 element vectors.
-  if (VT.getVectorNumElements() == 2)
-    return scalarizeVectorLoad(Load, DAG);
+  if (VT.getVectorNumElements() == 2) {
+    SDValue Ops[2];
+    std::tie(Ops[0], Ops[1]) = scalarizeVectorLoad(Load, DAG);
+    return DAG.getMergeValues(Ops, SL);
+  }
 
   SDValue BasePtr = Load->getBasePtr();
   EVT MemVT = Load->getMemoryVT();
-  SDLoc SL(Op);
 
   const MachinePointerInfo &SrcValue = Load->getMemOperand()->getPointerInfo();
 
@@ -2161,7 +2164,8 @@ SDValue AMDGPUTargetLowering::LowerFNEARBYINT(SDValue Op, SelectionDAG &DAG) con
 // Don't handle v2f16. The extra instructions to scalarize and repack around the
 // compare and vselect end up producing worse code than scalarizing the whole
 // operation.
-SDValue AMDGPUTargetLowering::LowerFROUND32_16(SDValue Op, SelectionDAG &DAG) const {
+SDValue AMDGPUTargetLowering::LowerFROUND_LegalFTRUNC(SDValue Op,
+                                                      SelectionDAG &DAG) const {
   SDLoc SL(Op);
   SDValue X = Op.getOperand(0);
   EVT VT = Op.getValueType();
@@ -2250,8 +2254,8 @@ SDValue AMDGPUTargetLowering::LowerFROUND64(SDValue Op, SelectionDAG &DAG) const
 SDValue AMDGPUTargetLowering::LowerFROUND(SDValue Op, SelectionDAG &DAG) const {
   EVT VT = Op.getValueType();
 
-  if (VT == MVT::f32 || VT == MVT::f16)
-    return LowerFROUND32_16(Op, DAG);
+  if (isOperationLegal(ISD::FTRUNC, VT))
+    return LowerFROUND_LegalFTRUNC(Op, DAG);
 
   if (VT == MVT::f64)
     return LowerFROUND64(Op, DAG);
@@ -2868,11 +2872,13 @@ SDValue AMDGPUTargetLowering::performLoadCombine(SDNode *N,
     // the bytes again are not eliminated in the case of an unaligned copy.
     if (!allowsMisalignedMemoryAccesses(
             VT, AS, Align, LN->getMemOperand()->getFlags(), &IsFast)) {
-      if (VT.isVector())
-        return scalarizeVectorLoad(LN, DAG);
-
       SDValue Ops[2];
-      std::tie(Ops[0], Ops[1]) = expandUnalignedLoad(LN, DAG);
+
+      if (VT.isVector())
+        std::tie(Ops[0], Ops[1]) = scalarizeVectorLoad(LN, DAG);
+      else
+        std::tie(Ops[0], Ops[1]) = expandUnalignedLoad(LN, DAG);
+
       return DAG.getMergeValues(Ops, SDLoc(N));
     }
 

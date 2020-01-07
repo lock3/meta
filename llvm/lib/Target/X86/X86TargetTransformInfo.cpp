@@ -1390,6 +1390,7 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
     { ISD::UINT_TO_FP,  MVT::v4f64,  MVT::v4i64,  5 },
     { ISD::UINT_TO_FP,  MVT::v8f64,  MVT::v8i64,  5 },
 
+    { ISD::UINT_TO_FP,  MVT::f32,    MVT::i64,    1 },
     { ISD::UINT_TO_FP,  MVT::f64,    MVT::i64,    1 },
     { ISD::FP_TO_UINT,  MVT::i64,    MVT::f32,    1 },
     { ISD::FP_TO_UINT,  MVT::i64,    MVT::f64,    1 },
@@ -1398,6 +1399,7 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
     { ISD::FP_TO_UINT,  MVT::v4i32,  MVT::v4f32,  1 },
     { ISD::FP_TO_UINT,  MVT::v4i32,  MVT::v4f64,  1 },
     { ISD::FP_TO_UINT,  MVT::v8i32,  MVT::v8f32,  1 },
+    { ISD::FP_TO_UINT,  MVT::v8i32,  MVT::v8f64,  1 },
     { ISD::FP_TO_UINT,  MVT::v8i16,  MVT::v8f64,  2 },
     { ISD::FP_TO_UINT,  MVT::v8i8,   MVT::v8f64,  2 },
     { ISD::FP_TO_UINT,  MVT::v16i32, MVT::v16f32, 1 },
@@ -1551,6 +1553,7 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
     { ISD::TRUNCATE,    MVT::v16i16, MVT::v16i32, 6 },
     { ISD::TRUNCATE,    MVT::v2i8,   MVT::v2i64,  1 }, // PSHUFB
 
+    { ISD::UINT_TO_FP,  MVT::f32,    MVT::i64,    4 },
     { ISD::UINT_TO_FP,  MVT::f64,    MVT::i64,    4 },
   };
 
@@ -1582,7 +1585,9 @@ int X86TTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst, Type *Src,
 
     { ISD::FP_TO_SINT,  MVT::v2i32,  MVT::v2f64,  3 },
 
+    { ISD::UINT_TO_FP,  MVT::f32,    MVT::i64,    6 },
     { ISD::UINT_TO_FP,  MVT::f64,    MVT::i64,    6 },
+
     { ISD::FP_TO_UINT,  MVT::i64,    MVT::f32,    4 },
     { ISD::FP_TO_UINT,  MVT::i64,    MVT::f64,    4 },
 

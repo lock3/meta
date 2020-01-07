@@ -4688,11 +4688,6 @@ SDValue SelectionDAG::getNode(unsigned Opcode, const SDLoc &DL, EVT VT,
     if (OpOpcode == ISD::UNDEF)
       return getUNDEF(VT);
 
-    // -(X-Y) -> (Y-X) is unsafe because when X==Y, -0.0 != +0.0
-    if ((getTarget().Options.NoSignedZerosFPMath || Flags.hasNoSignedZeros()) &&
-        OpOpcode == ISD::FSUB)
-      return getNode(ISD::FSUB, DL, VT, Operand.getOperand(1),
-                     Operand.getOperand(0), Flags);
     if (OpOpcode == ISD::FNEG)  // --X -> X
       return Operand.getOperand(0);
     break;
@@ -8152,9 +8147,9 @@ void SelectionDAG::transferDbgValues(SDValue From, SDValue To,
       Expr = *Fragment;
     }
     // Clone the SDDbgValue and move it to To.
-    SDDbgValue *Clone =
-        getDbgValue(Var, Expr, ToNode, To.getResNo(), Dbg->isIndirect(),
-                    Dbg->getDebugLoc(), Dbg->getOrder());
+    SDDbgValue *Clone = getDbgValue(
+        Var, Expr, ToNode, To.getResNo(), Dbg->isIndirect(), Dbg->getDebugLoc(),
+        std::max(ToNode->getIROrder(), Dbg->getOrder()));
     ClonedDVs.push_back(Clone);
 
     if (InvalidateDbg) {

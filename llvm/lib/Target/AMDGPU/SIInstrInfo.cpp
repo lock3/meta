@@ -6573,14 +6573,14 @@ MachineInstr *SIInstrInfo::createPHIDestinationCopy(
 
 MachineInstr *SIInstrInfo::createPHISourceCopy(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator InsPt,
-    const DebugLoc &DL, Register Src, Register SrcSubReg, Register Dst) const {
+    const DebugLoc &DL, Register Src, unsigned SrcSubReg, Register Dst) const {
   if (InsPt != MBB.end() &&
       (InsPt->getOpcode() == AMDGPU::SI_IF ||
        InsPt->getOpcode() == AMDGPU::SI_ELSE ||
        InsPt->getOpcode() == AMDGPU::SI_IF_BREAK) &&
       InsPt->definesRegister(Src)) {
     InsPt++;
-    return BuildMI(MBB, InsPt, InsPt->getDebugLoc(),
+    return BuildMI(MBB, InsPt, DL,
                    get(ST.isWave32() ? AMDGPU::S_MOV_B32_term
                                      : AMDGPU::S_MOV_B64_term),
                    Dst)

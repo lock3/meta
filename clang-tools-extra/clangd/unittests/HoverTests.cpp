@@ -598,6 +598,9 @@ TEST(Hover, NoHover) {
                func<1>();
             }
           )cpp",
+      R"cpp(// non-named decls don't get hover. Don't crash!
+            ^static_assert(1, "");
+          )cpp",
   };
 
   for (const auto &Test : Tests) {
@@ -1408,7 +1411,7 @@ TEST(Hover, All) {
           )cpp",
           [](HoverInfo &HI) { HI.Name = "int"; }},
       {
-          R"cpp(// More compilcated structured types.
+          R"cpp(// More complicated structured types.
             int bar();
             ^[[auto]] (*foo)() = bar;
           )cpp",
@@ -1454,6 +1457,24 @@ TEST(Hover, All) {
             HI.Name = "templ<int>";
             HI.Kind = index::SymbolKind::Struct;
             HI.Documentation = "auto on alias";
+          }},
+      {
+          R"cpp(// should not crash.
+          template <class T> struct cls {
+            int method();
+          };
+
+          auto test = cls<int>().[[m^ethod]]();
+          )cpp",
+          [](HoverInfo &HI) {
+            HI.Definition = "int method()";
+            HI.Kind = index::SymbolKind::InstanceMethod;
+            HI.NamespaceScope = "";
+            HI.LocalScope = "cls<int>::";
+            HI.Name = "method";
+            HI.Parameters.emplace();
+            HI.ReturnType = "int";
+            HI.Type = "int ()";
           }},
   };
 

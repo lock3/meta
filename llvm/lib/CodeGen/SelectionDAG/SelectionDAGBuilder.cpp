@@ -1108,6 +1108,15 @@ void SelectionDAGBuilder::visit(const Instruction &I) {
         Node->intersectFlagsWith(IncomingFlags);
     }
   }
+  // Constrained FP intrinsics with fpexcept.ignore should also get
+  // the NoFPExcept flag.
+  if (auto *FPI = dyn_cast<ConstrainedFPIntrinsic>(&I))
+    if (FPI->getExceptionBehavior() == fp::ExceptionBehavior::ebIgnore)
+      if (SDNode *Node = getNodeForIRValue(&I)) {
+        SDNodeFlags Flags = Node->getFlags();
+        Flags.setNoFPExcept(true);
+        Node->setFlags(Flags);
+      }
 
   if (!I.isTerminator() && !HasTailCall &&
       !isStatepoint(&I)) // statepoints handle their exports internally
@@ -3038,7 +3047,7 @@ static bool isVectorReductionOp(const User *I) {
     if (!Visited.insert(User).second)
       continue;
 
-    for (const auto &U : User->users()) {
+    for (const auto *U : User->users()) {
       auto Inst = dyn_cast<Instruction>(U);
       if (!Inst)
         return false;
@@ -4419,7 +4428,7 @@ static bool getUniformBase(const Value *&Ptr, SDValue &Base, SDValue &Index,
 void SelectionDAGBuilder::visitMaskedScatter(const CallInst &I) {
   SDLoc sdl = getCurSDLoc();
 
-  // llvm.masked.scatter.*(Src0, Ptrs, alignemt, Mask)
+  // llvm.masked.scatter.*(Src0, Ptrs, alignment, Mask)
   const Value *Ptr = I.getArgOperand(1);
   SDValue Src0 = getValue(I.getArgOperand(0));
   SDValue Mask = getValue(I.getArgOperand(3));
@@ -4684,10 +4693,10 @@ void SelectionDAGBuilder::visitFence(const FenceInst &I) {
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
   SDValue Ops[3];
   Ops[0] = getRoot();
-  Ops[1] = DAG.getConstant((unsigned)I.getOrdering(), dl,
-                           TLI.getFenceOperandTy(DAG.getDataLayout()));
-  Ops[2] = DAG.getConstant(I.getSyncScopeID(), dl,
-                           TLI.getFenceOperandTy(DAG.getDataLayout()));
+  Ops[1] = DAG.getTargetConstant((unsigned)I.getOrdering(), dl,
+                                 TLI.getFenceOperandTy(DAG.getDataLayout()));
+  Ops[2] = DAG.getTargetConstant(I.getSyncScopeID(), dl,
+                                 TLI.getFenceOperandTy(DAG.getDataLayout()));
   DAG.setRoot(DAG.getNode(ISD::ATOMIC_FENCE, dl, MVT::Other, Ops));
 }
 
@@ -5690,14 +5699,6 @@ SDDbgValue *SelectionDAGBuilder::getDbgValue(SDValue N,
                          /*IsIndirect*/ false, dl, DbgSDNodeOrder);
 }
 
-// VisualStudio defines setjmp as _setjmp
-#if defined(_MSC_VER) && defined(setjmp) && \
-                         !defined(setjmp_undefined_for_msvc)
-#  pragma push_macro("setjmp")
-#  undef setjmp
-#  define setjmp_undefined_for_msvc
-#endif
-
 static unsigned FixedPointIntrinsicToOpcode(unsigned Intrinsic) {
   switch (Intrinsic) {
   case Intrinsic::smul_fix:
@@ -5774,12 +5775,6 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
                             RegName, getValue(RegValue)));
     return;
   }
-  case Intrinsic::setjmp:
-    lowerCallToExternalSymbol(I, &"_setjmp"[!TLI.usesUnderscoreSetJmp()]);
-    return;
-  case Intrinsic::longjmp:
-    lowerCallToExternalSymbol(I, &"_longjmp"[!TLI.usesUnderscoreLongJmp()]);
-    return;
   case Intrinsic::memcpy: {
     const auto &MCI = cast<MemCpyInst>(I);
     SDValue Op1 = getValue(I.getArgOperand(0));
@@ -6986,12 +6981,6 @@ void SelectionDAGBuilder::visitConstrainedFPIntrinsic(
   SDVTList VTs = DAG.getVTList(ValueVTs);
   SDValue Result = DAG.getNode(Opcode, sdl, VTs, Opers);
 
-  if (FPI.getExceptionBehavior() != fp::ExceptionBehavior::ebIgnore) {
-    SDNodeFlags Flags;
-    Flags.setFPExcept(true);
-    Result->setFlags(Flags);
-  }
-
   assert(Result.getNode()->getNumValues() == 2);
   // See above -- chain is handled like for loads here.
   SDValue OutChain = Result.getValue(1);
@@ -7086,13 +7075,21 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
   const Value *SwiftErrorVal = nullptr;
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
 
-  // We can't tail call inside a function with a swifterror argument. Lowering
-  // does not support this yet. It would have to move into the swifterror
-  // register before the call.
-  auto *Caller = CS.getInstruction()->getParent()->getParent();
-  if (TLI.supportSwiftError() &&
-      Caller->getAttributes().hasAttrSomewhere(Attribute::SwiftError))
-    isTailCall = false;
+  if (isTailCall) {
+    // Avoid emitting tail calls in functions with the disable-tail-calls
+    // attribute.
+    auto *Caller = CS.getInstruction()->getParent()->getParent();
+    if (Caller->getFnAttribute("disable-tail-calls").getValueAsString() ==
+        "true")
+      isTailCall = false;
+
+    // We can't tail call inside a function with a swifterror argument. Lowering
+    // does not support this yet. It would have to move into the swifterror
+    // register before the call.
+    if (TLI.supportSwiftError() &&
+        Caller->getAttributes().hasAttrSomewhere(Attribute::SwiftError))
+      isTailCall = false;
+  }
 
   for (ImmutableCallSite::arg_iterator i = CS.arg_begin(), e = CS.arg_end();
        i != e; ++i) {
@@ -8180,10 +8177,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
 
     switch (OpInfo.Type) {
     case InlineAsm::isOutput:
-      if (OpInfo.ConstraintType == TargetLowering::C_Memory ||
-          ((OpInfo.ConstraintType == TargetLowering::C_Immediate ||
-            OpInfo.ConstraintType == TargetLowering::C_Other) &&
-           OpInfo.isIndirect)) {
+      if (OpInfo.ConstraintType == TargetLowering::C_Memory) {
         unsigned ConstraintID =
             TLI.getInlineAsmMemConstraint(OpInfo.ConstraintCode);
         assert(ConstraintID != InlineAsm::Constraint_Unknown &&
@@ -8195,12 +8189,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
         AsmNodeOperands.push_back(DAG.getTargetConstant(OpFlags, getCurSDLoc(),
                                                         MVT::i32));
         AsmNodeOperands.push_back(OpInfo.CallOperand);
-        break;
-      } else if (((OpInfo.ConstraintType == TargetLowering::C_Immediate ||
-                   OpInfo.ConstraintType == TargetLowering::C_Other) &&
-                  !OpInfo.isIndirect) ||
-                 OpInfo.ConstraintType == TargetLowering::C_Register ||
-                 OpInfo.ConstraintType == TargetLowering::C_RegisterClass) {
+      } else {
         // Otherwise, this outputs to a register (directly for C_Register /
         // C_RegisterClass, and a target-defined fashion for
         // C_Immediate/C_Other). Find a register that we can use.
@@ -8283,8 +8272,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
       }
 
       // Treat indirect 'X' constraint as memory.
-      if ((OpInfo.ConstraintType == TargetLowering::C_Immediate ||
-           OpInfo.ConstraintType == TargetLowering::C_Other) &&
+      if (OpInfo.ConstraintType == TargetLowering::C_Other &&
           OpInfo.isIndirect)
         OpInfo.ConstraintType = TargetLowering::C_Memory;
 
@@ -8337,8 +8325,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
       }
 
       assert((OpInfo.ConstraintType == TargetLowering::C_RegisterClass ||
-              OpInfo.ConstraintType == TargetLowering::C_Register ||
-              OpInfo.ConstraintType == TargetLowering::C_Immediate) &&
+              OpInfo.ConstraintType == TargetLowering::C_Register) &&
              "Unknown constraint type!");
 
       // TODO: Support this.
