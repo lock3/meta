@@ -19,6 +19,8 @@
 #define DEBUG_TYPE "Lifetime Analysis"
 
 STATISTIC(MaxIterations, "The maximum # of passes over the cfg");
+STATISTIC(BlockVisitCount, "The # times blocks are visited");
+STATISTIC(AllIterations, "The cumulative # of iterations");
 
 namespace clang {
 namespace lifetime {
@@ -367,6 +369,7 @@ void LifetimeContext::TraverseBlocks() {
         continue;
       }
 
+      ++BlockVisitCount;
       BC.ExitPMap = BC.EntryPMap;
       if (!VisitBlock(FuncDecl, BC.ExitPMap, BC.FalseBranchExitPMap,
                       PSetsOfExpr, RefersTo, *B, Reporter, ASTCtxt,
@@ -379,6 +382,7 @@ void LifetimeContext::TraverseBlocks() {
       Updated = true;
     }
     ++IterationCount;
+    ++AllIterations;
   } while (Updated && IterationCount < IterationLimit);
 
   if (IterationCount > MaxIterations)
