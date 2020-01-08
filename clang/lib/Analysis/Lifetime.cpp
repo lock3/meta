@@ -336,10 +336,9 @@ public:
   DataFlowWorklist(AnalysisDeclContext &AC)
       : EnqueuedBlocks(AC.getCFG()->getNumBlockIDs()),
         SortedGraph(AC.getAnalysis<PostOrderCFGView>()),
-        WorkList(ReversePostOrderCompare{SortedGraph->getComparator()}) {
-    for (const auto *B : *SortedGraph)
-      enqueue(B);
-  }
+        WorkList(ReversePostOrderCompare{SortedGraph->getComparator()}) {}
+
+  const PostOrderCFGView *getOrderedCfg() { return SortedGraph; }
 
   void enqueue(const CFGBlock *B) {
     if (!B || EnqueuedBlocks[B->getBlockID()])
@@ -371,27 +370,30 @@ void LifetimeContext::TraverseBlocks() {
   static constexpr unsigned IterationLimit = 100000;
 
   DataFlowWorklist WorkList(AC);
+  for (const auto *B : *WorkList.getOrderedCfg()) {
+    // The entry block introduces the function parameters into the psets.
+    if (B == &ControlFlowGraph->getEntry()) {
+      auto &BC = getBlockContext(B);
+      // ExitPSets are the function parameters.
+      getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, B, IsConvertible,
+                           Reporter);
+      if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
+        createEntryPsetsForMembers(Method, BC.ExitPMap);
+
+      // We only need to process entry block once.
+      continue;
+    }
+    WorkList.enqueue(B);
+  }
 
   unsigned IterationCount = 0;
   llvm::BitVector Visited(ControlFlowGraph->getNumBlockIDs());
   const CFGBlock *Current;
   while ((Current = WorkList.dequeue()) && IterationCount < IterationLimit) {
-    auto &BC = getBlockContext(Current);
-
-    // The entry block introduces the function parameters into the psets.
-    if (Current == &ControlFlowGraph->getEntry()) {
-      // ExitPSets are the function parameters.
-      getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, Current,
-                           IsConvertible, Reporter);
-      if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
-        createEntryPsetsForMembers(Method, BC.ExitPMap);
-
-      WorkList.enqueueSuccs(Current);
-      continue;
-    }
-
     if (Current == &ControlFlowGraph->getExit())
       continue;
+
+    auto &BC = getBlockContext(Current);
 
     // Compute entry psets of this block by merging exit psets of all
     // reachable predecessors.
