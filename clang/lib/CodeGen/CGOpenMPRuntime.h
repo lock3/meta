@@ -22,6 +22,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueHandle.h"
 
@@ -211,6 +212,43 @@ public:
     ~DisableAutoDeclareTargetRAII();
   };
 
+  /// Manages list of nontemporal decls for the specified directive.
+  class NontemporalDeclsRAII {
+    CodeGenModule &CGM;
+    const bool NeedToPush;
+
+  public:
+    NontemporalDeclsRAII(CodeGenModule &CGM, const OMPLoopDirective &S);
+    ~NontemporalDeclsRAII();
+  };
+
+  /// Maps the expression for the lastprivate variable to the global copy used
+  /// to store new value because original variables are not mapped in inner
+  /// parallel regions. Only private copies are captured but we need also to
+  /// store private copy in shared address.
+  /// Also, stores the expression for the private loop counter and it
+  /// threaprivate name.
+  struct LastprivateConditionalData {
+    llvm::SmallDenseMap<CanonicalDeclPtr<const Decl>, SmallString<16>>
+        DeclToUniqeName;
+    LValue IVLVal;
+    SmallString<16> IVName;
+    /// True if original lvalue for loop counter can be used in codegen (simd
+    /// region or simd only mode) and no need to create threadprivate
+    /// references.
+    bool UseOriginalIV = false;
+  };
+  /// Manages list of lastprivate conditional decls for the specified directive.
+  class LastprivateConditionalRAII {
+    CodeGenModule &CGM;
+    const bool NeedToPush;
+
+  public:
+    LastprivateConditionalRAII(CodeGenFunction &CGF,
+                               const OMPExecutableDirective &S, LValue IVLVal);
+    ~LastprivateConditionalRAII();
+  };
+
 protected:
   CodeGenModule &CGM;
   StringRef FirstSeparator, Separator;
@@ -240,17 +278,6 @@ protected:
                                                 llvm::Constant *&OutlinedFnID,
                                                 bool IsOffloadEntry,
                                                 const RegionCodeGenTy &CodeGen);
-
-  /// Emits code for OpenMP 'if' clause using specified \a CodeGen
-  /// function. Here is the logic:
-  /// if (Cond) {
-  ///   ThenGen();
-  /// } else {
-  ///   ElseGen();
-  /// }
-  void emitOMPIfClause(CodeGenFunction &CGF, const Expr *Cond,
-                       const RegionCodeGenTy &ThenGen,
-                       const RegionCodeGenTy &ElseGen);
 
   /// Emits object of ident_t type with info for source location.
   /// \param Flags Flags for OpenMP location.
@@ -661,6 +688,16 @@ private:
                   std::pair<GlobalDecl, GlobalDecl>>
       DeferredVariantFunction;
 
+  using NontemporalDeclsSet = llvm::SmallDenseSet<CanonicalDeclPtr<const Decl>>;
+  /// Stack for list of declarations in current context marked as nontemporal.
+  /// The set is the union of all current stack elements.
+  llvm::SmallVector<NontemporalDeclsSet, 4> NontemporalDeclsStack;
+
+  /// Stack for list of addresses of declarations in current context marked as
+  /// lastprivate conditional. The set is the union of all current stack
+  /// elements.
+  llvm::SmallVector<LastprivateConditionalData, 4> LastprivateConditionalStack;
+
   /// Flag for keeping track of weather a requires unified_shared_memory
   /// directive is present.
   bool HasRequiresUnifiedSharedMemory = false;
@@ -671,14 +708,6 @@ private:
   /// Flag for keeping track of weather a device routine has been emitted.
   /// Device routines are specific to the
   bool HasEmittedDeclareTargetRegion = false;
-
-  /// Creates and registers offloading binary descriptor for the current
-  /// compilation unit. The function that does the registration is returned.
-  llvm::Function *createOffloadingBinaryDescriptorRegistration();
-
-  /// Creates all the offload entries in the current compilation unit
-  /// along with the associated metadata.
-  void createOffloadEntriesAndInfoMetadata();
 
   /// Loads all the offload entries information from the host IR
   /// metadata.
@@ -826,6 +855,17 @@ public:
       : CGOpenMPRuntime(CGM, ".", ".") {}
   virtual ~CGOpenMPRuntime() {}
   virtual void clear();
+
+  /// Emits code for OpenMP 'if' clause using specified \a CodeGen
+  /// function. Here is the logic:
+  /// if (Cond) {
+  ///   ThenGen();
+  /// } else {
+  ///   ElseGen();
+  /// }
+  void emitIfClause(CodeGenFunction &CGF, const Expr *Cond,
+                    const RegionCodeGenTy &ThenGen,
+                    const RegionCodeGenTy &ElseGen);
 
   /// Checks if the \p Body is the \a CompoundStmt and returns its child
   /// statement iff there is only one that is not evaluatable at the compile
@@ -1154,7 +1194,7 @@ public:
   /// Emit call to void __kmpc_push_proc_bind(ident_t *loc, kmp_int32
   /// global_tid, int proc_bind) to generate code for 'proc_bind' clause.
   virtual void emitProcBindClause(CodeGenFunction &CGF,
-                                  OpenMPProcBindClauseKind ProcBind,
+                                  llvm::omp::ProcBindKind ProcBind,
                                   SourceLocation Loc);
 
   /// Returns address of the threadprivate variable for the current
@@ -1492,10 +1532,9 @@ public:
   /// requires directives was used in the current module.
   llvm::Function *emitRequiresDirectiveRegFun();
 
-  /// Creates the offloading descriptor in the event any target region
-  /// was emitted in the current module and return the function that registers
-  /// it.
-  virtual llvm::Function *emitRegistrationFunction();
+  /// Creates all the offload entries in the current compilation unit
+  /// along with the associated metadata.
+  void createOffloadEntriesAndInfoMetadata();
 
   /// Emits code for teams call of the \a OutlinedFn with
   /// variables captured in a record which address is stored in \a
@@ -1672,6 +1711,40 @@ public:
 
   /// Emits the definition of the declare variant function.
   virtual bool emitDeclareVariant(GlobalDecl GD, bool IsForDefinition);
+
+  /// Checks if the \p VD variable is marked as nontemporal declaration in
+  /// current context.
+  bool isNontemporalDecl(const ValueDecl *VD) const;
+
+  /// Initializes global counter for lastprivate conditional.
+  virtual void
+  initLastprivateConditionalCounter(CodeGenFunction &CGF,
+                                    const OMPExecutableDirective &S);
+
+  /// Checks if the provided \p LVal is lastprivate conditional and emits the
+  /// code to update the value of the original variable.
+  /// \code
+  /// lastprivate(conditional: a)
+  /// ...
+  /// <type> a;
+  /// lp_a = ...;
+  /// #pragma omp critical(a)
+  /// if (last_iv_a <= iv) {
+  ///   last_iv_a = iv;
+  ///   global_a = lp_a;
+  /// }
+  /// \endcode
+  virtual void checkAndEmitLastprivateConditional(CodeGenFunction &CGF,
+                                                  const Expr *LHS);
+
+  /// Gets the address of the global copy used for lastprivate conditional
+  /// update, if any.
+  /// \param PrivLVal LValue for the private copy.
+  /// \param VD Original lastprivate declaration.
+  virtual void emitLastprivateConditionalFinalUpdate(CodeGenFunction &CGF,
+                                                     LValue PrivLVal,
+                                                     const VarDecl *VD,
+                                                     SourceLocation Loc);
 };
 
 /// Class supports emissionof SIMD-only code.
@@ -1900,7 +1973,7 @@ public:
   /// Emit call to void __kmpc_push_proc_bind(ident_t *loc, kmp_int32
   /// global_tid, int proc_bind) to generate code for 'proc_bind' clause.
   void emitProcBindClause(CodeGenFunction &CGF,
-                          OpenMPProcBindClauseKind ProcBind,
+                          llvm::omp::ProcBindKind ProcBind,
                           SourceLocation Loc) override;
 
   /// Returns address of the threadprivate variable for the current
@@ -2166,11 +2239,6 @@ public:
   /// if it was emitted successfully.
   /// \param GD Global to scan.
   bool emitTargetGlobal(GlobalDecl GD) override;
-
-  /// Creates the offloading descriptor in the event any target region
-  /// was emitted in the current module and return the function that registers
-  /// it.
-  llvm::Function *emitRegistrationFunction() override;
 
   /// Emits code for teams call of the \a OutlinedFn with
   /// variables captured in a record which address is stored in \a

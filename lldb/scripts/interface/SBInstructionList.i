@@ -55,7 +55,10 @@ public:
     AppendInstruction (lldb::SBInstruction inst);
 
     void
-    Print (FILE *out);
+    Print (lldb::SBFile out);
+
+    void
+    Print (lldb::FileSP BORROWED);
 
     bool
     GetDescription (lldb::SBStream &description);
@@ -63,6 +66,7 @@ public:
     bool
     DumpEmulationForAllInstructions (const char *triple);
 
+#ifdef SWIGPYTHON
     %pythoncode %{
         def __iter__(self):
             '''Iterate over all instructions in a lldb.SBInstructionList
@@ -94,6 +98,7 @@ public:
                         closest_inst = inst
             return None
     %}
+#endif
 
 };
 

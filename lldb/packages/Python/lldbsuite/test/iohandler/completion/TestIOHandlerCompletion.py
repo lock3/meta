@@ -13,6 +13,10 @@ class IOHandlerCompletionTest(PExpectTest):
 
     mydir = TestBase.compute_mydir(__file__)
 
+    # PExpect uses many timeouts internally and doesn't play well
+    # under ASAN on a loaded machine..
+    @skipIfAsan
+    @skipIfEditlineSupportMissing
     def test_completion(self):
         self.launch(dimensions=(100,500))
 

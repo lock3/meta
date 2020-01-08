@@ -69,15 +69,15 @@ class ARMTTIImpl : public BasicTTIImplBase<ARMTTIImpl> {
       ARM::FeatureDontWidenVMOVS, ARM::FeatureExpandMLx,
       ARM::FeatureHasVMLxHazards, ARM::FeatureNEONForFPMovs,
       ARM::FeatureNEONForFP, ARM::FeatureCheckVLDnAlign,
-      ARM::FeatureHasSlowFPVMLx, ARM::FeatureVMLxForwarding,
-      ARM::FeaturePref32BitThumb, ARM::FeatureAvoidPartialCPSR,
-      ARM::FeatureCheapPredicableCPSR, ARM::FeatureAvoidMOVsShOp,
-      ARM::FeatureHasRetAddrStack, ARM::FeatureHasNoBranchPredictor,
-      ARM::FeatureDSP, ARM::FeatureMP, ARM::FeatureVirtualization,
-      ARM::FeatureMClass, ARM::FeatureRClass, ARM::FeatureAClass,
-      ARM::FeatureNaClTrap, ARM::FeatureStrictAlign, ARM::FeatureLongCalls,
-      ARM::FeatureExecuteOnly, ARM::FeatureReserveR9, ARM::FeatureNoMovt,
-      ARM::FeatureNoNegativeImmediates
+      ARM::FeatureHasSlowFPVMLx, ARM::FeatureHasSlowFPVFMx,
+      ARM::FeatureVMLxForwarding, ARM::FeaturePref32BitThumb,
+      ARM::FeatureAvoidPartialCPSR, ARM::FeatureCheapPredicableCPSR,
+      ARM::FeatureAvoidMOVsShOp, ARM::FeatureHasRetAddrStack,
+      ARM::FeatureHasNoBranchPredictor, ARM::FeatureDSP, ARM::FeatureMP,
+      ARM::FeatureVirtualization, ARM::FeatureMClass, ARM::FeatureRClass,
+      ARM::FeatureAClass, ARM::FeatureNaClTrap, ARM::FeatureStrictAlign,
+      ARM::FeatureLongCalls, ARM::FeatureExecuteOnly, ARM::FeatureReserveR9,
+      ARM::FeatureNoMovt, ARM::FeatureNoNegativeImmediates
   };
 
   const ARMSubtarget *getST() const { return ST; }
@@ -115,14 +115,15 @@ public:
   using BaseT::getIntImmCost;
   int getIntImmCost(const APInt &Imm, Type *Ty);
 
-  int getIntImmCost(unsigned Opcode, unsigned Idx, const APInt &Imm, Type *Ty);
+  int getIntImmCostInst(unsigned Opcode, unsigned Idx, const APInt &Imm, Type *Ty);
 
   /// @}
 
   /// \name Vector TTI Implementations
   /// @{
 
-  unsigned getNumberOfRegisters(bool Vector) {
+  unsigned getNumberOfRegisters(unsigned ClassID) const {
+    bool Vector = (ClassID == 1);
     if (Vector) {
       if (ST->hasNEON())
         return 16;
@@ -152,8 +153,15 @@ public:
     return ST->getMaxInterleaveFactor();
   }
 
-  bool isLegalMaskedLoad(Type *DataTy);
-  bool isLegalMaskedStore(Type *DataTy) { return isLegalMaskedLoad(DataTy); }
+  bool isLegalMaskedLoad(Type *DataTy, MaybeAlign Alignment);
+
+  bool isLegalMaskedStore(Type *DataTy, MaybeAlign Alignment) {
+    return isLegalMaskedLoad(DataTy, Alignment);
+  }
+
+  bool isLegalMaskedGather(Type *Ty, MaybeAlign Alignment) { return false; }
+
+  bool isLegalMaskedScatter(Type *Ty, MaybeAlign Alignment) { return false; }
 
   int getMemcpyCost(const Instruction *I);
 
@@ -183,9 +191,10 @@ public:
       TTI::OperandValueKind Op2Info = TTI::OK_AnyValue,
       TTI::OperandValueProperties Opd1PropInfo = TTI::OP_None,
       TTI::OperandValueProperties Opd2PropInfo = TTI::OP_None,
-      ArrayRef<const Value *> Args = ArrayRef<const Value *>());
+      ArrayRef<const Value *> Args = ArrayRef<const Value *>(),
+      const Instruction *CxtI = nullptr);
 
-  int getMemoryOpCost(unsigned Opcode, Type *Src, unsigned Alignment,
+  int getMemoryOpCost(unsigned Opcode, Type *Src, MaybeAlign Alignment,
                       unsigned AddressSpace, const Instruction *I = nullptr);
 
   int getInterleavedMemoryOpCost(unsigned Opcode, Type *VecTy, unsigned Factor,
@@ -199,7 +208,12 @@ public:
                                 AssumptionCache &AC,
                                 TargetLibraryInfo *LibInfo,
                                 HardwareLoopInfo &HWLoopInfo);
-
+  bool preferPredicateOverEpilogue(Loop *L, LoopInfo *LI,
+                                   ScalarEvolution &SE,
+                                   AssumptionCache &AC,
+                                   TargetLibraryInfo *TLI,
+                                   DominatorTree *DT,
+                                   const LoopAccessInfo *LAI);
   void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                TTI::UnrollingPreferences &UP);
 

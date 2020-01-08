@@ -109,7 +109,7 @@ protected:
                            const FileSpec &spec) const {
     for (size_t i = 0; i < sc_list.GetSize(); ++i) {
       const SymbolContext &sc = sc_list[i];
-      if (FileSpecMatchesAsBaseOrFull(*sc.comp_unit, spec))
+      if (FileSpecMatchesAsBaseOrFull(sc.comp_unit->GetPrimaryFile(), spec))
         return true;
     }
     return false;
@@ -437,10 +437,9 @@ TEST_F(SymbolFilePDBTests, TestClassInNamespace) {
       llvm::dyn_cast_or_null<ClangASTContext>(&clang_ast_ctx_or_err.get());
   EXPECT_NE(nullptr, clang_ast_ctx);
 
-  auto ast_ctx = clang_ast_ctx->getASTContext();
-  EXPECT_NE(nullptr, ast_ctx);
+  clang::ASTContext &ast_ctx = clang_ast_ctx->getASTContext();
 
-  auto tu = ast_ctx->getTranslationUnitDecl();
+  auto tu = ast_ctx.getTranslationUnitDecl();
   EXPECT_NE(nullptr, tu);
 
   symfile->ParseDeclsForContext(CompilerDeclContext(
@@ -603,9 +602,8 @@ TEST_F(SymbolFilePDBTests, TestFindSymbolsWithNameAndType) {
   lldb::ModuleSP module = std::make_shared<Module>(fspec, aspec);
 
   SymbolContextList sc_list;
-  EXPECT_EQ(1u,
-            module->FindSymbolsWithNameAndType(ConstString("?foo@@YAHH@Z"),
-                                               lldb::eSymbolTypeAny, sc_list));
+  module->FindSymbolsWithNameAndType(ConstString("?foo@@YAHH@Z"),
+                                     lldb::eSymbolTypeAny, sc_list);
   EXPECT_EQ(1u, sc_list.GetSize());
 
   SymbolContext sc;

@@ -234,7 +234,8 @@ void DynamicLoaderMacOSXDYLD::DoInitialImageFetch() {
       ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x7fff5fc00000ull);
     } else if (exe_arch.GetMachine() == llvm::Triple::arm ||
                exe_arch.GetMachine() == llvm::Triple::thumb ||
-               exe_arch.GetMachine() == llvm::Triple::aarch64) {
+               exe_arch.GetMachine() == llvm::Triple::aarch64 ||
+               exe_arch.GetMachine() == llvm::Triple::aarch64_32) {
       ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x2fe00000);
     } else {
       ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x8fe00000);
@@ -341,7 +342,10 @@ bool DynamicLoaderMacOSXDYLD::NotifyBreakpointHit(
     // get the values from the ABI:
 
     ClangASTContext *clang_ast_context =
-        process->GetTarget().GetScratchClangASTContext();
+        ClangASTContext::GetScratch(process->GetTarget());
+    if (!clang_ast_context)
+      return false;
+
     ValueList argument_values;
     Value input_value;
 
@@ -733,7 +737,7 @@ bool DynamicLoaderMacOSXDYLD::InitializeFromAllImageInfos() {
       if (!module_sp->IsLoadedInTarget(&target)) {
         if (log) {
           StreamString s;
-          module_sp->GetDescription(&s);
+          module_sp->GetDescription(s.AsRawOstream());
           LLDB_LOGF(log, "Unloading pre-run module: %s.", s.GetData());
         }
         not_loaded_modules.Append(module_sp);

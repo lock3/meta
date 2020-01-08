@@ -890,6 +890,10 @@ Instruction *InstCombiner::foldAddWithConstant(BinaryOperator &Add) {
   if (match(Op0, m_ZExt(m_Value(X))) &&
       X->getType()->getScalarSizeInBits() == 1)
     return SelectInst::Create(X, AddOne(Op1C), Op1);
+  // sext(bool) + C -> bool ? C - 1 : C
+  if (match(Op0, m_SExt(m_Value(X))) &&
+      X->getType()->getScalarSizeInBits() == 1)
+    return SelectInst::Create(X, SubOne(Op1C), Op1);
 
   // ~X + C --> (C-1) - X
   if (match(Op0, m_Not(m_Value(X))))
@@ -1097,12 +1101,13 @@ static Instruction *foldToUnsignedSaturatedAdd(BinaryOperator &I) {
   return nullptr;
 }
 
-static Instruction *
-canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
-    BinaryOperator &I, InstCombiner::BuilderTy &Builder) {
+Instruction *
+InstCombiner::canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
+    BinaryOperator &I) {
   assert((I.getOpcode() == Instruction::Add ||
+          I.getOpcode() == Instruction::Or ||
           I.getOpcode() == Instruction::Sub) &&
-         "Expecting add/sub instruction");
+         "Expecting add/or/sub instruction");
 
   // We have a subtraction/addition between a (potentially truncated) *logical*
   // right-shift of X and a "select".
@@ -1114,7 +1119,7 @@ canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
                            m_Value(Select))))
     return nullptr;
 
-  // `add` is commutative; but for `sub`, "select" *must* be on RHS.
+  // `add`/`or` is commutative; but for `sub`, "select" *must* be on RHS.
   if (I.getOpcode() == Instruction::Sub && I.getOperand(1) != Select)
     return nullptr;
 
@@ -1140,13 +1145,13 @@ canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
                                          X->getType()->getScalarSizeInBits()))))
     return nullptr;
 
-  // Sign-extending value can be sign-extended itself if we `add` it,
-  // or zero-extended if we `sub`tract it.
+  // Sign-extending value can be zero-extended if we `sub`tract it,
+  // or sign-extended otherwise.
   auto SkipExtInMagic = [&I](Value *&V) {
-    if (I.getOpcode() == Instruction::Add)
-      match(V, m_SExtOrSelf(m_Value(V)));
-    else
+    if (I.getOpcode() == Instruction::Sub)
       match(V, m_ZExtOrSelf(m_Value(V)));
+    else
+      match(V, m_SExtOrSelf(m_Value(V)));
   };
 
   // Now, finally validate the sign-extending magic.
@@ -1157,7 +1162,7 @@ canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
   const APInt *Thr;
   Value *SignExtendingValue, *Zero;
   bool ShouldSignext;
-  // It must be a select between two values we will later estabilish to be a
+  // It must be a select between two values we will later establish to be a
   // sign-extending value and a zero constant. The condition guarding the
   // sign-extension must be based on a sign bit of the same X we had in `lshr`.
   if (!match(Select, m_Select(m_ICmp(Pred, m_Specific(X), m_APInt(Thr)),
@@ -1169,7 +1174,7 @@ canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
   if (!ShouldSignext)
     std::swap(SignExtendingValue, Zero);
 
-  // If we should not perform sign-extension then we must add/subtract zero.
+  // If we should not perform sign-extension then we must add/or/subtract zero.
   if (!match(Zero, m_Zero()))
     return nullptr;
   // Otherwise, it should be some constant, left-shifted by the same NBits we
@@ -1181,10 +1186,10 @@ canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
              m_Shl(m_Constant(SignExtendingValueBaseConstant),
                    m_ZExtOrSelf(m_Specific(NBits)))))
     return nullptr;
-  // If we `add`, then the constant should be all-ones, else it should be one.
-  if (I.getOpcode() == Instruction::Add
-          ? !match(SignExtendingValueBaseConstant, m_AllOnes())
-          : !match(SignExtendingValueBaseConstant, m_One()))
+  // If we `sub`, then the constant should be one, else it should be all-ones.
+  if (I.getOpcode() == Instruction::Sub
+          ? !match(SignExtendingValueBaseConstant, m_One())
+          : !match(SignExtendingValueBaseConstant, m_AllOnes()))
     return nullptr;
 
   auto *NewAShr = BinaryOperator::CreateAShr(X, LowBitsToSkip,
@@ -1286,12 +1291,6 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
     // -A + B --> B - A
     return BinaryOperator::CreateSub(RHS, A);
   }
-
-  // Canonicalize sext to zext for better value tracking potential.
-  // add A, sext(B) --> sub A, zext(B)
-  if (match(&I, m_c_Add(m_Value(A), m_OneUse(m_SExt(m_Value(B))))) &&
-      B->getType()->isIntOrIntVectorTy(1))
-    return BinaryOperator::CreateSub(A, Builder.CreateZExt(B, Ty));
 
   // A + -B  -->  A - B
   if (match(RHS, m_Neg(m_Value(B))))
@@ -1403,8 +1402,7 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
     return V;
 
   if (Instruction *V =
-          canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
-              I, Builder))
+          canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(I))
     return V;
 
   if (Instruction *SatAdd = foldToUnsignedSaturatedAdd(I))
@@ -1881,6 +1879,74 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
           Y, Builder.CreateNot(Op1, Op1->getName() + ".not"));
   }
 
+  {
+    // (sub (and Op1, (neg X)), Op1) --> neg (and Op1, (add X, -1))
+    Value *X;
+    if (match(Op0, m_OneUse(m_c_And(m_Specific(Op1),
+                                    m_OneUse(m_Neg(m_Value(X))))))) {
+      return BinaryOperator::CreateNeg(Builder.CreateAnd(
+          Op1, Builder.CreateAdd(X, Constant::getAllOnesValue(I.getType()))));
+    }
+  }
+
+  {
+    // (sub (and Op1, C), Op1) --> neg (and Op1, ~C)
+    Constant *C;
+    if (match(Op0, m_OneUse(m_And(m_Specific(Op1), m_Constant(C))))) {
+      return BinaryOperator::CreateNeg(
+          Builder.CreateAnd(Op1, Builder.CreateNot(C)));
+    }
+  }
+
+  {
+    // If we have a subtraction between some value and a select between
+    // said value and something else, sink subtraction into select hands, i.e.:
+    //   sub (select %Cond, %TrueVal, %FalseVal), %Op1
+    //     ->
+    //   select %Cond, (sub %TrueVal, %Op1), (sub %FalseVal, %Op1)
+    //  or
+    //   sub %Op0, (select %Cond, %TrueVal, %FalseVal)
+    //     ->
+    //   select %Cond, (sub %Op0, %TrueVal), (sub %Op0, %FalseVal)
+    // This will result in select between new subtraction and 0.
+    auto SinkSubIntoSelect =
+        [Ty = I.getType()](Value *Select, Value *OtherHandOfSub,
+                           auto SubBuilder) -> Instruction * {
+      Value *Cond, *TrueVal, *FalseVal;
+      if (!match(Select, m_OneUse(m_Select(m_Value(Cond), m_Value(TrueVal),
+                                           m_Value(FalseVal)))))
+        return nullptr;
+      if (OtherHandOfSub != TrueVal && OtherHandOfSub != FalseVal)
+        return nullptr;
+      // While it is really tempting to just create two subtractions and let
+      // InstCombine fold one of those to 0, it isn't possible to do so
+      // because of worklist visitation order. So ugly it is.
+      bool OtherHandOfSubIsTrueVal = OtherHandOfSub == TrueVal;
+      Value *NewSub = SubBuilder(OtherHandOfSubIsTrueVal ? FalseVal : TrueVal);
+      Constant *Zero = Constant::getNullValue(Ty);
+      SelectInst *NewSel =
+          SelectInst::Create(Cond, OtherHandOfSubIsTrueVal ? Zero : NewSub,
+                             OtherHandOfSubIsTrueVal ? NewSub : Zero);
+      // Preserve prof metadata if any.
+      NewSel->copyMetadata(cast<Instruction>(*Select));
+      return NewSel;
+    };
+    if (Instruction *NewSel = SinkSubIntoSelect(
+            /*Select=*/Op0, /*OtherHandOfSub=*/Op1,
+            [Builder = &Builder, Op1](Value *OtherHandOfSelect) {
+              return Builder->CreateSub(OtherHandOfSelect,
+                                        /*OtherHandOfSub=*/Op1);
+            }))
+      return NewSel;
+    if (Instruction *NewSel = SinkSubIntoSelect(
+            /*Select=*/Op1, /*OtherHandOfSub=*/Op0,
+            [Builder = &Builder, Op0](Value *OtherHandOfSelect) {
+              return Builder->CreateSub(/*OtherHandOfSub=*/Op0,
+                                        OtherHandOfSelect);
+            }))
+      return NewSel;
+  }
+
   if (Op1->hasOneUse()) {
     Value *X = nullptr, *Y = nullptr, *Z = nullptr;
     Constant *C = nullptr;
@@ -1896,14 +1962,16 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
                                   Builder.CreateNot(Y, Y->getName() + ".not"));
 
     // 0 - (X sdiv C)  -> (X sdiv -C)  provided the negation doesn't overflow.
-    // TODO: This could be extended to match arbitrary vector constants.
-    const APInt *DivC;
-    if (match(Op0, m_Zero()) && match(Op1, m_SDiv(m_Value(X), m_APInt(DivC))) &&
-        !DivC->isMinSignedValue() && *DivC != 1) {
-      Constant *NegDivC = ConstantInt::get(I.getType(), -(*DivC));
-      Instruction *BO = BinaryOperator::CreateSDiv(X, NegDivC);
-      BO->setIsExact(cast<BinaryOperator>(Op1)->isExact());
-      return BO;
+    if (match(Op0, m_Zero())) {
+      Constant *Op11C;
+      if (match(Op1, m_SDiv(m_Value(X), m_Constant(Op11C))) &&
+          !Op11C->containsUndefElement() && Op11C->isNotMinSignedValue() &&
+          Op11C->isNotOneValue()) {
+        Instruction *BO =
+            BinaryOperator::CreateSDiv(X, ConstantExpr::getNeg(Op11C));
+        BO->setIsExact(cast<BinaryOperator>(Op1)->isExact());
+        return BO;
+      }
     }
 
     // 0 - (X << Y)  -> (-X << Y)   when X is freely negatable.
@@ -1918,6 +1986,14 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
         Y->getType()->getScalarSizeInBits() == 1) {
       Value *Zext = Builder.CreateZExt(Y, I.getType());
       BinaryOperator *Add = BinaryOperator::CreateAdd(Op0, Zext);
+      Add->setHasNoSignedWrap(I.hasNoSignedWrap());
+      return Add;
+    }
+    // sub [nsw] X, zext(bool Y) -> add [nsw] X, sext(bool Y)
+    // 'nuw' is dropped in favor of the canonical form.
+    if (match(Op1, m_ZExt(m_Value(Y))) && Y->getType()->isIntOrIntVectorTy(1)) {
+      Value *Sext = Builder.CreateSExt(Y, I.getType());
+      BinaryOperator *Add = BinaryOperator::CreateAdd(Op0, Sext);
       Add->setHasNoSignedWrap(I.hasNoSignedWrap());
       return Add;
     }
@@ -2006,8 +2082,7 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
   }
 
   if (Instruction *V =
-          canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(
-              I, Builder))
+          canonicalizeCondSignextOfHighBitExtractToSignextHighBitExtract(I))
     return V;
 
   if (Instruction *Ext = narrowMathIfNoOverflow(I))

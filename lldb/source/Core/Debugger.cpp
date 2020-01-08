@@ -708,8 +708,8 @@ Debugger::Debugger(lldb::LogOutputCallback log_callback, void *baton)
       m_source_manager_up(), m_source_file_cache(),
       m_command_interpreter_up(
           std::make_unique<CommandInterpreter>(*this, false)),
-      m_script_interpreter_sp(), m_input_reader_stack(), m_instance_name(),
-      m_loaded_plugins(), m_event_handler_thread(), m_io_handler_thread(),
+      m_input_reader_stack(), m_instance_name(), m_loaded_plugins(),
+      m_event_handler_thread(), m_io_handler_thread(),
       m_sync_broadcaster(nullptr, "lldb.debugger.sync"),
       m_forward_listener_sp(), m_clear_once() {
   char instance_cstr[256];
@@ -973,34 +973,31 @@ void Debugger::AdoptTopIOHandlerFilesIfInvalid(FileSP &in, StreamFileSP &out,
   std::lock_guard<std::recursive_mutex> guard(m_input_reader_stack.GetMutex());
   IOHandlerSP top_reader_sp(m_input_reader_stack.Top());
   // If no STDIN has been set, then set it appropriately
-  if (!in) {
+  if (!in || !in->IsValid()) {
     if (top_reader_sp)
       in = top_reader_sp->GetInputFileSP();
     else
       in = GetInputFileSP();
-
     // If there is nothing, use stdin
     if (!in)
       in = std::make_shared<NativeFile>(stdin, false);
   }
   // If no STDOUT has been set, then set it appropriately
-  if (!out) {
+  if (!out || !out->GetFile().IsValid()) {
     if (top_reader_sp)
       out = top_reader_sp->GetOutputStreamFileSP();
     else
       out = GetOutputStreamSP();
-
     // If there is nothing, use stdout
     if (!out)
       out = std::make_shared<StreamFile>(stdout, false);
   }
   // If no STDERR has been set, then set it appropriately
-  if (!err) {
+  if (!err || !err->GetFile().IsValid()) {
     if (top_reader_sp)
       err = top_reader_sp->GetErrorStreamFileSP();
     else
       err = GetErrorStreamSP();
-
     // If there is nothing, use stderr
     if (!err)
       err = std::make_shared<StreamFile>(stderr, false);
@@ -1201,17 +1198,21 @@ bool Debugger::EnableLog(llvm::StringRef channel,
                                error_stream);
 }
 
-ScriptInterpreter *Debugger::GetScriptInterpreter(bool can_create) {
+ScriptInterpreter *
+Debugger::GetScriptInterpreter(bool can_create,
+                               llvm::Optional<lldb::ScriptLanguage> language) {
   std::lock_guard<std::recursive_mutex> locker(m_script_interpreter_mutex);
+  lldb::ScriptLanguage script_language =
+      language ? *language : GetScriptLanguage();
 
-  if (!m_script_interpreter_sp) {
+  if (!m_script_interpreters[script_language]) {
     if (!can_create)
       return nullptr;
-    m_script_interpreter_sp = PluginManager::GetScriptInterpreterForLanguage(
-        GetScriptLanguage(), *this);
+    m_script_interpreters[script_language] =
+        PluginManager::GetScriptInterpreterForLanguage(script_language, *this);
   }
 
-  return m_script_interpreter_sp.get();
+  return m_script_interpreters[script_language].get();
 }
 
 SourceManager &Debugger::GetSourceManager() {
@@ -1455,7 +1456,7 @@ void Debugger::DefaultEventHandler() {
               done = true;
             } else if (event_type &
                        CommandInterpreter::eBroadcastBitAsynchronousErrorData) {
-              const char *data = reinterpret_cast<const char *>(
+              const char *data = static_cast<const char *>(
                   EventDataBytes::GetBytesFromEvent(event_sp.get()));
               if (data && data[0]) {
                 StreamSP error_sp(GetAsyncErrorStream());
@@ -1466,7 +1467,7 @@ void Debugger::DefaultEventHandler() {
               }
             } else if (event_type & CommandInterpreter::
                                         eBroadcastBitAsynchronousOutputData) {
-              const char *data = reinterpret_cast<const char *>(
+              const char *data = static_cast<const char *>(
                   EventDataBytes::GetBytesFromEvent(event_sp.get()));
               if (data && data[0]) {
                 StreamSP output_sp(GetAsyncOutputStream());

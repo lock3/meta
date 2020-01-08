@@ -21,7 +21,7 @@
 #include <vector>
 
 using namespace clang;
-using namespace tooling;
+using namespace transformer;
 
 using ast_matchers::MatchFinder;
 using ast_matchers::internal::DynTypedMatcher;
@@ -29,24 +29,24 @@ using ast_type_traits::ASTNodeKind;
 
 using MatchResult = MatchFinder::MatchResult;
 
-Expected<SmallVector<tooling::detail::Transformation, 1>>
-tooling::detail::translateEdits(const MatchResult &Result,
+Expected<SmallVector<transformer::detail::Transformation, 1>>
+transformer::detail::translateEdits(const MatchResult &Result,
                                 llvm::ArrayRef<ASTEdit> Edits) {
-  SmallVector<tooling::detail::Transformation, 1> Transformations;
+  SmallVector<transformer::detail::Transformation, 1> Transformations;
   for (const auto &Edit : Edits) {
     Expected<CharSourceRange> Range = Edit.TargetRange(Result);
     if (!Range)
       return Range.takeError();
     llvm::Optional<CharSourceRange> EditRange =
-        getRangeForEdit(*Range, *Result.Context);
+        tooling::getRangeForEdit(*Range, *Result.Context);
     // FIXME: let user specify whether to treat this case as an error or ignore
     // it as is currently done.
     if (!EditRange)
       return SmallVector<Transformation, 0>();
-    auto Replacement = Edit.Replacement(Result);
+    auto Replacement = Edit.Replacement->eval(Result);
     if (!Replacement)
       return Replacement.takeError();
-    tooling::detail::Transformation T;
+    transformer::detail::Transformation T;
     T.Range = *EditRange;
     T.Replacement = std::move(*Replacement);
     Transformations.push_back(std::move(T));
@@ -54,20 +54,42 @@ tooling::detail::translateEdits(const MatchResult &Result,
   return Transformations;
 }
 
-ASTEdit tooling::change(RangeSelector S, TextGenerator Replacement) {
+ASTEdit transformer::changeTo(RangeSelector S, TextGenerator Replacement) {
   ASTEdit E;
   E.TargetRange = std::move(S);
   E.Replacement = std::move(Replacement);
   return E;
 }
 
-RewriteRule tooling::makeRule(DynTypedMatcher M, SmallVector<ASTEdit, 1> Edits,
+namespace {
+/// A \c TextGenerator that always returns a fixed string.
+class SimpleTextGenerator : public MatchComputation<std::string> {
+  std::string S;
+
+public:
+  SimpleTextGenerator(std::string S) : S(std::move(S)) {}
+  llvm::Error eval(const ast_matchers::MatchFinder::MatchResult &,
+                   std::string *Result) const override {
+    Result->append(S);
+    return llvm::Error::success();
+  }
+  std::string toString() const override {
+    return (llvm::Twine("text(\"") + S + "\")").str();
+  }
+};
+} // namespace
+
+ASTEdit transformer::remove(RangeSelector S) {
+  return change(std::move(S), std::make_shared<SimpleTextGenerator>(""));
+}
+
+RewriteRule transformer::makeRule(DynTypedMatcher M, SmallVector<ASTEdit, 1> Edits,
                               TextGenerator Explanation) {
   return RewriteRule{{RewriteRule::Case{
       std::move(M), std::move(Edits), std::move(Explanation), {}}}};
 }
 
-void tooling::addInclude(RewriteRule &Rule, StringRef Header,
+void transformer::addInclude(RewriteRule &Rule, StringRef Header,
                          IncludeFormat Format) {
   for (auto &Case : Rule.Cases)
     Case.AddedIncludes.emplace_back(Header.str(), Format);
@@ -103,7 +125,7 @@ static std::vector<DynTypedMatcher> taggedMatchers(
 // Simply gathers the contents of the various rules into a single rule. The
 // actual work to combine these into an ordered choice is deferred to matcher
 // registration.
-RewriteRule tooling::applyFirst(ArrayRef<RewriteRule> Rules) {
+RewriteRule transformer::applyFirst(ArrayRef<RewriteRule> Rules) {
   RewriteRule R;
   for (auto &Rule : Rules)
     R.Cases.append(Rule.Cases.begin(), Rule.Cases.end());
@@ -111,7 +133,7 @@ RewriteRule tooling::applyFirst(ArrayRef<RewriteRule> Rules) {
 }
 
 std::vector<DynTypedMatcher>
-tooling::detail::buildMatchers(const RewriteRule &Rule) {
+transformer::detail::buildMatchers(const RewriteRule &Rule) {
   // Map the cases into buckets of matchers -- one for each "root" AST kind,
   // which guarantees that they can be combined in a single anyOf matcher. Each
   // case is paired with an identifying number that is converted to a string id
@@ -137,17 +159,17 @@ tooling::detail::buildMatchers(const RewriteRule &Rule) {
   return Matchers;
 }
 
-DynTypedMatcher tooling::detail::buildMatcher(const RewriteRule &Rule) {
+DynTypedMatcher transformer::detail::buildMatcher(const RewriteRule &Rule) {
   std::vector<DynTypedMatcher> Ms = buildMatchers(Rule);
   assert(Ms.size() == 1 && "Cases must have compatible matchers.");
   return Ms[0];
 }
 
-SourceLocation tooling::detail::getRuleMatchLoc(const MatchResult &Result) {
+SourceLocation transformer::detail::getRuleMatchLoc(const MatchResult &Result) {
   auto &NodesMap = Result.Nodes.getMap();
   auto Root = NodesMap.find(RewriteRule::RootID);
   assert(Root != NodesMap.end() && "Transformation failed: missing root node.");
-  llvm::Optional<CharSourceRange> RootRange = getRangeForEdit(
+  llvm::Optional<CharSourceRange> RootRange = tooling::getRangeForEdit(
       CharSourceRange::getTokenRange(Root->second.getSourceRange()),
       *Result.Context);
   if (RootRange)
@@ -161,7 +183,7 @@ SourceLocation tooling::detail::getRuleMatchLoc(const MatchResult &Result) {
 // Finds the case that was "selected" -- that is, whose matcher triggered the
 // `MatchResult`.
 const RewriteRule::Case &
-tooling::detail::findSelectedCase(const MatchResult &Result,
+transformer::detail::findSelectedCase(const MatchResult &Result,
                                   const RewriteRule &Rule) {
   if (Rule.Cases.size() == 1)
     return Rule.Cases[0];
@@ -176,3 +198,7 @@ tooling::detail::findSelectedCase(const MatchResult &Result,
 }
 
 constexpr llvm::StringLiteral RewriteRule::RootID;
+
+TextGenerator tooling::text(std::string M) {
+  return std::make_shared<SimpleTextGenerator>(std::move(M));
+}

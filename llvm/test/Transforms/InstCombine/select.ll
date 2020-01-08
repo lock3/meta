@@ -694,8 +694,8 @@ define i32 @test41(i1 %cond, i32 %x, i32 %y) {
 define i32 @test42(i32 %x, i32 %y) {
 ; CHECK-LABEL: @test42(
 ; CHECK-NEXT:    [[COND:%.*]] = icmp eq i32 [[X:%.*]], 0
-; CHECK-NEXT:    [[TMP1:%.*]] = zext i1 [[COND]] to i32
-; CHECK-NEXT:    [[C:%.*]] = sub i32 [[Y:%.*]], [[TMP1]]
+; CHECK-NEXT:    [[B:%.*]] = sext i1 [[COND]] to i32
+; CHECK-NEXT:    [[C:%.*]] = add i32 [[B]], [[Y:%.*]]
 ; CHECK-NEXT:    ret i32 [[C]]
 ;
   %b = add i32 %y, -1
@@ -707,8 +707,8 @@ define i32 @test42(i32 %x, i32 %y) {
 define <2 x i32> @test42vec(<2 x i32> %x, <2 x i32> %y) {
 ; CHECK-LABEL: @test42vec(
 ; CHECK-NEXT:    [[COND:%.*]] = icmp eq <2 x i32> [[X:%.*]], zeroinitializer
-; CHECK-NEXT:    [[TMP1:%.*]] = zext <2 x i1> [[COND]] to <2 x i32>
-; CHECK-NEXT:    [[C:%.*]] = sub <2 x i32> [[Y:%.*]], [[TMP1]]
+; CHECK-NEXT:    [[B:%.*]] = sext <2 x i1> [[COND]] to <2 x i32>
+; CHECK-NEXT:    [[C:%.*]] = add <2 x i32> [[B]], [[Y:%.*]]
 ; CHECK-NEXT:    ret <2 x i32> [[C]]
 ;
   %b = add <2 x i32> %y, <i32 -1, i32 -1>
@@ -1539,3 +1539,29 @@ define i8 @test90(i1 %cond, i8 %w, i8 %x, i8 %y, i8 %z) {
   ret i8 %c
 }
 
+define i32 @test_shl_zext_bool(i1 %t) {
+; CHECK-LABEL: @test_shl_zext_bool(
+; CHECK-NEXT:    [[R:%.*]] = select i1 [[T:%.*]], i32 4, i32 0
+; CHECK-NEXT:    ret i32 [[R]]
+;
+  %r = select i1 %t, i32 4, i32 0
+  ret i32 %r
+}
+
+define <2 x i32> @test_shl_zext_bool_splat(<2 x i1> %t) {
+; CHECK-LABEL: @test_shl_zext_bool_splat(
+; CHECK-NEXT:    [[R:%.*]] = select <2 x i1> [[T:%.*]], <2 x i32> <i32 8, i32 8>, <2 x i32> zeroinitializer
+; CHECK-NEXT:    ret <2 x i32> [[R]]
+;
+  %r = select <2 x i1> %t, <2 x i32> <i32 8, i32 8>, <2 x i32> zeroinitializer
+  ret <2 x i32> %r
+}
+
+define <2 x i32> @test_shl_zext_bool_vec(<2 x i1> %t) {
+; CHECK-LABEL: @test_shl_zext_bool_vec(
+; CHECK-NEXT:    [[R:%.*]] = select <2 x i1> [[T:%.*]], <2 x i32> <i32 4, i32 8>, <2 x i32> zeroinitializer
+; CHECK-NEXT:    ret <2 x i32> [[R]]
+;
+  %r = select <2 x i1> %t, <2 x i32> <i32 4, i32 8>, <2 x i32> zeroinitializer
+  ret <2 x i32> %r
+}

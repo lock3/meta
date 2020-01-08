@@ -471,6 +471,12 @@ static bool GetMacOSXProcessCPUType(ProcessInstanceInfo &process_info) {
         break;
 #endif
 
+#if defined(CPU_TYPE_ARM64_32) && defined(CPU_SUBTYPE_ARM64_32_ALL)
+      case CPU_TYPE_ARM64_32:
+        sub = CPU_SUBTYPE_ARM64_32_ALL;
+        break;
+#endif
+
       case CPU_TYPE_ARM: {
         // Note that we fetched the cpu type from the PROCESS but we can't get a
         // cpusubtype of the
@@ -1007,7 +1013,7 @@ static bool AddPosixSpawnFileAction(void *_file_actions, const FileAction *info,
     return false;
 
   posix_spawn_file_actions_t *file_actions =
-      reinterpret_cast<posix_spawn_file_actions_t *>(_file_actions);
+      static_cast<posix_spawn_file_actions_t *>(_file_actions);
 
   switch (info->GetAction()) {
   case FileAction::eFileActionNone:
@@ -1124,7 +1130,7 @@ static Status LaunchProcessPosixSpawn(const char *exe_path,
   // --arch <ARCH> as part of the shell invocation
   // to do that job on OSX.
 
-  if (launch_info.GetShell() == nullptr) {
+  if (launch_info.GetShell() == FileSpec()) {
     // We don't need to do this for ARM, and we really shouldn't now that we
     // have multiple CPU subtypes and no posix_spawnattr call that allows us
     // to set which CPU subtype to launch...
@@ -1441,7 +1447,7 @@ llvm::Expected<HostThread> Host::StartMonitoringChildProcess(
             "(callback, pid=%i, monitor_signals=%i) "
             "source = %p\n",
             static_cast<int>(pid), monitor_signals,
-            reinterpret_cast<void *>(source));
+            static_cast<void *>(source));
 
   if (source) {
     Host::MonitorChildProcessCallback callback_copy = callback;

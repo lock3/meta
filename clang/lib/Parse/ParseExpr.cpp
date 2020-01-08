@@ -232,18 +232,16 @@ ExprResult Parser::ParseCaseExpression(SourceLocation CaseLoc) {
 /// Parse a constraint-expression.
 ///
 /// \verbatim
-///       constraint-expression: [Concepts TS temp.constr.decl p1]
+///       constraint-expression: C++2a[temp.constr.decl]p1
 ///         logical-or-expression
 /// \endverbatim
 ExprResult Parser::ParseConstraintExpression() {
-  // FIXME: this may erroneously consume a function-body as the braced
-  // initializer list of a compound literal
-  //
-  // FIXME: this may erroneously consume a parenthesized rvalue reference
-  // declarator as a parenthesized address-of-label expression
+  EnterExpressionEvaluationContext ConstantEvaluated(
+      Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated);
   ExprResult LHS(ParseCastExpression(/*isUnaryExpression=*/false));
   ExprResult Res(ParseRHSOfBinaryExpression(LHS, prec::LogicalOr));
-
+  if (Res.isUsable() && !Actions.CheckConstraintExpression(Res.get()))
+    return ExprError();
   return Res;
 }
 
@@ -845,12 +843,22 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     return Actions.ActOnCXXNullPtrLiteral(ConsumeToken());
 
   case tok::annot_primary_expr:
-    assert(Res.get() == nullptr && "Stray primary-expression annotation?");
     Res = getExprAnnotation(Tok);
     ConsumeAnnotationToken();
     if (!Res.isInvalid() && Tok.is(tok::less))
       checkPotentialAngleBracket(Res);
     break;
+
+  case tok::annot_non_type:
+  case tok::annot_non_type_dependent:
+  case tok::annot_non_type_undeclared: {
+    CXXScopeSpec SS;
+    Token Replacement;
+    Res = tryParseCXXIdExpression(SS, isAddressOfOperand, Replacement);
+    assert(!Res.isUnset() &&
+           "should not perform typo correction on annotation token");
+    break;
+  }
 
   case tok::kw___super:
   case tok::kw_decltype:
@@ -1054,21 +1062,21 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     CXXScopeSpec ScopeSpec;
     SourceLocation TemplateKWLoc;
     Token Replacement;
-    auto Validator = std::make_unique<CastExpressionIdValidator>(
+    CastExpressionIdValidator Validator(
         /*Next=*/Tok,
         /*AllowTypes=*/isTypeCast != NotTypeCast,
         /*AllowNonTypes=*/isTypeCast != IsTypeCast);
-    Validator->IsAddressOfOperand = isAddressOfOperand;
+    Validator.IsAddressOfOperand = isAddressOfOperand;
     if (Tok.isOneOf(tok::periodstar, tok::arrowstar)) {
-      Validator->WantExpressionKeywords = false;
-      Validator->WantRemainingKeywords = false;
+      Validator.WantExpressionKeywords = false;
+      Validator.WantRemainingKeywords = false;
     } else {
-      Validator->WantRemainingKeywords = Tok.isNot(tok::r_paren);
+      Validator.WantRemainingKeywords = Tok.isNot(tok::r_paren);
     }
     Name.setIdentifier(&II, ILoc);
     Res = Actions.ActOnIdExpression(
         getCurScope(), ScopeSpec, TemplateKWLoc, Name, Tok.is(tok::l_paren),
-        isAddressOfOperand, std::move(Validator),
+        isAddressOfOperand, &Validator,
         /*IsInlineAsmIdentifier=*/false,
         Tok.is(tok::r_paren) ? nullptr : &Replacement);
     if (!Res.isInvalid() && Res.isUnset()) {

@@ -194,6 +194,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::NoInitExprClass:
   case Expr::DesignatedInitUpdateExprClass:
   case Expr::SourceLocExprClass:
+  case Expr::ConceptSpecializationExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionReadQueryExprClass:
@@ -319,6 +320,10 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::UserDefinedLiteralClass:
   case Expr::CUDAKernelCallExprClass:
     return ClassifyUnnamed(Ctx, cast<CallExpr>(E)->getCallReturnType(Ctx));
+
+  case Expr::CXXRewrittenBinaryOperatorClass:
+    return ClassifyInternal(
+        Ctx, cast<CXXRewrittenBinaryOperator>(E)->getSemanticForm());
 
     // __builtin_choose_expr is equivalent to the chosen expression.
   case Expr::ChooseExprClass:

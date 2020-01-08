@@ -18,17 +18,6 @@ else()
   set(LINKER_IS_LLD_LINK FALSE)
 endif()
 
-set(LLVM_CXX_STD_default "c++14")
-# Preserve behaviour of legacy cache variables
-if (LLVM_ENABLE_CXX1Z)
-  set(LLVM_CXX_STD_default "c++1z")
-endif()
-if (LLVM_CXX_STD STREQUAL "c++11")
-  set(LLVM_CXX_STD_force FORCE)
-endif()
-set(LLVM_CXX_STD ${LLVM_CXX_STD_default}
-    CACHE STRING "C++ standard to use for compilation." ${LLVM_CXX_STD_force})
-
 set(LLVM_ENABLE_LTO OFF CACHE STRING "Build LLVM with LTO. May be specified as Thin or Full to use a particular kind of LTO")
 string(TOUPPER "${LLVM_ENABLE_LTO}" uppercase_LLVM_ENABLE_LTO)
 
@@ -144,6 +133,28 @@ if(APPLE)
   endif()
   # Darwin-specific linker flags for loadable modules.
   set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-flat_namespace -Wl,-undefined -Wl,suppress")
+endif()
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  # RHEL7 has ar and ranlib being non-deterministic by default. The D flag forces determinism,
+  # however only GNU version of ar and ranlib (2.27) have this option. 
+  # RHEL DTS7 is also affected by this, which uses GNU binutils 2.28
+  execute_process(COMMAND ${CMAKE_AR} rD t.a
+                  WORKING_DIRECTORY ${CMAKE_BINARY_DIR} RESULT_VARIABLE AR_RESULT OUTPUT_VARIABLE RANLIB_OUTPUT)
+  if(${AR_RESULT} EQUAL 0)
+    execute_process(COMMAND ${CMAKE_RANLIB} -D t.a
+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR} RESULT_VARIABLE RANLIB_RESULT OUTPUT_VARIABLE RANLIB_OUTPUT)
+    if(${RANLIB_RESULT} EQUAL 0)
+      set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Dqc <TARGET> <LINK_FLAGS> <OBJECTS>")
+      set(CMAKE_C_ARCHIVE_APPEND "<CMAKE_AR> Dq  <TARGET> <LINK_FLAGS> <OBJECTS>")
+      set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -D <TARGET>")
+
+      set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Dqc <TARGET> <LINK_FLAGS> <OBJECTS>")
+      set(CMAKE_CXX_ARCHIVE_APPEND "<CMAKE_AR> Dq  <TARGET> <LINK_FLAGS> <OBJECTS>")
+      set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -D <TARGET>")
+    endif()
+    file(REMOVE ${CMAKE_BINARY_DIR}/t.a)
+  endif()
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "AIX")
@@ -445,23 +456,6 @@ if ( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
   add_flag_if_supported("-Werror=unguarded-availability-new" WERROR_UNGUARDED_AVAILABILITY_NEW)
 endif( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
 
-# C++ language standard selection for compilers accepting the GCC-style option:
-if ( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
-  check_cxx_compiler_flag("-std=${LLVM_CXX_STD}" CXX_SUPPORTS_CXX_STD)
-  if (CXX_SUPPORTS_CXX_STD)
-   if (CYGWIN OR MINGW)
-      # MinGW and Cygwin are a bit stricter and lack things like
-      # 'strdup', 'stricmp', etc in c++11 mode.
-      string(REPLACE "c++" "gnu++" gnu_LLVM_CXX_STD "${LLVM_CXX_STD}")
-      append("-std=${gnu_LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
-    else()
-      append("-std=${LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
-    endif()
-  else()
-    message(FATAL_ERROR "The host compiler does not support '-std=${LLVM_CXX_STD}'.")
-  endif()
-endif( LLVM_COMPILER_IS_GCC_COMPATIBLE OR CMAKE_CXX_COMPILER_ID MATCHES "XL" )
-
 # Modules enablement for GCC-compatible compilers:
 if ( LLVM_COMPILER_IS_GCC_COMPATIBLE AND LLVM_ENABLE_MODULES )
   set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
@@ -615,6 +609,16 @@ if (LLVM_ENABLE_WARNINGS AND (LLVM_COMPILER_IS_GCC_COMPATIBLE OR CLANG_CL))
   # LLVM's ADT classes.
   check_cxx_compiler_flag("-Wclass-memaccess" CXX_SUPPORTS_CLASS_MEMACCESS_FLAG)
   append_if(CXX_SUPPORTS_CLASS_MEMACCESS_FLAG "-Wno-class-memaccess" CMAKE_CXX_FLAGS)
+
+  # Disable -Wredundant-move on GCC>=9. GCC wants to remove std::move in code
+  # like "A foo(ConvertibleToA a) { return std::move(a); }", but this code does
+  # not compile (or uses the copy constructor instead) on clang<=3.8. Clang also
+  # has a -Wredundant-move, but it only fires when the types match exactly, so
+  # we can keep it here.
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    check_cxx_compiler_flag("-Wredundant-move" CXX_SUPPORTS_REDUNDANT_MOVE_FLAG)
+    append_if(CXX_SUPPORTS_REDUNDANT_MOVE_FLAG "-Wno-redundant-move" CMAKE_CXX_FLAGS)
+  endif()
 
   # The LLVM libraries have no stable C++ API, so -Wnoexcept-type is not useful.
   check_cxx_compiler_flag("-Wnoexcept-type" CXX_SUPPORTS_NOEXCEPT_TYPE_FLAG)
@@ -897,6 +901,9 @@ if(uppercase_LLVM_ENABLE_LTO STREQUAL "THIN")
            CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
   elseif(LLVM_USE_LINKER STREQUAL "gold")
     append("-Wl,--plugin-opt,cache-dir=${PROJECT_BINARY_DIR}/lto.cache"
+           CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
+  elseif(LINKER_IS_LLD_LINK)
+    append("/lldltocache:${PROJECT_BINARY_DIR}/lto.cache"
            CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS)
   endif()
 elseif(uppercase_LLVM_ENABLE_LTO STREQUAL "FULL")

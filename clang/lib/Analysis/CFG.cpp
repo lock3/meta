@@ -543,6 +543,7 @@ public:
 
 private:
   // Visitors to walk an AST and construct the CFG.
+  CFGBlock *VisitInitListExpr(InitListExpr *ILE, AddStmtChoice asc);
   CFGBlock *VisitAddrLabelExpr(AddrLabelExpr *A, AddStmtChoice asc);
   CFGBlock *VisitBinaryOperator(BinaryOperator *B, AddStmtChoice asc);
   CFGBlock *VisitBreakStmt(BreakStmt *B);
@@ -1140,6 +1141,32 @@ private:
     return {};
   }
 
+  /// A bitwise-or with a non-zero constant always evaluates to true.
+  TryResult checkIncorrectBitwiseOrOperator(const BinaryOperator *B) {
+    const Expr *LHSConstant =
+        tryTransformToIntOrEnumConstant(B->getLHS()->IgnoreParenImpCasts());
+    const Expr *RHSConstant =
+        tryTransformToIntOrEnumConstant(B->getRHS()->IgnoreParenImpCasts());
+
+    if ((LHSConstant && RHSConstant) || (!LHSConstant && !RHSConstant))
+      return {};
+
+    const Expr *Constant = LHSConstant ? LHSConstant : RHSConstant;
+
+    Expr::EvalResult Result;
+    Expr::EvalContext EvalCtx(*Context, nullptr);
+    if (!Constant->EvaluateAsInt(Result, EvalCtx))
+      return {};
+
+    if (Result.Val.getInt() == 0)
+      return {};
+
+    if (BuildOpts.Observer)
+      BuildOpts.Observer->compareBitwiseOr(B);
+
+    return TryResult(true);
+  }
+
   /// Try and evaluate an expression to an integer constant.
   bool tryEvaluate(Expr *S, Expr::EvalResult &outResult) {
     if (!BuildOpts.PruneTriviallyFalseEdges)
@@ -1157,7 +1184,7 @@ private:
       return {};
 
     if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(S)) {
-      if (Bop->isLogicalOp()) {
+      if (Bop->isLogicalOp() || Bop->isEqualityOp()) {
         // Check the cache first.
         CachedBoolEvalsTy::iterator I = CachedBoolEvals.find(S);
         if (I != CachedBoolEvals.end())
@@ -1239,6 +1266,10 @@ private:
             return BopRes.isTrue();
       } else if (Bop->isRelationalOp()) {
         TryResult BopRes = checkIncorrectRelationalOperator(Bop);
+        if (BopRes.isKnown())
+          return BopRes.isTrue();
+      } else if (Bop->getOpcode() == BO_Or) {
+        TryResult BopRes = checkIncorrectBitwiseOrOperator(Bop);
         if (BopRes.isKnown())
           return BopRes.isTrue();
       }
@@ -1400,7 +1431,7 @@ void CFGBuilder::findConstructionContexts(
     if (Layer->getItem().getKind() ==
         ConstructionContextItem::ElidableConstructorKind) {
       auto *MTE = cast<MaterializeTemporaryExpr>(Child);
-      findConstructionContexts(withExtraLayer(MTE), MTE->GetTemporaryExpr());
+      findConstructionContexts(withExtraLayer(MTE), MTE->getSubExpr());
     }
     break;
   }
@@ -1666,7 +1697,7 @@ static QualType getReferenceInitTemporaryType(const Expr *Init,
     // Skip through the temporary-materialization expression.
     if (const MaterializeTemporaryExpr *MTE
           = dyn_cast<MaterializeTemporaryExpr>(Init)) {
-      Init = MTE->GetTemporaryExpr();
+      Init = MTE->getSubExpr();
       if (FoundMTE)
         *FoundMTE = true;
       continue;
@@ -2107,6 +2138,14 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc,
     default:
       return VisitStmt(S, asc);
 
+    case Stmt::ImplicitValueInitExprClass:
+      if (BuildOpts.OmitImplicitValueInitializers)
+        return Block;
+      return VisitStmt(S, asc);
+
+    case Stmt::InitListExprClass:
+      return VisitInitListExpr(cast<InitListExpr>(S), asc);
+
     case Stmt::AddrLabelExprClass:
       return VisitAddrLabelExpr(cast<AddrLabelExpr>(S), asc);
 
@@ -2313,11 +2352,33 @@ CFGBlock *CFGBuilder::VisitChildren(Stmt *S) {
   // Visit the children in their reverse order so that they appear in
   // left-to-right (natural) order in the CFG.
   reverse_children RChildren(S);
-  for (reverse_children::iterator I = RChildren.begin(), E = RChildren.end();
-       I != E; ++I) {
-    if (Stmt *Child = *I)
+  for (Stmt *Child : RChildren) {
+    if (Child)
       if (CFGBlock *R = Visit(Child))
         B = R;
+  }
+  return B;
+}
+
+CFGBlock *CFGBuilder::VisitInitListExpr(InitListExpr *ILE, AddStmtChoice asc) {
+  if (asc.alwaysAdd(*this, ILE)) {
+    autoCreateBlock();
+    appendStmt(Block, ILE);
+  }
+  CFGBlock *B = Block;
+
+  reverse_children RChildren(ILE);
+  for (Stmt *Child : RChildren) {
+    if (!Child)
+      continue;
+    if (CFGBlock *R = Visit(Child))
+      B = R;
+    if (BuildOpts.AddCXXDefaultInitExprInAggregates) {
+      if (auto *DIE = dyn_cast<CXXDefaultInitExpr>(Child))
+        if (Stmt *Child = DIE->getExpr())
+          if (CFGBlock *R = Visit(Child))
+            B = R;
+    }
   }
   return B;
 }
@@ -2340,6 +2401,9 @@ CFGBlock *CFGBuilder::VisitUnaryOperator(UnaryOperator *U,
     autoCreateBlock();
     appendStmt(Block, U);
   }
+
+  if (U->getOpcode() == UO_LNot)
+    tryEvaluateBool(U->getSubExpr()->IgnoreParens());
 
   return Visit(U->getSubExpr(), AddStmtChoice());
 }
@@ -2474,6 +2538,9 @@ CFGBlock *CFGBuilder::VisitBinaryOperator(BinaryOperator *B,
     autoCreateBlock();
     appendStmt(Block, B);
   }
+
+  if (B->isEqualityOp() || B->isRelationalOp())
+    tryEvaluateBool(B);
 
   CFGBlock *RBlock = Visit(B->getRHS());
   CFGBlock *LBlock = Visit(B->getLHS());
@@ -3428,7 +3495,7 @@ CFGBuilder::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *MTE,
                                           AddStmtChoice asc) {
   findConstructionContexts(
       ConstructionContextLayer::create(cfg->getBumpVectorContext(), MTE),
-      MTE->getTemporary());
+      MTE->getSubExpr());
 
   return VisitStmt(MTE, asc);
 }
@@ -4528,6 +4595,10 @@ CFGBlock *CFGBuilder::VisitImplicitCastExpr(ImplicitCastExpr *E,
     autoCreateBlock();
     appendStmt(Block, E);
   }
+
+  if (E->getCastKind() == CK_IntegralToBoolean)
+    tryEvaluateBool(E->getSubExpr()->IgnoreParens());
+
   return Visit(E->getSubExpr(), AddStmtChoice());
 }
 
@@ -4611,7 +4682,7 @@ tryAgain:
       // Find the expression whose lifetime needs to be extended.
       E = const_cast<Expr *>(
           cast<MaterializeTemporaryExpr>(E)
-              ->GetTemporaryExpr()
+              ->getSubExpr()
               ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments));
       // Visit the skipped comma operator left-hand sides for other temporaries.
       for (const Expr *CommaLHS : CommaLHSs) {
@@ -4825,7 +4896,8 @@ CFGBlock *CFGBuilder::VisitOMPExecutableDirective(OMPExecutableDirective *D,
   }
   // Visit associated structured block if any.
   if (!D->isStandaloneDirective())
-    if (Stmt *S = D->getStructuredBlock()) {
+    if (CapturedStmt *CS = D->getInnermostCapturedStmt()) {
+      Stmt *S = CS->getCapturedStmt();
       if (!isa<CompoundStmt>(S))
         addLocalScopeAndDtors(S);
       if (CFGBlock *R = addStmt(S))
@@ -5840,12 +5912,16 @@ const Expr *CFGBlock::getLastCondition() const {
   if (succ_size() < 2)
     return nullptr;
 
+  // FIXME: Is there a better condition expression we can return in this case?
+  if (size() == 0)
+    return nullptr;
+
   auto StmtElem = rbegin()->getAs<CFGStmt>();
   if (!StmtElem)
     return nullptr;
 
   const Stmt *Cond = StmtElem->getStmt();
-  if (isa<ObjCForCollectionStmt>(Cond))
+  if (isa<ObjCForCollectionStmt>(Cond) || isa<DeclStmt>(Cond))
     return nullptr;
 
   // Only ObjCForCollectionStmt is known not to be a non-Expr terminator, hence

@@ -5733,14 +5733,16 @@ bool ARMAsmParser::parseMemory(OperandVector &Operands) {
     return false;
   }
 
-  // If we have a '#', it's an immediate offset, else assume it's a register
-  // offset. Be friendly and also accept a plain integer (without a leading
-  // hash) for gas compatibility.
+  // If we have a '#' or '$', it's an immediate offset, else assume it's a
+  // register offset. Be friendly and also accept a plain integer or expression
+  // (without a leading hash) for gas compatibility.
   if (Parser.getTok().is(AsmToken::Hash) ||
       Parser.getTok().is(AsmToken::Dollar) ||
+      Parser.getTok().is(AsmToken::LParen) ||
       Parser.getTok().is(AsmToken::Integer)) {
-    if (Parser.getTok().isNot(AsmToken::Integer))
-      Parser.Lex(); // Eat '#' or '$'.
+    if (Parser.getTok().is(AsmToken::Hash) ||
+        Parser.getTok().is(AsmToken::Dollar))
+      Parser.Lex(); // Eat '#' or '$'
     E = Parser.getTok().getLoc();
 
     bool isNegative = getParser().getTok().is(AsmToken::Minus);
@@ -6701,7 +6703,7 @@ static void applyMnemonicAliases(StringRef &Mnemonic,
 // omitted. We don't have a way to do that in tablegen, so fix it up here.
 //
 // We have to be careful to not emit an invalid Rt2 here, because the rest of
-// the assmebly parser could then generate confusing diagnostics refering to
+// the assembly parser could then generate confusing diagnostics refering to
 // it. If we do find anything that prevents us from doing the transformation we
 // bail out, and let the assembly parser report an error on the instruction as
 // it is written.
@@ -7893,10 +7895,10 @@ bool ARMAsmParser::validateInstruction(MCInst &Inst,
   case ARM::MVE_VQDMULLs32bh:
   case ARM::MVE_VQDMULLs32th:
   case ARM::MVE_VCMULf32:
-  case ARM::MVE_VMULLs32bh:
-  case ARM::MVE_VMULLs32th:
-  case ARM::MVE_VMULLu32bh:
-  case ARM::MVE_VMULLu32th: {
+  case ARM::MVE_VMULLBs32:
+  case ARM::MVE_VMULLTs32:
+  case ARM::MVE_VMULLBu32:
+  case ARM::MVE_VMULLTu32: {
     if (Operands[3]->getReg() == Operands[4]->getReg()) {
       return Error (Operands[3]->getStartLoc(),
                     "Qd register and Qn register can't be identical");

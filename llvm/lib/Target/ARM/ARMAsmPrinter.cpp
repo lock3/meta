@@ -54,8 +54,8 @@ using namespace llvm;
 
 ARMAsmPrinter::ARMAsmPrinter(TargetMachine &TM,
                              std::unique_ptr<MCStreamer> Streamer)
-    : AsmPrinter(TM, std::move(Streamer)), AFI(nullptr), MCP(nullptr),
-      InConstantPool(false), OptimizationGoals(-1) {}
+    : AsmPrinter(TM, std::move(Streamer)), Subtarget(nullptr), AFI(nullptr),
+      MCP(nullptr), InConstantPool(false), OptimizationGoals(-1) {}
 
 void ARMAsmPrinter::EmitFunctionBodyEnd() {
   // Make sure to terminate any constant pools that were at the end
@@ -1170,10 +1170,12 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
         break;
       case ARM::ADDri:
       case ARM::t2ADDri:
+      case ARM::t2ADDri12:
         Offset = -MI->getOperand(2).getImm();
         break;
       case ARM::SUBri:
       case ARM::t2SUBri:
+      case ARM::t2SUBri12:
         Offset = MI->getOperand(2).getImm();
         break;
       case ARM::tSUBspi:

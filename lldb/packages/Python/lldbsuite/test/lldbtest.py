@@ -1169,26 +1169,10 @@ class Base(unittest2.TestCase):
                 if test is self:
                     print(traceback, file=self.session)
 
-        # put footer (timestamp/rerun instructions) into session
-        testMethod = getattr(self, self._testMethodName)
-        if getattr(testMethod, "__benchmarks_test__", False):
-            benchmarks = True
-        else:
-            benchmarks = False
-
         import datetime
         print(
             "Session info generated @",
             datetime.datetime.now().ctime(),
-            file=self.session)
-        print(
-            "To rerun this test, issue the following command from the 'test' directory:\n",
-            file=self.session)
-        print(
-            "./dotest.py %s -v %s %s" %
-            (self.getRunOptions(),
-             ('+b' if benchmarks else '-t'),
-                self.getRerunArgs()),
             file=self.session)
         self.session.close()
         del self.session
@@ -1937,6 +1921,15 @@ class TestBase(Base):
                     lldb.SBFileSpec(remote_shlib_path, False))
 
         return environment
+
+    def registerSanitizerLibrariesWithTarget(self, target):
+        runtimes = []
+        for m in target.module_iter():
+            libspec = m.GetFileSpec()
+            if "clang_rt" in libspec.GetFilename():
+                runtimes.append(os.path.join(libspec.GetDirectory(),
+                                             libspec.GetFilename()))
+        return self.registerSharedLibrariesWithTarget(target, runtimes)
 
     # utility methods that tests can use to access the current objects
     def target(self):

@@ -829,8 +829,8 @@ void llvm::addPredicatedMveVpredROp(MachineInstrBuilder &MIB,
 
 void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator I,
-                                   const DebugLoc &DL, unsigned DestReg,
-                                   unsigned SrcReg, bool KillSrc) const {
+                                   const DebugLoc &DL, MCRegister DestReg,
+                                   MCRegister SrcReg, bool KillSrc) const {
   bool GPRDest = ARM::GPRRegClass.contains(DestReg);
   bool GPRSrc = ARM::GPRRegClass.contains(SrcReg);
 
@@ -993,9 +993,8 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     Mov->addRegisterKilled(SrcReg, TRI);
 }
 
-bool ARMBaseInstrInfo::isCopyInstrImpl(const MachineInstr &MI,
-                                       const MachineOperand *&Src,
-                                       const MachineOperand *&Dest) const {
+Optional<DestSourcePair>
+ARMBaseInstrInfo::isCopyInstrImpl(const MachineInstr &MI) const {
   // VMOVRRD is also a copy instruction but it requires
   // special way of handling. It is more complex copy version
   // and since that we are not considering it. For recognition
@@ -1006,10 +1005,8 @@ bool ARMBaseInstrInfo::isCopyInstrImpl(const MachineInstr &MI,
   if (!MI.isMoveReg() ||
       (MI.getOpcode() == ARM::VORRq &&
        MI.getOperand(1).getReg() != MI.getOperand(2).getReg()))
-    return false;
-  Dest = &MI.getOperand(0);
-  Src = &MI.getOperand(1);
-  return true;
+    return None;
+  return DestSourcePair{MI.getOperand(0), MI.getOperand(1)};
 }
 
 const MachineInstrBuilder &
@@ -2724,25 +2721,6 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
   }
 
   return false;
-}
-
-/// getSwappedCondition - assume the flags are set by MI(a,b), return
-/// the condition code if we modify the instructions such that flags are
-/// set by MI(b,a).
-inline static ARMCC::CondCodes getSwappedCondition(ARMCC::CondCodes CC) {
-  switch (CC) {
-  default: return ARMCC::AL;
-  case ARMCC::EQ: return ARMCC::EQ;
-  case ARMCC::NE: return ARMCC::NE;
-  case ARMCC::HS: return ARMCC::LS;
-  case ARMCC::LO: return ARMCC::HI;
-  case ARMCC::HI: return ARMCC::LO;
-  case ARMCC::LS: return ARMCC::HS;
-  case ARMCC::GE: return ARMCC::LE;
-  case ARMCC::LT: return ARMCC::GT;
-  case ARMCC::GT: return ARMCC::LT;
-  case ARMCC::LE: return ARMCC::GE;
-  }
 }
 
 /// getCmpToAddCondition - assume the flags are set by CMP(a,b), return
@@ -5348,6 +5326,34 @@ ARMBaseInstrInfo::getSerializableBitmaskMachineOperandTargetFlags() const {
       {MO_SECREL, "arm-secrel"},
       {MO_NONLAZY, "arm-nonlazy"}};
   return makeArrayRef(TargetFlags);
+}
+
+Optional<RegImmPair> ARMBaseInstrInfo::isAddImmediate(const MachineInstr &MI,
+                                                      Register Reg) const {
+  int Sign = 1;
+  unsigned Opcode = MI.getOpcode();
+  int64_t Offset = 0;
+
+  // TODO: Handle cases where Reg is a super- or sub-register of the
+  // destination register.
+  if (Reg != MI.getOperand(0).getReg())
+    return None;
+
+  // We describe SUBri or ADDri instructions.
+  if (Opcode == ARM::SUBri)
+    Sign = -1;
+  else if (Opcode != ARM::ADDri)
+    return None;
+
+  // TODO: Third operand can be global address (usually some string). Since
+  //       strings can be relocated we cannot calculate their offsets for
+  //       now.
+  if (!MI.getOperand(0).isReg() || !MI.getOperand(1).isReg() ||
+      !MI.getOperand(2).isImm())
+    return None;
+
+  Offset = MI.getOperand(2).getImm() * Sign;
+  return RegImmPair{MI.getOperand(1).getReg(), Offset};
 }
 
 bool llvm::registerDefinedBetween(unsigned Reg,

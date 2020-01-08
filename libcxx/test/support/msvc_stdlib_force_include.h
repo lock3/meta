@@ -77,7 +77,7 @@ const AssertionDialogAvoider assertion_dialog_avoider{};
     #define _SILENCE_ALL_CXX20_DEPRECATION_WARNINGS
 #endif // _LIBCXX_IN_DEVCRT
 
-#include <ciso646>
+#include <version>
 
 #if _HAS_CXX20
     #define TEST_STD_VER 99
@@ -88,5 +88,7 @@ const AssertionDialogAvoider assertion_dialog_avoider{};
 #endif
 
 #define _LIBCPP_AVAILABILITY_THROW_BAD_ANY_CAST
+#define _LIBCPP_SUPPRESS_DEPRECATED_PUSH
+#define _LIBCPP_SUPPRESS_DEPRECATED_POP
 
 #endif // SUPPORT_MSVC_STDLIB_FORCE_INCLUDE_H

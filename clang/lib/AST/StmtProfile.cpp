@@ -449,6 +449,7 @@ void OMPClauseProfiler::VisitOMPIfClause(const OMPIfClause *C) {
 }
 
 void OMPClauseProfiler::VisitOMPFinalClause(const OMPFinalClause *C) {
+  VistOMPClauseWithPreInit(C);
   if (C->getCondition())
     Profiler->VisitStmt(C->getCondition());
 }
@@ -745,14 +746,17 @@ void OMPClauseProfiler::VisitOMPThreadLimitClause(
     Profiler->VisitStmt(C->getThreadLimit());
 }
 void OMPClauseProfiler::VisitOMPPriorityClause(const OMPPriorityClause *C) {
+  VistOMPClauseWithPreInit(C);
   if (C->getPriority())
     Profiler->VisitStmt(C->getPriority());
 }
 void OMPClauseProfiler::VisitOMPGrainsizeClause(const OMPGrainsizeClause *C) {
+  VistOMPClauseWithPreInit(C);
   if (C->getGrainsize())
     Profiler->VisitStmt(C->getGrainsize());
 }
 void OMPClauseProfiler::VisitOMPNumTasksClause(const OMPNumTasksClause *C) {
+  VistOMPClauseWithPreInit(C);
   if (C->getNumTasks())
     Profiler->VisitStmt(C->getNumTasks());
 }
@@ -774,7 +778,13 @@ void OMPClauseProfiler::VisitOMPIsDevicePtrClause(
     const OMPIsDevicePtrClause *C) {
   VisitOMPClauseList(C);
 }
+void OMPClauseProfiler::VisitOMPNontemporalClause(
+    const OMPNontemporalClause *C) {
+  VisitOMPClauseList(C);
+  for (auto *E : C->private_refs())
+    Profiler->VisitStmt(E);
 }
+} // namespace
 
 void
 StmtProfiler::VisitOMPExecutableDirective(const OMPExecutableDirective *S) {
@@ -836,6 +846,11 @@ StmtProfiler::VisitOMPParallelForDirective(const OMPParallelForDirective *S) {
 void StmtProfiler::VisitOMPParallelForSimdDirective(
     const OMPParallelForSimdDirective *S) {
   VisitOMPLoopDirective(S);
+}
+
+void StmtProfiler::VisitOMPParallelMasterDirective(
+    const OMPParallelMasterDirective *S) {
+  VisitOMPExecutableDirective(S);
 }
 
 void StmtProfiler::VisitOMPParallelSectionsDirective(
@@ -929,6 +944,21 @@ void StmtProfiler::VisitOMPTaskLoopSimdDirective(
 
 void StmtProfiler::VisitOMPMasterTaskLoopDirective(
     const OMPMasterTaskLoopDirective *S) {
+  VisitOMPLoopDirective(S);
+}
+
+void StmtProfiler::VisitOMPMasterTaskLoopSimdDirective(
+    const OMPMasterTaskLoopSimdDirective *S) {
+  VisitOMPLoopDirective(S);
+}
+
+void StmtProfiler::VisitOMPParallelMasterTaskLoopDirective(
+    const OMPParallelMasterTaskLoopDirective *S) {
+  VisitOMPLoopDirective(S);
+}
+
+void StmtProfiler::VisitOMPParallelMasterTaskLoopSimdDirective(
+    const OMPParallelMasterTaskLoopSimdDirective *S) {
   VisitOMPLoopDirective(S);
 }
 
@@ -1298,7 +1328,7 @@ void StmtProfiler::VisitBlockExpr(const BlockExpr *S) {
 
 void StmtProfiler::VisitGenericSelectionExpr(const GenericSelectionExpr *S) {
   VisitExpr(S);
-  for (const GenericSelectionExpr::ConstAssociation &Assoc :
+  for (const GenericSelectionExpr::ConstAssociation Assoc :
        S->associations()) {
     QualType T = Assoc.getType();
     if (T.isNull())
@@ -1321,6 +1351,14 @@ void StmtProfiler::VisitPseudoObjectExpr(const PseudoObjectExpr *S) {
 void StmtProfiler::VisitAtomicExpr(const AtomicExpr *S) {
   VisitExpr(S);
   ID.AddInteger(S->getOp());
+}
+
+void StmtProfiler::VisitConceptSpecializationExpr(
+                                           const ConceptSpecializationExpr *S) {
+  VisitExpr(S);
+  VisitDecl(S->getFoundDecl());
+  VisitTemplateArguments(S->getTemplateArgsAsWritten()->getTemplateArgs(),
+                         S->getTemplateArgsAsWritten()->NumTemplateArgs);
 }
 
 static Stmt::StmtClass DecodeOperatorCall(const CXXOperatorCallExpr *S,
@@ -1554,6 +1592,16 @@ void StmtProfiler::VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *S) {
 
   VisitCallExpr(S);
   ID.AddInteger(S->getOperator());
+}
+
+void StmtProfiler::VisitCXXRewrittenBinaryOperator(
+    const CXXRewrittenBinaryOperator *S) {
+  // If a rewritten operator were ever to be type-dependent, we should profile
+  // it following its syntactic operator.
+  assert(!S->isTypeDependent() &&
+         "resolved rewritten operator should never be type-dependent");
+  ID.AddBoolean(S->isReversed());
+  VisitExpr(S->getSemanticForm());
 }
 
 #if defined(_MSC_VER) && !defined(__clang__)

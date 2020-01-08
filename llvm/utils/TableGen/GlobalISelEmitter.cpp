@@ -609,7 +609,7 @@ MatchTableRecord MatchTable::LineBreak = {
 void MatchTableRecord::emit(raw_ostream &OS, bool LineBreakIsNextAfterThis,
                             const MatchTable &Table) const {
   bool UseLineComment =
-      LineBreakIsNextAfterThis | (Flags & MTRF_LineBreakFollows);
+      LineBreakIsNextAfterThis || (Flags & MTRF_LineBreakFollows);
   if (Flags & (MTRF_JumpTarget | MTRF_CommaFollows))
     UseLineComment = false;
 
@@ -620,7 +620,7 @@ void MatchTableRecord::emit(raw_ostream &OS, bool LineBreakIsNextAfterThis,
   if (Flags & MTRF_Label)
     OS << ": @" << Table.getLabelIndex(LabelID);
 
-  if (Flags & MTRF_Comment && !UseLineComment)
+  if ((Flags & MTRF_Comment) && !UseLineComment)
     OS << "*/";
 
   if (Flags & MTRF_JumpTarget) {
@@ -1181,7 +1181,7 @@ public:
     TypeIDValues.clear();
 
     unsigned ID = 0;
-    for (const LLTCodeGen LLTy : KnownTypes)
+    for (const LLTCodeGen &LLTy : KnownTypes)
       TypeIDValues[LLTy] = ID++;
   }
 
@@ -1707,7 +1707,7 @@ public:
   }
 
   StringRef getOpcode() const { return I->TheDef->getName(); }
-  unsigned getNumOperands() const { return I->Operands.size(); }
+  bool isVariadicNumOperands() const { return I->Operands.isVariadic; }
 
   StringRef getOperandType(unsigned OpIdx) const {
     return I->Operands[OpIdx].OperandType;
@@ -2153,7 +2153,7 @@ public:
         return false;
     }
 
-    for (const auto &Operand : zip(Operands, B.Operands)) {
+    for (auto Operand : zip(Operands, B.Operands)) {
       if (std::get<0>(Operand)->isHigherPriorityThan(*std::get<1>(Operand)))
         return true;
       if (std::get<1>(Operand)->isHigherPriorityThan(*std::get<0>(Operand)))
@@ -2273,7 +2273,7 @@ void InstructionMatcher::optimize() {
 
   Stash.push_back(predicates_pop_front());
   if (Stash.back().get() == &OpcMatcher) {
-    if (NumOperandsCheck && OpcMatcher.getNumOperands() < getNumOperands())
+    if (NumOperandsCheck && OpcMatcher.isVariadicNumOperands())
       Stash.emplace_back(
           new InstructionNumOperandsMatcher(InsnVarID, getNumOperands()));
     NumOperandsCheck = false;
@@ -3159,7 +3159,7 @@ bool RuleMatcher::isHigherPriorityThan(const RuleMatcher &B) const {
   if (Matchers.size() < B.Matchers.size())
     return false;
 
-  for (const auto &Matcher : zip(Matchers, B.Matchers)) {
+  for (auto Matcher : zip(Matchers, B.Matchers)) {
     if (std::get<0>(Matcher)->isHigherPriorityThan(*std::get<1>(Matcher)))
       return true;
     if (std::get<1>(Matcher)->isHigherPriorityThan(*std::get<0>(Matcher)))
@@ -4309,18 +4309,48 @@ Expected<action_iterator> GlobalISelEmitter::importExplicitUseRenderers(
     ExpectedDstINumUses--;
   }
 
+  // NumResults - This is the number of results produced by the instruction in
+  // the "outs" list.
+  unsigned NumResults = OrigDstI->Operands.NumDefs;
+
+  // Number of operands we know the output instruction must have. If it is
+  // variadic, we could have more operands.
+  unsigned NumFixedOperands = DstI->Operands.size();
+
+  // Loop over all of the fixed operands of the instruction pattern, emitting
+  // code to fill them all in. The node 'N' usually has number children equal to
+  // the number of input operands of the instruction.  However, in cases where
+  // there are predicate operands for an instruction, we need to fill in the
+  // 'execute always' values. Match up the node operands to the instruction
+  // operands to do this.
   unsigned Child = 0;
+
+  // Similarly to the code in TreePatternNode::ApplyTypeConstraints, count the
+  // number of operands at the end of the list which have default values.
+  // Those can come from the pattern if it provides enough arguments, or be
+  // filled in with the default if the pattern hasn't provided them. But any
+  // operand with a default value _before_ the last mandatory one will be
+  // filled in with their defaults unconditionally.
+  unsigned NonOverridableOperands = NumFixedOperands;
+  while (NonOverridableOperands > NumResults &&
+         CGP.operandHasDefault(DstI->Operands[NonOverridableOperands - 1].Rec))
+    --NonOverridableOperands;
+
   unsigned NumDefaultOps = 0;
   for (unsigned I = 0; I != DstINumUses; ++I) {
-    const CGIOperandList::OperandInfo &DstIOperand =
-        DstI->Operands[DstI->Operands.NumDefs + I];
+    unsigned InstOpNo = DstI->Operands.NumDefs + I;
+
+    // Determine what to emit for this operand.
+    Record *OperandNode = DstI->Operands[InstOpNo].Rec;
 
     // If the operand has default values, introduce them now.
-    // FIXME: Until we have a decent test case that dictates we should do
-    // otherwise, we're going to assume that operands with default values cannot
-    // be specified in the patterns. Therefore, adding them will not cause us to
-    // end up with too many rendered operands.
-    if (DstIOperand.Rec->isSubClassOf("OperandWithDefaultOps")) {
+    if (CGP.operandHasDefault(OperandNode) &&
+        (InstOpNo < NonOverridableOperands || Child >= Dst->getNumChildren())) {
+      // This is a predicate or optional def operand which the pattern has not
+      // overridden, or which we aren't letting it override; emit the 'default
+      // ops' operands.
+
+      const CGIOperandList::OperandInfo &DstIOperand = DstI->Operands[InstOpNo];
       DagInit *DefaultOps = DstIOperand.Rec->getValueAsDag("DefaultOps");
       if (auto Error = importDefaultOperandRenderers(
             InsertPt, M, DstMIBuilder, DefaultOps))
@@ -5129,6 +5159,14 @@ void GlobalISelEmitter::run(raw_ostream &OS) {
   SubtargetFeatureInfo::emitComputeAvailableFeatures(
       Target.getName(), "InstructionSelector", "computeAvailableModuleFeatures",
       ModuleFeatures, OS);
+
+  if (Target.getName() == "X86" || Target.getName() == "AArch64") {
+    // TODO: Implement PGSO.
+    OS << "static bool shouldOptForSize(const MachineFunction *MF) {\n";
+    OS << "    return MF->getFunction().hasOptSize();\n";
+    OS << "}\n\n";
+  }
+
   SubtargetFeatureInfo::emitComputeAvailableFeatures(
       Target.getName(), "InstructionSelector",
       "computeAvailableFunctionFeatures", FunctionFeatures, OS,
@@ -5168,7 +5206,7 @@ void GlobalISelEmitter::run(raw_ostream &OS) {
       return true;
     if (A.size() > B.size())
       return false;
-    for (const auto &Pair : zip(A, B)) {
+    for (auto Pair : zip(A, B)) {
       if (std::get<0>(Pair)->getName() < std::get<1>(Pair)->getName())
         return true;
       if (std::get<0>(Pair)->getName() > std::get<1>(Pair)->getName())

@@ -21,6 +21,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
+char SymbolFileDWARFDwo::ID;
+
 SymbolFileDWARFDwo::SymbolFileDWARFDwo(ObjectFileSP objfile,
                                        DWARFCompileUnit &dwarf_cu)
     : SymbolFileDWARF(objfile, objfile->GetSectionList(
@@ -137,7 +139,9 @@ SymbolFileDWARF &SymbolFileDWARFDwo::GetBaseSymbolFile() {
 
 DWARFExpression::LocationListFormat
 SymbolFileDWARFDwo::GetLocationListFormat() const {
-  return DWARFExpression::SplitDwarfLocationList;
+  return m_base_dwarf_cu.GetVersion() >= 5
+             ? DWARFExpression::LocLists
+             : DWARFExpression::SplitDwarfLocationList;
 }
 
 llvm::Expected<TypeSystem &>

@@ -479,12 +479,13 @@ public:
       switch (flavor) {
       case GPRAltRegSet:
       case GPRRegSet:
-        for (uint32_t i = 0; i < count; ++i) {
+        // On ARM, the CPSR register is also included in the count but it is
+        // not included in gpr.r so loop until (count-1).
+        for (uint32_t i = 0; i < (count - 1); ++i) {
           gpr.r[i] = data.GetU32(&offset);
         }
-
-        // Note that gpr.cpsr is also copied by the above loop; this loop
-        // technically extends one element past the end of the gpr.r[] array.
+        // Save cpsr explicitly.
+        gpr.cpsr = data.GetU32(&offset);
 
         SetError(GPRRegSet, Read, 0);
         offset = next_thread_state;
@@ -1140,6 +1141,7 @@ AddressClass ObjectFileMachO::GetAddressClass(lldb::addr_t file_addr) {
         case eSectionTypeDWARFDebugPubTypes:
         case eSectionTypeDWARFDebugRanges:
         case eSectionTypeDWARFDebugRngLists:
+        case eSectionTypeDWARFDebugRngListsDwo:
         case eSectionTypeDWARFDebugStr:
         case eSectionTypeDWARFDebugStrDwo:
         case eSectionTypeDWARFDebugStrOffsets:
@@ -1863,9 +1865,15 @@ public:
           m_section_infos[n_sect].vm_range.SetByteSize(
               section_sp->GetByteSize());
         } else {
+          const char *filename = "<unknown>";
+          SectionSP first_section_sp(m_section_list->GetSectionAtIndex(0));
+          if (first_section_sp)
+            filename = first_section_sp->GetObjectFile()->GetFileSpec().GetPath().c_str();
+
           Host::SystemLog(Host::eSystemLogError,
-                          "error: unable to find section for section %u\n",
-                          n_sect);
+                          "error: unable to find section %d for a symbol in %s, corrupt file?\n",
+                          n_sect, 
+                          filename);
         }
       }
       if (m_section_infos[n_sect].vm_range.Contains(file_addr)) {
@@ -2538,8 +2546,7 @@ size_t ObjectFileMachO::ParseSymtab() {
 
     // Next we need to determine the correct path for the dyld shared cache.
 
-    ArchSpec header_arch;
-    GetArchitecture(header_arch);
+    ArchSpec header_arch = GetArchitecture();
     char dsc_path[PATH_MAX];
     char dsc_path_development[PATH_MAX];
 
@@ -2737,9 +2744,12 @@ size_t ObjectFileMachO::ParseSymtab() {
                      nlist_index++) {
                   /////////////////////////////
                   {
-                    struct nlist_64 nlist;
-                    if (!ParseNList(dsc_local_symbols_data, nlist_data_offset, nlist_byte_size, nlist)
+                    llvm::Optional<struct nlist_64> nlist_maybe =
+                        ParseNList(dsc_local_symbols_data, nlist_data_offset,
+                                   nlist_byte_size);
+                    if (!nlist_maybe)
                       break;
+                    struct nlist_64 nlist = *nlist_maybe;
 
                     SymbolType type = eSymbolTypeInvalid;
                     const char *symbol_name = dsc_local_symbols_data.PeekCStr(
@@ -5189,6 +5199,7 @@ lldb_private::Address ObjectFileMachO::GetEntryPointAddress() {
             }
             break;
           case llvm::MachO::CPU_TYPE_ARM64:
+          case llvm::MachO::CPU_TYPE_ARM64_32:
             if (flavor == 6) // ARM_THREAD_STATE64 from mach/arm/thread_status.h
             {
               offset += 256; // This is the offset of pc in the GPR thread state
@@ -5275,8 +5286,9 @@ lldb_private::Address ObjectFileMachO::GetEntryPointAddress() {
       if (module_sp) {
         SymbolContextList contexts;
         SymbolContext context;
-        if (module_sp->FindSymbolsWithNameAndType(ConstString("start"),
-                                                  eSymbolTypeCode, contexts)) {
+        module_sp->FindSymbolsWithNameAndType(ConstString("start"),
+                                              eSymbolTypeCode, contexts);
+        if (contexts.GetSize()) {
           if (contexts.GetContextAtIndex(0, context))
             m_entry_point_address = context.symbol->GetAddress();
         }
@@ -5469,6 +5481,7 @@ ObjectFileMachO::GetThreadContextAtIndex(uint32_t idx,
 
       switch (m_header.cputype) {
       case llvm::MachO::CPU_TYPE_ARM64:
+      case llvm::MachO::CPU_TYPE_ARM64_32:
         reg_ctx_sp =
             std::make_shared<RegisterContextDarwin_arm64_Mach>(thread, data);
         break;
@@ -6029,6 +6042,7 @@ bool ObjectFileMachO::SaveCore(const lldb::ProcessSP &process_sp,
     bool make_core = false;
     switch (target_arch.GetMachine()) {
     case llvm::Triple::aarch64:
+    case llvm::Triple::aarch64_32:
     case llvm::Triple::arm:
     case llvm::Triple::thumb:
     case llvm::Triple::x86:
@@ -6131,6 +6145,7 @@ bool ObjectFileMachO::SaveCore(const lldb::ProcessSP &process_sp,
           if (thread_sp) {
             switch (mach_header.cputype) {
             case llvm::MachO::CPU_TYPE_ARM64:
+            case llvm::MachO::CPU_TYPE_ARM64_32:
               RegisterContextDarwin_arm64_Mach::Create_LC_THREAD(
                   thread_sp.get(), LC_THREAD_datas[thread_idx]);
               break;

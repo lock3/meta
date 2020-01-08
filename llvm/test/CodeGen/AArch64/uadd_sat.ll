@@ -30,7 +30,8 @@ define i64 @func2(i64 %x, i64 %y) nounwind {
 define i16 @func16(i16 %x, i16 %y) nounwind {
 ; CHECK-LABEL: func16:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
+; CHECK-NEXT:    and w8, w0, #0xffff
+; CHECK-NEXT:    add w8, w8, w1, uxth
 ; CHECK-NEXT:    mov w9, #65535
 ; CHECK-NEXT:    cmp w8, w9
 ; CHECK-NEXT:    csel w0, w8, w9, lo
@@ -42,7 +43,8 @@ define i16 @func16(i16 %x, i16 %y) nounwind {
 define i8 @func8(i8 %x, i8 %y) nounwind {
 ; CHECK-LABEL: func8:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
+; CHECK-NEXT:    and w8, w0, #0xff
+; CHECK-NEXT:    add w8, w8, w1, uxtb
 ; CHECK-NEXT:    cmp w8, #255 // =255
 ; CHECK-NEXT:    mov w9, #255
 ; CHECK-NEXT:    csel w0, w8, w9, lo
@@ -54,7 +56,9 @@ define i8 @func8(i8 %x, i8 %y) nounwind {
 define i4 @func3(i4 %x, i4 %y) nounwind {
 ; CHECK-LABEL: func3:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
+; CHECK-NEXT:    and w8, w1, #0xf
+; CHECK-NEXT:    and w9, w0, #0xf
+; CHECK-NEXT:    add w8, w9, w8
 ; CHECK-NEXT:    cmp w8, #15 // =15
 ; CHECK-NEXT:    mov w9, #15
 ; CHECK-NEXT:    csel w0, w8, w9, lo

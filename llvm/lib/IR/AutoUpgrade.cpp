@@ -22,6 +22,9 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/IntrinsicsAArch64.h"
+#include "llvm/IR/IntrinsicsARM.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
@@ -557,6 +560,26 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
     }
     if (Name == "aarch64.thread.pointer" || Name == "arm.thread.pointer") {
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::thread_pointer);
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqadds.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::sadd_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqaddu.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::uadd_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqsubs.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::ssub_sat,
+                                        F->arg_begin()->getType());
+      return true;
+    }
+    if (Name.startswith("arm.neon.vqsubu.")) {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::usub_sat,
+                                        F->arg_begin()->getType());
       return true;
     }
     if (Name.startswith("aarch64.neon.addp")) {
@@ -3877,14 +3900,35 @@ void llvm::UpgradeARCRuntime(Module &M) {
       FunctionType *NewFuncTy = NewFn->getFunctionType();
       SmallVector<Value *, 2> Args;
 
+      // Don't upgrade the intrinsic if it's not valid to bitcast the return
+      // value to the return type of the old function.
+      if (NewFuncTy->getReturnType() != CI->getType() &&
+          !CastInst::castIsValid(Instruction::BitCast, CI,
+                                 NewFuncTy->getReturnType()))
+        continue;
+
+      bool InvalidCast = false;
+
       for (unsigned I = 0, E = CI->getNumArgOperands(); I != E; ++I) {
         Value *Arg = CI->getArgOperand(I);
+
         // Bitcast argument to the parameter type of the new function if it's
         // not a variadic argument.
-        if (I < NewFuncTy->getNumParams())
+        if (I < NewFuncTy->getNumParams()) {
+          // Don't upgrade the intrinsic if it's not valid to bitcast the argument
+          // to the parameter type of the new function.
+          if (!CastInst::castIsValid(Instruction::BitCast, Arg,
+                                     NewFuncTy->getParamType(I))) {
+            InvalidCast = true;
+            break;
+          }
           Arg = Builder.CreateBitCast(Arg, NewFuncTy->getParamType(I));
+        }
         Args.push_back(Arg);
       }
+
+      if (InvalidCast)
+        continue;
 
       // Create a call instruction that calls the new function.
       CallInst *NewCall = Builder.CreateCall(NewFuncTy, NewFn, Args);
@@ -4119,9 +4163,7 @@ std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
 
   // If X86, and the datalayout matches the expected format, add pointer size
   // address spaces to the datalayout.
-  Triple::ArchType Arch = Triple(TT).getArch();
-  if ((Arch != llvm::Triple::x86 && Arch != llvm::Triple::x86_64) ||
-      DL.contains(AddrSpaces))
+  if (!Triple(TT).isX86() || DL.contains(AddrSpaces))
     return DL;
 
   SmallVector<StringRef, 4> Groups;
@@ -4132,4 +4174,24 @@ std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
   SmallString<1024> Buf;
   std::string Res = (Groups[1] + AddrSpaces + Groups[3]).toStringRef(Buf).str();
   return Res;
+}
+
+void llvm::UpgradeFramePointerAttributes(AttrBuilder &B) {
+  StringRef FramePointer;
+  if (B.contains("no-frame-pointer-elim")) {
+    // The value can be "true" or "false".
+    for (const auto &I : B.td_attrs())
+      if (I.first == "no-frame-pointer-elim")
+        FramePointer = I.second == "true" ? "all" : "none";
+    B.removeAttribute("no-frame-pointer-elim");
+  }
+  if (B.contains("no-frame-pointer-elim-non-leaf")) {
+    // The value is ignored. "no-frame-pointer-elim"="true" takes priority.
+    if (FramePointer != "all")
+      FramePointer = "non-leaf";
+    B.removeAttribute("no-frame-pointer-elim-non-leaf");
+  }
+
+  if (!FramePointer.empty())
+    B.addAttribute("frame-pointer", FramePointer);
 }

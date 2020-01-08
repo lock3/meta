@@ -105,7 +105,7 @@ static const llvm::opt::ArgStringList *getCC1Arguments(
         // tooling will consider host-compilation only. For tooling on device
         // compilation, device compilation only option, such as
         // `--cuda-device-only`, needs specifying.
-        assert(Actions.size() == 2);
+        assert(Actions.size() > 1);
         assert(
             isa<driver::CompileJobAction>(Actions.front()) ||
             // On MacOSX real actions may end up being wrapped in
@@ -619,7 +619,7 @@ buildASTFromCode(StringRef Code, StringRef FileName,
 std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
     StringRef Code, const std::vector<std::string> &Args, StringRef FileName,
     StringRef ToolName, std::shared_ptr<PCHContainerOperations> PCHContainerOps,
-    ArgumentsAdjuster Adjuster) {
+    ArgumentsAdjuster Adjuster, const FileContentMappings &VirtualMappedFiles) {
   std::vector<std::unique_ptr<ASTUnit>> ASTs;
   ASTBuilderAction Action(ASTs);
   llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFileSystem(
@@ -636,6 +636,12 @@ std::unique_ptr<ASTUnit> buildASTFromCodeWithArgs(
 
   InMemoryFileSystem->addFile(FileName, 0,
                               llvm::MemoryBuffer::getMemBufferCopy(Code));
+  for (auto &FilenameWithContent : VirtualMappedFiles) {
+    InMemoryFileSystem->addFile(
+        FilenameWithContent.first, 0,
+        llvm::MemoryBuffer::getMemBuffer(FilenameWithContent.second));
+  }
+
   if (!Invocation.run())
     return nullptr;
 

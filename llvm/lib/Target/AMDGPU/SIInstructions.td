@@ -43,8 +43,8 @@ multiclass V_INTERP_P1_F32_m : VINTRP_m <
   (outs VINTRPDst:$vdst),
   (ins VGPR_32:$vsrc, Attr:$attr, AttrChan:$attrchan),
   "v_interp_p1_f32$vdst, $vsrc, $attr$attrchan",
-  [(set f32:$vdst, (AMDGPUinterp_p1 f32:$vsrc, (i32 timm:$attrchan),
-                                               (i32 timm:$attr)))]
+  [(set f32:$vdst, (int_amdgcn_interp_p1 f32:$vsrc,
+                   (i32 timm:$attrchan), (i32 timm:$attr), M0))]
 >;
 
 let OtherPredicates = [has32BankLDS] in {
@@ -66,8 +66,8 @@ defm V_INTERP_P2_F32 : VINTRP_m <
   (outs VINTRPDst:$vdst),
   (ins VGPR_32:$src0, VGPR_32:$vsrc, Attr:$attr, AttrChan:$attrchan),
   "v_interp_p2_f32$vdst, $vsrc, $attr$attrchan",
-  [(set f32:$vdst, (AMDGPUinterp_p2 f32:$src0, f32:$vsrc, (i32 timm:$attrchan),
-                                                          (i32 timm:$attr)))]>;
+  [(set f32:$vdst, (int_amdgcn_interp_p2 f32:$src0, f32:$vsrc,
+                   (i32 timm:$attrchan), (i32 timm:$attr), M0))]>;
 
 } // End DisableEncoding = "$src0", Constraints = "$src0 = $vdst"
 
@@ -76,8 +76,8 @@ defm V_INTERP_MOV_F32 : VINTRP_m <
   (outs VINTRPDst:$vdst),
   (ins InterpSlot:$vsrc, Attr:$attr, AttrChan:$attrchan),
   "v_interp_mov_f32$vdst, $vsrc, $attr$attrchan",
-  [(set f32:$vdst, (AMDGPUinterp_mov (i32 imm:$vsrc), (i32 timm:$attrchan),
-                                     (i32 timm:$attr)))]>;
+  [(set f32:$vdst, (int_amdgcn_interp_mov (i32 imm:$vsrc),
+                   (i32 timm:$attrchan), (i32 timm:$attr), M0))]>;
 
 } // End Uses = [M0, EXEC]
 
@@ -86,10 +86,15 @@ defm V_INTERP_MOV_F32 : VINTRP_m <
 //===----------------------------------------------------------------------===//
 def ATOMIC_FENCE : SPseudoInstSI<
   (outs), (ins i32imm:$ordering, i32imm:$scope),
-  [(atomic_fence (i32 imm:$ordering), (i32 imm:$scope))],
+  [(atomic_fence (i32 timm:$ordering), (i32 timm:$scope))],
   "ATOMIC_FENCE $ordering, $scope"> {
   let hasSideEffects = 1;
   let maybeAtomic = 1;
+}
+
+def VOP_I64_I64_DPP : VOPProfile <[i64, i64, untyped, untyped]> {
+  let HasExt = 1;
+  let HasExtDPP = 1;
 }
 
 let hasSideEffects = 0, mayLoad = 0, mayStore = 0, Uses = [EXEC] in {
@@ -106,6 +111,11 @@ def V_CNDMASK_B64_PSEUDO : VOP3Common <(outs VReg_64:$vdst),
 // SIFoldOperands pass to enable folding of inline immediates.
 def V_MOV_B64_PSEUDO : VPseudoInstSI <(outs VReg_64:$vdst),
                                       (ins VSrc_b64:$src0)>;
+
+// 64-bit vector move with dpp. Expanded post-RA.
+def V_MOV_B64_DPP_PSEUDO : VOP_DPP_Pseudo <"v_mov_b64_dpp", VOP_I64_I64_DPP> {
+  let Size = 16; // Requires two 8-byte v_mov_b32_dpp to complete.
+}
 
 // Pseudoinstruction for @llvm.amdgcn.wqm. It is turned into a copy after the
 // WQM pass processes it.
@@ -636,22 +646,22 @@ def : Pat <
 
 def : Pat <
   (int_amdgcn_kill i1:$src),
-  (SI_KILL_I1_PSEUDO $src, 0)
+  (SI_KILL_I1_PSEUDO SCSrc_i1:$src, 0)
 >;
 
 def : Pat <
   (int_amdgcn_kill (i1 (not i1:$src))),
-  (SI_KILL_I1_PSEUDO $src, -1)
+  (SI_KILL_I1_PSEUDO SCSrc_i1:$src, -1)
 >;
 
 def : Pat <
   (AMDGPUkill i32:$src),
-  (SI_KILL_F32_COND_IMM_PSEUDO $src, 0, 3) // 3 means SETOGE
+  (SI_KILL_F32_COND_IMM_PSEUDO VSrc_b32:$src, 0, 3) // 3 means SETOGE
 >;
 
 def : Pat <
-  (int_amdgcn_kill (i1 (setcc f32:$src, InlineFPImm<f32>:$imm, cond:$cond))),
-  (SI_KILL_F32_COND_IMM_PSEUDO $src, (bitcast_fpimm_to_i32 $imm), (cond_as_i32imm $cond))
+  (int_amdgcn_kill (i1 (setcc f32:$src, InlineImmFP32:$imm, cond:$cond))),
+  (SI_KILL_F32_COND_IMM_PSEUDO VSrc_b32:$src, (bitcast_fpimm_to_i32 $imm), (cond_as_i32imm $cond))
 >;
 
   // TODO: we could add more variants for other types of conditionals
@@ -772,13 +782,14 @@ defm : FMADPat <f32, V_MAC_F32_e64>;
 
 class FMADModsPat<Instruction inst, SDPatternOperator mad_opr, ValueType Ty>
   : GCNPat<
-  (Ty (mad_opr (VOP3Mods Ty:$src0, i32:$src0_mod),
-  (VOP3Mods Ty:$src1, i32:$src1_mod),
-  (VOP3Mods Ty:$src2, i32:$src2_mod))),
+  (Ty (mad_opr (Ty (VOP3Mods Ty:$src0, i32:$src0_mod)),
+               (Ty (VOP3Mods Ty:$src1, i32:$src1_mod)),
+               (Ty (VOP3Mods Ty:$src2, i32:$src2_mod)))),
   (inst $src0_mod, $src0, $src1_mod, $src1,
   $src2_mod, $src2, DSTCLAMP.NONE, DSTOMOD.NONE)
 >;
 
+// FIXME: This should select to V_MAC_F32
 def : FMADModsPat<V_MAD_F32, AMDGPUfmad_ftz, f32>;
 def : FMADModsPat<V_MAD_F16, AMDGPUfmad_ftz, f16> {
   let SubtargetPredicate = Has16BitInsts;
@@ -1313,8 +1324,8 @@ def : GCNPat <
 >;
 
 def : GCNPat <
-  (i64 InlineImm<i64>:$imm),
-  (S_MOV_B64 InlineImm<i64>:$imm)
+  (i64 InlineImm64:$imm),
+  (S_MOV_B64 InlineImm64:$imm)
 >;
 
 // XXX - Should this use a s_cmp to set SCC?
@@ -1335,14 +1346,15 @@ def : GCNPat <
 }
 
 def : GCNPat <
-  (f64 InlineFPImm<f64>:$imm),
-  (S_MOV_B64 (f64 (bitcast_fpimm_to_i64 InlineFPImm<f64>:$imm)))
+  (f64 InlineImmFP64:$imm),
+  (S_MOV_B64 (f64 (bitcast_fpimm_to_i64 InlineImmFP64:$imm)))
 >;
 
 /********** ================== **********/
 /********** Intrinsic Patterns **********/
 /********** ================== **********/
 
+// FIXME: Should use _e64 and select source modifiers.
 def : POW_Common <V_LOG_F32_e32, V_EXP_F32_e32, V_MUL_LEGACY_F32_e32>;
 
 def : GCNPat <
@@ -1782,54 +1794,59 @@ def : ExpPattern<AMDGPUexport_done, i32, EXP_DONE>;
 // COPY is workaround tablegen bug from multiple outputs
 // from S_LSHL_B32's multiple outputs from implicit scc def.
 def : GCNPat <
-  (v2i16 (build_vector (i16 0), i16:$src1)),
-  (v2i16 (COPY (S_LSHL_B32 i16:$src1, (i16 16))))
+  (v2i16 (build_vector (i16 0), (i16 SReg_32:$src1))),
+  (S_LSHL_B32 SReg_32:$src1, (i16 16))
 >;
 
 def : GCNPat <
-  (v2i16 (build_vector i16:$src0, (i16 undef))),
-  (v2i16 (COPY $src0))
+  (v2i16 (build_vector (i16 SReg_32:$src0), (i16 undef))),
+  (COPY_TO_REGCLASS SReg_32:$src0, SReg_32)
+>;
+
+def : GCNPat <
+  (v2i16 (build_vector (i16 VGPR_32:$src0), (i16 undef))),
+  (COPY_TO_REGCLASS VGPR_32:$src0, VGPR_32)
 >;
 
 def : GCNPat <
   (v2f16 (build_vector f16:$src0, (f16 undef))),
-  (v2f16 (COPY $src0))
+  (COPY $src0)
 >;
 
 def : GCNPat <
-  (v2i16 (build_vector (i16 undef), i16:$src1)),
-  (v2i16 (COPY (S_LSHL_B32 $src1, (i32 16))))
+  (v2i16 (build_vector (i16 undef), (i16 SReg_32:$src1))),
+  (S_LSHL_B32 SReg_32:$src1, (i32 16))
 >;
 
 def : GCNPat <
-  (v2f16 (build_vector (f16 undef), f16:$src1)),
-  (v2f16 (COPY (S_LSHL_B32 $src1, (i32 16))))
+  (v2f16 (build_vector (f16 undef), (f16 SReg_32:$src1))),
+  (S_LSHL_B32 SReg_32:$src1, (i32 16))
 >;
 
 let SubtargetPredicate = HasVOP3PInsts in {
 def : GCNPat <
-  (v2i16 (build_vector i16:$src0, i16:$src1)),
-  (v2i16 (S_PACK_LL_B32_B16 $src0, $src1))
+  (v2i16 (build_vector (i16 SReg_32:$src0), (i16 SReg_32:$src1))),
+  (S_PACK_LL_B32_B16 SReg_32:$src0, SReg_32:$src1)
 >;
 
 // With multiple uses of the shift, this will duplicate the shift and
 // increase register pressure.
 def : GCNPat <
-  (v2i16 (build_vector i16:$src0, (i16 (trunc (srl_oneuse i32:$src1, (i32 16)))))),
-  (v2i16 (S_PACK_LH_B32_B16 i16:$src0, i32:$src1))
+  (v2i16 (build_vector (i16 SReg_32:$src0), (i16 (trunc (srl_oneuse SReg_32:$src1, (i32 16)))))),
+  (v2i16 (S_PACK_LH_B32_B16 SReg_32:$src0, SReg_32:$src1))
 >;
 
 
 def : GCNPat <
-  (v2i16 (build_vector (i16 (trunc (srl_oneuse i32:$src0, (i32 16)))),
-                       (i16 (trunc (srl_oneuse i32:$src1, (i32 16)))))),
-  (v2i16 (S_PACK_HH_B32_B16 $src0, $src1))
+  (v2i16 (build_vector (i16 (trunc (srl_oneuse SReg_32:$src0, (i32 16)))),
+                       (i16 (trunc (srl_oneuse SReg_32:$src1, (i32 16)))))),
+  (S_PACK_HH_B32_B16 SReg_32:$src0, SReg_32:$src1)
 >;
 
 // TODO: Should source modifiers be matched to v_pack_b32_f16?
 def : GCNPat <
-  (v2f16 (build_vector f16:$src0, f16:$src1)),
-  (v2f16 (S_PACK_LL_B32_B16 $src0, $src1))
+  (v2f16 (build_vector (f16 SReg_32:$src0), (f16 SReg_32:$src1))),
+  (S_PACK_LL_B32_B16 SReg_32:$src0, SReg_32:$src1)
 >;
 
 } // End SubtargetPredicate = HasVOP3PInsts
@@ -1853,6 +1870,22 @@ def : GCNPat <
 def : GCNPat <
   (v4f16 (scalar_to_vector f16:$src0)),
   (INSERT_SUBREG (IMPLICIT_DEF), $src0, sub0)
+>;
+
+def : GCNPat <
+  (i64 (int_amdgcn_mov_dpp i64:$src, timm:$dpp_ctrl, timm:$row_mask, timm:$bank_mask,
+                           timm:$bound_ctrl)),
+  (V_MOV_B64_DPP_PSEUDO $src, $src, (as_i32imm $dpp_ctrl),
+                        (as_i32imm $row_mask), (as_i32imm $bank_mask),
+                        (as_i1imm $bound_ctrl))
+>;
+
+def : GCNPat <
+  (i64 (int_amdgcn_update_dpp i64:$old, i64:$src, timm:$dpp_ctrl, timm:$row_mask,
+                              timm:$bank_mask, timm:$bound_ctrl)),
+  (V_MOV_B64_DPP_PSEUDO $old, $src, (as_i32imm $dpp_ctrl),
+                        (as_i32imm $row_mask), (as_i32imm $bank_mask),
+                        (as_i1imm $bound_ctrl))
 >;
 
 //===----------------------------------------------------------------------===//
@@ -1905,7 +1938,7 @@ def : GCNPat<
 // the ignored src1.
 def : GCNPat<
   (int_amdgcn_readfirstlane (i32 imm:$src)),
-  (S_MOV_B32 $src)
+  (S_MOV_B32 SReg_32:$src)
 >;
 
 multiclass BFMPatterns <ValueType vt, InstSI BFM, InstSI MOV> {
@@ -1991,4 +2024,15 @@ def G_AMDGPU_FFBH_U32 : AMDGPUGenericInstruction {
   let OutOperandList = (outs type0:$dst);
   let InOperandList = (ins type1:$src);
   let hasSideEffects = 0;
+}
+
+// Atomic cmpxchg. $cmpval ad $newval are packed in a single vector
+// operand Expects a MachineMemOperand in addition to explicit
+// operands.
+def G_AMDGPU_ATOMIC_CMPXCHG : AMDGPUGenericInstruction {
+  let OutOperandList = (outs type0:$oldval);
+  let InOperandList = (ins ptype1:$addr, type0:$cmpval_nnenwval);
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
 }

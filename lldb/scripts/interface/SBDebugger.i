@@ -165,29 +165,46 @@ public:
     void
     SkipLLDBInitFiles (bool b);
 
-    %feature("autodoc", "DEPRECATED, use SetInputFile");
-    void
-    SetInputFileHandle (FILE *f, bool transfer_ownership);
+#ifdef SWIGPYTHON
+    %pythoncode %{
+        def SetOutputFileHandle(self, file, transfer_ownership):
+            "DEPRECATED, use SetOutputFile"
+            if file is None:
+                import sys
+                file = sys.stdout
+            self.SetOutputFile(SBFile.Create(file, borrow=True))
 
-    %feature("autodoc", "DEPRECATED, use SetOutputFile");
-    void
-    SetOutputFileHandle (FILE *f, bool transfer_ownership);
+        def SetInputFileHandle(self, file, transfer_ownership):
+            "DEPRECATED, use SetInputFile"
+            if file is None:
+                import sys
+                file = sys.stdin
+            self.SetInputFile(SBFile.Create(file, borrow=True))
 
-    %feature("autodoc", "DEPRECATED, use SetErrorFile");
-    void
-    SetErrorFileHandle (FILE *f, bool transfer_ownership);
+        def SetErrorFileHandle(self, file, transfer_ownership):
+            "DEPRECATED, use SetErrorFile"
+            if file is None:
+                import sys
+                file = sys.stderr
+            self.SetErrorFile(SBFile.Create(file, borrow=True))
+    %}
+#endif
 
-    %feature("autodoc", "DEPRECATED, use GetInputFile");
-    FILE *
-    GetInputFileHandle ();
 
-    %feature("autodoc", "DEPRECATED, use GetOutputFile");
-    FILE *
-    GetOutputFileHandle ();
+    %extend {
 
-    %feature("autodoc", "DEPRECATED, use GetErrorFile");
-    FILE *
-    GetErrorFileHandle ();
+        lldb::FileSP GetInputFileHandle() {
+            return self->GetInputFile().GetFile();
+        }
+
+        lldb::FileSP GetOutputFileHandle() {
+            return self->GetOutputFile().GetFile();
+        }
+
+        lldb::FileSP GetErrorFileHandle() {
+            return self->GetErrorFile().GetFile();
+        }
+    }
 
     SBError
     SetInputFile (SBFile file);
@@ -228,8 +245,14 @@ public:
     void
     HandleProcessEvent (const lldb::SBProcess &process,
                         const lldb::SBEvent &event,
-                        FILE *out,
-                        FILE *err);
+                        SBFile out,
+                        SBFile err);
+
+    void
+    HandleProcessEvent (const lldb::SBProcess &process,
+                        const lldb::SBEvent &event,
+                        FileSP BORROWED,
+                        FileSP BORROWED);
 
     lldb::SBTarget
     CreateTarget (const char *filename,
@@ -493,6 +516,7 @@ n_errors, quit_requested, has_crashed = debugger.RunCommandInterpreter(True,
     lldb::SBError
     RunREPL (lldb::LanguageType language, const char *repl_options);
 
+#ifdef SWIGPYTHON
     %pythoncode%{
     def __iter__(self):
         '''Iterate over all targets in a lldb.SBDebugger object.'''
@@ -502,6 +526,7 @@ n_errors, quit_requested, has_crashed = debugger.RunCommandInterpreter(True,
         '''Return the number of targets in a lldb.SBDebugger object.'''
         return self.GetNumTargets()
     %}
+#endif
 
 }; // class SBDebugger
 

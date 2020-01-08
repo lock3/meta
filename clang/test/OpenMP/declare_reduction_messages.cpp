@@ -142,13 +142,13 @@ int main() {
 #if __cplusplus == 201103L
 struct A {
   A() {}
-  A& operator=(A&&) = default;
+  A(const A &) = default;
 };
 
 int A_TEST() {
-  A test;
+  A test, test1;
 #pragma omp declare reduction(+ : A : omp_out) initializer(omp_priv = A()) allocate(test) // expected-warning {{extra tokens at the end of '#pragma omp declare reduction' are ignored}}
-#pragma omp parallel reduction(+ : test)
+#pragma omp parallel reduction(+ : test) reduction(::operator+: test1) // expected-error {{unable to resolve declare reduction construct for type 'A'}}
   {}
   return 0;
 }

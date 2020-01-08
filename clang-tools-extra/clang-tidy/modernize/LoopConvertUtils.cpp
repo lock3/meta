@@ -177,7 +177,7 @@ const Expr *digThroughConstructors(const Expr *E) {
       return nullptr;
     E = ConstructExpr->getArg(0);
     if (const auto *Temp = dyn_cast<MaterializeTemporaryExpr>(E))
-      E = Temp->GetTemporaryExpr();
+      E = Temp->getSubExpr();
     return digThroughConstructors(E);
   }
   return E;
@@ -867,7 +867,7 @@ std::string VariableNamer::createIndexName() {
   return OldIndex->getName();
 }
 
-/// Determines whether or not the the name \a Symbol conflicts with
+/// Determines whether or not the name \a Symbol conflicts with
 /// language keywords or defined macros. Also checks if the name exists in
 /// LoopContext, any of its parent contexts, or any of its child statements.
 ///

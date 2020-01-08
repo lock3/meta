@@ -10,20 +10,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CodeGenFunction.h"
 #include "CGCXXABI.h"
 #include "CGObjCRuntime.h"
 #include "CGRecordLayout.h"
+#include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include "ConstantEmitter.h"
 #include "TargetInfo.h"
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Builtins.h"
-#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -1175,7 +1176,7 @@ public:
 
   llvm::Constant *VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E,
                                                 QualType T) {
-    return Visit(E->GetTemporaryExpr(), T);
+    return Visit(E->getSubExpr(), T);
   }
 
   llvm::Constant *EmitArrayInitialization(InitListExpr *ILE, QualType T) {
@@ -1271,8 +1272,8 @@ public:
       return nullptr;
 
     // FIXME: We should not have to call getBaseElementType here.
-    const RecordType *RT =
-      CGM.getContext().getBaseElementType(Ty)->getAs<RecordType>();
+    const auto *RT =
+        CGM.getContext().getBaseElementType(Ty)->castAs<RecordType>();
     const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
 
     // If the class doesn't have a trivial destructor, we can't emit it as a
@@ -1370,7 +1371,7 @@ public:
 					 C, ".compoundliteral", nullptr,
 					 llvm::GlobalVariable::NotThreadLocal,
 					 CGM.getContext().getTargetAddressSpace(E->getType()));
-      GV->setAlignment(Align.getQuantity());
+      GV->setAlignment(Align.getAsAlign());
       CGM.setAddrOfConstantCompoundLiteral(CLE, GV);
       return ConstantAddress(GV, Align);
     }
@@ -1388,7 +1389,7 @@ public:
       PredefinedExpr::IdentKind Kind = cast<PredefinedExpr>(E)->getIdentKind();
       if (Emitter.CGF) {
         LValue Res = Emitter.CGF->EmitPredefinedLValue(cast<PredefinedExpr>(E));
-        return cast<ConstantAddress>(Res.getAddress());
+        return cast<ConstantAddress>(Res.getAddress(*Emitter.CGF));
       } else if (Kind == PredefinedExpr::PrettyFunction) {
         return CGM.GetAddrOfConstantCString("top level", ".tmp");
       }
@@ -1449,8 +1450,8 @@ public:
       assert(MTE->getStorageDuration() == SD_Static);
       SmallVector<const Expr *, 2> CommaLHSs;
       SmallVector<SubobjectAdjustment, 2> Adjustments;
-      const Expr *Inner = MTE->GetTemporaryExpr()
-	->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
+      const Expr *Inner = MTE->getSubExpr()
+                       ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
       return CGM.GetAddrOfGlobalTemporary(MTE, Inner);
     }
     }
@@ -2123,7 +2124,7 @@ struct ConstantLValue {
 
   /*implicit*/ ConstantLValue(llvm::Constant *value,
                               bool hasOffsetApplied = false)
-    : Value(value), HasOffsetApplied(false) {}
+    : Value(value), HasOffsetApplied(hasOffsetApplied) {}
 
   /*implicit*/ ConstantLValue(ConstantAddress address)
     : ConstantLValue(address.getPointer()) {}
@@ -2398,8 +2399,8 @@ ConstantLValueEmitter::VisitMaterializeTemporaryExpr(
   assert(E->getStorageDuration() == SD_Static);
   SmallVector<const Expr *, 2> CommaLHSs;
   SmallVector<SubobjectAdjustment, 2> Adjustments;
-  const Expr *Inner = E->GetTemporaryExpr()
-      ->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
+  const Expr *Inner =
+      E->getSubExpr()->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
   return CGM.GetAddrOfGlobalTemporary(E, Inner);
 }
 

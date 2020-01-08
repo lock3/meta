@@ -77,28 +77,39 @@ class ILFormat<dag outs, dag ins, string asmstr, list<dag> pattern>
 
 def TruePredicate : Predicate<"">;
 
+// Add a predicate to the list if does not already exist to deduplicate it.
+class PredConcat<list<Predicate> lst, Predicate pred> {
+  list<Predicate> ret =
+    !foldl([pred], lst, acc, cur,
+           !listconcat(acc, !if(!eq(!cast<string>(cur),!cast<string>(pred)),
+                                [], [cur])));
+}
+
 class PredicateControl {
   Predicate SubtargetPredicate = TruePredicate;
-  list<Predicate> AssemblerPredicates = [];
   Predicate AssemblerPredicate = TruePredicate;
   Predicate WaveSizePredicate = TruePredicate;
   list<Predicate> OtherPredicates = [];
-  list<Predicate> Predicates = !listconcat([SubtargetPredicate,
-                                            AssemblerPredicate,
-                                            WaveSizePredicate],
-                                            AssemblerPredicates,
-                                            OtherPredicates);
+  list<Predicate> Predicates = PredConcat<
+                                 PredConcat<PredConcat<OtherPredicates,
+                                                       SubtargetPredicate>.ret,
+                                            AssemblerPredicate>.ret,
+                                 WaveSizePredicate>.ret;
 }
+
 class AMDGPUPat<dag pattern, dag result> : Pat<pattern, result>,
       PredicateControl;
 
-def FP16Denormals : Predicate<"Subtarget->hasFP16Denormals()">;
-def FP32Denormals : Predicate<"Subtarget->hasFP32Denormals()">;
-def FP64Denormals : Predicate<"Subtarget->hasFP64Denormals()">;
-def NoFP16Denormals : Predicate<"!Subtarget->hasFP16Denormals()">;
-def NoFP32Denormals : Predicate<"!Subtarget->hasFP32Denormals()">;
-def NoFP64Denormals : Predicate<"!Subtarget->hasFP64Denormals()">;
+let RecomputePerFunction = 1 in {
+def FP16Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals">;
+def FP32Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP32Denormals">;
+def FP64Denormals : Predicate<"MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals">;
+def NoFP16Denormals : Predicate<"!MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals">;
+def NoFP32Denormals : Predicate<"!MF->getInfo<SIMachineFunctionInfo>()->getMode().FP32Denormals">;
+def NoFP64Denormals : Predicate<"!MF->getInfo<SIMachineFunctionInfo>()->getMode().FP64FP16Denormals">;
 def UnsafeFPMath : Predicate<"TM.Options.UnsafeFPMath">;
+}
+
 def FMA : Predicate<"Subtarget->hasFMA()">;
 
 def InstFlag : OperandWithDefaultOps <i32, (ops (i32 0))>;
@@ -147,20 +158,30 @@ def brtarget   : Operand<OtherVT>;
 class HasOneUseUnaryOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0),
   (op $src0),
-  [{ return N->hasOneUse(); }]
->;
+  [{ return N->hasOneUse(); }]> {
+
+  let GISelPredicateCode = [{
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
+  }];
+}
 
 class HasOneUseBinOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0, node:$src1),
   (op $src0, $src1),
-  [{ return N->hasOneUse(); }]
->;
+  [{ return N->hasOneUse(); }]> {
+  let GISelPredicateCode = [{
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
+  }];
+}
 
 class HasOneUseTernaryOp<SDPatternOperator op> : PatFrag<
   (ops node:$src0, node:$src1, node:$src2),
   (op $src0, $src1, $src2),
-  [{ return N->hasOneUse(); }]
->;
+  [{ return N->hasOneUse(); }]> {
+  let GISelPredicateCode = [{
+    return MRI.hasOneNonDBGUse(MI.getOperand(0).getReg());
+  }];
+}
 
 let Properties = [SDNPCommutative, SDNPAssociative] in {
 def smax_oneuse : HasOneUseBinOp<smax>;
@@ -497,6 +518,7 @@ defm atomic_load_umax : ret_noret_binary_atomic_op<atomic_load_umax>;
 defm atomic_load_umin : ret_noret_binary_atomic_op<atomic_load_umin>;
 defm atomic_load_xor : ret_noret_binary_atomic_op<atomic_load_xor>;
 defm atomic_load_fadd : ret_noret_binary_atomic_op<atomic_load_fadd, 0>;
+defm AMDGPUatomic_cmp_swap : ret_noret_binary_atomic_op<AMDGPUatomic_cmp_swap>;
 
 
 def store_hi16_private : StoreHi16 <truncstorei16>, PrivateAddress;
@@ -569,21 +591,7 @@ defm atomic_cmp_swap_region : ternary_atomic_op<atomic_cmp_swap>;
 defm atomic_cmp_swap_region_m0 : ternary_atomic_op<atomic_cmp_swap_glue>;
 }
 
-class global_binary_atomic_op_frag<SDNode atomic_op> : PatFrag<
-    (ops node:$ptr, node:$value),
-    (atomic_op node:$ptr, node:$value),
-    [{return cast<MemSDNode>(N)->getAddressSpace() == AMDGPUAS::GLOBAL_ADDRESS;}]>;
-
 // Legacy.
-def AMDGPUatomic_cmp_swap_global : PatFrag<
-  (ops node:$ptr, node:$value),
-  (AMDGPUatomic_cmp_swap node:$ptr, node:$value)>, GlobalAddress;
-
-def atomic_cmp_swap_global : PatFrag<
-  (ops node:$ptr, node:$cmp, node:$value),
-  (atomic_cmp_swap node:$ptr, node:$cmp, node:$value)>, GlobalAddress;
-
-
 def atomic_cmp_swap_global_noret : PatFrag<
   (ops node:$ptr, node:$cmp, node:$value),
   (atomic_cmp_swap node:$ptr, node:$cmp, node:$value),

@@ -16,6 +16,7 @@
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ASTLambda.h"
 #include "clang/AST/ASTMutationListener.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/CanonicalType.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclCXX.h"
@@ -55,8 +56,8 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -940,6 +941,10 @@ LinkageComputer::getLVForNamespaceScopeDecl(const NamedDecl *D,
   if (!isExternallyVisible(LV.getLinkage()))
     return LinkageInfo(LV.getLinkage(), DefaultVisibility, false);
 
+  // Mark the symbols as hidden when compiling for the device.
+  if (Context.getLangOpts().OpenMP && Context.getLangOpts().OpenMPIsDevice)
+    LV.mergeVisibility(HiddenVisibility, /*newExplicit=*/false);
+
   return LV;
 }
 
@@ -1424,7 +1429,8 @@ LinkageInfo LinkageComputer::computeLVForDecl(const NamedDecl *D,
     case Decl::CXXRecord: {
       const auto *Record = cast<CXXRecordDecl>(D);
       if (Record->isLambda()) {
-        if (!Record->getLambdaManglingNumber()) {
+        if (Record->hasKnownLambdaInternalLinkage() ||
+            !Record->getLambdaManglingNumber()) {
           // This lambda has no mangling number, so it's internal.
           return getInternalLinkageFor(D);
         }
@@ -1441,7 +1447,8 @@ LinkageInfo LinkageComputer::computeLVForDecl(const NamedDecl *D,
         //  };
         const CXXRecordDecl *OuterMostLambda =
             getOutermostEnclosingLambda(Record);
-        if (!OuterMostLambda->getLambdaManglingNumber())
+        if (OuterMostLambda->hasKnownLambdaInternalLinkage() ||
+            !OuterMostLambda->getLambdaManglingNumber())
           return getInternalLinkageFor(D);
 
         return getLVForClosure(
@@ -1849,6 +1856,12 @@ static SourceLocation getTemplateOrInnerLocStart(const DeclT *decl) {
 SourceLocation DeclaratorDecl::getTypeSpecStartLoc() const {
   TypeSourceInfo *TSI = getTypeSourceInfo();
   if (TSI) return TSI->getTypeLoc().getBeginLoc();
+  return SourceLocation();
+}
+
+SourceLocation DeclaratorDecl::getTypeSpecEndLoc() const {
+  TypeSourceInfo *TSI = getTypeSourceInfo();
+  if (TSI) return TSI->getTypeLoc().getEndLoc();
   return SourceLocation();
 }
 
@@ -2821,7 +2834,7 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
                            ConstexprSpecKind ConstexprKind)
     : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
                      StartLoc),
-      DeclContext(DK), redeclarable_base(C), ODRHash(0),
+      DeclContext(DK), redeclarable_base(C), Body(), ODRHash(0),
       EndRangeLoc(NameInfo.getEndLoc()), DNLoc(NameInfo.getInfo()) {
   assert(T.isNull() || T->isFunctionType());
 
@@ -2837,11 +2850,13 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.IsTrivialForCall = false;
   FunctionDeclBits.IsDefaulted = false;
   FunctionDeclBits.IsExplicitlyDefaulted = false;
+  FunctionDeclBits.HasDefaultedFunctionInfo = false;
   FunctionDeclBits.HasImplicitReturnZero = false;
   FunctionDeclBits.IsLateTemplateParsed = false;
   FunctionDeclBits.ConstexprKind = ConstexprKind;
   FunctionDeclBits.InstantiationIsPending = false;
   FunctionDeclBits.UsesSEHTry = false;
+  FunctionDeclBits.UsesFPIntrin = false;
   FunctionDeclBits.HasSkippedBody = false;
   FunctionDeclBits.WillHaveBody = false;
   FunctionDeclBits.IsMultiVersion = false;
@@ -2863,6 +2878,32 @@ bool FunctionDecl::isVariadic() const {
   return false;
 }
 
+FunctionDecl::DefaultedFunctionInfo *
+FunctionDecl::DefaultedFunctionInfo::Create(ASTContext &Context,
+                                            ArrayRef<DeclAccessPair> Lookups) {
+  DefaultedFunctionInfo *Info = new (Context.Allocate(
+      totalSizeToAlloc<DeclAccessPair>(Lookups.size()),
+      std::max(alignof(DefaultedFunctionInfo), alignof(DeclAccessPair))))
+      DefaultedFunctionInfo;
+  Info->NumLookups = Lookups.size();
+  std::uninitialized_copy(Lookups.begin(), Lookups.end(),
+                          Info->getTrailingObjects<DeclAccessPair>());
+  return Info;
+}
+
+void FunctionDecl::setDefaultedFunctionInfo(DefaultedFunctionInfo *Info) {
+  assert(!FunctionDeclBits.HasDefaultedFunctionInfo && "already have this");
+  assert(!Body && "can't replace function body with defaulted function info");
+
+  FunctionDeclBits.HasDefaultedFunctionInfo = true;
+  DefaultedInfo = Info;
+}
+
+FunctionDecl::DefaultedFunctionInfo *
+FunctionDecl::getDefaultedFunctionInfo() const {
+  return FunctionDeclBits.HasDefaultedFunctionInfo ? DefaultedInfo : nullptr;
+}
+
 bool FunctionDecl::hasBody(const FunctionDecl *&Definition) const {
   for (auto I : redecls()) {
     if (I->doesThisDeclarationHaveABody()) {
@@ -2874,8 +2915,7 @@ bool FunctionDecl::hasBody(const FunctionDecl *&Definition) const {
   return false;
 }
 
-bool FunctionDecl::hasTrivialBody() const
-{
+bool FunctionDecl::hasTrivialBody() const {
   Stmt *S = getBody();
   if (!S) {
     // Since we don't have a body for this function, we don't know if it's
@@ -2903,6 +2943,8 @@ Stmt *FunctionDecl::getBody(const FunctionDecl *&Definition) const {
   if (!hasBody(Definition))
     return nullptr;
 
+  assert(!Definition->FunctionDeclBits.HasDefaultedFunctionInfo &&
+         "definition should not have a body");
   if (Definition->Body)
     return Definition->Body.get(getASTContext().getExternalSource());
 
@@ -2925,7 +2967,8 @@ bool FunctionDecl::doesThisDeclarationHaveAPrintableBody() const {
 }
 
 void FunctionDecl::setBody(Stmt *B) {
-  Body = B;
+  FunctionDeclBits.HasDefaultedFunctionInfo = false;
+  Body = LazyDeclStmtPtr(B);
   if (B)
     EndRangeLoc = B->getEndLoc();
 }
@@ -3183,10 +3226,17 @@ FunctionDecl *FunctionDecl::getCanonicalDecl() { return getFirstDecl(); }
 /// functions as their wrapped builtins. This shouldn't be done in general, but
 /// it's useful in Sema to diagnose calls to wrappers based on their semantics.
 unsigned FunctionDecl::getBuiltinID(bool ConsiderWrapperFunctions) const {
-  if (!getIdentifier())
-    return 0;
+  unsigned BuiltinID;
 
-  unsigned BuiltinID = getIdentifier()->getBuiltinID();
+  if (const auto *AMAA = getAttr<ArmMveAliasAttr>()) {
+    BuiltinID = AMAA->getBuiltinName()->getBuiltinID();
+  } else {
+    if (!getIdentifier())
+      return 0;
+
+    BuiltinID = getIdentifier()->getBuiltinID();
+  }
+
   if (!BuiltinID)
     return 0;
 
@@ -3210,7 +3260,8 @@ unsigned FunctionDecl::getBuiltinID(bool ConsiderWrapperFunctions) const {
 
   // If the function is marked "overloadable", it has a different mangled name
   // and is not the C library function.
-  if (!ConsiderWrapperFunctions && hasAttr<OverloadableAttr>())
+  if (!ConsiderWrapperFunctions && hasAttr<OverloadableAttr>() &&
+      !hasAttr<ArmMveAliasAttr>())
     return 0;
 
   if (!Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID))
@@ -3358,9 +3409,9 @@ bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
     const FunctionDecl *Prev = this;
     bool FoundBody = false;
     while ((Prev = Prev->getPreviousDecl())) {
-      FoundBody |= Prev->Body.isValid();
+      FoundBody |= Prev->doesThisDeclarationHaveABody();
 
-      if (Prev->Body) {
+      if (Prev->doesThisDeclarationHaveABody()) {
         // If it's not the case that both 'inline' and 'extern' are
         // specified on the definition, then it is always externally visible.
         if (!Prev->isInlineSpecified() ||
@@ -3383,19 +3434,21 @@ bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
   const FunctionDecl *Prev = this;
   bool FoundBody = false;
   while ((Prev = Prev->getPreviousDecl())) {
-    FoundBody |= Prev->Body.isValid();
+    FoundBody |= Prev->doesThisDeclarationHaveABody();
     if (RedeclForcesDefC99(Prev))
       return false;
   }
   return FoundBody;
 }
 
-SourceRange FunctionDecl::getReturnTypeSourceRange() const {
+FunctionTypeLoc FunctionDecl::getFunctionTypeLoc() const {
   const TypeSourceInfo *TSI = getTypeSourceInfo();
-  if (!TSI)
-    return SourceRange();
-  FunctionTypeLoc FTL =
-      TSI->getTypeLoc().IgnoreParens().getAs<FunctionTypeLoc>();
+  return TSI ? TSI->getTypeLoc().IgnoreParens().getAs<FunctionTypeLoc>()
+             : FunctionTypeLoc();
+}
+
+SourceRange FunctionDecl::getReturnTypeSourceRange() const {
+  FunctionTypeLoc FTL = getFunctionTypeLoc();
   if (!FTL)
     return SourceRange();
 
@@ -3410,16 +3463,25 @@ SourceRange FunctionDecl::getReturnTypeSourceRange() const {
   return RTRange;
 }
 
-SourceRange FunctionDecl::getExceptionSpecSourceRange() const {
-  const TypeSourceInfo *TSI = getTypeSourceInfo();
-  if (!TSI)
-    return SourceRange();
-  FunctionTypeLoc FTL =
-    TSI->getTypeLoc().IgnoreParens().getAs<FunctionTypeLoc>();
-  if (!FTL)
+SourceRange FunctionDecl::getParametersSourceRange() const {
+  unsigned NP = getNumParams();
+  SourceLocation EllipsisLoc = getEllipsisLoc();
+
+  if (NP == 0 && EllipsisLoc.isInvalid())
     return SourceRange();
 
-  return FTL.getExceptionSpecRange();
+  SourceLocation Begin =
+      NP > 0 ? ParamInfo[0]->getSourceRange().getBegin() : EllipsisLoc;
+  SourceLocation End = EllipsisLoc.isValid()
+                           ? EllipsisLoc
+                           : ParamInfo[NP - 1]->getSourceRange().getEnd();
+
+  return SourceRange(Begin, End);
+}
+
+SourceRange FunctionDecl::getExceptionSpecSourceRange() const {
+  FunctionTypeLoc FTL = getFunctionTypeLoc();
+  return FTL ? FTL.getExceptionSpecRange() : SourceRange();
 }
 
 /// For an inline function definition in C, or for a gnu_inline function
@@ -4652,7 +4714,7 @@ LabelDecl *LabelDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
 }
 
 void LabelDecl::setMSAsmLabel(StringRef Name) {
-  char *Buffer = new (getASTContext(), 1) char[Name.size() + 1];
+char *Buffer = new (getASTContext(), 1) char[Name.size() + 1];
   memcpy(Buffer, Name.data(), Name.size());
   Buffer[Name.size()] = '\0';
   MSAsmName = Buffer;
