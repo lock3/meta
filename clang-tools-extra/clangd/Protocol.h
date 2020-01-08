@@ -681,7 +681,7 @@ llvm::json::Value toJSON(const Diagnostic &);
 
 /// A LSP-specific comparator used to find diagnostic in a container like
 /// std:map.
-/// We only use the required fields of Diagnostic to do the comparsion to avoid
+/// We only use the required fields of Diagnostic to do the comparison to avoid
 /// any regression issues from LSP clients (e.g. VScode), see
 /// https://git.io/vbr29
 struct LSPDiagnosticCompare {
@@ -1209,6 +1209,11 @@ struct SemanticHighlightingInformation {
   int Line = 0;
   /// The base64 encoded string of highlighting tokens.
   std::string Tokens;
+  /// Is the line in an inactive preprocessor branch?
+  /// This is a clangd extension.
+  /// An inactive line can still contain highlighting tokens as well;
+  /// clients should combine line style and token style if possible.
+  bool IsInactive = false;
 };
 bool operator==(const SemanticHighlightingInformation &Lhs,
                 const SemanticHighlightingInformation &Rhs);
@@ -1244,6 +1249,39 @@ struct SelectionRange {
   std::unique_ptr<SelectionRange> parent;
 };
 llvm::json::Value toJSON(const SelectionRange &);
+
+/// Parameters for the document link request.
+struct DocumentLinkParams {
+  /// The document to provide document links for.
+  TextDocumentIdentifier textDocument;
+};
+bool fromJSON(const llvm::json::Value &, DocumentLinkParams &);
+
+/// A range in a text document that links to an internal or external resource,
+/// like another text document or a web site.
+struct DocumentLink {
+  /// The range this link applies to.
+  Range range;
+
+  /// The uri this link points to. If missing a resolve request is sent later.
+  URIForFile target;
+
+  // TODO(forster): The following optional fields defined by the language
+  // server protocol are unsupported:
+  //
+  // data?: any - A data entry field that is preserved on a document link
+  //              between a DocumentLinkRequest and a
+  //              DocumentLinkResolveRequest.
+
+  friend bool operator==(const DocumentLink &LHS, const DocumentLink &RHS) {
+    return LHS.range == RHS.range && LHS.target == RHS.target;
+  }
+
+  friend bool operator!=(const DocumentLink &LHS, const DocumentLink &RHS) {
+    return !(LHS == RHS);
+  }
+};
+llvm::json::Value toJSON(const DocumentLink &DocumentLink);
 
 } // namespace clangd
 } // namespace clang

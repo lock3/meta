@@ -809,6 +809,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case OMPRequires:
     case OMPCapturedExpr:
     case Empty:
+    case LifetimeExtendedTemporary:
     case CXXFragment:
     case CXXMetaprogram:
     case CXXInjection:

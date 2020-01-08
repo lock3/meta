@@ -103,8 +103,8 @@ ObjCLanguageRuntime::LookupInCompleteClassCache(ConstString &name) {
   const ModuleList &modules = m_process->GetTarget().GetImages();
 
   SymbolContextList sc_list;
-  const size_t matching_symbols =
-      modules.FindSymbolsWithNameAndType(name, eSymbolTypeObjCClass, sc_list);
+  modules.FindSymbolsWithNameAndType(name, eSymbolTypeObjCClass, sc_list);
+  const size_t matching_symbols = sc_list.GetSize();
 
   if (matching_symbols) {
     SymbolContext sc;
@@ -311,14 +311,6 @@ ObjCLanguageRuntime::EncodingToType::RealizeType(const char *name,
   if (m_scratch_ast_ctx_up)
     return RealizeType(*m_scratch_ast_ctx_up, name, for_expression);
   return CompilerType();
-}
-
-CompilerType ObjCLanguageRuntime::EncodingToType::RealizeType(
-    ClangASTContext &ast_ctx, const char *name, bool for_expression) {
-  clang::ASTContext *clang_ast = ast_ctx.getASTContext();
-  if (!clang_ast)
-    return CompilerType();
-  return RealizeType(*clang_ast, name, for_expression);
 }
 
 ObjCLanguageRuntime::EncodingToType::~EncodingToType() {}

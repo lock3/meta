@@ -112,6 +112,11 @@ public:
     return Result;
   }
 
+  llvm::Optional<ast_type_traits::TraversalKind>
+  TraversalKind() const override {
+    return InnerMatcher->TraversalKind();
+  }
+
 private:
   const std::string ID;
   const IntrusiveRefCntPtr<DynMatcherInterface> InnerMatcher;
@@ -189,6 +194,14 @@ DynTypedMatcher DynTypedMatcher::constructVariadic(
   llvm_unreachable("Invalid Op value.");
 }
 
+DynTypedMatcher DynTypedMatcher::constructRestrictedWrapper(
+    const DynTypedMatcher &InnerMatcher,
+    ast_type_traits::ASTNodeKind RestrictKind) {
+  DynTypedMatcher Copy = InnerMatcher;
+  Copy.RestrictKind = RestrictKind;
+  return Copy;
+}
+
 DynTypedMatcher DynTypedMatcher::trueMatcher(
     ast_type_traits::ASTNodeKind NodeKind) {
   return DynTypedMatcher(NodeKind, NodeKind, &*TrueMatcherInstance);
@@ -211,8 +224,13 @@ DynTypedMatcher DynTypedMatcher::dynCastTo(
 bool DynTypedMatcher::matches(const ast_type_traits::DynTypedNode &DynNode,
                               ASTMatchFinder *Finder,
                               BoundNodesTreeBuilder *Builder) const {
-  if (RestrictKind.isBaseOf(DynNode.getNodeKind()) &&
-      Implementation->dynMatches(DynNode, Finder, Builder)) {
+  TraversalKindScope RAII(Finder->getASTContext(),
+                          Implementation->TraversalKind());
+
+  auto N = Finder->getASTContext().traverseIgnored(DynNode);
+
+  if (RestrictKind.isBaseOf(N.getNodeKind()) &&
+      Implementation->dynMatches(N, Finder, Builder)) {
     return true;
   }
   // Delete all bindings when a matcher does not match.
@@ -225,8 +243,13 @@ bool DynTypedMatcher::matches(const ast_type_traits::DynTypedNode &DynNode,
 bool DynTypedMatcher::matchesNoKindCheck(
     const ast_type_traits::DynTypedNode &DynNode, ASTMatchFinder *Finder,
     BoundNodesTreeBuilder *Builder) const {
-  assert(RestrictKind.isBaseOf(DynNode.getNodeKind()));
-  if (Implementation->dynMatches(DynNode, Finder, Builder)) {
+  TraversalKindScope raii(Finder->getASTContext(),
+                          Implementation->TraversalKind());
+
+  auto N = Finder->getASTContext().traverseIgnored(DynNode);
+
+  assert(RestrictKind.isBaseOf(N.getNodeKind()));
+  if (Implementation->dynMatches(N, Finder, Builder)) {
     return true;
   }
   // Delete all bindings when a matcher does not match.

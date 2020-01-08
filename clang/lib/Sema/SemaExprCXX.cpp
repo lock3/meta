@@ -922,7 +922,7 @@ bool Sema::CheckCXXThrowOperand(SourceLocation ThrowLoc,
       // cannot be a simple walk of the class's decls.  Instead, we must perform
       // lookup and overload resolution.
       CXXConstructorDecl *CD = LookupCopyingConstructor(Subobject, 0);
-      if (!CD)
+      if (!CD || CD->isDeleted())
         continue;
 
       // Mark the constructor referenced as it is used by this throw expression.
@@ -2325,7 +2325,7 @@ static bool resolveAllocationOverload(
           PartialDiagnosticAt(R.getNameLoc(),
                               S.PDiag(diag::err_ovl_ambiguous_call)
                                   << R.getLookupName() << Range),
-          S, OCD_ViableCandidates, Args);
+          S, OCD_AmbiguousCandidates, Args);
     }
     return true;
 
@@ -3305,7 +3305,7 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
       //        itself in this case.
       return ExprError();
 
-    QualType Pointee = Type->getAs<PointerType>()->getPointeeType();
+    QualType Pointee = Type->castAs<PointerType>()->getPointeeType();
     QualType PointeeElem = Context.getBaseElementType(Pointee);
 
     if (Pointee.getAddressSpace() != LangAS::Default &&
@@ -3516,7 +3516,7 @@ static bool resolveBuiltinNewDeleteOverload(Sema &S, CallExpr *TheCall,
         PartialDiagnosticAt(R.getNameLoc(),
                             S.PDiag(diag::err_ovl_ambiguous_call)
                                 << R.getLookupName() << Range),
-        S, OCD_ViableCandidates, Args);
+        S, OCD_AmbiguousCandidates, Args);
     return true;
 
   case OR_Deleted: {
@@ -4037,8 +4037,8 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
 
   case ICK_Complex_Promotion:
   case ICK_Complex_Conversion: {
-    QualType FromEl = From->getType()->getAs<ComplexType>()->getElementType();
-    QualType ToEl = ToType->getAs<ComplexType>()->getElementType();
+    QualType FromEl = From->getType()->castAs<ComplexType>()->getElementType();
+    QualType ToEl = ToType->castAs<ComplexType>()->getElementType();
     CastKind CK;
     if (FromEl->isRealFloatingType()) {
       if (ToEl->isRealFloatingType())
@@ -4098,9 +4098,26 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
             << From->getSourceRange();
     }
 
+    // Defer address space conversion to the third conversion.
+    QualType FromPteeType = From->getType()->getPointeeType();
+    QualType ToPteeType = ToType->getPointeeType();
+    QualType NewToType = ToType;
+    if (!FromPteeType.isNull() && !ToPteeType.isNull() &&
+        FromPteeType.getAddressSpace() != ToPteeType.getAddressSpace()) {
+      NewToType = Context.removeAddrSpaceQualType(ToPteeType);
+      NewToType = Context.getAddrSpaceQualType(NewToType,
+                                               FromPteeType.getAddressSpace());
+      if (ToType->isObjCObjectPointerType())
+        NewToType = Context.getObjCObjectPointerType(NewToType);
+      else if (ToType->isBlockPointerType())
+        NewToType = Context.getBlockPointerType(NewToType);
+      else
+        NewToType = Context.getPointerType(NewToType);
+    }
+
     CastKind Kind;
     CXXCastPath BasePath;
-    if (CheckPointerConversion(From, ToType, Kind, BasePath, CStyle))
+    if (CheckPointerConversion(From, NewToType, Kind, BasePath, CStyle))
       return ExprError();
 
     // Make sure we extend blocks if necessary.
@@ -4111,8 +4128,8 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
       From = E.get();
     }
     if (getLangOpts().allowsNonTrivialObjCLifetimeQualifiers())
-      CheckObjCConversion(SourceRange(), ToType, From, CCK);
-    From = ImpCastExprToType(From, ToType, Kind, VK_RValue, &BasePath, CCK)
+      CheckObjCConversion(SourceRange(), NewToType, From, CCK);
+    From = ImpCastExprToType(From, NewToType, Kind, VK_RValue, &BasePath, CCK)
              .get();
     break;
   }
@@ -5864,28 +5881,29 @@ QualType Sema::CXXCheckConditionalOperands(ExprResult &Cond, ExprResult &LHS,
   // FIXME:
   //   Resolving a defect in P0012R1: we extend this to cover all cases where
   //   one of the operands is reference-compatible with the other, in order
-  //   to support conditionals between functions differing in noexcept.
+  //   to support conditionals between functions differing in noexcept. This
+  //   will similarly cover difference in array bounds after P0388R4.
   ExprValueKind LVK = LHS.get()->getValueKind();
   ExprValueKind RVK = RHS.get()->getValueKind();
   if (!Context.hasSameType(LTy, RTy) &&
       LVK == RVK && LVK != VK_RValue) {
     // DerivedToBase was already handled by the class-specific case above.
     // FIXME: Should we allow ObjC conversions here?
-    bool DerivedToBase, ObjCConversion, ObjCLifetimeConversion;
-    if (CompareReferenceRelationship(
-            QuestionLoc, LTy, RTy, DerivedToBase,
-            ObjCConversion, ObjCLifetimeConversion) == Ref_Compatible &&
-        !DerivedToBase && !ObjCConversion && !ObjCLifetimeConversion &&
+    const ReferenceConversions AllowedConversions =
+        ReferenceConversions::Qualification | ReferenceConversions::Function;
+
+    ReferenceConversions RefConv;
+    if (CompareReferenceRelationship(QuestionLoc, LTy, RTy, &RefConv) ==
+            Ref_Compatible &&
+        !(RefConv & ~AllowedConversions) &&
         // [...] subject to the constraint that the reference must bind
         // directly [...]
-        !RHS.get()->refersToBitField() &&
-        !RHS.get()->refersToVectorElement()) {
+        !RHS.get()->refersToBitField() && !RHS.get()->refersToVectorElement()) {
       RHS = ImpCastExprToType(RHS.get(), LTy, CK_NoOp, RVK);
       RTy = RHS.get()->getType();
-    } else if (CompareReferenceRelationship(
-                   QuestionLoc, RTy, LTy, DerivedToBase,
-                   ObjCConversion, ObjCLifetimeConversion) == Ref_Compatible &&
-               !DerivedToBase && !ObjCConversion && !ObjCLifetimeConversion &&
+    } else if (CompareReferenceRelationship(QuestionLoc, RTy, LTy, &RefConv) ==
+                   Ref_Compatible &&
+               !(RefConv & ~AllowedConversions) &&
                !LHS.get()->refersToBitField() &&
                !LHS.get()->refersToVectorElement()) {
       LHS = ImpCastExprToType(LHS.get(), RTy, CK_NoOp, LVK);
@@ -5994,7 +6012,8 @@ QualType Sema::CXXCheckConditionalOperands(ExprResult &Cond, ExprResult &LHS,
   //      the usual arithmetic conversions are performed to bring them to a
   //      common type, and the result is of that type.
   if (LTy->isArithmeticType() && RTy->isArithmeticType()) {
-    QualType ResTy = UsualArithmeticConversions(LHS, RHS);
+    QualType ResTy =
+        UsualArithmeticConversions(LHS, RHS, QuestionLoc, ACK_Conditional);
     if (LHS.isInvalid() || RHS.isInvalid())
       return QualType();
     if (ResTy.isNull()) {
@@ -7799,8 +7818,9 @@ class TransformTypos : public TreeTransform<TransformTypos> {
 
     // If we found a valid result, double check to make sure it's not ambiguous.
     if (!IsAmbiguous && !Res.isInvalid() && !AmbiguousTypoExprs.empty()) {
-      auto SavedTransformCache = std::move(TransformCache);
-      TransformCache.clear();
+      auto SavedTransformCache =
+          llvm::SmallDenseMap<TypoExpr *, ExprResult, 2>(TransformCache);
+
       // Ensure none of the TypoExprs have multiple typo correction candidates
       // with the same edit length that pass all the checks and filters.
       while (!AmbiguousTypoExprs.empty()) {

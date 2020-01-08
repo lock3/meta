@@ -738,7 +738,9 @@ public:
 } // end anonymous namespace.
 
 #define GET_REGISTER_MATCHER
+#define GET_SUBTARGET_FEATURE_NAME
 #define GET_MATCHER_IMPLEMENTATION
+#define GET_MNEMONIC_SPELL_CHECKER
 #include "RISCVGenAsmMatcher.inc"
 
 static Register convertFPR64ToFPR32(Register Reg) {
@@ -775,24 +777,45 @@ bool RISCVAsmParser::generateImmOutOfRangeError(
   return Error(ErrorLoc, Msg + " [" + Twine(Lower) + ", " + Twine(Upper) + "]");
 }
 
+static std::string RISCVMnemonicSpellCheck(StringRef S,
+                                          const FeatureBitset &FBS,
+                                          unsigned VariantID = 0);
+
 bool RISCVAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                              OperandVector &Operands,
                                              MCStreamer &Out,
                                              uint64_t &ErrorInfo,
                                              bool MatchingInlineAsm) {
   MCInst Inst;
+  FeatureBitset MissingFeatures;
 
   auto Result =
-    MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm);
+    MatchInstructionImpl(Operands, Inst, ErrorInfo, MissingFeatures,
+                         MatchingInlineAsm);
   switch (Result) {
   default:
     break;
   case Match_Success:
     return processInstruction(Inst, IDLoc, Operands, Out);
-  case Match_MissingFeature:
-    return Error(IDLoc, "instruction use requires an option to be enabled");
-  case Match_MnemonicFail:
-    return Error(IDLoc, "unrecognized instruction mnemonic");
+  case Match_MissingFeature: {
+    assert(MissingFeatures.any() && "Unknown missing features!");
+    bool FirstFeature = true;
+    std::string Msg = "instruction requires the following:";
+    for (unsigned i = 0, e = MissingFeatures.size(); i != e; ++i) {
+      if (MissingFeatures[i]) {
+        Msg += FirstFeature ? " " : ", ";
+        Msg += getSubtargetFeatureName(i);
+        FirstFeature = false;
+      }
+    }
+    return Error(IDLoc, Msg);
+  }
+  case Match_MnemonicFail: {
+    FeatureBitset FBS = ComputeAvailableFeatures(getSTI().getFeatureBits());
+    std::string Suggestion = RISCVMnemonicSpellCheck(
+      ((RISCVOperand &)*Operands[0]).getToken(), FBS);
+    return Error(IDLoc, "unrecognized instruction mnemonic" + Suggestion);
+  }
   case Match_InvalidOperand: {
     SMLoc ErrorLoc = IDLoc;
     if (ErrorInfo != ~0U) {
@@ -1587,7 +1610,6 @@ bool RISCVAsmParser::parseDirectiveOption() {
 void RISCVAsmParser::emitToStreamer(MCStreamer &S, const MCInst &Inst) {
   MCInst CInst;
   bool Res = compressInst(CInst, Inst, getSTI(), S.getContext());
-  CInst.setLoc(Inst.getLoc());
   S.EmitInstruction((Res ? CInst : Inst), getSTI());
 }
 

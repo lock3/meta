@@ -10,6 +10,7 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_CLANGDLSPSERVER_H
 
 #include "ClangdServer.h"
+#include "Context.h"
 #include "DraftStore.h"
 #include "Features.inc"
 #include "FindSymbols.h"
@@ -43,6 +44,7 @@ public:
                   llvm::Optional<Path> CompileCommandsDir, bool UseDirBasedCDB,
                   llvm::Optional<OffsetEncoding> ForcedOffsetEncoding,
                   const ClangdServer::Options &Opts);
+  /// The destructor blocks on any outstanding background tasks.
   ~ClangdLSPServer();
 
   /// Run LSP server loop, communicating with the Transport provided in the
@@ -109,6 +111,8 @@ private:
                     Callback<std::vector<SymbolDetails>>);
   void onSelectionRange(const SelectionRangeParams &,
                         Callback<std::vector<SelectionRange>>);
+  void onDocumentLink(const DocumentLinkParams &,
+                      Callback<std::vector<DocumentLink>>);
 
   std::vector<Fix> getFixes(StringRef File, const clangd::Diagnostic &D);
 
@@ -130,6 +134,12 @@ private:
   /// Sends a "publishDiagnostics" notification to the LSP client.
   void publishDiagnostics(const URIForFile &File,
                           std::vector<clangd::Diagnostic> Diagnostics);
+
+  /// Since initialization of CDBs and ClangdServer is done lazily, the
+  /// following context captures the one used while creating ClangdLSPServer and
+  /// passes it to above mentioned object instances to make sure they share the
+  /// same state.
+  Context BackgroundContext;
 
   /// Used to indicate that the 'shutdown' request was received from the
   /// Language Server client.
@@ -202,13 +212,12 @@ private:
   bool UseDirBasedCDB;                     // FIXME: make this a capability.
   llvm::Optional<Path> CompileCommandsDir; // FIXME: merge with capability?
   std::unique_ptr<GlobalCompilationDatabase> BaseCDB;
-  // CDB is BaseCDB plus any comands overridden via LSP extensions.
+  // CDB is BaseCDB plus any commands overridden via LSP extensions.
   llvm::Optional<OverlayCDB> CDB;
-  // The ClangdServer is created by the "initialize" LSP method.
-  // It is destroyed before run() returns, to ensure worker threads exit.
   ClangdServer::Options ClangdServerOpts;
-  llvm::Optional<ClangdServer> Server;
   llvm::Optional<OffsetEncoding> NegotiatedOffsetEncoding;
+  // The ClangdServer is created by the "initialize" LSP method.
+  llvm::Optional<ClangdServer> Server;
 };
 } // namespace clangd
 } // namespace clang

@@ -19,6 +19,7 @@
 #include "clang/AST/Type.h"
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/Basic/TypeTraits.h"
 
 namespace clang {
 

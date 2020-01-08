@@ -46,6 +46,7 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/CFGuard.h"
 #include <memory>
 #include <string>
 
@@ -229,9 +230,7 @@ X86TargetMachine::X86TargetMachine(const Target &T, const Triple &TT,
     this->Options.NoTrapAfterNoreturn = TT.isOSBinFormatMachO();
   }
 
-  // Outlining is available for x86-64.
-  if (TT.getArch() == Triple::x86_64)
-    setMachineOutliner(true);
+  setMachineOutliner(true);
 
   initAsmInfo();
 }
@@ -307,10 +306,10 @@ X86TargetMachine::getSubtargetImpl(const Function &F) const {
     // creation will depend on the TM and the code generation flags on the
     // function that reside in TargetOptions.
     resetTargetOptions(F);
-    I = std::make_unique<X86Subtarget>(TargetTriple, CPU, FS, *this,
-                                        Options.StackAlignmentOverride,
-                                        PreferVectorWidthOverride,
-                                        RequiredVectorWidth);
+    I = std::make_unique<X86Subtarget>(
+        TargetTriple, CPU, FS, *this,
+        MaybeAlign(Options.StackAlignmentOverride), PreferVectorWidthOverride,
+        RequiredVectorWidth);
   }
   return I.get();
 }
@@ -414,6 +413,16 @@ void X86PassConfig::addIRPasses() {
   // thunk. These will be a no-op unless a function subtarget has the retpoline
   // feature enabled.
   addPass(createIndirectBrExpandPass());
+
+  // Add Control Flow Guard checks.
+  const Triple &TT = TM->getTargetTriple();
+  if (TT.isOSWindows()) {
+    if (TT.getArch() == Triple::x86_64) {
+      addPass(createCFGuardDispatchPass());
+    } else {
+      addPass(createCFGuardCheckPass());
+    }
+  }
 }
 
 bool X86PassConfig::addInstSelector() {
@@ -530,6 +539,9 @@ void X86PassConfig::addPreEmitPass2() {
       (!TT.isOSWindows() ||
        MAI->getExceptionHandlingType() == ExceptionHandling::DwarfCFI))
     addPass(createCFIInstrInserter());
+  // Identify valid longjmp targets for Windows Control Flow Guard.
+  if (TT.isOSWindows())
+    addPass(createCFGuardLongjmpPass());
 }
 
 std::unique_ptr<CSEConfigBase> X86PassConfig::getCSEConfig() const {

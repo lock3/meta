@@ -48,6 +48,7 @@
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/MC/LaneBitmask.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -238,6 +239,7 @@ void PostMachineScheduler::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesCFG();
   AU.addRequired<MachineDominatorTree>();
   AU.addRequired<MachineLoopInfo>();
+  AU.addRequired<AAResultsWrapperPass>();
   AU.addRequired<TargetPassConfig>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
@@ -402,7 +404,7 @@ bool PostMachineScheduler::runOnMachineFunction(MachineFunction &mf) {
   if (EnablePostRAMachineSched.getNumOccurrences()) {
     if (!EnablePostRAMachineSched)
       return false;
-  } else if (!mf.getSubtarget().enablePostRAScheduler()) {
+  } else if (!mf.getSubtarget().enablePostRAMachineScheduler()) {
     LLVM_DEBUG(dbgs() << "Subtarget disables post-MI-sched.\n");
     return false;
   }
@@ -412,6 +414,7 @@ bool PostMachineScheduler::runOnMachineFunction(MachineFunction &mf) {
   MF = &mf;
   MLI = &getAnalysis<MachineLoopInfo>();
   PassConfig = &getAnalysis<TargetPassConfig>();
+  AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
 
   if (VerifyScheduling)
     MF->verify(this, "Before post machine scheduling.");
@@ -1495,7 +1498,7 @@ class BaseMemOpClusterMutation : public ScheduleDAGMutation {
                                 : BaseOp->getIndex() < RHS.BaseOp->getIndex();
 
         if (Offset != RHS.Offset)
-          return StackGrowsDown ? Offset > RHS.Offset : Offset < RHS.Offset;
+          return Offset < RHS.Offset;
 
         return SU->NodeNum < RHS.SU->NodeNum;
       }
@@ -2085,7 +2088,13 @@ getOtherResourceCount(unsigned &OtherCritIdx) {
   return OtherCritCount;
 }
 
-void SchedBoundary::releaseNode(SUnit *SU, unsigned ReadyCycle) {
+template void SchedBoundary::releaseNode<true>(SUnit *SU, unsigned ReadyCycle,
+                                               unsigned Idx);
+template void SchedBoundary::releaseNode<false>(SUnit *SU, unsigned ReadyCycle,
+                                                unsigned Idx);
+
+template <bool InPQueue>
+void SchedBoundary::releaseNode(SUnit *SU, unsigned ReadyCycle, unsigned Idx) {
   assert(SU->getInstr() && "Scheduled SUnit must have instr");
 
 #ifndef NDEBUG
@@ -2102,11 +2111,19 @@ void SchedBoundary::releaseNode(SUnit *SU, unsigned ReadyCycle) {
   // Check for interlocks first. For the purpose of other heuristics, an
   // instruction that cannot issue appears as if it's not in the ReadyQueue.
   bool IsBuffered = SchedModel->getMicroOpBufferSize() != 0;
-  if ((!IsBuffered && ReadyCycle > CurrCycle) || checkHazard(SU) ||
-      Available.size() >= ReadyListLimit)
-    Pending.push(SU);
-  else
+  bool HazardDetected = (!IsBuffered && ReadyCycle > CurrCycle) ||
+                        checkHazard(SU) || (Available.size() >= ReadyListLimit);
+
+  if (!HazardDetected) {
     Available.push(SU);
+
+    if (InPQueue)
+      Pending.remove(Pending.begin() + Idx);
+    return;
+  }
+
+  if (!InPQueue)
+    Pending.push(SU);
 }
 
 /// Move the boundary of scheduled code by one cycle.
@@ -2346,26 +2363,21 @@ void SchedBoundary::releasePending() {
 
   // Check to see if any of the pending instructions are ready to issue.  If
   // so, add them to the available queue.
-  bool IsBuffered = SchedModel->getMicroOpBufferSize() != 0;
-  for (unsigned i = 0, e = Pending.size(); i != e; ++i) {
-    SUnit *SU = *(Pending.begin()+i);
+  for (unsigned I = 0, E = Pending.size(); I < E; ++I) {
+    SUnit *SU = *(Pending.begin() + I);
     unsigned ReadyCycle = isTop() ? SU->TopReadyCycle : SU->BotReadyCycle;
 
     if (ReadyCycle < MinReadyCycle)
       MinReadyCycle = ReadyCycle;
 
-    if (!IsBuffered && ReadyCycle > CurrCycle)
-      continue;
-
-    if (checkHazard(SU))
-      continue;
-
     if (Available.size() >= ReadyListLimit)
       break;
 
-    Available.push(SU);
-    Pending.remove(Pending.begin()+i);
-    --i; --e;
+    releaseNode<true>(SU, ReadyCycle, I);
+    if (E != Pending.size()) {
+      --I;
+      --E;
+    }
   }
   CheckPending = false;
 }

@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TableGenBackends.h"
+#include "ASTTableGen.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -101,9 +102,9 @@ static std::string ReadPCHRecord(StringRef type) {
   return StringSwitch<std::string>(type)
     .EndsWith("Decl *", "Record.GetLocalDeclAs<" 
               + std::string(type, 0, type.size()-1) + ">(Record.readInt())")
-    .Case("TypeSourceInfo *", "Record.getTypeSourceInfo()")
+    .Case("TypeSourceInfo *", "Record.readTypeSourceInfo()")
     .Case("Expr *", "Record.readExpr()")
-    .Case("IdentifierInfo *", "Record.getIdentifierInfo()")
+    .Case("IdentifierInfo *", "Record.readIdentifier()")
     .Case("StringRef", "Record.readString()")
     .Case("ParamIdx", "ParamIdx::deserialize(Record.readInt())")
     .Default("Record.readInt()");
@@ -585,7 +586,7 @@ namespace {
       OS << "      " << getLowerName() << "Ptr = Record.readExpr();\n";
       OS << "    else\n";
       OS << "      " << getLowerName()
-         << "Ptr = Record.getTypeSourceInfo();\n";
+         << "Ptr = Record.readTypeSourceInfo();\n";
     }
 
     void writePCHWrite(raw_ostream &OS) const override {
@@ -1809,19 +1810,11 @@ struct PragmaClangAttributeSupport {
 } // end anonymous namespace
 
 static bool doesDeclDeriveFrom(const Record *D, const Record *Base) {
-  const Record *CurrentBase = D->getValueAsDef("Base");
-
-  // If we've reached a root node (i.e. `Decl` instead of `DDecl`)
-  // then we should check to see if our current base is equal
-  // to the target base. If it isn't, we're in another inheritance
-  // heirarchy, and we should return false.
-  //
-  // FIXME: Const cast shouldnt' be required here. This requires
-  // changes outside of the clang codebase, in llvm.
-  if (const_cast<Record *>(CurrentBase)->getType() ==
-      const_cast<Record *>(Base)->getType())
-    return CurrentBase == Base;
-
+  const Record *CurrentBase = D->getValueAsOptionalDef(BaseFieldName);
+  if (!CurrentBase)
+    return false;
+  if (CurrentBase == Base)
+    return true;
   return doesDeclDeriveFrom(CurrentBase, Base);
 }
 
@@ -1858,7 +1851,8 @@ PragmaClangAttributeSupport::PragmaClangAttributeSupport(
 
   std::vector<Record *> Aggregates =
       Records.getAllDerivedDefinitions("AttrSubjectMatcherAggregateRule");
-  std::vector<Record *> DeclNodes = Records.getAllDerivedDefinitions("DDecl");
+  std::vector<Record *> DeclNodes =
+    Records.getAllDerivedDefinitions(DeclNodeClassName);
   for (const auto *Aggregate : Aggregates) {
     Record *SubjectDecl = Aggregate->getValueAsDef("Subject");
 
@@ -3312,9 +3306,8 @@ static std::string GetDiagnosticSpelling(const Record &R) {
   // If we couldn't find the DiagSpelling in this object, we can check to see
   // if the object is one that has a base, and if it is, loop up to the Base
   // member recursively.
-  std::string Super = R.getSuperClasses().back().first->getName();
-  if (Super == "DDecl" || Super == "DStmt")
-    return GetDiagnosticSpelling(*R.getValueAsDef("Base"));
+  if (auto Base = R.getValueAsOptionalDef(BaseFieldName))
+    return GetDiagnosticSpelling(*Base);
 
   return "";
 }
@@ -3394,7 +3387,8 @@ static std::string GenerateCustomAppertainsTo(const Record &Subject,
   if (I != CustomSubjectSet.end())
     return *I;
 
-  Record *Base = Subject.getValueAsDef("Base");
+  // This only works with non-root Decls.
+  Record *Base = Subject.getValueAsDef(BaseFieldName);
 
   // Not currently support custom subjects within custom subjects.
   if (Base->isSubClassOf("SubsetSubject")) {

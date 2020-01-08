@@ -44,11 +44,12 @@ void WebAssemblyInstPrinter::printRegName(raw_ostream &OS,
   OS << "$" << RegNo;
 }
 
-void WebAssemblyInstPrinter::printInst(const MCInst *MI, raw_ostream &OS,
+void WebAssemblyInstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                        StringRef Annot,
-                                       const MCSubtargetInfo &STI) {
+                                       const MCSubtargetInfo &STI,
+                                       raw_ostream &OS) {
   // Print the instruction (this uses the AsmStrings from the .td files).
-  printInstruction(MI, OS);
+  printInstruction(MI, Address, OS);
 
   // Print any additional variadic operands.
   const MCInstrDesc &Desc = MII.get(MI->getOpcode());
@@ -272,9 +273,21 @@ void WebAssemblyInstPrinter::printWebAssemblyP2AlignOperand(const MCInst *MI,
 void WebAssemblyInstPrinter::printWebAssemblySignatureOperand(const MCInst *MI,
                                                               unsigned OpNo,
                                                               raw_ostream &O) {
-  auto Imm = static_cast<unsigned>(MI->getOperand(OpNo).getImm());
-  if (Imm != wasm::WASM_TYPE_NORESULT)
-    O << WebAssembly::anyTypeToString(Imm);
+  const MCOperand &Op = MI->getOperand(OpNo);
+  if (Op.isImm()) {
+    auto Imm = static_cast<unsigned>(Op.getImm());
+    if (Imm != wasm::WASM_TYPE_NORESULT)
+      O << WebAssembly::anyTypeToString(Imm);
+  } else {
+    auto Expr = cast<MCSymbolRefExpr>(Op.getExpr());
+    auto *Sym = cast<MCSymbolWasm>(&Expr->getSymbol());
+    if (Sym->getSignature()) {
+      O << WebAssembly::signatureToString(Sym->getSignature());
+    } else {
+      // Disassembler does not currently produce a signature
+      O << "unknown_type";
+    }
+  }
 }
 
 // We have various enums representing a subset of these types, use this

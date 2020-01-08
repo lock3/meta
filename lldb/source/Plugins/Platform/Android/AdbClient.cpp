@@ -165,7 +165,7 @@ Status AdbClient::GetDevices(DeviceIDList &device_list) {
   llvm::SmallVector<llvm::StringRef, 4> devices;
   response.split(devices, "\n", -1, false);
 
-  for (const auto device : devices)
+  for (const auto &device : devices)
     device_list.push_back(device.split('\t').first);
 
   // Force disconnect since ADB closes connection after host:devices response
@@ -595,7 +595,7 @@ Status AdbClient::SyncService::SendSyncRequest(const char *request_id,
   const DataBufferSP data_sp(new DataBufferHeap(kSyncPacketLen, 0));
   DataEncoder encoder(data_sp, eByteOrderLittle, sizeof(void *));
   auto offset = encoder.PutData(0, request_id, strlen(request_id));
-  encoder.PutU32(offset, data_len);
+  encoder.PutUnsigned(offset, 4, data_len);
 
   Status error;
   ConnectionStatus status;

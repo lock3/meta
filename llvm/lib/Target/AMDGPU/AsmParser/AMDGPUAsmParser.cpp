@@ -45,7 +45,7 @@
 #include "llvm/Support/AMDHSAKernelDescriptor.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
-#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/MachineValueType.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SMLoc.h"
@@ -1320,6 +1320,7 @@ private:
   bool validateIntClampSupported(const MCInst &Inst);
   bool validateMIMGAtomicDMask(const MCInst &Inst);
   bool validateMIMGGatherDMask(const MCInst &Inst);
+  bool validateMovrels(const MCInst &Inst);
   bool validateMIMGDataSize(const MCInst &Inst);
   bool validateMIMGAddrSize(const MCInst &Inst);
   bool validateMIMGD16(const MCInst &Inst);
@@ -1423,9 +1424,12 @@ public:
   void cvtSdwaVOP1(MCInst &Inst, const OperandVector &Operands);
   void cvtSdwaVOP2(MCInst &Inst, const OperandVector &Operands);
   void cvtSdwaVOP2b(MCInst &Inst, const OperandVector &Operands);
+  void cvtSdwaVOP2e(MCInst &Inst, const OperandVector &Operands);
   void cvtSdwaVOPC(MCInst &Inst, const OperandVector &Operands);
   void cvtSDWA(MCInst &Inst, const OperandVector &Operands,
-                uint64_t BasicInstType, bool skipVcc = false);
+               uint64_t BasicInstType,
+               bool SkipDstVcc = false,
+               bool SkipSrcVcc = false);
 
   AMDGPUOperand::Ptr defaultBLGP() const;
   AMDGPUOperand::Ptr defaultCBSZ() const;
@@ -2359,7 +2363,7 @@ AMDGPUAsmParser::parseImm(OperandVector &Operands, bool HasSP3AbsModifier) {
 
     APFloat RealVal(APFloat::IEEEdouble());
     auto roundMode = APFloat::rmNearestTiesToEven;
-    if (RealVal.convertFromString(Num, roundMode) == APFloat::opInvalidOp) {
+    if (!RealVal.convertFromString(Num, roundMode)) {
       return MatchOperand_ParseFail;
     }
     if (Negate)
@@ -3046,6 +3050,41 @@ bool AMDGPUAsmParser::validateMIMGGatherDMask(const MCInst &Inst) {
   return DMask == 0x1 || DMask == 0x2 || DMask == 0x4 || DMask == 0x8;
 }
 
+static bool IsMovrelsSDWAOpcode(const unsigned Opcode)
+{
+  switch (Opcode) {
+  case AMDGPU::V_MOVRELS_B32_sdwa_gfx10:
+  case AMDGPU::V_MOVRELSD_B32_sdwa_gfx10:
+  case AMDGPU::V_MOVRELSD_2_B32_sdwa_gfx10:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// movrels* opcodes should only allow VGPRS as src0.
+// This is specified in .td description for vop1/vop3,
+// but sdwa is handled differently. See isSDWAOperand.
+bool AMDGPUAsmParser::validateMovrels(const MCInst &Inst) {
+
+  const unsigned Opc = Inst.getOpcode();
+  const MCInstrDesc &Desc = MII.get(Opc);
+
+  if ((Desc.TSFlags & SIInstrFlags::SDWA) == 0 || !IsMovrelsSDWAOpcode(Opc))
+    return true;
+
+  const int Src0Idx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::src0);
+  assert(Src0Idx != -1);
+
+  const MCOperand &Src0 = Inst.getOperand(Src0Idx);
+  if (!Src0.isReg())
+    return false;
+
+  auto Reg = Src0.getReg();
+  const MCRegisterInfo *TRI = getContext().getRegisterInfo();
+  return !isSGPR(mc2PseudoReg(Reg), TRI);
+}
+
 bool AMDGPUAsmParser::validateMIMGD16(const MCInst &Inst) {
 
   const unsigned Opc = Inst.getOpcode();
@@ -3464,6 +3503,10 @@ bool AMDGPUAsmParser::validateInstruction(const MCInst &Inst,
   if (!validateMIMGGatherDMask(Inst)) {
     Error(IDLoc,
       "invalid image_gather dmask: only one bit must be set");
+    return false;
+  }
+  if (!validateMovrels(Inst)) {
+    Error(IDLoc, "source operand must be a VGPR");
     return false;
   }
   if (!validateFlatOffset(Inst, Operands)) {
@@ -6813,7 +6856,11 @@ void AMDGPUAsmParser::cvtSdwaVOP2(MCInst &Inst, const OperandVector &Operands) {
 }
 
 void AMDGPUAsmParser::cvtSdwaVOP2b(MCInst &Inst, const OperandVector &Operands) {
-  cvtSDWA(Inst, Operands, SIInstrFlags::VOP2, true);
+  cvtSDWA(Inst, Operands, SIInstrFlags::VOP2, true, true);
+}
+
+void AMDGPUAsmParser::cvtSdwaVOP2e(MCInst &Inst, const OperandVector &Operands) {
+  cvtSDWA(Inst, Operands, SIInstrFlags::VOP2, false, true);
 }
 
 void AMDGPUAsmParser::cvtSdwaVOPC(MCInst &Inst, const OperandVector &Operands) {
@@ -6821,11 +6868,14 @@ void AMDGPUAsmParser::cvtSdwaVOPC(MCInst &Inst, const OperandVector &Operands) {
 }
 
 void AMDGPUAsmParser::cvtSDWA(MCInst &Inst, const OperandVector &Operands,
-                              uint64_t BasicInstType, bool skipVcc) {
+                              uint64_t BasicInstType,
+                              bool SkipDstVcc,
+                              bool SkipSrcVcc) {
   using namespace llvm::AMDGPU::SDWA;
 
   OptionalImmIndexMap OptionalIdx;
-  bool skippedVcc = false;
+  bool SkipVcc = SkipDstVcc || SkipSrcVcc;
+  bool SkippedVcc = false;
 
   unsigned I = 1;
   const MCInstrDesc &Desc = MII.get(Inst.getOpcode());
@@ -6835,19 +6885,21 @@ void AMDGPUAsmParser::cvtSDWA(MCInst &Inst, const OperandVector &Operands,
 
   for (unsigned E = Operands.size(); I != E; ++I) {
     AMDGPUOperand &Op = ((AMDGPUOperand &)*Operands[I]);
-    if (skipVcc && !skippedVcc && Op.isReg() &&
+    if (SkipVcc && !SkippedVcc && Op.isReg() &&
         (Op.getReg() == AMDGPU::VCC || Op.getReg() == AMDGPU::VCC_LO)) {
       // VOP2b (v_add_u32, v_sub_u32 ...) sdwa use "vcc" token as dst.
       // Skip it if it's 2nd (e.g. v_add_i32_sdwa v1, vcc, v2, v3)
       // or 4th (v_addc_u32_sdwa v1, vcc, v2, v3, vcc) operand.
       // Skip VCC only if we didn't skip it on previous iteration.
+      // Note that src0 and src1 occupy 2 slots each because of modifiers.
       if (BasicInstType == SIInstrFlags::VOP2 &&
-          (Inst.getNumOperands() == 1 || Inst.getNumOperands() == 5)) {
-        skippedVcc = true;
+          ((SkipDstVcc && Inst.getNumOperands() == 1) ||
+           (SkipSrcVcc && Inst.getNumOperands() == 5))) {
+        SkippedVcc = true;
         continue;
       } else if (BasicInstType == SIInstrFlags::VOPC &&
                  Inst.getNumOperands() == 0) {
-        skippedVcc = true;
+        SkippedVcc = true;
         continue;
       }
     }
@@ -6859,7 +6911,7 @@ void AMDGPUAsmParser::cvtSDWA(MCInst &Inst, const OperandVector &Operands,
     } else {
       llvm_unreachable("Invalid operand type");
     }
-    skippedVcc = false;
+    SkippedVcc = false;
   }
 
   if (Inst.getOpcode() != AMDGPU::V_NOP_sdwa_gfx10 &&

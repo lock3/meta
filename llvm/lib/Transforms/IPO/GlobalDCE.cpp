@@ -22,7 +22,9 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Utils/CtorUtils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -405,7 +407,7 @@ PreservedAnalyses GlobalDCEPass::run(Module &M, ModuleAnalysisManager &MAM) {
       // virtual function pointers with null, allowing us to remove the
       // function itself.
       ++NumVFuncs;
-      F->replaceAllUsesWith(ConstantPointerNull::get(F->getType()));
+      F->replaceNonMetadataUsesWith(ConstantPointerNull::get(F->getType()));
     }
     EraseUnusedGlobalValue(F);
   }

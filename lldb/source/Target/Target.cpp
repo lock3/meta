@@ -404,8 +404,8 @@ Target::CreateAddressInModuleBreakpoint(lldb::addr_t file_addr, bool internal,
                                         bool request_hardware) {
   SearchFilterSP filter_sp(
       new SearchFilterForUnconstrainedSearches(shared_from_this()));
-  BreakpointResolverSP resolver_sp(
-      new BreakpointResolverAddress(nullptr, file_addr, file_spec));
+  BreakpointResolverSP resolver_sp(new BreakpointResolverAddress(
+      nullptr, file_addr, file_spec ? *file_spec : FileSpec()));
   return CreateBreakpoint(filter_sp, resolver_sp, internal, request_hardware,
                           false);
 }
@@ -728,11 +728,17 @@ void Target::ConfigureBreakpointName(
 }
 
 void Target::ApplyNameToBreakpoints(BreakpointName &bp_name) {
-  BreakpointList bkpts_with_name(false);
-  m_breakpoint_list.FindBreakpointsByName(bp_name.GetName().AsCString(),
-                                          bkpts_with_name);
+  llvm::Expected<std::vector<BreakpointSP>> expected_vector =
+      m_breakpoint_list.FindBreakpointsByName(bp_name.GetName().AsCString());
 
-  for (auto bp_sp : bkpts_with_name.Breakpoints())
+  if (!expected_vector) {
+    LLDB_LOG(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_BREAKPOINTS),
+             "invalid breakpoint name: {}",
+             llvm::toString(expected_vector.takeError()));
+    return;
+  }
+
+  for (auto bp_sp : *expected_vector)
     bp_name.ConfigureBreakpoint(bp_sp);
 }
 
@@ -996,10 +1002,9 @@ Status Target::SerializeBreakpointsToFile(const FileSpec &file,
   }
 
   StreamFile out_file(path.c_str(),
-                      File::OpenOptions::eOpenOptionTruncate |
-                          File::OpenOptions::eOpenOptionWrite |
-                          File::OpenOptions::eOpenOptionCanCreate |
-                          File::OpenOptions::eOpenOptionCloseOnExec,
+                      File::eOpenOptionTruncate | File::eOpenOptionWrite |
+                          File::eOpenOptionCanCreate |
+                          File::eOpenOptionCloseOnExec,
                       lldb::eFilePermissionsFileDefault);
   if (!out_file.GetFile().IsValid()) {
     error.SetErrorStringWithFormat("Unable to open output file: %s.",
@@ -1426,8 +1431,7 @@ void Target::SetExecutableModule(ModuleSP &executable_sp,
       ModuleList added_modules;
       executable_objfile->GetDependentModules(dependent_files);
       for (uint32_t i = 0; i < dependent_files.GetSize(); i++) {
-        FileSpec dependent_file_spec(
-            dependent_files.GetFileSpecPointerAtIndex(i));
+        FileSpec dependent_file_spec(dependent_files.GetFileSpecAtIndex(i));
         FileSpec platform_dependent_file_spec;
         if (m_platform_sp)
           m_platform_sp->GetFileWithUUID(dependent_file_spec, nullptr,
@@ -1649,11 +1653,11 @@ bool Target::ModuleIsExcludedForUnconstrainedSearches(
   if (GetBreakpointsConsultPlatformAvoidList()) {
     ModuleList matchingModules;
     ModuleSpec module_spec(module_file_spec);
-    size_t num_modules = GetImages().FindModules(module_spec, matchingModules);
+    GetImages().FindModules(module_spec, matchingModules);
+    size_t num_modules = matchingModules.GetSize();
 
-    // If there is more than one module for this file spec, only return true if
-    // ALL the modules are on the
-    // black list.
+    // If there is more than one module for this file spec, only
+    // return true if ALL the modules are on the black list.
     if (num_modules > 0) {
       for (size_t i = 0; i < num_modules; i++) {
         if (!ModuleIsExcludedForUnconstrainedSearches(
@@ -2060,11 +2064,9 @@ ModuleSP Target::GetOrCreateModule(const ModuleSpec &module_spec, bool notify,
             module_spec_copy.GetUUID().Clear();
 
             ModuleList found_modules;
-            size_t num_found =
-                m_images.FindModules(module_spec_copy, found_modules);
-            if (num_found == 1) {
+            m_images.FindModules(module_spec_copy, found_modules);
+            if (found_modules.GetSize() == 1)
               old_module_sp = found_modules.GetModuleAtIndex(0);
-            }
           }
         }
 
@@ -2254,20 +2256,6 @@ Target::GetUtilityFunctionForLanguage(const char *text,
         Language::GetNameForLanguageType(language));
 
   return utility_fn;
-}
-
-ClangASTContext *Target::GetScratchClangASTContext(bool create_on_demand) {
-  if (!m_valid)
-    return nullptr;
-
-  auto type_system_or_err =
-          GetScratchTypeSystemForLanguage(eLanguageTypeC, create_on_demand);
-  if (auto err = type_system_or_err.takeError()) {
-    LLDB_LOG_ERROR(lldb_private::GetLogIfAnyCategoriesSet(LIBLLDB_LOG_TARGET),
-                   std::move(err), "Couldn't get scratch ClangASTContext");
-    return nullptr;
-  }
-  return llvm::dyn_cast<ClangASTContext>(&type_system_or_err.get());
 }
 
 ClangASTImporterSP Target::GetClangASTImporter() {
@@ -3180,7 +3168,7 @@ void Target::StopHook::SetThreadSpecifier(ThreadSpec *specifier) {
 
 void Target::StopHook::GetDescription(Stream *s,
                                       lldb::DescriptionLevel level) const {
-  int indent_level = s->GetIndentLevel();
+  unsigned indent_level = s->GetIndentLevel();
 
   s->SetIndentLevel(indent_level + 2);
 
@@ -3555,18 +3543,6 @@ void TargetProperties::SetInjectLocalVariables(ExecutionContext *exe_ctx,
   if (exp_values)
     exp_values->SetPropertyAtIndexAsBoolean(exe_ctx, ePropertyInjectLocalVars,
                                             true);
-}
-
-bool TargetProperties::GetUseModernTypeLookup() const {
-  const Property *exp_property = m_collection_sp->GetPropertyAtIndex(
-      nullptr, false, ePropertyExperimental);
-  OptionValueProperties *exp_values =
-      exp_property->GetValue()->GetAsProperties();
-  if (exp_values)
-    return exp_values->GetPropertyAtIndexAsBoolean(
-        nullptr, ePropertyUseModernTypeLookup, true);
-  else
-    return true;
 }
 
 ArchSpec TargetProperties::GetDefaultArchitecture() const {
@@ -4002,14 +3978,14 @@ void TargetProperties::SetRequireHardwareBreakpoints(bool b) {
 void TargetProperties::Arg0ValueChangedCallback(void *target_property_ptr,
                                                 OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.SetArg0(this_->GetArg0());
 }
 
 void TargetProperties::RunArgsValueChangedCallback(void *target_property_ptr,
                                                    OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   Args args;
   if (this_->GetRunArguments(args))
     this_->m_launch_info.GetArguments() = args;
@@ -4018,14 +3994,14 @@ void TargetProperties::RunArgsValueChangedCallback(void *target_property_ptr,
 void TargetProperties::EnvVarsValueChangedCallback(void *target_property_ptr,
                                                    OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.GetEnvironment() = this_->GetEnvironment();
 }
 
 void TargetProperties::InputPathValueChangedCallback(void *target_property_ptr,
                                                      OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDIN_FILENO, this_->GetStandardInputPath(), true, false);
 }
@@ -4033,7 +4009,7 @@ void TargetProperties::InputPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::OutputPathValueChangedCallback(void *target_property_ptr,
                                                       OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDOUT_FILENO, this_->GetStandardOutputPath(), false, true);
 }
@@ -4041,7 +4017,7 @@ void TargetProperties::OutputPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::ErrorPathValueChangedCallback(void *target_property_ptr,
                                                      OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   this_->m_launch_info.AppendOpenFileAction(
       STDERR_FILENO, this_->GetStandardErrorPath(), false, true);
 }
@@ -4049,7 +4025,7 @@ void TargetProperties::ErrorPathValueChangedCallback(void *target_property_ptr,
 void TargetProperties::DetachOnErrorValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDetachOnError())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDetachOnError);
   else
@@ -4059,7 +4035,7 @@ void TargetProperties::DetachOnErrorValueChangedCallback(
 void TargetProperties::DisableASLRValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDisableASLR())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDisableASLR);
   else
@@ -4069,7 +4045,7 @@ void TargetProperties::DisableASLRValueChangedCallback(
 void TargetProperties::DisableSTDIOValueChangedCallback(
     void *target_property_ptr, OptionValue *) {
   TargetProperties *this_ =
-      reinterpret_cast<TargetProperties *>(target_property_ptr);
+      static_cast<TargetProperties *>(target_property_ptr);
   if (this_->GetDisableSTDIO())
     this_->m_launch_info.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
   else
@@ -4097,7 +4073,7 @@ void Target::TargetEventData::Dump(Stream *s) const {
     if (i != 0)
       *s << ", ";
     m_module_list.GetModuleAtIndex(i)->GetDescription(
-        s, lldb::eDescriptionLevelBrief);
+        s->AsRawOstream(), lldb::eDescriptionLevelBrief);
   }
 }
 

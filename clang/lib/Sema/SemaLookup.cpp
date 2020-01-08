@@ -744,6 +744,18 @@ static void GetOpenCLBuiltinFctOverloads(
   }
 }
 
+/// Add extensions to the function declaration.
+/// \param S (in/out) The Sema instance.
+/// \param BIDecl (in) Description of the builtin.
+/// \param FDecl (in/out) FunctionDecl instance.
+static void AddOpenCLExtensions(Sema &S, const OpenCLBuiltinStruct &BIDecl,
+                                FunctionDecl *FDecl) {
+  // Fetch extension associated with a function prototype.
+  StringRef E = FunctionExtensionTable[BIDecl.Extension];
+  if (E != "")
+    S.setOpenCLExtensionForDecl(FDecl, E);
+}
+
 /// When trying to resolve a function name, if isOpenCLBuiltin() returns a
 /// non-null <Index, Len> pair, then the name is referencing an OpenCL
 /// builtin function.  Add all candidate signatures to the LookUpResult.
@@ -770,10 +782,13 @@ static void InsertOCLBuiltinDeclarationsFromTable(Sema &S, LookupResult &LR,
     ASTContext &Context = S.Context;
 
     // Ignore this BIF if its version does not match the language options.
-    if (Context.getLangOpts().OpenCLVersion < OpenCLBuiltin.MinVersion)
+    unsigned OpenCLVersion = Context.getLangOpts().OpenCLVersion;
+    if (Context.getLangOpts().OpenCLCPlusPlus)
+      OpenCLVersion = 200;
+    if (OpenCLVersion < OpenCLBuiltin.MinVersion)
       continue;
     if ((OpenCLBuiltin.MaxVersion != 0) &&
-        (Context.getLangOpts().OpenCLVersion >= OpenCLBuiltin.MaxVersion))
+        (OpenCLVersion >= OpenCLBuiltin.MaxVersion))
       continue;
 
     SmallVector<QualType, 1> RetTypes;
@@ -817,9 +832,20 @@ static void InsertOCLBuiltinDeclarationsFromTable(Sema &S, LookupResult &LR,
         }
         NewOpenCLBuiltin->setParams(ParmList);
       }
-      if (!S.getLangOpts().OpenCLCPlusPlus) {
+
+      // Add function attributes.
+      if (OpenCLBuiltin.IsPure)
+        NewOpenCLBuiltin->addAttr(PureAttr::CreateImplicit(Context));
+      if (OpenCLBuiltin.IsConst)
+        NewOpenCLBuiltin->addAttr(ConstAttr::CreateImplicit(Context));
+      if (OpenCLBuiltin.IsConv)
+        NewOpenCLBuiltin->addAttr(ConvergentAttr::CreateImplicit(Context));
+
+      if (!S.getLangOpts().OpenCLCPlusPlus)
         NewOpenCLBuiltin->addAttr(OverloadableAttr::CreateImplicit(Context));
-      }
+
+      AddOpenCLExtensions(S, OpenCLBuiltin, NewOpenCLBuiltin);
+
       LR.addDecl(NewOpenCLBuiltin);
     }
   }
@@ -831,7 +857,7 @@ static void InsertOCLBuiltinDeclarationsFromTable(Sema &S, LookupResult &LR,
 
 /// Lookup a builtin function, when name lookup would otherwise
 /// fail.
-static bool LookupBuiltin(Sema &S, LookupResult &R) {
+bool Sema::LookupBuiltin(LookupResult &R) {
   Sema::LookupNameKind NameKind = R.getLookupKind();
 
   // If we didn't find a use of this identifier, and if the identifier
@@ -841,21 +867,21 @@ static bool LookupBuiltin(Sema &S, LookupResult &R) {
       NameKind == Sema::LookupRedeclarationWithLinkage) {
     IdentifierInfo *II = R.getLookupName().getAsIdentifierInfo();
     if (II) {
-      if (S.getLangOpts().CPlusPlus && NameKind == Sema::LookupOrdinaryName) {
-        if (II == S.getASTContext().getMakeIntegerSeqName()) {
-          R.addDecl(S.getASTContext().getMakeIntegerSeqDecl());
+      if (getLangOpts().CPlusPlus && NameKind == Sema::LookupOrdinaryName) {
+        if (II == getASTContext().getMakeIntegerSeqName()) {
+          R.addDecl(getASTContext().getMakeIntegerSeqDecl());
           return true;
-        } else if (II == S.getASTContext().getTypePackElementName()) {
-          R.addDecl(S.getASTContext().getTypePackElementDecl());
+        } else if (II == getASTContext().getTypePackElementName()) {
+          R.addDecl(getASTContext().getTypePackElementDecl());
           return true;
         }
       }
 
       // Check if this is an OpenCL Builtin, and if so, insert its overloads.
-      if (S.getLangOpts().OpenCL && S.getLangOpts().DeclareOpenCLBuiltins) {
+      if (getLangOpts().OpenCL && getLangOpts().DeclareOpenCLBuiltins) {
         auto Index = isOpenCLBuiltin(II->getName());
         if (Index.first) {
-          InsertOCLBuiltinDeclarationsFromTable(S, R, II, Index.first - 1,
+          InsertOCLBuiltinDeclarationsFromTable(*this, R, II, Index.first - 1,
                                                 Index.second);
           return true;
         }
@@ -865,14 +891,14 @@ static bool LookupBuiltin(Sema &S, LookupResult &R) {
       if (unsigned BuiltinID = II->getBuiltinID()) {
         // In C++ and OpenCL (spec v1.2 s6.9.f), we don't have any predefined
         // library functions like 'malloc'. Instead, we'll just error.
-        if ((S.getLangOpts().CPlusPlus || S.getLangOpts().OpenCL) &&
-            S.Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID))
+        if ((getLangOpts().CPlusPlus || getLangOpts().OpenCL) &&
+            Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID))
           return false;
 
-        if (NamedDecl *D = S.LazilyCreateBuiltin((IdentifierInfo *)II,
-                                                 BuiltinID, S.TUScope,
-                                                 R.isForRedeclaration(),
-                                                 R.getNameLoc())) {
+        if (NamedDecl *D = LazilyCreateBuiltin((IdentifierInfo *)II,
+                                               BuiltinID, TUScope,
+                                               R.isForRedeclaration(),
+                                               R.getNameLoc())) {
           R.addDecl(D);
           return true;
         }
@@ -1022,7 +1048,7 @@ static bool LookupDirect(Sema &S, LookupResult &R, const DeclContext *DC) {
     }
   }
 
-  if (!Found && DC->isTranslationUnit() && LookupBuiltin(S, R))
+  if (!Found && DC->isTranslationUnit() && S.LookupBuiltin(R))
     return true;
 
   if (R.getLookupName().getNameKind()
@@ -2028,7 +2054,7 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   // If we didn't find a use of this identifier, and if the identifier
   // corresponds to a compiler builtin, create the decl object for the builtin
   // now, injecting it into translation unit scope, and return it.
-  if (AllowBuiltinCreation && LookupBuiltin(*this, R))
+  if (AllowBuiltinCreation && LookupBuiltin(R))
     return true;
 
   // If we didn't find a use of this identifier, the ExternalSource
@@ -3119,11 +3145,10 @@ Sema::SpecialMemberOverloadResult Sema::LookupSpecialMember(CXXRecordDecl *RD,
       });
     }
     CXXDestructorDecl *DD = RD->getDestructor();
-    assert(DD && "record without a destructor");
     Result->setMethod(DD);
-    Result->setKind(DD->isDeleted() ?
-                    SpecialMemberOverloadResult::NoMemberOrDeleted :
-                    SpecialMemberOverloadResult::Success);
+    Result->setKind(DD && !DD->isDeleted()
+                        ? SpecialMemberOverloadResult::Success
+                        : SpecialMemberOverloadResult::NoMemberOrDeleted);
     return *Result;
   }
 

@@ -32,6 +32,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 
 # Third-party modules
 import six
@@ -616,7 +617,7 @@ def setupSysPath():
         if not lldbPythonDir:
             print(
                 "Unable to load lldb extension module.  Possible reasons for this include:")
-            print("  1) LLDB was built with LLDB_DISABLE_PYTHON=1")
+            print("  1) LLDB was built with LLDB_ENABLE_PYTHON=0")
             print(
                 "  2) PYTHONPATH and PYTHONHOME are not set correctly.  PYTHONHOME should refer to")
             print(
@@ -850,9 +851,15 @@ def canRunLibcxxTests():
         return True, "libc++ always present"
 
     if platform == "linux":
-        if not os.path.isdir("/usr/include/c++/v1"):
-            return False, "Unable to find libc++ installation"
-        return True, "Headers found, let's hope they work"
+        if os.path.isdir("/usr/include/c++/v1"):
+            return True, "Headers found, let's hope they work"
+        with tempfile.NamedTemporaryFile() as f:
+            cmd = [configuration.compiler, "-xc++", "-stdlib=libc++", "-o", f.name, "-"]
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            _, stderr = p.communicate("#include <algorithm>\nint main() {}")
+            if not p.returncode:
+                return True, "Compiling with -stdlib=libc++ works"
+            return False, "Compiling with -stdlib=libc++ fails with the error: %s" % stderr
 
     return False, "Don't know how to build with libc++ on %s" % platform
 
@@ -1021,10 +1028,17 @@ def run_suite():
     checkDebugInfoSupport()
 
     # Don't do debugserver tests on anything except OS X.
-    configuration.dont_do_debugserver_test = "linux" in target_platform or "freebsd" in target_platform or "windows" in target_platform
+    configuration.dont_do_debugserver_test = (
+            "linux" in target_platform or
+            "freebsd" in target_platform or
+            "netbsd" in target_platform or
+            "windows" in target_platform)
 
     # Don't do lldb-server (llgs) tests on anything except Linux and Windows.
-    configuration.dont_do_llgs_test = not ("linux" in target_platform) and not ("windows" in target_platform)
+    configuration.dont_do_llgs_test = not (
+            "linux" in target_platform or
+            "netbsd" in target_platform or
+            "windows" in target_platform)
 
     # Collect tests from the specified testing directories. If a test
     # subdirectory filter is explicitly specified, limit the search to that

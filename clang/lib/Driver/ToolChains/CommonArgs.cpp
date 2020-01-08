@@ -253,6 +253,7 @@ std::string tools::getCPUName(const ArgList &Args, const llvm::Triple &T,
     return "";
 
   case llvm::Triple::aarch64:
+  case llvm::Triple::aarch64_32:
   case llvm::Triple::aarch64_be:
     return aarch64::getAArch64TargetCPU(Args, T, A);
 
@@ -1126,6 +1127,21 @@ unsigned tools::ParseFunctionAlignment(const ToolChain &TC,
   return Value ? llvm::Log2_32_Ceil(std::min(Value, 65536u)) : Value;
 }
 
+unsigned tools::ParseDebugDefaultVersion(const ToolChain &TC,
+                                         const ArgList &Args) {
+  const Arg *A = Args.getLastArg(options::OPT_fdebug_default_version);
+
+  if (!A)
+    return 0;
+
+  unsigned Value = 0;
+  if (StringRef(A->getValue()).getAsInteger(10, Value) || Value > 5 ||
+      Value < 2)
+    TC.getDriver().Diag(diag::err_drv_invalid_int_value)
+        << A->getAsString(Args) << A->getValue();
+  return Value;
+}
+
 void tools::AddAssemblerKPIC(const ToolChain &ToolChain, const ArgList &Args,
                              ArgStringList &CmdArgs) {
   llvm::Reloc::Model RelocationModel;
@@ -1193,7 +1209,10 @@ static void AddUnwindLibrary(const ToolChain &TC, const Driver &D,
     break;
   }
   case ToolChain::UNW_CompilerRT:
-    CmdArgs.push_back("-lunwind");
+    if (LGT == LibGccType::StaticLibGcc)
+      CmdArgs.push_back("-l:libunwind.a");
+    else
+      CmdArgs.push_back("-l:libunwind.so");
     break;
   }
 

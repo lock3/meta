@@ -107,7 +107,7 @@ public:
   /// make these decisions: function formal arguments, call
   /// instruction args, call instruction returns and function
   /// returns. However, once a decision has been made on where an
-  /// arugment should go, exactly what happens can vary slightly. This
+  /// argument should go, exactly what happens can vary slightly. This
   /// class abstracts the differences.
   struct ValueHandler {
     ValueHandler(MachineIRBuilder &MIRBuilder, MachineRegisterInfo &MRI,
@@ -118,7 +118,7 @@ public:
 
     /// Returns true if the handler is dealing with incoming arguments,
     /// i.e. those that move values from some physical location to vregs.
-    virtual bool isIncomingArgumentHandler() const { return false; }
+    virtual bool isIncomingArgumentHandler() const = 0;
 
     /// Materialize a VReg containing the address of the specified
     /// stack-based object. This is either based on a FrameIndex or

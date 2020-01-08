@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/Attr.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Reflection.h"
@@ -1286,7 +1287,7 @@ static bool isVariableTemplate(const Reflection &R, APValue &Result) {
 static const CXXMethodDecl *getAsTemplateMemberFunction(const Reflection &R) {
   if (const Decl *D = getReachableDecl(R)) {
     if (const FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(D))
-      return dyn_cast<CXXMethodDecl>(D->getAsFunction());
+      return dyn_cast<CXXMethodDecl>(FTD->getTemplatedDecl());
 
     if (const CXXMethodDecl *RD = dyn_cast<CXXMethodDecl>(D)) {
       if (RD->isTemplated())
@@ -1329,8 +1330,7 @@ static bool isDestructorTemplate(const Reflection &R, APValue &Result) {
 /// Returns true if R designates a concept.
 static bool isConcept(const Reflection &R, APValue &Result) {
   if (const Decl *D = getReachableDecl(R))
-    if (const TemplateDecl *TD = dyn_cast<TemplateDecl>(D))
-      return SuccessBool(R, Result, TD->isConcept());
+    return SuccessBool(R, Result, isa<ConceptDecl>(D));
   return SuccessFalse(R, Result);
 }
 

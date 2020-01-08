@@ -240,9 +240,6 @@ Value *SCEVExpander::InsertBinop(Instruction::BinaryOps Opcode,
 /// division. If so, update S with Factor divided out and return true.
 /// S need not be evenly divisible if a reasonable remainder can be
 /// computed.
-/// TODO: When ScalarEvolution gets a SCEVSDivExpr, this can be made
-/// unnecessary; in its place, just signed-divide Ops[i] by the scale and
-/// check to see if the divide was folded.
 static bool FactorOutConstant(const SCEV *&S, const SCEV *&Remainder,
                               const SCEV *Factor, ScalarEvolution &SE,
                               const DataLayout &DL) {
@@ -417,7 +414,7 @@ Value *SCEVExpander::expandAddToGEP(const SCEV *const *op_begin,
   // without the other.
   SplitAddRecs(Ops, Ty, SE);
 
-  Type *IntPtrTy = DL.getIntPtrType(PTy);
+  Type *IntIdxTy = DL.getIndexType(PTy);
 
   // Descend down the pointer's type and attempt to convert the other
   // operands into GEP indices, at each level. The first index in a GEP
@@ -429,7 +426,7 @@ Value *SCEVExpander::expandAddToGEP(const SCEV *const *op_begin,
     // array indexing.
     SmallVector<const SCEV *, 8> ScaledOps;
     if (ElTy->isSized()) {
-      const SCEV *ElSize = SE.getSizeOfExpr(IntPtrTy, ElTy);
+      const SCEV *ElSize = SE.getSizeOfExpr(IntIdxTy, ElTy);
       if (!ElSize->isZero()) {
         SmallVector<const SCEV *, 8> NewOps;
         for (const SCEV *Op : Ops) {

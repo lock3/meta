@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/VectorUtils.h"
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/IR/InstIterator.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
@@ -87,7 +89,7 @@ private:
 protected:
   // Referencies to the parser output field.
   unsigned &VF = Info.Shape.VF;
-  VFISAKind &ISA = Info.Shape.ISA;
+  VFISAKind &ISA = Info.ISA;
   SmallVector<VFParameter, 8> &Parameters = Info.Shape.Parameters;
   StringRef &ScalarName = Info.ScalarName;
   StringRef &VectorName = Info.VectorName;
@@ -254,7 +256,7 @@ TEST_F(VFABIParserTest, Align) {
   EXPECT_EQ(Parameters.size(), (unsigned)1);
   EXPECT_EQ(Parameters[0].Alignment, Align(2));
 
-  // Missing alignement value.
+  // Missing alignment value.
   EXPECT_FALSE(invokeParser("_ZGVsM2l2a_sin"));
   // Invalid alignment token "x".
   EXPECT_FALSE(invokeParser("_ZGVsM2l2ax_sin"));
@@ -343,6 +345,13 @@ TEST_F(VFABIParserTest, ISAIndependentMangling) {
   EXPECT_EQ(ISA, VFISAKind::AVX512);
   __COMMON_CHECKS;
   EXPECT_EQ(VectorName, "_ZGVeN2vls2Ls27Us4Rs5l1L10U100R1000u2_sin");
+
+  // LLVM: <isa> = "_LLVM_" internal vector function.
+  EXPECT_TRUE(
+      invokeParser("_ZGV_LLVM_N2vls2Ls27Us4Rs5l1L10U100R1000u2_sin(vectorf)"));
+  EXPECT_EQ(ISA, VFISAKind::LLVM);
+  __COMMON_CHECKS;
+  EXPECT_EQ(VectorName, "vectorf");
 
   // Unknown ISA (randomly using "q"). This test will need update if
   // some targets decide to use "q" as their ISA token.
@@ -436,4 +445,83 @@ TEST_F(VFABIParserTest, ParseMaskingAVX512) {
   EXPECT_EQ(Parameters[0], VFParameter({0, VFParamKind::Vector}));
   EXPECT_EQ(Parameters[1], VFParameter({1, VFParamKind::GlobalPredicate}));
   EXPECT_EQ(ScalarName, "sin");
+}
+
+TEST_F(VFABIParserTest, ParseMaskingLLVM) {
+  EXPECT_TRUE(invokeParser("_ZGV_LLVM_M2v_sin(custom_vector_sin)"));
+  EXPECT_EQ(VF, (unsigned)2);
+  EXPECT_TRUE(IsMasked());
+  EXPECT_FALSE(IsScalable);
+  EXPECT_EQ(ISA, VFISAKind::LLVM);
+  EXPECT_EQ(Parameters.size(), (unsigned)2);
+  EXPECT_EQ(Parameters[0], VFParameter({0, VFParamKind::Vector}));
+  EXPECT_EQ(Parameters[1], VFParameter({1, VFParamKind::GlobalPredicate}));
+  EXPECT_EQ(ScalarName, "sin");
+  EXPECT_EQ(VectorName, "custom_vector_sin");
+}
+
+TEST_F(VFABIParserTest, ParseScalableMaskingLLVM) {
+  EXPECT_TRUE(invokeParser("_ZGV_LLVM_Mxv_sin(custom_vector_sin)"));
+  EXPECT_TRUE(IsMasked());
+  EXPECT_TRUE(IsScalable);
+  EXPECT_EQ(ISA, VFISAKind::LLVM);
+  EXPECT_EQ(Parameters.size(), (unsigned)2);
+  EXPECT_EQ(Parameters[0], VFParameter({0, VFParamKind::Vector}));
+  EXPECT_EQ(Parameters[1], VFParameter({1, VFParamKind::GlobalPredicate}));
+  EXPECT_EQ(ScalarName, "sin");
+  EXPECT_EQ(VectorName, "custom_vector_sin");
+}
+
+TEST_F(VFABIParserTest, ParseScalableMaskingLLVMSincos) {
+  EXPECT_TRUE(invokeParser("_ZGV_LLVM_Mxvl8l8_sincos(custom_vector_sincos)"));
+  EXPECT_TRUE(IsMasked());
+  EXPECT_TRUE(IsScalable);
+  EXPECT_EQ(ISA, VFISAKind::LLVM);
+  EXPECT_EQ(Parameters.size(), (unsigned)4);
+  EXPECT_EQ(Parameters[0], VFParameter({0, VFParamKind::Vector}));
+  EXPECT_EQ(Parameters[1], VFParameter({1, VFParamKind::OMP_Linear, 8}));
+  EXPECT_EQ(Parameters[2], VFParameter({2, VFParamKind::OMP_Linear, 8}));
+  EXPECT_EQ(Parameters[3], VFParameter({3, VFParamKind::GlobalPredicate}));
+  EXPECT_EQ(ScalarName, "sincos");
+  EXPECT_EQ(VectorName, "custom_vector_sincos");
+}
+
+class VFABIAttrTest : public testing::Test {
+protected:
+  void SetUp() override {
+    M = parseAssemblyString(IR, Err, Ctx);
+    // Get the only call instruction in the block, which is the first
+    // instruction.
+    CI = dyn_cast<CallInst>(&*(instructions(M->getFunction("f")).begin()));
+  }
+  const char *IR = "define i32 @f(i32 %a) {\n"
+                   " %1 = call i32 @g(i32 %a) #0\n"
+                   "  ret i32 %1\n"
+                   "}\n"
+                   "declare i32 @g(i32)\n"
+                   "declare <2 x i32> @custom_vg(<2 x i32>)"
+                   "declare <4 x i32> @_ZGVnN4v_g(<4 x i32>)"
+                   "declare <8 x i32> @_ZGVnN8v_g(<8 x i32>)"
+                   "attributes #0 = { "
+                   "\"vector-function-abi-variant\"=\""
+                   "_ZGVnN2v_g(custom_vg),_ZGVnN4v_g\" }";
+  LLVMContext Ctx;
+  SMDiagnostic Err;
+  std::unique_ptr<Module> M;
+  CallInst *CI;
+  SmallVector<std::string, 8> Mappings;
+};
+
+TEST_F(VFABIAttrTest, Read) {
+  VFABI::getVectorVariantNames(*CI, Mappings);
+  SmallVector<std::string, 8> Exp;
+  Exp.push_back("_ZGVnN2v_g(custom_vg)");
+  Exp.push_back("_ZGVnN4v_g");
+  EXPECT_EQ(Mappings, Exp);
+}
+
+TEST_F(VFABIParserTest, LLVM_InternalISA) {
+  EXPECT_FALSE(invokeParser("_ZGV_LLVM_N2v_sin"));
+  EXPECT_TRUE(invokeParser("_ZGV_LLVM_N2v_sin_(vector_name)"));
+  EXPECT_EQ(ISA, VFISAKind::LLVM);
 }

@@ -10,6 +10,7 @@
 #include "BenchmarkResult.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <limits>
 #include <unordered_set>
@@ -113,7 +114,7 @@ void Analysis::writeSnippet(raw_ostream &OS, ArrayRef<uint8_t> Bytes,
     }
     SmallString<128> InstPrinterStr; // FIXME: magic number.
     raw_svector_ostream OSS(InstPrinterStr);
-    InstPrinter_->printInst(&MI, OSS, "", *SubtargetInfo_);
+    InstPrinter_->printInst(&MI, 0, "", *SubtargetInfo_, OSS);
     Bytes = Bytes.drop_front(MISize);
     Lines.emplace_back(StringRef(InstPrinterStr).trim());
   }
@@ -163,7 +164,9 @@ Analysis::Analysis(const Target &Target, std::unique_ptr<MCInstrInfo> InstrInfo,
 
   const InstructionBenchmark &FirstPoint = Clustering.getPoints().front();
   RegInfo_.reset(Target.createMCRegInfo(FirstPoint.LLVMTriple));
-  AsmInfo_.reset(Target.createMCAsmInfo(*RegInfo_, FirstPoint.LLVMTriple));
+  MCTargetOptions MCOptions;
+  AsmInfo_.reset(
+      Target.createMCAsmInfo(*RegInfo_, FirstPoint.LLVMTriple, MCOptions));
   SubtargetInfo_.reset(Target.createMCSubtargetInfo(FirstPoint.LLVMTriple,
                                                     FirstPoint.CpuName, ""));
   InstPrinter_.reset(Target.createMCInstPrinter(

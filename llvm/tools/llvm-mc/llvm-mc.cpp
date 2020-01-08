@@ -351,7 +351,8 @@ int main(int argc, char **argv) {
   std::unique_ptr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
   assert(MRI && "Unable to create target register info!");
 
-  std::unique_ptr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(*MRI, TripleName));
+  std::unique_ptr<MCAsmInfo> MAI(
+      TheTarget->createMCAsmInfo(*MRI, TripleName, MCOptions));
   assert(MAI && "Unable to create target asm info!");
 
   MAI->setRelaxELFRelocations(RelaxELFRel);
@@ -517,8 +518,8 @@ int main(int argc, char **argv) {
     break;
   }
   if (disassemble)
-    Res = Disassembler::disassemble(*TheTarget, TripleName, *STI, *Str,
-                                    *Buffer, SrcMgr, Out->os());
+    Res = Disassembler::disassemble(*TheTarget, TripleName, *STI, *Str, *Buffer,
+                                    SrcMgr, Ctx, Out->os(), MCOptions);
 
   // Keep output if no errors.
   if (Res == 0) {

@@ -1869,9 +1869,9 @@ Here is the table:
 :raw-html:`<td class="no"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="no"></td> <!-- NVPTX -->`
-:raw-html:`<td class="no"></td> <!-- PowerPC -->`
+:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
 :raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
@@ -1884,11 +1884,11 @@ Here is the table:
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="na"></td> <!-- NVPTX -->`
-:raw-html:`<td class="no"></td> <!-- PowerPC -->`
+:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
+:raw-html:`<td class="yes"></td> <!-- Sparc -->`
 :raw-html:`<td class="yes"></td> <!-- SystemZ -->`
-:raw-html:`<td class="no"></td> <!-- Sparc -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="yes"></td> <!-- XCore -->`
 :raw-html:`<td class="yes"></td> <!-- eBPF -->`
@@ -1899,7 +1899,7 @@ Here is the table:
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="yes"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`
@@ -1929,9 +1929,9 @@ Here is the table:
 :raw-html:`<td class="no"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="na"></td> <!-- NVPTX -->`
-:raw-html:`<td class="no"></td> <!-- PowerPC -->`
+:raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
 :raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
@@ -1944,7 +1944,7 @@ Here is the table:
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
-:raw-html:`<td class="no"></td> <!-- Mips -->`
+:raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="no"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`

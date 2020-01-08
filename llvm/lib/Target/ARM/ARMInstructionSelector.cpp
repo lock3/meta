@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/GlobalISel/InstructionSelectorImpl.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/IR/IntrinsicsARM.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "arm-isel"
@@ -1061,7 +1062,7 @@ bool ARMInstructionSelector::select(MachineInstr &I) {
   case G_SHL: {
     return selectShift(ARM_AM::ShiftOpc::lsl, MIB);
   }
-  case G_GEP:
+  case G_PTR_ADD:
     I.setDesc(TII.get(Opcodes.ADDrr));
     MIB.add(predOps(ARMCC::AL)).add(condCodeOp());
     break;

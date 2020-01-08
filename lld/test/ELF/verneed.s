@@ -117,7 +117,7 @@
 # CHECK-NEXT: 0x000000006FFFFFFE VERNEED              [[VERNEED]]
 # CHECK-NEXT: 0x000000006FFFFFFF VERNEEDNUM           2
 
-# CHECK:      Version symbols [
+# CHECK:      VersionSymbols [
 # CHECK-NEXT:    Symbol {
 # CHECK-NEXT:      Version: 0
 # CHECK-NEXT:      Name:
@@ -135,9 +135,9 @@
 # CHECK-NEXT:      Name: g1@v1
 # CHECK-NEXT:    }
 # CHECK-NEXT:  ]
-# CHECK-NEXT:  SHT_GNU_verdef {
-# CHECK-NEXT:  }
-# CHECK-NEXT:  SHT_GNU_verneed {
+# CHECK-NEXT:  VersionDefinitions [
+# CHECK-NEXT:  ]
+# CHECK-NEXT:  VersionRequirements [
 # CHECK-NEXT:    Dependency {
 # CHECK-NEXT:      Version: 1
 # CHECK-NEXT:      Count: 2
@@ -145,13 +145,15 @@
 # CHECK-NEXT:      Entries [
 # CHECK-NEXT:        Entry {
 # CHECK-NEXT:          Hash: 1938
-# CHECK-NEXT:          Flags: 0x0
+# CHECK-NEXT:          Flags [ (0x0)
+# CHECK-NEXT:          ]
 # CHECK-NEXT:          Index: 3
 # CHECK-NEXT:          Name: v2
 # CHECK-NEXT:        }
 # CHECK-NEXT:        Entry {
 # CHECK-NEXT:          Hash: 1939
-# CHECK-NEXT:          Flags: 0x0
+# CHECK-NEXT:          Flags [ (0x0)
+# CHECK-NEXT:          ]
 # CHECK-NEXT:          Index: 2
 # CHECK-NEXT:          Name: v3
 # CHECK-NEXT:        }
@@ -164,13 +166,14 @@
 # CHECK-NEXT:      Entries [
 # CHECK-NEXT:        Entry {
 # CHECK-NEXT:          Hash: 1937
-# CHECK-NEXT:          Flags: 0x0
+# CHECK-NEXT:          Flags [ (0x0)
+# CHECK-NEXT:          ]
 # CHECK-NEXT:          Index: 4
 # CHECK-NEXT:          Name: v1
 # CHECK-NEXT:        }
 # CHECK-NEXT:      ]
 # CHECK-NEXT:    }
-# CHECK-NEXT:  }
+# CHECK-NEXT:  ]
 
 .globl _start
 _start:

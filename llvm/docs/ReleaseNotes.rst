@@ -41,7 +41,25 @@ Non-comprehensive list of changes in this release
    for adding a new subsection.
 
 * The ISD::FP_ROUND_INREG opcode and related code was removed from SelectionDAG.
-* Enabled MemorySSA as a loop dependency.
+* Enabled MemorySSA as a loop dependency. Since
+  `r370957 <https://reviews.llvm.org/rL370957>`_
+  (`D58311 <https://reviews.llvm.org/D58311>`_ ``[MemorySSA & LoopPassManager]
+  Enable MemorySSA as loop dependency. Update tests.``), the MemorySSA analysis
+  is being preserved and used by a series of loop passes. The most significant
+  use is in LICM, where the instruction hoisting and sinking relies on aliasing
+  information provided by MemorySSA vs previously creating an AliasSetTracker.
+  The LICM step of promoting variables to scalars still relies on the creation
+  of an AliasSetTracker, but its use is reduced to only be enabled for loops
+  with a small number of overall memory instructions. This choice was motivated
+  by experimental results showing compile and run time benefits or replacing the
+  AliasSetTracker usage with MemorySSA without any performance penalties.
+  The fact that MemorySSA is now preserved by and available in a series of loop
+  passes, also opens up opportunities for its use in those respective passes.
+* The BasicBlockPass, BBPassManager and all their uses were deleted in
+  `this revision <https://reviews.llvm.org/rG9f0ff0b2634bab6a5be8dace005c9eb24d386dd1>`_.
+
+* The LLVM_BUILD_LLVM_DYLIB and LLVM_LINK_LLVM_DYLIB CMake options are no longer
+  available on Windows.
 
 .. NOTE
    If you would like to document a larger change, then you can add a
@@ -66,6 +84,19 @@ Non-comprehensive list of changes in this release
   Undefined Behaviour Sanitizer ``-fsanitize=pointer-overflow`` check
   will now catch such cases.
 
+
+* Windows Control Flow Guard: the ``-cfguard`` option now emits CFG checks on
+  indirect function calls. The previous behavior is still available with the 
+  ``-cfguard-nochecks`` option. Note that this feature should always be used 
+  with optimizations enabled.
+
+* ``Callbacks`` have been added to ``CommandLine Options``.  These can
+  be used to validate of selectively enable other options.
+
+* The function attributes ``no-frame-pointer-elim`` and
+  ``no-frame-pointer-elim-non-leaf`` have been replaced by ``frame-pointer``,
+  which has 3 values: ``none``, ``non-leaf``, and ``all``. The values mean what
+  functions should retain frame pointers.
 
 Changes to the LLVM IR
 ----------------------
@@ -114,6 +145,13 @@ Changes to the X86 Target
   Intel CPUs. This tries to limit the use of 512-bit registers which can cause a
   decrease in CPU frequency on these CPUs. This can be re-enabled by passing
   -mprefer-vector-width=512 to clang or passing -mattr=-prefer-256-bit to llc.
+* Deprecated the mpx feature flag for the Intel MPX instructions. There were no
+  intrinsics for this feature. This change only this effects the results
+  returned by getHostCPUFeatures on CPUs that implement the MPX instructions.
+* The feature flag fast-partial-ymm-or-zmm-write which previously disabled
+  vzeroupper insertion has been removed. It has been replaced with a vzeroupper
+  feature flag which has the opposite polarity. So -vzeroupper has the same
+  effect as +fast-partial-ymm-or-zmm-write.
 
 Changes to the AMDGPU Target
 -----------------------------
@@ -122,10 +160,6 @@ Changes to the AVR Target
 -----------------------------
 
  During this release ...
-
-* Deprecated the mpx feature flag for the Intel MPX instructions. There were no
-  intrinsics for this feature. This change only this effects the results
-  returned by getHostCPUFeatures on CPUs that implement the MPX instructions.
 
 Changes to the WebAssembly Target
 ---------------------------------
@@ -140,6 +174,16 @@ Changes to the OCaml bindings
 
 Changes to the C API
 --------------------
+* C DebugInfo API ``LLVMDIBuilderCreateTypedef`` is updated to include an extra
+  argument ``AlignInBits``, to facilitate / propagate specified Alignment information
+  present in a ``typedef`` to Debug information in LLVM IR.
+
+
+Changes to the Go bindings
+--------------------------
+* Go DebugInfo API ``CreateTypedef`` is updated to include an extra argument ``AlignInBits``,
+  to facilitate / propagate specified Alignment information present in a ``typedef``
+  to Debug information in LLVM IR.
 
 
 Changes to the DAG infrastructure

@@ -22,6 +22,7 @@
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/ELFObjectFile.h"
@@ -363,7 +364,7 @@ uint64_t FileAnalysis::indirectCFOperandClobber(const GraphResult &Graph) const 
 
 void FileAnalysis::printInstruction(const Instr &InstrMeta,
                                     raw_ostream &OS) const {
-  Printer->printInst(&InstrMeta.Instruction, OS, "", *SubtargetInfo.get());
+  Printer->printInst(&InstrMeta.Instruction, 0, "", *SubtargetInfo.get(), OS);
 }
 
 Error FileAnalysis::initialiseDisassemblyMembers() {
@@ -387,7 +388,9 @@ Error FileAnalysis::initialiseDisassemblyMembers() {
     return make_error<UnsupportedDisassembly>(
         "Failed to initialise RegisterInfo.");
 
-  AsmInfo.reset(ObjectTarget->createMCAsmInfo(*RegisterInfo, TripleName));
+  MCTargetOptions MCOptions;
+  AsmInfo.reset(
+      ObjectTarget->createMCAsmInfo(*RegisterInfo, TripleName, MCOptions));
   if (!AsmInfo)
     return make_error<UnsupportedDisassembly>("Failed to initialise AsmInfo.");
 

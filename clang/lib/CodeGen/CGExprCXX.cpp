@@ -133,7 +133,7 @@ RValue CodeGenFunction::EmitCXXPseudoDestructorExpr(
       BaseQuals = PTy->getPointeeType().getQualifiers();
     } else {
       LValue BaseLV = EmitLValue(BaseExpr);
-      BaseValue = BaseLV.getAddress();
+      BaseValue = BaseLV.getAddress(*this);
       QualType BaseTy = BaseExpr->getType();
       BaseQuals = BaseTy.getQualifiers();
     }
@@ -241,16 +241,28 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
     }
   }
 
+  bool TrivialForCodegen =
+      MD->isTrivial() || (MD->isDefaulted() && MD->getParent()->isUnion());
+  bool TrivialAssignment =
+      TrivialForCodegen &&
+      (MD->isCopyAssignmentOperator() || MD->isMoveAssignmentOperator()) &&
+      !MD->getParent()->mayInsertExtraPadding();
+
   // C++17 demands that we evaluate the RHS of a (possibly-compound) assignment
   // operator before the LHS.
   CallArgList RtlArgStorage;
   CallArgList *RtlArgs = nullptr;
+  LValue TrivialAssignmentRHS;
   if (auto *OCE = dyn_cast<CXXOperatorCallExpr>(CE)) {
     if (OCE->isAssignmentOp()) {
-      RtlArgs = &RtlArgStorage;
-      EmitCallArgs(*RtlArgs, MD->getType()->castAs<FunctionProtoType>(),
-                   drop_begin(CE->arguments(), 1), CE->getDirectCallee(),
-                   /*ParamsToSkip*/0, EvaluationOrder::ForceRightToLeft);
+      if (TrivialAssignment) {
+        TrivialAssignmentRHS = EmitLValue(CE->getArg(1));
+      } else {
+        RtlArgs = &RtlArgStorage;
+        EmitCallArgs(*RtlArgs, MD->getType()->castAs<FunctionProtoType>(),
+                     drop_begin(CE->arguments(), 1), CE->getDirectCallee(),
+                     /*ParamsToSkip*/0, EvaluationOrder::ForceRightToLeft);
+      }
     }
   }
 
@@ -271,32 +283,35 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
     assert(ReturnValue.isNull() && "Constructor shouldn't have return value");
     CallArgList Args;
     commonEmitCXXMemberOrOperatorCall(
-        *this, Ctor, This.getPointer(), /*ImplicitParam=*/nullptr,
+        *this, Ctor, This.getPointer(*this), /*ImplicitParam=*/nullptr,
         /*ImplicitParamTy=*/QualType(), CE, Args, nullptr);
 
     EmitCXXConstructorCall(Ctor, Ctor_Complete, /*ForVirtualBase=*/false,
-                           /*Delegating=*/false, This.getAddress(), Args,
+                           /*Delegating=*/false, This.getAddress(*this), Args,
                            AggValueSlot::DoesNotOverlap, CE->getExprLoc(),
                            /*NewPointerIsChecked=*/false);
     return RValue::get(nullptr);
   }
 
-  if (MD->isTrivial() || (MD->isDefaulted() && MD->getParent()->isUnion())) {
-    if (isa<CXXDestructorDecl>(MD)) return RValue::get(nullptr);
-    if (!MD->getParent()->mayInsertExtraPadding()) {
-      if (MD->isCopyAssignmentOperator() || MD->isMoveAssignmentOperator()) {
-        // We don't like to generate the trivial copy/move assignment operator
-        // when it isn't necessary; just produce the proper effect here.
-        LValue RHS = isa<CXXOperatorCallExpr>(CE)
-                         ? MakeNaturalAlignAddrLValue(
-                               (*RtlArgs)[0].getRValue(*this).getScalarVal(),
-                               (*(CE->arg_begin() + 1))->getType())
-                         : EmitLValue(*CE->arg_begin());
-        EmitAggregateAssign(This, RHS, CE->getType());
-        return RValue::get(This.getPointer());
-      }
-      llvm_unreachable("unknown trivial member function");
+  if (TrivialForCodegen) {
+    if (isa<CXXDestructorDecl>(MD))
+      return RValue::get(nullptr);
+
+    if (TrivialAssignment) {
+      // We don't like to generate the trivial copy/move assignment operator
+      // when it isn't necessary; just produce the proper effect here.
+      // It's important that we use the result of EmitLValue here rather than
+      // emitting call arguments, in order to preserve TBAA information from
+      // the RHS.
+      LValue RHS = isa<CXXOperatorCallExpr>(CE)
+                       ? TrivialAssignmentRHS
+                       : EmitLValue(*CE->arg_begin());
+      EmitAggregateAssign(This, RHS, CE->getType());
+      return RValue::get(This.getPointer(*this));
     }
+
+    assert(MD->getParent()->mayInsertExtraPadding() &&
+           "unknown trivial member function");
   }
 
   // Compute the function type we're calling.
@@ -328,7 +343,8 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
     if (IsImplicitObjectCXXThis || isa<DeclRefExpr>(IOA))
       SkippedChecks.set(SanitizerKind::Null, true);
   }
-  EmitTypeCheck(CodeGenFunction::TCK_MemberCall, CallLoc, This.getPointer(),
+  EmitTypeCheck(CodeGenFunction::TCK_MemberCall, CallLoc,
+                This.getPointer(*this),
                 C.getRecordType(CalleeDecl->getParent()),
                 /*Alignment=*/CharUnits::Zero(), SkippedChecks);
 
@@ -345,9 +361,9 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
            "Destructor shouldn't have explicit parameters");
     assert(ReturnValue.isNull() && "Destructor shouldn't have return value");
     if (UseVirtualCall) {
-      CGM.getCXXABI().EmitVirtualDestructorCall(
-          *this, Dtor, Dtor_Complete, This.getAddress(),
-          cast<CXXMemberCallExpr>(CE));
+      CGM.getCXXABI().EmitVirtualDestructorCall(*this, Dtor, Dtor_Complete,
+                                                This.getAddress(*this),
+                                                cast<CXXMemberCallExpr>(CE));
     } else {
       GlobalDecl GD(Dtor, Dtor_Complete);
       CGCallee Callee;
@@ -362,7 +378,7 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
 
       QualType ThisTy =
           IsArrow ? Base->getType()->getPointeeType() : Base->getType();
-      EmitCXXDestructorCall(GD, Callee, This.getPointer(), ThisTy,
+      EmitCXXDestructorCall(GD, Callee, This.getPointer(*this), ThisTy,
                             /*ImplicitParam=*/nullptr,
                             /*ImplicitParamTy=*/QualType(), nullptr);
     }
@@ -374,15 +390,14 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
 
   CGCallee Callee;
   if (UseVirtualCall) {
-    Callee = CGCallee::forVirtual(CE, MD, This.getAddress(), Ty);
+    Callee = CGCallee::forVirtual(CE, MD, This.getAddress(*this), Ty);
   } else {
     if (SanOpts.has(SanitizerKind::CFINVCall) &&
         MD->getParent()->isDynamicClass()) {
       llvm::Value *VTable;
       const CXXRecordDecl *RD;
-      std::tie(VTable, RD) =
-          CGM.getCXXABI().LoadVTablePtr(*this, This.getAddress(),
-                                        MD->getParent());
+      std::tie(VTable, RD) = CGM.getCXXABI().LoadVTablePtr(
+          *this, This.getAddress(*this), CalleeDecl->getParent());
       EmitVTablePtrCheckForCall(RD, VTable, CFITCK_NVCall, CE->getBeginLoc());
     }
 
@@ -401,12 +416,12 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
   if (MD->isVirtual()) {
     Address NewThisAddr =
         CGM.getCXXABI().adjustThisArgumentForVirtualFunctionCall(
-            *this, CalleeDecl, This.getAddress(), UseVirtualCall);
+            *this, CalleeDecl, This.getAddress(*this), UseVirtualCall);
     This.setAddress(NewThisAddr);
   }
 
   return EmitCXXMemberOrOperatorCall(
-      CalleeDecl, Callee, ReturnValue, This.getPointer(),
+      CalleeDecl, Callee, ReturnValue, This.getPointer(*this),
       /*ImplicitParam=*/nullptr, QualType(), CE, RtlArgs);
 }
 
@@ -428,7 +443,7 @@ CodeGenFunction::EmitCXXMemberPointerCallExpr(const CXXMemberCallExpr *E,
   if (BO->getOpcode() == BO_PtrMemI)
     This = EmitPointerWithAlignment(BaseExpr);
   else
-    This = EmitLValue(BaseExpr).getAddress();
+    This = EmitLValue(BaseExpr).getAddress(*this);
 
   EmitTypeCheck(TCK_MemberCall, E->getExprLoc(), This.getPointer(),
                 QualType(MPT->getClass(), 0));
@@ -2103,7 +2118,7 @@ static bool isGLValueFromPointerDeref(const Expr *E) {
 static llvm::Value *EmitTypeidFromVTable(CodeGenFunction &CGF, const Expr *E,
                                          llvm::Type *StdTypeInfoPtrTy) {
   // Get the vtable pointer.
-  Address ThisPtr = CGF.EmitLValue(E).getAddress();
+  Address ThisPtr = CGF.EmitLValue(E).getAddress(CGF);
 
   QualType SrcRecordTy = E->getType();
 

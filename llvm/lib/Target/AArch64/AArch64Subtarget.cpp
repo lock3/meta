@@ -94,12 +94,6 @@ void AArch64Subtarget::initializeProperties() {
     MinPrefetchStride = 2048;
     MaxPrefetchIterationsAhead = 3;
     break;
-  case ExynosM1:
-    MaxInterleaveFactor = 4;
-    MaxJumpTableSize = 8;
-    PrefFunctionLogAlignment = 4;
-    PrefLoopLogAlignment = 3;
-    break;
   case ExynosM3:
     MaxInterleaveFactor = 4;
     MaxJumpTableSize = 20;
@@ -256,6 +250,10 @@ unsigned AArch64Subtarget::classifyGlobalFunctionReference(
   if (UseNonLazyBind && F && F->hasFnAttribute(Attribute::NonLazyBind) &&
       !TM.shouldAssumeDSOLocal(*GV->getParent(), GV))
     return AArch64II::MO_GOT;
+
+  // Use ClassifyGlobalReference for setting MO_DLLIMPORT/MO_COFFSTUB.
+  if (getTargetTriple().isOSWindows())
+    return ClassifyGlobalReference(GV, TM);
 
   return AArch64II::MO_NO_FLAG;
 }

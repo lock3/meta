@@ -50,6 +50,8 @@ template <class Allocator, u32 MaxTSDCount> struct TSDRegistrySharedT {
   void unmapTestOnly() {
     unmap(reinterpret_cast<void *>(TSDs),
           sizeof(TSD<Allocator>) * NumberOfTSDs);
+    setCurrentTSD(nullptr);
+    pthread_key_delete(PThreadKey);
   }
 
   ALWAYS_INLINE void initThreadMaybe(Allocator *Instance,
@@ -70,9 +72,19 @@ template <class Allocator, u32 MaxTSDCount> struct TSDRegistrySharedT {
     return getTSDAndLockSlow(TSD);
   }
 
+  void disable() {
+    for (u32 I = 0; I < NumberOfTSDs; I++)
+      TSDs[I].lock();
+  }
+
+  void enable() {
+    for (u32 I = 0; I < NumberOfTSDs; I++)
+      TSDs[I].unlock();
+  }
+
 private:
   ALWAYS_INLINE void setCurrentTSD(TSD<Allocator> *CurrentTSD) {
-#if SCUDO_ANDROID
+#if _BIONIC
     *getAndroidTlsPtr() = reinterpret_cast<uptr>(CurrentTSD);
 #elif SCUDO_LINUX
     ThreadTSD = CurrentTSD;
@@ -84,7 +96,7 @@ private:
   }
 
   ALWAYS_INLINE TSD<Allocator> *getCurrentTSD() {
-#if SCUDO_ANDROID
+#if _BIONIC
     return reinterpret_cast<TSD<Allocator> *>(*getAndroidTlsPtr());
 #elif SCUDO_LINUX
     return ThreadTSD;
@@ -152,12 +164,12 @@ private:
   u32 CoPrimes[MaxTSDCount];
   bool Initialized;
   HybridMutex Mutex;
-#if SCUDO_LINUX && !SCUDO_ANDROID
+#if SCUDO_LINUX && !_BIONIC
   static THREADLOCAL TSD<Allocator> *ThreadTSD;
 #endif
 };
 
-#if SCUDO_LINUX && !SCUDO_ANDROID
+#if SCUDO_LINUX && !_BIONIC
 template <class Allocator, u32 MaxTSDCount>
 THREADLOCAL TSD<Allocator>
     *TSDRegistrySharedT<Allocator, MaxTSDCount>::ThreadTSD;
