@@ -6548,7 +6548,7 @@ void TypeLocReader::VisitUnresolvedUsingTypeLoc(UnresolvedUsingTypeLoc TL) {
 }
 
 void TypeLocReader::VisitCXXRequiredTypeTypeLoc(CXXRequiredTypeTypeLoc TL) {
-  TL.setNameLoc(ReadSourceLocation());
+  TL.setNameLoc(readSourceLocation());
 }
 
 void TypeLocReader::VisitTypedefTypeLoc(TypedefTypeLoc TL) {

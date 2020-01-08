@@ -704,6 +704,16 @@ let Class = CXXDependentVariadicReifierType in {
   }]>;
 }
 
+let Class = CXXRequiredTypeType in {
+  def : Property<"declaration", DeclRef> {
+    let Read = [{ node->getDecl() }];
+  }
+
+  def : Creator<[{
+    return ctx.getCXXRequiredTypeType(cast<CXXRequiredTypeDecl>(declaration));
+  }]>;
+}
+
 let Class = SubstTemplateTypeParmPackType in {
   def : Property<"replacedParameter", QualType> {
     let Read = [{ QualType(node->getReplacedParameter(), 0) }];

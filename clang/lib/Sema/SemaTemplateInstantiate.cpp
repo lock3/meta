@@ -2357,7 +2357,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   // default arg exprs for default constructors if necessary now. Unless we're
   // parsing a class, in which case wait until that's finished.
   if (ParsingClassDepth == 0)
-    ActOnFinishCXXNonNestedClass();
+    ActOnFinishCXXNonNestedClass(Instantiation);
 
   // Instantiate late parsed attributes, and attach them to their decls.
   // See Sema::InstantiateAttrs

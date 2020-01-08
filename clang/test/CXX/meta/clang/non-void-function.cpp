@@ -2,12 +2,12 @@
 
 consteval -> __fragment namespace {
   int reset_foo() {
-  } // expected-warning {{control reaches end of non-void function}}
+  } // expected-warning {{non-void function does not return a value}}
 };
 
 struct Thing {
   consteval -> __fragment struct {
     int reset_foo() {
-    } // expected-warning {{control reaches end of non-void function}}
+    } // expected-warning {{non-void function does not return a value}}
   };
 };

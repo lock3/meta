@@ -6639,7 +6639,7 @@ public:
                                          SourceLocation RBrac,
                                          const ParsedAttributesView &AttrList);
   void ActOnFinishCXXMemberDecls();
-  void ActOnFinishCXXNonNestedClass();
+  void ActOnFinishCXXNonNestedClass(Decl *D);
 
   void ActOnReenterCXXMethodParameter(Scope *S, ParmVarDecl *Param);
   unsigned ActOnReenterTemplateScope(Scope *S, Decl *Template);

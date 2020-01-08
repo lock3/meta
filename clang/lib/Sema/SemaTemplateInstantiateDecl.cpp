@@ -3860,7 +3860,6 @@ FunctionDecl *Sema::SubstSpaceshipAsEqualEqual(CXXRecordDecl *RD,
     RD->addDecl(FD);
   }
   return cast_or_null<FunctionDecl>(R);
->>>>>>> feature/reflect
 }
 
 /// Instantiates a nested template parameter list in the current
