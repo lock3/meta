@@ -370,21 +370,16 @@ void LifetimeContext::TraverseBlocks() {
   static constexpr unsigned IterationLimit = 100000;
 
   DataFlowWorklist WorkList(AC);
-  for (const auto *B : *WorkList.getOrderedCfg()) {
-    // The entry block introduces the function parameters into the psets.
-    if (B == &ControlFlowGraph->getEntry()) {
-      auto &BC = getBlockContext(B);
-      // ExitPSets are the function parameters.
-      getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, B, IsConvertible,
-                           Reporter);
-      if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
-        createEntryPsetsForMembers(Method, BC.ExitPMap);
+  // The entry block introduces the function parameters into the psets.
+  auto Start = &ControlFlowGraph->getEntry();
+  auto &BC = getBlockContext(Start);
+  // ExitPSets are the function parameters.
+  getLifetimeContracts(BC.ExitPMap, FuncDecl, ASTCtxt, Start, IsConvertible,
+                       Reporter);
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
+    createEntryPsetsForMembers(Method, BC.ExitPMap);
 
-      // We only need to process entry block once.
-      continue;
-    }
-    WorkList.enqueue(B);
-  }
+  WorkList.enqueueSuccs(Start);
 
   unsigned IterationCount = 0;
   llvm::BitVector Visited(ControlFlowGraph->getNumBlockIDs());
