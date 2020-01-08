@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeView.h"
 #include "llvm/MC/MCContext.h"
@@ -90,16 +91,13 @@ struct MacroInstantiation {
   SMLoc InstantiationLoc;
 
   /// The buffer where parsing should resume upon instantiation completion.
-  int ExitBuffer;
+  unsigned ExitBuffer;
 
   /// The location where parsing should resume upon instantiation completion.
   SMLoc ExitLoc;
 
   /// The depth of TheCondStack at the start of the instantiation.
   size_t CondStackDepth;
-
-public:
-  MacroInstantiation(SMLoc IL, int EB, SMLoc EL, size_t CondStackDepth);
 };
 
 struct ParseStatementInfo {
@@ -915,13 +913,12 @@ bool AsmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
   // While we have input, parse each statement.
   while (Lexer.isNot(AsmToken::Eof)) {
     ParseStatementInfo Info(&AsmStrRewrites);
-    if (!parseStatement(Info, nullptr))
-      continue;
+    bool Parsed = parseStatement(Info, nullptr);
 
     // If we have a Lexer Error we are on an Error Token. Load in Lexer Error
     // for printing ErrMsg via Lex() only if no (presumably better) parser error
     // exists.
-    if (!hasPendingError() && Lexer.getTok().is(AsmToken::Error)) {
+    if (Parsed && !hasPendingError() && Lexer.getTok().is(AsmToken::Error)) {
       Lex();
     }
 
@@ -929,7 +926,7 @@ bool AsmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
     printPendingErrors();
 
     // Skipping to the next line if needed.
-    if (!getLexer().isAtStartOfStatement())
+    if (Parsed && !getLexer().isAtStartOfStatement())
       eatToEndOfStatement();
   }
 
@@ -2520,11 +2517,6 @@ bool AsmParser::expandMacro(raw_svector_ostream &OS, StringRef Body,
   return false;
 }
 
-MacroInstantiation::MacroInstantiation(SMLoc IL, int EB, SMLoc EL,
-                                       size_t CondStackDepth)
-    : InstantiationLoc(IL), ExitBuffer(EB), ExitLoc(EL),
-      CondStackDepth(CondStackDepth) {}
-
 static bool isOperator(AsmToken::TokenKind kind) {
   switch (kind) {
   default:
@@ -2799,8 +2791,8 @@ bool AsmParser::handleMacroEntry(const MCAsmMacro *M, SMLoc NameLoc) {
 
   // Create the macro instantiation object and add to the current macro
   // instantiation stack.
-  MacroInstantiation *MI = new MacroInstantiation(
-      NameLoc, CurBuffer, getTok().getLoc(), TheCondStack.size());
+  MacroInstantiation *MI = new MacroInstantiation{
+      NameLoc, CurBuffer, getTok().getLoc(), TheCondStack.size()};
   ActiveMacros.push_back(MI);
 
   ++NumOfMacroInstantiations;
@@ -3138,8 +3130,7 @@ bool AsmParser::parseRealValue(const fltSemantics &Semantics, APInt &Res) {
       Value = APFloat::getNaN(Semantics, false, ~0);
     else
       return TokError("invalid floating point literal");
-  } else if (Value.convertFromString(IDVal, APFloat::rmNearestTiesToEven) ==
-             APFloat::opInvalidOp)
+  } else if (!Value.convertFromString(IDVal, APFloat::rmNearestTiesToEven))
     return TokError("invalid floating point literal");
   if (IsNeg)
     Value.changeSign();
@@ -3908,7 +3899,7 @@ bool AsmParser::parseDirectiveCVDefRange() {
         parseAbsoluteExpression(DRRegister))
       return Error(Loc, "expected register number");
 
-    codeview::DefRangeRegisterSym::Header DRHdr;
+    codeview::DefRangeRegisterHeader DRHdr;
     DRHdr.Register = DRRegister;
     DRHdr.MayHaveNoName = 0;
     getStreamer().EmitCVDefRangeDirective(Ranges, DRHdr);
@@ -3921,7 +3912,7 @@ bool AsmParser::parseDirectiveCVDefRange() {
         parseAbsoluteExpression(DROffset))
       return Error(Loc, "expected offset value");
 
-    codeview::DefRangeFramePointerRelSym::Header DRHdr;
+    codeview::DefRangeFramePointerRelHeader DRHdr;
     DRHdr.Offset = DROffset;
     getStreamer().EmitCVDefRangeDirective(Ranges, DRHdr);
     break;
@@ -3938,7 +3929,7 @@ bool AsmParser::parseDirectiveCVDefRange() {
         parseAbsoluteExpression(DROffsetInParent))
       return Error(Loc, "expected offset value");
 
-    codeview::DefRangeSubfieldRegisterSym::Header DRHdr;
+    codeview::DefRangeSubfieldRegisterHeader DRHdr;
     DRHdr.Register = DRRegister;
     DRHdr.MayHaveNoName = 0;
     DRHdr.OffsetInParent = DROffsetInParent;
@@ -3963,7 +3954,7 @@ bool AsmParser::parseDirectiveCVDefRange() {
         parseAbsoluteExpression(DRBasePointerOffset))
       return Error(Loc, "expected base pointer offset value");
 
-    codeview::DefRangeRegisterRelSym::Header DRHdr;
+    codeview::DefRangeRegisterRelHeader DRHdr;
     DRHdr.Register = DRRegister;
     DRHdr.Flags = DRFlags;
     DRHdr.BasePointerOffset = DRBasePointerOffset;
@@ -5544,8 +5535,8 @@ void AsmParser::instantiateMacroLikeBody(MCAsmMacro *M, SMLoc DirectiveLoc,
 
   // Create the macro instantiation object and add to the current macro
   // instantiation stack.
-  MacroInstantiation *MI = new MacroInstantiation(
-      DirectiveLoc, CurBuffer, getTok().getLoc(), TheCondStack.size());
+  MacroInstantiation *MI = new MacroInstantiation{
+      DirectiveLoc, CurBuffer, getTok().getLoc(), TheCondStack.size()};
   ActiveMacros.push_back(MI);
 
   // Jump to the macro instantiation and prime the lexer.
@@ -5812,10 +5803,6 @@ bool AsmParser::parseMSInlineAsm(
     for (unsigned i = 1, e = Info.ParsedOperands.size(); i != e; ++i) {
       MCParsedAsmOperand &Operand = *Info.ParsedOperands[i];
 
-      // Immediate.
-      if (Operand.isImm())
-        continue;
-
       // Register operand.
       if (Operand.isReg() && !Operand.needAddressOf() &&
           !getTargetParser().OmitRegisterFromClobberLists(Operand.getReg())) {
@@ -5835,19 +5822,31 @@ bool AsmParser::parseMSInlineAsm(
       if (!OpDecl)
         continue;
 
+      StringRef Constraint = Operand.getConstraint();
+      if (Operand.isImm()) {
+        // Offset as immediate
+        if (Operand.isOffsetOfLocal())
+          Constraint = "r";
+        else
+          Constraint = "i";
+      }
+
       bool isOutput = (i == 1) && Desc.mayStore();
       SMLoc Start = SMLoc::getFromPointer(SymName.data());
       if (isOutput) {
         ++InputIdx;
         OutputDecls.push_back(OpDecl);
         OutputDeclsAddressOf.push_back(Operand.needAddressOf());
-        OutputConstraints.push_back(("=" + Operand.getConstraint()).str());
+        OutputConstraints.push_back(("=" + Constraint).str());
         AsmStrRewrites.emplace_back(AOK_Output, Start, SymName.size());
       } else {
         InputDecls.push_back(OpDecl);
         InputDeclsAddressOf.push_back(Operand.needAddressOf());
-        InputConstraints.push_back(Operand.getConstraint().str());
-        AsmStrRewrites.emplace_back(AOK_Input, Start, SymName.size());
+        InputConstraints.push_back(Constraint.str());
+        if (Operand.isCallOperand())
+          AsmStrRewrites.emplace_back(AOK_CallInput, Start, SymName.size());
+        else
+          AsmStrRewrites.emplace_back(AOK_Input, Start, SymName.size());
       }
     }
 
@@ -5894,7 +5893,11 @@ bool AsmParser::parseMSInlineAsm(
   const char *AsmStart = ASMString.begin();
   const char *AsmEnd = ASMString.end();
   array_pod_sort(AsmStrRewrites.begin(), AsmStrRewrites.end(), rewritesSort);
-  for (const AsmRewrite &AR : AsmStrRewrites) {
+  for (auto it = AsmStrRewrites.begin(); it != AsmStrRewrites.end(); ++it) {
+    const AsmRewrite &AR = *it;
+    // Check if this has already been covered by another rewrite...
+    if (AR.Done)
+      continue;
     AsmRewriteKind Kind = AR.Kind;
 
     const char *Loc = AR.Loc.getPointer();
@@ -5925,9 +5928,32 @@ bool AsmParser::parseMSInlineAsm(
         OS << (AR.IntelExp.hasBaseReg() ? " + " : "")
            << AR.IntelExp.IndexReg;
       if (AR.IntelExp.Scale > 1)
-          OS << " * $$" << AR.IntelExp.Scale;
-      if (AR.IntelExp.Imm || !AR.IntelExp.hasRegs())
-        OS << (AR.IntelExp.hasRegs() ? " + $$" : "$$") << AR.IntelExp.Imm;
+        OS << " * $$" << AR.IntelExp.Scale;
+      if (AR.IntelExp.hasOffset()) {
+        if (AR.IntelExp.hasRegs())
+          OS << " + ";
+        // Fuse this rewrite with a rewrite of the offset name, if present.
+        StringRef OffsetName = AR.IntelExp.OffsetName;
+        SMLoc OffsetLoc = SMLoc::getFromPointer(AR.IntelExp.OffsetName.data());
+        size_t OffsetLen = OffsetName.size();
+        auto rewrite_it = std::find_if(
+            it, AsmStrRewrites.end(), [&](const AsmRewrite &FusingAR) {
+              return FusingAR.Loc == OffsetLoc && FusingAR.Len == OffsetLen &&
+                     (FusingAR.Kind == AOK_Input ||
+                      FusingAR.Kind == AOK_CallInput);
+            });
+        if (rewrite_it == AsmStrRewrites.end()) {
+          OS << "offset " << OffsetName;
+        } else if (rewrite_it->Kind == AOK_CallInput) {
+          OS << "${" << InputIdx++ << ":P}";
+          rewrite_it->Done = true;
+        } else {
+          OS << '$' << InputIdx++;
+          rewrite_it->Done = true;
+        }
+      }
+      if (AR.IntelExp.Imm || AR.IntelExp.emitImm())
+        OS << (AR.IntelExp.emitImm() ? "$$" : " + $$") << AR.IntelExp.Imm;
       if (AR.IntelExp.NeedBracs)
         OS << "]";
       break;
@@ -5936,6 +5962,9 @@ bool AsmParser::parseMSInlineAsm(
       break;
     case AOK_Input:
       OS << '$' << InputIdx++;
+      break;
+    case AOK_CallInput:
+      OS << "${" << InputIdx++ << ":P}";
       break;
     case AOK_Output:
       OS << '$' << OutputIdx++;

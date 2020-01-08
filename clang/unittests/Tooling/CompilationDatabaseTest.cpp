@@ -749,6 +749,7 @@ TEST_F(InterpolateTest, Language) {
   add("dir/foo.cpp", "-std=c++17");
   add("dir/bar.c", "");
   add("dir/baz.cee", "-x c");
+  add("dir/aux.cpp", "-std=c++17 -x objective-c++");
 
   // .h is ambiguous, so we add explicit language flags
   EXPECT_EQ(getCommand("foo.h"),
@@ -767,6 +768,9 @@ TEST_F(InterpolateTest, Language) {
   Entries.erase(path(StringRef("dir/bar.c")));
   // Now we transfer across languages, so drop -std too.
   EXPECT_EQ(getCommand("foo.c"), "clang -D dir/foo.cpp");
+  // Prefer -x over -std when overriding language.
+  EXPECT_EQ(getCommand("aux.h"),
+            "clang -D dir/aux.cpp -x objective-c++-header -std=c++17");
 }
 
 TEST_F(InterpolateTest, Strip) {
@@ -857,6 +861,36 @@ TEST_F(TargetAndModeTest, TargetAndMode) {
             "clang-cl --driver-mode=cl foo.cpp -D foo.cpp");
   EXPECT_EQ(getCommand("bar.cpp"),
             "clang++ --driver-mode=g++ bar.cpp -D bar.cpp");
+}
+
+class ExpandResponseFilesTest : public MemDBTest {
+public:
+  ExpandResponseFilesTest() : FS(new llvm::vfs::InMemoryFileSystem) {}
+
+protected:
+  void addFile(StringRef File, StringRef Content) {
+    ASSERT_TRUE(
+        FS->addFile(File, 0, llvm::MemoryBuffer::getMemBufferCopy(Content)));
+  }
+
+  std::string getCommand(llvm::StringRef F) {
+    auto Results = expandResponseFiles(std::make_unique<MemCDB>(Entries), FS)
+                       ->getCompileCommands(path(F));
+    if (Results.empty())
+      return "none";
+    return llvm::join(Results[0].CommandLine, " ");
+  }
+
+  llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> FS;
+};
+
+TEST_F(ExpandResponseFilesTest, ExpandResponseFiles) {
+  addFile(path(StringRef("rsp1.rsp")), "-Dflag");
+
+  add("foo.cpp", "clang", "@rsp1.rsp");
+  add("bar.cpp", "clang", "-Dflag");
+  EXPECT_EQ(getCommand("foo.cpp"), "clang foo.cpp -D foo.cpp -Dflag");
+  EXPECT_EQ(getCommand("bar.cpp"), "clang bar.cpp -D bar.cpp -Dflag");
 }
 
 } // end namespace tooling

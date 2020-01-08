@@ -436,7 +436,8 @@ Error opts::symbols::findFunctions(lldb_private::Module &Module) {
   } else if (Regex) {
     RegularExpression RE(Name);
     assert(RE.IsValid());
-    Symfile.FindFunctions(RE, true, false, List);
+    List.Clear();
+    Symfile.FindFunctions(RE, true, List);
   } else {
     Expected<CompilerDeclContext> ContextOr = getDeclContext(Symfile);
     if (!ContextOr)
@@ -444,8 +445,9 @@ Error opts::symbols::findFunctions(lldb_private::Module &Module) {
     CompilerDeclContext *ContextPtr =
         ContextOr->IsValid() ? &*ContextOr : nullptr;
 
+    List.Clear();
     Symfile.FindFunctions(ConstString(Name), ContextPtr, getFunctionNameFlags(),
-                         true, false, List);
+                         true, List);
   }
   outs() << formatv("Found {0} functions:\n", List.GetSize());
   StreamString Stream;
@@ -527,7 +529,7 @@ Error opts::symbols::findTypes(lldb_private::Module &Module) {
     Symfile.FindTypes(ConstString(Name), ContextPtr, UINT32_MAX, SearchedFiles,
                       Map);
   else
-    Module.FindTypes(parseCompilerContext(), languages, Map);
+    Module.FindTypes(parseCompilerContext(), languages, SearchedFiles, Map);
 
   outs() << formatv("Found {0} types:\n", Map.GetSize());
   StreamString Stream;
@@ -547,7 +549,8 @@ Error opts::symbols::findVariables(lldb_private::Module &Module) {
     CompUnitSP CU;
     for (size_t Ind = 0; !CU && Ind < Module.GetNumCompileUnits(); ++Ind) {
       CompUnitSP Candidate = Module.GetCompileUnitAtIndex(Ind);
-      if (!Candidate || Candidate->GetFilename().GetStringRef() != File)
+      if (!Candidate ||
+          Candidate->GetPrimaryFile().GetFilename().GetStringRef() != File)
         continue;
       if (CU)
         return make_string_error("Multiple compile units for file `{0}` found.",
@@ -600,11 +603,9 @@ Error opts::symbols::dumpAST(lldb_private::Module &Module) {
   if (!clang_ast_ctx)
     return make_string_error("Retrieved TypeSystem was not a ClangASTContext");
 
-  auto ast_ctx = clang_ast_ctx->getASTContext();
-  if (!ast_ctx)
-    return make_string_error("Can't retrieve AST context.");
+  clang::ASTContext &ast_ctx = clang_ast_ctx->getASTContext();
 
-  clang::TranslationUnitDecl *tu = ast_ctx->getTranslationUnitDecl();
+  clang::TranslationUnitDecl *tu = ast_ctx.getTranslationUnitDecl();
   if (!tu)
     return make_string_error("Can't retrieve translation unit declaration.");
 
@@ -621,7 +622,7 @@ Error opts::symbols::dumpClangAST(lldb_private::Module &Module) {
     return make_string_error("Module has no symbol file.");
 
   llvm::Expected<TypeSystem &> type_system_or_err =
-      symfile->GetTypeSystemForLanguage(eLanguageTypeC_plus_plus);
+      symfile->GetTypeSystemForLanguage(eLanguageTypeObjC_plus_plus);
   if (!type_system_or_err)
     return make_string_error("Can't retrieve ClangASTContext");
 
@@ -651,7 +652,8 @@ Error opts::symbols::verify(lldb_private::Module &Module) {
     if (!comp_unit)
       return make_string_error("Connot parse compile unit {0}.", i);
 
-    outs() << "Processing '" << comp_unit->GetFilename().AsCString()
+    outs() << "Processing '"
+           << comp_unit->GetPrimaryFile().GetFilename().AsCString()
            << "' compile unit.\n";
 
     LineTable *lt = comp_unit->GetLineTable();

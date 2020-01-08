@@ -120,8 +120,8 @@ Thumb2InstrInfo::isLegalToSplitMBBAt(MachineBasicBlock &MBB,
 
 void Thumb2InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                   MachineBasicBlock::iterator I,
-                                  const DebugLoc &DL, unsigned DestReg,
-                                  unsigned SrcReg, bool KillSrc) const {
+                                  const DebugLoc &DL, MCRegister DestReg,
+                                  MCRegister SrcReg, bool KillSrc) const {
   // Handle SPR, DPR, and QPR copies.
   if (!ARM::GPRRegClass.contains(DestReg, SrcReg))
     return ARMBaseInstrInfo::copyPhysReg(MBB, I, DL, DestReg, SrcReg, KillSrc);
@@ -161,7 +161,7 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
     // otherwise).
     if (Register::isVirtualRegister(SrcReg)) {
       MachineRegisterInfo *MRI = &MF.getRegInfo();
-      MRI->constrainRegClass(SrcReg, &ARM::GPRPair_with_gsub_1_in_GPRwithAPSRnospRegClass);
+      MRI->constrainRegClass(SrcReg, &ARM::GPRPairnospRegClass);
     }
 
     MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(ARM::t2STRDi8));
@@ -202,8 +202,7 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
     // otherwise).
     if (Register::isVirtualRegister(DestReg)) {
       MachineRegisterInfo *MRI = &MF.getRegInfo();
-      MRI->constrainRegClass(DestReg,
-                             &ARM::GPRPair_with_gsub_1_in_GPRwithAPSRnospRegClass);
+      MRI->constrainRegClass(DestReg, &ARM::GPRPairnospRegClass);
     }
 
     MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(ARM::t2LDRDi8));
@@ -304,50 +303,41 @@ void llvm::emitT2RegPlusImmediate(MachineBasicBlock &MBB,
       continue;
     }
 
-    bool HasCCOut = true;
-    if (BaseReg == ARM::SP) {
-      // sub sp, sp, #imm7
-      if (DestReg == ARM::SP && (ThisVal < ((1 << 7)-1) * 4)) {
-        assert((ThisVal & 3) == 0 && "Stack update is not multiple of 4?");
-        Opc = isSub ? ARM::tSUBspi : ARM::tADDspi;
-        BuildMI(MBB, MBBI, dl, TII.get(Opc), DestReg)
-            .addReg(BaseReg)
-            .addImm(ThisVal / 4)
-            .setMIFlags(MIFlags)
-            .add(predOps(ARMCC::AL));
-        NumBytes = 0;
-        continue;
-      }
+    assert((DestReg != ARM::SP || BaseReg == ARM::SP) &&
+           "Writing to SP, from other register.");
 
-      // sub rd, sp, so_imm
-      Opc = isSub ? ARM::t2SUBri : ARM::t2ADDri;
-      if (ARM_AM::getT2SOImmVal(NumBytes) != -1) {
-        NumBytes = 0;
-      } else {
-        // FIXME: Move this to ARMAddressingModes.h?
-        unsigned RotAmt = countLeadingZeros(ThisVal);
-        ThisVal = ThisVal & ARM_AM::rotr32(0xff000000U, RotAmt);
-        NumBytes &= ~ThisVal;
-        assert(ARM_AM::getT2SOImmVal(ThisVal) != -1 &&
-               "Bit extraction didn't work?");
-      }
+    // Try to use T1, as it smaller
+    if ((DestReg == ARM::SP) && (ThisVal < ((1 << 7) - 1) * 4)) {
+      assert((ThisVal & 3) == 0 && "Stack update is not multiple of 4?");
+      Opc = isSub ? ARM::tSUBspi : ARM::tADDspi;
+      BuildMI(MBB, MBBI, dl, TII.get(Opc), DestReg)
+          .addReg(BaseReg)
+          .addImm(ThisVal / 4)
+          .setMIFlags(MIFlags)
+          .add(predOps(ARMCC::AL));
+      break;
+    }
+    bool HasCCOut = true;
+    int ImmIsT2SO = ARM_AM::getT2SOImmVal(ThisVal);
+
+    Opc = isSub ? ARM::t2SUBri : ARM::t2ADDri;
+    // Prefer T2: sub rd, rn, so_imm | sub sp, sp, so_imm
+    if (ImmIsT2SO != -1) {
+      NumBytes = 0;
+    } else if (ThisVal < 4096) {
+      // Prefer T3 if can make it in a single go: subw rd, rn, imm12 | subw sp,
+      // sp, imm12
+      Opc = isSub ? ARM::t2SUBri12 : ARM::t2ADDri12;
+      HasCCOut = false;
+      NumBytes = 0;
     } else {
-      assert(DestReg != ARM::SP && BaseReg != ARM::SP);
-      Opc = isSub ? ARM::t2SUBri : ARM::t2ADDri;
-      if (ARM_AM::getT2SOImmVal(NumBytes) != -1) {
-        NumBytes = 0;
-      } else if (ThisVal < 4096) {
-        Opc = isSub ? ARM::t2SUBri12 : ARM::t2ADDri12;
-        HasCCOut = false;
-        NumBytes = 0;
-      } else {
-        // FIXME: Move this to ARMAddressingModes.h?
-        unsigned RotAmt = countLeadingZeros(ThisVal);
-        ThisVal = ThisVal & ARM_AM::rotr32(0xff000000U, RotAmt);
-        NumBytes &= ~ThisVal;
-        assert(ARM_AM::getT2SOImmVal(ThisVal) != -1 &&
-               "Bit extraction didn't work?");
-      }
+      // Use one T2 instruction to reduce NumBytes
+      // FIXME: Move this to ARMAddressingModes.h?
+      unsigned RotAmt = countLeadingZeros(ThisVal);
+      ThisVal = ThisVal & ARM_AM::rotr32(0xff000000U, RotAmt);
+      NumBytes &= ~ThisVal;
+      assert(ARM_AM::getT2SOImmVal(ThisVal) != -1 &&
+             "Bit extraction didn't work?");
     }
 
     // Build the new ADD / SUB.
@@ -376,6 +366,8 @@ negativeOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi12:  return ARM::t2STRBi8;
   case ARM::t2STRHi12:  return ARM::t2STRHi8;
   case ARM::t2PLDi12:   return ARM::t2PLDi8;
+  case ARM::t2PLDWi12:  return ARM::t2PLDWi8;
+  case ARM::t2PLIi12:   return ARM::t2PLIi8;
 
   case ARM::t2LDRi8:
   case ARM::t2LDRHi8:
@@ -386,13 +378,13 @@ negativeOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi8:
   case ARM::t2STRHi8:
   case ARM::t2PLDi8:
+  case ARM::t2PLDWi8:
+  case ARM::t2PLIi8:
     return opcode;
 
   default:
-    break;
+    llvm_unreachable("unknown thumb2 opcode.");
   }
-
-  return 0;
 }
 
 static unsigned
@@ -408,6 +400,8 @@ positiveOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi8:  return ARM::t2STRBi12;
   case ARM::t2STRHi8:  return ARM::t2STRHi12;
   case ARM::t2PLDi8:   return ARM::t2PLDi12;
+  case ARM::t2PLDWi8:  return ARM::t2PLDWi12;
+  case ARM::t2PLIi8:   return ARM::t2PLIi12;
 
   case ARM::t2LDRi12:
   case ARM::t2LDRHi12:
@@ -418,13 +412,13 @@ positiveOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi12:
   case ARM::t2STRHi12:
   case ARM::t2PLDi12:
+  case ARM::t2PLDWi12:
+  case ARM::t2PLIi12:
     return opcode;
 
   default:
-    break;
+    llvm_unreachable("unknown thumb2 opcode.");
   }
-
-  return 0;
 }
 
 static unsigned
@@ -440,6 +434,8 @@ immediateOffsetOpcode(unsigned opcode)
   case ARM::t2STRBs:  return ARM::t2STRBi12;
   case ARM::t2STRHs:  return ARM::t2STRHi12;
   case ARM::t2PLDs:   return ARM::t2PLDi12;
+  case ARM::t2PLDWs:  return ARM::t2PLDWi12;
+  case ARM::t2PLIs:   return ARM::t2PLIi12;
 
   case ARM::t2LDRi12:
   case ARM::t2LDRHi12:
@@ -450,6 +446,8 @@ immediateOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi12:
   case ARM::t2STRHi12:
   case ARM::t2PLDi12:
+  case ARM::t2PLDWi12:
+  case ARM::t2PLIi12:
   case ARM::t2LDRi8:
   case ARM::t2LDRHi8:
   case ARM::t2LDRBi8:
@@ -459,13 +457,13 @@ immediateOffsetOpcode(unsigned opcode)
   case ARM::t2STRBi8:
   case ARM::t2STRHi8:
   case ARM::t2PLDi8:
+  case ARM::t2PLDWi8:
+  case ARM::t2PLIi8:
     return opcode;
 
   default:
-    break;
+    llvm_unreachable("unknown thumb2 opcode.");
   }
-
-  return 0;
 }
 
 bool llvm::rewriteT2FrameIndex(MachineInstr &MI, unsigned FrameRegIdx,

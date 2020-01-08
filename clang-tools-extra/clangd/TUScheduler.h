@@ -39,7 +39,7 @@ struct InputsAndAST {
 struct InputsAndPreamble {
   llvm::StringRef Contents;
   const tooling::CompileCommand &Command;
-  // This can be nullptr if no preamble is availble.
+  // This can be nullptr if no preamble is available.
   const PreambleData *Preamble;
 };
 
@@ -179,6 +179,9 @@ public:
   /// Returns the current contents of the buffer for File, per last update().
   /// The returned StringRef may be invalidated by any write to TUScheduler.
   llvm::StringRef getContents(PathRef File) const;
+
+  /// Returns a snapshot of all file buffer contents, per last update().
+  llvm::StringMap<std::string> getAllFileContents() const;
 
   /// Schedule an async task with no dependencies.
   void run(llvm::StringRef Name, llvm::unique_function<void()> Action);

@@ -114,7 +114,11 @@ public:
   }
 
   unsigned getEstimatedNumberOfCaseClusters(const SwitchInst &SI,
-                                            unsigned &JTSize) {
+                                            unsigned &JTSize,
+                                            ProfileSummaryInfo *PSI,
+                                            BlockFrequencyInfo *BFI) {
+    (void)PSI;
+    (void)BFI;
     JTSize = 0;
     return SI.getNumCases();
   }
@@ -209,6 +213,13 @@ public:
     return false;
   }
 
+  bool preferPredicateOverEpilogue(Loop *L, LoopInfo *LI, ScalarEvolution &SE,
+                                   AssumptionCache &AC, TargetLibraryInfo *TLI,
+                                   DominatorTree *DT,
+                                   const LoopAccessInfo *LAI) const {
+    return false;
+  }
+
   void getUnrollingPreferences(Loop *, ScalarEvolution &,
                                TTI::UnrollingPreferences &) {}
 
@@ -243,9 +254,9 @@ public:
 
   bool shouldFavorBackedgeIndex(const Loop *L) const { return false; }
 
-  bool isLegalMaskedStore(Type *DataType) { return false; }
+  bool isLegalMaskedStore(Type *DataType, MaybeAlign Alignment) { return false; }
 
-  bool isLegalMaskedLoad(Type *DataType) { return false; }
+  bool isLegalMaskedLoad(Type *DataType, MaybeAlign Alignment) { return false; }
 
   bool isLegalNTStore(Type *DataType, Align Alignment) {
     // By default, assume nontemporal memory stores are available for stores
@@ -261,9 +272,13 @@ public:
     return Alignment >= DataSize && isPowerOf2_32(DataSize);
   }
 
-  bool isLegalMaskedScatter(Type *DataType) { return false; }
+  bool isLegalMaskedScatter(Type *DataType, MaybeAlign Alignment) {
+    return false;
+  }
 
-  bool isLegalMaskedGather(Type *DataType) { return false; }
+  bool isLegalMaskedGather(Type *DataType, MaybeAlign Alignment) {
+    return false;
+  }
 
   bool isLegalMaskedCompressStore(Type *DataType) { return false; }
 
@@ -344,17 +359,30 @@ public:
 
   unsigned getIntImmCost(const APInt &Imm, Type *Ty) { return TTI::TCC_Basic; }
 
-  unsigned getIntImmCost(unsigned Opcode, unsigned Idx, const APInt &Imm,
-                         Type *Ty) {
+  unsigned getIntImmCostInst(unsigned Opcode, unsigned Idx, const APInt &Imm,
+                             Type *Ty) {
     return TTI::TCC_Free;
   }
 
-  unsigned getIntImmCost(Intrinsic::ID IID, unsigned Idx, const APInt &Imm,
-                         Type *Ty) {
+  unsigned getIntImmCostIntrin(Intrinsic::ID IID, unsigned Idx,
+                               const APInt &Imm, Type *Ty) {
     return TTI::TCC_Free;
   }
 
-  unsigned getNumberOfRegisters(bool Vector) { return 8; }
+  unsigned getNumberOfRegisters(unsigned ClassID) const { return 8; }
+
+  unsigned getRegisterClassForType(bool Vector, Type *Ty = nullptr) const {
+    return Vector ? 1 : 0;
+  };
+
+  const char* getRegisterClassName(unsigned ClassID) const {
+    switch (ClassID) {
+      default:
+        return "Generic::Unknown Register Class";
+      case 0: return "Generic::ScalarRC";
+      case 1: return "Generic::VectorRC";
+    }
+  }
 
   unsigned getRegisterBitWidth(bool Vector) const { return 32; }
 
@@ -406,7 +434,8 @@ public:
                                   TTI::OperandValueKind Opd2Info,
                                   TTI::OperandValueProperties Opd1PropInfo,
                                   TTI::OperandValueProperties Opd2PropInfo,
-                                  ArrayRef<const Value *> Args) {
+                                  ArrayRef<const Value *> Args,
+                                  const Instruction *CxtI = nullptr) {
     return 1;
   }
 
@@ -434,7 +463,7 @@ public:
     return 1;
   }
 
-  unsigned getMemoryOpCost(unsigned Opcode, Type *Src, unsigned Alignment,
+  unsigned getMemoryOpCost(unsigned Opcode, Type *Src, MaybeAlign Alignment,
                            unsigned AddressSpace, const Instruction *I) {
     return 1;
   }

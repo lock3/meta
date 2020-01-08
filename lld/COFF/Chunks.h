@@ -268,10 +268,6 @@ public:
   public:
     AssociatedIterator() = default;
     AssociatedIterator(SectionChunk *head) : cur(head) {}
-    AssociatedIterator &operator=(const AssociatedIterator &r) {
-      cur = r.cur;
-      return *this;
-    }
     bool operator==(const AssociatedIterator &r) const { return cur == r.cur; }
     const SectionChunk &operator*() const { return *cur; }
     SectionChunk &operator*() { return *cur; }

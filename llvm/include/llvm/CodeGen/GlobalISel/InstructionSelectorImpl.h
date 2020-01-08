@@ -26,6 +26,7 @@
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -573,7 +574,8 @@ bool InstructionSelector::executeMatchTable(
       assert(State.MIs[InsnID] != nullptr && "Used insn before defined");
       MachineOperand &MO = State.MIs[InsnID]->getOperand(OpIdx);
       if (!MO.isReg() ||
-          &RBI.getRegBankFromRegClass(*TRI.getRegClass(RCEnum)) !=
+          &RBI.getRegBankFromRegClass(*TRI.getRegClass(RCEnum),
+                                      MRI.getType(MO.getReg())) !=
               RBI.getRegBank(MO.getReg(), MRI, TRI)) {
         if (handleReject() == RejectAndGiveUp)
           return false;

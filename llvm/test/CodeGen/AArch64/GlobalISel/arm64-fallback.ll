@@ -167,7 +167,7 @@ define void @nonpow2_load_narrowing() {
   ret void
 }
 
-; FALLBACK-WITH-REPORT-ERR: remark: <unknown>:0:0: cannot select: %5:fpr32(s32) = G_EXTRACT %{{[0-9]+}}:fpr(s128), 64 (in function: nonpow2_store_narrowing)
+; FALLBACK-WITH-REPORT-ERR: remark: <unknown>:0:0: cannot select: %14:gpr64(s64), %15:gpr(s1) = G_UADDE %17:gpr, %17:gpr, %13:gpr (in function: nonpow2_store_narrowing)
 ; FALLBACK-WITH-REPORT-ERR: warning: Instruction selection used fallback path for nonpow2_store_narrowing
 ; FALLBACK-WITH-REPORT-OUT-LABEL: nonpow2_store_narrowing:
 define void @nonpow2_store_narrowing(i96* %c) {
@@ -200,3 +200,12 @@ entry:
   call void @use_s128(i128 %p2, i128 %p6)
   ret i32 0
 }
+
+; FALLBACK-WITH-REPORT-ERR: remark: <unknown>:0:0: cannot select: %2:fpr(<4 x s16>) = G_ZEXT %0:fpr(<4 x s8>) (in function: zext_v4s8)
+; FALLBACK-WITH-REPORT-ERR: warning: Instruction selection used fallback path for zext_v4s8
+; FALLBACK-WITH-REPORT-OUT-LABEL: zext_v4s8
+define <4 x i16> @zext_v4s8(<4 x i8> %in) {
+  %ext = zext <4 x i8> %in to <4 x i16>
+  ret <4 x i16> %ext
+}
+

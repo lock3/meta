@@ -176,7 +176,7 @@ TEST_F(TUSchedulerTests, MissingFiles) {
 TEST_F(TUSchedulerTests, WantDiagnostics) {
   std::atomic<int> CallbackCount(0);
   {
-    // To avoid a racy test, don't allow tasks to actualy run on the worker
+    // To avoid a racy test, don't allow tasks to actually run on the worker
     // thread until we've scheduled them all.
     Notification Ready;
     TUScheduler S(
@@ -688,6 +688,15 @@ TEST_F(TUSchedulerTests, Run) {
   S.run("add 2", [&] { Counter += 2; });
   ASSERT_TRUE(S.blockUntilIdle(timeoutSeconds(10)));
   EXPECT_EQ(Counter.load(), 3);
+
+  Notification TaskRun;
+  Key<int> TestKey;
+  WithContextValue CtxWithKey(TestKey, 10);
+  S.run("props context", [&] {
+    EXPECT_EQ(Context::current().getExisting(TestKey), 10);
+    TaskRun.notify();
+  });
+  TaskRun.wait();
 }
 
 TEST_F(TUSchedulerTests, TUStatus) {

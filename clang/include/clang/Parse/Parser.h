@@ -56,6 +56,7 @@ namespace clang {
 ///
 class Parser : public CodeCompletionHandler {
   friend class ColonProtectionRAIIObject;
+  friend class ParsingOpenMPDirectiveRAII;
   friend class InMessageExpressionRAIIObject;
   friend class PoisonSEHIdentifiersRAIIObject;
   friend class ObjCDeclContextSwitch;
@@ -214,6 +215,9 @@ class Parser : public CodeCompletionHandler {
   /// safe in case statements and a few other things.  This is managed by the
   /// ColonProtectionRAIIObject RAII object.
   bool ColonIsSacred;
+
+  /// Parsing OpenMP directive mode.
+  bool OpenMPDirectiveParsing = false;
 
   /// When true, we are directly inside an Objective-C message
   /// send expression.
@@ -766,6 +770,22 @@ private:
     Tok.setAnnotationValue(T.getAsOpaquePtr());
   }
 
+  static NamedDecl *getNonTypeAnnotation(const Token &Tok) {
+    return static_cast<NamedDecl*>(Tok.getAnnotationValue());
+  }
+
+  static void setNonTypeAnnotation(Token &Tok, NamedDecl *ND) {
+    Tok.setAnnotationValue(ND);
+  }
+
+  static IdentifierInfo *getIdentifierAnnotation(const Token &Tok) {
+    return static_cast<IdentifierInfo*>(Tok.getAnnotationValue());
+  }
+
+  static void setIdentifierAnnotation(Token &Tok, IdentifierInfo *ND) {
+    Tok.setAnnotationValue(ND);
+  }
+
   /// Read an already-translated primary expression out of an annotation
   /// token.
   static ExprResult getExprAnnotation(const Token &Tok) {
@@ -799,8 +819,7 @@ private:
     /// Annotation was successful.
     ANK_Success
   };
-  AnnotatedNameKind TryAnnotateName(bool IsAddressOfOperand,
-                                    CorrectionCandidateCallback *CCC = nullptr);
+  AnnotatedNameKind TryAnnotateName(CorrectionCandidateCallback *CCC = nullptr);
 
   /// Push a tok::annot_cxxscope token onto the token stream.
   void AnnotateScopeToken(CXXScopeSpec &SS, bool IsNewAnnotation);
@@ -1106,6 +1125,11 @@ public:
   /// SkipMalformedDecl - Read tokens until we get to some likely good stopping
   /// point for skipping past a simple-declaration.
   void SkipMalformedDecl();
+
+  /// The location of the first statement inside an else that might
+  /// have a missleading indentation. If there is no
+  /// MisleadingIndentationChecker on an else active, this location is invalid.
+  SourceLocation MisleadingIndentationElseLoc;
 
 private:
   //===--------------------------------------------------------------------===//
@@ -1744,13 +1768,13 @@ private:
                                   bool EnteringContext, IdentifierInfo &II,
                                   CXXScopeSpec &SS);
 
-  bool ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
-                                      ParsedType ObjectType,
+  bool ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS, ParsedType ObjectType,
                                       bool EnteringContext,
                                       bool *MayBePseudoDestructor = nullptr,
                                       bool IsTypename = false,
                                       IdentifierInfo **LastII = nullptr,
-                                      bool OnlyNamespace = false);
+                                      bool OnlyNamespace = false,
+                                      bool InUsingDeclaration = false);
 
   //===--------------------------------------------------------------------===//
   // C++11 5.1.2: Lambda expressions
@@ -2943,11 +2967,9 @@ public:
                                             SourceLocation Loc);
   /// Parses OpenMP context selectors and calls \p Callback for each
   /// successfully parsed context selector.
-  bool parseOpenMPContextSelectors(
-      SourceLocation Loc,
-      llvm::function_ref<
-          void(SourceRange, const Sema::OpenMPDeclareVariantCtsSelectorData &)>
-          Callback);
+  bool
+  parseOpenMPContextSelectors(SourceLocation Loc,
+                              SmallVectorImpl<Sema::OMPCtxSelectorData> &Data);
 
   /// Parse clauses for '#pragma omp declare variant'.
   void ParseOMPDeclareVariantClauses(DeclGroupPtrTy Ptr, CachedTokens &Toks,
@@ -3055,15 +3077,14 @@ public:
     SourceLocation RLoc;
     CXXScopeSpec ReductionOrMapperIdScopeSpec;
     DeclarationNameInfo ReductionOrMapperId;
-    OpenMPDependClauseKind DepKind = OMPC_DEPEND_unknown;
-    OpenMPLinearClauseKind LinKind = OMPC_LINEAR_val;
+    int ExtraModifier = -1; ///< Additional modifier for linear, map, depend or
+                            ///< lastprivate clause.
     SmallVector<OpenMPMapModifierKind, OMPMapClause::NumberOfModifiers>
     MapTypeModifiers;
     SmallVector<SourceLocation, OMPMapClause::NumberOfModifiers>
     MapTypeModifiersLoc;
-    OpenMPMapClauseKind MapType = OMPC_MAP_unknown;
     bool IsMapTypeImplicit = false;
-    SourceLocation DepLinMapLoc;
+    SourceLocation DepLinMapLastLoc;
   };
 
   /// Parses clauses with list.

@@ -97,7 +97,10 @@ public:
     GetAsyncProfileData(char *dst, size_t dst_len) const;
 
     void
-    ReportEventState (const lldb::SBEvent &event, FILE *out) const;
+    ReportEventState (const lldb::SBEvent &event, SBFile out) const;
+
+    void
+    ReportEventState (const lldb::SBEvent &event, FileSP BORROWED) const;
 
     void
     AppendEventStateReport (const lldb::SBEvent &event, lldb::SBCommandReturnObject &result);
@@ -414,6 +417,7 @@ public:
     lldb::SBProcessInfo
     GetProcessInfo();
 
+#ifdef SWIGPYTHON
     %pythoncode %{
         def __get_is_alive__(self):
             '''Returns "True" if the process is currently alive, "False" otherwise'''
@@ -492,6 +496,7 @@ public:
         exit_description = property(GetExitDescription, None, doc='''A read only property that returns an exit description as a string of this process when the process state is lldb.eStateExited.''')
         broadcaster = property(GetBroadcaster, None, doc='''A read only property that an lldb object that represents the broadcaster (lldb.SBBroadcaster) for this process.''')
     %}
+#endif
 
 };
 

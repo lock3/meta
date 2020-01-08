@@ -137,7 +137,8 @@ static void printCXXConstructorDestructorName(QualType ClassType,
   ClassType.print(OS, Policy);
 }
 
-void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
+void DeclarationName::print(raw_ostream &OS,
+                            const PrintingPolicy &Policy) const {
   switch (getNameKind()) {
   case DeclarationName::Identifier:
     if (const IdentifierInfo *II = getAsIdentifierInfo())
@@ -522,11 +523,17 @@ bool DeclarationNameInfo::isInstantiationDependent() const {
 std::string DeclarationNameInfo::getAsString() const {
   std::string Result;
   llvm::raw_string_ostream OS(Result);
-  printName(OS);
+  OS << *this;
   return OS.str();
 }
 
-void DeclarationNameInfo::printName(raw_ostream &OS) const {
+raw_ostream &clang::operator<<(raw_ostream &OS, DeclarationNameInfo DNInfo) {
+  LangOptions LO;
+  DNInfo.printName(OS, PrintingPolicy(LangOptions()));
+  return OS;
+}
+
+void DeclarationNameInfo::printName(raw_ostream &OS, PrintingPolicy Policy) const {
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
   case DeclarationName::ObjCZeroArgSelector:
@@ -537,7 +544,7 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXDeductionGuideName:
   case DeclarationName::CXXReflectedIdName:
-    OS << Name;
+    Name.print(OS, Policy);
     return;
 
   case DeclarationName::CXXConstructorName:
@@ -549,13 +556,11 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
       else if (Name.getNameKind() == DeclarationName::CXXConversionFunctionName)
         OS << "operator ";
       LangOptions LO;
-      LO.CPlusPlus = true;
-      LO.Bool = true;
-      PrintingPolicy PP(LO);
-      PP.SuppressScope = true;
-      OS << TInfo->getType().getAsString(PP);
+      Policy.adjustForCPlusPlus();
+      Policy.SuppressScope = true;
+      OS << TInfo->getType().getAsString(Policy);
     } else
-      OS << Name;
+      Name.print(OS, Policy);
     return;
   }
   llvm_unreachable("Unexpected declaration name kind");

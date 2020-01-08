@@ -39,8 +39,9 @@ define i64 @func2(i64 %x, i64 %y) nounwind {
 define i16 @func16(i16 %x, i16 %y) nounwind {
 ; CHECK-LABEL: func16:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
+; CHECK-NEXT:    sxth w8, w0
 ; CHECK-NEXT:    mov w9, #32767
+; CHECK-NEXT:    add w8, w8, w1, sxth
 ; CHECK-NEXT:    cmp w8, w9
 ; CHECK-NEXT:    csel w8, w8, w9, lt
 ; CHECK-NEXT:    cmn w8, #8, lsl #12 // =32768
@@ -54,7 +55,8 @@ define i16 @func16(i16 %x, i16 %y) nounwind {
 define i8 @func8(i8 %x, i8 %y) nounwind {
 ; CHECK-LABEL: func8:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
+; CHECK-NEXT:    sxtb w8, w0
+; CHECK-NEXT:    add w8, w8, w1, sxtb
 ; CHECK-NEXT:    mov w9, #127
 ; CHECK-NEXT:    cmp w8, #127 // =127
 ; CHECK-NEXT:    csel w8, w8, w9, lt
@@ -69,10 +71,12 @@ define i8 @func8(i8 %x, i8 %y) nounwind {
 define i4 @func3(i4 %x, i4 %y) nounwind {
 ; CHECK-LABEL: func3:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add w8, w0, w1
-; CHECK-NEXT:    mov w9, #7
+; CHECK-NEXT:    lsl w8, w1, #28
+; CHECK-NEXT:    sbfx w9, w0, #0, #4
+; CHECK-NEXT:    add w8, w9, w8, asr #28
+; CHECK-NEXT:    mov w10, #7
 ; CHECK-NEXT:    cmp w8, #7 // =7
-; CHECK-NEXT:    csel w8, w8, w9, lt
+; CHECK-NEXT:    csel w8, w8, w10, lt
 ; CHECK-NEXT:    cmn w8, #8 // =8
 ; CHECK-NEXT:    mov w9, #-8
 ; CHECK-NEXT:    csel w0, w8, w9, gt
@@ -84,15 +88,7 @@ define i4 @func3(i4 %x, i4 %y) nounwind {
 define <4 x i32> @vec(<4 x i32> %x, <4 x i32> %y) nounwind {
 ; CHECK-LABEL: vec:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    add v2.4s, v0.4s, v1.4s
-; CHECK-NEXT:    cmlt v4.4s, v2.4s, #0
-; CHECK-NEXT:    mvni v3.4s, #128, lsl #24
-; CHECK-NEXT:    cmlt v1.4s, v1.4s, #0
-; CHECK-NEXT:    cmgt v0.4s, v0.4s, v2.4s
-; CHECK-NEXT:    mvn v5.16b, v4.16b
-; CHECK-NEXT:    bsl v3.16b, v4.16b, v5.16b
-; CHECK-NEXT:    eor v0.16b, v1.16b, v0.16b
-; CHECK-NEXT:    bsl v0.16b, v3.16b, v2.16b
+; CHECK-NEXT:    sqadd v0.4s, v0.4s, v1.4s
 ; CHECK-NEXT:    ret
   %tmp = call <4 x i32> @llvm.sadd.sat.v4i32(<4 x i32> %x, <4 x i32> %y);
   ret <4 x i32> %tmp;

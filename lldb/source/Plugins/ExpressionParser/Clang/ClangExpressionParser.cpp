@@ -10,6 +10,7 @@
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TargetInfo.h"
@@ -515,6 +516,9 @@ ClangExpressionParser::ClangExpressionParser(
     lang_opts.DoubleSquareBracketAttributes = true;
     lang_opts.CPlusPlus11 = true;
 
+    // The Darwin libc expects this macro to be set.
+    lang_opts.GNUCVersion = 40201;
+
     SetupModuleHeaderPaths(m_compiler.get(), m_include_directories,
                            target_sp);
   }
@@ -693,10 +697,7 @@ class CodeComplete : public CodeCompleteConsumer {
 
 public:
   /// Constructs a CodeComplete consumer that can be attached to a Sema.
-  /// \param[out] matches
-  ///    The list of matches that the lldb completion API expects as a result.
-  ///    This may already contain matches, so it's only allowed to append
-  ///    to this variable.
+  ///
   /// \param[out] expr
   ///    The whole expression string that we are currently parsing. This
   ///    string needs to be equal to the input the user typed, and NOT the
@@ -973,7 +974,7 @@ ClangExpressionParser::ParseInternal(DiagnosticManager &diagnostic_manager,
   m_compiler->setASTConsumer(std::move(Consumer));
 
   if (ast_context.getLangOpts().Modules) {
-    m_compiler->createModuleManager();
+    m_compiler->createASTReader();
     m_ast_context->setSema(&m_compiler->getSema());
   }
 
@@ -996,7 +997,7 @@ ClangExpressionParser::ParseInternal(DiagnosticManager &diagnostic_manager,
     } else {
       ast_context.setExternalSource(ast_source);
     }
-    decl_map->InstallASTContext(ast_context, m_compiler->getFileManager());
+    decl_map->InstallASTContext(*m_ast_context);
   }
 
   // Check that the ASTReader is properly attached to ASTContext and Sema.
@@ -1030,15 +1031,6 @@ ClangExpressionParser::ParseInternal(DiagnosticManager &diagnostic_manager,
                                  "while importing modules:");
     diagnostic_manager.AppendMessageToDiagnostic(
         m_pp_callbacks->getErrorString());
-  }
-
-  if (!num_errors) {
-    if (type_system_helper->DeclMap() &&
-        !type_system_helper->DeclMap()->ResolveUnknownTypes()) {
-      diagnostic_manager.Printf(eDiagnosticSeverityError,
-                                "Couldn't infer the type of a variable");
-      num_errors++;
-    }
   }
 
   if (!num_errors) {

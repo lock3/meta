@@ -91,6 +91,8 @@ def err_no_external_assembler : Error<
   "there is no external assembler that can be used on this platform">;
 def err_drv_unable_to_remove_file : Error<
   "unable to remove file: %0">;
+def err_drv_unable_to_set_working_directory : Error <
+  "unable to set working directory: %0">;
 def err_drv_command_failure : Error<
   "unable to execute command: %0">;
 def err_drv_invalid_darwin_version : Error<
@@ -141,8 +143,8 @@ def err_drv_missing_arg_mtp : Error<
   "missing argument to '%0'">;
 def err_drv_invalid_libcxx_deployment : Error<
   "invalid deployment target for -stdlib=libc++ (requires %0 or later)">;
-def err_drv_invalid_argument_to_fdebug_prefix_map : Error<
-  "invalid argument '%0' to -fdebug-prefix-map">;
+def err_drv_invalid_argument_to_option : Error<
+  "invalid argument '%0' to -%1">;
 def err_drv_malformed_sanitizer_blacklist : Error<
   "malformed sanitizer blacklist: '%0'">;
 def err_drv_duplicate_config : Error<

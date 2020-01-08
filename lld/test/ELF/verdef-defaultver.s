@@ -53,7 +53,7 @@
 # DSO-NEXT:      Section: .text
 # DSO-NEXT:    }
 # DSO-NEXT:  ]
-# DSO-NEXT:  Version symbols [
+# DSO-NEXT:  VersionSymbols [
 # DSO-NEXT:    Symbol {
 # DSO-NEXT:      Version: 0
 # DSO-NEXT:      Name:
@@ -75,29 +75,36 @@
 # DSO-NEXT:      Name: c@@V2
 # DSO-NEXT:    }
 # DSO-NEXT:  ]
-# DSO-NEXT:  SHT_GNU_verdef {
+# DSO-NEXT:  VersionDefinitions [
 # DSO-NEXT:    Definition {
 # DSO-NEXT:      Version: 1
-# DSO-NEXT:      Flags: Base
+# DSO-NEXT:      Flags [ (0x1)
+# DSO-NEXT:        Base (0x1)
+# DSO-NEXT:      ]
 # DSO-NEXT:      Index: 1
 # DSO-NEXT:      Hash: 127830196
 # DSO-NEXT:      Name: shared
+# DSO-NEXT:      Predecessors: []
 # DSO-NEXT:    }
 # DSO-NEXT:    Definition {
 # DSO-NEXT:      Version: 1
-# DSO-NEXT:      Flags: 0x0
+# DSO-NEXT:      Flags [ (0x0)
+# DSO-NEXT:      ]
 # DSO-NEXT:      Index: 2
 # DSO-NEXT:      Hash: 1425
 # DSO-NEXT:      Name: V1
+# DSO-NEXT:      Predecessors: []
 # DSO-NEXT:    }
 # DSO-NEXT:    Definition {
 # DSO-NEXT:      Version: 1
-# DSO-NEXT:      Flags: 0x0
+# DSO-NEXT:      Flags [ (0x0)
+# DSO-NEXT:      ]
 # DSO-NEXT:      Index: 3
 # DSO-NEXT:      Hash: 1426
 # DSO-NEXT:      Name: V2
+# DSO-NEXT:      Predecessors: []
 # DSO-NEXT:    }
-# DSO-NEXT:  }
+# DSO-NEXT:  ]
 
 ## Check that we can link against DSO produced.
 # RUN: llvm-mc -filetype=obj -triple=x86_64-unknown-linux %s -o %t2
@@ -142,7 +149,7 @@
 # EXE-NEXT:      Section: Undefined
 # EXE-NEXT:    }
 # EXE-NEXT:  ]
-# EXE-NEXT:  Version symbols [
+# EXE-NEXT:  VersionSymbols [
 # EXE-NEXT:    Symbol {
 # EXE-NEXT:      Version: 0
 # EXE-NEXT:      Name:
@@ -160,9 +167,9 @@
 # EXE-NEXT:      Name: c@V2
 # EXE-NEXT:    }
 # EXE-NEXT:  ]
-# EXE-NEXT:  SHT_GNU_verdef {
-# EXE-NEXT:  }
-# EXE-NEXT:  SHT_GNU_verneed {
+# EXE-NEXT:  VersionDefinitions [
+# EXE-NEXT:  ]
+# EXE-NEXT:  VersionRequirements [
 # EXE-NEXT:    Dependency {
 # EXE-NEXT:      Version: 1
 # EXE-NEXT:      Count: 2
@@ -170,19 +177,21 @@
 # EXE-NEXT:      Entries [
 # EXE-NEXT:        Entry {
 # EXE-NEXT:          Hash: 1425
-# EXE-NEXT:          Flags: 0x0
+# EXE-NEXT:          Flags [ (0x0)
+# EXE-NEXT:          ]
 # EXE-NEXT:          Index: 2
 # EXE-NEXT:          Name: V1
 # EXE-NEXT:        }
 # EXE-NEXT:        Entry {
 # EXE-NEXT:          Hash: 1426
-# EXE-NEXT:          Flags: 0x0
+# EXE-NEXT:          Flags [ (0x0)
+# EXE-NEXT:          ]
 # EXE-NEXT:          Index: 3
 # EXE-NEXT:          Name: V2
 # EXE-NEXT:        }
 # EXE-NEXT:      ]
 # EXE-NEXT:    }
-# EXE-NEXT:  }
+# EXE-NEXT:  ]
 
 .globl _start
 _start:

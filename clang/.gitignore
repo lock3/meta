@@ -38,6 +38,3 @@ test/debuginfo-tests
 .vscode
 .vs
 
-# Emacs created files
-*~
-\#*\#

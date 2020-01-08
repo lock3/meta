@@ -37,6 +37,7 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
@@ -1151,6 +1152,8 @@ bool GCNTargetMachine::parseMachineFunctionInfo(
 
   MFI->Mode.IEEE = YamlMFI.Mode.IEEE;
   MFI->Mode.DX10Clamp = YamlMFI.Mode.DX10Clamp;
+  MFI->Mode.FP32Denormals = YamlMFI.Mode.FP32Denormals;
+  MFI->Mode.FP64FP16Denormals = YamlMFI.Mode.FP64FP16Denormals;
 
   return false;
 }

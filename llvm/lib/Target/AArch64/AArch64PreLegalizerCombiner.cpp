@@ -47,7 +47,11 @@ public:
                                   GISelKnownBits *KB, MachineDominatorTree *MDT)
       : CombinerInfo(/*AllowIllegalOps*/ true, /*ShouldLegalizeIllegal*/ false,
                      /*LegalizerInfo*/ nullptr, EnableOpt, OptSize, MinSize),
-        KB(KB), MDT(MDT) {}
+        KB(KB), MDT(MDT) {
+    if (!Generated.parseCommandLineOption())
+      report_fatal_error("Invalid rule identifier");
+  }
+
   virtual bool combine(GISelChangeObserver &Observer, MachineInstr &MI,
                        MachineIRBuilder &B) const override;
 };
@@ -58,22 +62,6 @@ bool AArch64PreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
   CombinerHelper Helper(Observer, B, KB, MDT);
 
   switch (MI.getOpcode()) {
-  default:
-    return false;
-  case TargetOpcode::COPY:
-    return Helper.tryCombineCopy(MI);
-  case TargetOpcode::G_BR:
-    return Helper.tryCombineBr(MI);
-  case TargetOpcode::G_LOAD:
-  case TargetOpcode::G_SEXTLOAD:
-  case TargetOpcode::G_ZEXTLOAD: {
-    bool Changed = false;
-    Changed |= Helper.tryCombineExtendingLoads(MI);
-    Changed |= Helper.tryCombineIndexedLoadStore(MI);
-    return Changed;
-  }
-  case TargetOpcode::G_STORE:
-    return Helper.tryCombineIndexedLoadStore(MI);
   case TargetOpcode::G_INTRINSIC_W_SIDE_EFFECTS:
     switch (MI.getIntrinsicID()) {
     case Intrinsic::memcpy:
@@ -91,8 +79,15 @@ bool AArch64PreLegalizerCombinerInfo::combine(GISelChangeObserver &Observer,
     }
   }
 
-  if (Generated.tryCombineAll(Observer, MI, B))
+  if (Generated.tryCombineAll(Observer, MI, B, Helper))
     return true;
+
+  switch (MI.getOpcode()) {
+  case TargetOpcode::G_CONCAT_VECTORS:
+    return Helper.tryCombineConcatVectors(MI);
+  case TargetOpcode::G_SHUFFLE_VECTOR:
+    return Helper.tryCombineShuffleVector(MI);
+  }
 
   return false;
 }
@@ -118,7 +113,7 @@ public:
 private:
   bool IsOptNone;
 };
-}
+} // end anonymous namespace
 
 void AArch64PreLegalizerCombiner::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<TargetPassConfig>();

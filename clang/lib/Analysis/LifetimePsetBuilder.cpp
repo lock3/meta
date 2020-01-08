@@ -239,8 +239,8 @@ public:
   void VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E) {
     PSet Singleton = PSet::singleton(E);
     setPSet(E, Singleton);
-    if (hasPSet(E->GetTemporaryExpr()))
-      setPSet(Singleton, getPSet(E->GetTemporaryExpr()), E->getSourceRange());
+    if (hasPSet(E->getSubExpr()))
+      setPSet(Singleton, getPSet(E->getSubExpr()), E->getSourceRange());
   }
 
   void VisitInitListExpr(const InitListExpr *I) {
