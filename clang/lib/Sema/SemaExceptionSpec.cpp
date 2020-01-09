@@ -1411,9 +1411,11 @@ CanThrowResult Sema::canThrow(const Stmt *S) {
   case Stmt::ContinueStmtClass:
   case Stmt::CoreturnStmtClass:
   case Stmt::CoroutineBodyStmtClass:
+  case Stmt::CXXBaseInjectionStmtClass:
   case Stmt::CXXCatchStmtClass:
-  case Stmt::CXXForRangeStmtClass:
   case Stmt::CXXCompositeExpansionStmtClass:
+  case Stmt::CXXForRangeStmtClass:
+  case Stmt::CXXInjectionStmtClass:
   case Stmt::CXXPackExpansionStmtClass:
   case Stmt::DefaultStmtClass:
   case Stmt::DoStmtClass:

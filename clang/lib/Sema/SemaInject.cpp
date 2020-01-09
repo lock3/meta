@@ -685,8 +685,10 @@ bool InjectionContext::ExpandInjectedParameter(
   Expr *Operand = TransformedOperand.get();
   Sema::ExpansionContextBuilder CtxBldr(SemaRef, SemaRef.getCurScope(),
                                         Operand);
-  if (CtxBldr.BuildCalls())
-    ; // TODO: Diag << failed to build calls
+  if (CtxBldr.BuildCalls()) {
+    // TODO: Diag << failed to build calls
+    return true;
+  }
 
   // Traverse the range now and add the exprs to the vector
   Sema::RangeTraverser Traverser(SemaRef, CtxBldr.getKind(),

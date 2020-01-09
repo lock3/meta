@@ -981,7 +981,7 @@ static AccessSpecifier getAccess(const Reflection &R) {
       const TagDecl *TD = cast<TagDecl>(D->getDeclContext());
       return TD->getDefaultAccessSpecifier();
     }
-    if (const CXXBaseSpecifier *B = getReachableBase(R))
+    if (getReachableBase(R))
       return AS_private;
     return AS_none;
   }
@@ -992,6 +992,7 @@ static AccessSpecifier getAccess(const Reflection &R) {
   case AccessModifier::Private:
     return AS_private;
   }
+  llvm_unreachable("unknown access modifier");
 }
 
 /// Returns true if R has public access.
