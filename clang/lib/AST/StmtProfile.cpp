@@ -1168,10 +1168,6 @@ void StmtProfiler::VisitOMPArraySectionExpr(const OMPArraySectionExpr *S) {
   VisitExpr(S);
 }
 
-void StmtProfiler::VisitCXXSelectionExpr(const CXXSelectionExpr *S) {
-  VisitExpr(S);
-}
-
 void StmtProfiler::VisitCXXSelectMemberExpr(const CXXSelectMemberExpr *S) {
   VisitExpr(S);
 }

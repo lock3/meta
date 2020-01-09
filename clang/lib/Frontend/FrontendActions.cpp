@@ -411,6 +411,8 @@ private:
       return "ExceptionSpecEvaluation";
     case CodeSynthesisContext::ExceptionSpecInstantiation:
       return "ExceptionSpecInstantiation";
+    case CodeSynthesisContext::ForLoopInstantiation:
+      return "ForLoopInstantiation";
     case CodeSynthesisContext::DeclaringSpecialMember:
       return "DeclaringSpecialMember";
     case CodeSynthesisContext::DeclaringImplicitEqualityComparison:
