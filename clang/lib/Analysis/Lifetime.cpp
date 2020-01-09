@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 #include "clang/Analysis/Analyses/Lifetime.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
 #include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"

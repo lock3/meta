@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
 #include <map>

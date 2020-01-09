@@ -24,7 +24,6 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/NonTrivialTypeVisitor.h"
 #include "clang/AST/StmtCXX.h"
-#include "clang/Basic/AttributeCommonInfo.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/SourceManager.h"

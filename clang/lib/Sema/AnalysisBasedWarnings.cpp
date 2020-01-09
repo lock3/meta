@@ -2178,7 +2178,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // appropriately.  This is essentially a layering violation.
   if (P.enableCheckUnreachable || P.enableThreadSafetyAnalysis ||
       P.enableConsumedAnalysis) {
-    // TODO check
     // Unreachable code analysis and thread safety require a linearized CFG.
     AC.getCFGBuildOptions().setAllAlwaysAdd();
   }

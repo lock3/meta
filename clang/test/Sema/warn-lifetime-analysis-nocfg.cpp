@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wdangling-gsl -Wreturn-stack-address -verify %s
+// RUN: %clang_cc1 -fsyntax-only -Wdangling -Wdangling-field -Wreturn-stack-address -verify %s
 struct [[gsl::Owner(int)]] MyIntOwner {
   MyIntOwner();
   int &operator*();

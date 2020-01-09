@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/StmtVisitor.h"
