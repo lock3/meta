@@ -296,6 +296,19 @@ let Class = PropertyTypeCase<DeclarationName, "CXXUsingDirective"> in {
     return DeclarationName::getUsingDirectiveName();
   }]>;
 }
+let Class = PropertyTypeCase<DeclarationName, "CXXReflectedIdName"> in {
+  def : Property<"arguments", Array<ExprRef>> {
+    let Read = [{ node.getCXXReflectedIdArguments() }];
+  }
+  def : Creator<[{
+    // Copy the expr arguments into the ASTContext.
+    Expr **ctxArguments = new (ctx) Expr*[arguments.size()];
+    for (size_t i = 0, a = arguments.size(); i != a; ++i)
+      ctxArguments[i] = arguments[i];
+    return ctx.DeclarationNames.getCXXReflectedIdName(
+                                                arguments.size(), ctxArguments);
+  }]>;
+}
 
 // Type cases for TemplateName.
 def : PropertyTypeKind<TemplateName, TemplateNameKind, "node.getKind()">;
@@ -479,6 +492,14 @@ let Class = PropertyTypeCase<TemplateArgument, "Expression"> in {
   }
   def : Creator<[{
     return TemplateArgument(expression, TemplateArgument::Expression);
+  }]>;
+}
+let Class = PropertyTypeCase<TemplateArgument, "Reflected"> in {
+  def : Property<"expression", ExprRef> {
+    let Read = [{ node.getAsExpr() }];
+  }
+  def : Creator<[{
+    return TemplateArgument(expression, TemplateArgument::Reflected);
   }]>;
 }
 let Class = PropertyTypeCase<TemplateArgument, "Pack"> in {
