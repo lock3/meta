@@ -182,15 +182,13 @@ class NamedArgument<string name, bit opt = 0, bit fake = 0> : Argument<name,
                                                                        fake>;
 class TypeArgument<string name, bit opt = 0> : Argument<name, opt>;
 class UnsignedArgument<string name, bit opt = 0> : Argument<name, opt>;
-class VariadicUnsignedArgument<string name, bit opt = 1, bit fake = 0> :
-    Argument<name, opt, fake>;
+class VariadicUnsignedArgument<string name> : Argument<name, 1>;
 class VariadicExprArgument<string name> : Argument<name, 1>;
 class VariadicStringArgument<string name> : Argument<name, 1>;
 class VariadicIdentifierArgument<string name> : Argument<name, 1>;
 
 // Like VariadicUnsignedArgument except values are ParamIdx.
-class VariadicParamIdxArgument<string name, bit opt = 1, bit fake = 0> :
-    Argument<name, opt, fake>;
+class VariadicParamIdxArgument<string name> : Argument<name, 1>;
 
 // A list of identifiers matching parameters or ParamIdx indices.
 class VariadicParamOrParamIdxArgument<string name> : Argument<name, 1>;
