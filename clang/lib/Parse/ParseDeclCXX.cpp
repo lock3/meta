@@ -2520,7 +2520,7 @@ bool Parser::ParseCXXMemberDeclaratorBeforeInitializer(
   // If a simple-asm-expr is present, parse it.
   if (Tok.is(tok::kw_asm)) {
     SourceLocation Loc;
-    ExprResult AsmLabel(ParseSimpleAsm(&Loc));
+    ExprResult AsmLabel(ParseSimpleAsm(/*ForAsmLabel*/ true, &Loc));
     if (AsmLabel.isInvalid())
       SkipUntil(tok::comma, StopAtSemi | StopBeforeMatch);
 
@@ -3347,8 +3347,8 @@ Parser::DeclGroupPtrTy Parser::ParseCXXClassMemberDeclarationWithPragmas(
   }
 
   case tok::annot_pragma_openmp:
-    return ParseOpenMPDeclarativeDirectiveWithExtDecl(AS, AccessAttrs, TagType,
-                                                      TagDecl);
+    return ParseOpenMPDeclarativeDirectiveWithExtDecl(
+        AS, AccessAttrs, /*Delayed=*/true, TagType, TagDecl);
 
   default:
     if (tok::isPragmaAnnotation(Tok.getKind())) {
@@ -3553,8 +3553,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
     Actions.ActOnFinishCXXMemberSpecification(getCurScope(), RecordLoc, TagDecl,
                                               T.getOpenLocation(),
-                                              T.getCloseLocation(),
-                                              attrs);
+                                              T.getCloseLocation(), attrs);
 
     // C++11 [class.mem]p2:
     //   Within the class member-specification, the class is regarded as complete
@@ -3567,6 +3566,7 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
       // declarations and the lexed inline method definitions, along with any
       // delayed attributes.
       SourceLocation SavedPrevTokLocation = PrevTokLocation;
+      ParseLexedPragmas(getCurrentClass());
       ParseLexedAttributes(getCurrentClass());
       ParseLexedMethodDeclarations(getCurrentClass());
 
