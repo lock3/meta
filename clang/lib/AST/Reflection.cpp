@@ -620,7 +620,7 @@ static bool isNamed(const Reflection &R, APValue &Result) {
   if (R.isType())
     return SuccessTrue(R, Result);
 
-  if (const NamedDecl *ND = getReachableNamedAliasDecl(R))
+  if (getReachableNamedAliasDecl(R))
     return SuccessTrue(R, Result);
 
   return SuccessFalse(R, Result);
@@ -784,7 +784,7 @@ static bool isStaticDataMember(const Reflection &R, APValue &Result) {
 
 /// Returns true if R designates a nonstatic data member.
 static bool isNonstaticDataMember(const Reflection &R, APValue &Result) {
-  if (const FieldDecl *D = getAsDataMember(R))
+  if (getAsDataMember(R))
     return SuccessTrue(R, Result);
   return SuccessFalse(R, Result);
 }
@@ -981,7 +981,7 @@ static AccessSpecifier getAccess(const Reflection &R) {
       const TagDecl *TD = cast<TagDecl>(D->getDeclContext());
       return TD->getDefaultAccessSpecifier();
     }
-    if (const CXXBaseSpecifier *B = getReachableBase(R))
+    if (getReachableBase(R))
       return AS_private;
     return AS_none;
   }
@@ -992,6 +992,7 @@ static AccessSpecifier getAccess(const Reflection &R) {
   case AccessModifier::Private:
     return AS_private;
   }
+  llvm_unreachable("unknown access modifier");
 }
 
 /// Returns true if R has public access.
@@ -2393,24 +2394,6 @@ static bool makeReflection(QualType T, unsigned Offset, const APValue &P,
   return true;
 }
 
-/// Set Result to a reflection of T.
-static bool makeReflection(const Type *T, APValue &Result) {
-  assert(T);
-  return makeReflection(QualType(T, 0), Result);
-}
-
-/// Set Result to a reflection of E.
-static bool makeReflection(const Expr *E, APValue &Result) {
-  Result = APValue(RK_declaration, E);
-  return true;
-}
-
-/// Set Result to a reflection of B.
-static bool makeReflection(const CXXBaseSpecifier *B, APValue &Result) {
-  Result = APValue(RK_declaration, B);
-  return true;
-}
-
 /// Set Result to a reflection of B, at the given offset,
 /// for a parent reflection P.
 static bool makeReflection(const CXXBaseSpecifier *B, unsigned Offset,
@@ -2819,22 +2802,6 @@ static bool removeVolatile(const Reflection &R, APValue &Result) {
   return Error(R);
 }
 
-// Equivalent to [meta.trans.cv]p6:
-// The reflected type names the same type as
-// add_const(add_volatile(reflexpr(T))).
-static bool addCv(const Reflection &R, APValue &Result) {
-  if (MaybeType MT = getCanonicalType(R)) {
-    QualType T = *MT;
-    if (!T.isVolatileQualified())
-      T.addVolatile();
-    if (!T.isConstQualified())
-      T.addConst();
-    return makeReflection(T, Result);
-  }
-
-  return Error(R);
-}
-
 // Equivalent to [meta.trans.cv]p4:
 // If typename(R) = T is a reference, function, or top-level
 // const-qualified type, then type names the same type as T, otherwise T const.
@@ -2935,31 +2902,6 @@ static bool addPointer(const Reflection &R, APValue &Result) {
     if (!T.isNull())
       return makeReflection(T.getNonReferenceType(), Result);
     return makeReflection(*MT, Result);
-  }
-
-  return Error(R);
-}
-
-// Equivalent to [meta.trans.other]p4:
-// The reflected type names the same type as
-// remove_cv(remove_reference(typename(R))).
-static bool removeCvRef(const Reflection &R, APValue &Result) {
-  if (MaybeType MT = getCanonicalType(R)) {
-    QualType T = (*MT).getNonReferenceType();
-    if (T.isConstQualified() || T.isVolatileQualified()) {
-      // Strip the const qualifier out of the qualifiers and rebuild the type.
-      Qualifiers Quals = T.getQualifiers();
-      if (T.isConstQualified())
-        Quals.removeConst();
-      if (T.isVolatileQualified())
-        Quals.removeVolatile();
-      QualifierCollector QualCol(Quals);
-      QualType NewType(T.getTypePtr(), 0);
-      NewType = QualCol.apply(R.getContext(), NewType);
-      return makeReflection(NewType, Result);
-    }
-
-    return makeReflection(T, Result);
   }
 
   return Error(R);

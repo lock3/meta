@@ -995,15 +995,15 @@ getAsCXXReflectedType(Sema &SemaRef, Expr *Expression)
   return SemaRef.BuildReflectedType(SourceLocation(), Expression);
 }
 
-bool
-Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
-                           SourceLocation KWLoc, IdentifierInfo *KW,
-                           Expr *Range, SourceLocation LParenLoc,
-                           SourceLocation EllipsisLoc, SourceLocation RParenLoc)
-{
+bool Sema::ActOnVariadicReifier(
+    llvm::SmallVectorImpl<Expr *> &Expressions, SourceLocation KWLoc,
+    IdentifierInfo *KW, Expr *Range, SourceLocation LParenLoc,
+    SourceLocation EllipsisLoc, SourceLocation RParenLoc) {
   Sema::ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
-  if (CtxBldr.BuildCalls())
-    ; // TODO: Diag << failed to build calls
+  if (CtxBldr.BuildCalls()) {
+    // TODO: Diag << failed to build calls
+    return true;
+  }
 
   ExprResult C;
 
@@ -1053,14 +1053,15 @@ Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<Expr *> &Expressions,
   return false;
 }
 
-bool
-Sema::ActOnVariadicReifier(llvm::SmallVectorImpl<QualType> &Types,
-                           SourceLocation KWLoc, Expr *Range,
-                           SourceLocation LParenLoc, SourceLocation EllipsisLoc,
-                           SourceLocation RParenLoc)
-{
+bool Sema::ActOnVariadicReifier(
+    llvm::SmallVectorImpl<QualType> &Types, SourceLocation KWLoc,
+    Expr *Range, SourceLocation LParenLoc, SourceLocation EllipsisLoc,
+    SourceLocation RParenLoc) {
   Sema::ExpansionContextBuilder CtxBldr(*this, getCurScope(), Range);
-  CtxBldr.BuildCalls();
+  if (CtxBldr.BuildCalls()) {
+    // TODO: Diag << failed to build calls
+    return true;
+  }
 
   if (CtxBldr.getKind() == RK_Unknown) {
     QualType T =
