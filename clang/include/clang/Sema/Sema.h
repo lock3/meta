@@ -120,6 +120,7 @@ namespace clang {
   class EnumConstantDecl;
   class Expr;
   class ExtVectorType;
+  class CompleteTemplateArgumentList;
   class FormatAttr;
   class FriendDecl;
   class FunctionDecl;
@@ -723,33 +724,47 @@ public:
     OpaqueParser = P;
   }
 
+  InjectionContext *CurrentInjectionContext = nullptr;
+
   /// When injecting class fragments, definitions of member functions are
   /// not injected immediately. They are deferred, just as they are during
   /// parsing. These injections are processed when the outermost class is
   /// completed.
-  llvm::SmallVector<InjectionContext *, 4> PendingClassMemberInjections;
+  SmallVector<InjectionContext *, 4> PendingClassMemberInjections;
 
   struct PendingInjectionEffect {
     CXXInjectorDecl *MD;
     InjectionEffect Effect;
   };
 
-  llvm::SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
+  SmallVector<PendingInjectionEffect, 4> PendingNamespaceInjections;
 
+  llvm::DenseMap<CXXFragmentExpr *, CompleteTemplateArgumentList>
+    FragmentDependentInstantiationArgs;
+
+  using FragInstantiationArgTy = SmallVector<CompleteTemplateArgumentList, 1>;
+  llvm::DenseMap<CXXRecordDecl *, FragInstantiationArgTy>
+    FragmentInstantiationArgs;
+
+private:
   /// True if we're currently injecting code.
-  bool IsInjectingCode = false;
+  bool InjectingCode = false;
+public:
+  bool isInjectingCode() {
+    return InjectingCode;
+  }
 
   class CodeInjectionTracker {
     Sema &S;
     bool PreviousValue;
   public:
     CodeInjectionTracker(Sema &S)
-      : S(S), PreviousValue(S.IsInjectingCode) {
-      S.IsInjectingCode = true;
+      : S(S), PreviousValue(S.InjectingCode) {
+      S.InjectingCode = true;
     }
 
     ~CodeInjectionTracker() {
-      S.IsInjectingCode = PreviousValue;
+      S.InjectingCode = PreviousValue;
     }
   };
 
@@ -8718,8 +8733,7 @@ public:
   using DeclMappingList = SmallVector<std::pair<Decl *, Decl *>, 8>;
 
   StmtResult SubstStmt(Stmt *S,
-                       const MultiLevelTemplateArgumentList &TemplateArgs,
-                       const DeclMappingList &ExistingMappings);
+                       const MultiLevelTemplateArgumentList &TemplateArgs);
 
   TemplateParameterList *
   SubstTemplateParams(TemplateParameterList *Params, DeclContext *Owner,
@@ -11483,9 +11497,10 @@ public:
                                          ConditionKind CK);
 
   void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
-  Decl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
-                              SmallVectorImpl<Expr *> &Captures);
-  Decl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment, Decl *Content);
+  CXXFragmentDecl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
+                                         SmallVectorImpl<Expr *> &Captures);
+  CXXFragmentDecl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment,
+                                          Decl *Content);
   ExprResult ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                   SmallVectorImpl<Expr *> &Captures);
   ExprResult BuildCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,

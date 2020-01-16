@@ -29,6 +29,7 @@ namespace clang {
 
 class ASTContext;
 class BindingDecl;
+class CompleteTemplateArgumentList;
 class CXXMethodDecl;
 class Decl;
 class DeclaratorDecl;
@@ -62,6 +63,8 @@ class VarDecl;
   /// list will contain a template argument list (int) at depth 0 and a
   /// template argument list (17) at depth 1.
   class MultiLevelTemplateArgumentList {
+    friend CompleteTemplateArgumentList;
+
     /// The template argument list at a certain template depth
     using ArgList = ArrayRef<TemplateArgument>;
 
@@ -152,6 +155,88 @@ class VarDecl;
 
     /// Retrieve the innermost template argument list.
     const ArgList &getInnermost() const {
+      return TemplateArgumentLists.front();
+    }
+  };
+
+  class CompleteTemplateArgumentList {
+    /// The template argument list view at a certain template depth
+    using ArgListView = ArrayRef<TemplateArgument>;
+
+    /// The template argument lists, stored from the innermost template
+    /// argument list (first) to the outermost template argument list (last).
+    SmallVector<SmallVector<TemplateArgument, 4>, 4> TemplateArgumentLists;
+
+    /// The number of outer levels of template arguments that are not
+    /// being substituted.
+    unsigned NumRetainedOuterLevels = 0;
+
+  public:
+    /// Construct an empty set of template argument lists.
+    CompleteTemplateArgumentList() = default;
+
+    /// Construct a non-temporary representation
+    /// of a MutliLevelTemplateArgumentList.
+    explicit CompleteTemplateArgumentList(
+        const MultiLevelTemplateArgumentList &TemplateArgs) {
+      for (ArgListView ArgList : TemplateArgs.TemplateArgumentLists) {
+        TemplateArgumentLists.push_back({});
+        TemplateArgumentLists.back().append(ArgList.begin(), ArgList.end());
+      }
+
+      NumRetainedOuterLevels = TemplateArgs.NumRetainedOuterLevels;
+    }
+
+    operator MultiLevelTemplateArgumentList() const {
+      MultiLevelTemplateArgumentList MultiLevelArgList;
+
+      for (auto &ArgList : TemplateArgumentLists) {
+        MultiLevelArgList.addOuterTemplateArguments(ArgList);
+      }
+      while (MultiLevelArgList.getNumLevels() < getNumLevels()) {
+        MultiLevelArgList.addOuterRetainedLevel();
+      }
+
+      return MultiLevelArgList;
+    }
+
+    /// Determine the number of levels in this template argument
+    /// list.
+    unsigned getNumLevels() const {
+      return TemplateArgumentLists.size() + NumRetainedOuterLevels;
+    }
+
+    /// Determine the number of substituted levels in this template
+    /// argument list.
+    unsigned getNumSubstitutedLevels() const {
+      return TemplateArgumentLists.size();
+    }
+
+    /// Retrieve the template argument at a given depth and index.
+    const TemplateArgument &operator()(unsigned Depth, unsigned Index) const {
+      assert(NumRetainedOuterLevels <= Depth && Depth < getNumLevels());
+      assert(Index < TemplateArgumentLists[getNumLevels() - Depth - 1].size());
+      return TemplateArgumentLists[getNumLevels() - Depth - 1][Index];
+    }
+
+    /// Determine whether there is a non-NULL template argument at the
+    /// given depth and index.
+    ///
+    /// There must exist a template argument list at the given depth.
+    bool hasTemplateArgument(unsigned Depth, unsigned Index) const {
+      assert(Depth < getNumLevels());
+
+      if (Depth < NumRetainedOuterLevels)
+        return false;
+
+      if (Index >= TemplateArgumentLists[getNumLevels() - Depth - 1].size())
+        return false;
+
+      return !(*this)(Depth, Index).isNull();
+    }
+
+    /// Retrieve the innermost template argument list.
+    const ArgListView getInnermost() const {
       return TemplateArgumentLists.front();
     }
   };

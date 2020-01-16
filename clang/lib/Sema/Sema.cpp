@@ -36,6 +36,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaConsumer.h"
 #include "clang/Sema/SemaInternal.h"
+#include "clang/Sema/Template.h"
 #include "clang/Sema/TemplateDeduction.h"
 #include "clang/Sema/TemplateInstCallback.h"
 #include "clang/Sema/TypoCorrection.h"
