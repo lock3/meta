@@ -12491,48 +12491,6 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
   return AliasDecl;
 }
 
-Decl *Sema::ActOnCXXRequiredTypeDecl(AccessSpecifier AS,
-                                     SourceLocation RequiresLoc,
-                                     SourceLocation TypenameLoc,
-                                     IdentifierInfo *Id, bool Typename) {
-  CXXRequiredTypeDecl *RTD =
-    CXXRequiredTypeDecl::Create(Context, CurContext,
-                                RequiresLoc, TypenameLoc, Id, Typename);
-  RTD->setAccess(AS);
-
-  PushOnScopeChains(RTD, getCurScope());
-  return RTD;
-}
-
-Decl *Sema::ActOnCXXRequiredDeclaratorDecl(Scope *CurScope,
-                                           SourceLocation RequiresLoc,
-                                           Declarator &D) {
-  // We don't want to check for linkage, memoize that we're
-  // working on a required declarator for later checks.
-  AnalyzingRequiredDeclarator = true;
-  DeclaratorDecl *DDecl
-    = cast<DeclaratorDecl>(ActOnDeclarator(CurScope, D));
-  AnalyzingRequiredDeclarator = false;
-
-  if (!DDecl)
-    return nullptr;
-
-  // We'll deal with auto deduction later.
-  if (ParsingInitForAutoVars.count(DDecl)) {
-    ParsingInitForAutoVars.erase(DDecl);
-
-    // Since we haven't deduced the auto type, we will run
-    // into problems if the user actually tries to use this
-    // declarator. Make it a dependent deduced auto type.
-    QualType Sub = SubstAutoType(DDecl->getType(), Context.DependentTy);
-    DDecl->setType(Sub);
-  }
-
-  CXXRequiredDeclaratorDecl *RDD =
-    CXXRequiredDeclaratorDecl::Create(Context, CurContext, DDecl, RequiresLoc);
-  return RDD;
-}
-
 namespace {
 struct SpecialMemberExceptionSpecInfo
     : SpecialMemberVisitor<SpecialMemberExceptionSpecInfo> {

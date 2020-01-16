@@ -1679,7 +1679,7 @@ DeclResult Sema::CheckClassTemplate(
   NewTemplate->setLexicalDeclContext(CurContext);
 
   if (TUK == TUK_Definition && (!SkipBody || !SkipBody->ShouldSkip))
-    NewClass->startDefinition();
+    StartDefinition(NewClass);
 
   ProcessDeclAttributeList(S, NewClass, Attr);
 

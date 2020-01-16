@@ -4107,8 +4107,7 @@ StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
 
     InstantiatingTemplate Inst(*this, B->getBeginLoc(), Expansion, Args,
                                B->getSourceRange());
-    SmallVector<std::pair<Decl *, Decl *>, 8> ExistingMappings;
-    StmtResult Instantiation = SubstStmt(Body, MultiArgs, ExistingMappings);
+    StmtResult Instantiation = SubstStmt(Body, MultiArgs);
     if (Instantiation.isInvalid())
       return StmtError();
     Stmts.push_back(Instantiation.get());
