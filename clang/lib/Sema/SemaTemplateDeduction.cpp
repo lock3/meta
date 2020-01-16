@@ -3905,6 +3905,15 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
       return TDK_TooManyArguments;
   }
 
+  // Treat forwarding references as lifetime_const.
+  for (ParmVarDecl *PVD : Function->parameters()) {
+    QualType ToCheck = PVD->getType();
+    if (const auto *ParamExpansion = dyn_cast<PackExpansionType>(ToCheck))
+      ToCheck = ParamExpansion->getPattern();
+    if (isForwardingReference(ToCheck, FirstInnerIndex))
+      PVD->addAttr(LifetimeconstAttr::CreateImplicit(Context));
+  }
+
   // The types of the parameters from which we will perform template argument
   // deduction.
   LocalInstantiationScope InstScope(*this);

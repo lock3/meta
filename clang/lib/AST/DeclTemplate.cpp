@@ -13,6 +13,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTMutationListener.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Expr.h"
@@ -482,6 +483,20 @@ void ClassTemplateDecl::AddPartialSpecialization(
       = getPartialSpecializations().GetOrInsertNode(D);
     (void)Existing;
     assert(Existing->isCanonicalDecl() && "Non-canonical specialization?");
+  }
+
+  // Inherit [[gsl::Owner]]/[[gsl::Pointer]] if D hasn't one of them already.
+  if (!D->hasAttr<OwnerAttr>() && !D->hasAttr<PointerAttr>()) {
+    if(auto *AT = getTemplatedDecl()->getAttr<OwnerAttr>()) {
+      D->addAttr(OwnerAttr::CreateImplicit(getASTContext(),
+                                           AT->getDerefTypeLoc(),
+                                           AT->getLocation()));
+
+    } else if(auto *AT = getTemplatedDecl()->getAttr<PointerAttr>()) {
+      D->addAttr(PointerAttr::CreateImplicit(getASTContext(),
+                                             AT->getDerefTypeLoc(),
+                                             AT->getLocation()));
+    }
   }
 
   if (ASTMutationListener *L = getASTMutationListener())

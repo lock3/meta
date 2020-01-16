@@ -43,11 +43,10 @@ std::string aarch64::getAArch64TargetCPU(const ArgList &Args,
   else if (CPU.size())
     return CPU;
 
-  // Make sure we pick the appropriate Apple CPU if -arch is used or when
-  // targetting a Darwin OS.
+  // Make sure we pick "cyclone" if -arch is used or when targetting a Darwin
+  // OS.
   if (Args.getLastArg(options::OPT_arch) || Triple.isOSDarwin())
-    return Triple.getArch() == llvm::Triple::aarch64_32 ? "apple-s4"
-                                                        : "apple-a7";
+    return "cyclone";
 
   return "generic";
 }
@@ -140,7 +139,7 @@ getAArch64MicroArchFeaturesFromMtune(const Driver &D, StringRef Mtune,
   // Handle CPU name is 'native'.
   if (MtuneLowerCase == "native")
     MtuneLowerCase = llvm::sys::getHostCPUName();
-  if (MtuneLowerCase == "cyclone" || MtuneLowerCase.find("apple") == 0) {
+  if (MtuneLowerCase == "cyclone") {
     Features.push_back("+zcm");
     Features.push_back("+zcz");
   }

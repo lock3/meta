@@ -66,8 +66,6 @@ public:
     bool
     DumpEmulationForAllInstructions (const char *triple);
 
-    STRING_EXTENSION(SBInstructionList)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
         def __iter__(self):

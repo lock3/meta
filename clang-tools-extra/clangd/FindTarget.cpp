@@ -27,7 +27,6 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/TypeLocVisitor.h"
 #include "clang/Basic/LangOptions.h"
-#include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -62,14 +61,9 @@ nodeToString(const ast_type_traits::DynTypedNode &N) {
 // (e.g. an overloaded method in the primary template).
 // This heuristic will give the desired answer in many cases, e.g.
 // for a call to vector<T>::size().
-// The name to look up is provided in the form of a factory that takes
-// an ASTContext, because an ASTContext may be needed to obtain the
-// name (e.g. if it's an operator name), but the caller may not have
-// access to an ASTContext.
-std::vector<const NamedDecl *> getMembersReferencedViaDependentName(
-    const Type *T,
-    llvm::function_ref<DeclarationName(ASTContext &)> NameFactory,
-    bool IsNonstaticMember) {
+std::vector<const NamedDecl *>
+getMembersReferencedViaDependentName(const Type *T, const DeclarationName &Name,
+                                     bool IsNonstaticMember) {
   if (!T)
     return {};
   if (auto *ICNT = T->getAs<InjectedClassNameType>()) {
@@ -86,52 +80,10 @@ std::vector<const NamedDecl *> getMembersReferencedViaDependentName(
   if (!RD->hasDefinition())
     return {};
   RD = RD->getDefinition();
-  DeclarationName Name = NameFactory(RD->getASTContext());
   return RD->lookupDependentName(Name, [=](const NamedDecl *D) {
     return IsNonstaticMember ? D->isCXXInstanceMember()
                              : !D->isCXXInstanceMember();
   });
-}
-
-// Given the type T of a dependent expression that appears of the LHS of a "->",
-// heuristically find a corresponding pointee type in whose scope we could look
-// up the name appearing on the RHS.
-const Type *getPointeeType(const Type *T) {
-  if (!T)
-    return nullptr;
-
-  if (T->isPointerType()) {
-    return T->getAs<PointerType>()->getPointeeType().getTypePtrOrNull();
-  }
-
-  // Try to handle smart pointer types.
-
-  // Look up operator-> in the primary template. If we find one, it's probably a
-  // smart pointer type.
-  auto ArrowOps = getMembersReferencedViaDependentName(
-      T,
-      [](ASTContext &Ctx) {
-        return Ctx.DeclarationNames.getCXXOperatorName(OO_Arrow);
-      },
-      /*IsNonStaticMember=*/true);
-  if (ArrowOps.empty())
-    return nullptr;
-
-  // Getting the return type of the found operator-> method decl isn't useful,
-  // because we discarded template arguments to perform lookup in the primary
-  // template scope, so the return type would just have the form U* where U is a
-  // template parameter type.
-  // Instead, just handle the common case where the smart pointer type has the
-  // form of SmartPtr<X, ...>, and assume X is the pointee type.
-  auto *TST = T->getAs<TemplateSpecializationType>();
-  if (!TST)
-    return nullptr;
-  if (TST->getNumArgs() == 0)
-    return nullptr;
-  const TemplateArgument &FirstArg = TST->getArg(0);
-  if (FirstArg.getKind() != TemplateArgument::Type)
-    return nullptr;
-  return FirstArg.getAsType().getTypePtrOrNull();
 }
 
 // TargetFinder locates the entities that an AST node refers to.
@@ -299,18 +251,24 @@ public:
       VisitCXXDependentScopeMemberExpr(const CXXDependentScopeMemberExpr *E) {
         const Type *BaseType = E->getBaseType().getTypePtrOrNull();
         if (E->isArrow()) {
-          BaseType = getPointeeType(BaseType);
+          // FIXME: Handle smart pointer types by looking up operator->
+          // in the primary template.
+          if (!BaseType || !BaseType->isPointerType()) {
+            return;
+          }
+          BaseType = BaseType->getAs<PointerType>()
+                         ->getPointeeType()
+                         .getTypePtrOrNull();
         }
-        for (const NamedDecl *D : getMembersReferencedViaDependentName(
-                 BaseType, [E](ASTContext &) { return E->getMember(); },
-                 /*IsNonstaticMember=*/true)) {
+        for (const NamedDecl *D :
+             getMembersReferencedViaDependentName(BaseType, E->getMember(),
+                                                  /*IsNonstaticMember=*/true)) {
           Outer.add(D, Flags);
         }
       }
       void VisitDependentScopeDeclRefExpr(const DependentScopeDeclRefExpr *E) {
         for (const NamedDecl *D : getMembersReferencedViaDependentName(
-                 E->getQualifier()->getAsType(),
-                 [E](ASTContext &) { return E->getDeclName(); },
+                 E->getQualifier()->getAsType(), E->getDeclName(),
                  /*IsNonstaticMember=*/false)) {
           Outer.add(D, Flags);
         }

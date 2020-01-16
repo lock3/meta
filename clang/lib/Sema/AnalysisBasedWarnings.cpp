@@ -1973,117 +1973,101 @@ public:
 
 namespace clang {
 namespace lifetime {
+const int Warnings[] = {
+    diag::warn_deref_dangling, diag::warn_deref_nullptr,
+    diag::warn_assign_nullptr, diag::warn_null,
+    diag::warn_dangling,
+};
+const int Notes[] = {diag::note_never_initialized,
+                     diag::note_temporary_destroyed,
+                     diag::note_dereferenced,
+                     diag::note_forbidden_cast,
+                     diag::note_modified,
+                     diag::note_deleted,
+                     diag::note_assigned,
+                     diag::note_null_reason_parameter,
+                     diag::note_null_reason_default_construct,
+                     diag::note_null_reason_compared_to_null};
+
 class Reporter : public LifetimeReporterBase {
   Sema &S;
+  bool FilterWarnings;
   std::set<SourceLocation> WarningLocs;
   bool IgnoreCurrentWarning = false;
 
-  bool enableIfNew(SourceLocation Loc) {
-    auto I = WarningLocs.insert(Loc);
+  bool enableIfNew(SourceRange Range) {
+    auto I = WarningLocs.insert(Range.getBegin());
     IgnoreCurrentWarning = !I.second;
     return !IgnoreCurrentWarning;
   }
 
 public:
-  Reporter(Sema &S) : S(S) {}
+  Reporter(Sema &S, bool FilterWarnings)
+      : S(S), FilterWarnings(FilterWarnings) {}
 
-  void warnPsetOfGlobal(SourceLocation Loc, StringRef VariableName,
+  bool shouldFilterWarnings() const final { return FilterWarnings; }
+
+  void warnPsetOfGlobal(SourceRange Range, StringRef VariableName,
                         std::string ActualPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_pset_of_global) << VariableName << ActualPset;
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_pset_of_global)
+          << VariableName << ActualPset << Range;
+  }
+  void warnNullDangling(WarnType T, SourceRange Range, ValueSource Source,
+                        StringRef ValueName, bool Possibly) final {
+    assert(T == WarnType::Dangling || T == WarnType::Null);
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), Warnings[(int)T])
+          << (int)Source << ValueName << Possibly << Range;
+  }
+  void warn(WarnType T, SourceRange Range, bool Possibly) final {
+    assert((unsigned)T < sizeof(Warnings) / sizeof(Warnings[0]));
+    assert(T != WarnType::Dangling && T != WarnType::Null);
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), Warnings[(int)T]) << Possibly << Range;
+  }
+  void warnNonStaticThrow(SourceRange Range, StringRef ThrownPset) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_non_static_throw)
+          << ThrownPset << Range;
+  }
+  void warnWrongPset(SourceRange Range, ValueSource Source, StringRef ValueName,
+                     StringRef RetPset, StringRef ExpectedPset) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_wrong_pset)
+          << (int)Source << ValueName << RetPset << ExpectedPset << Range;
+  }
+  void warnPointerArithmetic(SourceRange Range) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_lifetime_pointer_arithmetic);
+  }
+  void warnUnsafeCast(SourceRange Range) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_lifetime_unsafe_cast);
   }
 
-  void warnDerefDangling(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_deref_dangling) << possibly;
+  void warnUnsupportedExpr(SourceRange Range) final {
+    if (enableIfNew(Range))
+      S.Diag(Range.getBegin(), diag::warn_unsupported_expression) << Range;
   }
-  void warnDerefNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_deref_nullptr) << possibly;
+  void notePointeeLeftScope(SourceRange Range, std::string Name) final {
+    if (!IgnoreCurrentWarning)
+      S.Diag(Range.getBegin(), diag::note_pointee_left_scope) << Name << Range;
   }
-  void warnParametersAlias(SourceLocation LocParam1, SourceLocation LocParam2,
-                           const std::string &Pointee) final {
-    if(enableIfNew(LocParam1)) {
-      S.Diag(LocParam1, diag::warn_parameter_alias) << Pointee;
-      S.Diag(LocParam2, diag::note_here);
-    }
+  void note(NoteType T, SourceRange Range) final {
+    assert((unsigned)T < sizeof(Notes) / sizeof(Notes[0]));
+    if (!IgnoreCurrentWarning)
+      S.Diag(Range.getBegin(), Notes[(int)T]) << Range;
   }
-  void warnParameterDangling(SourceLocation Loc, bool indirectly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_parameter_dangling) << indirectly;
-  }
-  void warnParameterNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_parameter_null) << possibly;
-  }
-  void warnReturnDangling(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_dangling) << possibly;
-  }
-  void warnReturnNull(SourceLocation Loc, bool possibly) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_null) << possibly;
-  }
-  void warnNonStaticThrow(SourceLocation Loc, StringRef ThrownPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_non_static_throw) << ThrownPset;
-  }
-  void warnReturnWrongPset(SourceLocation Loc, StringRef RetPset, StringRef ExpectedPset) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_return_wrong_pset) << RetPset << ExpectedPset;
-  }
-  void warnPointerArithmetic(SourceLocation Loc) final {
-    if(enableIfNew(Loc))
-      S.Diag(Loc, diag::warn_lifetime_pointer_arithmetic);
-  }
-  void notePointeeLeftScope(SourceLocation Loc, std::string Name) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_pointee_left_scope) << Name;
-  }
-  void noteNeverInitialized(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_never_initialized);
-  }
-  void noteTemporaryDestroyed(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_temporary_destroyed);
-  }
-  void noteForbiddenCast(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_forbidden_cast);
-  }
-  void noteDereferenced(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_dereferenced);
-  }
-  void noteModified(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_modified);
-  }
-  void noteAssigned(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_assigned);
-  }
-  void noteParameterNull(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_parameter);
-  }
-  void noteNullDefaultConstructed(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_default_construct);
-  }
-  void noteNullComparedToNull(SourceLocation Loc) final {
-    if(!IgnoreCurrentWarning)
-      S.Diag(Loc, diag::note_null_reason_compared_to_null);
-  }
-  void debugPset(SourceLocation Loc, StringRef Variable,
+  void debugPset(SourceRange Range, StringRef Variable,
                  std::string Pset) final {
-    S.Diag(Loc, diag::warn_pset) << Variable << Pset;
+    S.Diag(Range.getBegin(), diag::warn_pset) << Variable << Pset << Range;
   }
 
-  void debugTypeCategory(SourceLocation Loc,
-                         TypeCategory Category, StringRef Pointee) final {
-    S.Diag(Loc, diag::warn_lifetime_type_category) << (int)Category << !Pointee.empty() << Pointee;
+  void debugTypeCategory(SourceRange Range, TypeCategory Category,
+                         StringRef Pointee) final {
+    S.Diag(Range.getBegin(), diag::warn_lifetime_type_category)
+        << (int)Category << !Pointee.empty() << Pointee;
   }
 };
 } // namespace lifetime
@@ -2100,6 +2084,7 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
   enableThreadSafetyAnalysis = 0;
   enableConsumedAnalysis = 0;
   enableLifetimeAnalysis = 0;
+  filterLifetimeWarnings = 0;
 }
 
 static unsigned isEnabled(DiagnosticsEngine &D, unsigned diag) {
@@ -2134,6 +2119,7 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
     isEnabled(D, warn_use_in_invalid_state);
 
   DefaultPolicy.enableLifetimeAnalysis = isEnabled(D, warn_deref_dangling);
+  DefaultPolicy.filterLifetimeWarnings = isEnabled(D, warn_lifetime_filtered);
 }
 
 static void flushDiagnostics(Sema &S, const sema::FunctionScopeInfo *fscope) {
@@ -2194,7 +2180,6 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // appropriately.  This is essentially a layering violation.
   if (P.enableCheckUnreachable || P.enableThreadSafetyAnalysis ||
       P.enableConsumedAnalysis) {
-    // TODO check
     // Unreachable code analysis and thread safety require a linearized CFG.
     AC.getCFGBuildOptions().setAllAlwaysAdd();
   }
@@ -2307,126 +2292,21 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     consumed::ConsumedAnalyzer Analyzer(WarningHandler);
     Analyzer.run(AC);
   }
+
   // Check for lifetime safety violations
-  if (P.enableLifetimeAnalysis) {
-
-    struct DiagnosticsSuppressor {
-      DiagnosticsSuppressor(Sema &S) : S(S), PrevDiag(S.Diags.getSuppressAllDiagnostics()) {
-        S.Diags.setSuppressAllDiagnostics(true);
-        PendingLocalImplicitInstantiations = S.PendingLocalImplicitInstantiations;
-        PendingInstantiations = S.PendingInstantiations;
-      }
-      ~DiagnosticsSuppressor() {
-        S.Diags.setSuppressAllDiagnostics(PrevDiag);
-        S.PendingLocalImplicitInstantiations = PendingLocalImplicitInstantiations;
-        S.PendingInstantiations = PendingInstantiations;
-      }
-      Sema& S;
-      bool PrevDiag;
-      std::deque<Sema::PendingImplicitInstantiation> PendingLocalImplicitInstantiations;
-      std::deque<Sema::PendingImplicitInstantiation> PendingInstantiations;
-    };
-
+  if (P.enableLifetimeAnalysis && S.getLangOpts().CPlusPlus) {
     auto isConvertible = [this, D](QualType From, QualType To) {
-      DiagnosticsSuppressor _(S);
       OpaqueValueExpr Expr(D->getBeginLoc(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
-        &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
-        /*InOverloadResolution=*/false, /*CStyle=*/false,
-        /*AllowObjCWritebackConversion=*/false);
+          &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+          /*InOverloadResolution=*/false, /*CStyle=*/false,
+          /*AllowObjCWritebackConversion=*/false);
       return !ICS.isFailure();
     };
 
-    /// Find the viable overload of the given kind on the given class.
-    /// Considers member function and non-member functions. Will create
-    /// template instantiations if necessary.
-    auto lookupOperator = [this](const CXXRecordDecl* R, OverloadedOperatorKind Op) -> FunctionDecl* {
-      // Find all of the overloaded operators visible from this
-      // point. We perform both an operator-name lookup from the local
-      // scope and an argument-dependent lookup based on the types of
-      // the arguments.
-      DiagnosticsSuppressor _(S);
-      UnresolvedSet<16> Functions;
-      S.LookupOverloadedOperatorName(Op, S.getScopeForContext(const_cast<CXXRecordDecl*>(R)), QualType(), QualType(),
-                                    Functions);
-      SourceLocation OpLoc = R->getLocation();
-
-      // The expression itself does not matter, we just need to fake the right QualType.
-      // We are looking for an operator overload that takes an lvalue of class type.
-      Expr* Object = ImplicitCastExpr::Create(S.Context, S.Context.getRecordType(R), CK_NoOp, nullptr, nullptr, VK_LValue);
-      Expr *Args[2] = { Object, nullptr};
-      auto NumArgs = 1;
-      if (Op == OO_Subscript) {
-        auto SizeType = S.Context.getSizeType();
-        Args[1] = IntegerLiteral::Create(S.Context, llvm::APInt(S.Context.getIntWidth(SizeType), 0), SizeType, OpLoc);
-        NumArgs = 2;
-      }
-      ArrayRef<Expr *> ArgsArray(Args, NumArgs);
-
-      // Build an empty overload set.
-      OverloadCandidateSet CandidateSet(OpLoc, OverloadCandidateSet::CSK_Operator);
-
-      // Add the candidates from the given function set. Instantiates templates.
-      S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
-
-      // Add operator candidates that are member functions. Instantiates templates.
-      S.AddMemberOperatorCandidates(Op, OpLoc, ArgsArray, CandidateSet);
-
-      // Perform overload resolution.
-      OverloadCandidateSet::iterator Best;
-      if(CandidateSet.BestViableFunction(S, OpLoc, Best) != OR_Success)
-        return nullptr;
-
-      return Best->Function;
-    };
-
-    /// Find a member function on R with the given name that takes no arguments. Instantiates templates.
-    auto lookupMemberFunction = [this](const CXXRecordDecl* R, StringRef Name) -> FunctionDecl* {
-      // Don't diagnose if we fail here because the template is ill-formed.
-      DiagnosticsSuppressor _(S);
-      SourceLocation Loc = R->getLocation();
-      LookupResult Res(S, DeclarationNameInfo(DeclarationName(&S.Context.Idents.get(Name)), Loc), Sema::LookupMemberName);
-      S.LookupQualifiedName(Res, const_cast<CXXRecordDecl*>(R));
-
-      UnresolvedSet<16> Functions;
-      for(auto* D : Res) {
-        if (isa<FunctionTemplateDecl>(D) || isa<FunctionDecl>(D))
-          Functions.addDecl(D);
-      }
-
-      // The expression itself does not matter, we just need to fake the right QualType.
-      // A member function takes the object as first argument.
-      Expr* Object = ImplicitCastExpr::Create(S.Context, S.Context.getRecordType(R), CK_NoOp, nullptr, nullptr, VK_LValue);
-      Expr *Args[] = { Object};
-      ArrayRef<Expr *> ArgsArray(Args, 1);
-
-      OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
-
-
-
-      S.AddFunctionCandidates(Functions, ArgsArray, CandidateSet);
-
-      OverloadCandidateSet::iterator Best;
-      if(CandidateSet.BestViableFunction(S, Loc, Best) != OR_Success)
-        return nullptr;
-
-      return Best->Function;
-    };
-
-    /// Tries to add the definition to a template specialization
-    /// \post Specialization->hasDefinition() == true if possible
-    auto tryInstantiateClassTemplateSpecialization = [this](ClassTemplateSpecializationDecl* Specialization) {
-      DiagnosticsSuppressor _(S);
-      S.InstantiateClassTemplateSpecialization(Specialization->getLocation(), Specialization, TSK_ImplicitInstantiation, /*Complain=*/false);
-    };
-
-    lifetime::Reporter Reporter{S};
+    lifetime::Reporter Reporter{S, (bool)P.filterLifetimeWarnings};
     if (const auto *FD = dyn_cast<FunctionDecl>(D))
-      lifetime::runAnalysis(FD, S.Context, Reporter,
-                            isConvertible,
-                            lookupOperator,
-                            lookupMemberFunction,
-                            tryInstantiateClassTemplateSpecialization);
+      lifetime::runAnalysis(FD, S.Context, Reporter, isConvertible);
   }
 
   if (!Diags.isIgnored(diag::warn_uninit_var, D->getBeginLoc()) ||

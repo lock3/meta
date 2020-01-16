@@ -105,8 +105,6 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
 
-    STRING_EXTENSION(SBError)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
         value = property(GetError, None, doc='''A read only property that returns the same result as GetError().''')

@@ -702,9 +702,6 @@ bool X86FlagsCopyLoweringPass::runOnMachineFunction(MachineFunction &MF) {
           }
 
           Blocks.push_back(SuccMBB);
-
-          // After this, EFLAGS will be recreated before each use.
-          SuccMBB->removeLiveIn(X86::EFLAGS);
         }
     } while (!Blocks.empty());
 

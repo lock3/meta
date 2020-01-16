@@ -12,282 +12,320 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/LifetimeAttrData.h"
 #include "clang/Analysis/Analyses/LifetimeTypeCategory.h"
 #include <map>
-#include <sstream>
-#include <vector>
+#include <set>
 
 namespace clang {
 namespace lifetime {
+
 /// A Variable can represent a base:
 /// - a local variable: Var contains a non-null VarDecl
-/// - the this pointer: Var contains a null VarDecl
-/// - a life-time extended temporary: Var contains a non-null
-/// MaterializeTemporaryExpr
-/// - a normal temporary: Var contains a null MaterializeTemporaryExpr
+/// - the this pointer: Var contains a non-null RecordDecl
+/// - temporary: Var contains a non-null MaterializeTemporaryExpr
+/// - the return value of the current function: Var contains a null Expr
 /// plus fields of them (in member FDs).
 /// And a list of dereference and field select operations that applied
 /// consecutively to the base.
-struct Variable {
-  Variable(const VarDecl *VD) : Var(VD) {}
-  Variable(const MaterializeTemporaryExpr *MT) : Var(MT) {}
-
-  static Variable temporary() {
-    return Variable(static_cast<const MaterializeTemporaryExpr *>(nullptr));
-  }
-  static Variable thisPointer() {
-    return Variable(static_cast<const VarDecl *>(nullptr));
+class Variable : public ContractVariable {
+public:
+  Variable(const VarDecl *VD) : ContractVariable(VD) {}
+  Variable(const MaterializeTemporaryExpr *MT) : ContractVariable(MT) {
+    assert(MT);
   }
 
-  bool operator==(const Variable &O) const {
-    return Var == O.Var && FDs == O.FDs;
+  Variable(const ContractVariable &CV, const FunctionDecl *FD)
+      : ContractVariable(CV) {
+    if (asParmVarDecl())
+      Var = FD->getParamDecl(asParmVarDecl()->getFunctionScopeIndex());
   }
 
-  bool operator!=(const Variable &O) const { return !(*this == O); }
+  static Variable thisPointer(const RecordDecl *RD) { return Variable(RD); }
 
-  bool operator<(const Variable &O) const {
-    if (Var != O.Var)
-      return Var < O.Var;
-    if (FDs.size() != O.FDs.size())
-      return FDs.size() < O.FDs.size();
-
-    for (auto I = FDs.begin(), J = O.FDs.begin(); I != FDs.end(); ++I, ++J) {
-      if (*I != *J)
-        return std::less<const FieldDecl *>()(*I, *J);
-    }
-    return false;
+  /// A variable that represent the return value of the current function.
+  static Variable returnVal() {
+    return Variable(ContractVariable::returnVal(), nullptr);
   }
 
-  bool isBaseEqual(const Variable &O) const { return Var == O.Var; }
+  // Is O a subobject of this?
+  // Examples:
+  //   a is the subobject of a
+  //   *a is the subobject of *a
+  //   **a is the subobject of **a
+  //   a.b.c is the subobject of a.b
+  //   (*a).b is the subobject of *a
+  //   *(*a).b is NOT the subobject of *a
+  bool isParent(const Variable &O) const {
+    auto isPrefixOf =
+        [this](const llvm::SmallVectorImpl<const FieldDecl *> &OtherFDs) {
+          if (OtherFDs.size() < FDs.size())
+            return false;
+          bool HasField = false;
+          for (const auto *FD : OtherFDs) {
+            if (FD)
+              HasField = true;
+            // Dereferencing a field, we are no longer in the same object.
+            if (HasField && !FD)
+              return false;
+          }
+          return FDs.end() ==
+                 std::mismatch(FDs.begin(), FDs.end(), OtherFDs.begin()).first;
+        };
+    return Var == O.Var && isPrefixOf(O.FDs);
+  }
 
   bool hasStaticLifetime() const {
     if (const auto *VD = Var.dyn_cast<const VarDecl *>())
       return VD->hasGlobalStorage();
-    return isThisPointer() && !FDs.empty();
+    return isThisPointer() && !FDs.empty() &&
+           llvm::none_of(FDs,
+                         [](const FieldDecl *FD) { return FD == nullptr; });
   }
 
-  /// Returns QualType of Variable or empty QualType if it refers to the 'this'.
+  /// Returns QualType of Variable.
+  /// \pre !isReturnVal()
   /// TODO: Should we cache the type instead of calculating?
   QualType getType() const {
-    QualType Base;
-    if (const auto *VD = Var.dyn_cast<const VarDecl *>())
-      Base = VD->getType();
-    else if (const auto *MT = Var.dyn_cast<const MaterializeTemporaryExpr *>())
-      Base = MT->getType();
-    else
-      assert(!FDs.empty() && "Not yet supported for temporary and this.");
-
-    for (auto It = FDs.rbegin(); It != FDs.rend(); ++It) {
-      if (*It) {
-        assert(isThisPointer() || isTemporary() ||
-               (*It)->getParent() == Base->getAsCXXRecordDecl() ||
-               Base->getAsCXXRecordDecl()->isDerivedFrom(
-                   dyn_cast<CXXRecordDecl>((*It)->getParent())));
-        Base = (*It)->getType();
-        break;
-      } else {
-        Base = getPointeeType(Base);
-      }
-    }
-    return Base;
+    int Order;
+    return getTypeAndOrder(Order);
   }
 
   bool isField() const { return !FDs.empty() && FDs.back(); }
 
-  bool isThisPointer() const {
-    return Var.is<const VarDecl *>() && !Var.get<const VarDecl *>();
-  }
+  bool isThisPointer() const { return asThis(); }
 
-  bool isTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           !Var.get<const MaterializeTemporaryExpr *>();
-  }
+  bool isTemporary() const { return asTemporary(); }
 
-  bool isLifetimeExtendedTemporary() const {
-    return Var.is<const MaterializeTemporaryExpr *>() &&
-           Var.get<const MaterializeTemporaryExpr *>();
-  }
-
-  bool isLifetimeExtendedTemporaryBy(const ValueDecl *VD) const {
-    return isLifetimeExtendedTemporary() &&
-           Var.get<const MaterializeTemporaryExpr *>()->getExtendingDecl() ==
-               VD;
+  /// When VD is non-null, returns true if the Variable represents a
+  /// lifetime-extended temporary that is extended by VD. When VD is null,
+  /// returns true if the the Variable is a non-lifetime-extended temporary.
+  bool isTemporaryExtendedBy(const ValueDecl *VD) const {
+    return asTemporary() && asTemporary()->getExtendingDecl() == VD;
   }
 
   const VarDecl *asVarDecl() const { return Var.dyn_cast<const VarDecl *>(); }
 
   // Chain of field accesses starting from VD. Types must match.
-  void addFieldRef(const FieldDecl *FD) { FDs.push_back(FD); }
+  void addFieldRef(const FieldDecl *FD) {
+    assert(FD);
 
-  void deref() { FDs.push_back(nullptr); }
+#ifndef NDEBUG
+    // We can only add fields that are part of the current record.
+    QualType QT = getType();
+    // Fields can only be added if the current type is a record
+    assert(!QT.isNull());
+    const CXXRecordDecl *RD = QT->getAsCXXRecordDecl();
+    assert(RD);
+
+    // Either the fields is a field of this class, or of a base class
+    // or of a derived class (in case of static up-cast).
+    assert(FD->getParent() == RD ||
+           RD->isDerivedFrom(dyn_cast<CXXRecordDecl>(FD->getParent())) ||
+           dyn_cast<CXXRecordDecl>(FD->getParent())->isDerivedFrom(RD));
+#endif
+    FDs.push_back(FD);
+  }
+
+  Variable &deref(int Num = 1) {
+    while (Num--)
+      FDs.push_back(nullptr);
+    return *this;
+  }
 
   bool isDeref() const { return !FDs.empty() && FDs.front() == nullptr; }
 
+  unsigned getOrder() const {
+    int Order;
+    getTypeAndOrder(Order);
+    return Order >= 0 ? Order : 0;
+  }
+
   std::string getName() const {
     std::string Ret;
-    if (Var.is<const MaterializeTemporaryExpr *>()) {
-      auto *MD = Var.get<const MaterializeTemporaryExpr *>();
-      if (MD) {
-        Ret = "(lifetime-extended temporary through ";
-        if (MD->getExtendingDecl())
-          Ret += std::string(MD->getExtendingDecl()->getName()) + ")";
-        else
-          Ret += "(unknown))";
-      } else {
-        Ret = "(temporary)";
-      }
-    } else {
-      auto *VD = Var.get<const VarDecl *>();
-      Ret = (VD ? std::string(VD->getName()) : "this");
-    }
-
-    for (const auto *FD : FDs) {
-      if (FD)
-        Ret += "." + std::string(FD->getName());
+    if (const MaterializeTemporaryExpr *MTE = asTemporary()) {
+      if (MTE->getExtendingDecl())
+        Ret = "(lifetime-extended temporary through " +
+              MTE->getExtendingDecl()->getName().str() + ")";
       else
-        Ret = "(*" + Ret + ")";
+        Ret = "(temporary)";
+
+    } else if (auto *VD = asVarDecl())
+      Ret = VD->getName();
+    else if (isThisPointer())
+      Ret = "this";
+    else if (isReturnVal())
+      Ret = "(return value)";
+    else
+      llvm_unreachable("Invalid state");
+
+    for (unsigned I = 0; I < FDs.size(); ++I) {
+      if (FDs[I]) {
+        if (I > 0 && !FDs[I - 1])
+          Ret = "(" + Ret + ")";
+        Ret += "." + std::string(FDs[I]->getName());
+      } else
+        Ret.insert(0, 1, '*');
     }
     return Ret;
   }
 
-  llvm::PointerUnion<const VarDecl *, const MaterializeTemporaryExpr *> Var;
+private:
+  // The this pointer
+  Variable(const RecordDecl *RD) : ContractVariable(RD) {}
 
-  /// Possibly empty list of fields and deref operations on the base.
-  /// The First entry is the field on base, next entry is the field inside
-  /// there, etc. Null pointers represent a deref operation.
-  llvm::SmallVector<const FieldDecl *, 8> FDs;
+  // Return the type of the base object of this variable, ignoring all
+  // fields and derefs.
+  // \post never returns a null QualType
+  QualType getBaseType() const {
+    assert(!isReturnVal() && "We don't store types of return values here");
+    if (const auto *VD = asVarDecl())
+      return VD->getType();
+    else if (const MaterializeTemporaryExpr *MT = asTemporary())
+      return MT->getType();
+    else if (const RecordDecl *RD = asThis())
+      return RD->getASTContext().getPointerType(
+          RD->getASTContext().getRecordType(RD));
+    else
+      llvm_unreachable("invalid state");
+  }
+
+  QualType getTypeAndOrder(int &Order) const {
+    Order = -1;
+    QualType Base = getBaseType();
+
+    if (classifyTypeCategory(Base) == TypeCategory::Owner)
+      Order = 0;
+
+    for (auto It = FDs.begin(); It != FDs.end(); ++It) {
+      if (*It) {
+        Base = (*It)->getType();
+        if (Order == -1 && classifyTypeCategory(Base) == TypeCategory::Owner)
+          Order = 0;
+      } else {
+        // Dereference the current pointer/owner
+        Base = getPointeeType(Base);
+        if (Order >= 0)
+          ++Order;
+      }
+    }
+    return Base;
+  }
+
+  const MaterializeTemporaryExpr *asTemporary() const {
+    return dyn_cast_or_null<MaterializeTemporaryExpr>(
+        Var.dyn_cast<const Expr *>());
+  }
 };
 
 /// The reason why a pset became invalid
 /// Invariant: (Reason != POINTEE_LEFT_SCOPE || Pointee) && Range.isValid()
-// TODO: We should use source ranges rather than single locations
-//       for user friendliness.
 class InvalidationReason {
-  enum EReason {
-    NOT_INITIALIZED,
-    POINTEE_LEFT_SCOPE,
-    TEMPORARY_LEFT_SCOPE,
-    FORBIDDEN_CAST,
-    DEREFERENCED,
-    MODIFIED
-  } Reason;
-
+  NoteType Reason;
   const VarDecl *Pointee;
   SourceRange Range;
+  const CFGBlock *Block;
+  Optional<Variable> InvalidatedMemory;
 
-  InvalidationReason(SourceRange Range, EReason Reason,
+  InvalidationReason(SourceRange Range, const CFGBlock *Block, NoteType Reason,
                      const VarDecl *Pointee = nullptr)
-      : Reason(Reason), Pointee(Pointee), Range(Range) {
+      : Reason(Reason), Pointee(Pointee), Range(Range), Block(Block) {
     assert(Range.isValid());
   }
 
 public:
-  SourceLocation getLoc() const { return Range.getBegin(); }
+  SourceRange getRange() const { return Range; }
+  Optional<Variable> getInvalidatedMemory() const { return InvalidatedMemory; }
+  void setInvalidatedMemory(const Variable &V) { InvalidatedMemory = V; }
+  const CFGBlock *getBlock() const { return Block; }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
-    switch (Reason) {
-    case NOT_INITIALIZED:
-      Reporter.noteNeverInitialized(getLoc());
-      return;
-    case POINTEE_LEFT_SCOPE:
+    if (Reason == NoteType::PointeeLeftScope) {
       assert(Pointee);
-      Reporter.notePointeeLeftScope(getLoc(), Pointee->getNameAsString());
-      return;
-    case TEMPORARY_LEFT_SCOPE:
-      Reporter.noteTemporaryDestroyed(getLoc());
-      return;
-    case FORBIDDEN_CAST:
-      Reporter.noteForbiddenCast(getLoc());
-      return;
-    case DEREFERENCED:
-      Reporter.noteDereferenced(getLoc());
-      return;
-    case MODIFIED:
-      Reporter.noteModified(getLoc());
+      Reporter.notePointeeLeftScope(Range, Pointee->getNameAsString());
       return;
     }
-    llvm_unreachable("Invalid InvalidationReason::Reason");
+    Reporter.note(Reason, Range);
   }
 
-  static InvalidationReason NotInitialized(SourceRange Range) {
-    return {Range, NOT_INITIALIZED};
+  static InvalidationReason NotInitialized(SourceRange Range,
+                                           const CFGBlock *Block) {
+    return {Range, Block, NoteType::NeverInit};
   }
 
   static InvalidationReason PointeeLeftScope(SourceRange Range,
+                                             const CFGBlock *Block,
                                              const VarDecl *Pointee) {
     assert(Pointee);
-    return {Range, POINTEE_LEFT_SCOPE, Pointee};
+    return {Range, Block, NoteType::PointeeLeftScope, Pointee};
   }
 
-  static InvalidationReason TemporaryLeftScope(SourceRange Range) {
-    return {Range, TEMPORARY_LEFT_SCOPE};
+  static InvalidationReason TemporaryLeftScope(SourceRange Range,
+                                               const CFGBlock *Block) {
+    return {Range, Block, NoteType::TempDestroyed};
   }
 
-  static InvalidationReason Dereferenced(SourceRange Range) {
-    return {Range, DEREFERENCED};
+  static InvalidationReason Dereferenced(SourceRange Range,
+                                         const CFGBlock *Block) {
+    return {Range, Block, NoteType::Dereferenced};
   }
 
-  static InvalidationReason ForbiddenCast(SourceRange Range) {
-    return {Range, FORBIDDEN_CAST};
+  static InvalidationReason ForbiddenCast(SourceRange Range,
+                                          const CFGBlock *Block) {
+    return {Range, Block, NoteType::ForbiddenCast};
   }
 
-  static InvalidationReason Modified(SourceRange Range) {
-    return {Range, MODIFIED};
+  static InvalidationReason Modified(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Modified};
+  }
+
+  static InvalidationReason Deleted(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Deleted};
   }
 };
 
 /// The reason how null entered a pset.
 class NullReason {
   SourceRange Range;
+  const CFGBlock *Block;
+  NoteType Reason;
+  Optional<Variable> NulledMemory;
 
 public:
-  enum EReason {
-    ASSIGNED,
-    PARAMETER_NULL,
-    DEFAULT_CONSTRUCTED,
-    COMPARED_TO_NULL,
-    NULLPTR_CONSTANT
-  } Reason;
+  Optional<Variable> getNulledMemory() const { return NulledMemory; }
+  void setNulledMemory(const Variable &V) { NulledMemory = V; }
+  const CFGBlock *getBlock() const { return Block; }
 
-  NullReason(SourceRange Range, EReason Reason) : Range(Range), Reason(Reason) {
+  NullReason(SourceRange Range, const CFGBlock *Block, NoteType Reason)
+      : Range(Range), Block(Block), Reason(Reason) {
     assert(Range.isValid());
   }
 
-  static NullReason assigned(SourceRange Range) { return {Range, ASSIGNED}; }
-
-  static NullReason parameterNull(SourceRange Range) {
-    return {Range, PARAMETER_NULL};
+  static NullReason assigned(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::Assigned};
   }
 
-  static NullReason defaultConstructed(SourceRange Range) {
-    return {Range, DEFAULT_CONSTRUCTED};
+  static NullReason parameterNull(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::ParamNull};
   }
 
-  static NullReason comparedToNull(SourceRange Range) {
-    return {Range, COMPARED_TO_NULL};
+  static NullReason defaultConstructed(SourceRange Range,
+                                       const CFGBlock *Block) {
+    return {Range, Block, NoteType::NullDefaultConstructed};
   }
 
-  static NullReason nullptrConstant(SourceRange Range) {
-    return {Range, NULLPTR_CONSTANT};
+  static NullReason comparedToNull(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::ComparedToNull};
+  }
+
+  static NullReason nullptrConstant(SourceRange Range, const CFGBlock *Block) {
+    return {Range, Block, NoteType::NullConstant};
   }
 
   void emitNote(LifetimeReporterBase &Reporter) const {
-    switch (Reason) {
-    case ASSIGNED:
-      Reporter.noteAssigned(Range.getBegin());
-      break;
-    case PARAMETER_NULL:
-      Reporter.noteParameterNull(Range.getBegin());
-      break;
-    case DEFAULT_CONSTRUCTED:
-      Reporter.noteNullDefaultConstructed(Range.getBegin());
-      break;
-    case COMPARED_TO_NULL:
-      Reporter.noteNullComparedToNull(Range.getBegin());
-      break;
-    case NULLPTR_CONSTANT:
-      break; // not diagnosed, hopefully obvious
-    }
+    if (Reason == NoteType::NullConstant)
+      return; // not diagnosed, hopefully obvious
+    Reporter.note(Reason, Range);
   }
 };
 
@@ -295,12 +333,20 @@ public:
 /// - null
 /// - static
 /// - invalid
-/// - variables with an order
+/// - variables
 /// It a Pset contains non of that, its "unknown".
 class PSet {
 public:
   // Initializes an unknown pset
   PSet() : ContainsNull(false), ContainsInvalid(false), ContainsStatic(false) {}
+  PSet(const ContractPSet &S, const FunctionDecl *FD)
+      : ContainsNull(S.ContainsNull), ContainsInvalid(S.ContainsInvalid),
+        ContainsStatic(S.ContainsStatic) {
+    for (const ContractVariable &CV : S.Vars) {
+      assert(CV != ContractVariable::returnVal());
+      Vars.emplace(CV, FD);
+    }
+  }
 
   bool operator==(const PSet &O) const {
     return ContainsInvalid == O.ContainsInvalid &&
@@ -318,6 +364,20 @@ public:
       R.emitNote(Reporter);
   }
 
+  bool shouldBeFilteredBasedOnNotes(LifetimeReporterBase &Reporter) const {
+    if (!Reporter.shouldFilterWarnings())
+      return false;
+    for (auto &R : InvReasons)
+      if (Optional<Variable> V = R.getInvalidatedMemory())
+        if (Reporter.shouldBeFiltered(R.getBlock(), V.getPointer()))
+          return true;
+    for (auto &R : NullReasons)
+      if (Optional<Variable> V = R.getNulledMemory())
+        if (Reporter.shouldBeFiltered(R.getBlock(), V.getPointer()))
+          return true;
+    return false;
+  }
+
   bool containsInvalid() const { return ContainsInvalid; }
   bool isInvalid() const {
     return !ContainsNull && !ContainsStatic && ContainsInvalid && Vars.empty();
@@ -328,12 +388,9 @@ public:
   }
 
   /// Returns true if we look for S and we have S.field in the set.
-  bool containsBase(Variable Var, unsigned Order = 0) const {
-    auto I = llvm::find_if(
-        Vars, [Var, Order](const std::pair<Variable, unsigned> &Other) {
-          return Var.isBaseEqual(Other.first) && Order <= Other.second;
-        });
-    return I != Vars.end() && I->second >= Order;
+  bool containsParent(Variable Var) const {
+    return llvm::any_of(
+        Vars, [Var](const Variable &Other) { return Var.isParent(Other); });
   }
 
   bool containsNull() const { return ContainsNull; }
@@ -346,7 +403,10 @@ public:
     ContainsNull = true;
     NullReasons.push_back(Reason);
   }
-  void removeNull() { ContainsNull = false; }
+  void removeNull() {
+    ContainsNull = false;
+    NullReasons.clear();
+  }
   void removeEverythingButNull() {
     ContainsInvalid = false;
     InvReasons.clear();
@@ -365,26 +425,43 @@ public:
   }
   void addStatic() { ContainsStatic = true; }
 
-  bool isSingleton() const {
-    return !ContainsInvalid &&
-           (ContainsStatic ^ ContainsNull ^ (Vars.size() == 1));
-  }
-
-  const std::map<Variable, unsigned> &vars() const { return Vars; }
+  const std::set<Variable> &vars() const { return Vars; }
 
   const std::vector<InvalidationReason> &invReasons() const {
     return InvReasons;
   }
   const std::vector<NullReason> &nullReasons() const { return NullReasons; }
 
-  bool isSubstitutableFor(const PSet &O) {
+  void addReasonTarget(const Variable &V) {
+    for (auto &R : InvReasons)
+      R.setInvalidatedMemory(V);
+    for (auto &R : NullReasons)
+      R.setNulledMemory(V);
+  }
+
+  bool checkSubstitutableFor(const PSet &O, SourceRange Range,
+                             LifetimeReporterBase &Reporter,
+                             ValueSource Source = ValueSource::Param,
+                             StringRef SourceName = "") {
+    // Everything is substitutable for invalid.
+    if (O.ContainsInvalid)
+      return true;
+
     // If 'this' includes invalid, then 'O' must include invalid.
-    if (ContainsInvalid && !O.ContainsInvalid)
+    if (ContainsInvalid) {
+      Reporter.warnNullDangling(WarnType::Dangling, Range, Source, SourceName,
+                                !isInvalid());
+      explainWhyInvalid(Reporter);
       return false;
+    }
 
     // If 'this' includes null, then 'O' must include null.
-    if (ContainsNull && !O.ContainsNull)
+    if (ContainsNull && !O.ContainsNull) {
+      Reporter.warnNullDangling(WarnType::Null, Range, Source, SourceName,
+                                !isNull());
+      explainWhyNull(Reporter);
       return false;
+    }
 
     // If 'O' includes static and no x or o, then 'this' must include static and
     // no x or o.
@@ -392,12 +469,12 @@ public:
       return false;
 
     // If 'this' includes o'', then 'O' must include o'' or o'. (etc.)
-    for (auto &kv : Vars) {
-      auto &V = kv.first;
-      auto Order = kv.second;
-      auto i = O.Vars.find(V);
-      if (i == O.Vars.end() || i->second > Order)
+    for (auto &V : Vars) {
+      auto I = O.Vars.find(V);
+      if (I == O.Vars.end() || I->getOrder() > V.getOrder()) {
+        Reporter.warnWrongPset(Range, Source, SourceName, str(), O.str());
         return false;
+      }
     }
 
     // TODO
@@ -416,11 +493,8 @@ public:
       Entries.push_back("(null)");
     if (ContainsStatic)
       Entries.push_back("(static)");
-    for (const auto &V : Vars) {
-      Entries.push_back(V.first.getName());
-      for (size_t j = 0; j < V.second; ++j)
-        Entries.back().append("'");
-    }
+    for (const auto &V : Vars)
+      Entries.push_back(V.getName());
     std::sort(Entries.begin(), Entries.end());
     return "(" + llvm::join(Entries, ", ") + ")";
   }
@@ -440,15 +514,25 @@ public:
     }
     ContainsStatic |= O.ContainsStatic;
 
-    for (const auto &VO : O.Vars) {
-      auto V = Vars.find(VO.first);
-      if (V == Vars.end()) {
-        Vars.insert(VO);
-      } else {
-        // If this would contain o' and o'' it would be invalidated on KILL(o')
-        // and KILL(o'') which is the same for a pset only containing o''.
-        V->second = std::max(V->second, VO.second);
-      }
+    Vars.insert(O.Vars.begin(), O.Vars.end());
+  }
+
+  // This method is used to actualize the PSet of a contract with the arguments
+  // of a call. It has two modes:
+  // * Checking: The special elements of the psets are coming from the
+  //   contracts, i.e.: the resulting pset will contain null only if the
+  //   contract had null.
+  // * Non-checking: The resulting pset will contain null if 'To' contains
+  //   null. This is useful so code like 'int *p = f(&x);' will result in a
+  //   non-null pset for 'p'.
+  void bind(Variable ToReplace, const PSet &To, bool Checking = true) {
+    // Replace valid deref locations.
+    if (Vars.erase(ToReplace)) {
+      if (Checking)
+        Vars.insert(To.Vars.begin(), To.Vars.end());
+      else
+        merge(To); // TODO: verify if assigned here note is generated later on
+                   // during output matching.
     }
   }
 
@@ -458,27 +542,20 @@ public:
     return Ret;
   }
 
-  void insert(Variable Var, unsigned Order = 0) {
+  void insert(Variable Var, unsigned Deref = 0) {
     if (Var.hasStaticLifetime()) {
       ContainsStatic = true;
       return;
     }
 
-    // If this would contain o' and o'' it would be invalidated on KILL(o')
-    // and KILL(o'') which is the same for a pset only containing o''.
-    auto It = Vars.find(Var);
-    if (It != Vars.end())
-      Order = std::max(It->second, Order);
-
-    Vars[Var] = Order;
+    Vars.insert(Var);
   }
 
   void addFieldRef(const FieldDecl *FD) {
-    std::map<Variable, unsigned> NewVars;
-    for (auto &VO : Vars) {
-      Variable Var = VO.first;
+    std::set<Variable> NewVars;
+    for (auto Var : Vars) {
       Var.addFieldRef(FD);
-      NewVars.insert(std::make_pair(Var, VO.second));
+      NewVars.insert(Var);
     }
     Vars = NewVars;
   }
@@ -512,31 +589,27 @@ public:
     return ret;
   }
 
-  /// The pset contains one of obj, obj' or obj''
-  static PSet singleton(Variable Var, unsigned order = 0) {
+  /// The pset contains one element
+  static PSet singleton(Variable Var, unsigned Deref = 0) {
     PSet ret;
     if (Var.hasStaticLifetime())
       ret.ContainsStatic = true;
-    else
-      ret.Vars.emplace(Var, order);
+    else {
+      Var.deref(Deref);
+      ret.Vars.emplace(Var);
+    }
     return ret;
   }
 
 private:
-  int ContainsNull : 1;
-  int ContainsInvalid : 1;
-  int ContainsStatic : 1;
-  /// Maps Variable obj to order.
-  /// If Variable is not an Owner, order must be zero
-  /// (obj,0) == obj: points to obj
-  /// (obj,1) == obj': points to object owned directly by obj
-  /// (obj,2) == obj'': points an object kept alive indirectly (transitively)
-  /// via owner obj
-  std::map<Variable, unsigned> Vars;
+  unsigned ContainsNull : 1;
+  unsigned ContainsInvalid : 1;
+  unsigned ContainsStatic : 1;
+  std::set<Variable> Vars;
 
   std::vector<InvalidationReason> InvReasons;
   std::vector<NullReason> NullReasons;
-};
+}; // namespace lifetime
 
 using PSetsMap = std::map<Variable, PSet>;
 

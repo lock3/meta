@@ -69,8 +69,6 @@ struct SSS {
   T a;
   SSS() : a() {}
 #pragma omp declare reduction(fun : T : omp_out ^= omp_in) initializer(omp_priv = 24 + omp_orig)
-#pragma omp declare reduction(sssss : T : ssssss(omp_in)) initializer(omp_priv = 18 + omp_orig)
-  static void ssssss(T &x);
 };
 
 SSS<int> d;
@@ -83,17 +81,6 @@ SSS<int> d;
 
 // CHECK: define internal {{.*}}void @{{[^(]+}}(i32* noalias %0, i32* noalias %1)
 // CHECK: [[ADD:%.+]] = add nsw i32 24,
-// CHECK-NEXT: store i32 [[ADD]], i32*
-// CHECK-NEXT: ret void
-// CHECK-NEXT: }
-
-// CHECK: define internal {{.*}}void @{{[^(]+}}(i32* noalias %0, i32* noalias %1)
-// CHECK: call void @_ZN3SSSIiE6ssssssERi(i32* dereferenceable{{.*}})
-// CHECK-NEXT: ret void
-// CHECK-NEXT: }
-
-// CHECK: define internal {{.*}}void @{{[^(]+}}(i32* noalias %0, i32* noalias %1)
-// CHECK: [[ADD:%.+]] = add nsw i32 18,
 // CHECK-NEXT: store i32 [[ADD]], i32*
 // CHECK-NEXT: ret void
 // CHECK-NEXT: }

@@ -663,8 +663,6 @@ void TargetLoweringBase::initActions() {
     setOperationAction(ISD::SMULFIXSAT, VT, Expand);
     setOperationAction(ISD::UMULFIX, VT, Expand);
     setOperationAction(ISD::UMULFIXSAT, VT, Expand);
-    setOperationAction(ISD::SDIVFIX, VT, Expand);
-    setOperationAction(ISD::UDIVFIX, VT, Expand);
 
     // Overflow operations default to expand
     setOperationAction(ISD::SADDO, VT, Expand);

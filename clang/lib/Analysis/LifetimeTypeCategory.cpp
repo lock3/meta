@@ -20,27 +20,27 @@ namespace lifetime {
 
 static QualType getPointeeType(const Type *T);
 
-static FunctionDecl *lookupOperator(const CXXRecordDecl *R,
-                                    OverloadedOperatorKind Op) {
-  return GlobalLookupOperator(R, Op);
-}
-
-static FunctionDecl *lookupMemberFunction(const CXXRecordDecl *R,
-                                          StringRef Name) {
-  return GlobalLookupMemberFunction(R, Name);
-}
-
 template <typename T>
-static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
+static bool hasMethodLike(const CXXRecordDecl *R, T Predicate,
+                          const CXXMethodDecl **FoundMD = nullptr) {
   // TODO cache IdentifierInfo to avoid string compare
-  auto CallBack = [Predicate](const CXXRecordDecl *Base) {
+  auto CallBack = [Predicate, FoundMD](const CXXRecordDecl *Base) {
     return std::none_of(
-        Base->decls_begin(), Base->decls_end(), [Predicate](const Decl *D) {
-          if (auto *M = dyn_cast<CXXMethodDecl>(D))
-            return Predicate(M);
+        Base->decls_begin(), Base->decls_end(),
+        [Predicate, FoundMD](const Decl *D) {
+          if (auto *M = dyn_cast<CXXMethodDecl>(D)) {
+            bool Found = Predicate(M);
+            if (Found && FoundMD)
+              *FoundMD = M;
+            return Found;
+          }
           if (auto *Tmpl = dyn_cast<FunctionTemplateDecl>(D)) {
-            if (auto *M = dyn_cast<CXXMethodDecl>(Tmpl->getTemplatedDecl()))
-              return Predicate(M);
+            if (auto *M = dyn_cast<CXXMethodDecl>(Tmpl->getTemplatedDecl())) {
+              bool Found = Predicate(M);
+              if (Found && FoundMD)
+                *FoundMD = M;
+              return Found;
+            }
           }
           return false;
         });
@@ -48,16 +48,36 @@ static bool hasMethodLike(const CXXRecordDecl *R, T Predicate) {
   return !R->forallBases(CallBack) || !CallBack(R);
 }
 
-static bool hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
-                                       int ArgNum = -1) {
-  return hasMethodLike(R, [Name, ArgNum](const CXXMethodDecl *M) {
-    if (ArgNum >= 0 && (unsigned)ArgNum != M->getMinRequiredArguments())
-      return false;
-    auto *I = M->getDeclName().getAsIdentifierInfo();
-    if (!I)
-      return false;
-    return I->getName() == Name;
-  });
+static bool hasOperator(const CXXRecordDecl *R, OverloadedOperatorKind Op,
+                        int NumParams = -1, bool ConstOnly = false,
+                        const CXXMethodDecl **FoundMD = nullptr) {
+  return hasMethodLike(
+      R,
+      [Op, NumParams, ConstOnly](const CXXMethodDecl *MD) {
+        if (NumParams != -1 && NumParams != (int)MD->param_size())
+          return false;
+        if (ConstOnly && !MD->isConst())
+          return false;
+        return MD->getOverloadedOperator() == Op;
+      },
+      FoundMD);
+}
+
+static bool
+hasMethodWithNameAndArgNum(const CXXRecordDecl *R, StringRef Name,
+                           int ArgNum = -1,
+                           const CXXMethodDecl **FoundMD = nullptr) {
+  return hasMethodLike(
+      R,
+      [Name, ArgNum](const CXXMethodDecl *M) {
+        if (ArgNum >= 0 && (unsigned)ArgNum != M->getMinRequiredArguments())
+          return false;
+        auto *I = M->getDeclName().getAsIdentifierInfo();
+        if (!I)
+          return false;
+        return I->getName() == Name;
+      },
+      FoundMD);
 }
 
 static bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
@@ -68,19 +88,8 @@ static bool satisfiesContainerRequirements(const CXXRecordDecl *R) {
 
 static bool satisfiesIteratorRequirements(const CXXRecordDecl *R) {
   // TODO https://en.cppreference.com/w/cpp/named_req/Iterator
-  bool hasDeref = false;
-  bool hasPlusPlus = false;
-  // TODO: check base classes.
-  for (auto *M : R->methods()) {
-    auto O = M->getDeclName().getCXXOverloadedOperator();
-    if (O == OO_PlusPlus)
-      hasPlusPlus = true;
-    else if (O == OO_Star && M->param_empty())
-      hasDeref = true;
-    if (hasPlusPlus && hasDeref)
-      return true;
-  }
-  return false;
+  // TODO operator* might be defined as a free function.
+  return hasOperator(R, OO_Star, 0) && hasOperator(R, OO_PlusPlus, 0);
 }
 
 static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
@@ -90,13 +99,15 @@ static bool satisfiesRangeConcept(const CXXRecordDecl *R) {
 }
 
 static bool hasDerefOperations(const CXXRecordDecl *R) {
-  return lookupOperator(R, OO_Arrow) || lookupOperator(R, OO_Star);
+  // TODO operator* might be defined as a free function.
+  return hasOperator(R, OO_Arrow, 0) || hasOperator(R, OO_Star, 0);
 }
 
 /// Determines if D is std::vector<bool>::reference
 static bool IsVectorBoolReference(const CXXRecordDecl *D) {
   assert(D);
   static std::set<StringRef> StdVectorBoolReference{
+      "__bit_const_reference" /* for libc++ */,
       "__bit_reference" /* for libc++ */, "_Bit_reference" /* for libstdc++ */,
       "_Vb_reference" /* for MSVC */};
   if (!D->isInStdNamespace() || !D->getIdentifier())
@@ -112,19 +123,10 @@ static bool IsVectorBoolReference(const CXXRecordDecl *D) {
 // to look up the declarations (pointers) by names upfront and look up the
 // declarations instead of matching strings populated lazily.
 static Optional<TypeCategory> classifyStd(const Type *T) {
-  // MSVC: _Ptr_base is a base class of shared_ptr, and we only see
-  // _Ptr_base when calling get() on a shared_ptr.
-  static std::set<StringRef> StdOwners{"stack", "queue", "priority_queue",
-                                       "optional", "_Ptr_base"};
-  static std::set<StringRef> StdPointers{"basic_regex", "reference_wrapper"};
   auto *Decl = T->getAsCXXRecordDecl();
   if (!Decl || !Decl->isInStdNamespace() || !Decl->getIdentifier())
     return {};
 
-  if (StdOwners.count(Decl->getName()))
-    return TypeCategory::Owner;
-  if (StdPointers.count(Decl->getName()))
-    return TypeCategory::Pointer;
   if (IsVectorBoolReference(Decl))
     return TypeCategory::Pointer;
 
@@ -133,7 +135,8 @@ static Optional<TypeCategory> classifyStd(const Type *T) {
 
 /// Checks if all bases agree to the same TypeClassification,
 /// and if they do, returns it.
-Optional<TypeClassification> getBaseClassification(const CXXRecordDecl *R) {
+static Optional<TypeClassification>
+getBaseClassification(const CXXRecordDecl *R) {
   QualType PointeeType;
   bool HasOwnerBase = false;
   bool HasPointerBase = false;
@@ -180,18 +183,13 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
       return TypeCategory::Value;
 
     if (T->isArrayType())
-      return TypeCategory::Value;
+      return {TypeCategory::Owner, getPointeeType(T)};
 
     // raw pointers and references
     if (T->isPointerType() || T->isReferenceType())
       return {TypeCategory::Pointer, getPointeeType(T)};
 
     return TypeCategory::Value;
-  }
-
-  if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
-      GlobalDefineClassTemplateSpecialization(CDS);
   }
 
   if (!R->hasDefinition())
@@ -219,43 +217,47 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 
   if (R->hasAttr<OwnerAttr>()) {
     if (Pointee.isNull())
-      return TypeCategory::Value; // TODO diagnose
-    else
-      return {TypeCategory::Owner, Pointee};
+      Pointee = R->getASTContext().VoidTy;
+    return {TypeCategory::Owner, Pointee};
   }
 
   if (R->hasAttr<PointerAttr>()) {
     if (Pointee.isNull())
-      return TypeCategory::Value; // TODO diagnose
-    else
-      return {TypeCategory::Pointer, Pointee};
+      Pointee = R->getASTContext().VoidTy;
+    return {TypeCategory::Pointer, Pointee};
   }
 
-  if (auto Cat = classifyStd(T))
-    return {*Cat, Pointee};
+  // Do not attempt to infer implicit Pointer/Owner if we cannot deduce
+  // the DerefType.
+  if (!Pointee.isNull()) {
 
-  // Every type that satisfies the standard Container requirements.
-  if (!Pointee.isNull() && satisfiesContainerRequirements(R))
-    return {TypeCategory::Owner, Pointee};
+    if (auto Cat = classifyStd(T))
+      return {*Cat, Pointee};
 
-  // Every type that provides unary * or -> and has a user-provided destructor.
-  // (Example: unique_ptr.)
-  if (!Pointee.isNull() && hasDerefOperations(R) && !R->hasTrivialDestructor())
-    return {TypeCategory::Owner, Pointee};
+    // Every type that satisfies the standard Container requirements.
+    if (satisfiesContainerRequirements(R))
+      return {TypeCategory::Owner, Pointee};
 
-  //  Every type that satisfies the Ranges TS Range concept.
-  if (!Pointee.isNull() && satisfiesRangeConcept(R))
-    return {TypeCategory::Pointer, Pointee};
+    // Every type that provides unary * or -> and has a user-provided
+    // destructor. (Example: unique_ptr.)
+    if (hasDerefOperations(R) && !R->hasTrivialDestructor())
+      return {TypeCategory::Owner, Pointee};
 
-  // Every type that satisfies the standard Iterator requirements. (Example:
-  // regex_iterator.), see https://en.cppreference.com/w/cpp/named_req/Iterator
-  if (!Pointee.isNull() && satisfiesIteratorRequirements(R))
-    return {TypeCategory::Pointer, Pointee};
+    //  Every type that satisfies the Ranges TS Range concept.
+    if (satisfiesRangeConcept(R))
+      return {TypeCategory::Pointer, Pointee};
 
-  // Every type that provides unary * or -> and does not have a user-provided
-  // destructor. (Example: span.)
-  if (!Pointee.isNull() && hasDerefOperations(R) && R->hasTrivialDestructor())
-    return {TypeCategory::Pointer, Pointee};
+    // Every type that satisfies the standard Iterator requirements. (Example:
+    // regex_iterator.), see
+    // https://en.cppreference.com/w/cpp/named_req/Iterator
+    if (satisfiesIteratorRequirements(R))
+      return {TypeCategory::Pointer, Pointee};
+
+    // Every type that provides unary * or -> and does not have a user-provided
+    // destructor. (Example: span.)
+    if (hasDerefOperations(R) && R->hasTrivialDestructor())
+      return {TypeCategory::Pointer, Pointee};
+  }
 
   // Every closure type of a lambda that captures by reference.
   if (R->isLambda()) {
@@ -277,6 +279,7 @@ static TypeClassification classifyTypeCategoryImpl(const Type *T) {
 
 TypeClassification classifyTypeCategory(const Type *T) {
   static std::map<const Type *, TypeClassification> Cache;
+  T = T->getUnqualifiedDesugaredType();
 
   auto I = Cache.find(T);
   if (I != Cache.end())
@@ -329,22 +332,42 @@ bool isNullableType(QualType QT) {
 static QualType getPointeeType(const CXXRecordDecl *R) {
   assert(R);
 
-  for (auto Op : {OO_Star, OO_Arrow, OO_Subscript}) {
-    if (auto *F = lookupOperator(R, Op)) {
+  for (auto D : R->decls()) {
+    if (const auto *TypeDef = dyn_cast<TypedefNameDecl>(D)) {
+      if (TypeDef->getName() == "value_type")
+        return TypeDef->getUnderlyingType().getCanonicalType();
+    }
+  }
+
+  // TODO operator* might be defined as a free function.
+  struct OpTy {
+    OverloadedOperatorKind Kind;
+    int ParamNum;
+    bool ConstOnly;
+  };
+  OpTy Ops[] = {
+      {OO_Star, 0, false}, {OO_Arrow, 0, false}, {OO_Subscript, -1, true}};
+  for (auto P : Ops) {
+    const CXXMethodDecl *F;
+    if (hasOperator(R, P.Kind, P.ParamNum, P.ConstOnly, &F) &&
+        !F->isDependentContext()) {
       auto PointeeType = F->getReturnType();
       if (PointeeType->isReferenceType() || PointeeType->isAnyPointerType())
         PointeeType = PointeeType->getPointeeType();
+      if (P.ConstOnly)
+        return PointeeType.getCanonicalType().getUnqualifiedType();
       return PointeeType.getCanonicalType();
     }
   }
 
-  if (auto *F = lookupMemberFunction(R, "begin")) {
-    auto PointeeType = F->getReturnType();
+  const CXXMethodDecl *FoundMD;
+  if (hasMethodWithNameAndArgNum(R, "begin", 0, &FoundMD)) {
+    auto PointeeType = FoundMD->getReturnType();
     if (classifyTypeCategory(PointeeType) != TypeCategory::Pointer) {
 #if CLASSIFY_DEBUG
       // TODO: diag?
       llvm::errs() << "begin() function does not return a Pointer!\n";
-      F->dump();
+      FoundMD->dump();
 #endif
       return {};
     }
@@ -374,14 +397,10 @@ static QualType getPointeeTypeImpl(const Type *T) {
 
   // std::vector<bool> contains std::vector<bool>::references
   if (IsVectorBoolReference(R))
-    return QualType(T, 0);
+    return R->getASTContext().BoolTy;
 
-  if (!R->hasDefinition()) {
-    if (auto *CDS = dyn_cast<ClassTemplateSpecializationDecl>(R))
-      GlobalDefineClassTemplateSpecialization(CDS);
-  }
-
-  assert(R->hasDefinition());
+  if (!R->hasDefinition())
+    return {};
 
   auto PointeeType = getPointeeType(R);
   if (!PointeeType.isNull())
@@ -424,42 +443,6 @@ static QualType getPointeeType(const Type *T) {
   return P;
 }
 
-CallTypes getCallTypes(const Expr *CalleeE) {
-  CallTypes CT;
-
-  if (CalleeE->hasPlaceholderType(BuiltinType::BoundMember)) {
-    CalleeE = CalleeE->IgnoreParenImpCasts();
-    if (const auto *BinOp = dyn_cast<BinaryOperator>(CalleeE)) {
-      auto MemberPtr = BinOp->getRHS()->getType()->castAs<MemberPointerType>();
-      CT.FTy = MemberPtr->getPointeeType()
-                   .IgnoreParens()
-                   ->getAs<FunctionProtoType>();
-      CT.ClassDecl = MemberPtr->getClass()->getAsCXXRecordDecl();
-    } else if (const auto *ME = dyn_cast<MemberExpr>(CalleeE)) {
-      CT.FTy = dyn_cast<FunctionProtoType>(ME->getMemberDecl()->getType());
-      auto ClassType = ME->getBase()->getType();
-      if (ClassType->isPointerType())
-        ClassType = ClassType->getPointeeType();
-      CT.ClassDecl = ClassType->getAsCXXRecordDecl();
-    } else {
-      CalleeE->dump();
-      llvm_unreachable("not a binOp after boundMember");
-    }
-    assert(CT.FTy);
-    assert(CT.ClassDecl);
-    return CT;
-  }
-
-  const auto *P =
-      dyn_cast<PointerType>(CalleeE->getType()->getUnqualifiedDesugaredType());
-  assert(P);
-  CT.FTy = dyn_cast<FunctionProtoType>(
-      P->getPointeeType()->getUnqualifiedDesugaredType());
-
-  assert(CT.FTy);
-  return CT;
-}
-
 bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
   // Until annotations are widespread, STL specific lifetimeconst
   // methods and params can be enumerated here.
@@ -492,12 +475,16 @@ bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum) {
     }
     const CXXRecordDecl *RD = MD->getParent();
     StringRef ClassName = RD->getName();
-    if (RD->isInStdNamespace() &&
-        (ClassName.endswith("map") || ClassName.endswith("set"))) {
-      if (FD->getDeclName().isIdentifier() &&
-          (FD->getName() == "insert" || FD->getName() == "emplace" ||
-           FD->getName() == "emplace_hint"))
-        return true;
+    if (RD->isInStdNamespace()) {
+      if (ClassName.endswith("map") || ClassName.endswith("set")) {
+        if (FD->getDeclName().isIdentifier() &&
+            (FD->getName() == "insert" || FD->getName() == "emplace" ||
+             FD->getName() == "emplace_hint"))
+          return true;
+      }
+      if (ClassName == "list" || ClassName == "forward_list")
+        return FD->getDeclName().isIdentifier() && FD->getName() != "clear" &&
+               FD->getName() != "assign";
     }
     return FD->getDeclName().isIdentifier() &&
            (FD->getName() == "at" || FD->getName() == "data" ||

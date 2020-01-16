@@ -41,8 +41,7 @@ namespace {
 
 using internal::MatcherDescriptor;
 
-using ConstructorMap =
-    llvm::StringMap<std::unique_ptr<const MatcherDescriptor>>;
+using ConstructorMap = llvm::StringMap<std::unique_ptr<const MatcherDescriptor>>;
 
 class RegistryMaps {
 public:
@@ -456,7 +455,6 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(on);
   REGISTER_MATCHER(onImplicitObjectArgument);
   REGISTER_MATCHER(opaqueValueExpr);
-  REGISTER_MATCHER(optionally);
   REGISTER_MATCHER(parameterCountIs);
   REGISTER_MATCHER(parenExpr);
   REGISTER_MATCHER(parenListExpr);

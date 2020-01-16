@@ -27,8 +27,6 @@ struct TypeClassification {
   TypeClassification(TypeCategory TC, QualType PointeeType)
       : TC(TC), PointeeType(PointeeType) {
     assert(!PointeeType.isNull());
-    assert(!PointeeType->isVoidType());
-    assert(TC == TypeCategory::Pointer || TC == TypeCategory::Owner);
   }
 
   std::string str() const {
@@ -70,15 +68,6 @@ bool isNullableType(QualType QT);
 inline QualType getPointeeType(QualType QT) {
   return classifyTypeCategory(QT).PointeeType;
 }
-
-struct CallTypes {
-  const FunctionProtoType *FTy = nullptr;
-  const CXXRecordDecl *ClassDecl = nullptr;
-};
-
-/// Obtains the function prototype (without 'this' pointer) and the type of
-/// the object (if MemberCallExpr).
-CallTypes getCallTypes(const Expr *CalleeE);
 
 bool isLifetimeConst(const FunctionDecl *FD, QualType Pointee, int ArgNum);
 } // namespace lifetime

@@ -77,8 +77,6 @@ public:
     assert(InstPrinter);
     if (IsVerboseAsm)
         InstPrinter->setCommentStream(CommentStream);
-    if (Assembler->getBackendPtr())
-      setAllowAutoPadding(Assembler->getBackend().allowAutoPadding());
   }
 
   MCAssembler &getAssembler() { return *Assembler; }

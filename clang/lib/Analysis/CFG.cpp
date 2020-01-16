@@ -4486,7 +4486,6 @@ CFGBlock *CFGBuilder::VisitExprWithCleanups(ExprWithCleanups *E,
     autoCreateBlock();
     appendStmt(Block, E);
   }
-
   if (BuildOpts.AddTemporaryDtors) {
     // If adding implicit destructors visit the full expression for adding
     // destructors of temporaries.

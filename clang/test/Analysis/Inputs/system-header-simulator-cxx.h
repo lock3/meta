@@ -805,6 +805,7 @@ namespace std {
   public:
     unique_ptr(const unique_ptr &) = delete;
     unique_ptr(unique_ptr &&);
+    ~unique_ptr();
 
     T *get() const;
 
@@ -866,6 +867,9 @@ namespace std {
 
   template<class BidirIt, class UnaryPredicate>
   BidirIt stable_partition(BidirIt first, BidirIt last, UnaryPredicate p);
+
+  template<class InputIt, class UnaryPredicate>
+  bool any_of(InputIt first, InputIt last, UnaryPredicate p);
 }
 
 namespace std {

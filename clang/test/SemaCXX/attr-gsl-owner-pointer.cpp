@@ -55,6 +55,17 @@ class [[gsl::Owner(float)]] AddConflictLater2;
 // CHECK: CXXRecordDecl {{.*}} AddConflictLater
 // CHECK: OwnerAttr {{.*}} Inherited int
 
+template<class T, int N>
+class [[gsl::Owner]] PartialSpecializationChangesCategory {};
+// expected-note@-1 {{conflicting attribute is here}}
+template<class T>
+class [[gsl::Pointer]] PartialSpecializationChangesCategory<T,0> {};
+// expected-error@-1 {{'Pointer' and 'Owner' attributes are not compatible}}
+// CHECK: CXXRecordDecl {{.*}} PartialSpecializationChangesCategory
+// CHECK: OwnerAttr
+// CHECK: ClassTemplatePartialSpecializationDecl {{.*}} PartialSpecializationChangesCategory
+// CHECK: OwnerAttr
+
 class [[gsl::Owner()]] [[gsl::Owner(int)]] WithAndWithoutParameter{};
 // expected-error@-1 {{'Owner' and 'Owner' attributes are not compatible}}
 // expected-note@-2 {{conflicting attribute is here}}

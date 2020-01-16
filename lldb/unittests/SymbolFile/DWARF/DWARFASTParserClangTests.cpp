@@ -9,7 +9,6 @@
 #include "Plugins/SymbolFile/DWARF/DWARFASTParserClang.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "TestingSupport/SubsystemRAII.h"
-#include "lldb/Host/HostInfo.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -17,7 +16,7 @@ using namespace lldb;
 using namespace lldb_private;
 
 class DWARFASTParserClangTests : public testing::Test {
-  SubsystemRAII<FileSystem, HostInfo, ClangASTContext> subsystems;
+  SubsystemRAII<FileSystem, ClangASTContext> subsystems;
 };
 
 namespace {
@@ -39,7 +38,7 @@ public:
 // defining here, causing this test to fail, feel free to delete it.
 TEST_F(DWARFASTParserClangTests,
        EnsureAllDIEsInDeclContextHaveBeenParsedParsesOnlyMatchingEntries) {
-  ClangASTContext ast_ctx(HostInfoBase::GetTargetTriple());
+  ClangASTContext ast_ctx;
   DWARFASTParserClangStub ast_parser(ast_ctx);
 
   DWARFUnit *unit = nullptr;

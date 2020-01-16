@@ -38,11 +38,6 @@ class AArch64Subtarget final : public AArch64GenSubtargetInfo {
 public:
   enum ARMProcFamilyEnum : uint8_t {
     Others,
-    AppleA7,
-    AppleA10,
-    AppleA11,
-    AppleA12,
-    AppleA13,
     CortexA35,
     CortexA53,
     CortexA55,
@@ -52,6 +47,7 @@ public:
     CortexA73,
     CortexA75,
     CortexA76,
+    Cyclone,
     ExynosM3,
     Falkor,
     Kryo,

@@ -55,7 +55,6 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
 
-    STRING_EXTENSION(SBMemoryRegionInfo)
 };
 
 } // namespace lldb

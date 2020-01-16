@@ -66,7 +66,6 @@ public:
 class OverflowingBinaryOperator : public Operator {
 public:
   enum {
-    AnyWrap        = 0,
     NoUnsignedWrap = (1 << 0),
     NoSignedWrap   = (1 << 1)
   };

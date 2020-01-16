@@ -344,8 +344,6 @@ public:
     lldb::SBAddress
     GetObjectFileEntryPointAddress() const;
 
-    STRING_EXTENSION(SBModule)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
         def __len__(self):

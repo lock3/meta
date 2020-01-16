@@ -134,8 +134,6 @@ public:
     bool
     SetDataFromDoubleArray (double* array, size_t array_len);
 
-    STRING_EXTENSION(SBData)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
 

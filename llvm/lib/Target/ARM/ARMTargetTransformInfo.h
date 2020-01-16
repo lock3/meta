@@ -159,7 +159,7 @@ public:
     return isLegalMaskedLoad(DataTy, Alignment);
   }
 
-  bool isLegalMaskedGather(Type *Ty, MaybeAlign Alignment);
+  bool isLegalMaskedGather(Type *Ty, MaybeAlign Alignment) { return false; }
 
   bool isLegalMaskedScatter(Type *Ty, MaybeAlign Alignment) { return false; }
 

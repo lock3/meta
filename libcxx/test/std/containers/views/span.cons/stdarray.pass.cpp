@@ -22,7 +22,6 @@
 
 
 #include <span>
-#include <array>
 #include <cassert>
 #include <string>
 

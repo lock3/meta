@@ -9,7 +9,6 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANGD_INDEX_SYMBOL_COLLECTOR_H
 
 #include "CanonicalIncludes.h"
-#include "CollectMacros.h"
 #include "Index.h"
 #include "SymbolOrigin.h"
 #include "clang/AST/ASTContext.h"
@@ -108,8 +107,6 @@ public:
   bool handleMacroOccurrence(const IdentifierInfo *Name, const MacroInfo *MI,
                              index::SymbolRoleSet Roles,
                              SourceLocation Loc) override;
-
-  void handleMacros(const MainFileMacros &MacroRefsToIndex);
 
   SymbolSlab takeSymbols() { return std::move(Symbols).build(); }
   RefSlab takeRefs() { return std::move(Refs).build(); }

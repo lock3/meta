@@ -24,7 +24,6 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -229,7 +228,7 @@ static void symbolizeInput(StringRef InputString, LLVMSymbolizer &Symbolizer,
   std::string ModuleName;
   uint64_t Offset = 0;
   if (!parseCommand(StringRef(InputString), Cmd, ModuleName, Offset)) {
-    outs() << InputString << "\n";
+    outs() << InputString;
     return;
   }
 
@@ -329,13 +328,7 @@ int main(int argc, char **argv) {
     char InputString[kMaxInputStringLength];
 
     while (fgets(InputString, sizeof(InputString), stdin)) {
-      // Strip newline characters.
-      std::string StrippedInputString(InputString);
-      StrippedInputString.erase(
-          std::remove_if(StrippedInputString.begin(), StrippedInputString.end(),
-                         [](char c) { return c == '\r' || c == '\n'; }),
-          StrippedInputString.end());
-      symbolizeInput(StrippedInputString, Symbolizer, Printer);
+      symbolizeInput(InputString, Symbolizer, Printer);
       outs().flush();
     }
   } else {

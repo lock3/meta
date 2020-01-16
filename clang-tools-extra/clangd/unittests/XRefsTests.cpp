@@ -253,7 +253,7 @@ TEST(LocateSymbol, All) {
       )cpp",
 
       R"cpp(// Function definition via pointer
-        void [[foo]](int) {}
+        int [[foo]](int) {}
         int main() {
           auto *X = &^foo;
         }
@@ -270,7 +270,7 @@ TEST(LocateSymbol, All) {
         struct Foo { int [[x]]; };
         int main() {
           Foo bar;
-          (void)bar.^x;
+          bar.^x;
         }
       )cpp",
 
@@ -279,6 +279,13 @@ TEST(LocateSymbol, All) {
           int [[x]];
           Foo() : ^x(0) {}
         };
+      )cpp",
+
+      R"cpp(// Field, GNU old-style field designator
+        struct Foo { int [[x]]; };
+        int main() {
+          Foo bar = { ^x : 1 };
+        }
       )cpp",
 
       R"cpp(// Field, field designator
@@ -315,9 +322,17 @@ TEST(LocateSymbol, All) {
 
       R"cpp(// Namespace
         namespace $decl[[ns]] {
-        struct Foo { static void bar(); };
+        struct Foo { static void bar(); }
         } // namespace ns
         int main() { ^ns::Foo::bar(); }
+      )cpp",
+
+      R"cpp(// Macro
+        #define MACRO 0
+        #define [[MACRO]] 1
+        int main() { return ^MACRO; }
+        #define MACRO 2
+        #undef macro
       )cpp",
 
       R"cpp(// Macro
@@ -337,7 +352,7 @@ TEST(LocateSymbol, All) {
 
       R"cpp(// Symbol concatenated inside macro (not supported)
        int *pi;
-       #define POINTER(X) p ## X;
+       #define POINTER(X) p # X;
        int i = *POINTER(^i);
       )cpp",
 
@@ -418,10 +433,10 @@ TEST(LocateSymbol, All) {
       )cpp",
 
       R"cpp(// No implicit constructors
-        struct X {
+        class X {
           X(X&& x) = default;
         };
-        X $decl[[makeX]]();
+        X [[makeX]]() {}
         void foo() {
           auto x = m^akeX();
         }
@@ -429,7 +444,7 @@ TEST(LocateSymbol, All) {
 
       R"cpp(
         struct X {
-          X& $decl[[operator]]++();
+          X& [[operator]]++() {}
         };
         void foo(X& x) {
           +^+x;
@@ -485,9 +500,9 @@ TEST(LocateSymbol, All) {
         }
       )cpp",
 
-      R"cpp(// Heuristic resolution of dependent method
+      R"cpp(// FIXME: Heuristic resolution of dependent method
             // invoked via smart pointer
-        template <typename> struct S { void [[foo]]() {} };
+        template <typename> struct S { void foo(); };
         template <typename T> struct unique_ptr {
           T* operator->();
         };
@@ -513,61 +528,6 @@ TEST(LocateSymbol, All) {
     // FIXME: Auto-completion in a template requires disabling delayed template
     // parsing.
     TU.ExtraArgs.push_back("-fno-delayed-template-parsing");
-
-    auto AST = TU.build();
-    for (auto &D : AST.getDiagnostics())
-      ADD_FAILURE() << D;
-    ASSERT_TRUE(AST.getDiagnostics().empty()) << Test;
-
-    auto Results = locateSymbolAt(AST, T.point());
-
-    if (!WantDecl) {
-      EXPECT_THAT(Results, IsEmpty()) << Test;
-    } else {
-      ASSERT_THAT(Results, ::testing::SizeIs(1)) << Test;
-      EXPECT_EQ(Results[0].PreferredDeclaration.range, *WantDecl) << Test;
-      llvm::Optional<Range> GotDef;
-      if (Results[0].Definition)
-        GotDef = Results[0].Definition->range;
-      EXPECT_EQ(WantDef, GotDef) << Test;
-    }
-  }
-}
-
-// LocateSymbol test cases that produce warnings.
-// These are separated out from All so that in All we can assert
-// that there are no diagnostics.
-TEST(LocateSymbol, Warnings) {
-  const char *Tests[] = {
-      R"cpp(// Field, GNU old-style field designator
-        struct Foo { int [[x]]; };
-        int main() {
-          Foo bar = { ^x : 1 };
-        }
-      )cpp",
-
-      R"cpp(// Macro
-        #define MACRO 0
-        #define [[MACRO]] 1
-        int main() { return ^MACRO; }
-        #define MACRO 2
-        #undef macro
-      )cpp",
-  };
-
-  for (const char *Test : Tests) {
-    Annotations T(Test);
-    llvm::Optional<Range> WantDecl;
-    llvm::Optional<Range> WantDef;
-    if (!T.ranges().empty())
-      WantDecl = WantDef = T.range();
-    if (!T.ranges("decl").empty())
-      WantDecl = T.range("decl");
-    if (!T.ranges("def").empty())
-      WantDef = T.range("def");
-
-    TestTU TU;
-    TU.Code = T.code();
 
     auto AST = TU.build();
     auto Results = locateSymbolAt(AST, T.point());

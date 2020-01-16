@@ -1,0 +1,21 @@
+name: main
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: install ninja
+      run: sudo apt-get -y install ninja-build
+    - name: make build
+      run: mkdir -p build 
+    - name: cmake
+      run: cd build && cmake ../llvm -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_APPEND_VC_REV=OFF -DBUILD_SHARED_LIBS=ON -DLLVM_TARGETS_TO_BUILD="X86" -DLLVM_OPTIMIZED_TABLEGEN=ON -G Ninja -DLLVM_ENABLE_PROJECTS=clang
+    - name: ninja check-clang
+      run: ninja -C build check-clang
+    - name: integration tests
+      run: cd lifetime-integration-tests && ./run.sh ../build/bin/clang

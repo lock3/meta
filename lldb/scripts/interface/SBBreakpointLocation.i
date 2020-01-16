@@ -134,8 +134,6 @@ public:
 
     SBBreakpoint
     GetBreakpoint ();
-
-    STRING_EXTENSION_LEVEL(SBBreakpointLocation, lldb::eDescriptionLevelFull)
 };
 
 } // namespace lldb

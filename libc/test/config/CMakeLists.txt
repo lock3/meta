@@ -1,1 +1,1 @@
-add_subdirectory(${LIBC_TARGET_OS})
+add_subdirectory(linux)

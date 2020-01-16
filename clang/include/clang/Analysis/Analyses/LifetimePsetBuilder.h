@@ -10,6 +10,7 @@
 #ifndef LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSETBUILDER_H
 #define LLVM_CLANG_ANALYSIS_ANALYSES_LIFETIMEPSETBUILDER_H
 
+#include "Lifetime.h"
 #include "LifetimePset.h"
 #include "clang/Basic/SourceLocation.h"
 
@@ -22,15 +23,19 @@ class LifetimeReporterBase;
 
 /// Updates psets with all effects that appear in the block.
 /// \param Reporter if non-null, emits diagnostics
-void VisitBlock(PSetsMap &PMap, llvm::Optional<PSetsMap> &FalseBranchExitPMap,
-                const PSet &PSetOfAllParams,
+/// \returns false when an unsupported AST node disabled the analysis
+bool VisitBlock(const FunctionDecl *FD, PSetsMap &PMap,
+                llvm::Optional<PSetsMap> &FalseBranchExitPMap,
                 std::map<const Expr *, PSet> &PSetsOfExpr,
                 std::map<const Expr *, PSet> &RefersTo, const CFGBlock &B,
                 LifetimeReporterBase &Reporter, ASTContext &ASTCtxt,
                 IsConvertibleTy IsConvertible);
 
 /// Get the initial PSets for function parameters.
-PSet PopulatePSetForParams(PSetsMap &PMap, const FunctionDecl *FD);
+void getLifetimeContracts(PSetsMap &PMap, const FunctionDecl *FD,
+                          const ASTContext &ASTCtxt, const CFGBlock *Block,
+                          IsConvertibleTy isConvertible,
+                          LifetimeReporterBase &Reporter, bool Pre = true);
 } // namespace lifetime
 } // namespace clang
 

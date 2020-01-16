@@ -3450,27 +3450,31 @@ def warn_param_typestate_mismatch : Warning<
 
 // LifetimeAnalysis
 def warn_pset_of_global : Warning<"the pset of '%0' must be a subset of {(static), (null)}, but is {%1}">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
+  InGroup<LifetimeGlobal>, DefaultIgnore;
 def warn_deref_nullptr : Warning<"dereferencing a%select{| possibly}0 null pointer">,
+  InGroup<LifetimeNull>, DefaultIgnore;
+def warn_assign_nullptr : Warning<"assigning a%select{| possibly}0 null pointer to a non-null object">,
   InGroup<LifetimeNull>, DefaultIgnore;
 def warn_deref_dangling : Warning<"dereferencing a%select{| possibly}0 dangling pointer">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_parameter_alias : Warning<"this argument points to the same variable '%0' as another argument">,
+def warn_dangling : Warning<"%select{passing|returning|returning}0 a%select{| possibly}2 dangling pointer%select{ as argument|| as output value '%1'}0">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_parameter_dangling : Warning<"passing a%select{| indirectly}0 dangling pointer as argument">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_parameter_null : Warning<"passing a%select{| possibly}0 null pointer as argument to a non-null parameter">,
+def warn_null : Warning<"%select{passing|returning|returning}0 a%select{| possibly}2 null pointer%select{ as argument|| as output value '%1'}0 where a non-null pointer is expected">,
   InGroup<LifetimeNull>, DefaultIgnore;
-def warn_return_dangling : Warning<"returning a%select{| possibly}0 dangling Pointer">,
-  InGroup<LifetimeAnalysis>, DefaultIgnore;
-def warn_return_null : Warning<"returning a%select{| possibly}0 null Pointer where a non-null Pointer is expected">,
-  InGroup<LifetimeNull>, DefaultIgnore;
-def warn_return_wrong_pset : Warning<"returning a Pointer with points-to set %0 where points-to set %1 is expected">,
+def warn_wrong_pset : Warning<"%select{passing|returning|returning}0 a pointer%select{ as argument|| as output value '%1'}0 with points-to set %2 where points-to set %3 is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_non_static_throw : Warning<"throwing a pointer with points-to set %0 where points-to set ((static)) is expected">,
   InGroup<LifetimeAnalysis>, DefaultIgnore;
 def warn_lifetime_pointer_arithmetic : Warning<"pointer arithmetic disables lifetime analysis">,
-  InGroup<LifetimePointerArithmetic>, DefaultIgnore;
+  InGroup<LifetimeDisabled>, DefaultIgnore;
+def warn_lifetime_unsafe_cast : Warning<"unsafe cast disables lifetime analysis">,
+  InGroup<LifetimeDisabled>, DefaultIgnore;
+def warn_unsupported_expression : Warning<"this pre/postcondition is not supported">,
+  InGroup<LifetimeAnalysis>, DefaultIgnore;
+
+def warn_lifetime_category : Warning<"%0 could be annotate as %1">, InGroup<LifetimeCategory>, DefaultIgnore;
+
+def warn_lifetime_filtered : Warning<"TODO: this is just a placeholder, never actually emitted.">, InGroup<LifetimeFiltered>, DefaultIgnore;
 
 def note_never_initialized : Note<"it was never initialized here">;
 def note_pointee_left_scope : Note<"pointee '%0' left the scope here">;
@@ -3479,10 +3483,11 @@ def note_pointer_arithmetic: Note<"pointer arithmetic is not allowed">;
 def note_dereferenced: Note<"was dereferenced here">;
 def note_null_here: Note<"became nullptr here">;
 def note_null_reason_parameter: Note<"the parameter is assumed to be potentially null. Consider using gsl::not_null<>, a reference instead of a pointer or an assert() to explicitly remove null">;
-def note_null_reason_default_construct: Note<"default-constructed Pointers are assumed to be null">;
+def note_null_reason_default_construct: Note<"default-constructed pointers are assumed to be null">;
 def note_null_reason_compared_to_null: Note<"is compared to null here">;
 def note_forbidden_cast: Note<"used a forbidden cast here">;
 def note_modified: Note<"modified here">;
+def note_deleted: Note<"deleted here">;
 def note_assigned: Note<"assigned here">;
 def note_here: Note<"here">;
 

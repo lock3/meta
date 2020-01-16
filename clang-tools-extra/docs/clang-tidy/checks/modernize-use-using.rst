@@ -14,8 +14,6 @@ Before:
   class Class{};
   typedef void (Class::* MyPtrType)() const;
 
-  typedef struct { int a; } R_t, *R_p;
-
 After:
 
 .. code-block:: c++
@@ -24,9 +22,6 @@ After:
 
   class Class{};
   using MyPtrType = void (Class::*)() const;
-
-  using R_t = struct { int a; };
-  using R_p = R_t*;
 
 This check requires using C++11 or higher to run.
 

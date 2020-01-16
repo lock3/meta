@@ -80,8 +80,6 @@ public:
     void
     AppendPathComponent (const char *file_or_directory);
 
-    STRING_EXTENSION(SBFileSpec)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
         def __get_fullpath__(self):

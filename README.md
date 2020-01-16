@@ -1,4 +1,4 @@
-# The Lock3 LLVM Reflection & Metaprograming Clang Fork
+# The Lock3 LLVM Reflection & Metaprograming Clang Fork + Lifetimes
 
 This repository contains a modified version of the clang compiler for
 reflection (feature/reflect) and metaprogramming (feature/metaprogramming).

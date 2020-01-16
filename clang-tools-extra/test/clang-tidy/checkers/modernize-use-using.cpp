@@ -84,11 +84,7 @@ typedef int* PInt;
 
 typedef int bla1, bla2, bla3;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:17: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-3]]:23: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using bla1 = int;
-// CHECK-FIXES-NEXT: using bla2 = int;
-// CHECK-FIXES-NEXT: using bla3 = int;
+// CHECK-FIXES: typedef int bla1, bla2, bla3;
 
 #define CODE typedef int INT
 
@@ -140,16 +136,16 @@ int typedef Bax;
 
 typedef struct Q1 { int a; } S1;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S1 = struct Q1 { int a; };
+// CHECK-FIXES: typedef struct Q1 { int a; } S1;
 typedef struct { int b; } S2;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S2 = struct { int b; };
+// CHECK-FIXES: typedef struct { int b; } S2;
 struct Q2 { int c; } typedef S3;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S3 = struct Q2 { int c; };
+// CHECK-FIXES: struct Q2 { int c; } typedef S3;
 struct { int d; } typedef S4;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S4 = struct { int d; };
+// CHECK-FIXES: struct { int d; } typedef S4;
 
 namespace my_space {
   class my_cclass {};
@@ -200,15 +196,11 @@ struct S {};
 
 typedef S<(0 > 0), int> S_t, *S_p;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:28: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S_t = S<(0 > 0), int>;
-// CHECK-FIXES-NEXT: using S_p = S_t*;
+// CHECK-FIXES: typedef S<(0 > 0), int> S_t, *S_p;
 
 typedef S<(0 < 0), int> S2_t, *S2_p;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:29: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using S2_t = S<(0 < 0), int>;
-// CHECK-FIXES-NEXT: using S2_p = S2_t*;
+// CHECK-FIXES: typedef S<(0 < 0), int> S2_t, *S2_p;
 
 typedef S<(0 > 0 && (3 > 1) && (1 < 1)), int> S3_t;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
@@ -221,9 +213,7 @@ constexpr bool b[1] = {true};
 
 typedef Q<b[0 < 0]> Q_t, *Q_p;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:24: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using Q_t = Q<b[0 < 0]>;
-// CHECK-FIXES-NEXT: using Q_p = Q_t*;
+// CHECK-FIXES: typedef Q<b[0 < 0]> Q_t, *Q_p;
 
 typedef Q<b[0 < 0]> Q2_t;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
@@ -237,9 +227,7 @@ struct T {
 
 typedef Q<T{0 < 0}.b> Q3_t, *Q3_p;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:27: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using Q3_t = Q<T{0 < 0}.b>;
-// CHECK-FIXES-NEXT: using Q3_p = Q3_t*;
+// CHECK-FIXES: typedef Q<T{0 < 0}.b> Q3_t, *Q3_p;
 
 typedef Q<T{0 < 0}.b> Q3_t;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
@@ -258,12 +246,4 @@ typedef Variadic<Variadic<int, bool, Q<T{0 < 0}.b> >, S<(0 < 0), Variadic<Q<b[0 
 
 typedef Variadic<Variadic<int, bool, Q<T{0 < 0}.b> >, S<(0 < 0), Variadic<Q<b[0 < 0]> > > > Variadic_t, *Variadic_p;
 // CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:103: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using Variadic_t = Variadic<Variadic<int, bool, Q<T{0 < 0}.b> >, S<(0 < 0), Variadic<Q<b[0 < 0]> > > >;
-// CHECK-FIXES-NEXT: using Variadic_p = Variadic_t*;
-
-typedef struct { int a; } R_t, *R_p;
-// CHECK-MESSAGES: :[[@LINE-1]]:1: warning: use 'using' instead of 'typedef'
-// CHECK-MESSAGES: :[[@LINE-2]]:30: warning: use 'using' instead of 'typedef'
-// CHECK-FIXES: using R_t = struct { int a; };
-// CHECK-FIXES-NEXT: using R_p = R_t*;
+// CHECK-FIXES: typedef Variadic<Variadic<int, bool, Q<T{0 < 0}.b> >, S<(0 < 0), Variadic<Q<b[0 < 0]> > > > Variadic_t, *Variadic_p;

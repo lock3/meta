@@ -116,8 +116,6 @@ public:
     bool
     operator != (const lldb::SBCompileUnit &rhs) const;
 
-    STRING_EXTENSION(SBCompileUnit)
-
 #ifdef SWIGPYTHON
     %pythoncode %{
         def __iter__(self):

@@ -743,7 +743,7 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
   BalancedDelimiterTracker T(*this, tok::l_paren);
   T.consumeOpen();
 
-  ExprResult AsmString(ParseAsmStringLiteral(/*ForAsmLabel*/ false));
+  ExprResult AsmString(ParseAsmStringLiteral());
 
   // Check if GNU-style InlineAsm is disabled.
   // Error on anything other than empty string.
@@ -823,7 +823,7 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
     // Parse the asm-string list for clobbers if present.
     if (!AteExtraColon && isTokenStringLiteral()) {
       while (1) {
-        ExprResult Clobber(ParseAsmStringLiteral(/*ForAsmLabel*/ false));
+        ExprResult Clobber(ParseAsmStringLiteral());
 
         if (Clobber.isInvalid())
           break;
@@ -920,7 +920,7 @@ bool Parser::ParseAsmOperandsOpt(SmallVectorImpl<IdentifierInfo *> &Names,
     } else
       Names.push_back(nullptr);
 
-    ExprResult Constraint(ParseAsmStringLiteral(/*ForAsmLabel*/ false));
+    ExprResult Constraint(ParseAsmStringLiteral());
     if (Constraint.isInvalid()) {
       SkipUntil(tok::r_paren, StopAtSemi);
       return true;

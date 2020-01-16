@@ -285,22 +285,6 @@ void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
                                          ISD::CondCode &CCCode,
                                          const SDLoc &dl, const SDValue OldLHS,
                                          const SDValue OldRHS) const {
-  SDValue Chain;
-  return softenSetCCOperands(DAG, VT, NewLHS, NewRHS, CCCode, dl, OldLHS,
-                             OldRHS, Chain);
-}
-
-void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
-                                         SDValue &NewLHS, SDValue &NewRHS,
-                                         ISD::CondCode &CCCode,
-                                         const SDLoc &dl, const SDValue OldLHS,
-                                         const SDValue OldRHS,
-                                         SDValue &Chain,
-                                         bool IsSignaling) const {
-  // FIXME: Currently we cannot really respect all IEEE predicates due to libgcc
-  // not supporting it. We can update this code when libgcc provides such
-  // functions.
-
   assert((VT == MVT::f32 || VT == MVT::f64 || VT == MVT::f128 || VT == MVT::ppcf128)
          && "Unsupported setcc type!");
 
@@ -406,8 +390,7 @@ void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
   EVT OpsVT[2] = { OldLHS.getValueType(),
                    OldRHS.getValueType() };
   CallOptions.setTypeListBeforeSoften(OpsVT, RetVT, true);
-  auto Call = makeLibCall(DAG, LC1, RetVT, Ops, CallOptions, dl, Chain);
-  NewLHS = Call.first;
+  NewLHS = makeLibCall(DAG, LC1, RetVT, Ops, CallOptions, dl).first;
   NewRHS = DAG.getConstant(0, dl, RetVT);
 
   CCCode = getCmpLibcallCC(LC1);
@@ -416,22 +399,16 @@ void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
     CCCode = getSetCCInverse(CCCode, RetVT);
   }
 
-  if (LC2 == RTLIB::UNKNOWN_LIBCALL) {
-    // Update Chain.
-    Chain = Call.second;
-  } else {
+  if (LC2 != RTLIB::UNKNOWN_LIBCALL) {
     SDValue Tmp = DAG.getNode(
         ISD::SETCC, dl,
         getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), RetVT),
         NewLHS, NewRHS, DAG.getCondCode(CCCode));
-    auto Call2 = makeLibCall(DAG, LC2, RetVT, Ops, CallOptions, dl, Chain);
+    NewLHS = makeLibCall(DAG, LC2, RetVT, Ops, CallOptions, dl).first;
     NewLHS = DAG.getNode(
         ISD::SETCC, dl,
         getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), RetVT),
-        Call2.first, NewRHS, DAG.getCondCode(getCmpLibcallCC(LC2)));
-    if (Chain)
-      Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, Call.second,
-                          Call2.second);
+        NewLHS, NewRHS, DAG.getCondCode(getCmpLibcallCC(LC2)));
     NewLHS = DAG.getNode(ISD::OR, dl, Tmp.getValueType(), Tmp, NewLHS);
     NewRHS = SDValue();
   }
@@ -7291,86 +7268,6 @@ TargetLowering::expandFixedPointMul(SDNode *Node, SelectionDAG &DAG) const {
                       dl, VT);
   Result = DAG.getSelectCC(dl, Hi, HighMask, SatMin, Result, ISD::SETLT);
   return Result;
-}
-
-SDValue
-TargetLowering::expandFixedPointDiv(unsigned Opcode, const SDLoc &dl,
-                                    SDValue LHS, SDValue RHS,
-                                    unsigned Scale, SelectionDAG &DAG) const {
-  assert((Opcode == ISD::SDIVFIX ||
-          Opcode == ISD::UDIVFIX) &&
-         "Expected a fixed point division opcode");
-
-  EVT VT = LHS.getValueType();
-  bool Signed = Opcode == ISD::SDIVFIX;
-  EVT BoolVT = getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), VT);
-
-  // If there is enough room in the type to upscale the LHS or downscale the
-  // RHS before the division, we can perform it in this type without having to
-  // resize. For signed operations, the LHS headroom is the number of
-  // redundant sign bits, and for unsigned ones it is the number of zeroes.
-  // The headroom for the RHS is the number of trailing zeroes.
-  unsigned LHSLead = Signed ? DAG.ComputeNumSignBits(LHS) - 1
-                            : DAG.computeKnownBits(LHS).countMinLeadingZeros();
-  unsigned RHSTrail = DAG.computeKnownBits(RHS).countMinTrailingZeros();
-
-  if (LHSLead + RHSTrail < Scale)
-    return SDValue();
-
-  unsigned LHSShift = std::min(LHSLead, Scale);
-  unsigned RHSShift = Scale - LHSShift;
-
-  // At this point, we know that if we shift the LHS up by LHSShift and the
-  // RHS down by RHSShift, we can emit a regular division with a final scaling
-  // factor of Scale.
-
-  EVT ShiftTy = getShiftAmountTy(VT, DAG.getDataLayout());
-  if (LHSShift)
-    LHS = DAG.getNode(ISD::SHL, dl, VT, LHS,
-                      DAG.getConstant(LHSShift, dl, ShiftTy));
-  if (RHSShift)
-    RHS = DAG.getNode(Signed ? ISD::SRA : ISD::SRL, dl, VT, RHS,
-                      DAG.getConstant(RHSShift, dl, ShiftTy));
-
-  SDValue Quot;
-  if (Signed) {
-    // For signed operations, if the resulting quotient is negative and the
-    // remainder is nonzero, subtract 1 from the quotient to round towards
-    // negative infinity.
-    SDValue Rem;
-    // FIXME: Ideally we would always produce an SDIVREM here, but if the
-    // type isn't legal, SDIVREM cannot be expanded. There is no reason why
-    // we couldn't just form a libcall, but the type legalizer doesn't do it.
-    if (isTypeLegal(VT) &&
-        isOperationLegalOrCustom(ISD::SDIVREM, VT)) {
-      Quot = DAG.getNode(ISD::SDIVREM, dl,
-                         DAG.getVTList(VT, VT),
-                         LHS, RHS);
-      Rem = Quot.getValue(1);
-      Quot = Quot.getValue(0);
-    } else {
-      Quot = DAG.getNode(ISD::SDIV, dl, VT,
-                         LHS, RHS);
-      Rem = DAG.getNode(ISD::SREM, dl, VT,
-                        LHS, RHS);
-    }
-    SDValue Zero = DAG.getConstant(0, dl, VT);
-    SDValue RemNonZero = DAG.getSetCC(dl, BoolVT, Rem, Zero, ISD::SETNE);
-    SDValue LHSNeg = DAG.getSetCC(dl, BoolVT, LHS, Zero, ISD::SETLT);
-    SDValue RHSNeg = DAG.getSetCC(dl, BoolVT, RHS, Zero, ISD::SETLT);
-    SDValue QuotNeg = DAG.getNode(ISD::XOR, dl, BoolVT, LHSNeg, RHSNeg);
-    SDValue Sub1 = DAG.getNode(ISD::SUB, dl, VT, Quot,
-                               DAG.getConstant(1, dl, VT));
-    Quot = DAG.getSelect(dl, VT,
-                         DAG.getNode(ISD::AND, dl, BoolVT, RemNonZero, QuotNeg),
-                         Sub1, Quot);
-  } else
-    Quot = DAG.getNode(ISD::UDIV, dl, VT,
-                       LHS, RHS);
-
-  // TODO: Saturation.
-
-  return Quot;
 }
 
 void TargetLowering::expandUADDSUBO(

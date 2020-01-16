@@ -108,7 +108,6 @@ public:
 
   bool GetDescription(lldb::SBStream &description);
 
-  STRING_EXTENSION(SBBreakpointName)
 };
 
 } // namespace lldb

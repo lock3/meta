@@ -278,6 +278,11 @@ bool Symbol::includeInDynsym() const {
   if (computeBinding() == STB_LOCAL)
     return false;
 
+  // If a PIE binary was not linked against any shared libraries, then we can
+  // safely drop weak undef symbols from .dynsym.
+  if (isUndefWeak() && config->pie && sharedFiles.empty())
+    return false;
+
   return isUndefined() || isShared() || exportDynamic || inDynamicList;
 }
 

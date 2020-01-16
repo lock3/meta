@@ -9664,9 +9664,9 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
   }
 
   const ValueDecl *VD = cast<ValueDecl>(GD.getDecl());
+  StringRef Name = CGM.getMangledName(GD);
   // Try to detect target regions in the function.
   if (const auto *FD = dyn_cast<FunctionDecl>(VD)) {
-    StringRef Name = CGM.getMangledName(GD);
     scanForTargetRegionsFunctions(FD->getBody(), Name);
     Optional<OMPDeclareTargetDeclAttr::DevTypeTy> DevTy =
         OMPDeclareTargetDeclAttr::getDeviceType(FD);
@@ -9677,7 +9677,7 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
 
   // Do not to emit function if it is not marked as declare target.
   return !OMPDeclareTargetDeclAttr::isDeclareTargetDeclaration(VD) &&
-         AlreadyEmittedTargetDecls.count(VD) == 0;
+         AlreadyEmittedTargetFunctions.count(Name) == 0;
 }
 
 bool CGOpenMPRuntime::emitTargetGlobalVariable(GlobalDecl GD) {
@@ -9908,20 +9908,20 @@ bool CGOpenMPRuntime::markAsGlobalTarget(GlobalDecl GD) {
   if (!CGM.getLangOpts().OpenMPIsDevice || !ShouldMarkAsGlobal)
     return true;
 
+  StringRef Name = CGM.getMangledName(GD);
   const auto *D = cast<FunctionDecl>(GD.getDecl());
   // Do not to emit function if it is marked as declare target as it was already
   // emitted.
   if (OMPDeclareTargetDeclAttr::isDeclareTargetDeclaration(D)) {
-    if (D->hasBody() && AlreadyEmittedTargetDecls.count(D) == 0) {
-      if (auto *F = dyn_cast_or_null<llvm::Function>(
-              CGM.GetGlobalValue(CGM.getMangledName(GD))))
+    if (D->hasBody() && AlreadyEmittedTargetFunctions.count(Name) == 0) {
+      if (auto *F = dyn_cast_or_null<llvm::Function>(CGM.GetGlobalValue(Name)))
         return !F->isDeclaration();
       return false;
     }
     return true;
   }
 
-  return !AlreadyEmittedTargetDecls.insert(D).second;
+  return !AlreadyEmittedTargetFunctions.insert(Name).second;
 }
 
 llvm::Function *CGOpenMPRuntime::emitRequiresDirectiveRegFun() {

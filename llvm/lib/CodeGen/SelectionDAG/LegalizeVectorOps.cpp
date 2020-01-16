@@ -146,7 +146,6 @@ class VectorLegalizer {
   SDValue ExpandMULO(SDValue Op);
   SDValue ExpandAddSubSat(SDValue Op);
   SDValue ExpandFixedPointMul(SDValue Op);
-  SDValue ExpandFixedPointDiv(SDValue Op);
   SDValue ExpandStrictFPOp(SDValue Op);
 
   SDValue UnrollStrictFPOp(SDValue Op);
@@ -443,9 +442,7 @@ SDValue VectorLegalizer::LegalizeOp(SDValue Op) {
   case ISD::SMULFIX:
   case ISD::SMULFIXSAT:
   case ISD::UMULFIX:
-  case ISD::UMULFIXSAT:
-  case ISD::SDIVFIX:
-  case ISD::UDIVFIX: {
+  case ISD::UMULFIXSAT: {
     unsigned Scale = Node->getConstantOperandVal(2);
     Action = TLI.getFixedPointOperationAction(Node->getOpcode(),
                                               Node->getValueType(0), Scale);
@@ -852,9 +849,6 @@ SDValue VectorLegalizer::Expand(SDValue Op) {
     // targets? This should probably be investigated. And if we still prefer to
     // unroll an explanation could be helpful.
     return DAG.UnrollVectorOp(Op.getNode());
-  case ISD::SDIVFIX:
-  case ISD::UDIVFIX:
-    return ExpandFixedPointDiv(Op);
 #define INSTRUCTION(NAME, NARG, ROUND_MODE, INTRINSIC, DAGN)                   \
   case ISD::STRICT_##DAGN:
 #include "llvm/IR/ConstrainedOps.def"
@@ -1396,14 +1390,6 @@ SDValue VectorLegalizer::ExpandFixedPointMul(SDValue Op) {
   if (SDValue Expanded = TLI.expandFixedPointMul(Op.getNode(), DAG))
     return Expanded;
   return DAG.UnrollVectorOp(Op.getNode());
-}
-
-SDValue VectorLegalizer::ExpandFixedPointDiv(SDValue Op) {
-  SDNode *N = Op.getNode();
-  if (SDValue Expanded = TLI.expandFixedPointDiv(N->getOpcode(), SDLoc(N),
-          N->getOperand(0), N->getOperand(1), N->getConstantOperandVal(2), DAG))
-    return Expanded;
-  return DAG.UnrollVectorOp(N);
 }
 
 SDValue VectorLegalizer::ExpandStrictFPOp(SDValue Op) {
