@@ -55,9 +55,13 @@ public:
   bool isA(const void *ClassID) const override { return ClassID == &ID; }
   static bool classof(const TypeSystem *ts) { return ts->isA(&ID); }
 
-  // Constructors and Destructors
-  explicit ClangASTContext(llvm::Triple triple = llvm::Triple());
-  explicit ClangASTContext(ArchSpec arch);
+  /// Constructs a ClangASTContext with an ASTContext using the given triple.
+  ///
+  /// \param triple The llvm::Triple used for the ASTContext. The triple defines
+  ///               certain characteristics of the ASTContext and its types
+  ///               (e.g., whether certain primitive types exist or what their
+  ///               signedness is).
+  explicit ClangASTContext(llvm::Triple triple);
 
   /// Constructs a ClangASTContext that uses an existing ASTContext internally.
   /// Useful when having an existing ASTContext created by Clang.
@@ -764,13 +768,11 @@ public:
                                                  const CompilerType &var_type,
                                                  lldb::AccessType access);
 
-  clang::CXXMethodDecl *
-  AddMethodToCXXRecordType(lldb::opaque_compiler_type_t type, const char *name,
-                           const char *mangled_name,
-                           const CompilerType &method_type,
-                           lldb::AccessType access, bool is_virtual,
-                           bool is_static, bool is_inline, bool is_explicit,
-                           bool is_attr_used, bool is_artificial);
+  clang::CXXMethodDecl *AddMethodToCXXRecordType(
+      lldb::opaque_compiler_type_t type, llvm::StringRef name,
+      const char *mangled_name, const CompilerType &method_type,
+      lldb::AccessType access, bool is_virtual, bool is_static, bool is_inline,
+      bool is_explicit, bool is_attr_used, bool is_artificial);
 
   void AddMethodOverridesForCXXRecordType(lldb::opaque_compiler_type_t type);
 
@@ -969,7 +971,7 @@ private:
 
 class ClangASTContextForExpressions : public ClangASTContext {
 public:
-  ClangASTContextForExpressions(Target &target, ArchSpec arch);
+  ClangASTContextForExpressions(Target &target, llvm::Triple triple);
 
   ~ClangASTContextForExpressions() override = default;
 

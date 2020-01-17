@@ -304,6 +304,11 @@ public:
   bool TraverseSynOrSemInitListExpr(InitListExpr *S,
                                     DataRecursionQueue *Queue = nullptr);
 
+  /// Recursively visit a reference to a concept with potential arguments.
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseConceptReference(const ConceptReference &C);
+
   // ---- Methods on Attrs ----
 
   // Visit an attribute.
@@ -1773,9 +1778,8 @@ DEF_TRAVERSE_DECL(TemplateTemplateParmDecl, {
   // D is the "T" in something like
   //   template <template <typename> class T> class container { };
   TRY_TO(TraverseDecl(D->getTemplatedDecl()));
-  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited())
     TRY_TO(TraverseTemplateArgumentLoc(D->getDefaultArgument()));
-  }
   TRY_TO(TraverseTemplateParameterListHelper(D->getTemplateParameters()));
 })
 
@@ -1787,6 +1791,8 @@ DEF_TRAVERSE_DECL(TemplateTypeParmDecl, {
   // D is the "T" in something like "template<typename T> class vector;"
   if (D->getTypeForDecl())
     TRY_TO(TraverseType(QualType(D->getTypeForDecl(), 0)));
+  if (const auto *TC = D->getTypeConstraint())
+    TRY_TO(TraverseConceptReference(*TC));
   if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited())
     TRY_TO(TraverseTypeLoc(D->getDefaultArgumentInfo()->getTypeLoc()));
 })
@@ -2028,6 +2034,11 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionHelper(FunctionDecl *D) {
     for (ParmVarDecl *Parameter : D->parameters()) {
       TRY_TO(TraverseDecl(Parameter));
     }
+  }
+
+  // Visit the trailing requires clause, if any.
+  if (Expr *TrailingRequiresClause = D->getTrailingRequiresClause()) {
+    TRY_TO(TraverseStmt(TrailingRequiresClause));
   }
 
   if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
@@ -2322,6 +2333,18 @@ bool RecursiveASTVisitor<Derived>::TraverseSynOrSemInitListExpr(
       TRY_TO_TRAVERSE_OR_ENQUEUE_STMT(SubStmt);
     }
   }
+  return true;
+}
+
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseConceptReference(
+    const ConceptReference &C) {
+  TRY_TO(TraverseNestedNameSpecifierLoc(C.getNestedNameSpecifierLoc()));
+  TRY_TO(TraverseDeclarationNameInfo(C.getConceptNameInfo()));
+  if (C.hasExplicitTemplateArgs())
+    TRY_TO(TraverseTemplateArgumentLocsHelper(
+        C.getTemplateArgsAsWritten()->getTemplateArgs(),
+        C.getTemplateArgsAsWritten()->NumTemplateArgs));
   return true;
 }
 
@@ -2683,9 +2706,7 @@ DEF_TRAVERSE_STMT(CoyieldExpr, {
 })
 
 DEF_TRAVERSE_STMT(ConceptSpecializationExpr, {
-  TRY_TO(TraverseTemplateArgumentLocsHelper(
-          S->getTemplateArgsAsWritten()->getTemplateArgs(),
-          S->getTemplateArgsAsWritten()->NumTemplateArgs));
+  TRY_TO(TraverseConceptReference(*S));
 })
 
 // These literals (all of them) do not need any action.

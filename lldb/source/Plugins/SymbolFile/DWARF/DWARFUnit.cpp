@@ -32,9 +32,9 @@ extern int g_verbose;
 DWARFUnit::DWARFUnit(SymbolFileDWARF &dwarf, lldb::user_id_t uid,
                      const DWARFUnitHeader &header,
                      const DWARFAbbreviationDeclarationSet &abbrevs,
-                     DIERef::Section section)
+                     DIERef::Section section, bool is_dwo)
     : UserID(uid), m_dwarf(dwarf), m_header(header), m_abbrevs(&abbrevs),
-      m_cancel_scopes(false), m_section(section) {}
+      m_cancel_scopes(false), m_section(section), m_is_dwo(is_dwo) {}
 
 DWARFUnit::~DWARFUnit() = default;
 
@@ -336,6 +336,9 @@ void DWARFUnit::AddUnitDIE(const DWARFDebugInfoEntry &cu_die) {
     }
   }
 
+  if (m_is_dwo)
+    return;
+
   std::unique_ptr<SymbolFileDWARFDwo> dwo_symbol_file =
       m_dwarf.GetDwoSymbolFileForCompileUnit(*this, cu_die);
   if (!dwo_symbol_file)
@@ -377,8 +380,9 @@ void DWARFUnit::AddUnitDIE(const DWARFDebugInfoEntry &cu_die) {
                .GetByteSize() > 0)
     dwo_cu->SetRangesBase(llvm::DWARFListTableHeader::getHeaderSize(DWARF32));
 
-  if (GetVersion() >= 5 &&
-      m_dwo_symbol_file->get_debug_loclists_data().GetByteSize() > 0)
+  if (GetVersion() >= 5 && m_dwo_symbol_file->GetDWARFContext()
+                                   .getOrLoadLocListsData()
+                                   .GetByteSize() > 0)
     dwo_cu->SetLoclistsBase(llvm::DWARFListTableHeader::getHeaderSize(DWARF32));
   dwo_cu->SetBaseAddress(GetBaseAddress());
 
@@ -452,11 +456,29 @@ void DWARFUnit::SetLoclistsBase(dw_addr_t loclists_base) {
   m_loclist_table_header.emplace(".debug_loclists", "locations");
   uint64_t offset = loclists_base - header_size;
   if (llvm::Error E = m_loclist_table_header->extract(
-          m_dwarf.get_debug_loclists_data().GetAsLLVM(), &offset)) {
+          m_dwarf.GetDWARFContext().getOrLoadLocListsData().GetAsLLVM(),
+          &offset)) {
     GetSymbolFileDWARF().GetObjectFile()->GetModule()->ReportError(
         "Failed to extract location list table at offset 0x%" PRIx64 ": %s",
         loclists_base, toString(std::move(E)).c_str());
   }
+}
+
+std::unique_ptr<llvm::DWARFLocationTable>
+DWARFUnit::GetLocationTable(const DataExtractor &data) const {
+  llvm::DWARFDataExtractor llvm_data(
+      toStringRef(data.GetData()),
+      data.GetByteOrder() == lldb::eByteOrderLittle, data.GetAddressByteSize());
+
+  if (m_is_dwo || GetVersion() >= 5)
+    return std::make_unique<llvm::DWARFDebugLoclists>(llvm_data, GetVersion());
+  return std::make_unique<llvm::DWARFDebugLoc>(llvm_data);
+}
+
+const DWARFDataExtractor &DWARFUnit::GetLocationData() const {
+  DWARFContext &Ctx = GetSymbolFileDWARF().GetDWARFContext();
+  return GetVersion() >= 5 ? Ctx.getOrLoadLocListsData()
+                           : Ctx.getOrLoadLocData();
 }
 
 void DWARFUnit::SetRangesBase(dw_addr_t ranges_base) {
@@ -771,7 +793,8 @@ void DWARFUnit::ComputeAbsolutePath() {
     m_file_spec->MakeAbsolute(GetCompilationDirectory());
 }
 
-SymbolFileDWARFDwo *DWARFUnit::GetDwoSymbolFile() const {
+SymbolFileDWARFDwo *DWARFUnit::GetDwoSymbolFile() {
+  ExtractUnitDIEIfNeeded();
   return m_dwo_symbol_file.get();
 }
 
@@ -872,11 +895,12 @@ DWARFUnit::extract(SymbolFileDWARF &dwarf, user_id_t uid,
     return llvm::make_error<llvm::object::GenericBinaryError>(
         "No abbrev exists at the specified offset.");
 
+  bool is_dwo = dwarf.GetDWARFContext().isDwo();
   if (expected_header->IsTypeUnit())
-    return DWARFUnitSP(
-        new DWARFTypeUnit(dwarf, uid, *expected_header, *abbrevs, section));
-  return DWARFUnitSP(
-      new DWARFCompileUnit(dwarf, uid, *expected_header, *abbrevs, section));
+    return DWARFUnitSP(new DWARFTypeUnit(dwarf, uid, *expected_header, *abbrevs,
+                                         section, is_dwo));
+  return DWARFUnitSP(new DWARFCompileUnit(dwarf, uid, *expected_header,
+                                          *abbrevs, section, is_dwo));
 }
 
 const lldb_private::DWARFDataExtractor &DWARFUnit::GetData() const {

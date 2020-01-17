@@ -79,6 +79,11 @@ public:
   /// Add one value to the argument list.
   BlockArgument addArgument(Type type);
 
+  /// Insert one value to the position in the argument list indicated by the
+  /// given iterator. The existing arguments are shifted. The block is expected
+  /// not to have predecessors.
+  BlockArgument insertArgument(args_iterator it, Type type);
+
   /// Add one argument to the argument list for each type specified in the list.
   iterator_range<args_iterator> addArguments(ArrayRef<Type> types);
 
@@ -307,12 +312,14 @@ public:
   }
 
   void print(raw_ostream &os);
+  void print(raw_ostream &os, AsmState &state);
   void dump();
 
   /// Print out the name of the block without printing its body.
   /// NOTE: The printType argument is ignored.  We keep it for compatibility
   /// with LLVM dominator machinery that expects it to exist.
   void printAsOperand(raw_ostream &os, bool printType = true);
+  void printAsOperand(raw_ostream &os, AsmState &state);
 
 private:
   /// Pair of the parent object that owns this block and a bit that signifies if

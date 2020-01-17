@@ -1223,7 +1223,7 @@ public:
       APFloat RealVal(APFloat::IEEEdouble());
       auto StatusOrErr =
           RealVal.convertFromString(Desc->Repr, APFloat::rmTowardZero);
-      if (!StatusOrErr || *StatusOrErr != APFloat::opOK)
+      if (errorToBool(StatusOrErr.takeError()) || *StatusOrErr != APFloat::opOK)
         llvm_unreachable("FP immediate is not exact");
 
       if (getFPImm().bitwiseIsEqual(RealVal))
@@ -2580,7 +2580,7 @@ AArch64AsmParser::tryParseFPImm(OperandVector &Operands) {
     APFloat RealVal(APFloat::IEEEdouble());
     auto StatusOrErr =
         RealVal.convertFromString(Tok.getString(), APFloat::rmTowardZero);
-    if (!StatusOrErr) {
+    if (errorToBool(StatusOrErr.takeError())) {
       TokError("invalid floating point representation");
       return MatchOperand_ParseFail;
     }
@@ -5515,7 +5515,7 @@ AArch64AsmParser::classifySymbolRef(const MCExpr *Expr,
 }
 
 /// Force static initialization.
-extern "C" void LLVMInitializeAArch64AsmParser() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64AsmParser() {
   RegisterMCAsmParser<AArch64AsmParser> X(getTheAArch64leTarget());
   RegisterMCAsmParser<AArch64AsmParser> Y(getTheAArch64beTarget());
   RegisterMCAsmParser<AArch64AsmParser> Z(getTheARM64Target());

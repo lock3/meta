@@ -519,8 +519,8 @@ def int_memmove : Intrinsic<[],
 def int_memset  : Intrinsic<[],
                             [llvm_anyptr_ty, llvm_i8_ty, llvm_anyint_ty,
                              llvm_i1_ty],
-                            [IntrArgMemOnly, IntrWillReturn, NoCapture<0>, WriteOnly<0>,
-                            ImmArg<3>]>;
+                            [IntrWriteMem, IntrArgMemOnly, IntrWillReturn, NoCapture<0>,
+                             WriteOnly<0>, ImmArg<3>]>;
 
 // FIXME: Add version of these floating point intrinsics which allow non-default
 // rounding modes and FP exception handling.
@@ -930,6 +930,14 @@ def int_umul_fix : Intrinsic<[llvm_anyint_ty],
                              [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
                              [IntrNoMem, IntrSpeculatable, IntrWillReturn, Commutative, ImmArg<2>]>;
 
+def int_sdiv_fix : Intrinsic<[llvm_anyint_ty],
+                             [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
+                             [IntrNoMem, ImmArg<2>]>;
+
+def int_udiv_fix : Intrinsic<[llvm_anyint_ty],
+                             [LLVMMatchType<0>, LLVMMatchType<0>, llvm_i32_ty],
+                             [IntrNoMem, ImmArg<2>]>;
+
 //===------------------- Fixed Point Saturation Arithmetic Intrinsics ----------------===//
 //
 def int_smul_fix_sat : Intrinsic<[llvm_anyint_ty],
@@ -1213,7 +1221,8 @@ def int_memmove_element_unordered_atomic
 // @llvm.memset.element.unordered.atomic.*(dest, value, length, elementsize)
 def int_memset_element_unordered_atomic
     : Intrinsic<[], [ llvm_anyptr_ty, llvm_i8_ty, llvm_anyint_ty, llvm_i32_ty ],
-                [ IntrArgMemOnly, IntrWillReturn, NoCapture<0>, WriteOnly<0>, ImmArg<3> ]>;
+                [ IntrWriteMem, IntrArgMemOnly, IntrWillReturn, NoCapture<0>, WriteOnly<0>,
+                  ImmArg<3> ]>;
 
 //===------------------------ Reduction Intrinsics ------------------------===//
 //
@@ -1306,7 +1315,9 @@ def int_loop_decrement :
 // maximum number of elements processed in an iteration). Return the remaining
 // number of iterations still to be executed. This is effectively a sub which
 // can be used with a phi, icmp and br to control the number of iterations
-// executed, as usual.
+// executed, as usual. Any optimisations are allowed to treat it is a sub, and
+// it's scevable, so it's the backends responsibility to handle cases where it
+// may be optimised.
 def int_loop_decrement_reg :
   Intrinsic<[llvm_anyint_ty],
             [llvm_anyint_ty, llvm_anyint_ty], [IntrNoDuplicate]>;

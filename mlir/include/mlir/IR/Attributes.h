@@ -69,7 +69,7 @@ public:
   using ImplType = AttributeStorage;
   using ValueType = void;
 
-  Attribute() : impl(nullptr) {}
+  constexpr Attribute() : impl(nullptr) {}
   /* implicit */ Attribute(const ImplType *impl)
       : impl(const_cast<ImplType *>(impl)) {}
 
@@ -214,6 +214,25 @@ public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast.
   static bool kindof(unsigned kind) {
     return kind == StandardAttributes::Array;
+  }
+
+private:
+  /// Class for underlying value iterator support.
+  template <typename AttrTy>
+  class attr_value_iterator final
+      : public llvm::mapped_iterator<iterator, AttrTy (*)(Attribute)> {
+  public:
+    explicit attr_value_iterator(iterator it)
+        : llvm::mapped_iterator<iterator, AttrTy (*)(Attribute)>(
+              it, [](Attribute attr) { return attr.cast<AttrTy>(); }) {}
+    AttrTy operator*() { return (*this->I).template cast<AttrTy>(); }
+  };
+
+public:
+  template <typename AttrTy>
+  llvm::iterator_range<attr_value_iterator<AttrTy>> getAsRange() {
+    return llvm::make_range(attr_value_iterator<AttrTy>(begin()),
+                            attr_value_iterator<AttrTy>(end()));
   }
 };
 
@@ -603,7 +622,7 @@ public:
   }
 
   // Note: We could steal more bits if the need arises.
-  enum { NumLowBitsAvailable = 1 };
+  static constexpr int NumLowBitsAvailable = 1;
 };
 
 /// Pair of raw pointer and a boolean flag of whether the pointer holds a splat,
@@ -1423,7 +1442,7 @@ template <> struct PointerLikeTypeTraits<mlir::Attribute> {
   static inline mlir::Attribute getFromVoidPointer(void *ptr) {
     return mlir::Attribute::getFromOpaquePointer(ptr);
   }
-  enum { NumLowBitsAvailable = 3 };
+  static constexpr int NumLowBitsAvailable = 3;
 };
 
 template <>

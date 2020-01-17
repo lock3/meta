@@ -3081,7 +3081,7 @@ Error ASTNodeImporter::ImportFunctionDeclBody(FunctionDecl *FromFD,
 
 // Returns true if the given D has a DeclContext up to the TranslationUnitDecl
 // which is equal to the given DC.
-bool isAncestorDeclContextOf(const DeclContext *DC, const Decl *D) {
+static bool isAncestorDeclContextOf(const DeclContext *DC, const Decl *D) {
   const DeclContext *DCi = D->getDeclContext();
   while (DCi != D->getTranslationUnitDecl()) {
     if (DCi == DC)
@@ -3279,10 +3279,12 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
   TypeSourceInfo *TInfo;
   SourceLocation ToInnerLocStart, ToEndLoc;
   NestedNameSpecifierLoc ToQualifierLoc;
+  Expr *TrailingRequiresClause;
   if (auto Imp = importSeq(
       FromTy, D->getTypeSourceInfo(), D->getInnerLocStart(),
-      D->getQualifierLoc(), D->getEndLoc()))
-    std::tie(T, TInfo, ToInnerLocStart, ToQualifierLoc, ToEndLoc) = *Imp;
+      D->getQualifierLoc(), D->getEndLoc(), D->getTrailingRequiresClause()))
+    std::tie(T, TInfo, ToInnerLocStart, ToQualifierLoc, ToEndLoc,
+             TrailingRequiresClause) = *Imp;
   else
     return Imp.takeError();
 
@@ -3311,7 +3313,10 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
             ExplicitSpecifier(
                 ExplicitExpr,
                 FromConstructor->getExplicitSpecifier().getKind()),
-            D->isInlineSpecified(), D->isImplicit(), D->getConstexprKind()))
+            D->isInlineSpecified(), D->isImplicit(), D->getConstexprKind(),
+            InheritedConstructor(), // FIXME: Properly import inherited
+                                    // constructor info
+            TrailingRequiresClause))
       return ToFunction;
   } else if (CXXDestructorDecl *FromDtor = dyn_cast<CXXDestructorDecl>(D)) {
 
@@ -3329,7 +3334,7 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
     if (GetImportedOrCreateDecl<CXXDestructorDecl>(
         ToFunction, D, Importer.getToContext(), cast<CXXRecordDecl>(DC),
         ToInnerLocStart, NameInfo, T, TInfo, D->isInlineSpecified(),
-        D->isImplicit(), D->getConstexprKind()))
+        D->isImplicit(), D->getConstexprKind(), TrailingRequiresClause))
       return ToFunction;
 
     CXXDestructorDecl *ToDtor = cast<CXXDestructorDecl>(ToFunction);
@@ -3349,20 +3354,21 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
             ToInnerLocStart, NameInfo, T, TInfo, D->isInlineSpecified(),
             ExplicitSpecifier(ExplicitExpr,
                               FromConversion->getExplicitSpecifier().getKind()),
-            D->getConstexprKind(), SourceLocation()))
+            D->getConstexprKind(), SourceLocation(), TrailingRequiresClause))
       return ToFunction;
   } else if (auto *Method = dyn_cast<CXXMethodDecl>(D)) {
     if (GetImportedOrCreateDecl<CXXMethodDecl>(
             ToFunction, D, Importer.getToContext(), cast<CXXRecordDecl>(DC),
             ToInnerLocStart, NameInfo, T, TInfo, Method->getStorageClass(),
             Method->isInlineSpecified(), D->getConstexprKind(),
-            SourceLocation()))
+            SourceLocation(), TrailingRequiresClause))
       return ToFunction;
   } else {
     if (GetImportedOrCreateDecl(
             ToFunction, D, Importer.getToContext(), DC, ToInnerLocStart,
             NameInfo, T, TInfo, D->getStorageClass(), D->isInlineSpecified(),
-            D->hasWrittenPrototype(), D->getConstexprKind()))
+            D->hasWrittenPrototype(), D->getConstexprKind(),
+            TrailingRequiresClause))
       return ToFunction;
   }
 
@@ -5091,7 +5097,7 @@ ASTNodeImporter::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
   // context. This context will be fixed when the actual template declaration
   // is created.
 
-  // FIXME: Import default argument.
+  // FIXME: Import default argument  and constraint expression.
 
   ExpectedSLoc BeginLocOrErr = import(D->getBeginLoc());
   if (!BeginLocOrErr)
@@ -5102,12 +5108,47 @@ ASTNodeImporter::VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D) {
     return LocationOrErr.takeError();
 
   TemplateTypeParmDecl *ToD = nullptr;
-  (void)GetImportedOrCreateDecl(
+  if (GetImportedOrCreateDecl(
       ToD, D, Importer.getToContext(),
       Importer.getToContext().getTranslationUnitDecl(),
       *BeginLocOrErr, *LocationOrErr,
       D->getDepth(), D->getIndex(), Importer.Import(D->getIdentifier()),
-      D->wasDeclaredWithTypename(), D->isParameterPack());
+      D->wasDeclaredWithTypename(), D->isParameterPack(),
+      D->hasTypeConstraint()))
+    return ToD;
+
+  // Import the type-constraint
+  if (const TypeConstraint *TC = D->getTypeConstraint()) {
+    NestedNameSpecifierLoc ToNNS;
+    DeclarationName ToName;
+    SourceLocation ToNameLoc;
+    NamedDecl *ToFoundDecl;
+    ConceptDecl *ToNamedConcept;
+    Expr *ToIDC;
+    if (auto Imp = importSeq(TC->getNestedNameSpecifierLoc(),
+        TC->getConceptNameInfo().getName(), TC->getConceptNameInfo().getLoc(),
+        TC->getFoundDecl(), TC->getNamedConcept(),
+        TC->getImmediatelyDeclaredConstraint()))
+      std::tie(ToNNS, ToName, ToNameLoc, ToFoundDecl, ToNamedConcept,
+               ToIDC) = *Imp;
+    else
+      return Imp.takeError();
+
+    TemplateArgumentListInfo ToTAInfo;
+    const auto *ASTTemplateArgs = TC->getTemplateArgsAsWritten();
+    if (ASTTemplateArgs)
+      if (Error Err = ImportTemplateArgumentListInfo(*ASTTemplateArgs,
+                                                     ToTAInfo))
+        return std::move(Err);
+
+    ToD->setTypeConstraint(ToNNS, DeclarationNameInfo(ToName, ToNameLoc),
+        ToFoundDecl, ToNamedConcept,
+        ASTTemplateArgs ?
+            ASTTemplateArgumentListInfo::Create(Importer.getToContext(),
+                                                ToTAInfo) : nullptr,
+        ToIDC);
+  }
+
   return ToD;
 }
 

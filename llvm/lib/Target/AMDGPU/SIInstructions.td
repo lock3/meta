@@ -24,8 +24,41 @@ include "BUFInstructions.td"
 // EXP Instructions
 //===----------------------------------------------------------------------===//
 
-defm EXP : EXP_m<0, AMDGPUexport>;
-defm EXP_DONE : EXP_m<1, AMDGPUexport_done>;
+defm EXP : EXP_m<0>;
+defm EXP_DONE : EXP_m<1>;
+
+// FIXME: GlobalISel successfully imports this pattern, but fails to
+// select because the i1 done_val does a type check on done_val, which
+// only works on register operands.
+class ExpPattern<ValueType vt, Instruction Inst, int done_val> : GCNPat<
+  (int_amdgcn_exp timm:$tgt, timm:$en,
+                  (vt ExpSrc0:$src0), (vt ExpSrc1:$src1),
+                  (vt ExpSrc2:$src2), (vt ExpSrc3:$src3),
+                  done_val, timm:$vm),
+  (Inst timm:$tgt, ExpSrc0:$src0, ExpSrc1:$src1,
+        ExpSrc2:$src2, ExpSrc3:$src3, timm:$vm, 0, timm:$en)
+>;
+
+class ExpComprPattern<ValueType vt, Instruction Inst, int done_val> : GCNPat<
+  (int_amdgcn_exp_compr timm:$tgt, timm:$en,
+                        (vt ExpSrc0:$src0), (vt ExpSrc1:$src1),
+                        done_val, timm:$vm),
+  (Inst timm:$tgt, ExpSrc0:$src0, ExpSrc1:$src1,
+        (IMPLICIT_DEF), (IMPLICIT_DEF), timm:$vm, 1, timm:$en)
+>;
+
+// FIXME: The generated DAG matcher seems to have strange behavior
+// with a 1-bit literal to match, so use a -1 for checking a true
+// 1-bit value.
+def : ExpPattern<i32, EXP, 0>;
+def : ExpPattern<i32, EXP_DONE, -1>;
+def : ExpPattern<f32, EXP, 0>;
+def : ExpPattern<f32, EXP_DONE, -1>;
+
+def : ExpComprPattern<v2i16, EXP, 0>;
+def : ExpComprPattern<v2i16, EXP_DONE, -1>;
+def : ExpComprPattern<v2f16, EXP, 0>;
+def : ExpComprPattern<v2f16, EXP_DONE, -1>;
 
 //===----------------------------------------------------------------------===//
 // VINTRP Instructions
@@ -1782,15 +1815,6 @@ def : GCNPat <
                   SRCMODS.NONE, $src2, $clamp, $omod)
 >;
 
-// Allow integer inputs
-class ExpPattern<SDPatternOperator node, ValueType vt, Instruction Inst> : GCNPat<
-  (node (i8 timm:$tgt), (i8 timm:$en), vt:$src0, vt:$src1, vt:$src2, vt:$src3, (i1 timm:$compr), (i1 timm:$vm)),
-  (Inst i8:$tgt, vt:$src0, vt:$src1, vt:$src2, vt:$src3, i1:$vm, i1:$compr, i8:$en)
->;
-
-def : ExpPattern<AMDGPUexport, i32, EXP>;
-def : ExpPattern<AMDGPUexport_done, i32, EXP_DONE>;
-
 // COPY is workaround tablegen bug from multiple outputs
 // from S_LSHL_B32's multiple outputs from implicit scc def.
 def : GCNPat <
@@ -1930,8 +1954,21 @@ def : GCNPat <
 // TODO: Also do for 64-bit.
 def : GCNPat<
   (add i32:$src0, (i32 NegSubInlineConst32:$src1)),
-  (S_SUB_I32 $src0, NegSubInlineConst32:$src1)
+  (S_SUB_I32 SReg_32:$src0, NegSubInlineConst32:$src1)
 >;
+
+def : GCNPat<
+  (add i32:$src0, (i32 NegSubInlineConst32:$src1)),
+  (V_SUB_U32_e64 VS_32:$src0, NegSubInlineConst32:$src1)> {
+  let SubtargetPredicate = HasAddNoCarryInsts;
+}
+
+def : GCNPat<
+  (add i32:$src0, (i32 NegSubInlineConst32:$src1)),
+  (V_SUB_I32_e64 VS_32:$src0, NegSubInlineConst32:$src1)> {
+  let SubtargetPredicate = NotHasAddNoCarryInsts;
+}
+
 
 // Avoid pointlessly materializing a constant in VGPR.
 // FIXME: Should also do this for readlane, but tablegen crashes on
@@ -1958,6 +1995,29 @@ defm : BFMPatterns <i32, S_BFM_B32, S_MOV_B32>;
 
 defm : BFEPattern <V_BFE_U32, V_BFE_I32, S_MOV_B32>;
 defm : SHA256MaPattern <V_BFI_B32, V_XOR_B32_e64, SReg_64>;
+
+multiclass IntMed3Pat<Instruction med3Inst,
+                 SDPatternOperator min,
+                 SDPatternOperator max,
+                 SDPatternOperator min_oneuse,
+                 SDPatternOperator max_oneuse> {
+
+  // This matches 16 permutations of
+  // min(max(a, b), max(min(a, b), c))
+  def : AMDGPUPat <
+  (min (max_oneuse i32:$src0, i32:$src1),
+       (max_oneuse (min_oneuse i32:$src0, i32:$src1), i32:$src2)),
+  (med3Inst VSrc_b32:$src0, VSrc_b32:$src1, VSrc_b32:$src2)
+>;
+
+  // This matches 16 permutations of
+  // max(min(x, y), min(max(x, y), z))
+  def : AMDGPUPat <
+  (max (min_oneuse i32:$src0, i32:$src1),
+       (min_oneuse (max_oneuse i32:$src0, i32:$src1), i32:$src2)),
+  (med3Inst VSrc_b32:$src0, VSrc_b32:$src1, VSrc_b32:$src2)
+>;
+}
 
 defm : IntMed3Pat<V_MED3_I32, smin, smax, smin_oneuse, smax_oneuse>;
 defm : IntMed3Pat<V_MED3_U32, umin, umax, umin_oneuse, umax_oneuse>;
@@ -1989,22 +2049,21 @@ multiclass Int16Med3Pat<Instruction med3Inst,
                    SDPatternOperator min,
                    SDPatternOperator max,
                    SDPatternOperator max_oneuse,
-                   SDPatternOperator min_oneuse,
-                   ValueType vt = i16> {
+                   SDPatternOperator min_oneuse> {
   // This matches 16 permutations of
   // max(min(x, y), min(max(x, y), z))
   def : GCNPat <
-  (max (min_oneuse vt:$src0, vt:$src1),
-       (min_oneuse (max_oneuse vt:$src0, vt:$src1), vt:$src2)),
-  (med3Inst SRCMODS.NONE, $src0, SRCMODS.NONE, $src1, SRCMODS.NONE, $src2, DSTCLAMP.NONE)
+  (max (min_oneuse i16:$src0, i16:$src1),
+       (min_oneuse (max_oneuse i16:$src0, i16:$src1), i16:$src2)),
+  (med3Inst SRCMODS.NONE, VSrc_b16:$src0, SRCMODS.NONE, VSrc_b16:$src1, SRCMODS.NONE, VSrc_b16:$src2, DSTCLAMP.NONE)
 >;
 
   // This matches 16 permutations of
   // min(max(a, b), max(min(a, b), c))
   def : GCNPat <
-  (min (max_oneuse vt:$src0, vt:$src1),
-      (max_oneuse (min_oneuse vt:$src0, vt:$src1), vt:$src2)),
-  (med3Inst SRCMODS.NONE, $src0, SRCMODS.NONE, $src1, SRCMODS.NONE, $src2, DSTCLAMP.NONE)
+  (min (max_oneuse i16:$src0, i16:$src1),
+      (max_oneuse (min_oneuse i16:$src0, i16:$src1), i16:$src2)),
+  (med3Inst SRCMODS.NONE, VSrc_b16:$src0, SRCMODS.NONE, VSrc_b16:$src1, SRCMODS.NONE, VSrc_b16:$src2, DSTCLAMP.NONE)
 >;
 }
 

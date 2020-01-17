@@ -39,6 +39,16 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 };
 
+/// Convert floating-point comparison operations to SPIR-V dialect.
+class CmpFOpConversion final : public SPIRVOpLowering<CmpFOp> {
+public:
+  using SPIRVOpLowering<CmpFOp>::SPIRVOpLowering;
+
+  PatternMatchResult
+  matchAndRewrite(CmpFOp cmpFOp, ArrayRef<Value> operands,
+                  ConversionPatternRewriter &rewriter) const override;
+};
+
 /// Convert compare operation to SPIR-V dialect.
 class CmpIOpConversion final : public SPIRVOpLowering<CmpIOp> {
 public:
@@ -64,7 +74,7 @@ public:
   matchAndRewrite(StdOp operation, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto resultType =
-        this->typeConverter.convertType(operation.getResult()->getType());
+        this->typeConverter.convertType(operation.getResult().getType());
     rewriter.template replaceOpWithNewOp<SPIRVOp>(
         operation, resultType, operands, ArrayRef<NamedAttribute>());
     return this->matchSuccess();
@@ -129,10 +139,11 @@ public:
 
 // TODO(ravishankarm) : This method assumes that the `origBaseType` is a
 // MemRefType with AffineMap that has static strides. Handle dynamic strides
-spirv::AccessChainOp getElementPtr(OpBuilder &builder,
-                                   SPIRVTypeConverter &typeConverter,
-                                   Location loc, MemRefType origBaseType,
-                                   Value basePtr, ArrayRef<Value> indices) {
+static spirv::AccessChainOp getElementPtr(OpBuilder &builder,
+                                          SPIRVTypeConverter &typeConverter,
+                                          Location loc, MemRefType origBaseType,
+                                          Value basePtr,
+                                          ArrayRef<Value> indices) {
   // Get base and offset of the MemRefType and verify they are static.
   int64_t offset;
   SmallVector<int64_t, 4> strides;
@@ -168,7 +179,7 @@ spirv::AccessChainOp getElementPtr(OpBuilder &builder,
 PatternMatchResult ConstantIndexOpConversion::matchAndRewrite(
     ConstantOp constIndexOp, ArrayRef<Value> operands,
     ConversionPatternRewriter &rewriter) const {
-  if (!constIndexOp.getResult()->getType().isa<IndexType>()) {
+  if (!constIndexOp.getResult().getType().isa<IndexType>()) {
     return matchFailure();
   }
   // The attribute has index type which is not directly supported in
@@ -187,12 +198,52 @@ PatternMatchResult ConstantIndexOpConversion::matchAndRewrite(
     return matchFailure();
   }
   auto spirvConstType =
-      typeConverter.convertType(constIndexOp.getResult()->getType());
+      typeConverter.convertType(constIndexOp.getResult().getType());
   auto spirvConstVal =
       rewriter.getIntegerAttr(spirvConstType, constAttr.getInt());
   rewriter.replaceOpWithNewOp<spirv::ConstantOp>(constIndexOp, spirvConstType,
                                                  spirvConstVal);
   return matchSuccess();
+}
+
+//===----------------------------------------------------------------------===//
+// CmpFOp
+//===----------------------------------------------------------------------===//
+
+PatternMatchResult
+CmpFOpConversion::matchAndRewrite(CmpFOp cmpFOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const {
+  CmpFOpOperandAdaptor cmpFOpOperands(operands);
+
+  switch (cmpFOp.getPredicate()) {
+#define DISPATCH(cmpPredicate, spirvOp)                                        \
+  case cmpPredicate:                                                           \
+    rewriter.replaceOpWithNewOp<spirvOp>(cmpFOp, cmpFOp.getResult().getType(), \
+                                         cmpFOpOperands.lhs(),                 \
+                                         cmpFOpOperands.rhs());                \
+    return matchSuccess();
+
+    // Ordered.
+    DISPATCH(CmpFPredicate::OEQ, spirv::FOrdEqualOp);
+    DISPATCH(CmpFPredicate::OGT, spirv::FOrdGreaterThanOp);
+    DISPATCH(CmpFPredicate::OGE, spirv::FOrdGreaterThanEqualOp);
+    DISPATCH(CmpFPredicate::OLT, spirv::FOrdLessThanOp);
+    DISPATCH(CmpFPredicate::OLE, spirv::FOrdLessThanEqualOp);
+    DISPATCH(CmpFPredicate::ONE, spirv::FOrdNotEqualOp);
+    // Unordered.
+    DISPATCH(CmpFPredicate::UEQ, spirv::FUnordEqualOp);
+    DISPATCH(CmpFPredicate::UGT, spirv::FUnordGreaterThanOp);
+    DISPATCH(CmpFPredicate::UGE, spirv::FUnordGreaterThanEqualOp);
+    DISPATCH(CmpFPredicate::ULT, spirv::FUnordLessThanOp);
+    DISPATCH(CmpFPredicate::ULE, spirv::FUnordLessThanEqualOp);
+    DISPATCH(CmpFPredicate::UNE, spirv::FUnordNotEqualOp);
+
+#undef DISPATCH
+
+  default:
+    break;
+  }
+  return matchFailure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -207,9 +258,9 @@ CmpIOpConversion::matchAndRewrite(CmpIOp cmpIOp, ArrayRef<Value> operands,
   switch (cmpIOp.getPredicate()) {
 #define DISPATCH(cmpPredicate, spirvOp)                                        \
   case cmpPredicate:                                                           \
-    rewriter.replaceOpWithNewOp<spirvOp>(                                      \
-        cmpIOp, cmpIOp.getResult()->getType(), cmpIOpOperands.lhs(),           \
-        cmpIOpOperands.rhs());                                                 \
+    rewriter.replaceOpWithNewOp<spirvOp>(cmpIOp, cmpIOp.getResult().getType(), \
+                                         cmpIOpOperands.lhs(),                 \
+                                         cmpIOpOperands.rhs());                \
     return matchSuccess();
 
     DISPATCH(CmpIPredicate::eq, spirv::IEqualOp);
@@ -218,11 +269,12 @@ CmpIOpConversion::matchAndRewrite(CmpIOp cmpIOp, ArrayRef<Value> operands,
     DISPATCH(CmpIPredicate::sle, spirv::SLessThanEqualOp);
     DISPATCH(CmpIPredicate::sgt, spirv::SGreaterThanOp);
     DISPATCH(CmpIPredicate::sge, spirv::SGreaterThanEqualOp);
+    DISPATCH(CmpIPredicate::ult, spirv::ULessThanOp);
+    DISPATCH(CmpIPredicate::ule, spirv::ULessThanEqualOp);
+    DISPATCH(CmpIPredicate::ugt, spirv::UGreaterThanOp);
+    DISPATCH(CmpIPredicate::uge, spirv::UGreaterThanEqualOp);
 
 #undef DISPATCH
-
-  default:
-    break;
   }
   return matchFailure();
 }
@@ -236,7 +288,7 @@ LoadOpConversion::matchAndRewrite(LoadOp loadOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const {
   LoadOpOperandAdaptor loadOperands(operands);
   auto loadPtr = getElementPtr(rewriter, typeConverter, loadOp.getLoc(),
-                               loadOp.memref()->getType().cast<MemRefType>(),
+                               loadOp.memref().getType().cast<MemRefType>(),
                                loadOperands.memref(), loadOperands.indices());
   rewriter.replaceOpWithNewOp<spirv::LoadOp>(loadOp, loadPtr,
                                              /*memory_access =*/nullptr,
@@ -282,7 +334,7 @@ StoreOpConversion::matchAndRewrite(StoreOp storeOp, ArrayRef<Value> operands,
   StoreOpOperandAdaptor storeOperands(operands);
   auto storePtr =
       getElementPtr(rewriter, typeConverter, storeOp.getLoc(),
-                    storeOp.memref()->getType().cast<MemRefType>(),
+                    storeOp.memref().getType().cast<MemRefType>(),
                     storeOperands.memref(), storeOperands.indices());
   rewriter.replaceOpWithNewOp<spirv::StoreOp>(storeOp, storePtr,
                                               storeOperands.value(),
@@ -302,7 +354,7 @@ void populateStandardToSPIRVPatterns(MLIRContext *context,
                                      OwningRewritePatternList &patterns) {
   // Add patterns that lower operations into SPIR-V dialect.
   populateWithGenerated(context, &patterns);
-  patterns.insert<ConstantIndexOpConversion, CmpIOpConversion,
+  patterns.insert<ConstantIndexOpConversion, CmpFOpConversion, CmpIOpConversion,
                   IntegerOpConversion<AddIOp, spirv::IAddOp>,
                   IntegerOpConversion<MulIOp, spirv::IMulOp>,
                   IntegerOpConversion<SignedDivIOp, spirv::SDivOp>,

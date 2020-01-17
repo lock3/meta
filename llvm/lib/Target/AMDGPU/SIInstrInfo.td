@@ -579,46 +579,37 @@ def si_setcc_uniform : PatFrag <
 // SDNodes PatFrags for d16 loads
 //===----------------------------------------------------------------------===//
 
-class LoadD16Frag <SDPatternOperator op> : PatFrag<(ops node:$ptr, node:$tied_in), (op node:$ptr, node:$tied_in)>;
-class LocalLoadD16 <SDPatternOperator op> : LoadD16Frag <op>, LocalAddress;
-class GlobalLoadD16 <SDPatternOperator op> : LoadD16Frag <op>, GlobalLoadAddress;
-class PrivateLoadD16 <SDPatternOperator op> : LoadD16Frag <op>, PrivateAddress;
-class FlatLoadD16 <SDPatternOperator op> : LoadD16Frag <op>, FlatLoadAddress;
+class LoadD16Frag <SDPatternOperator op> : PatFrag<
+  (ops node:$ptr, node:$tied_in),
+  (op node:$ptr, node:$tied_in)> {
+  let IsLoad = 1;
+}
 
-def load_d16_hi_local : LocalLoadD16 <SIload_d16_hi>;
-def az_extloadi8_d16_hi_local : LocalLoadD16 <SIload_d16_hi_u8>;
-def sextloadi8_d16_hi_local : LocalLoadD16 <SIload_d16_hi_i8>;
+foreach as = [ "global", "flat", "constant", "local", "private", "region" ] in {
+let AddressSpaces = !cast<AddressSpaceList>("LoadAddress_"#as).AddrSpaces in {
 
-def load_d16_hi_global : GlobalLoadD16 <SIload_d16_hi>;
-def az_extloadi8_d16_hi_global : GlobalLoadD16 <SIload_d16_hi_u8>;
-def sextloadi8_d16_hi_global : GlobalLoadD16 <SIload_d16_hi_i8>;
+def load_d16_hi_#as : LoadD16Frag <SIload_d16_hi>;
 
-def load_d16_hi_private : PrivateLoadD16 <SIload_d16_hi>;
-def az_extloadi8_d16_hi_private : PrivateLoadD16 <SIload_d16_hi_u8>;
-def sextloadi8_d16_hi_private : PrivateLoadD16 <SIload_d16_hi_i8>;
+def az_extloadi8_d16_hi_#as : LoadD16Frag <SIload_d16_hi_u8> {
+  let MemoryVT = i8;
+}
 
-def load_d16_hi_flat : FlatLoadD16 <SIload_d16_hi>;
-def az_extloadi8_d16_hi_flat : FlatLoadD16 <SIload_d16_hi_u8>;
-def sextloadi8_d16_hi_flat : FlatLoadD16 <SIload_d16_hi_i8>;
+def sextloadi8_d16_hi_#as : LoadD16Frag <SIload_d16_hi_i8> {
+  let MemoryVT = i8;
+}
 
+def load_d16_lo_#as : LoadD16Frag <SIload_d16_lo>;
 
-def load_d16_lo_local : LocalLoadD16 <SIload_d16_lo>;
-def az_extloadi8_d16_lo_local : LocalLoadD16 <SIload_d16_lo_u8>;
-def sextloadi8_d16_lo_local : LocalLoadD16 <SIload_d16_lo_i8>;
+def az_extloadi8_d16_lo_#as : LoadD16Frag <SIload_d16_lo_u8> {
+  let MemoryVT = i8;
+}
 
-def load_d16_lo_global : GlobalLoadD16 <SIload_d16_lo>;
-def az_extloadi8_d16_lo_global : GlobalLoadD16 <SIload_d16_lo_u8>;
-def sextloadi8_d16_lo_global : GlobalLoadD16 <SIload_d16_lo_i8>;
+def sextloadi8_d16_lo_#as : LoadD16Frag <SIload_d16_lo_i8> {
+  let MemoryVT = i8;
+}
 
-def load_d16_lo_private : PrivateLoadD16 <SIload_d16_lo>;
-def az_extloadi8_d16_lo_private : PrivateLoadD16 <SIload_d16_lo_u8>;
-def sextloadi8_d16_lo_private : PrivateLoadD16 <SIload_d16_lo_i8>;
-
-def load_d16_lo_flat : FlatLoadD16 <SIload_d16_lo>;
-def az_extloadi8_d16_lo_flat : FlatLoadD16 <SIload_d16_lo_u8>;
-def sextloadi8_d16_lo_flat : FlatLoadD16 <SIload_d16_lo_i8>;
-
-
+} // End let AddressSpaces = ...
+} // End foreach AddrSpace
 
 def lshr_rev : PatFrag <
   (ops node:$src1, node:$src0),
@@ -683,6 +674,10 @@ def as_i8imm : SDNodeXForm<imm, [{
 }]>;
 
 def as_i16imm : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(N->getSExtValue(), SDLoc(N), MVT::i16);
+}]>;
+
+def as_i16timm : SDNodeXForm<timm, [{
   return CurDAG->getTargetConstant(N->getSExtValue(), SDLoc(N), MVT::i16);
 }]>;
 
@@ -1106,7 +1101,7 @@ def abid : NamedOperandU32<"ABID", NamedMatchClass<"ABID">>;
 
 def hwreg : NamedOperandU16<"Hwreg", NamedMatchClass<"Hwreg", 0>>;
 
-def exp_tgt : NamedOperandU8<"ExpTgt", NamedMatchClass<"ExpTgt", 0>> {
+def exp_tgt : NamedOperandU32<"ExpTgt", NamedMatchClass<"ExpTgt", 0>> {
 
 }
 
@@ -1275,7 +1270,6 @@ def MOVRELOffset : ComplexPattern<i32, 2, "SelectMOVRELOffset">;
 
 def VOP3Mods0 : ComplexPattern<untyped, 4, "SelectVOP3Mods0">;
 def VOP3Mods0Clamp : ComplexPattern<untyped, 3, "SelectVOP3Mods0Clamp">;
-def VOP3Mods0Clamp0OMod : ComplexPattern<untyped, 4, "SelectVOP3Mods0Clamp0OMod">;
 def VOP3Mods  : ComplexPattern<untyped, 2, "SelectVOP3Mods">;
 def VOP3NoMods : ComplexPattern<untyped, 1, "SelectVOP3NoMods">;
 // VOP3Mods, but the input source is known to never be NaN.
@@ -1386,24 +1380,21 @@ class SIMCInstr <string pseudo, int subtarget> {
 // EXP classes
 //===----------------------------------------------------------------------===//
 
-class EXP_Helper<bit done, SDPatternOperator node = null_frag> : EXPCommon<
+class EXP_Helper<bit done> : EXPCommon<
   (outs),
   (ins exp_tgt:$tgt,
        ExpSrc0:$src0, ExpSrc1:$src1, ExpSrc2:$src2, ExpSrc3:$src3,
-       exp_vm:$vm, exp_compr:$compr, i8imm:$en),
-  "exp$tgt $src0, $src1, $src2, $src3"#!if(done, " done", "")#"$compr$vm",
-  [(node (i8 timm:$tgt), (i8 timm:$en),
-         f32:$src0, f32:$src1, f32:$src2, f32:$src3,
-         (i1 timm:$compr), (i1 timm:$vm))]> {
+       exp_vm:$vm, exp_compr:$compr, i32imm:$en),
+  "exp$tgt $src0, $src1, $src2, $src3"#!if(done, " done", "")#"$compr$vm", []> {
   let AsmMatchConverter = "cvtExp";
 }
 
 // Split EXP instruction into EXP and EXP_DONE so we can set
 // mayLoad for done=1.
-multiclass EXP_m<bit done, SDPatternOperator node> {
+multiclass EXP_m<bit done> {
   let mayLoad = done, DisableWQM = 1 in {
     let isPseudo = 1, isCodeGenOnly = 1 in {
-      def "" : EXP_Helper<done, node>,
+      def "" : EXP_Helper<done>,
                SIMCInstr <"exp"#!if(done, "_done", ""), SIEncodingFamily.NONE>;
     }
 

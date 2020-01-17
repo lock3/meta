@@ -507,13 +507,6 @@ ClangASTContext::ClangASTContext(llvm::Triple target_triple) {
   CreateASTContext();
 }
 
-ClangASTContext::ClangASTContext(ArchSpec arch) {
-  SetTargetTriple(arch.GetTriple().str());
-  // The caller didn't pass an ASTContext so create a new one for this
-  // ClangASTContext.
-  CreateASTContext();
-}
-
 ClangASTContext::ClangASTContext(ASTContext &existing_ctxt) {
   SetTargetTriple(existing_ctxt.getTargetInfo().getTriple().str());
 
@@ -548,29 +541,25 @@ lldb::TypeSystemSP ClangASTContext::CreateInstance(lldb::LanguageType language,
   if (!arch.IsValid())
     return lldb::TypeSystemSP();
 
-  ArchSpec fixed_arch = arch;
+  llvm::Triple triple = arch.GetTriple();
   // LLVM wants this to be set to iOS or MacOSX; if we're working on
   // a bare-boards type image, change the triple for llvm's benefit.
-  if (fixed_arch.GetTriple().getVendor() == llvm::Triple::Apple &&
-      fixed_arch.GetTriple().getOS() == llvm::Triple::UnknownOS) {
-    if (fixed_arch.GetTriple().getArch() == llvm::Triple::arm ||
-        fixed_arch.GetTriple().getArch() == llvm::Triple::aarch64 ||
-        fixed_arch.GetTriple().getArch() == llvm::Triple::aarch64_32 ||
-        fixed_arch.GetTriple().getArch() == llvm::Triple::thumb) {
-      fixed_arch.GetTriple().setOS(llvm::Triple::IOS);
+  if (triple.getVendor() == llvm::Triple::Apple &&
+      triple.getOS() == llvm::Triple::UnknownOS) {
+    if (triple.getArch() == llvm::Triple::arm ||
+        triple.getArch() == llvm::Triple::aarch64 ||
+        triple.getArch() == llvm::Triple::aarch64_32 ||
+        triple.getArch() == llvm::Triple::thumb) {
+      triple.setOS(llvm::Triple::IOS);
     } else {
-      fixed_arch.GetTriple().setOS(llvm::Triple::MacOSX);
+      triple.setOS(llvm::Triple::MacOSX);
     }
   }
 
-  if (module) {
-    std::shared_ptr<ClangASTContext> ast_sp(new ClangASTContext(fixed_arch));
-    return ast_sp;
-  } else if (target && target->IsValid()) {
-    std::shared_ptr<ClangASTContextForExpressions> ast_sp(
-        new ClangASTContextForExpressions(*target, fixed_arch));
-    return ast_sp;
-  }
+  if (module)
+    return std::make_shared<ClangASTContext>(triple);
+  else if (target && target->IsValid())
+    return std::make_shared<ClangASTContextForExpressions>(*target, triple);
   return lldb::TypeSystemSP();
 }
 
@@ -3935,7 +3924,7 @@ CompilerType
 ClangASTContext::GetArrayElementType(lldb::opaque_compiler_type_t type,
                                      uint64_t *stride) {
   if (type) {
-    clang::QualType qual_type(GetCanonicalQualType(type));
+    clang::QualType qual_type(GetQualType(type));
 
     const clang::Type *array_eletype =
         qual_type.getTypePtr()->getArrayElementTypeNoTypeQual();
@@ -3943,8 +3932,7 @@ ClangASTContext::GetArrayElementType(lldb::opaque_compiler_type_t type,
     if (!array_eletype)
       return CompilerType();
 
-    CompilerType element_type =
-        GetType(array_eletype->getCanonicalTypeUnqualified());
+    CompilerType element_type = GetType(clang::QualType(array_eletype, 0));
 
     // TODO: the real stride will be >= this value.. find the real one!
     if (stride)
@@ -7128,12 +7116,11 @@ clang::VarDecl *ClangASTContext::AddVariableToRecordType(
 }
 
 clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
-    lldb::opaque_compiler_type_t type, const char *name, const char *mangled_name,
-    const CompilerType &method_clang_type, lldb::AccessType access,
-    bool is_virtual, bool is_static, bool is_inline, bool is_explicit,
-    bool is_attr_used, bool is_artificial) {
-  if (!type || !method_clang_type.IsValid() || name == nullptr ||
-      name[0] == '\0')
+    lldb::opaque_compiler_type_t type, llvm::StringRef name,
+    const char *mangled_name, const CompilerType &method_clang_type,
+    lldb::AccessType access, bool is_virtual, bool is_static, bool is_inline,
+    bool is_explicit, bool is_attr_used, bool is_artificial) {
+  if (!type || !method_clang_type.IsValid() || name.empty())
     return nullptr;
 
   clang::QualType record_qual_type(GetCanonicalQualType(type));
@@ -7174,7 +7161,7 @@ clang::CXXMethodDecl *ClangASTContext::AddMethodToCXXRecordType(
       nullptr /*expr*/, is_explicit
                             ? clang::ExplicitSpecKind::ResolvedTrue
                             : clang::ExplicitSpecKind::ResolvedFalse);
-  if (name[0] == '~') {
+  if (name.startswith("~")) {
     cxx_dtor_decl = clang::CXXDestructorDecl::Create(
         getASTContext(), cxx_record_decl, clang::SourceLocation(),
         clang::DeclarationNameInfo(
@@ -7785,70 +7772,65 @@ bool ClangASTContext::StartTagDeclarationDefinition(const CompilerType &type) {
 bool ClangASTContext::CompleteTagDeclarationDefinition(
     const CompilerType &type) {
   clang::QualType qual_type(ClangUtil::GetQualType(type));
-  if (!qual_type.isNull()) {
-    // Make sure we use the same methodology as
-    // ClangASTContext::StartTagDeclarationDefinition() as to how we start/end
-    // the definition. Previously we were calling
-    const clang::TagType *tag_type = qual_type->getAs<clang::TagType>();
-    if (tag_type) {
-      clang::TagDecl *tag_decl = tag_type->getDecl();
-      if (tag_decl) {
-        clang::CXXRecordDecl *cxx_record_decl =
-            llvm::dyn_cast_or_null<clang::CXXRecordDecl>(tag_decl);
+  if (qual_type.isNull())
+    return false;
 
-        if (cxx_record_decl) {
-          if (!cxx_record_decl->isCompleteDefinition())
-            cxx_record_decl->completeDefinition();
-          cxx_record_decl->setHasLoadedFieldsFromExternalStorage(true);
-          cxx_record_decl->setHasExternalLexicalStorage(false);
-          cxx_record_decl->setHasExternalVisibleStorage(false);
-          return true;
-        }
-      }
-    }
+  // Make sure we use the same methodology as
+  // ClangASTContext::StartTagDeclarationDefinition() as to how we start/end
+  // the definition.
+  const clang::TagType *tag_type = qual_type->getAs<clang::TagType>();
+  if (tag_type) {
+    clang::TagDecl *tag_decl = tag_type->getDecl();
 
-    const clang::EnumType *enutype = qual_type->getAs<clang::EnumType>();
-
-    if (enutype) {
-      clang::EnumDecl *enum_decl = enutype->getDecl();
-
-      if (enum_decl) {
-        if (!enum_decl->isCompleteDefinition()) {
-          ClangASTContext *lldb_ast =
-              llvm::dyn_cast<ClangASTContext>(type.GetTypeSystem());
-          if (lldb_ast == nullptr)
-            return false;
-          clang::ASTContext &ast = lldb_ast->getASTContext();
-
-          /// TODO This really needs to be fixed.
-
-          QualType integer_type(enum_decl->getIntegerType());
-          if (!integer_type.isNull()) {
-            unsigned NumPositiveBits = 1;
-            unsigned NumNegativeBits = 0;
-
-            clang::QualType promotion_qual_type;
-            // If the enum integer type is less than an integer in bit width,
-            // then we must promote it to an integer size.
-            if (ast.getTypeSize(enum_decl->getIntegerType()) <
-                ast.getTypeSize(ast.IntTy)) {
-              if (enum_decl->getIntegerType()->isSignedIntegerType())
-                promotion_qual_type = ast.IntTy;
-              else
-                promotion_qual_type = ast.UnsignedIntTy;
-            } else
-              promotion_qual_type = enum_decl->getIntegerType();
-
-            enum_decl->completeDefinition(enum_decl->getIntegerType(),
-                                          promotion_qual_type, NumPositiveBits,
-                                          NumNegativeBits);
-          }
-        }
-        return true;
-      }
+    if (auto *cxx_record_decl = llvm::dyn_cast<CXXRecordDecl>(tag_decl)) {
+      if (!cxx_record_decl->isCompleteDefinition())
+        cxx_record_decl->completeDefinition();
+      cxx_record_decl->setHasLoadedFieldsFromExternalStorage(true);
+      cxx_record_decl->setHasExternalLexicalStorage(false);
+      cxx_record_decl->setHasExternalVisibleStorage(false);
+      return true;
     }
   }
-  return false;
+
+  const clang::EnumType *enutype = qual_type->getAs<clang::EnumType>();
+
+  if (!enutype)
+    return false;
+  clang::EnumDecl *enum_decl = enutype->getDecl();
+
+  if (enum_decl->isCompleteDefinition())
+    return true;
+
+  ClangASTContext *lldb_ast =
+      llvm::dyn_cast<ClangASTContext>(type.GetTypeSystem());
+  if (lldb_ast == nullptr)
+    return false;
+  clang::ASTContext &ast = lldb_ast->getASTContext();
+
+  /// TODO This really needs to be fixed.
+
+  QualType integer_type(enum_decl->getIntegerType());
+  if (!integer_type.isNull()) {
+    unsigned NumPositiveBits = 1;
+    unsigned NumNegativeBits = 0;
+
+    clang::QualType promotion_qual_type;
+    // If the enum integer type is less than an integer in bit width,
+    // then we must promote it to an integer size.
+    if (ast.getTypeSize(enum_decl->getIntegerType()) <
+        ast.getTypeSize(ast.IntTy)) {
+      if (enum_decl->getIntegerType()->isSignedIntegerType())
+        promotion_qual_type = ast.IntTy;
+      else
+        promotion_qual_type = ast.UnsignedIntTy;
+    } else
+      promotion_qual_type = enum_decl->getIntegerType();
+
+    enum_decl->completeDefinition(enum_decl->getIntegerType(),
+                                  promotion_qual_type, NumPositiveBits,
+                                  NumNegativeBits);
+  }
+  return true;
 }
 
 clang::EnumConstantDecl *ClangASTContext::AddEnumerationValueToEnumerationType(
@@ -9255,9 +9237,9 @@ ClangASTContext::DeclContextGetClangASTContext(const CompilerDeclContext &dc) {
   return nullptr;
 }
 
-ClangASTContextForExpressions::ClangASTContextForExpressions(Target &target,
-                                                             ArchSpec arch)
-    : ClangASTContext(arch), m_target_wp(target.shared_from_this()),
+ClangASTContextForExpressions::ClangASTContextForExpressions(
+    Target &target, llvm::Triple triple)
+    : ClangASTContext(triple), m_target_wp(target.shared_from_this()),
       m_persistent_variables(new ClangPersistentVariables) {
   m_scratch_ast_source_up.reset(new ClangASTSource(
       target.shared_from_this(), target.GetClangASTImporter()));
