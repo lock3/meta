@@ -10,11 +10,9 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Attr.h"
 #include "clang/Analysis/Analyses/LifetimePsetBuilder.h"
-#include "clang/Analysis/Analyses/PostOrderCFGView.h"
 #include "clang/Analysis/CFG.h"
-#include "clang/Analysis/CFGStmtMap.h"
+#include "clang/Analysis/FlowSensitive/DataflowWorklist.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 
@@ -318,59 +316,12 @@ static void createEntryPsetsForMembers(const CXXMethodDecl *Method,
   RD->forallBases(CallBack);
 }
 
-namespace {
-class DataFlowWorklist {
-  struct ReversePostOrderCompare {
-    PostOrderCFGView::BlockOrderCompare Cmp;
-    bool operator()(const CFGBlock *lhs, const CFGBlock *rhs) const {
-      return Cmp(rhs, lhs);
-    }
-  };
-
-  llvm::BitVector EnqueuedBlocks;
-  const PostOrderCFGView *SortedGraph;
-  llvm::PriorityQueue<const CFGBlock *, SmallVector<const CFGBlock *, 20>,
-                      ReversePostOrderCompare>
-      WorkList;
-
-public:
-  DataFlowWorklist(AnalysisDeclContext &AC)
-      : EnqueuedBlocks(AC.getCFG()->getNumBlockIDs()),
-        SortedGraph(AC.getAnalysis<PostOrderCFGView>()),
-        WorkList(ReversePostOrderCompare{SortedGraph->getComparator()}) {}
-
-  const PostOrderCFGView *getOrderedCfg() { return SortedGraph; }
-
-  void enqueue(const CFGBlock *B) {
-    if (!B || EnqueuedBlocks[B->getBlockID()])
-      return;
-    EnqueuedBlocks[B->getBlockID()] = true;
-    WorkList.push(B);
-  }
-
-  void enqueueSuccs(const CFGBlock *B) {
-    for (auto Succ : B->succs())
-      enqueue(Succ);
-  }
-
-  const CFGBlock *dequeue() {
-    if (WorkList.empty())
-      return nullptr;
-    const CFGBlock *Top = WorkList.top();
-    WorkList.pop();
-    EnqueuedBlocks[Top->getBlockID()] = false;
-    return Top;
-  }
-};
-
-} // namespace
-
 /// Traverse all blocks of the CFG.
 /// The traversal is repeated until the psets come to a steady state.
 void LifetimeContext::TraverseBlocks() {
   static constexpr unsigned IterationLimit = 100000;
 
-  DataFlowWorklist WorkList(AC);
+  ForwardDataflowWorklist WorkList(*ControlFlowGraph, AC);
   // The entry block introduces the function parameters into the psets.
   auto Start = &ControlFlowGraph->getEntry();
   auto &BC = getBlockContext(Start);
@@ -380,7 +331,7 @@ void LifetimeContext::TraverseBlocks() {
   if (const auto *Method = dyn_cast<CXXMethodDecl>(FuncDecl))
     createEntryPsetsForMembers(Method, BC.ExitPMap);
 
-  WorkList.enqueueSuccs(Start);
+  WorkList.enqueueSuccessors(Start);
 
   unsigned IterationCount = 0;
   llvm::BitVector Visited(ControlFlowGraph->getNumBlockIDs());
@@ -411,7 +362,7 @@ void LifetimeContext::TraverseBlocks() {
       // the analysis.
       break;
     }
-    WorkList.enqueueSuccs(Current);
+    WorkList.enqueueSuccessors(Current);
   }
 
   if (IterationCount > MaxBlockVisitCount)
