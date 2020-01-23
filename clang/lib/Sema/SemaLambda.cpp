@@ -1620,8 +1620,8 @@ FieldDecl *Sema::BuildCaptureField(RecordDecl *RD,
 
   // Build the non-static data member.
   FieldDecl *Field =
-      FieldDecl::Create(Context, RD, Loc, Loc, nullptr, FieldType, TSI, nullptr,
-                        false, ICIS_NoInit);
+      FieldDecl::Create(Context, RD, Loc, Loc, DeclarationName(), FieldType,
+                        TSI, nullptr, false, ICIS_NoInit);
   // If the variable being captured has an invalid type, mark the class as
   // invalid as well.
   if (!FieldType->isDependentType()) {

@@ -3300,32 +3300,31 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     CXXScopeSpec &SS = D.getCXXScopeSpec();
 
     // Data members must have identifiers for names.
-    if (!Name.isIdentifier()) {
-      Diag(Loc, diag::err_bad_variable_name)
-        << Name;
-      return nullptr;
-    }
+    if (Name.isIdentifier()) {
+      IdentifierInfo *II = Name.getAsIdentifierInfo();
 
-    IdentifierInfo *II = Name.getAsIdentifierInfo();
-
-    // Member field could not be with "template" keyword.
-    // So TemplateParameterLists should be empty in this case.
-    if (TemplateParameterLists.size()) {
-      TemplateParameterList* TemplateParams = TemplateParameterLists[0];
-      if (TemplateParams->size()) {
-        // There is no such thing as a member field template.
-        Diag(D.getIdentifierLoc(), diag::err_template_member)
+      // Member field could not be with "template" keyword.
+      // So TemplateParameterLists should be empty in this case.
+      if (TemplateParameterLists.size()) {
+        TemplateParameterList *TemplateParams = TemplateParameterLists[0];
+        if (TemplateParams->size()) {
+          // There is no such thing as a member field template.
+          Diag(D.getIdentifierLoc(), diag::err_template_member)
             << II
             << SourceRange(TemplateParams->getTemplateLoc(),
-                TemplateParams->getRAngleLoc());
-      } else {
-        // There is an extraneous 'template<>' for this member.
-        Diag(TemplateParams->getTemplateLoc(),
-            diag::err_template_member_noparams)
+                           TemplateParams->getRAngleLoc());
+        } else {
+          // There is an extraneous 'template<>' for this member.
+          Diag(TemplateParams->getTemplateLoc(),
+               diag::err_template_member_noparams)
             << II
             << SourceRange(TemplateParams->getTemplateLoc(),
-                TemplateParams->getRAngleLoc());
+                           TemplateParams->getRAngleLoc());
+        }
+        return nullptr;
       }
+    } else if (!Name.isReflectedIdentifier()) {
+      Diag(Loc, diag::err_bad_variable_name) << Name;
       return nullptr;
     }
 
@@ -3355,7 +3354,7 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       isInstField = false;
     } else {
       Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D,
-                                BitWidth, InitStyle, AS);
+                           BitWidth, InitStyle, AS);
       if (!Member)
         return nullptr;
     }
