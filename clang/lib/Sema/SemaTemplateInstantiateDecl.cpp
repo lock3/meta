@@ -1032,7 +1032,9 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
       BitWidth = InstantiatedBitWidth.getAs<Expr>();
   }
 
-  FieldDecl *Field = SemaRef.CheckFieldDecl(D->getDeclName(),
+  DeclarationNameInfo DNI = SemaRef.SubstDeclarationNameInfo(
+                                D->getNameInfo(), TemplateArgs);
+  FieldDecl *Field = SemaRef.CheckFieldDecl(DNI.getName(),
                                             DI->getType(), DI,
                                             cast<RecordDecl>(Owner),
                                             D->getLocation(),

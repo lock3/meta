@@ -411,6 +411,9 @@ public:
   bool isObjCOneArgSelector() const {
     return getStoredNameKind() == StoredObjCOneArgSelector;
   }
+  bool isReflectedIdentifier() const {
+    return getNameKind() == CXXReflectedIdName;
+  }
 
   /// Determine what kind of name this is.
   NameKind getNameKind() const {
@@ -512,7 +515,7 @@ public:
   /// getCXXReflectIdArguments - If this is an idexpr name, retrieve the list
   /// of arguments.
   llvm::ArrayRef<Expr *> getCXXReflectedIdArguments() const {
-    if (getNameKind() == CXXReflectedIdName) {
+    if (isReflectedIdentifier()) {
       assert(getPtr() &&
              "getCXXReflectedIdArguments on a null DeclarationName!");
 

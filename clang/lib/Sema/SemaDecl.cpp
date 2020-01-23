@@ -5034,7 +5034,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
   if (RecordDecl *OwningClass = dyn_cast<RecordDecl>(Owner)) {
     Anon = FieldDecl::Create(
         Context, OwningClass, DS.getBeginLoc(), Record->getLocation(),
-        /*IdentifierInfo=*/nullptr, Context.getTypeDeclType(Record), TInfo,
+        DeclarationName(), Context.getTypeDeclType(Record), TInfo,
         /*BitWidth=*/nullptr, /*Mutable=*/false,
         /*InitStyle=*/ICIS_NoInit);
     Anon->setAccess(AS);
@@ -5132,7 +5132,7 @@ Decl *Sema::BuildMicrosoftCAnonymousStruct(Scope *S, DeclSpec &DS,
   // Create a declaration for this anonymous struct.
   NamedDecl *Anon =
       FieldDecl::Create(Context, ParentDecl, DS.getBeginLoc(), DS.getBeginLoc(),
-                        /*IdentifierInfo=*/nullptr, RecTy, TInfo,
+                        DeclarationName(), RecTy, TInfo,
                         /*BitWidth=*/nullptr, /*Mutable=*/false,
                         /*InitStyle=*/ICIS_NoInit);
   Anon->setImplicit();
@@ -16015,12 +16015,15 @@ void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
 
 // Note that FieldName may be null for anonymous bitfields.
 ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
-                                IdentifierInfo *FieldName,
+                                DeclarationName FieldName,
                                 QualType FieldTy, bool IsMsStruct,
                                 Expr *BitWidth, bool *ZeroWidth) {
   // Default to true; that shouldn't confuse checks for emptiness
   if (ZeroWidth)
     *ZeroWidth = true;
+
+  bool NameIsIdentifying = FieldName.getAsIdentifierInfo() ||
+      FieldName.isReflectedIdentifier();
 
   // C99 6.7.2.1p4 - verify the field type.
   // C++ 9.6p3: A bit-field shall have integral or enumeration type.
@@ -16028,7 +16031,7 @@ ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
     // Handle incomplete types with specific error.
     if (RequireCompleteType(FieldLoc, FieldTy, diag::err_field_incomplete))
       return ExprError();
-    if (FieldName)
+    if (NameIsIdentifying)
       return Diag(FieldLoc, diag::err_not_integral_type_bitfield)
         << FieldName << FieldTy << BitWidth->getSourceRange();
     return Diag(FieldLoc, diag::err_not_integral_type_anon_bitfield)
@@ -16052,11 +16055,11 @@ ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
     *ZeroWidth = false;
 
   // Zero-width bitfield is ok for anonymous field.
-  if (Value == 0 && FieldName)
+  if (Value == 0 && NameIsIdentifying)
     return Diag(FieldLoc, diag::err_bitfield_has_zero_width) << FieldName;
 
   if (Value.isSigned() && Value.isNegative()) {
-    if (FieldName)
+    if (NameIsIdentifying)
       return Diag(FieldLoc, diag::err_bitfield_has_negative_width)
                << FieldName << Value.toString(10);
     return Diag(FieldLoc, diag::err_anon_bitfield_has_negative_width)
@@ -16078,7 +16081,7 @@ ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
     if (CStdConstraintViolation || MSBitfieldViolation) {
       unsigned DiagWidth =
           CStdConstraintViolation ? TypeWidth : TypeStorageSize;
-      if (FieldName)
+      if (NameIsIdentifying)
         return Diag(FieldLoc, diag::err_bitfield_width_exceeds_type_width)
                << FieldName << (unsigned)Value.getZExtValue()
                << !CStdConstraintViolation << DiagWidth;
@@ -16092,7 +16095,7 @@ ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
     // specified bits as value bits: that's all integral types other than
     // 'bool'.
     if (BitfieldIsOverwide && !FieldTy->isBooleanType()) {
-      if (FieldName)
+      if (NameIsIdentifying)
         Diag(FieldLoc, diag::warn_bitfield_width_exceeds_type_width)
             << FieldName << (unsigned)Value.getZExtValue()
             << (unsigned)TypeWidth;
@@ -16129,9 +16132,11 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
     return nullptr;
   }
 
-  IdentifierInfo *II = D.getIdentifier();
+  DeclarationNameInfo NameInfo = GetNameFromUnqualifiedId(D.getName());
+  DeclarationName Name = NameInfo.getName();
   SourceLocation Loc = DeclStart;
-  if (II) Loc = D.getIdentifierLoc();
+  if (Name.getAsIdentifierInfo() || Name.isReflectedIdentifier())
+    Loc = NameInfo.getLoc();
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType T = TInfo->getType();
@@ -16158,7 +16163,7 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
 
   // Check to see if this name was declared as a member previously
   NamedDecl *PrevDecl = nullptr;
-  LookupResult Previous(*this, II, Loc, LookupMemberName,
+  LookupResult Previous(*this, Name, Loc, LookupMemberName,
                         ForVisibleRedeclaration);
   LookupName(Previous, S);
   switch (Previous.getResultKind()) {
@@ -16192,8 +16197,8 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
     = (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_mutable);
   SourceLocation TSSL = D.getBeginLoc();
   FieldDecl *NewFD
-    = CheckFieldDecl(II, T, TInfo, Record, Loc, Mutable, BitWidth, InitStyle,
-                     TSSL, AS, PrevDecl, &D);
+    = CheckFieldDecl(Name, T, TInfo, Record, Loc, Mutable,
+                     BitWidth, InitStyle, TSSL, AS, PrevDecl, &D);
 
   if (NewFD->isInvalidDecl())
     Record->setInvalidDecl();
@@ -16204,7 +16209,7 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
   if (NewFD->isInvalidDecl() && PrevDecl) {
     // Don't introduce NewFD into scope; there's already something
     // with the same name in the same scope.
-  } else if (II) {
+  } else if (Name.getAsIdentifierInfo()) {
     PushOnScopeChains(NewFD, S);
   } else
     Record->addDecl(NewFD);
@@ -16230,7 +16235,6 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
                                 SourceLocation TSSL,
                                 AccessSpecifier AS, NamedDecl *PrevDecl,
                                 Declarator *D) {
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
   bool InvalidDecl = false;
   if (D) InvalidDecl = D->isInvalidType();
 
@@ -16282,8 +16286,10 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   }
 
   // Anonymous bit-fields cannot be cv-qualified (CWG 2229).
-  if (!InvalidDecl && getLangOpts().CPlusPlus && !II && BitWidth &&
-      T.hasQualifiers()) {
+  IdentifierInfo *II = Name.getAsIdentifierInfo();
+  bool NameIsNonIdentifying = (!II && !Name.isReflectedIdentifier());
+  if (!InvalidDecl && getLangOpts().CPlusPlus && NameIsNonIdentifying &&
+      BitWidth && T.hasQualifiers()) {
     InvalidDecl = true;
     Diag(Loc, diag::err_anon_bitfield_qualifiers);
   }
@@ -16325,8 +16331,8 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
     BitWidth = nullptr;
   // If this is declared as a bit-field, check the bit-field.
   if (BitWidth) {
-    BitWidth = VerifyBitField(Loc, II, T, Record->isMsStruct(Context), BitWidth,
-                              &ZeroWidth).get();
+    BitWidth = VerifyBitField(Loc, Name, T, Record->isMsStruct(Context),
+                              BitWidth, &ZeroWidth).get();
     if (!BitWidth) {
       InvalidDecl = true;
       BitWidth = nullptr;
@@ -16361,13 +16367,13 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   if (InitStyle != ICIS_NoInit)
     checkDuplicateDefaultInit(*this, cast<CXXRecordDecl>(Record), Loc);
 
-  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, Loc, II, T, TInfo,
-                                       BitWidth, Mutable, InitStyle);
+  FieldDecl *NewFD = FieldDecl::Create(Context, Record, TSSL, Loc, Name, T,
+                                       TInfo, BitWidth, Mutable, InitStyle);
   if (InvalidDecl)
     NewFD->setInvalidDecl();
 
   if (PrevDecl && !isa<TagDecl>(PrevDecl)) {
-    Diag(Loc, diag::err_duplicate_member) << II;
+    Diag(Loc, diag::err_duplicate_member) << Name;
     Diag(PrevDecl->getLocation(), diag::note_previous_declaration);
     NewFD->setInvalidDecl();
   }

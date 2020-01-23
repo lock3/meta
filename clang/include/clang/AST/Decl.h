@@ -2776,10 +2776,10 @@ class FieldDecl : public DeclaratorDecl, public Mergeable<FieldDecl> {
 
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
-            SourceLocation IdLoc, IdentifierInfo *Id,
+            SourceLocation NameLoc, const DeclarationName &Name,
             QualType T, TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
             InClassInitStyle InitStyle)
-    : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
+    : DeclaratorDecl(DK, DC, NameLoc, Name, T, TInfo, StartLoc),
       BitField(false), Mutable(Mutable), CachedFieldIndex(0),
       InitStorage(nullptr, (InitStorageKind) InitStyle) {
     if (BW)
@@ -2791,8 +2791,8 @@ public:
   friend class ASTDeclWriter;
 
   static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
-                           SourceLocation StartLoc, SourceLocation IdLoc,
-                           IdentifierInfo *Id, QualType T,
+                           SourceLocation StartLoc, SourceLocation NameLoc,
+                           const DeclarationName &Name, QualType T,
                            TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
                            InClassInitStyle InitStyle);
 
