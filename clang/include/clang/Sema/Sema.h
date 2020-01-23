@@ -11629,7 +11629,7 @@ public:
   /// the correct width, and that the field type is valid.
   /// Returns false on success.
   /// Can optionally return whether the bit-field is of width 0
-  ExprResult VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
+  ExprResult VerifyBitField(SourceLocation FieldLoc, DeclarationName FieldName,
                             QualType FieldTy, bool IsMsStruct,
                             Expr *BitWidth, bool *ZeroWidth = nullptr);
 

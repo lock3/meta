@@ -4859,7 +4859,7 @@ QualType CodeGenModule::getObjCFastEnumerationStateType() {
       FieldDecl *Field = FieldDecl::Create(Context,
                                            D,
                                            SourceLocation(),
-                                           SourceLocation(), nullptr,
+                                           SourceLocation(), DeclarationName(),
                                            FieldTypes[i], /*TInfo=*/nullptr,
                                            /*BitWidth=*/nullptr,
                                            /*Mutable=*/false,

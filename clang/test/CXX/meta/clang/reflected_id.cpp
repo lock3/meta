@@ -22,13 +22,15 @@ void test_template() {
 
 template<typename T>
 struct TemplateS {
+  T unqualid("val_", reflexpr(T));
   T unqualid("get_", reflexpr(T))() { return T(); }
 };
 
 template<typename T>
 void test_template_class_attribute() {
   TemplateS<T> s;
-  T res = s.unqualid("get_", reflexpr(T))();
+  T res_val = s.unqualid("val_", reflexpr(T));
+  T res_get = s.unqualid("get_", reflexpr(T))();
 }
 
 template<int y>
