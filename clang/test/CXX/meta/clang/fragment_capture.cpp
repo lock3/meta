@@ -20,3 +20,18 @@ class ArrayDestructure {
     };
   }
 };
+
+class ClassWithArr {
+  int a_arr[10]; // expected-note {{subobject declared here}}
+};
+
+class BadCaptureClass {
+  consteval { // expected-error {{expression is not an integral constant expression}} expected-note {{in call to '__constexpr_decl()'}}
+    ClassWithArr a_arr_class; // expected-note {{subobject of type 'int' is not initialized}} expected-note {{in call to 'ClassWithArr(a_arr_class)'}}
+    -> __fragment struct {
+      constexpr auto val_a_arr_class() {
+        return a_arr_class;
+      }
+    };
+  }
+};
