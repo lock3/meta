@@ -4454,7 +4454,7 @@ EvaluateMetaDeclCall(Sema &Sema, MetaType *MD, CallExpr *Call) {
       // If we got a compiler error, then just emit that.
       if (Notes[0].second.getDiagID() == diag::err_user_defined_error)
         Sema.Diag(MD->getBeginLoc(), Notes[0].second);
-      else if (Notes[0].second.getDiagID() != diag::note_constexpr_uninitialized) {
+      else {
         // FIXME: These source locations are wrong.
         Sema.Diag(MD->getBeginLoc(), diag::err_expr_not_ice) << LangOpts.CPlusPlus;
         for (const PartialDiagnosticAt &Note : Notes)
@@ -4483,14 +4483,14 @@ EvaluateMetaDecl(Sema &Sema, MetaType *MD, FunctionDecl *D) {
   DeclRefExpr *Ref =
       new (Context) DeclRefExpr(Context, D,
                                 /*RefersToEnclosingVariableOrCapture=*/false,
-                                FunctionTy, VK_LValue, SourceLocation());
+                                FunctionTy, VK_LValue, MD->getLocation());
   QualType PtrTy = Context.getPointerType(FunctionTy);
   ImplicitCastExpr *Cast =
       ImplicitCastExpr::Create(Context, PtrTy, CK_FunctionToPointerDecay, Ref,
                                /*BasePath=*/nullptr, VK_RValue);
   CallExpr *Call =
       CallExpr::Create(Context, Cast, ArrayRef<Expr *>(), Context.VoidTy,
-                       VK_RValue, SourceLocation());
+                       VK_RValue, MD->getLocation());
   return EvaluateMetaDeclCall(Sema, MD, Call);
 }
 

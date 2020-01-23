@@ -2163,6 +2163,9 @@ static bool CheckEvaluationResult(CheckEvaluationResultKind CERK,
                                   SourceLocation SubobjectLoc,
                                   CheckedTemporaries &CheckedTemps) {
   if (!Value.hasValue()) {
+    if (Type->isVoidType())
+      return true;
+
     Info.FFDiag(DiagLoc, diag::note_constexpr_uninitialized)
       << true << Type;
     if (SubobjectLoc.isValid())
