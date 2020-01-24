@@ -4672,10 +4672,8 @@ static void PushInjectedECD(
 }
 
 static bool isEnumFragment(Scope *S) {
-  bool InFragment = S->getFlags() & Scope::FragmentScope;
-  if (!InFragment) {
+  if (!S->isFragmentScope())
     return false;
-  }
 
   bool InEnum = false;
 

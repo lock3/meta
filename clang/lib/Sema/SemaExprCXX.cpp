@@ -1081,6 +1081,10 @@ static QualType adjustCVQualifiersForCXXThisWithinLambda(
 
 QualType Sema::getCurrentThisType() {
   DeclContext *DC = getFunctionLevelDeclContext();
+
+  if (getCurScope() && getCurScope()->isBlockFragmentScope())
+    DC = DC->getNonMetaAncestor();
+
   QualType ThisTy = CXXThisTypeOverride;
 
   if (CXXMethodDecl *method = dyn_cast<CXXMethodDecl>(DC)) {

@@ -135,8 +135,11 @@ public:
     /// This is the scope of a C++ catch statement.
     CatchScope = 0x1000000,
 
-    /// \brief We are in the scope of a source code literal/fragment.
-    FragmentScope = 0x2000000
+    /// We are in the scope of a source code literal/fragment.
+    FragmentScope = 0x2000000,
+
+    /// We are in a block fragment scope.
+    BlockFragmentScope = 0x4000000
   };
 
 private:
@@ -460,6 +463,16 @@ public:
   /// Determine whether this scope is a compound statement scope.
   bool isCompoundStmtScope() const {
     return getFlags() & Scope::CompoundStmtScope;
+  }
+
+  /// Determine whether this scope is a fragment declaration scope.
+  bool isFragmentScope() const {
+    return getFlags() & Scope::FragmentScope;
+  }
+
+  /// Determine whether this scope is a block fragment scope.
+  bool isBlockFragmentScope() const {
+    return getFlags() & Scope::BlockFragmentScope;
   }
 
   /// Returns if rhs has a higher scope depth than this.

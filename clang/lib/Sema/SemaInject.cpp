@@ -2828,8 +2828,8 @@ static bool CXXRequiredDeclSubstitute(InjectionContext &Ctx, DeclType *D) {
 
 template<typename DeclType>
 static void
-SubstitueOrMaintainRequiredDecl(InjectionContext &Ctx, DeclContext *Owner,
-                                DeclType *NewDecl) {
+SubstituteOrMaintainRequiredDecl(InjectionContext &Ctx, DeclContext *Owner,
+                                 DeclType *NewDecl) {
   // If we're injecting this declaration, we should never add it to the owner
   // as that would result in the declaration showing up in the injectee.
   // Instead, we want to run lookup, and start the substitution process
@@ -2862,7 +2862,7 @@ Decl *InjectionContext::InjectCXXRequiredTypeDecl(CXXRequiredTypeDecl *D) {
       getContext(), Owner, D->getRequiresLoc(),
       D->getSpecLoc(), Id, D->wasDeclaredWithTypename());
   AddDeclSubstitution(D, RTD);
-  SubstitueOrMaintainRequiredDecl(*this, Owner, RTD);
+  SubstituteOrMaintainRequiredDecl(*this, Owner, RTD);
 
   return RTD;
 }
@@ -2888,7 +2888,7 @@ InjectionContext::InjectCXXRequiredDeclaratorDecl(CXXRequiredDeclaratorDecl *D) 
     CXXRequiredDeclaratorDecl::Create(SemaRef.Context, Owner,
                                       NewDD, D->getRequiresLoc());
   AddDeclSubstitution(D, RDD);
-  SubstitueOrMaintainRequiredDecl(*this, Owner, RDD);
+  SubstituteOrMaintainRequiredDecl(*this, Owner, RDD);
 
   return RDD;
 }

@@ -1938,6 +1938,14 @@ public:
     return const_cast<DeclContext*>(this)->getNonClosureAncestor();
   }
 
+  /// Find the nearest non-meta ancestor of this context,
+  /// i.e. the innermost semantic parent of this context, which is not
+  /// fragment, or a injector.
+  DeclContext *getNonMetaAncestor();
+  const DeclContext *getNonMetaAncestor() const {
+    return const_cast<DeclContext*>(this)->getNonMetaAncestor();
+  }
+
   /// getPrimaryContext - There may be many different
   /// declarations of the same entity (including forward declarations
   /// of classes, multiple definitions of namespaces, etc.), each with

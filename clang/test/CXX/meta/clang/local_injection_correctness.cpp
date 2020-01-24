@@ -39,6 +39,18 @@ constexpr int temple_frag_inst(bool bigNum) {
   consteval -> templ_frag<0>;
 }
 
+class a_class {
+  int x;
+
+  void inject_member_access() {
+    consteval {
+      -> __fragment {
+        int y = unqualid("x");
+      };
+    }
+  }
+};
+
 int main() {
   // MetaprogramDecl
   consteval {

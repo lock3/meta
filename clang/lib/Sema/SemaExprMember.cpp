@@ -90,6 +90,9 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
   assert(!R.empty() && (*R.begin())->isCXXClassMember());
   DeclContext *DC = SemaRef.getFunctionLevelDeclContext();
 
+  if (SemaRef.getCurScope() && SemaRef.getCurScope()->isBlockFragmentScope())
+    DC = DC->getNonMetaAncestor();
+
   bool isStaticContext = SemaRef.CXXThisTypeOverride.isNull() &&
     (!isa<CXXMethodDecl>(DC) || cast<CXXMethodDecl>(DC)->isStatic());
 
@@ -154,6 +157,7 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
     return AbstractInstanceResult ? AbstractInstanceResult
                                   : IMA_Error_StaticContext;
   }
+
   CXXRecordDecl *contextClass;
   if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(DC))
     contextClass = MD->getParent()->getCanonicalDecl();

@@ -1008,6 +1008,26 @@ Decl *DeclContext::getNonClosureAncestor() {
   return ::getNonClosureContext(this);
 }
 
+/// Starting at a given context (a Decl or DeclContext), look for a
+/// code context that is not in a meta context (i.e. injector, fragment, etc).
+static DeclContext *getNonMetaContext(DeclContext *DC) {
+  if (isa<CXXInjectorDecl>(DC))
+    return getNonMetaContext(DC->getParent());
+  if (DC->isFragmentContext())
+    return getNonMetaContext(DC->getParent());
+  if (auto *FD = dyn_cast<FunctionDecl>(DC)) {
+    if (FD->isMetaprogram()) {
+      return getNonMetaContext(FD->getParent());
+    }
+  }
+
+  return DC;
+}
+
+DeclContext *DeclContext::getNonMetaAncestor() {
+  return getNonMetaContext(this);
+}
+
 //===----------------------------------------------------------------------===//
 // DeclContext Implementation
 //===----------------------------------------------------------------------===//

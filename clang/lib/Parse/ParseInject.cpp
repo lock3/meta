@@ -175,6 +175,10 @@ Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
   using CompoundStmt = ::CompoundStmt;
   SourceLocation IntroLoc = Tok.getLocation();
 
+  // A name declared in the the fragment is not leaked into the enclosing
+  // scope. That is, fragments names are only accessible from within.
+  ParseScope BlockFragmentScope(this, Scope::BlockFragmentScope);
+
   // We need a function scope in order to parse a compound statement
   // in a file context.
   Actions.PushFunctionScope();
