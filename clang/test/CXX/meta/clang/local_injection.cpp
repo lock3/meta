@@ -37,6 +37,21 @@ constexpr int f4() {
   }
 }
 
+template<int T>
+class a_class {
+  int x;
+
+  void inject_member_access() {
+    consteval {
+      -> __fragment {
+        int y = unqualid(T);
+      };
+    }
+  }
+};
+
+using a_class_instantiated = a_class<1>;
+
 int main() {
   static_assert(f1() == 42);
   static_assert(f3() == 10);
