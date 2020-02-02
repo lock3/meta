@@ -1336,5 +1336,7 @@ def err_invalid_reifier_context_parse : Error<
   "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
    "reifier in this context: %select{expression|typename}1 expected.">;
 }
+def err_reify_typename_preceded : Error<
+  "the typename reifier cannot be preceded by a nested name specifier">;
 
 } // end of Parser diagnostics

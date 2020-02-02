@@ -1329,6 +1329,11 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       if (TryAnnotateTypeOrScopeToken())
         return ExprError();
 
+      // If TryAnnotateTypeOrScopeToken annotates the token, tail recurse.
+      if (!Tok.is(tok::kw_typename))
+        return ParseCastExpression(isUnaryExpression, isAddressOfOperand,
+                                   NotCastExpr, isTypeCast);
+
       if (!Actions.isSimpleTypeSpecifier(Tok.getKind()))
         // We are trying to parse a simple-type-specifier but might not get such
         // a token after error recovery.
