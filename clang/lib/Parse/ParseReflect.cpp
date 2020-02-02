@@ -434,13 +434,16 @@ TypeResult Parser::ParseReflectedTypeSpecifier(SourceLocation TypenameLoc,
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen_after, "reflexpr"))
     return TypeResult(true);
+
   ExprResult Result = ParseConstantExpression();
-  if (!T.consumeClose()) {
-    EndLoc = T.getCloseLocation();
-    if (!Result.isInvalid())
-      return Actions.ActOnReflectedTypeSpecifier(TypenameLoc, Result.get());
-  }
-  return TypeResult(true);
+  if (T.consumeClose())
+    return TypeResult(true);
+
+  EndLoc = T.getCloseLocation();
+  if (Result.isInvalid())
+    return TypeResult(true);
+
+  return Actions.ActOnReflectedTypeSpecifier(TypenameLoc, Result.get());
 }
 
 /// Parse a template argument reflection.
