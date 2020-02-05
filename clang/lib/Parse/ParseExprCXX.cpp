@@ -229,6 +229,37 @@ bool Parser::ParseOptionalCXXScopeSpecifier(
     HasScopeSpecifier = true;
   }
 
+  if (!HasScopeSpecifier && getLangOpts().Reflection &&
+      Tok.is(tok::kw_typename) && NextToken().is(tok::l_paren)) {
+    // Match 'typename (e)' and build annotated token for it.
+    TentativeParsingAction TPA(*this);
+
+    SourceLocation TypenameLoc = ConsumeToken();
+    SourceLocation TypenameEndLoc;
+    TypeResult Ty = ParseReflectedTypeSpecifier(TypenameLoc, TypenameEndLoc);
+    if (Ty.isInvalid()) {
+      TPA.Commit();
+      return true;
+    }
+
+    if (!Tok.is(tok::coloncolon)) {
+      // If the next token isn't a colon colon, we're
+      // trying to declare a type, not a name specifier.
+      TPA.Revert();
+      return false;
+    }
+
+    HasScopeSpecifier = true;
+    TPA.Commit();
+
+    SourceLocation EndLoc = ConsumeToken();
+    if (Actions.ActOnCXXNestedNameSpecifierReifTypename(
+        SS, TypenameLoc, Ty.get(), EndLoc)) {
+      SS.SetInvalid(SourceRange(TypenameLoc, EndLoc));
+      return true;
+    }
+  }
+
   // Preferred type might change when parsing qualifiers, we need the original.
   auto SavedType = PreferredType;
   while (true) {

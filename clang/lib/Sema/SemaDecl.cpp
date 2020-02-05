@@ -150,6 +150,7 @@ bool Sema::isSimpleTypeSpecifier(tok::TokenKind Kind) const {
   case tok::kw_typeof:
   case tok::annot_decltype:
   case tok::kw_decltype:
+  case tok::annot_refltype:
     return getLangOpts().CPlusPlus;
 
   case tok::kw_char8_t:
@@ -6795,7 +6796,9 @@ NamedDecl *Sema::ActOnVariableDeclarator(
                  ? diag::warn_cxx98_compat_static_data_member_in_union
                  : diag::ext_static_data_member_in_union) << Name;
         // We conservatively disallow static data members in anonymous structs.
-        else if (!RD->getDeclName())
+        // FIXME: Duplicated in SemaInject
+        else if (!RD->getDeclName() &&
+                 !(RD->getParent() && RD->getParent()->isFragment()))
           Diag(D.getIdentifierLoc(),
                diag::err_static_data_member_not_allowed_in_anon_struct)
             << Name << RD->isUnion();
