@@ -3523,7 +3523,6 @@ static InjectionContext *GetLastInjectionContext(Sema &S) {
 class InjectionContextManagerRAII {
   Sema &SemaRef;
   InjectionContext *OriginalContext;
-  bool RootInjection;
   bool NewContext;
 public:
   InjectionContextManagerRAII(Sema &SemaRef, Decl *Injectee)
