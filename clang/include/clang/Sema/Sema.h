@@ -6064,6 +6064,10 @@ public:
                                            const DeclSpec &DS,
                                            SourceLocation ColonColonLoc);
 
+  bool ActOnCXXNestedNameSpecifierReifTypename(CXXScopeSpec &SS,
+                                               SourceLocation TypenameLoc, ParsedType T,
+                                               SourceLocation ColonColonLoc);
+
   bool IsInvalidUnlessNestedName(Scope *S, CXXScopeSpec &SS,
                                  NestedNameSpecInfo &IdInfo,
                                  bool EnteringContext);

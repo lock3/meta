@@ -3208,6 +3208,20 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         continue;
       }
 
+      // Handle the typename reifier. In this context, the reifier
+      // is always invalid as it shouldn't be preceded
+      // by a nested-name-specifier.
+      if (getLangOpts().Reflection && Next.is(tok::kw_typename) &&
+          GetLookAheadToken(2).is(tok::l_paren)) {
+        assert(SS.isNotEmpty());
+
+        PrevSpec = ""; // not actually used by the diagnostic
+        DiagID = diag::err_reify_typename_preceded;
+        isInvalid = true;
+
+        break;
+      }
+
       if (Next.is(tok::annot_typename)) {
         DS.getTypeSpecScope() = SS;
         ConsumeAnnotationToken(); // The C++ scope.
