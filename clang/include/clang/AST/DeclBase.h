@@ -1847,6 +1847,15 @@ public:
     }
   }
 
+  bool isMethod() const {
+      return Decl::firstCXXMethod <= getDeclKind() &&
+             getDeclKind() <= Decl::lastCXXMethod;
+  }
+
+  bool isFunction() const {
+    return isFunctionOrMethod() && !isMethod();
+  }
+
   /// Test whether the context supports looking up names.
   bool isLookupContext() const {
     return !isFunctionOrMethod() && getDeclKind() != Decl::LinkageSpec &&
@@ -1873,9 +1882,9 @@ public:
 
   bool isFragment() const { return getDeclKind() == Decl::CXXFragment; }
 
-  bool isStatementFragment() const {
-    return getDeclKind() == Decl::CXXStmtFragment;
-  }
+  bool isStatementFragment() const;
+
+  bool isMemberStatementFragment() const;
 
   /// Determines whether this context is itself a fragment, or a
   /// subcontext inside of a fragment.

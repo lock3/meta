@@ -1076,6 +1076,18 @@ const BlockDecl *DeclContext::getInnermostBlockDecl() const {
   return nullptr;
 }
 
+bool DeclContext::isStatementFragment() const {
+  if (auto *FD = dyn_cast<CXXStmtFragmentDecl>(this))
+    return !FD->hasThisPtr();
+  return false;
+}
+
+bool DeclContext::isMemberStatementFragment() const {
+  if (auto *FD = dyn_cast<CXXStmtFragmentDecl>(this))
+    return FD->hasThisPtr();
+  return false;
+}
+
 bool DeclContext::isFragmentContext() const {
   const DeclContext *DC = this;
   do {

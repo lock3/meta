@@ -5718,6 +5718,10 @@ public:
     /// along with the qualifiers placed on '*this'.
     CXXThisScopeRAII(Sema &S, Decl *ContextDecl, Qualifiers CXXThisTypeQuals,
                      bool Enabled = true);
+    /// Introduce a new scope where 'this' may be allowed,
+    /// using a dependent type. If 'this' is not allowed, temporarily
+    /// clears the current this type.
+    CXXThisScopeRAII(Sema &S, bool AllowThis);
 
     ~CXXThisScopeRAII();
   };
@@ -11501,7 +11505,11 @@ public:
                                          ConditionKind CK);
 
   void ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures);
-  CXXFragmentDecl *ActOnStartCXXFragment(Scope* S, SourceLocation Loc,
+  Decl *ActOnStartCXXStmtFragment(Scope *S, SourceLocation Loc,
+                                  bool HasThisPtr);
+  void ActOnCXXStmtFragmentError(Scope *S);
+  Decl *ActOnFinishCXXStmtFragment(Scope *S, Decl *StmtFragment, Stmt *Body);
+  CXXFragmentDecl *ActOnStartCXXFragment(Scope *S, SourceLocation Loc,
                                          SmallVectorImpl<Expr *> &Captures);
   CXXFragmentDecl *ActOnFinishCXXFragment(Scope *S, Decl *Fragment,
                                           Decl *Content);

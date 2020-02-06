@@ -1136,6 +1136,15 @@ Sema::CXXThisScopeRAII::CXXThisScopeRAII(Sema &S,
   this->Enabled = true;
 }
 
+Sema::CXXThisScopeRAII::CXXThisScopeRAII(Sema &S, bool AllowThis)
+  : S(S), OldCXXThisTypeOverride(S.CXXThisTypeOverride), Enabled(true)
+{
+  if (AllowThis) {
+    S.CXXThisTypeOverride = S.Context.DependentTy;
+  } else {
+    S.CXXThisTypeOverride = { };
+  }
+}
 
 Sema::CXXThisScopeRAII::~CXXThisScopeRAII() {
   if (Enabled) {

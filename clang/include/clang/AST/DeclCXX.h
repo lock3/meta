@@ -4198,17 +4198,20 @@ public:
 
 class CXXStmtFragmentDecl : public Decl, public DeclContext {
   Stmt *Body;
+  bool HasThisPtr;
 
-  CXXStmtFragmentDecl(DeclContext *DC, SourceLocation BeginLoc)
-    : Decl(CXXStmtFragment, DC, BeginLoc), DeclContext(CXXStmtFragment)
-    {}
+  CXXStmtFragmentDecl(DeclContext *DC, SourceLocation BeginLoc, bool HasThisPtr)
+    : Decl(CXXStmtFragment, DC, BeginLoc), DeclContext(CXXStmtFragment),
+      HasThisPtr(HasThisPtr) { }
 public:
   static CXXStmtFragmentDecl *Create(ASTContext &Ctx, DeclContext *DC,
-                                     SourceLocation BeginLoc);
+                                     SourceLocation BeginLoc, bool HasThisPtr);
 
   void setBody(Stmt *S) { Body = S; }
   bool hasBody() const { return Body; }
   Stmt *getBody() const { return Body; }
+
+  bool hasThisPtr() const { return HasThisPtr; }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == CXXStmtFragment; }
