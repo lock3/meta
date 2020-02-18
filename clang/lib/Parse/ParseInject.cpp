@@ -169,30 +169,42 @@ Decl *Parser::ParseCXXEnumFragment(Decl *Fragment) {
   return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, EnumDecl);
 }
 
-/// ParseCXXBlockFragment
-Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
-  assert(Tok.is(tok::l_brace) && "Expected '{'");
-  using CompoundStmt = ::CompoundStmt;
-  SourceLocation IntroLoc = Tok.getLocation();
+Decl *Parser::ParseCXXStmtFragment(SourceLocation IntroLoc, bool HasThisPtr) {
+  Sema::CXXThisScopeRAII ThisOverride(Actions, HasThisPtr);
 
-  // We need a function scope in order to parse a compound statement
-  // in a file context.
-  Actions.PushFunctionScope();
-  Sema::FunctionScopeRAII FunctionScopeCleanup(Actions);
-
+  Scope *S = getCurScope();
+  Decl *StmtFragment = Actions.ActOnStartCXXStmtFragment(S, IntroLoc,
+                                                         HasThisPtr);
   // Parse the actual block. This consumes the braces.
   StmtResult Block = ParseCompoundStatementBody();
   if (Block.isInvalid()) {
-    Actions.ActOnFinishCXXFragment(getCurScope(), nullptr, nullptr);
+    Actions.ActOnCXXStmtFragmentError(S);
     return nullptr;
   }
 
-  DeclContext *CurContext = Actions.CurContext;
-  CXXStmtFragmentDecl *Body =
-    CXXStmtFragmentDecl::Create(Actions.getASTContext(), CurContext, IntroLoc);
-  Body->setBody(cast<CompoundStmt>(Block.get()));
+  return Actions.ActOnFinishCXXStmtFragment(S, StmtFragment, Block.get());
+}
 
-  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, Body);
+/// ParseCXXBlockFragment
+Decl *Parser::ParseCXXBlockFragment(Decl *Fragment) {
+  assert(Tok.is(tok::l_brace) && "Expected '{'");
+  SourceLocation IntroLoc = Tok.getLocation();
+
+  Decl *StmtFragment = ParseCXXStmtFragment(IntroLoc, /*HasThisPtr=*/false);
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, StmtFragment);
+}
+
+/// ParseCXXMemberBlockFragment
+Decl *Parser::ParseCXXMemberBlockFragment(Decl *Fragment) {
+  assert(Tok.is(tok::kw_this) && "Expected 'this'");
+
+  SourceLocation IntroLoc = Tok.getLocation();
+  if (ExpectAndConsume(tok::kw_this))
+    return nullptr;
+
+
+  Decl *StmtFragment = ParseCXXStmtFragment(IntroLoc, /*HasThisPtr=*/true);
+  return Actions.ActOnFinishCXXFragment(getCurScope(), Fragment, StmtFragment);
 }
 
 /// ParseCXXFragment
@@ -231,6 +243,9 @@ Decl *Parser::ParseCXXFragment(SmallVectorImpl<Expr *> &Captures) {
 
     case tok::l_brace:
       return ParseCXXBlockFragment(Fragment);
+
+    case tok::kw_this:
+      return ParseCXXMemberBlockFragment(Fragment);
 
     default:
       break;

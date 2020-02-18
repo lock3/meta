@@ -2942,7 +2942,11 @@ public:
   Decl *ParseCXXNamespaceFragment(Decl *Fragment);
   Decl *ParseCXXClassFragment(Decl *Fragment);
   Decl *ParseCXXEnumFragment(Decl *Fragment);
+private:
+  Decl *ParseCXXStmtFragment(SourceLocation IntroLoc, bool HasThisPtr);
+public:
   Decl *ParseCXXBlockFragment(Decl *Fragment);
+  Decl *ParseCXXMemberBlockFragment(Decl *Fragment);
   Decl *ParseCXXFragment(SmallVectorImpl<Expr *> &Captures);
   ExprResult ParseCXXFragmentExpression();
 

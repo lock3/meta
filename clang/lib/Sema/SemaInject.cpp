@@ -3089,10 +3089,42 @@ void Sema::ActOnCXXFragmentCapture(SmallVectorImpl<Expr *> &Captures) {
   ReferenceCaptures(*this, Vars, Captures);
 }
 
+Decl *Sema::ActOnStartCXXStmtFragment(Scope *S, SourceLocation Loc,
+                                      bool HasThisPtr) {
+  CXXStmtFragmentDecl *StmtFragment = CXXStmtFragmentDecl::Create(
+      Context, CurContext, Loc, HasThisPtr);
+
+  PushFunctionScope();
+  if (S)
+    PushDeclContext(S, StmtFragment);
+
+  return StmtFragment;
+}
+
+static void CleanupStmtFragment(Sema &SemaRef, Scope *S) {
+  if (S)
+    SemaRef.PopDeclContext();
+
+  SemaRef.PopFunctionScopeInfo();
+}
+
+void Sema::ActOnCXXStmtFragmentError(Scope *S) {
+  CleanupStmtFragment(*this, S);
+}
+
+Decl *Sema::ActOnFinishCXXStmtFragment(Scope *S, Decl *StmtFragment,
+                                       Stmt *Body) {
+  cast<CXXStmtFragmentDecl>(StmtFragment)->setBody(Body);
+
+  CleanupStmtFragment(*this, S);
+
+  return StmtFragment;
+}
+
 /// Called at the start of a source code fragment to establish the fragment
 /// declaration and placeholders.
 CXXFragmentDecl *Sema::ActOnStartCXXFragment(Scope *S, SourceLocation Loc,
-                                            SmallVectorImpl<Expr *> &Captures) {
+                                             SmallVectorImpl<Expr *> &Captures) {
   CXXFragmentDecl *Fragment = CXXFragmentDecl::Create(Context, CurContext, Loc);
   CreatePlaceholders(*this, Fragment, Captures);
 
@@ -3433,14 +3465,16 @@ StmtResult Sema::BuildCXXBaseInjectionStmt(
 // Returns an integer value describing the target context of the injection.
 // This correlates to the second %select in err_invalid_injection.
 static int DescribeDeclContext(DeclContext *DC) {
-  if (DC->isFunctionOrMethod() || DC->isStatementFragment())
+  if (DC->isFunction() || DC->isStatementFragment())
     return 0;
-  else if (DC->isRecord())
+  else if (DC->isMethod() || DC->isMemberStatementFragment())
     return 1;
-  else if (DC->isEnum())
+  else if (DC->isRecord())
     return 2;
-  else if (DC->isFileContext())
+  else if (DC->isEnum())
     return 3;
+  else if (DC->isFileContext())
+    return 4;
   else
     llvm_unreachable("Invalid injection context");
 }
@@ -3486,9 +3520,15 @@ static bool CheckInjectionContexts(Sema &SemaRef, SourceLocation POI,
   InjectionCompatibilityChecker Check(SemaRef, POI, Injection, Injectee);
 
   auto BlockTest = [] (DeclContext *DC) -> bool {
-    return DC->isFunctionOrMethod() || DC->isStatementFragment();
+    return DC->isFunction() || DC->isStatementFragment();
   };
   if (Check(BlockTest))
+    return false;
+
+  auto MemberBlockTest = [] (DeclContext *DC) -> bool {
+    return DC->isMethod() || DC->isMemberStatementFragment();
+  };
+  if (Check(MemberBlockTest))
     return false;
 
   auto ClassTest = [] (DeclContext *DC) -> bool {
