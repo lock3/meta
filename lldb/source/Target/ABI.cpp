@@ -1,4 +1,4 @@
-//===-- ABI.cpp -------------------------------------------------*- C++ -*-===//
+//===-- ABI.cpp -----------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,6 +17,7 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/Log.h"
 #include "llvm/Support/TargetRegistry.h"
+#include <cctype>
 
 using namespace lldb;
 using namespace lldb_private;
@@ -41,7 +42,7 @@ ABI::FindPlugin(lldb::ProcessSP process_sp, const ArchSpec &arch) {
 
 ABI::~ABI() = default;
 
-bool ABI::GetRegisterInfoByName(ConstString name, RegisterInfo &info) {
+bool RegInfoBasedABI::GetRegisterInfoByName(ConstString name, RegisterInfo &info) {
   uint32_t count = 0;
   const RegisterInfo *register_info_array = GetRegisterInfoArray(count);
   if (register_info_array) {
@@ -87,7 +88,7 @@ ValueObjectSP ABI::GetReturnValueObject(Thread &thread, CompilerType &ast_type,
             ast_type.GetMinimumLanguage());
 
     if (!persistent_expression_state)
-      return ValueObjectSP();
+      return {};
 
     auto prefix = persistent_expression_state->GetPersistentVariablePrefix();
     ConstString persistent_variable_name =
@@ -212,7 +213,7 @@ std::unique_ptr<llvm::MCRegisterInfo> ABI::MakeMCRegisterInfo(const ArchSpec &ar
   return info_up;
 }
 
-void ABI::AugmentRegisterInfo(RegisterInfo &info) {
+void RegInfoBasedABI::AugmentRegisterInfo(RegisterInfo &info) {
   if (info.kinds[eRegisterKindEHFrame] != LLDB_INVALID_REGNUM &&
       info.kinds[eRegisterKindDWARF] != LLDB_INVALID_REGNUM)
     return;
@@ -227,4 +228,45 @@ void ABI::AugmentRegisterInfo(RegisterInfo &info) {
     info.kinds[eRegisterKindDWARF] = abi_info.kinds[eRegisterKindDWARF];
   if (info.kinds[eRegisterKindGeneric] == LLDB_INVALID_REGNUM)
     info.kinds[eRegisterKindGeneric] = abi_info.kinds[eRegisterKindGeneric];
+}
+
+void MCBasedABI::AugmentRegisterInfo(RegisterInfo &info) {
+  uint32_t eh, dwarf;
+  std::tie(eh, dwarf) = GetEHAndDWARFNums(info.name);
+
+  if (info.kinds[eRegisterKindEHFrame] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindEHFrame] = eh;
+  if (info.kinds[eRegisterKindDWARF] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindDWARF] = dwarf;
+  if (info.kinds[eRegisterKindGeneric] == LLDB_INVALID_REGNUM)
+    info.kinds[eRegisterKindGeneric] = GetGenericNum(info.name);
+}
+
+std::pair<uint32_t, uint32_t>
+MCBasedABI::GetEHAndDWARFNums(llvm::StringRef name) {
+  std::string mc_name = GetMCName(name.str());
+  for (char &c : mc_name)
+    c = std::toupper(c);
+  int eh = -1;
+  int dwarf = -1;
+  for (unsigned reg = 0; reg < m_mc_register_info_up->getNumRegs(); ++reg) {
+    if (m_mc_register_info_up->getName(reg) == mc_name) {
+      eh = m_mc_register_info_up->getDwarfRegNum(reg, /*isEH=*/true);
+      dwarf = m_mc_register_info_up->getDwarfRegNum(reg, /*isEH=*/false);
+      break;
+    }
+  }
+  return std::pair<uint32_t, uint32_t>(eh == -1 ? LLDB_INVALID_REGNUM : eh,
+                                       dwarf == -1 ? LLDB_INVALID_REGNUM
+                                                   : dwarf);
+}
+
+void MCBasedABI::MapRegisterName(std::string &name, llvm::StringRef from_prefix,
+                                 llvm::StringRef to_prefix) {
+  llvm::StringRef name_ref = name;
+  if (!name_ref.consume_front(from_prefix))
+    return;
+  uint64_t _;
+  if (name_ref.empty() || to_integer(name_ref, _, 10))
+    name = (to_prefix + name_ref).str();
 }

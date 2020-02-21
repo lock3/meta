@@ -62,7 +62,7 @@ D: libc++
 
 N: Peter Collingbourne
 E: peter@pcc.me.uk
-D: llgo, libLTO (lib/LTO/* tools/lto/*), LLVM Bitcode (lib/Bitcode/* include/llvm/Bitcode/*)
+D: libLTO (lib/LTO/* tools/lto/*), LLVM Bitcode (lib/Bitcode/* include/llvm/Bitcode/*)
 
 N: Quentin Colombet
 E: quentin.colombet@gmail.com
@@ -149,6 +149,10 @@ D: IR Constant Folder, InstCombine
 N: Dylan McKay
 E: me@dylanmckay.io
 D: AVR Backend
+
+N: Simon Moll
+E: simon.moll@emea.nec.com
+D: VE Backend
 
 N: Tim Northover
 E: t.p.northover@gmail.com

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_Target_h_
-#define liblldb_Target_h_
+#ifndef LLDB_TARGET_TARGET_H
+#define LLDB_TARGET_TARGET_H
 
 #include <list>
 #include <map>
@@ -35,6 +35,8 @@
 #include "lldb/lldb-public.h"
 
 namespace lldb_private {
+
+class ClangModulesDeclVendor;
 
 OptionEnumValues GetDynamicValueTypes();
 
@@ -207,28 +209,19 @@ public:
 
   bool GetRequireHardwareBreakpoints() const;
 
+  bool GetAutoInstallMainExecutable() const;
+
 private:
   // Callbacks for m_launch_info.
-  static void Arg0ValueChangedCallback(void *target_property_ptr,
-                                       OptionValue *);
-  static void RunArgsValueChangedCallback(void *target_property_ptr,
-                                          OptionValue *);
-  static void EnvVarsValueChangedCallback(void *target_property_ptr,
-                                          OptionValue *);
-  static void InheritEnvValueChangedCallback(void *target_property_ptr,
-                                             OptionValue *);
-  static void InputPathValueChangedCallback(void *target_property_ptr,
-                                            OptionValue *);
-  static void OutputPathValueChangedCallback(void *target_property_ptr,
-                                             OptionValue *);
-  static void ErrorPathValueChangedCallback(void *target_property_ptr,
-                                            OptionValue *);
-  static void DetachOnErrorValueChangedCallback(void *target_property_ptr,
-                                                OptionValue *);
-  static void DisableASLRValueChangedCallback(void *target_property_ptr,
-                                              OptionValue *);
-  static void DisableSTDIOValueChangedCallback(void *target_property_ptr,
-                                               OptionValue *);
+  void Arg0ValueChangedCallback();
+  void RunArgsValueChangedCallback();
+  void EnvVarsValueChangedCallback();
+  void InputPathValueChangedCallback();
+  void OutputPathValueChangedCallback();
+  void ErrorPathValueChangedCallback();
+  void DetachOnErrorValueChangedCallback();
+  void DisableASLRValueChangedCallback();
+  void DisableSTDIOValueChangedCallback();
 
   // Member variables.
   ProcessLaunchInfo m_launch_info;
@@ -1065,8 +1058,6 @@ public:
                                                  const char *name,
                                                  Status &error);
 
-  lldb::ClangASTImporterSP GetClangASTImporter();
-
   // Install any files through the platform that need be to installed prior to
   // launching or attaching.
   Status Install(ProcessLaunchInfo *launch_info);
@@ -1313,8 +1304,7 @@ protected:
   typedef std::map<lldb::LanguageType, lldb::REPLSP> REPLMap;
   REPLMap m_repl_map;
 
-  lldb::ClangASTImporterSP m_ast_importer_sp;
-  lldb::ClangModulesDeclVendorUP m_clang_modules_decl_vendor_up;
+  std::unique_ptr<ClangModulesDeclVendor> m_clang_modules_decl_vendor_up;
 
   lldb::SourceManagerUP m_source_manager_up;
 
@@ -1375,4 +1365,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_Target_h_
+#endif // LLDB_TARGET_TARGET_H

@@ -1,5 +1,6 @@
-add_custom_target(libc_string_unittests)
-add_dependencies(check_libc libc_string_unittests)
+add_libc_testsuite(libc_string_unittests)
+
+add_subdirectory(memory_utils)
 
 add_libc_unittest(
   strcat_test

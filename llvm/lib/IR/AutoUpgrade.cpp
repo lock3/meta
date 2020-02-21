@@ -585,11 +585,10 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
     if (Name.startswith("aarch64.neon.addp")) {
       if (F->arg_size() != 2)
         break; // Invalid IR.
-      auto fArgs = F->getFunctionType()->params();
-      VectorType *ArgTy = dyn_cast<VectorType>(fArgs[0]);
-      if (ArgTy && ArgTy->getElementType()->isFloatingPointTy()) {
+      VectorType *Ty = dyn_cast<VectorType>(F->getReturnType());
+      if (Ty && Ty->getElementType()->isFloatingPointTy()) {
         NewFn = Intrinsic::getDeclaration(F->getParent(),
-                                          Intrinsic::aarch64_neon_faddp, fArgs);
+                                          Intrinsic::aarch64_neon_faddp, Ty);
         return true;
       }
     }
@@ -1238,18 +1237,19 @@ static Value *UpgradeMaskedStore(IRBuilder<> &Builder,
   // Cast the pointer to the right type.
   Ptr = Builder.CreateBitCast(Ptr,
                               llvm::PointerType::getUnqual(Data->getType()));
-  unsigned Align =
-    Aligned ? cast<VectorType>(Data->getType())->getBitWidth() / 8 : 1;
+  const Align Alignment =
+      Aligned ? Align(cast<VectorType>(Data->getType())->getBitWidth() / 8)
+              : Align(1);
 
   // If the mask is all ones just emit a regular store.
   if (const auto *C = dyn_cast<Constant>(Mask))
     if (C->isAllOnesValue())
-      return Builder.CreateAlignedStore(Data, Ptr, Align);
+      return Builder.CreateAlignedStore(Data, Ptr, Alignment);
 
   // Convert the mask from an integer type to a vector of i1.
   unsigned NumElts = Data->getType()->getVectorNumElements();
   Mask = getX86MaskVec(Builder, Mask, NumElts);
-  return Builder.CreateMaskedStore(Data, Ptr, Align, Mask);
+  return Builder.CreateMaskedStore(Data, Ptr, Alignment, Mask);
 }
 
 static Value *UpgradeMaskedLoad(IRBuilder<> &Builder,
@@ -1258,18 +1258,19 @@ static Value *UpgradeMaskedLoad(IRBuilder<> &Builder,
   Type *ValTy = Passthru->getType();
   // Cast the pointer to the right type.
   Ptr = Builder.CreateBitCast(Ptr, llvm::PointerType::getUnqual(ValTy));
-  unsigned Align =
-    Aligned ? cast<VectorType>(Passthru->getType())->getBitWidth() / 8 : 1;
+  const Align Alignment =
+      Aligned ? Align(cast<VectorType>(Passthru->getType())->getBitWidth() / 8)
+              : Align(1);
 
   // If the mask is all ones just emit a regular store.
   if (const auto *C = dyn_cast<Constant>(Mask))
     if (C->isAllOnesValue())
-      return Builder.CreateAlignedLoad(ValTy, Ptr, Align);
+      return Builder.CreateAlignedLoad(ValTy, Ptr, Alignment);
 
   // Convert the mask from an integer type to a vector of i1.
   unsigned NumElts = Passthru->getType()->getVectorNumElements();
   Mask = getX86MaskVec(Builder, Mask, NumElts);
-  return Builder.CreateMaskedLoad(Ptr, Align, Mask, Passthru);
+  return Builder.CreateMaskedLoad(Ptr, Alignment, Mask, Passthru);
 }
 
 static Value *upgradeAbs(IRBuilder<> &Builder, CallInst &CI) {
@@ -1706,7 +1707,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Value *Extract =
           Builder.CreateExtractElement(Arg1, (uint64_t)0, "extractelement");
 
-      StoreInst *SI = Builder.CreateAlignedStore(Extract, Addr, 1);
+      StoreInst *SI = Builder.CreateAlignedStore(Extract, Addr, Align(1));
       SI->setMetadata(M->getMDKindID("nontemporal"), Node);
 
       // Remove intrinsic.
@@ -1730,8 +1731,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
                                         PointerType::getUnqual(Arg1->getType()),
                                         "cast");
       VectorType *VTy = cast<VectorType>(Arg1->getType());
-      StoreInst *SI = Builder.CreateAlignedStore(Arg1, BC,
-                                                 VTy->getBitWidth() / 8);
+      StoreInst *SI =
+          Builder.CreateAlignedStore(Arg1, BC, Align(VTy->getBitWidth() / 8));
       SI->setMetadata(M->getMDKindID("nontemporal"), Node);
 
       // Remove intrinsic.
@@ -1749,7 +1750,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Value *BC = Builder.CreateBitCast(Arg0,
                                         PointerType::getUnqual(Elt->getType()),
                                         "cast");
-      Builder.CreateAlignedStore(Elt, BC, 1);
+      Builder.CreateAlignedStore(Elt, BC, Align(1));
 
       // Remove intrinsic.
       CI->eraseFromParent();
@@ -1765,7 +1766,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Arg0 = Builder.CreateBitCast(Arg0,
                                    PointerType::getUnqual(Arg1->getType()),
                                    "cast");
-      Builder.CreateAlignedStore(Arg1, Arg0, 1);
+      Builder.CreateAlignedStore(Arg1, Arg0, Align(1));
 
       // Remove intrinsic.
       CI->eraseFromParent();
@@ -2307,7 +2308,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Type *VT = VectorType::get(EltTy, NumSrcElts);
       Value *Op = Builder.CreatePointerCast(CI->getArgOperand(0),
                                             PointerType::getUnqual(VT));
-      Value *Load = Builder.CreateAlignedLoad(VT, Op, 1);
+      Value *Load = Builder.CreateAlignedLoad(VT, Op, Align(1));
       if (NumSrcElts == 2)
         Rep = Builder.CreateShuffleVector(Load, UndefValue::get(Load->getType()),
                                           { 0, 1, 0, 1 });
@@ -3053,7 +3054,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       // Convert the type of the pointer to a pointer to the stored type.
       Value *BC =
           Builder.CreateBitCast(Ptr, PointerType::getUnqual(VTy), "cast");
-      LoadInst *LI = Builder.CreateAlignedLoad(VTy, BC, VTy->getBitWidth() / 8);
+      LoadInst *LI =
+          Builder.CreateAlignedLoad(VTy, BC, Align(VTy->getBitWidth() / 8));
       LI->setMetadata(M->getMDKindID("nontemporal"), Node);
       Rep = LI;
     } else if (IsX86 && (Name.startswith("fma.vfmadd.") ||
@@ -3257,8 +3259,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
           Ops[2] = Builder.CreateFNeg(Ops[2]);
 
         Rep = Builder.CreateCall(Intrinsic::getDeclaration(F->getParent(), IID),
-                                 {CI->getArgOperand(0), CI->getArgOperand(1),
-                                  CI->getArgOperand(2), CI->getArgOperand(4)});
+                                 Ops);
       } else {
         int NumElts = CI->getType()->getVectorNumElements();
 
@@ -3435,7 +3436,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       // Cast the pointer to the right type.
       Value *Ptr = Builder.CreateBitCast(CI->getArgOperand(3),
                                  llvm::PointerType::getUnqual(Data->getType()));
-      Builder.CreateAlignedStore(Data, Ptr, 1);
+      Builder.CreateAlignedStore(Data, Ptr, Align(1));
       // Replace the original call result with the first result of the new call.
       Value *CF = Builder.CreateExtractValue(NewCall, 0);
 
@@ -3657,11 +3658,11 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     // Cast the pointer to the right type.
     Value *Ptr = Builder.CreateBitCast(CI->getArgOperand(0),
                                  llvm::PointerType::getUnqual(Data->getType()));
-    Builder.CreateAlignedStore(Data, Ptr, 1);
+    Builder.CreateAlignedStore(Data, Ptr, Align(1));
     // Replace the original call result with the first result of the new call.
     Value *TSC = Builder.CreateExtractValue(NewCall, 0);
 
-    std::string Name = CI->getName();
+    std::string Name = std::string(CI->getName());
     if (!Name.empty()) {
       CI->setName(Name + ".old");
       NewCall->setName(Name);
@@ -3736,7 +3737,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   }
   assert(NewCall && "Should have either set this variable or returned through "
                     "the default case");
-  std::string Name = CI->getName();
+  std::string Name = std::string(CI->getName());
   if (!Name.empty()) {
     CI->setName(Name + ".old");
     NewCall->setName(Name);
@@ -4078,7 +4079,7 @@ void llvm::UpgradeSectionAttributes(Module &M) {
     for (auto Component : Components)
       OS << ',' << Component.trim();
 
-    return OS.str().substr(1);
+    return std::string(OS.str().substr(1));
   };
 
   for (auto &GV : M.globals()) {
@@ -4164,12 +4165,12 @@ std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
   // If X86, and the datalayout matches the expected format, add pointer size
   // address spaces to the datalayout.
   if (!Triple(TT).isX86() || DL.contains(AddrSpaces))
-    return DL;
+    return std::string(DL);
 
   SmallVector<StringRef, 4> Groups;
   Regex R("(e-m:[a-z](-p:32:32)?)(-[if]64:.*$)");
   if (!R.match(DL, &Groups))
-    return DL;
+    return std::string(DL);
 
   SmallString<1024> Buf;
   std::string Res = (Groups[1] + AddrSpaces + Groups[3]).toStringRef(Buf).str();

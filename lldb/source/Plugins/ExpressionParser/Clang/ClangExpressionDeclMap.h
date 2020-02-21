@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ClangExpressionDeclMap_h_
-#define liblldb_ClangExpressionDeclMap_h_
+#ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONDECLMAP_H
+#define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONDECLMAP_H
 
 #include <signal.h>
 #include <stdint.h>
@@ -17,7 +17,6 @@
 #include "ClangASTSource.h"
 #include "ClangExpressionVariable.h"
 
-#include "lldb/Core/ClangForward.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/Materializer.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -28,6 +27,8 @@
 #include "llvm/ADT/DenseMap.h"
 
 namespace lldb_private {
+
+class ClangPersistentVariables;
 
 /// \class ClangExpressionDeclMap ClangExpressionDeclMap.h
 /// "lldb/Expression/ClangExpressionDeclMap.h" Manages named entities that are
@@ -79,8 +80,8 @@ public:
   ClangExpressionDeclMap(
       bool keep_result_in_memory,
       Materializer::PersistentVariableDelegate *result_delegate,
-      const lldb::TargetSP &target, const lldb::ClangASTImporterSP &importer,
-      ValueObject *ctx_obj);
+      const lldb::TargetSP &target,
+      const std::shared_ptr<ClangASTImporter> &importer, ValueObject *ctx_obj);
 
   /// Destructor
   ~ClangExpressionDeclMap() override;
@@ -641,20 +642,20 @@ private:
   /// export all components of the type also.
   ///
   /// \param[in] target
-  ///     The ClangASTContext to move to.
+  ///     The TypeSystemClang to move to.
   /// \param[in] source
-  ///     The ClangASTContext to move from.  This is assumed to be going away.
+  ///     The TypeSystemClang to move from.  This is assumed to be going away.
   /// \param[in] parser_type
   ///     The type as it appears in the source context.
   ///
   /// \return
   ///     Returns the moved type, or an empty type if there was a problem.
-  TypeFromUser DeportType(ClangASTContext &target, ClangASTContext &source,
+  TypeFromUser DeportType(TypeSystemClang &target, TypeSystemClang &source,
                           TypeFromParser parser_type);
 
-  ClangASTContext *GetClangASTContext();
+  TypeSystemClang *GetTypeSystemClang();
 };
 
 } // namespace lldb_private
 
-#endif // liblldb_ClangExpressionDeclMap_h_
+#endif // LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONDECLMAP_H

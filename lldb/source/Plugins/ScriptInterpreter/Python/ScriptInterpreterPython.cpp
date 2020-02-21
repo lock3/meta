@@ -1,4 +1,4 @@
-//===-- ScriptInterpreterPython.cpp -----------------------------*- C++ -*-===//
+//===-- ScriptInterpreterPython.cpp ---------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -55,6 +55,8 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace lldb_private::python;
 using llvm::Expected;
+
+LLDB_PLUGIN_DEFINE(ScriptInterpreterPython)
 
 // Defined in the SWIG source file
 #if PY_MAJOR_VERSION >= 3
@@ -853,7 +855,7 @@ static std::string GenerateUniqueName(const char *base_name_wanted,
   else
     sstr.Printf("%s_%p", base_name_wanted, name_token);
 
-  return sstr.GetString();
+  return std::string(sstr.GetString());
 }
 
 bool ScriptInterpreterPythonImpl::GetEmbeddedInterpreterModuleObjects() {
@@ -1064,7 +1066,7 @@ void ScriptInterpreterPythonImpl::ExecuteInterpreterLoop() {
 
   IOHandlerSP io_handler_sp(new IOHandlerPythonInterpreter(debugger, this));
   if (io_handler_sp) {
-    debugger.PushIOHandler(io_handler_sp);
+    debugger.RunIOHandlerAsync(io_handler_sp);
   }
 }
 
@@ -1248,14 +1250,14 @@ void ScriptInterpreterPythonImpl::CollectDataForBreakpointCommandCallback(
     CommandReturnObject &result) {
   m_active_io_handler = eIOHandlerBreakpoint;
   m_debugger.GetCommandInterpreter().GetPythonCommandsFromIOHandler(
-      "    ", *this, true, &bp_options_vec);
+      "    ", *this, &bp_options_vec);
 }
 
 void ScriptInterpreterPythonImpl::CollectDataForWatchpointCommandCallback(
     WatchpointOptions *wp_options, CommandReturnObject &result) {
   m_active_io_handler = eIOHandlerWatchpoint;
   m_debugger.GetCommandInterpreter().GetPythonCommandsFromIOHandler(
-      "    ", *this, true, wp_options);
+      "    ", *this, wp_options);
 }
 
 Status ScriptInterpreterPythonImpl::SetBreakpointCommandCallbackFunction(
@@ -3035,7 +3037,7 @@ bool ScriptInterpreterPythonImpl::GetDocumentationForItem(const char *item,
     StreamString str_stream;
     str_stream.Printf(
         "Function %s was not found. Containing module might be missing.", item);
-    dest = str_stream.GetString();
+    dest = std::string(str_stream.GetString());
     return false;
   }
 }

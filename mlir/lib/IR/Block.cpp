@@ -1,6 +1,6 @@
 //===- Block.cpp - MLIR Block Class ---------------------------------------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -91,7 +91,7 @@ void Block::dropAllReferences() {
 
 void Block::dropAllDefinedValueUses() {
   for (auto arg : getArguments())
-    arg->dropAllUses();
+    arg.dropAllUses();
   for (auto &op : *this)
     op.dropAllDefinedValueUses();
   dropAllUses();
@@ -160,6 +160,13 @@ auto Block::addArguments(ArrayRef<Type> types)
   return {arguments.data() + initialSize, arguments.data() + arguments.size()};
 }
 
+BlockArgument Block::insertArgument(unsigned index, Type type) {
+  auto arg = BlockArgument::create(type, this);
+  assert(index <= arguments.size());
+  arguments.insert(arguments.begin() + index, arg);
+  return arg;
+}
+
 void Block::eraseArgument(unsigned index, bool updatePredTerms) {
   assert(index < arguments.size());
 
@@ -177,6 +184,20 @@ void Block::eraseArgument(unsigned index, bool updatePredTerms) {
     auto *predTerminator = (*predIt)->getTerminator();
     predTerminator->eraseSuccessorOperand(predIt.getSuccessorIndex(), index);
   }
+}
+
+/// Insert one value to the given position of the argument list. The existing
+/// arguments are shifted. The block is expected not to have predecessors.
+BlockArgument Block::insertArgument(args_iterator it, Type type) {
+  assert(llvm::empty(getPredecessors()) &&
+         "cannot insert arguments to blocks with predecessors");
+
+  // Use the args_iterator (on the BlockArgListType) to compute the insertion
+  // iterator in the underlying argument storage.
+  size_t distance = std::distance(args_begin(), it);
+  auto arg = BlockArgument::create(type, this);
+  arguments.insert(std::next(arguments.begin(), distance), arg);
+  return arg;
 }
 
 //===----------------------------------------------------------------------===//

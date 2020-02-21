@@ -70,19 +70,31 @@ Each toolchain provides a good reference for what it accepts:
 C++ Standard Library
 --------------------
 
-Use the C++ standard library facilities whenever they are available for
-a particular task. LLVM and related projects emphasize and rely on the standard
-library facilities as much as possible.
-
-We avoid some standard facilities, like the I/O streams, and instead use LLVM's
-streams library (raw_ostream_). More detailed information on these subjects is
-available in the :doc:`ProgrammersManual`.
+Instead of implementing custom data structures, we encourage the use of C++
+standard library facilities or LLVM support libraries whenever they are
+available for a particular task. LLVM and related projects emphasize and rely
+on the standard library facilities and the LLVM support libraries as much as
+possible.
 
 LLVM support libraries (for example, `ADT
 <https://github.com/llvm/llvm-project/tree/master/llvm/include/llvm/ADT>`_)
-implement functionality missing in the standard library. Such libraries are
-usually implemented in the ``llvm`` namespace and follow the expected standard
-interface, when there is one.
+implement specialized data structures or functionality missing in the standard
+library. Such libraries are usually implemented in the ``llvm`` namespace and
+follow the expected standard interface, when there is one.
+
+When both C++ and the LLVM support libraries provide similar functionality, and
+there isn't a specific reason to favor the C++ implementation, it is generally
+preferable to use the LLVM library. For example, ``llvm::DenseMap`` should
+almost always be used instead of ``std::map`` or ``std::unordered_map``, and
+``llvm::SmallVector`` should usually be used instead of ``std::vector``.
+
+We explicitly avoid some standard facilities, like the I/O streams, and instead
+use LLVM's streams library (raw_ostream_). More detailed information on these
+subjects is available in the :doc:`ProgrammersManual`.
+
+For more information about LLVM's data structures and the tradeoffs they make,
+please consult [that section of the programmer's
+manual](https://llvm.org/docs/ProgrammersManual.html#picking-the-right-data-structure-for-a-task).
 
 Guidelines for Go code
 ----------------------
@@ -647,7 +659,7 @@ Beware of non-deterministic sorting order of equal elements
 
 ``std::sort`` uses a non-stable sorting algorithm in which the order of equal
 elements is not guaranteed to be preserved. Thus using ``std::sort`` for a
-container having equal elements may result in non-determinstic behavior.
+container having equal elements may result in non-deterministic behavior.
 To uncover such instances of non-determinism, LLVM has introduced a new
 llvm::sort wrapper function. For an EXPENSIVE_CHECKS build this will randomly
 shuffle the container before sorting. Default to using ``llvm::sort`` instead
@@ -1206,7 +1218,7 @@ Don't evaluate ``end()`` every time through a loop
 
 In cases where range-based ``for`` loops can't be used and it is necessary
 to write an explicit iterator-based loop, pay close attention to whether
-``end()`` is re-evaluted on each loop iteration. One common mistake is to
+``end()`` is re-evaluated on each loop iteration. One common mistake is to
 write a loop in this style:
 
 .. code-block:: c++

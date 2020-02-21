@@ -1217,7 +1217,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXTypeidExprClass:
     case Stmt::CXXUuidofExprClass:
     case Stmt::CXXFoldExprClass:
-    case Stmt::CXXConstantExprClass:
     case Stmt::CXXReflectExprClass:
     case Stmt::CXXInvalidReflectionExprClass:
     case Stmt::CXXReflectionReadQueryExprClass:
@@ -1403,6 +1402,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::AsTypeExprClass:
     case Stmt::ConceptSpecializationExprClass:
     case Stmt::CXXRewrittenBinaryOperatorClass:
+    case Stmt::RequiresExprClass:
       // Fall through.
 
     // Cases we intentionally don't evaluate, since they don't need
@@ -3178,7 +3178,8 @@ std::string ExprEngine::DumpGraph(bool trim, StringRef Filename) {
     return DumpGraph(Src, Filename);
   } else {
     return llvm::WriteGraph(&G, "ExprEngine", /*ShortNames=*/false,
-                     /*Title=*/"Exploded Graph", /*Filename=*/Filename);
+                            /*Title=*/"Exploded Graph",
+                            /*Filename=*/std::string(Filename));
   }
 #endif
   llvm::errs() << "Warning: dumping graph requires assertions" << "\n";
@@ -3196,7 +3197,7 @@ std::string ExprEngine::DumpGraph(ArrayRef<const ExplodedNode*> Nodes,
     return llvm::WriteGraph(TrimmedG.get(), "TrimmedExprEngine",
                             /*ShortNames=*/false,
                             /*Title=*/"Trimmed Exploded Graph",
-                            /*Filename=*/Filename);
+                            /*Filename=*/std::string(Filename));
   }
 #endif
   llvm::errs() << "Warning: dumping graph requires assertions" << "\n";

@@ -362,7 +362,7 @@ MipsRegisterBankInfo::TypeInfoForMF::determineInstType(const MachineInstr *MI) {
 void MipsRegisterBankInfo::TypeInfoForMF::cleanupIfNewFunction(
     llvm::StringRef FunctionName) {
   if (MFName != FunctionName) {
-    MFName = FunctionName;
+    MFName = std::string(FunctionName);
     WaitingQueues.clear();
     Types.clear();
   }
@@ -453,6 +453,7 @@ MipsRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
   case G_BRINDIRECT:
   case G_VASTART:
   case G_BSWAP:
+  case G_CTLZ:
     OperandsMapping = &Mips::ValueMappings[Mips::GPRIdx];
     break;
   case G_ADD:
@@ -652,10 +653,10 @@ void MipsRegisterBankInfo::setRegBank(MachineInstr &MI,
 
 static void
 combineAwayG_UNMERGE_VALUES(LegalizationArtifactCombiner &ArtCombiner,
-                            MachineInstr &MI) {
+                            MachineInstr &MI, GISelObserverWrapper &Observer) {
   SmallVector<Register, 4> UpdatedDefs;
   SmallVector<MachineInstr *, 2> DeadInstrs;
-  ArtCombiner.tryCombineMerges(MI, DeadInstrs, UpdatedDefs);
+  ArtCombiner.tryCombineMerges(MI, DeadInstrs, UpdatedDefs, Observer);
   for (MachineInstr *DeadMI : DeadInstrs)
     DeadMI->eraseFromParent();
 }
@@ -688,7 +689,7 @@ void MipsRegisterBankInfo::applyMappingImpl(
       // not be considered for regbank selection. RegBankSelect for mips
       // visits/makes corresponding G_MERGE first. Combine them here.
       if (NewMI->getOpcode() == TargetOpcode::G_UNMERGE_VALUES)
-        combineAwayG_UNMERGE_VALUES(ArtCombiner, *NewMI);
+        combineAwayG_UNMERGE_VALUES(ArtCombiner, *NewMI, WrapperObserver);
       // This G_MERGE will be combined away when its corresponding G_UNMERGE
       // gets regBankSelected.
       else if (NewMI->getOpcode() == TargetOpcode::G_MERGE_VALUES)
@@ -700,7 +701,7 @@ void MipsRegisterBankInfo::applyMappingImpl(
     return;
   }
   case TargetOpcode::G_UNMERGE_VALUES:
-    combineAwayG_UNMERGE_VALUES(ArtCombiner, MI);
+    combineAwayG_UNMERGE_VALUES(ArtCombiner, MI, WrapperObserver);
     return;
   default:
     break;

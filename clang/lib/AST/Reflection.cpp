@@ -1447,7 +1447,7 @@ static OptionalString
 getArgAsString(const ArrayRef<APValue> &Args, std::size_t I) {
   if (OptionalExpr E = getArgAsExpr(Args, I))
     if (const StringLiteral *SL = dyn_cast<StringLiteral>(*E))
-      return { SL->getString() };
+      return { SL->getString().str() };
   return { };
 }
 

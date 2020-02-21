@@ -23,6 +23,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/TargetFolder.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/VectorUtils.h"
@@ -501,6 +502,10 @@ bool ReadDataFromGlobal(Constant *C, uint64_t ByteOffset, unsigned char *CurPtr,
 
 Constant *FoldReinterpretLoadFromConstPtr(Constant *C, Type *LoadTy,
                                           const DataLayout &DL) {
+  // Bail out early. Not expect to load from scalable global variable.
+  if (LoadTy->isVectorTy() && LoadTy->getVectorIsScalable())
+    return nullptr;
+
   auto *PTy = cast<PointerType>(C->getType());
   auto *IntType = dyn_cast<IntegerType>(LoadTy);
 
@@ -520,8 +525,8 @@ Constant *FoldReinterpretLoadFromConstPtr(Constant *C, Type *LoadTy,
     else if (LoadTy->isDoubleTy())
       MapTy = Type::getInt64Ty(C->getContext());
     else if (LoadTy->isVectorTy()) {
-      MapTy = PointerType::getIntNTy(C->getContext(),
-                                     DL.getTypeSizeInBits(LoadTy));
+      MapTy = PointerType::getIntNTy(
+          C->getContext(), DL.getTypeSizeInBits(LoadTy).getFixedSize());
     } else
       return nullptr;
 
@@ -561,7 +566,8 @@ Constant *FoldReinterpretLoadFromConstPtr(Constant *C, Type *LoadTy,
     return nullptr;
 
   int64_t Offset = OffsetAI.getSExtValue();
-  int64_t InitializerSize = DL.getTypeAllocSize(GV->getInitializer()->getType());
+  int64_t InitializerSize =
+      DL.getTypeAllocSize(GV->getInitializer()->getType()).getFixedSize();
 
   // If we're not accessing anything in this constant, the result is undefined.
   if (Offset <= -1 * static_cast<int64_t>(BytesLoaded))
@@ -828,7 +834,8 @@ Constant *SymbolicallyEvaluateGEP(const GEPOperator *GEP,
   Type *SrcElemTy = GEP->getSourceElementType();
   Type *ResElemTy = GEP->getResultElementType();
   Type *ResTy = GEP->getType();
-  if (!SrcElemTy->isSized())
+  if (!SrcElemTy->isSized() ||
+      (SrcElemTy->isVectorTy() && SrcElemTy->getVectorIsScalable()))
     return nullptr;
 
   if (Constant *C = CastGEPIndices(SrcElemTy, Ops, ResTy,
@@ -1517,7 +1524,8 @@ bool llvm::canConstantFoldCallTo(const CallBase *Call, const Function *F) {
   case 'p':
     return Name == "pow" || Name == "powf";
   case 'r':
-    return Name == "rint" || Name == "rintf" ||
+    return Name == "remainder" || Name == "remainderf" ||
+           Name == "rint" || Name == "rintf" ||
            Name == "round" || Name == "roundf";
   case 's':
     return Name == "sin" || Name == "sinf" ||
@@ -2097,6 +2105,14 @@ static Constant *ConstantFoldScalarCall2(StringRef Name,
             return ConstantFP::get(Ty->getContext(), V);
         }
         break;
+      case LibFunc_remainder:
+      case LibFunc_remainderf:
+        if (TLI->has(Func)) {
+          APFloat V = Op1->getValueAPF();
+          if (APFloat::opStatus::opOK == V.remainder(Op2->getValueAPF()))
+            return ConstantFP::get(Ty->getContext(), V);
+        }
+        break;
       case LibFunc_atan2:
       case LibFunc_atan2f:
       case LibFunc_atan2_finite:
@@ -2399,6 +2415,11 @@ static Constant *ConstantFoldVectorCall(StringRef Name,
   SmallVector<Constant *, 4> Lane(Operands.size());
   Type *Ty = VTy->getElementType();
 
+  // Do not iterate on scalable vector. The number of elements is unknown at
+  // compile-time.
+  if (VTy->getVectorIsScalable())
+    return nullptr;
+
   if (IntrinsicID == Intrinsic::masked_load) {
     auto *SrcPtr = Operands[0];
     auto *Mask = Operands[2];
@@ -2626,6 +2647,9 @@ bool llvm::isMathLibCallNoop(const CallBase *Call,
       case LibFunc_fmodl:
       case LibFunc_fmod:
       case LibFunc_fmodf:
+      case LibFunc_remainderl:
+      case LibFunc_remainder:
+      case LibFunc_remainderf:
         return Op0.isNaN() || Op1.isNaN() ||
                (!Op0.isInfinity() && !Op1.isZero());
 
@@ -2637,3 +2661,5 @@ bool llvm::isMathLibCallNoop(const CallBase *Call,
 
   return false;
 }
+
+void TargetFolder::anchor() {}

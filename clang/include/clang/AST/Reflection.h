@@ -60,7 +60,7 @@ public:
 class NamespaceName {
   // This is either an a reflected namespace or a qualified namespace name.
   using StorageType =
-    llvm::PointerUnion3<
+    llvm::PointerUnion<
         NamespaceDecl *, TranslationUnitDecl *, QualifiedNamespaceName *>;
 
   StorageType Storage;

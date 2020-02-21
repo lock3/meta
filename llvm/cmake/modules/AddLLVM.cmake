@@ -847,69 +847,98 @@ macro(add_llvm_executable name)
   llvm_codesign(${name} ENTITLEMENTS ${ARG_ENTITLEMENTS} BUNDLE_PATH ${ARG_BUNDLE_PATH})
 endmacro(add_llvm_executable name)
 
-# add_llvm_pass_plugin(name)
+# add_llvm_pass_plugin(name [NO_MODULE] ...)
 #   Add ${name} as an llvm plugin.
 #   If option LLVM_${name_upper}_LINK_INTO_TOOLS is set to ON, the plugin is registered statically.
 #   Otherwise a pluggable shared library is registered.
+#
+#   If NO_MODULE is specified, when option LLVM_${name_upper}_LINK_INTO_TOOLS is set to OFF,
+#   only an object library is built, and no module is built. This is specific to the Polly use case.
 function(add_llvm_pass_plugin name)
+  cmake_parse_arguments(ARG
+    "NO_MODULE" "" ""
+    ${ARGN})
 
   string(TOUPPER ${name} name_upper)
 
   option(LLVM_${name_upper}_LINK_INTO_TOOLS "Statically link ${name} into tools (if available)" OFF)
 
-  # process_llvm_pass_plugins takes care of the actual linking, just create an
-  # object library as of now
-  add_llvm_library(${name} OBJECT ${ARGN})
-
   if(LLVM_${name_upper}_LINK_INTO_TOOLS)
-      target_compile_definitions(${name} PRIVATE LLVM_${name_upper}_LINK_INTO_TOOLS)
-      set_property(TARGET ${name} APPEND PROPERTY COMPILE_DEFINITIONS LLVM_LINK_INTO_TOOLS)
-      if (TARGET intrinsics_gen)
-        add_dependencies(obj.${name} intrinsics_gen)
-      endif()
-  endif()
-
-  message(STATUS "Registering ${name} as a pass plugin (static build: ${LLVM_${name_upper}_LINK_INTO_TOOLS})")
-  if(LLVM_${name_upper}_LINK_INTO_TOOLS)
+    list(REMOVE_ITEM ARG_UNPARSED_ARGUMENTS BUILDTREE_ONLY)
+    # process_llvm_pass_plugins takes care of the actual linking, just create an
+    # object library as of now
+    add_llvm_library(${name} OBJECT ${ARG_UNPARSED_ARGUMENTS})
+    target_compile_definitions(${name} PRIVATE LLVM_${name_upper}_LINK_INTO_TOOLS)
+    set_property(TARGET ${name} APPEND PROPERTY COMPILE_DEFINITIONS LLVM_LINK_INTO_TOOLS)
+    if (TARGET intrinsics_gen)
+      add_dependencies(obj.${name} intrinsics_gen)
+    endif()
+    message(STATUS "Registering ${name} as a pass plugin (static build: ${LLVM_${name_upper}_LINK_INTO_TOOLS})")
     set_property(GLOBAL APPEND PROPERTY LLVM_COMPILE_EXTENSIONS ${name})
+  elseif(NOT ARG_NO_MODULE)
+    add_llvm_library(${name} MODULE ${ARG_UNPARSED_ARGUMENTS})
+  else()
+    add_llvm_library(${name} OBJECT ${ARG_UNPARSED_ARGUMENTS})
   endif()
+
 endfunction(add_llvm_pass_plugin)
 
-# Generate X Macro file for extension handling. It provides a
-# HANDLE_EXTENSION(extension_namespace, ExtensionProject) call for each extension
-# allowing client code to define HANDLE_EXTENSION to have a specific code be run for
-# each extension.
+# process_llvm_pass_plugins([NO_GEN])
 #
-# Also correctly set lib dependencies between plugins and tools.
+# Correctly set lib dependencies between plugins and tools, based on tools
+# registered with the ENABLE_PLUGINS option.
+#
+# Unless NO_GEN option is set, also generate X Macro file for extension
+# handling. It provides a HANDLE_EXTENSION(extension_namespace, ExtensionProject)
+# call for each extension allowing client code to define
+# HANDLE_EXTENSION to have a specific code be run for each extension.
+#
 function(process_llvm_pass_plugins)
+  cmake_parse_arguments(ARG
+      "NO_GEN" "" ""
+    ${ARGN})
+
+  # Add static plugins to each plugin target.
   get_property(LLVM_EXTENSIONS GLOBAL PROPERTY LLVM_COMPILE_EXTENSIONS)
-  file(WRITE "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "//extension handlers\n")
   foreach(llvm_extension ${LLVM_EXTENSIONS})
+    string(TOUPPER ${llvm_extension} llvm_extension_upper)
     string(TOLOWER ${llvm_extension} llvm_extension_lower)
 
-    string(TOUPPER ${llvm_extension} llvm_extension_upper)
-    string(SUBSTRING ${llvm_extension_upper} 0 1 llvm_extension_upper_first)
-    string(SUBSTRING ${llvm_extension_lower} 1 -1 llvm_extension_lower_tail)
-    string(CONCAT llvm_extension_project ${llvm_extension_upper_first} ${llvm_extension_lower_tail})
-
     if(LLVM_${llvm_extension_upper}_LINK_INTO_TOOLS)
-        file(APPEND "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "HANDLE_EXTENSION(${llvm_extension_project})\n")
-
-        get_property(llvm_plugin_targets GLOBAL PROPERTY LLVM_PLUGIN_TARGETS)
-        foreach(llvm_plugin_target ${llvm_plugin_targets})
-          set_property(TARGET ${llvm_plugin_target} APPEND PROPERTY LINK_LIBRARIES ${llvm_extension})
-          set_property(TARGET ${llvm_plugin_target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${llvm_extension})
-        endforeach()
+      get_property(llvm_plugin_targets GLOBAL PROPERTY LLVM_PLUGIN_TARGETS)
+      foreach(llvm_plugin_target ${llvm_plugin_targets})
+        set_property(TARGET ${llvm_plugin_target} APPEND PROPERTY LINK_LIBRARIES ${llvm_extension})
+        set_property(TARGET ${llvm_plugin_target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${llvm_extension})
+      endforeach()
     else()
       add_llvm_library(${llvm_extension_lower} MODULE obj.${llvm_extension_lower})
     endif()
-
   endforeach()
-  file(APPEND "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "#undef HANDLE_EXTENSION\n")
 
-  # only replace if there's an actual change
-  execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def")
-  file(REMOVE "${CMAKE_BINARY_DIR}/include/llvm/Support/Extension.def.tmp")
+  # Eventually generate the extension header.
+  if(NOT ARG_NO_GEN)
+      file(WRITE "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "//extension handlers\n")
+      foreach(llvm_extension ${LLVM_EXTENSIONS})
+        string(TOLOWER ${llvm_extension} llvm_extension_lower)
+
+        string(TOUPPER ${llvm_extension} llvm_extension_upper)
+        string(SUBSTRING ${llvm_extension_upper} 0 1 llvm_extension_upper_first)
+        string(SUBSTRING ${llvm_extension_lower} 1 -1 llvm_extension_lower_tail)
+        string(CONCAT llvm_extension_project ${llvm_extension_upper_first} ${llvm_extension_lower_tail})
+
+        if(LLVM_${llvm_extension_upper}_LINK_INTO_TOOLS)
+          file(APPEND "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "HANDLE_EXTENSION(${llvm_extension_project})\n")
+        endif()
+
+      endforeach()
+      file(APPEND "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def.tmp" "#undef HANDLE_EXTENSION\n")
+
+      # only replace if there's an actual change
+      execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def.tmp"
+        "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def")
+      file(REMOVE "${LLVM_BINARY_DIR}/include/llvm/Support/Extension.def.tmp")
+  endif()
 endfunction()
 
 function(export_executable_symbols target)
@@ -1317,36 +1346,6 @@ function(add_benchmark benchmark_name)
   target_link_libraries(${benchmark_name} PRIVATE benchmark)
 endfunction()
 
-function(llvm_add_go_executable binary pkgpath)
-  cmake_parse_arguments(ARG "ALL" "" "DEPENDS;GOFLAGS" ${ARGN})
-
-  if(LLVM_BINDINGS MATCHES "go")
-    # FIXME: This should depend only on the libraries Go needs.
-    get_property(llvmlibs GLOBAL PROPERTY LLVM_LIBS)
-    set(binpath ${CMAKE_BINARY_DIR}/bin/${binary}${CMAKE_EXECUTABLE_SUFFIX})
-    set(cc "${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_ARG1}")
-    set(cxx "${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1}")
-    set(cppflags "")
-    get_property(include_dirs DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
-    foreach(d ${include_dirs})
-      set(cppflags "${cppflags} -I${d}")
-    endforeach(d)
-    set(ldflags "${CMAKE_EXE_LINKER_FLAGS}")
-    add_custom_command(OUTPUT ${binpath}
-      COMMAND ${CMAKE_BINARY_DIR}/bin/llvm-go "go=${GO_EXECUTABLE}" "cc=${cc}" "cxx=${cxx}" "cppflags=${cppflags}" "ldflags=${ldflags}" "packages=${LLVM_GO_PACKAGES}"
-              ${ARG_GOFLAGS} build -o ${binpath} ${pkgpath}
-      DEPENDS llvm-config ${CMAKE_BINARY_DIR}/bin/llvm-go${CMAKE_EXECUTABLE_SUFFIX}
-              ${llvmlibs} ${ARG_DEPENDS}
-      COMMENT "Building Go executable ${binary}"
-      VERBATIM)
-    if (ARG_ALL)
-      add_custom_target(${binary} ALL DEPENDS ${binpath})
-    else()
-      add_custom_target(${binary} DEPENDS ${binpath})
-    endif()
-  endif()
-endfunction()
-
 # This function canonicalize the CMake variables passed by names
 # from CMake boolean to 0/1 suitable for passing into Python or C++,
 # in place.
@@ -1550,10 +1549,10 @@ endfunction()
 
 # A function to add a set of lit test suites to be driven through 'check-*' targets.
 function(add_lit_testsuite target comment)
-  cmake_parse_arguments(ARG "" "" "PARAMS;DEPENDS;ARGS" ${ARGN})
+  cmake_parse_arguments(ARG "EXCLUDE_FROM_CHECK_ALL" "" "PARAMS;DEPENDS;ARGS" ${ARGN})
 
   # EXCLUDE_FROM_ALL excludes the test ${target} out of check-all.
-  if(NOT EXCLUDE_FROM_ALL)
+  if(NOT ARG_EXCLUDE_FROM_CHECK_ALL)
     # Register the testsuites, params and depends for the global check rule.
     set_property(GLOBAL APPEND PROPERTY LLVM_LIT_TESTSUITES ${ARG_UNPARSED_ARGUMENTS})
     set_property(GLOBAL APPEND PROPERTY LLVM_LIT_PARAMS ${ARG_PARAMS})
@@ -1572,7 +1571,7 @@ endfunction()
 
 function(add_lit_testsuites project directory)
   if (NOT LLVM_ENABLE_IDE)
-    cmake_parse_arguments(ARG "" "" "PARAMS;DEPENDS;ARGS" ${ARGN})
+    cmake_parse_arguments(ARG "EXCLUDE_FROM_CHECK_ALL" "" "PARAMS;DEPENDS;ARGS" ${ARGN})
 
     # Search recursively for test directories by assuming anything not
     # in a directory called Inputs contains tests.
@@ -1595,6 +1594,7 @@ function(add_lit_testsuites project directory)
         string(TOLOWER "${project}${name_dashes}" name_var)
         add_lit_target("check-${name_var}" "Running lit suite ${lit_suite}"
           ${lit_suite}
+          ${EXCLUDE_FROM_CHECK_ALL}
           PARAMS ${ARG_PARAMS}
           DEPENDS ${ARG_DEPENDS}
           ARGS ${ARG_ARGS}

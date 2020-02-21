@@ -1357,19 +1357,6 @@ LinkageInfo LinkageComputer::getLVForLocalDecl(const NamedDecl *D,
                      LV.isVisibilityExplicit());
 }
 
-static inline const CXXRecordDecl*
-getOutermostEnclosingLambda(const CXXRecordDecl *Record) {
-  const CXXRecordDecl *Ret = Record;
-  while (Record && Record->isLambda()) {
-    Ret = Record;
-    if (!Record->getParent()) break;
-    // Get the Containing Class of this Lambda Class
-    Record = dyn_cast_or_null<CXXRecordDecl>(
-      Record->getParent()->getParent());
-  }
-  return Ret;
-}
-
 LinkageInfo LinkageComputer::computeLVForDecl(const NamedDecl *D,
                                               LVComputationKind computation,
                                               bool IgnoreVarTypeLinkage) {
@@ -1435,25 +1422,9 @@ LinkageInfo LinkageComputer::computeLVForDecl(const NamedDecl *D,
           return getInternalLinkageFor(D);
         }
 
-        // This lambda has its linkage/visibility determined:
-        //  - either by the outermost lambda if that lambda has no mangling
-        //    number.
-        //  - or by the parent of the outer most lambda
-        // This prevents infinite recursion in settings such as nested lambdas
-        // used in NSDMI's, for e.g.
-        //  struct L {
-        //    int t{};
-        //    int t2 = ([](int a) { return [](int b) { return b; };})(t)(t);
-        //  };
-        const CXXRecordDecl *OuterMostLambda =
-            getOutermostEnclosingLambda(Record);
-        if (OuterMostLambda->hasKnownLambdaInternalLinkage() ||
-            !OuterMostLambda->getLambdaManglingNumber())
-          return getInternalLinkageFor(D);
-
         return getLVForClosure(
-                  OuterMostLambda->getDeclContext()->getRedeclContext(),
-                  OuterMostLambda->getLambdaContextDecl(), computation);
+                  Record->getDeclContext()->getRedeclContext(),
+                  Record->getLambdaContextDecl(), computation);
       }
 
       break;
@@ -1878,21 +1849,25 @@ void DeclaratorDecl::setQualifierInfo(NestedNameSpecifierLoc QualifierLoc) {
     }
     // Set qualifier info.
     getExtInfo()->QualifierLoc = QualifierLoc;
-  } else {
+  } else if (hasExtInfo()) {
     // Here Qualifier == 0, i.e., we are removing the qualifier (if any).
-    if (hasExtInfo()) {
-      if (getExtInfo()->NumTemplParamLists == 0) {
-        // Save type source info pointer.
-        TypeSourceInfo *savedTInfo = getExtInfo()->TInfo;
-        // Deallocate the extended decl info.
-        getASTContext().Deallocate(getExtInfo());
-        // Restore savedTInfo into (non-extended) decl info.
-        DeclInfo = savedTInfo;
-      }
-      else
-        getExtInfo()->QualifierLoc = QualifierLoc;
-    }
+    getExtInfo()->QualifierLoc = QualifierLoc;
   }
+}
+
+void DeclaratorDecl::setTrailingRequiresClause(Expr *TrailingRequiresClause) {
+  assert(TrailingRequiresClause);
+  // Make sure the extended decl info is allocated.
+  if (!hasExtInfo()) {
+    // Save (non-extended) type source info pointer.
+    auto *savedTInfo = DeclInfo.get<TypeSourceInfo*>();
+    // Allocate external info struct.
+    DeclInfo = new (getASTContext()) ExtInfo;
+    // Restore savedTInfo into (extended) decl info.
+    getExtInfo()->TInfo = savedTInfo;
+  }
+  // Set requires clause info.
+  getExtInfo()->TrailingRequiresClause = TrailingRequiresClause;
 }
 
 void DeclaratorDecl::setTemplateParameterListsInfo(
@@ -2831,7 +2806,8 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
                            const DeclarationNameInfo &NameInfo, QualType T,
                            TypeSourceInfo *TInfo, StorageClass S,
                            bool isInlineSpecified,
-                           ConstexprSpecKind ConstexprKind)
+                           ConstexprSpecKind ConstexprKind,
+                           Expr *TrailingRequiresClause)
     : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
                      StartLoc),
       DeclContext(DK), redeclarable_base(C), Body(), ODRHash(0),
@@ -2862,6 +2838,8 @@ FunctionDecl::FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC,
   FunctionDeclBits.IsMultiVersion = false;
   FunctionDeclBits.IsCopyDeductionCandidate = false;
   FunctionDeclBits.HasODRHash = false;
+  if (TrailingRequiresClause)
+    setTrailingRequiresClause(TrailingRequiresClause);
 }
 
 void FunctionDecl::getNameForDiagnostic(
@@ -3107,6 +3085,14 @@ bool FunctionDecl::isReplaceableGlobalAllocationFunction(bool *IsAligned) const 
   }
 
   return Params == FPT->getNumParams();
+}
+
+bool FunctionDecl::isInlineBuiltinDeclaration() const {
+  if (!getBuiltinID())
+    return false;
+
+  const FunctionDecl *Definition;
+  return hasBody(Definition) && Definition->isInlineSpecified();
 }
 
 bool FunctionDecl::isDestroyingOperatorDelete() const {
@@ -3942,6 +3928,11 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
   case Builtin::BImemcpy:
     return Builtin::BImemcpy;
 
+  case Builtin::BI__builtin_mempcpy:
+  case Builtin::BI__builtin___mempcpy_chk:
+  case Builtin::BImempcpy:
+    return Builtin::BImempcpy;
+
   case Builtin::BI__builtin_memmove:
   case Builtin::BI__builtin___memmove_chk:
   case Builtin::BImemmove:
@@ -3999,6 +3990,8 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
         return Builtin::BImemset;
       else if (FnInfo->isStr("memcpy"))
         return Builtin::BImemcpy;
+      else if (FnInfo->isStr("mempcpy"))
+        return Builtin::BImempcpy;
       else if (FnInfo->isStr("memmove"))
         return Builtin::BImemmove;
       else if (FnInfo->isStr("memcmp"))
@@ -4755,10 +4748,12 @@ FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
                                    QualType T, TypeSourceInfo *TInfo,
                                    StorageClass SC, bool isInlineSpecified,
                                    bool hasWrittenPrototype,
-                                   ConstexprSpecKind ConstexprKind) {
+                                   ConstexprSpecKind ConstexprKind,
+                                   Expr *TrailingRequiresClause) {
   FunctionDecl *New =
       new (C, DC) FunctionDecl(Function, C, DC, StartLoc, NameInfo, T, TInfo,
-                               SC, isInlineSpecified, ConstexprKind);
+                               SC, isInlineSpecified, ConstexprKind,
+                               TrailingRequiresClause);
   New->setHasWrittenPrototype(hasWrittenPrototype);
   return New;
 }
@@ -4766,7 +4761,7 @@ FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
 FunctionDecl *FunctionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) FunctionDecl(Function, C, nullptr, SourceLocation(),
                                   DeclarationNameInfo(), QualType(), nullptr,
-                                  SC_None, false, CSK_unspecified);
+                                  SC_None, false, CSK_unspecified, nullptr);
 }
 
 BlockDecl *BlockDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L) {

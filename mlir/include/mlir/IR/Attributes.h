@@ -1,6 +1,6 @@
 //===- Attributes.h - MLIR Attribute Classes --------------------*- C++ -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -69,7 +69,7 @@ public:
   using ImplType = AttributeStorage;
   using ValueType = void;
 
-  Attribute() : impl(nullptr) {}
+  constexpr Attribute() : impl(nullptr) {}
   /* implicit */ Attribute(const ImplType *impl)
       : impl(const_cast<ImplType *>(impl)) {}
 
@@ -204,6 +204,7 @@ public:
   static ArrayAttr get(ArrayRef<Attribute> value, MLIRContext *context);
 
   ArrayRef<Attribute> getValue() const;
+  Attribute operator[](unsigned idx) const;
 
   /// Support range iteration.
   using iterator = llvm::ArrayRef<Attribute>::iterator;
@@ -214,6 +215,26 @@ public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast.
   static bool kindof(unsigned kind) {
     return kind == StandardAttributes::Array;
+  }
+
+private:
+  /// Class for underlying value iterator support.
+  template <typename AttrTy>
+  class attr_value_iterator final
+      : public llvm::mapped_iterator<ArrayAttr::iterator,
+                                     AttrTy (*)(Attribute)> {
+  public:
+    explicit attr_value_iterator(ArrayAttr::iterator it)
+        : llvm::mapped_iterator<ArrayAttr::iterator, AttrTy (*)(Attribute)>(
+              it, [](Attribute attr) { return attr.cast<AttrTy>(); }) {}
+    AttrTy operator*() { return (*this->I).template cast<AttrTy>(); }
+  };
+
+public:
+  template <typename AttrTy>
+  llvm::iterator_range<attr_value_iterator<AttrTy>> getAsRange() {
+    return llvm::make_range(attr_value_iterator<AttrTy>(begin()),
+                            attr_value_iterator<AttrTy>(end()));
   }
 };
 
@@ -339,6 +360,13 @@ public:
   static bool kindof(unsigned kind) {
     return kind == StandardAttributes::Integer;
   }
+
+  static LogicalResult verifyConstructionInvariants(Optional<Location> loc,
+                                                    MLIRContext *ctx, Type type,
+                                                    int64_t value);
+  static LogicalResult verifyConstructionInvariants(Optional<Location> loc,
+                                                    MLIRContext *ctx, Type type,
+                                                    const APInt &value);
 };
 
 //===----------------------------------------------------------------------===//
@@ -603,7 +631,7 @@ public:
   }
 
   // Note: We could steal more bits if the need arises.
-  enum { NumLowBitsAvailable = 1 };
+  static constexpr int NumLowBitsAvailable = 1;
 };
 
 /// Pair of raw pointer and a boolean flag of whether the pointer holds a splat,
@@ -1423,7 +1451,7 @@ template <> struct PointerLikeTypeTraits<mlir::Attribute> {
   static inline mlir::Attribute getFromVoidPointer(void *ptr) {
     return mlir::Attribute::getFromOpaquePointer(ptr);
   }
-  enum { NumLowBitsAvailable = 3 };
+  static constexpr int NumLowBitsAvailable = 3;
 };
 
 template <>

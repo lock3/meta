@@ -77,7 +77,7 @@ namespace llvm {
       NT_CALL,
 
       /// X86 compare and logical compare instructions.
-      CMP, COMI, UCOMI,
+      CMP, FCMP, COMI, UCOMI,
 
       /// X86 bit-test instructions.
       BT,
@@ -537,15 +537,13 @@ namespace llvm {
       // falls back to heap allocation if not.
       SEG_ALLOCA,
 
+      // For allocating stack space when using stack clash protector.
+      // Allocation is performed by block, and each block is probed.
+      PROBED_ALLOCA,
+
       // Memory barriers.
       MEMBARRIER,
       MFENCE,
-
-      // Store FP status word into i16 register.
-      FNSTSW16r,
-
-      // Store contents of %ah into %eflags.
-      SAHF,
 
       // Get a random integer and indicate whether it is valid in CF.
       RDRAND,
@@ -626,6 +624,12 @@ namespace llvm {
       // Vector signed/unsigned integer to float/double.
       STRICT_CVTSI2P, STRICT_CVTUI2P,
 
+      // Strict FMA nodes.
+      STRICT_FNMADD, STRICT_FMSUB, STRICT_FNMSUB,
+
+      // Conversions between float and half-float.
+      STRICT_CVTPS2PH, STRICT_CVTPH2PS,
+
       // Compare and swap.
       LCMPXCHG_DAG = ISD::FIRST_TARGET_MEMORY_OPCODE,
       LCMPXCHG8_DAG,
@@ -659,10 +663,9 @@ namespace llvm {
       /// This instruction implements SINT_TO_FP with the
       /// integer source in memory and FP reg result.  This corresponds to the
       /// X86::FILD*m instructions. It has two inputs (token chain and address)
-      /// and two outputs (FP value and token chain). FILD_FLAG also produces a
-      /// flag). The integer source type is specified by the memory VT.
+      /// and two outputs (FP value and token chain). The integer source type is
+      /// specified by the memory VT.
       FILD,
-      FILD_FLAG,
 
       /// This instruction implements a fp->int store from FP stack
       /// slots. This corresponds to the fist instruction. It takes a
@@ -756,19 +759,7 @@ namespace llvm {
     unsigned getByValTypeAlignment(Type *Ty,
                                    const DataLayout &DL) const override;
 
-    /// Returns the target specific optimal type for load
-    /// and store operations as a result of memset, memcpy, and memmove
-    /// lowering. If DstAlign is zero that means it's safe to destination
-    /// alignment can satisfy any constraint. Similarly if SrcAlign is zero it
-    /// means there isn't a need to check it against alignment requirement,
-    /// probably because the source does not need to be loaded. If 'IsMemset' is
-    /// true, that means it's expanding a memset. If 'ZeroMemset' is true, that
-    /// means it's a memset of zero. 'MemcpyStrSrc' indicates whether the memcpy
-    /// source is constant so it does not need to be loaded.
-    /// It returns EVT::Other if the type should be determined using generic
-    /// target-independent logic.
-    EVT getOptimalMemOpType(uint64_t Size, unsigned DstAlign, unsigned SrcAlign,
-                            bool IsMemset, bool ZeroMemset, bool MemcpyStrSrc,
+    EVT getOptimalMemOpType(const MemOp &Op,
                             const AttributeList &FuncAttributes) const override;
 
     /// Returns true if it's safe to use load / store of the
@@ -805,19 +796,6 @@ namespace llvm {
 
     SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
-    // Return true if it is profitable to combine a BUILD_VECTOR with a
-    // stride-pattern to a shuffle and a truncate.
-    // Example of such a combine:
-    // v4i32 build_vector((extract_elt V, 1),
-    //                    (extract_elt V, 3),
-    //                    (extract_elt V, 5),
-    //                    (extract_elt V, 7))
-    //  -->
-    // v4i32 truncate (bitcast (shuffle<1,u,3,u,4,u,5,u,6,u,7,u> V, u) to
-    // v4i64)
-    bool isDesirableToCombineBuildVectorToShuffleTruncate(
-        ArrayRef<int> ShuffleMask, EVT SrcVT, EVT TruncVT) const override;
-
     /// Return true if the target has native support for
     /// the specified value type and it is 'desirable' to use the type for the
     /// given node type. e.g. On x86 i16 is legal, but undesirable since i16
@@ -830,13 +808,14 @@ namespace llvm {
     /// and some i16 instructions are slow.
     bool IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const override;
 
-    /// Return 1 if we can compute the negated form of the specified expression
-    /// for the same cost as the expression itself, or 2 if we can compute the
-    /// negated form more cheaply than the expression itself. Else return 0.
-    char isNegatibleForFree(SDValue Op, SelectionDAG &DAG, bool LegalOperations,
-                            bool ForCodeSize, unsigned Depth) const override;
+    /// Returns whether computing the negated form of the specified expression
+    /// is more expensive, the same cost or cheaper.
+    NegatibleCost getNegatibleCost(SDValue Op, SelectionDAG &DAG,
+                                   bool LegalOperations, bool ForCodeSize,
+                                   unsigned Depth) const override;
 
-    /// If isNegatibleForFree returns true, return the newly negated expression.
+    /// If getNegatibleCost returns Neutral/Cheaper, return the newly negated
+    /// expression.
     SDValue getNegatedExpression(SDValue Op, SelectionDAG &DAG,
                                  bool LegalOperations, bool ForCodeSize,
                                  unsigned Depth) const override;
@@ -1189,7 +1168,7 @@ namespace llvm {
       return nullptr; // nothing to do, move along.
     }
 
-    Register getRegisterByName(const char* RegName, EVT VT,
+    Register getRegisterByName(const char* RegName, LLT VT,
                                const MachineFunction &MF) const override;
 
     /// If a physical register, this returns the register that receives the
@@ -1236,6 +1215,8 @@ namespace llvm {
     /// Customize the preferred legalization strategy for certain types.
     LegalizeTypeAction getPreferredVectorAction(MVT VT) const override;
 
+    bool softPromoteHalfType() const override { return true; }
+
     MVT getRegisterTypeForCallingConv(LLVMContext &Context, CallingConv::ID CC,
                                       EVT VT) const override;
 
@@ -1251,6 +1232,8 @@ namespace llvm {
 
     bool supportSwiftError() const override;
 
+    bool hasStackProbeSymbol(MachineFunction &MF) const override;
+    bool hasInlineStackProbe(MachineFunction &MF) const override;
     StringRef getStackProbeSymbolName(MachineFunction &MF) const override;
 
     unsigned getStackProbeSize(MachineFunction &MF) const;
@@ -1342,6 +1325,7 @@ namespace llvm {
 
     SDValue FP_TO_INTHelper(SDValue Op, SelectionDAG &DAG, bool isSigned,
                             SDValue &Chain) const;
+    SDValue LRINT_LLRINTHelper(SDNode *N, SelectionDAG &DAG) const;
 
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVSELECT(SDValue Op, SelectionDAG &DAG) const;
@@ -1365,6 +1349,7 @@ namespace llvm {
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_INT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerLRINT_LLRINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSTRICT_FSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSETCCCARRY(SDValue Op, SelectionDAG &DAG) const;
@@ -1470,11 +1455,11 @@ namespace llvm {
     MachineBasicBlock *EmitLoweredCatchRet(MachineInstr &MI,
                                            MachineBasicBlock *BB) const;
 
-    MachineBasicBlock *EmitLoweredCatchPad(MachineInstr &MI,
-                                           MachineBasicBlock *BB) const;
-
     MachineBasicBlock *EmitLoweredSegAlloca(MachineInstr &MI,
                                             MachineBasicBlock *BB) const;
+
+    MachineBasicBlock *EmitLoweredProbedAlloca(MachineInstr &MI,
+                                               MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredTLSAddr(MachineInstr &MI,
                                           MachineBasicBlock *BB) const;
@@ -1503,15 +1488,11 @@ namespace llvm {
     MachineBasicBlock *EmitSjLjDispatchBlock(MachineInstr &MI,
                                              MachineBasicBlock *MBB) const;
 
-    /// Convert a comparison if required by the subtarget.
-    SDValue ConvertCmpIfNecessary(SDValue Cmp, SelectionDAG &DAG) const;
-
     /// Emit flags for the given setcc condition and operands. Also returns the
     /// corresponding X86 condition code constant in X86CC.
     SDValue emitFlagsForSetcc(SDValue Op0, SDValue Op1, ISD::CondCode CC,
                               const SDLoc &dl, SelectionDAG &DAG,
-                              SDValue &X86CC, SDValue &Chain,
-                              bool IsSignaling) const;
+                              SDValue &X86CC) const;
 
     /// Check if replacement of SQRT with RSQRT should be disabled.
     bool isFsqrtCheap(SDValue Operand, SelectionDAG &DAG) const override;
@@ -1684,6 +1665,21 @@ namespace llvm {
       int Pos = (i % NumEltsInLane) / 2 + LaneStart;
       Pos += (Unary ? 0 : NumElts * (i % 2));
       Pos += (Lo ? 0 : NumEltsInLane / 2);
+      Mask.push_back(Pos);
+    }
+  }
+
+  /// Similar to unpacklo/unpackhi, but without the 128-bit lane limitation
+  /// imposed by AVX and specific to the unary pattern. Example:
+  /// v8iX Lo --> <0, 0, 1, 1, 2, 2, 3, 3>
+  /// v8iX Hi --> <4, 4, 5, 5, 6, 6, 7, 7>
+  template <typename T = int>
+  void createSplat2ShuffleMask(MVT VT, SmallVectorImpl<T> &Mask, bool Lo) {
+    assert(Mask.empty() && "Expected an empty shuffle mask vector");
+    int NumElts = VT.getVectorNumElements();
+    for (int i = 0; i < NumElts; ++i) {
+      int Pos = i / 2;
+      Pos += (Lo ? 0 : NumElts / 2);
       Mask.push_back(Pos);
     }
   }

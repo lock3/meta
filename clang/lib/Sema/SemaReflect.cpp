@@ -535,7 +535,7 @@ static void DiagnoseInvalidReflection(Sema &SemaRef, Expr *Refl,
   SmallString<256> Buf;
   llvm::raw_svector_ostream OS(Buf);
   Message->outputString(OS);
-  std::string NonQuote(Buf.str(), 1, Buf.size() - 2);
+  std::string NonQuote(Buf.c_str(), 1, Buf.size() - 2);
 
   SemaRef.Diag(Refl->getExprLoc(), diag::note_user_defined_note) << NonQuote;
 }
@@ -1188,7 +1188,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
     return ExprError();
   }
 
-  return new (Context) CXXConstantExpr(Eval, std::move(Result.Val));
+  return ConstantExpr::Create(Context, Eval, std::move(Result.Val));
 }
 
 ExprResult Sema::ActOnCXXDependentVariadicReifierExpr(Expr *Range,
@@ -1479,7 +1479,7 @@ bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
     Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
   } else if (TNK != TNK_Non_template && TNK != TNK_Undeclared_template) {
     TemplateIdAnnotation *TemplateIdAnnotation = TemplateIdAnnotation::Create(
-          SS, TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
+          TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
           Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
           /*OpaqueTemplateName=*/Template, /*TemplateKind=*/TNK,
           /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc, TemplateArgsPtr,

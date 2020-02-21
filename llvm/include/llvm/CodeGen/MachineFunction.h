@@ -796,6 +796,8 @@ public:
   /// Allocate and initialize a register mask with @p NumRegister bits.
   uint32_t *allocateRegMask();
 
+  ArrayRef<int> allocateShuffleMask(ArrayRef<int> Mask);
+
   /// Allocate and construct an extra info structure for a `MachineInstr`.
   ///
   /// This is allocated on the function's allocator and so lives the life of
@@ -981,10 +983,14 @@ public:
     return VariableDbgInfos;
   }
 
+  /// Start tracking the arguments passed to the call \p CallI.
   void addCallArgsForwardingRegs(const MachineInstr *CallI,
                                  CallSiteInfoImpl &&CallInfo) {
-    assert(CallI->isCall());
-    CallSitesInfo[CallI] = std::move(CallInfo);
+    assert(CallI->isCandidateForCallSiteEntry());
+    bool Inserted =
+        CallSitesInfo.try_emplace(CallI, std::move(CallInfo)).second;
+    (void)Inserted;
+    assert(Inserted && "Call site info not unique");
   }
 
   const CallSiteInfoMap &getCallSitesInfo() const {

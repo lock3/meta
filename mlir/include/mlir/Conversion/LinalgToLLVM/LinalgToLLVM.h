@@ -1,6 +1,6 @@
 //===- LinalgToLLVM.h - Utils to convert from the linalg dialect ----------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -13,6 +13,8 @@
 
 namespace mlir {
 class MLIRContext;
+class ModuleOp;
+template <typename T> class OpPassBase;
 
 class LinalgTypeConverter : public LLVMTypeConverter {
 public:
@@ -24,6 +26,9 @@ public:
 void populateLinalgToLLVMConversionPatterns(LinalgTypeConverter &converter,
                                             OwningRewritePatternList &patterns,
                                             MLIRContext *ctx);
+
+/// Create a pass to convert Linalg operations to the LLVMIR dialect.
+std::unique_ptr<OpPassBase<ModuleOp>> createConvertLinalgToLLVMPass();
 
 } // namespace mlir
 

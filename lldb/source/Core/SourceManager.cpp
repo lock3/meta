@@ -1,4 +1,4 @@
-//===-- SourceManager.cpp ---------------------------------------*- C++ -*-===//
+//===-- SourceManager.cpp -------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -325,7 +325,7 @@ bool SourceManager::GetDefaultFileAndLine(FileSpec &file_spec, uint32_t &line) {
         ConstString main_name("main");
         bool symbols_okay = false; // Force it to be a debug symbol.
         bool inlines_okay = true;
-        executable_ptr->FindFunctions(main_name, nullptr,
+        executable_ptr->FindFunctions(main_name, CompilerDeclContext(),
                                       lldb::eFunctionNameTypeBase, inlines_okay,
                                       symbols_okay, sc_list);
         size_t num_matches = sc_list.GetSize();

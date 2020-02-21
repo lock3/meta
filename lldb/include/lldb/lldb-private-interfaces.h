@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_lldb_private_interfaces_h_
-#define liblldb_lldb_private_interfaces_h_
+#ifndef LLDB_LLDB_PRIVATE_INTERFACES_H
+#define LLDB_LLDB_PRIVATE_INTERFACES_H
 
 #if defined(__cplusplus)
 
@@ -82,8 +82,6 @@ typedef bool (*BreakpointHitCallback)(void *baton,
 typedef bool (*WatchpointHitCallback)(void *baton,
                                       StoppointCallbackContext *context,
                                       lldb::user_id_t watch_id);
-typedef void (*OptionValueChangedCallback)(void *baton,
-                                           OptionValue *option_value);
 typedef bool (*ThreadPlanShouldStopHereCallback)(
     ThreadPlan *current_plan, Flags &flags, lldb::FrameComparison operation,
     Status &status, void *baton);
@@ -109,4 +107,4 @@ typedef void (*DebuggerInitializeCallback)(Debugger &debugger);
 
 #endif // #if defined(__cplusplus)
 
-#endif // liblldb_lldb_private_interfaces_h_
+#endif // LLDB_LLDB_PRIVATE_INTERFACES_H

@@ -6,12 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_lldb_forward_h_
-#define LLDB_lldb_forward_h_
+#ifndef LLDB_LLDB_FORWARD_H
+#define LLDB_LLDB_FORWARD_H
 
 #if defined(__cplusplus)
 
-#include "lldb/Utility/SharingPtr.h"
+#include <memory>
 
 // lldb forward declarations
 namespace lldb_private {
@@ -45,15 +45,6 @@ class BroadcastEventSpec;
 class Broadcaster;
 class BroadcasterManager;
 class CallFrameInfo;
-class ClangASTContext;
-class ClangASTImporter;
-class ClangASTMetadata;
-class ClangASTSource;
-class ClangExpressionDeclMap;
-class ClangExpressionParser;
-class ClangExpressionVariable;
-class ClangModulesDeclVendor;
-class ClangPersistentVariables;
 class CommandInterpreter;
 class CommandInterpreterRunOptions;
 class CommandObject;
@@ -304,12 +295,6 @@ typedef std::shared_ptr<lldb_private::BreakpointResolver> BreakpointResolverSP;
 typedef std::shared_ptr<lldb_private::Broadcaster> BroadcasterSP;
 typedef std::shared_ptr<lldb_private::BroadcasterManager> BroadcasterManagerSP;
 typedef std::weak_ptr<lldb_private::BroadcasterManager> BroadcasterManagerWP;
-typedef std::unique_ptr<lldb_private::ClangASTContext> ClangASTContextUP;
-typedef std::shared_ptr<lldb_private::ClangASTImporter> ClangASTImporterSP;
-typedef std::unique_ptr<lldb_private::ClangModulesDeclVendor>
-    ClangModulesDeclVendorUP;
-typedef std::unique_ptr<lldb_private::ClangPersistentVariables>
-    ClangPersistentVariablesUP;
 typedef std::shared_ptr<lldb_private::UserExpression> UserExpressionSP;
 typedef std::shared_ptr<lldb_private::CommandObject> CommandObjectSP;
 typedef std::shared_ptr<lldb_private::Communication> CommunicationSP;
@@ -467,7 +452,7 @@ typedef std::weak_ptr<lldb_private::UnixSignals> UnixSignalsWP;
 typedef std::shared_ptr<lldb_private::UnwindAssembly> UnwindAssemblySP;
 typedef std::shared_ptr<lldb_private::UnwindPlan> UnwindPlanSP;
 typedef std::shared_ptr<lldb_private::UtilityFunction> UtilityFunctionSP;
-typedef lldb_private::SharingPtr<lldb_private::ValueObject> ValueObjectSP;
+typedef std::shared_ptr<lldb_private::ValueObject> ValueObjectSP;
 typedef std::shared_ptr<lldb_private::Value> ValueSP;
 typedef std::shared_ptr<lldb_private::ValueList> ValueListSP;
 typedef std::shared_ptr<lldb_private::Variable> VariableSP;
@@ -486,4 +471,4 @@ class StringRef;
 } // namespace llvm
 
 #endif // #if defined(__cplusplus)
-#endif // LLDB_lldb_forward_h_
+#endif // LLDB_LLDB_FORWARD_H
