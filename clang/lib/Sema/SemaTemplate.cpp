@@ -10358,7 +10358,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   Decl *Referenced = nullptr;
   switch (Result.getResultKind()) {
   case LookupResult::NotFound: {
-    if (isa<CXXFragmentDecl>(Ctx->getParent()))
+    if (Ctx && Ctx->isFragmentContext())
       // If the nested-name-specifier refers to an unspecified member of
       // a fragment, then the type name will be resolved during injection
       return Context.getDependentNameType(
