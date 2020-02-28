@@ -173,9 +173,9 @@ def CoyieldExpr : StmtNode<CoroutineSuspendExpr>;
 
 // C++2a Concepts expressions
 def ConceptSpecializationExpr : StmtNode<Expr>;
+def RequiresExpr : StmtNode<Expr>;
 
 // [Meta] expressions
-def CXXConstantExpr : StmtNode<Expr>;
 def CXXReflectExpr : StmtNode<Expr>;
 def CXXInvalidReflectionExpr : StmtNode<Expr>;
 def CXXReflectionReadQueryExpr : StmtNode<Expr>;

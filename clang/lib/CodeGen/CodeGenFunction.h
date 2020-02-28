@@ -2266,8 +2266,9 @@ public:
 
   /// CreateAggTemp - Create a temporary memory object for the given
   /// aggregate type.
-  AggValueSlot CreateAggTemp(QualType T, const Twine &Name = "tmp") {
-    return AggValueSlot::forAddr(CreateMemTemp(T, Name),
+  AggValueSlot CreateAggTemp(QualType T, const Twine &Name = "tmp",
+                             Address *Alloca = nullptr) {
+    return AggValueSlot::forAddr(CreateMemTemp(T, Name, Alloca),
                                  T.getQualifiers(),
                                  AggValueSlot::IsNotDestructed,
                                  AggValueSlot::DoesNotNeedGCBarriers,
@@ -2828,7 +2829,7 @@ public:
   PeepholeProtection protectFromPeepholes(RValue rvalue);
   void unprotectFromPeepholes(PeepholeProtection protection);
 
-  void EmitAlignmentAssumptionCheck(llvm::Value *Ptr, QualType Ty,
+  void emitAlignmentAssumptionCheck(llvm::Value *Ptr, QualType Ty,
                                     SourceLocation Loc,
                                     SourceLocation AssumptionLoc,
                                     llvm::Value *Alignment,
@@ -2836,13 +2837,14 @@ public:
                                     llvm::Value *TheCheck,
                                     llvm::Instruction *Assumption);
 
-  void EmitAlignmentAssumption(llvm::Value *PtrValue, QualType Ty,
+  void emitAlignmentAssumption(llvm::Value *PtrValue, QualType Ty,
                                SourceLocation Loc, SourceLocation AssumptionLoc,
                                llvm::Value *Alignment,
                                llvm::Value *OffsetValue = nullptr);
 
-  void EmitAlignmentAssumption(llvm::Value *PtrValue, const Expr *E,
-                               SourceLocation AssumptionLoc, llvm::Value *Alignment,
+  void emitAlignmentAssumption(llvm::Value *PtrValue, const Expr *E,
+                               SourceLocation AssumptionLoc,
+                               llvm::Value *Alignment,
                                llvm::Value *OffsetValue = nullptr);
 
   //===--------------------------------------------------------------------===//
@@ -2989,7 +2991,8 @@ public:
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
   Address GenerateCapturedStmtArgument(const CapturedStmt &S);
-  llvm::Function *GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S);
+  llvm::Function *GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S,
+                                                     SourceLocation Loc);
   void GenerateOpenMPCapturedVars(const CapturedStmt &S,
                                   SmallVectorImpl<llvm::Value *> &CapturedVars);
   void emitOMPSimpleStore(LValue LVal, RValue RVal, QualType RValTy,
@@ -3730,6 +3733,8 @@ public:
 
   RValue EmitNVPTXDevicePrintfCallExpr(const CallExpr *E,
                                        ReturnValueSlot ReturnValue);
+  RValue EmitAMDGPUDevicePrintfCallExpr(const CallExpr *E,
+                                        ReturnValueSlot ReturnValue);
 
   RValue EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
                          const CallExpr *E, ReturnValueSlot ReturnValue);
@@ -3738,6 +3743,11 @@ public:
 
   /// Emit IR for __builtin_os_log_format.
   RValue emitBuiltinOSLogFormat(const CallExpr &E);
+
+  /// Emit IR for __builtin_is_aligned.
+  RValue EmitBuiltinIsAligned(const CallExpr *E);
+  /// Emit IR for __builtin_align_up/__builtin_align_down.
+  RValue EmitBuiltinAlignTo(const CallExpr *E, bool AlignUp);
 
   llvm::Function *generateBuiltinOSLogHelperFunction(
       const analyze_os_log::OSLogBufferLayout &Layout,
@@ -4414,7 +4424,7 @@ inline llvm::Value *DominatingLLVMValue::restore(CodeGenFunction &CGF,
 
   // Otherwise, it should be an alloca instruction, as set up in save().
   auto alloca = cast<llvm::AllocaInst>(value.getPointer());
-  return CGF.Builder.CreateAlignedLoad(alloca, alloca->getAlignment());
+  return CGF.Builder.CreateAlignedLoad(alloca, alloca->getAlign());
 }
 
 }  // end namespace CodeGen

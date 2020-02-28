@@ -1091,7 +1091,8 @@ std::string TreePredicateFn::getPredCode() const {
                   .str();
   }
 
-  std::string PredicateCode = PatFragRec->getRecord()->getValueAsString("PredicateCode");
+  std::string PredicateCode =
+      std::string(PatFragRec->getRecord()->getValueAsString("PredicateCode"));
 
   Code += PredicateCode;
 
@@ -1106,7 +1107,8 @@ bool TreePredicateFn::hasImmCode() const {
 }
 
 std::string TreePredicateFn::getImmCode() const {
-  return PatFragRec->getRecord()->getValueAsString("ImmediateCode");
+  return std::string(
+      PatFragRec->getRecord()->getValueAsString("ImmediateCode"));
 }
 
 bool TreePredicateFn::immCodeUsesAPInt() const {
@@ -1223,7 +1225,8 @@ bool TreePredicateFn::hasGISelPredicateCode() const {
               .empty();
 }
 std::string TreePredicateFn::getGISelPredicateCode() const {
-  return PatFragRec->getRecord()->getValueAsString("GISelPredicateCode");
+  return std::string(
+      PatFragRec->getRecord()->getValueAsString("GISelPredicateCode"));
 }
 
 StringRef TreePredicateFn::getImmType() const {
@@ -2741,7 +2744,7 @@ TreePatternNodePtr TreePattern::ParseTreePattern(Init *TheInit,
     if (R->getName() == "node" && !OpName.empty()) {
       if (OpName.empty())
         error("'node' argument requires a name to match with operand list");
-      Args.push_back(OpName);
+      Args.push_back(std::string(OpName));
     }
 
     Res->setName(OpName);
@@ -2753,7 +2756,7 @@ TreePatternNodePtr TreePattern::ParseTreePattern(Init *TheInit,
     if (OpName.empty())
       error("'?' argument requires a name to match with operand list");
     TreePatternNodePtr Res = std::make_shared<TreePatternNode>(TheInit, 1);
-    Args.push_back(OpName);
+    Args.push_back(std::string(OpName));
     Res->setName(OpName);
     return Res;
   }
@@ -2915,8 +2918,15 @@ static bool SimplifyTree(TreePatternNodePtr &N) {
 
   // If we have a bitconvert with a resolved type and if the source and
   // destination types are the same, then the bitconvert is useless, remove it.
+  //
+  // We make an exception if the types are completely empty. This can come up
+  // when the pattern being simplified is in the Fragments list of a PatFrags,
+  // so that the operand is just an untyped "node". In that situation we leave
+  // bitconverts unsimplified, and simplify them later once the fragment is
+  // expanded into its true context.
   if (N->getOperator()->getName() == "bitconvert" &&
       N->getExtType(0).isValueTypeByHwMode(false) &&
+      !N->getExtType(0).empty() &&
       N->getExtType(0) == N->getChild(0)->getExtType(0) &&
       N->getName().empty()) {
     N = N->getChildShared(0);
@@ -3105,7 +3115,8 @@ void CodeGenDAGPatterns::ParseNodeTransforms() {
     Record *XFormNode = Xforms.back();
     Record *SDNode = XFormNode->getValueAsDef("Opcode");
     StringRef Code = XFormNode->getValueAsString("XFormFunction");
-    SDNodeXForms.insert(std::make_pair(XFormNode, NodeXForm(SDNode, Code)));
+    SDNodeXForms.insert(
+        std::make_pair(XFormNode, NodeXForm(SDNode, std::string(Code))));
 
     Xforms.pop_back();
   }
@@ -3173,7 +3184,7 @@ void CodeGenDAGPatterns::ParsePatternFragments(bool OutFrags) {
         P->error("'" + ArgNameStr +
                  "' does not occur in pattern or was multiply specified!");
       OperandsSet.erase(ArgNameStr);
-      Args.push_back(ArgNameStr);
+      Args.push_back(std::string(ArgNameStr));
     }
 
     if (!OperandsSet.empty())

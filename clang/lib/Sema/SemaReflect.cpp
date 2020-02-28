@@ -1131,7 +1131,7 @@ ExprResult Sema::ActOnCXXValueOfExpr(SourceLocation KWLoc,
     return ExprError();
   }
 
-  return new (Context) CXXConstantExpr(Eval, std::move(Result.Val));
+  return ConstantExpr::Create(Context, Eval, std::move(Result.Val));
 }
 
 ExprResult Sema::ActOnCXXDependentVariadicReifierExpr(Expr *Range,
@@ -1422,7 +1422,7 @@ bool Sema::CompleteDeclnameId(SourceLocation BeginLoc, CXXScopeSpec SS,
     Result.setReflectedId(BeginLoc, ReflectedId, EndLoc);
   } else if (TNK != TNK_Non_template && TNK != TNK_Undeclared_template) {
     TemplateIdAnnotation *TemplateIdAnnotation = TemplateIdAnnotation::Create(
-          SS, TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
+          TemplateKWLoc, /*TemplateNameLoc=*/BeginLoc,
           Name.getAsIdentifierInfo(), /*OperatorKind=*/OO_None,
           /*OpaqueTemplateName=*/Template, /*TemplateKind=*/TNK,
           /*LAngleLoc=*/LAngleLoc, /*RAngleLoc=*/RAngleLoc, TemplateArgsPtr,

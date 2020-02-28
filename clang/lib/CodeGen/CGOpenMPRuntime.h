@@ -20,11 +20,13 @@
 #include "clang/Basic/OpenMPKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueHandle.h"
+#include "llvm/Support/AtomicOrdering.h"
 
 namespace llvm {
 class ArrayType;
@@ -79,11 +81,10 @@ public:
   template <typename Callable>
   RegionCodeGenTy(
       Callable &&CodeGen,
-      typename std::enable_if<
-          !std::is_same<typename std::remove_reference<Callable>::type,
-                        RegionCodeGenTy>::value>::type * = nullptr)
+      std::enable_if_t<!std::is_same<std::remove_reference_t<Callable>,
+                                     RegionCodeGenTy>::value> * = nullptr)
       : CodeGen(reinterpret_cast<intptr_t>(&CodeGen)),
-        Callback(CallbackFn<typename std::remove_reference<Callable>::type>),
+        Callback(CallbackFn<std::remove_reference_t<Callable>>),
         PrePostAction(nullptr) {}
   void setAction(PrePostActionTy &Action) const { PrePostAction = &Action; }
   void operator()(CodeGenFunction &CGF) const;
@@ -229,23 +230,37 @@ public:
   /// Also, stores the expression for the private loop counter and it
   /// threaprivate name.
   struct LastprivateConditionalData {
-    llvm::SmallDenseMap<CanonicalDeclPtr<const Decl>, SmallString<16>>
-        DeclToUniqeName;
+    llvm::MapVector<CanonicalDeclPtr<const Decl>, SmallString<16>>
+        DeclToUniqueName;
     LValue IVLVal;
-    SmallString<16> IVName;
-    /// True if original lvalue for loop counter can be used in codegen (simd
-    /// region or simd only mode) and no need to create threadprivate
-    /// references.
-    bool UseOriginalIV = false;
+    llvm::Function *Fn = nullptr;
+    bool Disabled = false;
   };
   /// Manages list of lastprivate conditional decls for the specified directive.
   class LastprivateConditionalRAII {
+    enum class ActionToDo {
+      DoNotPush,
+      PushAsLastprivateConditional,
+      DisableLastprivateConditional,
+    };
     CodeGenModule &CGM;
-    const bool NeedToPush;
+    ActionToDo Action = ActionToDo::DoNotPush;
+
+    /// Check and try to disable analysis of inner regions for changes in
+    /// lastprivate conditional.
+    void tryToDisableInnerAnalysis(const OMPExecutableDirective &S,
+                                   llvm::DenseSet<CanonicalDeclPtr<const Decl>>
+                                       &NeedToAddForLPCsAsDisabled) const;
+
+    LastprivateConditionalRAII(CodeGenFunction &CGF,
+                               const OMPExecutableDirective &S);
 
   public:
-    LastprivateConditionalRAII(CodeGenFunction &CGF,
-                               const OMPExecutableDirective &S, LValue IVLVal);
+    explicit LastprivateConditionalRAII(CodeGenFunction &CGF,
+                                        const OMPExecutableDirective &S,
+                                        LValue IVLVal);
+    static LastprivateConditionalRAII disable(CodeGenFunction &CGF,
+                                              const OMPExecutableDirective &S);
     ~LastprivateConditionalRAII();
   };
 
@@ -391,6 +406,13 @@ private:
       llvm::DenseMap<llvm::Function *,
                      SmallVector<const OMPDeclareMapperDecl *, 4>>;
   FunctionUDMMapTy FunctionUDMMap;
+  /// Maps local variables marked as lastprivate conditional to their internal
+  /// types.
+  llvm::DenseMap<llvm::Function *,
+                 llvm::DenseMap<CanonicalDeclPtr<const Decl>,
+                                std::tuple<QualType, const FieldDecl *,
+                                           const FieldDecl *, LValue>>>
+      LastprivateConditionalToTypes;
   /// Type kmp_critical_name, originally defined as typedef kmp_int32
   /// kmp_critical_name[8];
   llvm::ArrayType *KmpCriticalNameTy;
@@ -438,29 +460,10 @@ private:
   ///                          // (function or global)
   ///   char      *name;       // Name of the function or global.
   ///   size_t     size;       // Size of the entry info (0 if it a function).
+  ///   int32_t flags;
+  ///   int32_t reserved;
   /// };
   QualType TgtOffloadEntryQTy;
-  /// struct __tgt_device_image{
-  /// void   *ImageStart;       // Pointer to the target code start.
-  /// void   *ImageEnd;         // Pointer to the target code end.
-  /// // We also add the host entries to the device image, as it may be useful
-  /// // for the target runtime to have access to that information.
-  /// __tgt_offload_entry  *EntriesBegin;   // Begin of the table with all
-  ///                                       // the entries.
-  /// __tgt_offload_entry  *EntriesEnd;     // End of the table with all the
-  ///                                       // entries (non inclusive).
-  /// };
-  QualType TgtDeviceImageQTy;
-  /// struct __tgt_bin_desc{
-  ///   int32_t              NumDevices;      // Number of devices supported.
-  ///   __tgt_device_image   *DeviceImages;   // Arrays of device images
-  ///                                         // (one per device).
-  ///   __tgt_offload_entry  *EntriesBegin;   // Begin of the table with all the
-  ///                                         // entries.
-  ///   __tgt_offload_entry  *EntriesEnd;     // End of the table with all the
-  ///                                         // entries (non inclusive).
-  /// };
-  QualType TgtBinaryDescriptorQTy;
   /// Entity that registers the offloading constants that were emitted so
   /// far.
   class OffloadEntriesInfoManagerTy {
@@ -672,8 +675,8 @@ private:
   OffloadEntriesInfoManagerTy OffloadEntriesInfoManager;
 
   bool ShouldMarkAsGlobal = true;
-  /// List of the emitted functions.
-  llvm::StringSet<> AlreadyEmittedTargetFunctions;
+  /// List of the emitted declarations.
+  llvm::DenseSet<CanonicalDeclPtr<const Decl>> AlreadyEmittedTargetDecls;
   /// List of the global variables with their addresses that should not be
   /// emitted for the target.
   llvm::StringMap<llvm::WeakTrackingVH> EmittedNonTargetVariables;
@@ -702,6 +705,9 @@ private:
   /// directive is present.
   bool HasRequiresUnifiedSharedMemory = false;
 
+  /// Atomic ordering from the omp requires directive.
+  llvm::AtomicOrdering RequiresAtomicOrdering = llvm::AtomicOrdering::Monotonic;
+
   /// Flag for keeping track of weather a target region has been emitted.
   bool HasEmittedTargetRegion = false;
 
@@ -715,12 +721,6 @@ private:
 
   /// Returns __tgt_offload_entry type.
   QualType getTgtOffloadEntryQTy();
-
-  /// Returns __tgt_device_image type.
-  QualType getTgtDeviceImageQTy();
-
-  /// Returns __tgt_bin_desc type.
-  QualType getTgtBinaryDescriptorQTy();
 
   /// Start scanning from statement \a S and and emit all target regions
   /// found along the way.
@@ -849,6 +849,11 @@ private:
       llvm::function_ref<llvm::Value *(CodeGenFunction &CGF,
                                        const OMPLoopDirective &D)>
           SizeEmitter);
+
+  /// Emit update for lastprivate conditional data.
+  void emitLastprivateConditionalUpdate(CodeGenFunction &CGF, LValue IVLVal,
+                                        StringRef UniqueDeclName, LValue LVal,
+                                        SourceLocation Loc);
 
 public:
   explicit CGOpenMPRuntime(CodeGenModule &CGM)
@@ -1244,7 +1249,7 @@ public:
   /// Emit flush of the variables specified in 'omp flush' directive.
   /// \param Vars List of variables to flush.
   virtual void emitFlush(CodeGenFunction &CGF, ArrayRef<const Expr *> Vars,
-                         SourceLocation Loc);
+                         SourceLocation Loc, llvm::AtomicOrdering AO);
 
   /// Emit task region for the task directive. The task region is
   /// emitted in several steps:
@@ -1699,7 +1704,10 @@ public:
 
   /// Perform check on requires decl to ensure that target architecture
   /// supports unified addressing
-  virtual void checkArchForUnifiedAddressing(const OMPRequiresDecl *D);
+  virtual void processRequiresDirective(const OMPRequiresDecl *D);
+
+  /// Gets default memory ordering as specified in requires directive.
+  llvm::AtomicOrdering getDefaultMemoryOrdering() const;
 
   /// Checks if the variable has associated OMPAllocateDeclAttr attribute with
   /// the predefined allocator and translates it into the corresponding address
@@ -1716,10 +1724,9 @@ public:
   /// current context.
   bool isNontemporalDecl(const ValueDecl *VD) const;
 
-  /// Initializes global counter for lastprivate conditional.
-  virtual void
-  initLastprivateConditionalCounter(CodeGenFunction &CGF,
-                                    const OMPExecutableDirective &S);
+  /// Create specialized alloca to handle lastprivate conditionals.
+  Address emitLastprivateConditionalInit(CodeGenFunction &CGF,
+                                         const VarDecl *VD);
 
   /// Checks if the provided \p LVal is lastprivate conditional and emits the
   /// code to update the value of the original variable.
@@ -1736,6 +1743,30 @@ public:
   /// \endcode
   virtual void checkAndEmitLastprivateConditional(CodeGenFunction &CGF,
                                                   const Expr *LHS);
+
+  /// Checks if the lastprivate conditional was updated in inner region and
+  /// writes the value.
+  /// \code
+  /// lastprivate(conditional: a)
+  /// ...
+  /// <type> a;bool Fired = false;
+  /// #pragma omp ... shared(a)
+  /// {
+  ///   lp_a = ...;
+  ///   Fired = true;
+  /// }
+  /// if (Fired) {
+  ///   #pragma omp critical(a)
+  ///   if (last_iv_a <= iv) {
+  ///     last_iv_a = iv;
+  ///     global_a = lp_a;
+  ///   }
+  ///   Fired = false;
+  /// }
+  /// \endcode
+  virtual void checkAndEmitSharedLastprivateConditional(
+      CodeGenFunction &CGF, const OMPExecutableDirective &D,
+      const llvm::DenseSet<CanonicalDeclPtr<const VarDecl>> &IgnoredDecls);
 
   /// Gets the address of the global copy used for lastprivate conditional
   /// update, if any.
@@ -2009,7 +2040,7 @@ public:
   /// Emit flush of the variables specified in 'omp flush' directive.
   /// \param Vars List of variables to flush.
   void emitFlush(CodeGenFunction &CGF, ArrayRef<const Expr *> Vars,
-                 SourceLocation Loc) override;
+                 SourceLocation Loc, llvm::AtomicOrdering AO) override;
 
   /// Emit task region for the task directive. The task region is
   /// emitted in several steps:

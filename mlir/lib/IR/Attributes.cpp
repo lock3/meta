@@ -1,6 +1,6 @@
 //===- Attributes.cpp - MLIR Affine Expr Classes --------------------------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -67,6 +67,11 @@ ArrayAttr ArrayAttr::get(ArrayRef<Attribute> value, MLIRContext *context) {
 }
 
 ArrayRef<Attribute> ArrayAttr::getValue() const { return getImpl()->value; }
+
+Attribute ArrayAttr::operator[](unsigned idx) const {
+  assert(idx < size() && "index out of bounds");
+  return getValue()[idx];
+}
 
 //===----------------------------------------------------------------------===//
 // BoolAttr
@@ -280,6 +285,34 @@ IntegerAttr IntegerAttr::get(Type type, int64_t value) {
 APInt IntegerAttr::getValue() const { return getImpl()->getValue(); }
 
 int64_t IntegerAttr::getInt() const { return getValue().getSExtValue(); }
+
+static LogicalResult verifyIntegerTypeInvariants(Optional<Location> loc,
+                                                 Type type) {
+  if (type.isa<IntegerType>() || type.isa<IndexType>())
+    return success();
+  return emitOptionalError(loc, "expected integer or index type");
+}
+
+LogicalResult IntegerAttr::verifyConstructionInvariants(Optional<Location> loc,
+                                                        MLIRContext *ctx,
+                                                        Type type,
+                                                        int64_t value) {
+  return verifyIntegerTypeInvariants(loc, type);
+}
+
+LogicalResult IntegerAttr::verifyConstructionInvariants(Optional<Location> loc,
+                                                        MLIRContext *ctx,
+                                                        Type type,
+                                                        const APInt &value) {
+  if (failed(verifyIntegerTypeInvariants(loc, type)))
+    return failure();
+  if (auto integerType = type.dyn_cast<IntegerType>())
+    if (integerType.getWidth() != value.getBitWidth())
+      return emitOptionalError(
+          loc, "integer type bit width (", integerType.getWidth(),
+          ") doesn't match value bit width (", value.getBitWidth(), ")");
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // IntegerSetAttr
@@ -676,7 +709,8 @@ DenseElementsAttr DenseElementsAttr::getRaw(ShapedType type,
 static bool isValidIntOrFloat(ShapedType type, int64_t dataEltSize,
                               bool isInt) {
   // Make sure that the data element size is the same as the type element width.
-  if ((dataEltSize * CHAR_BIT) != type.getElementTypeBitWidth())
+  if (getDenseElementBitwidth(type.getElementType()) !=
+      static_cast<size_t>(dataEltSize * CHAR_BIT))
     return false;
 
   // Check that the element type is valid.

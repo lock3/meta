@@ -102,6 +102,7 @@ def OMPThreadPrivate : DeclNode<Decl>;
 def OMPAllocate : DeclNode<Decl>;
 def OMPRequires : DeclNode<Decl>;
 def Empty : DeclNode<Decl>;
+def RequiresExprBody : DeclNode<Decl>, DeclContext;
 def LifetimeExtendedTemporary : DeclNode<Decl>;
 def CXXInjector : DeclNode<Decl, "injector declarations", 1>;
   def CXXMetaprogram : DeclNode<CXXInjector>;

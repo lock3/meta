@@ -124,7 +124,7 @@ def SDTIntSatNoShOp : SDTypeProfile<1, 2, [   // ssat with no shift
 def SDTIntBinHiLoOp : SDTypeProfile<2, 2, [ // mulhi, mullo, sdivrem, udivrem
   SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>, SDTCisSameAs<0, 3>,SDTCisInt<0>
 ]>;
-def SDTIntScaledBinOp : SDTypeProfile<1, 3, [  // smulfix, umulfix
+def SDTIntScaledBinOp : SDTypeProfile<1, 3, [  // smulfix, sdivfix, etc
   SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>, SDTCisInt<0>, SDTCisInt<3>
 ]>;
 
@@ -316,6 +316,7 @@ def vt         : SDNode<"ISD::VALUETYPE" , SDTOther   , [], "VTSDNode">;
 def bb         : SDNode<"ISD::BasicBlock", SDTOther   , [], "BasicBlockSDNode">;
 def cond       : SDNode<"ISD::CONDCODE"  , SDTOther   , [], "CondCodeSDNode">;
 def undef      : SDNode<"ISD::UNDEF"     , SDTUNDEF   , []>;
+def vscale     : SDNode<"ISD::VSCALE"    , SDTIntUnaryOp, []>;
 def globaladdr : SDNode<"ISD::GlobalAddress",         SDTPtrLeaf, [],
                         "GlobalAddressSDNode">;
 def tglobaladdr : SDNode<"ISD::TargetGlobalAddress",  SDTPtrLeaf, [],
@@ -400,6 +401,8 @@ def smulfix    : SDNode<"ISD::SMULFIX"   , SDTIntScaledBinOp, [SDNPCommutative]>
 def smulfixsat : SDNode<"ISD::SMULFIXSAT", SDTIntScaledBinOp, [SDNPCommutative]>;
 def umulfix    : SDNode<"ISD::UMULFIX"   , SDTIntScaledBinOp, [SDNPCommutative]>;
 def umulfixsat : SDNode<"ISD::UMULFIXSAT", SDTIntScaledBinOp, [SDNPCommutative]>;
+def sdivfix    : SDNode<"ISD::SDIVFIX"   , SDTIntScaledBinOp>;
+def udivfix    : SDNode<"ISD::UDIVFIX"   , SDTIntScaledBinOp>;
 
 def sext_inreg : SDNode<"ISD::SIGN_EXTEND_INREG", SDTExtInreg>;
 def sext_invec : SDNode<"ISD::SIGN_EXTEND_VECTOR_INREG", SDTExtInvec>;
@@ -561,8 +564,6 @@ def br         : SDNode<"ISD::BR"         , SDTBr,     [SDNPHasChain]>;
 def catchret   : SDNode<"ISD::CATCHRET"   , SDTCatchret,
                         [SDNPHasChain, SDNPSideEffect]>;
 def cleanupret : SDNode<"ISD::CLEANUPRET" , SDTNone,   [SDNPHasChain]>;
-def catchpad   : SDNode<"ISD::CATCHPAD"   , SDTNone,
-                        [SDNPHasChain, SDNPSideEffect]>;
 
 def trap       : SDNode<"ISD::TRAP"       , SDTNone,
                         [SDNPHasChain, SDNPSideEffect]>;
@@ -713,19 +714,6 @@ class SDNodeXForm<SDNode opc, code xformFunction> {
 }
 
 def NOOP_SDNodeXForm : SDNodeXForm<imm, [{}]>;
-
-//===----------------------------------------------------------------------===//
-// PatPred Subclasses.
-//
-// These allow specifying different sorts of predicates that control whether a
-// node is matched.
-//
-class PatPred;
-
-class CodePatPred<code predicate> : PatPred {
-  code PredicateCode = predicate;
-}
-
 
 //===----------------------------------------------------------------------===//
 // Selection DAG Pattern Fragments.

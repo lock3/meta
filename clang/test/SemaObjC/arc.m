@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -triple x86_64-apple-darwin11 -fobjc-runtime-has-weak -fsyntax-only -fobjc-arc -fblocks -verify -Wno-objc-root-class %s
-// RUN: not %clang_cc1 -triple x86_64-apple-darwin11 -fobjc-runtime-has-weak -fsyntax-only -fobjc-arc -fblocks -Wno-objc-root-class -fdiagnostics-parseable-fixits %s 2>&1
+// RUN: %clang_cc1 -triple x86_64-apple-darwin11 -fobjc-runtime-has-weak -fsyntax-only -fobjc-arc -fblocks -verify -Wno-pointer-to-int-cast -Wno-objc-root-class %s
+// RUN: not %clang_cc1 -triple x86_64-apple-darwin11 -fobjc-runtime-has-weak -fsyntax-only -fobjc-arc -fblocks -Wno-pointer-to-int-cast -Wno-objc-root-class -fdiagnostics-parseable-fixits %s 2>&1
 
 typedef unsigned long NSUInteger;
 typedef const void * CFTypeRef;
@@ -295,6 +295,7 @@ void test11(id op, void *vp) {
   b = (vp == nil);
   b = (nil == vp);
 
+  // FIXME: Shouldn't these be consistent?
   b = (vp == op); // expected-error {{implicit conversion of Objective-C pointer type 'id' to C pointer type 'void *' requires a bridged cast}} expected-note {{use __bridge}} expected-note {{use CFBridgingRetain call}}
   b = (op == vp);
 }

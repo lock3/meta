@@ -152,7 +152,7 @@ struct InjectionInfo {
 class InjectionContext : public TreeTransform<InjectionContext> {
   using Base = TreeTransform<InjectionContext>;
 
-  using InjectionType = llvm::PointerUnion3<Decl *, CXXBaseSpecifier *, Stmt *>;
+  using InjectionType = llvm::PointerUnion<Decl *, CXXBaseSpecifier *, Stmt *>;
 public:
   InjectionContext(Sema &SemaRef, Decl *Injectee)
     : Base(SemaRef), Injectee(Injectee) { }
@@ -1206,7 +1206,7 @@ Decl *InjectionContext::InjectFunctionDecl(FunctionDecl *D) {
   FunctionDecl* Fn = FunctionDecl::Create(
       getContext(), Owner, D->getLocation(), DNI, TSI->getType(), TSI,
       D->getStorageClass(), D->isInlineSpecified(), D->hasWrittenPrototype(),
-      D->getConstexprKind());
+      D->getConstexprKind(), D->getTrailingRequiresClause());
   AddDeclSubstitution(D, Fn);
   UpdateFunctionParms(D, Fn);
 
@@ -4422,7 +4422,8 @@ ActOnMetaDecl(Sema &Sema, SourceLocation ConstevalLoc) {
                            FunctionTy, FunctionTyInfo, SC_None,
                            /*isInlineSpecified=*/false,
                            /*hasWrittenPrototype=*/true,
-                           /*ConstexprKind=*/CSK_consteval);
+                           /*ConstexprKind=*/CSK_consteval,
+                           /*TrailingRequiresClause=*/nullptr);
   Function->setImplicit();
   Function->setMetaprogram();
 

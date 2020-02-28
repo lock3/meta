@@ -1952,10 +1952,11 @@ void SIScheduleDAGMI::schedule()
     int64_t OffLatReg;
     if (SITII->isLowLatencyInstruction(*SU->getInstr())) {
       IsLowLatencySU[i] = 1;
+      bool OffsetIsScalable;
       if (SITII->getMemOperandWithOffset(*SU->getInstr(), BaseLatOp, OffLatReg,
-                                         TRI))
+                                         OffsetIsScalable, TRI))
         LowLatencyOffset[i] = OffLatReg;
-    } else if (SITII->isHighLatencyInstruction(*SU->getInstr()))
+    } else if (SITII->isHighLatencyDef(SU->getInstr()->getOpcode()))
       IsHighLatencySU[i] = 1;
   }
 

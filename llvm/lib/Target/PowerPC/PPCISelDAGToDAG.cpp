@@ -1400,11 +1400,14 @@ class BitPermutationSelector {
       for (unsigned i = 0; i < NumValidBits; ++i)
         Bits[i] = (*LHSBits)[i];
 
-      // These bits are known to be zero.
+      // These bits are known to be zero but the AssertZext may be from a value
+      // that already has some constant zero bits (i.e. from a masking and).
       for (unsigned i = NumValidBits; i < NumBits; ++i)
-        Bits[i] = ValueBit((*LHSBits)[i].getValue(),
-                           (*LHSBits)[i].getValueBitIndex(),
-                           ValueBit::VariableKnownToBeZero);
+        Bits[i] = (*LHSBits)[i].hasValue()
+                      ? ValueBit((*LHSBits)[i].getValue(),
+                                 (*LHSBits)[i].getValueBitIndex(),
+                                 ValueBit::VariableKnownToBeZero)
+                      : ValueBit(ValueBit::ConstZero);
 
       return std::make_pair(Interesting, &Bits);
     }
@@ -3869,10 +3872,10 @@ static PPC::Predicate getPredicateForSetCC(ISD::CondCode CC, const EVT &VT,
     return UseSPE ? PPC::PRED_GT : PPC::PRED_LT;
   case ISD::SETULE:
   case ISD::SETLE:
-    return UseSPE ? PPC::PRED_LE : PPC::PRED_LE;
+    return PPC::PRED_LE;
   case ISD::SETOGT:
   case ISD::SETGT:
-    return UseSPE ? PPC::PRED_GT : PPC::PRED_GT;
+    return PPC::PRED_GT;
   case ISD::SETUGE:
   case ISD::SETGE:
     return UseSPE ? PPC::PRED_LE : PPC::PRED_GE;
@@ -5123,8 +5126,6 @@ void PPCDAGToDAGISel::Select(SDNode *N) {
     const bool isELFABI = PPCSubTarget->isSVR4ABI();
     const bool isAIXABI = PPCSubTarget->isAIXABI();
 
-    assert(!PPCSubTarget->isDarwin() && "TOC is an ELF/XCOFF construct");
-
     // PowerPC only support small, medium and large code model.
     const CodeModel::Model CModel = TM.getCodeModel();
     assert(!(CModel == CodeModel::Tiny || CModel == CodeModel::Kernel) &&
@@ -5546,8 +5547,7 @@ void PPCDAGToDAGISel::foldBoolExts(SDValue &Res, SDNode *&N) {
       SDValue O1 = UserO1.getNode() == N ? Val : UserO1;
 
       return CurDAG->FoldConstantArithmetic(User->getOpcode(), dl,
-                                            User->getValueType(0),
-                                            O0.getNode(), O1.getNode());
+                                            User->getValueType(0), {O0, O1});
     };
 
     // FIXME: When the semantics of the interaction between select and undef
@@ -6425,10 +6425,6 @@ void PPCDAGToDAGISel::PeepholePPC64ZExt() {
 }
 
 void PPCDAGToDAGISel::PeepholePPC64() {
-  // These optimizations are currently supported only for 64-bit SVR4.
-  if (PPCSubTarget->isDarwin() || !PPCSubTarget->isPPC64())
-    return;
-
   SelectionDAG::allnodes_iterator Position = CurDAG->allnodes_end();
 
   while (Position != CurDAG->allnodes_begin()) {

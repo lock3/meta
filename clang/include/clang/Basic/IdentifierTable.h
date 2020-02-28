@@ -1040,7 +1040,7 @@ struct PointerLikeTypeTraits<clang::Selector> {
     return clang::Selector(reinterpret_cast<uintptr_t>(P));
   }
 
-  enum { NumLowBitsAvailable = 0 };
+  static constexpr int NumLowBitsAvailable = 0;
 };
 
 // Provide PointerLikeTypeTraits for IdentifierInfo pointers, which
@@ -1055,7 +1055,7 @@ struct PointerLikeTypeTraits<clang::IdentifierInfo*> {
     return static_cast<clang::IdentifierInfo*>(P);
   }
 
-  enum { NumLowBitsAvailable = 1 };
+  static constexpr int NumLowBitsAvailable = 1;
 };
 
 template<>
@@ -1068,7 +1068,7 @@ struct PointerLikeTypeTraits<const clang::IdentifierInfo*> {
     return static_cast<const clang::IdentifierInfo*>(P);
   }
 
-  enum { NumLowBitsAvailable = 1 };
+  static constexpr int NumLowBitsAvailable = 1;
 };
 
 } // namespace llvm

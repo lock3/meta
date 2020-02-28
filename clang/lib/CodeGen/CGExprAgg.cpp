@@ -125,10 +125,18 @@ public:
     return Visit(E->getReplacement());
   }
 
-  void VisitCXXConstantExpr(CXXConstantExpr *E);
-
   void VisitConstantExpr(ConstantExpr *E) {
-    return Visit(E->getSubExpr());
+    APValue Result = E->getAPValueResult();
+    if (Result.hasValue()) {
+      // Create a temporary for the value and store the constant.
+      llvm::Constant *Const = CGF.EmitConstantValue(Result, E->getType());
+      Address Addr = CGF.CreateMemTemp(E->getType());
+      CGF.InitTempAlloca(Addr, Const);
+      RValue RV = RValue::getAggregate(Addr);
+      EmitFinalDestCopy(E->getType(), RV);
+    } else {
+      Visit(E->getSubExpr());
+    }
   }
 
   // l-values.
@@ -1731,15 +1739,6 @@ void AggExprEmitter::VisitDesignatedInitUpdateExpr(DesignatedInitUpdateExpr *E) 
   LValue DestLV = CGF.MakeAddrLValue(Dest.getAddress(), E->getType());
   EmitInitializationToLValue(E->getBase(), DestLV);
   VisitInitListExpr(E->getUpdater());
-}
-
-void AggExprEmitter::VisitCXXConstantExpr(CXXConstantExpr *E) {
-  // Create a temporary for the value and store the constant.
-  llvm::Constant *Const = CGF.EmitConstantValue(E->getValue(), E->getType());
-  Address Addr = CGF.CreateMemTemp(E->getType());
-  CGF.InitTempAlloca(Addr, Const);
-  RValue RV = RValue::getAggregate(Addr);
-  EmitFinalDestCopy(E->getType(), RV);
 }
 
 //===----------------------------------------------------------------------===//

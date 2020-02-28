@@ -195,6 +195,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::DesignatedInitUpdateExprClass:
   case Expr::SourceLocExprClass:
   case Expr::ConceptSpecializationExprClass:
+  case Expr::RequiresExprClass:
   case Expr::CXXReflectExprClass:
   case Expr::CXXInvalidReflectionExprClass:
   case Expr::CXXReflectionReadQueryExprClass:
@@ -442,9 +443,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   case Expr::CoawaitExprClass:
   case Expr::CoyieldExprClass:
     return ClassifyInternal(Ctx, cast<CoroutineSuspendExpr>(E)->getResumeExpr());
-
-  case Expr::CXXConstantExprClass:
-    return ClassifyInternal(Ctx, cast<CXXConstantExpr>(E)->getExpression());
   }
 
   llvm_unreachable("unhandled expression kind in classification");

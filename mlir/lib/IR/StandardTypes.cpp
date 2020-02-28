@@ -1,6 +1,6 @@
 //===- StandardTypes.cpp - MLIR Standard Type Classes ---------------------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -333,7 +333,8 @@ MemRefType MemRefType::getImpl(ArrayRef<int64_t> shape, Type elementType,
   auto *context = elementType.getContext();
 
   // Check that memref is formed from allowed types.
-  if (!elementType.isIntOrFloat() && !elementType.isa<VectorType>())
+  if (!elementType.isIntOrFloat() && !elementType.isa<VectorType>() &&
+      !elementType.isa<ComplexType>())
     return emitOptionalError(location, "invalid memref element type"),
            MemRefType();
 
@@ -411,7 +412,8 @@ LogicalResult UnrankedMemRefType::verifyConstructionInvariants(
     Optional<Location> loc, MLIRContext *context, Type elementType,
     unsigned memorySpace) {
   // Check that memref is formed from allowed types.
-  if (!elementType.isIntOrFloat() && !elementType.isa<VectorType>())
+  if (!elementType.isIntOrFloat() && !elementType.isa<VectorType>() &&
+      !elementType.isa<ComplexType>())
     return emitOptionalError(*loc, "invalid memref element type");
   return success();
 }
@@ -702,7 +704,7 @@ AffineMap mlir::makeStridedLinearLayoutMap(ArrayRef<int64_t> strides,
 /// Return a version of `t` with identity layout if it can be determined
 /// statically that the layout is the canonical contiguous strided layout.
 /// Otherwise pass `t`'s layout into `simplifyAffineMap` and return a copy of
-/// `t` with simplifed layout.
+/// `t` with simplified layout.
 /// If `t` has multiple layout maps or a multi-result layout, just return `t`.
 MemRefType mlir::canonicalizeStridedLayout(MemRefType t) {
   auto affineMaps = t.getAffineMaps();
@@ -723,11 +725,9 @@ MemRefType mlir::canonicalizeStridedLayout(MemRefType t) {
   auto simplifiedLayoutExpr =
       simplifyAffineExpr(m.getResult(0), m.getNumDims(), m.getNumSymbols());
   if (expr != simplifiedLayoutExpr)
-    return MemRefType::get(t.getShape(), t.getElementType(),
-                           {AffineMap::get(m.getNumDims(), m.getNumSymbols(),
-                                           {simplifiedLayoutExpr})});
-
-  return MemRefType::get(t.getShape(), t.getElementType(), {});
+    return MemRefType::Builder(t).setAffineMaps({AffineMap::get(
+        m.getNumDims(), m.getNumSymbols(), {simplifiedLayoutExpr})});
+  return MemRefType::Builder(t).setAffineMaps({});
 }
 
 /// Return true if the layout for `t` is compatible with strided semantics.

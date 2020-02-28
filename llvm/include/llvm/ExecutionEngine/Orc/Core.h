@@ -202,10 +202,10 @@ public:
   /// If Body returns true then the element just passed in is removed from the
   /// set. If Body returns false then the element is retained.
   template <typename BodyFn>
-  auto forEachWithRemoval(BodyFn &&Body) -> typename std::enable_if<
+  auto forEachWithRemoval(BodyFn &&Body) -> std::enable_if_t<
       std::is_same<decltype(Body(std::declval<const SymbolStringPtr &>(),
                                  std::declval<SymbolLookupFlags>())),
-                   bool>::value>::type {
+                   bool>::value> {
     UnderlyingVector::size_type I = 0;
     while (I != Symbols.size()) {
       const auto &Name = Symbols[I].first;
@@ -224,11 +224,11 @@ public:
   /// returns true then the element just passed in is removed from the set. If
   /// Body returns false then the element is retained.
   template <typename BodyFn>
-  auto forEachWithRemoval(BodyFn &&Body) -> typename std::enable_if<
+  auto forEachWithRemoval(BodyFn &&Body) -> std::enable_if_t<
       std::is_same<decltype(Body(std::declval<const SymbolStringPtr &>(),
                                  std::declval<SymbolLookupFlags>())),
                    Expected<bool>>::value,
-      Error>::type {
+      Error> {
     UnderlyingVector::size_type I = 0;
     while (I != Symbols.size()) {
       const auto &Name = Symbols[I].first;
@@ -489,13 +489,18 @@ public:
   /// is guaranteed to return Error::success() and can be wrapped with cantFail.
   Error notifyEmitted();
 
-  /// Adds new symbols to the JITDylib and this responsibility instance.
-  ///        JITDylib entries start out in the materializing state.
+  /// Attempt to claim responsibility for new definitions. This method can be
+  /// used to claim responsibility for symbols that are added to a
+  /// materialization unit during the compilation process (e.g. literal pool
+  /// symbols). Symbol linkage rules are the same as for symbols that are
+  /// defined up front: duplicate strong definitions will result in errors.
+  /// Duplicate weak definitions will be discarded (in which case they will
+  /// not be added to this responsibility instance).
   ///
   ///   This method can be used by materialization units that want to add
   /// additional symbols at materialization time (e.g. stubs, compile
   /// callbacks, metadata).
-  Error defineMaterializing(const SymbolFlagsMap &SymbolFlags);
+  Error defineMaterializing(SymbolFlagsMap SymbolFlags);
 
   /// Notify all not-yet-emitted covered by this MaterializationResponsibility
   /// instance that an error has occurred.
@@ -1023,7 +1028,7 @@ private:
                                        const SymbolStringPtr &DependantName,
                                        MaterializingInfo &EmittedMI);
 
-  Error defineMaterializing(const SymbolFlagsMap &SymbolFlags);
+  Expected<SymbolFlagsMap> defineMaterializing(SymbolFlagsMap SymbolFlags);
 
   void replace(std::unique_ptr<MaterializationUnit> MU);
 
@@ -1074,7 +1079,7 @@ public:
   std::shared_ptr<SymbolStringPool> getSymbolStringPool() const { return SSP; }
 
   /// Run the given lambda with the session mutex locked.
-  template <typename Func> auto runSessionLocked(Func &&F) -> decltype(F()) {
+  template <typename Func> decltype(auto) runSessionLocked(Func &&F) {
     std::lock_guard<std::recursive_mutex> Lock(SessionMutex);
     return F();
   }

@@ -33,10 +33,6 @@ def err_asm_goto_cannot_have_output : Error<
 
 let CategoryName = "Parse Issue" in {
 
-def warn_cxx2a_compat_explicit_bool : Warning<
-  "this expression will be parsed as explicit(bool) in C++2a">,
-  InGroup<CXX2aCompat>, DefaultIgnore;
-
 def ext_empty_translation_unit : Extension<
   "ISO C requires a translation unit to contain at least one declaration">,
   InGroup<DiagGroup<"empty-translation-unit">>;
@@ -181,6 +177,13 @@ def err_function_declared_typedef : Error<
 def err_at_defs_cxx : Error<"@defs is not supported in Objective-C++">;
 def err_at_in_class : Error<"unexpected '@' in member specification">;
 def err_unexpected_semi : Error<"unexpected ';' before %0">;
+def err_unparenthesized_non_primary_expr_in_requires_clause : Error<
+  "parentheses are required around this expression in a requires clause">;
+def note_unparenthesized_non_primary_expr_in_requires_clause : Note<
+  "parentheses are required around this expression in a requires clause">;
+def err_potential_function_call_in_constraint_logical_or : Error<
+  "function call must be parenthesized to be considered part of the requires "
+  "clause">;
 
 def err_expected_fn_body : Error<
   "expected function body after function declarator">;
@@ -265,7 +268,7 @@ def err_label_end_of_compound_statement : Error<
 def err_address_of_label_outside_fn : Error<
   "use of address-of-label extension outside of a function body">;
 def err_asm_operand_wide_string_literal : Error<
-  "cannot use %select{unicode|wide}0 string literal in 'asm'">;
+  "cannot use %select{unicode|wide|an empty}0 string literal in 'asm'">;
 def err_expected_selector_for_method : Error<
   "expected selector for Objective-C method">;
 def err_expected_property_name : Error<"expected property name">;
@@ -309,6 +312,12 @@ def err_init_list_bin_op : Error<"initializer list cannot be used on the "
 def warn_cxx98_compat_trailing_return_type : Warning<
   "trailing return types are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def err_requires_clause_must_appear_after_trailing_return : Error<
+  "trailing return type must appear before trailing requires clause">;
+def err_requires_clause_on_declarator_not_declaring_a_function : Error<
+  "trailing requires clause can only be used when declaring a function">;
+def err_requires_clause_inside_parens : Error<
+  "trailing requires clause should be placed outside parentheses">;
 def ext_auto_storage_class : ExtWarn<
   "'auto' storage class specifier is not permitted in C++11, and will not "
   "be supported in future releases">, InGroup<DiagGroup<"auto-storage-class">>;
@@ -676,6 +685,15 @@ def err_ms_property_expected_comma_or_rparen : Error<
 def err_ms_property_initializer : Error<
   "property declaration cannot have an in-class initializer">;
 
+def warn_cxx2a_compat_explicit_bool : Warning<
+  "this expression will be parsed as explicit(bool) in C++2a">,
+  InGroup<CXX2aCompat>, DefaultIgnore;
+def warn_cxx17_compat_explicit_bool : Warning<
+  "explicit(bool) is incompatible with C++ standards before C++2a">,
+  InGroup<CXXPre2aCompat>, DefaultIgnore;
+def ext_explicit_bool : ExtWarn<"explicit(bool) is a C++2a extension">,
+  InGroup<CXX2a>;
+
 /// C++ Templates
 def err_expected_template : Error<"expected template">;
 def err_unknown_template_name : Error<
@@ -731,6 +749,33 @@ def err_friend_explicit_instantiation : Error<
 def err_explicit_instantiation_enum : Error<
   "enumerations cannot be explicitly instantiated">;
 def err_expected_template_parameter : Error<"expected template parameter">;
+def note_ill_formed_requires_expression_outside_template : Note<
+  "requires expression outside a template declaration may not contain invalid "
+  "types or expressions">;
+def err_empty_requires_expr : Error<
+  "a requires expression must contain at least one requirement">;
+def err_requires_expr_parameter_list_ellipsis : Error<
+  "varargs not allowed in requires expression">;
+def err_requires_expr_type_req_illegal_identifier : Error<
+  "expected identifier or template-id in type requirement">;
+def err_requires_expr_type_req_template_args_on_non_template : Error<
+  "template arguments provided for non-template '%0'">;
+def err_expected_semi_requirement : Error<
+  "expected ';' at end of requirement">;
+def err_requires_expr_missing_arrow : Error<
+  "expected '->' before expression type requirement">;
+def err_requires_expr_expected_type_constraint : Error<
+  "expected concept name with optional arguments">;
+def err_requires_expr_simple_requirement_noexcept : Error<
+  "'noexcept' can only be used in a compound requirement (with '{' '}' around "
+  "the expression)">;
+def err_requires_expr_simple_requirement_unexpected_tok : Error<
+  "unexpected %0 after expression; did you intend to use a compound "
+  "requirement (with '{' '}' around the expression)?">;
+def warn_requires_expr_in_simple_requirement : Warning<
+  "this requires expression will only be checked for syntactic validity; did "
+  "you intend to place it in a nested requirement? (add another 'requires' "
+  "before the expression)">, InGroup<DiagGroup<"requires-expression">>;
 
 def err_missing_dependent_template_keyword : Error<
   "use 'template' keyword to treat '%0' as a dependent template name">;
@@ -885,7 +930,7 @@ def warn_cxx98_compat_lambda : Warning<
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_lambda_missing_parens : Error<
   "lambda requires '()' before %select{'mutable'|return type|"
-  "attribute specifier|'constexpr'|'consteval'}0">;
+  "attribute specifier|'constexpr'|'consteval'|'requires' clause}0">;
 def err_lambda_decl_specifier_repeated : Error<
   "%select{'mutable'|'constexpr'|'consteval'}0 cannot appear multiple times in a lambda declarator">;
 def err_lambda_capture_misplaced_ellipsis : Error<
@@ -1009,6 +1054,8 @@ def warn_pragma_expected_section_label_or_name : Warning<
 def warn_pragma_expected_init_seg : Warning<
   "expected 'compiler', 'lib', 'user', or a string literal for the section name in '#pragma %0' - ignored">,
   InGroup<IgnoredPragmas>;
+
+def err_pragma_expected_integer : Error<"expected an integer argument in '#pragma %0'">;
 def warn_pragma_expected_integer : Warning<
   "expected integer between %0 and %1 inclusive in '#pragma %2' - ignored">,
   InGroup<IgnoredPragmas>;
@@ -1219,30 +1266,68 @@ def err_omp_mapper_expected_declarator : Error<
   "expected declarator on 'omp declare mapper' directive">;
 def err_omp_declare_variant_wrong_clause : Error<
   "expected '%0' clause on 'omp declare variant' directive">;
-def err_omp_declare_variant_no_ctx_selector : Error<
-  "expected context selector in '%0' clause on 'omp declare variant' directive">;
-def err_omp_declare_variant_equal_expected : Error<
-  "expected '=' after '%0' context selector set name on 'omp declare variant' directive">;
-def warn_omp_declare_variant_cs_name_expected : Warning<
-  "unknown context selector in '%0' context selector set of 'omp declare variant' directive, ignored">,
-  InGroup<OpenMPClauses>;
-def err_omp_declare_variant_item_expected : Error<
-  "expected %0 in '%1' context selector of '%2' selector set of 'omp declare variant' directive">;
-def err_omp_declare_variant_ctx_set_mutiple_use : Error<
-  "context selector set '%0' is used already in the same 'omp declare variant' directive">;
-def note_omp_declare_variant_ctx_set_used_here : Note<
-  "previously context selector set '%0' used here">;
-def err_omp_expected_comma_brace : Error<"expected '}' or ',' after '%0'">;
-def err_omp_declare_variant_ctx_mutiple_use : Error<
-  "context trait selector '%0' is used already in the same '%1' context selector set of 'omp declare variant' directive">;
-def note_omp_declare_variant_ctx_used_here : Note<
-  "previously context trait selector '%0' used here">;
-def warn_omp_more_one_device_type_clause : Warning<
-  "more than one 'device_type' clause is specified">,
-  InGroup<OpenMPClauses>;
-def err_omp_wrong_device_kind_trait : Error<
-  "unknown '%0' device kind trait in the 'device' context selector set, expected"
-  " one of 'host', 'nohost', 'cpu', 'gpu' or 'fpga'">;
+def warn_omp_declare_variant_string_literal_or_identifier
+    : Warning<"expected identifier or string literal describing a context "
+              "%select{set|selector|property}0; "
+              "%select{set|selector|property}0 skipped">,
+      InGroup<OpenMPClauses>;
+def note_omp_declare_variant_ctx_options
+    : Note<"context %select{set|selector|property}0 options are: %1">;
+def warn_omp_declare_variant_expected
+    : Warning<"expected '%0' after the %1; '%0' assumed">,
+      InGroup<OpenMPClauses>;
+def warn_omp_declare_variant_ctx_not_a_property
+    : Warning<"'%0' is not a valid context property for the context selector "
+              "'%1' and the context set '%2'; property ignored">,
+      InGroup<OpenMPClauses>;
+def note_omp_declare_variant_ctx_is_a
+    : Note<"'%0' is a context %select{set|selector|property}1 not a context "
+           "%select{set|selector|property}2">;
+def note_omp_declare_variant_ctx_try : Note<"try 'match(%0={%1%2})'">;
+def warn_omp_declare_variant_ctx_not_a_selector
+    : Warning<"'%0' is not a valid context selector for the context set '%1'; "
+              "selector ignored">,
+      InGroup<OpenMPClauses>;
+def warn_omp_declare_variant_ctx_not_a_set
+    : Warning<"'%0' is not a valid context set in a `declare variant`; set "
+              "ignored">,
+      InGroup<OpenMPClauses>;
+def warn_omp_declare_variant_ctx_mutiple_use
+    : Warning<"the context %select{set|selector|property}0 '%1' was used "
+              "already in the same 'omp declare variant' directive; "
+              "%select{set|selector|property}0 ignored">,
+      InGroup<OpenMPClauses>;
+def note_omp_declare_variant_ctx_used_here
+    : Note<"the previous context %select{set|selector|property}0 '%1' used "
+           "here">;
+def note_omp_declare_variant_ctx_continue_here
+    : Note<"the ignored %select{set|selector|property}0 spans until here">;
+def warn_omp_ctx_incompatible_selector_for_set
+    : Warning<"the context selector '%0' is not valid for the context set "
+              "'%1'; selector ignored">,
+      InGroup<OpenMPClauses>;
+def note_omp_ctx_compatible_set_for_selector
+    : Note<"the context selector '%0' can be nested in the context set '%1'; "
+           "try 'match(%1={%0%select{|(property)}2})'">;
+def warn_omp_ctx_selector_without_properties
+    : Warning<"the context selector '%0' in context set '%1' requires a "
+              "context property defined in parentheses; selector ignored">,
+      InGroup<OpenMPClauses>;
+def warn_omp_ctx_incompatible_property_for_selector
+    : Warning<"the context property '%0' is not valid for the context selector "
+              "'%1' and the context set '%2'; property ignored">,
+      InGroup<OpenMPClauses>;
+def note_omp_ctx_compatible_set_and_selector_for_property
+    : Note<"the context property '%0' can be nested in the context selector "
+           "'%1' which is nested in the context set '%2'; try "
+           "'match(%2={%1(%0)})'">;
+def warn_omp_ctx_incompatible_score_for_property
+    : Warning<"the context selector '%0' in the context set '%1' cannot have a "
+              "score ('%2'); score ignored">,
+      InGroup<OpenMPClauses>;
+def warn_omp_more_one_device_type_clause
+    : Warning<"more than one 'device_type' clause is specified">,
+      InGroup<OpenMPClauses>;
 
 // Pragma loop support.
 def err_pragma_loop_missing_argument : Error<
@@ -1334,14 +1419,27 @@ def err_concept_definition_not_identifier : Error<
 def ext_concept_legacy_bool_keyword : ExtWarn<
   "ISO C++2a does not permit the 'bool' keyword after 'concept'">,
   InGroup<DiagGroup<"concepts-ts-compat">>;
+def err_placeholder_expected_auto_or_decltype_auto : Error<
+  "expected 'auto' or 'decltype(auto)' after concept name">;
 }
 
 let CategoryName = "Reflection Issue" in {
 def err_invalid_reifier_context_parse : Error<
   "cannot use %select{valueof|idexpr|unqualid|typename}0 as "
    "reifier in this context: %select{expression|typename}1 expected.">;
-}
+
 def err_reify_typename_preceded : Error<
   "the typename reifier cannot be preceded by a nested name specifier">;
+}
+
+def warn_max_tokens : Warning<
+  "the number of preprocessor source tokens (%0) exceeds this token limit (%1)">,
+  InGroup<MaxTokens>;
+
+def warn_max_tokens_total : Warning<
+  "the total number of preprocessor source tokens (%0) exceeds the token limit (%1)">,
+  InGroup<MaxTokens>;
+
+def note_max_tokens_total_override : Note<"total token limit set here">;
 
 } // end of Parser diagnostics

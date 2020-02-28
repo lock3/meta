@@ -1,6 +1,6 @@
 //===- OpDefinition.h - Classes for defining concrete Op types --*- C++ -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -121,6 +121,10 @@ public:
   /// Print the operation to the given stream.
   void print(raw_ostream &os, OpPrintingFlags flags = llvm::None) {
     state->print(os, flags);
+  }
+  void print(raw_ostream &os, AsmState &asmState,
+             OpPrintingFlags flags = llvm::None) {
+    state->print(os, asmState, flags);
   }
 
   /// Dump this operation.
@@ -550,7 +554,7 @@ struct MultiResultTraitBase : public TraitBase<ConcreteType, TraitType> {
   }
 
   /// Return the type of the `i`-th result.
-  Type getType(unsigned i) { return getResult(i)->getType(); }
+  Type getType(unsigned i) { return getResult(i).getType(); }
 
   /// Result iterator access.
   result_iterator result_begin() {
@@ -578,13 +582,13 @@ template <typename ConcreteType>
 class OneResult : public TraitBase<ConcreteType, OneResult> {
 public:
   Value getResult() { return this->getOperation()->getResult(0); }
-  Type getType() { return getResult()->getType(); }
+  Type getType() { return getResult().getType(); }
 
   /// Replace all uses of 'this' value with the new value, updating anything in
   /// the IR that uses 'this' to use the other value instead.  When this returns
   /// there are zero uses of 'this'.
   void replaceAllUsesWith(Value newValue) {
-    getResult()->replaceAllUsesWith(newValue);
+    getResult().replaceAllUsesWith(newValue);
   }
 
   /// Replace all uses of 'this' value with the result of 'op'.
@@ -980,7 +984,7 @@ public:
   /// Return true if this "op class" can match against the specified operation.
   static bool classof(Operation *op) {
     if (auto *abstractOp = op->getAbstractOperation())
-      return &classof == abstractOp->classof;
+      return ClassID::getID<ConcreteType>() == abstractOp->classID;
     return op->getName().getStringRef() == ConcreteType::getOperationName();
   }
 

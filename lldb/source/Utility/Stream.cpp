@@ -1,4 +1,4 @@
-//===-- Stream.cpp ----------------------------------------------*- C++ -*-===//
+//===-- Stream.cpp --------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -126,15 +126,9 @@ size_t Stream::PrintfVarArg(const char *format, va_list args) {
 // Print and End of Line character to the stream
 size_t Stream::EOL() { return PutChar('\n'); }
 
-// Indent the current line using the current indentation level and print an
-// optional string following the indentation spaces.
-size_t Stream::Indent(const char *s) {
-  return Printf("%*.*s%s", m_indent_level, m_indent_level, "", s ? s : "");
-}
-
 size_t Stream::Indent(llvm::StringRef str) {
-  return Printf("%*.*s%s", m_indent_level, m_indent_level, "",
-                str.str().c_str());
+  std::string indentation(m_indent_level, ' ');
+  return PutCString(indentation) + PutCString(str);
 }
 
 // Stream a character "ch" out to this stream.

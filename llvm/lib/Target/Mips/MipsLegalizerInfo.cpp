@@ -202,6 +202,25 @@ MipsLegalizerInfo::MipsLegalizerInfo(const MipsSubtarget &ST) {
       .lowerFor({s32})
       .maxScalar(0, s32);
 
+  getActionDefinitionsBuilder(G_CTLZ)
+      .legalFor({{s32, s32}})
+      .maxScalar(0, s32)
+      .maxScalar(1, s32);
+  getActionDefinitionsBuilder(G_CTLZ_ZERO_UNDEF)
+      .lowerFor({{s32, s32}});
+
+  getActionDefinitionsBuilder(G_CTTZ)
+      .lowerFor({{s32, s32}})
+      .maxScalar(0, s32)
+      .maxScalar(1, s32);
+  getActionDefinitionsBuilder(G_CTTZ_ZERO_UNDEF)
+      .lowerFor({{s32, s32}, {s64, s64}});
+
+  getActionDefinitionsBuilder(G_CTPOP)
+      .lowerFor({{s32, s32}})
+      .clampScalar(0, s32, s32)
+      .clampScalar(1, s32, s32);
+
   // FP instructions
   getActionDefinitionsBuilder(G_FCONSTANT)
       .legalFor({s32, s64});
@@ -341,9 +360,9 @@ static bool MSA3OpIntrinsicToGeneric(MachineInstr &MI, unsigned Opcode,
   return true;
 }
 
-bool MSA2OpIntrinsicToGeneric(MachineInstr &MI, unsigned Opcode,
-                              MachineIRBuilder &MIRBuilder,
-                              const MipsSubtarget &ST) {
+static bool MSA2OpIntrinsicToGeneric(MachineInstr &MI, unsigned Opcode,
+                                     MachineIRBuilder &MIRBuilder,
+                                     const MipsSubtarget &ST) {
   assert(ST.hasMSA() && "MSA intrinsic not supported on target without MSA.");
   MIRBuilder.buildInstr(Opcode)
       .add(MI.getOperand(0))
@@ -353,8 +372,9 @@ bool MSA2OpIntrinsicToGeneric(MachineInstr &MI, unsigned Opcode,
 }
 
 bool MipsLegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
-                                          MachineRegisterInfo &MRI,
-                                          MachineIRBuilder &MIRBuilder) const {
+                                          MachineIRBuilder &MIRBuilder,
+                                          GISelChangeObserver &Observer) const {
+  MachineRegisterInfo &MRI = *MIRBuilder.getMRI();
   const MipsSubtarget &ST =
       static_cast<const MipsSubtarget &>(MI.getMF()->getSubtarget());
   const MipsInstrInfo &TII = *ST.getInstrInfo();
@@ -377,11 +397,10 @@ bool MipsLegalizerInfo::legalizeIntrinsic(MachineInstr &MI,
     return constrainSelectedInstRegOperands(*Trap, TII, TRI, RBI);
   }
   case Intrinsic::vacopy: {
-    Register Tmp = MRI.createGenericVirtualRegister(LLT::pointer(0, 32));
     MachinePointerInfo MPO;
-    MIRBuilder.buildLoad(Tmp, MI.getOperand(2),
-                         *MI.getMF()->getMachineMemOperand(
-                             MPO, MachineMemOperand::MOLoad, 4, 4));
+    auto Tmp = MIRBuilder.buildLoad(LLT::pointer(0, 32), MI.getOperand(2),
+                                    *MI.getMF()->getMachineMemOperand(
+                                        MPO, MachineMemOperand::MOLoad, 4, 4));
     MIRBuilder.buildStore(Tmp, MI.getOperand(1),
                           *MI.getMF()->getMachineMemOperand(
                               MPO, MachineMemOperand::MOStore, 4, 4));

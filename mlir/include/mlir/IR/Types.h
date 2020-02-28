@@ -1,6 +1,6 @@
 //===- Types.h - MLIR Type Classes ------------------------------*- C++ -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -108,7 +108,7 @@ public:
 
   using ImplType = TypeStorage;
 
-  Type() : impl(nullptr) {}
+  constexpr Type() : impl(nullptr) {}
   /* implicit */ Type(const ImplType *impl)
       : impl(const_cast<ImplType *>(impl)) {}
 
@@ -293,7 +293,7 @@ public:
   static inline mlir::Type getFromVoidPointer(void *P) {
     return mlir::Type::getFromOpaquePointer(P);
   }
-  enum { NumLowBitsAvailable = 3 };
+  static constexpr int NumLowBitsAvailable = 3;
 };
 
 } // namespace llvm

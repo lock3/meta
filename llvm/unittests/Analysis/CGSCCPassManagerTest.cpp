@@ -16,6 +16,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Utils/CallGraphUpdater.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
@@ -27,6 +28,13 @@ public:
   struct Result {
     Result(int Count) : FunctionCount(Count) {}
     int FunctionCount;
+    bool invalidate(Module &, const PreservedAnalyses &PA,
+                    ModuleAnalysisManager::Invalidator &) {
+      // Check whether the analysis or all analyses on modules have been
+      // preserved.
+      auto PAC = PA.getChecker<TestModuleAnalysis>();
+      return !(PAC.preserved() || PAC.preservedSet<AllAnalysesOn<Module>>());
+    }
   };
 
   TestModuleAnalysis(int &Runs) : Runs(Runs) {}
@@ -50,6 +58,14 @@ public:
   struct Result {
     Result(int Count) : FunctionCount(Count) {}
     int FunctionCount;
+    bool invalidate(LazyCallGraph::SCC &, const PreservedAnalyses &PA,
+                    CGSCCAnalysisManager::Invalidator &) {
+      // Check whether the analysis or all analyses on SCCs have been
+      // preserved.
+      auto PAC = PA.getChecker<TestSCCAnalysis>();
+      return !(PAC.preserved() ||
+               PAC.preservedSet<AllAnalysesOn<LazyCallGraph::SCC>>());
+    }
   };
 
   TestSCCAnalysis(int &Runs) : Runs(Runs) {}
@@ -73,6 +89,13 @@ public:
   struct Result {
     Result(int Count) : InstructionCount(Count) {}
     int InstructionCount;
+    bool invalidate(Function &, const PreservedAnalyses &PA,
+                    FunctionAnalysisManager::Invalidator &) {
+      // Check whether the analysis or all analyses on functions have been
+      // preserved.
+      auto PAC = PA.getChecker<TestFunctionAnalysis>();
+      return !(PAC.preserved() || PAC.preservedSet<AllAnalysesOn<Function>>());
+    }
   };
 
   TestFunctionAnalysis(int &Runs) : Runs(Runs) {}
@@ -1281,4 +1304,386 @@ TEST_F(CGSCCPassManagerTest, TestAnalysisInvalidationCGSCCUpdate) {
   // the graph, and then over the whole module.
   EXPECT_EQ(6 + 3 + 6 + 3 + 3 + 2 + 6, IndirectFunctionAnalysisRuns);
 }
+
+// The (negative) tests below check for assertions so we only run them if NDEBUG
+// is not defined.
+#ifndef NDEBUG
+
+struct LambdaSCCPassNoPreserve : public PassInfoMixin<LambdaSCCPassNoPreserve> {
+  template <typename T>
+  LambdaSCCPassNoPreserve(T &&Arg) : Func(std::forward<T>(Arg)) {}
+
+  PreservedAnalyses run(LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM,
+                        LazyCallGraph &CG, CGSCCUpdateResult &UR) {
+    Func(C, AM, CG, UR);
+    PreservedAnalyses PA;
+    // We update the core CGSCC data structures and so can preserve the proxy to
+    // the function analysis manager.
+    PA.preserve<FunctionAnalysisManagerCGSCCProxy>();
+    return PA;
+  }
+
+  std::function<void(LazyCallGraph::SCC &, CGSCCAnalysisManager &,
+                     LazyCallGraph &, CGSCCUpdateResult &)>
+      Func;
+};
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses0) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(h3, h1, h2)")
+          return;
+
+        Function *FnX = M->getFunction("x");
+        Function *FnH1 = M->getFunction("h1");
+        Function *FnH2 = M->getFunction("h2");
+        Function *FnH3 = M->getFunction("h3");
+        ASSERT_NE(FnX, nullptr);
+        ASSERT_NE(FnH1, nullptr);
+        ASSERT_NE(FnH2, nullptr);
+        ASSERT_NE(FnH3, nullptr);
+
+        // And insert a call to `h1`, `h2`, and `h3`.
+        Instruction *IP = &FnH2->getEntryBlock().front();
+        (void)CallInst::Create(FnH1, {}, "", IP);
+        (void)CallInst::Create(FnH2, {}, "", IP);
+        (void)CallInst::Create(FnH3, {}, "", IP);
+
+        auto &H2N = *llvm::find_if(
+            C, [](LazyCallGraph::Node &N) { return N.getName() == "h2"; });
+        ASSERT_NO_FATAL_FAILURE(
+            updateCGAndAnalysisManagerForCGSCCPass(CG, C, H2N, AM, UR));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
 }
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses1) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve([&](LazyCallGraph::SCC &C,
+                                           CGSCCAnalysisManager &AM,
+                                           LazyCallGraph &CG,
+                                           CGSCCUpdateResult &UR) {
+    if (C.getName() != "(h3, h1, h2)")
+      return;
+
+    Function *FnX = M->getFunction("x");
+    Function *FnH1 = M->getFunction("h1");
+    Function *FnH2 = M->getFunction("h2");
+    Function *FnH3 = M->getFunction("h3");
+    ASSERT_NE(FnX, nullptr);
+    ASSERT_NE(FnH1, nullptr);
+    ASSERT_NE(FnH2, nullptr);
+    ASSERT_NE(FnH3, nullptr);
+
+    // And insert a call to `h1`, `h2`, and `h3`.
+    Instruction *IP = &FnH2->getEntryBlock().front();
+    (void)CallInst::Create(FnH1, {}, "", IP);
+    (void)CallInst::Create(FnH2, {}, "", IP);
+    (void)CallInst::Create(FnH3, {}, "", IP);
+
+    auto &H2N = *llvm::find_if(
+        C, [](LazyCallGraph::Node &N) { return N.getName() == "h2"; });
+    ASSERT_DEATH(updateCGAndAnalysisManagerForFunctionPass(CG, C, H2N, AM, UR),
+                 "Any new calls should be modeled as");
+  }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses2) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(f)")
+          return;
+
+        Function *FnF = M->getFunction("f");
+        Function *FnH2 = M->getFunction("h2");
+        ASSERT_NE(FnF, nullptr);
+        ASSERT_NE(FnH2, nullptr);
+
+        // And insert a call to `h2`
+        Instruction *IP = &FnF->getEntryBlock().front();
+        (void)CallInst::Create(FnH2, {}, "", IP);
+
+        auto &FN = *llvm::find_if(
+            C, [](LazyCallGraph::Node &N) { return N.getName() == "f"; });
+        ASSERT_NO_FATAL_FAILURE(
+            updateCGAndAnalysisManagerForCGSCCPass(CG, C, FN, AM, UR));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses3) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve([&](LazyCallGraph::SCC &C,
+                                           CGSCCAnalysisManager &AM,
+                                           LazyCallGraph &CG,
+                                           CGSCCUpdateResult &UR) {
+    if (C.getName() != "(f)")
+      return;
+
+    Function *FnF = M->getFunction("f");
+    Function *FnH2 = M->getFunction("h2");
+    ASSERT_NE(FnF, nullptr);
+    ASSERT_NE(FnH2, nullptr);
+
+    // And insert a call to `h2`
+    Instruction *IP = &FnF->getEntryBlock().front();
+    (void)CallInst::Create(FnH2, {}, "", IP);
+
+    auto &FN = *llvm::find_if(
+        C, [](LazyCallGraph::Node &N) { return N.getName() == "f"; });
+    ASSERT_DEATH(updateCGAndAnalysisManagerForFunctionPass(CG, C, FN, AM, UR),
+                 "Any new calls should be modeled as");
+  }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses4) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(f)")
+          return;
+
+        Function *FnF = M->getFunction("f");
+        Function *FnewF = Function::Create(FnF->getFunctionType(),
+                                           FnF->getLinkage(), "newF", *M);
+        BasicBlock *BB = BasicBlock::Create(FnewF->getContext(), "", FnewF);
+        ReturnInst::Create(FnewF->getContext(), BB);
+
+        // Use the CallGraphUpdater to update the call graph for the new
+        // function.
+        CallGraphUpdater CGU;
+        CGU.initialize(CG, C, AM, UR);
+        CGU.registerOutlinedFunction(*FnewF);
+
+        // And insert a call to `newF`
+        Instruction *IP = &FnF->getEntryBlock().front();
+        (void)CallInst::Create(FnewF, {}, "", IP);
+
+        auto &FN = *llvm::find_if(
+            C, [](LazyCallGraph::Node &N) { return N.getName() == "f"; });
+
+        ASSERT_NO_FATAL_FAILURE(
+            updateCGAndAnalysisManagerForCGSCCPass(CG, C, FN, AM, UR));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses5) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve([&](LazyCallGraph::SCC &C,
+                                           CGSCCAnalysisManager &AM,
+                                           LazyCallGraph &CG,
+                                           CGSCCUpdateResult &UR) {
+    if (C.getName() != "(f)")
+      return;
+
+    Function *FnF = M->getFunction("f");
+    Function *FnewF =
+        Function::Create(FnF->getFunctionType(), FnF->getLinkage(), "newF", *M);
+    BasicBlock *BB = BasicBlock::Create(FnewF->getContext(), "", FnewF);
+    ReturnInst::Create(FnewF->getContext(), BB);
+
+    // Use the CallGraphUpdater to update the call graph for the new
+    // function.
+    CallGraphUpdater CGU;
+    CGU.initialize(CG, C, AM, UR);
+    CGU.registerOutlinedFunction(*FnewF);
+
+    // And insert a call to `newF`
+    Instruction *IP = &FnF->getEntryBlock().front();
+    (void)CallInst::Create(FnewF, {}, "", IP);
+
+    auto &FN = *llvm::find_if(
+        C, [](LazyCallGraph::Node &N) { return N.getName() == "f"; });
+
+    ASSERT_DEATH(updateCGAndAnalysisManagerForFunctionPass(CG, C, FN, AM, UR),
+                 "Any new calls should be modeled as");
+  }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses6) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(h3, h1, h2)")
+          return;
+
+        Function *FnX = M->getFunction("x");
+        Function *FnH1 = M->getFunction("h1");
+        Function *FnH2 = M->getFunction("h2");
+        Function *FnH3 = M->getFunction("h3");
+        ASSERT_NE(FnX, nullptr);
+        ASSERT_NE(FnH1, nullptr);
+        ASSERT_NE(FnH2, nullptr);
+        ASSERT_NE(FnH3, nullptr);
+
+        // And insert a call to `h1`, `h2`, and `h3`.
+        Instruction *IP = &FnH2->getEntryBlock().front();
+        (void)CallInst::Create(FnH1, {}, "", IP);
+        (void)CallInst::Create(FnH2, {}, "", IP);
+        (void)CallInst::Create(FnH3, {}, "", IP);
+
+        // Use the CallGraphUpdater to update the call graph for the new
+        // function.
+        CallGraphUpdater CGU;
+        CGU.initialize(CG, C, AM, UR);
+        ASSERT_NO_FATAL_FAILURE(CGU.reanalyzeFunction(*FnH2));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses7) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(f)")
+          return;
+
+        Function *FnF = M->getFunction("f");
+        Function *FnH2 = M->getFunction("h2");
+        ASSERT_NE(FnF, nullptr);
+        ASSERT_NE(FnH2, nullptr);
+
+        // And insert a call to `h2`
+        Instruction *IP = &FnF->getEntryBlock().front();
+        (void)CallInst::Create(FnH2, {}, "", IP);
+
+        // Use the CallGraphUpdater to update the call graph for the new
+        // function.
+        CallGraphUpdater CGU;
+        CGU.initialize(CG, C, AM, UR);
+        ASSERT_NO_FATAL_FAILURE(CGU.reanalyzeFunction(*FnF));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses8) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(f)")
+          return;
+
+        Function *FnF = M->getFunction("f");
+        Function *FnewF = Function::Create(FnF->getFunctionType(),
+                                           FnF->getLinkage(), "newF", *M);
+        BasicBlock *BB = BasicBlock::Create(FnewF->getContext(), "", FnewF);
+        auto *RI = ReturnInst::Create(FnewF->getContext(), BB);
+        while (FnF->getEntryBlock().size() > 1)
+          FnF->getEntryBlock().front().moveBefore(RI);
+        ASSERT_NE(FnF, nullptr);
+
+        // Use the CallGraphUpdater to update the call graph.
+        CallGraphUpdater CGU;
+        CGU.initialize(CG, C, AM, UR);
+        ASSERT_NO_FATAL_FAILURE(CGU.replaceFunctionWith(*FnF, *FnewF));
+        ASSERT_TRUE(FnF->isDeclaration());
+        ASSERT_EQ(FnF->getNumUses(), 0U);
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses9) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(f)")
+          return;
+
+        Function *FnF = M->getFunction("f");
+
+        // Use the CallGraphUpdater to update the call graph.
+        {
+          CallGraphUpdater CGU;
+          CGU.initialize(CG, C, AM, UR);
+          ASSERT_NO_FATAL_FAILURE(CGU.removeFunction(*FnF));
+          ASSERT_EQ(M->getFunctionList().size(), 6U);
+        }
+        ASSERT_EQ(M->getFunctionList().size(), 5U);
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+TEST_F(CGSCCPassManagerTest, TestUpdateCGAndAnalysisManagerForPasses10) {
+  CGSCCPassManager CGPM(/*DebugLogging*/ true);
+  CGPM.addPass(LambdaSCCPassNoPreserve(
+      [&](LazyCallGraph::SCC &C, CGSCCAnalysisManager &AM, LazyCallGraph &CG,
+          CGSCCUpdateResult &UR) {
+        if (C.getName() != "(h3, h1, h2)")
+          return;
+
+        Function *FnX = M->getFunction("x");
+        Function *FnH1 = M->getFunction("h1");
+        Function *FnH2 = M->getFunction("h2");
+        Function *FnH3 = M->getFunction("h3");
+        ASSERT_NE(FnX, nullptr);
+        ASSERT_NE(FnH1, nullptr);
+        ASSERT_NE(FnH2, nullptr);
+        ASSERT_NE(FnH3, nullptr);
+
+        // And insert a call to `h1`, and `h3`.
+        Instruction *IP = &FnH1->getEntryBlock().front();
+        (void)CallInst::Create(FnH1, {}, "", IP);
+        (void)CallInst::Create(FnH3, {}, "", IP);
+
+        // Remove the `h2` call.
+        ASSERT_TRUE(isa<CallBase>(IP));
+        ASSERT_EQ(cast<CallBase>(IP)->getCalledFunction(), FnH2);
+        IP->eraseFromParent();
+
+        // Use the CallGraphUpdater to update the call graph.
+        CallGraphUpdater CGU;
+        CGU.initialize(CG, C, AM, UR);
+        ASSERT_NO_FATAL_FAILURE(CGU.reanalyzeFunction(*FnH1));
+        ASSERT_NO_FATAL_FAILURE(CGU.removeFunction(*FnH2));
+      }));
+
+  ModulePassManager MPM(/*DebugLogging*/ true);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.run(*M, MAM);
+}
+
+#endif
+} // namespace

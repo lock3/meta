@@ -6,12 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ClangASTSource_h_
-#define liblldb_ClangASTSource_h_
+#ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGASTSOURCE_H
+#define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGASTSOURCE_H
 
 #include <set>
 
-#include "lldb/Symbol/ClangASTImporter.h"
+#include "Plugins/ExpressionParser/Clang/ClangASTImporter.h"
 #include "lldb/Symbol/CompilerType.h"
 #include "lldb/Target/Target.h"
 #include "clang/AST/ExternalASTSource.h"
@@ -42,7 +42,7 @@ public:
   /// \param[in] importer
   ///     The ClangASTImporter to use.
   ClangASTSource(const lldb::TargetSP &target,
-                 const lldb::ClangASTImporterSP &importer);
+                 const std::shared_ptr<ClangASTImporter> &importer);
 
   /// Destructor
   ~ClangASTSource() override;
@@ -60,7 +60,7 @@ public:
   }
   void MaterializeVisibleDecls(const clang::DeclContext *DC) { return; }
 
-  void InstallASTContext(ClangASTContext &ast_context);
+  void InstallASTContext(TypeSystemClang &ast_context);
 
   //
   // APIs for ExternalASTSource
@@ -307,7 +307,7 @@ protected:
   ///     is the containing object.
   void FindObjCPropertyAndIvarDecls(NameSearchContext &context);
 
-  /// A wrapper for ClangASTContext::CopyType that sets a flag that
+  /// A wrapper for TypeSystemClang::CopyType that sets a flag that
   /// indicates that we should not respond to queries during import.
   ///
   /// \param[in] src_type
@@ -346,15 +346,13 @@ public:
   /// \param[in] decl
   ///     The Decl whose origin is to be found.
   ///
-  /// \param[out] original_decl
-  ///     A pointer whose target is filled in with the original Decl.
-  ///
-  /// \param[in] original_ctx
-  ///     A pointer whose target is filled in with the original's ASTContext.
-  ///
   /// \return
   ///     True if lookup succeeded; false otherwise.
   ClangASTImporter::DeclOrigin GetDeclOrigin(const clang::Decl *decl);
+
+  /// Returns the TypeSystem that uses this ClangASTSource instance as it's
+  /// ExternalASTSource.
+  TypeSystemClang *GetTypeSystem() const { return m_clang_ast_context; }
 
 protected:
   bool FindObjCMethodDeclsWithOrigin(
@@ -370,12 +368,12 @@ protected:
   const lldb::TargetSP m_target;
   /// The AST context requests are coming in for.
   clang::ASTContext *m_ast_context;
-  /// The ClangASTContext for m_ast_context.
-  ClangASTContext *m_clang_ast_context;
+  /// The TypeSystemClang for m_ast_context.
+  TypeSystemClang *m_clang_ast_context;
   /// The file manager paired with the AST context.
   clang::FileManager *m_file_manager;
   /// The target's AST importer.
-  lldb::ClangASTImporterSP m_ast_importer_sp;
+  std::shared_ptr<ClangASTImporter> m_ast_importer_sp;
   std::set<const clang::Decl *> m_active_lexical_decls;
   std::set<const char *> m_active_lookups;
 };
@@ -481,4 +479,4 @@ struct NameSearchContext {
 
 } // namespace lldb_private
 
-#endif // liblldb_ClangASTSource_h_
+#endif // LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGASTSOURCE_H

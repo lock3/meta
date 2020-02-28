@@ -407,6 +407,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::Binding:
   case Decl::Concept:
   case Decl::LifetimeExtendedTemporary:
+  case Decl::RequiresExprBody:
   case Decl::CXXFragment:
   case Decl::CXXMetaprogram:
   case Decl::CXXInjection:

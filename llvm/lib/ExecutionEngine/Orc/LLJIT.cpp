@@ -67,7 +67,7 @@ Error LLJIT::addIRModule(JITDylib &JD, ThreadSafeModule TSM) {
           TSM.withModuleDo([&](Module &M) { return applyDataLayout(M); }))
     return Err;
 
-  return CompileLayer->add(JD, std::move(TSM), ES->allocateVModule());
+  return TransformLayer->add(JD, std::move(TSM), ES->allocateVModule());
 }
 
 Error LLJIT::addObjectFile(JITDylib &JD, std::unique_ptr<MemoryBuffer> Obj) {
@@ -96,8 +96,10 @@ LLJIT::createObjectLinkingLayer(LLJITBuilderState &S, ExecutionSession &ES) {
   auto ObjLinkingLayer =
       std::make_unique<RTDyldObjectLinkingLayer>(ES, std::move(GetMemMgr));
 
-  if (S.JTMB->getTargetTriple().isOSBinFormatCOFF())
+  if (S.JTMB->getTargetTriple().isOSBinFormatCOFF()) {
     ObjLinkingLayer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+    ObjLinkingLayer->setAutoClaimResponsibilityForObjectSymbols(true);
+  }
 
   // FIXME: Explicit conversion to std::unique_ptr<ObjectLayer> added to silence
   //        errors from some GCC / libstdc++ bots. Remove this conversion (i.e.
@@ -105,7 +107,7 @@ LLJIT::createObjectLinkingLayer(LLJITBuilderState &S, ExecutionSession &ES) {
   return std::unique_ptr<ObjectLayer>(std::move(ObjLinkingLayer));
 }
 
-Expected<IRCompileLayer::CompileFunction>
+Expected<std::unique_ptr<IRCompileLayer::IRCompiler>>
 LLJIT::createCompileFunction(LLJITBuilderState &S,
                              JITTargetMachineBuilder JTMB) {
 
@@ -116,18 +118,19 @@ LLJIT::createCompileFunction(LLJITBuilderState &S,
   // Otherwise default to creating a SimpleCompiler, or ConcurrentIRCompiler,
   // depending on the number of threads requested.
   if (S.NumCompileThreads > 0)
-    return ConcurrentIRCompiler(std::move(JTMB));
+    return std::make_unique<ConcurrentIRCompiler>(std::move(JTMB));
 
   auto TM = JTMB.createTargetMachine();
   if (!TM)
     return TM.takeError();
 
-  return TMOwningSimpleCompiler(std::move(*TM));
+  return std::make_unique<TMOwningSimpleCompiler>(std::move(*TM));
 }
 
 LLJIT::LLJIT(LLJITBuilderState &S, Error &Err)
     : ES(S.ES ? std::move(S.ES) : std::make_unique<ExecutionSession>()),
       Main(this->ES->createJITDylib("<main>")), DL(""),
+      TT(S.JTMB->getTargetTriple()),
       ObjLinkingLayer(createObjectLinkingLayer(S, *ES)),
       ObjTransformLayer(*this->ES, *ObjLinkingLayer), CtorRunner(Main),
       DtorRunner(Main) {
@@ -149,11 +152,13 @@ LLJIT::LLJIT(LLJITBuilderState &S, Error &Err)
     }
     CompileLayer = std::make_unique<IRCompileLayer>(
         *ES, ObjTransformLayer, std::move(*CompileFunction));
+    TransformLayer = std::make_unique<IRTransformLayer>(*ES, *CompileLayer);
   }
 
   if (S.NumCompileThreads > 0) {
-    CompileLayer->setCloneToNewContextOnEmit(true);
-    CompileThreads = std::make_unique<ThreadPool>(S.NumCompileThreads);
+    TransformLayer->setCloneToNewContextOnEmit(true);
+    CompileThreads =
+        std::make_unique<ThreadPool>(hardware_concurrency(S.NumCompileThreads));
     ES->setDispatchMaterialization(
         [this](JITDylib &JD, std::unique_ptr<MaterializationUnit> MU) {
           // FIXME: Switch to move capture once we have c++14.
@@ -248,9 +253,6 @@ LLLazyJIT::LLLazyJIT(LLLazyJITBuilderState &S, Error &Err) : LLJIT(S, Err) {
                                   inconvertibleErrorCode());
     return;
   }
-
-  // Create the transform layer.
-  TransformLayer = std::make_unique<IRTransformLayer>(*ES, *CompileLayer);
 
   // Create the COD layer.
   CODLayer = std::make_unique<CompileOnDemandLayer>(

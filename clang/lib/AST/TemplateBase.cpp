@@ -568,16 +568,7 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
 
   case TemplateArgument::Reflected:
   case TemplateArgument::Expression: {
-    // This shouldn't actually ever happen, so it's okay that we're
-    // regurgitating an expression here.
-    // FIXME: We're guessing at LangOptions!
-    SmallString<32> Str;
-    llvm::raw_svector_ostream OS(Str);
-    LangOptions LangOpts;
-    LangOpts.CPlusPlus = true;
-    PrintingPolicy Policy(LangOpts);
-    Arg.getAsExpr()->printPretty(OS, nullptr, Policy);
-    return DB << OS.str();
+    return DB << Arg.getAsExpr();
   }
 
   case TemplateArgument::Pack: {
@@ -596,7 +587,7 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
 }
 
 const ASTTemplateArgumentListInfo *
-ASTTemplateArgumentListInfo::Create(ASTContext &C,
+ASTTemplateArgumentListInfo::Create(const ASTContext &C,
                                     const TemplateArgumentListInfo &List) {
   std::size_t size = totalSizeToAlloc<TemplateArgumentLoc>(List.size());
   void *Mem = C.Allocate(size, alignof(ASTTemplateArgumentListInfo));

@@ -285,6 +285,12 @@ namespace ISD {
     /// bits of the first 2 operands.
     SMULFIXSAT, UMULFIXSAT,
 
+    /// RESULT = [US]DIVFIX(LHS, RHS, SCALE) - Perform fixed point division on
+    /// 2 integers with the same width and scale. SCALE represents the scale
+    /// of both operands as fixed point numbers. This SCALE parameter must be a
+    /// constant integer.
+    SDIVFIX, UDIVFIX,
+
     /// Simple binary floating point operators.
     FADD, FSUB, FMUL, FDIV, FREM,
 
@@ -627,6 +633,7 @@ namespace ISD {
     /// form a semi-softened interface for dealing with f16 (as an i16), which
     /// is often a storage-only type but has native conversions.
     FP16_TO_FP, FP_TO_FP16,
+    STRICT_FP16_TO_FP, STRICT_FP_TO_FP16,
 
     /// Perform various unary floating-point operations inspired by libm. For
     /// FPOWI, the result is undefined if if the integer operand doesn't fit
@@ -731,9 +738,6 @@ namespace ISD {
     /// with respect to other call instructions, but loads and stores may float
     /// past it.
     ANNOTATION_LABEL,
-
-    /// CATCHPAD - Represents a catchpad instruction.
-    CATCHPAD,
 
     /// CATCHRET - Represents a return from a catch block funclet. Used for
     /// MSVC compatible exception handling. Takes a chain operand and a
@@ -914,6 +918,11 @@ namespace ISD {
     /// for some others (e.g. PowerPC, PowerPC64) that would be compile-time
     /// known nonzero constant. The only operand here is the chain.
     GET_DYNAMIC_AREA_OFFSET,
+
+    /// VSCALE(IMM) - Returns the runtime scaling factor used to calculate the
+    /// number of elements within a scalable vector. IMM is a constant integer
+    /// multiplier that is applied to the runtime value.
+    VSCALE,
 
     /// Generic reduction nodes. These nodes represent horizontal vector
     /// reduction operations, producing a scalar result.
@@ -1098,6 +1107,16 @@ namespace ISD {
   /// Return the operation corresponding to !(X op Y), where 'op' is a valid
   /// SetCC operation.
   CondCode getSetCCInverse(CondCode Operation, EVT Type);
+
+  namespace GlobalISel {
+    /// Return the operation corresponding to !(X op Y), where 'op' is a valid
+    /// SetCC operation. The U bit of the condition code has different meanings
+    /// between floating point and integer comparisons and LLT's don't provide
+    /// this distinction. As such we need to be told whether the comparison is
+    /// floating point or integer-like. Pointers should use integer-like
+    /// comparisons.
+    CondCode getSetCCInverse(CondCode Operation, bool isIntegerLike);
+  } // end namespace GlobalISel
 
   /// Return the operation corresponding to (Y op X) when given the operation
   /// for (X op Y).

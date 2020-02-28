@@ -108,6 +108,8 @@ namespace {
     void VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D);
     void VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D);
     void VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D);
+    void VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *TTP);
+    void VisitNonTypeTemplateParmDecl(const NonTypeTemplateParmDecl *NTTP);
     void VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D);
     void VisitCXXInjectionDecl(CXXInjectionDecl *D);
 
@@ -791,6 +793,11 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
       Proto.clear();
     }
     Out << Proto;
+
+    if (Expr *TrailingRequiresClause = D->getTrailingRequiresClause()) {
+      Out << " requires ";
+      TrailingRequiresClause->printPretty(Out, nullptr, SubPolicy, Indentation);
+    }
   } else {
     Ty.print(Out, Policy, Proto);
   }
@@ -1100,35 +1107,10 @@ void DeclPrinter::printTemplateParameters(const TemplateParameterList *Params,
     else
       NeedComma = true;
 
-    if (auto TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
-
-      if (TTP->wasDeclaredWithTypename())
-        Out << "typename";
-      else
-        Out << "class";
-
-      if (TTP->isParameterPack())
-        Out << " ...";
-      else if (!TTP->getName().empty())
-        Out << ' ';
-
-      Out << *TTP;
-
-      if (TTP->hasDefaultArgument()) {
-        Out << " = ";
-        Out << TTP->getDefaultArgument().getAsString(Policy);
-      };
+    if (const auto *TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
+      VisitTemplateTypeParmDecl(TTP);
     } else if (auto NTTP = dyn_cast<NonTypeTemplateParmDecl>(Param)) {
-      StringRef Name;
-      if (IdentifierInfo *II = NTTP->getIdentifier())
-        Name = II->getName();
-      printDeclType(NTTP->getType(), Name, NTTP->isParameterPack());
-
-      if (NTTP->hasDefaultArgument()) {
-        Out << " = ";
-        NTTP->getDefaultArgument()->printPretty(Out, nullptr, Policy,
-                                                Indentation);
-      }
+      VisitNonTypeTemplateParmDecl(NTTP);
     } else if (auto TTPD = dyn_cast<TemplateTemplateParmDecl>(Param)) {
       VisitTemplateDecl(TTPD);
       // FIXME: print the default argument, if present.
@@ -1777,6 +1759,40 @@ void DeclPrinter::VisitOMPDeclareMapperDecl(OMPDeclareMapperDecl *D) {
 
 void DeclPrinter::VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D) {
   D->getInit()->printPretty(Out, nullptr, Policy, Indentation);
+}
+
+void DeclPrinter::VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *TTP) {
+  if (const TypeConstraint *TC = TTP->getTypeConstraint())
+    TC->print(Out, Policy);
+  else if (TTP->wasDeclaredWithTypename())
+    Out << "typename";
+  else
+    Out << "class";
+
+  if (TTP->isParameterPack())
+    Out << " ...";
+  else if (!TTP->getName().empty())
+    Out << ' ';
+
+  Out << *TTP;
+
+  if (TTP->hasDefaultArgument()) {
+    Out << " = ";
+    Out << TTP->getDefaultArgument().getAsString(Policy);
+  }
+}
+
+void DeclPrinter::VisitNonTypeTemplateParmDecl(
+    const NonTypeTemplateParmDecl *NTTP) {
+  StringRef Name;
+  if (IdentifierInfo *II = NTTP->getIdentifier())
+    Name = II->getName();
+  printDeclType(NTTP->getType(), Name, NTTP->isParameterPack());
+
+  if (NTTP->hasDefaultArgument()) {
+    Out << " = ";
+    NTTP->getDefaultArgument()->printPretty(Out, nullptr, Policy, Indentation);
+  }
 }
 
 void DeclPrinter::VisitCXXMetaprogramDecl(CXXMetaprogramDecl *D) {

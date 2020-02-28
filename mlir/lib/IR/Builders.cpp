@@ -1,6 +1,6 @@
 //===- Builders.cpp - Helpers for constructing MLIR Classes ---------------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -342,8 +342,7 @@ LogicalResult OpBuilder::tryFold(Operation *op,
   };
 
   // If this operation is already a constant, there is nothing to do.
-  Attribute unused;
-  if (matchPattern(op, m_Constant(&unused)))
+  if (matchPattern(op, m_Constant()))
     return cleanupFailure();
 
   // Check to see if any operands to the operation is constant and whether
@@ -377,7 +376,7 @@ LogicalResult OpBuilder::tryFold(Operation *op,
     // Ask the dialect to materialize a constant operation for this value.
     Attribute attr = it.value().get<Attribute>();
     auto *constOp = dialect->materializeConstant(
-        cstBuilder, attr, op->getResult(it.index())->getType(), op->getLoc());
+        cstBuilder, attr, op->getResult(it.index()).getType(), op->getLoc());
     if (!constOp) {
       // Erase any generated constants.
       for (Operation *cst : generatedConstants)

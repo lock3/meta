@@ -65,6 +65,9 @@ void SymbolTable::addFile(InputFile *file) {
 // Because all bitcode files that the program consists of are passed
 // to the compiler at once, it can do whole-program optimization.
 void SymbolTable::addCombinedLTOObject() {
+  // Prevent further LTO objects being included
+  BitcodeFile::doneLTO = true;
+
   if (bitcodeFiles.empty())
     return;
 
@@ -719,7 +722,7 @@ void SymbolTable::handleSymbolVariants() {
       if (symbol != defined) {
         auto *f = cast<FunctionSymbol>(symbol);
         reportFunctionSignatureMismatch(symName, f, defined, false);
-        StringRef debugName = saver.save("unreachable:" + toString(*f));
+        StringRef debugName = saver.save("signature_mismatch:" + toString(*f));
         replaceWithUnreachable(f, *f->signature, debugName);
       }
     }

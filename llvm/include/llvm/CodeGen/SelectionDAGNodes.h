@@ -701,7 +701,9 @@ public:
     switch (NodeType) {
       default:
         return false;
-#define INSTRUCTION(NAME, NARG, ROUND_MODE, INTRINSIC, DAGN)                   \
+      case ISD::STRICT_FP16_TO_FP:
+      case ISD::STRICT_FP_TO_FP16:
+#define DAG_INSTRUCTION(NAME, NARG, ROUND_MODE, INTRINSIC, DAGN)               \
       case ISD::STRICT_##DAGN:
 #include "llvm/IR/ConstrainedOps.def"
         return true;

@@ -570,8 +570,7 @@ void CodeGenFunction::EmitLabel(const LabelDecl *D) {
 
   // Emit debug info for labels.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    if (CGM.getCodeGenOpts().getDebugInfo() >=
-        codegenoptions::LimitedDebugInfo) {
+    if (CGM.getCodeGenOpts().hasReducedDebugInfo()) {
       DI->setLocation(D->getLocation());
       DI->EmitLabel(D, Builder);
     }
@@ -2318,8 +2317,14 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
     if (Clobber == "memory")
       ReadOnly = ReadNone = false;
-    else if (Clobber != "cc")
+    else if (Clobber != "cc") {
       Clobber = getTarget().getNormalizedGCCRegisterName(Clobber);
+      if (CGM.getCodeGenOpts().StackClashProtector &&
+          getTarget().isSPRegName(Clobber)) {
+        CGM.getDiags().Report(S.getAsmLoc(),
+                              diag::warn_stack_clash_protection_inline_asm);
+      }
+    }
 
     if (!Constraints.empty())
       Constraints += ',';

@@ -217,6 +217,13 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
   }
 
   assert(getBackendPtr() && "Expected assembler backend");
+  bool IsTarget = getBackendPtr()->getFixupKindInfo(Fixup.getKind()).Flags &
+                  MCFixupKindInfo::FKF_IsTarget;
+
+  if (IsTarget)
+    return getBackend().evaluateTargetFixup(*this, Layout, Fixup, DF, Target,
+                                            Value, WasForced);
+
   bool IsPCRel = getBackendPtr()->getFixupKindInfo(Fixup.getKind()).Flags &
                  MCFixupKindInfo::FKF_IsPCRel;
 
@@ -572,6 +579,7 @@ static void writeFragment(raw_ostream &OS, const MCAssembler &Asm,
     unsigned VSize = FF.getValueSize();
     const unsigned MaxChunkSize = 16;
     char Data[MaxChunkSize];
+    assert(0 < VSize && VSize <= MaxChunkSize && "Illegal fragment fill size");
     // Duplicate V into Data as byte vector to reduce number of
     // writes done. As such, do endian conversion here.
     for (unsigned I = 0; I != VSize; ++I) {

@@ -27,6 +27,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 #include "llvm/Support/SHA1.h"
+#include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
 #include <climits>
 
@@ -135,11 +136,14 @@ StringRef getOutputSectionName(const InputSectionBase *s) {
 }
 
 static bool needsInterpSection() {
-  return !config->shared && !config->dynamicLinker.empty() &&
-         script->needsInterpSection();
+  return !config->relocatable && !config->shared &&
+         !config->dynamicLinker.empty() && script->needsInterpSection();
 }
 
-template <class ELFT> void writeResult() { Writer<ELFT>().run(); }
+template <class ELFT> void writeResult() {
+  llvm::TimeTraceScope timeScope("Write output file");
+  Writer<ELFT>().run();
+}
 
 static void removeEmptyPTLoad(std::vector<PhdrEntry *> &phdrs) {
   llvm::erase_if(phdrs, [&](const PhdrEntry *p) {
@@ -514,6 +518,12 @@ template <class ELFT> void createSyntheticSections() {
       config->androidPackDynRelocs ? in.relaPlt->name : relaDynName,
       /*sort=*/false);
   add(in.relaIplt);
+
+  if ((config->emachine == EM_386 || config->emachine == EM_X86_64) &&
+      (config->andFeatures & GNU_PROPERTY_X86_FEATURE_1_IBT)) {
+    in.ibtPlt = make<IBTPltSection>();
+    add(in.ibtPlt);
+  }
 
   in.plt = make<PltSection>();
   add(in.plt);
@@ -1410,8 +1420,14 @@ template <class ELFT> void Writer<ELFT>::sortSections() {
         llvm::find_if(script->sectionCommands, isSection),
         llvm::find_if(llvm::reverse(script->sectionCommands), isSection).base(),
         compareSections);
+
+    // Process INSERT commands. From this point onwards the order of
+    // script->sectionCommands is fixed.
+    script->processInsertCommands();
     return;
   }
+
+  script->processInsertCommands();
 
   // Orphan sections are sections present in the input files which are
   // not explicitly placed into the output file by the linker script.
@@ -2100,12 +2116,11 @@ std::vector<PhdrEntry *> Writer<ELFT>::createPhdrs(Partition &part) {
     // time, we don't want to create a separate load segment for the headers,
     // even if the first output section has an AT or AT> attribute.
     uint64_t newFlags = computeFlags(sec->getPhdrFlags());
-    if (!load ||
-        ((sec->lmaExpr ||
-          (sec->lmaRegion && (sec->lmaRegion != load->firstSec->lmaRegion))) &&
-         load->lastSec != Out::programHeaders) ||
-        sec->memRegion != load->firstSec->memRegion || flags != newFlags ||
-        sec == relroEnd) {
+    bool sameLMARegion =
+        load && !sec->lmaExpr && sec->lmaRegion == load->firstSec->lmaRegion;
+    if (!(load && newFlags == flags && sec != relroEnd &&
+          sec->memRegion == load->firstSec->memRegion &&
+          (sameLMARegion || load->lastSec == Out::programHeaders))) {
       load = addHdr(PT_LOAD, newFlags);
       flags = newFlags;
     }

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_PluginManager_h_
-#define liblldb_PluginManager_h_
+#ifndef LLDB_CORE_PLUGINMANAGER_H
+#define LLDB_CORE_PLUGINMANAGER_H
 
 #include "lldb/Core/Architecture.h"
 #include "lldb/Symbol/TypeSystem.h"
@@ -21,6 +21,25 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#define LLDB_PLUGIN_DEFINE_ADV(ClassName, PluginName)                          \
+  namespace lldb_private {                                                     \
+  void lldb_initialize_##PluginName() { ClassName::Initialize(); }             \
+  void lldb_terminate_##PluginName() { ClassName::Terminate(); }               \
+  }
+
+#define LLDB_PLUGIN_DEFINE(PluginName)                                         \
+  LLDB_PLUGIN_DEFINE_ADV(PluginName, PluginName)
+
+// FIXME: Generate me with CMake
+#define LLDB_PLUGIN_DECLARE(PluginName)                                        \
+  namespace lldb_private {                                                     \
+  extern void lldb_initialize_##PluginName();                                  \
+  extern void lldb_terminate_##PluginName();                                   \
+  }
+
+#define LLDB_PLUGIN_INITIALIZE(PluginName) lldb_initialize_##PluginName()
+#define LLDB_PLUGIN_TERMINATE(PluginName) lldb_terminate_##PluginName()
 
 namespace lldb_private {
 class CommandInterpreter;
@@ -42,15 +61,13 @@ public:
 
   static ABICreateInstance GetABICreateCallbackAtIndex(uint32_t idx);
 
-  static ABICreateInstance
-  GetABICreateCallbackForPluginName(ConstString name);
+  static ABICreateInstance GetABICreateCallbackForPluginName(ConstString name);
 
   // Architecture
   using ArchitectureCreateInstance =
       std::unique_ptr<Architecture> (*)(const ArchSpec &);
 
-  static void RegisterPlugin(ConstString name,
-                             llvm::StringRef description,
+  static void RegisterPlugin(ConstString name, llvm::StringRef description,
                              ArchitectureCreateInstance create_callback);
 
   static void UnregisterPlugin(ArchitectureCreateInstance create_callback);
@@ -478,4 +495,4 @@ public:
 
 } // namespace lldb_private
 
-#endif // liblldb_PluginManager_h_
+#endif // LLDB_CORE_PLUGINMANAGER_H

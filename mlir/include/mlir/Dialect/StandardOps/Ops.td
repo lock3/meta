@@ -1,6 +1,6 @@
 //===- Ops.td - Standard operation definitions -------------*- tablegen -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -192,7 +192,7 @@ def AllocOp : Std_Op<"alloc"> {
   let extraClassDeclaration = [{
     static StringRef getAlignmentAttrName() { return "alignment"; }
 
-    MemRefType getType() { return getResult()->getType().cast<MemRefType>(); }
+    MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
 
     /// Returns the number of symbolic operands (the ones in square brackets),
     /// which bind to the symbols of the memref's layout map.
@@ -304,6 +304,10 @@ def CallOp : Std_Op<"call", [CallOpInterface]> {
       return getAttrOfType<SymbolRefAttr>("callee");
     }
   }];
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
 }
 
 def CallIndirectOp : Std_Op<"call_indirect", [CallOpInterface]> {
@@ -325,7 +329,7 @@ def CallIndirectOp : Std_Op<"call_indirect", [CallOpInterface]> {
     "ValueRange operands = {}", [{
       result.operands.push_back(callee);
       result.addOperands(operands);
-      result.addTypes(callee->getType().cast<FunctionType>().getResults());
+      result.addTypes(callee.getType().cast<FunctionType>().getResults());
   }]>];
 
   let extraClassDeclaration = [{
@@ -651,6 +655,7 @@ def DeallocOp : Std_Op<"dealloc"> {
 
   let hasCanonicalizer = 1;
   let hasFolder = 1;
+  let assemblyFormat = "$memref attr-dict `:` type($memref)";
 }
 
 def DimOp : Std_Op<"dim", [NoSideEffect]> {
@@ -723,7 +728,7 @@ def ExtractElementOp : Std_Op<"extract_element", [NoSideEffect]> {
   let builders = [OpBuilder<
     "Builder *builder, OperationState &result, Value aggregate,"
     "ValueRange indices = {}", [{
-      auto resType = aggregate->getType().cast<ShapedType>()
+      auto resType = aggregate.getType().cast<ShapedType>()
                                          .getElementType();
       build(builder, result, resType, aggregate, indices);
     }]>];
@@ -753,7 +758,7 @@ def IndexCastOp : CastOp<"index_cast">, Arguments<(ins AnyType:$in)> {
     static bool areCastCompatible(Type a, Type b);
   }];
 
-  let hasFolder = 0;
+  let hasFolder = 1;
 }
 
 def FPExtOp : CastOp<"fpext">, Arguments<(ins AnyType:$in)> {
@@ -809,7 +814,7 @@ def LoadOp : Std_Op<"load"> {
   let builders = [OpBuilder<
     "Builder *, OperationState &result, Value memref,"
     "ValueRange indices = {}", [{
-      auto memrefType = memref->getType().cast<MemRefType>();
+      auto memrefType = memref.getType().cast<MemRefType>();
       result.addOperands(memref);
       result.addOperands(indices);
       result.types.push_back(memrefType.getElementType());
@@ -819,7 +824,7 @@ def LoadOp : Std_Op<"load"> {
     Value getMemRef() { return getOperand(0); }
     void setMemRef(Value value) { setOperand(0, value); }
     MemRefType getMemRefType() {
-      return getMemRef()->getType().cast<MemRefType>();
+      return getMemRef().getType().cast<MemRefType>();
     }
 
     operand_range getIndices() { return {operand_begin() + 1, operand_end()}; }
@@ -890,7 +895,7 @@ def MemRefCastOp : CastOp<"memref_cast"> {
     static bool areCastCompatible(Type a, Type b);
 
     /// The result of a memref_cast is always a memref.
-    Type getType() { return getResult()->getType(); }
+    Type getType() { return getResult().getType(); }
   }];
 }
 
@@ -958,7 +963,7 @@ def PrefetchOp : Std_Op<"prefetch"> {
 
   let extraClassDeclaration = [{
     MemRefType getMemRefType() {
-      return memref()->getType().cast<MemRefType>();
+      return memref().getType().cast<MemRefType>();
     }
     static StringRef getLocalityHintAttrName() { return "localityHint"; }
     static StringRef getIsWriteAttrName() { return "isWrite"; }
@@ -987,6 +992,7 @@ def RankOp : Std_Op<"rank", [NoSideEffect]> {
     }]>];
 
   let hasFolder = 1;
+  let assemblyFormat = "operands attr-dict `:` type(operands)";
 }
 
 def RemFOp : FloatArithmeticOp<"remf"> {
@@ -1046,7 +1052,7 @@ def SelectOp : Std_Op<"select", [NoSideEffect, SameOperandsAndResultShape]> {
     "Builder *builder, OperationState &result, Value condition,"
     "Value trueValue, Value falseValue", [{
       result.addOperands({condition, trueValue, falseValue});
-      result.addTypes(trueValue->getType());
+      result.addTypes(trueValue.getType());
   }]>];
 
   let extraClassDeclaration = [{
@@ -1215,7 +1221,7 @@ def StoreOp : Std_Op<"store"> {
       Value getMemRef() { return getOperand(1); }
       void setMemRef(Value value) { setOperand(1, value); }
       MemRefType getMemRefType() {
-        return getMemRef()->getType().cast<MemRefType>();
+        return getMemRef().getType().cast<MemRefType>();
       }
 
       operand_range getIndices() {
@@ -1367,11 +1373,11 @@ def SubViewOp : Std_Op<"subview", [AttrSizedOperandSegments, NoSideEffect]> {
   let extraClassDeclaration = [{
     /// Returns the type of the base memref operand.
     MemRefType getBaseMemRefType() {
-      return source()->getType().cast<MemRefType>();
+      return source().getType().cast<MemRefType>();
     }
 
     /// The result of a subview is always a memref.
-    MemRefType getType() { return getResult()->getType().cast<MemRefType>(); }
+    MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
 
     /// Returns as integer value the number of offset operands.
     int64_t getNumOffsets() { return llvm::size(offsets()); }
@@ -1400,6 +1406,16 @@ def SubViewOp : Std_Op<"subview", [AttrSizedOperandSegments, NoSideEffect]> {
   }];
 
   let hasCanonicalizer = 1;
+}
+
+def SqrtOp : FloatUnaryOp<"sqrt"> {
+  let summary = "sqrt of the specified value";
+  let description = [{
+    The `sqrt` operation computes the square root. It takes one operand and
+    returns one result of the same type. This type may be a float scalar type, a
+    vector whose element type is float, or a tensor of floats. It has no standard
+    attributes.
+  }];
 }
 
 def TanhOp : FloatUnaryOp<"tanh"> {
@@ -1434,7 +1450,7 @@ def TensorCastOp : CastOp<"tensor_cast"> {
     static bool areCastCompatible(Type a, Type b);
 
     /// The result of a tensor_cast is always a tensor.
-    TensorType getType() { return getResult()->getType().cast<TensorType>(); }
+    TensorType getType() { return getResult().getType().cast<TensorType>(); }
   }];
 }
 
@@ -1457,7 +1473,7 @@ def TensorLoadOp : Std_Op<"tensor_load",
 
   let builders = [OpBuilder<
     "Builder *builder, OperationState &result, Value memref", [{
-      auto memrefType = memref->getType().cast<MemRefType>();
+      auto memrefType = memref.getType().cast<MemRefType>();
       auto resultType = RankedTensorType::get(memrefType.getShape(),
                                               memrefType.getElementType());
       result.addOperands(memref);
@@ -1467,7 +1483,7 @@ def TensorLoadOp : Std_Op<"tensor_load",
 
   let extraClassDeclaration = [{
     /// The result of a tensor_load is always a tensor.
-    TensorType getType() { return getResult()->getType().cast<TensorType>(); }
+    TensorType getType() { return getResult().getType().cast<TensorType>(); }
   }];
 }
 
@@ -1565,7 +1581,7 @@ def ViewOp : Std_Op<"view", [NoSideEffect]> {
 
   let extraClassDeclaration = [{
     /// The result of a view is always a memref.
-    MemRefType getType() { return getResult()->getType().cast<MemRefType>(); }
+    MemRefType getType() { return getResult().getType().cast<MemRefType>(); }
 
     /// Returns the dynamic offset for this view operation if specified.
     /// Returns nullptr if no dynamic offset was specified.

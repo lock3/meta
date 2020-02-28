@@ -323,6 +323,20 @@ void UnwrappedLineParser::parseFile() {
   addUnwrappedLine();
 }
 
+void UnwrappedLineParser::parseCSharpAttribute() {
+  do {
+    switch (FormatTok->Tok.getKind()) {
+    case tok::r_square:
+      nextToken();
+      addUnwrappedLine();
+      return;
+    default:
+      nextToken();
+      break;
+    }
+  } while (!eof());
+}
+
 void UnwrappedLineParser::parseLevel(bool HasOpeningBrace) {
   bool SwitchLabelEncountered = false;
   do {
@@ -381,6 +395,13 @@ void UnwrappedLineParser::parseLevel(bool HasOpeningBrace) {
       SwitchLabelEncountered = true;
       parseStructuralElement();
       break;
+    case tok::l_square:
+      if (Style.isCSharp()) {
+        nextToken();
+        parseCSharpAttribute();
+        break;
+      }
+      LLVM_FALLTHROUGH;
     default:
       parseStructuralElement();
       break;
@@ -1011,13 +1032,22 @@ void UnwrappedLineParser::parseStructuralElement() {
       parseAccessSpecifier();
     return;
   case tok::kw_if:
+    if (Style.Language == FormatStyle::LK_JavaScript && Line->MustBeDeclaration)
+      // field/method declaration.
+      break;
     parseIfThenElse();
     return;
   case tok::kw_for:
   case tok::kw_while:
+    if (Style.Language == FormatStyle::LK_JavaScript && Line->MustBeDeclaration)
+      // field/method declaration.
+      break;
     parseForOrWhileLoop();
     return;
   case tok::kw_do:
+    if (Style.Language == FormatStyle::LK_JavaScript && Line->MustBeDeclaration)
+      // field/method declaration.
+      break;
     parseDoWhile();
     return;
   case tok::kw_switch:
@@ -1045,6 +1075,9 @@ void UnwrappedLineParser::parseStructuralElement() {
     return;
   case tok::kw_try:
   case tok::kw___try:
+    if (Style.Language == FormatStyle::LK_JavaScript && Line->MustBeDeclaration)
+      // field/method declaration.
+      break;
     parseTryCatch();
     return;
   case tok::kw_extern:
@@ -1290,6 +1323,12 @@ void UnwrappedLineParser::parseStructuralElement() {
       // element continues.
       break;
     case tok::kw_try:
+      if (Style.Language == FormatStyle::LK_JavaScript &&
+          Line->MustBeDeclaration) {
+        // field/method declaration.
+        nextToken();
+        break;
+      }
       // We arrive here when parsing function-try blocks.
       if (Style.BraceWrapping.AfterFunction)
         addUnwrappedLine();
@@ -1985,7 +2024,8 @@ void UnwrappedLineParser::parseLabel(bool LeftAlignLabel) {
     --Line->Level;
   if (LeftAlignLabel)
     Line->Level = 0;
-  if (CommentsBeforeNextToken.empty() && FormatTok->Tok.is(tok::l_brace)) {
+  if (!Style.IndentCaseBlocks && CommentsBeforeNextToken.empty() &&
+      FormatTok->Tok.is(tok::l_brace)) {
     CompoundStatementIndenter Indenter(this, Line->Level,
                                        Style.BraceWrapping.AfterCaseLabel,
                                        Style.BraceWrapping.IndentBraces);

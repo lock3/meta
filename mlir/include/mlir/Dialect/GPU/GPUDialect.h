@@ -1,6 +1,6 @@
 //===- GPUDialect.h - MLIR Dialect for GPU Kernels --------------*- C++ -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -52,6 +52,11 @@ public:
   /// Returns whether the given function is a kernel function, i.e., has the
   /// 'gpu.kernel' attribute.
   static bool isKernel(Operation *op);
+
+  /// Returns the number of workgroup (thread, block) dimensions supported in
+  /// the GPU dialect.
+  // TODO(zinenko,herhut): consider generalizing this.
+  static unsigned getNumWorkgroupDimensions() { return 3; }
 
   /// Returns the numeric value used to identify the workgroup memory address
   /// space.

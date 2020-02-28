@@ -58,6 +58,8 @@ CMake configuration error.
 +-------------------+------------------------------------------------------+--------------------------+
 | LZMA              | Lossless data compression                            | ``LLDB_ENABLE_LZMA``     |
 +-------------------+------------------------------------------------------+--------------------------+
+| Libxml2           | XML                                                  | ``LLDB_ENABLE_LIBXML2``  |
++-------------------+------------------------------------------------------+--------------------------+
 | Python            | Python scripting                                     | ``LLDB_ENABLE_PYTHON``   |
 +-------------------+------------------------------------------------------+--------------------------+
 | Lua               | Lua scripting                                        | ``LLDB_ENABLE_LUA``      |
@@ -283,14 +285,6 @@ project, and use F5 to run it. You need only edit the project settings to set
 the executable and the working directory to point to binaries inside of the
 ninja tree.
 
-
-NetBSD
-^^^^^^
-
-Current stable NetBSD release doesn't ship with libpanel(3), therefore it's
-required to disable curses(3) support with the
-``-DLLDB_ENABLE_CURSES:BOOL=FALSE`` option. To make sure check if
-``/usr/include/panel.h`` exists in your system.
 
 macOS
 ^^^^^
