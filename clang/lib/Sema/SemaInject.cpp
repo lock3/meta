@@ -359,7 +359,25 @@ public:
       const TypedValue &TV = Iter->second;
       Expr *Opaque = new (getContext()) OpaqueValueExpr(
           E->getLocation(), TV.Type, VK_RValue, OK_Ordinary, E);
-      return new (getContext()) CXXConstantExpr(Opaque, TV.Value);
+      auto *CE = ConstantExpr::Create(getContext(), Opaque, TV.Value);
+
+      // Override dependence.
+      //
+      // By passing the DeclRefExpr onto OpaqueValueExpr we inherit
+      // its dependence flags, and that is then inherited by the ConstantExpr.
+      // Rather than causing conflict with upstream and changing
+      // semantics of OpaqueValueExpr
+      // (to allow us to traffic the DeclRefExpr for diagnostics),
+      // override this behavior for the ConstantExpr.
+      //
+      // This is fine as we should only be using the ConstantExpr's value
+      // rather than the expression which created it.
+
+      CE->setTypeDependent(false);
+      CE->setValueDependent(false);
+      CE->setInstantiationDependent(false);
+
+      return CE;
     } else {
       return nullptr;
     }
