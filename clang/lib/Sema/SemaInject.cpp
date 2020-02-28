@@ -834,6 +834,9 @@ static ParmVarDecl *GetReflectedPVD(const Reflection &R) {
 bool InjectionContext::ExpandInjectedParameter(
                                         const CXXInjectedParmsInfo &Injected,
                                         SmallVectorImpl<ParmVarDecl *> &Parms) {
+  EnterExpressionEvaluationContext EvalContext(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
   ExprResult TransformedOperand = getDerived().TransformExpr(
                                                             Injected.Operand);
   if (TransformedOperand.isInvalid())
@@ -3155,6 +3158,11 @@ CXXFragmentDecl *Sema::ActOnFinishCXXFragment(Scope *S, Decl *Fragment,
 /// Builds a new fragment expression.
 ExprResult Sema::ActOnCXXFragmentExpr(SourceLocation Loc, Decl *Fragment,
                                       SmallVectorImpl<Expr *> &Captures) {
+  if (!isConstantEvaluated()) {
+    Diag(Loc, diag::err_requires_manifest_constevaluation) << 1;
+    return ExprError();
+  }
+
   return BuildCXXFragmentExpr(Loc, Fragment, Captures);
 }
 
@@ -3180,6 +3188,9 @@ CXXFragmentExpr *SynthesizeFragmentExpr(Sema &S,
                                         CXXFragmentDecl *FD,
                                         CXXReflectExpr *Reflection,
                                         SmallVectorImpl<Expr *> &Captures) {
+  assert(S.isConstantEvaluated() &&
+         "Fragments should only appear in constant evaluated contexts");
+
   ASTContext &Context = S.Context;
   DeclContext *CurContext = S.CurContext;
 
@@ -3428,9 +3439,8 @@ CheckInjectionOperand(Sema &S, Expr *Operand) {
 StmtResult Sema::BuildCXXInjectionStmt(SourceLocation Loc,
                            const CXXInjectionContextSpecifier &ContextSpecifier,
                                        Expr *Operand) {
-  // An injection stmt can only appear in constexpr contexts
-  if (!CurContext->isConstexprContext()) {
-    Diag(Loc, diag::err_injection_stmt_constexpr);
+  if (!isConstantEvaluated()) {
+    Diag(Loc, diag::err_requires_manifest_constevaluation) << 2;
     return StmtError();
   }
 

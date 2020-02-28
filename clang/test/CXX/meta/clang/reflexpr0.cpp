@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1z -freflection %s
+// RUN: %clang_cc1 -std=c++2a -freflection %s
 
 #include "reflection_query.h"
 
@@ -141,19 +141,19 @@ constexpr int test() {
 }
 
 template<typename T>
-constexpr int type_template() {
+consteval int type_template() {
   auto r = reflexpr(T);
   return 0;
 }
 
 template<int N>
-constexpr int nontype_template() {
+consteval int nontype_template() {
   auto r = reflexpr(N);
   return 0;
 }
 
 template<template<typename> class X>
-constexpr int template_template() {
+consteval int template_template() {
   auto r = reflexpr(X);
   return 0;
 }

@@ -1898,9 +1898,6 @@ public:
   /// template parameter.
   bool isDependentContext() const;
 
-  /// Determine whether this context is a constexpr context.
-  bool isConstexprContext() const;
-
   /// isTransparentContext - Determines whether this context is a
   /// "transparent" context, meaning that the members declared in this
   /// context are semantically declared in the nearest enclosing

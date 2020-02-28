@@ -46,7 +46,7 @@ namespace OkDependent {
 struct product{};
 
 template<typename T>
-constexpr int test() {
+consteval int test() {
   auto x = reflexpr(T);
   return 0;
 }

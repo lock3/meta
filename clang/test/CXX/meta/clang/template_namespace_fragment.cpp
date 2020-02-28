@@ -3,7 +3,7 @@
 #define assert(E) if (!(E)) __builtin_abort();
 
 template<int val>
-constexpr auto thing() {
+consteval auto thing() {
   return __fragment namespace {
     requires typename R;
 

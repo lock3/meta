@@ -1164,16 +1164,6 @@ bool DeclContext::isDependentContext() const {
   return getParent() && getParent()->isDependentContext();
 }
 
-bool DeclContext::isConstexprContext() const {
-  const DeclContext *DC = this;
-  do {
-    if (auto *FD = dyn_cast<FunctionDecl>(DC))
-      return FD->isConstexpr();
-    DC = DC->getParent();
-  } while (DC);
-  return false;
-}
-
 bool DeclContext::isTransparentContext() const {
   if (getDeclKind() == Decl::Enum)
     return !cast<EnumDecl>(this)->isScoped();

@@ -12855,10 +12855,9 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     }
   }
 
-  bool isConstexprContext = var->isConstexpr()
-                         || var->getDeclContext()->isConstexprContext();
+  bool isConstexprContext = var->isConstexpr() || isConstantEvaluated();
   if (!isConstexprContext && type->isMetaType()) {
-    Diag(var->getLocation(), diag::err_meta_type_constexpr);
+    Diag(var->getLocation(), diag::err_requires_manifest_constevaluation) << 0;
     var->setInvalidDecl();
     return;
   }

@@ -6876,8 +6876,14 @@ public:
     return Error(E);
   }
 
-  bool VisitConstantExpr(const ConstantExpr *E)
-    { return StmtVisitorTy::Visit(E->getSubExpr()); }
+  bool VisitConstantExpr(const ConstantExpr *E) {
+    APValue Result = E->getAPValueResult();
+    if (Result.hasValue())
+      return DerivedSuccess(Result, E);
+
+    return StmtVisitorTy::Visit(E->getSubExpr());
+  }
+
   bool VisitParenExpr(const ParenExpr *E)
     { return StmtVisitorTy::Visit(E->getSubExpr()); }
   bool VisitUnaryExtension(const UnaryOperator *E)
@@ -7748,6 +7754,14 @@ public:
   bool Success(const APValue &V, const Expr *E) {
     Result.setFrom(this->Info.ASTCtx, V);
     return true;
+  }
+
+  bool VisitConstantExpr(const ConstantExpr *E) {
+    APValue Result = E->getAPValueResult();
+    if (Result.hasValue() && Result.isLValue())
+      return Success(Result, E);
+
+    return ExprEvaluatorBaseTy::Visit(E->getSubExpr());
   }
 
   bool VisitMemberExpr(const MemberExpr *E) {

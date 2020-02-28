@@ -15361,12 +15361,20 @@ void Sema::CheckUnusedVolatileAssignment(Expr *E) {
   }
 }
 
+// Check to see if this expression is part of a decltype specifier.
+// We're not interested in evaluating this expression, immediately or otherwise.
+static bool isInDeclType(Sema &SemaRef) {
+  return SemaRef.ExprEvalContexts.back().ExprContext ==
+    Sema::ExpressionEvaluationContextRecord::EK_Decltype;
+}
+
 ExprResult Sema::CheckForImmediateInvocation(ExprResult E, FunctionDecl *Decl) {
   // FIXME: Added `E.get()->isValueDependent()` to handle expansion statements.
   // It seems like this should fall out of the implementation. i.e. this is
   // likely an issue with expansion statements.
   if (!E.isUsable() || !Decl || !Decl->isConsteval() || isConstantEvaluated() ||
-      E.get()->isValueDependent() || RebuildingImmediateInvocation)
+      isInDeclType(*this) || E.get()->isValueDependent() ||
+      RebuildingImmediateInvocation)
     return E;
 
   /// Opportunistically remove the callee from ReferencesToConsteval if we can.
@@ -15528,11 +15536,12 @@ HandleImmediateInvocations(Sema &SemaRef,
 }
 
 void Sema::PopExpressionEvaluationContext() {
+  using ExpressionKind = ExpressionEvaluationContextRecord::ExpressionKind;
+
   ExpressionEvaluationContextRecord& Rec = ExprEvalContexts.back();
   unsigned NumTypos = Rec.NumTypos;
 
   if (!Rec.Lambdas.empty()) {
-    using ExpressionKind = ExpressionEvaluationContextRecord::ExpressionKind;
     if (Rec.ExprContext == ExpressionKind::EK_TemplateArgument || Rec.isUnevaluated() ||
         (Rec.isConstantEvaluated() && !getLangOpts().CPlusPlus17)) {
       unsigned D;
@@ -15573,7 +15582,16 @@ void Sema::PopExpressionEvaluationContext() {
   // temporaries that we may have created as part of the evaluation of
   // the expression in that context: they aren't relevant because they
   // will never be constructed.
-  if (Rec.isUnevaluated() || Rec.isConstantEvaluated()) {
+  //
+  // FIXME: The condition Rec.ExprContext != EK_ConstexprVarInit
+  // has been added as a stop gap fix. After adding a ConstEvaluated
+  // context to constexpr variable initializers, an issue manifests here
+  // where the cleanups are dropped prior to VarDecl::evaluateValue, which
+  // subsequently requires them. This has been done as a temporary workaround
+  // as it was not obvious how to produce.
+  if (Rec.isUnevaluated() ||
+      (Rec.isConstantEvaluated() &&
+       Rec.ExprContext != ExpressionKind::EK_ConstexprVarInit)) {
     ExprCleanupObjects.erase(ExprCleanupObjects.begin() + Rec.NumCleanupObjects,
                              ExprCleanupObjects.end());
     Cleanup = Rec.ParentCleanup;

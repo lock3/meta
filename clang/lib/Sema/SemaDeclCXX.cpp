@@ -16873,6 +16873,19 @@ void Sema::ActOnPureSpecifier(Decl *D, SourceLocation ZeroLoc) {
     Diag(D->getLocation(), diag::err_illegal_initializer);
 }
 
+/// Determine whether the given declaration is a variable
+/// which will be manifestly constant evaluated due to
+/// a constexpr specifier.
+static bool isManifestlyEvaluatedVar(Sema &SemaRef, const Decl *D) {
+  if (!SemaRef.getLangOpts().CPlusPlus2a)
+    return false;
+
+  if (const VarDecl *Var = dyn_cast_or_null<VarDecl>(D))
+    return Var->isConstexpr();
+
+  return false;
+}
+
 /// Determine whether the given declaration is a global variable or
 /// static data member.
 static bool isNonlocalVariable(const Decl *D) {
@@ -16904,7 +16917,12 @@ void Sema::ActOnCXXEnterDeclInitializer(Scope *S, Decl *D) {
   // If we are parsing the initializer for a static data member, push a
   // new expression evaluation context that is associated with this static
   // data member.
-  if (isNonlocalVariable(D))
+  if (isManifestlyEvaluatedVar(*this, D)) {
+    using ExpressionKind = ExpressionEvaluationContextRecord::ExpressionKind;
+
+    PushExpressionEvaluationContext(
+        ExpressionEvaluationContext::ConstantEvaluated, D, ExpressionKind::EK_ConstexprVarInit);
+  } else if (isNonlocalVariable(D))
     PushExpressionEvaluationContext(
         ExpressionEvaluationContext::PotentiallyEvaluated, D);
 }
@@ -16915,7 +16933,7 @@ void Sema::ActOnCXXExitDeclInitializer(Scope *S, Decl *D) {
   if (!D || D->isInvalidDecl())
     return;
 
-  if (isNonlocalVariable(D))
+  if (isManifestlyEvaluatedVar(*this, D) || isNonlocalVariable(D))
     PopExpressionEvaluationContext();
 
   if (S && D->isOutOfLine())

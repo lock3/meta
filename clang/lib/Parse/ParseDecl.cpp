@@ -2278,6 +2278,7 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
           P.EnterScope(0);
           S = P.getCurScope();
         }
+
         P.Actions.ActOnCXXEnterDeclInitializer(S, ThisDecl);
       }
     }
@@ -2383,6 +2384,7 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
       }
 
       PreferredType.enterVariableInit(Tok.getLocation(), ThisDecl);
+
       ExprResult Init = ParseInitializer();
 
       // If this is the only decl in (possibly) range based for statement,

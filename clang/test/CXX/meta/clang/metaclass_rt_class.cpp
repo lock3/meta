@@ -73,7 +73,7 @@ consteval void gen_void_fn(info fn) {
   };
 }
 
-constexpr void gen_non_void_fn(info fn) {
+consteval void gen_non_void_fn(info fn) {
   info ret_type = return_type_of(fn);
   meta::range params(fn);
   -> __fragment struct {
@@ -84,7 +84,7 @@ constexpr void gen_non_void_fn(info fn) {
   };
 }
 
-constexpr void rt_class(info proto) {
+consteval void rt_class(info proto) {
   // Create the implementation class.
   -> __fragment class {
     class impl_type {

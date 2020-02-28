@@ -3,7 +3,7 @@
 #include "reflection_query.h"
 #include "reflection_iterator.h"
 
-constexpr void dupe(meta::info source) {
+consteval void dupe(meta::info source) {
   for (meta::info mem : meta::range(source)) {
     -> mem;
   };

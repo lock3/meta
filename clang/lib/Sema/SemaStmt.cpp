@@ -3093,6 +3093,9 @@ ExpansionStatementBuilder::Build()
     return StmtError();
   FinishRangeVar();
 
+  EnterExpressionEvaluationContext Ctx(
+      SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+
   // The order in which we determine the expansion style must follow
   // the order in which structured bindings proceeds. That is:
   //

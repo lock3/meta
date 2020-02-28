@@ -1149,8 +1149,12 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   // statements following block literals with non-trivial cleanups.
   RunCleanupsScope cleanupScope(*this);
   if (const FullExpr *fe = dyn_cast_or_null<FullExpr>(RV)) {
-    enterFullExpression(fe);
-    RV = fe->getSubExpr();
+    // Constant expressions derive from full expr, though should
+    // not be treated as such.
+    if (!isa<ConstantExpr>(fe)) {
+      enterFullExpression(fe);
+      RV = fe->getSubExpr();
+    }
   }
 
   // FIXME: Clean this up by using an LValue for ReturnTemp,

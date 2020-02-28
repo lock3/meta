@@ -12615,7 +12615,7 @@ TreeTransform<Derived>::TransformCXXConstructExpr(CXXConstructExpr *E) {
   // CXXTemporaryObjectExpr are always implicit, so when we have
   // a 1-argument construction we just transform that argument.
   if ((E->getNumArgs() == 1 ||
-       (E->getNumArgs() > 1 && getDerived().DropCallArgument(E->getArg(1)))) &&
+      (E->getNumArgs() > 1 && getDerived().DropCallArgument(E->getArg(1)))) &&
       (!getDerived().DropCallArgument(E->getArg(0))) &&
       !E->isListInitialization())
     return getDerived().TransformExpr(E->getArg(0));
@@ -13052,6 +13052,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
   // FIXME: Sema's lambda-building mechanism expects us to push an expression
   // evaluation context even if we're not transforming the function body.
   getSema().PushExpressionEvaluationContext(
+      E->getCallOperator()->getConstexprKind() ?
+      Sema::ExpressionEvaluationContext::ConstantEvaluated :
       Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
   // Instantiate the body of the lambda expression.
