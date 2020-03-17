@@ -1297,8 +1297,7 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   case Expr::ConstantExprClass: {
     const ConstantExpr *CE = cast<ConstantExpr>(E);
 
-    APValue Result = CE->getAPValueResult();
-    if (Result.hasValue()) {
+    if (CE->hasAPValueResult()) {
       QualType T = getContext().getPointerType(CE->getType());
       llvm::Constant *C = EmitConstantValue(CE->getAPValueResult(), T);
       ConstantAddress Addr(C, getContext().getTypeAlignInChars(T));

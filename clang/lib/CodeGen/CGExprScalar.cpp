@@ -433,11 +433,9 @@ public:
   Value *VisitExpr(Expr *S);
 
   Value *VisitConstantExpr(ConstantExpr *E) {
-    APValue Result = E->getAPValueResult();
-
-    if (Result.hasValue()) {
+    if (E->hasAPValueResult()) {
       assert(!E->getType()->isVoidType());
-      return CGF.EmitConstantValue(Result, E->getType());
+      return CGF.EmitConstantValue(E->getAPValueResult(), E->getType());
     } else {
       return Visit(E->getSubExpr());
     }
