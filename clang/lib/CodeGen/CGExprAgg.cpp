@@ -126,7 +126,17 @@ public:
   }
 
   void VisitConstantExpr(ConstantExpr *E) {
-    return Visit(E->getSubExpr());
+    if (E->hasAPValueResult()) {
+      // Create a temporary for the value and store the constant.
+      llvm::Constant *Const = ConstantEmitter(CGF).emitAbstract(
+          E->getLocation(), E->getAPValueResult(), E->getType());
+      Address Addr = CGF.CreateMemTemp(E->getType());
+      CGF.InitTempAlloca(Addr, Const);
+      RValue RV = RValue::getAggregate(Addr);
+      EmitFinalDestCopy(E->getType(), RV);
+    } else {
+      Visit(E->getSubExpr());
+    }
   }
 
   // l-values.

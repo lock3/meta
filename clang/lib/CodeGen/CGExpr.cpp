@@ -1292,8 +1292,20 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitVAArgExprLValue(cast<VAArgExpr>(E));
   case Expr::DeclRefExprClass:
     return EmitDeclRefLValue(cast<DeclRefExpr>(E));
-  case Expr::ConstantExprClass:
-    return EmitLValue(cast<ConstantExpr>(E)->getSubExpr());
+  case Expr::ConstantExprClass: {
+    const ConstantExpr *CE = cast<ConstantExpr>(E);
+
+    if (CE->hasAPValueResult()) {
+      QualType T = getContext().getPointerType(CE->getType());
+      llvm::Constant *C = ConstantEmitter(*this).emitAbstract(
+          CE->getLocation(), CE->getAPValueResult(), T);
+      ConstantAddress Addr(C, getContext().getTypeAlignInChars(T));
+      LValueBaseInfo BI;
+      return LValue::MakeAddr(Addr, T, getContext(), BI, TBAAAccessInfo());
+    }
+
+    return EmitLValue(CE->getSubExpr());
+  }
   case Expr::ParenExprClass:
     return EmitLValue(cast<ParenExpr>(E)->getSubExpr());
   case Expr::GenericSelectionExprClass:
