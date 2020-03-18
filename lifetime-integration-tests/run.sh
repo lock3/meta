@@ -22,12 +22,12 @@ function test_libstdcpp() {
   if [[ ! -d $INSTALL_DIR ]]; then
     mkdir -p gcc
     cd gcc
-    FILE=gcc-$1_$2_$3-release
-    wget -N https://github.com/gcc-mirror/gcc/archive/$FILE.tar.gz
+    FILE=gcc-$1.$2.$3
+    wget -N https://github.com/gcc-mirror/gcc/archive/releases/$FILE.tar.gz
     test -d gcc-$FILE || tar -xzf $FILE.tar.gz
     mkdir -p build-$FILE
     cd build-$FILE
-    test -f Makefile || CC=gcc CXX=g++ ../gcc-$FILE/libstdc++-v3/configure --disable-multilib --disable-nls --prefix=`pwd`/../../install-libstdc++
+    test -f Makefile || CC=gcc CXX=g++ ../gcc-releases-$FILE/libstdc++-v3/configure --disable-multilib --disable-nls --prefix=`pwd`/../../install-libstdc++
     make install-data
     cd ..
     cd ..
