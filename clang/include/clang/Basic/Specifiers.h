@@ -316,6 +316,17 @@ namespace clang {
     SD_Dynamic         ///< Dynamic storage duration.
   };
 
+  /// Parameter passing kinds.
+  enum ParameterPassingKind
+  {
+    PPK_unspecified,
+    PPK_in,
+    PPK_out,
+    PPK_inout,
+    PPK_forward,
+    PPK_move,
+  };
+
   /// Describes the nullability of a particular type.
   enum class NullabilityKind : uint8_t {
     /// Values of this type can never be null.

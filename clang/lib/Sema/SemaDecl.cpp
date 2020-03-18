@@ -13448,10 +13448,23 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
   return DNI;
 }
 
+static QualType CheckParameterPassingMode(Sema &SemaRef, ParameterPassingKind PPK,
+                                      TypeSourceInfo *TSI) {
+  // FIXME: Check for bad combinations of type specifiers with parameter
+  // passing modes (e.g., cv-qualifiers, reference qualfiers, etc).
+
+  // TODO: Adjust the type of the parameter based on the parameter passing mode.
+
+  return TSI->getType();
+}
+
 /// ActOnParamDeclarator - Called from Parser::ParseFunctionDeclarator()
 /// to introduce parameters into function prototype scope.
 Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   const DeclSpec &DS = D.getDeclSpec();
+
+  // Check for a parameter passing specifier
+  ParameterPassingKind PPK = DS.getParameterPassingSpecifier();
 
   // Verify C99 6.7.5.3p2: The only SCS allowed is 'register'.
 
@@ -13491,7 +13504,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   CheckFunctionOrTemplateParamDeclarator(S, D);
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
-  QualType parmDeclType = TInfo->getType();
+  QualType ParmType = CheckParameterPassingMode(*this, PPK, TInfo);
 
   DeclarationNameInfo DNI = FindParamName(*this, S, D);
 
@@ -13500,7 +13513,8 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // looking like class members in C++.
   ParmVarDecl *New =
       CheckParameter(Context.getTranslationUnitDecl(), D.getBeginLoc(),
-                     DNI, parmDeclType, TInfo, SC);
+                     DNI, ParmType, TInfo, SC);
+  New->setParameterPassing(PPK);
 
   if (D.isInvalidType())
     New->setInvalidDecl();

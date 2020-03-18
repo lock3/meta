@@ -2382,12 +2382,16 @@ private:
                         ParsedAttributesWithRange &Attrs);
   DeclSpecContext
   getDeclSpecContextFromDeclaratorContext(DeclaratorContext Context);
+
   void ParseDeclarationSpecifiers(
       DeclSpec &DS,
       const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
       AccessSpecifier AS = AS_none,
       DeclSpecContext DSC = DeclSpecContext::DSC_normal,
       LateParsedAttrList *LateAttrs = nullptr);
+
+  void ParseParameterPassingSpecifier(DeclSpec &DS);
+
   bool DiagnoseMissingSemiAfterTagDefinition(
       DeclSpec &DS, AccessSpecifier AS, DeclSpecContext DSContext,
       LateParsedAttrList *LateAttrs = nullptr);

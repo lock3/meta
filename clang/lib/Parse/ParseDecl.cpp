@@ -4037,6 +4037,44 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
   }
 }
 
+/// Parse an optional parameter passing specifier.
+///
+///   parameter-passing-specifier: one of
+///     in out inout move forward
+///
+/// TODO: We could add constexpr to the list and just implement constexpr
+/// parameter passing.
+///
+/// TODO: The 
+void Parser::ParseParameterPassingSpecifier(DeclSpec &DS) {
+  // TODO: If users have types with these names, we'll get some weird
+  // errors. Note that users can fully qualify their user-defiened types
+  // in order to be compatible with parameter passing specifers.
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *Id = Tok.getIdentifierInfo();
+    if (Id->isStr("in")) {
+      SourceLocation Loc = ConsumeToken();
+      DS.SetParameterPassingSpecifier(PPK_in, Loc);
+    }
+    else if (Id->isStr("out")) {
+      SourceLocation Loc = ConsumeToken();
+      DS.SetParameterPassingSpecifier(PPK_out, Loc);
+    }
+    else if (Id->isStr("inout")) {
+      SourceLocation Loc = ConsumeToken();
+      DS.SetParameterPassingSpecifier(PPK_inout, Loc);
+    }
+    else if (Id->isStr("move")) {
+      SourceLocation Loc = ConsumeToken();
+      DS.SetParameterPassingSpecifier(PPK_move, Loc);
+    }
+    else if (Id->isStr("forward")) {
+      SourceLocation Loc = ConsumeToken();
+      DS.SetParameterPassingSpecifier(PPK_forward, Loc);
+    }
+  }
+}
+
 /// ParseStructDeclaration - Parse a struct declaration without the terminating
 /// semicolon.
 ///
@@ -6730,6 +6768,8 @@ void Parser::ParseParameterDeclarationClause(
     // get rid of a parameter (FirstArgAttrs) and this statement. It might be
     // too much hassle.
     DS.takeAttributesFrom(FirstArgAttrs);
+
+    ParseParameterPassingSpecifier(DS);
 
     ParseDeclarationSpecifiers(DS);
 
