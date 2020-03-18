@@ -330,6 +330,11 @@ int &hello() {
   return f(x); // expected-warning {{dangling}} expected-note {{pointee 'x' left}}
 }
 
+const char * hello2() {
+  std::string s;
+  return s.c_str(); // expected-warning {{dangling}} expected-note {{pointee 's' left}}
+}
+
 bool uninitialized_output_param(int **p) { // expected-note {{it was never initialized here}}
   return true; // expected-warning {{returning a dangling pointer as output value '*p'}}
 }
