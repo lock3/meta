@@ -313,10 +313,10 @@ public:
             Ret.merge(ContractAttr->PrePSets.at(CV));
         }
       }
-      // For not_null types are never null regardless of type matching.
-      Ret.ContainsNull = isNullableType(OutputType);
       if (Ret.isEmpty())
         Ret.ContainsStatic = true;
+      // For not_null types are never null regardless of type matching.
+      Ret.ContainsNull = isNullableType(OutputType);
       return Ret;
     };
 
