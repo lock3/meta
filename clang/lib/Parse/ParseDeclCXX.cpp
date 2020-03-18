@@ -3077,11 +3077,20 @@ Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 /// be a constant-expression.
 ExprResult Parser::ParseCXXMemberInitializer(Decl *D, bool IsFunction,
                                              SourceLocation &EqualLoc) {
+  using EEC = Sema::ExpressionEvaluationContext;
+
   assert(Tok.isOneOf(tok::equal, tok::l_brace)
          && "Data member initializer not starting with '=' or '{'");
 
+  bool IsConstexpr = false;
+  if (auto *VD = dyn_cast_or_null<VarDecl>(D))
+    IsConstexpr = VD->isConstexpr();
+
   EnterExpressionEvaluationContext Context(
-      Actions, Sema::ExpressionEvaluationContext::PotentiallyEvaluated, D);
+      Actions,
+      getLangOpts().CPlusPlus2a && IsConstexpr ? EEC::ConstantEvaluated
+                                               : EEC::PotentiallyEvaluated,
+      D);
   if (TryConsumeToken(tok::equal, EqualLoc)) {
     if (Tok.is(tok::kw_delete)) {
       // In principle, an initializer of '= delete p;' is legal, but it will

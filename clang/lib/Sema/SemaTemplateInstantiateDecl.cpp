@@ -4663,7 +4663,9 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   Function->setInnerLocStart(PatternDecl->getInnerLocStart());
 
   EnterExpressionEvaluationContext EvalContext(
-      *this, Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
+      *this, PatternDecl->getConstexprKind() == CSK_consteval
+                 ? Sema::ExpressionEvaluationContext::ConstantEvaluated
+                 : Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
 
   // Introduce a new scope where local variable instantiations will be
   // recorded, unless we're actually a member function within a local
@@ -4970,8 +4972,13 @@ void Sema::InstantiateVariableInitializer(
     Var->setImplicitlyInline();
 
   if (OldVar->getInit()) {
+    bool IsConstexpr = OldVar->isConstexpr() || isConstantEvaluated();
     EnterExpressionEvaluationContext Evaluated(
-        *this, Sema::ExpressionEvaluationContext::PotentiallyEvaluated, Var);
+        *this,
+        getLangOpts().CPlusPlus2a && IsConstexpr
+            ? Sema::ExpressionEvaluationContext::ConstantEvaluated
+            : Sema::ExpressionEvaluationContext::PotentiallyEvaluated,
+        Var);
 
     // Instantiate the initializer.
     ExprResult Init;

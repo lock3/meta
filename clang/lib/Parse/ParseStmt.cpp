@@ -1344,18 +1344,16 @@ StmtResult Parser::ParseIfStatement(SourceLocation *TrailingElseLoc) {
   StmtResult InitStmt;
   Sema::ConditionResult Cond;
 
-  if (IsConstexpr) {
+  {
     EnterExpressionEvaluationContext Unevaluated(
         Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated,
         /*LambdaContextDecl=*/nullptr, /*ExprContext=*/
-        Sema::ExpressionEvaluationContextRecord::EK_Other);
+        Sema::ExpressionEvaluationContextRecord::EK_Other,
+        /*ShouldEnter=*/IsConstexpr);
 
     if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
-                                  Sema::ConditionKind::ConstexprIf))
-      return StmtError();
-  } else {
-    if (ParseParenExprOrCondition(&InitStmt, Cond, IfLoc,
-                                  Sema::ConditionKind::Boolean))
+                                  IsConstexpr ? Sema::ConditionKind::ConstexprIf
+                                              : Sema::ConditionKind::Boolean))
       return StmtError();
   }
 
