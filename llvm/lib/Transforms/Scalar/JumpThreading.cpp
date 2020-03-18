@@ -170,7 +170,7 @@ FunctionPass *llvm::createJumpThreadingPass(int Threshold) {
 }
 
 JumpThreadingPass::JumpThreadingPass(int T) {
-  BBDupThreshold = (T == -1) ? BBDuplicateThreshold : unsigned(T);
+  DefaultBBDupThreshold = (T == -1) ? BBDuplicateThreshold : unsigned(T);
 }
 
 // Update branch probability information according to conditional
@@ -374,6 +374,15 @@ bool JumpThreadingPass::runImpl(Function &F, TargetLibraryInfo *TLI_,
     BFI = std::move(BFI_);
   }
 
+  // Reduce the number of instructions duplicated when optimizing strictly for
+  // size.
+  if (BBDuplicateThreshold.getNumOccurrences())
+    BBDupThreshold = BBDuplicateThreshold;
+  else if (F.hasFnAttribute(Attribute::MinSize))
+    BBDupThreshold = 3;
+  else
+    BBDupThreshold = DefaultBBDupThreshold;
+
   // JumpThreading must not processes blocks unreachable from entry. It's a
   // waste of compute time and can potentially lead to hangs.
   SmallPtrSet<BasicBlock *, 16> Unreachable;
@@ -396,6 +405,12 @@ bool JumpThreadingPass::runImpl(Function &F, TargetLibraryInfo *TLI_,
         continue;
       while (ProcessBlock(&BB)) // Thread all of the branches we can over BB.
         Changed = true;
+
+      // Jump threading may have introduced redundant debug values into BB
+      // which should be removed.
+      if (Changed)
+        RemoveRedundantDbgInstrs(&BB);
+
       // Stop processing BB if it's the entry or is now deleted. The following
       // routines attempt to eliminate BB and locating a suitable replacement
       // for the entry is non-trivial.
@@ -418,17 +433,21 @@ bool JumpThreadingPass::runImpl(Function &F, TargetLibraryInfo *TLI_,
       // ProcessBlock doesn't thread BBs with unconditional TIs. However, if BB
       // is "almost empty", we attempt to merge BB with its sole successor.
       auto *BI = dyn_cast<BranchInst>(BB.getTerminator());
-      if (BI && BI->isUnconditional() &&
-          // The terminator must be the only non-phi instruction in BB.
-          BB.getFirstNonPHIOrDbg()->isTerminator() &&
-          // Don't alter Loop headers and latches to ensure another pass can
-          // detect and transform nested loops later.
-          !LoopHeaders.count(&BB) && !LoopHeaders.count(BI->getSuccessor(0)) &&
-          TryToSimplifyUncondBranchFromEmptyBlock(&BB, DTU)) {
-        // BB is valid for cleanup here because we passed in DTU. F remains
-        // BB's parent until a DTU->getDomTree() event.
-        LVI->eraseBlock(&BB);
-        Changed = true;
+      if (BI && BI->isUnconditional()) {
+        BasicBlock *Succ = BI->getSuccessor(0);
+        if (
+            // The terminator must be the only non-phi instruction in BB.
+            BB.getFirstNonPHIOrDbg()->isTerminator() &&
+            // Don't alter Loop headers and latches to ensure another pass can
+            // detect and transform nested loops later.
+            !LoopHeaders.count(&BB) && !LoopHeaders.count(Succ) &&
+            TryToSimplifyUncondBranchFromEmptyBlock(&BB, DTU)) {
+          RemoveRedundantDbgInstrs(Succ);
+          // BB is valid for cleanup here because we passed in DTU. F remains
+          // BB's parent until a DTU->getDomTree() event.
+          LVI->eraseBlock(&BB);
+          Changed = true;
+        }
       }
     }
     EverChanged |= Changed;
@@ -2094,11 +2113,11 @@ bool JumpThreadingPass::MaybeThreadThroughTwoBasicBlocks(BasicBlock *BB,
   if (!PredBB)
     return false;
 
-  // Require that PredBB end with a Branch.  If PredBB ends with an
-  // unconditional branch, we should be merging PredBB and BB instead.  For
+  // Require that PredBB end with a conditional Branch. If PredBB ends with an
+  // unconditional branch, we should be merging PredBB and BB instead. For
   // simplicity, we don't deal with a switch.
   BranchInst *PredBBBranch = dyn_cast<BranchInst>(PredBB->getTerminator());
-  if (!PredBBBranch)
+  if (!PredBBBranch || PredBBBranch->isUnconditional())
     return false;
 
   // If PredBB has exactly one incoming edge, we don't gain anything by copying
@@ -2122,11 +2141,12 @@ bool JumpThreadingPass::MaybeThreadThroughTwoBasicBlocks(BasicBlock *BB,
   BasicBlock *ZeroPred = nullptr;
   BasicBlock *OnePred = nullptr;
   for (BasicBlock *P : predecessors(PredBB)) {
-    if (Constant *Cst = EvaluateOnPredecessorEdge(BB, P, Cond)) {
-      if (Cst->isZeroValue()) {
+    if (ConstantInt *CI = dyn_cast_or_null<ConstantInt>(
+            EvaluateOnPredecessorEdge(BB, P, Cond))) {
+      if (CI->isZero()) {
         ZeroCount++;
         ZeroPred = P;
-      } else {
+      } else if (CI->isOne()) {
         OneCount++;
         OnePred = P;
       }
@@ -2168,14 +2188,20 @@ bool JumpThreadingPass::MaybeThreadThroughTwoBasicBlocks(BasicBlock *BB,
     return false;
   }
 
-  // Check the cost of duplicating BB and PredBB.
-  unsigned JumpThreadCost =
+  // Compute the cost of duplicating BB and PredBB.
+  unsigned BBCost =
       getJumpThreadDuplicationCost(BB, BB->getTerminator(), BBDupThreshold);
-  JumpThreadCost += getJumpThreadDuplicationCost(
+  unsigned PredBBCost = getJumpThreadDuplicationCost(
       PredBB, PredBB->getTerminator(), BBDupThreshold);
-  if (JumpThreadCost > BBDupThreshold) {
+
+  // Give up if costs are too high.  We need to check BBCost and PredBBCost
+  // individually before checking their sum because getJumpThreadDuplicationCost
+  // return (unsigned)~0 for those basic blocks that cannot be duplicated.
+  if (BBCost > BBDupThreshold || PredBBCost > BBDupThreshold ||
+      BBCost + PredBBCost > BBDupThreshold) {
     LLVM_DEBUG(dbgs() << "  Not threading BB '" << BB->getName()
-                      << "' - Cost is too high: " << JumpThreadCost << "\n");
+                      << "' - Cost is too high: " << PredBBCost
+                      << " for PredBB, " << BBCost << "for BB\n");
     return false;
   }
 

@@ -151,7 +151,7 @@ public:
         Ret = "(temporary)";
 
     } else if (auto *VD = asVarDecl())
-      Ret = VD->getName();
+      Ret = VD->getName().str();
     else if (isThisPointer())
       Ret = "this";
     else if (isReturnVal())

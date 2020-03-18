@@ -253,7 +253,7 @@ template <typename T> static void StringifyImpl(T &Str, char Quote) {
 }
 
 std::string Lexer::Stringify(StringRef Str, bool Charify) {
-  std::string Result = Str;
+  std::string Result = std::string(Str);
   char Quote = Charify ? '\'' : '"';
   StringifyImpl(Result, Quote);
   return Result;
@@ -2552,8 +2552,8 @@ bool Lexer::SkipBlockComment(Token &Result, const char *CurPtr,
         '/', '/', '/', '/',  '/', '/', '/', '/',
         '/', '/', '/', '/',  '/', '/', '/', '/'
       };
-      while (CurPtr+16 <= BufferEnd &&
-             !vec_any_eq(*(const vector unsigned char*)CurPtr, Slashes))
+      while (CurPtr + 16 <= BufferEnd &&
+             !vec_any_eq(*(const __vector unsigned char *)CurPtr, Slashes))
         CurPtr += 16;
 #else
       // Scan for '/' quickly.  Many block comments are very large.

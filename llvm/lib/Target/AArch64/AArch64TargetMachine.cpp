@@ -236,12 +236,8 @@ getEffectiveAArch64CodeModel(const Triple &TT, Optional<CodeModel::Model> CM,
   if (CM) {
     if (*CM != CodeModel::Small && *CM != CodeModel::Tiny &&
         *CM != CodeModel::Large) {
-      if (!TT.isOSFuchsia())
-        report_fatal_error(
-            "Only small, tiny and large code models are allowed on AArch64");
-      else if (*CM != CodeModel::Kernel)
-        report_fatal_error("Only small, tiny, kernel, and large code models "
-                           "are allowed on AArch64");
+      report_fatal_error(
+          "Only small, tiny and large code models are allowed on AArch64");
     } else if (*CM == CodeModel::Tiny && !TT.isOSBinFormatELF())
       report_fatal_error("tiny code model is only supported on ELF");
     return *CM;
@@ -648,4 +644,7 @@ void AArch64PassConfig::addPreEmitPass() {
   if (TM->getOptLevel() != CodeGenOpt::None && EnableCollectLOH &&
       TM->getTargetTriple().isOSBinFormatMachO())
     addPass(createAArch64CollectLOHPass());
+
+  // SVE bundles move prefixes with destructive operations.
+  addPass(createUnpackMachineBundles(nullptr));
 }

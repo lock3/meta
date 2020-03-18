@@ -1,6 +1,6 @@
 //===-- TestOps.td - Test dialect operation definitions ----*- tablegen -*-===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -11,20 +11,35 @@
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/OpAsmInterface.td"
-include "mlir/Analysis/CallInterfaces.td"
-include "mlir/Analysis/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffects.td"
+include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffects.td"
 
-def TEST_Dialect : Dialect {
+def Test_Dialect : Dialect {
   let name = "test";
   let cppNamespace = "";
+  let hasOperationAttrVerify = 1;
+  let hasRegionArgAttrVerify = 1;
+  let hasRegionResultAttrVerify = 1;
 }
 
 class TEST_Op<string mnemonic, list<OpTrait> traits = []> :
-    Op<TEST_Dialect, mnemonic, traits>;
+    Op<Test_Dialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // Test Types
 //===----------------------------------------------------------------------===//
+
+def IntTypesOp : TEST_Op<"int_types"> {
+  let results = (outs
+    AnyI16:$any_i16,
+    SI32:$si32,
+    UI64:$ui64,
+    AnyInteger:$any_int
+  );
+}
 
 def ComplexF64 : Complex<F64>;
 def ComplexOp : TEST_Op<"complex_f64"> {
@@ -127,15 +142,15 @@ def MixedNormalVariadicResults : TEST_Op<
 
 def NonNegIntAttrOp : TEST_Op<"non_negative_int_attr"> {
   let arguments = (ins
-      NonNegativeI32Attr:$i32attr,
-      NonNegativeI64Attr:$i64attr
+      Confined<I32Attr, [IntNonNegative]>:$i32attr,
+      Confined<I64Attr, [IntNonNegative]>:$i64attr
   );
 }
 
 def PositiveIntAttrOp : TEST_Op<"positive_int_attr"> {
   let arguments = (ins
-      PositiveI32Attr:$i32attr,
-      PositiveI64Attr:$i64attr
+      Confined<I32Attr, [IntPositive]>:$i32attr,
+      Confined<I64Attr, [IntPositive]>:$i64attr
   );
 }
 
@@ -187,6 +202,15 @@ def I64EnumAttrOp : TEST_Op<"i64_enum_attr"> {
   let results = (outs I32:$val);
 }
 
+
+def IntAttrOp : TEST_Op<"int_attrs"> {
+  let arguments = (ins
+    AnyI32Attr:$any_i32_attr,
+    UI32Attr:$ui32_attr,
+    SI32Attr:$si32_attr
+  );
+}
+
 def FloatElementsAttrOp : TEST_Op<"float_elements_attr"> {
   let arguments = (ins
       RankedF32ElementsAttr<[2]>:$scalar_f32_attr,
@@ -203,6 +227,20 @@ def UpdateFloatElementsAttr : Pat<
   (FloatElementsAttrOp
     ConstantAttr<RankedF32ElementsAttr<[2]>, "{5.0f, 6.0f}">:$f32attr,
     $f64attr)>;
+
+def IntElementsAttrOp : TEST_Op<"int_elements_attr"> {
+  let arguments = (ins
+      AnyI32ElementsAttr:$any_i32_attr,
+      I32ElementsAttr:$i32_attr
+  );
+}
+
+def RankedIntElementsAttrOp : TEST_Op<"ranked_int_elements_attr"> {
+  let arguments = (ins
+      RankedI32ElementsAttr<[2]>:$vector_i32_attr,
+      RankedI64ElementsAttr<[4, 8]>:$matrix_i64_attr
+  );
+}
 
 //===----------------------------------------------------------------------===//
 // Test Attribute Constraints
@@ -376,8 +414,8 @@ def IfFirstOperandIsNoneThenSoIsSecond :
   let arguments = (ins AnyType:$x, AnyType:$y);
 }
 
-def BroadcastableOp : TEST_Op<"broadcastable", [Broadcastable]> {
-  let arguments = (ins AnyTensor, AnyTensor);
+def BroadcastableOp : TEST_Op<"broadcastable", [ResultsBroadcastableShape]> {
+  let arguments = (ins Variadic<AnyTensor>);
   let results = (outs AnyTensor);
 }
 
@@ -415,6 +453,11 @@ def OpWithShapedTypeInferTypeInterfaceOp : TEST_Op<"op_with_shaped_type_infer_ty
    ]> {
   let arguments = (ins AnyTensor, AnyTensor);
   let results = (outs AnyTensor);
+
+  let extraClassDeclaration = [{
+    LogicalResult reifyReturnTypeShapes(OpBuilder &builder,
+                                        SmallVectorImpl<Value> &shapes);
+  }];
 }
 
 def IsNotScalar : Constraint<CPred<"$0.getType().getRank() != 0">>;
@@ -423,8 +466,10 @@ def UpdateAttr : Pat<(I32ElementsAttrOp $attr),
                      (I32ElementsAttrOp ConstantAttr<I32ElementsAttr, "0">),
                      [(IsNotScalar $attr)]>;
 
-def TestBranchOp : TEST_Op<"br", [Terminator]> {
-  let arguments = (ins Variadic<AnyType>:$operands);
+def TestBranchOp : TEST_Op<"br",
+    [DeclareOpInterfaceMethods<BranchOpInterface>, Terminator]> {
+  let arguments = (ins Variadic<AnyType>:$targetOperands);
+  let successors = (successor AnySuccessor:$target);
 }
 
 def AttrSizedOperandOp : TEST_Op<"attr_sized_operands",
@@ -602,12 +647,11 @@ def OpAllAttrConstraint2 : TEST_Op<"all_attr_constraint_of2"> {
   let results = (outs I32);
 }
 def Constraint0 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>().getValue()[0]."
+    CPred<"$_self.cast<ArrayAttr>()[0]."
           "cast<IntegerAttr>().getInt() == 0">,
     "[0] == 0">;
 def Constraint1 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>().getValue()[1]."
-          "cast<IntegerAttr>().getInt() == 1">,
+    CPred<"$_self.cast<ArrayAttr>()[1].cast<IntegerAttr>().getInt() == 1">,
     "[1] == 1">;
 def : Pat<(OpAllAttrConstraint1
             AllAttrConstraintsOf<[Constraint0, Constraint1]>:$attr),
@@ -637,6 +681,11 @@ def TestOpWithVariadicResultsAndFolder: TEST_Op<"op_with_variadic_results_and_fo
   let arguments = (ins Variadic<I32>:$operands);
   let results = (outs Variadic<I32>);
   let hasFolder = 1;
+}
+
+def TestCommutativeOp : TEST_Op<"op_commutative", [Commutative]> {
+  let arguments = (ins I32:$op1, I32:$op2, I32:$op3, I32:$op4);
+  let results = (outs I32);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1060,6 +1109,86 @@ def AsmInterfaceOp : TEST_Op<"asm_interface_op"> {
 
 def AsmDialectInterfaceOp : TEST_Op<"asm_dialect_interface_op"> {
   let results = (outs AnyType);
+}
+
+//===----------------------------------------------------------------------===//
+// Test Op Asm Format
+//===----------------------------------------------------------------------===//
+
+def FormatLiteralOp : TEST_Op<"format_literal_op"> {
+  let assemblyFormat = [{
+    `keyword_$.` `->` `:` `,` `=` `<` `>` `(` `)` `[` `]` attr-dict
+  }];
+}
+
+// Test that we elide attributes that are within the syntax.
+def FormatAttrOp : TEST_Op<"format_attr_op"> {
+  let arguments = (ins I64Attr:$attr);
+  let assemblyFormat = "$attr attr-dict";
+}
+
+// Test that we elide attributes that are within the syntax.
+def FormatAttrDictWithKeywordOp : TEST_Op<"format_attr_dict_w_keyword"> {
+  let arguments = (ins I64Attr:$attr);
+  let assemblyFormat = "attr-dict-with-keyword";
+}
+
+// Test that we don't need to provide types in the format if they are buildable.
+def FormatBuildableTypeOp : TEST_Op<"format_buildable_type_op"> {
+  let arguments = (ins I64:$buildable);
+  let results = (outs I64:$buildable_res);
+  let assemblyFormat = "$buildable attr-dict";
+}
+
+// Test various mixings of result type formatting.
+class FormatResultBase<string name, string fmt> : TEST_Op<name> {
+  let results = (outs I64:$buildable_res, AnyMemRef:$result);
+  let assemblyFormat = fmt;
+}
+def FormatResultAOp : FormatResultBase<"format_result_a_op", [{
+  type($result) attr-dict
+}]>;
+def FormatResultBOp : FormatResultBase<"format_result_b_op", [{
+  type(results) attr-dict
+}]>;
+def FormatResultCOp : FormatResultBase<"format_result_c_op", [{
+  functional-type($buildable_res, $result) attr-dict
+}]>;
+
+// Test various mixings of operand type formatting.
+class FormatOperandBase<string name, string fmt> : TEST_Op<name> {
+  let arguments = (ins I64:$buildable, AnyMemRef:$operand);
+  let assemblyFormat = fmt;
+}
+
+def FormatOperandAOp : FormatOperandBase<"format_operand_a_op", [{
+  operands `:` type(operands) attr-dict
+}]>;
+def FormatOperandBOp : FormatOperandBase<"format_operand_b_op", [{
+  operands `:` type($operand) attr-dict
+}]>;
+def FormatOperandCOp : FormatOperandBase<"format_operand_c_op", [{
+  $buildable `,` $operand `:` type(operands) attr-dict
+}]>;
+def FormatOperandDOp : FormatOperandBase<"format_operand_d_op", [{
+  $buildable `,` $operand `:` type($operand) attr-dict
+}]>;
+def FormatOperandEOp : FormatOperandBase<"format_operand_e_op", [{
+  $buildable `,` $operand `:` type($buildable) `,` type($operand) attr-dict
+}]>;
+
+def FormatSuccessorAOp : TEST_Op<"format_successor_a_op", [Terminator]> {
+  let successors = (successor VariadicSuccessor<AnySuccessor>:$targets);
+  let assemblyFormat = "$targets attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// Test SideEffects
+//===----------------------------------------------------------------------===//
+
+def SideEffectOp : TEST_Op<"side_effect_op",
+    [DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+  let results = (outs AnyType:$result);
 }
 
 #endif // TEST_OPS

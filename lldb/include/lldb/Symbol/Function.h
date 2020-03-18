@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_Function_h_
-#define liblldb_Function_h_
+#ifndef LLDB_SYMBOL_FUNCTION_H
+#define LLDB_SYMBOL_FUNCTION_H
 
 #include "lldb/Core/AddressRange.h"
 #include "lldb/Core/Mangled.h"
@@ -199,11 +199,11 @@ public:
   ///     The stream to which to dump the object description.
   void Dump(Stream *s, bool show_fullpaths) const;
 
-  void DumpStopContext(Stream *s, lldb::LanguageType language) const;
+  void DumpStopContext(Stream *s) const;
 
-  ConstString GetName(lldb::LanguageType language) const;
+  ConstString GetName() const;
 
-  ConstString GetDisplayName(lldb::LanguageType language) const;
+  ConstString GetDisplayName() const;
 
   /// Get accessor for the call site declaration information.
   ///
@@ -630,4 +630,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_Function_h_
+#endif // LLDB_SYMBOL_FUNCTION_H

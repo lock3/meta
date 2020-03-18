@@ -1,6 +1,6 @@
 //===- Inliner.cpp - Pass to inline function calls ------------------------===//
 //
-// Part of the MLIR Project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -86,15 +86,14 @@ static void collectCallOps(iterator_range<Region::iterator> blocks,
   while (!worklist.empty()) {
     for (Operation &op : *worklist.pop_back_val()) {
       if (auto call = dyn_cast<CallOpInterface>(op)) {
-        CallInterfaceCallable callable = call.getCallableForCallee();
-
         // TODO(riverriddle) Support inlining nested call references.
+        CallInterfaceCallable callable = call.getCallableForCallee();
         if (SymbolRefAttr symRef = callable.dyn_cast<SymbolRefAttr>()) {
           if (!symRef.isa<FlatSymbolRefAttr>())
             continue;
         }
 
-        CallGraphNode *node = cg.resolveCallable(callable, &op);
+        CallGraphNode *node = cg.resolveCallable(call);
         if (!node->isExternal())
           calls.emplace_back(call, node);
         continue;

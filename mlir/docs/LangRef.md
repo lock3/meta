@@ -241,8 +241,8 @@ Syntax:
 ```
 operation         ::= op-result-list? (generic-operation | custom-operation)
                       trailing-location?
-generic-operation ::= string-literal '(' ssa-use-list? ')' attribute-dict?
-                      `:` function-type
+generic-operation ::= string-literal `(` ssa-use-list? `)`  successor-list?
+                      (`(` region-list `)`)? attribute-dict? `:` function-type
 custom-operation  ::= bare-id custom-operation-format
 op-result-list    ::= op-result (`,` op-result)* `=`
 op-result         ::= ssa-id (`:` integer-literal)
@@ -391,9 +391,10 @@ block-arg-list ::= `(` ssa-id-and-type-list? `)`
 ```
 
 A [block](https://en.wikipedia.org/wiki/Basic_block) is a sequential list of
-operations without control flow (calls are not considered control flow for this
-purpose) that are executed from top to bottom. The last operation in a block is
-a [terminator operation](#terminator-operations), which ends the block.
+operations without control flow (a call or entering an op's region is not
+considered control flow for this purpose) that are executed from top to bottom.
+The last operation in a block is a
+[terminator operation](#terminator-operations), which ends the block.
 
 Blocks in MLIR take a list of block arguments, which represent SSA PHI nodes in
 a functional notation. The arguments are defined by the block, and values are
@@ -501,8 +502,11 @@ outside the region completely.
 Regions are Single-Entry-Multiple-Exit (SEME). This means that control can only
 flow into the first block of the region, but can flow out of the region at the
 end of any of the contained blocks (This behavior is similar to that of a
-function body in most programming languages). When exiting a Region, control is
-returned to the enclosing operation.
+function body in most programming languages). A terminator of a block within a
+region may transfer the control flow to another block in this region, or return
+it to the immediately enclosing op. The semantics of the enclosing op defines
+where the control flow is transmitted next. It may, for example, enter a region
+of the same op, including the same region that returned the control flow.
 
 The enclosing operation determines the way in which control is transmitted into
 the entry block of a Region. The successor to a region’s exit points may not
@@ -741,11 +745,16 @@ Syntax:
 
 ```
 // Sized integers like i1, i4, i8, i16, i32.
-integer-type ::= `i` [1-9][0-9]*
+signed-integer-type ::= `si` [1-9][0-9]*
+unsigned-integer-type ::= `ui` [1-9][0-9]*
+signless-integer-type ::= `i` [1-9][0-9]*
+integer-type ::= signed-integer-type |
+                 unsigned-integer-type |
+                 signless-integer-type
 ```
 
-MLIR supports arbitrary precision integer types. Integer types are signless, but
-have a designated width.
+MLIR supports arbitrary precision integer types. Integer types have a designated
+width and may have signedness semantics.
 
 **Rationale:** low precision integers (like `i2`, `i4` etc) are useful for
 low-precision inference chips, and arbitrary precision integers are useful for
@@ -1147,7 +1156,8 @@ attribute-dict ::= `{` `}`
 attribute-entry ::= dialect-attribute-entry | dependent-attribute-entry
 dialect-attribute-entry ::= dialect-namespace `.` bare-id `=` attribute-value
 dependent-attribute-entry ::= dependent-attribute-name `=` attribute-value
-dependent-attribute-name ::= (letter|[_]) (letter|digit|[_$])*
+dependent-attribute-name ::= ((letter|[_]) (letter|digit|[_$])*)
+                           | string-literal
 ```
 
 Attributes are the mechanism for specifying constant data on operations in
@@ -1453,14 +1463,15 @@ This attribute can only be held internally by
 [array attributes](#array-attribute) and
 [dictionary attributes](#dictionary-attribute)(including the top-level operation
 attribute dictionary), i.e. no other attribute kinds such as Locations or
-extended attribute kinds. If a reference to a symbol is necessary from outside
-of the symbol table that the symbol is defined in, a
-[string attribute](#string-attribute) can be used to refer to the symbol name.
+extended attribute kinds.
 
 **Rationale:** Given that MLIR models global accesses with symbol references, to
 enable efficient multi-threading, it becomes difficult to effectively reason
 about their uses. By restricting the places that can legally hold a symbol
 reference, we can always opaquely reason about a symbols usage characteristics.
+
+See [`Symbols And SymbolTables`](SymbolsAndSymbolTables.md) for more
+information.
 
 #### Type Attribute
 

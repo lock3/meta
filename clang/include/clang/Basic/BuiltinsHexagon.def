@@ -17,8 +17,10 @@
 #   define TARGET_BUILTIN(ID, TYPE, ATTRS, FEATURE) BUILTIN(ID, TYPE, ATTRS)
 #endif
 
+#pragma push_macro("V67")
+#define V67 "v67"
 #pragma push_macro("V66")
-#define V66 "v66"
+#define V66 "v66|" V67
 #pragma push_macro("V65")
 #define V65 "v65|" V66
 #pragma push_macro("V62")
@@ -30,8 +32,10 @@
 #pragma push_macro("V5")
 #define V5 "v5|" V55
 
+#pragma push_macro("HVXV67")
+#define HVXV67 "hvxv67"
 #pragma push_macro("HVXV66")
-#define HVXV66 "hvxv66"
+#define HVXV66 "hvxv66|" HVXV67
 #pragma push_macro("HVXV65")
 #define HVXV65 "hvxv65|" HVXV66
 #pragma push_macro("HVXV62")
@@ -92,14 +96,14 @@ TARGET_BUILTIN(__builtin_HEXAGON_S2_storerd_pcr, "vv*iLLivC*", "", V5)
 TARGET_BUILTIN(__builtin_HEXAGON_prefetch,"vv*","", V5)
 TARGET_BUILTIN(__builtin_HEXAGON_A6_vminub_RdP,"LLiLLiLLi","", V62)
 
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstoreq,"vV16iv*V16i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorenq,"vV16iv*V16i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentq,"vV16iv*V16i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentnq,"vV16iv*V16i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstoreq_128B,"vV32iv*V32i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorenq_128B,"vV32iv*V32i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentq_128B,"vV32iv*V32i","", HVXV60)
-TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentnq_128B,"vV32iv*V32i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstoreq,"vV64bv*V16i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorenq,"vV64bv*V16i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentq,"vV64bv*V16i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentnq,"vV64bv*V16i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstoreq_128B,"vV128bv*V32i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorenq_128B,"vV128bv*V32i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentq_128B,"vV128bv*V32i","", HVXV60)
+TARGET_BUILTIN(__builtin_HEXAGON_V6_vmaskedstorentnq_128B,"vV128bv*V32i","", HVXV60)
 
 
 // These are only valid on v65
@@ -118,6 +122,7 @@ TARGET_BUILTIN(__builtin_HEXAGON_V6_vrmpyub_rtt_acc_128B,"V64iV64iV32iLLi","", "
 #pragma pop_macro("HVXV62")
 #pragma pop_macro("HVXV65")
 #pragma pop_macro("HVXV66")
+#pragma pop_macro("HVXV67")
 
 #pragma pop_macro("V5")
 #pragma pop_macro("V55")
@@ -125,6 +130,7 @@ TARGET_BUILTIN(__builtin_HEXAGON_V6_vrmpyub_rtt_acc_128B,"V64iV64iV32iLLi","", "
 #pragma pop_macro("V62")
 #pragma pop_macro("V65")
 #pragma pop_macro("V66")
+#pragma pop_macro("V67")
 
 #undef BUILTIN
 #undef TARGET_BUILTIN

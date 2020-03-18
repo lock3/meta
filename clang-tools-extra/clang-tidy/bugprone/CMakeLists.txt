@@ -22,6 +22,7 @@ add_clang_library(clangTidyBugproneModule
   MacroParenthesesCheck.cpp
   MacroRepeatedSideEffectsCheck.cpp
   MisplacedOperatorInStrlenInAllocCheck.cpp
+  MisplacedPointerArithmeticInAllocCheck.cpp
   MisplacedWideningCastCheck.cpp
   MoveForwardingReferenceCheck.cpp
   MultipleStatementMacroCheck.cpp
@@ -36,6 +37,7 @@ add_clang_library(clangTidyBugproneModule
   StringIntegerAssignmentCheck.cpp
   StringLiteralWithEmbeddedNulCheck.cpp
   SuspiciousEnumUsageCheck.cpp
+  SuspiciousIncludeCheck.cpp
   SuspiciousMemsetUsageCheck.cpp
   SuspiciousMissingCommaCheck.cpp
   SuspiciousSemicolonCheck.cpp

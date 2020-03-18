@@ -860,13 +860,13 @@ static void enterBlockScope(CodeGenFunction &CGF, BlockDecl *block) {
 }
 
 /// Enter a full-expression with a non-trivial number of objects to
-/// clean up.  This is in this file because, at the moment, the only
-/// kind of cleanup object is a BlockDecl*.
+/// clean up.
 void CodeGenFunction::enterNonTrivialFullExpression(const FullExpr *E) {
   if (const auto EWC = dyn_cast<ExprWithCleanups>(E)) {
     assert(EWC->getNumObjects() != 0);
     for (const ExprWithCleanups::CleanupObject &C : EWC->getObjects())
-      enterBlockScope(*this, C);
+      if (auto *BD = C.dyn_cast<BlockDecl *>())
+        enterBlockScope(*this, BD);
   }
 }
 
@@ -1449,7 +1449,8 @@ static llvm::Constant *buildGlobalBlock(CodeGenModule &CGM,
     llvm::IRBuilder<> b(llvm::BasicBlock::Create(CGM.getLLVMContext(), "entry",
           Init));
     b.CreateAlignedStore(CGM.getNSConcreteGlobalBlock(),
-        b.CreateStructGEP(literal, 0), CGM.getPointerAlign().getQuantity());
+                         b.CreateStructGEP(literal, 0),
+                         CGM.getPointerAlign().getAsAlign());
     b.CreateRetVoid();
     // We can't use the normal LLVM global initialisation array, because we
     // need to specify that this runs early in library initialisation.
@@ -2031,11 +2032,13 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
   FunctionDecl *FD = FunctionDecl::Create(
       C, C.getTranslationUnitDecl(), SourceLocation(), SourceLocation(), II,
       FunctionTy, nullptr, SC_Static, false, false);
-
   setBlockHelperAttributesVisibility(blockInfo.CapturesNonExternalType, Fn, FI,
                                      CGM);
+  // This is necessary to avoid inheriting the previous line number.
+  FD->setImplicit();
   StartFunction(FD, ReturnTy, Fn, FI, args);
-  ApplyDebugLocation NL{*this, blockInfo.getBlockExpr()->getBeginLoc()};
+  auto AL = ApplyDebugLocation::CreateArtificial(*this);
+
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 
   Address src = GetAddrOfLocalVar(&SrcDecl);
@@ -2226,10 +2229,12 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
 
   setBlockHelperAttributesVisibility(blockInfo.CapturesNonExternalType, Fn, FI,
                                      CGM);
+  // This is necessary to avoid inheriting the previous line number.
+  FD->setImplicit();
   StartFunction(FD, ReturnTy, Fn, FI, args);
   markAsIgnoreThreadCheckingAtRuntime(Fn);
 
-  ApplyDebugLocation NL{*this, blockInfo.getBlockExpr()->getBeginLoc()};
+  auto AL = ApplyDebugLocation::CreateArtificial(*this);
 
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
 

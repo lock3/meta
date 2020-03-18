@@ -153,7 +153,7 @@ func @block_arg_no_type() {
 
 func @block_arg_no_close_paren() {
 ^bb42:
-  br ^bb2( // expected-error@+1 {{expected ')' to close argument list}}
+  br ^bb2( // expected-error@+1 {{expected ':'}}
   return
 }
 
@@ -201,6 +201,14 @@ func @no_terminator() {
 // -----
 
 func @illegaltype(i0) // expected-error {{invalid integer width}}
+
+// -----
+
+func @illegaltype(ui1) // expected-error {{cannot have signedness semantics for i1}}
+
+// -----
+
+func @illegaltype(si1) // expected-error {{cannot have signedness semantics for i1}}
 
 // -----
 
@@ -394,7 +402,6 @@ func @condbr_notbool() {
 ^bb0:
   %a = "foo"() : () -> i32 // expected-note {{prior use here}}
   cond_br %a, ^bb0, ^bb0 // expected-error {{use of value '%a' expects different type than prior uses: 'i1' vs 'i32'}}
-// expected-error@-1 {{expected condition type was boolean (i1)}}
 }
 
 // -----
@@ -528,7 +535,7 @@ func @undefined_function() {
 
 func @bound_symbol_mismatch(%N : index) {
   affine.for %i = #map1(%N) to 100 {
-  // expected-error@-1 {{symbol operand count and integer set symbol count must match}}
+  // expected-error@-1 {{symbol operand count and affine map symbol count must match}}
   }
   return
 }
@@ -539,7 +546,7 @@ func @bound_symbol_mismatch(%N : index) {
 
 func @bound_dim_mismatch(%N : index) {
   affine.for %i = #map1(%N, %N)[%N] to 100 {
-  // expected-error@-1 {{dim operand count and integer set dim count must match}}
+  // expected-error@-1 {{dim operand count and affine map dim count must match}}
   }
   return
 }
@@ -703,14 +710,14 @@ func @elementsattr_malformed_opaque() -> () {
 
 func @elementsattr_malformed_opaque1() -> () {
 ^bb0:
-  "foo"(){bar = opaque<"", "0xQZz123"> : tensor<1xi8>} : () -> () // expected-error {{opaque string only contains hex digits}}
+  "foo"(){bar = opaque<"", "0xQZz123"> : tensor<1xi8>} : () -> () // expected-error {{elements hex string only contains hex digits}}
 }
 
 // -----
 
 func @elementsattr_malformed_opaque2() -> () {
 ^bb0:
-  "foo"(){bar = opaque<"", "00abc"> : tensor<1xi8>} : () -> () // expected-error {{opaque string should start with '0x'}}
+  "foo"(){bar = opaque<"", "00abc"> : tensor<1xi8>} : () -> () // expected-error {{elements hex string should start with '0x'}}
 }
 
 // -----
@@ -1206,5 +1213,21 @@ func @bool_literal_in_non_bool_tensor() {
   "foo"() {bar = dense<true> : tensor<2xi16>} : () -> ()
 }
 
+// -----
+
 // expected-error @+1 {{unbalanced ')' character in pretty dialect name}}
 func @bad_arrow(%arg : !unreg.ptr<(i32)->)
+
+// -----
+
+func @negative_value_in_unsigned_int_attr() {
+  // expected-error @+1 {{negative integer literal not valid for unsigned integer type}}
+  "foo"() {bar = -5 : ui32} : () -> ()
+}
+
+// -----
+
+func @negative_value_in_unsigned_vector_attr() {
+  // expected-error @+1 {{expected unsigned integer elements, but parsed negative value}}
+  "foo"() {bar = dense<[5, -5]> : vector<2xui32>} : () -> ()
+}

@@ -1,4 +1,4 @@
-//===-- Function.cpp --------------------------------------------*- C++ -*-===//
+//===-- Function.cpp ------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -82,25 +82,24 @@ void InlineFunctionInfo::Dump(Stream *s, bool show_fullpaths) const {
     m_mangled.Dump(s);
 }
 
-void InlineFunctionInfo::DumpStopContext(Stream *s,
-                                         LanguageType language) const {
+void InlineFunctionInfo::DumpStopContext(Stream *s) const {
   //    s->Indent("[inlined] ");
   s->Indent();
   if (m_mangled)
-    s->PutCString(m_mangled.GetName(language).AsCString());
+    s->PutCString(m_mangled.GetName().AsCString());
   else
     s->PutCString(m_name.AsCString());
 }
 
-ConstString InlineFunctionInfo::GetName(LanguageType language) const {
+ConstString InlineFunctionInfo::GetName() const {
   if (m_mangled)
-    return m_mangled.GetName(language);
+    return m_mangled.GetName();
   return m_name;
 }
 
-ConstString InlineFunctionInfo::GetDisplayName(LanguageType language) const {
+ConstString InlineFunctionInfo::GetDisplayName() const {
   if (m_mangled)
-    return m_mangled.GetDisplayDemangledName(language);
+    return m_mangled.GetDisplayDemangledName();
   return m_name;
 }
 
@@ -421,11 +420,11 @@ lldb::DisassemblerSP Function::GetInstructions(const ExecutionContext &exe_ctx,
                                                const char *flavor,
                                                bool prefer_file_cache) {
   ModuleSP module_sp(GetAddressRange().GetBaseAddress().GetModule());
-  if (module_sp) {
+  if (module_sp && exe_ctx.HasTargetScope()) {
     const bool prefer_file_cache = false;
     return Disassembler::DisassembleRange(module_sp->GetArchitecture(), nullptr,
-                                          flavor, exe_ctx, GetAddressRange(),
-                                          prefer_file_cache);
+                                          flavor, exe_ctx.GetTargetRef(),
+                                          GetAddressRange(), prefer_file_cache);
   }
   return lldb::DisassemblerSP();
 }
@@ -482,7 +481,7 @@ bool Function::IsTopLevelFunction() {
 }
 
 ConstString Function::GetDisplayName() const {
-  return m_mangled.GetDisplayDemangledName(GetLanguage());
+  return m_mangled.GetDisplayDemangledName();
 }
 
 CompilerDeclContext Function::GetDeclContext() {
@@ -650,15 +649,9 @@ lldb::LanguageType Function::GetLanguage() const {
 }
 
 ConstString Function::GetName() const {
-  LanguageType language = lldb::eLanguageTypeUnknown;
-  if (m_comp_unit)
-    language = m_comp_unit->GetLanguage();
-  return m_mangled.GetName(language);
+  return m_mangled.GetName();
 }
 
 ConstString Function::GetNameNoArguments() const {
-  LanguageType language = lldb::eLanguageTypeUnknown;
-  if (m_comp_unit)
-    language = m_comp_unit->GetLanguage();
-  return m_mangled.GetName(language, Mangled::ePreferDemangledWithoutArguments);
+  return m_mangled.GetName(Mangled::ePreferDemangledWithoutArguments);
 }

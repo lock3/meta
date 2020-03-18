@@ -262,6 +262,10 @@ private:
   // MachineInstrs are pool-allocated and owned by MachineFunction.
   friend class MachineFunction;
 
+  void
+  dumprImpl(const MachineRegisterInfo &MRI, unsigned Depth, unsigned MaxDepth,
+            SmallPtrSetImpl<const MachineInstr *> &AlreadySeenInstrs) const;
+
 public:
   MachineInstr(const MachineInstr &) = delete;
   MachineInstr &operator=(const MachineInstr &) = delete;
@@ -683,6 +687,14 @@ public:
     return hasProperty(MCID::Call, Type);
   }
 
+  /// Return true if this is a call instruction that may have an associated
+  /// call site entry in the debug info.
+  bool isCandidateForCallSiteEntry(QueryType Type = IgnoreBundle) const;
+  /// Return true if copying, moving, or erasing this instruction requires
+  /// updating Call Site Info (see \ref copyCallSiteInfo, \ref moveCallSiteInfo,
+  /// \ref eraseCallSiteInfo).
+  bool shouldUpdateCallSiteInfo() const;
+
   /// Returns true if the specified instruction stops control flow
   /// from executing the instruction immediately following it.  Examples include
   /// unconditional branches and return instructions.
@@ -701,7 +713,7 @@ public:
 
   /// Returns true if this is a conditional, unconditional, or indirect branch.
   /// Predicates below can be used to discriminate between
-  /// these cases, and the TargetInstrInfo::AnalyzeBranch method can be used to
+  /// these cases, and the TargetInstrInfo::analyzeBranch method can be used to
   /// get more information.
   bool isBranch(QueryType Type = AnyInBundle) const {
     return hasProperty(MCID::Branch, Type);
@@ -715,7 +727,7 @@ public:
 
   /// Return true if this is a branch which may fall
   /// through to the next instruction or may transfer control flow to some other
-  /// block.  The TargetInstrInfo::AnalyzeBranch method can be used to get more
+  /// block.  The TargetInstrInfo::analyzeBranch method can be used to get more
   /// information about this branch.
   bool isConditionalBranch(QueryType Type = AnyInBundle) const {
     return isBranch(Type) && !isBarrier(Type) && !isIndirectBranch(Type);
@@ -723,7 +735,7 @@ public:
 
   /// Return true if this is a branch which always
   /// transfers control flow to some other block.  The
-  /// TargetInstrInfo::AnalyzeBranch method can be used to get more information
+  /// TargetInstrInfo::analyzeBranch method can be used to get more information
   /// about this branch.
   bool isUnconditionalBranch(QueryType Type = AnyInBundle) const {
     return isBranch(Type) && isBarrier(Type) && !isIndirectBranch(Type);
@@ -1530,6 +1542,10 @@ public:
              bool AddNewLine = true,
              const TargetInstrInfo *TII = nullptr) const;
   void dump() const;
+  /// Print on dbgs() the current instruction and the instructions defining its
+  /// operands and so on until we reach \p MaxDepth.
+  void dumpr(const MachineRegisterInfo &MRI,
+             unsigned MaxDepth = UINT_MAX) const;
   /// @}
 
   //===--------------------------------------------------------------------===//

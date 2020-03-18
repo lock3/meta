@@ -2296,7 +2296,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
     auto isConvertible = [this, D](QualType From, QualType To) {
       OpaqueValueExpr Expr(D->getBeginLoc(), From, VK_RValue);
       ImplicitConversionSequence ICS = S.TryImplicitConversion(
-          &Expr, To, /*SuppressUserConversions=*/false, /*AllowExplicit=*/true,
+          &Expr, To, /*SuppressUserConversions=*/false,
+          Sema::AllowedExplicit::All,
           /*InOverloadResolution=*/false, /*CStyle=*/false,
           /*AllowObjCWritebackConversion=*/false);
       return !ICS.isFailure();

@@ -186,21 +186,8 @@ Parser::TPResult Parser::TryConsumeDeclarationSpecifier() {
     ConsumeToken();
 
     // Skip attributes.
-    while (Tok.isOneOf(tok::l_square, tok::kw___attribute, tok::kw___declspec,
-                       tok::kw_alignas)) {
-      if (Tok.is(tok::l_square)) {
-        ConsumeBracket();
-        if (!SkipUntil(tok::r_square))
-          return TPResult::Error;
-      } else {
-        ConsumeToken();
-        if (Tok.isNot(tok::l_paren))
-          return TPResult::Error;
-        ConsumeParen();
-        if (!SkipUntil(tok::r_paren))
-          return TPResult::Error;
-      }
-    }
+    if (!TrySkipAttributes())
+      return TPResult::Error;
 
     if (TryAnnotateOptionalCXXScopeToken())
       return TPResult::Error;
@@ -781,6 +768,32 @@ Parser::isCXX11AttributeSpecifier(bool Disambiguate,
   return CAK_NotAttributeSpecifier;
 }
 
+bool Parser::TrySkipAttributes() {
+  while (Tok.isOneOf(tok::l_square, tok::kw___attribute, tok::kw___declspec,
+                     tok::kw_alignas)) {
+    if (Tok.is(tok::l_square)) {
+      ConsumeBracket();
+      if (Tok.isNot(tok::l_square))
+        return false;
+      ConsumeBracket();
+      if (!SkipUntil(tok::r_square) || Tok.isNot(tok::r_square))
+        return false;
+      // Note that explicitly checking for `[[` and `]]` allows to fail as
+      // expected in the case of the Objective-C message send syntax.
+      ConsumeBracket();
+    } else {
+      ConsumeToken();
+      if (Tok.isNot(tok::l_paren))
+        return false;
+      ConsumeParen();
+      if (!SkipUntil(tok::r_paren))
+        return false;
+    }
+  }
+
+  return true;
+}
+
 Parser::TPResult Parser::TryParsePtrOperatorSeq() {
   while (true) {
     if (TryAnnotateOptionalCXXScopeToken(true))
@@ -790,9 +803,14 @@ Parser::TPResult Parser::TryParsePtrOperatorSeq() {
         (Tok.is(tok::annot_cxxscope) && NextToken().is(tok::star))) {
       // ptr-operator
       ConsumeAnyToken();
+
+      // Skip attributes.
+      if (!TrySkipAttributes())
+        return TPResult::Error;
+
       while (Tok.isOneOf(tok::kw_const, tok::kw_volatile, tok::kw_restrict,
                          tok::kw__Nonnull, tok::kw__Nullable,
-                         tok::kw__Null_unspecified))
+                         tok::kw__Null_unspecified, tok::kw__Atomic))
         ConsumeToken();
     } else {
       return TPResult::True;
@@ -1313,6 +1331,18 @@ public:
 Parser::TPResult
 Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
                                   bool *InvalidAsDeclSpec) {
+  auto IsPlaceholderSpecifier = [&] (TemplateIdAnnotation *TemplateId,
+                                     int Lookahead) {
+    // We have a placeholder-constraint (we check for 'auto' or 'decltype' to
+    // distinguish 'C<int>;' from 'C<int> auto c = 1;')
+    return TemplateId->Kind == TNK_Concept_template &&
+        GetLookAheadToken(Lookahead + 1).isOneOf(tok::kw_auto, tok::kw_decltype,
+            // If we have an identifier here, the user probably forgot the
+            // 'auto' in the placeholder constraint, e.g. 'C<int> x = 2;'
+            // This will be diagnosed nicely later, so disambiguate as a
+            // declaration.
+            tok::identifier);
+  };
   switch (Tok.getKind()) {
   case tok::identifier: {
     // Check for need to substitute AltiVec __vector keyword
@@ -1516,10 +1546,12 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
       *InvalidAsDeclSpec = NextToken().is(tok::l_paren);
       return TPResult::Ambiguous;
     }
+    if (IsPlaceholderSpecifier(TemplateId, /*Lookahead=*/0))
+      return TPResult::True;
     if (TemplateId->Kind != TNK_Type_template)
       return TPResult::False;
     CXXScopeSpec SS;
-    AnnotateTemplateIdTokenAsType();
+    AnnotateTemplateIdTokenAsType(SS);
     assert(Tok.is(tok::annot_typename));
     goto case_typename;
   }
@@ -1529,6 +1561,13 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
     if (TryAnnotateTypeOrScopeToken())
       return TPResult::Error;
     if (!Tok.is(tok::annot_typename)) {
+      if (Tok.is(tok::annot_cxxscope) &&
+          NextToken().is(tok::annot_template_id)) {
+        TemplateIdAnnotation *TemplateId =
+            takeTemplateIdAnnotation(NextToken());
+        if (IsPlaceholderSpecifier(TemplateId, /*Lookahead=*/1))
+          return TPResult::True;
+      }
       // If the next token is an identifier or a type qualifier, then this
       // can't possibly be a valid expression either.
       if (Tok.is(tok::annot_cxxscope) && NextToken().is(tok::identifier)) {

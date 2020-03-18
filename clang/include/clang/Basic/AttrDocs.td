@@ -260,6 +260,7 @@ The ``sycl_kernel`` attribute specifies that a function template will be used
 to outline device code and to generate an OpenCL kernel.
 Here is a code example of the SYCL program, which demonstrates the compiler's
 outlining job:
+
 .. code-block:: c++
 
   int foo(int x) { return ++x; }
@@ -282,27 +283,29 @@ compilation of functions for the device part can be found in the SYCL 1.2.1
 specification Section 6.4.
 To show to the compiler entry point to the "device part" of the code, the SYCL
 runtime can use the ``sycl_kernel`` attribute in the following way:
-.. code-block:: c++
-namespace cl {
-namespace sycl {
-class handler {
-  template <typename KernelName, typename KernelType/*, ...*/>
-  __attribute__((sycl_kernel)) void sycl_kernel_function(KernelType KernelFuncObj) {
-    // ...
-    KernelFuncObj();
-  }
 
-  template <typename KernelName, typename KernelType, int Dims>
-  void parallel_for(range<Dims> NumWorkItems, KernelType KernelFunc) {
-#ifdef __SYCL_DEVICE_ONLY__
-    sycl_kernel_function<KernelName, KernelType, Dims>(KernelFunc);
-#else
-    // Host implementation
-#endif
-  }
-};
-} // namespace sycl
-} // namespace cl
+.. code-block:: c++
+
+  namespace cl {
+  namespace sycl {
+  class handler {
+    template <typename KernelName, typename KernelType/*, ...*/>
+    __attribute__((sycl_kernel)) void sycl_kernel_function(KernelType KernelFuncObj) {
+      // ...
+      KernelFuncObj();
+    }
+
+    template <typename KernelName, typename KernelType, int Dims>
+    void parallel_for(range<Dims> NumWorkItems, KernelType KernelFunc) {
+  #ifdef __SYCL_DEVICE_ONLY__
+      sycl_kernel_function<KernelName, KernelType, Dims>(KernelFunc);
+  #else
+      // Host implementation
+  #endif
+    }
+  };
+  } // namespace sycl
+  } // namespace cl
 
 The compiler will also generate an OpenCL kernel using the function marked with
 the ``sycl_kernel`` attribute.
@@ -3995,8 +3998,6 @@ def PatchableFunctionEntryDocs : Documentation {
 before the function entry and N-M NOPs after the function entry. This attribute
 takes precedence over the command line option ``-fpatchable-function-entry=N,M``.
 ``M`` defaults to 0 if omitted.
-
-Currently, only M=0 is supported.
 }];
 }
 
@@ -4117,7 +4118,7 @@ documentation for more information.
 def ObjCDirectMembersDocs : Documentation {
   let Category = DocCatDecl;
   let Content = [{
-The ``objc_direct_members`` attribute can be placed on an  Objective-C
+The ``objc_direct_members`` attribute can be placed on an Objective-C
 ``@interface`` or ``@implementation`` to mark that methods declared
 therein should be considered direct by default.  See the documentation
 for ``objc_direct`` for more information about direct methods.
@@ -4126,9 +4127,7 @@ When ``objc_direct_members`` is placed on an ``@interface`` block, every
 method in the block is considered to be declared as direct.  This includes any
 implicit method declarations introduced by property declarations.  If the method
 redeclares a non-direct method, the declaration is ill-formed, exactly as if the
-method was annotated with the ``objc_direct`` attribute.  ``objc_direct_members``
-cannot be placed on the primary interface of a class, only on category or class
-extension interfaces.
+method was annotated with the ``objc_direct`` attribute.
 
 When ``objc_direct_members`` is placed on an ``@implementation`` block,
 methods defined in the block are considered to be declared as direct unless
@@ -4356,6 +4355,29 @@ stack variables are uninitialized. This attribute is used to override the
 command-line parameter, forcing variables to remain uninitialized. It has no
 semantic meaning in that using uninitialized values is undefined behavior,
 it rather documents the programmer's intent.
+  }];
+}
+
+def LoaderUninitializedDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+The ``loader_uninitialized`` attribute can be placed on global variables to
+indicate that the variable does not need to be zero initialized by the loader.
+On most targets, zero-initialization does not incur any additional cost.
+For example, most general purpose operating systems deliberately ensure
+that all memory is properly initialized in order to avoid leaking privileged
+information from the kernel or other programs. However, some targets
+do not make this guarantee, and on these targets, avoiding an unnecessary
+zero-initialization can have a significant impact on load times and/or code
+size.
+
+A declaration with this attribute is a non-tentative definition just as if it
+provided an initializer. Variables with this attribute are considered to be
+uninitialized in the same sense as a local variable, and the programs must
+write to them before reading from them. If the variable's type is a C++ class
+type with a non-trivial default constructor, or an array thereof, this attribute
+only suppresses the static zero-initialization of the variable, not the dynamic
+initialization provided by executing the default constructor.
   }];
 }
 
@@ -4670,11 +4692,11 @@ When the Owner's lifetime ends, it will consider the Pointer to be dangling.
 }];
 }
 
-def ArmMveAliasDocs : Documentation {
+def ArmBuiltinAliasDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
-This attribute is used in the implementation of the ACLE intrinsics
-for the Arm MVE instruction set. It allows the intrinsic functions to
+This attribute is used in the implementation of the ACLE intrinsics.
+It allows the intrinsic functions to
 be declared using the names defined in ACLE, and still be recognized
 as clang builtins equivalent to the underlying name. For example,
 ``arm_mve.h`` declares the function ``vaddq_u32`` with
@@ -4685,8 +4707,8 @@ recognized as that clang builtin, and in the latter case, the choice
 of which builtin to identify the function as can be deferred until
 after overload resolution.
 
-This attribute can only be used to set up the aliases for the MVE
-intrinsic functions; it is intended for use only inside ``arm_mve.h``,
+This attribute can only be used to set up the aliases for certain Arm
+intrinsic functions; it is intended for use only inside ``arm_*.h``
 and is not a general mechanism for declaring arbitrary aliases for
 clang builtin functions.
   }];

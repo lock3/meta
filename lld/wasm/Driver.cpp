@@ -25,6 +25,7 @@
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/TarWriter.h"
@@ -149,12 +150,26 @@ static void handleColorDiagnostics(opt::InputArgList &args) {
   }
 }
 
+static cl::TokenizerCallback getQuotingStyle(opt::InputArgList &args) {
+  if (auto *arg = args.getLastArg(OPT_rsp_quoting)) {
+    StringRef s = arg->getValue();
+    if (s != "windows" && s != "posix")
+      error("invalid response file quoting: " + s);
+    if (s == "windows")
+      return cl::TokenizeWindowsCommandLine;
+    return cl::TokenizeGNUCommandLine;
+  }
+  if (Triple(sys::getProcessTriple()).isOSWindows())
+    return cl::TokenizeWindowsCommandLine;
+  return cl::TokenizeGNUCommandLine;
+}
+
 // Find a file by concatenating given paths.
 static Optional<std::string> findFile(StringRef path1, const Twine &path2) {
   SmallString<128> s;
   path::append(s, path1, path2);
   if (fs::exists(s))
-    return s.str().str();
+    return std::string(s);
   return None;
 }
 
@@ -164,10 +179,15 @@ opt::InputArgList WasmOptTable::parse(ArrayRef<const char *> argv) {
   unsigned missingIndex;
   unsigned missingCount;
 
-  // Expand response files (arguments in the form of @<filename>)
-  cl::ExpandResponseFiles(saver, cl::TokenizeGNUCommandLine, vec);
-
+  // We need to get the quoting style for response files before parsing all
+  // options so we parse here before and ignore all the options but
+  // --rsp-quoting.
   opt::InputArgList args = this->ParseArgs(vec, missingIndex, missingCount);
+
+  // Expand response files (arguments in the form of @<filename>)
+  // and then parse the argument again.
+  cl::ExpandResponseFiles(saver, getQuotingStyle(args), vec);
+  args = this->ParseArgs(vec, missingIndex, missingCount);
 
   handleColorDiagnostics(args);
   for (auto *arg : args.filtered(OPT_UNKNOWN))
@@ -361,7 +381,7 @@ static void readConfigs(opt::InputArgList &args) {
     config->features =
         llvm::Optional<std::vector<std::string>>(std::vector<std::string>());
     for (StringRef s : arg->getValues())
-      config->features->push_back(s);
+      config->features->push_back(std::string(s));
   }
 }
 
@@ -452,7 +472,7 @@ static void handleLibcall(StringRef name) {
 static UndefinedGlobal *
 createUndefinedGlobal(StringRef name, llvm::wasm::WasmGlobalType *type) {
   auto *sym = cast<UndefinedGlobal>(symtab->addUndefinedGlobal(
-      name, name, defaultModule, WASM_SYMBOL_UNDEFINED, nullptr, type));
+      name, None, None, WASM_SYMBOL_UNDEFINED, nullptr, type));
   config->allowUndefinedSymbols.insert(sym->getName());
   sym->isUsedInRegularObj = true;
   return sym;
@@ -572,7 +592,7 @@ static std::string createResponseFile(const opt::InputArgList &args) {
       os << toString(*arg) << "\n";
     }
   }
-  return data.str();
+  return std::string(data.str());
 }
 
 // The --wrap option is a feature to rename symbols so that you can write
@@ -590,7 +610,7 @@ struct WrappedSymbol {
 };
 
 static Symbol *addUndefined(StringRef name) {
-  return symtab->addUndefinedFunction(name, "", "", WASM_SYMBOL_UNDEFINED,
+  return symtab->addUndefinedFunction(name, None, None, WASM_SYMBOL_UNDEFINED,
                                       nullptr, nullptr, false);
 }
 

@@ -342,6 +342,7 @@ protected:
   bool HasDPP;
   bool HasDPP8;
   bool HasR128A16;
+  bool HasGFX10A16;
   bool HasNSAEncoding;
   bool HasDLInsts;
   bool HasDot1Insts;
@@ -506,6 +507,10 @@ public:
     return getGeneration() >= VOLCANIC_ISLANDS;
   }
 
+  bool hasFractBug() const {
+    return getGeneration() == SOUTHERN_ISLANDS;
+  }
+
   bool hasBFE() const {
     return true;
   }
@@ -585,6 +590,11 @@ public:
   /// s_cbranch_vccnz/s_cbranch_vccz.
   bool hasReadVCCZBug() const {
     return getGeneration() <= SEA_ISLANDS;
+  }
+
+  /// Writes to VCC_LO/VCC_HI update the VCCZ flag.
+  bool partialVCCWritesUpdateVCCZ() const {
+    return getGeneration() >= GFX10;
   }
 
   /// A read of an SGPR by SMRD instruction requires 4 wait states when the SGPR
@@ -722,6 +732,10 @@ public:
 
   bool hasScalarFlatScratchInsts() const {
     return ScalarFlatScratchInsts;
+  }
+
+  bool hasMultiDwordFlatScratchAddressing() const {
+    return getGeneration() >= GFX9;
   }
 
   bool hasFlatSegmentOffsetBug() const {
@@ -977,6 +991,10 @@ public:
 
   bool hasR128A16() const {
     return HasR128A16;
+  }
+
+  bool hasGFX10A16() const {
+    return HasGFX10A16;
   }
 
   bool hasOffset3fBug() const {

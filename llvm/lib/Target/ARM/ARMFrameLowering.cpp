@@ -969,10 +969,9 @@ ARMFrameLowering::ResolveFrameIndexReference(const MachineFunction &MF,
 
 void ARMFrameLowering::emitPushInst(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MI,
-                                    const std::vector<CalleeSavedInfo> &CSI,
+                                    ArrayRef<CalleeSavedInfo> CSI,
                                     unsigned StmOpc, unsigned StrOpc,
-                                    bool NoGap,
-                                    bool(*Func)(unsigned, bool),
+                                    bool NoGap, bool (*Func)(unsigned, bool),
                                     unsigned NumAlignedDPRCS2Regs,
                                     unsigned MIFlags) const {
   MachineFunction &MF = *MBB.getParent();
@@ -1047,10 +1046,10 @@ void ARMFrameLowering::emitPushInst(MachineBasicBlock &MBB,
 
 void ARMFrameLowering::emitPopInst(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator MI,
-                                   std::vector<CalleeSavedInfo> &CSI,
+                                   MutableArrayRef<CalleeSavedInfo> CSI,
                                    unsigned LdmOpc, unsigned LdrOpc,
                                    bool isVarArg, bool NoGap,
-                                   bool(*Func)(unsigned, bool),
+                                   bool (*Func)(unsigned, bool),
                                    unsigned NumAlignedDPRCS2Regs) const {
   MachineFunction &MF = *MBB.getParent();
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
@@ -1162,7 +1161,7 @@ void ARMFrameLowering::emitPopInst(MachineBasicBlock &MBB,
 static void emitAlignedDPRCS2Spills(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MI,
                                     unsigned NumAlignedDPRCS2Regs,
-                                    const std::vector<CalleeSavedInfo> &CSI,
+                                    ArrayRef<CalleeSavedInfo> CSI,
                                     const TargetRegisterInfo *TRI) {
   MachineFunction &MF = *MBB.getParent();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
@@ -1335,7 +1334,7 @@ skipAlignedDPRCS2Spills(MachineBasicBlock::iterator MI,
 static void emitAlignedDPRCS2Restores(MachineBasicBlock &MBB,
                                       MachineBasicBlock::iterator MI,
                                       unsigned NumAlignedDPRCS2Regs,
-                                      const std::vector<CalleeSavedInfo> &CSI,
+                                      ArrayRef<CalleeSavedInfo> CSI,
                                       const TargetRegisterInfo *TRI) {
   MachineFunction &MF = *MBB.getParent();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
@@ -1422,10 +1421,9 @@ static void emitAlignedDPRCS2Restores(MachineBasicBlock &MBB,
   std::prev(MI)->addRegisterKilled(ARM::R4, TRI);
 }
 
-bool ARMFrameLowering::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                        MachineBasicBlock::iterator MI,
-                                        const std::vector<CalleeSavedInfo> &CSI,
-                                        const TargetRegisterInfo *TRI) const {
+bool ARMFrameLowering::spillCalleeSavedRegisters(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
+    ArrayRef<CalleeSavedInfo> CSI, const TargetRegisterInfo *TRI) const {
   if (CSI.empty())
     return false;
 
@@ -1453,10 +1451,9 @@ bool ARMFrameLowering::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
   return true;
 }
 
-bool ARMFrameLowering::restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                        MachineBasicBlock::iterator MI,
-                                        std::vector<CalleeSavedInfo> &CSI,
-                                        const TargetRegisterInfo *TRI) const {
+bool ARMFrameLowering::restoreCalleeSavedRegisters(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
+    MutableArrayRef<CalleeSavedInfo> CSI, const TargetRegisterInfo *TRI) const {
   if (CSI.empty())
     return false;
 
@@ -1771,8 +1768,7 @@ void ARMFrameLowering::determineCalleeSaves(MachineFunction &MF,
   if (!LRSpilled && AFI->isThumb1OnlyFunction()) {
     unsigned FnSize = EstimateFunctionSizeInBytes(MF, TII);
     // Force LR to be spilled if the Thumb function size is > 2048. This enables
-    // use of BL to implement far jump. If it turns out that it's not needed
-    // then the branch fix up path will undo it.
+    // use of BL to implement far jump.
     if (FnSize >= (1 << 11)) {
       CanEliminateFrame = false;
       ForceLRSpill = true;
@@ -2123,10 +2119,8 @@ void ARMFrameLowering::determineCalleeSaves(MachineFunction &MF,
     }
   }
 
-  if (ForceLRSpill) {
+  if (ForceLRSpill)
     SavedRegs.set(ARM::LR);
-    AFI->setLRIsSpilledForFarJump(true);
-  }
   AFI->setLRIsSpilled(SavedRegs.test(ARM::LR));
 }
 
