@@ -13450,10 +13450,20 @@ FindParamName(Sema &SemaRef, Scope *S, Declarator &D) {
 
 static QualType CheckParameterPassingMode(Sema &SemaRef, ParameterPassingKind PPK,
                                       TypeSourceInfo *TSI) {
-  // FIXME: Check for bad combinations of type specifiers with parameter
-  // passing modes (e.g., cv-qualifiers, reference qualfiers, etc).
+  SourceRange Range = TSI->getTypeLoc().getSourceRange();
+  QualType T = TSI->getType();
 
-  // TODO: Adjust the type of the parameter based on the parameter passing mode.
+  // Don't allow cv- or ref-qualifications on passed types.
+  if (T.isConstQualified() || T.isVolatileQualified())
+    SemaRef.Diag(Range.getBegin(), diag::err_cv_qualified_parameter_passing)
+      << ((unsigned)PPK - 1) << Range;
+  if (T->isReferenceType())
+    SemaRef.Diag(Range.getBegin(), diag::err_ref_qualified_parameter_passing)
+      << ((unsigned)PPK - 1) << Range;
+
+  // Defer until instantiation.
+  if (T->isDependentType())
+    return T;
 
   return TSI->getType();
 }
