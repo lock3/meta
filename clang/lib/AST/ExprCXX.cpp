@@ -1818,14 +1818,11 @@ CXXReflectionWriteQueryExpr::CXXReflectionWriteQueryExpr(ASTContext &C,
                                                          SourceLocation KW,
                                                          SourceLocation LP,
                                                          SourceLocation RP)
-  : Expr(CXXReflectionWriteQueryExprClass, T, VK_RValue, OK_Ordinary,
-         AnyTypeDependentExprs(Args),
-         AnyValueDependentExprs(Args),
-         AnyInstantiationDependentExprs(Args),
-         /*ContainsUnexpandedParameterPack=*/false),
+  : Expr(CXXReflectionWriteQueryExprClass, T, VK_RValue, OK_Ordinary),
     Query(Q), NumArgs(Args.size()), Args(new (C) Expr *[NumArgs]),
     KeywordLoc(KW), LParenLoc(LP), RParenLoc(RP) {
   std::copy(Args.begin(), Args.end(), this->Args);
+  setDependence(computeDependence(this));
 }
 
 CXXReflectPrintLiteralExpr::CXXReflectPrintLiteralExpr(
@@ -1909,16 +1906,12 @@ CXXConcatenateExpr::CXXConcatenateExpr(ASTContext &Ctx,
   setDependence(computeDependence(this));
 }
 
-// FIXME: Can a fragment be value dependent?
 CXXFragmentExpr::CXXFragmentExpr(ASTContext &Ctx, SourceLocation IntroLoc,
                                  QualType T, CXXFragmentDecl *Frag,
                                  ArrayRef<Expr *> Caps, Expr *E)
-  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary,
-         /*TD=*/T->isDependentType() || AnyTypeDependentExprs(Caps),
-         /*VD=*/AnyValueDependentExprs(Caps),
-         /*ID=*/AnyInstantiationDependentExprs(Caps),
-         /*ContainsUnexpandedParameterPack=*/false),
+  : Expr(CXXFragmentExprClass, T, VK_RValue, OK_Ordinary),
     IntroLoc(IntroLoc), NumCaptures(Caps.size()),
     Captures(new (Ctx) Expr*[NumCaptures]), Fragment(Frag), Init(E) {
   std::copy(Caps.begin(), Caps.end(), Captures);
+  setDependence(computeDependence(this));
 }

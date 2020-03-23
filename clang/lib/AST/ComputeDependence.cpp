@@ -369,6 +369,15 @@ ExprDependence clang::computeDependence(CXXReflectionReadQueryExpr *E) {
   return D & ~ExprDependence::UnexpandedPack;
 }
 
+ExprDependence clang::computeDependence(CXXReflectionWriteQueryExpr *E) {
+  auto D = ExprDependence::None;
+  for (unsigned I = 0; I < E->getNumArgs(); ++I) {
+    Expr *SE = E->getArg(I);
+    D |= SE->getDependence();
+  }
+  return D & ~ExprDependence::UnexpandedPack;
+}
+
 ExprDependence clang::computeDependence(CXXReflectPrintLiteralExpr *E) {
   auto D = ExprDependence::None;
   for (unsigned I = 0; I < E->getNumArgs(); ++I) {
@@ -421,6 +430,17 @@ ExprDependence clang::computeDependence(CXXConcatenateExpr *E) {
     D |= SE->getDependence();
   }
   return D & ~ExprDependence::Type & ~ExprDependence::UnexpandedPack;
+}
+
+ExprDependence clang::computeDependence(CXXFragmentExpr *E) {
+  auto D = E->getType()->isDependentType()
+      ? ExprDependence::Type
+      : ExprDependence::None;
+  for (unsigned I = 0; I < E->getNumCaptures(); ++I) {
+    Expr *SE = E->getCapture(I);
+    D |= SE->getDependence();
+  }
+  return D & ~ExprDependence::UnexpandedPack;
 }
 
 ExprDependence clang::computeDependence(ObjCBoxedExpr *E) {
