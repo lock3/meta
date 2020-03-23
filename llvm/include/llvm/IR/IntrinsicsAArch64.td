@@ -619,7 +619,7 @@ def int_aarch64_neon_tbx4 : AdvSIMD_Tbx4_Intrinsic;
 
 let TargetPrefix = "aarch64" in {
   class FPCR_Get_Intrinsic
-    : Intrinsic<[llvm_i64_ty], [], [IntrNoMem]>;
+    : Intrinsic<[llvm_i64_ty], [], [IntrNoMem, IntrHasSideEffects]>;
 }
 
 // FPCR
@@ -780,12 +780,6 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
   class AdvSIMD_1Vec_PredLoad_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
-                 LLVMPointerTo<0>],
-                [IntrReadMem, IntrArgMemOnly]>;
-
-  class AdvSIMD_1Vec_PredFaultingLoad_Intrinsic
-    : Intrinsic<[llvm_anyvector_ty],
-                [LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
                  LLVMPointerToElt<0>],
                 [IntrReadMem, IntrArgMemOnly]>;
 
@@ -793,7 +787,7 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
     : Intrinsic<[],
                 [llvm_anyvector_ty,
                  LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
-                 LLVMPointerTo<0>],
+                 LLVMPointerToElt<0>],
                 [IntrArgMemOnly, NoCapture<2>]>;
 
   class AdvSIMD_SVE_Index_Intrinsic
@@ -961,6 +955,16 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
                  LLVMVectorElementType<0>],
                 [IntrNoMem]>;
 
+  class AdvSIMD_SVE_DUP_Unpred_Intrinsic
+    : Intrinsic<[llvm_anyvector_ty], [LLVMVectorElementType<0>],
+                [IntrNoMem]>;
+
+  class AdvSIMD_SVE_DUPQ_Intrinsic
+    : Intrinsic<[llvm_anyvector_ty],
+                [LLVMMatchType<0>,
+                 llvm_i64_ty],
+                [IntrNoMem]>;
+
   class AdvSIMD_SVE_EXPA_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [LLVMVectorOfBitcastsToInt<0>],
@@ -1053,6 +1057,13 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
                  LLVMVectorOfBitcastsToInt<0>],
                 [IntrNoMem]>;
 
+  class AdvSIMD_SVE2_TBX_Intrinsic
+    : Intrinsic<[llvm_anyvector_ty],
+                [LLVMMatchType<0>,
+                 LLVMMatchType<0>,
+                 LLVMVectorOfBitcastsToInt<0>],
+                [IntrNoMem]>;
+
   class SVE2_1VectorArg_Long_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [LLVMSubdivide2VectorType<0>,
@@ -1133,6 +1144,11 @@ let TargetPrefix = "aarch64" in {  // All intrinsics start with "llvm.aarch64.".
                    llvm_i32_ty],
                   [IntrNoMem, ImmArg<2>]>;
 
+  class SVE2_CONFLICT_DETECT_Intrinsic
+    : Intrinsic<[llvm_anyvector_ty],
+                [LLVMAnyPointerType<llvm_any_ty>,
+                 LLVMMatchType<1>]>;
+
   class SVE2_3VectorArg_Indexed_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [LLVMMatchType<0>,
@@ -1185,7 +1201,7 @@ class AdvSIMD_SVE_WHILE_Intrinsic
                 [llvm_anyint_ty, LLVMMatchType<1>],
                 [IntrNoMem]>;
 
-class AdvSIMD_GatherLoad_64bitOffset_Intrinsic
+class AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [
                   LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
@@ -1194,7 +1210,7 @@ class AdvSIMD_GatherLoad_64bitOffset_Intrinsic
                 ],
                 [IntrReadMem, IntrArgMemOnly]>;
 
-class AdvSIMD_GatherLoad_32bitOffset_Intrinsic
+class AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [
                   LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
@@ -1203,7 +1219,7 @@ class AdvSIMD_GatherLoad_32bitOffset_Intrinsic
                 ],
                 [IntrReadMem, IntrArgMemOnly]>;
 
-class AdvSIMD_GatherLoad_VectorBase_Intrinsic
+class AdvSIMD_GatherLoad_VS_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [
                   LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>,
@@ -1212,7 +1228,7 @@ class AdvSIMD_GatherLoad_VectorBase_Intrinsic
                 ],
                 [IntrReadMem, IntrArgMemOnly]>;
 
-class AdvSIMD_ScatterStore_64bitOffset_Intrinsic
+class AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic
     : Intrinsic<[],
                [
                  llvm_anyvector_ty,
@@ -1222,7 +1238,7 @@ class AdvSIMD_ScatterStore_64bitOffset_Intrinsic
                ],
                [IntrWriteMem, IntrArgMemOnly]>;
 
-class AdvSIMD_ScatterStore_32bitOffset_Intrinsic
+class AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic
     : Intrinsic<[],
                [
                  llvm_anyvector_ty,
@@ -1232,7 +1248,7 @@ class AdvSIMD_ScatterStore_32bitOffset_Intrinsic
                ],
                [IntrWriteMem, IntrArgMemOnly]>;
 
-class AdvSIMD_ScatterStore_VectorBase_Intrinsic
+class AdvSIMD_ScatterStore_VS_Intrinsic
     : Intrinsic<[],
                [
                  llvm_anyvector_ty,
@@ -1241,14 +1257,34 @@ class AdvSIMD_ScatterStore_VectorBase_Intrinsic
                ],
                [IntrWriteMem, IntrArgMemOnly]>;
 
+
+class SVE_gather_prf_scalar_base_vector_offset_scaled
+    : Intrinsic<[],
+                [
+                  LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>, // Predicate
+                  llvm_ptr_ty, // Base address
+                  llvm_anyvector_ty, // Offsets
+                  llvm_i32_ty // Prfop
+                ],
+                [IntrInaccessibleMemOrArgMemOnly, NoCapture<1>, ImmArg<3>]>;
+
+class SVE_gather_prf_vector_base_scalar_offset
+    : Intrinsic<[],
+                [
+                  LLVMScalarOrSameVectorWidth<0, llvm_i1_ty>, // Predicate
+                  llvm_anyvector_ty, // Base addresses
+                  llvm_i64_ty, // Scalar offset
+                  llvm_i32_ty // Prfop
+                ],
+                [IntrInaccessibleMemOrArgMemOnly, ImmArg<3>]>;
+
 //
 // Loads
 //
 
 def int_aarch64_sve_ldnt1 : AdvSIMD_1Vec_PredLoad_Intrinsic;
-
-def int_aarch64_sve_ldnf1 : AdvSIMD_1Vec_PredFaultingLoad_Intrinsic;
-def int_aarch64_sve_ldff1 : AdvSIMD_1Vec_PredFaultingLoad_Intrinsic;
+def int_aarch64_sve_ldnf1 : AdvSIMD_1Vec_PredLoad_Intrinsic;
+def int_aarch64_sve_ldff1 : AdvSIMD_1Vec_PredLoad_Intrinsic;
 
 //
 // Stores
@@ -1257,12 +1293,57 @@ def int_aarch64_sve_ldff1 : AdvSIMD_1Vec_PredFaultingLoad_Intrinsic;
 def int_aarch64_sve_stnt1 : AdvSIMD_1Vec_PredStore_Intrinsic;
 
 //
+// Prefetches
+//
+
+def int_aarch64_sve_prf
+  : Intrinsic<[], [llvm_anyvector_ty, llvm_ptr_ty, llvm_i32_ty],
+                  [IntrArgMemOnly, ImmArg<2>]>;
+
+// Scalar + 32-bit scaled offset vector, zero extend, packed and
+// unpacked.
+def int_aarch64_sve_prfb_gather_scaled_uxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfh_gather_scaled_uxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfw_gather_scaled_uxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfd_gather_scaled_uxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+
+// Scalar + 32-bit scaled offset vector, sign extend, packed and
+// unpacked.
+def int_aarch64_sve_prfb_gather_scaled_sxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfw_gather_scaled_sxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfh_gather_scaled_sxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfd_gather_scaled_sxtw : SVE_gather_prf_scalar_base_vector_offset_scaled;
+
+// Scalar + 64-bit scaled offset vector.
+def int_aarch64_sve_prfb_gather_scaled : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfh_gather_scaled : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfw_gather_scaled : SVE_gather_prf_scalar_base_vector_offset_scaled;
+def int_aarch64_sve_prfd_gather_scaled : SVE_gather_prf_scalar_base_vector_offset_scaled;
+
+// Vector + scalar.
+def int_aarch64_sve_prfb_gather : SVE_gather_prf_vector_base_scalar_offset;
+def int_aarch64_sve_prfh_gather : SVE_gather_prf_vector_base_scalar_offset;
+def int_aarch64_sve_prfw_gather : SVE_gather_prf_vector_base_scalar_offset;
+def int_aarch64_sve_prfd_gather : SVE_gather_prf_vector_base_scalar_offset;
+
+//
 // Scalar to vector operations
 //
 
 def int_aarch64_sve_dup : AdvSIMD_SVE_DUP_Intrinsic;
+def int_aarch64_sve_dup_x : AdvSIMD_SVE_DUP_Unpred_Intrinsic;
+
 
 def int_aarch64_sve_index : AdvSIMD_SVE_Index_Intrinsic;
+
+//
+// Address calculation
+//
+
+def int_aarch64_sve_adrb : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_adrh : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_adrw : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_adrd : AdvSIMD_2VectorArg_Intrinsic;
 
 //
 // Integer arithmetic
@@ -1466,7 +1547,9 @@ def int_aarch64_sve_clasta_n  : AdvSIMD_SVE_ReduceWithInit_Intrinsic;
 def int_aarch64_sve_clastb    : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_clastb_n  : AdvSIMD_SVE_ReduceWithInit_Intrinsic;
 def int_aarch64_sve_compact   : AdvSIMD_Pred1VectorArg_Intrinsic;
+def int_aarch64_sve_dupq_lane : AdvSIMD_SVE_DUPQ_Intrinsic;
 def int_aarch64_sve_ext       : AdvSIMD_2VectorArgIndexed_Intrinsic;
+def int_aarch64_sve_sel       : AdvSIMD_Pred2VectorArg_Intrinsic;
 def int_aarch64_sve_lasta     : AdvSIMD_SVE_Reduce_Intrinsic;
 def int_aarch64_sve_lastb     : AdvSIMD_SVE_Reduce_Intrinsic;
 def int_aarch64_sve_rev       : AdvSIMD_1VectorArg_Intrinsic;
@@ -1677,59 +1760,136 @@ def int_aarch64_sve_ptest_first : AdvSIMD_SVE_PTEST_Intrinsic;
 def int_aarch64_sve_ptest_last  : AdvSIMD_SVE_PTEST_Intrinsic;
 
 //
+// Reinterpreting data
+//
+
+def int_aarch64_sve_convert_from_svbool : Intrinsic<[llvm_anyvector_ty],
+                                                    [llvm_nxv16i1_ty],
+                                                    [IntrNoMem]>;
+
+def int_aarch64_sve_convert_to_svbool : Intrinsic<[llvm_nxv16i1_ty],
+                                                  [llvm_anyvector_ty],
+                                                  [IntrNoMem]>;
+
+//
 // Gather loads: scalar base + vector offsets
 //
 
 // 64 bit unscaled offsets
-def int_aarch64_sve_ld1_gather : AdvSIMD_GatherLoad_64bitOffset_Intrinsic;
+def int_aarch64_sve_ld1_gather : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
 
 // 64 bit scaled offsets
-def int_aarch64_sve_ld1_gather_index : AdvSIMD_GatherLoad_64bitOffset_Intrinsic;
+def int_aarch64_sve_ld1_gather_index : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
 
 // 32 bit unscaled offsets, sign (sxtw) or zero (zxtw) extended to 64 bits
-def int_aarch64_sve_ld1_gather_sxtw : AdvSIMD_GatherLoad_32bitOffset_Intrinsic;
-def int_aarch64_sve_ld1_gather_uxtw : AdvSIMD_GatherLoad_32bitOffset_Intrinsic;
+def int_aarch64_sve_ld1_gather_sxtw : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+def int_aarch64_sve_ld1_gather_uxtw : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
 
 // 32 bit scaled offsets, sign (sxtw) or zero (zxtw) extended to 64 bits
-def int_aarch64_sve_ld1_gather_sxtw_index : AdvSIMD_GatherLoad_32bitOffset_Intrinsic;
-def int_aarch64_sve_ld1_gather_uxtw_index : AdvSIMD_GatherLoad_32bitOffset_Intrinsic;
+def int_aarch64_sve_ld1_gather_sxtw_index : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+def int_aarch64_sve_ld1_gather_uxtw_index : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
 
 //
 // Gather loads: vector base + scalar offset
 //
 
-def int_aarch64_sve_ld1_gather_scalar_offset : AdvSIMD_GatherLoad_VectorBase_Intrinsic;
+def int_aarch64_sve_ld1_gather_scalar_offset : AdvSIMD_GatherLoad_VS_Intrinsic;
+
+
+//
+// First-faulting gather loads: scalar base + vector offsets
+//
+
+// 64 bit unscalled offsets
+def int_aarch64_sve_ldff1_gather : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
+
+// 64 bit scaled offsets
+def int_aarch64_sve_ldff1_gather_index : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
+
+// 32 bit unscaled offsets, sign (sxtw) or zero (uxtw) extended to 64 bits
+def int_aarch64_sve_ldff1_gather_sxtw : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+def int_aarch64_sve_ldff1_gather_uxtw : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+
+// 32 bit scaled offsets, sign (sxtw) or zero (uxtw) extended to 64 bits
+def int_aarch64_sve_ldff1_gather_sxtw_index : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+def int_aarch64_sve_ldff1_gather_uxtw_index : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+
+//
+// First-faulting gather loads: vector base + scalar offset
+//
+
+def int_aarch64_sve_ldff1_gather_scalar_offset : AdvSIMD_GatherLoad_VS_Intrinsic;
+
+
+//
+// Non-temporal gather loads: scalar base + vector offsets
+//
+
+// 64 bit unscaled offsets
+def int_aarch64_sve_ldnt1_gather : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
+
+// 64 bit indices
+def int_aarch64_sve_ldnt1_gather_index : AdvSIMD_GatherLoad_SV_64b_Offsets_Intrinsic;
+
+// 32 bit unscaled offsets, zero (zxtw) extended to 64 bits
+def int_aarch64_sve_ldnt1_gather_uxtw : AdvSIMD_GatherLoad_SV_32b_Offsets_Intrinsic;
+
+//
+// Non-temporal gather loads: vector base + scalar offset
+//
+
+def int_aarch64_sve_ldnt1_gather_scalar_offset  : AdvSIMD_GatherLoad_VS_Intrinsic;
 
 //
 // Scatter stores: scalar base + vector offsets
 //
 
 // 64 bit unscaled offsets
-def int_aarch64_sve_st1_scatter : AdvSIMD_ScatterStore_64bitOffset_Intrinsic;
+def int_aarch64_sve_st1_scatter : AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic;
 
 // 64 bit scaled offsets
 def int_aarch64_sve_st1_scatter_index
-    : AdvSIMD_ScatterStore_64bitOffset_Intrinsic;
+    : AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic;
 
 // 32 bit unscaled offsets, sign (sxtw) or zero (zxtw) extended to 64 bits
 def int_aarch64_sve_st1_scatter_sxtw
-    : AdvSIMD_ScatterStore_32bitOffset_Intrinsic;
+    : AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic;
 
 def int_aarch64_sve_st1_scatter_uxtw
-    : AdvSIMD_ScatterStore_32bitOffset_Intrinsic;
+    : AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic;
 
 // 32 bit scaled offsets, sign (sxtw) or zero (zxtw) extended to 64 bits
 def int_aarch64_sve_st1_scatter_sxtw_index
-    : AdvSIMD_ScatterStore_32bitOffset_Intrinsic;
+    : AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic;
 
 def int_aarch64_sve_st1_scatter_uxtw_index
-    : AdvSIMD_ScatterStore_32bitOffset_Intrinsic;
+    : AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic;
 
 //
 // Scatter stores: vector base + scalar offset
 //
 
-def int_aarch64_sve_st1_scatter_scalar_offset : AdvSIMD_ScatterStore_VectorBase_Intrinsic;
+def int_aarch64_sve_st1_scatter_scalar_offset : AdvSIMD_ScatterStore_VS_Intrinsic;
+
+//
+// Non-temporal scatter stores: scalar base + vector offsets
+//
+
+// 64 bit unscaled offsets
+def int_aarch64_sve_stnt1_scatter : AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic;
+
+// 64 bit indices
+def int_aarch64_sve_stnt1_scatter_index
+    : AdvSIMD_ScatterStore_SV_64b_Offsets_Intrinsic;
+
+// 32 bit unscaled offsets, zero (zxtw) extended to 64 bits
+def int_aarch64_sve_stnt1_scatter_uxtw : AdvSIMD_ScatterStore_SV_32b_Offsets_Intrinsic;
+
+//
+// Non-temporal scatter stores: vector base + scalar offset
+//
+
+def int_aarch64_sve_stnt1_scatter_scalar_offset  : AdvSIMD_ScatterStore_VS_Intrinsic;
 
 //
 // SVE2 - Uniform DSP operations
@@ -1998,4 +2158,83 @@ def int_aarch64_sve_adclt       : AdvSIMD_3VectorArg_Intrinsic;
 def int_aarch64_sve_sbclb       : AdvSIMD_3VectorArg_Intrinsic;
 def int_aarch64_sve_sbclt       : AdvSIMD_3VectorArg_Intrinsic;
 
+//
+// SVE2 - Polynomial arithmetic
+//
+def int_aarch64_sve_eorbt       : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_eortb       : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_pmullb_pair : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_pmullt_pair : AdvSIMD_2VectorArg_Intrinsic;
+
+//
+// SVE2 bitwise ternary operations.
+//
+def int_aarch64_sve_eor3   : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_bcax   : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_bsl    : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_bsl1n  : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_bsl2n  : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_nbsl   : AdvSIMD_3VectorArg_Intrinsic;
+def int_aarch64_sve_xar    : AdvSIMD_2VectorArgIndexed_Intrinsic;
+
+//
+// SVE2 - Optional AES, SHA-3 and SM4
+//
+
+def int_aarch64_sve_aesd    : GCCBuiltin<"__builtin_sve_svaesd_u8">,
+                              Intrinsic<[llvm_nxv16i8_ty],
+                                        [llvm_nxv16i8_ty, llvm_nxv16i8_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_aesimc  : GCCBuiltin<"__builtin_sve_svaesimc_u8">,
+                              Intrinsic<[llvm_nxv16i8_ty],
+                                        [llvm_nxv16i8_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_aese    : GCCBuiltin<"__builtin_sve_svaese_u8">,
+                              Intrinsic<[llvm_nxv16i8_ty],
+                                        [llvm_nxv16i8_ty, llvm_nxv16i8_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_aesmc   : GCCBuiltin<"__builtin_sve_svaesmc_u8">,
+                              Intrinsic<[llvm_nxv16i8_ty],
+                                        [llvm_nxv16i8_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_rax1    : GCCBuiltin<"__builtin_sve_svrax1_u64">,
+                              Intrinsic<[llvm_nxv2i64_ty],
+                                        [llvm_nxv2i64_ty, llvm_nxv2i64_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_sm4e    : GCCBuiltin<"__builtin_sve_svsm4e_u32">,
+                              Intrinsic<[llvm_nxv4i32_ty],
+                                        [llvm_nxv4i32_ty, llvm_nxv4i32_ty],
+                                        [IntrNoMem]>;
+def int_aarch64_sve_sm4ekey : GCCBuiltin<"__builtin_sve_svsm4ekey_u32">,
+                              Intrinsic<[llvm_nxv4i32_ty],
+                                        [llvm_nxv4i32_ty, llvm_nxv4i32_ty],
+                                        [IntrNoMem]>;
+//
+// SVE2 - Extended table lookup/permute
+//
+
+def int_aarch64_sve_tbl2 : AdvSIMD_SVE2_TBX_Intrinsic;
+def int_aarch64_sve_tbx  : AdvSIMD_SVE2_TBX_Intrinsic;
+
+//
+// SVE2 - Optional bit permutation
+//
+
+def int_aarch64_sve_bdep_x : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_bext_x : AdvSIMD_2VectorArg_Intrinsic;
+def int_aarch64_sve_bgrp_x : AdvSIMD_2VectorArg_Intrinsic;
+
 }
+
+//
+// SVE2 - Contiguous conflict detection
+//
+
+def int_aarch64_sve_whilerw_b : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilerw_h : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilerw_s : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilerw_d : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilewr_b : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilewr_h : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilewr_s : SVE2_CONFLICT_DETECT_Intrinsic;
+def int_aarch64_sve_whilewr_d : SVE2_CONFLICT_DETECT_Intrinsic;

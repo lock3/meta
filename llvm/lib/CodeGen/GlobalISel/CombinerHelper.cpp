@@ -1449,8 +1449,8 @@ bool CombinerHelper::applyCombineShiftToUnmerge(MachineInstr &MI,
 
     if (ShiftVal == HalfSize) {
       // (G_ASHR i64:x, 32) ->
-      //   G_MERGE_VALUES lo_32(x), (G_ASHR hi_32(x), 31)
-      Builder.buildMerge(DstReg, { Unmerge.getReg(0), Hi });
+      //   G_MERGE_VALUES hi_32(x), (G_ASHR hi_32(x), 31)
+      Builder.buildMerge(DstReg, { Unmerge.getReg(1), Hi });
     } else if (ShiftVal == Size - 1) {
       // Don't need a second shift.
       // (G_ASHR i64:x, 63) ->
@@ -1481,6 +1481,50 @@ bool CombinerHelper::tryCombineShiftToUnmerge(MachineInstr &MI,
   }
 
   return false;
+}
+
+bool CombinerHelper::matchAnyExplicitUseIsUndef(MachineInstr &MI) {
+  return any_of(MI.explicit_uses(), [this](const MachineOperand &MO) {
+    return MO.isReg() &&
+           getOpcodeDef(TargetOpcode::G_IMPLICIT_DEF, MO.getReg(), MRI);
+  });
+}
+
+bool CombinerHelper::matchAllExplicitUsesAreUndef(MachineInstr &MI) {
+  return all_of(MI.explicit_uses(), [this](const MachineOperand &MO) {
+    return !MO.isReg() ||
+           getOpcodeDef(TargetOpcode::G_IMPLICIT_DEF, MO.getReg(), MRI);
+  });
+}
+
+bool CombinerHelper::matchUndefShuffleVectorMask(MachineInstr &MI) {
+  assert(MI.getOpcode() == TargetOpcode::G_SHUFFLE_VECTOR);
+  ArrayRef<int> Mask = MI.getOperand(3).getShuffleMask();
+  return all_of(Mask, [](int Elt) { return Elt < 0; });
+}
+
+bool CombinerHelper::replaceInstWithFConstant(MachineInstr &MI, double C) {
+  assert(MI.getNumDefs() == 1 && "Expected only one def?");
+  Builder.setInstr(MI);
+  Builder.buildFConstant(MI.getOperand(0), C);
+  MI.eraseFromParent();
+  return true;
+}
+
+bool CombinerHelper::replaceInstWithConstant(MachineInstr &MI, int64_t C) {
+  assert(MI.getNumDefs() == 1 && "Expected only one def?");
+  Builder.setInstr(MI);
+  Builder.buildConstant(MI.getOperand(0), C);
+  MI.eraseFromParent();
+  return true;
+}
+
+bool CombinerHelper::replaceInstWithUndef(MachineInstr &MI) {
+  assert(MI.getNumDefs() == 1 && "Expected only one def?");
+  Builder.setInstr(MI);
+  Builder.buildUndef(MI.getOperand(0));
+  MI.eraseFromParent();
+  return true;
 }
 
 bool CombinerHelper::tryCombine(MachineInstr &MI) {

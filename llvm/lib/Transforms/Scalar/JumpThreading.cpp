@@ -2113,16 +2113,28 @@ bool JumpThreadingPass::MaybeThreadThroughTwoBasicBlocks(BasicBlock *BB,
   if (!PredBB)
     return false;
 
-  // Require that PredBB end with a Branch.  If PredBB ends with an
-  // unconditional branch, we should be merging PredBB and BB instead.  For
+  // Require that PredBB end with a conditional Branch. If PredBB ends with an
+  // unconditional branch, we should be merging PredBB and BB instead. For
   // simplicity, we don't deal with a switch.
   BranchInst *PredBBBranch = dyn_cast<BranchInst>(PredBB->getTerminator());
-  if (!PredBBBranch)
+  if (!PredBBBranch || PredBBBranch->isUnconditional())
     return false;
 
   // If PredBB has exactly one incoming edge, we don't gain anything by copying
   // PredBB.
   if (PredBB->getSinglePredecessor())
+    return false;
+
+  // Don't thread through PredBB if it contains a successor edge to itself, in
+  // which case we would infinite loop.  Suppose we are threading an edge from
+  // PredPredBB through PredBB and BB to SuccBB with PredBB containing a
+  // successor edge to itself.  If we allowed jump threading in this case, we
+  // could duplicate PredBB and BB as, say, PredBB.thread and BB.thread.  Since
+  // PredBB.thread has a successor edge to PredBB, we would immediately come up
+  // with another jump threading opportunity from PredBB.thread through PredBB
+  // and BB to SuccBB.  This jump threading would repeatedly occur.  That is, we
+  // would keep peeling one iteration from PredBB.
+  if (llvm::is_contained(successors(PredBB), PredBB))
     return false;
 
   // Don't thread across a loop header.

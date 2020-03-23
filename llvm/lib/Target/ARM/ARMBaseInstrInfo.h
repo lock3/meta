@@ -105,6 +105,11 @@ protected:
   Optional<DestSourcePair>
   isCopyInstrImpl(const MachineInstr &MI) const override;
 
+  /// Specialization of \ref TargetInstrInfo::describeLoadedValue, used to
+  /// enhance debug entry value descriptions for ARM targets.
+  Optional<ParamLoadedValue> describeLoadedValue(const MachineInstr &MI,
+                                                 Register Reg) const override;
+
 public:
   // Return whether the target has an explicit NOP encoding.
   bool hasNOP() const;
@@ -145,6 +150,11 @@ public:
 
   // Predication support.
   bool isPredicated(const MachineInstr &MI) const override;
+
+  // MIR printer helper function to annotate Operands with a comment.
+  std::string createMIROperandComment(const MachineInstr &MI,
+                                      const MachineOperand &Op,
+                                      unsigned OpIdx) const override;
 
   ARMCC::CondCodes getPredicate(const MachineInstr &MI) const {
     int PIdx = MI.findFirstPredOperandIdx();

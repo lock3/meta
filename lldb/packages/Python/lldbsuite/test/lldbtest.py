@@ -1,7 +1,7 @@
 """
 LLDB module which provides the abstract base class of lldb test case.
 
-The concrete subclass can override lldbtest.TesBase in order to inherit the
+The concrete subclass can override lldbtest.TestBase in order to inherit the
 common behavior for unitest.TestCase.setUp/tearDown implemented in this file.
 
 The subclass should override the attribute mydir in order for the python runtime
@@ -687,10 +687,17 @@ class Base(unittest2.TestCase):
     @classmethod
     def setUpCommands(cls):
         commands = [
+            # First of all, clear all settings to have clean state of global properties.
+            "settings clear -all",
+
             # Disable Spotlight lookup. The testsuite creates
             # different binaries with the same UUID, because they only
             # differ in the debug info, which is not being hashed.
             "settings set symbols.enable-external-lookup false",
+
+            # Disable fix-its by default so that incorrect expressions in tests don't
+            # pass just because Clang thinks it has a fix-it.
+            "settings set target.auto-apply-fixits false",
 
             # Testsuite runs in parallel and the host can have also other load.
             "settings set plugin.process.gdb-remote.packet-timeout 60",
@@ -699,6 +706,11 @@ class Base(unittest2.TestCase):
                 configuration.lldb_module_cache_dir),
             "settings set use-color false",
         ]
+
+        # Set any user-overridden settings.
+        for setting, value in configuration.settings:
+            commands.append('setting set %s %s'%(setting, value))
+
         # Make sure that a sanitizer LLDB's environment doesn't get passed on.
         if cls.platformContext and cls.platformContext.shlib_environment_var in os.environ:
             commands.append('settings set target.env-vars {}='.format(
@@ -799,11 +811,11 @@ class Base(unittest2.TestCase):
             # set environment variable names for finding shared libraries
             self.dylibPath = self.platformContext.shlib_environment_var
 
-        # Create the debugger instance if necessary.
-        try:
-            self.dbg = lldb.DBG
-        except AttributeError:
-            self.dbg = lldb.SBDebugger.Create()
+        # Create the debugger instance.
+        self.dbg = lldb.SBDebugger.Create()
+        # Copy selected platform from a global instance if it exists.
+        if lldb.selected_platform is not None:
+            self.dbg.SetSelectedPlatform(lldb.selected_platform)
 
         if not self.dbg:
             raise Exception('Invalid debugger instance')
@@ -1013,6 +1025,11 @@ class Base(unittest2.TestCase):
             if self.dicts:
                 for dict in reversed(self.dicts):
                     self.cleanup(dictionary=dict)
+
+        # This must be the last statement, otherwise teardown hooks or other
+        # lines might depend on this still being active.
+        lldb.SBDebugger.Destroy(self.dbg)
+        del self.dbg
 
     # =========================================================
     # Various callbacks to allow introspection of test progress
@@ -1227,6 +1244,8 @@ class Base(unittest2.TestCase):
         arch = module.getArchitecture()
         if arch == 'amd64':
             arch = 'x86_64'
+        if arch in ['armv7l', 'armv8l'] :
+            arch = 'arm'
         return arch
 
     def getLldbArchitecture(self):
@@ -1990,10 +2009,6 @@ class TestBase(Base):
         # Do this last, to make sure it's in reverse order from how we setup.
         Base.tearDown(self)
 
-        # This must be the last statement, otherwise teardown hooks or other
-        # lines might depend on this still being active.
-        del self.dbg
-
     def switch_to_thread_with_stop_reason(self, stop_reason):
         """
         Run the 'thread list' command, and select the thread with stop reason as
@@ -2381,7 +2396,6 @@ FileCheck output:
             result_summary=None,
             result_value=None,
             result_type=None,
-            error_msg=None,
             ):
         """
         Evaluates the given expression and verifies the result.
@@ -2389,24 +2403,27 @@ FileCheck output:
         :param result_summary: The summary that the expression should have. None if the summary should not be checked.
         :param result_value: The value that the expression should have. None if the value should not be checked.
         :param result_type: The type that the expression result should have. None if the type should not be checked.
-        :param error_msg: The error message the expression should return. None if the error output should not be checked.
         """
         self.assertTrue(expr.strip() == expr, "Expression contains trailing/leading whitespace: '" + expr + "'")
 
         frame = self.frame()
-        eval_result = frame.EvaluateExpression(expr)
+        options = lldb.SBExpressionOptions()
 
-        if error_msg:
-            self.assertFalse(eval_result.IsValid(), "Unexpected success with result: '" + str(eval_result) + "'")
-            self.assertEqual(error_msg, eval_result.GetError().GetCString())
-            return
+        # Disable fix-its that tests don't pass by accident.
+        options.SetAutoApplyFixIts(False)
+
+        # Set the usual default options for normal expressions.
+        options.SetIgnoreBreakpoints(True)
+        options.SetLanguage(frame.GuessLanguage())
+
+        eval_result = frame.EvaluateExpression(expr, options)
 
         if not eval_result.GetError().Success():
             self.assertTrue(eval_result.GetError().Success(),
                 "Unexpected failure with msg: " + eval_result.GetError().GetCString())
 
         if result_type:
-            self.assertEqual(result_type, eval_result.GetTypeName())
+            self.assertEqual(result_type, eval_result.GetDisplayTypeName())
 
         if result_value:
             self.assertEqual(result_value, eval_result.GetValue())

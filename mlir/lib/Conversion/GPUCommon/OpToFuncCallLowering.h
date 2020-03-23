@@ -11,7 +11,7 @@
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/GPU/GPUDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Builders.h"
 
 namespace mlir {
@@ -26,15 +26,15 @@ namespace mlir {
 /// will be transformed into
 ///   llvm.call @__nv_expf(%arg_f32) : (!llvm.float) -> !llvm.float
 template <typename SourceOp>
-struct OpToFuncCallLowering : public LLVMOpLowering {
+struct OpToFuncCallLowering : public ConvertToLLVMPattern {
 public:
   explicit OpToFuncCallLowering(LLVMTypeConverter &lowering_, StringRef f32Func,
                                 StringRef f64Func)
-      : LLVMOpLowering(SourceOp::getOperationName(),
-                       lowering_.getDialect()->getContext(), lowering_),
+      : ConvertToLLVMPattern(SourceOp::getOperationName(),
+                             lowering_.getDialect()->getContext(), lowering_),
         f32Func(f32Func), f64Func(f64Func) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     using LLVM::LLVMFuncOp;
@@ -49,13 +49,13 @@ public:
     LLVMType funcType = getFunctionType(resultType, operands);
     StringRef funcName = getFunctionName(resultType);
     if (funcName.empty())
-      return matchFailure();
+      return failure();
 
     LLVMFuncOp funcOp = appendOrGetFuncOp(funcName, funcType, op);
     auto callOp = rewriter.create<LLVM::CallOp>(
         op->getLoc(), resultType, rewriter.getSymbolRefAttr(funcOp), operands);
     rewriter.replaceOp(op, {callOp.getResult(0)});
-    return matchSuccess();
+    return success();
   }
 
 private:

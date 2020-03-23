@@ -481,6 +481,11 @@ void OMPClauseProfiler::VisitOMPCollapseClause(const OMPCollapseClause *C) {
     Profiler->VisitStmt(C->getNumForLoops());
 }
 
+void OMPClauseProfiler::VisitOMPDetachClause(const OMPDetachClause *C) {
+  if (Expr *Evt = C->getEventHandler())
+    Profiler->VisitStmt(Evt);
+}
+
 void OMPClauseProfiler::VisitOMPDefaultClause(const OMPDefaultClause *C) { }
 
 void OMPClauseProfiler::VisitOMPProcBindClause(const OMPProcBindClause *C) { }
@@ -540,6 +545,8 @@ void OMPClauseProfiler::VisitOMPThreadsClause(const OMPThreadsClause *) {}
 void OMPClauseProfiler::VisitOMPSIMDClause(const OMPSIMDClause *) {}
 
 void OMPClauseProfiler::VisitOMPNogroupClause(const OMPNogroupClause *) {}
+
+void OMPClauseProfiler::VisitOMPDestroyClause(const OMPDestroyClause *) {}
 
 template<typename T>
 void OMPClauseProfiler::VisitOMPClauseList(T *Node) {
@@ -728,6 +735,10 @@ OMPClauseProfiler::VisitOMPCopyprivateClause(const OMPCopyprivateClause *C) {
 void OMPClauseProfiler::VisitOMPFlushClause(const OMPFlushClause *C) {
   VisitOMPClauseList(C);
 }
+void OMPClauseProfiler::VisitOMPDepobjClause(const OMPDepobjClause *C) {
+  if (const Expr *Depobj = C->getDepobj())
+    Profiler->VisitStmt(Depobj);
+}
 void OMPClauseProfiler::VisitOMPDependClause(const OMPDependClause *C) {
   VisitOMPClauseList(C);
 }
@@ -792,6 +803,12 @@ void OMPClauseProfiler::VisitOMPNontemporalClause(
   VisitOMPClauseList(C);
   for (auto *E : C->private_refs())
     Profiler->VisitStmt(E);
+}
+void OMPClauseProfiler::VisitOMPInclusiveClause(const OMPInclusiveClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseProfiler::VisitOMPExclusiveClause(const OMPExclusiveClause *C) {
+  VisitOMPClauseList(C);
 }
 void OMPClauseProfiler::VisitOMPOrderClause(const OMPOrderClause *C) {}
 } // namespace
@@ -891,6 +908,14 @@ void StmtProfiler::VisitOMPTaskgroupDirective(const OMPTaskgroupDirective *S) {
 }
 
 void StmtProfiler::VisitOMPFlushDirective(const OMPFlushDirective *S) {
+  VisitOMPExecutableDirective(S);
+}
+
+void StmtProfiler::VisitOMPDepobjDirective(const OMPDepobjDirective *S) {
+  VisitOMPExecutableDirective(S);
+}
+
+void StmtProfiler::VisitOMPScanDirective(const OMPScanDirective *S) {
   VisitOMPExecutableDirective(S);
 }
 

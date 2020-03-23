@@ -391,7 +391,7 @@ tryToUnrollAndJamLoop(Loop *L, DominatorTree &DT, LoopInfo *LI,
   Loop *EpilogueOuterLoop = nullptr;
   LoopUnrollResult UnrollResult = UnrollAndJamLoop(
       L, UP.Count, OuterTripCount, OuterTripMultiple, UP.UnrollRemainder, LI,
-      &SE, &DT, &AC, &ORE, &EpilogueOuterLoop);
+      &SE, &DT, &AC, &TTI, &ORE, &EpilogueOuterLoop);
 
   // Assign new loop attributes.
   if (EpilogueOuterLoop) {
@@ -438,11 +438,11 @@ static bool tryToUnrollAndJamLoop(Function &F, DominatorTree &DT, LoopInfo &LI,
                                   int OptLevel) {
   bool DidSomething = false;
 
-  // The loop unroll and jam pass requires loops to be in simplified form, and also needs LCSSA.
-  // Since simplification may add new inner loops, it has to run before the
-  // legality and profitability checks. This means running the loop unroll and jam pass
-  // will simplify all loops, regardless of whether anything end up being
-  // unroll and jammed.
+  // The loop unroll and jam pass requires loops to be in simplified form, and
+  // also needs LCSSA. Since simplification may add new inner loops, it has to
+  // run before the legality and profitability checks. This means running the
+  // loop unroll and jam pass will simplify all loops, regardless of whether
+  // anything end up being unroll and jammed.
   for (auto &L : LI) {
     DidSomething |=
         simplifyLoop(L, &DT, &LI, &SE, &AC, nullptr, false /* PreserveLCSSA */);

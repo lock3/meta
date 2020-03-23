@@ -2062,6 +2062,8 @@ public:
   VisitOMPCancellationPointDirective(const OMPCancellationPointDirective *D);
   void VisitOMPCancelDirective(const OMPCancelDirective *D);
   void VisitOMPFlushDirective(const OMPFlushDirective *D);
+  void VisitOMPDepobjDirective(const OMPDepobjDirective *D);
+  void VisitOMPScanDirective(const OMPScanDirective *D);
   void VisitOMPOrderedDirective(const OMPOrderedDirective *D);
   void VisitOMPAtomicDirective(const OMPAtomicDirective *D);
   void VisitOMPTargetDirective(const OMPTargetDirective *D);
@@ -2234,6 +2236,10 @@ void OMPClauseEnqueue::VisitOMPOrderedClause(const OMPOrderedClause *C) {
   Visitor->AddStmt(C->getNumForLoops());
 }
 
+void OMPClauseEnqueue::VisitOMPDetachClause(const OMPDetachClause *C) {
+  Visitor->AddStmt(C->getEventHandler());
+}
+
 void OMPClauseEnqueue::VisitOMPNowaitClause(const OMPNowaitClause *) {}
 
 void OMPClauseEnqueue::VisitOMPUntiedClause(const OMPUntiedClause *) {}
@@ -2263,6 +2269,8 @@ void OMPClauseEnqueue::VisitOMPThreadsClause(const OMPThreadsClause *) {}
 void OMPClauseEnqueue::VisitOMPSIMDClause(const OMPSIMDClause *) {}
 
 void OMPClauseEnqueue::VisitOMPNogroupClause(const OMPNogroupClause *) {}
+
+void OMPClauseEnqueue::VisitOMPDestroyClause(const OMPDestroyClause *) {}
 
 void OMPClauseEnqueue::VisitOMPUnifiedAddressClause(
     const OMPUnifiedAddressClause *) {}
@@ -2316,6 +2324,12 @@ void OMPClauseEnqueue::VisitOMPClauseList(T *Node) {
   }
 }
 
+void OMPClauseEnqueue::VisitOMPInclusiveClause(const OMPInclusiveClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPExclusiveClause(const OMPExclusiveClause *C) {
+  VisitOMPClauseList(C);
+}
 void OMPClauseEnqueue::VisitOMPAllocateClause(const OMPAllocateClause *C) {
   VisitOMPClauseList(C);
   Visitor->AddStmt(C->getAllocator());
@@ -2458,6 +2472,9 @@ OMPClauseEnqueue::VisitOMPCopyprivateClause(const OMPCopyprivateClause *C) {
 }
 void OMPClauseEnqueue::VisitOMPFlushClause(const OMPFlushClause *C) {
   VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPDepobjClause(const OMPDepobjClause *C) {
+  Visitor->AddStmt(C->getDepobj());
 }
 void OMPClauseEnqueue::VisitOMPDependClause(const OMPDependClause *C) {
   VisitOMPClauseList(C);
@@ -2886,6 +2903,14 @@ void EnqueueVisitor::VisitOMPFlushDirective(const OMPFlushDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
+void EnqueueVisitor::VisitOMPDepobjDirective(const OMPDepobjDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPScanDirective(const OMPScanDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
 void EnqueueVisitor::VisitOMPOrderedDirective(const OMPOrderedDirective *D) {
   VisitOMPExecutableDirective(D);
 }
@@ -2898,8 +2923,8 @@ void EnqueueVisitor::VisitOMPTargetDirective(const OMPTargetDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
-void EnqueueVisitor::VisitOMPTargetDataDirective(const 
-                                                 OMPTargetDataDirective *D) {
+void EnqueueVisitor::VisitOMPTargetDataDirective(
+    const OMPTargetDataDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
@@ -5519,6 +5544,10 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPTaskgroupDirective");
   case CXCursor_OMPFlushDirective:
     return cxstring::createRef("OMPFlushDirective");
+  case CXCursor_OMPDepobjDirective:
+    return cxstring::createRef("OMPDepobjDirective");
+  case CXCursor_OMPScanDirective:
+    return cxstring::createRef("OMPScanDirective");
   case CXCursor_OMPOrderedDirective:
     return cxstring::createRef("OMPOrderedDirective");
   case CXCursor_OMPAtomicDirective:

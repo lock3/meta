@@ -1424,6 +1424,14 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
     return translateOverflowIntrinsic(CI, TargetOpcode::G_UMULO, MIRBuilder);
   case Intrinsic::smul_with_overflow:
     return translateOverflowIntrinsic(CI, TargetOpcode::G_SMULO, MIRBuilder);
+  case Intrinsic::uadd_sat:
+    return translateBinaryOp(TargetOpcode::G_UADDSAT, CI, MIRBuilder);
+  case Intrinsic::sadd_sat:
+    return translateBinaryOp(TargetOpcode::G_SADDSAT, CI, MIRBuilder);
+  case Intrinsic::usub_sat:
+    return translateBinaryOp(TargetOpcode::G_USUBSAT, CI, MIRBuilder);
+  case Intrinsic::ssub_sat:
+    return translateBinaryOp(TargetOpcode::G_SSUBSAT, CI, MIRBuilder);
   case Intrinsic::fmuladd: {
     const TargetMachine &TM = MF->getTarget();
     const TargetLowering &TLI = *MF->getSubtarget().getTargetLowering();
@@ -2381,6 +2389,7 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
     WrapperObserver.addObserver(&Verifier);
 #endif // ifndef NDEBUG
     RAIIDelegateInstaller DelInstall(*MF, &WrapperObserver);
+    RAIIMFObserverInstaller ObsInstall(*MF, WrapperObserver);
     for (const BasicBlock *BB : RPOT) {
       MachineBasicBlock &MBB = getMBB(*BB);
       // Set the insertion point of all the following translations to

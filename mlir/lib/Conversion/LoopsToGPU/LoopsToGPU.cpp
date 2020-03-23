@@ -15,10 +15,11 @@
 #include "mlir/Conversion/LoopsToGPU/LoopsToGPU.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
-#include "mlir/Dialect/AffineOps/AffineOps.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/GPU/GPUDialect.h"
+#include "mlir/Dialect/GPU/ParallelLoopMapper.h"
 #include "mlir/Dialect/LoopOps/LoopOps.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
@@ -496,8 +497,8 @@ namespace {
 struct ParallelToGpuLaunchLowering : public OpRewritePattern<ParallelOp> {
   using OpRewritePattern<ParallelOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(ParallelOp parallelOp,
-                                     PatternRewriter &rewriter) const override;
+  LogicalResult matchAndRewrite(ParallelOp parallelOp,
+                                PatternRewriter &rewriter) const override;
 };
 
 struct MappingAnnotation {
@@ -508,23 +509,20 @@ struct MappingAnnotation {
 
 } // namespace
 
-static constexpr const char *kProcessorEntryName = "processor";
-static constexpr const char *kIndexMapEntryName = "map";
-static constexpr const char *kBoundMapEntryName = "bound";
-
 /// Extracts the mapping annotations from the provided attribute. The attribute
 /// is expected to be of the form
 /// { processor = <unsigned>, map = <AffineMap>, bound = <AffineMap> }
 /// where the bound is optional.
 static MappingAnnotation extractMappingAnnotation(Attribute attribute) {
   DictionaryAttr dict = attribute.cast<DictionaryAttr>();
-  unsigned processor = dict.get(kProcessorEntryName)
+  unsigned processor = dict.get(gpu::kProcessorEntryName)
                            .cast<IntegerAttr>()
                            .getValue()
                            .getSExtValue();
-  AffineMap map = dict.get(kIndexMapEntryName).cast<AffineMapAttr>().getValue();
+  AffineMap map =
+      dict.get(gpu::kIndexMapEntryName).cast<AffineMapAttr>().getValue();
   AffineMapAttr boundAttr =
-      dict.get(kBoundMapEntryName).dyn_cast_or_null<AffineMapAttr>();
+      dict.get(gpu::kBoundMapEntryName).dyn_cast_or_null<AffineMapAttr>();
   AffineMap bound;
   if (boundAttr)
     bound = boundAttr.getValue();
@@ -533,25 +531,19 @@ static MappingAnnotation extractMappingAnnotation(Attribute attribute) {
 
 /// Tries to derive a static upper bound from the defining operation of
 /// `upperBound`.
-static Value deriveStaticUpperBound(Value upperBound) {
-  Value constantBound = {};
+static Value deriveStaticUpperBound(Value upperBound,
+                                    PatternRewriter &rewriter) {
   if (AffineMinOp minOp =
           dyn_cast_or_null<AffineMinOp>(upperBound.getDefiningOp())) {
-    auto map = minOp.map();
-    auto operands = minOp.operands();
-    for (int sub = 0, e = map.getNumResults(); sub < e; ++sub) {
-      AffineExpr expr = map.getResult(sub);
-      if (AffineDimExpr dimExpr = expr.dyn_cast<AffineDimExpr>()) {
-        auto dimOperand = operands[dimExpr.getPosition()];
-        auto defOp = dimOperand.getDefiningOp();
-        if (ConstantOp constOp = dyn_cast_or_null<ConstantOp>(defOp)) {
-          constantBound = constOp;
-          break;
-        }
+    for (const AffineExpr &result : minOp.map().getResults()) {
+      if (AffineConstantExpr constExpr =
+              result.dyn_cast<AffineConstantExpr>()) {
+        return rewriter.create<ConstantIndexOp>(minOp.getLoc(),
+                                                constExpr.getValue());
       }
     }
   }
-  return constantBound;
+  return {};
 }
 
 /// Modifies the current transformation state to capture the effect of the given
@@ -580,10 +572,12 @@ static LogicalResult processParallelLoop(ParallelOp parallelOp,
                                          gpu::LaunchOp launchOp,
                                          BlockAndValueMapping &cloningMap,
                                          SmallVectorImpl<Operation *> &worklist,
+                                         DenseMap<int, Value> &bounds,
                                          PatternRewriter &rewriter) {
   // TODO(herhut): Verify that this is a valid GPU mapping.
   // processor ids: 0-2 block [x/y/z], 3-5 -> thread [x/y/z], 6-> sequential
-  ArrayAttr mapping = parallelOp.getAttrOfType<ArrayAttr>("mapping");
+  ArrayAttr mapping =
+      parallelOp.getAttrOfType<ArrayAttr>(gpu::kMappingAttributeName);
 
   // TODO(herhut): Support reductions.
   if (!mapping || parallelOp.getNumResults() != 0)
@@ -615,47 +609,73 @@ static LogicalResult processParallelLoop(ParallelOp parallelOp,
 
     if (annotation.processor < gpu::LaunchOp::kNumConfigOperands) {
       // Use the corresponding thread/grid index as replacement for the loop iv.
-      // TODO(herhut): Make the iv calculation depend on lower & upper bound.
       Value operand = launchOp.body().front().getArgument(annotation.processor);
-      Value appliedMap =
-          rewriter.create<AffineApplyOp>(loc, annotation.indexMap, operand);
-      // Add the lower bound, as the maps are 0 based but the loop might not be.
-      // TODO(herhut): Maybe move this explicitly into the maps?
-      newIndex = rewriter.create<AddIOp>(
-          loc, appliedMap, cloningMap.lookupOrDefault(lowerBound));
+      // Take the indexmap and add the lower bound and step computations in.
+      // This computes operand * step + lowerBound.
+      // Use an affine map here so that it composes nicely with the provided
+      // annotation.
+      AffineMap lowerAndStep = AffineMap::get(
+          1, 2,
+          rewriter.getAffineDimExpr(0) * rewriter.getAffineSymbolExpr(0) +
+              rewriter.getAffineSymbolExpr(1));
+      newIndex = rewriter.create<AffineApplyOp>(
+          loc, annotation.indexMap.compose(lowerAndStep),
+          ValueRange{operand, step, lowerBound});
       // If there was also a bound, insert that, too.
       // TODO(herhut): Check that we do not assign bounds twice.
       if (annotation.boundMap) {
         // We pass as the single opererand to the bound-map the number of
-        // iterations, which is upperBound - lowerBound. To support inner loops
-        // with dynamic upper bounds (as generated by e.g. tiling), try to
-        // derive a max for the bounds. If the used bound for the hardware id is
-        // inprecise, wrap the contained code into a conditional.
-        // If the lower-bound is constant or defined before the launch, we can
-        // use it in the launch bounds. Otherwise fail.
+        // iterations, which is (upperBound - lowerBound) ceilDiv step. To
+        // support inner loops with dynamic upper bounds (as generated by e.g.
+        // tiling), try to derive a max for the bounds. If the used bound for
+        // the hardware id is imprecise, wrap the contained code into a
+        // conditional. If the lower-bound is constant or defined before the
+        // launch, we can use it in the launch bounds. Otherwise fail.
         if (!launchIndependent(lowerBound) &&
-            !isa<ConstantOp>(lowerBound.getDefiningOp()))
+            !isa_and_nonnull<ConstantOp>(lowerBound.getDefiningOp()))
+          return failure();
+        // The step must also be constant or defined outside of the loop nest.
+        if (!launchIndependent(step) &&
+            !isa_and_nonnull<ConstantOp>(step.getDefiningOp()))
           return failure();
         // If the upper-bound is constant or defined before the launch, we can
         // use it in the launch bounds directly. Otherwise try derive a bound.
-        bool boundIsPrecise = launchIndependent(upperBound) ||
-                              isa<ConstantOp>(upperBound.getDefiningOp());
-        if (!boundIsPrecise) {
-          upperBound = deriveStaticUpperBound(upperBound);
-          if (!upperBound)
-            return failure();
-        }
+        bool boundIsPrecise =
+            launchIndependent(upperBound) ||
+            isa_and_nonnull<ConstantOp>(upperBound.getDefiningOp());
         {
           PatternRewriter::InsertionGuard guard(rewriter);
           rewriter.setInsertionPoint(launchOp);
-
-          Value iterations = rewriter.create<SubIOp>(
-              loc,
-              ensureLaunchIndependent(cloningMap.lookupOrDefault(upperBound)),
-              ensureLaunchIndependent(cloningMap.lookupOrDefault(lowerBound)));
+          if (!boundIsPrecise) {
+            upperBound = deriveStaticUpperBound(upperBound, rewriter);
+            if (!upperBound) {
+              return parallelOp.emitOpError()
+                     << "cannot derive loop-invariant upper bound for number "
+                        "of iterations";
+            }
+          }
+          // Compute the number of iterations needed. We compute this as an
+          // affine expression ceilDiv (upperBound - lowerBound) step. We use
+          // affine.apply here so that it composes nicely with the provided map.
+          AffineMap stepMap =
+              AffineMap::get(0, 3,
+                             ((rewriter.getAffineSymbolExpr(0) -
+                               rewriter.getAffineSymbolExpr(1))
+                                  .ceilDiv(rewriter.getAffineSymbolExpr(2))));
           Value launchBound = rewriter.create<AffineApplyOp>(
-              loc, annotation.boundMap, iterations);
-          launchOp.setOperand(annotation.processor, launchBound);
+              loc, annotation.boundMap.compose(stepMap),
+              ValueRange{
+                  ensureLaunchIndependent(
+                      cloningMap.lookupOrDefault(upperBound)),
+                  ensureLaunchIndependent(
+                      cloningMap.lookupOrDefault(lowerBound)),
+                  ensureLaunchIndependent(cloningMap.lookupOrDefault(step))});
+          if (bounds.find(annotation.processor) != bounds.end()) {
+            return parallelOp.emitOpError()
+                   << "cannot redefine the bound for processor "
+                   << annotation.processor;
+          }
+          bounds[annotation.processor] = launchBound;
         }
         if (!boundIsPrecise) {
           // We are using an approximation, create a surrounding conditional.
@@ -722,7 +742,7 @@ static LogicalResult processParallelLoop(ParallelOp parallelOp,
 /// the actual loop bound. This only works if an static upper bound for the
 /// dynamic loop bound can be defived, currently via analyzing `affine.min`
 /// operations.
-PatternMatchResult
+LogicalResult
 ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
                                              PatternRewriter &rewriter) const {
   // Create a launch operation. We start with bound one for all grid/block
@@ -737,10 +757,11 @@ ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
   rewriter.setInsertionPointToStart(&launchOp.body().front());
 
   BlockAndValueMapping cloningMap;
+  llvm::DenseMap<int, Value> launchBounds;
   SmallVector<Operation *, 16> worklist;
   if (failed(processParallelLoop(parallelOp, launchOp, cloningMap, worklist,
-                                 rewriter)))
-    return matchFailure();
+                                 launchBounds, rewriter)))
+    return failure();
 
   // Whether we have seen any side-effects. Reset when leaving an inner scope.
   bool seenSideeffects = false;
@@ -748,8 +769,6 @@ ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
   bool leftNestingScope = false;
   while (!worklist.empty()) {
     Operation *op = worklist.pop_back_val();
-    launchOp.dump();
-
     // Now walk over the body and clone it.
     // TODO: This is only correct if there either is no further loop.parallel
     //       nested or this code is side-effect free. Otherwise we might need
@@ -759,12 +778,13 @@ ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
       // Before entering a nested scope, make sure there have been no
       // sideeffects until now.
       if (seenSideeffects)
-        return matchFailure();
+        return failure();
       // A nested loop.parallel needs insertion of code to compute indices.
       // Insert that now. This will also update the worklist with the loops
       // body.
-      processParallelLoop(nestedParallel, launchOp, cloningMap, worklist,
-                          rewriter);
+      if (failed(processParallelLoop(nestedParallel, launchOp, cloningMap,
+                                     worklist, launchBounds, rewriter)))
+        return failure();
     } else if (op == launchOp.getOperation()) {
       // Found our sentinel value. We have finished the operations from one
       // nesting level, pop one level back up.
@@ -777,41 +797,25 @@ ParallelToGpuLaunchLowering::matchAndRewrite(ParallelOp parallelOp,
       Operation *clone = rewriter.clone(*op, cloningMap);
       cloningMap.map(op->getResults(), clone->getResults());
       // Check for side effects.
-      seenSideeffects |= !clone->hasNoSideEffect();
+      // TODO: Handle region side effects properly.
+      seenSideeffects |= !MemoryEffectOpInterface::hasNoEffect(clone) ||
+                         clone->getNumRegions() != 0;
       // If we are no longer in the innermost scope, sideeffects are disallowed.
       if (seenSideeffects && leftNestingScope)
-        return matchFailure();
+        return failure();
     }
   }
 
-  rewriter.eraseOp(parallelOp);
-  return matchSuccess();
-}
+  // Now that we succeeded creating the launch operation, also update the
+  // bounds.
+  for (auto bound : launchBounds)
+    launchOp.setOperand(std::get<0>(bound), std::get<1>(bound));
 
-namespace {
-struct ParallelLoopToGpuPass : public OperationPass<ParallelLoopToGpuPass> {
-  void runOnOperation() override;
-};
-} // namespace
+  rewriter.eraseOp(parallelOp);
+  return success();
+}
 
 void mlir::populateParallelLoopToGPUPatterns(OwningRewritePatternList &patterns,
                                              MLIRContext *ctx) {
   patterns.insert<ParallelToGpuLaunchLowering>(ctx);
 }
-
-void ParallelLoopToGpuPass::runOnOperation() {
-  OwningRewritePatternList patterns;
-  populateParallelLoopToGPUPatterns(patterns, &getContext());
-  ConversionTarget target(getContext());
-  target.addLegalDialect<StandardOpsDialect>();
-  target.addLegalDialect<AffineOpsDialect>();
-  target.addLegalDialect<gpu::GPUDialect>();
-  target.addLegalDialect<loop::LoopOpsDialect>();
-  target.addIllegalOp<loop::ParallelOp>();
-  if (failed(applyPartialConversion(getOperation(), target, patterns)))
-    signalPassFailure();
-}
-
-static PassRegistration<ParallelLoopToGpuPass>
-    pass("convert-parallel-loops-to-gpu", "Convert mapped loop.parallel ops"
-                                          " to gpu launch operations.");

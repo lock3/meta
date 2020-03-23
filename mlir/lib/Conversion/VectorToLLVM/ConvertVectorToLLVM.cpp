@@ -7,11 +7,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
+
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
-#include "mlir/Dialect/VectorOps/VectorOps.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Vector/VectorOps.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/MLIRContext.h"
@@ -24,7 +25,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
-
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
@@ -126,20 +126,20 @@ static SmallVector<int64_t, 4> getI64SubArray(ArrayAttr arrayAttr,
 
 namespace {
 
-class VectorBroadcastOpConversion : public LLVMOpLowering {
+class VectorBroadcastOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorBroadcastOpConversion(MLIRContext *context,
                                        LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::BroadcastOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::BroadcastOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto broadcastOp = cast<vector::BroadcastOp>(op);
     VectorType dstVectorType = broadcastOp.getVectorType();
     if (typeConverter.convertType(dstVectorType) == nullptr)
-      return matchFailure();
+      return failure();
     // Rewrite when the full vector type can be lowered (which
     // implies all 'reduced' types can be lowered too).
     auto adaptor = vector::BroadcastOpOperandAdaptor(operands);
@@ -149,7 +149,7 @@ public:
         op, expandRanks(adaptor.source(), // source value to be expanded
                         op->getLoc(),     // location of original broadcast
                         srcVectorType, dstVectorType, rewriter));
-    return matchSuccess();
+    return success();
   }
 
 private:
@@ -275,21 +275,43 @@ private:
   }
 };
 
-class VectorReductionOpConversion : public LLVMOpLowering {
+/// Conversion pattern for a vector.matrix_multiply.
+/// This is lowered directly to the proper llvm.intr.matrix.multiply.
+class VectorMatmulOpConversion : public ConvertToLLVMPattern {
+public:
+  explicit VectorMatmulOpConversion(MLIRContext *context,
+                                    LLVMTypeConverter &typeConverter)
+      : ConvertToLLVMPattern(vector::MatmulOp::getOperationName(), context,
+                             typeConverter) {}
+
+  LogicalResult
+  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto matmulOp = cast<vector::MatmulOp>(op);
+    auto adaptor = vector::MatmulOpOperandAdaptor(operands);
+    rewriter.replaceOpWithNewOp<LLVM::MatrixMultiplyOp>(
+        op, typeConverter.convertType(matmulOp.res().getType()), adaptor.lhs(),
+        adaptor.rhs(), matmulOp.lhs_rows(), matmulOp.lhs_columns(),
+        matmulOp.rhs_columns());
+    return success();
+  }
+};
+
+class VectorReductionOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorReductionOpConversion(MLIRContext *context,
                                        LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::ReductionOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::ReductionOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto reductionOp = cast<vector::ReductionOp>(op);
     auto kind = reductionOp.kind();
     Type eltType = reductionOp.dest().getType();
     Type llvmType = typeConverter.convertType(eltType);
-    if (eltType.isInteger(32) || eltType.isInteger(64)) {
+    if (eltType.isSignlessInteger(32) || eltType.isSignlessInteger(64)) {
       // Integer reductions: add/mul/min/max/and/or/xor.
       if (kind == "add")
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_add>(
@@ -313,21 +335,28 @@ public:
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_xor>(
             op, llvmType, operands[0]);
       else
-        return matchFailure();
-      return matchSuccess();
+        return failure();
+      return success();
 
     } else if (eltType.isF32() || eltType.isF64()) {
       // Floating-point reductions: add/mul/min/max
       if (kind == "add") {
-        Value zero = rewriter.create<LLVM::ConstantOp>(
-            op->getLoc(), llvmType, rewriter.getZeroAttr(eltType));
+        // Optional accumulator (or zero).
+        Value acc = operands.size() > 1 ? operands[1]
+                                        : rewriter.create<LLVM::ConstantOp>(
+                                              op->getLoc(), llvmType,
+                                              rewriter.getZeroAttr(eltType));
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fadd>(
-            op, llvmType, zero, operands[0]);
+            op, llvmType, acc, operands[0]);
       } else if (kind == "mul") {
-        Value one = rewriter.create<LLVM::ConstantOp>(
-            op->getLoc(), llvmType, rewriter.getFloatAttr(eltType, 1.0));
+        // Optional accumulator (or one).
+        Value acc = operands.size() > 1
+                        ? operands[1]
+                        : rewriter.create<LLVM::ConstantOp>(
+                              op->getLoc(), llvmType,
+                              rewriter.getFloatAttr(eltType, 1.0));
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fmul>(
-            op, llvmType, one, operands[0]);
+            op, llvmType, acc, operands[0]);
       } else if (kind == "min")
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_fmin>(
             op, llvmType, operands[0]);
@@ -335,48 +364,21 @@ public:
         rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_fmax>(
             op, llvmType, operands[0]);
       else
-        return matchFailure();
-      return matchSuccess();
+        return failure();
+      return success();
     }
-    return matchFailure();
+    return failure();
   }
 };
 
-// TODO(ajcbik): merge Reduction and ReductionV2
-class VectorReductionV2OpConversion : public LLVMOpLowering {
-public:
-  explicit VectorReductionV2OpConversion(MLIRContext *context,
-                                         LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::ReductionV2Op::getOperationName(), context,
-                       typeConverter) {}
-  PatternMatchResult
-  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto reductionOp = cast<vector::ReductionV2Op>(op);
-    auto kind = reductionOp.kind();
-    Type eltType = reductionOp.dest().getType();
-    Type llvmType = typeConverter.convertType(eltType);
-    if (kind == "add") {
-      rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fadd>(
-          op, llvmType, operands[1], operands[0]);
-      return matchSuccess();
-    } else if (kind == "mul") {
-      rewriter.replaceOpWithNewOp<LLVM::experimental_vector_reduce_v2_fmul>(
-          op, llvmType, operands[1], operands[0]);
-      return matchSuccess();
-    }
-    return matchFailure();
-  }
-};
-
-class VectorShuffleOpConversion : public LLVMOpLowering {
+class VectorShuffleOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorShuffleOpConversion(MLIRContext *context,
                                      LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::ShuffleOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::ShuffleOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
@@ -390,7 +392,7 @@ public:
 
     // Bail if result type cannot be lowered.
     if (!llvmType)
-      return matchFailure();
+      return failure();
 
     // Get rank and dimension sizes.
     int64_t rank = vectorType.getRank();
@@ -404,7 +406,7 @@ public:
       Value shuffle = rewriter.create<LLVM::ShuffleVectorOp>(
           loc, adaptor.v1(), adaptor.v2(), maskArrayAttr);
       rewriter.replaceOp(op, shuffle);
-      return matchSuccess();
+      return success();
     }
 
     // For all other cases, insert the individual values individually.
@@ -423,18 +425,18 @@ public:
                          llvmType, rank, insPos++);
     }
     rewriter.replaceOp(op, insert);
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorExtractElementOpConversion : public LLVMOpLowering {
+class VectorExtractElementOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorExtractElementOpConversion(MLIRContext *context,
                                             LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::ExtractElementOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::ExtractElementOp::getOperationName(),
+                             context, typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto adaptor = vector::ExtractElementOpOperandAdaptor(operands);
@@ -444,22 +446,22 @@ public:
 
     // Bail if result type cannot be lowered.
     if (!llvmType)
-      return matchFailure();
+      return failure();
 
     rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
         op, llvmType, adaptor.vector(), adaptor.position());
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorExtractOpConversion : public LLVMOpLowering {
+class VectorExtractOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorExtractOpConversion(MLIRContext *context,
                                      LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::ExtractOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::ExtractOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
@@ -472,14 +474,14 @@ public:
 
     // Bail if result type cannot be lowered.
     if (!llvmResultType)
-      return matchFailure();
+      return failure();
 
     // One-shot extraction of vector from array (only requires extractvalue).
     if (resultType.isa<VectorType>()) {
       Value extracted = rewriter.create<LLVM::ExtractValueOp>(
           loc, llvmResultType, adaptor.vector(), positionArrayAttr);
       rewriter.replaceOp(op, extracted);
-      return matchSuccess();
+      return success();
     }
 
     // Potential extraction of 1-D vector from array.
@@ -503,7 +505,7 @@ public:
         rewriter.create<LLVM::ExtractElementOp>(loc, extracted, constant);
     rewriter.replaceOp(op, extracted);
 
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -521,35 +523,35 @@ public:
 ///    (!llvm<"<8 x float>">, !llvm<"<8 x float>">, !llvm<"<8 x float>">)
 ///    -> !llvm<"<8 x float>">
 /// ```
-class VectorFMAOp1DConversion : public LLVMOpLowering {
+class VectorFMAOp1DConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorFMAOp1DConversion(MLIRContext *context,
                                    LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::FMAOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::FMAOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto adaptor = vector::FMAOpOperandAdaptor(operands);
     vector::FMAOp fmaOp = cast<vector::FMAOp>(op);
     VectorType vType = fmaOp.getVectorType();
     if (vType.getRank() != 1)
-      return matchFailure();
+      return failure();
     rewriter.replaceOpWithNewOp<LLVM::FMAOp>(op, adaptor.lhs(), adaptor.rhs(),
                                              adaptor.acc());
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorInsertElementOpConversion : public LLVMOpLowering {
+class VectorInsertElementOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorInsertElementOpConversion(MLIRContext *context,
                                            LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::InsertElementOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::InsertElementOp::getOperationName(),
+                             context, typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto adaptor = vector::InsertElementOpOperandAdaptor(operands);
@@ -559,22 +561,22 @@ public:
 
     // Bail if result type cannot be lowered.
     if (!llvmType)
-      return matchFailure();
+      return failure();
 
     rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
         op, llvmType, adaptor.dest(), adaptor.source(), adaptor.position());
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorInsertOpConversion : public LLVMOpLowering {
+class VectorInsertOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorInsertOpConversion(MLIRContext *context,
                                     LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::InsertOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::InsertOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
@@ -587,7 +589,7 @@ public:
 
     // Bail if result type cannot be lowered.
     if (!llvmResultType)
-      return matchFailure();
+      return failure();
 
     // One-shot insertion of a vector into an array (only requires insertvalue).
     if (sourceType.isa<VectorType>()) {
@@ -595,7 +597,7 @@ public:
           loc, llvmResultType, adaptor.dest(), adaptor.source(),
           positionArrayAttr);
       rewriter.replaceOp(op, inserted);
-      return matchSuccess();
+      return success();
     }
 
     // Potential extraction of 1-D vector from array.
@@ -630,7 +632,7 @@ public:
     }
 
     rewriter.replaceOp(op, inserted);
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -659,11 +661,11 @@ class VectorFMAOpNDRewritePattern : public OpRewritePattern<FMAOp> {
 public:
   using OpRewritePattern<FMAOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(FMAOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(FMAOp op,
+                                PatternRewriter &rewriter) const override {
     auto vType = op.getVectorType();
     if (vType.getRank() < 2)
-      return matchFailure();
+      return failure();
 
     auto loc = op.getLoc();
     auto elemType = vType.getElementType();
@@ -678,7 +680,7 @@ public:
       desc = rewriter.create<InsertOp>(loc, fma, desc, i);
     }
     rewriter.replaceOp(op, desc);
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -702,19 +704,19 @@ class VectorInsertStridedSliceOpDifferentRankRewritePattern
 public:
   using OpRewritePattern<InsertStridedSliceOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(InsertStridedSliceOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(InsertStridedSliceOp op,
+                                PatternRewriter &rewriter) const override {
     auto srcType = op.getSourceVectorType();
     auto dstType = op.getDestVectorType();
 
     if (op.offsets().getValue().empty())
-      return matchFailure();
+      return failure();
 
     auto loc = op.getLoc();
     int64_t rankDiff = dstType.getRank() - srcType.getRank();
     assert(rankDiff >= 0);
     if (rankDiff == 0)
-      return matchFailure();
+      return failure();
 
     int64_t rankRest = dstType.getRank() - rankDiff;
     // Extract / insert the subvector of matching rank and InsertStridedSlice
@@ -733,7 +735,7 @@ public:
         op, stridedSliceInnerOp.getResult(), op.dest(),
         getI64SubArray(op.offsets(), /*dropFront=*/0,
                        /*dropFront=*/rankRest));
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -751,22 +753,22 @@ class VectorInsertStridedSliceOpSameRankRewritePattern
 public:
   using OpRewritePattern<InsertStridedSliceOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(InsertStridedSliceOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(InsertStridedSliceOp op,
+                                PatternRewriter &rewriter) const override {
     auto srcType = op.getSourceVectorType();
     auto dstType = op.getDestVectorType();
 
     if (op.offsets().getValue().empty())
-      return matchFailure();
+      return failure();
 
     int64_t rankDiff = dstType.getRank() - srcType.getRank();
     assert(rankDiff >= 0);
     if (rankDiff != 0)
-      return matchFailure();
+      return failure();
 
     if (srcType == dstType) {
       rewriter.replaceOp(op, op.source());
-      return matchSuccess();
+      return success();
     }
 
     int64_t offset =
@@ -803,7 +805,7 @@ public:
         // multiple times.
         auto success = matchAndRewrite(insertStridedSliceOp, rewriter);
         (void)success;
-        assert(success && "Unexpected failure");
+        assert(succeeded(success) && "Unexpected failure");
         extractedSource = insertStridedSliceOp;
       }
       // 4. Insert the extractedSource into the res vector.
@@ -811,70 +813,18 @@ public:
     }
 
     rewriter.replaceOp(op, res);
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorOuterProductOpConversion : public LLVMOpLowering {
-public:
-  explicit VectorOuterProductOpConversion(MLIRContext *context,
-                                          LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::OuterProductOp::getOperationName(), context,
-                       typeConverter) {}
-
-  PatternMatchResult
-  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto loc = op->getLoc();
-    auto adaptor = vector::OuterProductOpOperandAdaptor(operands);
-    auto *ctx = op->getContext();
-    auto vLHS = adaptor.lhs().getType().cast<LLVM::LLVMType>();
-    auto vRHS = adaptor.rhs().getType().cast<LLVM::LLVMType>();
-    auto rankLHS = vLHS.getUnderlyingType()->getVectorNumElements();
-    auto rankRHS = vRHS.getUnderlyingType()->getVectorNumElements();
-    auto llvmArrayOfVectType = typeConverter.convertType(
-        cast<vector::OuterProductOp>(op).getResult().getType());
-    Value desc = rewriter.create<LLVM::UndefOp>(loc, llvmArrayOfVectType);
-    Value a = adaptor.lhs(), b = adaptor.rhs();
-    Value acc = adaptor.acc().empty() ? nullptr : adaptor.acc().front();
-    SmallVector<Value, 8> lhs, accs;
-    lhs.reserve(rankLHS);
-    accs.reserve(rankLHS);
-    for (unsigned d = 0, e = rankLHS; d < e; ++d) {
-      // shufflevector explicitly requires i32.
-      auto attr = rewriter.getI32IntegerAttr(d);
-      SmallVector<Attribute, 4> bcastAttr(rankRHS, attr);
-      auto bcastArrayAttr = ArrayAttr::get(bcastAttr, ctx);
-      Value aD = nullptr, accD = nullptr;
-      // 1. Broadcast the element a[d] into vector aD.
-      aD = rewriter.create<LLVM::ShuffleVectorOp>(loc, a, a, bcastArrayAttr);
-      // 2. If acc is present, extract 1-d vector acc[d] into accD.
-      if (acc)
-        accD = rewriter.create<LLVM::ExtractValueOp>(
-            loc, vRHS, acc, rewriter.getI64ArrayAttr(d));
-      // 3. Compute aD outer b (plus accD, if relevant).
-      Value aOuterbD =
-          accD
-              ? rewriter.create<LLVM::FMAOp>(loc, vRHS, aD, b, accD).getResult()
-              : rewriter.create<LLVM::FMulOp>(loc, aD, b).getResult();
-      // 4. Insert as value `d` in the descriptor.
-      desc = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayOfVectType,
-                                                  desc, aOuterbD,
-                                                  rewriter.getI64ArrayAttr(d));
-    }
-    rewriter.replaceOp(op, desc);
-    return matchSuccess();
-  }
-};
-
-class VectorTypeCastOpConversion : public LLVMOpLowering {
+class VectorTypeCastOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorTypeCastOpConversion(MLIRContext *context,
                                       LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::TypeCastOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::TypeCastOp::getOperationName(), context,
+                             typeConverter) {}
 
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op->getLoc();
@@ -887,18 +837,18 @@ public:
     // Only static shape casts supported atm.
     if (!sourceMemRefType.hasStaticShape() ||
         !targetMemRefType.hasStaticShape())
-      return matchFailure();
+      return failure();
 
     auto llvmSourceDescriptorTy =
         operands[0].getType().dyn_cast<LLVM::LLVMType>();
     if (!llvmSourceDescriptorTy || !llvmSourceDescriptorTy.isStructTy())
-      return matchFailure();
+      return failure();
     MemRefDescriptor sourceMemRef(operands[0]);
 
     auto llvmTargetDescriptorTy = typeConverter.convertType(targetMemRefType)
                                       .dyn_cast_or_null<LLVM::LLVMType>();
     if (!llvmTargetDescriptorTy || !llvmTargetDescriptorTy.isStructTy())
-      return matchFailure();
+      return failure();
 
     int64_t offset;
     SmallVector<int64_t, 4> strides;
@@ -916,7 +866,7 @@ public:
     }
     // Only contiguous source tensors supported atm.
     if (failed(successStrides) || !isContiguous)
-      return matchFailure();
+      return failure();
 
     auto int64Ty = LLVM::LLVMType::getInt64Ty(typeConverter.getDialect());
 
@@ -951,16 +901,16 @@ public:
     }
 
     rewriter.replaceOp(op, {desc});
-    return matchSuccess();
+    return success();
   }
 };
 
-class VectorPrintOpConversion : public LLVMOpLowering {
+class VectorPrintOpConversion : public ConvertToLLVMPattern {
 public:
   explicit VectorPrintOpConversion(MLIRContext *context,
                                    LLVMTypeConverter &typeConverter)
-      : LLVMOpLowering(vector::PrintOp::getOperationName(), context,
-                       typeConverter) {}
+      : ConvertToLLVMPattern(vector::PrintOp::getOperationName(), context,
+                             typeConverter) {}
 
   // Proof-of-concept lowering implementation that relies on a small
   // runtime support library, which only needs to provide a few
@@ -974,7 +924,7 @@ public:
   //
   // TODO(ajcbik): rely solely on libc in future? something else?
   //
-  PatternMatchResult
+  LogicalResult
   matchAndRewrite(Operation *op, ArrayRef<Value> operands,
                   ConversionPatternRewriter &rewriter) const override {
     auto printOp = cast<vector::PrintOp>(op);
@@ -982,29 +932,29 @@ public:
     Type printType = printOp.getPrintType();
 
     if (typeConverter.convertType(printType) == nullptr)
-      return matchFailure();
+      return failure();
 
     // Make sure element type has runtime support (currently just Float/Double).
     VectorType vectorType = printType.dyn_cast<VectorType>();
     Type eltType = vectorType ? vectorType.getElementType() : printType;
     int64_t rank = vectorType ? vectorType.getRank() : 0;
     Operation *printer;
-    if (eltType.isInteger(32))
+    if (eltType.isSignlessInteger(32))
       printer = getPrintI32(op);
-    else if (eltType.isInteger(64))
+    else if (eltType.isSignlessInteger(64))
       printer = getPrintI64(op);
     else if (eltType.isF32())
       printer = getPrintFloat(op);
     else if (eltType.isF64())
       printer = getPrintDouble(op);
     else
-      return matchFailure();
+      return failure();
 
     // Unroll vector into elementary print calls.
     emitRanks(rewriter, op, adaptor.source(), vectorType, printer, rank);
     emitCall(rewriter, op->getLoc(), getPrintNewline(op));
     rewriter.eraseOp(op);
-    return matchSuccess();
+    return success();
   }
 
 private:
@@ -1097,8 +1047,8 @@ class VectorStridedSliceOpConversion : public OpRewritePattern<StridedSliceOp> {
 public:
   using OpRewritePattern<StridedSliceOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(StridedSliceOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(StridedSliceOp op,
+                                PatternRewriter &rewriter) const override {
     auto dstType = op.getResult().getType().cast<VectorType>();
 
     assert(!op.offsets().getValue().empty() && "Unexpected empty offsets");
@@ -1111,7 +1061,7 @@ public:
 
     auto loc = op.getLoc();
     auto elemType = dstType.getElementType();
-    assert(elemType.isIntOrIndexOrFloat());
+    assert(elemType.isSignlessIntOrIndexOrFloat());
     Value zero = rewriter.create<ConstantOp>(loc, elemType,
                                              rewriter.getZeroAttr(elemType));
     Value res = rewriter.create<SplatOp>(loc, dstType, zero);
@@ -1133,13 +1083,13 @@ public:
         // multiple times.
         auto success = matchAndRewrite(stridedSliceOp, rewriter);
         (void)success;
-        assert(success && "Unexpected failure");
+        assert(succeeded(success) && "Unexpected failure");
         extracted = stridedSliceOp;
       }
       res = insertOne(rewriter, loc, extracted, res, idx);
     }
     rewriter.replaceOp(op, {res});
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -1154,12 +1104,17 @@ void mlir::populateVectorToLLVMConversionPatterns(
                   VectorInsertStridedSliceOpSameRankRewritePattern,
                   VectorStridedSliceOpConversion>(ctx);
   patterns.insert<VectorBroadcastOpConversion, VectorReductionOpConversion,
-                  VectorReductionV2OpConversion, VectorShuffleOpConversion,
-                  VectorExtractElementOpConversion, VectorExtractOpConversion,
-                  VectorFMAOp1DConversion, VectorInsertElementOpConversion,
-                  VectorInsertOpConversion, VectorOuterProductOpConversion,
+                  VectorShuffleOpConversion, VectorExtractElementOpConversion,
+                  VectorExtractOpConversion, VectorFMAOp1DConversion,
+                  VectorInsertElementOpConversion, VectorInsertOpConversion,
                   VectorTypeCastOpConversion, VectorPrintOpConversion>(
       ctx, converter);
+}
+
+void mlir::populateVectorToLLVMMatrixConversionPatterns(
+    LLVMTypeConverter &converter, OwningRewritePatternList &patterns) {
+  MLIRContext *ctx = converter.getDialect()->getContext();
+  patterns.insert<VectorMatmulOpConversion>(ctx, converter);
 }
 
 namespace {
@@ -1169,7 +1124,7 @@ struct LowerVectorToLLVMPass : public ModulePass<LowerVectorToLLVMPass> {
 } // namespace
 
 void LowerVectorToLLVMPass::runOnModule() {
-  // Perform progressive lowering of operations on "slices" and
+  // Perform progressive lowering of operations on slices and
   // all contraction operations. Also applies folding and DCE.
   {
     OwningRewritePatternList patterns;
@@ -1181,11 +1136,12 @@ void LowerVectorToLLVMPass::runOnModule() {
   // Convert to the LLVM IR dialect.
   LLVMTypeConverter converter(&getContext());
   OwningRewritePatternList patterns;
+  populateVectorToLLVMMatrixConversionPatterns(converter, patterns);
   populateVectorToLLVMConversionPatterns(converter, patterns);
+  populateVectorToLLVMMatrixConversionPatterns(converter, patterns);
   populateStdToLLVMConversionPatterns(converter, patterns);
 
-  ConversionTarget target(getContext());
-  target.addLegalDialect<LLVM::LLVMDialect>();
+  LLVMConversionTarget target(getContext());
   target.addDynamicallyLegalOp<FuncOp>(
       [&](FuncOp op) { return converter.isSignatureLegal(op.getType()); });
   if (failed(
@@ -1194,8 +1150,8 @@ void LowerVectorToLLVMPass::runOnModule() {
   }
 }
 
-OpPassBase<ModuleOp> *mlir::createLowerVectorToLLVMPass() {
-  return new LowerVectorToLLVMPass();
+std::unique_ptr<OpPassBase<ModuleOp>> mlir::createConvertVectorToLLVMPass() {
+  return std::make_unique<LowerVectorToLLVMPass>();
 }
 
 static PassRegistration<LowerVectorToLLVMPass>

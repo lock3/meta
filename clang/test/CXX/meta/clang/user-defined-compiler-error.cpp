@@ -9,7 +9,7 @@ consteval void report_error(const char *custom_message) {
 }
 
 int main() {
-  report_error(); // expected-error {{call to consteval function ''report_error'' is not a constant expression}} expected-note {{in call to 'report_error()'}}
-  report_error("Custom error reported!"); // expected-error {{call to consteval function ''report_error'' is not a constant expression}} expected-note {{in call to 'report_error(&"Custom error reported!"[0])'}}
+  report_error(); // expected-error {{call to consteval function 'report_error' is not a constant expression}} expected-note {{in call to 'report_error()'}}
+  report_error("Custom error reported!"); // expected-error {{call to consteval function 'report_error' is not a constant expression}} expected-note {{in call to 'report_error(&"Custom error reported!"[0])'}}
   return 0;
 }

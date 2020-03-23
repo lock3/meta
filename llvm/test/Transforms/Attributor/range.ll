@@ -705,40 +705,38 @@ define internal i32 @r1(i32) local_unnamed_addr {
 ; OLD_PM-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], 100
 ; OLD_PM-NEXT:    br i1 [[TMP9]], label [[TMP1:%.*]], label [[TMP4]]
 ;
-; CGSCC_OLD_PM-LABEL: define {{[^@]+}}@r1
-; CGSCC_OLD_PM-SAME: (i32 [[TMP0:%.*]]) local_unnamed_addr
-; CGSCC_OLD_PM-NEXT:    br label [[TMP5:%.*]]
-; CGSCC_OLD_PM:       2:
-; CGSCC_OLD_PM-NEXT:    [[TMP3:%.*]] = icmp sgt i32 [[TMP8:%.*]], 10000
-; CGSCC_OLD_PM-NEXT:    br i1 [[TMP3]], label [[TMP4:%.*]], label [[F:%.*]]
-; CGSCC_OLD_PM:       4:
+; CGSCC_OLD_PM-LABEL: define {{[^@]+}}@r1() local_unnamed_addr
+; CGSCC_OLD_PM-NEXT:    br label [[TMP4:%.*]]
+; CGSCC_OLD_PM:       1:
+; CGSCC_OLD_PM-NEXT:    [[TMP2:%.*]] = icmp sgt i32 [[TMP7:%.*]], 10000
+; CGSCC_OLD_PM-NEXT:    br i1 [[TMP2]], label [[TMP3:%.*]], label [[F:%.*]]
+; CGSCC_OLD_PM:       3:
 ; CGSCC_OLD_PM-NEXT:    ret i32 20
 ; CGSCC_OLD_PM:       f:
 ; CGSCC_OLD_PM-NEXT:    ret i32 10
-; CGSCC_OLD_PM:       5:
-; CGSCC_OLD_PM-NEXT:    [[TMP6:%.*]] = phi i32 [ 0, [[TMP1:%.*]] ], [ [[TMP9:%.*]], [[TMP5]] ]
-; CGSCC_OLD_PM-NEXT:    [[TMP7:%.*]] = phi i32 [ 0, [[TMP1]] ], [ [[TMP8]], [[TMP5]] ]
-; CGSCC_OLD_PM-NEXT:    [[TMP8]] = add nuw nsw i32 [[TMP6]], [[TMP7]]
-; CGSCC_OLD_PM-NEXT:    [[TMP9]] = add nuw nsw i32 [[TMP6]], 1
-; CGSCC_OLD_PM-NEXT:    [[TMP10:%.*]] = icmp eq i32 [[TMP9]], 100
-; CGSCC_OLD_PM-NEXT:    br i1 [[TMP10]], label [[TMP2:%.*]], label [[TMP5]]
+; CGSCC_OLD_PM:       4:
+; CGSCC_OLD_PM-NEXT:    [[TMP5:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP8:%.*]], [[TMP4]] ]
+; CGSCC_OLD_PM-NEXT:    [[TMP6:%.*]] = phi i32 [ 0, [[TMP0]] ], [ [[TMP7]], [[TMP4]] ]
+; CGSCC_OLD_PM-NEXT:    [[TMP7]] = add nuw nsw i32 [[TMP5]], [[TMP6]]
+; CGSCC_OLD_PM-NEXT:    [[TMP8]] = add nuw nsw i32 [[TMP5]], 1
+; CGSCC_OLD_PM-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], 100
+; CGSCC_OLD_PM-NEXT:    br i1 [[TMP9]], label [[TMP1:%.*]], label [[TMP4]]
 ;
-; CGSCC_NEW_PM-LABEL: define {{[^@]+}}@r1
-; CGSCC_NEW_PM-SAME: (i32 [[TMP0:%.*]]) local_unnamed_addr
-; CGSCC_NEW_PM-NEXT:    br label [[TMP4:%.*]]
-; CGSCC_NEW_PM:       2:
+; CGSCC_NEW_PM-LABEL: define {{[^@]+}}@r1() local_unnamed_addr
+; CGSCC_NEW_PM-NEXT:    br label [[TMP3:%.*]]
+; CGSCC_NEW_PM:       1:
 ; CGSCC_NEW_PM-NEXT:    br label [[F:%.*]]
-; CGSCC_NEW_PM:       3:
+; CGSCC_NEW_PM:       2:
 ; CGSCC_NEW_PM-NEXT:    unreachable
 ; CGSCC_NEW_PM:       f:
 ; CGSCC_NEW_PM-NEXT:    ret i32 10
-; CGSCC_NEW_PM:       4:
-; CGSCC_NEW_PM-NEXT:    [[TMP5:%.*]] = phi i32 [ 0, [[TMP1:%.*]] ], [ [[TMP8:%.*]], [[TMP4]] ]
-; CGSCC_NEW_PM-NEXT:    [[TMP6:%.*]] = phi i32 [ 0, [[TMP1]] ], [ [[TMP7:%.*]], [[TMP4]] ]
-; CGSCC_NEW_PM-NEXT:    [[TMP7]] = add nuw nsw i32 [[TMP5]], [[TMP6]]
-; CGSCC_NEW_PM-NEXT:    [[TMP8]] = add nuw nsw i32 [[TMP5]], 1
-; CGSCC_NEW_PM-NEXT:    [[TMP9:%.*]] = icmp eq i32 [[TMP8]], 100
-; CGSCC_NEW_PM-NEXT:    br i1 [[TMP9]], label [[TMP2:%.*]], label [[TMP4]]
+; CGSCC_NEW_PM:       3:
+; CGSCC_NEW_PM-NEXT:    [[TMP4:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP7:%.*]], [[TMP3]] ]
+; CGSCC_NEW_PM-NEXT:    [[TMP5:%.*]] = phi i32 [ 0, [[TMP0]] ], [ [[TMP6:%.*]], [[TMP3]] ]
+; CGSCC_NEW_PM-NEXT:    [[TMP6]] = add nuw nsw i32 [[TMP4]], [[TMP5]]
+; CGSCC_NEW_PM-NEXT:    [[TMP7]] = add nuw nsw i32 [[TMP4]], 1
+; CGSCC_NEW_PM-NEXT:    [[TMP8:%.*]] = icmp eq i32 [[TMP7]], 100
+; CGSCC_NEW_PM-NEXT:    br i1 [[TMP8]], label [[TMP1:%.*]], label [[TMP3]]
 ;
   br label %5
 
@@ -780,7 +778,7 @@ define void @f1(i32){
 ;
 ; CGSCC_OLD_PM-LABEL: define {{[^@]+}}@f1
 ; CGSCC_OLD_PM-SAME: (i32 [[TMP0:%.*]])
-; CGSCC_OLD_PM-NEXT:    [[TMP2:%.*]] = tail call i32 @r1(i32 [[TMP0]])
+; CGSCC_OLD_PM-NEXT:    [[TMP2:%.*]] = tail call i32 @r1()
 ; CGSCC_OLD_PM-NEXT:    [[TMP3:%.*]] = icmp sgt i32 [[TMP2]], 15
 ; CGSCC_OLD_PM-NEXT:    br i1 [[TMP3]], label [[TMP4:%.*]], label [[TMP5:%.*]]
 ; CGSCC_OLD_PM:       4:
@@ -1122,13 +1120,7 @@ define dso_local i64 @select_int2ptr_bitcast_ptr2int(i32 %a) local_unnamed_addr 
 ; CHECK-LABEL: define {{[^@]+}}@select_int2ptr_bitcast_ptr2int
 ; CHECK-SAME: (i32 [[A:%.*]]) local_unnamed_addr
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[CMP:%.*]] = icmp sgt i32 [[A]], 5
-; CHECK-NEXT:    [[DOT:%.*]] = select i1 [[CMP]], i32 1, i32 2
-; CHECK-NEXT:    [[CMP1:%.*]] = icmp sgt i32 [[A]], 10
-; CHECK-NEXT:    [[Y_0_V:%.*]] = select i1 [[CMP1]], i32 1, i32 2
-; CHECK-NEXT:    [[Y_0:%.*]] = add nuw nsw i32 [[DOT]], [[Y_0_V]]
-; CHECK-NEXT:    [[CMP6:%.*]] = icmp eq i32 [[Y_0]], 5
-; CHECK-NEXT:    [[I2P:%.*]] = inttoptr i1 [[CMP6]] to i1*
+; CHECK-NEXT:    [[I2P:%.*]] = inttoptr i1 false to i1*
 ; CHECK-NEXT:    [[BC:%.*]] = bitcast i1* [[I2P]] to i32*
 ; CHECK-NEXT:    [[P2I:%.*]] = ptrtoint i32* [[BC]] to i64
 ; CHECK-NEXT:    ret i64 [[P2I]]
@@ -1270,6 +1262,108 @@ define i8 @undef_collapse_caller() {
   %c2 = call i8 @undef_collapse_2()
   %a = add i8 %c1, %c2
   ret i8 %a
+}
+
+define i32 @ret1or2(i1 %c) {
+; CHECK-LABEL: define {{[^@]+}}@ret1or2
+; CHECK-SAME: (i1 [[C:%.*]])
+; CHECK-NEXT:    [[S:%.*]] = select i1 [[C]], i32 1, i32 2
+; CHECK-NEXT:    ret i32 [[S]]
+;
+  %s = select i1 %c, i32 1, i32 2
+  ret i32 %s
+}
+define i1 @callee_range_1(i1 %c1, i1 %c2, i1 %c3) {
+; OLD_PM-LABEL: define {{[^@]+}}@callee_range_1
+; OLD_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]], i1 [[C3:%.*]])
+; OLD_PM-NEXT:    [[F:%.*]] = and i1 true, true
+; OLD_PM-NEXT:    ret i1 [[F]]
+;
+; NEW_PM-LABEL: define {{[^@]+}}@callee_range_1
+; NEW_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]], i1 [[C3:%.*]])
+; NEW_PM-NEXT:    [[F:%.*]] = and i1 true, true
+; NEW_PM-NEXT:    ret i1 [[F]]
+;
+; CGSCC_OLD_PM-LABEL: define {{[^@]+}}@callee_range_1
+; CGSCC_OLD_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]], i1 [[C3:%.*]])
+; CGSCC_OLD_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]])
+; CGSCC_OLD_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]])
+; CGSCC_OLD_PM-NEXT:    [[INDIRECTION:%.*]] = select i1 [[C3]], i32 [[R1]], i32 [[R2]]
+; CGSCC_OLD_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[INDIRECTION]]
+; CGSCC_OLD_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 4
+; CGSCC_OLD_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; CGSCC_OLD_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; CGSCC_OLD_PM-NEXT:    ret i1 [[F]]
+;
+; CGSCC_NEW_PM-LABEL: define {{[^@]+}}@callee_range_1
+; CGSCC_NEW_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]], i1 [[C3:%.*]])
+; CGSCC_NEW_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]])
+; CGSCC_NEW_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]])
+; CGSCC_NEW_PM-NEXT:    [[INDIRECTION:%.*]] = select i1 [[C3]], i32 [[R1]], i32 [[R2]]
+; CGSCC_NEW_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[INDIRECTION]]
+; CGSCC_NEW_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 4
+; CGSCC_NEW_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; CGSCC_NEW_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; CGSCC_NEW_PM-NEXT:    ret i1 [[F]]
+;
+  %r1 = call i32 @ret1or2(i1 %c1)
+  %r2 = call i32 @ret1or2(i1 %c2)
+  %indirection = select i1 %c3, i32 %r1, i32 %r2
+  %a = add i32 %r1, %indirection
+  %i1 = icmp sle i32 %a, 4
+  %i2 = icmp sge i32 %a, 2
+  %f = and i1 %i1, %i2
+  ret i1 %f
+}
+
+define i1 @callee_range_2(i1 %c1, i1 %c2) {
+; OLD_PM-LABEL: define {{[^@]+}}@callee_range_2
+; OLD_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]])
+; OLD_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]]) #2, !range !4
+; OLD_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]]) #3, !range !4
+; OLD_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[R2]]
+; OLD_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 3
+; OLD_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; OLD_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; OLD_PM-NEXT:    ret i1 [[F]]
+;
+; NEW_PM-LABEL: define {{[^@]+}}@callee_range_2
+; NEW_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]])
+; NEW_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]]) #2, !range !5
+; NEW_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]]) #3, !range !5
+; NEW_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[R2]]
+; NEW_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 3
+; NEW_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; NEW_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; NEW_PM-NEXT:    ret i1 [[F]]
+;
+; CGSCC_OLD_PM-LABEL: define {{[^@]+}}@callee_range_2
+; CGSCC_OLD_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]])
+; CGSCC_OLD_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]])
+; CGSCC_OLD_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]])
+; CGSCC_OLD_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[R2]]
+; CGSCC_OLD_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 3
+; CGSCC_OLD_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; CGSCC_OLD_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; CGSCC_OLD_PM-NEXT:    ret i1 [[F]]
+;
+; CGSCC_NEW_PM-LABEL: define {{[^@]+}}@callee_range_2
+; CGSCC_NEW_PM-SAME: (i1 [[C1:%.*]], i1 [[C2:%.*]])
+; CGSCC_NEW_PM-NEXT:    [[R1:%.*]] = call i32 @ret1or2(i1 [[C1]])
+; CGSCC_NEW_PM-NEXT:    [[R2:%.*]] = call i32 @ret1or2(i1 [[C2]])
+; CGSCC_NEW_PM-NEXT:    [[A:%.*]] = add i32 [[R1]], [[R2]]
+; CGSCC_NEW_PM-NEXT:    [[I1:%.*]] = icmp sle i32 [[A]], 3
+; CGSCC_NEW_PM-NEXT:    [[I2:%.*]] = icmp sge i32 [[A]], 2
+; CGSCC_NEW_PM-NEXT:    [[F:%.*]] = and i1 [[I1]], [[I2]]
+; CGSCC_NEW_PM-NEXT:    ret i1 [[F]]
+;
+  %r1 = call i32 @ret1or2(i1 %c1)
+  %r2 = call i32 @ret1or2(i1 %c2)
+  %a = add i32 %r1, %r2
+  %i1 = icmp sle i32 %a, 3
+  %i2 = icmp sge i32 %a, 2
+  %f = and i1 %i1, %i2
+  ret i1 %f
 }
 
 

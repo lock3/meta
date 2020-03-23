@@ -1275,8 +1275,8 @@ CodeGenRegBank::getOrCreateSubClass(const CodeGenRegisterClass *RC,
   return &RegClasses.back();
 }
 
-CodeGenRegisterClass *CodeGenRegBank::getRegClass(Record *Def) {
-  if (CodeGenRegisterClass *RC = Def2RC[Def])
+CodeGenRegisterClass *CodeGenRegBank::getRegClass(const Record *Def) const {
+  if (CodeGenRegisterClass *RC = Def2RC.lookup(Def))
     return RC;
 
   PrintFatalError(Def->getLoc(), "Not a known RegisterClass!");
@@ -1956,7 +1956,7 @@ void CodeGenRegBank::computeRegUnitSets() {
       // Speculatively grow the RegUnitSets to hold the new set.
       RegUnitSets.resize(RegUnitSets.size() + 1);
       RegUnitSets.back().Name =
-        RegUnitSets[Idx].Name + "+" + RegUnitSets[SearchIdx].Name;
+        RegUnitSets[Idx].Name + "_with_" + RegUnitSets[SearchIdx].Name;
 
       std::set_union(RegUnitSets[Idx].Units.begin(),
                      RegUnitSets[Idx].Units.end(),

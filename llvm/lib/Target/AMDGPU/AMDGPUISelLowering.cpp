@@ -37,6 +37,11 @@ using namespace llvm;
 
 #include "AMDGPUGenCallingConv.inc"
 
+static cl::opt<bool> AMDGPUBypassSlowDiv(
+  "amdgpu-bypass-slow-div",
+  cl::desc("Skip 64-bit divide for dynamic 32-bit values"),
+  cl::init(true));
+
 // Find a larger type to do a load / store of a vector with.
 EVT AMDGPUTargetLowering::getEquivalentMemType(LLVMContext &Ctx, EVT VT) {
   unsigned StoreSize = VT.getStoreSizeInBits();
@@ -328,6 +333,9 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::SUBE, VT, Legal);
   }
 
+  // The hardware supports 32-bit FSHR, but not FSHL.
+  setOperationAction(ISD::FSHR, MVT::i32, Legal);
+
   // The hardware supports 32-bit ROTR, but not ROTL.
   setOperationAction(ISD::ROTL, MVT::i32, Expand);
   setOperationAction(ISD::ROTL, MVT::i64, Expand);
@@ -482,6 +490,10 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(const TargetMachine &TM,
   MaxStoresPerMemmove = 0xffffffff;
   MaxStoresPerMemset  = 0xffffffff;
 
+  // The expansion for 64-bit division is enormous.
+  if (AMDGPUBypassSlowDiv)
+    addBypassSlowDiv(64, 32);
+
   setTargetDAGCombine(ISD::BITCAST);
   setTargetDAGCombine(ISD::SHL);
   setTargetDAGCombine(ISD::SRA);
@@ -606,6 +618,17 @@ bool AMDGPUTargetLowering::allUsesHaveSourceMods(const SDNode *N,
   }
 
   return true;
+}
+
+EVT AMDGPUTargetLowering::getTypeForExtReturn(LLVMContext &Context, EVT VT,
+                                              ISD::NodeType ExtendKind) const {
+  assert(!VT.isVector() && "only scalar expected");
+
+  // Round to the next multiple of 32-bits.
+  unsigned Size = VT.getSizeInBits();
+  if (Size <= 32)
+    return MVT::i32;
+  return EVT::getIntegerVT(Context, 32 * ((Size + 31) / 32));
 }
 
 MVT AMDGPUTargetLowering::getVectorIdxTy(const DataLayout &) const {
@@ -1218,10 +1241,23 @@ SDValue AMDGPUTargetLowering::LowerGlobalAddress(AMDGPUMachineFunction* MFI,
   if (G->getAddressSpace() == AMDGPUAS::LOCAL_ADDRESS ||
       G->getAddressSpace() == AMDGPUAS::REGION_ADDRESS) {
     if (!MFI->isEntryFunction()) {
+      SDLoc DL(Op);
       const Function &Fn = DAG.getMachineFunction().getFunction();
       DiagnosticInfoUnsupported BadLDSDecl(
-        Fn, "local memory global used by non-kernel function", SDLoc(Op).getDebugLoc());
+        Fn, "local memory global used by non-kernel function",
+        DL.getDebugLoc(), DS_Warning);
       DAG.getContext()->diagnose(BadLDSDecl);
+
+      // We currently don't have a way to correctly allocate LDS objects that
+      // aren't directly associated with a kernel. We do force inlining of
+      // functions that use local objects. However, if these dead functions are
+      // not eliminated, we don't want a compile time error. Just emit a warning
+      // and a trap, since there should be no callable path here.
+      SDValue Trap = DAG.getNode(ISD::TRAP, DL, MVT::Other, DAG.getEntryNode());
+      SDValue OutputChain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
+                                        Trap, DAG.getRoot());
+      DAG.setRoot(OutputChain);
+      return DAG.getUNDEF(Op.getValueType());
     }
 
     // XXX: What does the value of G->getOffset() mean?
@@ -2184,8 +2220,7 @@ SDValue AMDGPUTargetLowering::LowerFNEARBYINT(SDValue Op, SelectionDAG &DAG) con
 // Don't handle v2f16. The extra instructions to scalarize and repack around the
 // compare and vselect end up producing worse code than scalarizing the whole
 // operation.
-SDValue AMDGPUTargetLowering::LowerFROUND_LegalFTRUNC(SDValue Op,
-                                                      SelectionDAG &DAG) const {
+SDValue AMDGPUTargetLowering::LowerFROUND(SDValue Op, SelectionDAG &DAG) const {
   SDLoc SL(Op);
   SDValue X = Op.getOperand(0);
   EVT VT = Op.getValueType();
@@ -2212,75 +2247,6 @@ SDValue AMDGPUTargetLowering::LowerFROUND_LegalFTRUNC(SDValue Op,
   SDValue Sel = DAG.getNode(ISD::SELECT, SL, VT, Cmp, SignOne, Zero);
 
   return DAG.getNode(ISD::FADD, SL, VT, T, Sel);
-}
-
-SDValue AMDGPUTargetLowering::LowerFROUND64(SDValue Op, SelectionDAG &DAG) const {
-  SDLoc SL(Op);
-  SDValue X = Op.getOperand(0);
-
-  SDValue L = DAG.getNode(ISD::BITCAST, SL, MVT::i64, X);
-
-  const SDValue Zero = DAG.getConstant(0, SL, MVT::i32);
-  const SDValue One = DAG.getConstant(1, SL, MVT::i32);
-  const SDValue NegOne = DAG.getConstant(-1, SL, MVT::i32);
-  const SDValue FiftyOne = DAG.getConstant(51, SL, MVT::i32);
-  EVT SetCCVT =
-      getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), MVT::i32);
-
-  SDValue BC = DAG.getNode(ISD::BITCAST, SL, MVT::v2i32, X);
-
-  SDValue Hi = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SL, MVT::i32, BC, One);
-
-  SDValue Exp = extractF64Exponent(Hi, SL, DAG);
-
-  const SDValue Mask = DAG.getConstant(INT64_C(0x000fffffffffffff), SL,
-                                       MVT::i64);
-
-  SDValue M = DAG.getNode(ISD::SRA, SL, MVT::i64, Mask, Exp);
-  SDValue D = DAG.getNode(ISD::SRA, SL, MVT::i64,
-                          DAG.getConstant(INT64_C(0x0008000000000000), SL,
-                                          MVT::i64),
-                          Exp);
-
-  SDValue Tmp0 = DAG.getNode(ISD::AND, SL, MVT::i64, L, M);
-  SDValue Tmp1 = DAG.getSetCC(SL, SetCCVT,
-                              DAG.getConstant(0, SL, MVT::i64), Tmp0,
-                              ISD::SETNE);
-
-  SDValue Tmp2 = DAG.getNode(ISD::SELECT, SL, MVT::i64, Tmp1,
-                             D, DAG.getConstant(0, SL, MVT::i64));
-  SDValue K = DAG.getNode(ISD::ADD, SL, MVT::i64, L, Tmp2);
-
-  K = DAG.getNode(ISD::AND, SL, MVT::i64, K, DAG.getNOT(SL, M, MVT::i64));
-  K = DAG.getNode(ISD::BITCAST, SL, MVT::f64, K);
-
-  SDValue ExpLt0 = DAG.getSetCC(SL, SetCCVT, Exp, Zero, ISD::SETLT);
-  SDValue ExpGt51 = DAG.getSetCC(SL, SetCCVT, Exp, FiftyOne, ISD::SETGT);
-  SDValue ExpEqNegOne = DAG.getSetCC(SL, SetCCVT, NegOne, Exp, ISD::SETEQ);
-
-  SDValue Mag = DAG.getNode(ISD::SELECT, SL, MVT::f64,
-                            ExpEqNegOne,
-                            DAG.getConstantFP(1.0, SL, MVT::f64),
-                            DAG.getConstantFP(0.0, SL, MVT::f64));
-
-  SDValue S = DAG.getNode(ISD::FCOPYSIGN, SL, MVT::f64, Mag, X);
-
-  K = DAG.getNode(ISD::SELECT, SL, MVT::f64, ExpLt0, S, K);
-  K = DAG.getNode(ISD::SELECT, SL, MVT::f64, ExpGt51, X, K);
-
-  return K;
-}
-
-SDValue AMDGPUTargetLowering::LowerFROUND(SDValue Op, SelectionDAG &DAG) const {
-  EVT VT = Op.getValueType();
-
-  if (isOperationLegal(ISD::FTRUNC, VT))
-    return LowerFROUND_LegalFTRUNC(Op, DAG);
-
-  if (VT == MVT::f64)
-    return LowerFROUND64(Op, DAG);
-
-  llvm_unreachable("unhandled type");
 }
 
 SDValue AMDGPUTargetLowering::LowerFFLOOR(SDValue Op, SelectionDAG &DAG) const {
@@ -2813,6 +2779,7 @@ static bool isI24(SDValue Op, SelectionDAG &DAG) {
 static SDValue simplifyI24(SDNode *Node24,
                            TargetLowering::DAGCombinerInfo &DCI) {
   SelectionDAG &DAG = DCI.DAG;
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
   bool IsIntrin = Node24->getOpcode() == ISD::INTRINSIC_WO_CHAIN;
 
   SDValue LHS = IsIntrin ? Node24->getOperand(1) : Node24->getOperand(0);
@@ -2826,11 +2793,11 @@ static SDValue simplifyI24(SDNode *Node24,
 
   APInt Demanded = APInt::getLowBitsSet(LHS.getValueSizeInBits(), 24);
 
-  // First try to simplify using GetDemandedBits which allows the operands to
-  // have other uses, but will only perform simplifications that involve
-  // bypassing some nodes for this user.
-  SDValue DemandedLHS = DAG.GetDemandedBits(LHS, Demanded);
-  SDValue DemandedRHS = DAG.GetDemandedBits(RHS, Demanded);
+  // First try to simplify using SimplifyMultipleUseDemandedBits which allows
+  // the operands to have other uses, but will only perform simplifications that
+  // involve bypassing some nodes for this user.
+  SDValue DemandedLHS = TLI.SimplifyMultipleUseDemandedBits(LHS, Demanded, DAG);
+  SDValue DemandedRHS = TLI.SimplifyMultipleUseDemandedBits(RHS, Demanded, DAG);
   if (DemandedLHS || DemandedRHS)
     return DAG.getNode(NewOpcode, SDLoc(Node24), Node24->getVTList(),
                        DemandedLHS ? DemandedLHS : LHS,
@@ -2838,7 +2805,6 @@ static SDValue simplifyI24(SDNode *Node24,
 
   // Now try SimplifyDemandedBits which can simplify the nodes used by our
   // operands if this node is the only user.
-  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
   if (TLI.SimplifyDemandedBits(LHS, Demanded, DCI))
     return SDValue(Node24, 0);
   if (TLI.SimplifyDemandedBits(RHS, Demanded, DCI))

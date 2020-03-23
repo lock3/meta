@@ -1,9 +1,10 @@
 // A basic clang -cc1 command-line, and simple environment check.
+// REQUIRES: platform-linker
 
 // RUN: %clang %s -### -no-canonical-prefixes -target riscv32 2>&1 | FileCheck -check-prefix=CC1 %s
 // CC1: clang{{.*}} "-cc1" "-triple" "riscv32"
 
-// Test interaction with -fuse-ld=lld, if ld.lld is available.
+// Test interaction with -fuse-ld=lld, if lld is available.
 // RUN: %clang %s -### -no-canonical-prefixes -target riscv32 -fuse-ld=lld 2>&1 | FileCheck -check-prefix=LLD %s
 // LLD: {{(error: invalid linker name in argument '-fuse-ld=lld')|(ld.lld)}}
 

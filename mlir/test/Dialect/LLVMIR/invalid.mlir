@@ -295,7 +295,7 @@ func @nvvm_invalid_mma_0(%a0 : !llvm.half, %a1 : !llvm<"<2 x half>">,
                          %c0 : !llvm.float, %c1 : !llvm.float, %c2 : !llvm.float, %c3 : !llvm.float,
                          %c4 : !llvm.float, %c5 : !llvm.float, %c6 : !llvm.float, %c7 : !llvm.float) {
   // expected-error@+1 {{expected operands to be 4 <halfx2>s followed by either 4 <halfx2>s or 8 floats}}
-  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="row"} : (!llvm.half, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{ float, float, float, float, float, float, float, float }">
+  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="col"} : (!llvm.half, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{ float, float, float, float, float, float, float, float }">
   llvm.return %0 : !llvm<"{ float, float, float, float, float, float, float, float }">
 }
 
@@ -307,7 +307,7 @@ func @nvvm_invalid_mma_1(%a0 : !llvm<"<2 x half>">, %a1 : !llvm<"<2 x half>">,
                          %c0 : !llvm.float, %c1 : !llvm.float, %c2 : !llvm.float, %c3 : !llvm.float,
                          %c4 : !llvm.float, %c5 : !llvm.float, %c6 : !llvm.float, %c7 : !llvm.float) {
   // expected-error@+1 {{expected result type to be a struct of either 4 <halfx2>s or 8 floats}}
-  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="row"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{ float, float, float, float, float, float, float, half }">
+  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="col"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{ float, float, float, float, float, float, float, half }">
   llvm.return %0 : !llvm<"{ float, float, float, float, float, float, float, half }">
 }
 
@@ -331,7 +331,7 @@ func @nvvm_invalid_mma_3(%a0 : !llvm<"<2 x half>">, %a1 : !llvm<"<2 x half>">,
                          %c0 : !llvm<"<2 x half>">, %c1 : !llvm<"<2 x half>">,
                          %c2 : !llvm<"<2 x half>">, %c3 : !llvm<"<2 x half>">) {
   // expected-error@+1 {{unimplemented mma.sync variant}}
-  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3 {alayout="row", blayout="row"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">) -> !llvm<"{ float, float, float, float, float, float, float, float }">
+  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3 {alayout="row", blayout="col"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">) -> !llvm<"{ float, float, float, float, float, float, float, float }">
   llvm.return %0 : !llvm<"{ float, float, float, float, float, float, float, float }">
 }
 
@@ -343,7 +343,7 @@ func @nvvm_invalid_mma_4(%a0 : !llvm<"<2 x half>">, %a1 : !llvm<"<2 x half>">,
                          %c0 : !llvm.float, %c1 : !llvm.float, %c2 : !llvm.float, %c3 : !llvm.float,
                          %c4 : !llvm.float, %c5 : !llvm.float, %c6 : !llvm.float, %c7 : !llvm.float) {
   // expected-error@+1 {{unimplemented mma.sync variant}}
-  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="row"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{<2 x half>, <2 x half>, <2 x half>, <2 x half>}">
+  %0 = nvvm.mma.sync %a0, %a1, %b0, %b1, %c0, %c1, %c2, %c3, %c4, %c5, %c6, %c7 {alayout="row", blayout="col"} : (!llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm<"<2 x half>">, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float, !llvm.float) -> !llvm<"{<2 x half>, <2 x half>, <2 x half>, <2 x half>}">
   llvm.return %0 : !llvm<"{<2 x half>, <2 x half>, <2 x half>, <2 x half>}">
 }
 
@@ -515,7 +515,7 @@ func @cmpxchg_failure_acq_rel(%i32_ptr : !llvm<"i32*">, %i32 : !llvm.i32) {
 llvm.func @foo(!llvm.i32) -> !llvm.i32
 llvm.func @__gxx_personality_v0(...) -> !llvm.i32
 
-llvm.func @bad_landingpad(%arg0: !llvm<"i8**">) {
+llvm.func @bad_landingpad(%arg0: !llvm<"i8**">) attributes { personality = @__gxx_personality_v0} {
   %0 = llvm.mlir.constant(3 : i32) : !llvm.i32
   %1 = llvm.mlir.constant(2 : i32) : !llvm.i32
   %2 = llvm.invoke @foo(%1) to ^bb1 unwind ^bb2 : (!llvm.i32) -> !llvm.i32
@@ -532,7 +532,7 @@ llvm.func @bad_landingpad(%arg0: !llvm<"i8**">) {
 llvm.func @foo(!llvm.i32) -> !llvm.i32
 llvm.func @__gxx_personality_v0(...) -> !llvm.i32
 
-llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 {
+llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 attributes { personality = @__gxx_personality_v0} {
   %0 = llvm.mlir.constant(1 : i32) : !llvm.i32
   %1 = llvm.alloca %0 x !llvm<"i8*"> : (!llvm.i32) -> !llvm<"i8**">
   // expected-note@+1 {{global addresses expected as operand to bitcast used in clauses for landingpad}}
@@ -551,7 +551,7 @@ llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 {
 llvm.func @foo(!llvm.i32) -> !llvm.i32
 llvm.func @__gxx_personality_v0(...) -> !llvm.i32
 
-llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 {
+llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 attributes { personality = @__gxx_personality_v0} {
   %0 = llvm.mlir.constant(1 : i32) : !llvm.i32
   %1 = llvm.invoke @foo(%0) to ^bb1 unwind ^bb2 : (!llvm.i32) -> !llvm.i32
 ^bb1: // pred: ^bb0
@@ -560,4 +560,42 @@ llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 {
   // expected-error@+1 {{landingpad instruction expects at least one clause or cleanup attribute}}
   %2 = llvm.landingpad : !llvm<"{ i8*, i32 }">
   llvm.return %0 : !llvm.i32
+}
+
+// -----
+
+llvm.func @foo(!llvm.i32) -> !llvm.i32
+llvm.func @__gxx_personality_v0(...) -> !llvm.i32
+
+llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 attributes { personality = @__gxx_personality_v0 } {
+  %0 = llvm.mlir.constant(1 : i32) : !llvm.i32
+  %1 = llvm.invoke @foo(%0) to ^bb1 unwind ^bb2 : (!llvm.i32) -> !llvm.i32
+^bb1: // pred: ^bb0
+  llvm.return %0 : !llvm.i32
+^bb2: // pred: ^bb0
+  %2 = llvm.landingpad cleanup : !llvm<"{ i8*, i32 }">
+  // expected-error@+1 {{'llvm.resume' op expects landingpad value as operand}}
+  llvm.resume %0 : !llvm.i32
+}
+
+// -----
+
+llvm.func @foo(!llvm.i32) -> !llvm.i32
+
+llvm.func @caller(%arg0: !llvm.i32) -> !llvm.i32 {
+  %0 = llvm.mlir.constant(1 : i32) : !llvm.i32
+  %1 = llvm.invoke @foo(%0) to ^bb1 unwind ^bb2 : (!llvm.i32) -> !llvm.i32
+^bb1: // pred: ^bb0
+  llvm.return %0 : !llvm.i32
+^bb2: // pred: ^bb0
+  // expected-error@+1 {{llvm.landingpad needs to be in a function with a personality}}
+  %2 = llvm.landingpad cleanup : !llvm<"{ i8*, i32 }">
+  llvm.resume %2 : !llvm<"{ i8*, i32 }">
+}
+
+// -----
+
+func @invalid_ordering_in_fence() {
+  // expected-error @+1 {{can be given only acquire, release, acq_rel, and seq_cst orderings}}
+  llvm.fence syncscope("agent") monotonic
 }

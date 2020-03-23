@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Serialization/ASTRecordReader.h"
 #include "clang/AST/ASTConcept.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/AttrIterator.h"
@@ -22,6 +21,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclarationName.h"
+#include "clang/AST/DependenceFlags.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
@@ -49,6 +49,7 @@
 #include "clang/Basic/TypeTraits.h"
 #include "clang/Lex/Token.h"
 #include "clang/Serialization/ASTBitCodes.h"
+#include "clang/Serialization/ASTRecordReader.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
@@ -101,11 +102,12 @@ namespace clang {
 
     /// The number of record fields required for the Stmt class
     /// itself.
-    static const unsigned NumStmtFields = 1;
+    static const unsigned NumStmtFields = 0;
 
     /// The number of record fields required for the Expr class
     /// itself.
-    static const unsigned NumExprFields = NumStmtFields + 7;
+    static const unsigned NumExprFields =
+        NumStmtFields + ExprDependenceBits + 3;
 
     /// Read and initialize a ExplicitTemplateArgumentList structure.
     void ReadTemplateKWAndArgsInfo(ASTTemplateKWAndArgsInfo &Args,
@@ -137,7 +139,6 @@ void ASTStmtReader::ReadTemplateKWAndArgsInfo(ASTTemplateKWAndArgsInfo &Args,
 }
 
 void ASTStmtReader::VisitStmt(Stmt *S) {
-  S->setIsOMPStructuredBlock(Record.readInt());
   assert(Record.getIdx() == NumStmtFields && "Incorrect statement field count");
 }
 
@@ -564,10 +565,26 @@ void ASTStmtReader::VisitCapturedStmt(CapturedStmt *S) {
 void ASTStmtReader::VisitExpr(Expr *E) {
   VisitStmt(E);
   E->setType(Record.readType());
-  E->setTypeDependent(Record.readInt());
-  E->setValueDependent(Record.readInt());
-  E->setInstantiationDependent(Record.readInt());
-  E->ExprBits.ContainsUnexpandedParameterPack = Record.readInt();
+
+  // FIXME: write and read all DependentFlags with a single call.
+  bool TypeDependent = Record.readInt();
+  bool ValueDependent = Record.readInt();
+  bool InstantiationDependent = Record.readInt();
+  bool ContainsUnexpandedTemplateParameters = Record.readInt();
+  bool ContainsErrors = Record.readInt();
+  auto Deps = ExprDependence::None;
+  if (TypeDependent)
+    Deps |= ExprDependence::Type;
+  if (ValueDependent)
+    Deps |= ExprDependence::Value;
+  if (InstantiationDependent)
+    Deps |= ExprDependence::Instantiation;
+  if (ContainsUnexpandedTemplateParameters)
+    Deps |= ExprDependence::UnexpandedPack;
+  if (ContainsErrors)
+    Deps |= ExprDependence::Error;
+  E->setDependence(Deps);
+
   E->setValueKind(static_cast<ExprValueKind>(Record.readInt()));
   E->setObjectKind(static_cast<ExprObjectKind>(Record.readInt()));
   assert(Record.getIdx() == NumExprFields &&
@@ -807,6 +824,7 @@ void ASTStmtReader::VisitConceptSpecializationExpr(
   E->TemplateKWLoc = Record.readSourceLocation();
   E->ConceptName = Record.readDeclarationNameInfo();
   E->NamedConcept = readDeclAs<ConceptDecl>();
+  E->FoundDecl = Record.readDeclAs<NamedDecl>();
   E->ArgsAsWritten = Record.readASTTemplateArgumentListInfo();
   llvm::SmallVector<TemplateArgument, 4> Args;
   for (unsigned I = 0; I < NumTemplateArgs; ++I)
@@ -1256,6 +1274,7 @@ void ASTStmtReader::VisitStmtExpr(StmtExpr *E) {
   E->setLParenLoc(readSourceLocation());
   E->setRParenLoc(readSourceLocation());
   E->setSubStmt(cast_or_null<CompoundStmt>(Record.readSubStmt()));
+  E->StmtExprBits.TemplateDepth = Record.readInt();
 }
 
 void ASTStmtReader::VisitChooseExpr(ChooseExpr *E) {
@@ -1881,9 +1900,17 @@ void ASTStmtReader::VisitExprWithCleanups(ExprWithCleanups *E) {
 
   unsigned NumObjects = Record.readInt();
   assert(NumObjects == E->getNumObjects());
-  for (unsigned i = 0; i != NumObjects; ++i)
-    E->getTrailingObjects<BlockDecl *>()[i] =
-        readDeclAs<BlockDecl>();
+  for (unsigned i = 0; i != NumObjects; ++i) {
+    unsigned CleanupKind = Record.readInt();
+    ExprWithCleanups::CleanupObject Obj;
+    if (CleanupKind == COK_Block)
+      Obj = readDeclAs<BlockDecl>();
+    else if (CleanupKind == COK_CompoundLiteral)
+      Obj = cast<CompoundLiteralExpr>(Record.readSubExpr());
+    else
+      llvm_unreachable("unexpected cleanup object type");
+    E->getTrailingObjects<ExprWithCleanups::CleanupObject>()[i] = Obj;
+  }
 
   E->ExprWithCleanupsBits.CleanupsHaveSideEffects = Record.readInt();
   E->SubExpr = Record.readSubExpr();
@@ -2414,6 +2441,20 @@ void ASTStmtReader::VisitOMPTaskgroupDirective(OMPTaskgroupDirective *D) {
 }
 
 void ASTStmtReader::VisitOMPFlushDirective(OMPFlushDirective *D) {
+  VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  Record.skipInts(1);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPDepobjDirective(OMPDepobjDirective *D) {
+  VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  Record.skipInts(1);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPScanDirective(OMPScanDirective *D) {
   VisitStmt(D);
   // The NumClauses field was read in ReadStmtFromStream.
   Record.skipInts(1);
@@ -3256,6 +3297,16 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_OMP_FLUSH_DIRECTIVE:
       S = OMPFlushDirective::CreateEmpty(
+          Context, Record[ASTStmtReader::NumStmtFields], Empty);
+      break;
+
+    case STMT_OMP_DEPOBJ_DIRECTIVE:
+      S = OMPDepobjDirective::CreateEmpty(
+          Context, Record[ASTStmtReader::NumStmtFields], Empty);
+      break;
+
+    case STMT_OMP_SCAN_DIRECTIVE:
+      S = OMPScanDirective::CreateEmpty(
           Context, Record[ASTStmtReader::NumStmtFields], Empty);
       break;
 

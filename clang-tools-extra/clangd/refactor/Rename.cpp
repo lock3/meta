@@ -81,7 +81,8 @@ llvm::DenseSet<const NamedDecl *> locateDeclAt(ParsedAST &AST,
   unsigned Offset =
       AST.getSourceManager().getDecomposedSpellingLoc(TokenStartLoc).second;
 
-  SelectionTree Selection(AST.getASTContext(), AST.getTokens(), Offset);
+  SelectionTree Selection = SelectionTree::createRight(
+      AST.getASTContext(), AST.getTokens(), Offset, Offset);
   const SelectionTree::Node *SelectedNode = Selection.commonAncestor();
   if (!SelectedNode)
     return {};
@@ -109,7 +110,7 @@ bool isBlacklisted(const NamedDecl &RenameDecl) {
 #include "StdSymbolMap.inc"
 #undef SYMBOL
   });
-  return StdSymbols->count(RenameDecl.getQualifiedNameAsString());
+  return StdSymbols->count(printQualifiedName(RenameDecl));
 }
 
 enum ReasonToReject {
@@ -183,13 +184,6 @@ llvm::Optional<ReasonToReject> renameable(const NamedDecl &RenameDecl,
   assert(CrossFile);
   if (!Index)
     return ReasonToReject::NoIndexProvided;
-
-  // Blacklist symbols that are not supported yet in cross-file mode due to the
-  // limitations of our index.
-  // FIXME: Renaming templates requires to rename all related specializations,
-  // our index doesn't have this information.
-  if (RenameDecl.getDescribedTemplate())
-    return ReasonToReject::UnsupportedSymbol;
 
   // FIXME: Renaming virtual methods requires to rename all overridens in
   // subclasses, our index doesn't have this information.
@@ -301,46 +295,20 @@ Range toRange(const SymbolLocation &L) {
   return R;
 }
 
-std::vector<const CXXConstructorDecl *> getConstructors(const NamedDecl *ND) {
-  std::vector<const CXXConstructorDecl *> Ctors;
-  if (const auto *RD = dyn_cast<CXXRecordDecl>(ND)) {
-    if (!RD->hasUserDeclaredConstructor())
-      return {};
-    for (const CXXConstructorDecl *Ctor : RD->ctors())
-      Ctors.push_back(Ctor);
-    for (const auto *D : RD->decls()) {
-      if (const auto *FTD = dyn_cast<FunctionTemplateDecl>(D))
-        if (const auto *Ctor =
-                dyn_cast<CXXConstructorDecl>(FTD->getTemplatedDecl()))
-          Ctors.push_back(Ctor);
-    }
-  }
-  return Ctors;
-}
-
 // Return all rename occurrences (using the index) outside of the main file,
 // grouped by the absolute file path.
 llvm::Expected<llvm::StringMap<std::vector<Range>>>
 findOccurrencesOutsideFile(const NamedDecl &RenameDecl,
-                           llvm::StringRef MainFile, const SymbolIndex &Index) {
+                           llvm::StringRef MainFile, const SymbolIndex &Index,
+                           size_t MaxLimitFiles) {
   trace::Span Tracer("FindOccurrencesOutsideFile");
   RefsRequest RQuest;
   RQuest.IDs.insert(*getSymbolID(&RenameDecl));
-  // Classes and their constructors are different symbols, and have different
-  // symbol ID.
-  // When querying references for a class, clangd's own index will also return
-  // references of the corresponding class constructors, but this is not true
-  // for all index backends, e.g. kythe, so we add all constructors to the query
-  // request.
-  for (const auto *Ctor : getConstructors(&RenameDecl))
-    RQuest.IDs.insert(*getSymbolID(Ctor));
 
   // Absolute file path => rename occurrences in that file.
   llvm::StringMap<std::vector<Range>> AffectedFiles;
-  // FIXME: Make the limit customizable.
-  static constexpr size_t MaxLimitFiles = 50;
   bool HasMore = Index.refs(RQuest, [&](const Ref &R) {
-    if (AffectedFiles.size() > MaxLimitFiles)
+    if (AffectedFiles.size() >= MaxLimitFiles)
       return;
     if ((R.Kind & RefKind::Spelled) == RefKind::Unknown)
       return;
@@ -350,7 +318,7 @@ findOccurrencesOutsideFile(const NamedDecl &RenameDecl,
     }
   });
 
-  if (AffectedFiles.size() > MaxLimitFiles)
+  if (AffectedFiles.size() >= MaxLimitFiles)
     return llvm::make_error<llvm::StringError>(
         llvm::formatv("The number of affected files exceeds the max limit {0}",
                       MaxLimitFiles),
@@ -387,11 +355,11 @@ findOccurrencesOutsideFile(const NamedDecl &RenameDecl,
 // there is no dirty buffer.
 llvm::Expected<FileEdits> renameOutsideFile(
     const NamedDecl &RenameDecl, llvm::StringRef MainFilePath,
-    llvm::StringRef NewName, const SymbolIndex &Index,
+    llvm::StringRef NewName, const SymbolIndex &Index, size_t MaxLimitFiles,
     llvm::function_ref<llvm::Expected<std::string>(PathRef)> GetFileContent) {
   trace::Span Tracer("RenameOutsideFile");
-  auto AffectedFiles =
-      findOccurrencesOutsideFile(RenameDecl, MainFilePath, Index);
+  auto AffectedFiles = findOccurrencesOutsideFile(RenameDecl, MainFilePath,
+                                                  Index, MaxLimitFiles);
   if (!AffectedFiles)
     return AffectedFiles.takeError();
   FileEdits Results;
@@ -473,6 +441,7 @@ void findNearMiss(
 
 llvm::Expected<FileEdits> rename(const RenameInputs &RInputs) {
   trace::Span Tracer("Rename flow");
+  const auto &Opts = RInputs.Opts;
   ParsedAST &AST = RInputs.AST;
   const SourceManager &SM = AST.getSourceManager();
   llvm::StringRef MainFileCode = SM.getBufferData(SM.getMainFileID());
@@ -508,7 +477,7 @@ llvm::Expected<FileEdits> rename(const RenameInputs &RInputs) {
     return makeError(ReasonToReject::NoSymbolFound);
   // FIXME: Renaming macros is not supported yet, the macro-handling code should
   // be moved to rename tooling library.
-  if (locateMacroAt(IdentifierToken->location(), AST.getPreprocessor()))
+  if (locateMacroAt(*IdentifierToken, AST.getPreprocessor()))
     return makeError(ReasonToReject::UnsupportedSymbol);
 
   auto DeclsUnderCursor = locateDeclAt(AST, IdentifierToken->location());
@@ -520,7 +489,7 @@ llvm::Expected<FileEdits> rename(const RenameInputs &RInputs) {
   const auto &RenameDecl =
       llvm::cast<NamedDecl>(*(*DeclsUnderCursor.begin())->getCanonicalDecl());
   auto Reject = renameable(RenameDecl, RInputs.MainFilePath, RInputs.Index,
-                           RInputs.AllowCrossFile);
+                           Opts.AllowCrossFile);
   if (Reject)
     return makeError(*Reject);
 
@@ -537,8 +506,9 @@ llvm::Expected<FileEdits> rename(const RenameInputs &RInputs) {
   if (!MainFileRenameEdit)
     return MainFileRenameEdit.takeError();
 
-  if (!RInputs.AllowCrossFile) {
-    // Within-file rename: just return the main file results.
+  // return the main file edit if this is a within-file rename or the symbol
+  // being renamed is function local.
+  if (!Opts.AllowCrossFile || RenameDecl.getParentFunctionOrMethod()) {
     return FileEdits(
         {std::make_pair(RInputs.MainFilePath,
                         Edit{MainFileCode, std::move(*MainFileRenameEdit)})});
@@ -548,9 +518,11 @@ llvm::Expected<FileEdits> rename(const RenameInputs &RInputs) {
   // Renameable safely guards us that at this point we are renaming a local
   // symbol if we don't have index.
   if (RInputs.Index) {
-    auto OtherFilesEdits =
-        renameOutsideFile(RenameDecl, RInputs.MainFilePath, RInputs.NewName,
-                          *RInputs.Index, GetFileContent);
+    auto OtherFilesEdits = renameOutsideFile(
+        RenameDecl, RInputs.MainFilePath, RInputs.NewName, *RInputs.Index,
+        Opts.LimitFiles == 0 ? std::numeric_limits<size_t>::max()
+                             : Opts.LimitFiles,
+        GetFileContent);
     if (!OtherFilesEdits)
       return OtherFilesEdits.takeError();
     Results = std::move(*OtherFilesEdits);

@@ -69,7 +69,7 @@ public:
 
     /// Called by ClangdServer when \p Diagnostics for \p File are ready.
     /// May be called concurrently for separate files, not for a single file.
-    virtual void onDiagnosticsReady(PathRef File,
+    virtual void onDiagnosticsReady(PathRef File, llvm::StringRef Version,
                                     std::vector<Diag> Diagnostics) {}
     /// Called whenever the file status is updated.
     /// May be called concurrently for separate files, not for a single file.
@@ -78,7 +78,7 @@ public:
     /// Called by ClangdServer when some \p Highlightings for \p File are ready.
     /// May be called concurrently for separate files, not for a single file.
     virtual void
-    onHighlightingsReady(PathRef File,
+    onHighlightingsReady(PathRef File, llvm::StringRef Version,
                          std::vector<HighlightingToken> Highlightings) {}
 
     /// Called when background indexing tasks are enqueued/started/completed.
@@ -130,8 +130,11 @@ public:
     llvm::Optional<std::string> ResourceDir = llvm::None;
 
     /// Time to wait after a new file version before computing diagnostics.
-    DebouncePolicy UpdateDebounce =
-        DebouncePolicy::fixed(std::chrono::milliseconds(500));
+    DebouncePolicy UpdateDebounce = DebouncePolicy{
+        /*Min=*/std::chrono::milliseconds(50),
+        /*Max=*/std::chrono::milliseconds(500),
+        /*RebuildRatio=*/1,
+    };
 
     bool SuggestMissingIncludes = false;
 
@@ -141,9 +144,6 @@ public:
 
     /// Enable semantic highlighting features.
     bool SemanticHighlighting = false;
-
-    /// Enable cross-file rename feature.
-    bool CrossFileRename = false;
 
     /// Returns true if the tweak should be enabled.
     std::function<bool(const Tweak &)> TweakFilter = [](const Tweak &T) {
@@ -171,16 +171,17 @@ public:
   /// \p File is already tracked. Also schedules parsing of the AST for it on a
   /// separate thread. When the parsing is complete, DiagConsumer passed in
   /// constructor will receive onDiagnosticsReady callback.
+  /// Version identifies this snapshot and is propagated to ASTs, preambles,
+  /// diagnostics etc built from it.
   void addDocument(PathRef File, StringRef Contents,
+                   llvm::StringRef Version = "null",
                    WantDiagnostics WD = WantDiagnostics::Auto,
                    bool ForceRebuild = false);
-
-  /// Get the contents of \p File, which should have been added.
-  llvm::StringRef getDocument(PathRef File) const;
 
   /// Remove \p File from list of tracked files, schedule a request to free
   /// resources associated with it. Pending diagnostics for closed files may not
   /// be delivered, even if requested with WantDiags::Auto or WantDiags::Yes.
+  /// An empty set of diagnostics will be delivered, with Version = "".
   void removeDocument(PathRef File);
 
   /// Run code completion for \p File at \p Pos.
@@ -254,6 +255,7 @@ public:
 
   /// Test the validity of a rename operation.
   void prepareRename(PathRef File, Position Pos,
+                     const RenameOptions &RenameOpts,
                      Callback<llvm::Optional<Range>> CB);
 
   /// Rename all occurrences of the symbol at the \p Pos in \p File to
@@ -262,7 +264,7 @@ public:
   /// embedders could use this method to get all occurrences of the symbol (e.g.
   /// highlighting them in prepare stage).
   void rename(PathRef File, Position Pos, llvm::StringRef NewName,
-              bool WantFormat, Callback<FileEdits> CB);
+              const RenameOptions &Opts, Callback<FileEdits> CB);
 
   struct TweakRef {
     std::string ID;    /// ID to pass for applyTweak.
@@ -339,8 +341,6 @@ private:
   // If this is true, suggest include insertion fixes for diagnostic errors that
   // can be caused by missing includes (e.g. member access in incomplete type).
   bool SuggestMissingIncludes = false;
-
-  bool CrossFileRename = false;
 
   std::function<bool(const Tweak &)> TweakFilter;
 

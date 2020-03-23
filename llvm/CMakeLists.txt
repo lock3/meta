@@ -289,6 +289,7 @@ set(LLVM_ALL_TARGETS
   AArch64
   AMDGPU
   ARM
+  AVR
   BPF
   Hexagon
   Lanai
@@ -347,13 +348,7 @@ option(LLVM_ENABLE_LIBPFM "Use libpfm for performance counters if available." ON
 
 option(LLVM_ENABLE_THREADS "Use threads if available." ON)
 
-if(CMAKE_SYSTEM_NAME STREQUAL Windows)
-  set(zlib_DEFAULT "OFF")
-else()
-  set(zlib_DEFAULT "ON")
-endif()
-
-set(LLVM_ENABLE_ZLIB "${zlib_DEFAULT}" CACHE STRING "Use zlib for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
+set(LLVM_ENABLE_ZLIB "ON" CACHE STRING "Use zlib for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
 
 set(LLVM_Z3_INSTALL_DIR "" CACHE STRING "Install directory of the Z3 solver.")
 
@@ -415,6 +410,17 @@ endif()
 
 option(LLVM_ENABLE_EXPENSIVE_CHECKS "Enable expensive checks" OFF)
 
+# While adding scalable vector support to LLVM, we temporarily want to
+# allow an implicit conversion of TypeSize to uint64_t. This CMake flag
+# enables a more strict conversion where it asserts that the type is not
+# a scalable vector type.
+#
+# Enabling this flag makes it easier to find cases where the compiler makes
+# assumptions on the size being 'fixed size', when building tests for
+# SVE/SVE2 or other scalable vector architectures.
+option(LLVM_ENABLE_STRICT_FIXED_SIZE_VECTORS
+       "Enable assertions that type is not scalable in implicit conversion from TypeSize to uint64_t" OFF)
+
 set(LLVM_ABI_BREAKING_CHECKS "WITH_ASSERTS" CACHE STRING
   "Enable abi-breaking checks.  Can be WITH_ASSERTS, FORCE_ON or FORCE_OFF.")
 
@@ -473,7 +479,7 @@ option(LLVM_USE_SPLIT_DWARF
 
 # Define an option controlling whether we should build for 32-bit on 64-bit
 # platforms, where supported.
-if( CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT WIN32 )
+if( CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT (WIN32 OR ${CMAKE_SYSTEM_NAME} MATCHES "AIX"))
   # TODO: support other platforms and toolchains.
   option(LLVM_BUILD_32_BITS "Build 32 bits executables and libraries." OFF)
 endif()
@@ -1066,6 +1072,7 @@ if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
       add_dependencies(llvm-libraries ${lib})
       if (NOT LLVM_ENABLE_IDE)
         add_dependencies(install-llvm-libraries install-${lib})
+        add_dependencies(install-llvm-libraries-stripped install-${lib}-stripped)
       endif()
     endforeach()
   endif()
@@ -1075,7 +1082,7 @@ endif()
 # after all targets are created.
 include(LLVMDistributionSupport)
 llvm_distribution_add_targets()
-process_llvm_pass_plugins()
+process_llvm_pass_plugins(GEN_CONFIG)
 
 # This allows us to deploy the Universal CRT DLLs by passing -DCMAKE_INSTALL_UCRT_LIBRARIES=ON to CMake
 if (MSVC AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_INSTALL_UCRT_LIBRARIES)

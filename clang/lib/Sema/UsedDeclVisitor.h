@@ -29,6 +29,26 @@ public:
 
   Derived &asImpl() { return *static_cast<Derived *>(this); }
 
+  void VisitDeclRefExpr(DeclRefExpr *E) {
+    auto *D = E->getDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getLocation(), D);
+    }
+  }
+
+  void VisitMemberExpr(MemberExpr *E) {
+    auto *D = E->getMemberDecl();
+    if (isa<FunctionDecl>(D) || isa<VarDecl>(D)) {
+      asImpl().visitUsedDecl(E->getMemberLoc(), D);
+    }
+    asImpl().Visit(E->getBase());
+  }
+
+  void VisitCapturedStmt(CapturedStmt *Node) {
+    asImpl().visitUsedDecl(Node->getBeginLoc(), Node->getCapturedDecl());
+    Inherited::VisitCapturedStmt(Node);
+  }
+
   void VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
     asImpl().visitUsedDecl(
         E->getBeginLoc(),
@@ -63,6 +83,18 @@ public:
 
   void VisitCXXDefaultArgExpr(CXXDefaultArgExpr *E) {
     asImpl().Visit(E->getExpr());
+  }
+
+  void visitUsedDecl(SourceLocation Loc, Decl *D) {
+    if (auto *CD = dyn_cast<CapturedDecl>(D)) {
+      if (auto *S = CD->getBody()) {
+        asImpl().Visit(S);
+      }
+    } else if (auto *CD = dyn_cast<BlockDecl>(D)) {
+      if (auto *S = CD->getBody()) {
+        asImpl().Visit(S);
+      }
+    }
   }
 };
 } // end namespace clang
