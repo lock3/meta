@@ -8685,8 +8685,6 @@ Sema::ActOnCXXSelectPackExpr(Expr *Base, Expr *Index,
       new (Context) CXXSelectPackExpr(Base, FPPE->getExpansion(I)->getType(),
                                       Index, Size.getValue(), Pack,
                                       KWLoc, BaseLoc);
-    // If we got to this point, we know it's not type-dependent anymore.
-    Sel->setTypeDependent(false);
     VarDecl *Parm = FPPE->getExpansion(I);
     ExprResult ParmRef =
       BuildDeclRefExpr(Parm, Parm->getType().getNonReferenceType(),
